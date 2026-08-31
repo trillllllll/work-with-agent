@@ -1,0 +1,11 @@
+node_modules/
+client/dist/
+server/dist/
+client/tsconfig.tsbuildinfo
+server/data.db
+server/data/
+server/prisma/*.db
+server/prisma/*.db-journal
+.env
+*.log
+.DS_Store

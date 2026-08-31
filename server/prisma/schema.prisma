@@ -1,0 +1,39 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum TaskStatus {
+  todo
+  doing
+  blocked
+  done
+}
+
+model Topic {
+  id            String   @id @default(cuid())
+  name          String
+  description   String   @default("")
+  isExploration Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  tasks         Task[]
+}
+
+model Task {
+  id            String     @id @default(cuid())
+  topicId       String
+  title         String
+  description   String     @default("")
+  status        TaskStatus @default(todo)
+  resultSummary String     @default("")
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  topic         Topic      @relation(fields: [topicId], references: [id], onDelete: Restrict)
+
+  @@index([topicId])
+}
