@@ -1,9 +1,85 @@
-import express from 'express'; import cors from 'cors'; import { z } from 'zod'; import { TopicService, TaskService } from './services.js'; import { AgentService } from './agent.js';
-export const app=express(); app.use(cors()); app.use(express.json()); const topics=new TopicService(), tasks=new TaskService(), agent=new AgentService();
-const send=(res:any,data:any)=>res.json({data,error:null}); const schema=(s:any)=>(req:any,res:any,next:any)=>{const r=s.safeParse(req.body); if(!r.success)return res.status(400).json({data:null,error:r.error.flatten()}); req.body=r.data; next();};
-app.get('/api/topics',async(_,res,next)=>{try{send(res,await topics.list())}catch(e){next(e)}}); app.get('/api/topics/:id',async(req,res,next)=>{try{const x=await topics.get(req.params.id); if(!x)return res.status(404).json({data:null,error:'主题不存在'}); send(res,x)}catch(e){next(e)}});
-app.post('/api/topics',schema(z.object({name:z.string().min(1),description:z.string().optional(),isExploration:z.boolean().optional()})),async(req,res,next)=>{try{send(res,await topics.create(req.body))}catch(e){next(e)}}); app.patch('/api/topics/:id',schema(z.object({name:z.string().min(1).optional(),description:z.string().optional(),isExploration:z.boolean().optional()})),async(req,res,next)=>{try{send(res,await topics.update(req.params.id,req.body))}catch(e){next(e)}}); app.delete('/api/topics/:id',async(req,res,next)=>{try{send(res,await topics.remove(req.params.id))}catch(e){next(e)}});
-app.get('/api/tasks',async(req,res,next)=>{try{send(res,await tasks.list(typeof req.query.topicId==='string'?req.query.topicId:undefined))}catch(e){next(e)}}); app.get('/api/tasks/:id',async(req,res,next)=>{try{const x=await tasks.get(req.params.id); if(!x)return res.status(404).json({data:null,error:'任务不存在'}); send(res,x)}catch(e){next(e)}});
-const taskBody=z.object({topicId:z.string().min(1),title:z.string().min(1),description:z.string().optional(),status:z.enum(['todo','doing','blocked','done']).optional(),resultSummary:z.string().optional()}); app.post('/api/tasks',schema(taskBody),async(req,res,next)=>{try{send(res,await tasks.create(req.body))}catch(e){next(e)}}); app.patch('/api/tasks/:id',schema(taskBody.partial()),async(req,res,next)=>{try{send(res,await tasks.update(req.params.id,req.body))}catch(e){next(e)}}); app.delete('/api/tasks/:id',async(req,res,next)=>{try{send(res,await tasks.remove(req.params.id))}catch(e){next(e)}});
-const chatBody=z.object({conversationId:z.string().optional(),message:z.string().min(1),pageContext:z.object({topicId:z.string().nullable().optional(),taskId:z.string().nullable().optional(),page:z.string().nullable().optional()}).optional()}); app.post('/api/chat',schema(chatBody),async(req,res,next)=>{try{send(res,await agent.chat(req.body))}catch(e){next(e)}}); app.post('/api/agent/approvals/:id/approve',async(req,res,next)=>{try{send(res,await agent.approve(req.params.id))}catch(e){next(e)}}); app.post('/api/agent/approvals/:id/reject',async(req,res,next)=>{try{send(res,await agent.reject(req.params.id))}catch(e){next(e)}});
-app.use((err:any,_req:any,res:any,_next:any)=>res.status(err.status??500).json({data:null,error:err.message??'服务器错误'}));
+import express, { type Request, type Response, type NextFunction } from 'express';
+import cors from 'cors';
+import { z } from 'zod';
+import { TopicService, TaskService } from './services.js';
+import { AgentService, type ChatEvent } from './agent.js';
+
+export const app = express();
+app.use(cors());
+app.use(express.json());
+
+const topics = new TopicService();
+const tasks = new TaskService();
+const agent = new AgentService();
+const send = (res: Response, data: unknown) => res.json({ data, error: null });
+const schema = (value: z.ZodTypeAny) => (req: Request, res: Response, next: NextFunction) => {
+  const parsed = value.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ data: null, error: parsed.error.flatten() });
+  req.body = parsed.data;
+  return next();
+};
+
+app.get('/api/topics', async (_, res, next) => { try { send(res, await topics.list()); } catch (error) { next(error); } });
+app.get('/api/topics/:id', async (req, res, next) => {
+  try { const topic = await topics.get(String(req.params.id)); if (!topic) return res.status(404).json({ data: null, error: '主题不存在' }); send(res, topic); } catch (error) { next(error); }
+});
+app.post('/api/topics', schema(z.object({ name: z.string().trim().min(1), description: z.string().optional(), isExploration: z.boolean().optional() })), async (req, res, next) => { try { send(res, await topics.create(req.body)); } catch (error) { next(error); } });
+app.patch('/api/topics/:id', schema(z.object({ name: z.string().trim().min(1).optional(), description: z.string().optional(), isExploration: z.boolean().optional() })), async (req, res, next) => { try { send(res, await topics.update(String(req.params.id), req.body)); } catch (error) { next(error); } });
+app.delete('/api/topics/:id', async (req, res, next) => { try { send(res, await topics.remove(String(req.params.id))); } catch (error) { next(error); } });
+
+app.get('/api/tasks', async (req, res, next) => { try { send(res, await tasks.list(typeof req.query.topicId === 'string' ? req.query.topicId : undefined)); } catch (error) { next(error); } });
+app.get('/api/tasks/:id', async (req, res, next) => { try { const task = await tasks.get(String(req.params.id)); if (!task) return res.status(404).json({ data: null, error: '任务不存在' }); send(res, task); } catch (error) { next(error); } });
+const taskBody = z.object({ topicId: z.string().trim().min(1), title: z.string().trim().min(1), description: z.string().optional(), status: z.enum(['todo', 'doing', 'blocked', 'done']).optional(), resultSummary: z.string().optional() });
+app.post('/api/tasks', schema(taskBody), async (req, res, next) => { try { send(res, await tasks.create(req.body)); } catch (error) { next(error); } });
+app.patch('/api/tasks/:id', schema(taskBody.partial()), async (req, res, next) => { try { send(res, await tasks.update(String(req.params.id), req.body)); } catch (error) { next(error); } });
+app.delete('/api/tasks/:id', async (req, res, next) => { try { send(res, await tasks.remove(String(req.params.id))); } catch (error) { next(error); } });
+
+const chatBody = z.object({
+  conversationId: z.string().min(1).optional(),
+  message: z.string().trim().min(1),
+  pageContext: z.object({ topicId: z.string().nullable().optional(), taskId: z.string().nullable().optional(), page: z.string().nullable().optional() }).optional(),
+});
+const sse = (res: Response, event: string, data: unknown) => {
+  if (!res.destroyed && !res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+};
+const streamMessage = (res: Response, conversationId: string, message: string) => {
+  sse(res, 'message_start', { conversationId });
+  for (const chunk of message.match(/[\s\S]{1,24}/gu) ?? [message]) sse(res, 'message_delta', { conversationId, delta: chunk });
+  sse(res, 'message_end', { conversationId });
+};
+
+app.post('/api/chat', schema(chatBody), async (req, res) => {
+  res.status(200).set({ 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+  res.flushHeaders?.();
+  const controller = new AbortController();
+  let closed = false;
+  res.on('close', () => { if (!res.writableEnded) { closed = true; controller.abort(); } });
+  try {
+    const result = await agent.chat({ ...req.body, signal: controller.signal });
+    if (closed) return;
+    for (const event of result.events as ChatEvent[]) {
+      if (event.type === 'message' && event.message) streamMessage(res, result.conversationId, event.message);
+      if (event.type === 'tool_result') sse(res, 'tool_result', { conversationId: result.conversationId, ...event });
+      if (event.type === 'approval_required') {
+        const payload = { conversationId: result.conversationId, ...event };
+        sse(res, 'tool_call', payload);
+        sse(res, 'approval_required', payload);
+      }
+    }
+    sse(res, 'done', { conversationId: result.conversationId });
+    res.end();
+  } catch (error) {
+    if (!closed) { sse(res, 'error', { message: error instanceof Error ? error.message : '聊天失败' }); res.end(); }
+  }
+});
+
+app.get('/api/conversations/:id/messages', async (req, res, next) => { try { send(res, await agent.messages(String(req.params.id))); } catch (error) { next(error); } });
+app.get('/api/agent/approvals', async (req, res, next) => { try { send(res, await agent.approvalList(typeof req.query.status === 'string' ? req.query.status : undefined)); } catch (error) { next(error); } });
+app.post('/api/agent/approvals/:id/approve', async (req, res, next) => { try { send(res, await agent.approve(String(req.params.id))); } catch (error) { next(error); } });
+app.post('/api/agent/approvals/:id/reject', async (req, res, next) => { try { send(res, await agent.reject(String(req.params.id))); } catch (error) { next(error); } });
+
+app.use((error: any, _req: Request, res: Response, _next: NextFunction) => {
+  if (res.headersSent) return;
+  const status = Number(error?.status) || 500;
+  res.status(status).json({ data: null, error: error?.message ?? '服务器错误' });
+});

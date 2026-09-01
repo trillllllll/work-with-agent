@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { afterAll, describe, expect, it } from 'vitest';
 import { app } from './app.js';
-import { db } from './services.js';
+import { prisma } from './services.js';
 
 describe('REST task workflow', () => {
   let topicId = '';
@@ -25,8 +25,16 @@ describe('REST task workflow', () => {
     expect(deleted.status).toBe(409);
   });
 
-  afterAll(() => {
-    if (taskId) db.prepare('DELETE FROM tasks WHERE id=?').run(taskId);
-    if (topicId) db.prepare('DELETE FROM topics WHERE id=?').run(topicId);
+  it('returns stable boolean fields and 404s for missing resources', async () => {
+    const topics = await request(app).get('/api/topics');
+    expect(typeof topics.body.data[0].isExploration).toBe('boolean');
+    expect((await request(app).get('/api/topics/missing-topic')).status).toBe(404);
+    expect((await request(app).get('/api/tasks/missing-task')).status).toBe(404);
+  });
+
+  afterAll(async () => {
+    if (taskId) await prisma.task.delete({ where: { id: taskId } }).catch(() => undefined);
+    if (topicId) await prisma.topic.delete({ where: { id: topicId } }).catch(() => undefined);
+    await prisma.$disconnect();
   });
 });
