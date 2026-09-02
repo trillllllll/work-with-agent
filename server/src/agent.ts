@@ -2,181 +2,200 @@ import { ApprovalService, ConversationService, TaskService, ToolService, type To
 
 export type PageContext = { topicId?: string | null; taskId?: string | null; page?: string | null };
 export type ChatEvent = {
-  type: 'message' | 'tool_result' | 'approval_required';
+  type: 'message_start' | 'message_delta' | 'message_end' | 'tool_call' | 'tool_result' | 'approval_required' | 'error' | 'done';
+  conversationId?: string;
+  messageId?: string;
+  delta?: string;
   message?: string;
   toolName?: string;
   arguments?: Record<string, unknown>;
   approvalId?: string;
   result?: ToolResult;
+  code?: string;
 };
-type AgentContext = {
-  pageContext: PageContext;
-  recentTasks: unknown[];
-  recentMessages: Array<{ role: string; content: string }>;
-  summary: string;
-};
+type AgentContext = { pageContext: PageContext; recentTasks: unknown[]; recentMessages: Array<{ role: string; content: string }>; summary: string };
+export type ModelMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string | null; tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>; tool_call_id?: string };
+export type ModelDelta = { text?: string; toolCalls?: ToolCall[] };
 
-export type ModelCompletion = { text: string; toolCalls: ToolCall[] };
+const configured = () => Boolean(process.env.OPENAI_BASE_URL && process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL);
+const modelError = (message: string, code = 'MODEL_ERROR') => Object.assign(new Error(message), { code });
 
 export class ModelAdapter {
-  async complete(message: string, context: AgentContext, signal?: AbortSignal): Promise<ModelCompletion> {
-    const baseUrl = process.env.OPENAI_BASE_URL;
-    const apiKey = process.env.OPENAI_API_KEY;
-    const model = process.env.OPENAI_MODEL;
-    if (baseUrl && apiKey && model) {
-      const response = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-        signal,
-        body: JSON.stringify({
-          model,
-          messages: [
-            {
-              role: 'system',
-              content: '你是 Agent 工作室的协作助手。需要改变任务或主题时，只使用已注册的工具。只读问题直接回答。所有变更都等待用户审核。',
-            },
-            { role: 'user', content: JSON.stringify({ message, context }) },
-          ],
-          tools: new ToolService().definitions(),
-          tool_choice: 'auto',
-        }),
-      });
-      if (!response.ok) throw new Error(`模型服务错误：${response.status}`);
-      const payload = await response.json() as any;
-      const assistant = payload.choices?.[0]?.message;
-      const toolCalls: ToolCall[] = [];
-      for (const rawCall of assistant?.tool_calls ?? []) {
-        const name = rawCall?.function?.name;
-        if (typeof name !== 'string') throw new Error('模型返回了无效的 Tool 名称');
+  async *stream(messages: ModelMessage[], signal?: AbortSignal, includeTools = true): AsyncGenerator<ModelDelta> {
+    if (!configured()) throw modelError('未配置模型服务，请设置 OPENAI_BASE_URL、OPENAI_API_KEY 和 OPENAI_MODEL', 'MODEL_NOT_CONFIGURED');
+    const response = await fetch(`${process.env.OPENAI_BASE_URL!.replace(/\/$/, '')}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+      signal,
+      body: JSON.stringify({ model: process.env.OPENAI_MODEL, messages, ...(includeTools ? { tools: new ToolService().definitions(), tool_choice: 'auto' } : {}), stream: true }),
+    });
+    if (!response.ok) throw modelError(`模型服务错误：${response.status}`, 'MODEL_HTTP_ERROR');
+    if (!response.body) throw modelError('模型服务没有返回流', 'MODEL_EMPTY_STREAM');
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    const toolCalls = new Map<number, { id: string; name: string; arguments: string }>();
+    let emittedToolCalls = false;
+    const emitToolCalls = () => {
+      if (emittedToolCalls || !toolCalls.size) return [] as ToolCall[];
+      emittedToolCalls = true;
+      const calls: ToolCall[] = [];
+      for (const [, value] of [...toolCalls.entries()].sort(([left], [right]) => left - right)) {
         let args: unknown;
-        try {
-          args = JSON.parse(rawCall?.function?.arguments || '{}');
-        } catch {
-          throw new Error(`Tool ${name} 的参数不是有效 JSON`);
-        }
-        if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error(`Tool ${name} 的参数必须是对象`);
-        toolCalls.push({ name, arguments: args as Record<string, unknown> });
+        try { args = JSON.parse(value.arguments || '{}'); } catch { throw modelError(`Tool ${value.name} 的参数不是有效 JSON`, 'INVALID_TOOL_ARGUMENTS'); }
+        if (!args || typeof args !== 'object' || Array.isArray(args)) throw modelError(`Tool ${value.name} 的参数必须是对象`, 'INVALID_TOOL_ARGUMENTS');
+        calls.push({ id: value.id, name: value.name, arguments: args as Record<string, unknown> });
       }
-      return { text: typeof assistant?.content === 'string' ? assistant.content : '', toolCalls };
+      return calls;
+    };
+    const consume = async function* (frame: string): AsyncGenerator<ModelDelta> {
+      for (const line of frame.split(/\r?\n/)) {
+        if (!line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === '[DONE]') continue;
+        let chunk: any;
+        try { chunk = JSON.parse(payload); } catch { throw modelError('模型返回了无效 SSE JSON', 'MODEL_INVALID_STREAM'); }
+        const delta = chunk.choices?.[0]?.delta;
+        if (typeof delta?.content === 'string') yield { text: delta.content };
+        for (const item of delta?.tool_calls ?? []) {
+          const index = Number(item.index ?? 0);
+          const current = toolCalls.get(index) ?? { id: item.id ?? `call_${index}`, name: '', arguments: '' };
+          if (item.id) current.id = item.id;
+          if (item.function?.name) current.name += item.function.name;
+          if (item.function?.arguments) current.arguments += item.function.arguments;
+          toolCalls.set(index, current);
+        }
+        if (chunk.choices?.[0]?.finish_reason === 'tool_calls') {
+          const calls = emitToolCalls();
+          if (calls.length) yield { toolCalls: calls };
+        }
+      }
+    };
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+      const frames = buffer.split(/\r?\n\r?\n/);
+      buffer = frames.pop() ?? '';
+      for (const frame of frames) yield* consume(frame);
+      if (done) break;
     }
-    return this.localFallback(message, context);
+    if (buffer.trim()) yield* consume(buffer);
+    const calls = emitToolCalls();
+    if (calls.length) yield { toolCalls: calls };
   }
 
-  private localFallback(message: string, context: AgentContext): ModelCompletion {
-    const trimmed = message.trim();
-    const create = trimmed.match(/^(?:创建|新建)(?:一个)?任务[：: ](.+)$/i);
-    if (create) return {
-      text: `我准备创建任务“${create[1]}”，请审核这次变更。`,
-      toolCalls: [{ name: 'create_task', arguments: { title: create[1], ...(context.pageContext.topicId ? { topicId: context.pageContext.topicId } : {}) } }],
-    };
-    if (/任务|待办|进度|有哪些/.test(trimmed)) return {
-      text: '我先读取当前工作上下文中的任务。',
-      toolCalls: [{ name: 'list_tasks', arguments: context.pageContext.topicId ? { topicId: context.pageContext.topicId } : {} }],
-    };
-    return { text: '我可以帮你查看任务，或创建任务。例如：“创建任务：整理 API 文档”。', toolCalls: [] };
+  async complete(messages: ModelMessage[], signal?: AbortSignal, includeTools = false) {
+    let text = '';
+    const toolCalls: ToolCall[] = [];
+    for await (const delta of this.stream(messages, signal, includeTools)) { text += delta.text ?? ''; if (delta.toolCalls) toolCalls.push(...delta.toolCalls); }
+    return { text, toolCalls };
   }
 }
 
 export class AgentService {
   private model: ModelAdapter;
   private tools: ToolService;
-  private approvals: ApprovalService;
-  private conversations: ConversationService;
-  private tasks: TaskService;
+  private approvals = new ApprovalService();
+  private conversations = new ConversationService();
+  private tasks = new TaskService();
 
-  constructor(model = new ModelAdapter(), tools = new ToolService()) {
-    this.model = model;
-    this.tools = tools;
-    this.approvals = new ApprovalService();
-    this.conversations = new ConversationService();
-    this.tasks = new TaskService();
-  }
+  constructor(model = new ModelAdapter(), tools = new ToolService()) { this.model = model; this.tools = tools; }
 
   private async contextFor(conversationId: string, pageContext: PageContext): Promise<AgentContext> {
     const conversation = await this.conversations.get(conversationId);
     if (!conversation) throw Object.assign(new Error('会话不存在'), { status: 404 });
     const messages = await this.conversations.listMessages(conversationId);
-    const maxRecent = 12;
-    let recentMessages = messages;
-    let summary = conversation.summary;
-    if (messages.length > maxRecent) {
-      const old = messages.slice(0, -maxRecent);
-      const generated = old.map((item) => `${item.role}: ${item.content}`).join('\n').slice(-4000);
-      summary = summary ? `${summary}\n${generated}`.slice(-6000) : generated;
-      await this.conversations.updateSummary(conversationId, summary);
-      recentMessages = messages.slice(-maxRecent);
-    }
-    const recentTasks = (await this.tasks.list(pageContext.topicId ?? undefined)).slice(0, 8);
+    const recent = messages.slice(-12);
+    const old = messages.slice(0, -12);
+    const summary = old.length ? `${conversation.summary}\n${old.map((item) => `${item.role}: ${item.content}`).join('\n')}`.trim().slice(-6000) : conversation.summary;
+    if (summary !== conversation.summary) await this.conversations.updateSummary(conversationId, summary);
     return {
       pageContext,
-      recentTasks,
-      recentMessages: recentMessages.map(({ role, content }) => ({ role, content })),
+      recentTasks: (await this.tasks.list(pageContext.topicId ?? undefined)).slice(0, 8),
+      // Tool messages are persisted for recovery, but their call ids are not
+      // part of the MVP schema. They must not be replayed as malformed model
+      // messages; the current tool round is always sent with proper ids below.
+      recentMessages: recent.filter((item) => item.role !== 'tool' && item.status !== 'streaming').map(({ role, content }) => ({ role, content })),
       summary,
     };
   }
 
-  async chat(input: { conversationId?: string; message: string; pageContext?: PageContext; signal?: AbortSignal }) {
+  private systemPrompt(context: AgentContext) { return `你是 Agent 工作室的协作助手。变更任务或主题必须使用工具，系统会要求用户审核。只读问题使用工具查询。当前上下文：${JSON.stringify(context)}`; }
+
+  async *chatStream(input: { conversationId?: string; message: string; pageContext?: PageContext; signal?: AbortSignal }): AsyncGenerator<ChatEvent> {
     const conversationId = input.conversationId ?? (await this.conversations.create()).id;
     if (input.conversationId && !(await this.conversations.get(conversationId))) throw Object.assign(new Error('会话不存在'), { status: 404 });
     await this.conversations.addMessage(conversationId, 'user', input.message);
     const context = await this.contextFor(conversationId, input.pageContext ?? {});
-    const completion = await this.model.complete(input.message, context, input.signal);
-    const events: ChatEvent[] = [];
-    if (completion.text) {
-      await this.conversations.addMessage(conversationId, 'assistant', completion.text);
-      events.push({ type: 'message', message: completion.text });
-    }
-    for (const call of completion.toolCalls) {
-      if (call.name === 'create_task' && !call.arguments.topicId && input.pageContext?.topicId) call.arguments.topicId = input.pageContext.topicId;
-      const validationError = this.tools.validate(call);
-      if (validationError) {
-        const result = { success: false, error: validationError };
-        await this.conversations.addMessage(conversationId, 'tool', JSON.stringify({ toolName: call.name, ...result }));
-        events.push({ type: 'tool_result', toolName: call.name, arguments: call.arguments, result });
-        continue;
+    const messages: ModelMessage[] = [{ role: 'system', content: this.systemPrompt(context) }, ...context.recentMessages.map((item) => ({ role: item.role as ModelMessage['role'], content: item.content }))];
+    for (let round = 0; round < 8; round += 1) {
+      const assistantId = (await this.conversations.addMessage(conversationId, 'assistant', '', 'streaming')).id;
+      yield { type: 'message_start', conversationId, messageId: assistantId };
+      let text = '';
+      const calls: ToolCall[] = [];
+      try {
+        for await (const delta of this.model.stream(messages, input.signal)) {
+          if (delta.text) { text += delta.text; yield { type: 'message_delta', conversationId, messageId: assistantId, delta: delta.text }; }
+          if (delta.toolCalls) calls.push(...delta.toolCalls);
+        }
+        await this.conversations.updateMessage(assistantId, { content: text, status: 'completed' });
+        yield { type: 'message_end', conversationId, messageId: assistantId };
+      } catch (error) {
+        await this.conversations.updateMessage(assistantId, { content: text, status: 'failed' });
+        if (error && typeof error === 'object') (error as { conversationId?: string }).conversationId ??= conversationId;
+        throw error;
       }
-      if (this.tools.isReadOnly(call.name)) {
+      if (!calls.length) { yield { type: 'done', conversationId }; return; }
+      calls.forEach((call, index) => { call.id ??= `call_${round}_${index}`; });
+      const toolMessages: ModelMessage[] = [];
+      let hasPendingApproval = false;
+      for (const call of calls) {
+        if (call.name === 'create_task' && !call.arguments.topicId && input.pageContext?.topicId) call.arguments.topicId = input.pageContext.topicId;
+        yield { type: 'tool_call', conversationId, toolName: call.name, arguments: call.arguments };
+        const validationError = this.tools.validate(call);
+        if (validationError) throw Object.assign(modelError(validationError, validationError.startsWith('未知 Tool') ? 'UNKNOWN_TOOL' : 'INVALID_TOOL_ARGUMENTS'), { conversationId });
+        if (!this.tools.isReadOnly(call.name)) {
+          const approval = await this.approvals.create(call, conversationId);
+          hasPendingApproval = true;
+          yield { type: 'approval_required', conversationId, toolName: call.name, arguments: call.arguments, approvalId: approval.id };
+          continue;
+        }
         const result = await this.tools.execute(call);
-        await this.conversations.addMessage(conversationId, 'tool', JSON.stringify({ toolName: call.name, ...result }));
-        events.push({ type: 'tool_result', toolName: call.name, arguments: call.arguments, result });
-        continue;
+        await this.conversations.addMessage(conversationId, 'tool', JSON.stringify({ toolName: call.name, toolCallId: call.id, ...result }));
+        yield { type: 'tool_result', conversationId, toolName: call.name, arguments: call.arguments, result };
+        toolMessages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
       }
-      const approval = await this.approvals.create(call);
-      events.push({ type: 'approval_required', toolName: call.name, arguments: call.arguments, approvalId: approval.id });
+      // A write call is intentionally never returned to the model as if it
+      // had executed. The approval endpoint owns the later side effect.
+      if (hasPendingApproval) { yield { type: 'done', conversationId }; return; }
+      if (!toolMessages.length) { yield { type: 'done', conversationId }; return; }
+      messages.push({
+        role: 'assistant',
+        content: text || null,
+        tool_calls: calls.map((call) => ({ id: call.id ?? `call_${Math.random().toString(36).slice(2)}`, type: 'function' as const, function: { name: call.name, arguments: JSON.stringify(call.arguments) } })),
+      });
+      messages.push(...toolMessages);
     }
-    return { conversationId, events };
+    throw modelError('Tool 调用轮次超过上限', 'TOOL_ROUND_LIMIT');
+  }
+
+  async chat(input: { conversationId?: string; message: string; pageContext?: PageContext; signal?: AbortSignal }) { const events: ChatEvent[] = []; for await (const event of this.chatStream(input)) events.push(event); return { conversationId: events.find((event) => event.conversationId)?.conversationId, events }; }
+
+  async summarize(conversationId: string, text: string, signal?: AbortSignal) {
+    try { const result = await this.model.complete([{ role: 'system', content: '请用简短中文说明刚才的任务变更结果，不要调用工具。' }, { role: 'user', content: text }], signal); return result.text || '变更已执行。'; } catch { return undefined; }
   }
 
   async approve(approvalId: string) {
-    const approval = await this.approvals.get(approvalId);
-    if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 });
+    const approval = await this.approvals.get(approvalId); if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 });
     if (approval.status !== 'pending' || !(await this.approvals.claim(approvalId))) throw Object.assign(new Error('该审核已处理'), { status: 409 });
-    let result: ToolResult;
-    try {
-      const call = this.approvals.parse(approval);
-      const validationError = this.tools.validate(call);
-      result = validationError ? { success: false, error: validationError } : await this.tools.execute(call);
-    } catch (error) {
-      result = { success: false, error: error instanceof Error ? error.message : '审核执行失败' };
-    }
+    let result: ToolResult; try { const call = this.approvals.parse(approval); const validationError = this.tools.validate(call); result = validationError ? { success: false, error: validationError } : await this.tools.execute(call); } catch (error) { result = { success: false, error: error instanceof Error ? error.message : '审核执行失败' }; }
     await this.approvals.update(approvalId, result.success ? 'executed' : 'failed', result);
-    return result;
+    let assistantMessage: string | undefined;
+    if (approval.conversationId) assistantMessage = await this.summarize(approval.conversationId, JSON.stringify({ toolName: approval.toolName, result }));
+    if (assistantMessage && approval.conversationId) await this.conversations.addMessage(approval.conversationId, 'assistant', assistantMessage);
+    return { result, assistantMessage, summaryError: result.success && !assistantMessage ? '无法生成自动总结' : undefined };
   }
-
-  async reject(approvalId: string) {
-    const approval = await this.approvals.get(approvalId);
-    if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 });
-    if (approval.status !== 'pending') throw Object.assign(new Error('该审核已处理'), { status: 409 });
-    return this.approvals.update(approvalId, 'rejected');
-  }
-
-  async messages(conversationId: string) {
-    if (!(await this.conversations.get(conversationId))) throw Object.assign(new Error('会话不存在'), { status: 404 });
-    return this.conversations.listMessages(conversationId);
-  }
-
-  async approvalList(status?: string) {
-    if (status && !['pending', 'approved', 'rejected', 'executed', 'failed'].includes(status)) throw Object.assign(new Error('审核状态无效'), { status: 400 });
-    return this.approvals.list(status as any);
-  }
+  async reject(approvalId: string) { const approval = await this.approvals.get(approvalId); if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 }); if (approval.status !== 'pending') throw Object.assign(new Error('该审核已处理'), { status: 409 }); return this.approvals.update(approvalId, 'rejected'); }
+  async messages(conversationId: string) { if (!(await this.conversations.get(conversationId))) throw Object.assign(new Error('会话不存在'), { status: 404 }); return this.conversations.listMessages(conversationId); }
+  async approvalList(status?: string) { if (status && !['pending', 'approved', 'rejected', 'executed', 'failed'].includes(status)) throw Object.assign(new Error('审核状态无效'), { status: 400 }); return this.approvals.list(status as any); }
 }

@@ -7,7 +7,7 @@ dotenv.config();
 
 export const prisma = new PrismaClient();
 export type ToolResult = { success: boolean; data?: unknown; error?: string };
-export type ToolCall = { name: string; arguments: Record<string, unknown> };
+export type ToolCall = { name: string; arguments: Record<string, unknown>; id?: string };
 const now = () => new Date().toISOString();
 
 function notFound(message: string) { return Object.assign(new Error(message), { status: 404 }); }
@@ -28,18 +28,7 @@ export class TaskService {
   async remove(taskId: string) { try { return await prisma.task.delete({ where: { id: taskId } }); } catch (error: any) { if (error?.code === 'P2025') throw notFound('任务不存在'); throw error; } }
 }
 
-type ToolDefinition = { name: string; description: string; parameters: Record<string, unknown>; requiresApproval: boolean; validate: (args: Record<string, unknown>) => string | null; execute: (args: Record<string, unknown>) => Promise<ToolResult> };
-const toolSchemas: Record<string, Omit<ToolDefinition, 'name' | 'execute'>> = {
-  list_topics: { description: '列出所有主题', parameters: { type: 'object', properties: {}, additionalProperties: false }, requiresApproval: false, validate: () => null },
-  get_topic: { description: '读取主题及其任务', parameters: { type: 'object', properties: { topicId: { type: 'string' } }, required: ['topicId'], additionalProperties: false }, requiresApproval: false, validate: (a) => typeof a.topicId === 'string' ? null : 'topicId 必须是字符串' },
-  list_tasks: { description: '列出任务，可按主题筛选', parameters: { type: 'object', properties: { topicId: { type: 'string' } }, additionalProperties: false }, requiresApproval: false, validate: (a) => a.topicId === undefined || typeof a.topicId === 'string' ? null : 'topicId 必须是字符串' },
-  get_task: { description: '读取一个任务', parameters: { type: 'object', properties: { taskId: { type: 'string' } }, required: ['taskId'], additionalProperties: false }, requiresApproval: false, validate: (a) => typeof a.taskId === 'string' ? null : 'taskId 必须是字符串' },
-  create_task: { description: '创建任务', parameters: { type: 'object', properties: { topicId: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' }, status: { type: 'string', enum: ['todo', 'doing', 'blocked', 'done'] }, resultSummary: { type: 'string' } }, required: ['topicId', 'title'], additionalProperties: false }, requiresApproval: true, validate: (a) => typeof a.topicId === 'string' && typeof a.title === 'string' ? null : 'topicId 和 title 必须是字符串' },
-  update_task: { description: '更新任务', parameters: { type: 'object', properties: { taskId: { type: 'string' }, topicId: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' }, status: { type: 'string', enum: ['todo', 'doing', 'blocked', 'done'] }, resultSummary: { type: 'string' } }, required: ['taskId'], additionalProperties: false }, requiresApproval: true, validate: (a) => typeof a.taskId === 'string' ? null : 'taskId 必须是字符串' },
-  delete_task: { description: '删除任务', parameters: { type: 'object', properties: { taskId: { type: 'string' } }, required: ['taskId'], additionalProperties: false }, requiresApproval: true, validate: (a) => typeof a.taskId === 'string' ? null : 'taskId 必须是字符串' },
-  create_topic: { description: '创建主题', parameters: { type: 'object', properties: { name: { type: 'string' }, description: { type: 'string' }, isExploration: { type: 'boolean' } }, required: ['name'], additionalProperties: false }, requiresApproval: true, validate: (a) => typeof a.name === 'string' ? null : 'name 必须是字符串' },
-  update_topic: { description: '更新主题', parameters: { type: 'object', properties: { topicId: { type: 'string' }, name: { type: 'string' }, description: { type: 'string' }, isExploration: { type: 'boolean' } }, required: ['topicId'], additionalProperties: false }, requiresApproval: true, validate: (a) => typeof a.topicId === 'string' ? null : 'topicId 必须是字符串' },
-};
+export type ToolDefinition = { name: string; description: string; parameters: Record<string, unknown>; requiresApproval: boolean; validate: (args: Record<string, unknown>) => string | null; execute: (args: Record<string, unknown>) => Promise<ToolResult> };
 
 function validateParameters(schema: Record<string, any>, args: Record<string, unknown>): string | null {
   const properties = (schema.properties ?? {}) as Record<string, { type?: string; enum?: unknown[] }>;
@@ -62,28 +51,47 @@ function validateParameters(schema: Record<string, any>, args: Record<string, un
 }
 
 export class ToolService {
-  private topics = new TopicService(); private tasks = new TaskService();
-  definitions() { return Object.entries(toolSchemas).map(([name, definition]) => ({ type: 'function', function: { name, description: definition.description, parameters: definition.parameters } })); }
-  isKnown(name: string) { return Boolean(toolSchemas[name]); }
-  isReadOnly(name: string) { return toolSchemas[name]?.requiresApproval === false; }
-  validate(call: ToolCall) { const definition = toolSchemas[call.name]; if (!definition) return `未知 Tool: ${call.name}`; if (!call.arguments || typeof call.arguments !== 'object' || Array.isArray(call.arguments)) return 'Tool 参数必须是对象'; return validateParameters(definition.parameters, call.arguments) ?? definition.validate(call.arguments); }
-  async execute(call: ToolCall): Promise<ToolResult> { const validationError = this.validate(call); if (validationError) return { success: false, error: validationError }; const a = call.arguments; try { switch (call.name) {
-    case 'list_topics': return { success: true, data: await this.topics.list() };
-    case 'get_topic': { const data = await this.topics.get(String(a.topicId)); return data ? { success: true, data } : { success: false, error: '主题不存在' }; }
-    case 'list_tasks': return { success: true, data: await this.tasks.list(a.topicId ? String(a.topicId) : undefined) };
-    case 'get_task': { const data = await this.tasks.get(String(a.taskId)); return data ? { success: true, data } : { success: false, error: '任务不存在' }; }
-    case 'create_topic': return { success: true, data: await this.topics.create({ name: String(a.name), description: a.description as string | undefined, isExploration: a.isExploration as boolean | undefined }) };
-    case 'update_topic': return { success: true, data: await this.topics.update(String(a.topicId), { name: a.name as string | undefined, description: a.description as string | undefined, isExploration: a.isExploration as boolean | undefined }) };
-    case 'create_task': return { success: true, data: await this.tasks.create({ topicId: String(a.topicId), title: String(a.title), description: a.description as string | undefined, status: a.status as TaskStatus | undefined, resultSummary: a.resultSummary as string | undefined }) };
-    case 'update_task': return { success: true, data: await this.tasks.update(String(a.taskId), { topicId: a.topicId as string | undefined, title: a.title as string | undefined, description: a.description as string | undefined, status: a.status as TaskStatus | undefined, resultSummary: a.resultSummary as string | undefined }) };
-    case 'delete_task': return { success: true, data: await this.tasks.remove(String(a.taskId)) };
-    default: return { success: false, error: `未知 Tool: ${call.name}` };
-  } } catch (error) { return { success: false, error: error instanceof Error ? error.message : 'Tool 执行失败' }; } }
+  private topics = new TopicService();
+  private tasks = new TaskService();
+  private registry: Record<string, ToolDefinition>;
+
+  constructor() {
+    const string = { type: 'string' };
+    const status = { type: 'string', enum: ['todo', 'doing', 'blocked', 'done'] };
+    this.registry = {
+      list_topics: this.define('list_topics', '列出所有主题', {}, false, async () => this.topics.list()),
+      get_topic: this.define('get_topic', '读取主题及其任务', { topicId: string }, false, async (a) => this.requireResource(await this.topics.get(String(a.topicId)), '主题不存在'), ['topicId']),
+      list_tasks: this.define('list_tasks', '列出任务，可按主题筛选', { topicId: string }, false, async (a) => this.tasks.list(a.topicId ? String(a.topicId) : undefined)),
+      get_task: this.define('get_task', '读取一个任务', { taskId: string }, false, async (a) => this.requireResource(await this.tasks.get(String(a.taskId)), '任务不存在'), ['taskId']),
+      create_task: this.define('create_task', '创建任务', { topicId: string, title: string, description: string, status, resultSummary: string }, true, async (a) => this.tasks.create({ topicId: String(a.topicId), title: String(a.title), description: a.description as string | undefined, status: a.status as TaskStatus | undefined, resultSummary: a.resultSummary as string | undefined }), ['topicId', 'title']),
+      update_task: this.define('update_task', '更新任务', { taskId: string, topicId: string, title: string, description: string, status, resultSummary: string }, true, async (a) => this.tasks.update(String(a.taskId), { topicId: a.topicId as string | undefined, title: a.title as string | undefined, description: a.description as string | undefined, status: a.status as TaskStatus | undefined, resultSummary: a.resultSummary as string | undefined }), ['taskId']),
+      delete_task: this.define('delete_task', '删除任务', { taskId: string }, true, async (a) => this.tasks.remove(String(a.taskId)), ['taskId']),
+      create_topic: this.define('create_topic', '创建主题', { name: string, description: string, isExploration: { type: 'boolean' } }, true, async (a) => this.topics.create({ name: String(a.name), description: a.description as string | undefined, isExploration: a.isExploration as boolean | undefined }), ['name']),
+      update_topic: this.define('update_topic', '更新主题', { topicId: string, name: string, description: string, isExploration: { type: 'boolean' } }, true, async (a) => this.topics.update(String(a.topicId), { name: a.name as string | undefined, description: a.description as string | undefined, isExploration: a.isExploration as boolean | undefined }), ['topicId']),
+    };
+  }
+
+  private define(name: string, description: string, properties: Record<string, unknown>, requiresApproval: boolean, execute: (args: Record<string, unknown>) => Promise<unknown>, required: string[] = []): ToolDefinition {
+    const parameters = { type: 'object', properties, ...(required.length ? { required } : {}), additionalProperties: false };
+    return { name, description, parameters, requiresApproval, validate: () => null, execute: async (args) => ({ success: true, data: await execute(args) }) };
+  }
+
+  private requireResource<T>(value: T | null, message: string) { if (!value) throw notFound(message); return value; }
+  definitions() { return Object.values(this.registry).map(({ name, description, parameters }) => ({ type: 'function', function: { name, description, parameters } })); }
+  isKnown(name: string) { return Boolean(this.registry[name]); }
+  isReadOnly(name: string) { return this.registry[name]?.requiresApproval === false; }
+  validate(call: ToolCall) { const definition = this.registry[call.name]; if (!definition) return `未知 Tool: ${call.name}`; if (!call.arguments || typeof call.arguments !== 'object' || Array.isArray(call.arguments)) return 'Tool 参数必须是对象'; return validateParameters(definition.parameters, call.arguments) ?? definition.validate(call.arguments); }
+  async execute(call: ToolCall): Promise<ToolResult> {
+    const validationError = this.validate(call);
+    if (validationError) return { success: false, error: validationError };
+    try { return await this.registry[call.name].execute(call.arguments); }
+    catch (error) { return { success: false, error: error instanceof Error ? error.message : 'Tool 执行失败' }; }
+  }
 }
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'executed' | 'failed';
 export class ApprovalService {
-  async create(call: ToolCall) { const timestamp = now(); return prisma.approval.create({ data: { toolName: call.name, arguments: JSON.stringify(call.arguments), createdAt: timestamp, updatedAt: timestamp } }); }
+  async create(call: ToolCall, conversationId?: string) { const timestamp = now(); return prisma.approval.create({ data: { toolName: call.name, arguments: JSON.stringify(call.arguments), conversationId, createdAt: timestamp, updatedAt: timestamp } }); }
   async get(approvalId: string) { return prisma.approval.findUnique({ where: { id: approvalId } }); }
   async list(status?: ApprovalStatus) { return prisma.approval.findMany({ where: status ? { status } : undefined, orderBy: { createdAt: 'asc' } }); }
   async update(approvalId: string, status: ApprovalStatus, result?: ToolResult) { return prisma.approval.update({ where: { id: approvalId }, data: { status, result: result ? JSON.stringify(result) : undefined, updatedAt: now() } }); }
@@ -94,7 +102,8 @@ export class ApprovalService {
 export class ConversationService {
   async create() { const timestamp = now(); return prisma.conversation.create({ data: { createdAt: timestamp, updatedAt: timestamp } }); }
   async get(conversationId: string) { return prisma.conversation.findUnique({ where: { id: conversationId } }); }
-  async addMessage(conversationId: string, role: 'user' | 'assistant' | 'tool' | 'system', content: string) { return prisma.message.create({ data: { conversationId, role, content, createdAt: now() } }); }
+  async addMessage(conversationId: string, role: 'user' | 'assistant' | 'tool' | 'system', content: string, status: 'streaming' | 'completed' | 'failed' = 'completed') { return prisma.message.create({ data: { conversationId, role, content, status, createdAt: now() } }); }
+  async updateMessage(messageId: string, data: { content?: string; status?: 'streaming' | 'completed' | 'failed' }) { return prisma.message.update({ where: { id: messageId }, data }); }
   async listMessages(conversationId: string) { return prisma.message.findMany({ where: { conversationId }, orderBy: { createdAt: 'asc' } }); }
   async updateSummary(conversationId: string, summary: string) { return prisma.conversation.update({ where: { id: conversationId }, data: { summary, updatedAt: now() } }); }
 }

@@ -48,6 +48,12 @@ enum MessageRole {
   system
 }
 
+enum MessageStatus {
+  streaming
+  completed
+  failed
+}
+
 enum ApprovalStatus {
   pending
   approved
@@ -62,6 +68,7 @@ model Conversation {
   createdAt String    @default("") @map("created_at")
   updatedAt String    @default("") @map("updated_at")
   messages  Message[]
+  approvals Approval[]
 
   @@map("conversations")
 }
@@ -71,6 +78,7 @@ model Message {
   conversationId String       @map("conversation_id")
   role           MessageRole
   content        String
+  status         MessageStatus @default(completed)
   createdAt      String       @default("") @map("created_at")
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
@@ -80,12 +88,15 @@ model Message {
 
 model Approval {
   id        String         @id @default(cuid())
+  conversationId String?   @map("conversation_id")
   toolName  String         @map("tool_name")
   arguments String
   status    ApprovalStatus @default(pending)
   result    String?
   createdAt String         @default("") @map("created_at")
   updatedAt String         @default("") @map("updated_at")
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
 
+  @@index([conversationId])
   @@map("approvals")
 }

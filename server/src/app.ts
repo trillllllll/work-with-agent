@@ -2,7 +2,7 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import cors from 'cors';
 import { z } from 'zod';
 import { TopicService, TaskService } from './services.js';
-import { AgentService, type ChatEvent } from './agent.js';
+import { AgentService } from './agent.js';
 
 export const app = express();
 app.use(cors());
@@ -42,12 +42,6 @@ const chatBody = z.object({
 const sse = (res: Response, event: string, data: unknown) => {
   if (!res.destroyed && !res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 };
-const streamMessage = (res: Response, conversationId: string, message: string) => {
-  sse(res, 'message_start', { conversationId });
-  for (const chunk of message.match(/[\s\S]{1,24}/gu) ?? [message]) sse(res, 'message_delta', { conversationId, delta: chunk });
-  sse(res, 'message_end', { conversationId });
-};
-
 app.post('/api/chat', schema(chatBody), async (req, res) => {
   res.status(200).set({ 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
   res.flushHeaders?.();
@@ -55,21 +49,20 @@ app.post('/api/chat', schema(chatBody), async (req, res) => {
   let closed = false;
   res.on('close', () => { if (!res.writableEnded) { closed = true; controller.abort(); } });
   try {
-    const result = await agent.chat({ ...req.body, signal: controller.signal });
-    if (closed) return;
-    for (const event of result.events as ChatEvent[]) {
-      if (event.type === 'message' && event.message) streamMessage(res, result.conversationId, event.message);
-      if (event.type === 'tool_result') sse(res, 'tool_result', { conversationId: result.conversationId, ...event });
-      if (event.type === 'approval_required') {
-        const payload = { conversationId: result.conversationId, ...event };
-        sse(res, 'tool_call', payload);
-        sse(res, 'approval_required', payload);
-      }
+    for await (const event of agent.chatStream({ ...req.body, signal: controller.signal })) {
+      if (closed) return;
+      sse(res, event.type, event);
     }
-    sse(res, 'done', { conversationId: result.conversationId });
-    res.end();
+    if (!closed) res.end();
   } catch (error) {
-    if (!closed) { sse(res, 'error', { message: error instanceof Error ? error.message : '聊天失败' }); res.end(); }
+    if (!closed) {
+      sse(res, 'error', {
+        conversationId: (error as any)?.conversationId ?? req.body.conversationId,
+        code: (error as any)?.code ?? 'CHAT_ERROR',
+        message: error instanceof Error ? error.message : '聊天失败',
+      });
+      res.end();
+    }
   }
 });
 
