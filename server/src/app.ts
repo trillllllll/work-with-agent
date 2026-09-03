@@ -1,7 +1,7 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
 import { z } from 'zod';
-import { TopicService, TaskService } from './services.js';
+import { SettingsService, TopicService, TaskService } from './services.js';
 import { AgentService } from './agent.js';
 
 export const app = express();
@@ -10,6 +10,7 @@ app.use(express.json());
 
 const topics = new TopicService();
 const tasks = new TaskService();
+const settings = new SettingsService();
 const agent = new AgentService();
 const send = (res: Response, data: unknown) => res.json({ data, error: null });
 const schema = (value: z.ZodTypeAny) => (req: Request, res: Response, next: NextFunction) => {
@@ -33,6 +34,13 @@ const taskBody = z.object({ topicId: z.string().trim().min(1), title: z.string()
 app.post('/api/tasks', schema(taskBody), async (req, res, next) => { try { send(res, await tasks.create(req.body)); } catch (error) { next(error); } });
 app.patch('/api/tasks/:id', schema(taskBody.partial()), async (req, res, next) => { try { send(res, await tasks.update(String(req.params.id), req.body)); } catch (error) { next(error); } });
 app.delete('/api/tasks/:id', async (req, res, next) => { try { send(res, await tasks.remove(String(req.params.id))); } catch (error) { next(error); } });
+
+app.get('/api/settings', async (_req, res, next) => { try { send(res, await settings.getPublic()); } catch (error) { next(error); } });
+const settingsBody = z.object({ baseUrl: z.string().trim().min(1), model: z.string().trim().min(1), apiKey: z.string().optional() });
+app.patch('/api/settings', schema(settingsBody), async (req, res, next) => {
+  try { send(res, await settings.save(req.body, (config) => agent.testConnection(config))); } catch (error) { next(error); }
+});
+app.delete('/api/settings/api-key', async (_req, res, next) => { try { send(res, await settings.clearApiKey()); } catch (error) { next(error); } });
 
 const chatBody = z.object({
   conversationId: z.string().min(1).optional(),

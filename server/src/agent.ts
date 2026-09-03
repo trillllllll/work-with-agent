@@ -1,4 +1,4 @@
-import { ApprovalService, ConversationService, TaskService, ToolService, type ToolCall, type ToolResult } from './services.js';
+import { ApprovalService, ConversationService, SettingsService, TaskService, ToolService, type ModelConfig, type ToolCall, type ToolResult } from './services.js';
 
 export type PageContext = { topicId?: string | null; taskId?: string | null; page?: string | null };
 export type ChatEvent = {
@@ -17,19 +17,34 @@ type AgentContext = { pageContext: PageContext; recentTasks: unknown[]; recentMe
 export type ModelMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string | null; tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>; tool_call_id?: string };
 export type ModelDelta = { text?: string; toolCalls?: ToolCall[] };
 
-const configured = () => Boolean(process.env.OPENAI_BASE_URL && process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL);
 const modelError = (message: string, code = 'MODEL_ERROR') => Object.assign(new Error(message), { code });
 
 export class ModelAdapter {
-  async *stream(messages: ModelMessage[], signal?: AbortSignal, includeTools = true): AsyncGenerator<ModelDelta> {
-    if (!configured()) throw modelError('未配置模型服务，请设置 OPENAI_BASE_URL、OPENAI_API_KEY 和 OPENAI_MODEL', 'MODEL_NOT_CONFIGURED');
-    const response = await fetch(`${process.env.OPENAI_BASE_URL!.replace(/\/$/, '')}/chat/completions`, {
+  constructor(private readonly settings = new SettingsService()) {}
+
+  private endpoint(config: ModelConfig) { return `${config.baseUrl.replace(/\/$/, '')}/chat/completions`; }
+
+  private async request(config: ModelConfig, messages: ModelMessage[], includeTools: boolean, stream: boolean, signal?: AbortSignal) {
+    const response = await fetch(this.endpoint(config), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
       signal,
-      body: JSON.stringify({ model: process.env.OPENAI_MODEL, messages, ...(includeTools ? { tools: new ToolService().definitions(), tool_choice: 'auto' } : {}), stream: true }),
+      body: JSON.stringify({ model: config.model, messages, ...(includeTools ? { tools: new ToolService().definitions(), tool_choice: 'auto' } : {}), stream }),
     });
     if (!response.ok) throw modelError(`模型服务错误：${response.status}`, 'MODEL_HTTP_ERROR');
+    return response;
+  }
+
+  async testConnection(config: ModelConfig) {
+    const response = await this.request(config, [{ role: 'system', content: '你是连接测试助手。' }, { role: 'user', content: '请回复“连接成功”。' }], false, false);
+    const payload = await response.json().catch(() => null) as any;
+    if (!payload?.choices?.[0]) throw modelError('模型服务返回了无效的连接测试结果', 'MODEL_INVALID_RESPONSE');
+  }
+
+  async *stream(messages: ModelMessage[], signal?: AbortSignal, includeTools = true): AsyncGenerator<ModelDelta> {
+    const config = await this.settings.credentials();
+    if (!config) throw modelError('未配置模型服务，请先在设置页填写接口地址、API Key 和模型名称', 'MODEL_NOT_CONFIGURED');
+    const response = await this.request(config, messages, includeTools, true, signal);
     if (!response.body) throw modelError('模型服务没有返回流', 'MODEL_EMPTY_STREAM');
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -184,6 +199,8 @@ export class AgentService {
   async summarize(conversationId: string, text: string, signal?: AbortSignal) {
     try { const result = await this.model.complete([{ role: 'system', content: '请用简短中文说明刚才的任务变更结果，不要调用工具。' }, { role: 'user', content: text }], signal); return result.text || '变更已执行。'; } catch { return undefined; }
   }
+
+  async testConnection(config: ModelConfig) { return this.model.testConnection(config); }
 
   async approve(approvalId: string) {
     const approval = await this.approvals.get(approvalId); if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 });

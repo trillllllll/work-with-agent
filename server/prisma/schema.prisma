@@ -7,6 +7,17 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model AppSetting {
+  id            String   @id
+  openaiBaseUrl String   @default("") @map("openai_base_url")
+  openaiApiKey  String   @default("") @map("openai_api_key")
+  openaiModel   String   @default("") @map("openai_model")
+  createdAt     String   @default("") @map("created_at")
+  updatedAt     String   @default("") @map("updated_at")
+
+  @@map("app_settings")
+}
+
 enum TaskStatus {
   todo
   doing

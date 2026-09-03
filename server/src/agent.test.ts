@@ -15,9 +15,7 @@ describe('Agent tool gate', () => {
   };
 
   beforeAll(() => {
-    process.env.OPENAI_BASE_URL = 'http://mock-openai/v1';
-    process.env.OPENAI_API_KEY = 'test-key';
-    process.env.OPENAI_MODEL = 'test-model';
+    return prisma.appSetting.upsert({ where: { id: 'default' }, create: { id: 'default', openaiBaseUrl: 'http://mock-openai/v1', openaiApiKey: 'test-key', openaiModel: 'test-model', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, update: { openaiBaseUrl: 'http://mock-openai/v1', openaiApiKey: 'test-key', openaiModel: 'test-model', updatedAt: new Date().toISOString() } }).then(() => {
     vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? '{}'));
       const user = [...(body.messages ?? [])].reverse().find((message: any) => message.role === 'user');
@@ -50,6 +48,7 @@ describe('Agent tool gate', () => {
         { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ topicId: topic, title }).slice(20) } }] }, finish_reason: 'tool_calls' }] },
       ]);
     }));
+    });
   });
 
   it('requires approval before creating a task', async () => {
@@ -92,18 +91,14 @@ describe('Agent tool gate', () => {
   });
 
   it('returns a clear error when the model is not configured', async () => {
-    const previous = { base: process.env.OPENAI_BASE_URL, key: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL };
-    delete process.env.OPENAI_BASE_URL;
-    delete process.env.OPENAI_API_KEY;
-    delete process.env.OPENAI_MODEL;
+    const previous = await prisma.appSetting.findUnique({ where: { id: 'default' } });
+    await prisma.appSetting.delete({ where: { id: 'default' } });
     try {
       const response = await request(app).post('/api/chat').send({ message: '检查配置' });
       expect(response.status).toBe(200);
       expect(response.text).toContain('MODEL_NOT_CONFIGURED');
     } finally {
-      process.env.OPENAI_BASE_URL = previous.base;
-      process.env.OPENAI_API_KEY = previous.key;
-      process.env.OPENAI_MODEL = previous.model;
+      if (previous) await prisma.appSetting.create({ data: previous });
     }
   });
 
@@ -146,6 +141,7 @@ describe('Agent tool gate', () => {
     vi.stubGlobal('fetch', originalFetch);
     if (taskId) await prisma.task.delete({ where: { id: taskId } }).catch(() => undefined);
     if (topicId) await prisma.topic.delete({ where: { id: topicId } }).catch(() => undefined);
+    await prisma.appSetting.deleteMany();
     await prisma.$disconnect();
   });
 });
