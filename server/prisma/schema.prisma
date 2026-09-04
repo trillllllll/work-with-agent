@@ -30,6 +30,11 @@ model Topic {
   name          String
   description   String   @default("")
   isExploration Boolean  @default(false) @map("is_exploration")
+  goal          String     @default("")
+  draftSummary  String     @default("") @map("draft_summary")
+  finalSummary  String     @default("") @map("final_summary")
+  summaryStatus String     @default("empty") @map("summary_status")
+  summaryUpdatedAt String? @map("summary_updated_at")
   createdAt     String   @default("") @map("created_at")
   updatedAt     String   @default("") @map("updated_at")
   tasks         Task[]
@@ -76,6 +81,9 @@ enum ApprovalStatus {
 model Conversation {
   id        String    @id @default(cuid())
   summary   String    @default("")
+  summaryVersion Int   @default(0) @map("summary_version")
+  lastCompactedAt String? @map("last_compacted_at")
+  tokenEstimate Int   @default(0) @map("token_estimate")
   createdAt String    @default("") @map("created_at")
   updatedAt String    @default("") @map("updated_at")
   messages  Message[]
@@ -84,12 +92,29 @@ model Conversation {
   @@map("conversations")
 }
 
+model ChangeRecord {
+  id String @id @default(cuid())
+  entityType String @map("entity_type")
+  entityId String @map("entity_id")
+  operation String
+  beforeSnapshot String? @map("before_snapshot")
+  afterSnapshot String? @map("after_snapshot")
+  source String
+  conversationId String? @map("conversation_id")
+  approvalId String? @map("approval_id")
+  undoneAt String? @map("undone_at")
+  createdAt String @default("") @map("created_at")
+  @@index([entityType, entityId, createdAt])
+  @@map("change_records")
+}
+
 model Message {
   id             String       @id @default(cuid())
   conversationId String       @map("conversation_id")
   role           MessageRole
   content        String
   status         MessageStatus @default(completed)
+  compactedAt    String?       @map("compacted_at")
   createdAt      String       @default("") @map("created_at")
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 

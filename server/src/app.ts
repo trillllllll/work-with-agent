@@ -1,7 +1,7 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
 import { z } from 'zod';
-import { SettingsService, TopicService, TaskService } from './services.js';
+import { SettingsService, TopicService, TaskService, ChangeService } from './services.js';
 import { AgentService } from './agent.js';
 
 export const app = express();
@@ -12,6 +12,7 @@ const topics = new TopicService();
 const tasks = new TaskService();
 const settings = new SettingsService();
 const agent = new AgentService();
+const changes = new ChangeService();
 const send = (res: Response, data: unknown) => res.json({ data, error: null });
 const schema = (value: z.ZodTypeAny) => (req: Request, res: Response, next: NextFunction) => {
   const parsed = value.safeParse(req.body);
@@ -25,7 +26,10 @@ app.get('/api/topics/:id', async (req, res, next) => {
   try { const topic = await topics.get(String(req.params.id)); if (!topic) return res.status(404).json({ data: null, error: '主题不存在' }); send(res, topic); } catch (error) { next(error); }
 });
 app.post('/api/topics', schema(z.object({ name: z.string().trim().min(1), description: z.string().optional(), isExploration: z.boolean().optional() })), async (req, res, next) => { try { send(res, await topics.create(req.body)); } catch (error) { next(error); } });
-app.patch('/api/topics/:id', schema(z.object({ name: z.string().trim().min(1).optional(), description: z.string().optional(), isExploration: z.boolean().optional() })), async (req, res, next) => { try { send(res, await topics.update(String(req.params.id), req.body)); } catch (error) { next(error); } });
+app.patch('/api/topics/:id', schema(z.object({ name: z.string().trim().min(1).optional(), description: z.string().optional(), isExploration: z.boolean().optional(), goal: z.string().optional(), draftSummary: z.string().optional() })), async (req, res, next) => { try { send(res, await topics.update(String(req.params.id), req.body)); } catch (error) { next(error); } });
+app.post('/api/topics/:id/summary/generate', schema(z.object({ summary: z.string().trim().min(1) })), async (req, res, next) => { try { send(res, await topics.generateSummary(String(req.params.id), req.body.summary)); } catch (error) { next(error); } });
+app.post('/api/topics/:id/summary/confirm', async (req, res, next) => { try { send(res, await topics.confirmSummary(String(req.params.id))); } catch (error) { next(error); } });
+app.post('/api/topics/:id/summary/discard', async (req, res, next) => { try { send(res, await topics.discardSummary(String(req.params.id))); } catch (error) { next(error); } });
 app.delete('/api/topics/:id', async (req, res, next) => { try { send(res, await topics.remove(String(req.params.id))); } catch (error) { next(error); } });
 
 app.get('/api/tasks', async (req, res, next) => { try { send(res, await tasks.list(typeof req.query.topicId === 'string' ? req.query.topicId : undefined)); } catch (error) { next(error); } });
@@ -78,6 +82,8 @@ app.get('/api/conversations/:id/messages', async (req, res, next) => { try { sen
 app.get('/api/agent/approvals', async (req, res, next) => { try { send(res, await agent.approvalList(typeof req.query.status === 'string' ? req.query.status : undefined)); } catch (error) { next(error); } });
 app.post('/api/agent/approvals/:id/approve', async (req, res, next) => { try { send(res, await agent.approve(String(req.params.id))); } catch (error) { next(error); } });
 app.post('/api/agent/approvals/:id/reject', async (req, res, next) => { try { send(res, await agent.reject(String(req.params.id))); } catch (error) { next(error); } });
+app.get('/api/changes', async (req, res, next) => { try { send(res, await changes.list(typeof req.query.entityType === 'string' ? req.query.entityType : undefined, typeof req.query.entityId === 'string' ? req.query.entityId : undefined)); } catch (error) { next(error); } });
+app.post('/api/changes/:id/undo', async (req, res, next) => { try { send(res, await changes.undo(String(req.params.id))); } catch (error) { next(error); } });
 
 app.use((error: any, _req: Request, res: Response, _next: NextFunction) => {
   if (res.headersSent) return;

@@ -5,7 +5,7 @@ import './style.css';
 import { applyApprovalEvent, applyMessageEvent, parseSseFrame, type Approval, type ChatMessage, type SseEvent, type ToolResult } from './chat.js';
 import { ConfirmDialog, Dialog } from './dialog.js';
 
-type Topic = { id: string; name: string; description: string; isExploration: boolean };
+type Topic = { id: string; name: string; description: string; isExploration: boolean; goal?: string; draftSummary?: string; finalSummary?: string; summaryStatus?: string; summaryUpdatedAt?: string | null };
 type Status = 'todo' | 'doing' | 'blocked' | 'done';
 type Task = { id: string; topicId: string; title: string; description: string; status: Status; resultSummary: string };
 type Settings = { baseUrl: string; model: string; apiKeyConfigured: boolean; apiKeyMasked: string | null };
@@ -67,6 +67,9 @@ function App() {
   const topics = topicsQuery.data ?? [];
   useEffect(() => { if (!selectedTopicId && topics[0]) setSelectedTopicId(topics[0].id); if (selectedTopicId && !topics.some((topic) => topic.id === selectedTopicId)) setSelectedTopicId(topics[0]?.id ?? ''); }, [topics, selectedTopicId]);
   const selectedTopic = topics.find((topic) => topic.id === selectedTopicId);
+  const topicDetail = useQuery<Topic>({ queryKey: ['topic', selectedTopicId], queryFn: () => api(`/api/topics/${selectedTopicId}`), enabled: Boolean(selectedTopicId) });
+  const detail = topicDetail.data ?? selectedTopic;
+  const summaryMutation = useMutation({ mutationFn: (action: 'confirm' | 'discard') => api(`/api/topics/${selectedTopicId}/summary/${action}`, { method: 'POST' }), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['topic', selectedTopicId] }); queryClient.invalidateQueries({ queryKey: ['topics'] }); }, onError: (e: Error) => setError(e.message) });
   const tasksQuery = useQuery<Task[]>({ queryKey: ['tasks', selectedTopicId], queryFn: () => api(`/api/tasks?topicId=${encodeURIComponent(selectedTopicId)}`), enabled: Boolean(selectedTopicId) });
   const invalidate = () => { queryClient.invalidateQueries({ queryKey: ['topics'] }); queryClient.invalidateQueries({ queryKey: ['tasks'] }); };
 
@@ -134,7 +137,9 @@ function App() {
       <section className="workspace">
         {error && <div className="alert"><span>{error}</span><button onClick={() => setError('')}>关闭</button></div>}
         {view === 'settings' ? <SettingsView /> : <>
-          <header className="workspace-header"><div><span className="eyebrow">任务管理</span><h1>{selectedTopic?.name ?? '选择一个主题'}</h1><p>{selectedTopic?.description || '把想法拆成下一步，持续推进到结果。'}</p></div>{selectedTopic && <div className="header-actions"><button className="secondary danger" type="button" onClick={() => setDeleteConfirmation({ kind: 'topic', id: selectedTopic.id, name: selectedTopic.name })}>删除主题</button><button className="primary" type="button" onClick={() => setTaskForm({ title: '', description: '', resultSummary: '' })}>+ 新建任务</button></div>}</header>
+          <header className="workspace-header"><div><span className="eyebrow">任务管理</span><h1>{detail?.name ?? '选择一个主题'}</h1><p>{detail?.description || '把想法拆成下一步，持续推进到结果。'}</p>{detail?.goal && <p className="topic-goal">目标：{detail.goal}</p>}</div>{selectedTopic && <div className="header-actions"><button className="secondary danger" type="button" onClick={() => setDeleteConfirmation({ kind: 'topic', id: selectedTopic.id, name: selectedTopic.name })}>删除主题</button><button className="primary" type="button" onClick={() => setTaskForm({ title: '', description: '', resultSummary: '' })}>+ 新建任务</button></div>}</header>
+          {detail?.draftSummary && <section className="summary-panel draft"><div><strong>成果草稿</strong><p>{detail.draftSummary}</p></div><div className="summary-actions"><button className="secondary" onClick={() => summaryMutation.mutate('discard')}>放弃草稿</button><button className="primary" onClick={() => summaryMutation.mutate('confirm')}>确认成果</button></div></section>}
+          {detail?.finalSummary && !detail.draftSummary && <section className="summary-panel"><strong>正式成果</strong><p>{detail.finalSummary}</p><small>{detail.summaryUpdatedAt ? `已确认：${new Date(detail.summaryUpdatedAt).toLocaleString()}` : ''}</small></section>}
           {!selectedTopic && <div className="empty-state"><div className="empty-icon">✦</div><h2>从一个主题开始</h2><p>主题是任务逐渐收敛成结果的容器。</p><button className="primary" type="button" onClick={() => setTopicForm({ name: '', description: '', isExploration: true })}>创建探索主题</button></div>}
           {selectedTopic && (tasksQuery.isLoading ? <div className="loading">正在加载任务…</div> : <div className="board">{statuses.map(({ value, label }) => <div className="column" key={value}><div className="column-heading"><h2>{label}</h2><span>{grouped[value].length}</span></div><div className="task-list">{grouped[value].map((task) => <article className="task-card" key={task.id}><div className="task-card-top"><button className="task-title" type="button" onClick={() => setTaskForm(task)}>{task.title}</button><button className="more-button" type="button" title="删除任务" aria-label={`删除任务：${task.title}`} onClick={() => setDeleteConfirmation({ kind: 'task', id: task.id, name: task.title })}>×</button></div>{task.description && <p>{task.description}</p>}{task.resultSummary && <div className="result-summary">结果：{task.resultSummary}</div>}<select value={task.status} onChange={(event) => updateTask.mutate({ id: task.id, status: event.target.value as Status })}>{statuses.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}</select></article>)}</div>{value === 'todo' && <button className="add-inline" type="button" onClick={() => setTaskForm({ title: '', description: '', resultSummary: '' })}>+ 添加任务</button>}</div>)}</div>)}
         </>}

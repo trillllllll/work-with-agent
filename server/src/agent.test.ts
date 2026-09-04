@@ -63,7 +63,7 @@ describe('Agent tool gate', () => {
       return { event, ...(data ? JSON.parse(data) : {}) };
     });
     const modelRequest = vi.mocked(globalThis.fetch).mock.calls[0]?.[1];
-    expect(JSON.parse(String(modelRequest?.body)).tools).toHaveLength(9);
+    expect(JSON.parse(String(modelRequest?.body)).tools).toHaveLength(11);
     expect(events.some((event) => event.event === 'message_delta' && event.delta?.includes('我准备创建'))).toBe(true);
     expect(events.some((event) => event.event === 'approval_required')).toBe(true);
     const approval = events.find((event) => event.event === 'approval_required')!;
