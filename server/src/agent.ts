@@ -1,4 +1,4 @@
-import { ApprovalService, ConversationService, SettingsService, TaskService, ToolService, type ModelConfig, type ToolCall, type ToolResult } from './services.js';
+import { ApprovalService, ContextService, ConversationService, SettingsService, TaskService, ToolService, type ModelConfig, type ToolCall, type ToolResult } from './services.js';
 
 export type PageContext = { topicId?: string | null; taskId?: string | null; page?: string | null };
 export type ChatEvent = {
@@ -16,11 +16,12 @@ export type ChatEvent = {
 type AgentContext = { pageContext: PageContext; recentTasks: unknown[]; recentMessages: Array<{ role: string; content: string }>; summary: string };
 export type ModelMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string | null; tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>; tool_call_id?: string };
 export type ModelDelta = { text?: string; toolCalls?: ToolCall[] };
+type ModelToolDefinition = { type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } };
 
 const modelError = (message: string, code = 'MODEL_ERROR') => Object.assign(new Error(message), { code });
 
 export class ModelAdapter {
-  constructor(private readonly settings = new SettingsService()) {}
+  constructor(private readonly settings = new SettingsService(), private readonly toolDefinitions: () => ModelToolDefinition[] = () => []) {}
 
   private endpoint(config: ModelConfig) { return `${config.baseUrl.replace(/\/$/, '')}/chat/completions`; }
 
@@ -29,7 +30,7 @@ export class ModelAdapter {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
       signal,
-      body: JSON.stringify({ model: config.model, messages, ...(includeTools ? { tools: new ToolService().definitions(), tool_choice: 'auto' } : {}), stream }),
+      body: JSON.stringify({ model: config.model, messages, ...(includeTools ? { tools: this.toolDefinitions(), tool_choice: 'auto' } : {}), stream }),
     });
     if (!response.ok) throw modelError(`模型服务错误：${response.status}`, 'MODEL_HTTP_ERROR');
     return response;
@@ -113,25 +114,18 @@ export class AgentService {
   private approvals = new ApprovalService();
   private conversations = new ConversationService();
   private tasks = new TaskService();
+  private context: ContextService;
 
-  constructor(model = new ModelAdapter(), tools = new ToolService()) { this.model = model; this.tools = tools; }
+  constructor(model: ModelAdapter | undefined = undefined, tools = new ToolService()) { this.tools = tools; this.model = model ?? new ModelAdapter(new SettingsService(), () => this.tools.definitions()); this.context = new ContextService(this.model); }
 
   private async contextFor(conversationId: string, pageContext: PageContext): Promise<AgentContext> {
-    const conversation = await this.conversations.get(conversationId);
-    if (!conversation) throw Object.assign(new Error('会话不存在'), { status: 404 });
-    const messages = await this.conversations.listMessages(conversationId);
-    const recent = messages.slice(-12);
-    const old = messages.slice(0, -12);
-    const summary = old.length ? `${conversation.summary}\n${old.map((item) => `${item.role}: ${item.content}`).join('\n')}`.trim().slice(-6000) : conversation.summary;
-    if (summary !== conversation.summary) await this.conversations.updateSummary(conversationId, summary);
+    await this.context.compactIfNeeded(conversationId);
+    const window = await this.context.buildWindow(conversationId, pageContext);
     return {
       pageContext,
-      recentTasks: (await this.tasks.list(pageContext.topicId ?? undefined)).slice(0, 8),
-      // Tool messages are persisted for recovery, but their call ids are not
-      // part of the MVP schema. They must not be replayed as malformed model
-      // messages; the current tool round is always sent with proper ids below.
-      recentMessages: recent.filter((item) => item.role !== 'tool' && item.status !== 'streaming').map(({ role, content }) => ({ role, content })),
-      summary,
+      recentTasks: window.recentTasks,
+      recentMessages: window.recentMessages,
+      summary: window.summary,
     };
   }
 
@@ -205,7 +199,7 @@ export class AgentService {
   async approve(approvalId: string) {
     const approval = await this.approvals.get(approvalId); if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 });
     if (approval.status !== 'pending' || !(await this.approvals.claim(approvalId))) throw Object.assign(new Error('该审核已处理'), { status: 409 });
-    let result: ToolResult; try { const call = this.approvals.parse(approval); const validationError = this.tools.validate(call); result = validationError ? { success: false, error: validationError } : await this.tools.execute(call); } catch (error) { result = { success: false, error: error instanceof Error ? error.message : '审核执行失败' }; }
+    let result: ToolResult; try { const call = this.approvals.parse(approval); const validationError = this.tools.validate(call); result = validationError ? { success: false, error: validationError } : await this.tools.execute(call, { source: 'agent', conversationId: approval.conversationId ?? undefined, approvalId: approval.id, requestId: approval.id }); } catch (error) { result = { success: false, error: error instanceof Error ? error.message : '审核执行失败' }; }
     await this.approvals.update(approvalId, result.success ? 'executed' : 'failed', result);
     let assistantMessage: string | undefined;
     if (approval.conversationId) assistantMessage = await this.summarize(approval.conversationId, JSON.stringify({ toolName: approval.toolName, result }));

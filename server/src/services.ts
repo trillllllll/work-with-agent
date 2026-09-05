@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
 import { resolve } from 'node:path';
-import { PrismaClient, TaskStatus } from '@prisma/client';
+import { PrismaClient, Prisma, TaskStatus } from '@prisma/client';
 
 dotenv.config({ path: resolve(process.cwd(), 'server/.env') });
 dotenv.config();
@@ -10,6 +10,14 @@ export type ToolResult = { success: boolean; data?: unknown; error?: string };
 export type ToolCall = { name: string; arguments: Record<string, unknown>; id?: string };
 export type ModelConfig = { baseUrl: string; apiKey: string; model: string };
 export type PublicSettings = { baseUrl: string; model: string; apiKeyConfigured: boolean; apiKeyMasked: string | null };
+export type MutationContext = { source: 'user' | 'agent'; conversationId?: string; approvalId?: string; requestId?: string };
+type Db = Prisma.TransactionClient | typeof prisma;
+export interface CredentialStore { read(): Promise<string | null>; write(value: string): Promise<void>; clear(): Promise<void>; }
+export class SqliteCredentialStore implements CredentialStore {
+  async read() { return (await prisma.appSetting.findUnique({ where: { id: 'default' } }))?.openaiApiKey || null; }
+  async write(value: string) { await prisma.appSetting.upsert({ where: { id: 'default' }, create: { id: 'default', openaiApiKey: value, createdAt: now(), updatedAt: now() }, update: { openaiApiKey: value, updatedAt: now() } }); }
+  async clear() { await prisma.appSetting.updateMany({ where: { id: 'default' }, data: { openaiApiKey: '', updatedAt: now() } }); }
+}
 const now = () => new Date().toISOString();
 
 function notFound(message: string) { return Object.assign(new Error(message), { status: 404 }); }
@@ -17,6 +25,7 @@ function badRequest(message: string) { return Object.assign(new Error(message), 
 
 export class SettingsService {
   private readonly id = 'default';
+  constructor(private readonly credentialsStore: CredentialStore = new SqliteCredentialStore()) {}
 
   private normalizeBaseUrl(value: string) {
     const baseUrl = value.trim().replace(/\/+$/, '');
@@ -48,22 +57,23 @@ export class SettingsService {
     return {
       baseUrl: setting?.openaiBaseUrl ?? '',
       model: setting?.openaiModel ?? '',
-      apiKeyConfigured: Boolean(setting?.openaiApiKey),
-      apiKeyMasked: this.mask(setting?.openaiApiKey ?? ''),
+      apiKeyConfigured: Boolean(await this.credentialsStore.read()),
+      apiKeyMasked: this.mask((await this.credentialsStore.read()) ?? ''),
     } satisfies PublicSettings;
   }
 
   async credentials(): Promise<ModelConfig | null> {
     const setting = await this.getStored();
-    if (!setting?.openaiBaseUrl || !setting.openaiApiKey || !setting.openaiModel) return null;
-    return { baseUrl: setting.openaiBaseUrl, apiKey: setting.openaiApiKey, model: setting.openaiModel };
+    const apiKey = await this.credentialsStore.read();
+    if (!setting?.openaiBaseUrl || !apiKey || !setting.openaiModel) return null;
+    return { baseUrl: setting.openaiBaseUrl, apiKey, model: setting.openaiModel };
   }
 
   async save(input: { baseUrl: string; model: string; apiKey?: string }, testConnection: (config: ModelConfig) => Promise<void>) {
     const current = await this.getStored();
     const baseUrl = this.normalizeBaseUrl(input.baseUrl);
     const model = this.validateModel(input.model);
-    const apiKey = input.apiKey?.trim() || current?.openaiApiKey || '';
+    const apiKey = input.apiKey?.trim() || await this.credentialsStore.read() || current?.openaiApiKey || '';
     if (!apiKey) throw badRequest('首次配置必须提供 API Key');
     this.validateKey(apiKey);
     const config = { baseUrl, apiKey, model };
@@ -79,12 +89,13 @@ export class SettingsService {
       create: { id: this.id, openaiBaseUrl: baseUrl, openaiApiKey: apiKey, openaiModel: model, createdAt: timestamp, updatedAt: timestamp },
       update: { openaiBaseUrl: baseUrl, openaiApiKey: apiKey, openaiModel: model, updatedAt: timestamp },
     });
+    await this.credentialsStore.write(apiKey);
     return this.getPublic();
   }
 
   async clearApiKey() {
     const current = await this.getStored();
-    if (current) await prisma.appSetting.update({ where: { id: this.id }, data: { openaiApiKey: '', updatedAt: now() } });
+    if (current) await this.credentialsStore.clear();
     return this.getPublic();
   }
 }
@@ -92,10 +103,10 @@ export class SettingsService {
 export class TopicService {
   async list() { return prisma.topic.findMany({ orderBy: { updatedAt: 'desc' } }); }
   async get(topicId: string) { return prisma.topic.findUnique({ where: { id: topicId }, include: { tasks: { orderBy: { updatedAt: 'desc' } } } }); }
-  async create(input: { name: string; description?: string; isExploration?: boolean; goal?: string }, source = 'user') { const timestamp = now(); const result = await prisma.topic.create({ data: { name: input.name, description: input.description ?? '', goal: input.goal ?? '', isExploration: input.isExploration ?? false, createdAt: timestamp, updatedAt: timestamp } }); await recordChange('topic', result.id, 'create', null, result, source); return result; }
-  async update(topicId: string, input: Partial<{ name: string; description: string; isExploration: boolean; goal: string; draftSummary: string }>, source = 'user') { try { const before = await prisma.topic.findUnique({ where: { id: topicId } }); if (!before) throw notFound('主题不存在'); const data: any = { ...input, updatedAt: now() }; if (input.draftSummary !== undefined) { data.summaryStatus = input.draftSummary ? 'draft' : (before.finalSummary ? 'confirmed' : 'empty'); data.summaryUpdatedAt = now(); } const result = await prisma.topic.update({ where: { id: topicId }, data }); await recordChange('topic', topicId, 'update', before, result, source); return result; } catch (error: any) { if (error?.code === 'P2025') throw notFound('主题不存在'); throw error; } }
-  async remove(topicId: string, source = 'user') { const topic = await this.get(topicId); if (!topic) throw notFound('主题不存在'); if (topic.tasks.length) throw Object.assign(new Error('非空主题不能删除'), { status: 409 }); const result = await prisma.topic.delete({ where: { id: topicId } }); await recordChange('topic', topicId, 'delete', topic, null, source); return result; }
-  async generateSummary(topicId: string, summary: string) { return this.update(topicId, { draftSummary: summary }, 'agent'); }
+  async create(input: { name: string; description?: string; isExploration?: boolean; goal?: string }, context: MutationContext | string = { source: 'user' }) { const ctx = typeof context === 'string' ? { source: context as MutationContext['source'] } : context; return prisma.$transaction(async (tx) => { const timestamp = now(); const result = await tx.topic.create({ data: { name: input.name, description: input.description ?? '', goal: input.goal ?? '', isExploration: input.isExploration ?? false, createdAt: timestamp, updatedAt: timestamp } }); await recordChange(tx, 'topic', result.id, 'create', null, result, ctx); return result; }); }
+  async update(topicId: string, input: Partial<{ name: string; description: string; isExploration: boolean; goal: string; draftSummary: string }>, context: MutationContext | string = { source: 'user' }) { const ctx = typeof context === 'string' ? { source: context as MutationContext['source'] } : context; try { return await prisma.$transaction(async (tx) => { const before = await tx.topic.findUnique({ where: { id: topicId } }); if (!before) throw notFound('主题不存在'); const data: any = { ...input, updatedAt: now() }; if (input.draftSummary !== undefined) { data.summaryStatus = input.draftSummary ? 'draft' : (before.finalSummary ? 'confirmed' : 'empty'); data.summaryUpdatedAt = now(); } const result = await tx.topic.update({ where: { id: topicId }, data }); await recordChange(tx, 'topic', topicId, 'update', before, result, ctx); return result; }); } catch (error: any) { if (error?.code === 'P2025') throw notFound('主题不存在'); throw error; } }
+  async remove(topicId: string, context: MutationContext | string = { source: 'user' }) { const ctx = typeof context === 'string' ? { source: context as MutationContext['source'] } : context; return prisma.$transaction(async (tx) => { const topic = await tx.topic.findUnique({ where: { id: topicId }, include: { tasks: true } }); if (!topic) throw notFound('主题不存在'); if (topic.tasks.length) throw Object.assign(new Error('非空主题不能删除'), { status: 409 }); const result = await tx.topic.delete({ where: { id: topicId } }); await recordChange(tx, 'topic', topicId, 'delete', topic, null, ctx); return result; }); }
+  async generateSummary(topicId: string, summary: string, context: MutationContext = { source: 'agent' }) { return this.update(topicId, { draftSummary: summary }, context); }
   async confirmSummary(topicId: string) { const topic = await this.get(topicId); if (!topic) throw notFound('主题不存在'); if (!topic.draftSummary) throw badRequest('没有待确认的成果草稿'); return prisma.topic.update({ where: { id: topicId }, data: { finalSummary: topic.draftSummary, draftSummary: '', summaryStatus: 'confirmed', summaryUpdatedAt: now(), updatedAt: now() } }); }
   async discardSummary(topicId: string) { const topic = await this.get(topicId); if (!topic) throw notFound('主题不存在'); return prisma.topic.update({ where: { id: topicId }, data: { draftSummary: '', summaryStatus: topic.finalSummary ? 'confirmed' : 'empty', summaryUpdatedAt: now(), updatedAt: now() } }); }
 }
@@ -103,16 +114,56 @@ export class TopicService {
 export class TaskService {
   async list(topicId?: string) { return prisma.task.findMany({ where: topicId ? { topicId } : undefined, orderBy: { updatedAt: 'desc' } }); }
   async get(taskId: string) { return prisma.task.findUnique({ where: { id: taskId } }); }
-  async create(input: { topicId: string; title: string; description?: string; status?: TaskStatus; resultSummary?: string }, source = 'user') { const topic = await prisma.topic.findUnique({ where: { id: input.topicId } }); if (!topic) throw notFound('主题不存在'); const timestamp = now(); const result = await prisma.task.create({ data: { topicId: input.topicId, title: input.title, description: input.description ?? '', status: input.status ?? TaskStatus.todo, resultSummary: input.resultSummary ?? '', createdAt: timestamp, updatedAt: timestamp } }); await recordChange('task', result.id, 'create', null, result, source); return result; }
-  async update(taskId: string, input: Partial<{ title: string; description: string; status: TaskStatus; resultSummary: string; topicId: string }>, source = 'user') { if (input.topicId && !(await prisma.topic.findUnique({ where: { id: input.topicId } }))) throw notFound('主题不存在'); try { const before = await prisma.task.findUnique({ where: { id: taskId } }); if (!before) throw notFound('任务不存在'); const result = await prisma.task.update({ where: { id: taskId }, data: { ...input, updatedAt: now() } }); await recordChange('task', taskId, 'update', before, result, source); return result; } catch (error: any) { if (error?.code === 'P2025') throw notFound('任务不存在'); throw error; } }
-  async remove(taskId: string, source = 'user') { try { const before = await prisma.task.findUnique({ where: { id: taskId } }); if (!before) throw notFound('任务不存在'); const result = await prisma.task.delete({ where: { id: taskId } }); await recordChange('task', taskId, 'delete', before, null, source); return result; } catch (error: any) { if (error?.code === 'P2025') throw notFound('任务不存在'); throw error; } }
+  async create(input: { topicId: string; title: string; description?: string; status?: TaskStatus; resultSummary?: string }, context: MutationContext | string = { source: 'user' }) { const ctx = typeof context === 'string' ? { source: context as MutationContext['source'] } : context; return prisma.$transaction(async (tx) => { const topic = await tx.topic.findUnique({ where: { id: input.topicId } }); if (!topic) throw notFound('主题不存在'); const timestamp = now(); const result = await tx.task.create({ data: { topicId: input.topicId, title: input.title, description: input.description ?? '', status: input.status ?? TaskStatus.todo, resultSummary: input.resultSummary ?? '', createdAt: timestamp, updatedAt: timestamp } }); await recordChange(tx, 'task', result.id, 'create', null, result, ctx); return result; }); }
+  async update(taskId: string, input: Partial<{ title: string; description: string; status: TaskStatus; resultSummary: string; topicId: string }>, context: MutationContext | string = { source: 'user' }) { const ctx = typeof context === 'string' ? { source: context as MutationContext['source'] } : context; try { return await prisma.$transaction(async (tx) => { if (input.topicId && !(await tx.topic.findUnique({ where: { id: input.topicId } }))) throw notFound('主题不存在'); const before = await tx.task.findUnique({ where: { id: taskId } }); if (!before) throw notFound('任务不存在'); const result = await tx.task.update({ where: { id: taskId }, data: { ...input, updatedAt: now() } }); await recordChange(tx, 'task', taskId, 'update', before, result, ctx); return result; }); } catch (error: any) { if (error?.code === 'P2025') throw notFound('任务不存在'); throw error; } }
+  async remove(taskId: string, context: MutationContext | string = { source: 'user' }) { const ctx = typeof context === 'string' ? { source: context as MutationContext['source'] } : context; try { return await prisma.$transaction(async (tx) => { const before = await tx.task.findUnique({ where: { id: taskId } }); if (!before) throw notFound('任务不存在'); const result = await tx.task.delete({ where: { id: taskId } }); await recordChange(tx, 'task', taskId, 'delete', before, null, ctx); return result; }); } catch (error: any) { if (error?.code === 'P2025') throw notFound('任务不存在'); throw error; } }
 }
 
-async function recordChange(entityType: string, entityId: string, operation: string, before: unknown, after: unknown, source: string) { return prisma.changeRecord.create({ data: { entityType, entityId, operation, beforeSnapshot: before ? JSON.stringify(before) : null, afterSnapshot: after ? JSON.stringify(after) : null, source, createdAt: now() } }); }
+async function recordChange(db: Db, entityType: string, entityId: string, operation: string, before: unknown, after: unknown, context: MutationContext, reversalOf?: string) { return db.changeRecord.create({ data: { entityType, entityId, operation, beforeSnapshot: before ? JSON.stringify(before) : null, afterSnapshot: after ? JSON.stringify(after) : null, source: context.source, conversationId: context.conversationId, approvalId: context.approvalId, requestId: context.requestId, reversalOf, createdAt: now() } }); }
+
+export class WorkspaceMutation {
+  constructor(private readonly topics = new TopicService(), private readonly tasks = new TaskService()) {}
+  async execute(call: ToolCall, context: MutationContext): Promise<unknown> {
+    switch (call.name) {
+      case 'create_task': return this.tasks.create({ topicId: String(call.arguments.topicId), title: String(call.arguments.title), description: call.arguments.description as string | undefined, status: call.arguments.status as TaskStatus | undefined, resultSummary: call.arguments.resultSummary as string | undefined }, context);
+      case 'update_task': return this.tasks.update(String(call.arguments.taskId), { topicId: call.arguments.topicId as string | undefined, title: call.arguments.title as string | undefined, description: call.arguments.description as string | undefined, status: call.arguments.status as TaskStatus | undefined, resultSummary: call.arguments.resultSummary as string | undefined }, context);
+      case 'delete_task': return this.tasks.remove(String(call.arguments.taskId), context);
+      case 'create_topic': return this.topics.create({ name: String(call.arguments.name), description: call.arguments.description as string | undefined, isExploration: call.arguments.isExploration as boolean | undefined }, context);
+      case 'update_topic': return this.topics.update(String(call.arguments.topicId), { name: call.arguments.name as string | undefined, description: call.arguments.description as string | undefined, isExploration: call.arguments.isExploration as boolean | undefined }, context);
+      case 'delete_topic': return this.topics.remove(String(call.arguments.topicId), context);
+      case 'propose_topic_summary': return this.topics.generateSummary(String(call.arguments.topicId), String(call.arguments.summary), context);
+      default: throw badRequest(`不支持的写入 Tool: ${call.name}`);
+    }
+  }
+  async restore(record: { entityType: string; entityId: string; operation: string; beforeSnapshot: string | null; afterSnapshot: string | null }, context: MutationContext, db: Db = prisma) {
+    const run = async (tx: Db) => {
+      const before = record.beforeSnapshot ? JSON.parse(record.beforeSnapshot) : null;
+      const after = record.afterSnapshot ? JSON.parse(record.afterSnapshot) : null;
+      const current = record.entityType === 'task' ? await tx.task.findUnique({ where: { id: record.entityId } }) : await tx.topic.findUnique({ where: { id: record.entityId } });
+      const expected = record.operation === 'create' ? after : record.operation === 'update' ? after : null;
+      if (record.operation !== 'delete' && expected && current && current.updatedAt !== expected.updatedAt) throw Object.assign(new Error('实体已发生后续变更，无法撤销'), { status: 409 });
+      if (record.entityType === 'task') {
+        if (record.operation === 'create') await tx.task.delete({ where: { id: record.entityId } });
+        else if (record.operation === 'delete') await tx.task.create({ data: sanitizeTask(before) });
+        else await tx.task.update({ where: { id: record.entityId }, data: sanitizeTask(before) });
+      } else if (record.entityType === 'topic') {
+        if (record.operation === 'create') await tx.topic.delete({ where: { id: record.entityId } });
+        else if (record.operation === 'delete') await tx.topic.create({ data: sanitizeTopic(before) });
+        else await tx.topic.update({ where: { id: record.entityId }, data: sanitizeTopic(before) });
+      } else throw badRequest('不支持的变更实体类型');
+      return { before, after };
+    };
+    return db === prisma ? prisma.$transaction(run) : run(db);
+  }
+}
+
+function sanitizeTask(value: any) { const { topic, ...data } = value ?? {}; return { ...data, status: data.status as TaskStatus }; }
+function sanitizeTopic(value: any) { const { tasks, ...data } = value ?? {}; return data; }
 
 export class ChangeService {
+  constructor(private readonly mutations = new WorkspaceMutation()) {}
   async list(entityType?: string, entityId?: string) { return prisma.changeRecord.findMany({ where: { ...(entityType ? { entityType } : {}), ...(entityId ? { entityId } : {}) }, orderBy: { createdAt: 'desc' } }); }
-  async undo(id: string) { const record = await prisma.changeRecord.findUnique({ where: { id } }); if (!record) throw notFound('变更记录不存在'); if (record.undoneAt) throw badRequest('该变更已经撤销'); const before = record.beforeSnapshot ? JSON.parse(record.beforeSnapshot) : null; const after = record.afterSnapshot ? JSON.parse(record.afterSnapshot) : null; if (record.entityType === 'task') { if (record.operation === 'create') await prisma.task.delete({ where: { id: record.entityId } }); else if (record.operation === 'delete') await prisma.task.create({ data: { ...before, status: before.status as TaskStatus } }); else await prisma.task.update({ where: { id: record.entityId }, data: before }); } else if (record.entityType === 'topic') { if (record.operation === 'create') await prisma.topic.delete({ where: { id: record.entityId } }); else if (record.operation === 'delete') await prisma.topic.create({ data: before }); else await prisma.topic.update({ where: { id: record.entityId }, data: before }); } await prisma.changeRecord.update({ where: { id }, data: { undoneAt: now() } }); return { success: true }; }
+  async undo(id: string, context: MutationContext = { source: 'user' }) { const record = await prisma.changeRecord.findUnique({ where: { id } }); if (!record) throw notFound('变更记录不存在'); if (record.undoneAt) throw badRequest('该变更已经撤销'); return prisma.$transaction(async (tx) => { await this.mutations.restore(record, context, tx); await tx.changeRecord.update({ where: { id }, data: { undoneAt: now() } }); await recordChange(tx, record.entityType, record.entityId, `undo:${record.operation}`, record.afterSnapshot ? JSON.parse(record.afterSnapshot) : null, record.beforeSnapshot ? JSON.parse(record.beforeSnapshot) : null, context, id); return { success: true }; }); }
 }
 
 export type ToolDefinition = { name: string; description: string; parameters: Record<string, unknown>; requiresApproval: boolean; validate: (args: Record<string, unknown>) => string | null; execute: (args: Record<string, unknown>) => Promise<ToolResult> };
@@ -141,6 +192,7 @@ export class ToolService {
   private topics = new TopicService();
   private tasks = new TaskService();
   private registry: Record<string, ToolDefinition>;
+  private mutations = new WorkspaceMutation();
 
   constructor() {
     const string = { type: 'string' };
@@ -166,14 +218,17 @@ export class ToolService {
   }
 
   private requireResource<T>(value: T | null, message: string) { if (!value) throw notFound(message); return value; }
-  definitions() { return Object.values(this.registry).map(({ name, description, parameters }) => ({ type: 'function', function: { name, description, parameters } })); }
+  definitions(): Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }> { return Object.values(this.registry).map(({ name, description, parameters }) => ({ type: 'function' as const, function: { name, description, parameters } })); }
   isKnown(name: string) { return Boolean(this.registry[name]); }
   isReadOnly(name: string) { return this.registry[name]?.requiresApproval === false; }
   validate(call: ToolCall) { const definition = this.registry[call.name]; if (!definition) return `未知 Tool: ${call.name}`; if (!call.arguments || typeof call.arguments !== 'object' || Array.isArray(call.arguments)) return 'Tool 参数必须是对象'; return validateParameters(definition.parameters, call.arguments) ?? definition.validate(call.arguments); }
-  async execute(call: ToolCall): Promise<ToolResult> {
+  async execute(call: ToolCall, context: MutationContext = { source: 'user' }): Promise<ToolResult> {
     const validationError = this.validate(call);
     if (validationError) return { success: false, error: validationError };
-    try { return await this.registry[call.name].execute(call.arguments); }
+    try {
+      if (this.registry[call.name].requiresApproval) return { success: true, data: await this.mutations.execute(call, context) };
+      return await this.registry[call.name].execute(call.arguments);
+    }
     catch (error) { return { success: false, error: error instanceof Error ? error.message : 'Tool 执行失败' }; }
   }
 }
@@ -207,6 +262,20 @@ export class RecordOnlyExecutionAdapter implements ExecutionAdapter {
 export class ContextService {
   constructor(private readonly model?: { complete(messages: any[], signal?: AbortSignal, includeTools?: boolean): Promise<{ text: string }> }) {}
   estimateTokens(messages: Array<{ content?: string | null }>) { return Math.ceil(messages.reduce((sum, message) => sum + (message.content?.length ?? 0), 0) / 4); }
+  async compactIfNeeded(conversationId: string, signal?: AbortSignal) {
+    const conversation = await prisma.conversation.findUnique({ where: { id: conversationId } }); if (!conversation) throw notFound('会话不存在');
+    const messages = await prisma.message.findMany({ where: { conversationId }, orderBy: { createdAt: 'asc' } });
+    const old = messages.slice(0, -12); const estimate = this.estimateTokens(messages);
+    if (estimate <= 6000 && messages.length <= 24 && old.filter((message) => !message.compactedAt).length <= 12) return conversation;
+    return this.compact(conversationId, signal);
+  }
+  async buildWindow(conversationId: string, pageContext: unknown) {
+    const conversation = await prisma.conversation.findUnique({ where: { id: conversationId } }); if (!conversation) throw notFound('会话不存在');
+    const messages = await prisma.message.findMany({ where: { conversationId }, orderBy: { createdAt: 'asc' } });
+    const recentMessages = messages.slice(-12).filter((item) => item.role !== 'tool' && item.status !== 'streaming').map(({ role, content }) => ({ role, content }));
+    const tasks = pageContext && typeof pageContext === 'object' && 'topicId' in pageContext ? await new TaskService().list((pageContext as any).topicId ?? undefined) : await new TaskService().list();
+    return { summary: conversation.summary, recentMessages, pageContext, recentTasks: tasks.slice(0, 8), estimatedTokens: this.estimateTokens(messages.slice(-12)) };
+  }
   async compact(conversationId: string, signal?: AbortSignal) {
     const conversation = await prisma.conversation.findUnique({ where: { id: conversationId } }); if (!conversation) throw notFound('会话不存在');
     const messages = await prisma.message.findMany({ where: { conversationId }, orderBy: { createdAt: 'asc' } }); const old = messages.slice(0, -12); if (!old.length) return conversation;

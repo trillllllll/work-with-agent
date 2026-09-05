@@ -102,6 +102,8 @@ model ChangeRecord {
   source String
   conversationId String? @map("conversation_id")
   approvalId String? @map("approval_id")
+  requestId String? @map("request_id")
+  reversalOf String? @map("reversal_of")
   undoneAt String? @map("undone_at")
   createdAt String @default("") @map("created_at")
   @@index([entityType, entityId, createdAt])
