@@ -1,4 +1,4 @@
-import { FolderKanban, MessageSquare, SquareKanban } from 'lucide-react';
+import { FolderKanban, MessageSquare, SquareKanban, Trash2 } from 'lucide-react';
 import type { View } from '@/lib/api.js';
 import { cn } from '@/lib/utils.js';
 
@@ -11,11 +11,12 @@ const tabs: { view: View; label: string; icon: typeof SquareKanban }[] = [
   { view: 'board', label: '看板', icon: SquareKanban },
   { view: 'chat', label: '聊天', icon: MessageSquare },
   { view: 'topics', label: '主题', icon: FolderKanban },
+  { view: 'trash', label: '回收站', icon: Trash2 },
 ];
 
 export function MobileTabBar({ route, navigate }: MobileTabBarProps) {
   return (
-    <nav className="grid shrink-0 grid-cols-3 border-t bg-card pb-[env(safe-area-inset-bottom)]" aria-label="主导航">
+    <nav className="grid shrink-0 grid-cols-4 border-t bg-card pb-[env(safe-area-inset-bottom)]" aria-label="主导航">
       {tabs.map(({ view, label, icon: Icon }) => {
         const active = route === view;
         return (

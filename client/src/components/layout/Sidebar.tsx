@@ -1,4 +1,4 @@
-import { Plus, Settings } from 'lucide-react';
+import { Plus, Settings, Trash2 } from 'lucide-react';
 import type { Topic } from '@/lib/api.js';
 import { Button } from '@/components/ui/button.js';
 import { cn } from '@/lib/utils.js';
@@ -14,9 +14,11 @@ type SidebarProps = {
   onEditTopic: (topic: Topic) => void;
   settingsActive: boolean;
   onToggleSettings: () => void;
+  trashActive: boolean;
+  onOpenTrash: () => void;
 };
 
-export function Sidebar({ topics, topicsLoading, selectedTopicId, onSelectTopic, onNewTopic, onEditTopic, settingsActive, onToggleSettings }: SidebarProps) {
+export function Sidebar({ topics, topicsLoading, selectedTopicId, onSelectTopic, onNewTopic, onEditTopic, settingsActive, onToggleSettings, trashActive, onOpenTrash }: SidebarProps) {
   return (
     <aside className="flex h-full min-h-0 flex-col border-r bg-card px-3 pt-5 pb-4">
       <div className="mb-7 flex items-center gap-2.5 px-2">
@@ -34,6 +36,7 @@ export function Sidebar({ topics, topicsLoading, selectedTopicId, onSelectTopic,
         <TopicList topics={topics} loading={topicsLoading} selectedTopicId={selectedTopicId} onSelect={onSelectTopic} onEdit={onEditTopic} />
       </div>
       <div className="mt-auto border-t pt-3">
+        <button type="button" onClick={onOpenTrash} className={cn('mb-1 flex h-9 w-full items-center gap-2 rounded-md px-2 text-xs transition-colors', trashActive ? 'bg-accent font-bold text-accent-foreground' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground')}><Trash2 className="size-3.5" />回收站</button>
         <div className="flex items-center gap-1">
           <button
             type="button"

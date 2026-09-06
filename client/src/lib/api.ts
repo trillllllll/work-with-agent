@@ -2,10 +2,11 @@ import { parseSseFrame, type Approval, type SseEvent, type ToolResult } from '..
 
 export type Topic = { id: string; name: string; description: string; isExploration: boolean; goal?: string; draftSummary?: string; finalSummary?: string; summaryStatus?: string; summaryUpdatedAt?: string | null };
 export type Status = 'todo' | 'doing' | 'blocked' | 'done';
-export type Task = { id: string; topicId: string; title: string; description: string; status: Status; resultSummary: string };
+export type Task = { id: string; topicId: string; title: string; description: string; status: Status; resultSummary: string; deletedAt?: string | null };
+export type TrashTask = Task & { deletedAt: string; topic?: { id: string; name: string } };
 export type Settings = { baseUrl: string; model: string; apiKeyConfigured: boolean; apiKeyMasked: string | null };
 export type ApprovalResponse = { result: ToolResult; assistantMessage?: string; summaryError?: string };
-export type View = 'board' | 'chat' | 'topics' | 'settings';
+export type View = 'board' | 'chat' | 'topics' | 'settings' | 'trash';
 
 export const statuses: { value: Status; label: string }[] = [{ value: 'todo', label: '待办' }, { value: 'doing', label: '进行中' }, { value: 'blocked', label: '已阻塞' }, { value: 'done', label: '已完成' }];
 export const toolLabels: Record<string, string> = { create_task: '创建任务', update_task: '更新任务', delete_task: '删除任务', create_topic: '创建主题', update_topic: '更新主题' };

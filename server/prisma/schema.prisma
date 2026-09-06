@@ -49,11 +49,14 @@ model Task {
   description   String     @default("")
   status        TaskStatus @default(todo)
   resultSummary String     @default("") @map("result_summary")
+  deletedAt String? @map("deleted_at")
   createdAt     String     @default("") @map("created_at")
   updatedAt     String     @default("") @map("updated_at")
   topic         Topic      @relation(fields: [topicId], references: [id], onDelete: Restrict)
 
   @@index([topicId])
+  @@index([topicId, deletedAt])
+  @@index([deletedAt])
   @@map("tasks")
 }
 

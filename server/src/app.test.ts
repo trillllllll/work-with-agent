@@ -32,6 +32,23 @@ describe('REST task workflow', () => {
     expect((await request(app).get('/api/tasks/missing-task')).status).toBe(404);
   });
 
+  it('moves tasks to trash, restores them, and permanently deletes them', async () => {
+    const created = await request(app).post('/api/tasks').send({ topicId, title: '回收站任务' });
+    const trashTaskId = created.body.data.id;
+    expect((await request(app).delete(`/api/tasks/${trashTaskId}`)).status).toBe(200);
+    expect((await request(app).get(`/api/tasks/${trashTaskId}`)).status).toBe(404);
+    const trash = await request(app).get('/api/trash/tasks');
+    expect(trash.status).toBe(200);
+    expect(trash.body.data.find((task: any) => task.id === trashTaskId)?.deletedAt).toBeTruthy();
+    const restored = await request(app).post(`/api/trash/tasks/${trashTaskId}/restore`);
+    expect(restored.status).toBe(200);
+    expect(restored.body.data.deletedAt).toBeNull();
+    expect((await request(app).get(`/api/tasks/${trashTaskId}`)).status).toBe(200);
+    expect((await request(app).delete(`/api/tasks/${trashTaskId}`)).status).toBe(200);
+    expect((await request(app).delete(`/api/trash/tasks/${trashTaskId}/permanent`)).status).toBe(200);
+    expect((await request(app).delete(`/api/trash/tasks/${trashTaskId}/permanent`)).status).toBe(409);
+  });
+
   afterAll(async () => {
     if (taskId) await prisma.task.delete({ where: { id: taskId } }).catch(() => undefined);
     if (topicId) await prisma.topic.delete({ where: { id: topicId } }).catch(() => undefined);

@@ -40,6 +40,9 @@ const taskBody = z.object({ topicId: z.string().trim().min(1), title: z.string()
 app.post('/api/tasks', schema(taskBody), async (req, res, next) => { try { send(res, await mutations.execute({ name: 'create_task', arguments: req.body }, userContext(req))); } catch (error) { next(error); } });
 app.patch('/api/tasks/:id', schema(taskBody.partial()), async (req, res, next) => { try { send(res, await mutations.execute({ name: 'update_task', arguments: { taskId: String(req.params.id), ...req.body } }, userContext(req))); } catch (error) { next(error); } });
 app.delete('/api/tasks/:id', async (req, res, next) => { try { send(res, await mutations.execute({ name: 'delete_task', arguments: { taskId: String(req.params.id) } }, userContext(req))); } catch (error) { next(error); } });
+app.get('/api/trash/tasks', async (_req, res, next) => { try { send(res, await tasks.listDeleted()); } catch (error) { next(error); } });
+app.post('/api/trash/tasks/:id/restore', async (req, res, next) => { try { send(res, await mutations.execute({ name: 'restore_task', arguments: { taskId: String(req.params.id) } }, userContext(req))); } catch (error) { next(error); } });
+app.delete('/api/trash/tasks/:id/permanent', async (req, res, next) => { try { send(res, await mutations.execute({ name: 'permanent_delete_task', arguments: { taskId: String(req.params.id) } }, userContext(req))); } catch (error) { next(error); } });
 
 app.get('/api/settings', async (_req, res, next) => { try { send(res, await settings.getPublic()); } catch (error) { next(error); } });
 const settingsBody = z.object({ baseUrl: z.string().trim().min(1), model: z.string().trim().min(1), apiKey: z.string().optional() });

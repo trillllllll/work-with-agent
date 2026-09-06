@@ -1,0 +1,8 @@
+import { RotateCcw, Trash2 } from 'lucide-react';
+import type { TrashTask } from '@/lib/api.js';
+import { Button } from '@/components/ui/button.js';
+
+type Props = { tasks: TrashTask[]; loading: boolean; onRestore: (task: TrashTask) => void; onPermanentDelete: (task: TrashTask) => void };
+export function TrashPage({ tasks, loading, onRestore, onPermanentDelete }: Props) {
+  return <div className="flex h-full flex-col bg-background"><header className="border-b px-5 py-5"><h1 className="text-xl font-semibold tracking-tight">回收站</h1><p className="mt-1 text-xs text-muted-foreground">删除的任务会保留在这里，恢复后回到原主题。</p></header><div className="min-h-0 flex-1 overflow-y-auto p-4"><div className="mx-auto flex max-w-3xl flex-col gap-2">{loading ? <p className="py-10 text-center text-sm text-muted-foreground">正在加载回收站…</p> : !tasks.length ? <div className="py-16 text-center"><Trash2 className="mx-auto size-10 text-muted-foreground/40" /><p className="mt-3 text-sm text-muted-foreground">回收站为空</p></div> : tasks.map((task) => <article key={task.id} className="rounded-lg border bg-card p-4"><div className="flex items-start justify-between gap-4"><div className="min-w-0"><h2 className="truncate text-sm font-semibold">{task.title}</h2><p className="mt-1 text-xs text-muted-foreground">主题：{task.topic?.name ?? '未知主题'} · 原状态：{task.status} · 删除于 {new Date(task.deletedAt).toLocaleString()}</p>{task.description && <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{task.description}</p>}</div><div className="flex shrink-0 gap-2"><Button variant="outline" size="sm" onClick={() => onRestore(task)}><RotateCcw />恢复</Button><Button variant="destructive" size="sm" onClick={() => onPermanentDelete(task)}><Trash2 />永久删除</Button></div></div></article>)}</div></div></div>;
+}
