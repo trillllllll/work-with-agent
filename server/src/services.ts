@@ -1,5 +1,8 @@
 import dotenv from 'dotenv';
-import { resolve } from 'node:path';
+import { resolve, relative, sep, dirname, basename } from 'node:path';
+import { promises as fs } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { lookup } from 'node:dns/promises';
 import { PrismaClient, Prisma, TaskStatus } from '@prisma/client';
 
 dotenv.config({ path: resolve(process.cwd(), 'server/.env') });
@@ -11,6 +14,9 @@ export type ToolCall = { name: string; arguments: Record<string, unknown>; id?: 
 export type ModelConfig = { baseUrl: string; apiKey: string; model: string };
 export type PublicSettings = { baseUrl: string; model: string; apiKeyConfigured: boolean; apiKeyMasked: string | null };
 export type MutationContext = { source: 'user' | 'agent'; conversationId?: string; approvalId?: string; requestId?: string };
+export type ExecutionKind = 'shell' | 'http' | 'file';
+export type ExecutionRequest = { kind: ExecutionKind; input: Record<string, unknown>; approvalId: string; timeoutMs?: number; maxOutputBytes?: number; workingDirectory?: string };
+export type ExecutionResult = { success: boolean; data?: unknown; error?: string; errorCode?: string; stdout?: string; stderr?: string; durationMs: number; reversible: boolean; redacted: boolean };
 type Db = Prisma.TransactionClient | typeof prisma;
 export interface CredentialStore { read(): Promise<string | null>; write(value: string): Promise<void>; clear(): Promise<void>; }
 export class SqliteCredentialStore implements CredentialStore {
@@ -107,8 +113,8 @@ export class TopicService {
   async update(topicId: string, input: Partial<{ name: string; description: string; isExploration: boolean; goal: string; draftSummary: string }>, context: MutationContext | string = { source: 'user' }) { const ctx = typeof context === 'string' ? { source: context as MutationContext['source'] } : context; try { return await prisma.$transaction(async (tx) => { const before = await tx.topic.findUnique({ where: { id: topicId } }); if (!before) throw notFound('主题不存在'); const data: any = { ...input, updatedAt: now() }; if (input.draftSummary !== undefined) { data.summaryStatus = input.draftSummary ? 'draft' : (before.finalSummary ? 'confirmed' : 'empty'); data.summaryUpdatedAt = now(); } const result = await tx.topic.update({ where: { id: topicId }, data }); await recordChange(tx, 'topic', topicId, 'update', before, result, ctx); return result; }); } catch (error: any) { if (error?.code === 'P2025') throw notFound('主题不存在'); throw error; } }
   async remove(topicId: string, context: MutationContext | string = { source: 'user' }) { const ctx = typeof context === 'string' ? { source: context as MutationContext['source'] } : context; return prisma.$transaction(async (tx) => { const topic = await tx.topic.findUnique({ where: { id: topicId }, include: { tasks: true } }); if (!topic) throw notFound('主题不存在'); if (topic.tasks.length) throw Object.assign(new Error('非空主题不能删除'), { status: 409 }); const result = await tx.topic.delete({ where: { id: topicId } }); await recordChange(tx, 'topic', topicId, 'delete', topic, null, ctx); return result; }); }
   async generateSummary(topicId: string, summary: string, context: MutationContext = { source: 'agent' }) { return this.update(topicId, { draftSummary: summary }, context); }
-  async confirmSummary(topicId: string) { const topic = await this.get(topicId); if (!topic) throw notFound('主题不存在'); if (!topic.draftSummary) throw badRequest('没有待确认的成果草稿'); return prisma.topic.update({ where: { id: topicId }, data: { finalSummary: topic.draftSummary, draftSummary: '', summaryStatus: 'confirmed', summaryUpdatedAt: now(), updatedAt: now() } }); }
-  async discardSummary(topicId: string) { const topic = await this.get(topicId); if (!topic) throw notFound('主题不存在'); return prisma.topic.update({ where: { id: topicId }, data: { draftSummary: '', summaryStatus: topic.finalSummary ? 'confirmed' : 'empty', summaryUpdatedAt: now(), updatedAt: now() } }); }
+  async confirmSummary(topicId: string, context: MutationContext = { source: 'user' }) { return prisma.$transaction(async (tx) => { const topic = await tx.topic.findUnique({ where: { id: topicId } }); if (!topic) throw notFound('主题不存在'); if (!topic.draftSummary) throw badRequest('没有待确认的成果草稿'); const result = await tx.topic.update({ where: { id: topicId }, data: { finalSummary: topic.draftSummary, draftSummary: '', summaryStatus: 'confirmed', summaryUpdatedAt: now(), updatedAt: now() } }); await recordChange(tx, 'topic', topicId, 'confirm_summary', topic, result, context); return result; }); }
+  async discardSummary(topicId: string, context: MutationContext = { source: 'user' }) { return prisma.$transaction(async (tx) => { const topic = await tx.topic.findUnique({ where: { id: topicId } }); if (!topic) throw notFound('主题不存在'); const result = await tx.topic.update({ where: { id: topicId }, data: { draftSummary: '', summaryStatus: topic.finalSummary ? 'confirmed' : 'empty', summaryUpdatedAt: now(), updatedAt: now() } }); await recordChange(tx, 'topic', topicId, 'discard_summary', topic, result, context); return result; }); }
 }
 
 export class TaskService {
@@ -191,6 +197,8 @@ function validateParameters(schema: Record<string, any>, args: Record<string, un
     const definition = properties[key];
     if (definition.type === 'string' && typeof value !== 'string') return `${key} 必须是字符串`;
     if (definition.type === 'boolean' && typeof value !== 'boolean') return `${key} 必须是布尔值`;
+    if (definition.type === 'number' && typeof value !== 'number') return `${key} 必须是数字`;
+    if (definition.type === 'array' && !Array.isArray(value)) return `${key} 必须是数组`;
     if (definition.type === 'object' && (typeof value !== 'object' || value === null || Array.isArray(value))) return `${key} 必须是对象`;
     if (definition.enum && !definition.enum.includes(value)) return `${key} 的值无效`;
   }
@@ -202,8 +210,10 @@ export class ToolService {
   private tasks = new TaskService();
   private registry: Record<string, ToolDefinition>;
   private mutations = new WorkspaceMutation();
+  private execution: ExecutionAdapter;
 
-  constructor() {
+  constructor(execution: ExecutionAdapter = new ControlledExecutionAdapter()) {
+    this.execution = execution;
     const string = { type: 'string' };
     const status = { type: 'string', enum: ['todo', 'doing', 'blocked', 'done'] };
     this.registry = {
@@ -218,6 +228,9 @@ export class ToolService {
       create_topic: this.define('create_topic', '创建主题', { name: string, description: string, isExploration: { type: 'boolean' } }, true, async (a) => this.topics.create({ name: String(a.name), description: a.description as string | undefined, isExploration: a.isExploration as boolean | undefined }), ['name']),
       update_topic: this.define('update_topic', '更新主题', { topicId: string, name: string, description: string, isExploration: { type: 'boolean' } }, true, async (a) => this.topics.update(String(a.topicId), { name: a.name as string | undefined, description: a.description as string | undefined, isExploration: a.isExploration as boolean | undefined }), ['topicId']),
       propose_topic_summary: this.define('propose_topic_summary', '提出主题成果草稿', { topicId: string, summary: string }, true, async (a) => this.topics.generateSummary(String(a.topicId), String(a.summary)), ['topicId', 'summary']),
+      execute_shell: this.define('execute_shell', '在受控工作区执行白名单命令', { command: string, args: { type: 'array' }, workingDirectory: string, timeoutMs: { type: 'number' } }, true, async (a) => this.execution.execute({ kind: 'shell', input: a, approvalId: 'tool' }), ['command']),
+      execute_file: this.define('execute_file', '在受控工作区进行文件操作', { operation: string, path: string, content: string, recursive: { type: 'boolean' } }, true, async (a) => this.execution.execute({ kind: 'file', input: a, approvalId: 'tool' }), ['operation', 'path']),
+      execute_http: this.define('execute_http', '访问受控 HTTP(S) 目标', { method: string, url: string, headers: { type: 'object' }, body: { type: 'object' }, timeoutMs: { type: 'number' } }, true, async (a) => this.execution.execute({ kind: 'http', input: a, approvalId: 'tool' }), ['url']),
     };
   }
 
@@ -235,7 +248,13 @@ export class ToolService {
     const validationError = this.validate(call);
     if (validationError) return { success: false, error: validationError };
     try {
-      if (this.registry[call.name].requiresApproval) return { success: true, data: await this.mutations.execute(call, context) };
+      if (this.registry[call.name].requiresApproval) {
+        if (call.name === 'execute_shell' || call.name === 'execute_file' || call.name === 'execute_http') {
+          const kind = call.name === 'execute_shell' ? 'shell' : call.name === 'execute_file' ? 'file' : 'http';
+          return { success: true, data: await this.execution.execute({ kind, input: call.arguments, approvalId: context.approvalId ?? 'direct', timeoutMs: Number(call.arguments.timeoutMs) || undefined }) };
+        }
+        return { success: true, data: await this.mutations.execute(call, context) };
+      }
       return await this.registry[call.name].execute(call.arguments);
     }
     catch (error) { return { success: false, error: error instanceof Error ? error.message : 'Tool 执行失败' }; }
@@ -261,11 +280,23 @@ export class ConversationService {
   async updateSummary(conversationId: string, summary: string) { return prisma.conversation.update({ where: { id: conversationId }, data: { summary, updatedAt: now() } }); }
 }
 
-export type ExecutionRequest = { kind: 'shell' | 'file' | 'http'; input: Record<string, unknown>; approvalId: string };
-export type ExecutionResult = { success: boolean; data?: unknown; error?: string; reversible: boolean };
 export interface ExecutionAdapter { execute(request: ExecutionRequest): Promise<ExecutionResult>; }
 export class RecordOnlyExecutionAdapter implements ExecutionAdapter {
-  async execute(request: ExecutionRequest): Promise<ExecutionResult> { return { success: true, data: { recorded: true, kind: request.kind, input: request.input }, reversible: false }; }
+  async execute(request: ExecutionRequest): Promise<ExecutionResult> { return { success: true, data: { recorded: true, kind: request.kind, input: redact(request.input) }, durationMs: 0, reversible: false, redacted: true }; }
+}
+
+const MAX_TIMEOUT = 30_000;
+const MAX_OUTPUT = 256 * 1024;
+const workspaceRoot = resolve(process.env.AGENT_WORKSPACE_ROOT || process.cwd());
+const redact = (value: unknown): unknown => { if (Array.isArray(value)) return value.map(redact); if (!value || typeof value !== 'object') return value; return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [/authorization|api[-_]?key|cookie|token|secret/i.test(key) ? [key, '[REDACTED]'] : [key, redact(item)] ])); };
+function boundedNumber(value: unknown, fallback: number, max: number) { const number = Number(value); return Number.isFinite(number) && number > 0 ? Math.min(Math.floor(number), max) : fallback; }
+function safePath(value: unknown) { if (typeof value !== 'string' || !value.trim()) throw Object.assign(new Error('文件路径不能为空'), { code: 'FILE_INVALID_PATH' }); const target = resolve(workspaceRoot, value); const rel = relative(workspaceRoot, target); if (rel === '..' || rel.startsWith(`..${sep}`) || resolve(target) !== target && !target.startsWith(workspaceRoot)) throw Object.assign(new Error('文件路径超出工作区'), { code: 'FILE_PATH_DENIED' }); return target; }
+async function assertSafeTarget(url: string) { const parsed = new URL(url); if (!['http:', 'https:'].includes(parsed.protocol)) throw Object.assign(new Error('仅支持 HTTP(S)'), { code: 'HTTP_PROTOCOL_DENIED' }); const host = parsed.hostname.toLowerCase(); if (host === 'localhost' || host === 'metadata.google.internal' || host.endsWith('.local') || /^127\.|^10\.|^192\.168\.|^169\.254\.|^172\.(1[6-9]|2\d|3[0-1])\./.test(host)) throw Object.assign(new Error('目标地址被禁止'), { code: 'HTTP_TARGET_DENIED' }); const addresses = await lookup(host, { all: true }).catch(() => []); if (addresses.some((item) => /^127\.|^10\.|^192\.168\.|^169\.254\.|^172\.(1[6-9]|2\d|3[0-1])\./.test(item.address))) throw Object.assign(new Error('目标地址解析到受限网络'), { code: 'HTTP_TARGET_DENIED' }); }
+export class ControlledExecutionAdapter implements ExecutionAdapter {
+  async execute(request: ExecutionRequest): Promise<ExecutionResult> { const started = Date.now(); const timeoutMs = boundedNumber(request.timeoutMs, 10_000, MAX_TIMEOUT); const maxOutputBytes = boundedNumber(request.maxOutputBytes, MAX_OUTPUT, MAX_OUTPUT); try { const data = request.kind === 'shell' ? await this.shell(request.input, timeoutMs, maxOutputBytes) : request.kind === 'file' ? await this.file(request.input, maxOutputBytes) : await this.http(request.input, timeoutMs, maxOutputBytes); return { success: true, data: redact(data), durationMs: Date.now() - started, reversible: request.kind === 'file' && (request.input.operation === 'write' || request.input.operation === 'mkdir'), redacted: true }; } catch (error) { const e = error as any; return { success: false, error: e?.message ?? '执行失败', errorCode: e?.code ?? 'EXECUTION_FAILED', durationMs: Date.now() - started, reversible: false, redacted: true }; } }
+  private async shell(input: Record<string, unknown>, timeoutMs: number, maxOutputBytes: number) { const command = String(input.command || ''); const args = Array.isArray(input.args) ? input.args.map(String) : []; const allowed = (process.env.AGENT_ALLOWED_COMMANDS || 'node,npm,git').split(',').map((item) => item.trim()).filter(Boolean); if (!allowed.includes(command)) throw Object.assign(new Error('命令不在白名单中'), { code: 'SHELL_COMMAND_DENIED' }); const cwd = input.workingDirectory ? safePath(input.workingDirectory) : workspaceRoot; const child = spawn(command, args, { cwd, shell: false, windowsHide: true, env: { PATH: process.env.PATH, NODE_ENV: 'production' } }); let stdout = ''; let stderr = ''; const append = (current: string, chunk: Buffer) => (current + chunk.toString()).slice(0, maxOutputBytes); child.stdout.on('data', (chunk) => { stdout = append(stdout, chunk); }); child.stderr.on('data', (chunk) => { stderr = append(stderr, chunk); }); const timer = setTimeout(() => child.kill(), timeoutMs); const exitCode = await new Promise<number>((resolveExit, reject) => { child.on('error', reject); child.on('close', (code) => resolveExit(code ?? 1)); }); clearTimeout(timer); if (exitCode !== 0) throw Object.assign(new Error(`命令退出码 ${exitCode}`), { code: 'SHELL_EXITED', stdout, stderr }); return { command, args, exitCode, stdout, stderr }; }
+  private async file(input: Record<string, unknown>, maxOutputBytes: number) { const operation = String(input.operation || 'read'); const target = safePath(input.path); if (operation === 'read') { const content = await fs.readFile(target); if (content.byteLength > maxOutputBytes) throw Object.assign(new Error('文件超过大小限制'), { code: 'FILE_SIZE_LIMIT' }); return { operation, path: relative(workspaceRoot, target), content: content.toString('utf8') }; } if (operation === 'write') { const content = String(input.content ?? ''); if (Buffer.byteLength(content) > maxOutputBytes) throw Object.assign(new Error('文件超过大小限制'), { code: 'FILE_SIZE_LIMIT' }); await fs.mkdir(dirname(target), { recursive: true }); await fs.writeFile(target, content, 'utf8'); return { operation, path: relative(workspaceRoot, target), bytes: Buffer.byteLength(content) }; } if (operation === 'mkdir') { await fs.mkdir(target, { recursive: true }); return { operation, path: relative(workspaceRoot, target) }; } if (operation === 'delete') { await fs.rm(target, { recursive: Boolean(input.recursive), force: false }); return { operation, path: relative(workspaceRoot, target) }; } throw Object.assign(new Error('文件操作不支持'), { code: 'FILE_OPERATION_DENIED' }); }
+  private async http(input: Record<string, unknown>, timeoutMs: number, maxOutputBytes: number) { const url = String(input.url || ''); await assertSafeTarget(url); const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), timeoutMs); try { const headers = Object.fromEntries(Object.entries((input.headers as Record<string, unknown>) || {}).filter(([key]) => !/host|content-length/i.test(key)).map(([key, value]) => [key, String(value)])); const response = await fetch(url, { method: String(input.method || 'GET').toUpperCase(), headers, body: input.body == null ? undefined : JSON.stringify(input.body), signal: controller.signal, redirect: 'error' }); const text = await response.text(); if (Buffer.byteLength(text) > maxOutputBytes) throw Object.assign(new Error('响应超过大小限制'), { code: 'HTTP_RESPONSE_LIMIT' }); return { url: new URL(url).origin, status: response.status, body: text }; } finally { clearTimeout(timer); } }
 }
 
 export class ContextService {

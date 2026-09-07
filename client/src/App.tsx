@@ -15,6 +15,7 @@ import { ChatPanel } from './components/chat/ChatPanel.js';
 import { SettingsView } from './components/settings/SettingsView.js';
 import { ConfirmDialog } from './components/dialogs/ConfirmDialog.js';
 import { TrashPage } from './components/trash/TrashPage.js';
+import { ChangesPage } from './components/changes/ChangesPage.js';
 
 export function App() {
   const queryClient = useQueryClient();
@@ -69,6 +70,8 @@ export function App() {
             onToggleSettings={() => navigate(route === 'settings' ? 'board' : 'settings')}
             trashActive={route === 'trash'}
             onOpenTrash={() => navigate('trash')}
+            changesActive={route === 'changes'}
+            onOpenChanges={() => navigate('changes')}
           />
         }
         board={
@@ -102,6 +105,7 @@ export function App() {
         }
         settings={<SettingsView onBack={isDesktop ? undefined : () => navigate('topics')} />}
         trash={<TrashPage tasks={trashQuery.data ?? []} loading={trashQuery.isLoading} onRestore={(task) => restoreTask.mutate(task.id)} onPermanentDelete={(task) => setDeleteConfirmation({ kind: 'trash', id: task.id, name: task.title })} />}
+        changes={<ChangesPage />}
       />
       {topicForm && <TopicModal form={topicForm} onChange={setTopicForm} onClose={() => setTopicForm(null)} onSave={() => saveTopic.mutate(topicForm)} busy={saveTopic.isPending} />}
       {taskForm && <TaskModal form={taskForm} onChange={setTaskForm} onClose={() => setTaskForm(null)} onSave={() => saveTask.mutate(taskForm)} busy={saveTask.isPending} />}
