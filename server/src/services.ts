@@ -1,8 +1,9 @@
 import dotenv from 'dotenv';
-import { resolve, relative, sep, dirname, basename } from 'node:path';
+import { resolve, relative, sep, dirname, basename, isAbsolute } from 'node:path';
 import { promises as fs } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import { PrismaClient, Prisma, TaskStatus } from '@prisma/client';
 
 dotenv.config({ path: resolve(process.cwd(), 'server/.env') });
@@ -178,7 +179,7 @@ function sanitizeTopic(value: any) { const { tasks, ...data } = value ?? {}; ret
 export class ChangeService {
   constructor(private readonly mutations = new WorkspaceMutation()) {}
   async list(entityType?: string, entityId?: string) { return prisma.changeRecord.findMany({ where: { ...(entityType ? { entityType } : {}), ...(entityId ? { entityId } : {}) }, orderBy: { createdAt: 'desc' } }); }
-  async undo(id: string, context: MutationContext = { source: 'user' }) { const record = await prisma.changeRecord.findUnique({ where: { id } }); if (!record) throw notFound('变更记录不存在'); if (record.undoneAt) throw badRequest('该变更已经撤销'); return prisma.$transaction(async (tx) => { await this.mutations.restore(record, context, tx); await tx.changeRecord.update({ where: { id }, data: { undoneAt: now() } }); await recordChange(tx, record.entityType, record.entityId, `undo:${record.operation}`, record.afterSnapshot ? JSON.parse(record.afterSnapshot) : null, record.beforeSnapshot ? JSON.parse(record.beforeSnapshot) : null, context, id); return { success: true }; }); }
+  async undo(id: string, context: MutationContext = { source: 'user' }) { const record = await prisma.changeRecord.findUnique({ where: { id } }); if (!record) throw notFound('变更记录不存在'); if (record.entityType === 'execution') throw badRequest('受控执行记录不可撤销'); if (record.undoneAt) throw badRequest('该变更已经撤销'); return prisma.$transaction(async (tx) => { await this.mutations.restore(record, context, tx); await tx.changeRecord.update({ where: { id }, data: { undoneAt: now() } }); await recordChange(tx, record.entityType, record.entityId, `undo:${record.operation}`, record.afterSnapshot ? JSON.parse(record.afterSnapshot) : null, record.beforeSnapshot ? JSON.parse(record.beforeSnapshot) : null, context, id); return { success: true }; }); }
 }
 
 export type ToolDefinition = { name: string; description: string; parameters: Record<string, unknown>; requiresApproval: boolean; validate: (args: Record<string, unknown>) => string | null; execute: (args: Record<string, unknown>) => Promise<ToolResult> };
@@ -251,13 +252,37 @@ export class ToolService {
       if (this.registry[call.name].requiresApproval) {
         if (call.name === 'execute_shell' || call.name === 'execute_file' || call.name === 'execute_http') {
           const kind = call.name === 'execute_shell' ? 'shell' : call.name === 'execute_file' ? 'file' : 'http';
-          return { success: true, data: await this.execution.execute({ kind, input: call.arguments, approvalId: context.approvalId ?? 'direct', timeoutMs: Number(call.arguments.timeoutMs) || undefined }) };
+          const execution = await this.execution.execute({ kind, input: call.arguments, approvalId: context.approvalId ?? 'direct', timeoutMs: Number(call.arguments.timeoutMs) || undefined });
+          if (context.approvalId && !this.isExecutionValidationFailure(execution)) await this.recordExecution(call, execution, context);
+          return { success: execution.success, data: execution, ...(execution.success ? {} : { error: execution.error }) };
         }
         return { success: true, data: await this.mutations.execute(call, context) };
       }
       return await this.registry[call.name].execute(call.arguments);
     }
     catch (error) { return { success: false, error: error instanceof Error ? error.message : 'Tool 执行失败' }; }
+  }
+
+  private async recordExecution(call: ToolCall, result: ExecutionResult, context: MutationContext) {
+    if (!context.approvalId) return;
+    await prisma.changeRecord.create({
+      data: {
+        entityType: 'execution',
+        entityId: context.approvalId,
+        operation: 'execute',
+        beforeSnapshot: null,
+        afterSnapshot: JSON.stringify({ toolName: call.name, input: redact(call.arguments), result: redact(result) }),
+        source: context.source,
+        conversationId: context.conversationId,
+        approvalId: context.approvalId,
+        requestId: context.requestId ?? context.approvalId,
+        createdAt: now(),
+      },
+    });
+  }
+
+  private isExecutionValidationFailure(result: ExecutionResult) {
+    return Boolean(result.errorCode && /(?:_DENIED|_INVALID_|_INVALID$|_INVALID_PATH$)/.test(result.errorCode));
   }
 }
 
@@ -288,15 +313,182 @@ export class RecordOnlyExecutionAdapter implements ExecutionAdapter {
 const MAX_TIMEOUT = 30_000;
 const MAX_OUTPUT = 256 * 1024;
 const workspaceRoot = resolve(process.env.AGENT_WORKSPACE_ROOT || process.cwd());
-const redact = (value: unknown): unknown => { if (Array.isArray(value)) return value.map(redact); if (!value || typeof value !== 'object') return value; return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [/authorization|api[-_]?key|cookie|token|secret/i.test(key) ? [key, '[REDACTED]'] : [key, redact(item)] ])); };
+const sensitiveName = /authorization|api[-_]?key|cookie|token|secret|password/i;
+function redactString(value: string) {
+  let result = value
+    .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [REDACTED]')
+    .replace(/((?:api[-_]?key|token|secret|password)=)[^&\s]+/gi, '$1[REDACTED]');
+  try {
+    const url = new URL(result);
+    for (const key of [...url.searchParams.keys()]) if (sensitiveName.test(key)) url.searchParams.set(key, '[REDACTED]');
+    result = url.toString();
+  } catch { /* Most strings are not URLs. */ }
+  return result;
+}
+const redact = (value: unknown): unknown => {
+  if (typeof value === 'string') return redactString(value);
+  if (Array.isArray(value)) return value.map((item, index) => index > 0 && typeof value[index - 1] === 'string' && sensitiveName.test(value[index - 1]) ? '[REDACTED]' : redact(item));
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => sensitiveName.test(key) ? [key, '[REDACTED]'] : [key, redact(item)]));
+};
 function boundedNumber(value: unknown, fallback: number, max: number) { const number = Number(value); return Number.isFinite(number) && number > 0 ? Math.min(Math.floor(number), max) : fallback; }
-function safePath(value: unknown) { if (typeof value !== 'string' || !value.trim()) throw Object.assign(new Error('文件路径不能为空'), { code: 'FILE_INVALID_PATH' }); const target = resolve(workspaceRoot, value); const rel = relative(workspaceRoot, target); if (rel === '..' || rel.startsWith(`..${sep}`) || resolve(target) !== target && !target.startsWith(workspaceRoot)) throw Object.assign(new Error('文件路径超出工作区'), { code: 'FILE_PATH_DENIED' }); return target; }
-async function assertSafeTarget(url: string) { const parsed = new URL(url); if (!['http:', 'https:'].includes(parsed.protocol)) throw Object.assign(new Error('仅支持 HTTP(S)'), { code: 'HTTP_PROTOCOL_DENIED' }); const host = parsed.hostname.toLowerCase(); if (host === 'localhost' || host === 'metadata.google.internal' || host.endsWith('.local') || /^127\.|^10\.|^192\.168\.|^169\.254\.|^172\.(1[6-9]|2\d|3[0-1])\./.test(host)) throw Object.assign(new Error('目标地址被禁止'), { code: 'HTTP_TARGET_DENIED' }); const addresses = await lookup(host, { all: true }).catch(() => []); if (addresses.some((item) => /^127\.|^10\.|^192\.168\.|^169\.254\.|^172\.(1[6-9]|2\d|3[0-1])\./.test(item.address))) throw Object.assign(new Error('目标地址解析到受限网络'), { code: 'HTTP_TARGET_DENIED' }); }
+function pathInsideRoot(root: string, target: string) { const rel = relative(root, target); return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`)); }
+function lexicalPath(value: unknown) { if (typeof value !== 'string' || !value.trim()) throw Object.assign(new Error('文件路径不能为空'), { code: 'FILE_INVALID_PATH' }); const target = resolve(workspaceRoot, value); if (!pathInsideRoot(workspaceRoot, target)) throw Object.assign(new Error('文件路径超出工作区'), { code: 'FILE_PATH_DENIED' }); return target; }
+async function safePath(value: unknown, allowMissingLeaf = true) {
+  const target = lexicalPath(value);
+  const realRoot = await fs.realpath(workspaceRoot);
+  let existing = target;
+  const missingSegments: string[] = [];
+  while (true) {
+    try {
+      const realExisting = await fs.realpath(existing);
+      const realTarget = resolve(realExisting, ...missingSegments);
+      if (!pathInsideRoot(realRoot, realTarget)) throw Object.assign(new Error('文件路径超出工作区'), { code: 'FILE_PATH_DENIED' });
+      return realTarget;
+    } catch (error: any) {
+      if (error?.code !== 'ENOENT' || !allowMissingLeaf) throw error;
+      const parent = dirname(existing);
+      if (parent === existing) throw error;
+      missingSegments.unshift(basename(existing));
+      existing = parent;
+    }
+  }
+}
+function ipv4Number(address: string) { return address.split('.').reduce((result, part) => ((result << 8) | Number(part)) >>> 0, 0); }
+function inIpv4Range(address: string, base: string, prefix: number) { const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0; return (ipv4Number(address) & mask) === (ipv4Number(base) & mask); }
+const restrictedIpv4Ranges: Array<[string, number]> = [
+  ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16],
+  ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.0.2.0', 24], ['192.88.99.0', 24], ['192.168.0.0', 16],
+  ['198.18.0.0', 15], ['198.51.100.0', 24], ['203.0.113.0', 24], ['224.0.0.0', 4], ['240.0.0.0', 4],
+];
+function ipv6Groups(address: string) {
+  let normalized = address;
+  const ipv4Tail = normalized.match(/(\d+\.\d+\.\d+\.\d+)$/)?.[1];
+  if (ipv4Tail) {
+    const value = ipv4Number(ipv4Tail);
+    normalized = `${normalized.slice(0, -ipv4Tail.length)}${(value >>> 16).toString(16)}:${(value & 0xffff).toString(16)}`;
+  }
+  const [left = '', right = ''] = normalized.split('::');
+  const leftGroups = left ? left.split(':') : [];
+  const rightGroups = right ? right.split(':') : [];
+  const zeros = normalized.includes('::') ? 8 - leftGroups.length - rightGroups.length : 0;
+  return [...leftGroups, ...Array(Math.max(0, zeros)).fill('0'), ...rightGroups].map((part) => Number.parseInt(part || '0', 16));
+}
+function inIpv6Range(groups: number[], base: number[], prefix: number) {
+  const fullGroups = Math.floor(prefix / 16);
+  const remainder = prefix % 16;
+  for (let index = 0; index < fullGroups; index += 1) if (groups[index] !== base[index]) return false;
+  if (!remainder) return true;
+  const mask = (0xffff << (16 - remainder)) & 0xffff;
+  return (groups[fullGroups] & mask) === (base[fullGroups] & mask);
+}
+const restrictedIpv6Ranges: Array<[string, number]> = [
+  ['::', 96], ['::', 128], ['::1', 128], ['64:ff9b::', 96], ['64:ff9b:1::', 48], ['100::', 64],
+  ['2001::', 23], ['2001:db8::', 32], ['2002::', 16], ['3fff::', 20], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8],
+];
+function restrictedAddress(address: string) {
+  const normalized = address.toLowerCase().replace(/^\[|\]$/g, '').split('%')[0];
+  if (isIP(normalized) === 4) return restrictedIpv4Ranges.some(([base, prefix]) => inIpv4Range(normalized, base, prefix));
+  if (isIP(normalized) === 6) {
+    const groups = ipv6Groups(normalized);
+    if (groups.length !== 8 || groups.some(Number.isNaN)) return true;
+    if (groups.slice(0, 5).every((part) => part === 0) && groups[5] === 0xffff) {
+      const mapped = `${groups[6] >>> 8}.${groups[6] & 0xff}.${groups[7] >>> 8}.${groups[7] & 0xff}`;
+      return restrictedAddress(mapped);
+    }
+    return restrictedIpv6Ranges.some(([base, prefix]) => inIpv6Range(groups, ipv6Groups(base), prefix));
+  }
+  return false;
+}
+export type DnsResolver = (hostname: string) => Promise<Array<{ address: string }>>;
+const defaultResolver: DnsResolver = async (hostname) => lookup(hostname, { all: true });
+async function assertSafeTarget(url: string, resolver: DnsResolver = defaultResolver) {
+  let parsed: URL;
+  try { parsed = new URL(url); } catch { throw Object.assign(new Error('HTTP 地址无效'), { code: 'HTTP_INVALID_URL' }); }
+  if (!['http:', 'https:'].includes(parsed.protocol)) throw Object.assign(new Error('仅支持 HTTP(S)'), { code: 'HTTP_PROTOCOL_DENIED' });
+  const host = parsed.hostname.toLowerCase();
+  if (host === 'localhost' || host === 'metadata.google.internal' || host.endsWith('.local') || restrictedAddress(host)) throw Object.assign(new Error('目标地址被禁止'), { code: 'HTTP_TARGET_DENIED' });
+  let addresses: Array<{ address: string }>;
+  try { addresses = await resolver(host); } catch { throw Object.assign(new Error('目标地址 DNS 解析失败'), { code: 'HTTP_DNS_FAILED' }); }
+  if (!addresses.length) throw Object.assign(new Error('目标地址 DNS 解析为空'), { code: 'HTTP_DNS_FAILED' });
+  if (addresses.some((item) => restrictedAddress(item.address))) throw Object.assign(new Error('目标地址解析到受限网络'), { code: 'HTTP_TARGET_DENIED' });
+}
 export class ControlledExecutionAdapter implements ExecutionAdapter {
-  async execute(request: ExecutionRequest): Promise<ExecutionResult> { const started = Date.now(); const timeoutMs = boundedNumber(request.timeoutMs, 10_000, MAX_TIMEOUT); const maxOutputBytes = boundedNumber(request.maxOutputBytes, MAX_OUTPUT, MAX_OUTPUT); try { const data = request.kind === 'shell' ? await this.shell(request.input, timeoutMs, maxOutputBytes) : request.kind === 'file' ? await this.file(request.input, maxOutputBytes) : await this.http(request.input, timeoutMs, maxOutputBytes); return { success: true, data: redact(data), durationMs: Date.now() - started, reversible: request.kind === 'file' && (request.input.operation === 'write' || request.input.operation === 'mkdir'), redacted: true }; } catch (error) { const e = error as any; return { success: false, error: e?.message ?? '执行失败', errorCode: e?.code ?? 'EXECUTION_FAILED', durationMs: Date.now() - started, reversible: false, redacted: true }; } }
-  private async shell(input: Record<string, unknown>, timeoutMs: number, maxOutputBytes: number) { const command = String(input.command || ''); const args = Array.isArray(input.args) ? input.args.map(String) : []; const allowed = (process.env.AGENT_ALLOWED_COMMANDS || 'node,npm,git').split(',').map((item) => item.trim()).filter(Boolean); if (!allowed.includes(command)) throw Object.assign(new Error('命令不在白名单中'), { code: 'SHELL_COMMAND_DENIED' }); const cwd = input.workingDirectory ? safePath(input.workingDirectory) : workspaceRoot; const child = spawn(command, args, { cwd, shell: false, windowsHide: true, env: { PATH: process.env.PATH, NODE_ENV: 'production' } }); let stdout = ''; let stderr = ''; const append = (current: string, chunk: Buffer) => (current + chunk.toString()).slice(0, maxOutputBytes); child.stdout.on('data', (chunk) => { stdout = append(stdout, chunk); }); child.stderr.on('data', (chunk) => { stderr = append(stderr, chunk); }); const timer = setTimeout(() => child.kill(), timeoutMs); const exitCode = await new Promise<number>((resolveExit, reject) => { child.on('error', reject); child.on('close', (code) => resolveExit(code ?? 1)); }); clearTimeout(timer); if (exitCode !== 0) throw Object.assign(new Error(`命令退出码 ${exitCode}`), { code: 'SHELL_EXITED', stdout, stderr }); return { command, args, exitCode, stdout, stderr }; }
-  private async file(input: Record<string, unknown>, maxOutputBytes: number) { const operation = String(input.operation || 'read'); const target = safePath(input.path); if (operation === 'read') { const content = await fs.readFile(target); if (content.byteLength > maxOutputBytes) throw Object.assign(new Error('文件超过大小限制'), { code: 'FILE_SIZE_LIMIT' }); return { operation, path: relative(workspaceRoot, target), content: content.toString('utf8') }; } if (operation === 'write') { const content = String(input.content ?? ''); if (Buffer.byteLength(content) > maxOutputBytes) throw Object.assign(new Error('文件超过大小限制'), { code: 'FILE_SIZE_LIMIT' }); await fs.mkdir(dirname(target), { recursive: true }); await fs.writeFile(target, content, 'utf8'); return { operation, path: relative(workspaceRoot, target), bytes: Buffer.byteLength(content) }; } if (operation === 'mkdir') { await fs.mkdir(target, { recursive: true }); return { operation, path: relative(workspaceRoot, target) }; } if (operation === 'delete') { await fs.rm(target, { recursive: Boolean(input.recursive), force: false }); return { operation, path: relative(workspaceRoot, target) }; } throw Object.assign(new Error('文件操作不支持'), { code: 'FILE_OPERATION_DENIED' }); }
-  private async http(input: Record<string, unknown>, timeoutMs: number, maxOutputBytes: number) { const url = String(input.url || ''); await assertSafeTarget(url); const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), timeoutMs); try { const headers = Object.fromEntries(Object.entries((input.headers as Record<string, unknown>) || {}).filter(([key]) => !/host|content-length/i.test(key)).map(([key, value]) => [key, String(value)])); const response = await fetch(url, { method: String(input.method || 'GET').toUpperCase(), headers, body: input.body == null ? undefined : JSON.stringify(input.body), signal: controller.signal, redirect: 'error' }); const text = await response.text(); if (Buffer.byteLength(text) > maxOutputBytes) throw Object.assign(new Error('响应超过大小限制'), { code: 'HTTP_RESPONSE_LIMIT' }); return { url: new URL(url).origin, status: response.status, body: text }; } finally { clearTimeout(timer); } }
+  constructor(private readonly resolver: DnsResolver = defaultResolver) {}
+  async execute(request: ExecutionRequest): Promise<ExecutionResult> { const started = Date.now(); const timeoutMs = boundedNumber(request.timeoutMs, 10_000, MAX_TIMEOUT); const maxOutputBytes = boundedNumber(request.maxOutputBytes, MAX_OUTPUT, MAX_OUTPUT); try { const data = request.kind === 'shell' ? await this.shell(request.input, timeoutMs, maxOutputBytes) : request.kind === 'file' ? await this.file(request.input, maxOutputBytes) : await this.http(request.input, timeoutMs, maxOutputBytes); return { success: true, data: redact(data), durationMs: Date.now() - started, reversible: false, redacted: true }; } catch (error) { const e = error as any; return { success: false, error: e?.message ?? '执行失败', errorCode: e?.code ?? 'EXECUTION_FAILED', durationMs: Date.now() - started, reversible: false, redacted: true }; } }
+  private async shell(input: Record<string, unknown>, timeoutMs: number, maxOutputBytes: number) {
+    const command = String(input.command || '');
+    const args = Array.isArray(input.args) ? input.args.map(String) : [];
+    const allowed = (process.env.AGENT_ALLOWED_COMMANDS || 'node,npm,git').split(',').map((item) => item.trim()).filter(Boolean);
+    if (!allowed.includes(command)) throw Object.assign(new Error('命令不在白名单中'), { code: 'SHELL_COMMAND_DENIED' });
+    const cwd = await safePath(input.workingDirectory || '.', false);
+    const child = spawn(command, args, { cwd, shell: false, windowsHide: true, env: { PATH: process.env.PATH, NODE_ENV: 'production' } });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    let outputBytes = 0;
+    let outputExceeded = false;
+    let timedOut = false;
+    const append = (target: Buffer[], chunk: Buffer) => {
+      const remaining = maxOutputBytes - outputBytes;
+      if (remaining > 0) { const accepted = chunk.subarray(0, remaining); target.push(accepted); outputBytes += accepted.byteLength; }
+      if (chunk.byteLength > remaining) { outputExceeded = true; child.kill(); }
+    };
+    child.stdout.on('data', (chunk: Buffer) => append(stdout, chunk));
+    child.stderr.on('data', (chunk: Buffer) => append(stderr, chunk));
+    const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeoutMs);
+    const exitCode = await new Promise<number>((resolveExit, reject) => { child.on('error', reject); child.on('close', (code) => resolveExit(code ?? 1)); }).finally(() => clearTimeout(timer));
+    const output = { stdout: Buffer.concat(stdout).toString('utf8'), stderr: Buffer.concat(stderr).toString('utf8') };
+    if (timedOut) throw Object.assign(new Error('命令执行超时'), { code: 'SHELL_TIMEOUT', ...output });
+    if (outputExceeded) throw Object.assign(new Error('命令输出超过大小限制'), { code: 'SHELL_OUTPUT_LIMIT', ...output });
+    if (exitCode !== 0) throw Object.assign(new Error(`命令退出码 ${exitCode}`), { code: 'SHELL_EXITED', ...output });
+    return { command, args, exitCode, ...output };
+  }
+  private async file(input: Record<string, unknown>, maxOutputBytes: number) {
+    const operation = String(input.operation || 'read');
+    const target = await safePath(input.path, operation === 'write' || operation === 'mkdir');
+    if (operation === 'read') {
+      if ((await fs.stat(target)).size > maxOutputBytes) throw Object.assign(new Error('文件超过大小限制'), { code: 'FILE_SIZE_LIMIT' });
+      return { operation, path: relative(workspaceRoot, target), content: await fs.readFile(target, 'utf8') };
+    }
+    if (operation === 'write') {
+      const content = String(input.content ?? '');
+      if (Buffer.byteLength(content) > maxOutputBytes) throw Object.assign(new Error('文件超过大小限制'), { code: 'FILE_SIZE_LIMIT' });
+      await fs.mkdir(dirname(target), { recursive: true });
+      await fs.writeFile(target, content, 'utf8');
+      return { operation, path: relative(workspaceRoot, target), bytes: Buffer.byteLength(content) };
+    }
+    if (operation === 'mkdir') { await fs.mkdir(target, { recursive: true }); return { operation, path: relative(workspaceRoot, target) }; }
+    if (operation === 'delete') { await fs.rm(target, { recursive: Boolean(input.recursive), force: false }); return { operation, path: relative(workspaceRoot, target) }; }
+    throw Object.assign(new Error('文件操作不支持'), { code: 'FILE_OPERATION_DENIED' });
+  }
+  private async http(input: Record<string, unknown>, timeoutMs: number, maxOutputBytes: number) {
+    const url = String(input.url || '');
+    await assertSafeTarget(url, this.resolver);
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+    try {
+      const headers = Object.fromEntries(Object.entries((input.headers as Record<string, unknown>) || {}).filter(([key]) => !/^(host|content-length)$/i.test(key)).map(([key, value]) => [key, String(value)]));
+      const response = await fetch(url, { method: String(input.method || 'GET').toUpperCase(), headers, body: input.body == null ? undefined : JSON.stringify(input.body), signal: controller.signal, redirect: 'error' });
+      const chunks: Buffer[] = [];
+      let bytes = 0;
+      if (response.body) {
+        const reader = response.body.getReader();
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          const chunk = Buffer.from(value);
+          bytes += chunk.byteLength;
+          if (bytes > maxOutputBytes) { await reader.cancel(); throw Object.assign(new Error('响应超过大小限制'), { code: 'HTTP_RESPONSE_LIMIT' }); }
+          chunks.push(chunk);
+        }
+      }
+      return { url: new URL(url).origin, status: response.status, body: Buffer.concat(chunks).toString('utf8') };
+    } catch (error: any) {
+      if (timedOut || error?.name === 'AbortError') throw Object.assign(new Error('HTTP 请求超时'), { code: 'HTTP_TIMEOUT' });
+      throw error;
+    } finally { clearTimeout(timer); }
+  }
 }
 
 export class ContextService {

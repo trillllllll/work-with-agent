@@ -6,6 +6,10 @@ server/data.db
 server/data/
 server/prisma/*.db
 server/prisma/*.db-journal
+e2e/.data/*.db
+e2e/.data/*.db-journal
+test-results/
+playwright-report/
 .env
 *.log
 .DS_Store

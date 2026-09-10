@@ -31,7 +31,7 @@ export function App() {
 
   const topicsQuery = useQuery<Topic[]>({ queryKey: ['topics'], queryFn: () => api('/api/topics') });
   const topics = topicsQuery.data ?? [];
-  useEffect(() => { if (!selectedTopicId && topics[0]) setSelectedTopicId(topics[0].id); if (selectedTopicId && !topics.some((topic) => topic.id === selectedTopicId)) setSelectedTopicId(topics[0]?.id ?? ''); }, [topics, selectedTopicId]);
+  useEffect(() => { if (!selectedTopicId && topics[0]) setSelectedTopicId(topics[0].id); if (selectedTopicId && !topicsQuery.isFetching && !topics.some((topic) => topic.id === selectedTopicId)) setSelectedTopicId(topics[0]?.id ?? ''); }, [topics, selectedTopicId, topicsQuery.isFetching]);
   const selectedTopic = topics.find((topic) => topic.id === selectedTopicId);
   const topicDetail = useQuery<Topic>({ queryKey: ['topic', selectedTopicId], queryFn: () => api(`/api/topics/${selectedTopicId}`), enabled: Boolean(selectedTopicId) });
   const detail = topicDetail.data ?? selectedTopic;
@@ -39,7 +39,7 @@ export function App() {
   const trashQuery = useQuery<TrashTask[]>({ queryKey: ['trash', 'tasks'], queryFn: () => api('/api/trash/tasks') });
   const grouped = useMemo(() => Object.fromEntries(statuses.map(({ value }) => [value, (tasksQuery.data ?? []).filter((task) => task.status === value)])) as Record<Status, Task[]>, [tasksQuery.data]);
 
-  const invalidate = () => { queryClient.invalidateQueries({ queryKey: ['topics'] }); queryClient.invalidateQueries({ queryKey: ['tasks'] }); };
+  const invalidate = () => { queryClient.invalidateQueries({ queryKey: ['topics'] }); queryClient.invalidateQueries({ queryKey: ['tasks'] }); queryClient.invalidateQueries({ queryKey: ['trash', 'tasks'] }); };
   const summaryMutation = useMutation({ mutationFn: (action: 'confirm' | 'discard') => api(`/api/topics/${selectedTopicId}/summary/${action}`, { method: 'POST' }), onSuccess: (_data, action) => { queryClient.invalidateQueries({ queryKey: ['topic', selectedTopicId] }); queryClient.invalidateQueries({ queryKey: ['topics'] }); toast.success(action === 'confirm' ? '成果已确认' : '草稿已放弃'); }, onError: (e: Error) => notifyError(e.message) });
   const saveTopic = useMutation({ mutationFn: (form: any) => api(form.id ? `/api/topics/${form.id}` : '/api/topics', { method: form.id ? 'PATCH' : 'POST', body: JSON.stringify(form) }), onSuccess: (topic: Topic) => { setTopicForm(null); setSelectedTopicId(topic.id); invalidate(); toast.success(topicForm?.id ? '主题已更新' : '主题已创建'); if (!isDesktop) navigate('board'); }, onError: (e: Error) => notifyError(e.message) });
   const deleteTopic = useMutation({ mutationFn: (id: string) => api(`/api/topics/${id}`, { method: 'DELETE' }), onSuccess: () => { setDeleteConfirmation(null); setSelectedTopicId(''); invalidate(); toast.success('主题已删除'); }, onError: (e: Error) => { setDeleteConfirmation(null); notifyError(e.message); } });

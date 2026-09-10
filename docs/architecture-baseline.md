@@ -98,3 +98,13 @@ Agent 可以读取信息、分析和提出操作，但不能绕过业务模块�
 - HTTP 只允许 HTTP(S)，默认阻止回环、内网、云元数据和本地解析地址。
 - 外部执行结果写入会话和审核记录，但外部副作用不支持工作区撤销。
 - 执行工具与任务、主题变更使用不同的审计语义，避免把外部副作用误认为可恢复的数据变更。
+
+## 7. 本地验收命令
+
+- `npm test`：运行服务端和客户端单元/集成测试。
+- `npm run build`：构建服务端和客户端。为避免 Windows 下运行中的 Prisma DLL 文件锁，根构建不会自动重新生成 Prisma Client；修改 Schema 后先显式运行 `npm run prisma:generate`。
+- `npm run e2e`：先显式生成 Prisma Client，再使用独立 SQLite 数据库和本地 Mock OpenAI 服务运行 Chromium 桌面/移动端验收。测试数据库会在每条用例前清空，不会复用开发数据。
+- `npm run e2e:real`：仅在设置 `E2E_REAL_MODEL=1`、`E2E_MODEL_BASE_URL`、`E2E_MODEL_API_KEY` 和 `E2E_MODEL_NAME` 后运行真实模型冒烟测试。
+- `npm run test:all`：依次运行单元/集成测试和默认 Mock E2E 验收。
+
+CI 会显式运行 `npm run prisma:generate`。本地开发服务器运行期间不要重复生成 Prisma Client；如修改了 `server/prisma/schema.prisma`，应先停止服务、执行生成，再重新启动服务。

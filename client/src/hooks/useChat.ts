@@ -14,6 +14,7 @@ type UseChatOptions = {
 export function useChat({ selectedTopicId, view, onError }: UseChatOptions) {
   const queryClient = useQueryClient();
   const onErrorRef = useRef(onError);
+  const newConversationRef = useRef('');
   onErrorRef.current = onError;
   const [input, setInput] = useState('');
   const [conversationId, setConversationId] = useState<string>(() => localStorage.getItem('agent-studio.conversationId') ?? '');
@@ -22,14 +23,22 @@ export function useChat({ selectedTopicId, view, onError }: UseChatOptions) {
   const [busy, setBusy] = useState(false);
   const [interrupted, setInterrupted] = useState(false);
 
-  const invalidate = () => { queryClient.invalidateQueries({ queryKey: ['topics'] }); queryClient.invalidateQueries({ queryKey: ['tasks'] }); };
+  const invalidate = () => { queryClient.invalidateQueries({ queryKey: ['topics'] }); queryClient.invalidateQueries({ queryKey: ['topic'] }); queryClient.invalidateQueries({ queryKey: ['tasks'] }); };
 
   useEffect(() => {
     if (!conversationId) return;
     localStorage.setItem('agent-studio.conversationId', conversationId);
+    if (newConversationRef.current === conversationId) {
+      newConversationRef.current = '';
+      return;
+    }
     Promise.all([api(`/api/conversations/${conversationId}/messages`), api('/api/agent/approvals?status=pending')]).then(([history, pending]) => {
       setMessages(history.map((message: ChatMessage) => ({ id: message.id, role: message.role, content: message.content, status: message.status })));
-      setApprovals(pending.map(parseApproval));
+      setApprovals((current) => {
+        const merged = new Map(current.map((item) => [item.approvalId, item]));
+        pending.map(parseApproval).forEach((item: Approval) => merged.set(item.approvalId, item));
+        return [...merged.values()];
+      });
     }).catch((reason: Error) => onErrorRef.current(reason.message));
   }, [conversationId]);
 
@@ -56,7 +65,7 @@ export function useChat({ selectedTopicId, view, onError }: UseChatOptions) {
     let receivedError = false;
     try {
       await streamChat({ conversationId: conversationId || undefined, message, pageContext: { topicId: selectedTopicId || null, taskId: null, page: view } }, (event) => {
-        if (event.conversationId && event.conversationId !== conversationId) { setConversationId(event.conversationId); localStorage.setItem('agent-studio.conversationId', event.conversationId); }
+        if (event.conversationId && event.conversationId !== conversationId) { if (!conversationId) newConversationRef.current = event.conversationId; setConversationId(event.conversationId); localStorage.setItem('agent-studio.conversationId', event.conversationId); }
         setMessages((current) => applyMessageEvent(current, event));
         setApprovals((current) => applyApprovalEvent(current, event));
         if (event.type === 'error') { receivedError = true; onErrorRef.current(event.code ? `${event.message ?? '聊天失败'}（${event.code}）` : (event.message ?? '聊天失败')); }
