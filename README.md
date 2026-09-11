@@ -1,4 +1,4 @@
-# Agent Studio
+# Work With Agent
 
 ![CI](https://github.com/trillllllll/work-with-agent/actions/workflows/ci.yml/badge.svg)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)
@@ -17,7 +17,7 @@
 
 ### 项目简介
 
-Agent Studio 将 AI 对话和可视化工作区结合起来。你可以让 Agent 创建和整理主题、任务，生成摘要，执行受控的文件、Shell 或 HTTP 操作，并在操作前进行审批；所有关键变更都会留下可审计记录。
+Work With Agent 将 AI 对话和可视化工作区结合起来。你可以让 Agent 创建和整理主题、任务，生成摘要，执行受控的文件、Shell 或 HTTP 操作，并在操作前进行审批；所有关键变更都会留下可审计记录。
 
 ### 核心能力
 
@@ -44,7 +44,7 @@ Agent Studio 将 AI 对话和可视化工作区结合起来。你可以让 Agent
 
 ```bash
 git clone https://github.com/trillllllll/work-with-agent.git
-cd agent-studio
+cd work-with-agent
 npm install
 npm run prisma:generate
 npm run db:migrate
@@ -96,7 +96,7 @@ architecture.svg
 
 ### Overview
 
-Agent Studio combines AI conversation with a visual workspace for everyday work. Ask the agent to create and organize topics and tasks, generate summaries, or run controlled file, shell, and HTTP operations. Sensitive actions are paused for human approval, and important changes are recorded for auditability.
+Work With Agent combines AI conversation with a visual workspace for everyday work. Ask the agent to create and organize topics and tasks, generate summaries, or run controlled file, shell, and HTTP operations. Sensitive actions are paused for human approval, and important changes are recorded for auditability.
 
 ### Features
 
@@ -118,7 +118,7 @@ React 19, Vite, TypeScript, Tailwind CSS, TanStack Query, Node.js, Express 5, Zo
 
 ```bash
 git clone https://github.com/trillllllll/work-with-agent.git
-cd agent-studio
+cd work-with-agent
 npm install
 npm run prisma:generate
 npm run db:migrate
