@@ -1,6 +1,6 @@
 # Agent Studio
 
-![CI](https://github.com/your-org/agent-studio/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/trillllllll/work-with-agent/actions/workflows/ci.yml/badge.svg)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6.svg?logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB.svg?logo=react&logoColor=111827)
@@ -43,7 +43,7 @@ Agent Studio 将 AI 对话和可视化工作区结合起来。你可以让 Agent
 **环境要求**：Node.js 20+、npm 10+。
 
 ```bash
-git clone https://github.com/your-org/agent-studio.git
+git clone https://github.com/trillllllll/work-with-agent.git
 cd agent-studio
 npm install
 npm run prisma:generate
@@ -117,7 +117,7 @@ React 19, Vite, TypeScript, Tailwind CSS, TanStack Query, Node.js, Express 5, Zo
 **Requirements**: Node.js 20+ and npm 10+.
 
 ```bash
-git clone https://github.com/your-org/agent-studio.git
+git clone https://github.com/trillllllll/work-with-agent.git
 cd agent-studio
 npm install
 npm run prisma:generate
