@@ -34,7 +34,7 @@ export function SettingsView({ onBack }: { onBack?: () => void }) {
 
   if (settingsQuery.isLoading) {
     return (
-      <div className="h-full min-h-0 max-w-xl overflow-y-auto p-6 sm:p-8">
+      <div className="min-h-full max-w-2xl p-6 sm:p-8">
         <Skeleton className="h-8 w-40" />
         <Skeleton className="mt-6 h-10 w-full" />
         <Skeleton className="mt-4 h-10 w-full" />
@@ -44,7 +44,7 @@ export function SettingsView({ onBack }: { onBack?: () => void }) {
   }
   if (settingsQuery.isError) {
     return (
-      <div className="h-full min-h-0 overflow-y-auto p-6 sm:p-8">
+      <div className="min-h-full p-6 sm:p-8">
         <div className="flex max-w-xl items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <span>{settingsQuery.error instanceof Error ? settingsQuery.error.message : '设置加载失败'}</span>
           <Button size="sm" variant="outline" onClick={() => settingsQuery.refetch()}>重试</Button>
@@ -54,8 +54,8 @@ export function SettingsView({ onBack }: { onBack?: () => void }) {
   }
 
   return (
-    <div className="min-h-full max-w-xl p-4 pb-10 sm:p-7">
-      <header className="flex items-start justify-between gap-3 border-b pb-5">
+    <div className="min-h-full max-w-2xl p-5 pb-10 sm:p-8">
+      <header className="flex items-start justify-between gap-3 border-b border-black/[0.08] pb-5 dark:border-white/[0.1]">
         <div className="flex items-start gap-2">
           {onBack && (
             <Button variant="ghost" size="icon-sm" aria-label="返回" onClick={onBack}><ArrowLeft /></Button>
@@ -84,7 +84,7 @@ export function SettingsView({ onBack }: { onBack?: () => void }) {
           <Label htmlFor="settings-api-key">API Key</Label>
           <Input id="settings-api-key" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={settingsQuery.data?.apiKeyConfigured ? `已配置：${settingsQuery.data.apiKeyMasked}` : '请输入 API Key'} autoComplete="new-password" />
         </div>
-        <div className="mb-6 rounded-lg border bg-card px-3.5 py-2.5 text-xs text-muted-foreground">
+        <div className="mb-6 rounded-xl border border-black/[0.08] bg-white/35 px-3.5 py-2.5 text-xs text-muted-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.45)] dark:border-white/[0.1] dark:bg-white/[0.06] dark:shadow-[inset_0_1px_0_rgb(255_255_255/0.08)]">
           {settingsQuery.data?.apiKeyConfigured ? <>当前 Key：<code className="font-mono text-foreground">{settingsQuery.data.apiKeyMasked}</code></> : '当前尚未配置 API Key'}
         </div>
         <div className="flex flex-wrap items-center gap-2">
