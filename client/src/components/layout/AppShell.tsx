@@ -10,17 +10,14 @@ type AppShellProps = {
   board: ReactNode;
   chat: ReactNode;
   topics: ReactNode;
-  settings: ReactNode;
-  trash: ReactNode;
-  changes: ReactNode;
 };
 
-export function AppShell({ route, isDesktop, navigate, sidebar, board, chat, topics, settings, trash, changes }: AppShellProps) {
+export function AppShell({ route, isDesktop, navigate, sidebar, board, chat, topics }: AppShellProps) {
   if (isDesktop) {
     return (
       <div className="grid h-dvh grid-cols-[240px_minmax(0,1fr)_380px] overflow-hidden">
         {sidebar}
-        <section className="min-h-0 min-w-0 overflow-y-auto bg-background">{route === 'settings' ? settings : route === 'trash' ? trash : route === 'changes' ? changes : board}</section>
+        <section className="min-h-0 min-w-0 overflow-y-auto bg-background">{board}</section>
         <aside className="min-h-0 border-l bg-card">{chat}</aside>
       </div>
     );
@@ -28,7 +25,7 @@ export function AppShell({ route, isDesktop, navigate, sidebar, board, chat, top
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
       <div className="min-h-0 flex-1 overflow-hidden">
-        {route === 'chat' ? chat : route === 'topics' ? topics : route === 'settings' ? settings : route === 'trash' ? trash : route === 'changes' ? changes : board}
+        {route === 'chat' ? chat : route === 'topics' ? topics : board}
       </div>
       <MobileTabBar route={route} navigate={navigate} />
     </div>

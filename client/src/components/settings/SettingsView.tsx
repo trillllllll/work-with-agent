@@ -34,7 +34,7 @@ export function SettingsView({ onBack }: { onBack?: () => void }) {
 
   if (settingsQuery.isLoading) {
     return (
-      <div className="max-w-xl p-6 sm:p-8">
+      <div className="h-full min-h-0 max-w-xl overflow-y-auto p-6 sm:p-8">
         <Skeleton className="h-8 w-40" />
         <Skeleton className="mt-6 h-10 w-full" />
         <Skeleton className="mt-4 h-10 w-full" />
@@ -44,7 +44,7 @@ export function SettingsView({ onBack }: { onBack?: () => void }) {
   }
   if (settingsQuery.isError) {
     return (
-      <div className="p-6 sm:p-8">
+      <div className="h-full min-h-0 overflow-y-auto p-6 sm:p-8">
         <div className="flex max-w-xl items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <span>{settingsQuery.error instanceof Error ? settingsQuery.error.message : '设置加载失败'}</span>
           <Button size="sm" variant="outline" onClick={() => settingsQuery.refetch()}>重试</Button>
@@ -54,7 +54,7 @@ export function SettingsView({ onBack }: { onBack?: () => void }) {
   }
 
   return (
-    <div className="max-w-xl p-4 pb-10 sm:p-7">
+    <div className="min-h-full max-w-xl p-4 pb-10 sm:p-7">
       <header className="flex items-start justify-between gap-3 border-b pb-5">
         <div className="flex items-start gap-2">
           {onBack && (

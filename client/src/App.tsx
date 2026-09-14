@@ -16,6 +16,7 @@ import { SettingsView } from './components/settings/SettingsView.js';
 import { ConfirmDialog } from './components/dialogs/ConfirmDialog.js';
 import { TrashPage } from './components/trash/TrashPage.js';
 import { ChangesPage } from './components/changes/ChangesPage.js';
+import { WorkspaceModal, type WorkspaceModalView } from './components/workspace/WorkspaceModal.js';
 
 export function App() {
   const queryClient = useQueryClient();
@@ -48,6 +49,10 @@ export function App() {
   const deleteTask = useMutation({ mutationFn: (id: string) => api(`/api/tasks/${id}`, { method: 'DELETE' }), onSuccess: () => { setDeleteConfirmation(null); invalidate(); toast.success('任务已删除'); }, onError: (e: Error) => { setDeleteConfirmation(null); notifyError(e.message); } });
   const restoreTask = useMutation({ mutationFn: (id: string) => api(`/api/trash/tasks/${id}/restore`, { method: 'POST' }), onSuccess: () => { setDeleteConfirmation(null); invalidate(); queryClient.invalidateQueries({ queryKey: ['trash', 'tasks'] }); toast.success('任务已恢复'); }, onError: (e: Error) => notifyError(e.message) });
   const permanentDeleteTask = useMutation({ mutationFn: (id: string) => api(`/api/trash/tasks/${id}/permanent`, { method: 'DELETE' }), onSuccess: () => { setDeleteConfirmation(null); queryClient.invalidateQueries({ queryKey: ['trash', 'tasks'] }); toast.success('任务已永久删除'); }, onError: (e: Error) => { setDeleteConfirmation(null); notifyError(e.message); } });
+
+  const workspaceModalView: WorkspaceModalView | null = route === 'settings' || route === 'trash' || route === 'changes' ? route : null;
+  const closeWorkspaceModal = () => navigate('board');
+  const openWorkspaceModal = (view: WorkspaceModalView) => navigate(view);
 
   const openNewTopic = () => setTopicForm({ name: '', description: '', isExploration: true });
   const openNewTask = () => setTaskForm({ title: '', description: '', resultSummary: '' });
@@ -103,10 +108,17 @@ export function App() {
             onOpenSettings={() => navigate('settings')}
           />
         }
-        settings={<SettingsView onBack={isDesktop ? undefined : () => navigate('topics')} />}
-        trash={<TrashPage tasks={trashQuery.data ?? []} loading={trashQuery.isLoading} onRestore={(task) => restoreTask.mutate(task.id)} onPermanentDelete={(task) => setDeleteConfirmation({ kind: 'trash', id: task.id, name: task.title })} />}
-        changes={<ChangesPage />}
       />
+      {workspaceModalView && (
+        <WorkspaceModal
+          view={workspaceModalView}
+          onViewChange={openWorkspaceModal}
+          onClose={closeWorkspaceModal}
+          settings={<SettingsView />}
+          trash={<TrashPage tasks={trashQuery.data ?? []} loading={trashQuery.isLoading} onRestore={(task) => restoreTask.mutate(task.id)} onPermanentDelete={(task) => setDeleteConfirmation({ kind: 'trash', id: task.id, name: task.title })} />}
+          changes={<ChangesPage />}
+        />
+      )}
       {topicForm && <TopicModal form={topicForm} onChange={setTopicForm} onClose={() => setTopicForm(null)} onSave={() => saveTopic.mutate(topicForm)} busy={saveTopic.isPending} />}
       {taskForm && <TaskModal form={taskForm} onChange={setTaskForm} onClose={() => setTaskForm(null)} onSave={() => saveTask.mutate(taskForm)} busy={saveTask.isPending} />}
       {deleteConfirmation && <ConfirmDialog title={deleteConfirmation.kind === 'topic' ? '删除主题' : deleteConfirmation.kind === 'trash' ? '永久删除任务' : '删除任务'} itemName={deleteConfirmation.name} description={deleteConfirmation.kind === 'topic' ? '删除前请确认该主题不再需要。非空主题会被系统拒绝删除。' : deleteConfirmation.kind === 'trash' ? '永久删除后无法恢复该任务，请确认继续。' : '删除后任务会移入回收站。'} busy={deleteTopic.isPending || deleteTask.isPending || permanentDeleteTask.isPending} onCancel={() => setDeleteConfirmation(null)} onConfirm={() => deleteConfirmation.kind === 'topic' ? deleteTopic.mutate(deleteConfirmation.id) : deleteConfirmation.kind === 'trash' ? permanentDeleteTask.mutate(deleteConfirmation.id) : deleteTask.mutate(deleteConfirmation.id)} />}
