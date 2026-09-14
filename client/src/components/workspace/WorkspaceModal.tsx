@@ -28,7 +28,7 @@ export function WorkspaceModal({ view, onViewChange, onClose, settings, trash, c
       <DialogContent
         showCloseButton
         overlayClassName="bg-black/30 backdrop-blur-md"
-        className="flex h-[75dvh] w-full max-w-[900px] flex-col gap-0 overflow-hidden p-0 max-md:inset-0 max-md:h-dvh max-md:max-h-none max-md:max-w-none max-md:translate-x-0 max-md:translate-y-0 max-md:rounded-none"
+        className="flex h-[75dvh] w-[calc(100vw-2rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:w-[calc(100vw-4rem)] sm:max-w-[900px] sm:!max-w-[900px] max-md:inset-0 max-md:h-dvh max-md:w-full max-md:max-h-none max-md:translate-x-0 max-md:translate-y-0 max-md:rounded-none"
       >
         <DialogHeader className="sr-only">
           <DialogTitle>工作区</DialogTitle>
