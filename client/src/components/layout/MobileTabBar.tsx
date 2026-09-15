@@ -17,7 +17,7 @@ const tabs: { view: View; label: string; icon: typeof SquareKanban }[] = [
 
 export function MobileTabBar({ route, navigate }: MobileTabBarProps) {
   return (
-    <nav className="grid shrink-0 grid-cols-5 border-t bg-card pb-[env(safe-area-inset-bottom)]" aria-label="主导航">
+    <nav className="glass-surface grid shrink-0 grid-cols-5 border-x-0 border-b-0 rounded-none pb-[env(safe-area-inset-bottom)]" aria-label="主导航">
       {tabs.map(({ view, label, icon: Icon }) => {
         const active = route === view;
         return (
@@ -26,7 +26,7 @@ export function MobileTabBar({ route, navigate }: MobileTabBarProps) {
             type="button"
             aria-current={active ? 'page' : undefined}
             onClick={() => navigate(view)}
-            className={cn('flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors', active ? 'text-primary' : 'text-muted-foreground')}
+            className={cn('flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60', active ? 'text-primary' : 'text-muted-foreground')}
           >
             <Icon className="size-5" strokeWidth={active ? 2.4 : 1.8} />
             {label}

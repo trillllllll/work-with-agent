@@ -11,7 +11,7 @@ export function SummaryPanel({ detail, busy = false, onConfirm }: SummaryPanelPr
   if (!detail) return null;
   if (detail.draftSummary) {
     return (
-      <section className="my-4 rounded-lg border border-warning-border bg-warning-bg p-4 text-sm">
+      <section className="my-4 rounded-2xl border border-warning-border bg-warning-bg/75 p-4 text-sm shadow-[inset_0_1px_0_rgb(255_255_255/0.35)]">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <strong className="text-warning">成果草稿</strong>
@@ -29,7 +29,7 @@ export function SummaryPanel({ detail, busy = false, onConfirm }: SummaryPanelPr
   }
   if (detail.finalSummary) {
     return (
-      <section className="my-4 rounded-lg border border-success-border bg-success-bg p-4 text-sm">
+      <section className="my-4 rounded-2xl border border-success-border bg-success-bg/75 p-4 text-sm shadow-[inset_0_1px_0_rgb(255_255_255/0.35)]">
         <strong className="text-success">正式成果</strong>
         <p className="mt-2 leading-relaxed whitespace-pre-wrap">{detail.finalSummary}</p>
         {detail.summaryUpdatedAt && <small className="mt-2 block text-xs text-muted-foreground">已确认：{new Date(detail.summaryUpdatedAt).toLocaleString()}</small>}

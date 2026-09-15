@@ -55,7 +55,7 @@ export function SettingsView({ onBack }: { onBack?: () => void }) {
 
   return (
     <div className="min-h-full max-w-2xl p-5 pb-10 sm:p-8">
-      <header className="flex items-start justify-between gap-3 border-b border-black/[0.08] pb-5 dark:border-white/[0.1]">
+      <header className="flex items-start justify-between gap-3 border-b glass-divider pb-5">
         <div className="flex items-start gap-2">
           {onBack && (
             <Button variant="ghost" size="icon-sm" aria-label="返回" onClick={onBack}><ArrowLeft /></Button>
@@ -84,7 +84,7 @@ export function SettingsView({ onBack }: { onBack?: () => void }) {
           <Label htmlFor="settings-api-key">API Key</Label>
           <Input id="settings-api-key" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={settingsQuery.data?.apiKeyConfigured ? `已配置：${settingsQuery.data.apiKeyMasked}` : '请输入 API Key'} autoComplete="new-password" />
         </div>
-        <div className="mb-6 rounded-xl border border-black/[0.08] bg-white/35 px-3.5 py-2.5 text-xs text-muted-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.45)] dark:border-white/[0.1] dark:bg-white/[0.06] dark:shadow-[inset_0_1px_0_rgb(255_255_255/0.08)]">
+        <div className="glass-subtle mb-6 rounded-xl px-3.5 py-2.5 text-xs text-muted-foreground">
           {settingsQuery.data?.apiKeyConfigured ? <>当前 Key：<code className="font-mono text-foreground">{settingsQuery.data.apiKeyMasked}</code></> : '当前尚未配置 API Key'}
         </div>
         <div className="flex flex-wrap items-center gap-2">

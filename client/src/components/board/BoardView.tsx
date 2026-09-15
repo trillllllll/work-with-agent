@@ -24,7 +24,7 @@ type BoardViewProps = {
 export function BoardView({ detail, hasTopic, grouped, tasksLoading, summaryBusy, onNewTopic, onNewTask, onDeleteTopic, onEditTask, onDeleteTask, onUpdateTaskStatus, onConfirmSummary, onOpenSettings }: BoardViewProps) {
   return (
     <div className="p-4 pb-10 sm:p-7">
-      <header className="flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-start sm:justify-between">
+      <header className="flex flex-col gap-4 border-b glass-divider pb-5 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <span className="text-[11px] font-bold tracking-[0.13em] text-muted-foreground uppercase">任务管理</span>
           <h1 className="mt-2 text-2xl leading-tight font-semibold tracking-tight">{detail?.name ?? '选择一个主题'}</h1>

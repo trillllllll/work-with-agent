@@ -76,7 +76,7 @@ export function WorkspaceModal({ view, onViewChange, onClose, settings, trash, c
         </nav>
 
         <section className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-white/15 dark:bg-black/10">
-          <div className="h-full min-h-0 overflow-y-auto overscroll-contain [scrollbar-color:rgb(100_116_139/0.35)_transparent] [scrollbar-width:thin]">{content}</div>
+          <div className="glass-scrollbar h-full min-h-0 overflow-y-auto overscroll-contain">{content}</div>
         </section>
       </DialogContent>
     </Dialog>

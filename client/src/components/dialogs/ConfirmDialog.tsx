@@ -13,7 +13,7 @@ type ConfirmDialogProps = {
 export function ConfirmDialog({ title, itemName, description, busy = false, onCancel, onConfirm }: ConfirmDialogProps) {
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !busy) onCancel(); }}>
-      <DialogContent showCloseButton={false} className="max-md:max-w-[calc(100vw-2rem)]">
+      <DialogContent showCloseButton={false} surface="glass" className="max-md:max-w-[calc(100vw-2rem)]">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>

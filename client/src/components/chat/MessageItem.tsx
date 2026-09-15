@@ -19,8 +19,8 @@ export function MessageItem({ message }: { message: ChatMessage }) {
   return (
     <div
       className={cn(
-        'rounded-md px-3 py-2.5',
-        role === 'user' && 'border-l-2 border-primary bg-accent/70',
+        'rounded-xl px-3 py-2.5',
+        role === 'user' && 'border-l-2 border-primary/60 bg-primary/[0.08]',
         failed && 'border-l-2 border-destructive/50 bg-destructive/10',
         (role === 'tool' || role === 'system') && 'bg-transparent px-1 py-1.5'
       )}
@@ -30,7 +30,7 @@ export function MessageItem({ message }: { message: ChatMessage }) {
       </span>
       {(role === 'tool' || role === 'system') && !streaming ? (
         looksLikeJson(content) ? (
-          <pre className="overflow-x-auto rounded-md bg-muted p-2.5 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap">{content}</pre>
+          <pre className="glass-subtle overflow-x-auto rounded-lg p-2.5 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap">{content}</pre>
         ) : (
           <p className="text-xs leading-relaxed text-muted-foreground">{content}</p>
         )

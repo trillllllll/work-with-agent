@@ -37,7 +37,7 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 z-50 bg-black/50 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
+        "fixed inset-0 z-50 bg-slate-950/25 backdrop-blur-sm backdrop-saturate-125 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 dark:bg-black/40",
         className
       )}
       {...props}
@@ -52,12 +52,14 @@ function DialogContent({
   overlayClassName,
   closeButtonClassName,
   motion = "default",
+  surface = "default",
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
   overlayClassName?: string
   closeButtonClassName?: string
   motion?: "default" | "none"
+  surface?: "default" | "glass"
 }) {
   return (
     <DialogPortal data-slot="dialog-portal">
@@ -66,6 +68,7 @@ function DialogContent({
         data-slot="dialog-content"
         className={cn(
           "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200 outline-none",
+          surface === "glass" && "glass-surface rounded-2xl bg-[var(--glass-bg-strong)] shadow-[0_24px_80px_-28px_rgb(15_23_42/0.42),0_8px_28px_-16px_rgb(15_23_42/0.25)] dark:shadow-[0_24px_80px_-28px_rgb(0_0_0/0.72),0_8px_28px_-16px_rgb(0_0_0/0.45)]",
           motion === "default" && "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
           className
         )}

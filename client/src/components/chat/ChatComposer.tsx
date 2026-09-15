@@ -25,7 +25,7 @@ export function ChatComposer({ input, busy, onChange, onSend }: ChatComposerProp
     }
   };
   return (
-    <form className="flex shrink-0 items-end gap-2 border-t p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]" onSubmit={onSend}>
+    <form className="flex shrink-0 items-end gap-2 border-t glass-divider p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]" onSubmit={onSend}>
       <Textarea
         ref={textareaRef}
         value={input}

@@ -15,16 +15,16 @@ type AppShellProps = {
 export function AppShell({ route, isDesktop, navigate, sidebar, board, chat, topics }: AppShellProps) {
   if (isDesktop) {
     return (
-      <div className="grid h-dvh grid-cols-[240px_minmax(0,1fr)_380px] overflow-hidden">
+      <div className="grid h-dvh grid-cols-[240px_minmax(0,1fr)_380px] overflow-hidden bg-background">
         {sidebar}
-        <section className="min-h-0 min-w-0 overflow-y-auto bg-background">{board}</section>
-        <aside className="min-h-0 border-l bg-card">{chat}</aside>
+        <section className="min-h-0 min-w-0 overflow-y-auto bg-background/80 glass-scrollbar">{board}</section>
+        <aside className="min-h-0 border-l glass-divider bg-[var(--glass-subtle)]">{chat}</aside>
       </div>
     );
   }
   return (
-    <div className="flex h-dvh flex-col overflow-hidden">
-      <div className="min-h-0 flex-1 overflow-hidden">
+    <div className="flex h-dvh flex-col overflow-hidden bg-background">
+      <div className="glass-scrollbar min-h-0 flex-1 overflow-y-auto">
         {route === 'chat' ? chat : route === 'topics' ? topics : board}
       </div>
       <MobileTabBar route={route} navigate={navigate} />

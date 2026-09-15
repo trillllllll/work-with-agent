@@ -35,7 +35,7 @@ export function ApprovalCard({ approval, pending, onApprove, onReject }: { appro
   );
 
   return (
-    <div className="rounded-lg border border-warning-border bg-warning-bg p-3">
+    <div className="glass-subtle rounded-xl border-warning-border bg-warning-bg/75 p-3">
       <div className="flex items-center gap-2">
         <TriangleAlert className="size-3.5 shrink-0 text-warning" />
         <span className="text-[11px] font-bold tracking-[0.06em] text-warning uppercase">需要审核</span>

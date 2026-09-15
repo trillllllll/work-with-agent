@@ -11,8 +11,8 @@ type FormDialogProps = {
 export function FormDialog({ title, description, onClose, children }: FormDialogProps) {
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="gap-0 overflow-hidden p-0 max-md:top-auto max-md:bottom-0 max-md:left-0 max-md:max-h-[85dvh] max-md:translate-x-0 max-md:translate-y-0 max-md:rounded-t-xl max-md:rounded-b-none sm:max-w-lg">
-        <DialogHeader className="border-b px-5 py-4">
+      <DialogContent surface="glass" className="gap-0 overflow-hidden p-0 max-md:top-auto max-md:bottom-0 max-md:left-0 max-md:max-h-[85dvh] max-md:translate-x-0 max-md:translate-y-0 max-md:rounded-t-2xl max-md:rounded-b-none sm:max-w-lg">
+        <DialogHeader className="border-b glass-divider px-5 py-4">
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>

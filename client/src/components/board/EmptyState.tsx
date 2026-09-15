@@ -15,7 +15,7 @@ export function EmptyState({ icon, title, description, actionLabel, onAction, se
   return (
     <div className="grid min-h-[55vh] place-items-center py-16 text-center">
       <div>
-        <div className="mx-auto grid size-14 place-items-center rounded-xl border border-primary/15 bg-accent text-primary">
+        <div className="glass-subtle mx-auto grid size-14 place-items-center rounded-2xl border-primary/15 text-primary">
           {icon ?? <Sparkles className="size-6" />}
         </div>
         <h2 className="mt-4 text-xl font-semibold tracking-tight">{title}</h2>

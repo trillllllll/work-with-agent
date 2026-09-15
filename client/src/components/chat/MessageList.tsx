@@ -40,10 +40,10 @@ export function MessageList({ messages, approvals, approvalPending, onApprove, o
 
   return (
     <div className="relative min-h-0 flex-1">
-      <div ref={scrollRef} onScroll={handleScroll} className="h-full overflow-y-auto overscroll-contain px-3 py-3">
+      <div ref={scrollRef} onScroll={handleScroll} className="glass-scrollbar h-full overflow-y-auto overscroll-contain px-3 py-3">
         {!messages.length && !approvals.length && (
           <div className="flex flex-col items-center px-6 py-16 text-center">
-            <div className="grid size-12 place-items-center rounded-xl border border-primary/15 bg-accent text-primary">
+            <div className="glass-subtle grid size-12 place-items-center rounded-2xl border-primary/15 text-primary">
               <Sparkles className="size-5" />
             </div>
             <p className="mt-4 max-w-xs text-[13px] leading-relaxed text-muted-foreground">

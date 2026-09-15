@@ -22,7 +22,7 @@ type SidebarProps = {
 
 export function Sidebar({ topics, topicsLoading, selectedTopicId, onSelectTopic, onNewTopic, onEditTopic, settingsActive, onToggleSettings, trashActive, onOpenTrash, changesActive, onOpenChanges }: SidebarProps) {
   return (
-    <aside className="flex h-full min-h-0 flex-col border-r bg-card px-3 pt-5 pb-4">
+    <aside className="glass-surface flex h-full min-h-0 flex-col border-y-0 border-l-0 rounded-none px-3 pt-5 pb-4">
       <div className="mb-7 flex items-center gap-2.5 px-2">
         <span className="grid size-8 place-items-center rounded-lg bg-foreground text-sm font-extrabold text-background">A</span>
         <div>
@@ -37,7 +37,7 @@ export function Sidebar({ topics, topicsLoading, selectedTopicId, onSelectTopic,
       <div className="min-h-0 flex-1 overflow-y-auto">
         <TopicList topics={topics} loading={topicsLoading} selectedTopicId={selectedTopicId} onSelect={onSelectTopic} onEdit={onEditTopic} />
       </div>
-      <div className="mt-auto border-t pt-3">
+      <div className="glass-divider mt-auto border-t pt-3">
         <button type="button" onClick={onOpenTrash} className={cn('mb-1 flex h-9 w-full items-center gap-2 rounded-md px-2 text-xs transition-colors', trashActive ? 'bg-accent font-bold text-accent-foreground' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground')}><Trash2 className="size-3.5" />回收站</button>
         <button type="button" onClick={onOpenChanges} className={cn('mb-1 flex h-9 w-full items-center gap-2 rounded-md px-2 text-xs transition-colors', changesActive ? 'bg-accent font-bold text-accent-foreground' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground')}><History className="size-3.5" />变更历史</button>
         <div className="flex items-center gap-1">

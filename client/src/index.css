@@ -37,6 +37,17 @@
   --explore: hsl(262 42% 51%);
   --explore-bg: hsl(258 100% 97%);
   --explore-border: hsl(260 55% 90%);
+
+  /* 轻透玻璃语义令牌 */
+  --glass-bg: rgb(255 255 255 / 0.68);
+  --glass-bg-strong: rgb(255 255 255 / 0.82);
+  --glass-subtle: rgb(255 255 255 / 0.42);
+  --glass-control: rgb(255 255 255 / 0.52);
+  --glass-hover: rgb(255 255 255 / 0.68);
+  --glass-border: rgb(15 23 42 / 0.09);
+  --glass-highlight: rgb(255 255 255 / 0.72);
+  --glass-shadow: 0 12px 30px -22px rgb(15 23 42 / 0.32), inset 0 1px 0 var(--glass-highlight);
+  --glass-divider: rgb(15 23 42 / 0.075);
 }
 
 .dark {
@@ -73,6 +84,16 @@
   --explore: hsl(262 75% 78%);
   --explore-bg: hsl(260 40% 15%);
   --explore-border: hsl(260 30% 27%);
+
+  --glass-bg: rgb(30 36 48 / 0.68);
+  --glass-bg-strong: rgb(35 42 56 / 0.82);
+  --glass-subtle: rgb(255 255 255 / 0.055);
+  --glass-control: rgb(255 255 255 / 0.075);
+  --glass-hover: rgb(255 255 255 / 0.12);
+  --glass-border: rgb(255 255 255 / 0.11);
+  --glass-highlight: rgb(255 255 255 / 0.13);
+  --glass-shadow: 0 14px 34px -24px rgb(0 0 0 / 0.72), inset 0 1px 0 var(--glass-highlight);
+  --glass-divider: rgb(255 255 255 / 0.09);
 }
 
 @theme inline {
@@ -124,6 +145,64 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-synthesis: none;
+    overflow-x: hidden;
+  }
+}
+
+@layer components {
+  .glass-surface {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+    backdrop-filter: blur(18px) saturate(135%);
+  }
+
+  .glass-subtle {
+    background: var(--glass-subtle);
+    border: 1px solid var(--glass-border);
+    box-shadow: inset 0 1px 0 var(--glass-highlight);
+    backdrop-filter: blur(14px) saturate(125%);
+  }
+
+  .glass-control {
+    background: var(--glass-control);
+    border: 1px solid var(--glass-border);
+    box-shadow: inset 0 1px 0 var(--glass-highlight);
+    backdrop-filter: blur(12px) saturate(125%);
+  }
+
+  .glass-divider {
+    border-color: var(--glass-divider);
+  }
+
+  .glass-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(100 116 139 / 0.35) transparent;
+  }
+
+  .glass-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .glass-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .glass-scrollbar::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgb(100 116 139 / 0.3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 
