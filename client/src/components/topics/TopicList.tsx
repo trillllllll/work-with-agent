@@ -35,7 +35,7 @@ export function TopicList({ topics, loading, selectedTopicId, onSelect, onEdit, 
           <button type="button" onClick={() => onSelect(topic.id)} className={cn('flex min-h-11 min-w-0 flex-1 items-center gap-2.5 px-2.5 text-left text-[13px] transition-colors lg:min-h-9', topic.id === selectedTopicId ? 'font-semibold text-primary' : 'text-foreground/75 hover:text-foreground')}>
             <span className={cn('size-1.5 shrink-0 rounded-full', topic.id === selectedTopicId ? 'bg-primary' : 'bg-muted-foreground/40')} />
             <span className="truncate">{topic.name}</span>
-            {topic.isExploration && <em className="ml-auto rounded-sm border border-explore-border bg-explore-bg px-1.5 py-0.5 text-[10px] not-italic text-explore">探索</em>}
+            {topic.isExploration && <em className="ml-auto flex w-10 shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-explore-border bg-explore-bg px-1.5 py-0.5 text-[10px] not-italic text-explore">探索</em>}
           </button>
           <button type="button" title="编辑主题" aria-label={`编辑主题：${topic.name}`} onClick={() => onEdit(topic)} className="mr-1 grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-[var(--glass-hover)] hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100">
             <Pencil className="size-3.5" />
