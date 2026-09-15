@@ -5,6 +5,7 @@ import { MobileTabBar } from './MobileTabBar.js';
 type AppShellProps = {
   route: View;
   isDesktop: boolean;
+  chatOpen: boolean;
   navigate: (view: View) => void;
   sidebar: ReactNode;
   board: ReactNode;
@@ -12,13 +13,14 @@ type AppShellProps = {
   topics: ReactNode;
 };
 
-export function AppShell({ route, isDesktop, navigate, sidebar, board, chat, topics }: AppShellProps) {
+export function AppShell({ route, isDesktop, chatOpen, navigate, sidebar, board, chat, topics }: AppShellProps) {
   if (isDesktop) {
+    const desktopGridClass = chatOpen ? 'grid-cols-[240px_minmax(0,1fr)_380px]' : 'grid-cols-[240px_minmax(0,1fr)]';
     return (
-      <div className="grid h-dvh grid-cols-[240px_minmax(0,1fr)_380px] overflow-hidden bg-background">
+      <div className={`grid h-dvh ${desktopGridClass} overflow-hidden bg-background`}>
         {sidebar}
         <section className="min-h-0 min-w-0 overflow-y-auto bg-background/80 glass-scrollbar">{board}</section>
-        <aside className="min-h-0 border-l glass-divider bg-[var(--glass-subtle)]">{chat}</aside>
+        {chatOpen && <aside className="min-h-0 border-l glass-divider bg-[var(--glass-subtle)]">{chat}</aside>}
       </div>
     );
   }

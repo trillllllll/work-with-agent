@@ -1,4 +1,4 @@
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, X } from 'lucide-react';
 import { useChat } from '@/hooks/useChat.js';
 import { cn } from '@/lib/utils.js';
 import { Badge } from '@/components/ui/badge.js';
@@ -8,9 +8,10 @@ import { ChatComposer } from './ChatComposer.js';
 
 type ChatPanelProps = {
   chat: ReturnType<typeof useChat>;
+  onClose: () => void;
 };
 
-export function ChatPanel({ chat }: ChatPanelProps) {
+export function ChatPanel({ chat, onClose }: ChatPanelProps) {
   const { messages, approvals, busy, interrupted, input, setInput, send, retry, approve, reject } = chat;
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -20,16 +21,21 @@ export function ChatPanel({ chat }: ChatPanelProps) {
             <span className="text-[11px] font-bold tracking-[0.13em] text-muted-foreground uppercase">协作空间</span>
             <h2 className="mt-1 text-lg leading-tight font-semibold tracking-tight">全局聊天</h2>
           </div>
-          {busy ? (
-            <Badge variant="secondary" className="gap-1.5">
-              <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-              处理中…
-            </Badge>
-          ) : interrupted ? (
-            <Badge variant="destructive">连接中断</Badge>
-          ) : (
-            <Badge variant="outline">可用</Badge>
-          )}
+          <div className="flex shrink-0 items-center gap-2">
+            {busy ? (
+              <Badge variant="secondary" className="gap-1.5">
+                <span className="size-1.5 animate-pulse rounded-full bg-primary" />
+                处理中…
+              </Badge>
+            ) : interrupted ? (
+              <Badge variant="destructive">连接中断</Badge>
+            ) : (
+              <Badge variant="outline">可用</Badge>
+            )}
+            <Button variant="ghost" size="icon-sm" title="关闭聊天" aria-label="关闭聊天" onClick={onClose}>
+              <X />
+            </Button>
+          </div>
         </div>
       </header>
 

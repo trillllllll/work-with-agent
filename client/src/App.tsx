@@ -23,6 +23,7 @@ export function App() {
   const { route, navigate } = useHashRoute();
   const isDesktop = useMediaQuery('(min-width: 1024px)');
   const [selectedTopicId, setSelectedTopicId] = useState('');
+  const [chatOpen, setChatOpen] = useState(true);
   const [topicForm, setTopicForm] = useState<any>(null);
   const [taskForm, setTaskForm] = useState<any>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState<{ kind: 'topic' | 'task' | 'trash'; id: string; name: string } | null>(null);
@@ -53,6 +54,7 @@ export function App() {
   const workspaceModalView: WorkspaceModalView | null = route === 'settings' || route === 'trash' || route === 'changes' ? route : null;
   const closeWorkspaceModal = () => navigate('board');
   const openWorkspaceModal = (view: WorkspaceModalView) => navigate(view);
+  const closeChat = () => { if (isDesktop) setChatOpen(false); else navigate('board'); };
 
   const openNewTopic = () => setTopicForm({ name: '', description: '', isExploration: true });
   const openNewTask = () => setTaskForm({ title: '', description: '', resultSummary: '' });
@@ -94,9 +96,12 @@ export function App() {
             onUpdateTaskStatus={(id, status) => updateTask.mutate({ id, status })}
             onConfirmSummary={(action) => summaryMutation.mutate(action)}
             onOpenSettings={() => navigate('settings')}
+            showOpenChat={!chatOpen && isDesktop}
+            onOpenChat={() => setChatOpen(true)}
           />
         }
-        chat={<ChatPanel chat={chat} />}
+        chatOpen={chatOpen}
+        chat={<ChatPanel chat={chat} onClose={closeChat} />}
         topics={
           <TopicListPage
             topics={topics}

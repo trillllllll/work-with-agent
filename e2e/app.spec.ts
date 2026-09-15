@@ -172,6 +172,55 @@ test.describe('Agent 工作室 MVP', () => {
     await expect(page.getByText('模型服务返回了无效的连接测试结果')).toBeVisible();
   });
 
+  test('桌面端聊天栏可关闭并从看板重新打开', async ({ page, isMobile }) => {
+    test.skip(Boolean(isMobile), '聊天栏桌面布局在桌面视口验收');
+    await page.goto('/#/board');
+
+    const chatHeading = page.getByRole('heading', { name: '全局聊天' });
+    const boardSection = page.locator('section').first();
+    await expect(chatHeading).toBeVisible();
+    await expect(page.getByRole('button', { name: '关闭聊天' })).toBeVisible();
+    const composer = page.getByPlaceholder(composerPlaceholder);
+    await composer.fill('关闭后仍然保留');
+    const boardWidthBeforeClose = (await boardSection.boundingBox())?.width;
+    expect(boardWidthBeforeClose).toBeGreaterThan(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+
+    await page.getByRole('button', { name: '关闭聊天' }).click();
+    await expect(chatHeading).toBeHidden();
+    await expect(page.getByRole('button', { name: '打开聊天' })).toBeVisible();
+    const boardWidthAfterClose = (await boardSection.boundingBox())?.width;
+    expect(boardWidthAfterClose).toBeGreaterThan(boardWidthBeforeClose!);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+
+    await page.getByRole('button', { name: '打开聊天' }).click();
+    await expect(chatHeading).toBeVisible();
+    await expect(page.getByRole('button', { name: '关闭聊天' })).toBeVisible();
+    await expect(composer).toHaveValue('关闭后仍然保留');
+  });
+
+  test('移动端关闭聊天返回看板并可从底部导航重新进入', async ({ page, isMobile }) => {
+    test.skip(!isMobile, '聊天栏移动布局在移动视口验收');
+    await page.goto('/#/chat');
+
+    const chatHeading = page.getByRole('heading', { name: '全局聊天' });
+    await expect(chatHeading).toBeVisible();
+    await expect(page.getByRole('button', { name: '关闭聊天' })).toBeVisible();
+
+    await page.getByRole('button', { name: '关闭聊天' }).click();
+    await expect(page).toHaveURL(/#\/(?:board)?$/);
+    await expect(chatHeading).toBeHidden();
+    await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '看板' })).toHaveAttribute('aria-current', 'page');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+
+    await page.getByRole('button', { name: '聊天' }).click();
+    await expect(page).toHaveURL(/#\/chat$/);
+    await expect(chatHeading).toBeVisible();
+    await expect(page.getByRole('button', { name: '关闭聊天' })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+  });
+
   test('移动端底部导航、横向看板和审核按钮均保持在视口内', async ({ page, isMobile, request }) => {
     test.skip(!isMobile, '仅在移动视口验收');
     const topic = await createTopic(request, 'E2E 移动主题');
