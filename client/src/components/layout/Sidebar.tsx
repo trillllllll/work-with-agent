@@ -1,4 +1,4 @@
-import { Plus, Settings, Trash2, History } from 'lucide-react';
+import { Inbox, Plus, Settings, Trash2, History } from 'lucide-react';
 import type { Topic } from '@/lib/api.js';
 import { Button } from '@/components/ui/button.js';
 import { cn } from '@/lib/utils.js';
@@ -18,9 +18,11 @@ type SidebarProps = {
   onOpenTrash: () => void;
   changesActive: boolean;
   onOpenChanges: () => void;
+  inboxActive: boolean;
+  onOpenInbox: () => void;
 };
 
-export function Sidebar({ topics, topicsLoading, selectedTopicId, onSelectTopic, onNewTopic, onEditTopic, settingsActive, onToggleSettings, trashActive, onOpenTrash, changesActive, onOpenChanges }: SidebarProps) {
+export function Sidebar({ topics, topicsLoading, selectedTopicId, onSelectTopic, onNewTopic, onEditTopic, settingsActive, onToggleSettings, trashActive, onOpenTrash, changesActive, onOpenChanges, inboxActive, onOpenInbox }: SidebarProps) {
   return (
     <aside className="glass-surface flex h-full min-h-0 flex-col border-y-0 border-l-0 rounded-none px-3 pt-5 pb-4">
       <div className="mb-7 flex items-center gap-2.5 px-2">
@@ -38,6 +40,7 @@ export function Sidebar({ topics, topicsLoading, selectedTopicId, onSelectTopic,
         <TopicList topics={topics} loading={topicsLoading} selectedTopicId={selectedTopicId} onSelect={onSelectTopic} onEdit={onEditTopic} />
       </div>
       <div className="glass-divider mt-auto border-t pt-3">
+        <button type="button" onClick={onOpenInbox} className={cn('mb-1 flex h-9 w-full items-center gap-2 rounded-md px-2 text-xs transition-colors', inboxActive ? 'bg-accent font-bold text-accent-foreground' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground')}><Inbox className="size-3.5" />收集箱</button>
         <button type="button" onClick={onOpenTrash} className={cn('mb-1 flex h-9 w-full items-center gap-2 rounded-md px-2 text-xs transition-colors', trashActive ? 'bg-accent font-bold text-accent-foreground' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground')}><Trash2 className="size-3.5" />回收站</button>
         <button type="button" onClick={onOpenChanges} className={cn('mb-1 flex h-9 w-full items-center gap-2 rounded-md px-2 text-xs transition-colors', changesActive ? 'bg-accent font-bold text-accent-foreground' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground')}><History className="size-3.5" />变更历史</button>
         <div className="flex items-center gap-1">

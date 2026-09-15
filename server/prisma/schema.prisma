@@ -44,7 +44,7 @@ model Topic {
 
 model Task {
   id            String     @id @default(cuid())
-  topicId       String     @map("topic_id")
+  topicId       String?    @map("topic_id")
   title         String
   description   String     @default("")
   status        TaskStatus @default(todo)
@@ -52,7 +52,7 @@ model Task {
   deletedAt String? @map("deleted_at")
   createdAt     String     @default("") @map("created_at")
   updatedAt     String     @default("") @map("updated_at")
-  topic         Topic      @relation(fields: [topicId], references: [id], onDelete: Restrict)
+  topic         Topic?     @relation(fields: [topicId], references: [id], onDelete: Restrict)
 
   @@index([topicId])
   @@index([topicId, deletedAt])

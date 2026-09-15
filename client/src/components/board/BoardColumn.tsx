@@ -1,5 +1,5 @@
 import { Plus, Trash2 } from 'lucide-react';
-import { statuses, type Status, type Task } from '@/lib/api.js';
+import { statuses, type Status, type Task, type Topic } from '@/lib/api.js';
 import { Button } from '@/components/ui/button.js';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.js';
 
@@ -8,9 +8,12 @@ type TaskCardProps = {
   onEdit: (task: Task) => void;
   onDelete: (task: Task) => void;
   onUpdateStatus: (id: string, status: Status) => void;
+  topics?: Topic[];
+  onAssignTopic?: (id: string, topicId: string) => void;
+  assigning?: boolean;
 };
 
-export function TaskCard({ task, onEdit, onDelete, onUpdateStatus }: TaskCardProps) {
+export function TaskCard({ task, onEdit, onDelete, onUpdateStatus, topics, onAssignTopic, assigning = false }: TaskCardProps) {
   return (
     <article className="glass-subtle group rounded-xl p-3 transition-colors hover:border-primary/25 hover:bg-[var(--glass-hover)]">
       <div className="flex items-start justify-between gap-1.5">
@@ -29,6 +32,17 @@ export function TaskCard({ task, onEdit, onDelete, onUpdateStatus }: TaskCardPro
           {statuses.map((item) => <SelectItem value={item.value} key={item.value}>{item.label}</SelectItem>)}
         </SelectContent>
       </Select>
+      {topics && onAssignTopic && (
+        <Select value="unassigned" onValueChange={(value) => { if (value !== 'unassigned') onAssignTopic(task.id, value); }} disabled={assigning}>
+          <SelectTrigger size="sm" className="mt-2 h-8 w-full text-[11px] text-muted-foreground" aria-label={`归入主题：${task.title}`}>
+            <SelectValue placeholder="归入主题" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="unassigned">归入主题</SelectItem>
+            {topics.map((topic) => <SelectItem value={topic.id} key={topic.id}>{topic.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      )}
     </article>
   );
 }

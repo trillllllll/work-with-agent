@@ -16,7 +16,7 @@ type TaskModalProps = {
 export function TaskModal({ form, onChange, onClose, onSave, busy = false }: TaskModalProps) {
   const submit = (event: FormEvent) => { event.preventDefault(); onSave(); };
   return (
-    <FormDialog title={form.id ? '编辑任务' : '新建任务'} description="补充任务背景和预期结果，保存后会同步到当前看板。" onClose={onClose}>
+    <FormDialog title={form.id ? '编辑任务' : '新建任务'} description={form.inbox ? '先记录下来，之后再归入合适的主题。' : '补充任务背景和预期结果，保存后会同步到当前看板。'} onClose={onClose}>
       <form onSubmit={submit}>
         <div className="mb-4">
           <Label htmlFor="task-title">任务名称</Label>

@@ -16,6 +16,7 @@ import { SettingsView } from './components/settings/SettingsView.js';
 import { ConfirmDialog } from './components/dialogs/ConfirmDialog.js';
 import { TrashPage } from './components/trash/TrashPage.js';
 import { ChangesPage } from './components/changes/ChangesPage.js';
+import { InboxPage } from './components/inbox/InboxPage.js';
 import { WorkspaceModal, type WorkspaceModalView } from './components/workspace/WorkspaceModal.js';
 
 export function App() {
@@ -29,7 +30,7 @@ export function App() {
   const [deleteConfirmation, setDeleteConfirmation] = useState<{ kind: 'topic' | 'task' | 'trash'; id: string; name: string } | null>(null);
   const notifyError = (message: string) => { if (message) toast.error(message); };
 
-  const chat = useChat({ selectedTopicId, view: route, onError: notifyError });
+  const chat = useChat({ selectedTopicId: route === 'inbox' ? '' : selectedTopicId, view: route, onError: notifyError });
 
   const topicsQuery = useQuery<Topic[]>({ queryKey: ['topics'], queryFn: () => api('/api/topics') });
   const topics = topicsQuery.data ?? [];
@@ -38,14 +39,18 @@ export function App() {
   const topicDetail = useQuery<Topic>({ queryKey: ['topic', selectedTopicId], queryFn: () => api(`/api/topics/${selectedTopicId}`), enabled: Boolean(selectedTopicId) });
   const detail = topicDetail.data ?? selectedTopic;
   const tasksQuery = useQuery<Task[]>({ queryKey: ['tasks', selectedTopicId], queryFn: () => api(`/api/tasks?topicId=${encodeURIComponent(selectedTopicId)}`), enabled: Boolean(selectedTopicId) });
+  const inboxTasksQuery = useQuery<Task[]>({ queryKey: ['tasks', 'inbox'], queryFn: () => api('/api/tasks?inbox=true') });
   const trashQuery = useQuery<TrashTask[]>({ queryKey: ['trash', 'tasks'], queryFn: () => api('/api/trash/tasks') });
   const grouped = useMemo(() => Object.fromEntries(statuses.map(({ value }) => [value, (tasksQuery.data ?? []).filter((task) => task.status === value)])) as Record<Status, Task[]>, [tasksQuery.data]);
+  const inboxGrouped = useMemo(() => Object.fromEntries(statuses.map(({ value }) => [value, (inboxTasksQuery.data ?? []).filter((task) => task.status === value)])) as Record<Status, Task[]>, [inboxTasksQuery.data]);
 
   const invalidate = () => { queryClient.invalidateQueries({ queryKey: ['topics'] }); queryClient.invalidateQueries({ queryKey: ['tasks'] }); queryClient.invalidateQueries({ queryKey: ['trash', 'tasks'] }); };
   const summaryMutation = useMutation({ mutationFn: (action: 'confirm' | 'discard') => api(`/api/topics/${selectedTopicId}/summary/${action}`, { method: 'POST' }), onSuccess: (_data, action) => { queryClient.invalidateQueries({ queryKey: ['topic', selectedTopicId] }); queryClient.invalidateQueries({ queryKey: ['topics'] }); toast.success(action === 'confirm' ? '成果已确认' : '草稿已放弃'); }, onError: (e: Error) => notifyError(e.message) });
   const saveTopic = useMutation({ mutationFn: (form: any) => api(form.id ? `/api/topics/${form.id}` : '/api/topics', { method: form.id ? 'PATCH' : 'POST', body: JSON.stringify(form) }), onSuccess: (topic: Topic) => { setTopicForm(null); setSelectedTopicId(topic.id); invalidate(); toast.success(topicForm?.id ? '主题已更新' : '主题已创建'); if (!isDesktop) navigate('board'); }, onError: (e: Error) => notifyError(e.message) });
   const deleteTopic = useMutation({ mutationFn: (id: string) => api(`/api/topics/${id}`, { method: 'DELETE' }), onSuccess: () => { setDeleteConfirmation(null); setTopicForm(null); setSelectedTopicId(''); invalidate(); toast.success('主题已删除'); }, onError: (e: Error) => { setDeleteConfirmation(null); notifyError(e.message); } });
-  const saveTask = useMutation({ mutationFn: (form: any) => api(form.id ? `/api/tasks/${form.id}` : '/api/tasks', { method: form.id ? 'PATCH' : 'POST', body: JSON.stringify(form.id ? { title: form.title, description: form.description, resultSummary: form.resultSummary } : { ...form, topicId: selectedTopicId }) }), onSuccess: () => { setTaskForm(null); invalidate(); toast.success(taskForm?.id ? '任务已更新' : '任务已创建'); }, onError: (e: Error) => notifyError(e.message) });
+  const saveTask = useMutation({ mutationFn: (form: any) => api(form.id ? `/api/tasks/${form.id}` : '/api/tasks', { method: form.id ? 'PATCH' : 'POST', body: JSON.stringify(form.id ? { title: form.title, description: form.description, resultSummary: form.resultSummary } : { title: form.title, description: form.description, resultSummary: form.resultSummary, topicId: form.inbox ? null : selectedTopicId }) }), onSuccess: () => { setTaskForm(null); invalidate(); toast.success(taskForm?.id ? '任务已更新' : '任务已创建'); }, onError: (e: Error) => notifyError(e.message) });
+  const captureTask = useMutation({ mutationFn: (form: { title: string; description: string }) => api('/api/tasks', { method: 'POST', body: JSON.stringify({ ...form, topicId: null }) }), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['tasks', 'inbox'] }); toast.success('任务已收集'); }, onError: (e: Error) => notifyError(e.message) });
+  const assignTask = useMutation({ mutationFn: ({ id, topicId }: { id: string; topicId: string }) => api(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify({ topicId }) }), onSuccess: (_data, variables) => { invalidate(); queryClient.invalidateQueries({ queryKey: ['tasks', 'inbox'] }); queryClient.invalidateQueries({ queryKey: ['tasks', variables.topicId] }); toast.success('任务已归入主题'); }, onError: (e: Error) => notifyError(e.message) });
   const updateTask = useMutation({ mutationFn: ({ id, status }: { id: string; status: Status }) => api(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }), onSuccess: invalidate, onError: (e: Error) => notifyError(e.message) });
   const deleteTask = useMutation({ mutationFn: (id: string) => api(`/api/tasks/${id}`, { method: 'DELETE' }), onSuccess: () => { setDeleteConfirmation(null); invalidate(); toast.success('任务已删除'); }, onError: (e: Error) => { setDeleteConfirmation(null); notifyError(e.message); } });
   const restoreTask = useMutation({ mutationFn: (id: string) => api(`/api/trash/tasks/${id}/restore`, { method: 'POST' }), onSuccess: () => { setDeleteConfirmation(null); invalidate(); queryClient.invalidateQueries({ queryKey: ['trash', 'tasks'] }); toast.success('任务已恢复'); }, onError: (e: Error) => notifyError(e.message) });
@@ -79,6 +84,22 @@ export function App() {
             onOpenTrash={() => navigate('trash')}
             changesActive={route === 'changes'}
             onOpenChanges={() => navigate('changes')}
+            inboxActive={route === 'inbox'}
+            onOpenInbox={() => navigate('inbox')}
+          />
+        }
+        inbox={
+          <InboxPage
+            topics={topics}
+            grouped={inboxGrouped}
+            loading={inboxTasksQuery.isLoading}
+            saving={captureTask.isPending}
+            onCapture={(form) => captureTask.mutate(form)}
+            onEditTask={(task) => setTaskForm({ ...task, inbox: true })}
+            onDeleteTask={(task) => setDeleteConfirmation({ kind: 'task', id: task.id, name: task.title })}
+            onUpdateTaskStatus={(id, status) => updateTask.mutate({ id, status })}
+            onAssignTopic={(id, topicId) => assignTask.mutate({ id, topicId })}
+            assigningTaskId={assignTask.isPending ? assignTask.variables?.id : undefined}
           />
         }
         board={

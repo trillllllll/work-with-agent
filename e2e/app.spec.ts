@@ -38,6 +38,23 @@ test.afterAll(async () => {
 });
 
 test.describe('Agent 工作室 MVP', () => {
+  test('收集箱可快速收集任务并归入已有主题', async ({ page, isMobile, request }) => {
+    test.skip(Boolean(isMobile), '收集箱桌面整理流程在桌面视口验收');
+    const topic = await createTopic(request, 'E2E 收集主题');
+    const task = await responseData<{ id: string }>(await request.post(`${apiUrl}/api/tasks`, { data: { title: '待整理收集项', description: '待归类背景' } }));
+    await page.goto('/#/inbox');
+    await expect(page.getByRole('heading', { name: '收集箱' })).toBeVisible();
+    const taskCard = page.getByRole('article').filter({ hasText: '待整理收集项' });
+    await expect(taskCard).toBeVisible();
+    await taskCard.getByRole('combobox', { name: '归入主题：待整理收集项' }).click();
+    await page.getByRole('option', { name: 'E2E 收集主题' }).click();
+    await expect(taskCard).toBeHidden();
+    expect((await responseData<Array<{ id: string; topicId: string | null }>>(await request.get(`${apiUrl}/api/tasks?inbox=true`))).some((item) => item.id === task.id)).toBe(false);
+    await page.goto('/#/board');
+    await expect(page.getByRole('button', { name: '待整理收集项', exact: true })).toBeVisible();
+    expect((await responseData<{ topicId: string }>(await request.get(`${apiUrl}/api/tasks/${task.id}`))).topicId).toBe(topic.id);
+  });
+
   test('创建探索主题并完成任务状态、回收站和永久删除流程', async ({ page, isMobile, request }) => {
     test.skip(Boolean(isMobile), '核心管理流程在桌面视口验收，移动端使用独立响应式用例');
     await page.goto('/#/topics');
@@ -52,10 +69,12 @@ test.describe('Agent 工作室 MVP', () => {
     await page.getByRole('button', { name: '保存任务' }).click();
     const taskCard = () => page.getByRole('button', { name: 'E2E 任务', exact: true }).locator('xpath=ancestor::article');
     await expect(taskCard()).toBeVisible();
-    await taskCard().getByLabel('修改状态：E2E 任务').selectOption('doing');
-    await expect(taskCard().getByLabel('修改状态：E2E 任务')).toHaveValue('doing');
-    await taskCard().getByLabel('修改状态：E2E 任务').selectOption('done');
-    await expect(taskCard().getByLabel('修改状态：E2E 任务')).toHaveValue('done');
+    await taskCard().getByRole('combobox', { name: '修改状态：E2E 任务' }).click();
+    await page.getByRole('option', { name: '进行中' }).click();
+    await expect(taskCard().getByRole('combobox', { name: '修改状态：E2E 任务' })).toContainText('进行中');
+    await taskCard().getByRole('combobox', { name: '修改状态：E2E 任务' }).click();
+    await page.getByRole('option', { name: '已完成' }).click();
+    await expect(taskCard().getByRole('combobox', { name: '修改状态：E2E 任务' })).toContainText('已完成');
 
     await taskCard().getByRole('button', { name: '删除任务：E2E 任务' }).click();
     await page.getByRole('button', { name: '确认' }).click();
@@ -147,7 +166,8 @@ test.describe('Agent 工作室 MVP', () => {
     await page.getByRole('button', { name: '批准执行' }).click();
 
     await page.goto('/#/changes');
-    await page.locator('select').selectOption('execution');
+    await page.getByRole('combobox', { name: '筛选对象类型' }).click();
+    await page.getByRole('option', { name: '受控执行' }).click();
     await expect(page.getByText('execute_file · 成功')).toBeVisible();
     await expect(page.getByText('不可撤销')).toBeVisible();
     await expect(page.getByText(/受控执行 ·/)).toBeVisible();
