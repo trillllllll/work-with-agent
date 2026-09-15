@@ -48,6 +48,9 @@
   --glass-highlight: rgb(255 255 255 / 0.72);
   --glass-shadow: 0 12px 30px -22px rgb(15 23 42 / 0.32), inset 0 1px 0 var(--glass-highlight);
   --glass-divider: rgb(15 23 42 / 0.075);
+  --scrollbar-thumb: rgb(100 116 139 / 0.35);
+  --scrollbar-thumb-hover: rgb(71 85 105 / 0.55);
+  --scrollbar-track: transparent;
 }
 
 .dark {
@@ -94,6 +97,9 @@
   --glass-highlight: rgb(255 255 255 / 0.13);
   --glass-shadow: 0 14px 34px -24px rgb(0 0 0 / 0.72), inset 0 1px 0 var(--glass-highlight);
   --glass-divider: rgb(255 255 255 / 0.09);
+  --scrollbar-thumb: rgb(148 163 184 / 0.38);
+  --scrollbar-thumb-hover: rgb(203 213 225 / 0.58);
+  --scrollbar-track: transparent;
 }
 
 @theme inline {
@@ -141,6 +147,26 @@
 @layer base {
   * {
     border-color: var(--color-border);
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
+
+  *::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: var(--scrollbar-thumb);
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
   }
   body {
     @apply bg-background text-foreground antialiased;
@@ -177,7 +203,7 @@
 
   .glass-scrollbar {
     scrollbar-width: thin;
-    scrollbar-color: rgb(100 116 139 / 0.35) transparent;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
   }
 
   .glass-scrollbar::-webkit-scrollbar {
@@ -186,12 +212,16 @@
   }
 
   .glass-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
+    background: var(--scrollbar-track);
   }
 
   .glass-scrollbar::-webkit-scrollbar-thumb {
     border-radius: 999px;
-    background: rgb(100 116 139 / 0.3);
+    background: var(--scrollbar-thumb);
+  }
+
+  .glass-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
   }
 }
 

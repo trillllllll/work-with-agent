@@ -1,6 +1,7 @@
 import { Plus, Trash2 } from 'lucide-react';
 import { statuses, type Status, type Task } from '@/lib/api.js';
 import { Button } from '@/components/ui/button.js';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.js';
 
 type TaskCardProps = {
   task: Task;
@@ -20,14 +21,14 @@ export function TaskCard({ task, onEdit, onDelete, onUpdateStatus }: TaskCardPro
       </div>
       {task.description && <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">{task.description}</p>}
       {task.resultSummary && <div className="mt-2 rounded-lg border-l-2 border-success bg-success-bg/70 px-2 py-1.5 text-[11px] leading-relaxed text-success">结果：{task.resultSummary}</div>}
-      <select
-        value={task.status}
-        onChange={(event) => onUpdateStatus(task.id, event.target.value as Status)}
-        className="glass-control mt-3 h-8 w-full rounded-lg px-2 text-[11px] text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring"
-        aria-label={`修改状态：${task.title}`}
-      >
-        {statuses.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
-      </select>
+      <Select value={task.status} onValueChange={(value) => onUpdateStatus(task.id, value as Status)}>
+        <SelectTrigger size="sm" className="mt-3 h-8 w-full text-[11px] text-muted-foreground" aria-label={`修改状态：${task.title}`}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {statuses.map((item) => <SelectItem value={item.value} key={item.value}>{item.label}</SelectItem>)}
+        </SelectContent>
+      </Select>
     </article>
   );
 }
