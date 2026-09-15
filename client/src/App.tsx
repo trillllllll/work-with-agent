@@ -44,7 +44,7 @@ export function App() {
   const invalidate = () => { queryClient.invalidateQueries({ queryKey: ['topics'] }); queryClient.invalidateQueries({ queryKey: ['tasks'] }); queryClient.invalidateQueries({ queryKey: ['trash', 'tasks'] }); };
   const summaryMutation = useMutation({ mutationFn: (action: 'confirm' | 'discard') => api(`/api/topics/${selectedTopicId}/summary/${action}`, { method: 'POST' }), onSuccess: (_data, action) => { queryClient.invalidateQueries({ queryKey: ['topic', selectedTopicId] }); queryClient.invalidateQueries({ queryKey: ['topics'] }); toast.success(action === 'confirm' ? '成果已确认' : '草稿已放弃'); }, onError: (e: Error) => notifyError(e.message) });
   const saveTopic = useMutation({ mutationFn: (form: any) => api(form.id ? `/api/topics/${form.id}` : '/api/topics', { method: form.id ? 'PATCH' : 'POST', body: JSON.stringify(form) }), onSuccess: (topic: Topic) => { setTopicForm(null); setSelectedTopicId(topic.id); invalidate(); toast.success(topicForm?.id ? '主题已更新' : '主题已创建'); if (!isDesktop) navigate('board'); }, onError: (e: Error) => notifyError(e.message) });
-  const deleteTopic = useMutation({ mutationFn: (id: string) => api(`/api/topics/${id}`, { method: 'DELETE' }), onSuccess: () => { setDeleteConfirmation(null); setSelectedTopicId(''); invalidate(); toast.success('主题已删除'); }, onError: (e: Error) => { setDeleteConfirmation(null); notifyError(e.message); } });
+  const deleteTopic = useMutation({ mutationFn: (id: string) => api(`/api/topics/${id}`, { method: 'DELETE' }), onSuccess: () => { setDeleteConfirmation(null); setTopicForm(null); setSelectedTopicId(''); invalidate(); toast.success('主题已删除'); }, onError: (e: Error) => { setDeleteConfirmation(null); notifyError(e.message); } });
   const saveTask = useMutation({ mutationFn: (form: any) => api(form.id ? `/api/tasks/${form.id}` : '/api/tasks', { method: form.id ? 'PATCH' : 'POST', body: JSON.stringify(form.id ? { title: form.title, description: form.description, resultSummary: form.resultSummary } : { ...form, topicId: selectedTopicId }) }), onSuccess: () => { setTaskForm(null); invalidate(); toast.success(taskForm?.id ? '任务已更新' : '任务已创建'); }, onError: (e: Error) => notifyError(e.message) });
   const updateTask = useMutation({ mutationFn: ({ id, status }: { id: string; status: Status }) => api(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }), onSuccess: invalidate, onError: (e: Error) => notifyError(e.message) });
   const deleteTask = useMutation({ mutationFn: (id: string) => api(`/api/tasks/${id}`, { method: 'DELETE' }), onSuccess: () => { setDeleteConfirmation(null); invalidate(); toast.success('任务已删除'); }, onError: (e: Error) => { setDeleteConfirmation(null); notifyError(e.message); } });
@@ -90,7 +90,6 @@ export function App() {
             summaryBusy={summaryMutation.isPending}
             onNewTopic={openNewTopic}
             onNewTask={openNewTask}
-            onDeleteTopic={() => selectedTopic && setDeleteConfirmation({ kind: 'topic', id: selectedTopic.id, name: selectedTopic.name })}
             onEditTask={(task) => setTaskForm(task)}
             onDeleteTask={(task) => setDeleteConfirmation({ kind: 'task', id: task.id, name: task.title })}
             onUpdateTaskStatus={(id, status) => updateTask.mutate({ id, status })}
@@ -124,7 +123,7 @@ export function App() {
           changes={<ChangesPage />}
         />
       )}
-      {topicForm && <TopicModal form={topicForm} onChange={setTopicForm} onClose={() => setTopicForm(null)} onSave={() => saveTopic.mutate(topicForm)} busy={saveTopic.isPending} />}
+      {topicForm && <TopicModal form={topicForm} onChange={setTopicForm} onClose={() => setTopicForm(null)} onSave={() => saveTopic.mutate(topicForm)} onDelete={() => setDeleteConfirmation({ kind: 'topic', id: topicForm.id, name: topicForm.name })} busy={saveTopic.isPending} />}
       {taskForm && <TaskModal form={taskForm} onChange={setTaskForm} onClose={() => setTaskForm(null)} onSave={() => saveTask.mutate(taskForm)} busy={saveTask.isPending} />}
       {deleteConfirmation && <ConfirmDialog title={deleteConfirmation.kind === 'topic' ? '删除主题' : deleteConfirmation.kind === 'trash' ? '永久删除任务' : '删除任务'} itemName={deleteConfirmation.name} description={deleteConfirmation.kind === 'topic' ? '删除前请确认该主题不再需要。非空主题会被系统拒绝删除。' : deleteConfirmation.kind === 'trash' ? '永久删除后无法恢复该任务，请确认继续。' : '删除后任务会移入回收站。'} busy={deleteTopic.isPending || deleteTask.isPending || permanentDeleteTask.isPending} onCancel={() => setDeleteConfirmation(null)} onConfirm={() => deleteConfirmation.kind === 'topic' ? deleteTopic.mutate(deleteConfirmation.id) : deleteConfirmation.kind === 'trash' ? permanentDeleteTask.mutate(deleteConfirmation.id) : deleteTask.mutate(deleteConfirmation.id)} />}
     </>

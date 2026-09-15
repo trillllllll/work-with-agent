@@ -14,7 +14,6 @@ type BoardViewProps = {
   summaryBusy: boolean;
   onNewTopic: () => void;
   onNewTask: () => void;
-  onDeleteTopic: () => void;
   onEditTask: (task: Task) => void;
   onDeleteTask: (task: Task) => void;
   onUpdateTaskStatus: (id: string, status: Status) => void;
@@ -24,7 +23,7 @@ type BoardViewProps = {
   onOpenChat?: () => void;
 };
 
-export function BoardView({ detail, hasTopic, grouped, tasksLoading, summaryBusy, onNewTopic, onNewTask, onDeleteTopic, onEditTask, onDeleteTask, onUpdateTaskStatus, onConfirmSummary, onOpenSettings, showOpenChat = false, onOpenChat }: BoardViewProps) {
+export function BoardView({ detail, hasTopic, grouped, tasksLoading, summaryBusy, onNewTopic, onNewTask, onEditTask, onDeleteTask, onUpdateTaskStatus, onConfirmSummary, onOpenSettings, showOpenChat = false, onOpenChat }: BoardViewProps) {
   return (
     <div className="p-4 pb-10 sm:p-7">
       <header className="flex flex-col gap-4 border-b glass-divider pb-5 sm:flex-row sm:items-start sm:justify-between">
@@ -39,7 +38,6 @@ export function BoardView({ detail, hasTopic, grouped, tasksLoading, summaryBusy
             {showOpenChat && onOpenChat && <Button variant="ghost" size="icon" title="打开聊天" aria-label="打开聊天" onClick={onOpenChat}><MessageSquare /></Button>}
             {hasTopic && (
               <>
-                <Button variant="outline" className="text-destructive hover:bg-destructive/10 hover:text-destructive max-sm:flex-1" onClick={onDeleteTopic}>删除主题</Button>
                 <Button className="max-sm:flex-1" onClick={onNewTask}>新建任务</Button>
               </>
             )}

@@ -10,10 +10,11 @@ type TopicModalProps = {
   onChange: (form: any) => void;
   onClose: () => void;
   onSave: () => void;
+  onDelete?: () => void;
   busy?: boolean;
 };
 
-export function TopicModal({ form, onChange, onClose, onSave, busy = false }: TopicModalProps) {
+export function TopicModal({ form, onChange, onClose, onSave, onDelete, busy = false }: TopicModalProps) {
   const submit = (event: FormEvent) => { event.preventDefault(); onSave(); };
   return (
     <FormDialog title={form.id ? '编辑主题' : '新建主题'} description="主题是任务逐渐收敛成结果的容器。" onClose={onClose}>
@@ -30,9 +31,12 @@ export function TopicModal({ form, onChange, onClose, onSave, busy = false }: To
           <input id="topic-exploration" type="checkbox" className="size-3.5 accent-primary" checked={form.isExploration} onChange={(event) => onChange({ ...form, isExploration: event.target.checked })} />
           当前仍在探索
         </Label>
-        <div className="flex justify-end gap-2 border-t pt-4">
+        <div className="flex items-center justify-between gap-2 border-t pt-4">
+          {form.id && onDelete ? <Button type="button" variant="outline" className="text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={busy} onClick={onDelete}>删除主题</Button> : <span />}
+          <div className="flex gap-2">
           <Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button>
           <Button disabled={busy}>{busy ? '正在保存…' : '保存主题'}</Button>
+          </div>
         </div>
       </form>
     </FormDialog>
