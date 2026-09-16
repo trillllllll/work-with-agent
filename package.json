@@ -1,1 +1,22 @@
-{"name":"agent-studio","private":true,"workspaces":["client","server"],"scripts":{"dev":"concurrently \"npm run dev -w server\" \"npm run dev -w client\"","build":"npm run build -w server && npm run build -w client","prisma:generate":"npm run prisma:generate -w server","test":"npm run test -w server && npm run test -w client","test:all":"npm test && npm run e2e","db:migrate":"npm run db:migrate -w server","e2e":"playwright test","e2e:real":"node e2e/run-real.mjs"},"devDependencies":{"@playwright/test":"^1.55.0","concurrently":"^9.1.2"}}
+{
+  "name": "agent-studio",
+  "private": true,
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w server && npm run build -w client",
+    "prisma:generate": "npm run prisma:generate -w server",
+    "test": "node scripts/test.mjs",
+    "test:all": "npm test && npm run e2e",
+    "db:migrate": "npm run db:migrate -w server",
+    "e2e": "playwright test",
+    "e2e:real": "node e2e/run-real.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "concurrently": "^9.1.2"
+  }
+}

@@ -16,13 +16,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run prisma:generate
-      - name: Prepare unit-test database
-        run: mkdir -p server/data && npm run db:migrate
-        env:
-          DATABASE_URL: file:../data/ci-test.db
       - run: npm test
-        env:
-          DATABASE_URL: file:../data/ci-test.db
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e
