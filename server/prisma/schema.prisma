@@ -25,6 +25,13 @@ enum TaskStatus {
   done
 }
 
+enum TaskPriority {
+  none
+  low
+  medium
+  high
+}
+
 model Topic {
   id            String   @id @default(cuid()) @map("id")
   name          String
@@ -48,6 +55,8 @@ model Task {
   title         String
   description   String     @default("")
   status        TaskStatus @default(todo)
+  priority      TaskPriority @default(none)
+  dueDate       String?    @map("due_date")
   resultSummary String     @default("") @map("result_summary")
   deletedAt String? @map("deleted_at")
   createdAt     String     @default("") @map("created_at")

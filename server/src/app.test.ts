@@ -15,13 +15,21 @@ describe('REST task workflow', () => {
     const task = await request(app).post('/api/tasks').send({ topicId, title: '测试任务' });
     expect(task.status).toBe(200);
     expect(task.body.data.status).toBe('todo');
+    expect(task.body.data.priority).toBe('none');
+    expect(task.body.data.dueDate).toBeNull();
     taskId = task.body.data.id;
   });
 
   it('updates task status and protects non-empty topic deletion', async () => {
-    const updated = await request(app).patch(`/api/tasks/${taskId}`).send({ status: 'doing' });
+    const updated = await request(app).patch(`/api/tasks/${taskId}`).send({ status: 'doing', priority: 'high', dueDate: '2026-09-30' });
     expect(updated.status).toBe(200);
     expect(updated.body.data.status).toBe('doing');
+    expect(updated.body.data.priority).toBe('high');
+    expect(updated.body.data.dueDate).toBe('2026-09-30');
+    const cleared = await request(app).patch(`/api/tasks/${taskId}`).send({ priority: 'none', dueDate: null });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.data.priority).toBe('none');
+    expect(cleared.body.data.dueDate).toBeNull();
     const deleted = await request(app).delete(`/api/topics/${topicId}`);
     expect(deleted.status).toBe(409);
   });

@@ -55,6 +55,31 @@ test.describe('Agent 工作室 MVP', () => {
     expect((await responseData<{ topicId: string }>(await request.get(`${apiUrl}/api/tasks/${task.id}`))).topicId).toBe(topic.id);
   });
 
+  test('任务名称打开详情，可保存优先级和截止日期', async ({ page, isMobile, request }) => {
+    test.skip(Boolean(isMobile), '任务详情桌面端验收');
+    const topic = await createTopic(request, 'E2E 详情主题');
+    const task = await responseData<{ id: string }>(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: topic.id, title: '详情任务', description: '详情背景' } }));
+    await page.goto('/#/board');
+
+    const taskCard = () => page.getByRole('button', { name: '详情任务', exact: true }).locator('xpath=ancestor::article');
+    await expect(taskCard()).toBeVisible();
+    await taskCard().getByRole('button', { name: '详情任务', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '任务详情' })).toBeVisible();
+    await expect(page.getByLabel('任务名称')).toHaveValue('详情任务');
+    await page.getByRole('combobox', { name: '任务优先级' }).click();
+    await page.getByRole('option', { name: '高' }).click();
+    await page.locator('#task-detail-due-date').fill('2026-09-30');
+    await page.getByRole('button', { name: '保存任务' }).click();
+    await expect(page.getByRole('heading', { name: '任务详情' })).toBeHidden();
+    await expect(taskCard().getByTitle('优先级：高')).toBeVisible();
+    await expect(taskCard().getByTitle('截止日期：2026-09-30')).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByRole('button', { name: '详情任务', exact: true })).toBeVisible();
+    const saved = await responseData<{ priority: string; dueDate: string | null }>(await request.get(`${apiUrl}/api/tasks/${task.id}`));
+    expect(saved).toMatchObject({ priority: 'high', dueDate: '2026-09-30' });
+  });
+
   test('创建探索主题并完成任务状态、回收站和永久删除流程', async ({ page, isMobile, request }) => {
     test.skip(Boolean(isMobile), '核心管理流程在桌面视口验收，移动端使用独立响应式用例');
     await page.goto('/#/topics');
