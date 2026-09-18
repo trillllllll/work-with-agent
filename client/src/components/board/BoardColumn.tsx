@@ -11,9 +11,10 @@ type TaskCardProps = {
   topics?: Topic[];
   onAssignTopic?: (id: string, topicId: string) => void;
   assigning?: boolean;
+  showDescription?: boolean;
 };
 
-export function TaskCard({ task, onEdit, onDelete, onUpdateStatus, topics, onAssignTopic, assigning = false }: TaskCardProps) {
+export function TaskCard({ task, onEdit, onDelete, onUpdateStatus, topics, onAssignTopic, assigning = false, showDescription = false }: TaskCardProps) {
   const priority = task.priority ?? 'none';
   const priorityLabel = priorities.find((item) => item.value === priority)?.label ?? '无优先级';
   return (
@@ -24,7 +25,7 @@ export function TaskCard({ task, onEdit, onDelete, onUpdateStatus, topics, onAss
           <Trash2 className="size-3.5" />
         </button>
       </div>
-      {task.description && <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">{task.description}</p>}
+      {showDescription && task.description && <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">{task.description}</p>}
       {task.resultSummary && <div className="mt-2 rounded-lg border-l-2 border-success bg-success-bg/70 px-2 py-1.5 text-[11px] leading-relaxed text-success">结果：{task.resultSummary}</div>}
       {(priority !== 'none' || task.dueDate) && (
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">

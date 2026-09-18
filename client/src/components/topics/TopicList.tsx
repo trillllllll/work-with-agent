@@ -23,21 +23,22 @@ export function TopicList({ topics, loading, selectedTopicId, onSelect, onEdit, 
     );
   }
   if (!topics.length) {
-    return <p className="px-2 py-3 text-xs text-muted-foreground">还没有主题，先创建一个。</p>;
+    return <p className="rounded-xl border border-dashed border-[var(--glass-border)] px-3 py-4 text-xs leading-relaxed text-muted-foreground">还没有主题，先创建一个。</p>;
   }
   return (
-    <div className={cn('flex flex-col gap-0.5', className)}>
+    <div className={cn('sidebar-topic-list flex flex-col gap-1', className)}>
       {topics.map((topic) => (
         <div
           key={topic.id}
-          className={cn('group flex min-w-0 items-center rounded-xl border border-transparent transition-colors', topic.id === selectedTopicId ? 'border-primary/15 bg-primary/[0.08] shadow-[inset_0_1px_0_rgb(255_255_255/0.35)] dark:bg-primary/[0.14]' : 'hover:bg-[var(--glass-hover)]')}
+          data-active={topic.id === selectedTopicId}
+          className={cn('sidebar-topic-item group relative flex min-w-0 items-center rounded-xl border border-transparent', topic.id === selectedTopicId ? 'border-primary/20 bg-primary/[0.09] shadow-[inset_0_1px_0_rgb(255_255_255/0.35)] dark:bg-primary/[0.14]' : 'hover:border-[var(--glass-border)] hover:bg-[var(--glass-hover)]')}
         >
-          <button type="button" onClick={() => onSelect(topic.id)} className={cn('flex min-h-11 min-w-0 flex-1 items-center gap-2.5 px-2.5 text-left text-[13px] transition-colors lg:min-h-9', topic.id === selectedTopicId ? 'font-semibold text-primary' : 'text-foreground/75 hover:text-foreground')}>
-            <span className={cn('size-1.5 shrink-0 rounded-full', topic.id === selectedTopicId ? 'bg-primary' : 'bg-muted-foreground/40')} />
+          <button type="button" onClick={() => onSelect(topic.id)} aria-current={topic.id === selectedTopicId ? 'page' : undefined} className={cn('relative flex min-h-11 min-w-0 flex-1 items-center gap-2.5 px-2.5 text-left text-[13px] transition-[color,transform] duration-200 lg:min-h-10', topic.id === selectedTopicId ? 'font-semibold text-primary' : 'text-foreground/75 hover:translate-x-0.5 hover:text-foreground')}>
+            <span className={cn('size-1.5 shrink-0 rounded-full transition-[background-color,box-shadow,transform] duration-200', topic.id === selectedTopicId ? 'scale-110 bg-primary shadow-[0_0_0_3px_var(--accent)]' : 'bg-muted-foreground/40')} />
             <span className="truncate">{topic.name}</span>
             {topic.isExploration && <em className="ml-auto flex w-10 shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-explore-border bg-explore-bg px-1.5 py-0.5 text-[10px] not-italic text-explore">探索</em>}
           </button>
-          <button type="button" title="编辑主题" aria-label={`编辑主题：${topic.name}`} onClick={() => onEdit(topic)} className="mr-1 grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-[var(--glass-hover)] hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100">
+          <button type="button" title="编辑主题" aria-label={`编辑主题：${topic.name}`} onClick={() => onEdit(topic)} className="mr-1 grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground opacity-100 transition-[background-color,color,opacity,transform] duration-200 hover:scale-105 hover:bg-[var(--glass-hover)] hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100">
             <Pencil className="size-3.5" />
           </button>
         </div>

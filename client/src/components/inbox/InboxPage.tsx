@@ -51,7 +51,7 @@ export function InboxPage({ topics, grouped, loading, onCapture, onEditTask, onD
       {loading ? <div className="mt-6 grid gap-3 md:grid-cols-2 lg:grid-cols-4">{statuses.map(({ value }) => <div key={value} className="glass-subtle h-64 animate-pulse rounded-2xl" />)}</div> : (
         <div className="mt-6 flex gap-3 overflow-x-auto pb-4 snap-x snap-mandatory scroll-px-4 md:grid md:grid-cols-2 md:overflow-visible md:pb-0 lg:grid-cols-4">
           {statuses.map(({ value, label }) => <BoardColumn key={value} label={label} count={grouped[value].length}>
-            {grouped[value].map((task) => <TaskCard key={task.id} task={task} onEdit={onEditTask} onDelete={onDeleteTask} onUpdateStatus={onUpdateTaskStatus} topics={topics} onAssignTopic={onAssignTopic} assigning={assigningTaskId === task.id} />)}
+            {grouped[value].map((task) => <TaskCard key={task.id} task={task} onEdit={onEditTask} onDelete={onDeleteTask} onUpdateStatus={onUpdateTaskStatus} topics={topics} onAssignTopic={onAssignTopic} assigning={assigningTaskId === task.id} showDescription />)}
           </BoardColumn>)}
         </div>
       )}
