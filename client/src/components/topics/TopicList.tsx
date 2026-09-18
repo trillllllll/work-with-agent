@@ -36,7 +36,7 @@ export function TopicList({ topics, loading, selectedTopicId, onSelect, onEdit, 
           <button type="button" onClick={() => onSelect(topic.id)} aria-current={topic.id === selectedTopicId ? 'page' : undefined} className={cn('relative flex min-h-11 min-w-0 flex-1 items-center gap-2.5 px-2.5 text-left text-[13px] transition-[color,transform] duration-200 lg:min-h-10', topic.id === selectedTopicId ? 'font-semibold text-primary' : 'text-foreground/75 hover:translate-x-0.5 hover:text-foreground')}>
             <span className={cn('size-1.5 shrink-0 rounded-full transition-[background-color,box-shadow,transform] duration-200', topic.id === selectedTopicId ? 'scale-110 bg-primary shadow-[0_0_0_3px_var(--accent)]' : 'bg-muted-foreground/40')} />
             <span className="truncate">{topic.name}</span>
-            {topic.isExploration && <em className="ml-auto flex w-10 shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-explore-border bg-explore-bg px-1.5 py-0.5 text-[10px] not-italic text-explore">探索</em>}
+            {topic.isExploration && <em className="glass-topic-badge ml-auto flex w-10 shrink-0 items-center justify-center whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] not-italic text-explore">探索</em>}
           </button>
           <button type="button" title="编辑主题" aria-label={`编辑主题：${topic.name}`} onClick={() => onEdit(topic)} className="mr-1 grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground opacity-100 transition-[background-color,color,opacity,transform] duration-200 hover:scale-105 hover:bg-[var(--glass-hover)] hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100">
             <Pencil className="size-3.5" />
