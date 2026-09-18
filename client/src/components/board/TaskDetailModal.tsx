@@ -32,7 +32,7 @@ export function TaskDetailModal({ task, topicName, onChange, onClose, onSave, bu
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
-      <DialogContent surface="glass" className="gap-0 overflow-hidden p-0 max-md:top-auto max-md:bottom-0 max-md:left-0 max-md:max-h-[92dvh] max-md:translate-x-0 max-md:translate-y-0 max-md:rounded-t-2xl max-md:rounded-b-none sm:max-w-2xl">
+      <DialogContent surface="glass" className="gap-0 overflow-hidden p-0 max-md:top-auto max-md:bottom-0 max-md:left-0 max-md:w-full max-md:!max-w-none max-md:max-h-[92dvh] max-md:translate-x-0 max-md:translate-y-0 max-md:rounded-t-2xl max-md:rounded-b-none sm:max-w-2xl">
         <DialogHeader className="border-b glass-divider px-5 py-4 pr-14 text-left sm:px-6">
           <DialogTitle>任务详情</DialogTitle>
           <DialogDescription>把任务背景、优先级和下一步安排放在同一个地方。</DialogDescription>
