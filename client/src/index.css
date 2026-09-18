@@ -197,6 +197,37 @@
     backdrop-filter: blur(12px) saturate(125%);
   }
 
+  .glass-overlay {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    border: 1px solid var(--glass-border);
+    background: var(--glass-bg-strong);
+    box-shadow: 0 24px 80px -28px rgb(15 23 42 / 0.45), 0 8px 28px -16px rgb(15 23 42 / 0.28), inset 0 1px 0 var(--glass-highlight);
+    backdrop-filter: blur(24px) saturate(165%);
+    -webkit-backdrop-filter: blur(24px) saturate(165%);
+  }
+
+  .glass-overlay::before {
+    position: absolute;
+    z-index: -1;
+    inset-inline: 0;
+    top: 0;
+    height: 7rem;
+    background: linear-gradient(to bottom, rgb(255 255 255 / 0.4), transparent);
+    content: "";
+    pointer-events: none;
+  }
+
+  .dark .glass-overlay {
+    border-color: var(--glass-border);
+    box-shadow: 0 24px 80px -28px rgb(0 0 0 / 0.72), 0 8px 28px -16px rgb(0 0 0 / 0.45), inset 0 1px 0 var(--glass-highlight);
+  }
+
+  .dark .glass-overlay::before {
+    background: linear-gradient(to bottom, rgb(255 255 255 / 0.1), transparent);
+  }
+
   .glass-button {
     position: relative;
     isolation: isolate;

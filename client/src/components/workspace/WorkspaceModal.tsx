@@ -37,7 +37,7 @@ export function WorkspaceModal({ view, onViewChange, onClose, settings, trash, c
         overlayClassName="bg-slate-950/20 backdrop-blur-md backdrop-saturate-150 dark:bg-black/35"
         closeButtonClassName="top-5 right-5 z-10 size-9 rounded-full border border-white/30 bg-white/35 p-2 text-foreground/70 opacity-100 shadow-sm backdrop-blur-xl transition-colors hover:bg-white/60 hover:text-foreground dark:border-white/10 dark:bg-white/10 dark:hover:bg-white/20 [&_svg]:size-4"
         className={cn(
-          'isolate flex h-[80dvh] w-[min(78vw,1120px)] max-w-none flex-col gap-0 overflow-hidden rounded-[24px] border border-white/55 bg-white/65 p-0 text-foreground shadow-[0_24px_80px_-28px_rgb(15_23_42/0.45),0_8px_28px_-16px_rgb(15_23_42/0.28)] backdrop-blur-2xl backdrop-saturate-150 duration-300 before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-28 before:bg-gradient-to-b before:from-white/55 before:to-transparent before:content-[""] dark:border-white/15 dark:bg-slate-900/58 dark:shadow-[0_24px_80px_-28px_rgb(0_0_0/0.7),0_8px_28px_-16px_rgb(0_0_0/0.45)] dark:before:from-white/10',
+          'glass-overlay flex h-[80dvh] w-[min(78vw,1120px)] max-w-none flex-col gap-0 rounded-[24px] p-0 text-foreground duration-300',
           'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.98] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.98] motion-reduce:!animate-none',
           'max-md:h-[calc(100dvh-1rem)] max-md:w-[calc(100vw-1rem)] max-md:rounded-[20px]',
         )}
