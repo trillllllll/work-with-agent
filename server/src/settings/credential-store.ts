@@ -1,2 +1,2 @@
-export { SqliteCredentialStore } from '../services.js';
-export type { CredentialStore } from '../services.js';
+export { SqliteCredentialStore } from '../application/settings.js';
+export type { CredentialStore } from '../application/settings.js';

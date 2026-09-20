@@ -1,7 +1,8 @@
 import type { FormEvent } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { CalendarDays, CircleDot, Flag, FolderKanban } from 'lucide-react';
-import type { Task, TaskPriority } from '@/lib/api.js';
-import { priorities, statuses } from '@/lib/api.js';
+import type { Task, TaskPriority, TaskTopicHistory } from '@/lib/api.js';
+import { api, availableTaskStatuses, priorities, statuses } from '@/lib/api.js';
 import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
@@ -25,6 +26,7 @@ function formatUpdatedAt(value?: string) {
 }
 
 export function TaskDetailModal({ task, topicName, onChange, onClose, onSave, busy = false }: TaskDetailModalProps) {
+  const history = useQuery<TaskTopicHistory[]>({ queryKey: ['task-topic-history', task.id], queryFn: () => api(`/api/tasks/${task.id}/topic-history`) });
   const submit = (event: FormEvent) => { event.preventDefault(); onSave(); };
   const update = (changes: Partial<Task>) => onChange({ ...task, ...changes });
   const priority = task.priority ?? 'none';
@@ -48,7 +50,7 @@ export function TaskDetailModal({ task, topicName, onChange, onClose, onSave, bu
               <Label htmlFor="task-detail-status">状态</Label>
               <Select value={task.status} onValueChange={(value) => update({ status: value as Task['status'] })} disabled={busy}>
                 <SelectTrigger id="task-detail-status" className="mt-2 w-full" aria-label="任务状态"><CircleDot className="size-4" /><SelectValue /></SelectTrigger>
-                <SelectContent>{statuses.map((item) => <SelectItem value={item.value} key={item.value}>{item.label}</SelectItem>)}</SelectContent>
+                <SelectContent>{statuses.filter((item) => availableTaskStatuses(task).includes(item.value)).map((item) => <SelectItem value={item.value} key={item.value}>{item.label}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div>
@@ -82,6 +84,13 @@ export function TaskDetailModal({ task, topicName, onChange, onClose, onSave, bu
           <div className="mb-5">
             <Label htmlFor="task-detail-result">结果摘要</Label>
             <Textarea id="task-detail-result" value={task.resultSummary} onChange={(event) => update({ resultSummary: event.target.value })} placeholder="完成后记录最终结果" disabled={busy} className="mt-2 min-h-20" />
+          </div>
+
+          <div className="mb-5">
+            <Label>主题归属历史</Label>
+            <div className="glass-subtle mt-2 space-y-2 rounded-xl p-3 text-xs text-muted-foreground">
+              {history.isLoading ? <p>正在加载…</p> : !(history.data ?? []).length ? <p>暂无归属记录</p> : history.data!.map((item) => <div key={item.id} className="flex items-start justify-between gap-3"><span>{item.fromTopic?.name ?? '收集箱'} → {item.toTopic?.name ?? '收集箱'}</span><time className="shrink-0">{formatUpdatedAt(item.changedAt)}</time></div>)}
+            </div>
           </div>
 
           <p className="mb-4 text-[11px] text-muted-foreground">最近更新：{formatUpdatedAt(task.updatedAt)}</p>

@@ -42,9 +42,12 @@ model Topic {
   finalSummary  String     @default("") @map("final_summary")
   summaryStatus String     @default("empty") @map("summary_status")
   summaryUpdatedAt String? @map("summary_updated_at")
+  archivedAt    String?  @map("archived_at")
   createdAt     String   @default("") @map("created_at")
   updatedAt     String   @default("") @map("updated_at")
   tasks         Task[]
+  assignmentsFrom TaskTopicAssignment[] @relation("AssignmentFromTopic")
+  assignmentsTo   TaskTopicAssignment[] @relation("AssignmentToTopic")
 
   @@map("topics")
 }
@@ -62,11 +65,32 @@ model Task {
   createdAt     String     @default("") @map("created_at")
   updatedAt     String     @default("") @map("updated_at")
   topic         Topic?     @relation(fields: [topicId], references: [id], onDelete: Restrict)
+  topicAssignments TaskTopicAssignment[]
 
   @@index([topicId])
   @@index([topicId, deletedAt])
   @@index([deletedAt])
   @@map("tasks")
+}
+
+model TaskTopicAssignment {
+  id             String  @id @default(cuid())
+  taskId         String  @map("task_id")
+  fromTopicId    String? @map("from_topic_id")
+  toTopicId      String? @map("to_topic_id")
+  reason         String
+  source         String
+  conversationId String? @map("conversation_id")
+  approvalId     String? @map("approval_id")
+  changedAt      String  @default("") @map("changed_at")
+  task           Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  fromTopic      Topic?  @relation("AssignmentFromTopic", fields: [fromTopicId], references: [id], onDelete: Restrict)
+  toTopic        Topic?  @relation("AssignmentToTopic", fields: [toTopicId], references: [id], onDelete: Restrict)
+
+  @@index([taskId, changedAt])
+  @@index([fromTopicId])
+  @@index([toTopicId])
+  @@map("task_topic_assignments")
 }
 
 enum MessageRole {

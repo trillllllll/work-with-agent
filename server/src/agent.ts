@@ -1,4 +1,9 @@
-import { ApprovalService, ContextService, ConversationService, SettingsService, TaskService, ToolService, type ModelConfig, type ToolCall, type ToolResult } from './services.js';
+import { ToolService, type ToolResult } from './application/tool-registry.js';
+import type { ToolCall } from './application/workspace.js';
+import { ApprovalService } from './application/approval.js';
+import { TaskService } from './application/workspace.js';
+import { SettingsService, type ModelConfig } from './application/settings.js';
+import { ContextService, ConversationService } from './application/conversation.js';
 
 export type PageContext = { topicId?: string | null; taskId?: string | null; page?: string | null };
 export type ChatEvent = {

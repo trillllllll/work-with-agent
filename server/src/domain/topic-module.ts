@@ -1,1 +1,2 @@
-export { TopicService as TopicModule } from '../services.js';
+export { Topic } from './topic.js';
+export type { TopicSummaryStatus } from './topic.js';

@@ -1,1 +1,1 @@
-export { ChangeService as AuditModule } from '../services.js';
+export { ChangeService as AuditModule } from '../application/workspace.js';

@@ -1,5 +1,5 @@
 import { CalendarDays, Flag, Plus, Trash2 } from 'lucide-react';
-import { priorities, statuses, type Status, type Task, type Topic } from '@/lib/api.js';
+import { availableTaskStatuses, priorities, statuses, type Status, type Task, type Topic } from '@/lib/api.js';
 import { Button } from '@/components/ui/button.js';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.js';
 
@@ -38,7 +38,7 @@ export function TaskCard({ task, onEdit, onDelete, onUpdateStatus, topics, onAss
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {statuses.map((item) => <SelectItem value={item.value} key={item.value}>{item.label}</SelectItem>)}
+          {statuses.filter((item) => availableTaskStatuses(task).includes(item.value)).map((item) => <SelectItem value={item.value} key={item.value}>{item.label}</SelectItem>)}
         </SelectContent>
       </Select>
       {topics && onAssignTopic && (

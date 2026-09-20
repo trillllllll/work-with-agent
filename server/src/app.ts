@@ -1,7 +1,8 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
 import { z } from 'zod';
-import { SettingsService, TopicService, TaskService, ChangeService, WorkspaceMutation } from './services.js';
+import { SettingsService } from './application/settings.js';
+import { TopicService, TaskService, ChangeService, WorkspaceMutation } from './application/workspace.js';
 import { AgentService } from './agent.js';
 
 export const app = express();
@@ -36,6 +37,7 @@ app.delete('/api/topics/:id', async (req, res, next) => { try { send(res, await 
 
 app.get('/api/tasks', async (req, res, next) => { try { send(res, await tasks.list(typeof req.query.topicId === 'string' ? req.query.topicId : undefined, { inbox: req.query.inbox === 'true' })); } catch (error) { next(error); } });
 app.get('/api/tasks/:id', async (req, res, next) => { try { const task = await tasks.get(String(req.params.id)); if (!task) return res.status(404).json({ data: null, error: '任务不存在' }); send(res, task); } catch (error) { next(error); } });
+app.get('/api/tasks/:id/topic-history', async (req, res, next) => { try { send(res, await tasks.topicHistory(String(req.params.id))); } catch (error) { next(error); } });
 const taskBody = z.object({ topicId: z.string().trim().min(1).nullable().optional(), title: z.string().trim().min(1), description: z.string().optional(), status: z.enum(['todo', 'doing', 'blocked', 'done']).optional(), priority: z.enum(['none', 'low', 'medium', 'high']).optional(), dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(), resultSummary: z.string().optional() });
 app.post('/api/tasks', schema(taskBody), async (req, res, next) => { try { send(res, await mutations.execute({ name: 'create_task', arguments: req.body }, userContext(req))); } catch (error) { next(error); } });
 app.patch('/api/tasks/:id', schema(taskBody.partial()), async (req, res, next) => { try { send(res, await mutations.execute({ name: 'update_task', arguments: { taskId: String(req.params.id), ...req.body } }, userContext(req))); } catch (error) { next(error); } });
@@ -93,5 +95,5 @@ app.post('/api/changes/:id/undo', async (req, res, next) => { try { send(res, aw
 app.use((error: any, _req: Request, res: Response, _next: NextFunction) => {
   if (res.headersSent) return;
   const status = Number(error?.status) || 500;
-  res.status(status).json({ data: null, error: error?.message ?? '服务器错误' });
+  res.status(status).json({ data: null, error: error?.message ?? '服务器错误', ...(error?.code ? { code: error.code } : {}) });
 });

@@ -1,1 +1,1 @@
-export { ToolService as ToolRegistry } from '../services.js';
+export { ToolService as ToolRegistry } from '../application/tool-registry.js';

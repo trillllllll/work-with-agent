@@ -1,1 +1,1 @@
-export { ContextService as ContextModule } from '../services.js';
+export { ContextService as ContextModule } from '../application/conversation.js';

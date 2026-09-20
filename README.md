@@ -82,7 +82,7 @@ npm run test:all  # 单元/集成测试 + E2E
 
 ```text
 client/       React 前端
-server/       Express API、Agent、Prisma 数据层
+server/       Express API、领域模型、应用用例、Agent 与 Prisma 适配器
 e2e/          Playwright 端到端测试
 docs/         架构与工程文档
 architecture.svg

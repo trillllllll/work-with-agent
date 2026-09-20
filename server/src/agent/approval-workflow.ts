@@ -1,1 +1,1 @@
-export { ApprovalService as ApprovalWorkflow } from '../services.js';
+export { ApprovalService as ApprovalWorkflow } from '../application/approval.js';

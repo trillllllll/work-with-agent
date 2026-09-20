@@ -1,1 +1,2 @@
-export { TaskService as TaskModule } from '../services.js';
+export { Task, allowedTaskTransitions } from './task.js';
+export type { TaskStatusValue } from './task.js';

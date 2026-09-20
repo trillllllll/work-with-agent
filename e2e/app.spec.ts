@@ -66,6 +66,8 @@ test.describe('Agent 工作室 MVP', () => {
     await taskCard().getByRole('button', { name: '详情任务', exact: true }).click();
     await expect(page.getByRole('heading', { name: '任务详情' })).toBeVisible();
     await expect(page.getByLabel('任务名称')).toHaveValue('详情任务');
+    await expect(page.getByText('主题归属历史')).toBeVisible();
+    await expect(page.getByText('收集箱 → E2E 详情主题')).toBeVisible();
     await page.getByRole('combobox', { name: '任务优先级' }).click();
     await page.getByRole('option', { name: '高' }).click();
     await page.locator('#task-detail-due-date').fill('2026-09-30');
@@ -95,6 +97,7 @@ test.describe('Agent 工作室 MVP', () => {
     const taskCard = () => page.getByRole('button', { name: 'E2E 任务', exact: true }).locator('xpath=ancestor::article');
     await expect(taskCard()).toBeVisible();
     await taskCard().getByRole('combobox', { name: '修改状态：E2E 任务' }).click();
+    await expect(page.getByRole('option', { name: '已完成' })).toHaveCount(0);
     await page.getByRole('option', { name: '进行中' }).click();
     await expect(taskCard().getByRole('combobox', { name: '修改状态：E2E 任务' })).toContainText('进行中');
     await taskCard().getByRole('combobox', { name: '修改状态：E2E 任务' }).click();
