@@ -60,6 +60,8 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await page.goto('/#/inbox');
     await page.getByTestId(`task-row-${created.id}`).getByRole('button', { name: '待整理任务', exact: true }).click();
     const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
+    await expect(detail.getByRole('button', { name: '关闭任务详情', exact: true })).toHaveCount(1);
+    await expect(detail.locator('[data-slot="dialog-close"]')).toHaveCount(0);
     await detail.getByLabel('任务标题', { exact: true }).fill('修改后的任务');
     await detail.getByLabel('任务说明', { exact: true }).fill('保留我的说明');
     await detail.getByLabel('截止日期', { exact: true }).fill('2028-02-29');
