@@ -183,6 +183,34 @@ test.describe('Agent 工作室 MVP', () => {
     await expect(composer).toHaveValue('关闭后仍然保留');
   });
 
+  test('WWA 品牌、任务检查器与聊天共用右侧区域', async ({ page, isMobile, request }) => {
+    test.skip(Boolean(isMobile), '桌面三栏布局在桌面视口验收');
+    const task = await responseData<{ id: string }>(await request.post(`${apiUrl}/api/tasks`, { data: { title: '检查器任务' } }));
+    await page.goto('/#/inbox');
+
+    await expect(page.getByLabel('WWA，专注，让更多可能发生', { exact: true })).toBeVisible();
+    await expect(page.getByText('WWA', { exact: true })).toHaveCount(1);
+    await page.getByTestId(`task-row-${task.id}`).getByRole('button', { name: '检查器任务', exact: true }).click();
+    const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
+    await expect(detail).toBeVisible();
+    await detail.getByLabel('任务说明', { exact: true }).fill('检查器草稿');
+
+    await page.getByRole('button', { name: '打开聊天', exact: true }).click();
+    const leave = page.getByRole('dialog', { name: '保存未完成的编辑？', exact: true });
+    await expect(leave).toBeVisible();
+    await leave.getByRole('button', { name: '继续编辑', exact: true }).click();
+    await expect(detail.getByLabel('任务说明', { exact: true })).toHaveValue('检查器草稿');
+
+    await detail.getByRole('button', { name: '保存更改', exact: true }).click();
+    await page.getByRole('button', { name: '打开聊天', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '全局聊天' })).toBeVisible();
+    await expect(detail).toBeHidden();
+    await page.getByRole('button', { name: '关闭聊天' }).click();
+    await expect(detail).toBeVisible();
+    await expect(detail.getByLabel('任务说明', { exact: true })).toHaveValue('检查器草稿');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+  });
+
   test('移动端关闭聊天返回收集箱并可重新进入', async ({ page, isMobile }) => {
     test.skip(!isMobile, '聊天栏移动布局在移动视口验收');
     await page.goto('/#/chat');

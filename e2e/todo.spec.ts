@@ -152,7 +152,8 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     const first = await data(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: list.id, title: '第一条' } }));
     const second = await data(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: list.id, title: '第二条' } }));
     await page.goto('/#/board');
-    await page.getByRole('button', { name: '上移任务：第二条', exact: true }).click();
+    await page.getByTestId(`task-row-${second.id}`).getByRole('button', { name: '任务操作：第二条', exact: true }).click();
+    await page.getByRole('menuitem', { name: '上移任务：第二条', exact: true }).click();
     await expect.poll(async () => (await data(await request.get(`${apiUrl}/api/tasks?topicId=${list.id}&sort=manual`))).map((value: any) => value.id)).toEqual([second.id, first.id]);
     await page.getByTestId(`task-row-${second.id}`).getByRole('button', { name: '第二条', exact: true }).click();
     const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
@@ -180,7 +181,8 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     const child = (await tasks(request)).find((value: any) => value.title === '一起处理');
     expect(child.parentId).toBe(parent.id);
     await detail.getByRole('button', { name: '关闭', exact: true }).click();
-    await page.getByTestId(`task-row-${parent.id}`).getByRole('button', { name: '删除任务：家庭任务', exact: true }).click();
+    await page.getByTestId(`task-row-${parent.id}`).getByRole('button', { name: '任务操作：家庭任务', exact: true }).click();
+    await page.getByRole('menuitem', { name: '删除任务：家庭任务', exact: true }).click();
     await page.getByRole('dialog', { name: '删除任务', exact: true }).getByRole('button', { name: '移入回收站', exact: true }).click();
     await page.getByRole('button', { name: '确认影响并执行', exact: true }).click();
     await expect(page.getByTestId(`task-row-${parent.id}`)).toBeHidden();
