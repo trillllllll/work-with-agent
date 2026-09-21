@@ -5,9 +5,9 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6.svg?logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB.svg?logo=react&logoColor=111827)
 
-> 一个从个人清单出发的本地工作台：先记录、整理和完成任务，再按需使用 AI 对话与受控执行。
+> **让每一次工作，都能接着上次继续。**
 >
-> A local workspace for capturing, organizing, and completing tasks, with optional AI chat and approved execution.
+> Work With Agent 是一个本地优先的个人项目工作台：从一条 Todo 开始，把任务、材料、项目记忆和 AI 执行结果，沉淀成一条可持续推进的工作链路。
 
 [中文](#中文) · [English](#english)
 
@@ -15,121 +15,56 @@
 
 ## 中文
 
-### 项目简介
+### 你缺的不是又一个 Todo
 
-Work With Agent 首先是一款无需配置模型的个人清单工具。使用收集箱、清单、今天和搜索管理同一份任务，编辑日期、优先级、标签、一级子任务和顺序，并通过回收站与变更记录恢复操作。内置 Agent 可按需开启，用于整理任务、生成成果草稿及执行经过审批的文件、Shell 或 HTTP 操作。
+长期项目真正难的地方，从来不是记住一件事，而是记住它为什么重要、已经试过什么、下一步该怎么继续。
 
-### 核心能力
+信息散落在清单、文件、聊天记录和不同 AI 会话里，每次重新开始都要重复解释背景；AI 做完工作后，结果又停留在聊天窗口，无法回到项目本身。
 
-- **基础 Todo**：快速录入、清单列表、今天与逾期、搜索筛选、标签、一级子任务和持久化排序。
-- **可靠编辑**：详情显式保存，失败保留草稿，父子操作共同保存，归档清单保留任务归属。
-- **AI 连接与待确认**：Codex、Claude Code 通过 MCP 按清单授权访问；并发校验、幂等回执、提议整组确认。
-- **材料与项目记忆**：保存文本、Markdown、链接、会话及附件，保留来源版本、记忆修订和当前简报。
-- **交接与执行**：已有会话接手，或本机 CLI 在独立副本执行；结果验收、代码应用和任务完成分别记录。
-- **每日/每周回顾**：规则默认关闭，先保存无模型报告，可追加受限 AI 整理建议。
-- **流式 Agent 对话**：通过 Server-Sent Events 实时查看回复、工具调用和执行结果。
-- **工作区看板**：以主题、任务和状态组织日常工作。
-- **人工审批**：高风险工具调用进入待审批列表，可批准或拒绝。
-- **变更审计与撤销**：记录用户和 Agent 的变更来源；对支持的操作提供安全撤销。
-- **受控执行**：文件、Shell、HTTP 执行具备参数校验、超时、输出限制和敏感信息脱敏。
-- **模型配置**：在设置页配置 OpenAI 兼容的接口地址、API Key 和模型名称。
-- **响应式界面**：支持桌面和移动端，并提供亮色/暗色主题。
+**Work With Agent 把这些内容放回同一个工作上下文。**
 
-### 技术栈
+你可以像使用轻量 Todo 一样快速记录工作，也可以逐步为任务补充项目、材料、决策、完成标准和历史经验。需要 AI 时，交给它的是一份带上下文的正式接力，而不是一段孤立的 Prompt。
 
-| 层 | 技术 |
-| --- | --- |
-| 前端 | React 19、Vite、TypeScript、Tailwind CSS、TanStack Query |
-| 服务端 | Node.js、Express 5、TypeScript、Zod |
-| 数据层 | Prisma、SQLite |
-| 测试 | Vitest、Supertest、Playwright |
-
-### 快速开始
-
-**环境要求**：Node.js 22+、npm 10+；备份和完整测试使用 Node.js 内置 SQLite。
-
-```bash
-git clone https://github.com/trillllllll/work-with-agent.git
-cd work-with-agent
-npm install
-copy server\.env.example server\.env   # macOS/Linux: cp server/.env.example server/.env
-npm run prisma:generate
-npm run db:migrate
-npm run dev
-```
-
-启动后访问：
-
-- Web：<http://127.0.0.1:5176>
-- API：<http://127.0.0.1:3016>
-
-首次使用请打开 API 启动日志中的一次性登录链接，浏览器会建立本机会话。
-
-打开应用后即可使用基础 Todo。只有使用内置 Agent 时，才需要在“设置”页面填写模型配置。也可以通过环境变量设置 `PORT`，并在前端通过 `VITE_API_URL` 指定 API 地址。
-
-第二至第五阶段的身份、命令、资料、MCP、交接和回顾接口见 [完整接口与接入说明](./docs/stages-2-5-api.md)，实际验证状态见 [实施与验收记录](./docs/stages-2-5-implementation.md)。
-
-第一阶段的接口、迁移和兼容说明见 [基础 Todo 实施记录](./docs/stage-1-todo-implementation.md)。新界面的“归档清单”保留任务归属；旧 `DELETE /api/topics/:id` 仍保留归档并移出任务的兼容语义。
-
-### 常用命令
-
-```bash
-npm run dev       # 同时启动前后端开发服务
-npm run build     # 构建服务端和客户端
-npm test          # 运行单元与集成测试
-npm run e2e       # 无模型 Todo + Mock Agent 的桌面/移动端验收
-npm run test:all  # 单元/集成测试 + E2E
-```
-
-修改 `server/prisma/schema.prisma` 后，请先停止开发服务，再运行 `npm run prisma:generate` 和 `npm run db:migrate`。
-
-### 安全说明
-
-- API Key 仅由服务端保存和使用，界面只显示掩码值。
-- Agent 发起的敏感变更需要审批后才会执行。
-- 执行结果会脱敏，并记录来源、审批 ID 和请求 ID。
-- 服务仅监听回环地址。用户会话使用 HttpOnly Cookie 与 CSRF；每个 AI 连接使用独立、可撤销的凭据。
-- 数据升级前停止服务并备份 SQLite、附件及运行目录。不要将本机服务直接暴露到公网。
-
-### 项目结构
+### 从记录到完成，形成一个闭环
 
 ```text
-client/       React 前端
-server/       Express API、领域模型、应用用例、Agent 与 Prisma 适配器
-e2e/          Playwright 端到端测试
-docs/         架构与工程文档
-architecture.svg
+快速记录 → 整理为任务与项目 → 补充材料和记忆
+                         ↓
+              自己处理，或交给 AI 接力
+                         ↓
+        结果、成果和经验回到项目，准备下一步
 ```
 
-### 参与贡献
+### 核心亮点
 
-欢迎提交 Issue 和 Pull Request。提交前请运行 `npm run test:all`，并在 PR 中说明行为变化及测试覆盖。
+- **先记下来，再慢慢整理**：收集箱、清单、今天、搜索和标签，让捕捉想法足够快，不必在输入时决定一切。
+- **任务自带完整上下文**：目标、完成标准、相关材料、历史决策和已尝试方案，都可以跟着任务一起交接。
+- **AI 是协作者，不是黑箱**：AI 可以整理任务、生成草稿、提出记忆更新和执行建议；重要变化由你确认后才会发生。
+- **正式的 AI 接力**：生成包含背景、约束、验收标准和期望交付物的接力包，让不同会话、不同工具都能从正确的位置开始。
+- **结果不会丢在聊天里**：执行结果、成果草稿、后续事项和项目记忆都能回到工作台，成为下一次工作的起点。
+- **本地优先，过程可追溯**：数据存储在本机，操作有审计记录，支持撤销；文件、Shell 和 HTTP 执行都有校验、超时和敏感信息脱敏。
 
-## English
+### 适合这些时刻
 
-### Overview
+- 一个要持续几周或几个月的个人项目
+- 需要在多个 AI 工具之间来回接力的开发、研究或创作
+- 不想把重要决策埋在聊天记录里的工作
+- 想先拥有可靠任务管理，再按需接入 AI 的本地工作流
 
-Work With Agent starts with a personal task list that works without a model configuration. Capture tasks in Inbox, organize lists, use Today and search, manage tags and one-level subtasks, and restore changes through Trash and audit history. Optional AI chat can organize tasks, propose summaries, and run approved file, Shell, and HTTP operations.
+### 你会得到什么
 
-### Features
+| 工作对象 | 在 Work With Agent 里如何协作 |
+| --- | --- |
+| 任务 | 记录下一步行动，并附带目的、优先级、标签、子任务和完成标准 |
+| 项目 | 汇总目标、任务、材料、决策、记忆和成果，随工作持续演化 |
+| 材料 | 保存文档、Markdown、链接、会话和附件，保留来源与版本 |
+| 项目记忆 | 沉淀当前有效的事实、约束、经验和决策，保留来源与变化历史 |
+| AI 接力 | 将任务交给受控的 AI 会话或本机执行器，并接收可验收的结果 |
+| 成果 | 保存报告、代码、设计、链接和摘要，让输出可以继续被复用 |
 
-- **Everyday Todo** with quick capture, lists, Today, search, tags, subtasks, and saved manual ordering.
-- **Explicit editing** with retained drafts on failure, grouped parent/subtask operations, and archives that preserve ownership.
-- **Streaming agent chat** with Server-Sent Events for messages, tool calls, and results.
-- **Workspace board** for organizing topics, tasks, and statuses.
-- **Human approval** for sensitive tool calls before execution.
-- **Change audit and undo** for supported reversible mutations.
-- **Controlled execution** with validation, timeouts, output limits, and secret redaction.
-- **Model settings** for OpenAI-compatible base URLs, API keys, and model names.
-- **Responsive UI** with light and dark themes.
+### 开始使用
 
-### Tech stack
-
-React 19, Vite, TypeScript, Tailwind CSS, TanStack Query, Node.js, Express 5, Zod, Prisma, SQLite, Vitest, Supertest, and Playwright.
-
-### Quick start
-
-**Requirements**: Node.js 22+ and npm 10+. Backups and the full test suite use Node's built-in SQLite.
+**环境要求**：Node.js 22+、npm 10+
 
 ```bash
 git clone https://github.com/trillllllll/work-with-agent.git
@@ -141,7 +76,105 @@ npm run db:migrate
 npm run dev
 ```
 
-Open the one-use login link printed at startup. The UI runs on <http://127.0.0.1:5176> and the loopback API on <http://127.0.0.1:3016>. A model is required only for optional AI chat and can be configured from Settings. Codex/Claude Code MCP, source-versioned materials and memories, isolated local runs, and opt-in periodic reviews are described in [the integration guide](./docs/stages-2-5-api.md).
+Windows PowerShell 可使用：
+
+```powershell
+Copy-Item server/.env.example server/.env
+```
+
+启动后访问：
+
+- Web：<http://127.0.0.1:5176>
+- API：<http://127.0.0.1:3016>
+
+首次启动时，打开 API 日志中输出的一次性登录链接即可建立本机会话。基础 Todo 不需要配置模型；只有使用内置 Agent 时，才需要在“设置”页面填写 OpenAI 兼容接口地址、API Key 和模型名称。
+
+### 常用命令
+
+```bash
+npm run dev       # 同时启动前后端开发服务
+npm run build     # 构建服务端和客户端
+npm test          # 单元与集成测试
+npm run e2e       # 桌面/移动端端到端验收
+npm run test:all  # 完整测试
+```
+
+### 设计取舍
+
+Work With Agent 不追求让 AI 自动接管所有事情，而是让项目在人和 AI 之间保持连续：
+
+1. **Todo 是入口**：先让记录和推进足够轻，再逐步增加项目上下文。
+2. **AI 提议，用户确认**：重要分类、记忆和写操作都保留人的判断权。
+3. **材料不等于记忆**：原始证据与已经确认的项目认知分开保存。
+4. **结果必须回流**：完成一次任务，不只是收到回复，还要留下成果、经验和下一步。
+
+### 安全与隐私
+
+- API Key 仅由服务端保存和使用，界面只显示掩码值。
+- Agent 的敏感写操作进入待审批列表，批准后才会执行。
+- 文件、Shell 和 HTTP 执行具备参数校验、超时、输出限制和敏感信息脱敏。
+- 服务默认只监听回环地址，不应直接暴露到公网。
+- 浏览器会话使用 HttpOnly Cookie 与 CSRF 防护；外部 AI 连接使用独立、可撤销的凭据。
+- 用户操作和 Agent 变更保留审计记录，支持对部分操作安全撤销。
+
+### 技术栈
+
+| 层 | 技术 |
+| --- | --- |
+| 前端 | React 19、Vite、TypeScript、Tailwind CSS、TanStack Query |
+| 服务端 | Node.js、Express 5、TypeScript、Zod |
+| 数据层 | Prisma、SQLite |
+| 测试 | Vitest、Supertest、Playwright |
+
+### 项目结构
+
+```text
+client/       React 前端
+server/       Express API、领域模型、Agent 与 Prisma 适配器
+e2e/          Playwright 端到端测试
+docs/         架构、产品和工程文档
+architecture.svg
+```
+
+更多 API、MCP、材料记忆、Handoff、Runner 和回顾能力，见 [完整接口与接入说明](./docs/stages-2-5-api.md)；当前实现和验收状态见 [实施与验收记录](./docs/stages-2-5-implementation.md)。
+
+### 参与贡献
+
+欢迎提交 Issue 和 Pull Request。提交前请运行 `npm run test:all`，并在 PR 中说明行为变化与测试覆盖。
+
+## English
+
+### Keep the work moving, even when the context changes
+
+Work With Agent is a local-first personal project workspace. It starts with a fast Todo experience, then connects tasks with project materials, decisions, durable memory, AI handoffs, and reviewable results.
+
+Long-running work often breaks at the handoff: context lives in one chat, files in another folder, decisions in someone's memory, and the next step in a separate task list. Work With Agent keeps those pieces together so you can capture quickly, resume with context, and let people or AI continue from the same source of truth.
+
+### Highlights
+
+- Fast capture with Inbox, lists, Today, search, tags, priorities, and subtasks.
+- Tasks that carry goals, completion criteria, materials, decisions, and previous attempts.
+- Project memory for current facts, constraints, decisions, and lessons with source history.
+- Structured AI handoffs instead of isolated prompts.
+- Streaming Agent chat, controlled file/Shell/HTTP execution, approvals, audit history, and undo.
+- Materials, drafts, artifacts, and follow-up work returned to the project after execution.
+- Local-first SQLite storage with responsive light and dark interfaces.
+
+### Quick start
+
+**Requirements**: Node.js 22+ and npm 10+
+
+```bash
+git clone https://github.com/trillllllll/work-with-agent.git
+cd work-with-agent
+npm install
+cp server/.env.example server/.env
+npm run prisma:generate
+npm run db:migrate
+npm run dev
+```
+
+Open the one-time login link printed by the API. The Web UI runs on <http://127.0.0.1:5176> and the loopback API on <http://127.0.0.1:3016>. A model is required only for optional Agent features and can be configured from Settings.
 
 ### Commands
 
@@ -149,17 +182,13 @@ Open the one-use login link printed at startup. The UI runs on <http://127.0.0.1
 npm run dev       # Start client and server together
 npm run build     # Build client and server
 npm test          # Unit and integration tests
-npm run e2e       # Desktop/mobile Todo without a model, plus mock Agent tests
+npm run e2e       # End-to-end acceptance tests
 npm run test:all  # Full test suite
 ```
 
 ### Security
 
-The API listens on loopback only. Browser sessions use HttpOnly cookies and CSRF; external AI connections use individual revocable credentials. API keys stay on the server. AI proposals require owner review, and execution output is redacted and audited. Stop the service and runners before `npm run db:backup`; keep the SQLite, attachment, and runner snapshots together. Do not expose this local single-user service directly to the public network.
-
-### Contributing
-
-Issues and pull requests are welcome. Run `npm run test:all` before submitting a PR and describe any behavior changes and relevant test coverage.
+The API listens on loopback by default. API keys stay on the server. Sensitive Agent proposals require owner approval, execution output is redacted and audited, and browser sessions use HttpOnly cookies with CSRF protection. Do not expose this local single-user service directly to the public network.
 
 ## License
 
