@@ -1,84 +1,50 @@
-import { Prisma, TaskPriority, TaskStatus } from '@prisma/client';
-import { DomainError, Task as TaskDomain, allowedTaskTransitions, type TaskStatusValue } from '../domain/task.js';
-import { Topic as TopicDomain } from '../domain/topic.js';
-import { prisma } from '../infrastructure/prisma.js';
+import { DomainError } from '../domain/task.js';
+import { z } from 'zod';
+import { TaskService } from './workspace-task.js';
+import { TopicService, TagService } from './workspace-topic.js';
+import { parseInput, taskCreateSchema, topicCreateSchema } from './workspace-input.js';
+import { ChangeGroup, conflict, isGroup, notFound, now, prisma, restoreGroup, mutationTransaction, recordChange, type Db, type MutationContext, type GroupSnapshot } from './workspace-store.js';
+import { hasUndoHandler, externalUndo } from './undo-registry.js';
+import { ownerActor } from './security.js';
 
-export type MutationContext = { source: 'user' | 'agent'; conversationId?: string; approvalId?: string; requestId?: string };
+export { TaskService, TopicService, TagService };
+export type { MutationContext };
 export type ToolCall = { name: string; arguments: Record<string, unknown>; id?: string };
-type Db = Prisma.TransactionClient | typeof prisma;
-const now = () => new Date().toISOString();
-const notFound = (message: string) => Object.assign(new Error(message), { status: 404 });
-const badRequest = (message: string) => Object.assign(new Error(message), { status: 400 });
-
-export class TopicService {
-  async list() { return prisma.topic.findMany({ where: { archivedAt: null }, orderBy: { updatedAt: 'desc' } }); }
-  async get(topicId: string) { const topic = await prisma.topic.findFirst({ where: { id: topicId, archivedAt: null }, include: { tasks: { where: { deletedAt: null }, orderBy: { updatedAt: 'desc' } } } }); return topic ? { ...topic, tasks: topic.tasks.map(taskDto) } : null; }
-  async create(input: { name: string; description?: string; isExploration?: boolean; goal?: string }, context: MutationContext | string = { source: 'user' }) { const ctx = normalizeContext(context); return prisma.$transaction(async (tx) => { const timestamp = now(); const result = await tx.topic.create({ data: { name: input.name, description: input.description ?? '', goal: input.goal ?? '', isExploration: input.isExploration ?? false, createdAt: timestamp, updatedAt: timestamp } }); await recordChange(tx, 'topic', result.id, 'create', null, result, ctx); return result; }); }
-  async update(topicId: string, input: Partial<{ name: string; description: string; isExploration: boolean; goal: string; draftSummary: string }>, context: MutationContext | string = { source: 'user' }) { const ctx = normalizeContext(context); return prisma.$transaction(async (tx) => { const before = await tx.topic.findFirst({ where: { id: topicId, archivedAt: null } }); if (!before) throw notFound('主题不存在'); const data: any = { ...input, updatedAt: now() }; if (input.draftSummary !== undefined) { const topic = TopicDomain.restore(before); if (input.draftSummary) topic.proposeSummary(input.draftSummary); else topic.discardSummary(); Object.assign(data, topic.summaryState(), { summaryUpdatedAt: now() }); } const result = await tx.topic.update({ where: { id: topicId }, data }); await recordChange(tx, 'topic', topicId, 'update', before, result, ctx); return result; }); }
-  async remove(topicId: string, context: MutationContext | string = { source: 'user' }) { const ctx = normalizeContext(context); return prisma.$transaction(async (tx) => { const topic = await tx.topic.findFirst({ where: { id: topicId, archivedAt: null }, include: { tasks: true } }); if (!topic) throw notFound('主题不存在'); const timestamp = now(); await tx.task.updateMany({ where: { topicId }, data: { topicId: null, updatedAt: timestamp } }); if (topic.tasks.length) await tx.taskTopicAssignment.createMany({ data: topic.tasks.map((task) => assignmentData(task.id, topicId, null, 'topic_archived', ctx, timestamp)) }); const result = await tx.topic.update({ where: { id: topicId }, data: { archivedAt: timestamp, updatedAt: timestamp } }); const afterTasks = topic.tasks.map((task) => ({ ...task, topicId: null, updatedAt: timestamp })); await recordChange(tx, 'topic', topicId, 'archive', topic, { ...result, tasks: afterTasks }, ctx); return result; }); }
-  async generateSummary(topicId: string, summary: string, context: MutationContext = { source: 'agent' }) { return this.update(topicId, { draftSummary: summary }, context); }
-  async confirmSummary(topicId: string, context: MutationContext = { source: 'user' }) { return prisma.$transaction(async (tx) => { const before = await tx.topic.findFirst({ where: { id: topicId, archivedAt: null } }); if (!before) throw notFound('主题不存在'); const topic = TopicDomain.restore(before); topic.confirmSummary(); const result = await tx.topic.update({ where: { id: topicId }, data: { ...topic.summaryState(), summaryUpdatedAt: now(), updatedAt: now() } }); await recordChange(tx, 'topic', topicId, 'confirm_summary', before, result, context); return result; }); }
-  async discardSummary(topicId: string, context: MutationContext = { source: 'user' }) { return prisma.$transaction(async (tx) => { const before = await tx.topic.findFirst({ where: { id: topicId, archivedAt: null } }); if (!before) throw notFound('主题不存在'); const topic = TopicDomain.restore(before); topic.discardSummary(); const result = await tx.topic.update({ where: { id: topicId }, data: { ...topic.summaryState(), summaryUpdatedAt: now(), updatedAt: now() } }); await recordChange(tx, 'topic', topicId, 'discard_summary', before, result, context); return result; }); }
-}
-
-export class TaskService {
-  async list(topicId?: string, options: { includeDeleted?: boolean; inbox?: boolean } = {}) { return (await prisma.task.findMany({ where: { ...(topicId ? { topicId } : {}), ...(options.inbox ? { topicId: null } : {}), ...(options.includeDeleted ? {} : { deletedAt: null }) }, orderBy: { updatedAt: 'desc' } })).map(taskDto); }
-  async listDeleted() { return (await prisma.task.findMany({ where: { deletedAt: { not: null } }, include: { topic: { select: { id: true, name: true } } }, orderBy: { deletedAt: 'desc' } })).map(taskDto); }
-  async get(taskId: string, options: { includeDeleted?: boolean } = {}) { const task = await prisma.task.findFirst({ where: { id: taskId, ...(options.includeDeleted ? {} : { deletedAt: null }) } }); return task ? taskDto(task) : null; }
-  async create(input: { topicId?: string | null; title: string; description?: string; status?: TaskStatus; priority?: TaskPriority; dueDate?: string | null; resultSummary?: string }, context: MutationContext | string = { source: 'user' }) { const ctx = normalizeContext(context); if (input.status && input.status !== TaskStatus.todo) throw new DomainError('INVALID_INITIAL_TASK_STATUS', '新任务必须从待办状态开始', 400); return prisma.$transaction(async (tx) => { if (input.topicId && !(await tx.topic.findFirst({ where: { id: input.topicId, archivedAt: null } }))) throw notFound('主题不存在'); const timestamp = now(); const result = await tx.task.create({ data: { topicId: input.topicId ?? null, title: input.title, description: input.description ?? '', status: TaskStatus.todo, priority: input.priority ?? TaskPriority.none, dueDate: input.dueDate ?? null, resultSummary: input.resultSummary ?? '', createdAt: timestamp, updatedAt: timestamp } }); if (result.topicId) await tx.taskTopicAssignment.create({ data: assignmentData(result.id, null, result.topicId, 'created', ctx, timestamp) }); await recordChange(tx, 'task', result.id, 'create', null, result, ctx); return taskDto(result); }); }
-  async update(taskId: string, input: Partial<{ title: string; description: string; status: TaskStatus; priority: TaskPriority; dueDate: string | null; resultSummary: string; topicId: string | null }>, context: MutationContext | string = { source: 'user' }) { const ctx = normalizeContext(context); return prisma.$transaction(async (tx) => { if (input.topicId && !(await tx.topic.findFirst({ where: { id: input.topicId, archivedAt: null } }))) throw notFound('主题不存在'); const before = await tx.task.findUnique({ where: { id: taskId } }); if (!before) throw notFound('任务不存在'); const task = TaskDomain.restore({ id: before.id, status: before.status as TaskStatusValue, topicId: before.topicId, deletedAt: before.deletedAt }); if (input.status) task.transitionTo(input.status as TaskStatusValue); else if (before.deletedAt) throw new DomainError('TASK_NOT_EDITABLE', '回收站中的任务不能直接修改'); const timestamp = now(); const result = await tx.task.update({ where: { id: taskId }, data: { ...input, updatedAt: timestamp } }); if ('topicId' in input && input.topicId !== before.topicId) await tx.taskTopicAssignment.create({ data: assignmentData(taskId, before.topicId, input.topicId ?? null, input.topicId ? 'assigned' : 'unassigned', ctx, timestamp) }); await recordChange(tx, 'task', taskId, 'update', before, result, ctx); return taskDto(result); }); }
-  async remove(taskId: string, context: MutationContext | string = { source: 'user' }) { return this.softDelete(taskId, normalizeContext(context)); }
-  async softDelete(taskId: string, context: MutationContext = { source: 'user' }) { return prisma.$transaction(async (tx) => { const before = await tx.task.findUnique({ where: { id: taskId } }); if (!before) throw notFound('任务不存在'); if (before.deletedAt) throw Object.assign(new Error('任务已在回收站'), { status: 409 }); const result = await tx.task.update({ where: { id: taskId }, data: { deletedAt: now(), updatedAt: now() } }); await recordChange(tx, 'task', taskId, 'delete', before, result, context); return result; }); }
-  async restore(taskId: string, context: MutationContext = { source: 'user' }) { return prisma.$transaction(async (tx) => { const task = await tx.task.findUnique({ where: { id: taskId }, include: { topic: true } }); if (!task || !task.deletedAt) throw Object.assign(new Error('任务不在回收站'), { status: 409 }); if (task.topicId && !task.topic) throw Object.assign(new Error('原主题不存在，无法恢复任务'), { status: 409 }); const result = await tx.task.update({ where: { id: taskId }, data: { deletedAt: null, updatedAt: now() } }); await recordChange(tx, 'task', taskId, 'restore', task, result, context); return result; }); }
-  async permanentDelete(taskId: string, context: MutationContext = { source: 'user' }) { return prisma.$transaction(async (tx) => { const before = await tx.task.findUnique({ where: { id: taskId } }); if (!before || !before.deletedAt) throw Object.assign(new Error('任务不在回收站'), { status: 409 }); await tx.task.delete({ where: { id: taskId } }); await recordChange(tx, 'task', taskId, 'permanent_delete', before, null, context); return before; }); }
-  async topicHistory(taskId: string) { if (!(await prisma.task.findUnique({ where: { id: taskId } }))) throw notFound('任务不存在'); return prisma.taskTopicAssignment.findMany({ where: { taskId }, include: { fromTopic: { select: { id: true, name: true } }, toTopic: { select: { id: true, name: true } } }, orderBy: { changedAt: 'asc' } }); }
-}
+type StoredChange = { entityType: string; entityId: string; operation: string; beforeSnapshot: string | null; afterSnapshot: string | null };
 
 export class WorkspaceMutation {
-  constructor(private readonly topics = new TopicService(), private readonly tasks = new TaskService()) {}
+  constructor(private readonly topics = new TopicService(), private readonly tasks = new TaskService(), private readonly tags = new TagService()) {}
+
   async execute(call: ToolCall, context: MutationContext): Promise<unknown> {
+    const args = call.arguments;
     switch (call.name) {
-      case 'create_task': return this.tasks.create({ topicId: typeof call.arguments.topicId === 'string' ? call.arguments.topicId : null, title: String(call.arguments.title), description: call.arguments.description as string | undefined, status: call.arguments.status as TaskStatus | undefined, priority: call.arguments.priority as TaskPriority | undefined, dueDate: call.arguments.dueDate as string | null | undefined, resultSummary: call.arguments.resultSummary as string | undefined }, context);
-      case 'update_task': return this.tasks.update(String(call.arguments.taskId), { topicId: call.arguments.topicId as string | undefined, title: call.arguments.title as string | undefined, description: call.arguments.description as string | undefined, status: call.arguments.status as TaskStatus | undefined, priority: call.arguments.priority as TaskPriority | undefined, dueDate: call.arguments.dueDate as string | null | undefined, resultSummary: call.arguments.resultSummary as string | undefined }, context);
-      case 'delete_task': return this.tasks.remove(String(call.arguments.taskId), context);
-      case 'restore_task': return this.tasks.restore(String(call.arguments.taskId), context);
-      case 'permanent_delete_task': return this.tasks.permanentDelete(String(call.arguments.taskId), context);
-      case 'create_topic': return this.topics.create({ name: String(call.arguments.name), description: call.arguments.description as string | undefined, isExploration: call.arguments.isExploration as boolean | undefined }, context);
-      case 'update_topic': return this.topics.update(String(call.arguments.topicId), { name: call.arguments.name as string | undefined, description: call.arguments.description as string | undefined, isExploration: call.arguments.isExploration as boolean | undefined }, context);
-      case 'delete_topic': return this.topics.remove(String(call.arguments.topicId), context);
-      case 'propose_topic_summary': return this.topics.generateSummary(String(call.arguments.topicId), String(call.arguments.summary), context);
-      default: throw badRequest(`不支持的写入 Tool: ${call.name}`);
+      case 'create_task': return this.tasks.create(args, context);
+      case 'update_task': return this.tasks.update(String(args.taskId), args, context);
+      case 'delete_task': return this.tasks.remove(String(args.taskId), context);
+      case 'restore_task': return this.tasks.restore(String(args.taskId), context);
+      case 'permanent_delete_task': return this.tasks.permanentDelete(String(args.taskId), context);
+      case 'reorder_tasks': return this.tasks.reorder(args, context);
+      case 'create_topic': return this.topics.create(args, context);
+      case 'update_topic': return this.topics.update(String(args.topicId), args, context);
+      case 'delete_topic': return this.topics.remove(String(args.topicId), context);
+      case 'archive_topic': return this.topics.archive(String(args.topicId), context);
+      case 'restore_topic': return this.topics.restore(String(args.topicId), context);
+      case 'move_topic_tasks_to_inbox': return this.topics.moveTasksToInbox(String(args.topicId), context);
+      case 'propose_topic_summary': return this.topics.generateSummary(String(args.topicId), String(args.summary), context);
+      case 'create_tag': return this.tags.create(args, context);
+      case 'update_tag': return this.tags.update(String(args.tagId), args, context);
+      case 'delete_tag': return this.tags.remove(String(args.tagId), context);
+      default: throw new DomainError('UNKNOWN_TOOL', `不支持的写入 Tool: ${call.name}`, 400);
     }
   }
-  async restore(record: { entityType: string; entityId: string; operation: string; beforeSnapshot: string | null; afterSnapshot: string | null }, context: MutationContext, db: Db = prisma) {
+
+  async restore(record: StoredChange, context: MutationContext, db: Db = prisma) {
     const run = async (tx: Db) => {
       const before = record.beforeSnapshot ? JSON.parse(record.beforeSnapshot) : null;
       const after = record.afterSnapshot ? JSON.parse(record.afterSnapshot) : null;
-      if (record.entityType === 'topic' && record.operation === 'archive') {
-        const currentTopic = await tx.topic.findUnique({ where: { id: record.entityId } });
-        if (!currentTopic || currentTopic.updatedAt !== after?.updatedAt || currentTopic.archivedAt !== after?.archivedAt) throw new DomainError('UNDO_CONFLICT', '主题已发生后续变更，无法撤销');
-        const beforeTasks = Array.isArray(before?.tasks) ? before.tasks : [];
-        const afterTasks = Array.isArray(after?.tasks) ? after.tasks : [];
-        const currentTasks = await tx.task.findMany({ where: { id: { in: beforeTasks.map((task: any) => task.id) } } });
-        const afterById = new Map(afterTasks.map((task: any) => [task.id, task]));
-        if (currentTasks.length !== beforeTasks.length || currentTasks.some((task) => task.topicId !== null || task.updatedAt !== (afterById.get(task.id) as any)?.updatedAt)) throw new DomainError('UNDO_CONFLICT', '主题中的任务已发生后续变更，无法撤销');
-        await tx.topic.update({ where: { id: record.entityId }, data: sanitizeTopic(before) });
-        for (const task of beforeTasks) await tx.task.update({ where: { id: task.id }, data: sanitizeTask(task) });
-        if (beforeTasks.length) await tx.taskTopicAssignment.createMany({ data: beforeTasks.map((task: any) => assignmentData(task.id, null, record.entityId, 'undo', context)) });
-        return { before, after };
-      }
-      const current = record.entityType === 'task' ? await tx.task.findUnique({ where: { id: record.entityId } }) : await tx.topic.findUnique({ where: { id: record.entityId } });
-      if (after && (!current || current.updatedAt !== after.updatedAt)) throw new DomainError('UNDO_CONFLICT', '实体已发生后续变更，无法撤销');
-      if (record.entityType === 'task') {
-        if (record.operation === 'create') await tx.task.delete({ where: { id: record.entityId } });
-        else if (record.operation === 'delete') current ? await tx.task.update({ where: { id: record.entityId }, data: sanitizeTask(before) }) : await tx.task.create({ data: sanitizeTask(before) });
-        else { await tx.task.update({ where: { id: record.entityId }, data: sanitizeTask(before) }); if (before?.topicId !== after?.topicId) await tx.taskTopicAssignment.create({ data: assignmentData(record.entityId, after?.topicId ?? null, before?.topicId ?? null, 'undo', context) }); }
-      } else if (record.entityType === 'topic') {
-        if (record.operation === 'create') await tx.topic.delete({ where: { id: record.entityId } });
-        else if (record.operation === 'delete') await tx.topic.create({ data: sanitizeTopic(before) });
-        else await tx.topic.update({ where: { id: record.entityId }, data: sanitizeTopic(before) });
-      } else throw badRequest('不支持的变更实体类型');
-      return { before, after };
+      if (isGroup(before) && isGroup(after)) return restoreGroup(tx, before, after, context);
+      const legacy = await legacySnapshots(tx, record, before, after, context);
+      return restoreGroup(tx, legacy.before, legacy.after, context);
     };
     return db === prisma ? prisma.$transaction(run) : run(db);
   }
@@ -86,14 +52,133 @@ export class WorkspaceMutation {
 
 export class ChangeService {
   constructor(private readonly mutations = new WorkspaceMutation()) {}
-  async list(entityType?: string, entityId?: string) { return (await prisma.changeRecord.findMany({ where: { ...(entityType ? { entityType } : {}), ...(entityId ? { entityId } : {}) }, orderBy: { createdAt: 'desc' } })).map((record) => ({ ...record, reversible: reversibleChange(record.entityType, record.operation) })); }
-  async undo(id: string, context: MutationContext = { source: 'user' }) { const record = await prisma.changeRecord.findUnique({ where: { id } }); if (!record) throw notFound('变更记录不存在'); if (!reversibleChange(record.entityType, record.operation)) throw new DomainError('CHANGE_NOT_REVERSIBLE', record.entityType === 'execution' ? '受控执行记录不可撤销' : '该变更不可撤销', 400); if (record.undoneAt) throw badRequest('该变更已经撤销'); return prisma.$transaction(async (tx) => { await this.mutations.restore(record, context, tx); await tx.changeRecord.update({ where: { id }, data: { undoneAt: now() } }); await recordChange(tx, record.entityType, record.entityId, `undo:${record.operation}`, record.afterSnapshot ? JSON.parse(record.afterSnapshot) : null, record.beforeSnapshot ? JSON.parse(record.beforeSnapshot) : null, context, id); return { success: true }; }); }
+
+  async list(entityType?: string, entityId?: string) {
+    const records = await prisma.changeRecord.findMany({ where: { ...(entityType ? { entityType } : {}), ...(entityId ? { entityId } : {}) }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] });
+    return records.map((record) => ({ ...record, reversible: reversibleChange(record.entityType, record.operation) }));
+  }
+
+  async undo(id: string, context: MutationContext = { source: 'user' }) {
+    return mutationTransaction(context, async (tx) => {
+      const record = await tx.changeRecord.findUnique({ where: { id } });
+      if (!record) throw notFound('变更记录不存在');
+      if (!reversibleChange(record.entityType, record.operation)) throw new DomainError('CHANGE_NOT_REVERSIBLE', record.entityType === 'execution' ? '受控执行记录不可撤销' : '该变更不可撤销', 400);
+      if (record.undoneAt) throw new DomainError('CHANGE_ALREADY_UNDONE', '该变更已经撤销', 400);
+      const before = record.beforeSnapshot ? JSON.parse(record.beforeSnapshot) : null;
+      const after = record.afterSnapshot ? JSON.parse(record.afterSnapshot) : null;
+      if (hasUndoHandler(record.entityType) || before?.version === 3) {
+        if (before?.version === 3) {
+          for (let index = before.changes.length - 1; index >= 0; index--) {
+            const item = before.changes[index];
+            const part = { ...item, beforeSnapshot: item.snapshot, afterSnapshot: after.changes[index].snapshot };
+            if (hasUndoHandler(item.entityType)) await externalUndo(tx, context.actor ?? ownerActor, part, { ...context, requestId: undefined });
+            else await this.mutations.restore(part, context, tx);
+          }
+        } else await externalUndo(tx, context.actor ?? ownerActor, record, { ...context, requestId: undefined });
+        await tx.changeRecord.update({ where: { id }, data: { undoneAt: now() } });
+        const reversal = await recordChange(tx, record.entityType, record.entityId, `undo:${record.operation}`, after, before, context, id);
+        return { success: true, meta: { changeId: reversal.id, affectedTaskIds: [] as string[] } };
+      }
+      const undo = await this.mutations.restore(record, context, tx);
+      await tx.changeRecord.update({ where: { id }, data: { undoneAt: now() } });
+      const meta = await undo.record(record.entityType, record.entityId, `undo:${record.operation}`, id);
+      return { success: true, meta };
+    });
+  }
 }
 
-function normalizeContext(context: MutationContext | string): MutationContext { return typeof context === 'string' ? { source: context as MutationContext['source'] } : context; }
-function taskDto<T extends { status: TaskStatus; deletedAt: string | null }>(task: T) { return { ...task, allowedTransitions: task.deletedAt ? [] : allowedTaskTransitions(task.status as TaskStatusValue) }; }
-function assignmentData(taskId: string, fromTopicId: string | null, toTopicId: string | null, reason: string, context: MutationContext, changedAt = now()) { return { taskId, fromTopicId, toTopicId, reason, source: context.source, conversationId: context.conversationId, approvalId: context.approvalId, changedAt }; }
-function sanitizeTask(value: any) { const { topic, ...data } = value ?? {}; return { ...data, status: data.status as TaskStatus }; }
-function sanitizeTopic(value: any) { const { tasks, ...data } = value ?? {}; return data; }
-function reversibleChange(entityType: string, operation: string) { if (operation.startsWith('undo:')) return false; if (entityType === 'task') return ['create', 'update', 'delete', 'restore'].includes(operation); if (entityType === 'topic') return ['create', 'update', 'delete', 'archive', 'confirm_summary', 'discard_summary'].includes(operation); return false; }
-async function recordChange(db: Db, entityType: string, entityId: string, operation: string, before: unknown, after: unknown, context: MutationContext, reversalOf?: string) { return db.changeRecord.create({ data: { entityType, entityId, operation, beforeSnapshot: before ? JSON.stringify(before) : null, afterSnapshot: after ? JSON.stringify(after) : null, source: context.source, conversationId: context.conversationId, approvalId: context.approvalId, requestId: context.requestId, reversalOf, createdAt: now() } }); }
+function reversibleChange(entityType: string, operation: string) {
+  if (operation.startsWith('undo:')) return false;
+  if (entityType === 'workspace' && operation === 'batch') return true;
+  if (entityType === 'proposal' && operation === 'batch') return true;
+  if (hasUndoHandler(entityType)) return true;
+  if (entityType === 'task') return ['create', 'update', 'delete', 'restore', 'reorder'].includes(operation);
+  if (entityType === 'topic') return ['create', 'update', 'delete', 'archive', 'archive_preserve', 'restore', 'move_tasks_to_inbox', 'confirm_summary', 'discard_summary'].includes(operation);
+  if (entityType === 'tag') return ['create', 'update', 'delete'].includes(operation);
+  return false;
+}
+
+const taskFields = ['id', 'topicId', 'title', 'description', 'status', 'priority', 'dueDate', 'resultSummary', 'deletedAt', 'createdAt', 'updatedAt', 'parentId', 'sortOrder', 'revision', 'deleteBatchId', 'tagIds'];
+const topicFields = ['id', 'name', 'description', 'isExploration', 'goal', 'draftSummary', 'finalSummary', 'summaryStatus', 'summaryUpdatedAt', 'archivedAt', 'createdAt', 'updatedAt', 'revision'];
+function pickFields(value: Record<string, unknown>, fields: string[]) {
+  return Object.fromEntries(fields.filter((key) => value[key] !== undefined).map((key) => [key, value[key]]));
+}
+
+const legacyTaskSchema = taskCreateSchema.extend({
+  id: z.string().min(1),
+  topicId: z.string().min(1).nullable().default(null),
+  parentId: z.string().min(1).nullable().default(null),
+  description: z.string().default(''),
+  status: z.enum(['todo', 'doing', 'blocked', 'done']).default('todo'),
+  priority: z.enum(['none', 'low', 'medium', 'high']).default('none'),
+  dueDate: taskCreateSchema.shape.dueDate.default(null),
+  resultSummary: z.string().default(''),
+  deletedAt: z.string().nullable().default(null),
+  deleteBatchId: z.string().nullable().default(null),
+  sortOrder: z.number().int().default(0),
+  revision: z.number().int().min(1).default(1),
+  tagIds: z.array(z.string().min(1)).default([]),
+  createdAt: z.string().default(''),
+  updatedAt: z.string().default(''),
+});
+const legacyTopicSchema = topicCreateSchema.extend({
+  id: z.string().min(1),
+  description: z.string().default(''),
+  isExploration: z.boolean().default(false),
+  goal: z.string().default(''),
+  draftSummary: z.string().default(''),
+  finalSummary: z.string().default(''),
+  summaryStatus: z.string().default('empty'),
+  summaryUpdatedAt: z.string().nullable().default(null),
+  archivedAt: z.string().nullable().default(null),
+  revision: z.number().int().min(1).default(1),
+  createdAt: z.string().default(''),
+  updatedAt: z.string().default(''),
+});
+
+/** Lift old snapshots into the group format without interpreting absent new fields as clears. */
+async function legacySnapshots(tx: Db, record: StoredChange, before: any, after: any, context: MutationContext): Promise<{ before: GroupSnapshot; after: GroupSnapshot }> {
+  const kind = record.entityType === 'task' ? 'tasks' : record.entityType === 'topic' ? 'topics' : null;
+  if (!kind) throw new DomainError('INVALID_CHANGE', '不支持的历史变更类型', 400);
+  const group = new ChangeGroup(tx, context);
+  await group.capture(kind, record.entityId);
+  const current = kind === 'tasks' ? await tx.task.findUnique({ where: { id: record.entityId } }) : await tx.topic.findUnique({ where: { id: record.entityId } });
+  if (after && (!current || current.updatedAt !== after.updatedAt || ('revision' in after && current.revision !== after.revision))) throw conflict('对象已发生后续变更，无法撤销');
+  if (!after && current) throw conflict('对象已发生后续变更，无法撤销');
+
+  if (record.entityType === 'topic' && record.operation === 'archive') {
+    if ((current as any)?.archivedAt !== after?.archivedAt) throw conflict('清单已发生后续变更，无法撤销');
+    const beforeTasks: any[] = Array.isArray(before?.tasks) ? before.tasks : [];
+    const afterTasks: any[] = Array.isArray(after?.tasks) ? after.tasks : [];
+    for (const oldTask of beforeTasks) {
+      const expected = afterTasks.find((task) => task.id === oldTask.id);
+      const task = await tx.task.findUnique({ where: { id: oldTask.id } });
+      if (!task || !expected || task.topicId !== null || task.updatedAt !== expected.updatedAt) throw conflict('清单中的任务已发生后续变更，无法撤销');
+      await group.capture('tasks', task.id);
+    }
+    const state = await group.after();
+    const desired = structuredClone(state);
+    desired.entities.topics[record.entityId] = { ...desired.entities.topics[record.entityId]!, ...pickFields(before, topicFields) };
+    for (const task of beforeTasks) desired.entities.tasks[task.id] = { ...desired.entities.tasks[task.id]!, ...pickFields(task, taskFields) };
+    return { before: desired, after: state };
+  }
+
+  if (record.operation === 'create') {
+    if (kind === 'topics' && await tx.task.count({ where: { topicId: record.entityId } })) throw conflict('清单已有后续任务，无法撤销');
+    if (kind === 'tasks' && await tx.task.count({ where: { parentId: record.entityId } })) throw conflict('任务已有子任务，无法撤销');
+  }
+  const state = await group.after();
+  const desired = structuredClone(state);
+  if (before === null) desired.entities[kind][record.entityId] = null;
+  else {
+    const existing = desired.entities[kind][record.entityId];
+    if (!existing) {
+      if (record.operation !== 'delete' || before.id !== record.entityId) throw conflict('历史对象已不存在，无法安全恢复');
+      // Earlier releases used hard deletion. Restore a valid old snapshot with the
+      // same ID, supplying only fields that did not exist in that schema version.
+      if (kind === 'tasks') desired.entities.tasks[record.entityId] = parseInput(legacyTaskSchema, before);
+      else desired.entities.topics[record.entityId] = parseInput(legacyTopicSchema, before);
+    } else (desired.entities[kind] as Record<string, unknown>)[record.entityId] = { ...existing, ...pickFields(before, kind === 'tasks' ? taskFields : topicFields) };
+  }
+  return { before: desired, after: state };
+}

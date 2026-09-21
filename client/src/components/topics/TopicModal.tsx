@@ -17,25 +17,26 @@ type TopicModalProps = {
 export function TopicModal({ form, onChange, onClose, onSave, onDelete, busy = false }: TopicModalProps) {
   const submit = (event: FormEvent) => { event.preventDefault(); onSave(); };
   return (
-    <FormDialog title={form.id ? '编辑主题' : '新建主题'} description="主题是任务逐渐收敛成结果的容器。" onClose={onClose}>
+    <FormDialog title={form.id ? '编辑清单' : '新建清单'} description="输入名称就可以开始记录任务。" onClose={onClose}>
       <form onSubmit={submit}>
         <div className="mb-4">
-          <Label htmlFor="topic-name">主题名称</Label>
+          <Label htmlFor="topic-name">清单名称</Label>
           <Input id="topic-name" required value={form.name} onChange={(event) => onChange({ ...form, name: event.target.value })} placeholder="例如：Agent 工作室" />
         </div>
-        <div className="mb-4">
+        <details className="mb-4"><summary className="mb-3 cursor-pointer text-sm text-muted-foreground">探索属性与目标</summary><div className="mb-4">
           <Label htmlFor="topic-description">描述</Label>
-          <Textarea id="topic-description" value={form.description} onChange={(event) => onChange({ ...form, description: event.target.value })} placeholder="这个主题最终想形成什么结果？" />
+          <Textarea id="topic-description" value={form.description ?? ''} onChange={(event) => onChange({ ...form, description: event.target.value })} placeholder="这个清单最终想形成什么结果？" />
         </div>
+        <div className="mb-4"><Label htmlFor="topic-goal">目标</Label><Input id="topic-goal" value={form.goal ?? ''} onChange={(event) => onChange({ ...form, goal: event.target.value })} /></div>
         <Label htmlFor="topic-exploration" className="mb-5 flex items-center gap-2 font-normal">
           <input id="topic-exploration" type="checkbox" className="size-3.5 accent-primary" checked={form.isExploration} onChange={(event) => onChange({ ...form, isExploration: event.target.checked })} />
           当前仍在探索
-        </Label>
+        </Label></details>
         <div className="flex items-center justify-between gap-2 border-t pt-4">
-          {form.id && onDelete ? <Button type="button" variant="outline" className="text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={busy} onClick={onDelete}>删除主题</Button> : <span />}
+          {form.id && onDelete ? <Button type="button" variant="outline" disabled={busy} onClick={onDelete}>归档清单</Button> : <span />}
           <div className="flex gap-2">
           <Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button>
-          <Button disabled={busy}>{busy ? '正在保存…' : '保存主题'}</Button>
+          <Button disabled={busy}>{busy ? '正在保存…' : '保存清单'}</Button>
           </div>
         </div>
       </form>

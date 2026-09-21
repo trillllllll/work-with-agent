@@ -1,10 +1,10 @@
 export type TaskStatusValue = 'todo' | 'doing' | 'blocked' | 'done';
 
 const transitions: Record<TaskStatusValue, readonly TaskStatusValue[]> = {
-  todo: ['doing'],
+  todo: ['doing', 'done'],
   doing: ['todo', 'blocked', 'done'],
-  blocked: ['todo', 'doing'],
-  done: ['doing'],
+  blocked: ['todo', 'doing', 'done'],
+  done: ['todo'],
 };
 
 export class DomainError extends Error {

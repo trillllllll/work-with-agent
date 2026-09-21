@@ -1,105 +1,93 @@
-import type { FormEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { CalendarDays, CircleDot, Flag, FolderKanban } from 'lucide-react';
-import type { Task, TaskPriority, TaskTopicHistory } from '@/lib/api.js';
-import { api, availableTaskStatuses, priorities, statuses } from '@/lib/api.js';
+import { api, availableTaskStatuses, priorities, statuses, type Tag, type Task, type TaskTopicHistory, type Topic } from '@/lib/api.js';
+import { draftPatch, mergeTaskDraft, taskDraft, type TaskDraft } from '@/lib/todo.js';
+import { useTask, useTasks } from '@/hooks/useTodo.js';
 import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.js';
 import { Textarea } from '@/components/ui/textarea.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
+import { QuickCapture } from '@/components/tasks/QuickCapture.js';
+import { TaskList } from '@/components/tasks/TaskList.js';
+import { HandoffPanel } from '@/components/workspace/HandoffPanel.js';
+import { KnowledgePage } from '@/components/workspace/KnowledgePage.js';
 
-type TaskDetailModalProps = {
-  task: Task;
-  topicName?: string;
-  onChange: (task: Task) => void;
-  onClose: () => void;
-  onSave: () => void;
-  busy?: boolean;
-};
+type Props = { id: string; topics: Topic[]; tags: Tag[]; onClose: () => void; onOpen: (id: string) => void; onSave: (task: Task, patch: Partial<TaskDraft>) => Promise<Task | undefined>; onCreate: (input: { title: string; topicId: string | null; parentId: string | null }) => Promise<unknown>; onToggle: (task: Task) => Promise<unknown>; onMove: (task: Task, topicId: string | null) => Promise<unknown>; onDelete: (task: Task) => void; onReorder: (tasks: Task[], parentId: string | null) => Promise<unknown>; };
+type Editing = { base: TaskDraft; draft: TaskDraft; conflicts: string[] };
+const fieldLabels: Record<string, string> = { title: '标题', description: '说明', status: '状态', priority: '优先级', dueDate: '截止日期', resultSummary: '结果摘要', topicId: '所属清单', parentId: '父任务', tagIds: '标签' };
 
-function formatUpdatedAt(value?: string) {
-  if (!value) return '暂无记录';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' });
-}
-
-export function TaskDetailModal({ task, topicName, onChange, onClose, onSave, busy = false }: TaskDetailModalProps) {
-  const history = useQuery<TaskTopicHistory[]>({ queryKey: ['task-topic-history', task.id], queryFn: () => api(`/api/tasks/${task.id}/topic-history`) });
-  const submit = (event: FormEvent) => { event.preventDefault(); onSave(); };
-  const update = (changes: Partial<Task>) => onChange({ ...task, ...changes });
-  const priority = task.priority ?? 'none';
-  const dueDate = task.dueDate ?? '';
-
-  return (
-    <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
-      <DialogContent surface="glass" className="gap-0 overflow-hidden p-0 max-md:top-auto max-md:bottom-0 max-md:left-0 max-md:w-full max-md:!max-w-none max-md:max-h-[92dvh] max-md:translate-x-0 max-md:translate-y-0 max-md:rounded-t-2xl max-md:rounded-b-none sm:max-w-2xl">
-        <DialogHeader className="border-b glass-divider px-5 py-4 pr-14 text-left sm:px-6">
-          <DialogTitle>任务详情</DialogTitle>
-          <DialogDescription>把任务背景、优先级和下一步安排放在同一个地方。</DialogDescription>
-        </DialogHeader>
-        <form onSubmit={submit} className="overflow-y-auto px-5 py-4 sm:px-6">
-          <div className="mb-5">
-            <Label htmlFor="task-detail-title">任务名称</Label>
-            <Input id="task-detail-title" required autoFocus value={task.title} onChange={(event) => update({ title: event.target.value })} placeholder="下一步要完成什么？" disabled={busy} className="mt-2 h-11 text-base font-semibold" />
-          </div>
-
-          <div className="mb-5 grid gap-4 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="task-detail-status">状态</Label>
-              <Select value={task.status} onValueChange={(value) => update({ status: value as Task['status'] })} disabled={busy}>
-                <SelectTrigger id="task-detail-status" className="mt-2 w-full" aria-label="任务状态"><CircleDot className="size-4" /><SelectValue /></SelectTrigger>
-                <SelectContent>{statuses.filter((item) => availableTaskStatuses(task).includes(item.value)).map((item) => <SelectItem value={item.value} key={item.value}>{item.label}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="task-detail-priority">优先级</Label>
-              <Select value={priority} onValueChange={(value) => update({ priority: value as TaskPriority })} disabled={busy}>
-                <SelectTrigger id="task-detail-priority" className="mt-2 w-full" aria-label="任务优先级"><Flag className="size-4" /><SelectValue /></SelectTrigger>
-                <SelectContent>{priorities.map((item) => <SelectItem value={item.value} key={item.value}>{item.label}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="mb-5 grid gap-4 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="task-detail-due-date">截止日期</Label>
-              <div className="relative mt-2">
-                <CalendarDays className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input id="task-detail-due-date" type="date" value={dueDate} onChange={(event) => update({ dueDate: event.target.value || null })} disabled={busy} className="pl-9" />
-              </div>
-            </div>
-            <div>
-              <Label>所属主题</Label>
-              <div className="glass-control mt-2 flex h-9 items-center gap-2 rounded-lg px-3 text-sm text-muted-foreground"><FolderKanban className="size-4 shrink-0" /><span className="truncate">{topicName ?? (task.topicId ? '当前主题' : '收集箱')}</span></div>
-            </div>
-          </div>
-
-          <div className="mb-5">
-            <Label htmlFor="task-detail-description">任务描述</Label>
-            <Textarea id="task-detail-description" value={task.description} onChange={(event) => update({ description: event.target.value })} placeholder="补充背景、范围或验收标准" disabled={busy} className="mt-2 min-h-24" />
-          </div>
-
-          <div className="mb-5">
-            <Label htmlFor="task-detail-result">结果摘要</Label>
-            <Textarea id="task-detail-result" value={task.resultSummary} onChange={(event) => update({ resultSummary: event.target.value })} placeholder="完成后记录最终结果" disabled={busy} className="mt-2 min-h-20" />
-          </div>
-
-          <div className="mb-5">
-            <Label>主题归属历史</Label>
-            <div className="glass-subtle mt-2 space-y-2 rounded-xl p-3 text-xs text-muted-foreground">
-              {history.isLoading ? <p>正在加载…</p> : !(history.data ?? []).length ? <p>暂无归属记录</p> : history.data!.map((item) => <div key={item.id} className="flex items-start justify-between gap-3"><span>{item.fromTopic?.name ?? '收集箱'} → {item.toTopic?.name ?? '收集箱'}</span><time className="shrink-0">{formatUpdatedAt(item.changedAt)}</time></div>)}
-            </div>
-          </div>
-
-          <p className="mb-4 text-[11px] text-muted-foreground">最近更新：{formatUpdatedAt(task.updatedAt)}</p>
-          <div className="flex justify-end gap-2 border-t pt-4">
-            <Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button>
-            <Button disabled={busy}>{busy ? '正在保存…' : '保存任务'}</Button>
-          </div>
-        </form>
+export function TaskDetailModal({ id, topics, tags, onClose, onOpen, onSave, onCreate, onToggle, onMove, onDelete, onReorder }: Props) {
+  const query = useTask(id);
+  const task = query.data;
+  const allTasks = useTasks(task?.topic?.archivedAt ? { includeArchived: 'true' } : {}, Boolean(task));
+  const history = useQuery<TaskTopicHistory[]>({ queryKey: ['task-topic-history', id], queryFn: () => api(`/api/tasks/${id}/topic-history`) });
+  const [editing, setEditing] = useState<Editing | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [leave, setLeave] = useState<{ next?: string } | null>(null);
+  const [acknowledgeConflict, setAcknowledgeConflict] = useState(false);
+  const lock = useRef(false);
+  useEffect(() => {
+    if (!task) return;
+    const incoming = taskDraft(task);
+    setEditing((current) => {
+      if (!current) return { base: incoming, draft: incoming, conflicts: [] };
+      const merged = mergeTaskDraft(current.base, current.draft, incoming);
+      return { base: incoming, draft: merged.draft, conflicts: [...new Set([...current.conflicts, ...merged.conflicts])] };
+    });
+  }, [task]);
+  const dirty = Boolean(editing && Object.keys(draftPatch(editing.base, editing.draft)).length);
+  useEffect(() => {
+    if (!dirty) return;
+    const prevent = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    window.addEventListener('beforeunload', prevent);
+    return () => window.removeEventListener('beforeunload', prevent);
+  }, [dirty]);
+  const finish = (next?: string) => { setLeave(null); next ? onOpen(next) : onClose(); };
+  const requestLeave = (next?: string) => { if (saving) return; if (dirty) setLeave({ next }); else finish(next); };
+  const update = (patch: Partial<TaskDraft>) => { setAcknowledgeConflict(false); setEditing((current) => current ? { ...current, draft: { ...current.draft, ...patch } } : current); };
+  const save = async (close = false, next?: string) => {
+    if (!task || !editing || lock.current) return;
+    if (editing.conflicts.length && !acknowledgeConflict) { setLeave(null); return; }
+    lock.current = true; setSaving(true);
+    try {
+      const patch = draftPatch(editing.base, editing.draft);
+      const result = Object.keys(patch).length ? await onSave(task, patch) : task;
+      if (!result) return;
+      const current = taskDraft(result);
+      setEditing({ base: current, draft: current, conflicts: [] });
+      setAcknowledgeConflict(false);
+      if (close) finish(next);
+    } catch { /* Failed saves keep all fields available for retry. */ }
+    finally { lock.current = false; setSaving(false); }
+  };
+  const readonly = Boolean(task?.topic?.archivedAt);
+  const draft = editing?.draft;
+  const selectClass = 'glass-control mt-2 h-10 w-full rounded-lg px-3 text-sm';
+  return <>
+    <Dialog open onOpenChange={(open) => { if (!open) requestLeave(); }}>
+      <DialogContent surface="glass" className="max-h-[92dvh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader><DialogTitle>任务详情</DialogTitle><DialogDescription>{readonly ? '所属清单已归档，恢复清单后可以编辑。' : '编辑后点击保存；子任务和行内操作即时生效。'}</DialogDescription></DialogHeader>
+        {query.isLoading || !draft ? <p>{query.error ? query.error.message : '正在加载…'}</p> : <>
+          <form id="task-detail-form" onSubmit={(event) => { event.preventDefault(); void save(); }} className="space-y-4">
+            {editing!.conflicts.length > 0 && <div role="alert" className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm"><p>后台已更新{editing!.conflicts.map((field) => fieldLabels[field]).join('、')}，你的编辑已保留。</p><label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={acknowledgeConflict} onChange={(event) => setAcknowledgeConflict(event.target.checked)} />保存时使用我的编辑</label><Button type="button" variant="ghost" size="sm" onClick={() => { if (task) { const latest = taskDraft(task); setEditing({ base: latest, draft: latest, conflicts: [] }); } }}>使用最新内容</Button></div>}
+            <fieldset disabled={readonly || saving} className="space-y-4 disabled:opacity-70">
+              <div><Label htmlFor="task-detail-title">任务标题</Label><Input id="task-detail-title" required value={draft.title} onChange={(event) => update({ title: event.target.value })} className="mt-2" /></div>
+              <div><Label htmlFor="task-detail-description">任务说明</Label><Textarea id="task-detail-description" value={draft.description} onChange={(event) => update({ description: event.target.value })} className="mt-2" /></div>
+              <div className="grid grid-cols-2 gap-4"><div><Label htmlFor="task-detail-status">状态</Label><select id="task-detail-status" aria-label="任务状态" className={selectClass} value={draft.status} onChange={(event) => update({ status: event.target.value as Task['status'] })}>{statuses.filter((item) => !task || availableTaskStatuses(task).includes(item.value)).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div><div><Label htmlFor="task-detail-priority">优先级</Label><select id="task-detail-priority" aria-label="优先级" className={selectClass} value={draft.priority} onChange={(event) => update({ priority: event.target.value as Task['priority'] })}>{priorities.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div></div>
+              <div className="grid grid-cols-2 gap-4"><div><Label htmlFor="task-detail-due-date">截止日期</Label><Input id="task-detail-due-date" type="date" className="mt-2" value={draft.dueDate ?? ''} onChange={(event) => update({ dueDate: event.target.value || null })} /></div><div><Label htmlFor="task-detail-topic">所属清单</Label><select id="task-detail-topic" aria-label="所属清单" className={selectClass} value={draft.topicId ?? ''} onChange={(event) => update({ topicId: event.target.value || null, parentId: null })}><option value="">收集箱</option>{topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}{readonly && task?.topic && <option value={task.topic.id}>{task.topic.name}（已归档）</option>}</select></div></div>
+              <div><Label htmlFor="task-detail-parent">父任务</Label><select id="task-detail-parent" aria-label="父任务" className={selectClass} value={draft.parentId ?? ''} onChange={(event) => update({ parentId: event.target.value || null })}><option value="">无（根任务）</option>{(allTasks.data ?? []).filter((candidate) => candidate.id !== id && !candidate.parentId && candidate.topicId === draft.topicId).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.title}</option>)}</select></div>
+              <div><Label>标签</Label><div className="mt-2 flex flex-wrap gap-3">{!tags.length && <p className="text-xs text-muted-foreground">在标签页面创建标签后即可分配。</p>}{tags.map((tag) => <label key={tag.id} className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={draft.tagIds?.includes(tag.id) ?? false} onChange={(event) => update({ tagIds: event.target.checked ? [...(draft.tagIds ?? []), tag.id] : draft.tagIds?.filter((value) => value !== tag.id) })} />{tag.name}</label>)}</div></div>
+              <details><summary className="cursor-pointer text-sm text-muted-foreground">结果与归属历史</summary><div className="mt-3"><Label htmlFor="task-detail-result">结果摘要</Label><Textarea id="task-detail-result" value={draft.resultSummary} onChange={(event) => update({ resultSummary: event.target.value })} className="mt-2" /></div><div className="mt-3 space-y-2 text-xs text-muted-foreground">{(history.data ?? []).map((item) => <p key={item.id}>{item.fromTopic?.name ?? '收集箱'} → {item.toTopic?.name ?? '收集箱'} · {new Date(item.changedAt).toLocaleString()}</p>)}</div></details>
+            </fieldset>
+          </form>
+          {!task?.parentId && <section className="space-y-3 border-t pt-4"><h2 className="text-sm font-semibold">子任务</h2><TaskList tasks={task?.children ?? (allTasks.data ?? []).filter((child) => child.parentId === id)} topics={topics} onOpen={(next) => requestLeave(next)} onToggle={onToggle} onMove={onMove} onDelete={onDelete} onReorder={readonly ? undefined : onReorder} readonly={readonly} />{!readonly && <QuickCapture key={`${task?.topicId}.${id}`} topicId={task?.topicId ?? null} parentId={id} onCreate={onCreate} />}</section>}
+          {task && <details className="border-t pt-4"><summary className="cursor-pointer text-sm">关联资料与项目记忆</summary><div className="mt-3"><KnowledgePage key={`${task.id}:${task.topicId}`} topics={topics} initialTopicId={task.topicId ?? ''} taskId={task.id} /></div></details>}
+          {task && !readonly && <details className="border-t pt-4"><summary className="cursor-pointer text-sm">交给 AI 与结果验收</summary><div className="mt-3"><HandoffPanel task={task} disabled={dirty || saving} /></div></details>}
+          <div className="flex justify-end gap-2 border-t pt-4"><Button type="button" variant="outline" disabled={saving} onClick={() => requestLeave()}>关闭</Button>{!readonly && <Button type="submit" form="task-detail-form" disabled={saving || !dirty || Boolean(editing!.conflicts.length && !acknowledgeConflict)}>{saving ? '正在保存…' : '保存更改'}</Button>}</div>
+        </>}
       </DialogContent>
     </Dialog>
-  );
+    {leave && <Dialog open onOpenChange={(open) => { if (!open) setLeave(null); }}><DialogContent surface="glass"><DialogHeader><DialogTitle>保存未完成的编辑？</DialogTitle><DialogDescription>任务有未保存的更改。</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => setLeave(null)}>继续编辑</Button><Button variant="outline" onClick={() => finish(leave.next)}>舍弃更改</Button><Button disabled={saving} onClick={() => { void save(true, leave.next); }}>保存并继续</Button></div></DialogContent></Dialog>}
+  </>;
 }

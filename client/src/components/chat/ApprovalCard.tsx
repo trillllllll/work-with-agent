@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { ChevronDown, TriangleAlert } from 'lucide-react';
 import type { Approval } from '@/chat.js';
-import { toolLabels } from '@/lib/api.js';
+import { api, toolLabels } from '@/lib/api.js';
+import { usePlatformAction } from '@/lib/platform.js';
 import { cn } from '@/lib/utils.js';
 import { Button } from '@/components/ui/button.js';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible.js';
@@ -17,6 +18,7 @@ function truncate(text: string, max = 80) {
 }
 
 export function ApprovalCard({ approval, pending, onApprove, onReject }: { approval: Approval; pending: boolean; onApprove: (id: string) => void; onReject: (id: string) => void }) {
+  const { run, busy } = usePlatformAction();
   const [open, setOpen] = useState(false);
   const entries = Object.entries(approval.arguments ?? {});
   const totalLength = JSON.stringify(approval.arguments ?? {}).length;
@@ -52,6 +54,7 @@ export function ApprovalCard({ approval, pending, onApprove, onReject }: { appro
       ) : (
         params
       )}
+      {!approval.toolName.startsWith('execute_') && <Button className="mt-3" size="sm" variant="outline" disabled={busy || pending} onClick={() => void run(async () => { const result = await api(`/api/agent/approvals/${approval.approvalId}/preview`, { method: 'POST', body: '{}' }); window.location.hash = '/proposals'; return result; }, '请在待确认中检查完整影响')}>重新预览业务提议</Button>}
       <div className="mt-3 flex justify-end gap-2 max-md:grid max-md:w-full max-md:grid-cols-2">
         <Button variant="outline" size="sm" disabled={pending} onClick={() => onReject(approval.approvalId)}>拒绝</Button>
         <Button size="sm" disabled={pending} onClick={() => onApprove(approval.approvalId)}>批准执行</Button>

@@ -35,12 +35,21 @@ const server = http.createServer(async (req, res) => {
       { choices: [{ delta: { tool_calls: [{ index: 0, id: 'e2e_create_task', function: { name: 'create_task', arguments: JSON.stringify({ topicId, title: 'E2E Agent 任务' }) } }] }, finish_reason: 'tool_calls' }] },
     ]);
   }
-  if (latestUser.includes('生成成果草稿') && !messages.some((item) => item.role === 'tool')) {
+  if (latestUser.includes('生成成果草稿')) {
     const topicId = messages.find((item) => item.role === 'system')?.content.match(/"topicId":"([^"]+)"/)?.[1] ?? '';
+    const topic = [...messages].reverse().filter((item) => item.role === 'tool').map((item) => {
+      try { const result = JSON.parse(item.content); return result.success ? result.data : null; } catch { return null; }
+    }).find((value) => value?.id === topicId && Number.isInteger(value.revision) && value.revision > 0);
+    if (!topic) {
+      return stream(res, [
+        { choices: [{ delta: { content: '我先读取当前清单及其版本。' }, finish_reason: null }] },
+        { choices: [{ delta: { tool_calls: [{ index: 0, id: 'e2e_summary_read_topic', function: { name: 'get_topic', arguments: JSON.stringify({ topicId }) } }] }, finish_reason: 'tool_calls' }] },
+      ]);
+    }
     const summary = latestUser.includes('第二版') ? 'E2E 最终成果' : 'E2E 待放弃草稿';
     return stream(res, [
       { choices: [{ delta: { content: '我准备生成成果草稿。' }, finish_reason: null }] },
-      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'e2e_summary', function: { name: 'propose_topic_summary', arguments: JSON.stringify({ topicId, summary }) } }] }, finish_reason: 'tool_calls' }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'e2e_summary', function: { name: 'propose_topic_summary', arguments: JSON.stringify({ topicId, summary, expectedRevision: topic.revision }) } }] }, finish_reason: 'tool_calls' }] },
     ]);
   }
   if (latestUser.includes('读取受控文件') && !messages.some((item) => item.role === 'tool')) {

@@ -1,4 +1,4 @@
-import request from 'supertest';
+import request from './test-auth.js';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { app } from './app.js';
 import { prisma } from './services.js';
@@ -63,7 +63,10 @@ describe('Agent tool gate', () => {
       return { event, ...(data ? JSON.parse(data) : {}) };
     });
     const modelRequest = vi.mocked(globalThis.fetch).mock.calls[0]?.[1];
-    expect(JSON.parse(String(modelRequest?.body)).tools).toHaveLength(14);
+    expect(JSON.parse(String(modelRequest?.body)).tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({ function: expect.objectContaining({ name: 'create_task' }) }),
+      expect.objectContaining({ function: expect.objectContaining({ name: 'list_tasks' }) }),
+    ]));
     expect(events.some((event) => event.event === 'message_delta' && event.delta?.includes('我准备创建'))).toBe(true);
     expect(events.some((event) => event.event === 'approval_required')).toBe(true);
     const approval = events.find((event) => event.event === 'approval_required')!;

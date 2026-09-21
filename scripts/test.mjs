@@ -1,6 +1,7 @@
 import { mkdir, rm } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { prismaClientIsCurrent } from './prisma-current.mjs';
 
 const root = process.cwd();
 // file: 路径按 Prisma 约定相对 server/prisma/schema.prisma 解析，落到 server/data/test.db。
@@ -16,7 +17,7 @@ const runScript = (script, ...flags) => {
   execFileSync(command, args, { cwd: root, env: { ...process.env, DATABASE_URL: databaseUrl }, stdio: 'inherit' });
 };
 
-runScript('prisma:generate');
+if (!await prismaClientIsCurrent(root)) runScript('prisma:generate');
 runScript('db:migrate');
 runScript('test', '-w', 'server');
 runScript('test', '-w', 'client');

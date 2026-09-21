@@ -1,4 +1,4 @@
-import request from 'supertest';
+import request from './test-auth.js';
 import { afterAll, describe, expect, it } from 'vitest';
 import { app } from './app.js';
 import { prisma } from './services.js';
@@ -40,7 +40,7 @@ describe('REST task workflow', () => {
     expect(created.status).toBe(200);
     expect(created.body.data.topicId).toBeNull();
     expect(created.body.data.status).toBe('todo');
-    expect(created.body.data.allowedTransitions).toEqual(['doing']);
+    expect(created.body.data.allowedTransitions).toEqual(['doing', 'done']);
     inboxTaskId = created.body.data.id;
     const inbox = await request(app).get('/api/tasks?inbox=true');
     expect(inbox.body.data.some((task: any) => task.id === inboxTaskId)).toBe(true);
@@ -53,9 +53,10 @@ describe('REST task workflow', () => {
   it('enforces task status transitions', async () => {
     const created = await request(app).post('/api/tasks').send({ topicId, title: '状态机任务' });
     const stateTaskId = created.body.data.id;
-    const invalid = await request(app).patch(`/api/tasks/${stateTaskId}`).send({ status: 'done' });
-    expect(invalid.status).toBe(409);
-    expect(invalid.body.code).toBe('TASK_STATUS_TRANSITION_NOT_ALLOWED');
+    const completed = await request(app).patch(`/api/tasks/${stateTaskId}`).send({ status: 'done' });
+    expect(completed.status).toBe(200);
+    expect(completed.body.data.status).toBe('done');
+    expect((await request(app).patch(`/api/tasks/${stateTaskId}`).send({ status: 'todo' })).body.data.status).toBe('todo');
     expect((await request(app).patch(`/api/tasks/${stateTaskId}`).send({ status: 'doing' })).body.data.allowedTransitions).toEqual(['todo', 'blocked', 'done']);
     await request(app).delete(`/api/tasks/${stateTaskId}`);
     await request(app).delete(`/api/trash/tasks/${stateTaskId}/permanent`);

@@ -4,6 +4,8 @@ import { ApprovalService } from './application/approval.js';
 import { TaskService } from './application/workspace.js';
 import { SettingsService, type ModelConfig } from './application/settings.js';
 import { ContextService, ConversationService } from './application/conversation.js';
+import { CommandService } from './application/commands.js';
+import { ownerActor } from './application/security.js';
 
 export type PageContext = { topicId?: string | null; taskId?: string | null; page?: string | null };
 export type ChatEvent = {
@@ -164,7 +166,7 @@ export class AgentService {
       const toolMessages: ModelMessage[] = [];
       let hasPendingApproval = false;
       for (const call of calls) {
-        if (call.name === 'create_task' && !call.arguments.topicId && input.pageContext?.topicId) call.arguments.topicId = input.pageContext.topicId;
+        if (call.name === 'create_task' && call.arguments.topicId === undefined && input.pageContext?.topicId) call.arguments.topicId = input.pageContext.topicId;
         yield { type: 'tool_call', conversationId, toolName: call.name, arguments: call.arguments };
         const validationError = this.tools.validate(call);
         if (validationError) throw Object.assign(modelError(validationError, validationError.startsWith('未知 Tool') ? 'UNKNOWN_TOOL' : 'INVALID_TOOL_ARGUMENTS'), { conversationId });
@@ -203,6 +205,19 @@ export class AgentService {
 
   async approve(approvalId: string) {
     const approval = await this.approvals.get(approvalId); if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 });
+    const proposal = approval.result ? JSON.parse(approval.result) : null;
+    if (proposal?.proposalId) {
+      if (approval.status !== 'pending') throw Object.assign(new Error('该审核已处理'), { status: 409 });
+      const applied = await new CommandService().approve(ownerActor, proposal.proposalId, { expectedRevision: proposal.proposalRevision, requestId: `approval:${approval.id}` });
+      const result: ToolResult = { success: true, data: applied.results?.[0] };
+      // The Proposal and Receipt commit with the Todo mutation. This compatibility
+      // Approval row is recoverable by replaying the same receipt after a crash.
+      await prismaApprovalComplete(approval.id, result);
+      const assistantMessage = approval.conversationId ? await this.summarize(approval.conversationId, JSON.stringify({ toolName: approval.toolName, result })) : undefined;
+      if (assistantMessage && approval.conversationId) await this.conversations.addMessage(approval.conversationId, 'assistant', assistantMessage);
+      return { result, assistantMessage, summaryError: !assistantMessage ? '无法生成自动总结' : undefined };
+    }
+    if (!approval.toolName.startsWith('execute_')) throw Object.assign(new Error('旧审核缺少版本快照，请重新生成提议后确认'), { status: 409, code: 'APPROVAL_REPREVIEW_REQUIRED' });
     if (approval.status !== 'pending' || !(await this.approvals.claim(approvalId))) throw Object.assign(new Error('该审核已处理'), { status: 409 });
     let result: ToolResult; try { const call = this.approvals.parse(approval); const validationError = this.tools.validate(call); result = validationError ? { success: false, error: validationError } : await this.tools.execute(call, { source: 'agent', conversationId: approval.conversationId ?? undefined, approvalId: approval.id, requestId: approval.id }); } catch (error) { result = { success: false, error: error instanceof Error ? error.message : '审核执行失败' }; }
     await this.approvals.update(approvalId, result.success ? 'executed' : 'failed', result);
@@ -211,7 +226,13 @@ export class AgentService {
     if (assistantMessage && approval.conversationId) await this.conversations.addMessage(approval.conversationId, 'assistant', assistantMessage);
     return { result, assistantMessage, summaryError: result.success && !assistantMessage ? '无法生成自动总结' : undefined };
   }
-  async reject(approvalId: string) { const approval = await this.approvals.get(approvalId); if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 }); if (approval.status !== 'pending') throw Object.assign(new Error('该审核已处理'), { status: 409 }); return this.approvals.update(approvalId, 'rejected'); }
+  async reject(approvalId: string) { const approval = await this.approvals.get(approvalId); if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 }); if (approval.status !== 'pending') throw Object.assign(new Error('该审核已处理'), { status: 409 }); const proposal = approval.result ? JSON.parse(approval.result) : null; if (proposal?.proposalId) await new CommandService().reject(ownerActor, proposal.proposalId, { expectedRevision: proposal.proposalRevision }); return this.approvals.update(approvalId, 'rejected'); }
+  async previewApproval(approvalId: string) { return this.approvals.preview(approvalId); }
   async messages(conversationId: string) { if (!(await this.conversations.get(conversationId))) throw Object.assign(new Error('会话不存在'), { status: 404 }); return this.conversations.listMessages(conversationId); }
   async approvalList(status?: string) { if (status && !['pending', 'approved', 'rejected', 'executed', 'failed'].includes(status)) throw Object.assign(new Error('审核状态无效'), { status: 400 }); return this.approvals.list(status as any); }
+}
+
+async function prismaApprovalComplete(id: string, result: ToolResult) {
+  const { prisma } = await import('./infrastructure/prisma.js');
+  await prisma.approval.update({ where: { id }, data: { status: 'executed', result: JSON.stringify(result), updatedAt: new Date().toISOString() } });
 }

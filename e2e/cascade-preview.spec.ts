@@ -1,0 +1,34 @@
+import { test, expect } from './fixtures.js';
+import { e2eDatabase, resetE2eDatabase } from './database.js';
+const base = 'http://127.0.0.1:3015';
+test.beforeEach(resetE2eDatabase);
+test.afterAll(() => e2eDatabase.$disconnect());
+test('父任务移动展示完整影响，取消保留草稿，确认后成员变化拒绝整组', async ({ page, request }) => {
+  const create = async (path: string, data: unknown) => {
+    const response = await request.post(`${base}${path}`, { data });
+    expect(response.ok(), await response.text()).toBeTruthy();
+    return (await response.json()).data;
+  };
+  const topic = await create('/api/topics', { name: '目标清单' });
+  const parent = await create('/api/tasks', { title: '整体移动' });
+  const child = await create('/api/tasks', { title: '会跟随的子任务', parentId: parent.id });
+  await page.goto('/#/inbox');
+  await page.getByTestId(`task-row-${parent.id}`).getByRole('button', { name: parent.title, exact: true }).click();
+  const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
+  await detail.getByLabel('所属清单', { exact: true }).selectOption(topic.id);
+  await detail.getByRole('button', { name: '保存更改', exact: true }).click();
+  const preview = page.getByRole('dialog', { name: '确认连带修改', exact: true });
+  await expect(preview.getByText('会跟随的子任务', { exact: false }).first()).toBeVisible();
+  await preview.getByRole('button', { name: '取消', exact: true }).click();
+  await expect(detail.getByLabel('所属清单', { exact: true })).toHaveValue(topic.id);
+  expect((await e2eDatabase.task.findUniqueOrThrow({ where: { id: parent.id } })).topicId).toBeNull();
+  await detail.getByRole('button', { name: '保存更改', exact: true }).click();
+  await expect(preview).toBeVisible();
+  expect((await request.patch(`${base}/api/tasks/${child.id}`, { data: { title: '预览后的新修改' } })).ok()).toBeTruthy();
+  const rejected = page.waitForResponse((response) => response.url().endsWith(`/api/tasks/${parent.id}`) && response.request().method() === 'PATCH' && response.status() === 409);
+  await preview.getByRole('button', { name: '确认影响并执行', exact: true }).click();
+  await rejected;
+  expect((await e2eDatabase.task.findUniqueOrThrow({ where: { id: parent.id } })).topicId).toBeNull();
+  expect((await e2eDatabase.task.findUniqueOrThrow({ where: { id: child.id } })).topicId).toBeNull();
+  await expect(detail.getByLabel('所属清单', { exact: true })).toHaveValue(topic.id);
+});

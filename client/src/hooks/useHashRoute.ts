@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { View } from '../lib/api.js';
 
-const validViews: View[] = ['board', 'chat', 'topics', 'inbox', 'settings', 'trash', 'changes'];
+const validViews: View[] = ['board', 'chat', 'topics', 'inbox', 'settings', 'trash', 'changes', 'today', 'search', 'tags', 'archived', 'more', 'connections', 'proposals', 'knowledge', 'runs', 'reviews'];
 
 function readHash(): View {
   const hash = window.location.hash.replace(/^#\/?/, '');
-  return (validViews as string[]).includes(hash) ? (hash as View) : 'board';
+  return (validViews as string[]).includes(hash) ? (hash as View) : 'inbox';
 }
 
 export function useHashRoute() {
@@ -16,7 +16,7 @@ export function useHashRoute() {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
   const navigate = useCallback((view: View) => {
-    window.location.hash = view === 'board' ? '/' : `/${view}`;
+    window.location.hash = `/${view}`;
   }, []);
   return { route, navigate };
 }

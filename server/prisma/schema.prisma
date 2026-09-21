@@ -43,6 +43,7 @@ model Topic {
   summaryStatus String     @default("empty") @map("summary_status")
   summaryUpdatedAt String? @map("summary_updated_at")
   archivedAt    String?  @map("archived_at")
+  revision      Int      @default(1)
   createdAt     String   @default("") @map("created_at")
   updatedAt     String   @default("") @map("updated_at")
   tasks         Task[]
@@ -55,6 +56,10 @@ model Topic {
 model Task {
   id            String     @id @default(cuid())
   topicId       String?    @map("topic_id")
+  parentId      String?    @map("parent_id")
+  sortOrder     Int        @default(0) @map("sort_order")
+  revision      Int        @default(1)
+  deleteBatchId String?    @map("delete_batch_id")
   title         String
   description   String     @default("")
   status        TaskStatus @default(todo)
@@ -65,12 +70,40 @@ model Task {
   createdAt     String     @default("") @map("created_at")
   updatedAt     String     @default("") @map("updated_at")
   topic         Topic?     @relation(fields: [topicId], references: [id], onDelete: Restrict)
+  parent        Task?      @relation("TaskChildren", fields: [parentId], references: [id], onDelete: Restrict)
+  children      Task[]     @relation("TaskChildren")
+  tags          TaskTag[]
   topicAssignments TaskTopicAssignment[]
 
   @@index([topicId])
   @@index([topicId, deletedAt])
   @@index([deletedAt])
+  @@index([topicId, parentId, deletedAt, sortOrder])
+  @@index([parentId])
+  @@index([deleteBatchId])
   @@map("tasks")
+}
+
+model Tag {
+  id        String @id @default(cuid())
+  name      String
+  revision  Int    @default(1)
+  createdAt String @default("") @map("created_at")
+  updatedAt String @default("") @map("updated_at")
+  tasks     TaskTag[]
+
+  @@map("tags")
+}
+
+model TaskTag {
+  taskId String @map("task_id")
+  tagId  String @map("tag_id")
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  tag    Tag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, tagId])
+  @@index([tagId])
+  @@map("task_tags")
 }
 
 model TaskTopicAssignment {
@@ -130,6 +163,9 @@ model Conversation {
 
 model ChangeRecord {
   id String @id @default(cuid())
+  actorId String? @map("actor_id")
+  connectionId String? @map("connection_id")
+  proposalId String? @map("proposal_id")
   entityType String @map("entity_type")
   entityId String @map("entity_id")
   operation String
@@ -173,4 +209,260 @@ model Approval {
 
   @@index([conversationId])
   @@map("approvals")
+}
+
+model LocalSession {
+  id String @id
+  tokenHash String @unique
+  csrfHash String
+  expiresAt String
+  createdAt String
+}
+
+model Connection {
+  id String @id @default(cuid())
+  name String
+  host String
+  tokenHash String @unique
+  status String @default("active")
+  topicIds String @default("[]")
+  includeInbox Boolean @default(false)
+  autoActions String @default("[]")
+  revision Int @default(1)
+  createdAt String
+  updatedAt String
+  @@index([status, createdAt])
+}
+
+model Proposal {
+  id String @id @default(cuid())
+  actorId String
+  connectionId String?
+  revision Int @default(1)
+  status String @default("pending")
+  commands String
+  preconditions String
+  preview String
+  result String?
+  createdAt String
+  updatedAt String
+  @@index([status, createdAt])
+  @@index([actorId, createdAt])
+}
+
+model RequestReceipt {
+  id String @id @default(cuid())
+  actorId String
+  requestId String
+  requestHash String
+  response String
+  createdAt String
+  @@unique([actorId, requestId])
+}
+
+model Material {
+  id String @id @default(cuid())
+  topicId String?
+  taskId String?
+  kind String
+  title String
+  uri String?
+  revision Int @default(1)
+  archivedAt String?
+  createdAt String
+  updatedAt String
+  versions MaterialVersion[]
+  @@index([topicId, archivedAt, updatedAt])
+  @@index([taskId])
+}
+model MaterialVersion {
+  id String @id @default(cuid())
+  materialId String
+  revision Int
+  content String @default("")
+  contentHash String
+  metadata String @default("{}")
+  attachmentPath String?
+  mimeType String?
+  fileName String?
+  createdAt String
+  material Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  @@unique([materialId, revision])
+}
+model Memory {
+  id String @id @default(cuid())
+  topicId String?
+  kind String
+  title String
+  content String
+  status String @default("active")
+  health String @default("current")
+  revision Int @default(1)
+  evidence String @default("[]")
+  createdAt String
+  updatedAt String
+  versions MemoryVersion[]
+  @@index([topicId, status, updatedAt])
+}
+model MemoryVersion {
+  id String @id @default(cuid())
+  memoryId String
+  revision Int
+  title String
+  content String
+  kind String
+  status String
+  health String
+  evidence String
+  reason String
+  createdAt String
+  memory Memory @relation(fields: [memoryId], references: [id], onDelete: Restrict)
+  @@unique([memoryId, revision])
+}
+model WorkingBrief {
+  id String @id @default(cuid())
+  topicId String?
+  content String @default("")
+  manualNotes String @default("")
+  manifest String @default("[]")
+  revision Int @default(1)
+  generatedAt String?
+  updatedAt String
+  @@index([topicId])
+}
+model OrganizationRequest {
+  id String @id @default(cuid())
+  topicId String?
+  purpose String
+  provider String
+  status String @default("pending")
+  snapshot String
+  proposalIds String @default("[]")
+  result String?
+  error String?
+  createdAt String
+  updatedAt String
+  @@index([topicId, status, createdAt])
+}
+model ReviewRule {
+  id String @id @default(cuid())
+  name String
+  enabled Boolean @default(false)
+  frequency String
+  timeOfDay String
+  timeZone String
+  weekDay Int @default(0)
+  topicIds String @default("[]")
+  includeInbox Boolean @default(false)
+  provider String @default("none")
+  revision Int @default(1)
+  coverageThrough String?
+  createdAt String
+  updatedAt String
+  batches ReviewBatch[]
+}
+model ReviewBatch {
+  id String @id @default(cuid())
+  ruleId String
+  occurrenceKey String
+  status String @default("generating")
+  snapshot String @default("{}")
+  content String @default("")
+  organizationIds String @default("[]")
+  error String?
+  createdAt String
+  updatedAt String
+  rule ReviewRule @relation(fields: [ruleId], references: [id], onDelete: Restrict)
+  @@unique([ruleId, occurrenceKey])
+}
+
+model Handoff {
+  id String @id @default(cuid())
+  taskId String
+  status String @default("prepared")
+  provider String
+  mode String @default("manual")
+  instruction String
+  inputSnapshot String
+  inputHash String
+  permissions String @default("{}")
+  revision Int @default(1)
+  createdBy String @default("user")
+  createdAt String
+  updatedAt String
+  runs Run[]
+  reviews HandoffReview[]
+  @@index([taskId, createdAt])
+}
+model Run {
+  id String @id @default(cuid())
+  handoffId String
+  continuationOf String?
+  status String @default("created")
+  provider String
+  mode String
+  externalSessionId String?
+  claimTokenHash String?
+  claimOwner String?
+  configJson String @default("{}")
+  workspaceJson String @default("{}")
+  resultJson String?
+  error String?
+  lastSequence Int @default(0)
+  startedAt String?
+  endedAt String?
+  createdAt String
+  updatedAt String
+  handoff Handoff @relation(fields: [handoffId], references: [id], onDelete: Restrict)
+  events RunEvent[]
+  artifacts Artifact[]
+  @@index([status, createdAt])
+}
+model RunEvent {
+  id String @id @default(cuid())
+  runId String
+  eventId String?
+  sequence Int
+  type String
+  payload String
+  createdAt String
+  run Run @relation(fields: [runId], references: [id], onDelete: Restrict)
+  @@unique([runId, sequence])
+  @@unique([runId, eventId])
+}
+model Artifact {
+  id String @id @default(cuid())
+  runId String
+  kind String
+  name String
+  content String?
+  path String?
+  hash String
+  metadata String @default("{}")
+  createdAt String
+  run Run @relation(fields: [runId], references: [id], onDelete: Restrict)
+  @@index([runId])
+}
+model HandoffReview {
+  id String @id @default(cuid())
+  handoffId String
+  runId String
+  decision String
+  comment String @default("")
+  taskRevision Int
+  createdAt String
+  handoff Handoff @relation(fields: [handoffId], references: [id], onDelete: Restrict)
+  @@index([handoffId])
+}
+model CodeApplication {
+  id String @id @default(cuid())
+  runId String
+  artifactId String
+  status String @default("prepared")
+  targetPath String
+  expectedHead String
+  details String @default("{}")
+  createdAt String
+  updatedAt String
+  @@index([runId])
 }

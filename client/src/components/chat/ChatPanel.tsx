@@ -1,5 +1,7 @@
 import { RotateCcw, X } from 'lucide-react';
 import { useChat } from '@/hooks/useChat.js';
+import { api } from '@/lib/api.js';
+import { json, usePlatformAction } from '@/lib/platform.js';
 import { cn } from '@/lib/utils.js';
 import { Badge } from '@/components/ui/badge.js';
 import { Button } from '@/components/ui/button.js';
@@ -12,6 +14,7 @@ type ChatPanelProps = {
 };
 
 export function ChatPanel({ chat, onClose }: ChatPanelProps) {
+  const action = usePlatformAction();
   const { messages, approvals, busy, interrupted, input, setInput, send, retry, approve, reject } = chat;
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -37,6 +40,7 @@ export function ChatPanel({ chat, onClose }: ChatPanelProps) {
             </Button>
           </div>
         </div>
+        {chat.conversationId && messages.length > 0 && <Button className="mt-2" size="sm" variant="ghost" disabled={busy || action.busy} onClick={() => void action.run(() => api('/api/v1/knowledge/materials/from-conversation', { method: 'POST', body: json({ conversationId: chat.conversationId, topicId: chat.selectedTopicId || null, title: `会话记录 ${new Date().toLocaleString()}` }) }), '完整会话已保存到项目资料')}>主动保存本次完整会话</Button>}
       </header>
 
       <MessageList messages={messages} approvals={approvals} approvalPending={approve.isPending || reject.isPending} onApprove={(id) => approve.mutate(id)} onReject={(id) => reject.mutate(id)} />

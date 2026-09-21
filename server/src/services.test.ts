@@ -11,13 +11,18 @@ describe('application services', () => {
 
   it('validates registered tool names, required fields, and enum values', () => {
     const tools = new ToolService();
-    expect(tools.definitions()).toHaveLength(14);
+    expect(tools.definitions()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ function: expect.objectContaining({ name: 'create_task' }) }),
+      expect.objectContaining({ function: expect.objectContaining({ name: 'execute_shell' }) }),
+    ]));
     expect(tools.validate({ name: 'list_tasks', arguments: {} })).toBeNull();
     expect(tools.validate({ name: 'missing_tool', arguments: {} })).toContain('未知 Tool');
     expect(tools.validate({ name: 'create_task', arguments: { title: '先放入收集箱' } })).toBeNull();
     expect(tools.validate({ name: 'update_task', arguments: { taskId: 'x', status: 'invalid' } })).toContain('status');
     expect(tools.isReadOnly('list_tasks')).toBe(true);
     expect(tools.isReadOnly('create_task')).toBe(false);
+    expect(tools.isKnown('delete_topic')).toBe(true);
+    expect(tools.isReadOnly('delete_topic')).toBe(false);
   });
 
   it('enforces controlled execution boundaries', async () => {

@@ -13,7 +13,8 @@
     "test:all": "npm test && npm run e2e",
     "db:migrate": "npm run db:migrate -w server",
     "e2e": "playwright test",
-    "e2e:real": "node e2e/run-real.mjs"
+    "e2e:real": "node e2e/run-real.mjs",
+    "db:backup": "node scripts/backup.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

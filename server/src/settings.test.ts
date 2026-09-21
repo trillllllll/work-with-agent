@@ -1,4 +1,4 @@
-import request from 'supertest';
+import request from './test-auth.js';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from './app.js';
 import { prisma } from './services.js';

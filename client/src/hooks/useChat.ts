@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { applyApprovalEvent, applyMessageEvent, type Approval, type ChatMessage } from '../chat.js';
 import { api, parseApproval, streamChat, type ApprovalResponse, type View } from '../lib/api.js';
+import { invalidateTodo } from './useTodo.js';
 
 export type { View };
 
@@ -23,7 +24,7 @@ export function useChat({ selectedTopicId, view, onError }: UseChatOptions) {
   const [busy, setBusy] = useState(false);
   const [interrupted, setInterrupted] = useState(false);
 
-  const invalidate = () => { queryClient.invalidateQueries({ queryKey: ['topics'] }); queryClient.invalidateQueries({ queryKey: ['topic'] }); queryClient.invalidateQueries({ queryKey: ['tasks'] }); };
+  const invalidate = () => { void invalidateTodo(queryClient); };
 
   useEffect(() => {
     if (!conversationId) return;
@@ -77,5 +78,5 @@ export function useChat({ selectedTopicId, view, onError }: UseChatOptions) {
   };
   const retry = () => { const last = [...messages].reverse().find((item) => item.role === 'user'); if (last) { setInput(last.content); setInterrupted(false); } };
 
-  return { messages, approvals, busy, interrupted, input, setInput, send, retry, approve, reject };
+  return { conversationId, selectedTopicId, messages, approvals, busy, interrupted, input, setInput, send, retry, approve, reject };
 }

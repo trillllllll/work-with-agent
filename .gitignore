@@ -14,3 +14,8 @@ playwright-report/
 *.log
 .DS_Store
 .claude/
+.cache/
+server/runtime/
+e2e/.data/
+
+.backups/

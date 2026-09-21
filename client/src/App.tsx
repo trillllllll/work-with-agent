@@ -1,155 +1,186 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
-import { api, statuses, type Status, type Task, type Topic, type TrashTask } from './lib/api.js';
+import { useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Archive, CalendarDays, FolderKanban, History, Inbox, Menu, MessageSquare, Plus, Search, Settings, Tags, Trash2 } from 'lucide-react';
+import { api, ApiError, statuses, type Status, type Tag, type Task, type Topic, type TrashTask, type View } from './lib/api.js';
+import { queryKeys, type TaskDraft } from './lib/todo.js';
 import { useChat } from './hooks/useChat.js';
 import { useHashRoute } from './hooks/useHashRoute.js';
 import { useMediaQuery } from './hooks/useMediaQuery.js';
-import { AppShell } from './components/layout/AppShell.js';
-import { Sidebar } from './components/layout/Sidebar.js';
-import { TopicListPage } from './components/topics/TopicList.js';
-import { BoardView } from './components/board/BoardView.js';
+import { useLocalDate, useTasks, useTodoActions } from './hooks/useTodo.js';
+import { useWorkspaceEvents } from './hooks/useWorkspaceEvents.js';
+import { ConnectionsPage } from './components/workspace/ConnectionsPage.js';
+import { ProposalsPage } from './components/workspace/ProposalsPage.js';
+import { KnowledgePage } from './components/workspace/KnowledgePage.js';
+import { RunsPage } from './components/workspace/HandoffPanel.js';
+import { ReviewsPage } from './components/workspace/ReviewsPage.js';
+import { TopicList, TopicListPage } from './components/topics/TopicList.js';
 import { TopicModal } from './components/topics/TopicModal.js';
-import { TaskModal } from './components/board/TaskModal.js';
 import { TaskDetailModal } from './components/board/TaskDetailModal.js';
+import { SummaryPanel } from './components/board/SummaryPanel.js';
+import { BoardColumn, TaskCard } from './components/board/BoardColumn.js';
 import { ChatPanel } from './components/chat/ChatPanel.js';
 import { SettingsView } from './components/settings/SettingsView.js';
-import { ConfirmDialog } from './components/dialogs/ConfirmDialog.js';
 import { TrashPage } from './components/trash/TrashPage.js';
 import { ChangesPage } from './components/changes/ChangesPage.js';
-import { InboxPage } from './components/inbox/InboxPage.js';
 import { WorkspaceModal, type WorkspaceModalView } from './components/workspace/WorkspaceModal.js';
+import { ActionDialog, type ActionPrompt } from './components/dialogs/ActionDialog.js';
+import { QuickCapture } from './components/tasks/QuickCapture.js';
+import { TaskList } from './components/tasks/TaskList.js';
+import { TagManager } from './components/tasks/TagManager.js';
+import { ThemeToggle } from './components/layout/ThemeToggle.js';
+import { Button } from './components/ui/button.js';
+import { Input } from './components/ui/input.js';
+import { cn } from './lib/utils.js';
+import { toast } from 'sonner';
+
+const navigation: { view: View; label: string; icon: typeof Inbox }[] = [
+  { view: 'inbox', label: '收集箱', icon: Inbox }, { view: 'today', label: '今天', icon: CalendarDays },
+  { view: 'topics', label: '清单', icon: FolderKanban }, { view: 'search', label: '搜索', icon: Search },
+  { view: 'tags', label: '标签', icon: Tags }, { view: 'archived', label: '已归档', icon: Archive },
+  { view: 'trash', label: '回收站', icon: Trash2 }, { view: 'changes', label: '变更历史', icon: History },
+  { view: 'settings', label: '设置', icon: Settings },
+  { view: 'connections', label: 'AI 连接', icon: MessageSquare },
+  { view: 'proposals', label: '待确认', icon: Inbox },
+  { view: 'knowledge', label: '项目资料', icon: FolderKanban },
+  { view: 'runs', label: 'AI 执行', icon: History },
+  { view: 'reviews', label: '定期回顾', icon: CalendarDays },
+];
+type Filters = { q: string; status: string; topic: string; dueFrom: string; dueTo: string; tag: string };
+const emptyFilters: Filters = { q: '', status: 'all', topic: 'all', dueFrom: '', dueTo: '', tag: '' };
 
 export function App() {
-  const queryClient = useQueryClient();
+  useWorkspaceEvents();
   const { route, navigate } = useHashRoute();
   const isDesktop = useMediaQuery('(min-width: 1024px)');
-  const [selectedTopicId, setSelectedTopicId] = useState('');
-  const [chatOpen, setChatOpen] = useState(true);
-  const [topicForm, setTopicForm] = useState<any>(null);
-  const [taskForm, setTaskForm] = useState<any>(null);
-  const [taskDetail, setTaskDetail] = useState<Task | null>(null);
-  const [deleteConfirmation, setDeleteConfirmation] = useState<{ kind: 'topic' | 'task' | 'trash'; id: string; name: string } | null>(null);
-  const notifyError = (message: string) => { if (message) toast.error(message); };
-
-  const chat = useChat({ selectedTopicId: route === 'inbox' ? '' : selectedTopicId, view: route, onError: notifyError });
-
-  const topicsQuery = useQuery<Topic[]>({ queryKey: ['topics'], queryFn: () => api('/api/topics') });
+  const [selectedTopicId, setSelectedTopicId] = useState(() => localStorage.getItem('todo.selectedTopic') ?? '');
+  const [chatOpen, setChatOpen] = useState(false);
+  const [topicForm, setTopicForm] = useState<Partial<Topic> | null>(null);
+  const [taskId, setTaskId] = useState('');
+  const [layout, setLayout] = useState<'list' | 'board'>('list');
+  const [sortMode, setSortMode] = useState('manual');
+  const [filters, setFilters] = useState<Filters>(emptyFilters);
+  const [selectedTag, setSelectedTag] = useState('');
+  const [prompt, setPrompt] = useState<(ActionPrompt & { resolve: (value: boolean) => void }) | null>(null);
+  const topicSaveLock = useRef(false);
+  const previousMain = useRef<View>('inbox');
+  const workspaceView: WorkspaceModalView | null = ['settings', 'trash', 'changes'].includes(route) ? route as WorkspaceModalView : null;
+  const page = workspaceView || route === 'chat' ? previousMain.current : route;
+  useEffect(() => { if (!workspaceView && route !== 'chat') previousMain.current = route; }, [route, workspaceView]);
+  useEffect(() => { setFilters(emptyFilters); setLayout('list'); setSortMode('manual'); }, [page, selectedTopicId]);
+  useEffect(() => { if (selectedTopicId) localStorage.setItem('todo.selectedTopic', selectedTopicId); }, [selectedTopicId]);
+  const confirm = (value: ActionPrompt) => new Promise<boolean>((resolve) => setPrompt({ ...value, resolve }));
+  const actions = useTodoActions();
+  const today = useLocalDate();
+  const topicsQuery = useQuery<Topic[]>({ queryKey: queryKeys.topics, queryFn: () => api('/api/topics') });
+  const archivedQuery = useQuery<Topic[]>({ queryKey: ['topics', 'archived'], queryFn: () => api('/api/topics?archived=true') });
+  const tagsQuery = useQuery<Tag[]>({ queryKey: queryKeys.tags, queryFn: () => api('/api/tags') });
+  const trashQuery = useQuery<TrashTask[]>({ queryKey: queryKeys.trash, queryFn: () => api('/api/trash/tasks'), enabled: route === 'trash' });
   const topics = topicsQuery.data ?? [];
-  useEffect(() => { if (!selectedTopicId && topics[0]) setSelectedTopicId(topics[0].id); if (selectedTopicId && !topicsQuery.isFetching && !topics.some((topic) => topic.id === selectedTopicId)) setSelectedTopicId(topics[0]?.id ?? ''); }, [topics, selectedTopicId, topicsQuery.isFetching]);
-  const selectedTopic = topics.find((topic) => topic.id === selectedTopicId);
-  const topicDetail = useQuery<Topic>({ queryKey: ['topic', selectedTopicId], queryFn: () => api(`/api/topics/${selectedTopicId}`), enabled: Boolean(selectedTopicId) });
+  const tags = tagsQuery.data ?? [];
+  const selectedTopic = [...topics, ...(archivedQuery.data ?? [])].find((item) => item.id === selectedTopicId);
+  useEffect(() => {
+    if (topicsQuery.isSuccess && archivedQuery.isSuccess && (!selectedTopicId || ![...(topicsQuery.data ?? []), ...(archivedQuery.data ?? [])].some((topic) => topic.id === selectedTopicId))) setSelectedTopicId(topicsQuery.data[0]?.id ?? '');
+  }, [selectedTopicId, topicsQuery.data, topicsQuery.isSuccess, archivedQuery.data, archivedQuery.isSuccess]);
+  const topicDetail = useQuery<Topic>({ queryKey: queryKeys.topic(selectedTopicId), queryFn: () => api(`/api/topics/${selectedTopicId}?includeArchived=true`), enabled: Boolean(selectedTopicId) && page === 'board' });
   const detail = topicDetail.data ?? selectedTopic;
-  const tasksQuery = useQuery<Task[]>({ queryKey: ['tasks', selectedTopicId], queryFn: () => api(`/api/tasks?topicId=${encodeURIComponent(selectedTopicId)}`), enabled: Boolean(selectedTopicId) });
-  const inboxTasksQuery = useQuery<Task[]>({ queryKey: ['tasks', 'inbox'], queryFn: () => api('/api/tasks?inbox=true') });
-  const trashQuery = useQuery<TrashTask[]>({ queryKey: ['trash', 'tasks'], queryFn: () => api('/api/trash/tasks') });
-  const grouped = useMemo(() => Object.fromEntries(statuses.map(({ value }) => [value, (tasksQuery.data ?? []).filter((task) => task.status === value)])) as Record<Status, Task[]>, [tasksQuery.data]);
-  const inboxGrouped = useMemo(() => Object.fromEntries(statuses.map(({ value }) => [value, (inboxTasksQuery.data ?? []).filter((task) => task.status === value)])) as Record<Status, Task[]>, [inboxTasksQuery.data]);
+  const archived = page === 'board' && Boolean(detail?.archivedAt);
+  const scoped = page === 'inbox' || page === 'board';
+  const hasFilters = Boolean(filters.q || filters.status !== 'all' || filters.dueFrom || filters.dueTo || filters.tag);
+  const params: Record<string, string> = { status: page === 'today' ? 'open' : filters.status, sort: scoped ? sortMode : 'date' };
+  if (page === 'inbox' || (!scoped && filters.topic === 'inbox')) params.inbox = 'true';
+  if (page === 'board') params.topicId = selectedTopicId;
+  else if (!scoped && filters.topic !== 'all' && filters.topic !== 'inbox') params.topicId = filters.topic;
+  if (archived) params.includeArchived = 'true';
+  if (filters.q) params.q = filters.q;
+  if (filters.dueFrom) params.dueFrom = filters.dueFrom;
+  if (filters.dueTo) params.dueTo = filters.dueTo;
+  if (page === 'today') params.dueTo = today;
+  if (page === 'tags' ? selectedTag : filters.tag) params.tagIds = page === 'tags' ? selectedTag : filters.tag;
+  const taskPage = ['inbox', 'board', 'today', 'search', 'tags'].includes(page);
+  const tasksQuery = useTasks(params, taskPage && (page !== 'board' || Boolean(selectedTopicId)));
+  const tasks = tasksQuery.data ?? [];
+  const chat = useChat({ selectedTopicId: page === 'inbox' ? '' : selectedTopicId, view: page === 'inbox' ? 'inbox' : 'board', onError: (message) => { if (message) toast.error(message); } });
+  const selectTopic = (id: string) => { setSelectedTopicId(id); navigate('board'); };
+  const newTopic = () => setTopicForm({ name: '', description: '', isExploration: false });
+  const createTask = (input: { title: string; topicId: string | null; parentId: string | null }) => actions.create(input, input.parentId);
+  const patchTask = async (task: Task, changes: Partial<TaskDraft>): Promise<Task | undefined> => {
+    const keys = [task.parentId, changes.parentId, ...(task.children ?? tasks.filter((child) => child.parentId === task.id)).map((child) => child.id)].filter(Boolean) as string[];
+    try { return (await actions.patch(task.id, { ...changes, expectedRevision: task.revision }, keys)).data; }
+    catch (error) {
+      if (!(error instanceof ApiError) || error.code !== 'SUBTASKS_INCOMPLETE') throw error;
+      if (await confirm({ title: '一并完成子任务？', description: '该任务还有未完成的子任务。继续后将一并标记为完成。', confirm: '一并完成' })) return (await actions.patch(task.id, { ...changes, completeChildren: true, expectedRevision: task.revision }, keys)).data;
+      return undefined;
+    }
+  };
+  const toggleTask = (task: Task) => patchTask(task, { status: task.status === 'done' ? 'todo' : 'done' });
+  const moveTask = (task: Task, topicId: string | null) => patchTask(task, { topicId });
+  const reorder = (group: Task[], parentId: string | null) => actions.write('/api/tasks/reorder', 'POST', { topicId: group[0]?.topicId ?? null, parentId, orderedTaskIds: group.map((task) => task.id), expectedRevisions: Object.fromEntries(group.map((task) => [task.id, task.revision])) }, [...group.map((task) => task.id), ...(parentId ? [parentId] : [])], '顺序已保存');
+  const deleteTask = async (task: Task) => {
+    const latest = await api<Task>(`/api/tasks/${task.id}`);
+    const children = latest.children ?? [];
+    if (!await confirm({ title: '删除任务', description: `“${task.title}”${children.length ? `及以下 ${children.length} 个子任务` : ''}将移入回收站。${children.length ? '\n' + children.map((child) => `• ${child.title}`).join('\n') : ''}`, confirm: '移入回收站', destructive: true })) return;
+    await actions.write(`/api/tasks/${task.id}`, 'DELETE', undefined, [task.id, ...children.map((child) => child.id)], '任务已移入回收站');
+    if (taskId === task.id) setTaskId('');
+  };
+  const archiveTopic = async (topic: Partial<Topic>) => {
+    if (!await confirm({ title: '归档清单', description: `归档“${topic.name}”后任务会保留归属，并从日常视图隐藏。可在已归档页面恢复。`, confirm: '归档清单' })) return;
+    await actions.write(`/api/topics/${topic.id}/archive`, 'POST', undefined, [topic.id!], '清单已归档');
+    setTopicForm(null); navigate('inbox');
+  };
+  const saveTopic = async () => {
+    if (!topicForm?.name?.trim() || topicSaveLock.current) return;
+    topicSaveLock.current = true;
+    try {
+      const response = await actions.write<Topic>(topicForm.id ? `/api/topics/${topicForm.id}` : '/api/topics', topicForm.id ? 'PATCH' : 'POST', { expectedRevision: topicForm.revision, name: topicForm.name.trim(), description: topicForm.description ?? '', isExploration: topicForm.isExploration ?? false, ...(topicForm.goal !== undefined ? { goal: topicForm.goal } : {}) }, [topicForm.id ?? 'topic-create'], topicForm.id ? '清单已更新' : '清单已创建');
+      setTopicForm(null); selectTopic(response.data.id);
+    } catch { /* Keep the form available. */ } finally { topicSaveLock.current = false; }
+  };
+  const permanentDelete = async (task: TrashTask) => {
+    const children = (trashQuery.data ?? []).filter((child) => child.parentId === task.id);
+    const descendants = new Map([...(task.children ?? []), ...children].map((child) => [child.id, child]));
+    if (!await confirm({ title: '永久删除任务', description: `永久删除“${task.title}”${descendants.size ? `及 ${descendants.size} 个子任务` : ''}，之后无法恢复。${descendants.size ? '\n' + [...descendants.values()].map((child) => `• ${child.title}`).join('\n') : ''}`, confirm: '永久删除', destructive: true })) return;
+    await actions.write(`/api/trash/tasks/${task.id}/permanent`, 'DELETE', undefined, [task.id, ...descendants.keys()], '任务已永久删除');
+  };
+  const run = (work: Promise<unknown>) => { void work.catch((error) => { if (!(error instanceof ApiError)) toast.error(error instanceof Error ? error.message : '操作失败'); }); };
+  const listProps = { topics, onOpen: setTaskId, onToggle: toggleTask, onMove: moveTask, onDelete: (task: Task) => run(deleteTask(task)), readonly: archived, busy: actions.pending };
+  const navButton = ({ view, label, icon: Icon }: typeof navigation[number]) => <button key={view} type="button" onClick={() => navigate(view)} className={cn('sidebar-nav-item flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm', route === view ? 'bg-primary/10 font-semibold text-primary' : 'text-muted-foreground hover:text-foreground')} aria-current={route === view ? 'page' : undefined}><Icon className="size-4" />{label}</button>;
+  const title = page === 'board' ? detail?.name ?? '选择一个清单' : navigation.find((item) => item.view === page)?.label ?? '工作区';
+  const updateFilter = (patch: Partial<Filters>) => setFilters((current) => ({ ...current, ...patch }));
+  const selectClass = 'glass-control h-9 max-w-full rounded-lg px-2 text-xs';
 
-  const invalidate = () => { queryClient.invalidateQueries({ queryKey: ['topics'] }); queryClient.invalidateQueries({ queryKey: ['tasks'] }); queryClient.invalidateQueries({ queryKey: ['trash', 'tasks'] }); };
-  const summaryMutation = useMutation({ mutationFn: (action: 'confirm' | 'discard') => api(`/api/topics/${selectedTopicId}/summary/${action}`, { method: 'POST' }), onSuccess: (_data, action) => { queryClient.invalidateQueries({ queryKey: ['topic', selectedTopicId] }); queryClient.invalidateQueries({ queryKey: ['topics'] }); toast.success(action === 'confirm' ? '成果已确认' : '草稿已放弃'); }, onError: (e: Error) => notifyError(e.message) });
-  const saveTopic = useMutation({ mutationFn: (form: any) => api(form.id ? `/api/topics/${form.id}` : '/api/topics', { method: form.id ? 'PATCH' : 'POST', body: JSON.stringify(form) }), onSuccess: (topic: Topic) => { setTopicForm(null); setSelectedTopicId(topic.id); invalidate(); toast.success(topicForm?.id ? '主题已更新' : '主题已创建'); if (!isDesktop) navigate('board'); }, onError: (e: Error) => notifyError(e.message) });
-  const deleteTopic = useMutation({ mutationFn: (id: string) => api(`/api/topics/${id}`, { method: 'DELETE' }), onSuccess: () => { setDeleteConfirmation(null); setTopicForm(null); setSelectedTopicId(''); invalidate(); toast.success('主题已删除'); }, onError: (e: Error) => { setDeleteConfirmation(null); notifyError(e.message); } });
-  const saveTask = useMutation({ mutationFn: (form: any) => api(form.id ? `/api/tasks/${form.id}` : '/api/tasks', { method: form.id ? 'PATCH' : 'POST', body: JSON.stringify(form.id ? { title: form.title, description: form.description, status: form.status, priority: form.priority, dueDate: form.dueDate || null, resultSummary: form.resultSummary } : { title: form.title, description: form.description, priority: form.priority, dueDate: form.dueDate || null, resultSummary: form.resultSummary, topicId: form.inbox ? null : selectedTopicId }) }), onSuccess: (_data, form) => { setTaskForm(null); setTaskDetail(null); invalidate(); toast.success(form.id ? '任务已更新' : '任务已创建'); }, onError: (e: Error) => notifyError(e.message) });
-  const captureTask = useMutation({ mutationFn: (form: { title: string; description: string }) => api('/api/tasks', { method: 'POST', body: JSON.stringify({ ...form, topicId: null }) }), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['tasks', 'inbox'] }); toast.success('任务已收集'); }, onError: (e: Error) => notifyError(e.message) });
-  const assignTask = useMutation({ mutationFn: ({ id, topicId }: { id: string; topicId: string }) => api(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify({ topicId }) }), onSuccess: (_data, variables) => { invalidate(); queryClient.invalidateQueries({ queryKey: ['tasks', 'inbox'] }); queryClient.invalidateQueries({ queryKey: ['tasks', variables.topicId] }); toast.success('任务已归入主题'); }, onError: (e: Error) => notifyError(e.message) });
-  const updateTask = useMutation({ mutationFn: ({ id, status }: { id: string; status: Status }) => api(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }), onSuccess: invalidate, onError: (e: Error) => notifyError(e.message) });
-  const deleteTask = useMutation({ mutationFn: (id: string) => api(`/api/tasks/${id}`, { method: 'DELETE' }), onSuccess: () => { setDeleteConfirmation(null); invalidate(); toast.success('任务已删除'); }, onError: (e: Error) => { setDeleteConfirmation(null); notifyError(e.message); } });
-  const restoreTask = useMutation({ mutationFn: (id: string) => api(`/api/trash/tasks/${id}/restore`, { method: 'POST' }), onSuccess: () => { setDeleteConfirmation(null); invalidate(); queryClient.invalidateQueries({ queryKey: ['trash', 'tasks'] }); toast.success('任务已恢复'); }, onError: (e: Error) => notifyError(e.message) });
-  const permanentDeleteTask = useMutation({ mutationFn: (id: string) => api(`/api/trash/tasks/${id}/permanent`, { method: 'DELETE' }), onSuccess: () => { setDeleteConfirmation(null); queryClient.invalidateQueries({ queryKey: ['trash', 'tasks'] }); toast.success('任务已永久删除'); }, onError: (e: Error) => { setDeleteConfirmation(null); notifyError(e.message); } });
+  const taskContent = <div className="mx-auto max-w-6xl p-4 pb-10 sm:p-7">
+    <header className="mb-5 flex flex-wrap items-start justify-between gap-3 border-b pb-5 glass-divider"><div><p className="text-xs text-muted-foreground">个人任务清单</p><h1 className="mt-2 text-2xl font-semibold">{title}</h1>{page === 'today' && <p className="mt-2 text-xs text-muted-foreground">{today} · 未完成的到期任务</p>}{archived && <p className="mt-2 text-sm text-muted-foreground">此清单已归档，内容只读。</p>}</div><div className="flex flex-wrap items-center gap-2"><Button variant="ghost" size="icon" aria-label="打开聊天" onClick={() => isDesktop ? setChatOpen(true) : navigate('chat')}><MessageSquare /></Button>{page === 'board' && detail && !archived && <Button variant="outline" aria-label={`编辑清单：${detail.name}`} onClick={() => setTopicForm(detail)}>编辑清单</Button>}{scoped && <><Button variant={layout === 'list' ? 'secondary' : 'ghost'} size="sm" onClick={() => setLayout('list')}>列表</Button><Button variant={layout === 'board' ? 'secondary' : 'ghost'} size="sm" onClick={() => setLayout('board')}>看板</Button></>}</div></header>
+    {page === 'board' && detail && <details className="mb-5 glass-subtle rounded-xl p-4"><summary className="cursor-pointer text-sm font-semibold">资料、记忆与当前简报</summary><KnowledgePage key={detail.id} topics={[detail]} initialTopicId={detail.id} /></details>}
+    {page === 'board' && !detail ? <Button onClick={newTopic}>新建清单</Button> : <>
+      {scoped && !archived && <QuickCapture key={`${page}.${selectedTopicId}`} topicId={page === 'inbox' ? null : selectedTopicId} inbox={page === 'inbox'} onCreate={createTask} />}
+      {page === 'board' && detail && <details className="my-4 glass-subtle rounded-xl p-3"><summary className="cursor-pointer text-sm text-muted-foreground">探索与成果</summary><p className="mt-3 whitespace-pre-wrap text-sm">{detail.description}</p>{detail.goal && <p className="mt-2 text-sm">目标：{detail.goal}</p>}<SummaryPanel detail={detail} busy={actions.pending} onConfirm={archived ? undefined : (action) => run(actions.write(`/api/topics/${detail.id}/summary/${action}`, 'POST', undefined, [detail.id], action === 'confirm' ? '成果已确认' : '草稿已放弃'))} /></details>}
+      {page === 'tags' && <TagManager tags={tags} selected={selectedTag} onSelect={setSelectedTag} confirm={confirm} />}
+      <div className="my-4 flex flex-wrap items-center gap-2" aria-label="任务筛选">
+        <Input className="h-9 w-full sm:w-56" aria-label="搜索任务" placeholder="搜索标题和说明" value={filters.q} onChange={(event) => updateFilter({ q: event.target.value })} />
+        {page !== 'today' && <select className={selectClass} aria-label="筛选完成状态" value={filters.status} onChange={(event) => updateFilter({ status: event.target.value })}><option value="all">全部状态</option><option value="open">未完成</option><option value="done">已完成</option></select>}
+        {scoped && <select className={selectClass} aria-label="任务排序" value={sortMode} onChange={(event) => setSortMode(event.target.value)}><option value="manual">手动排序</option><option value="date">按截止日期</option><option value="priority">按优先级</option></select>}
+        {!scoped && <select className={selectClass} aria-label="筛选清单" value={filters.topic} onChange={(event) => updateFilter({ topic: event.target.value })}><option value="all">全部清单</option><option value="inbox">收集箱</option>{topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}</select>}
+        {page !== 'tags' && <select className={selectClass} aria-label="筛选标签" value={filters.tag} onChange={(event) => updateFilter({ tag: event.target.value })}><option value="">全部标签</option>{tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select>}
+        {page !== 'today' && <><Input className="h-9 w-36 text-xs" type="date" aria-label="截止日期从" value={filters.dueFrom} onChange={(event) => updateFilter({ dueFrom: event.target.value })} /><span className="text-xs">至</span><Input className="h-9 w-36 text-xs" type="date" aria-label="截止日期到" value={filters.dueTo} onChange={(event) => updateFilter({ dueTo: event.target.value })} /></>}
+        {hasFilters && <Button size="sm" variant="ghost" onClick={() => setFilters(emptyFilters)}>清除筛选</Button>}
+      </div>
+      {scoped && <p className="mb-3 text-xs text-muted-foreground">{hasFilters ? '筛选期间不能手动排序；清除筛选后可调整完整列表。' : archived ? '恢复清单后可编辑和排序。' : sortMode !== 'manual' ? '切换为手动排序后，可调整任务位置。' : '包含已完成任务。拖动把手或使用上下按钮调整顺序。'}</p>}
+      {tasksQuery.isLoading ? <p className="py-12 text-center text-muted-foreground">正在加载任务…</p> : tasksQuery.error ? <p role="alert" className="text-destructive">{tasksQuery.error.message}</p> : page === 'today' ? <div className="space-y-6">{[{ name: '逾期', items: tasks.filter((task) => task.dueDate && task.dueDate < today) }, { name: '今天', items: tasks.filter((task) => task.dueDate === today) }].map((group) => <section key={group.name}><h2 className="mb-3 text-sm font-semibold">{group.name} · {group.items.length}</h2><TaskList {...listProps} tasks={group.items} /></section>)}</div> : scoped && layout === 'board' ? <div className="mt-5 flex gap-3 overflow-x-auto pb-4 snap-x snap-mandatory md:grid md:grid-cols-2 md:overflow-visible xl:grid-cols-4">{statuses.map(({ value, label }) => <BoardColumn key={value} label={label} count={tasks.filter((task) => task.status === value).length}>{tasks.filter((task) => task.status === value).map((task) => archived ? <button key={task.id} type="button" className="glass-subtle w-full rounded-xl p-3 text-left text-sm" onClick={() => setTaskId(task.id)}>{task.title}</button> : <TaskCard key={task.id} task={task} onEdit={(item) => setTaskId(item.id)} onDelete={(item) => run(deleteTask(item))} onUpdateStatus={(id, status: Status) => { const item = tasks.find((candidate) => candidate.id === id); if (item) run(patchTask(item, { status })); }} />)}</BoardColumn>)}</div> : <TaskList {...listProps} tasks={tasks} hierarchical={scoped && !hasFilters && sortMode === 'manual'} onReorder={scoped && !hasFilters && !archived && sortMode === 'manual' ? reorder : undefined} />}
+    </>}
+  </div>;
+  const content = page === 'connections' ? <ConnectionsPage topics={topics} /> : page === 'proposals' ? <ProposalsPage /> : page === 'knowledge' ? <KnowledgePage topics={topics} initialTopicId={selectedTopicId} /> : page === 'runs' ? <RunsPage /> : page === 'reviews' ? <ReviewsPage topics={topics} /> : taskPage ? taskContent : page === 'topics' ? <TopicListPage topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onSelectTopic={selectTopic} onNewTopic={newTopic} onEditTopic={setTopicForm} onOpenSettings={() => navigate('settings')} /> : page === 'archived' ? <div className="p-5 sm:p-7"><h1 className="mb-5 text-2xl font-semibold">已归档</h1><div className="space-y-3">{!(archivedQuery.data ?? []).length && <p className="text-sm text-muted-foreground">暂无归档清单</p>}{(archivedQuery.data ?? []).map((topic) => <article key={topic.id} className="glass-subtle flex flex-wrap items-center gap-3 rounded-xl p-4"><button className="flex-1 text-left font-medium" onClick={() => selectTopic(topic.id)}>{topic.name}</button><Button variant="outline" onClick={() => run(actions.write(`/api/topics/${topic.id}/restore`, 'POST', undefined, [topic.id], '清单已恢复'))}>恢复清单</Button><Button variant="outline" onClick={() => run((async () => { if (await confirm({ title: '移出归档清单的任务', description: `将“${topic.name}”的任务移到收集箱，保留父子关系。`, confirm: '移出任务' })) await actions.write(`/api/topics/${topic.id}/move-tasks-to-inbox`, 'POST', undefined, [topic.id], '任务已移入收集箱'); })())}>移出任务到收集箱</Button></article>)}</div></div> : <div className="p-5"><h1 className="mb-5 text-2xl font-semibold">工作区</h1>{navigation.map(navButton)}<Button className="mt-4" variant="outline" onClick={() => navigate('chat')}><MessageSquare />打开聊天</Button><div className="mt-4"><ThemeToggle /></div></div>;
+  const chatPanel = <ChatPanel chat={chat} onClose={() => { setChatOpen(false); if (!isDesktop || route === 'chat') navigate(previousMain.current); }} />;
 
-  const workspaceModalView: WorkspaceModalView | null = route === 'settings' || route === 'trash' || route === 'changes' ? route : null;
-  const closeWorkspaceModal = () => navigate('board');
-  const openWorkspaceModal = (view: WorkspaceModalView) => navigate(view);
-  const closeChat = () => { if (isDesktop) setChatOpen(false); else navigate('board'); };
-
-  const openNewTopic = () => setTopicForm({ name: '', description: '', isExploration: true });
-  const openNewTask = () => setTaskForm({ title: '', description: '', priority: 'none', dueDate: '', resultSummary: '' });
-
-  return (
-    <>
-      <AppShell
-        route={route}
-        isDesktop={isDesktop}
-        navigate={navigate}
-        sidebar={
-          <Sidebar
-            topics={topics}
-            topicsLoading={topicsQuery.isLoading}
-            selectedTopicId={selectedTopicId}
-            onSelectTopic={setSelectedTopicId}
-            onNewTopic={openNewTopic}
-            onEditTopic={(topic) => setTopicForm(topic)}
-            settingsActive={route === 'settings'}
-            onToggleSettings={() => navigate(route === 'settings' ? 'board' : 'settings')}
-            trashActive={route === 'trash'}
-            onOpenTrash={() => navigate('trash')}
-            changesActive={route === 'changes'}
-            onOpenChanges={() => navigate('changes')}
-            inboxActive={route === 'inbox'}
-            onOpenInbox={() => navigate('inbox')}
-          />
-        }
-        inbox={
-          <InboxPage
-            topics={topics}
-            grouped={inboxGrouped}
-            loading={inboxTasksQuery.isLoading}
-            saving={captureTask.isPending}
-            onCapture={(form) => captureTask.mutate(form)}
-            onEditTask={(task) => setTaskDetail(task)}
-            onDeleteTask={(task) => setDeleteConfirmation({ kind: 'task', id: task.id, name: task.title })}
-            onUpdateTaskStatus={(id, status) => updateTask.mutate({ id, status })}
-            onAssignTopic={(id, topicId) => assignTask.mutate({ id, topicId })}
-            assigningTaskId={assignTask.isPending ? assignTask.variables?.id : undefined}
-          />
-        }
-        board={
-          <BoardView
-            detail={detail}
-            hasTopic={Boolean(selectedTopic)}
-            grouped={grouped}
-            tasksLoading={tasksQuery.isLoading}
-            summaryBusy={summaryMutation.isPending}
-            onNewTopic={openNewTopic}
-            onNewTask={openNewTask}
-            onEditTask={(task) => setTaskDetail(task)}
-            onDeleteTask={(task) => setDeleteConfirmation({ kind: 'task', id: task.id, name: task.title })}
-            onUpdateTaskStatus={(id, status) => updateTask.mutate({ id, status })}
-            onConfirmSummary={(action) => summaryMutation.mutate(action)}
-            onOpenSettings={() => navigate('settings')}
-            showOpenChat={!chatOpen && isDesktop}
-            onOpenChat={() => setChatOpen(true)}
-          />
-        }
-        chatOpen={chatOpen}
-        chat={<ChatPanel chat={chat} onClose={closeChat} />}
-        topics={
-          <TopicListPage
-            topics={topics}
-            topicsLoading={topicsQuery.isLoading}
-            selectedTopicId={selectedTopicId}
-            onSelectTopic={(id) => { setSelectedTopicId(id); navigate('board'); }}
-            onNewTopic={openNewTopic}
-            onEditTopic={(topic) => setTopicForm(topic)}
-            onOpenSettings={() => navigate('settings')}
-          />
-        }
-      />
-      {workspaceModalView && (
-        <WorkspaceModal
-          view={workspaceModalView}
-          onViewChange={openWorkspaceModal}
-          onClose={closeWorkspaceModal}
-          settings={<SettingsView />}
-          trash={<TrashPage tasks={trashQuery.data ?? []} loading={trashQuery.isLoading} onRestore={(task) => restoreTask.mutate(task.id)} onPermanentDelete={(task) => setDeleteConfirmation({ kind: 'trash', id: task.id, name: task.title })} />}
-          changes={<ChangesPage />}
-        />
-      )}
-      {topicForm && <TopicModal form={topicForm} onChange={setTopicForm} onClose={() => setTopicForm(null)} onSave={() => saveTopic.mutate(topicForm)} onDelete={() => setDeleteConfirmation({ kind: 'topic', id: topicForm.id, name: topicForm.name })} busy={saveTopic.isPending} />}
-      {taskForm && <TaskModal form={taskForm} onChange={setTaskForm} onClose={() => setTaskForm(null)} onSave={() => saveTask.mutate(taskForm)} busy={saveTask.isPending} />}
-      {taskDetail && <TaskDetailModal task={taskDetail} topicName={taskDetail.topicId === selectedTopicId ? selectedTopic?.name : undefined} onChange={setTaskDetail} onClose={() => setTaskDetail(null)} onSave={() => saveTask.mutate(taskDetail)} busy={saveTask.isPending} />}
-      {deleteConfirmation && <ConfirmDialog title={deleteConfirmation.kind === 'topic' ? '删除主题' : deleteConfirmation.kind === 'trash' ? '永久删除任务' : '删除任务'} itemName={deleteConfirmation.name} description={deleteConfirmation.kind === 'topic' ? '删除前请确认该主题不再需要。非空主题会被系统拒绝删除。' : deleteConfirmation.kind === 'trash' ? '永久删除后无法恢复该任务，请确认继续。' : '删除后任务会移入回收站。'} busy={deleteTopic.isPending || deleteTask.isPending || permanentDeleteTask.isPending} onCancel={() => setDeleteConfirmation(null)} onConfirm={() => deleteConfirmation.kind === 'topic' ? deleteTopic.mutate(deleteConfirmation.id) : deleteConfirmation.kind === 'trash' ? permanentDeleteTask.mutate(deleteConfirmation.id) : deleteTask.mutate(deleteConfirmation.id)} />}
-    </>
-  );
+  return <>
+    <div className={cn('h-dvh overflow-hidden bg-background', isDesktop ? cn('grid', chatOpen || route === 'chat' ? 'grid-cols-[224px_minmax(0,1fr)_360px]' : 'grid-cols-[224px_minmax(0,1fr)]') : 'flex flex-col')}>
+      {isDesktop && <aside className="glass-surface flex min-h-0 flex-col border-y-0 border-l-0 p-3"><div className="mb-5 mt-2 flex items-center justify-between px-2"><strong className="text-sm">Agent 工作室</strong><ThemeToggle /></div><nav aria-label="主导航">{navigation.slice(0, 4).map(navButton)}</nav><div className="mt-4 flex items-center justify-between px-2"><span className="text-xs text-muted-foreground">我的清单</span><Button variant="ghost" size="icon-xs" aria-label="新建清单" onClick={newTopic}><Plus /></Button></div><div className="my-2 min-h-0 flex-1 overflow-y-auto"><TopicList topics={topics} loading={topicsQuery.isLoading} selectedTopicId={page === 'board' ? selectedTopicId : ''} onSelect={selectTopic} onEdit={setTopicForm} /></div><nav className="max-h-[45dvh] shrink-0 overflow-y-auto border-t pt-2 glass-divider" aria-label="工作区导航">{navigation.slice(4).map(navButton)}</nav></aside>}
+      <main className="glass-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto">{!isDesktop && route === 'chat' ? chatPanel : content}</main>
+      {isDesktop && (chatOpen || route === 'chat') && <aside className="min-h-0 border-l glass-divider">{chatPanel}</aside>}
+      {!isDesktop && <nav aria-label="主导航" className="mobile-tab-bar glass-surface grid shrink-0 grid-cols-5 rounded-none border-x-0 border-b-0 pb-[env(safe-area-inset-bottom)]">{[...navigation.slice(0, 4), { view: 'more' as View, label: '更多', icon: Menu }].map(({ view, label, icon: Icon }) => <button key={view} className={cn('flex flex-col items-center gap-1 py-3 text-[11px]', route === view ? 'text-primary' : 'text-muted-foreground')} onClick={() => navigate(view)} aria-current={route === view ? 'page' : undefined}><Icon className="size-5" />{label}</button>)}</nav>}
+    </div>
+    {workspaceView && <WorkspaceModal view={workspaceView} onViewChange={navigate} onClose={() => navigate(previousMain.current)} settings={<SettingsView />} changes={<ChangesPage />} trash={<TrashPage tasks={trashQuery.data ?? []} loading={trashQuery.isLoading} onRestore={(task) => run(actions.write(`/api/trash/tasks/${task.id}/restore`, 'POST', undefined, [task.id, ...(task.parentId ? [task.parentId] : []), ...(task.children ?? (trashQuery.data ?? []).filter((child) => child.parentId === task.id)).map((child) => child.id)], '任务已恢复'))} onPermanentDelete={(task) => run(permanentDelete(task))} />} />}
+    {topicForm && <TopicModal form={topicForm} onChange={setTopicForm} onClose={() => { if (!actions.pending) setTopicForm(null); }} onSave={() => run(saveTopic())} onDelete={() => run(archiveTopic(topicForm))} busy={actions.pending} />}
+    {taskId && <TaskDetailModal key={taskId} id={taskId} topics={topics} tags={tags} onClose={() => setTaskId('')} onOpen={setTaskId} onSave={patchTask} onCreate={createTask} onToggle={toggleTask} onMove={moveTask} onDelete={(task) => run(deleteTask(task))} onReorder={reorder} />}
+    {prompt && <ActionDialog prompt={prompt} onResolve={(value) => { prompt.resolve(value); setPrompt(null); }} />}
+  </>;
 }

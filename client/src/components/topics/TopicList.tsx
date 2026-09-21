@@ -23,7 +23,7 @@ export function TopicList({ topics, loading, selectedTopicId, onSelect, onEdit, 
     );
   }
   if (!topics.length) {
-    return <p className="rounded-xl border border-dashed border-[var(--glass-border)] px-3 py-4 text-xs leading-relaxed text-muted-foreground">还没有主题，先创建一个。</p>;
+    return <p className="rounded-xl border border-dashed border-[var(--glass-border)] px-3 py-4 text-xs leading-relaxed text-muted-foreground">还没有清单，先创建一个。</p>;
   }
   return (
     <div className={cn('sidebar-topic-list flex flex-col gap-1', className)}>
@@ -38,7 +38,7 @@ export function TopicList({ topics, loading, selectedTopicId, onSelect, onEdit, 
             <span className="truncate">{topic.name}</span>
             {topic.isExploration && <em className="glass-topic-badge ml-auto flex w-10 shrink-0 items-center justify-center whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] not-italic text-explore">探索</em>}
           </button>
-          <button type="button" title="编辑主题" aria-label={`编辑主题：${topic.name}`} onClick={() => onEdit(topic)} className="mr-1 grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground opacity-100 transition-[background-color,color,opacity,transform] duration-200 hover:scale-105 hover:bg-[var(--glass-hover)] hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100">
+          <button type="button" title="编辑清单" aria-label={`编辑清单：${topic.name}`} onClick={() => onEdit(topic)} className="mr-1 grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground opacity-100 transition-[background-color,color,opacity,transform] duration-200 hover:scale-105 hover:bg-[var(--glass-hover)] hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100">
             <Pencil className="size-3.5" />
           </button>
         </div>
@@ -62,8 +62,8 @@ export function TopicListPage({ topics, topicsLoading, selectedTopicId, onSelect
     <div className="flex h-full flex-col bg-background/80">
       <header className="flex items-center justify-between gap-2 border-b glass-divider px-4 py-3.5">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight">主题</h1>
-          <p className="mt-0.5 text-xs text-muted-foreground">任务是逐渐收敛成结果的容器</p>
+          <h1 className="text-lg font-semibold tracking-tight">清单</h1>
+          <p className="mt-0.5 text-xs text-muted-foreground">把相关任务放在一起</p>
         </div>
         <div className="flex items-center gap-1">
           <ThemeToggle />
@@ -71,7 +71,7 @@ export function TopicListPage({ topics, topicsLoading, selectedTopicId, onSelect
         </div>
       </header>
       <div className="glass-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
-        <Button className="mb-3 w-full" onClick={onNewTopic}><Plus />新建主题</Button>
+        <Button className="mb-3 w-full" onClick={onNewTopic}><Plus />新建清单</Button>
         <TopicList topics={topics} loading={topicsLoading} selectedTopicId={selectedTopicId} onSelect={onSelectTopic} onEdit={onEditTopic} />
       </div>
     </div>

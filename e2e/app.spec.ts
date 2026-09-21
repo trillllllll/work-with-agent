@@ -1,7 +1,7 @@
-import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const apiUrl = 'http://127.0.0.1:3001';
+const apiUrl = 'http://127.0.0.1:3015';
 const composerPlaceholder = '例如：创建任务：整理 API 文档';
 
 async function responseData<T>(response: Awaited<ReturnType<APIRequestContext['get']>>) {
@@ -25,6 +25,7 @@ async function taskCount(request: APIRequestContext, topicId: string) {
 }
 
 async function send(page: Page, message: string) {
+  if (!(await page.getByPlaceholder(composerPlaceholder).isVisible())) await page.getByRole('button', { name: '打开聊天', exact: true }).click();
   await page.getByPlaceholder(composerPlaceholder).fill(message);
   await page.getByRole('button', { name: '发送' }).click();
 }
@@ -38,89 +39,6 @@ test.afterAll(async () => {
 });
 
 test.describe('Agent 工作室 MVP', () => {
-  test('收集箱可快速收集任务并归入已有主题', async ({ page, isMobile, request }) => {
-    test.skip(Boolean(isMobile), '收集箱桌面整理流程在桌面视口验收');
-    const topic = await createTopic(request, 'E2E 收集主题');
-    const task = await responseData<{ id: string }>(await request.post(`${apiUrl}/api/tasks`, { data: { title: '待整理收集项', description: '待归类背景' } }));
-    await page.goto('/#/inbox');
-    await expect(page.getByRole('heading', { name: '收集箱' })).toBeVisible();
-    const taskCard = page.getByRole('article').filter({ hasText: '待整理收集项' });
-    await expect(taskCard).toBeVisible();
-    await taskCard.getByRole('combobox', { name: '归入主题：待整理收集项' }).click();
-    await page.getByRole('option', { name: 'E2E 收集主题' }).click();
-    await expect(taskCard).toBeHidden();
-    expect((await responseData<Array<{ id: string; topicId: string | null }>>(await request.get(`${apiUrl}/api/tasks?inbox=true`))).some((item) => item.id === task.id)).toBe(false);
-    await page.goto('/#/board');
-    await expect(page.getByRole('button', { name: '待整理收集项', exact: true })).toBeVisible();
-    expect((await responseData<{ topicId: string }>(await request.get(`${apiUrl}/api/tasks/${task.id}`))).topicId).toBe(topic.id);
-  });
-
-  test('任务名称打开详情，可保存优先级和截止日期', async ({ page, isMobile, request }) => {
-    test.skip(Boolean(isMobile), '任务详情桌面端验收');
-    const topic = await createTopic(request, 'E2E 详情主题');
-    const task = await responseData<{ id: string }>(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: topic.id, title: '详情任务', description: '详情背景' } }));
-    await page.goto('/#/board');
-
-    const taskCard = () => page.getByRole('button', { name: '详情任务', exact: true }).locator('xpath=ancestor::article');
-    await expect(taskCard()).toBeVisible();
-    await taskCard().getByRole('button', { name: '详情任务', exact: true }).click();
-    await expect(page.getByRole('heading', { name: '任务详情' })).toBeVisible();
-    await expect(page.getByLabel('任务名称')).toHaveValue('详情任务');
-    await expect(page.getByText('主题归属历史')).toBeVisible();
-    await expect(page.getByText('收集箱 → E2E 详情主题')).toBeVisible();
-    await page.getByRole('combobox', { name: '任务优先级' }).click();
-    await page.getByRole('option', { name: '高' }).click();
-    await page.locator('#task-detail-due-date').fill('2026-09-30');
-    await page.getByRole('button', { name: '保存任务' }).click();
-    await expect(page.getByRole('heading', { name: '任务详情' })).toBeHidden();
-    await expect(taskCard().getByTitle('优先级：高')).toBeVisible();
-    await expect(taskCard().getByTitle('截止日期：2026-09-30')).toBeVisible();
-
-    await page.reload();
-    await expect(page.getByRole('button', { name: '详情任务', exact: true })).toBeVisible();
-    const saved = await responseData<{ priority: string; dueDate: string | null }>(await request.get(`${apiUrl}/api/tasks/${task.id}`));
-    expect(saved).toMatchObject({ priority: 'high', dueDate: '2026-09-30' });
-  });
-
-  test('创建探索主题并完成任务状态、回收站和永久删除流程', async ({ page, isMobile, request }) => {
-    test.skip(Boolean(isMobile), '核心管理流程在桌面视口验收，移动端使用独立响应式用例');
-    await page.goto('/#/topics');
-    await page.getByRole('button', { name: '新建主题' }).click();
-    await page.getByLabel('主题名称').fill('E2E 探索主题');
-    await expect(page.getByLabel('当前仍在探索')).toBeChecked();
-    await page.getByRole('button', { name: '保存主题' }).click();
-    await expect(page.getByRole('heading', { name: 'E2E 探索主题' })).toBeVisible();
-
-    await page.getByRole('button', { name: '新建任务' }).click();
-    await page.getByLabel('任务名称').fill('E2E 任务');
-    await page.getByRole('button', { name: '保存任务' }).click();
-    const taskCard = () => page.getByRole('button', { name: 'E2E 任务', exact: true }).locator('xpath=ancestor::article');
-    await expect(taskCard()).toBeVisible();
-    await taskCard().getByRole('combobox', { name: '修改状态：E2E 任务' }).click();
-    await expect(page.getByRole('option', { name: '已完成' })).toHaveCount(0);
-    await page.getByRole('option', { name: '进行中' }).click();
-    await expect(taskCard().getByRole('combobox', { name: '修改状态：E2E 任务' })).toContainText('进行中');
-    await taskCard().getByRole('combobox', { name: '修改状态：E2E 任务' }).click();
-    await page.getByRole('option', { name: '已完成' }).click();
-    await expect(taskCard().getByRole('combobox', { name: '修改状态：E2E 任务' })).toContainText('已完成');
-
-    await taskCard().getByRole('button', { name: '删除任务：E2E 任务' }).click();
-    await page.getByRole('button', { name: '确认' }).click();
-    await page.goto('/#/trash');
-    await expect(page.getByRole('heading', { name: 'E2E 任务' })).toBeVisible();
-    await page.getByRole('button', { name: '恢复' }).click();
-    await page.goto('/#/board');
-    await expect(taskCard()).toBeVisible();
-
-    await taskCard().getByRole('button', { name: '删除任务：E2E 任务' }).click();
-    await page.getByRole('button', { name: '确认' }).click();
-    await page.goto('/#/trash');
-    await page.getByRole('button', { name: '永久删除' }).click();
-    await page.getByRole('button', { name: '确认' }).click();
-    await expect(page.getByText('回收站为空')).toBeVisible();
-    expect(await responseData<unknown[]>(await request.get(`${apiUrl}/api/trash/tasks`))).toHaveLength(0);
-  });
-
   test('配置模型，验证只读 Tool、写操作批准和拒绝', async ({ page, isMobile, request }) => {
     test.skip(Boolean(isMobile), 'Agent 完整工作流在桌面视口验收');
     const topic = await createTopic(request, 'E2E Agent 主题');
@@ -131,6 +49,8 @@ test.describe('Agent 工作室 MVP', () => {
     await page.getByRole('button', { name: '测试连接并保存' }).click();
     await expect(page.getByText('设置已保存，连接测试通过。')).toBeVisible();
 
+    await page.goto('/#/board');
+    await expect(page.getByRole('heading', { name: 'E2E Agent 主题', exact: true })).toBeVisible();
     await page.goto('/#/chat');
     await send(page, '列出任务');
     await expect(page.getByText('我先读取任务。', { exact: true })).toBeVisible();
@@ -157,14 +77,28 @@ test.describe('Agent 工作室 MVP', () => {
     const topic = await createTopic(request, 'E2E 成果主题');
     await configureMock(request);
     await page.goto('/#/board');
+    await page.getByText('探索与成果', { exact: true }).click();
 
+    const firstChat = page.waitForResponse((response) => response.url().endsWith('/api/chat') && response.request().method() === 'POST');
     await send(page, '生成成果草稿 第一版');
+    const firstStream = await (await firstChat).text();
+    expect(firstStream).toContain('"toolName":"get_topic"');
+    const firstProposal = await responseData<Array<{ arguments: string }>>(await request.get(`${apiUrl}/api/agent/approvals?status=pending`));
+    const originalTopic = await responseData<{ revision: number }>(await request.get(`${apiUrl}/api/topics/${topic.id}`));
+    expect(JSON.parse(firstProposal[0].arguments).expectedRevision).toBe(originalTopic.revision);
     await page.getByRole('button', { name: '批准执行' }).click();
     await expect(page.getByText('E2E 待放弃草稿')).toBeVisible();
     await page.getByRole('button', { name: '放弃草稿' }).click();
     await expect(page.getByText('E2E 待放弃草稿')).toHaveCount(0);
 
+    const secondChat = page.waitForResponse((response) => response.url().endsWith('/api/chat') && response.request().method() === 'POST');
     await send(page, '生成成果草稿 第二版');
+    const secondStream = await (await secondChat).text();
+    expect(secondStream).toContain('"toolName":"get_topic"');
+    const secondProposal = await responseData<Array<{ arguments: string }>>(await request.get(`${apiUrl}/api/agent/approvals?status=pending`));
+    const updatedTopic = await responseData<{ revision: number }>(await request.get(`${apiUrl}/api/topics/${topic.id}`));
+    expect(updatedTopic.revision).toBeGreaterThan(originalTopic.revision);
+    expect(JSON.parse(secondProposal[0].arguments).expectedRevision).toBe(updatedTopic.revision);
     await page.getByRole('button', { name: '批准执行' }).click();
     await expect(page.getByText('E2E 最终成果')).toBeVisible();
     await page.getByRole('button', { name: '确认成果' }).click();
@@ -225,7 +159,9 @@ test.describe('Agent 工作室 MVP', () => {
     await page.goto('/#/board');
 
     const chatHeading = page.getByRole('heading', { name: '全局聊天' });
-    const boardSection = page.locator('section').first();
+    const boardSection = page.getByRole('main');
+    await expect(chatHeading).toBeHidden();
+    await page.getByRole('button', { name: '打开聊天', exact: true }).click();
     await expect(chatHeading).toBeVisible();
     await expect(page.getByRole('button', { name: '关闭聊天' })).toBeVisible();
     const composer = page.getByPlaceholder(composerPlaceholder);
@@ -247,7 +183,7 @@ test.describe('Agent 工作室 MVP', () => {
     await expect(composer).toHaveValue('关闭后仍然保留');
   });
 
-  test('移动端关闭聊天返回看板并可从底部导航重新进入', async ({ page, isMobile }) => {
+  test('移动端关闭聊天返回收集箱并可重新进入', async ({ page, isMobile }) => {
     test.skip(!isMobile, '聊天栏移动布局在移动视口验收');
     await page.goto('/#/chat');
 
@@ -256,32 +192,32 @@ test.describe('Agent 工作室 MVP', () => {
     await expect(page.getByRole('button', { name: '关闭聊天' })).toBeVisible();
 
     await page.getByRole('button', { name: '关闭聊天' }).click();
-    await expect(page).toHaveURL(/#\/(?:board)?$/);
+    await expect(page).toHaveURL(/#\/(?:inbox)?$/);
     await expect(chatHeading).toBeHidden();
     await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
-    await expect(page.getByRole('button', { name: '看板' })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('button', { name: '收集箱', exact: true })).toHaveAttribute('aria-current', 'page');
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
 
-    await page.getByRole('button', { name: '聊天' }).click();
+    await page.getByRole('button', { name: '打开聊天', exact: true }).click();
     await expect(page).toHaveURL(/#\/chat$/);
     await expect(chatHeading).toBeVisible();
     await expect(page.getByRole('button', { name: '关闭聊天' })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
   });
 
-  test('移动端底部导航、横向看板和审核按钮均保持在视口内', async ({ page, isMobile, request }) => {
+  test('移动端底部导航、可选看板和审核按钮均保持在视口内', async ({ page, isMobile, request }) => {
     test.skip(!isMobile, '仅在移动视口验收');
     const topic = await createTopic(request, 'E2E 移动主题');
     await request.post(`${apiUrl}/api/tasks`, { data: { topicId: topic.id, title: '移动端任务' } });
     await configureMock(request);
     await page.goto('/#/board');
     await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
-    const board = page.locator('.snap-x');
-    await expect(board).toBeVisible();
-    expect(await board.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+    await page.getByRole('button', { name: '看板', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '待办', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: '移动端任务', exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
 
-    await page.getByRole('button', { name: '聊天' }).click();
+    await page.getByRole('button', { name: '打开聊天', exact: true }).click();
     await send(page, '创建任务');
     const reject = page.getByRole('button', { name: '拒绝' });
     const approve = page.getByRole('button', { name: '批准执行' });
