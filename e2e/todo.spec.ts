@@ -171,6 +171,107 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await expect(page.getByRole('button', { name: '上移任务：第二条已编辑', exact: true })).toBeHidden();
   });
 
+  test('清单里用指针拖动调整顺序，点击标题仍打开详情', async ({ page, request }) => {
+    const list = await data(await request.post(`${apiUrl}/api/topics`, { data: { name: '拖动清单' } }));
+    const first = await data(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: list.id, title: '第一条' } }));
+    const second = await data(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: list.id, title: '第二条' } }));
+    const third = await data(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: list.id, title: '第三条' } }));
+    await page.goto('/#/board');
+    await expect(page.getByText('包含已完成任务。上下拖动调整顺序，向右拖成子任务，向左拖回根任务。', { exact: true })).toBeVisible();
+    const start = page.getByTestId(`task-row-${third.id}`);
+    const target = page.getByTestId(`task-row-${first.id}`);
+    await expect(start).toBeVisible();
+    const from = await start.boundingBox();
+    const to = await target.boundingBox();
+    if (!from || !to) throw new Error('任务行没有布局');
+    const x = from.x + Math.min(160, from.width * 0.45);
+    await page.mouse.move(x, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(x, from.y + from.height / 2 + 18, { steps: 5 });
+    await page.mouse.move(x, to.y + 12, { steps: 24 });
+    // dnd-kit calls preventDefault on mousemove, and Playwright then drops mouseup.
+    const session = await page.context().newCDPSession(page);
+    await session.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y: to.y + 12, button: 'left', buttons: 0, clickCount: 1 });
+    await expect.poll(async () => (await data(await request.get(`${apiUrl}/api/tasks?topicId=${list.id}&sort=manual`))).map((value: { id: string }) => value.id)).toEqual([third.id, first.id, second.id]);
+    await page.reload();
+    await expect(page.getByTestId('task-list').locator('article').first()).toHaveAttribute('data-testid', `task-row-${third.id}`);
+    await page.getByTestId(`task-row-${third.id}`).getByRole('button', { name: '第三条', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: '任务详情', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '关闭任务详情', exact: true }).click();
+    await page.getByRole('button', { name: '筛选', exact: true }).click();
+    await page.getByRole('combobox', { name: '筛选完成状态', exact: true }).selectOption('open');
+    await expect(page.locator('.task-drag-handle')).toHaveCount(0);
+  });
+
+  test('子任务拖动只在同一父任务下换位', async ({ page, request }) => {
+    const parent = await data(await request.post(`${apiUrl}/api/tasks`, { data: { title: '父任务' } }));
+    const first = await data(await request.post(`${apiUrl}/api/tasks`, { data: { title: '子一', parentId: parent.id } }));
+    const second = await data(await request.post(`${apiUrl}/api/tasks`, { data: { title: '子二', parentId: parent.id } }));
+    await page.goto('/#/inbox');
+    const list = page.getByTestId('task-list');
+    const start = list.getByTestId(`task-row-${second.id}`);
+    const target = list.getByTestId(`task-row-${first.id}`);
+    await expect(start).toBeVisible();
+    const from = await start.boundingBox();
+    const to = await target.boundingBox();
+    if (!from || !to) throw new Error('子任务行没有布局');
+    const x = from.x + Math.min(160, from.width * 0.45);
+    await page.mouse.move(x, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(x, from.y + from.height / 2 - 18, { steps: 5 });
+    await page.mouse.move(x, to.y + 8, { steps: 20 });
+    const session = await page.context().newCDPSession(page);
+    await session.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y: to.y + 8, button: 'left', buttons: 0, clickCount: 1 });
+    await expect.poll(async () => (await task(request, parent.id)).children.map((value: { id: string }) => value.id)).toEqual([second.id, first.id]);
+    expect((await task(request, second.id)).parentId).toBe(parent.id);
+  });
+
+  test('拖动可以向右变成子任务，向左变回根任务', async ({ page, request }) => {
+    const list = await data(await request.post(`${apiUrl}/api/topics`, { data: { name: '缩进清单' } }));
+    const parent = await data(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: list.id, title: '甲' } }));
+    const child = await data(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: list.id, title: '乙' } }));
+    await page.goto('/#/board');
+    const childRow = page.getByTestId(`task-row-${child.id}`);
+    await expect(childRow).toBeVisible();
+    const from = await childRow.boundingBox();
+    if (!from) throw new Error('任务行没有布局');
+    const x = from.x + Math.min(140, from.width * 0.4);
+    const y = from.y + from.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + 40, y, { steps: 12 });
+    const session = await page.context().newCDPSession(page);
+    await session.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: x + 40, y, button: 'left', buttons: 0, clickCount: 1 });
+    await page.getByRole('button', { name: '确认影响并执行', exact: true }).click();
+    await expect.poll(async () => (await task(request, child.id)).parentId).toBe(parent.id);
+    const nested = await childRow.boundingBox();
+    if (!nested) throw new Error('子任务行没有布局');
+    const nx = nested.x + Math.min(140, nested.width * 0.4);
+    const ny = nested.y + nested.height / 2;
+    await page.mouse.move(nx, ny);
+    await page.mouse.down();
+    await page.mouse.move(nx - 48, ny, { steps: 12 });
+    await session.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: nx - 48, y: ny, button: 'left', buttons: 0, clickCount: 1 });
+    await page.getByRole('button', { name: '确认影响并执行', exact: true }).click();
+    await expect.poll(async () => (await task(request, child.id)).parentId).toBeNull();
+    const grandchild = await data(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: list.id, title: '丙', parentId: parent.id } }));
+    await page.reload();
+    const parentRow = page.getByTestId(`task-row-${parent.id}`);
+    await expect(parentRow).toBeVisible();
+    const block = await parentRow.boundingBox();
+    if (!block) throw new Error('父任务行没有布局');
+    const px = block.x + Math.min(140, block.width * 0.4);
+    const py = block.y + block.height / 2;
+    await page.mouse.move(px, py);
+    await page.mouse.down();
+    await page.mouse.move(px + 40, py, { steps: 12 });
+    const released = await page.context().newCDPSession(page);
+    await released.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: px + 40, y: py, button: 'left', buttons: 0, clickCount: 1 });
+    await expect(page.getByRole('heading', { name: '确认连带修改', exact: true })).toHaveCount(0);
+    await expect.poll(async () => (await task(request, parent.id)).parentId).toBeNull();
+    expect(grandchild.parentId).toBe(parent.id);
+  });
+
   test('删除父任务后成组恢复，不复活之前已删除的子任务', async ({ page, request }) => {
     const parent = await data(await request.post(`${apiUrl}/api/tasks`, { data: { title: '家庭任务' } }));
     const earlier = await data(await request.post(`${apiUrl}/api/tasks`, { data: { title: '早已删除', parentId: parent.id } }));

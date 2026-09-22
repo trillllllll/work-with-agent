@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, CalendarDays, FolderKanban, History, Inbox, Menu, MessageSquare, Plus, Search, Settings, Tags, Trash2 } from 'lucide-react';
 import { api, ApiError, statuses, type Status, type Tag, type Task, type Topic, type TrashTask, type View } from './lib/api.js';
 import { queryKeys, type TaskDraft } from './lib/todo.js';
@@ -27,6 +27,7 @@ import { ActionDialog, type ActionPrompt } from './components/dialogs/ActionDial
 import { QuickCapture, type QuickCaptureHandle } from './components/tasks/QuickCapture.js';
 import { TaskFilterBar, type TaskFilters } from './components/tasks/TaskFilterBar.js';
 import { TaskList } from './components/tasks/TaskList.js';
+import { withSortOrder } from './components/tasks/task-order.js';
 import { TagManager } from './components/tasks/TagManager.js';
 import { ThemeToggle } from './components/layout/ThemeToggle.js';
 import { BrandMark } from './components/layout/BrandMark.js';
@@ -94,6 +95,8 @@ export function App() {
   useEffect(() => { if (selectedTopicId) localStorage.setItem('todo.selectedTopic', selectedTopicId); }, [selectedTopicId]);
   const confirm = (value: ActionPrompt) => new Promise<boolean>((resolve) => setPrompt({ ...value, resolve }));
   const actions = useTodoActions();
+  const queryClient = useQueryClient();
+  const reorderEpoch = useRef(0);
   const today = useLocalDate();
   const topicsQuery = useQuery<Topic[]>({ queryKey: queryKeys.topics, queryFn: () => api('/api/topics') });
   const archivedQuery = useQuery<Topic[]>({ queryKey: ['topics', 'archived'], queryFn: () => api('/api/topics?archived=true') });
@@ -149,7 +152,72 @@ export function App() {
   };
   const toggleTask = (task: Task) => patchTask(task, { status: task.status === 'done' ? 'todo' : 'done' });
   const moveTask = (task: Task, topicId: string | null) => patchTask(task, { topicId });
-  const reorder = (group: Task[], parentId: string | null) => actions.write('/api/tasks/reorder', 'POST', { topicId: group[0]?.topicId ?? null, parentId, orderedTaskIds: group.map((task) => task.id), expectedRevisions: Object.fromEntries(group.map((task) => [task.id, task.revision])) }, [...group.map((task) => task.id), ...(parentId ? [parentId] : [])], '顺序已保存');
+  const reorder = (group: Task[], parentId: string | null, message = '顺序已保存') => {
+    const epoch = ++reorderEpoch.current;
+    const order = new Map(group.map((task, index) => [task.id, index]));
+    const lists = queryClient.getQueriesData<Task[]>({ queryKey: queryKeys.tasks });
+    const details = queryClient.getQueriesData<Task>({ queryKey: ['task'] });
+    const apply = () => {
+      queryClient.setQueriesData<Task[]>({ queryKey: queryKeys.tasks }, (old) => Array.isArray(old) ? old.map((task) => withSortOrder(task, order)) : old);
+      queryClient.setQueriesData<Task>({ queryKey: ['task'] }, (old) => old && typeof old === 'object' && 'id' in old ? withSortOrder(old, order) : old);
+    };
+    apply();
+    void Promise.all([
+      queryClient.cancelQueries({ queryKey: queryKeys.tasks }),
+      queryClient.cancelQueries({ queryKey: ['task'] }),
+    ]).then(() => { if (reorderEpoch.current === epoch) apply(); });
+    return actions.write('/api/tasks/reorder', 'POST', { topicId: group[0]?.topicId ?? null, parentId, orderedTaskIds: group.map((task) => task.id), expectedRevisions: Object.fromEntries(group.map((task) => [task.id, task.revision])) }, [...group.map((task) => task.id), ...(parentId ? [parentId] : [])], message || undefined).catch(async (error) => {
+      if (reorderEpoch.current === epoch) reorderEpoch.current += 1;
+      for (const [key, data] of lists) queryClient.setQueryData(key, data);
+      for (const [key, data] of details) queryClient.setQueryData(key, data);
+      await Promise.all([queryClient.invalidateQueries({ queryKey: queryKeys.tasks }), queryClient.invalidateQueries({ queryKey: ['task'] })]).catch(() => undefined);
+      throw error;
+    });
+  };
+  const nest = (task: Task, parentId: string | null, orderedIds: string[]) => {
+    const epoch = ++reorderEpoch.current;
+    const lists = queryClient.getQueriesData<Task[]>({ queryKey: queryKeys.tasks });
+    const details = queryClient.getQueriesData<Task>({ queryKey: ['task'] });
+    const parent = tasks.find((item) => item.id === parentId);
+    const topicId = parent ? parent.topicId : task.topicId;
+    const order = new Map(orderedIds.map((id, index) => [id, index]));
+    const patchTaskPlacement = (item: Task): Task => {
+      const sortOrder = order.get(item.id);
+      let next = item.id === task.id ? { ...item, parentId, topicId, ...(sortOrder === undefined ? {} : { sortOrder }) } : sortOrder === undefined ? item : { ...item, sortOrder };
+      if (!item.children) return next;
+      const children = item.children.filter((child) => child.id !== task.id).map(patchTaskPlacement);
+      if (item.id !== parentId) return { ...next, children };
+      const placed = { ...task, parentId, topicId, sortOrder: order.get(task.id) ?? 0 };
+      return { ...next, children: [...children, placed].sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0) || left.id.localeCompare(right.id)) };
+    };
+    const apply = () => {
+      queryClient.setQueriesData<Task[]>({ queryKey: queryKeys.tasks }, (old) => Array.isArray(old) ? old.map(patchTaskPlacement) : old);
+      queryClient.setQueriesData<Task>({ queryKey: ['task'] }, (old) => old && typeof old === 'object' && 'id' in old ? patchTaskPlacement(old) : old);
+    };
+    apply();
+    void Promise.all([
+      queryClient.cancelQueries({ queryKey: queryKeys.tasks }),
+      queryClient.cancelQueries({ queryKey: ['task'] }),
+    ]).then(() => { if (reorderEpoch.current === epoch) apply(); });
+    const restore = async () => {
+      if (reorderEpoch.current === epoch) reorderEpoch.current += 1;
+      for (const [key, data] of lists) queryClient.setQueryData(key, data);
+      for (const [key, data] of details) queryClient.setQueryData(key, data);
+      await Promise.all([queryClient.invalidateQueries({ queryKey: queryKeys.tasks }), queryClient.invalidateQueries({ queryKey: ['task'] })]).catch(() => undefined);
+    };
+    return (async () => {
+      try {
+        const updated = (await actions.write<Task>(`/api/tasks/${task.id}`, 'PATCH', { parentId, expectedRevision: task.revision }, [task.id, parentId, task.parentId].filter((id): id is string => Boolean(id)), parentId ? '已变为子任务' : '已变为根任务')).data;
+        if (orderedIds[orderedIds.length - 1] === task.id) return;
+        const byId = new Map(tasks.map((item) => [item.id, item]));
+        const group = orderedIds.map((id) => id === task.id ? { ...updated, parentId, topicId: updated.topicId ?? topicId } : byId.get(id)).filter((item): item is Task => Boolean(item));
+        await reorder(group, parentId, '');
+      } catch (error) {
+        await restore();
+        throw error;
+      }
+    })();
+  };
   const deleteTask = async (task: Task) => {
     const latest = await api<Task>(`/api/tasks/${task.id}`);
     const children = latest.children ?? [];
@@ -189,8 +257,8 @@ export function App() {
       {page === 'board' && detail && <details className="my-4 glass-subtle rounded-xl p-3"><summary className="cursor-pointer text-sm text-muted-foreground">探索与成果</summary><p className="mt-3 whitespace-pre-wrap text-sm">{detail.description}</p>{detail.goal && <p className="mt-2 text-sm">目标：{detail.goal}</p>}<SummaryPanel detail={detail} busy={actions.pending} onConfirm={archived ? undefined : (action) => run(actions.write(`/api/topics/${detail.id}/summary/${action}`, 'POST', undefined, [detail.id], action === 'confirm' ? '成果已确认' : '草稿已放弃'))} /></details>}
       {page === 'tags' && <TagManager tags={tags} selected={selectedTag} onSelect={setSelectedTag} confirm={confirm} />}
       {taskPage && <TaskFilterBar page={page} scoped={scoped} filters={filters} sortMode={sortMode} topics={topics} tags={tags} open={filtersOpen} onOpenChange={setFiltersOpen} onChange={updateFilter} onSort={setSortMode} onClear={() => setFilters(emptyFilters)} />}
-      {scoped && <p className="mb-3 text-xs text-muted-foreground">{hasFilters ? '筛选期间不能手动排序；清除筛选后可调整完整列表。' : archived ? '恢复清单后可编辑和排序。' : sortMode !== 'manual' ? '切换为手动排序后，可调整任务位置。' : '包含已完成任务。拖动把手或使用上下按钮调整顺序。'}</p>}
-      {tasksQuery.isLoading ? <p className="py-12 text-center text-muted-foreground">正在加载任务…</p> : tasksQuery.error ? <p role="alert" className="text-destructive">{tasksQuery.error.message}</p> : page === 'today' ? <div className="space-y-6">{[{ name: '逾期', items: tasks.filter((task) => task.dueDate && task.dueDate < today) }, { name: '今天', items: tasks.filter((task) => task.dueDate === today) }].map((group) => <section key={group.name}><h2 className="mb-3 text-sm font-semibold">{group.name} · {group.items.length}</h2><TaskList {...listProps} tasks={group.items} /></section>)}</div> : scoped && layout === 'board' ? <div className="mt-5 flex gap-3 overflow-x-auto pb-4 snap-x snap-mandatory md:grid md:grid-cols-2 md:overflow-visible xl:grid-cols-4">{statuses.map(({ value, label }) => <BoardColumn key={value} label={label} count={tasks.filter((task) => task.status === value).length}>{tasks.filter((task) => task.status === value).map((task) => archived ? <button key={task.id} type="button" className="glass-subtle w-full rounded-xl p-3 text-left text-sm" onClick={() => openTask(task.id)}>{task.title}</button> : <TaskCard key={task.id} task={task} onEdit={(item) => openTask(item.id)} onDelete={(item) => run(deleteTask(item))} onUpdateStatus={(id, status: Status) => { const item = tasks.find((candidate) => candidate.id === id); if (item) run(patchTask(item, { status })); }} />)}</BoardColumn>)}</div> : page === 'tags' ? (selectedTag ? <div className="space-y-6">{taggedSections.map((section) => <section key={section.id} aria-label={section.name}><h2 className="mb-3 text-sm font-semibold">{section.name} · {section.items.length}</h2><TaskList {...listProps} tasks={section.items} /></section>)}{!taggedSections.length && <p className="py-12 text-center text-sm text-muted-foreground">暂无任务</p>}</div> : <p className="py-12 text-center text-sm text-muted-foreground">选择一个标签后，按分类查看带有该标签的任务。</p>) : <TaskList {...listProps} tasks={tasks} hierarchical={scoped && !hasFilters && sortMode === 'manual'} onReorder={scoped && !hasFilters && !archived && sortMode === 'manual' ? reorder : undefined} />}
+      {scoped && <p className="mb-3 text-xs text-muted-foreground">{hasFilters ? '筛选期间不能手动排序；清除筛选后可调整完整列表。' : archived ? '恢复清单后可编辑和排序。' : sortMode !== 'manual' ? '切换为手动排序后，可调整任务位置。' : '包含已完成任务。上下拖动调整顺序，向右拖成子任务，向左拖回根任务。'}</p>}
+      {tasksQuery.isLoading ? <p className="py-12 text-center text-muted-foreground">正在加载任务…</p> : tasksQuery.error ? <p role="alert" className="text-destructive">{tasksQuery.error.message}</p> : page === 'today' ? <div className="space-y-6">{[{ name: '逾期', items: tasks.filter((task) => task.dueDate && task.dueDate < today) }, { name: '今天', items: tasks.filter((task) => task.dueDate === today) }].map((group) => <section key={group.name}><h2 className="mb-3 text-sm font-semibold">{group.name} · {group.items.length}</h2><TaskList {...listProps} tasks={group.items} /></section>)}</div> : scoped && layout === 'board' ? <div className="mt-5 flex gap-3 overflow-x-auto pb-4 snap-x snap-mandatory md:grid md:grid-cols-2 md:overflow-visible xl:grid-cols-4">{statuses.map(({ value, label }) => <BoardColumn key={value} label={label} count={tasks.filter((task) => task.status === value).length}>{tasks.filter((task) => task.status === value).map((task) => archived ? <button key={task.id} type="button" className="glass-subtle w-full rounded-xl p-3 text-left text-sm" onClick={() => openTask(task.id)}>{task.title}</button> : <TaskCard key={task.id} task={task} onEdit={(item) => openTask(item.id)} onDelete={(item) => run(deleteTask(item))} onUpdateStatus={(id, status: Status) => { const item = tasks.find((candidate) => candidate.id === id); if (item) run(patchTask(item, { status })); }} />)}</BoardColumn>)}</div> : page === 'tags' ? (selectedTag ? <div className="space-y-6">{taggedSections.map((section) => <section key={section.id} aria-label={section.name}><h2 className="mb-3 text-sm font-semibold">{section.name} · {section.items.length}</h2><TaskList {...listProps} tasks={section.items} /></section>)}{!taggedSections.length && <p className="py-12 text-center text-sm text-muted-foreground">暂无任务</p>}</div> : <p className="py-12 text-center text-sm text-muted-foreground">选择一个标签后，按分类查看带有该标签的任务。</p>) : <TaskList {...listProps} tasks={tasks} hierarchical={scoped && !hasFilters && sortMode === 'manual'} onReorder={scoped && !hasFilters && !archived && sortMode === 'manual' ? reorder : undefined} onNest={scoped && !hasFilters && !archived && sortMode === 'manual' ? nest : undefined} />}
     </>}
   </div>;
   const content = page === 'connections' ? <ConnectionsPage topics={topics} /> : page === 'proposals' ? <ProposalsPage /> : page === 'knowledge' ? <KnowledgePage topics={topics} initialTopicId={selectedTopicId} /> : page === 'runs' ? <RunsPage /> : page === 'reviews' ? <ReviewsPage topics={topics} /> : taskPage ? taskContent : page === 'topics' ? <TopicListPage topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onSelectTopic={selectTopic} onNewTopic={newTopic} onEditTopic={setTopicForm} onOpenSettings={() => navigateSafely('settings')} onOpenInbox={() => navigateSafely('inbox')} /> : page === 'archived' ? <div className="p-5 sm:p-7"><h1 className="mb-5 text-2xl font-semibold">已归档</h1><div className="space-y-3">{!(archivedQuery.data ?? []).length && <p className="text-sm text-muted-foreground">暂无归档清单</p>}{(archivedQuery.data ?? []).map((topic) => <article key={topic.id} className="glass-subtle flex flex-wrap items-center gap-3 rounded-xl p-4"><button className="flex-1 text-left font-medium" onClick={() => selectTopic(topic.id)}>{topic.name}</button><Button variant="outline" onClick={() => run(actions.write(`/api/topics/${topic.id}/restore`, 'POST', undefined, [topic.id], '清单已恢复'))}>恢复清单</Button><Button variant="outline" onClick={() => run((async () => { if (await confirm({ title: '移出归档清单的任务', description: `将“${topic.name}”的任务移到收集箱，保留父子关系。`, confirm: '移出任务' })) await actions.write(`/api/topics/${topic.id}/move-tasks-to-inbox`, 'POST', undefined, [topic.id], '任务已移入收集箱'); })())}>移出任务到收集箱</Button></article>)}</div></div> : <div className="p-5"><h1 className="mb-5 text-2xl font-semibold">工作区</h1>{navigation.map(navButton)}<Button className="mt-4" variant="outline" onClick={() => navigateSafely('chat')}><MessageSquare />打开聊天</Button><div className="mt-4"><ThemeToggle /></div></div>;
