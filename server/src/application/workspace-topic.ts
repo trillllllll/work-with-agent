@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Topic as TopicDomain } from '../domain/topic.js';
 import { DomainError } from '../domain/task.js';
-import { parseInput, topicCreateSchema, topicUpdateSchema, tagSchema } from './workspace-input.js';
+import { parseInput, topicCreateSchema, topicUpdateSchema, tagCreateSchema, tagUpdateSchema } from './workspace-input.js';
 import { prisma, mutationTransaction, ChangeGroup, activeTopic, nextOrder, normalizeContext, notFound, now, taskDto, taskInclude, assignmentData, type MutationContext } from './workspace-store.js';
 
 export class TopicService {
@@ -126,20 +126,20 @@ export class TagService {
   async list() { return prisma.tag.findMany({ orderBy: [{ name: 'asc' }, { id: 'asc' }] }); }
 
   async create(value: unknown, context: MutationContext = { source: 'user' }) {
-    const input = parseInput(tagSchema, value);
+    const input = parseInput(tagCreateSchema, value);
     return mutationTransaction(context, async (tx) => {
       const group = new ChangeGroup(tx, context);
       const id = normalizeContext(context).entityId ?? randomUUID();
       await group.capture('tags', id);
       await group.scope({ kind: 'tag', id });
       const timestamp = now();
-      const result = await tx.tag.create({ data: { ...input, id, createdAt: timestamp, updatedAt: timestamp } });
+      const result = await tx.tag.create({ data: { name: input.name, color: input.color ?? 'violet', id, createdAt: timestamp, updatedAt: timestamp } });
       return { ...result, meta: await group.record('tag', id, 'create') };
     });
   }
 
   async update(id: string, value: unknown, context: MutationContext = { source: 'user' }) {
-    const input = parseInput(tagSchema, value);
+    const input = parseInput(tagUpdateSchema, value);
     return mutationTransaction(context, async (tx) => {
       if (!await tx.tag.findUnique({ where: { id } })) throw notFound('标签不存在');
       const group = new ChangeGroup(tx, context);

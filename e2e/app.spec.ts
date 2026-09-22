@@ -202,12 +202,13 @@ test.describe('Agent 工作室 MVP', () => {
     await expect(detail.getByLabel('任务说明', { exact: true })).toHaveValue('检查器草稿');
 
     await detail.getByRole('button', { name: '保存更改', exact: true }).click();
+    await expect(detail).toBeHidden();
     await page.getByRole('button', { name: '打开聊天', exact: true }).click();
     await expect(page.getByRole('heading', { name: '全局聊天' })).toBeVisible();
     await expect(detail).toBeHidden();
     await page.getByRole('button', { name: '关闭聊天' }).click();
-    await expect(detail).toBeVisible();
-    await expect(detail.getByLabel('任务说明', { exact: true })).toHaveValue('检查器草稿');
+    await expect(detail).toBeHidden();
+    expect((await responseData<{ description: string }>(await request.get(`${apiUrl}/api/tasks/${task.id}`))).description).toBe('检查器草稿');
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
   });
 

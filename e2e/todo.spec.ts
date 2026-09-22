@@ -85,6 +85,7 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await expect(detail.getByLabel('任务标题', { exact: true })).toHaveValue('修改后的任务');
     await expect(detail.getByLabel('任务说明', { exact: true })).toHaveValue('保留我的说明');
     await detail.getByRole('button', { name: '保存更改', exact: true }).click();
+    await expect(detail).toBeHidden();
     await expect.poll(async () => (await task(request, created.id)).title).toBe('修改后的任务');
     expect(await task(request, created.id)).toMatchObject({ topicId: list.id, priority: 'high', dueDate: '2028-02-29', description: '保留我的说明' });
     await page.goto('/#/board');
@@ -140,8 +141,8 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await detail.getByLabel('任务说明', { exact: true }).fill('从搜索中修改');
     await detail.getByLabel('截止日期', { exact: true }).fill('');
     await detail.getByRole('button', { name: '保存更改', exact: true }).click();
+    await expect(detail).toBeHidden();
     await expect.poll(async () => (await task(request, current.id)).dueDate).toBeNull();
-    await detail.getByRole('button', { name: '关闭', exact: true }).click();
     await expect(row).toBeVisible();
     await page.goto('/#/today');
     await expect(page.getByTestId(`task-row-${current.id}`)).toBeHidden();
@@ -161,10 +162,11 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
     await detail.getByLabel('任务标题', { exact: true }).fill('第二条已编辑');
     await detail.getByRole('button', { name: '保存更改', exact: true }).click();
+    await expect(detail).toBeHidden();
     await expect.poll(async () => (await task(request, second.id)).title).toBe('第二条已编辑');
-    await detail.getByRole('button', { name: '关闭', exact: true }).click();
     await page.reload();
     await expect(page.getByTestId('task-list').locator('article').first()).toHaveAttribute('data-testid', `task-row-${second.id}`);
+    await page.getByRole('button', { name: '筛选', exact: true }).click();
     await page.getByRole('combobox', { name: '筛选完成状态', exact: true }).selectOption('open');
     await expect(page.getByRole('button', { name: '上移任务：第二条已编辑', exact: true })).toBeHidden();
   });
@@ -227,20 +229,30 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await page.getByRole('textbox', { name: '标签名称', exact: true }).fill('重要事项');
     await page.getByRole('button', { name: '创建标签', exact: true }).click();
     await expect(page.getByRole('button', { name: '#重要事项', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '把“重要事项”改成蓝', exact: true }).click();
+    await expect.poll(async () => (await data(await request.get(`${apiUrl}/api/tags`)))[0].color).toBe('blue');
     const label = (await data(await request.get(`${apiUrl}/api/tags`)))[0];
     await page.goto('/#/inbox');
     await page.getByTestId(`task-row-${item.id}`).getByRole('button', { name: '分类任务', exact: true }).click();
     const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
+    const openDetail = async () => {
+      await page.getByTestId(`task-row-${item.id}`).getByRole('button', { name: /^分类任务/ }).click();
+      await expect(detail).toBeVisible();
+    };
     await detail.getByRole('checkbox', { name: '重要事项', exact: true }).check();
     await detail.getByRole('button', { name: '保存更改', exact: true }).click();
+    await expect(detail).toBeHidden();
     await expect.poll(async () => (await task(request, item.id)).tagIds).toEqual([label.id]);
+    await openDetail();
     await detail.getByRole('checkbox', { name: '重要事项', exact: true }).uncheck();
     await detail.getByRole('button', { name: '保存更改', exact: true }).click();
+    await expect(detail).toBeHidden();
     await expect.poll(async () => (await task(request, item.id)).tagIds).toEqual([]);
+    await openDetail();
     await detail.getByRole('checkbox', { name: '重要事项', exact: true }).check();
     await detail.getByRole('button', { name: '保存更改', exact: true }).click();
+    await expect(detail).toBeHidden();
     await expect.poll(async () => (await task(request, item.id)).tagIds).toEqual([label.id]);
-    await detail.getByRole('button', { name: '关闭', exact: true }).click();
     await page.goto('/#/tags');
     await page.getByRole('button', { name: '删除标签：重要事项', exact: true }).click();
     await page.getByRole('dialog', { name: '删除标签', exact: true }).getByRole('button', { name: '删除标签', exact: true }).click();
@@ -359,11 +371,10 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
       expect(receivedStatuses).toEqual(['doing']);
       releaseFirst.release();
       await expect.poll(async () => (await task(request, first.id)).description).toBe('后续保存');
-      await expect(detail.getByRole('button', { name: '保存更改', exact: true })).toBeDisabled();
+      await expect(detail).toBeHidden();
       expect(firstStatus).toBe(200);
       expect(receivedStatuses).toEqual(['doing', 'done']);
       expect((await task(request, first.id)).status).toBe('done');
-      await detail.getByRole('button', { name: '关闭', exact: true }).click();
     } finally { releaseFirst.release(); }
     await page.unroute(firstPattern);
 
@@ -384,13 +395,11 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
       await detail.getByLabel('任务说明', { exact: true }).fill('另一任务的成功修改');
       await detail.getByRole('button', { name: '保存更改', exact: true }).click();
       await expect.poll(async () => (await task(request, other.id)).description).toBe('另一任务的成功修改');
-      await expect(detail.getByRole('button', { name: '保存更改', exact: true })).toBeDisabled();
+      await expect(detail).toBeHidden();
       releaseFailure.release();
       await expect(page.getByText('第一个任务保存失败', { exact: true }).first()).toBeVisible();
-      await expect(detail.getByLabel('任务说明', { exact: true })).toHaveValue('另一任务的成功修改');
       expect((await task(request, other.id)).description).toBe('另一任务的成功修改');
       expect((await task(request, first.id)).status).toBe('done');
-      await detail.getByRole('button', { name: '关闭', exact: true }).click();
       await expect(page.getByTestId(`task-row-${first.id}`).getByRole('checkbox', { name: '重开任务：顺序任务', exact: true })).toBeChecked();
     } finally { releaseFailure.release(); }
   });
@@ -413,9 +422,8 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     expect((await task(request, item.id)).title).toBe('后台已更新的标题');
     await detail.getByRole('checkbox', { name: '保存时使用我的编辑', exact: true }).check();
     await detail.getByRole('button', { name: '保存更改', exact: true }).click();
+    await expect(detail).toBeHidden();
     await expect.poll(async () => (await task(request, item.id)).title).toBe('尚未提交的本地标题');
-    await expect(detail.getByRole('alert')).toBeHidden();
-    await expect(detail.getByLabel('任务标题', { exact: true })).toHaveValue('尚未提交的本地标题');
   });
 
   test('本地跨午夜后今天任务转为逾期，新日期任务自动进入今天', async ({ page, request }) => {
@@ -435,5 +443,49 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await expect(today.getByTestId(`task-row-${previousDay.id}`)).toBeHidden();
     expect((await task(request, previousDay.id)).dueDate).toBe('2026-09-20');
     expect((await task(request, nextDay.id)).dueDate).toBe('2026-09-21');
+  });
+
+  test('分类之间互不可见，标签只缩小当前分类', async ({ page, request }) => {
+    const topic = await data(await request.post(`${apiUrl}/api/topics`, { data: { name: '隔离主题' } }));
+    const inboxTask = await data(await request.post(`${apiUrl}/api/tasks`, { data: { title: '收集箱专属' } }));
+    const topicTask = await data(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: topic.id, title: '主题专属' } }));
+    const tag = await data(await request.post(`${apiUrl}/api/tags`, { data: { name: '跨类标签' } }));
+    await request.patch(`${apiUrl}/api/tasks/${inboxTask.id}`, { data: { tagIds: [tag.id] } });
+    await request.patch(`${apiUrl}/api/tasks/${topicTask.id}`, { data: { tagIds: [tag.id] } });
+
+    await page.goto('/#/inbox');
+    await expect(page.getByRole('heading', { name: '收集箱', exact: true })).toBeVisible();
+    await expect(page.getByText('这是一个分类，这里只显示放在收集箱里的任务。', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: '收集箱', exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByTestId(`task-row-${inboxTask.id}`)).toBeVisible();
+    await expect(page.getByTestId(`task-row-${topicTask.id}`)).toHaveCount(0);
+    await page.getByRole('button', { name: '筛选', exact: true }).click();
+    await page.getByRole('combobox', { name: '筛选标签', exact: true }).selectOption(tag.id);
+    await expect(page.getByTestId(`task-row-${inboxTask.id}`)).toBeVisible();
+    await expect(page.getByTestId(`task-row-${topicTask.id}`)).toHaveCount(0);
+
+    await page.goto('/#/board');
+    await expect(page.getByTestId(`task-row-${topicTask.id}`)).toBeVisible();
+    await expect(page.getByTestId(`task-row-${inboxTask.id}`)).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '收集箱', exact: true })).not.toHaveAttribute('aria-current', 'page');
+
+    await page.goto('/#/search');
+    const inboxRow = page.getByTestId(`task-row-${inboxTask.id}`);
+    await expect(inboxRow.getByText('收集箱', { exact: true })).toBeVisible();
+    await expect(inboxRow.getByText('#跨类标签', { exact: true })).toBeVisible();
+    await expect(inboxRow.locator('.task-place-chip + .task-tag-chip, .task-place-chip ~ .task-tag-chip').first()).toHaveAttribute('data-color', 'violet');
+    await expect(page.getByTestId(`task-row-${topicTask.id}`).getByText('隔离主题', { exact: true })).toBeVisible();
+
+    await page.goto('/#/tags');
+    await expect(page.getByText('选择一个标签后，按分类查看带有该标签的任务。', { exact: true })).toBeVisible();
+    await expect(page.getByTestId(`task-row-${inboxTask.id}`)).toHaveCount(0);
+    await page.getByRole('button', { name: '#跨类标签', exact: true }).click();
+    const inboxSection = page.getByRole('region', { name: '收集箱', exact: true });
+    const topicSection = page.getByRole('region', { name: '隔离主题', exact: true });
+    await expect(inboxSection.getByTestId(`task-row-${inboxTask.id}`)).toBeVisible();
+    await expect(inboxSection.getByTestId(`task-row-${topicTask.id}`)).toHaveCount(0);
+    await expect(topicSection.getByTestId(`task-row-${topicTask.id}`)).toBeVisible();
+    await expect(topicSection.getByTestId(`task-row-${inboxTask.id}`)).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
   });
 });

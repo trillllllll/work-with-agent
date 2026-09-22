@@ -6,7 +6,7 @@ import type { ChangeRecord } from '@prisma/client';
 import { DomainError } from '../domain/task.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { TaskService, TopicService, TagService, ChangeService } from './workspace.js';
-import { taskCreateSchema, taskUpdateSchema, topicCreateSchema, topicUpdateSchema, tagSchema, reorderSchema, parseInput } from './workspace-input.js';
+import { taskCreateSchema, taskUpdateSchema, topicCreateSchema, topicUpdateSchema, tagCreateSchema, tagUpdateSchema, reorderSchema, parseInput } from './workspace-input.js';
 import { type Db, type MutationContext, type GroupSnapshot, isGroup, now } from './workspace-store.js';
 import { type Actor, getActor, assertOwner, assertTopicAccess, actorFromConnection } from './security.js';
 import { commandDescriptor } from './command-catalog.js';
@@ -260,7 +260,8 @@ async function inspectWorkspace(tx: Db, actor: Actor, command: Command): Promise
     }
   } else if (entity === 'tag') {
     assertOwner(actor);
-    if (action !== 'delete') parseInput(tagSchema, command.input);
+    if (action === 'create') parseInput(tagCreateSchema, command.input);
+    if (action === 'update') parseInput(tagUpdateSchema, command.input);
     if (action !== 'create') {
       const tag = await tx.tag.findUnique({ where: { id: command.targetId } });
       expectRevision(command, tag);

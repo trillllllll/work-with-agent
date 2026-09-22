@@ -3,7 +3,12 @@ import { parseSseFrame, type Approval, type SseEvent, type ToolResult } from '..
 export type Topic = { id: string; name: string; description: string; isExploration: boolean; goal?: string; draftSummary?: string; finalSummary?: string; summaryStatus?: string; summaryUpdatedAt?: string | null; archivedAt?: string | null; revision?: number };
 export type Status = 'todo' | 'doing' | 'blocked' | 'done';
 export type TaskPriority = 'none' | 'low' | 'medium' | 'high';
-export type Tag = { id: string; name: string; revision?: number };
+export type TagColor = 'violet' | 'blue' | 'teal' | 'green' | 'amber' | 'rose' | 'slate';
+export const tagColors: { id: TagColor; label: string }[] = [
+  { id: 'violet', label: '紫' }, { id: 'blue', label: '蓝' }, { id: 'teal', label: '青' }, { id: 'green', label: '绿' },
+  { id: 'amber', label: '琥珀' }, { id: 'rose', label: '玫红' }, { id: 'slate', label: '灰' },
+];
+export type Tag = { id: string; name: string; color?: TagColor; revision?: number };
 export type Task = { id: string; topicId: string | null; title: string; description: string; status: Status; allowedTransitions: Status[]; priority: TaskPriority; dueDate: string | null; resultSummary: string; createdAt?: string; updatedAt?: string; deletedAt?: string | null; parentId?: string | null; sortOrder?: number; revision?: number; deleteBatchId?: string | null; tags?: Tag[]; tagIds?: string[]; children?: Task[]; topic?: { id: string; name: string; archivedAt?: string | null } | null };
 export type TrashTask = Task & { deletedAt: string; topic?: { id: string; name: string } };
 export type TaskTopicHistory = { id: string; reason: 'created' | 'assigned' | 'unassigned' | 'topic_archived' | 'undo' | 'migration'; source: string; changedAt: string; fromTopic: { id: string; name: string } | null; toTopic: { id: string; name: string } | null };

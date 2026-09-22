@@ -30,7 +30,16 @@ export const topicCreateSchema = z.object({
   goal: z.string().optional(),
 });
 export const topicUpdateSchema = topicCreateSchema.partial().extend({ draftSummary: z.string().optional() });
-export const tagSchema = z.object({ name: z.string().trim().min(1, '标签名称不能为空') });
+export const tagColors = ['violet', 'blue', 'teal', 'green', 'amber', 'rose', 'slate'] as const;
+const tagColor = z.enum(tagColors);
+export const tagCreateSchema = z.object({
+  name: z.string().trim().min(1, '标签名称不能为空'),
+  color: tagColor.optional(),
+});
+export const tagUpdateSchema = z.object({
+  name: z.string().trim().min(1, '标签名称不能为空').optional(),
+  color: tagColor.optional(),
+}).refine((value) => value.name !== undefined || value.color !== undefined, '标签修改不能为空');
 export const reorderSchema = z.object({
   topicId: id.nullable(),
   parentId: id.nullable(),

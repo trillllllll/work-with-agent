@@ -37,6 +37,13 @@
   --explore: hsl(262 42% 51%);
   --explore-bg: hsl(258 100% 97%);
   --explore-border: hsl(260 55% 90%);
+  --tag-violet-fg: hsl(262 42% 42%); --tag-violet-bg: hsl(258 100% 96%); --tag-violet-border: hsl(260 45% 82%);
+  --tag-blue-fg: hsl(214 72% 36%); --tag-blue-bg: hsl(214 100% 96%); --tag-blue-border: hsl(214 55% 80%);
+  --tag-teal-fg: hsl(174 62% 26%); --tag-teal-bg: hsl(174 55% 94%); --tag-teal-border: hsl(174 35% 74%);
+  --tag-green-fg: hsl(145 42% 28%); --tag-green-bg: hsl(145 45% 94%); --tag-green-border: hsl(145 28% 74%);
+  --tag-amber-fg: hsl(32 78% 30%); --tag-amber-bg: hsl(40 100% 94%); --tag-amber-border: hsl(36 60% 74%);
+  --tag-rose-fg: hsl(345 62% 40%); --tag-rose-bg: hsl(345 100% 96%); --tag-rose-border: hsl(345 50% 82%);
+  --tag-slate-fg: hsl(220 9% 32%); --tag-slate-bg: hsl(220 14% 94%); --tag-slate-border: hsl(220 8% 76%);
 
   /* 轻透玻璃语义令牌 */
   --glass-bg: rgb(250 250 250 / 0.94);
@@ -87,6 +94,13 @@
   --explore: hsl(262 75% 78%);
   --explore-bg: hsl(260 40% 15%);
   --explore-border: hsl(260 30% 27%);
+  --tag-violet-fg: hsl(262 75% 82%); --tag-violet-bg: hsl(260 36% 16%); --tag-violet-border: hsl(260 28% 32%);
+  --tag-blue-fg: hsl(214 85% 78%); --tag-blue-bg: hsl(214 40% 16%); --tag-blue-border: hsl(214 32% 32%);
+  --tag-teal-fg: hsl(174 55% 72%); --tag-teal-bg: hsl(174 32% 13%); --tag-teal-border: hsl(174 24% 28%);
+  --tag-green-fg: hsl(145 48% 70%); --tag-green-bg: hsl(145 28% 13%); --tag-green-border: hsl(145 20% 26%);
+  --tag-amber-fg: hsl(38 90% 72%); --tag-amber-bg: hsl(34 40% 14%); --tag-amber-border: hsl(34 32% 28%);
+  --tag-rose-fg: hsl(345 80% 78%); --tag-rose-bg: hsl(345 32% 16%); --tag-rose-border: hsl(345 26% 32%);
+  --tag-slate-fg: hsl(220 12% 78%); --tag-slate-bg: hsl(220 10% 16%); --tag-slate-border: hsl(220 8% 32%);
 
   --glass-bg: rgb(27 27 27 / 0.95);
   --glass-bg-strong: rgb(31 31 31 / 0.97);
@@ -238,6 +252,68 @@
     border-radius: 999px;
     background: var(--glass-control);
     padding: 0.1rem 0.42rem;
+  }
+
+  .task-tag-chip {
+    --tag-fg: var(--tag-violet-fg);
+    --tag-bg: var(--tag-violet-bg);
+    --tag-border: var(--tag-violet-border);
+    border: 1px solid var(--tag-border);
+    border-radius: 999px;
+    background: var(--tag-bg);
+    color: var(--tag-fg);
+    padding: 0.08rem 0.42rem;
+    font-weight: 500;
+  }
+
+  .task-tag-chip[data-color="violet"] { --tag-fg: var(--tag-violet-fg); --tag-bg: var(--tag-violet-bg); --tag-border: var(--tag-violet-border); }
+  .task-tag-chip[data-color="blue"] { --tag-fg: var(--tag-blue-fg); --tag-bg: var(--tag-blue-bg); --tag-border: var(--tag-blue-border); }
+  .task-tag-chip[data-color="teal"] { --tag-fg: var(--tag-teal-fg); --tag-bg: var(--tag-teal-bg); --tag-border: var(--tag-teal-border); }
+  .task-tag-chip[data-color="green"] { --tag-fg: var(--tag-green-fg); --tag-bg: var(--tag-green-bg); --tag-border: var(--tag-green-border); }
+  .task-tag-chip[data-color="amber"] { --tag-fg: var(--tag-amber-fg); --tag-bg: var(--tag-amber-bg); --tag-border: var(--tag-amber-border); }
+  .task-tag-chip[data-color="rose"] { --tag-fg: var(--tag-rose-fg); --tag-bg: var(--tag-rose-bg); --tag-border: var(--tag-rose-border); }
+  .task-tag-chip[data-color="slate"] { --tag-fg: var(--tag-slate-fg); --tag-bg: var(--tag-slate-bg); --tag-border: var(--tag-slate-border); }
+
+  .tag-color-swatch {
+    width: 1.15rem;
+    height: 1.15rem;
+    flex: none;
+    border-radius: 999px;
+    border: 1px solid var(--tag-border);
+    background: var(--tag-fg);
+  }
+
+  .tag-color-swatch[data-color="violet"] { --tag-fg: var(--tag-violet-fg); --tag-border: var(--tag-violet-border); }
+  .tag-color-swatch[data-color="blue"] { --tag-fg: var(--tag-blue-fg); --tag-border: var(--tag-blue-border); }
+  .tag-color-swatch[data-color="teal"] { --tag-fg: var(--tag-teal-fg); --tag-border: var(--tag-teal-border); }
+  .tag-color-swatch[data-color="green"] { --tag-fg: var(--tag-green-fg); --tag-border: var(--tag-green-border); }
+  .tag-color-swatch[data-color="amber"] { --tag-fg: var(--tag-amber-fg); --tag-border: var(--tag-amber-border); }
+  .tag-color-swatch[data-color="rose"] { --tag-fg: var(--tag-rose-fg); --tag-border: var(--tag-rose-border); }
+  .tag-color-swatch[data-color="slate"] { --tag-fg: var(--tag-slate-fg); --tag-border: var(--tag-slate-border); }
+
+  .tag-color-swatch[aria-pressed="true"] {
+    outline: 2px solid var(--foreground);
+    outline-offset: 2px;
+  }
+
+  .task-place-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    border-radius: 0.35rem;
+    background: color-mix(in srgb, var(--foreground) 8%, var(--glass-control));
+    color: var(--foreground);
+    padding: 0.08rem 0.4rem 0.08rem 0.32rem;
+    font-weight: 600;
+  }
+
+  .task-place-chip::before {
+    content: "";
+    width: 0.32rem;
+    height: 0.32rem;
+    flex: none;
+    border-radius: 999px;
+    background: currentColor;
   }
 
   .task-checkbox {

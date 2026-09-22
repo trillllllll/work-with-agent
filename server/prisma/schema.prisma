@@ -87,6 +87,7 @@ model Task {
 model Tag {
   id        String @id @default(cuid())
   name      String
+  color     String @default("violet")
   revision  Int    @default(1)
   createdAt String @default("") @map("created_at")
   updatedAt String @default("") @map("updated_at")

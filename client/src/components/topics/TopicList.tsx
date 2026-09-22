@@ -11,38 +11,37 @@ type TopicListProps = {
   selectedTopicId: string;
   onSelect: (id: string) => void;
   onEdit: (topic: Topic) => void;
+  onOpenInbox?: () => void;
+  inboxActive?: boolean;
   className?: string;
 };
 
-export function TopicList({ topics, loading, selectedTopicId, onSelect, onEdit, className }: TopicListProps) {
-  if (loading) {
-    return (
-      <div className={cn('flex flex-col gap-1.5', className)}>
-        {Array.from({ length: 5 }, (_, index) => <Skeleton key={index} className="h-9 w-full" />)}
-      </div>
-    );
-  }
-  if (!topics.length) {
-    return <p className="rounded-xl border border-dashed border-[var(--glass-border)] px-3 py-4 text-xs leading-relaxed text-muted-foreground">还没有清单，先创建一个。</p>;
-  }
+function classificationClass(active: boolean) {
+  return cn('sidebar-topic-item group relative flex min-w-0 items-center rounded-xl border border-transparent', active ? 'border-primary/20 bg-primary/[0.09] shadow-[inset_0_1px_0_rgb(255_255_255/0.35)] dark:bg-primary/[0.14]' : 'hover:border-[var(--glass-border)] hover:bg-[var(--glass-hover)]');
+}
+function classificationLabelClass(active: boolean) {
+  return cn('relative flex min-h-11 min-w-0 flex-1 items-center gap-2.5 px-2.5 text-left text-[13px] transition-[color,transform] duration-200 lg:min-h-10', active ? 'font-semibold text-primary' : 'text-foreground/75 hover:translate-x-0.5 hover:text-foreground');
+}
+
+export function TopicList({ topics, loading, selectedTopicId, onSelect, onEdit, onOpenInbox, inboxActive = false, className }: TopicListProps) {
   return (
     <div className={cn('sidebar-topic-list flex flex-col gap-1', className)}>
-      {topics.map((topic) => (
-        <div
-          key={topic.id}
-          data-active={topic.id === selectedTopicId}
-          className={cn('sidebar-topic-item group relative flex min-w-0 items-center rounded-xl border border-transparent', topic.id === selectedTopicId ? 'border-primary/20 bg-primary/[0.09] shadow-[inset_0_1px_0_rgb(255_255_255/0.35)] dark:bg-primary/[0.14]' : 'hover:border-[var(--glass-border)] hover:bg-[var(--glass-hover)]')}
-        >
-          <button type="button" onClick={() => onSelect(topic.id)} aria-current={topic.id === selectedTopicId ? 'page' : undefined} className={cn('relative flex min-h-11 min-w-0 flex-1 items-center gap-2.5 px-2.5 text-left text-[13px] transition-[color,transform] duration-200 lg:min-h-10', topic.id === selectedTopicId ? 'font-semibold text-primary' : 'text-foreground/75 hover:translate-x-0.5 hover:text-foreground')}>
-            <span className={cn('size-1.5 shrink-0 rounded-full transition-[background-color,box-shadow,transform] duration-200', topic.id === selectedTopicId ? 'scale-110 bg-primary shadow-[0_0_0_3px_var(--accent)]' : 'bg-muted-foreground/40')} />
-            <span className="truncate">{topic.name}</span>
-            {topic.isExploration && <em className="glass-topic-badge ml-auto flex w-10 shrink-0 items-center justify-center whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] not-italic text-explore">探索</em>}
-          </button>
-          <button type="button" title="编辑清单" aria-label={`编辑清单：${topic.name}`} onClick={() => onEdit(topic)} className="mr-1 grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground opacity-100 transition-[background-color,color,opacity,transform] duration-200 hover:scale-105 hover:bg-[var(--glass-hover)] hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100">
-            <Pencil className="size-3.5" />
-          </button>
-        </div>
-      ))}
+      {onOpenInbox && <div data-active={inboxActive || undefined} className={classificationClass(inboxActive)}><button type="button" onClick={onOpenInbox} aria-current={inboxActive ? 'page' : undefined} className={classificationLabelClass(inboxActive)}><span className={cn('size-1.5 shrink-0 rounded-full transition-[background-color,box-shadow,transform] duration-200', inboxActive ? 'scale-110 bg-primary shadow-[0_0_0_3px_var(--accent)]' : 'bg-muted-foreground/40')} /><span className="truncate">收集箱</span></button></div>}
+      {loading ? Array.from({ length: 5 }, (_, index) => <Skeleton key={index} className="h-9 w-full" />) : topics.length ? topics.map((topic) => {
+        const active = topic.id === selectedTopicId;
+        return (
+          <div key={topic.id} data-active={active || undefined} className={classificationClass(active)}>
+            <button type="button" onClick={() => onSelect(topic.id)} aria-current={active ? 'page' : undefined} className={classificationLabelClass(active)}>
+              <span className={cn('size-1.5 shrink-0 rounded-full transition-[background-color,box-shadow,transform] duration-200', active ? 'scale-110 bg-primary shadow-[0_0_0_3px_var(--accent)]' : 'bg-muted-foreground/40')} />
+              <span className="truncate">{topic.name}</span>
+              {topic.isExploration && <em className="glass-topic-badge ml-auto flex w-10 shrink-0 items-center justify-center whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] not-italic text-explore">探索</em>}
+            </button>
+            <button type="button" title="编辑清单" aria-label={`编辑清单：${topic.name}`} onClick={() => onEdit(topic)} className="mr-1 grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground opacity-100 transition-[background-color,color,opacity,transform] duration-200 hover:scale-105 hover:bg-[var(--glass-hover)] hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100">
+              <Pencil className="size-3.5" />
+            </button>
+          </div>
+        );
+      }) : <p className="rounded-xl border border-dashed border-[var(--glass-border)] px-3 py-4 text-xs leading-relaxed text-muted-foreground">还没有清单，先创建一个。</p>}
     </div>
   );
 }
@@ -55,9 +54,10 @@ type TopicListPageProps = {
   onNewTopic: () => void;
   onEditTopic: (topic: Topic) => void;
   onOpenSettings: () => void;
+  onOpenInbox: () => void;
 };
 
-export function TopicListPage({ topics, topicsLoading, selectedTopicId, onSelectTopic, onNewTopic, onEditTopic, onOpenSettings }: TopicListPageProps) {
+export function TopicListPage({ topics, topicsLoading, selectedTopicId, onSelectTopic, onNewTopic, onEditTopic, onOpenSettings, onOpenInbox }: TopicListPageProps) {
   return (
     <div className="flex h-full flex-col bg-background/80">
       <header className="flex items-center justify-between gap-2 border-b glass-divider px-4 py-3.5">
@@ -72,7 +72,7 @@ export function TopicListPage({ topics, topicsLoading, selectedTopicId, onSelect
       </header>
       <div className="glass-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
         <Button className="mb-3 w-full" onClick={onNewTopic}><Plus />新建清单</Button>
-        <TopicList topics={topics} loading={topicsLoading} selectedTopicId={selectedTopicId} onSelect={onSelectTopic} onEdit={onEditTopic} />
+        <TopicList topics={topics} loading={topicsLoading} selectedTopicId={selectedTopicId} onSelect={onSelectTopic} onEdit={onEditTopic} onOpenInbox={onOpenInbox} />
       </div>
     </div>
   );

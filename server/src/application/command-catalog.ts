@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { taskCreateSchema, taskUpdateSchema, topicCreateSchema, topicUpdateSchema, tagSchema, reorderSchema } from './workspace-input.js';
+import { taskCreateSchema, taskUpdateSchema, topicCreateSchema, topicUpdateSchema, tagCreateSchema, tagUpdateSchema, reorderSchema } from './workspace-input.js';
 
 export function jsonSchema(schema: z.ZodTypeAny): Record<string, unknown> {
   if (schema instanceof z.ZodOptional || schema instanceof z.ZodDefault) return jsonSchema(schema._def.innerType);
@@ -22,7 +22,7 @@ const schemas: Record<string, z.ZodTypeAny> = {
   'task.update': taskUpdateSchema,
   'task.reorder': reorderSchema.extend({ expectedRevisions: z.record(z.number().int().positive()) }),
   'topic.create': topicCreateSchema, 'topic.update': topicUpdateSchema,
-  'tag.create': tagSchema, 'tag.update': tagSchema,
+  'tag.create': tagCreateSchema, 'tag.update': tagUpdateSchema,
 };
 const descriptions: Record<string, string> = {
   'task.create': '创建待办；仅title必需。可用clientRef声明新ID，在后续input中用{$ref:clientRef}引用。',
@@ -35,7 +35,7 @@ const descriptions: Record<string, string> = {
   'topic.update': '更新清单内容。', 'topic.archive': '归档清单且保留任务归属；归档内容只读。',
   'topic.restore': '恢复清单。', 'topic.move_tasks_to_inbox': '将清单全部任务移到收集箱。',
   'topic.legacy_delete': '旧兼容：归档并移出全部任务；新入口建议topic.archive。',
-  'tag.create': '用户专用创建标签。', 'tag.update': '用户专用重命名标签。', 'tag.delete': '用户专用删除标签并解除关联。',
+  'tag.create': '用户专用创建标签；color 可省略，默认 violet。', 'tag.update': '用户专用改名或改颜色；省略的字段保持原值。', 'tag.delete': '用户专用删除标签并解除关联。',
   'change.undo': '用户专用整组撤销；任一对象版本或关系冲突则完全拒绝。',
 };
 export function commandDescriptor(kind: string) {

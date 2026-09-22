@@ -25,12 +25,12 @@ import { ChangesPage } from './components/changes/ChangesPage.js';
 import { WorkspaceModal, type WorkspaceModalView } from './components/workspace/WorkspaceModal.js';
 import { ActionDialog, type ActionPrompt } from './components/dialogs/ActionDialog.js';
 import { QuickCapture, type QuickCaptureHandle } from './components/tasks/QuickCapture.js';
+import { TaskFilterBar, type TaskFilters } from './components/tasks/TaskFilterBar.js';
 import { TaskList } from './components/tasks/TaskList.js';
 import { TagManager } from './components/tasks/TagManager.js';
 import { ThemeToggle } from './components/layout/ThemeToggle.js';
 import { BrandMark } from './components/layout/BrandMark.js';
 import { Button } from './components/ui/button.js';
-import { Input } from './components/ui/input.js';
 import { cn } from './lib/utils.js';
 import { toast } from 'sonner';
 
@@ -46,8 +46,28 @@ const navigation: { view: View; label: string; icon: typeof Inbox }[] = [
   { view: 'runs', label: 'AI 执行', icon: History },
   { view: 'reviews', label: '定期回顾', icon: CalendarDays },
 ];
-type Filters = { q: string; status: string; topic: string; dueFrom: string; dueTo: string; tag: string };
-const emptyFilters: Filters = { q: '', status: 'all', topic: 'all', dueFrom: '', dueTo: '', tag: '' };
+const emptyFilters: TaskFilters = { q: '', status: 'all', topic: 'all', dueFrom: '', dueTo: '', tag: '' };
+
+function classificationSections(tasks: Task[], topics: Topic[]) {
+  const sections: { id: string; name: string; items: Task[] }[] = [];
+  const inbox = tasks.filter((task) => !task.topicId);
+  if (inbox.length) sections.push({ id: 'inbox', name: '收集箱', items: inbox });
+  const seen = new Set<string>();
+  for (const topic of topics) {
+    const items = tasks.filter((task) => task.topicId === topic.id);
+    if (!items.length) continue;
+    seen.add(topic.id);
+    sections.push({ id: topic.id, name: topic.name, items });
+  }
+  const leftovers = new Map<string, { id: string; name: string; items: Task[] }>();
+  for (const task of tasks) {
+    if (!task.topicId || seen.has(task.topicId)) continue;
+    const current = leftovers.get(task.topicId) ?? { id: task.topicId, name: task.topic?.name ?? '已归档', items: [] };
+    current.items.push(task);
+    leftovers.set(task.topicId, current);
+  }
+  return [...sections, ...leftovers.values()];
+}
 
 export function App() {
   useWorkspaceEvents();
@@ -59,7 +79,8 @@ export function App() {
   const [taskId, setTaskId] = useState('');
   const [layout, setLayout] = useState<'list' | 'board'>('list');
   const [sortMode, setSortMode] = useState('manual');
-  const [filters, setFilters] = useState<Filters>(emptyFilters);
+  const [filters, setFilters] = useState<TaskFilters>(emptyFilters);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedTag, setSelectedTag] = useState('');
   const [prompt, setPrompt] = useState<(ActionPrompt & { resolve: (value: boolean) => void }) | null>(null);
   const topicSaveLock = useRef(false);
@@ -69,7 +90,7 @@ export function App() {
   const workspaceView: WorkspaceModalView | null = ['settings', 'trash', 'changes'].includes(route) ? route as WorkspaceModalView : null;
   const page = workspaceView || route === 'chat' ? previousMain.current : route;
   useEffect(() => { if (!workspaceView && route !== 'chat') previousMain.current = route; }, [route, workspaceView]);
-  useEffect(() => { setFilters(emptyFilters); setLayout('list'); setSortMode('manual'); }, [page, selectedTopicId]);
+  useEffect(() => { setFilters(emptyFilters); setFiltersOpen(false); setLayout('list'); setSortMode('manual'); }, [page, selectedTopicId]);
   useEffect(() => { if (selectedTopicId) localStorage.setItem('todo.selectedTopic', selectedTopicId); }, [selectedTopicId]);
   const confirm = (value: ActionPrompt) => new Promise<boolean>((resolve) => setPrompt({ ...value, resolve }));
   const actions = useTodoActions();
@@ -100,8 +121,9 @@ export function App() {
   if (page === 'today') params.dueTo = today;
   if (page === 'tags' ? selectedTag : filters.tag) params.tagIds = page === 'tags' ? selectedTag : filters.tag;
   const taskPage = ['inbox', 'board', 'today', 'search', 'tags'].includes(page);
-  const tasksQuery = useTasks(params, taskPage && (page !== 'board' || Boolean(selectedTopicId)));
+  const tasksQuery = useTasks(params, taskPage && (page !== 'board' || Boolean(selectedTopicId)) && (page !== 'tags' || Boolean(selectedTag)));
   const tasks = tasksQuery.data ?? [];
+  const taggedSections = page === 'tags' && selectedTag ? classificationSections(tasks, topics) : [];
   const chat = useChat({ selectedTopicId: page === 'inbox' ? '' : selectedTopicId, view: page === 'inbox' ? 'inbox' : 'board', onError: (message) => { if (message) toast.error(message); } });
   const transitionFromDetail = (action: () => void) => {
     if (taskId && detailRef.current) detailRef.current.requestTransition(action);
@@ -158,38 +180,20 @@ export function App() {
   const listProps = { topics, onOpen: openTask, onToggle: toggleTask, onMove: moveTask, onDelete: (task: Task) => run(deleteTask(task)), readonly: archived, busy: actions.pending, selectedTaskId: taskId };
   const navButton = ({ view, label, icon: Icon }: typeof navigation[number]) => <button key={view} type="button" onClick={() => navigateSafely(view)} data-active={route === view || undefined} className={cn('sidebar-nav-item relative flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-[13px]', route === view ? 'font-semibold text-foreground' : 'text-muted-foreground hover:text-foreground')} aria-current={route === view ? 'page' : undefined}><Icon className="size-4" strokeWidth={route === view ? 2.3 : 1.8} />{label}</button>;
   const title = page === 'board' ? detail?.name ?? '选择一个清单' : navigation.find((item) => item.view === page)?.label ?? '工作区';
-  const updateFilter = (patch: Partial<Filters>) => setFilters((current) => ({ ...current, ...patch }));
-  const selectClass = 'glass-control h-9 max-w-full rounded-lg px-2 text-xs';
-
+  const updateFilter = (patch: Partial<TaskFilters>) => setFilters((current) => ({ ...current, ...patch }));
   const taskContent = <div className="mx-auto max-w-5xl p-4 pb-10 sm:p-6">
-    <header className="mb-5 border-b pb-5 glass-divider"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs text-muted-foreground">个人任务清单</p><h1 className="mt-1.5 text-3xl font-semibold tracking-tight">{title}</h1>{page === 'today' && <p className="mt-2 text-xs text-muted-foreground">{today} · 未完成的到期任务</p>}{archived && <p className="mt-2 text-sm text-muted-foreground">此清单已归档，内容只读。</p>}</div><div className="flex flex-wrap items-center gap-2"><Button variant="ghost" size="icon" aria-label="打开聊天" onClick={() => isDesktop ? openChat() : navigateSafely('chat')}><MessageSquare /></Button>{page === 'board' && detail && !archived && <Button variant="outline" aria-label={`编辑清单：${detail.name}`} onClick={() => setTopicForm(detail)}>编辑清单</Button>}{scoped && <div className="glass-control flex rounded-xl p-1"><Button variant={layout === 'list' ? 'secondary' : 'ghost'} size="sm" onClick={() => setLayout('list')}>列表</Button><Button variant={layout === 'board' ? 'secondary' : 'ghost'} size="sm" onClick={() => setLayout('board')}>看板</Button></div>}{scoped && !archived && <Button onClick={() => captureRef.current?.focus()}><Plus />新建任务</Button>}</div></div>{taskPage && <div className="relative mt-4 max-w-md"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input className="h-10 rounded-xl pl-9" aria-label="搜索任务" placeholder="搜索任务、说明或标签…" value={filters.q} onChange={(event) => updateFilter({ q: event.target.value })} /></div>}</header>
+    <header className="mb-5 border-b pb-5 glass-divider"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs text-muted-foreground">个人任务清单</p><h1 className="mt-1.5 text-3xl font-semibold tracking-tight">{title}</h1>{page === 'inbox' && <p className="mt-2 max-w-xl text-xs text-muted-foreground">这是一个分类，这里只显示放在收集箱里的任务。</p>}{page === 'today' && <p className="mt-2 text-xs text-muted-foreground">{today} · 未完成的到期任务</p>}{archived && <p className="mt-2 text-sm text-muted-foreground">此清单已归档，内容只读。</p>}</div><div className="flex flex-wrap items-center gap-2"><Button variant="ghost" size="icon" aria-label="打开聊天" onClick={() => isDesktop ? openChat() : navigateSafely('chat')}><MessageSquare /></Button>{page === 'board' && detail && !archived && <Button variant="outline" aria-label={`编辑清单：${detail.name}`} onClick={() => setTopicForm(detail)}>编辑清单</Button>}{scoped && <div className="glass-control flex rounded-xl p-1"><Button variant={layout === 'list' ? 'secondary' : 'ghost'} size="sm" onClick={() => setLayout('list')}>列表</Button><Button variant={layout === 'board' ? 'secondary' : 'ghost'} size="sm" onClick={() => setLayout('board')}>看板</Button></div>}{scoped && !archived && <Button onClick={() => captureRef.current?.focus()}><Plus />新建任务</Button>}</div></div></header>
     {page === 'board' && detail && <details className="mb-5 glass-subtle rounded-xl p-4"><summary className="cursor-pointer text-sm font-semibold">资料、记忆与当前简报</summary><KnowledgePage key={detail.id} topics={[detail]} initialTopicId={detail.id} /></details>}
     {page === 'board' && !detail ? <Button onClick={newTopic}>新建清单</Button> : <>
       {scoped && !archived && <QuickCapture ref={captureRef} key={`${page}.${selectedTopicId}`} topicId={page === 'inbox' ? null : selectedTopicId} inbox={page === 'inbox'} onCreate={createTask} />}
       {page === 'board' && detail && <details className="my-4 glass-subtle rounded-xl p-3"><summary className="cursor-pointer text-sm text-muted-foreground">探索与成果</summary><p className="mt-3 whitespace-pre-wrap text-sm">{detail.description}</p>{detail.goal && <p className="mt-2 text-sm">目标：{detail.goal}</p>}<SummaryPanel detail={detail} busy={actions.pending} onConfirm={archived ? undefined : (action) => run(actions.write(`/api/topics/${detail.id}/summary/${action}`, 'POST', undefined, [detail.id], action === 'confirm' ? '成果已确认' : '草稿已放弃'))} /></details>}
       {page === 'tags' && <TagManager tags={tags} selected={selectedTag} onSelect={setSelectedTag} confirm={confirm} />}
-      <div className="my-4 space-y-2" aria-label="任务筛选">
-        <div className="flex flex-wrap items-center gap-2">
-          {page !== 'today' && <select className={selectClass} aria-label="筛选完成状态" value={filters.status} onChange={(event) => updateFilter({ status: event.target.value })}><option value="all">全部状态</option><option value="open">未完成</option><option value="done">已完成</option></select>}
-          {scoped && <select className={selectClass} aria-label="任务排序" value={sortMode} onChange={(event) => setSortMode(event.target.value)}><option value="manual">手动排序</option><option value="date">按截止日期</option><option value="priority">按优先级</option></select>}
-          {!scoped && <select className={selectClass} aria-label="筛选清单" value={filters.topic} onChange={(event) => updateFilter({ topic: event.target.value })}><option value="all">全部清单</option><option value="inbox">收集箱</option>{topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}</select>}
-          {page !== 'tags' && <select className={selectClass} aria-label="筛选标签" value={filters.tag} onChange={(event) => updateFilter({ tag: event.target.value })}><option value="">全部标签</option>{tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select>}
-          {hasFilters && <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setFilters(emptyFilters)}>清除筛选</Button>}
-        </div>
-        {page !== 'today' && <div className="flex flex-wrap items-center gap-2">
-          <span className="shrink-0 text-xs text-muted-foreground">截止日期</span>
-          <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:inline-flex sm:w-auto sm:flex-none">
-            <Input className="h-9 w-full min-w-0 text-xs sm:w-36" type="date" aria-label="截止日期从" value={filters.dueFrom} onChange={(event) => updateFilter({ dueFrom: event.target.value })} />
-            <span className="text-xs text-muted-foreground">至</span>
-            <Input className="h-9 w-full min-w-0 text-xs sm:w-36" type="date" aria-label="截止日期到" value={filters.dueTo} onChange={(event) => updateFilter({ dueTo: event.target.value })} />
-          </div>
-        </div>}
-      </div>
+      {taskPage && <TaskFilterBar page={page} scoped={scoped} filters={filters} sortMode={sortMode} topics={topics} tags={tags} open={filtersOpen} onOpenChange={setFiltersOpen} onChange={updateFilter} onSort={setSortMode} onClear={() => setFilters(emptyFilters)} />}
       {scoped && <p className="mb-3 text-xs text-muted-foreground">{hasFilters ? '筛选期间不能手动排序；清除筛选后可调整完整列表。' : archived ? '恢复清单后可编辑和排序。' : sortMode !== 'manual' ? '切换为手动排序后，可调整任务位置。' : '包含已完成任务。拖动把手或使用上下按钮调整顺序。'}</p>}
-      {tasksQuery.isLoading ? <p className="py-12 text-center text-muted-foreground">正在加载任务…</p> : tasksQuery.error ? <p role="alert" className="text-destructive">{tasksQuery.error.message}</p> : page === 'today' ? <div className="space-y-6">{[{ name: '逾期', items: tasks.filter((task) => task.dueDate && task.dueDate < today) }, { name: '今天', items: tasks.filter((task) => task.dueDate === today) }].map((group) => <section key={group.name}><h2 className="mb-3 text-sm font-semibold">{group.name} · {group.items.length}</h2><TaskList {...listProps} tasks={group.items} /></section>)}</div> : scoped && layout === 'board' ? <div className="mt-5 flex gap-3 overflow-x-auto pb-4 snap-x snap-mandatory md:grid md:grid-cols-2 md:overflow-visible xl:grid-cols-4">{statuses.map(({ value, label }) => <BoardColumn key={value} label={label} count={tasks.filter((task) => task.status === value).length}>{tasks.filter((task) => task.status === value).map((task) => archived ? <button key={task.id} type="button" className="glass-subtle w-full rounded-xl p-3 text-left text-sm" onClick={() => openTask(task.id)}>{task.title}</button> : <TaskCard key={task.id} task={task} onEdit={(item) => openTask(item.id)} onDelete={(item) => run(deleteTask(item))} onUpdateStatus={(id, status: Status) => { const item = tasks.find((candidate) => candidate.id === id); if (item) run(patchTask(item, { status })); }} />)}</BoardColumn>)}</div> : <TaskList {...listProps} tasks={tasks} hierarchical={scoped && !hasFilters && sortMode === 'manual'} onReorder={scoped && !hasFilters && !archived && sortMode === 'manual' ? reorder : undefined} />}
+      {tasksQuery.isLoading ? <p className="py-12 text-center text-muted-foreground">正在加载任务…</p> : tasksQuery.error ? <p role="alert" className="text-destructive">{tasksQuery.error.message}</p> : page === 'today' ? <div className="space-y-6">{[{ name: '逾期', items: tasks.filter((task) => task.dueDate && task.dueDate < today) }, { name: '今天', items: tasks.filter((task) => task.dueDate === today) }].map((group) => <section key={group.name}><h2 className="mb-3 text-sm font-semibold">{group.name} · {group.items.length}</h2><TaskList {...listProps} tasks={group.items} /></section>)}</div> : scoped && layout === 'board' ? <div className="mt-5 flex gap-3 overflow-x-auto pb-4 snap-x snap-mandatory md:grid md:grid-cols-2 md:overflow-visible xl:grid-cols-4">{statuses.map(({ value, label }) => <BoardColumn key={value} label={label} count={tasks.filter((task) => task.status === value).length}>{tasks.filter((task) => task.status === value).map((task) => archived ? <button key={task.id} type="button" className="glass-subtle w-full rounded-xl p-3 text-left text-sm" onClick={() => openTask(task.id)}>{task.title}</button> : <TaskCard key={task.id} task={task} onEdit={(item) => openTask(item.id)} onDelete={(item) => run(deleteTask(item))} onUpdateStatus={(id, status: Status) => { const item = tasks.find((candidate) => candidate.id === id); if (item) run(patchTask(item, { status })); }} />)}</BoardColumn>)}</div> : page === 'tags' ? (selectedTag ? <div className="space-y-6">{taggedSections.map((section) => <section key={section.id} aria-label={section.name}><h2 className="mb-3 text-sm font-semibold">{section.name} · {section.items.length}</h2><TaskList {...listProps} tasks={section.items} /></section>)}{!taggedSections.length && <p className="py-12 text-center text-sm text-muted-foreground">暂无任务</p>}</div> : <p className="py-12 text-center text-sm text-muted-foreground">选择一个标签后，按分类查看带有该标签的任务。</p>) : <TaskList {...listProps} tasks={tasks} hierarchical={scoped && !hasFilters && sortMode === 'manual'} onReorder={scoped && !hasFilters && !archived && sortMode === 'manual' ? reorder : undefined} />}
     </>}
   </div>;
-  const content = page === 'connections' ? <ConnectionsPage topics={topics} /> : page === 'proposals' ? <ProposalsPage /> : page === 'knowledge' ? <KnowledgePage topics={topics} initialTopicId={selectedTopicId} /> : page === 'runs' ? <RunsPage /> : page === 'reviews' ? <ReviewsPage topics={topics} /> : taskPage ? taskContent : page === 'topics' ? <TopicListPage topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onSelectTopic={selectTopic} onNewTopic={newTopic} onEditTopic={setTopicForm} onOpenSettings={() => navigateSafely('settings')} /> : page === 'archived' ? <div className="p-5 sm:p-7"><h1 className="mb-5 text-2xl font-semibold">已归档</h1><div className="space-y-3">{!(archivedQuery.data ?? []).length && <p className="text-sm text-muted-foreground">暂无归档清单</p>}{(archivedQuery.data ?? []).map((topic) => <article key={topic.id} className="glass-subtle flex flex-wrap items-center gap-3 rounded-xl p-4"><button className="flex-1 text-left font-medium" onClick={() => selectTopic(topic.id)}>{topic.name}</button><Button variant="outline" onClick={() => run(actions.write(`/api/topics/${topic.id}/restore`, 'POST', undefined, [topic.id], '清单已恢复'))}>恢复清单</Button><Button variant="outline" onClick={() => run((async () => { if (await confirm({ title: '移出归档清单的任务', description: `将“${topic.name}”的任务移到收集箱，保留父子关系。`, confirm: '移出任务' })) await actions.write(`/api/topics/${topic.id}/move-tasks-to-inbox`, 'POST', undefined, [topic.id], '任务已移入收集箱'); })())}>移出任务到收集箱</Button></article>)}</div></div> : <div className="p-5"><h1 className="mb-5 text-2xl font-semibold">工作区</h1>{navigation.map(navButton)}<Button className="mt-4" variant="outline" onClick={() => navigateSafely('chat')}><MessageSquare />打开聊天</Button><div className="mt-4"><ThemeToggle /></div></div>;
+  const content = page === 'connections' ? <ConnectionsPage topics={topics} /> : page === 'proposals' ? <ProposalsPage /> : page === 'knowledge' ? <KnowledgePage topics={topics} initialTopicId={selectedTopicId} /> : page === 'runs' ? <RunsPage /> : page === 'reviews' ? <ReviewsPage topics={topics} /> : taskPage ? taskContent : page === 'topics' ? <TopicListPage topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onSelectTopic={selectTopic} onNewTopic={newTopic} onEditTopic={setTopicForm} onOpenSettings={() => navigateSafely('settings')} onOpenInbox={() => navigateSafely('inbox')} /> : page === 'archived' ? <div className="p-5 sm:p-7"><h1 className="mb-5 text-2xl font-semibold">已归档</h1><div className="space-y-3">{!(archivedQuery.data ?? []).length && <p className="text-sm text-muted-foreground">暂无归档清单</p>}{(archivedQuery.data ?? []).map((topic) => <article key={topic.id} className="glass-subtle flex flex-wrap items-center gap-3 rounded-xl p-4"><button className="flex-1 text-left font-medium" onClick={() => selectTopic(topic.id)}>{topic.name}</button><Button variant="outline" onClick={() => run(actions.write(`/api/topics/${topic.id}/restore`, 'POST', undefined, [topic.id], '清单已恢复'))}>恢复清单</Button><Button variant="outline" onClick={() => run((async () => { if (await confirm({ title: '移出归档清单的任务', description: `将“${topic.name}”的任务移到收集箱，保留父子关系。`, confirm: '移出任务' })) await actions.write(`/api/topics/${topic.id}/move-tasks-to-inbox`, 'POST', undefined, [topic.id], '任务已移入收集箱'); })())}>移出任务到收集箱</Button></article>)}</div></div> : <div className="p-5"><h1 className="mb-5 text-2xl font-semibold">工作区</h1>{navigation.map(navButton)}<Button className="mt-4" variant="outline" onClick={() => navigateSafely('chat')}><MessageSquare />打开聊天</Button><div className="mt-4"><ThemeToggle /></div></div>;
   const chatPanel = <ChatPanel chat={chat} onClose={() => { setChatOpen(false); if (!isDesktop || route === 'chat') navigate(previousMain.current); }} />;
   const showChat = chatOpen || route === 'chat';
   const hasAccessory = showChat || Boolean(taskId);
@@ -199,7 +203,7 @@ export function App() {
   return <>
     <div className="app-backdrop h-dvh overflow-hidden bg-background p-0 xl:p-4">
       <div className={cn('app-frame h-full overflow-hidden', isDesktop ? 'grid' : 'flex flex-col')} style={isDesktop ? { gridTemplateColumns: hasAccessory ? '232px minmax(0, 1fr) minmax(340px, 400px)' : '232px minmax(0, 1fr)' } : undefined}>
-        {isDesktop && <aside className="app-sidebar glass-surface flex min-h-0 flex-col border-y-0 border-l-0 p-3 xl:rounded-l-[22px] xl:border-y xl:border-l"><div className="mb-5 mt-1 px-2"><BrandMark /></div><nav aria-label="主导航" className="space-y-0.5">{navGroup(['inbox', 'today', 'topics', 'search'])}</nav><div className="mt-4 flex items-center justify-between px-2"><span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">我的清单</span><Button variant="ghost" size="icon-xs" aria-label="新建清单" onClick={newTopic}><Plus /></Button></div><div className="my-2 min-h-[5rem] max-h-[32%] overflow-y-auto"><TopicList topics={topics} loading={topicsQuery.isLoading} selectedTopicId={page === 'board' ? selectedTopicId : ''} onSelect={selectTopic} onEdit={setTopicForm} /></div><div className="glass-scrollbar min-h-0 flex-1 overflow-y-auto border-t pt-2 glass-divider"><nav aria-label="内容导航" className="space-y-0.5">{navGroup(['tags', 'archived'])}</nav><p className="mb-1 mt-3 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">工作区</p><nav aria-label="AI 工作区导航" className="space-y-0.5">{navGroup(['connections', 'proposals', 'knowledge', 'runs', 'reviews'])}</nav></div><div className="mt-2 border-t pt-2 glass-divider"><nav aria-label="工具导航" className="space-y-0.5">{navGroup(['trash', 'changes'])}</nav><div className="mt-1 flex items-center gap-1">{navGroup(['settings'])}<ThemeToggle /></div></div></aside>}
+        {isDesktop && <aside className="app-sidebar glass-surface flex min-h-0 flex-col border-y-0 border-l-0 p-3 xl:rounded-l-[22px] xl:border-y xl:border-l"><div className="mb-5 mt-1 px-2"><BrandMark /></div><nav aria-label="主导航" className="space-y-0.5">{navGroup(['today', 'topics', 'search'])}</nav><div className="mt-4 flex items-center justify-between px-2"><span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">分类</span><Button variant="ghost" size="icon-xs" aria-label="新建清单" onClick={newTopic}><Plus /></Button></div><div className="my-2 min-h-[5rem] max-h-[32%] overflow-y-auto"><TopicList topics={topics} loading={topicsQuery.isLoading} selectedTopicId={page === 'board' ? selectedTopicId : ''} onSelect={selectTopic} onEdit={setTopicForm} onOpenInbox={() => navigateSafely('inbox')} inboxActive={page === 'inbox'} /></div><div className="glass-scrollbar min-h-0 flex-1 overflow-y-auto border-t pt-2 glass-divider"><nav aria-label="内容导航" className="space-y-0.5">{navGroup(['tags', 'archived'])}</nav><p className="mb-1 mt-3 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">工作区</p><nav aria-label="AI 工作区导航" className="space-y-0.5">{navGroup(['connections', 'proposals', 'knowledge', 'runs', 'reviews'])}</nav></div><div className="mt-2 border-t pt-2 glass-divider"><nav aria-label="工具导航" className="space-y-0.5">{navGroup(['trash', 'changes'])}</nav><div className="mt-1 flex items-center gap-1">{navGroup(['settings'])}<ThemeToggle /></div></div></aside>}
         <main className="app-main glass-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto bg-[var(--glass-bg-strong)]">{!isDesktop && route === 'chat' ? chatPanel : content}</main>
         {isDesktop && hasAccessory && <div className="accessory-pane min-h-0 min-w-0 border-l glass-divider xl:rounded-r-[22px] xl:border-y xl:border-r"><div className={showChat ? 'h-full' : 'hidden'}>{chatPanel}</div>{detailProps && <div className={showChat ? 'hidden' : 'h-full'}><TaskDetailPanel key={taskId} ref={detailRef} {...detailProps} /></div>}</div>}
         {!isDesktop && <nav aria-label="主导航" className="mobile-tab-bar glass-surface grid shrink-0 grid-cols-5 rounded-none border-x-0 border-b-0 pb-[env(safe-area-inset-bottom)]">{[...navigation.slice(0, 4), { view: 'more' as View, label: '更多', icon: Menu }].map(({ view, label, icon: Icon }) => <button key={view} className={cn('mobile-tab-item flex flex-col items-center gap-1 py-3 text-[11px]', route === view ? 'text-foreground' : 'text-muted-foreground')} onClick={() => navigateSafely(view)} aria-current={route === view ? 'page' : undefined}><Icon className="size-5" />{label}</button>)}</nav>}
