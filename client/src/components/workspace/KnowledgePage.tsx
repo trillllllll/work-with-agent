@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { api, type Topic } from '@/lib/api.js';
+import { organizationMcpPrompt } from '@/lib/organization-prompt.js';
 import { json, submitCommands, usePlatformAction } from '@/lib/platform.js';
 import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
@@ -105,10 +107,23 @@ function BriefPanel({ topicId, draft, updateDraft }: { topicId: string | null; d
   }
   return <div className="space-y-4">{query.error && <p role="alert">{query.error.message}</p>}<pre className="glass-subtle whitespace-pre-wrap rounded-xl p-4 text-sm leading-relaxed">{query.data?.content ?? '正在准备当前简报…'}</pre><label className="block text-sm">固定说明<Textarea className="mt-2" aria-label="简报固定说明" disabled={!query.data} value={draft?.notes ?? query.data?.manualNotes ?? ''} onChange={(event) => { const notes = event.target.value; updateDraft((current) => ({ notes, revision: current?.revision ?? query.data.revision })); }} /></label><Button disabled={busy || draft === null} onClick={() => void save()}>保存固定说明</Button></div>;
 }
+function OrganizationPrompt({ id, purpose }: { id: string; purpose: string }) {
+  const [copied, setCopied] = useState(false);
+  const prompt = organizationMcpPrompt({ id, purpose });
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setCopied(true);
+    } catch {
+      toast.error('复制失败，请手动选择提示词');
+    }
+  };
+  return <div className="space-y-2"><p className="text-xs text-muted-foreground">复制下面的提示词，粘贴到已连接 work_with_agent 的 AI 会话。</p><pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-lg bg-muted p-3 text-xs" aria-label={`整理提示词 ${id}`}>{prompt}</pre><Button type="button" variant="outline" size="sm" aria-label={`复制整理提示词 ${id}`} onClick={() => void copy()}>{copied ? '已复制' : '复制提示词'}</Button></div>;
+}
 function OrganizationPanel({ topicId }: { topicId: string | null }) {
   const query = useQuery({ queryKey: ['organizations', topicId], queryFn: () => api<any[]>(`/api/v1/knowledge/organizations?topicId=${topicId ?? 'inbox'}`) });
   const [purpose, setPurpose] = useState('整理资料中的下一步任务、决策和需要确认的问题');
   const [provider, setProvider] = useState('external');
   const { run, busy } = usePlatformAction();
-  return <details className="glass-subtle rounded-xl p-4"><summary className="cursor-pointer text-sm font-semibold">AI 辅助整理</summary><div className="mt-4 space-y-3"><Textarea aria-label="整理目标" value={purpose} onChange={(event) => setPurpose(event.target.value)} /><select aria-label="整理方式" className="glass-control h-9 rounded-lg px-3 text-sm" value={provider} onChange={(event) => setProvider(event.target.value)}><option value="external">外部 AI 通过 MCP 整理</option><option value="builtin">使用已配置的内置模型</option></select><Button size="sm" disabled={busy || !purpose.trim()} onClick={() => void run(async () => { const request = await api<any>('/api/v1/knowledge/organizations', { method: 'POST', body: json({ topicId, purpose, provider }) }); return provider === 'builtin' ? api(`/api/v1/knowledge/organizations/${request.id}/generate`, { method: 'POST', body: '{}' }) : request; }, provider === 'builtin' ? '整理建议已生成' : '整理请求已准备')}>准备整理</Button>{query.data?.map((request) => <article className="space-y-2 border-t pt-3" key={request.id}><p className="text-sm">{request.purpose}</p><p className="text-xs text-muted-foreground">{request.status} · {new Date(request.createdAt).toLocaleString()}</p>{request.error && <p role="alert" className="text-xs text-destructive">{request.error}</p>}{request.result?.summary && <p className="whitespace-pre-wrap text-sm">{request.result.summary}</p>}{request.provider === 'external' && !['proposed', 'completed'].includes(request.status) && <p className="break-all text-xs">让已连接的 AI 读取整理请求 {request.id}，依据其中来源生成建议并提交候选。</p>}{request.proposalIds?.length > 0 && <a className="text-sm text-primary underline" href="#/proposals">检查待确认建议</a>}</article>)}</div></details>;
+  return <details className="glass-subtle rounded-xl p-4"><summary className="cursor-pointer text-sm font-semibold">AI 辅助整理</summary><div className="mt-4 space-y-3"><Textarea aria-label="整理目标" value={purpose} onChange={(event) => setPurpose(event.target.value)} /><select aria-label="整理方式" className="glass-control h-9 rounded-lg px-3 text-sm" value={provider} onChange={(event) => setProvider(event.target.value)}><option value="external">外部 AI 通过 MCP 整理</option><option value="builtin">使用已配置的内置模型</option></select><Button size="sm" disabled={busy || !purpose.trim()} onClick={() => void run(async () => { const request = await api<any>('/api/v1/knowledge/organizations', { method: 'POST', body: json({ topicId, purpose, provider }) }); return provider === 'builtin' ? api(`/api/v1/knowledge/organizations/${request.id}/generate`, { method: 'POST', body: '{}' }) : request; }, provider === 'builtin' ? '整理建议已生成' : '整理请求已准备')}>准备整理</Button>{query.data?.map((request) => <article className="space-y-2 border-t pt-3" key={request.id}><p className="text-sm">{request.purpose}</p><p className="text-xs text-muted-foreground">{request.status} · {new Date(request.createdAt).toLocaleString()}</p>{request.error && <p role="alert" className="text-xs text-destructive">{request.error}</p>}{request.result?.summary && <p className="whitespace-pre-wrap text-sm">{request.result.summary}</p>}{request.provider === 'external' && !['proposed', 'completed'].includes(request.status) && <OrganizationPrompt id={request.id} purpose={request.purpose} />}{request.proposalIds?.length > 0 && <a className="text-sm text-primary underline" href="#/proposals">检查待确认建议</a>}</article>)}</div></details>;
 }
