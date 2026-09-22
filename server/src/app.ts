@@ -5,6 +5,7 @@ import { SettingsService } from './application/settings.js';
 import { TopicService, TaskService, TagService, ChangeService } from './application/workspace.js';
 import { AgentService } from './agent.js';
 import { securityRouter, connectionRouter, identityMiddleware, ownerMiddleware, corsOptions } from './application/security.js';
+import { mountMcp } from './mcp/http.js';
 import { commandsRouter } from './application/commands.js';
 import { legacyMutationMiddleware, workspaceQueryRouter } from './application/workspace-api.js';
 import { handoffRouter } from './routes/handoffs.js';
@@ -149,6 +150,8 @@ app.post('/api/agent/approvals/:id/preview', async (req, res, next) => { try { s
 app.post('/api/agent/approvals/:id/reject', async (req, res, next) => { try { send(res, await agent.reject(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/changes', async (req, res, next) => { try { send(res, await changes.list(typeof req.query.entityType === 'string' ? req.query.entityType : undefined, typeof req.query.entityId === 'string' ? req.query.entityId : undefined)); } catch (error) { next(error); } });
 app.post('/api/changes/:id/undo', async (req, res, next) => { try { send(res, await changes.undo(String(req.params.id), userContext(req))); } catch (error) { next(error); } });
+
+mountMcp(app);
 
 app.use((error: any, _req: Request, res: Response, _next: NextFunction) => {
   if (res.headersSent) return;

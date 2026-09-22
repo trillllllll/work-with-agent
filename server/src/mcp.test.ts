@@ -1,8 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { fileURLToPath } from 'node:url';
+import express from 'express';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { mountMcp } from './mcp/http.js';
 
 describe('stdio MCP authenticated HTTP contract', () => {
   let http: Server;
@@ -44,5 +47,45 @@ describe('stdio MCP authenticated HTTP contract', () => {
     const result = await client.callTool({ name: 'get_task', arguments: { taskId: 'missing' } });
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toMatchObject({ code: 'VERSION_CONFLICT', httpStatus: 409, retryable: false });
+  });
+});
+
+describe('MCP is served by the workspace process', () => {
+  let api: Server;
+  let workspace: Server;
+  let client: Client;
+  const previousApi = process.env.WWA_API_URL;
+  const calls: Array<{ authorization: string | undefined }> = [];
+  beforeAll(async () => {
+    api = createServer((req, res) => {
+      calls.push({ authorization: req.headers.authorization });
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ data: { items: [{ id: 'task-1' }], nextCursor: null, hasMore: false }, error: null }));
+    });
+    await new Promise<void>((resolve) => api.listen(0, '127.0.0.1', resolve));
+    process.env.WWA_API_URL = `http://127.0.0.1:${(api.address() as { port: number }).port}`;
+    const app = express();
+    app.use(express.json());
+    mountMcp(app, async (token) => token === 'isolated-test-connection');
+    workspace = createServer(app);
+    await new Promise<void>((resolve) => workspace.listen(0, '127.0.0.1', resolve));
+    client = new Client({ name: 'workspace-mcp', version: '1.0.0' });
+    const port = (workspace.address() as { port: number }).port;
+    await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), { requestInit: { headers: { Authorization: 'Bearer isolated-test-connection' } } }));
+  }, 20_000);
+  afterAll(async () => {
+    if (previousApi === undefined) delete process.env.WWA_API_URL;
+    else process.env.WWA_API_URL = previousApi;
+    await client?.close();
+    await Promise.all([api, workspace].filter(Boolean).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+  });
+  it('rejects a missing credential and serves tools on the workspace port', async () => {
+    const port = (workspace.address() as { port: number }).port;
+    const denied = await fetch(`http://127.0.0.1:${port}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: '{}' });
+    expect(denied.status).toBe(401);
+    const { tools } = await client.listTools();
+    expect(tools.map((tool) => tool.name)).toContain('list_tasks');
+    await client.callTool({ name: 'list_tasks', arguments: { limit: 1 } });
+    expect(calls.at(-1)?.authorization).toBe('Bearer isolated-test-connection');
   });
 });

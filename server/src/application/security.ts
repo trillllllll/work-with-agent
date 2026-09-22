@@ -65,6 +65,11 @@ export function checkLocalOrigin(req: Request) {
 }
 export const corsOptions = { credentials: true, origin: (origin: string | undefined, callback: (error: Error | null, allowed?: boolean) => void) => callback(null, !origin || allowedOrigin(origin)) };
 
+export async function connectionTokenActive(credential: string) {
+  const connection = await prisma.connection.findUnique({ where: { tokenHash: hash(credential) } });
+  return connection?.status === 'active';
+}
+
 async function authenticate(req: Request): Promise<{ actor: Actor; csrfToken?: string } | null> {
   checkLocalOrigin(req);
   const authorization = req.headers.authorization;
@@ -128,7 +133,8 @@ const connectionSchema = z.object({ name: z.string().trim().min(1), host: z.stri
 const publicConnection = ({ tokenHash: _tokenHash, ...value }: { tokenHash: string; topicIds: string; autoActions: string; [key: string]: unknown }) => ({ ...value, topicIds: JSON.parse(value.topicIds), autoActions: JSON.parse(value.autoActions) });
 function connectionConfiguration(credential: string) {
   const entry = fileURLToPath(new URL('../mcp/index.js', import.meta.url)).replace(/[/\\]src[/\\]/, '/dist/');
-  return { command: process.execPath, args: [entry], env: { WWA_API_URL: `http://127.0.0.1:${Number(process.env.PORT) || 3016}`, WWA_CONNECTION_TOKEN: credential }, hosts: ['codex', 'claude-code'] };
+  const api = `http://127.0.0.1:${Number(process.env.PORT) || 3016}`;
+  return { command: process.execPath, args: [entry], env: { WWA_API_URL: api, WWA_CONNECTION_TOKEN: credential }, url: `${api}/mcp`, hosts: ['codex', 'claude-code', 'grok'] };
 }
 export const connectionRouter = Router();
 connectionRouter.use(ownerMiddleware);
