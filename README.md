@@ -34,9 +34,9 @@
 
 <img src="./docs/readme/task-list-dark.png" width="880" alt="深色界面：同一清单和任务详情">
 
-项目资料里，确认过的记忆会按关系收成社区。下面用的是示例数据：登录、清单、记忆和交接各自成团，一条还没归类的疑问留在团外。
+项目资料里，确认过的记忆会按关系收成社区，也可以铺成三维地形。下面用的是示例数据：登录、清单、记忆和交接各自成团，高处是更重要、连接更多的知识。
 
-<img src="./docs/readme/knowledge-graph-dark.png" width="880" alt="深色关系图：示例项目记忆分成登录、清单、记忆、交接四个社区">
+<img src="./docs/readme/knowledge-graph-dark.png" width="880" alt="深色三维地形：示例项目记忆分成登录、清单、记忆、交接四个社区">
 
 <a id="quick-start"></a>
 
@@ -137,9 +137,9 @@ npm run dev
 
 Open the one-time login link printed by the API. The web UI is <http://127.0.0.1:5176> and the API is <http://127.0.0.1:3016>. Build `npm run build -w server` before connecting a host. Create a connection in the app, then point Codex, Claude Code, or Grok at `server/dist/mcp/index.js` with `WWA_API_URL` and `WWA_CONNECTION_TOKEN`. Grok uses `http://127.0.0.1:3016/mcp` with a bearer token. Ask the host to call `list_tasks`. Unapproved writes stay in the proposal queue.
 
-Confirmed memories group into communities. The sample below puts sign-in, lists, memory, and handoff in their own groups.
+Confirmed memories group into communities and can be shown as 3D terrain. The sample puts sign-in, lists, memory, and handoff on their own ground, with more important knowledge higher up.
 
-<img src="./docs/readme/knowledge-graph-dark.png" width="880" alt="Dark relationship graph: sample project memory grouped into four communities">
+<img src="./docs/readme/knowledge-graph-dark.png" width="880" alt="Dark 3D terrain: sample project memory grouped into four communities">
 
 ## 许可与贡献
 
