@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
+use tauri::{AppHandle, LogicalSize, Manager, RunEvent, WindowEvent};
 use tauri_plugin_dialog::DialogExt;
 
 const DESKTOP_PORT: u16 = 47316;
@@ -30,6 +30,7 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_min_size(Some(LogicalSize::new(578.0, 640.0)));
                 window.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { .. } = event {
                         handle.exit(0);
@@ -164,6 +165,7 @@ fn open_workspace(app: &AppHandle, url: String) {
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         if let Some(window) = handle.get_webview_window("main") {
+            let _ = window.set_min_size(Some(LogicalSize::new(578.0, 640.0)));
             let Ok(parsed) = url.parse::<tauri::Url>() else { return };
             let _ = window.navigate(parsed);
         }

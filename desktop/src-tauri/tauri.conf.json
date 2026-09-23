@@ -15,7 +15,7 @@
         "title": "Work With Agent",
         "width": 1200,
         "height": 800,
-        "minWidth": 880,
+        "minWidth": 578,
         "minHeight": 640,
         "resizable": true,
         "url": "index.html"
