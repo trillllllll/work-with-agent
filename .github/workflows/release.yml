@@ -1,0 +1,27 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  macos-arm64:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: npm run prisma:generate
+      - run: npm test
+      - run: npm run desktop:build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: work-with-agent-macos-arm64
+          path: desktop/src-tauri/target/release/bundle/dmg/*.dmg

@@ -19,3 +19,6 @@ server/runtime/
 e2e/.data/
 
 .backups/
+desktop/resources/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/

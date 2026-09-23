@@ -1,5 +1,6 @@
 {
   "name": "agent-studio",
+  "version": "0.1.0",
   "private": true,
   "workspaces": [
     "client",
@@ -14,10 +15,15 @@
     "db:migrate": "npm run db:migrate -w server",
     "e2e": "playwright test",
     "e2e:real": "node e2e/run-real.mjs",
-    "db:backup": "node scripts/backup.mjs"
+    "db:backup": "node scripts/backup.mjs",
+    "desktop:assemble": "node scripts/assemble-desktop.mjs",
+    "desktop:dev": "node scripts/assemble-desktop.mjs && node scripts/tauri.mjs dev",
+    "desktop:build": "node scripts/assemble-desktop.mjs && node scripts/tauri.mjs build",
+    "desktop:smoke": "node scripts/desktop-smoke.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",
+    "@tauri-apps/cli": "^2.11.5",
     "concurrently": "^9.1.2"
   }
 }

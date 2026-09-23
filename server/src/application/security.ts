@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { fileURLToPath } from 'node:url';
 import { prisma } from '../infrastructure/prisma.js';
 import { DomainError } from '../domain/task.js';
+import { DESKTOP_PORT, desktopMcpCommand, isDesktopPackage } from './desktop-paths.js';
 
 export type Actor = {
   id: string;
@@ -131,10 +132,18 @@ securityRouter.post('/auth/session', async (req, res, next) => {
 export const autoActionNames = ['task.create', 'task.content', 'task.schedule', 'task.complete', 'task.result'] as const;
 const connectionSchema = z.object({ name: z.string().trim().min(1), host: z.string().trim().min(1), topicIds: z.array(z.string().min(1)).default([]), includeInbox: z.boolean().default(false), autoActions: z.array(z.enum(autoActionNames)).default([]) });
 const publicConnection = ({ tokenHash: _tokenHash, ...value }: { tokenHash: string; topicIds: string; autoActions: string; [key: string]: unknown }) => ({ ...value, topicIds: JSON.parse(value.topicIds), autoActions: JSON.parse(value.autoActions) });
-function connectionConfiguration(credential: string) {
+export function connectionConfiguration(credential: string) {
   const entry = fileURLToPath(new URL('../mcp/index.js', import.meta.url)).replace(/[/\\]src[/\\]/, '/dist/');
-  const api = `http://127.0.0.1:${Number(process.env.PORT) || 3016}`;
-  return { command: process.execPath, args: [entry], env: { WWA_API_URL: api, WWA_CONNECTION_TOKEN: credential }, url: `${api}/mcp`, hosts: ['codex', 'claude-code', 'grok'] };
+  const port = Number(process.env.PORT) || (isDesktopPackage() ? DESKTOP_PORT : 3016);
+  const api = `http://127.0.0.1:${port}`;
+  const packaged = isDesktopPackage();
+  return {
+    command: packaged ? desktopMcpCommand() : process.execPath,
+    args: packaged ? [] : [entry],
+    env: { WWA_API_URL: api, WWA_CONNECTION_TOKEN: credential },
+    url: `${api}/mcp`,
+    hosts: ['codex', 'claude-code', 'grok'],
+  };
 }
 export const connectionRouter = Router();
 connectionRouter.use(ownerMiddleware);

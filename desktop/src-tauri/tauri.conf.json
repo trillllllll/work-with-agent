@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Work With Agent",
+  "version": "0.1.0",
+  "identifier": "app.workwithagent.desktop",
+  "build": {
+    "frontendDist": "../splash",
+    "devUrl": "http://127.0.0.1:47111",
+    "beforeDevCommand": "node ../../scripts/splash-server.mjs"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Work With Agent",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 880,
+        "minHeight": 640,
+        "resizable": true,
+        "url": "index.html"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "resources": {
+      "../resources/node": "node",
+      "../resources/server/": "server/",
+      "../resources/client/": "client/"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "signingIdentity": "-",
+      "minimumSystemVersion": "12.0"
+    }
+  }
+}

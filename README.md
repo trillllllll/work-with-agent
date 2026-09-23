@@ -70,6 +70,24 @@ npm run e2e       # 端到端验收
 npm run test:all  # 完整测试
 ```
 
+## 桌面应用
+
+macOS Apple Silicon 可以打一个双击即用的应用。窗口里仍是这个网页，数据和接口仍由打包进去的 Node 提供。开发时的 `npm run dev` 继续用 <http://127.0.0.1:5176> 和 <http://127.0.0.1:3016>。
+
+```bash
+npm run desktop:build
+```
+
+产物在 `desktop/src-tauri/target/release/bundle/dmg/`。安装后数据在 `~/Library/Application Support/work-with-agent/`，应用监听 `127.0.0.1:47316`。第一次打开前，可以把现有开发库导入进去。目标里已经有数据库时，这条命令会拒绝覆盖：
+
+```bash
+node scripts/import-desktop-data.mjs
+```
+
+桌面应用开着，Codex、Claude Code 和 Grok 才能连上。在应用的「AI 连接」里重新复制配置。stdio 命令指向上面目录中的 `bin/wwa-mcp`，Grok 使用 `http://127.0.0.1:47316/mcp`。原来指向 3016 的配置仍然只连接开发服务。
+
+这版安装包做了 ad-hoc 签名，可以在本机打开。没有 Apple 公证。
+
 ## 接上已经在用的 AI
 
 先构建 MCP 入口，并保持服务运行：
@@ -135,7 +153,7 @@ npm run db:migrate
 npm run dev
 ```
 
-Open the one-time login link printed by the API. The web UI is <http://127.0.0.1:5176> and the API is <http://127.0.0.1:3016>. Build `npm run build -w server` before connecting a host. Create a connection in the app, then point Codex, Claude Code, or Grok at `server/dist/mcp/index.js` with `WWA_API_URL` and `WWA_CONNECTION_TOKEN`. Grok uses `http://127.0.0.1:3016/mcp` with a bearer token. Ask the host to call `list_tasks`. Unapproved writes stay in the proposal queue.
+Open the one-time login link printed by the API. The web UI is <http://127.0.0.1:5176> and the API is <http://127.0.0.1:3016>. `npm run desktop:build` produces a macOS Apple Silicon app on `127.0.0.1:47316`; import an existing database with `node scripts/import-desktop-data.mjs` before the first launch. Copy a new AI connection from the desktop app. Its stdio command is `~/Library/Application Support/work-with-agent/bin/wwa-mcp`, and Grok uses `http://127.0.0.1:47316/mcp`. Configurations that still point at port 3016 keep talking to the dev server. Build `npm run build -w server` before connecting a host to the dev server. Create a connection in the app, then point Codex, Claude Code, or Grok at `server/dist/mcp/index.js` with `WWA_API_URL` and `WWA_CONNECTION_TOKEN`. Grok uses `http://127.0.0.1:3016/mcp` with a bearer token. Ask the host to call `list_tasks`. Unapproved writes stay in the proposal queue.
 
 Confirmed memories group into communities and can be shown as 3D terrain. The sample puts sign-in, lists, memory, and handoff on their own ground, with more important knowledge higher up.
 
