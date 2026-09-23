@@ -240,7 +240,7 @@ function traceBlob(context: CanvasRenderingContext2D, points: Array<{ x: number;
 }
 
 function clusterCenters(ids: string[]) {
-  const radius = ids.length <= 1 ? 0 : 210;
+  const radius = ids.length <= 1 ? 0 : 176;
   const centers = new Map<string, { x: number; y: number }>();
   ids.forEach((id, index) => {
     if (ids.length === 1) { centers.set(id, { x: 0, y: 0 }); return; }
@@ -349,7 +349,7 @@ function GraphCanvas({ nodes, edges, selectedId, spatial, onSelect }: { nodes: G
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
   const sim = useRef<Point[]>([]);
-  const camera = useRef({ yaw: 0.42, pitch: 0.95, scale: 1, panX: 0, panY: 0 });
+  const camera = useRef({ yaw: 0.42, pitch: 0.95, scale: 0.84, panX: 0, panY: 0 });
   const drag = useRef<{ x: number; y: number; moved: boolean; id?: string } | null>(null);
   const [surface, setSurface] = useState<Surface>('terrain');
   const [relief, setRelief] = useState<Relief>('influence');
@@ -462,14 +462,22 @@ function GraphCanvas({ nodes, edges, selectedId, spatial, onSelect }: { nodes: G
         context.fillText(text, boxX + 8, boxY + 15);
       }
       context.font = '12px sans-serif'; context.fillStyle = 'rgba(214, 214, 214, 0.82)';
-      const occupied: Array<{ x: number; y: number; w: number; h: number }> = [];
+      const occupied: Array<{ x: number; y: number; w: number; h: number }> = communities.map((community) => {
+        const top = community.outline.reduce((best, point) => point.y < best.y ? point : best, community.outline[0]);
+        const text = `${community.label.name} ${community.members.length}`;
+        return { x: top.x - context.measureText(text).width / 2 - 8, y: top.y - 28, w: context.measureText(text).width + 16, h: 24 };
+      });
       for (const node of drawOrder) if (labeled.has(node.id)) {
         const point = project(node.x, node.y, node.h, width, height);
-        const text = node.title.slice(0, 18);
-        const box = { x: point.x + 8, y: point.y - 16, w: context.measureText(text).width, h: 14 };
-        if (occupied.some((item) => box.x < item.x + item.w && box.x + box.w > item.x && box.y < item.y + item.h && box.y + box.h > item.y)) continue;
+        const mates = items.filter((item) => item.cluster === node.cluster);
+        const cx = mates.reduce((sum, item) => sum + item.x, 0) / mates.length;
+        const cy = mates.reduce((sum, item) => sum + item.y, 0) / mates.length;
+        const dx = node.x - cx; const dy = node.y - cy; const length = Math.hypot(dx, dy) || 1;
+        const text = node.title.slice(0, 16);
+        const box = { x: point.x + (dx / length) * 14, y: point.y + (dy / length) * 14 - 8, w: context.measureText(text).width, h: 16 };
+        if (occupied.some((item) => box.x < item.x + item.w + 6 && box.x + box.w + 6 > item.x && box.y < item.y + item.h + 4 && box.y + box.h + 4 > item.y)) continue;
         occupied.push(box);
-        context.fillText(text, box.x, point.y - 6);
+        context.fillText(text, box.x, box.y + 12);
       }
     };
     const loop = () => { if (!running) return; step(true); frame = requestAnimationFrame(loop); };
