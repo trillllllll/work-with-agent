@@ -7,19 +7,22 @@ import request from 'supertest';
 import { prisma } from '../infrastructure/prisma.js';
 import { CommandService, workspaceEvents } from './commands.js';
 import { actorFromConnection, ownerActor, type Actor } from './security.js';
-import { KnowledgeService, knowledgeStorageRoot, registerKnowledgeCommands, takeKnowledgeSnapshot } from './knowledge.js';
+import { KnowledgeService, knowledgeStorageRoot, readLabels, registerKnowledgeCommands, takeKnowledgeSnapshot } from './knowledge.js';
+import { KnowledgeGraph, registerGraphCommands } from './knowledge-graph.js';
 import { OrganizationService, type OrganizationModel } from './knowledge-organizations.js';
 import { ReviewService } from './reviews.js';
 import { latestOccurrence, scheduledInstant } from './reviews-clock.js';
 import { createKnowledgeRouter } from '../routes/knowledge.js';
 
 registerKnowledgeCommands();
+registerGraphCommands();
 const commands = new CommandService();
 const knowledge = new KnowledgeService();
 process.env.KNOWLEDGE_STORAGE_ROOT = resolve(process.cwd(), 'data/test-knowledge-blobs');
 async function clean() {
   await prisma.reviewBatch.deleteMany(); await prisma.reviewRule.deleteMany();
   await prisma.organizationRequest.deleteMany(); await prisma.workingBrief.deleteMany();
+  await prisma.graphLink.deleteMany(); await prisma.entity.deleteMany();
   await prisma.memoryVersion.deleteMany(); await prisma.memory.deleteMany();
   await prisma.materialVersion.deleteMany(); await prisma.material.deleteMany();
   await prisma.proposal.deleteMany(); await prisma.requestReceipt.deleteMany(); await prisma.changeRecord.deleteMany();
@@ -274,6 +277,67 @@ describe('knowledge evidence and review closed loops', () => {
       await reviews.run(ownerActor, rule.id, { occurrenceKey: 'daily:2026-09-21' });
       expect(events).toEqual([{ kind: 'review', batchId: batch!.id, status: 'ready' }]);
     } finally { workspaceEvents.off('change', listener); }
+  });
+
+  it('stores importance, labels and caller origin, and sorts active memories above history', async () => {
+    const project = await topic();
+    const quiet = await write('memory.create', { topicId: project, title: '普通记录', content: '默认重要度', labels: ['本机环境'] });
+    const loud = await write('memory.create', { topicId: project, title: '关键决策', content: '使用 SQLite', kind: 'decision', importance: 5, labels: ['存储', '存储'] });
+    expect(quiet).toMatchObject({ importance: 3, labels: ['本机环境'], origin: 'manual' });
+    expect(loud.labels).toEqual(['存储']);
+    const listed = await knowledge.memories(ownerActor, project);
+    expect(listed.items.map((item) => item.id)).toEqual([loud.id, quiet.id]);
+    expect(await prisma.entity.findMany({ where: { topicId: project }, orderBy: { name: 'asc' } })).toMatchObject([{ name: '存储' }, { name: '本机环境' }]);
+    await commands.preview(ownerActor, { commands: [{ kind: 'memory.create', input: { topicId: project, title: '只预览', content: '不落库', labels: ['预览实体'] } }] });
+    expect(await prisma.entity.findFirst({ where: { name: '预览实体' } })).toBeNull();
+    await write('memory.retire', { reason: '先收起' }, quiet.id, quiet.revision);
+    expect((await knowledge.memories(ownerActor, project)).items.map((item) => item.id)).toEqual([loud.id]);
+    expect((await knowledge.memories(ownerActor, project, { status: 'history' })).items.map((item) => item.id)).toEqual([quiet.id]);
+    const actor: Actor = { id: 'memory-origin', kind: 'internal', topicIds: [project], includeInbox: false, autoActions: [], revision: 1 };
+    const pending = await commands.submit(actor, { requestId: 'origin-ai', commands: [{ kind: 'memory.create', input: { topicId: project, title: '外部整理', content: '由模型提议', evidence: [{ type: 'memory', id: loud.id, revision: loud.revision }] } }] });
+    const approved = await commands.approve(ownerActor, pending.proposalId, { requestId: 'origin-approve', expectedRevision: 1 });
+    expect(approved.results[0].origin).toBe('ai');
+  });
+
+  it('keeps fast search on titles and expands smart search by hop distance', async () => {
+    const project = await topic();
+    const source = await material(project, '材料甲', '正文里有火山这个词');
+    const near = await write('memory.create', { topicId: project, title: '邻近记忆', content: '引用材料', evidence: [{ type: 'material', id: source.id, revision: source.revision, hash: source.contentHash }] });
+    const far = await write('memory.create', { topicId: project, title: '更远记忆', content: '只引用邻近记忆', evidence: [{ type: 'memory', id: near.id, revision: near.revision }] });
+    await write('memory.create', { topicId: project, title: '正文命中', content: '这里单独写到火山' });
+    const graph = new KnowledgeGraph();
+    expect((await graph.read(ownerActor, { topicId: project, q: '火山', mode: 'fast' })).nodes).toHaveLength(0);
+    const smart = await graph.read(ownerActor, { topicId: project, q: '火山', mode: 'smart', range: 1 });
+    expect(smart.nodes.map((node) => node.title).sort()).toEqual(['材料甲', '正文命中', '邻近记忆']);
+    const one = await graph.read(ownerActor, { topicId: project, focusType: 'material', focusId: source.id, range: 1 });
+    expect(one.nodes.map((node) => node.rawId).sort()).toEqual([source.id, near.id].sort());
+    const two = await graph.read(ownerActor, { topicId: project, focusType: 'material', focusId: source.id, range: 2 });
+    expect(two.nodes.map((node) => node.rawId).sort()).toEqual([source.id, near.id, far.id].sort());
+    const answer = await graph.answer(ownerActor, { topicId: project, question: '火山存在于哪' }, async () => '依据 [material:' + source.id + ']');
+    expect(answer.mode).toBe('model'); expect(answer.answer).toContain(source.id);
+    const retrieved = await graph.answer(ownerActor, { topicId: project, question: '完全不存在的句子' }, async () => { throw new Error('未配置模型服务'); });
+    expect(retrieved.mode).toBe('retrieval'); expect(retrieved.answer).toBeNull();
+  });
+
+  it('extracts wiki mentions, crystallizes three memories, and restores a renamed entity', async () => {
+    const project = await topic();
+    await write('memory.create', { topicId: project, title: '提到 [[SQLite]]', content: '第一种做法' });
+    const graph = new KnowledgeGraph();
+    expect((await graph.read(ownerActor, { topicId: project })).edges.some((edge) => edge.relation === 'mentions')).toBe(true);
+    for (const title of ['甲', '乙', '丙']) await write('memory.create', { topicId: project, title, content: `${title}的原文`, labels: ['存储'] });
+    await expect(write('memory.crystallize', { topicId: project, entityId: 'missing' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    const entity = await prisma.entity.findFirstOrThrow({ where: { topicId: project, name: '存储' } });
+    const crystal = await write('memory.crystallize', { topicId: project, entityId: entity.id });
+    expect(crystal).toMatchObject({ kind: 'crystal', labels: ['存储'] });
+    expect(crystal.evidence).toHaveLength(3); expect(crystal.content).toContain('没有另作改写');
+    const again = await write('memory.crystallize', { topicId: project, entityId: entity.id });
+    expect(again.reused).toBe(true); expect(await prisma.memory.count({ where: { kind: 'crystal' } })).toBe(1);
+    const renamed = await write('entity.update', { name: '本地存储' }, entity.id, entity.revision);
+    expect(renamed.name).toBe('本地存储');
+    expect(readLabels((await prisma.memory.findFirstOrThrow({ where: { title: '甲' } })).labels)).toEqual(['本地存储']);
+    await commands.submit(ownerActor, { requestId: 'undo-rename', commands: [{ kind: 'change.undo', targetId: renamed.changeId, input: {} }] });
+    expect((await prisma.entity.findUniqueOrThrow({ where: { id: entity.id } })).name).toBe('存储');
+    expect(readLabels((await prisma.memory.findFirstOrThrow({ where: { title: '甲' } })).labels)).toEqual(['存储']);
   });
 });
 

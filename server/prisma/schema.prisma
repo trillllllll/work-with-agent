@@ -298,12 +298,15 @@ model Memory {
   content String
   status String @default("active")
   health String @default("current")
+  importance Int @default(3)
+  labels String @default("[]")
+  origin String @default("manual")
   revision Int @default(1)
   evidence String @default("[]")
   createdAt String
   updatedAt String
   versions MemoryVersion[]
-  @@index([topicId, status, updatedAt])
+  @@index([topicId, status, importance, updatedAt])
 }
 model MemoryVersion {
   id String @id @default(cuid())
@@ -315,10 +318,40 @@ model MemoryVersion {
   status String
   health String
   evidence String
+  importance Int @default(3)
+  labels String @default("[]")
+  origin String @default("manual")
   reason String
   createdAt String
   memory Memory @relation(fields: [memoryId], references: [id], onDelete: Restrict)
   @@unique([memoryId, revision])
+}
+model Entity {
+  id String @id @default(cuid())
+  topicKey String
+  topicId String?
+  name String
+  kind String @default("concept")
+  description String @default("")
+  revision Int @default(1)
+  createdAt String
+  updatedAt String
+  @@unique([topicKey, name])
+  @@index([topicId, kind])
+}
+model GraphLink {
+  id String @id @default(cuid())
+  topicId String?
+  fromType String
+  fromId String
+  toType String
+  toId String
+  relation String
+  note String @default("")
+  createdAt String
+  @@unique([fromType, fromId, toType, toId, relation])
+  @@index([fromId, fromType])
+  @@index([toId, toType])
 }
 model WorkingBrief {
   id String @id @default(cuid())

@@ -28,12 +28,65 @@ const materialSchema = z.object({
   attachmentBase64: z.string().max(Math.ceil(attachmentLimit / 3) * 4).optional(), fileName: z.string().min(1).max(255).optional(), mimeType: z.string().max(150).optional(),
 }).strict();
 const materialUpdateSchema = materialSchema.omit({ topicId: true, taskId: true, kind: true }).partial().extend({ reason: z.string().max(1000).optional() }).strict();
-const memorySchema = z.object({ topicId: z.string().min(1).nullable().default(null), kind: z.enum(['fact', 'decision', 'constraint', 'learning', 'question']).default('fact'), title: titleSchema, content: contentSchema.min(1), evidence: z.array(evidenceSchema).max(100).default([]), reason: z.string().trim().min(1).max(1000).default('人工记录') }).strict();
-const memoryUpdateSchema = memorySchema.omit({ topicId: true }).partial().extend({ status: z.enum(['active', 'retired', 'superseded']).optional(), reason: z.string().trim().min(1).max(1000).default('修订记忆') }).strict();
+const memoryKinds = ['fact', 'decision', 'constraint', 'learning', 'question'] as const;
+const memoryKindSchema = z.enum([...memoryKinds, 'crystal']);
+const originSchema = z.enum(['manual', 'ai', 'mcp']);
+const labelsSchema = z.array(z.string().trim().min(1).max(40)).max(20).transform((values) => [...new Set(values)]);
+const memorySchema = z.object({ topicId: z.string().min(1).nullable().default(null), kind: z.enum(memoryKinds).default('fact'), title: titleSchema, content: contentSchema.min(1), evidence: z.array(evidenceSchema).max(100).default([]), reason: z.string().trim().min(1).max(1000).default('人工记录'), importance: z.number().int().min(1).max(5).default(3), labels: labelsSchema.default([]), origin: originSchema.optional() }).strict();
+const memoryUpdateSchema = z.object({ kind: memoryKindSchema.optional(), title: titleSchema.optional(), content: contentSchema.min(1).optional(), evidence: z.array(evidenceSchema).max(100).optional(), reason: z.string().trim().min(1).max(1000).default('修订记忆'), status: z.enum(['active', 'retired', 'superseded']).optional(), importance: z.number().int().min(1).max(5).optional(), labels: labelsSchema.optional(), origin: originSchema.optional() }).strict();
 export const knowledgeFailure = (code: string, message: string, status = 409) => new DomainError(code, message, status);
 export const knowledgeHash = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex');
 const parseJson = <T>(value: string, fallback: T): T => { try { return JSON.parse(value) as T; } catch { return fallback; } };
 export function readEvidence(value: string): EvidenceRef[] { return parseJson(value, []); }
+export function readLabels(value: string): string[] { const parsed = parseJson<unknown>(value, []); return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []; }
+export function mentionNames(title: string, content: string) {
+  const names: string[] = []; const seen = new Set<string>();
+  for (const match of `${title}\n${content}`.matchAll(/\[\[([^\]\n]{1,80})\]\]/g)) {
+    const name = match[1].trim();
+    if (!name || seen.has(name)) continue;
+    seen.add(name); names.push(name);
+  }
+  return names;
+}
+export function memoryOrigin(actor: Actor, given?: string, existing?: string) {
+  if (given) return given;
+  if (existing) return existing;
+  if (actor.kind === 'connection') return 'mcp';
+  return actor.kind === 'user' ? 'manual' : 'ai';
+}
+export async function syncLabelEntities(tx: KnowledgeDb, memory: { id: string; topicId: string | null; title: string; content: string; labels: string[] }) {
+  const desired = new Map<string, 'label' | 'mentions'>();
+  for (const name of mentionNames(memory.title, memory.content)) desired.set(name, 'mentions');
+  for (const name of memory.labels) desired.set(name, 'label');
+  const topicKey = memory.topicId ?? '';
+  const timestamp = knowledgeNow();
+  const keep = new Set<string>();
+  for (const [name, relation] of desired) {
+    let entity = await tx.entity.findUnique({ where: { topicKey_name: { topicKey, name } } });
+    if (!entity) entity = await tx.entity.create({ data: { topicKey, topicId: memory.topicId, name, kind: 'concept', description: '', createdAt: timestamp, updatedAt: timestamp } });
+    keep.add(`${relation}:${entity.id}`);
+    const links = await tx.graphLink.findMany({ where: { fromType: 'memory', fromId: memory.id, toType: 'entity', toId: entity.id, relation: { in: ['label', 'mentions'] } } });
+    if (!links.some((link) => link.relation === relation)) await tx.graphLink.create({ data: { topicId: memory.topicId, fromType: 'memory', fromId: memory.id, toType: 'entity', toId: entity.id, relation, createdAt: timestamp } });
+    const stale = links.filter((link) => link.relation !== relation).map((link) => link.id);
+    if (stale.length) await tx.graphLink.deleteMany({ where: { id: { in: stale } } });
+  }
+  const managed = await tx.graphLink.findMany({ where: { fromType: 'memory', fromId: memory.id, relation: { in: ['label', 'mentions'] } } });
+  const remove = managed.filter((link) => !keep.has(`${link.relation}:${link.toId}`)).map((link) => link.id);
+  if (remove.length) await tx.graphLink.deleteMany({ where: { id: { in: remove } } });
+}
+type MemoryRow = { id: string; revision: number; topicId: string | null; title: string; content: string; kind: string; status: string; health: string; evidence: string; importance: number; labels: string; origin: string };
+export async function persistMemory(tx: KnowledgeDb, actor: Actor, command: Command, context: MutationContext, spec: { existing: MemoryRow | null; topicId: string | null; title: string; content: string; kind: string; status: string; evidence: EvidenceRef[]; reason: string; importance: number; labels: string[]; origin: string }) {
+  const timestamp = knowledgeNow();
+  const evidence = JSON.stringify(spec.evidence);
+  const labels = JSON.stringify(spec.labels);
+  const memory = spec.existing
+    ? await tx.memory.update({ where: { id: spec.existing.id, revision: command.expectedRevision }, data: { title: spec.title, content: spec.content, kind: spec.kind, status: spec.status, evidence, importance: spec.importance, labels, origin: spec.origin, health: 'current', revision: { increment: 1 }, updatedAt: timestamp } })
+    : await tx.memory.create({ data: { id: context.entityId ?? command.entityId, topicId: spec.topicId, title: spec.title, content: spec.content, kind: spec.kind, status: spec.status, evidence, importance: spec.importance, labels, origin: spec.origin, createdAt: timestamp, updatedAt: timestamp } });
+  await tx.memoryVersion.create({ data: { memoryId: memory.id, revision: memory.revision, title: memory.title, content: memory.content, kind: memory.kind, status: memory.status, health: memory.health, evidence: memory.evidence, importance: memory.importance, labels: memory.labels, origin: memory.origin, reason: spec.reason, createdAt: timestamp } });
+  await recordChange(tx, 'memory', memory.id, spec.existing ? 'update' : 'create', spec.existing, memory, context);
+  await syncLabelEntities(tx, { ...memory, labels: spec.labels });
+  return { ...memory, evidence: spec.evidence, labels: spec.labels };
+}
 
 export async function checkKnowledgeScope(tx: KnowledgeDb, actor: Actor, topicId: string | null, write = false) {
   assertTopicAccess(actor, topicId);
@@ -245,15 +298,14 @@ async function executeKnowledgeCommand(tx: KnowledgeDb, actor: Actor, command: C
   const existing = command.kind !== 'memory.create' ? await tx.memory.findUniqueOrThrow({ where: { id: command.targetId } }) : null;
   const data = existing ? memoryUpdateSchema.parse(command.kind === 'memory.retire' ? { ...command.input, status: 'retired' } : command.input) : memorySchema.parse(command.input);
   const evidence = data.evidence ?? (existing ? readEvidence(existing.evidence) : []);
-  const memory = existing ? await tx.memory.update({ where: { id: existing.id, revision: command.expectedRevision }, data: { ...(data.title !== undefined ? { title: data.title } : {}), ...(data.content !== undefined ? { content: data.content } : {}), ...(data.kind !== undefined ? { kind: data.kind } : {}), ...('status' in data && data.status ? { status: data.status } : {}), evidence: JSON.stringify(evidence), health: 'current', revision: { increment: 1 }, updatedAt: timestamp } }) : await tx.memory.create({ data: { id: context.entityId ?? command.entityId, topicId: 'topicId' in data ? data.topicId : null, title: data.title!, content: data.content!, kind: data.kind!, evidence: JSON.stringify(evidence), createdAt: timestamp, updatedAt: timestamp } });
-  await tx.memoryVersion.create({ data: { memoryId: memory.id, revision: memory.revision, title: memory.title, content: memory.content, kind: memory.kind, status: memory.status, health: memory.health, evidence: memory.evidence, reason: data.reason, createdAt: timestamp } });
-  await recordChange(tx, 'memory', memory.id, existing ? 'update' : 'create', existing, memory, context);
-  return { ...memory, evidence };
+  const labels = data.labels ?? (existing ? readLabels(existing.labels) : []);
+  return persistMemory(tx, actor, command, context, { existing, topicId: existing ? existing.topicId : 'topicId' in data ? data.topicId : null, title: data.title ?? existing!.title, content: data.content ?? existing!.content, kind: data.kind ?? existing!.kind, status: ('status' in data && data.status) || existing?.status || 'active', evidence, reason: data.reason, importance: data.importance ?? existing?.importance ?? 3, labels, origin: memoryOrigin(actor, data.origin, existing?.origin) });
 }
 
 export function registerKnowledgeCommands() {
   const schemas = { 'material.create': materialSchema, 'material.update': materialUpdateSchema, 'material.archive': z.object({ archived: z.boolean() }).strict(), 'memory.create': memorySchema, 'memory.update': memoryUpdateSchema, 'memory.retire': memoryUpdateSchema };
-  for (const [kind, schema] of Object.entries(schemas)) registerCommandHandler(kind, { inspect: inspectKnowledgeCommand, execute: executeKnowledgeCommand, forceProposal: true, inputSchema: jsonSchema(schema) });
+  const descriptions: Record<string, string> = { 'memory.create': '保存记忆。importance（1到5）、labels 和 origin 都可以省略；省略时重要度为 3，标签为空，来源按调用方记为 manual、ai 或 mcp。', 'memory.update': '修订记忆。省略的字段保持原值；labels 传空数组会清空标签。' };
+  for (const [kind, schema] of Object.entries(schemas)) registerCommandHandler(kind, { inspect: inspectKnowledgeCommand, execute: executeKnowledgeCommand, forceProposal: true, inputSchema: jsonSchema(schema), ...(descriptions[kind] ? { description: descriptions[kind] } : {}) });
   registerEvidenceValidator(validateKnowledgeEvidence);
   registerUndoHandler('material', undoKnowledgeChange);
   registerUndoHandler('memory', undoKnowledgeChange);
@@ -281,8 +333,9 @@ export async function undoKnowledgeChange(tx: KnowledgeDb, actor: Actor, record:
   if (!current || current.revision !== after.revision) throw knowledgeFailure('UNDO_CONFLICT', '记忆已有后续修改');
   await checkKnowledgeScope(tx, actor, current.topicId, true);
   const desired = before ?? { ...current, status: 'retired' };
-  const result = await tx.memory.update({ where: { id: current.id, revision: current.revision }, data: { title: desired.title, content: desired.content, kind: desired.kind, status: desired.status, health: desired.health, evidence: desired.evidence, revision: { increment: 1 }, updatedAt: timestamp } });
-  await tx.memoryVersion.create({ data: { memoryId: result.id, revision: result.revision, title: result.title, content: result.content, kind: result.kind, status: result.status, health: result.health, evidence: result.evidence, reason: `撤销${record.operation}，保留历史版本`, createdAt: timestamp } });
+  const result = await tx.memory.update({ where: { id: current.id, revision: current.revision }, data: { title: desired.title, content: desired.content, kind: desired.kind, status: desired.status, health: desired.health, evidence: desired.evidence, importance: desired.importance ?? current.importance, labels: desired.labels ?? current.labels, origin: desired.origin ?? current.origin, revision: { increment: 1 }, updatedAt: timestamp } });
+  await tx.memoryVersion.create({ data: { memoryId: result.id, revision: result.revision, title: result.title, content: result.content, kind: result.kind, status: result.status, health: result.health, evidence: result.evidence, importance: result.importance, labels: result.labels, origin: result.origin, reason: `撤销${record.operation}，保留历史版本`, createdAt: timestamp } });
+  await syncLabelEntities(tx, { ...result, labels: readLabels(result.labels) });
   return result;
 }
 
@@ -312,15 +365,20 @@ export class KnowledgeService {
     if (knowledgeHash(bytes) !== version.attachmentPath) throw knowledgeFailure('ATTACHMENT_CORRUPT', '附件内容校验失败');
     return { bytes, fileName: version.fileName ?? 'attachment', mimeType: version.mimeType ?? 'application/octet-stream' };
   }
-  async memories(actor: Actor, topicId: string | null, options: { history?: boolean; cursor?: number; limit?: number } = {}) {
+  async memories(actor: Actor, topicId: string | null, options: { history?: boolean; status?: 'active' | 'history' | 'all'; q?: string; cursor?: number; limit?: number } = {}) {
     await checkKnowledgeScope(prisma, actor, topicId);
-    const where = { topicId, ...(options.history ? {} : { status: 'active' }) };
+    const status = options.status ?? (options.history ? 'all' : 'active');
+    const where = { topicId, ...(status === 'active' ? { status: 'active' } : status === 'history' ? { status: { in: ['retired', 'superseded'] } } : {}) };
     const offset = Math.max(0, options.cursor ?? 0);
     const limit = Math.min(100, Math.max(1, options.limit ?? 40));
-    const [records, total] = await Promise.all([prisma.memory.findMany({ where, orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }], skip: offset, take: limit }), prisma.memory.count({ where })]);
+    const normalize = (value: string) => value.normalize('NFKC').toLocaleLowerCase('en-US');
+    const terms = normalize(options.q ?? '').split(/\s+/).filter(Boolean);
+    const ordered = await prisma.memory.findMany({ where, orderBy: [{ importance: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }] });
+    const matched = terms.length ? ordered.filter((row) => terms.every((term) => normalize(`${row.title}\n${row.content}\n${readLabels(row.labels).join(' ')}`).includes(term))) : ordered;
+    const records = matched.slice(offset, offset + limit);
     const items = [];
-    for (const row of records) { const evidence = readEvidence(row.evidence); items.push({ ...row, evidence, health: await evidenceHealth(prisma, actor, evidence) }); }
-    return { items, total, nextCursor: offset + items.length < total ? offset + items.length : null, hasMore: offset + items.length < total };
+    for (const row of records) { const evidence = readEvidence(row.evidence); items.push({ ...row, labels: readLabels(row.labels), evidence, health: await evidenceHealth(prisma, actor, evidence) }); }
+    return { items, total: matched.length, nextCursor: offset + records.length < matched.length ? offset + records.length : null, hasMore: offset + records.length < matched.length };
   }
   async memory(actor: Actor, id: string) {
     const row = await prisma.memory.findUnique({ where: { id } });
@@ -328,7 +386,7 @@ export class KnowledgeService {
     await checkKnowledgeScope(prisma, actor, row.topicId);
     const evidence = readEvidence(row.evidence);
     const versions = await prisma.memoryVersion.findMany({ where: { memoryId: id }, orderBy: { revision: 'desc' } });
-    return { ...row, evidence, health: await evidenceHealth(prisma, actor, evidence), versions: versions.map((item) => ({ ...item, evidence: readEvidence(item.evidence) })) };
+    return { ...row, labels: readLabels(row.labels), evidence, health: await evidenceHealth(prisma, actor, evidence), versions: versions.map((item) => ({ ...item, labels: readLabels(item.labels), evidence: readEvidence(item.evidence) })) };
   }
   async brief(actor: Actor, topicId: string | null) {
     const snapshot = await takeKnowledgeSnapshot(actor, { topicId });
@@ -374,7 +432,7 @@ export class KnowledgeService {
       if (!input.includeHistory && health !== 'current') continue;
       for (const version of memory.versions) {
         if (!input.includeHistory && version.revision !== memory.revision) continue;
-        rows.push({ type: 'memory', id: memory.id, revision: version.revision, title: version.title, content: version.content, status: version.revision === memory.revision ? health === 'current' ? memory.status : health : 'historical', updatedAt: version.createdAt });
+        rows.push({ type: 'memory', id: memory.id, revision: version.revision, title: version.title, content: `${version.content}\n${readLabels(version.labels).join(' ')}`, status: version.revision === memory.revision ? health === 'current' ? memory.status : health : 'historical', updatedAt: version.createdAt });
       }
     }
     const hits = rows.filter((row) => terms.every((term) => normalize(`${row.title}\n${row.content}`).includes(term))).map((row) => {

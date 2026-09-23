@@ -6,13 +6,15 @@ import { ControlledExecutionAdapter } from '../infrastructure/controlled-executi
 import { CommandService, type Command } from '../application/commands.js';
 import { assertOwner, getActor } from '../application/security.js';
 import { KnowledgeService, knowledgeFailure } from '../application/knowledge.js';
+import { KnowledgeGraph } from '../application/knowledge-graph.js';
+import { ModelAdapter } from '../agent.js';
 import { OrganizationService } from '../application/knowledge-organizations.js';
 
 const topic = (value: unknown) => typeof value === 'string' && value && value !== 'inbox' && value !== 'null' ? value : null;
 const pagination = (query: Record<string, unknown>) => z.object({ cursor: z.coerce.number().int().min(0).optional(), limit: z.coerce.number().int().min(1).max(100).optional() }).parse(query);
 const requestId = (req: Request) => typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : randomUUID();
 
-export function createKnowledgeRouter(service = new KnowledgeService(), organizations = new OrganizationService()) {
+export function createKnowledgeRouter(service = new KnowledgeService(), organizations = new OrganizationService(), graph = new KnowledgeGraph(), answer = async (messages: Array<{ role: 'system' | 'user'; content: string }>) => (await new ModelAdapter().complete(messages)).text) {
   const router = Router();
   router.get('/materials', async (req, res, next) => { try { res.json({ data: await service.materials(getActor(req), topic(req.query.topicId), { ...pagination(req.query), taskId: typeof req.query.taskId === 'string' ? req.query.taskId : undefined, includeArchived: req.query.includeArchived === 'true' }), error: null }); } catch (error) { next(error); } });
   router.get('/materials/:id', async (req, res, next) => { try { res.json({ data: await service.material(getActor(req), String(req.params.id)), error: null }); } catch (error) { next(error); } });
@@ -52,13 +54,16 @@ export function createKnowledgeRouter(service = new KnowledgeService(), organiza
       res.json({ data: await submit(req, { kind: 'material.create', input: { topicId: input.topicId, kind: 'thread', title: input.title, content: selected.map((row) => `## ${row.role}\n\n${row.content}`).join('\n\n'), metadata: { provider: 'builtin', sessionId: input.conversationId, messageIds: selected.map((row) => row.id), completeness: input.messageIds ? 'excerpt' : 'full' } } }), error: null });
     } catch (error) { next(error); }
   });
-  router.get('/memories', async (req, res, next) => { try { res.json({ data: await service.memories(getActor(req), topic(req.query.topicId), { ...pagination(req.query), history: req.query.history === 'true' }), error: null }); } catch (error) { next(error); } });
+  router.get('/memories', async (req, res, next) => { try { const filter = z.object({ status: z.enum(['active', 'history', 'all']).optional(), q: z.string().max(500).optional() }).parse({ status: req.query.status || undefined, q: typeof req.query.q === 'string' ? req.query.q : undefined }); res.json({ data: await service.memories(getActor(req), topic(req.query.topicId), { ...pagination(req.query), history: req.query.history === 'true', ...filter }), error: null }); } catch (error) { next(error); } });
   router.get('/memories/:id', async (req, res, next) => { try { res.json({ data: await service.memory(getActor(req), String(req.params.id)), error: null }); } catch (error) { next(error); } });
   router.post('/memories', async (req, res, next) => { try { res.json({ data: await submit(req, { kind: 'memory.create', input: req.body }), error: null }); } catch (error) { next(error); } });
   router.patch('/memories/:id', async (req, res, next) => { try { const { expectedVersion, ...input } = req.body; res.json({ data: await submit(req, { kind: 'memory.update', targetId: String(req.params.id), expectedRevision: expectedVersion, input }), error: null }); } catch (error) { next(error); } });
   router.get('/brief', async (req, res, next) => { try { res.json({ data: await service.brief(getActor(req), topic(req.query.topicId)), error: null }); } catch (error) { next(error); } });
   router.put('/brief', async (req, res, next) => { try { res.json({ data: await service.saveBrief(getActor(req), { ...req.body, topicId: topic(req.body.topicId) }), error: null }); } catch (error) { next(error); } });
   router.get('/search', async (req, res, next) => { try { res.json({ data: await service.search(getActor(req), { ...pagination(req.query), topicId: topic(req.query.topicId), q: String(req.query.q ?? ''), includeHistory: req.query.includeHistory === 'true' }), error: null }); } catch (error) { next(error); } });
+  router.get('/tree', async (req, res, next) => { try { res.json({ data: await graph.tree(getActor(req), topic(req.query.topicId)), error: null }); } catch (error) { next(error); } });
+  router.get('/graph', async (req, res, next) => { try { const query = z.object({ q: z.string().max(500).optional(), mode: z.enum(['fast', 'smart']).optional(), range: z.coerce.number().int().min(1).max(5).optional(), focusType: z.enum(['memory', 'material', 'task', 'artifact', 'entity']).optional(), focusId: z.string().min(1).optional(), includeHistory: z.enum(['true', 'false']).optional() }).parse(req.query); res.json({ data: await graph.read(getActor(req), { topicId: topic(req.query.topicId), ...query, includeHistory: query.includeHistory === 'true' }), error: null }); } catch (error) { next(error); } });
+  router.post('/graph/ask', async (req, res, next) => { try { const body = z.object({ topicId: z.string().nullable().optional(), question: z.string(), mode: z.enum(['fast', 'smart']).optional(), range: z.number().int().min(1).max(5).optional() }).parse(req.body); res.json({ data: await graph.answer(getActor(req), { topicId: topic(body.topicId), question: body.question, mode: body.mode, range: body.range }, answer), error: null }); } catch (error) { next(error); } });
   router.get('/organizations', async (req, res, next) => { try { res.json({ data: await organizations.list(getActor(req), topic(req.query.topicId)), error: null }); } catch (error) { next(error); } });
   router.post('/organizations', async (req, res, next) => { try { res.json({ data: await organizations.create(getActor(req), req.body), error: null }); } catch (error) { next(error); } });
   router.get('/organizations/:id', async (req, res, next) => { try { res.json({ data: await organizations.get(getActor(req), String(req.params.id)), error: null }); } catch (error) { next(error); } });
