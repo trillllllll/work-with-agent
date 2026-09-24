@@ -50,7 +50,7 @@ function stopDrag(event: { stopPropagation: () => void }) { event.stopPropagatio
 // The menu is portaled, but React still bubbles the click to the task row and opens the detail dialog.
 function containMenuEvent(event: { stopPropagation: () => void }) { event.stopPropagation(); }
 
-const subTriggerClass = 'rounded-lg focus:bg-[var(--glass-hover)] data-[state=open]:bg-[var(--glass-hover)]';
+const subTriggerClass = 'rounded-lg focus:bg-[var(--menu-highlight)] data-[state=open]:bg-[var(--menu-highlight)]';
 function SubPanel({ children }: { children: ReactNode }) {
   return <div className="max-h-80 min-w-44 overflow-y-auto p-1" onClick={containMenuEvent} onPointerDown={containMenuEvent}>{children}</div>;
 }
@@ -103,7 +103,7 @@ export function TaskMenuButton() {
   const { task, busy, setMenuOpen } = useMenu();
   return <DropdownMenu modal={false} onOpenChange={setMenuOpen}>
     <DropdownMenuTrigger asChild><Button variant="ghost" size="icon-xs" disabled={busy} aria-label={`任务操作：${task.title}`} onMouseDown={stopDrag} onTouchStart={stopDrag} onPointerDown={stopDrag}><MoreHorizontal /></Button></DropdownMenuTrigger>
-    <DropdownMenuContent side="left" align="start" sideOffset={8} className="z-[80] w-auto overflow-x-visible overflow-y-visible p-0" onClick={containMenuEvent} onPointerDown={containMenuEvent}><MenuItems parts={dropdownParts} /></DropdownMenuContent>
+    <DropdownMenuContent side="left" align="start" sideOffset={8} className="z-[80] w-auto p-0" onClick={containMenuEvent} onPointerDown={containMenuEvent}><MenuItems parts={dropdownParts} /></DropdownMenuContent>
   </DropdownMenu>;
 }
 
@@ -119,7 +119,7 @@ export function TaskActions({ task, group = [], index = 0, children, ...actions 
   return <MenuContext.Provider value={value}>
     <ContextMenu modal={false} onOpenChange={setContextOpen}>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-      <ContextMenuContent className="z-[80] w-auto overflow-x-visible overflow-y-visible p-0"><MenuItems parts={contextParts} /></ContextMenuContent>
+      <ContextMenuContent className="z-[80] w-auto p-0"><MenuItems parts={contextParts} /></ContextMenuContent>
     </ContextMenu>
     <TaskDialogs dialog={dialog} onOpenChange={setDialog} tasks={allTasks.data ?? []} />
   </MenuContext.Provider>;
