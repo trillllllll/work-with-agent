@@ -6,6 +6,7 @@ import { json, submitCommands, usePlatformAction } from '@/lib/platform.js';
 import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { Textarea } from '@/components/ui/textarea.js';
+import { BLOB_PAD, communityColors, communityOutline, communityRadius, fittedScale, layoutClusterCenters, memberRing, projectGround } from './graph-layout.js';
 import { entityKindNames, relationNames } from './memory-view.js';
 
 type GraphNode = { id: string; rawId: string; type: 'memory' | 'material' | 'task' | 'artifact' | 'entity'; title: string; kind?: string; status?: string; excerpt?: string; description?: string; importance?: number; labels?: string[]; origin?: string; revision?: number; memoryCount?: number; createdAt?: string };
@@ -190,41 +191,6 @@ function clusterGroups(nodes: GraphNode[], edges: GraphEdge[]) {
   return { membership, labels };
 }
 
-function convexHull(points: Array<{ x: number; y: number }>) {
-  const sorted = [...points].sort((left, right) => left.x - right.x || left.y - right.y);
-  if (sorted.length <= 2) return sorted;
-  const cross = (origin: { x: number; y: number }, left: { x: number; y: number }, right: { x: number; y: number }) => (left.x - origin.x) * (right.y - origin.y) - (left.y - origin.y) * (right.x - origin.x);
-  const lower: Array<{ x: number; y: number }> = [];
-  for (const point of sorted) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) lower.pop(); lower.push(point); }
-  const upper: Array<{ x: number; y: number }> = [];
-  for (const point of [...sorted].reverse()) { while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) upper.pop(); upper.push(point); }
-  lower.pop(); upper.pop();
-  return lower.concat(upper);
-}
-
-function communityOutline(points: Array<{ x: number; y: number }>, pad: number) {
-  const hull = convexHull(points);
-  if (hull.length === 0) return [];
-  if (hull.length === 1) return Array.from({ length: 8 }, (_, index) => { const angle = (index / 8) * Math.PI * 2; return { x: hull[0].x + Math.cos(angle) * pad, y: hull[0].y + Math.sin(angle) * pad }; });
-  if (hull.length === 2) {
-    const start = hull[0]; const end = hull[1];
-    const dx = end.x - start.x; const dy = end.y - start.y; const length = Math.hypot(dx, dy) || 1;
-    const nx = -dy / length * pad; const ny = dx / length * pad;
-    return [{ x: start.x + nx, y: start.y + ny }, { x: end.x + nx, y: end.y + ny }, { x: end.x - nx, y: end.y - ny }, { x: start.x - nx, y: start.y - ny }];
-  }
-  const center = hull.reduce((sum, point) => ({ x: sum.x + point.x / hull.length, y: sum.y + point.y / hull.length }), { x: 0, y: 0 });
-  return hull.map((point, index) => {
-    const previous = hull[(index + hull.length - 1) % hull.length];
-    const next = hull[(index + 1) % hull.length];
-    const outward = (from: { x: number; y: number }, to: { x: number; y: number }) => { const dx = to.x - from.x; const dy = to.y - from.y; const length = Math.hypot(dx, dy) || 1; return { x: dy / length, y: -dx / length }; };
-    const left = outward(previous, point); const right = outward(point, next);
-    let ox = left.x + right.x; let oy = left.y + right.y; const length = Math.hypot(ox, oy) || 1;
-    ox /= length; oy /= length;
-    if ((point.x - center.x) * ox + (point.y - center.y) * oy < 0) { ox *= -1; oy *= -1; }
-    return { x: point.x + ox * pad, y: point.y + oy * pad };
-  });
-}
-
 function traceBlob(context: CanvasRenderingContext2D, points: Array<{ x: number; y: number }>) {
   if (points.length < 3) return;
   const middle = (left: { x: number; y: number }, right: { x: number; y: number }) => ({ x: (left.x + right.x) / 2, y: (left.y + right.y) / 2 });
@@ -239,16 +205,6 @@ function traceBlob(context: CanvasRenderingContext2D, points: Array<{ x: number;
   context.closePath();
 }
 
-function clusterCenters(ids: string[]) {
-  const radius = ids.length <= 1 ? 0 : 176;
-  const centers = new Map<string, { x: number; y: number }>();
-  ids.forEach((id, index) => {
-    if (ids.length === 1) { centers.set(id, { x: 0, y: 0 }); return; }
-    const angle = (index / ids.length) * Math.PI * 2 - Math.PI / 2;
-    centers.set(id, { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius });
-  });
-  return centers;
-}
 type Relief = 'influence' | 'structure' | 'form' | 'growth';
 type Surface = 'terrain' | 'star';
 const reliefCopy: Record<Relief, string> = {
@@ -289,19 +245,20 @@ function terrainField(items: Point[], scores: Map<string, number>) {
     bump.x += node.x; bump.y += node.y; bump.count += 1; bump.score = Math.max(bump.score, scores.get(node.id) ?? 0);
     bumps.set(node.cluster, bump);
   }
-  const hills = [...bumps.values()].map((bump) => ({ x: bump.x / bump.count, y: bump.y / bump.count, score: bump.score }));
+  const counts = new Map<string, number>();
+  for (const node of items) counts.set(node.cluster, (counts.get(node.cluster) ?? 0) + 1);
+  const hills = [...bumps.entries()].map(([id, bump]) => ({ x: bump.x / bump.count, y: bump.y / bump.count, score: bump.score, sigma: Math.max(32, communityRadius(counts.get(id) ?? bump.count) * 0.5) }));
   let minX = Infinity; let maxX = -Infinity; let minY = Infinity; let maxY = -Infinity;
   for (const node of items) { minX = Math.min(minX, node.x); maxX = Math.max(maxX, node.x); minY = Math.min(minY, node.y); maxY = Math.max(maxY, node.y); }
   const padX = Math.max(80, (maxX - minX) * 0.35); const padY = Math.max(60, (maxY - minY) * 0.35);
   minX -= padX; maxX += padX; minY -= padY; maxY += padY;
   const spanX = maxX - minX || 1; const spanY = maxY - minY || 1;
-  const sigma = Math.max(spanX, spanY) / 5;
   const field = new Float32Array(cols * rows);
   let peak = 0;
   for (let row = 0; row < rows; row += 1) for (let col = 0; col < cols; col += 1) {
     const x = minX + (col / (cols - 1)) * spanX; const y = minY + (row / (rows - 1)) * spanY;
     let value = 0;
-    for (const hill of hills) { const distance = (hill.x - x) ** 2 + (hill.y - y) ** 2; value += hill.score * Math.exp(-distance / (2 * sigma * sigma)); }
+    for (const hill of hills) { const distance = (hill.x - x) ** 2 + (hill.y - y) ** 2; value = Math.max(value, hill.score * Math.exp(-distance / (2 * hill.sigma * hill.sigma))); }
     field[row * cols + col] = value; peak = Math.max(peak, value);
   }
   if (peak > 0) for (let index = 0; index < field.length; index += 1) field[index] /= peak;
@@ -350,24 +307,26 @@ function GraphCanvas({ nodes, edges, selectedId, spatial, onSelect }: { nodes: G
   selectRef.current = onSelect;
   const sim = useRef<Point[]>([]);
   const camera = useRef({ yaw: 0.42, pitch: 0.95, scale: 0.84, panX: 0, panY: 0 });
+  const fitted = useRef(false);
   const drag = useRef<{ x: number; y: number; moved: boolean; id?: string } | null>(null);
   const [surface, setSurface] = useState<Surface>('terrain');
   const [relief, setRelief] = useState<Relief>('influence');
   const groups = useMemo(() => clusterGroups(nodes, edges), [nodes, edges]);
+  useEffect(() => { fitted.current = false; }, [nodes, groups, spatial]);
   useEffect(() => {
     const ids = [...new Set(groups.membership.values())];
-    const placed = clusterCenters(ids);
     const members = new Map<string, string[]>();
     for (const node of nodes) {
       const cluster = groups.membership.get(node.id) ?? otherCluster;
       members.set(cluster, [...(members.get(cluster) ?? []), node.id].sort());
     }
+    const placed = layoutClusterCenters(ids.map((id) => ({ id, count: (members.get(id) ?? []).length })));
     sim.current = nodes.map((node) => {
       const cluster = groups.membership.get(node.id) ?? otherCluster;
       const group = members.get(cluster) ?? [node.id];
       const center = placed.get(cluster) ?? { x: 0, y: 0 };
       const index = Math.max(0, group.indexOf(node.id));
-      const ring = group.length <= 1 ? 0 : 46 + group.length * 5;
+      const ring = memberRing(group.length);
       const angle = (index / Math.max(group.length, 1)) * Math.PI * 2 - Math.PI / 2;
       const x = center.x + Math.cos(angle) * ring;
       const y = center.y + Math.sin(angle) * ring;
@@ -380,14 +339,7 @@ function GraphCanvas({ nodes, edges, selectedId, spatial, onSelect }: { nodes: G
     let frame = 0; let running = true;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const scene = spatial === '3d';
-    const project = (x: number, y: number, lift: number, width: number, height: number) => {
-      const view = camera.current;
-      const turnedX = scene ? x * Math.cos(view.yaw) - y * Math.sin(view.yaw) : x;
-      const turnedY = scene ? x * Math.sin(view.yaw) + y * Math.cos(view.yaw) : y;
-      const rise = scene ? lift * 150 * Math.sin(view.pitch) : 0;
-      const ground = scene ? turnedY * Math.cos(view.pitch) : turnedY;
-      return { x: width / 2 + turnedX * view.scale + view.panX, y: (scene ? height * 0.4 : height / 2) + (ground - rise) * view.scale + view.panY };
-    };
+    const project = (x: number, y: number, lift: number, width: number, height: number) => projectGround(x, y, lift, camera.current, width, height, scene);
     const step = (animate: boolean) => {
       const items = sim.current; const byId = new Map(items.map((node) => [node.id, node]));
       if (animate) {
@@ -407,9 +359,15 @@ function GraphCanvas({ nodes, edges, selectedId, spatial, onSelect }: { nodes: G
       const ratio = window.devicePixelRatio || 1; const width = canvas.clientWidth; const height = canvas.clientHeight;
       canvas.width = Math.max(1, Math.floor(width * ratio)); canvas.height = Math.max(1, Math.floor(height * ratio)); context.setTransform(ratio, 0, 0, ratio, 0, 0);
       context.clearRect(0, 0, width, height);
+      if (!fitted.current && width > 40 && height > 40 && items.length) {
+        const ids = [...new Set(items.map((node) => node.cluster))];
+        camera.current.scale = fittedScale(ids.map((id) => ({ id, count: items.filter((node) => node.cluster === id).length })), width, height, scene);
+        fitted.current = true;
+      }
+      let ground: ReturnType<typeof terrainField> | null = null;
       if (scene && items.length && surface === 'terrain') {
         const scores = nodeScores(items, edges, relief);
-        const ground = terrainField(items, scores);
+        ground = terrainField(items, scores);
         for (const node of items) node.h = ground.sample(node.x, node.y);
         for (const level of [0.28, 0.42, 0.56, 0.7, 0.84]) {
           context.strokeStyle = `rgba(186, 210, 230, ${0.18 + level * 0.45})`; context.lineWidth = level > 0.7 ? 1.4 : 1;
@@ -420,15 +378,16 @@ function GraphCanvas({ nodes, edges, selectedId, spatial, onSelect }: { nodes: G
           }
         }
       } else for (const node of items) node.h = 0;
-      const communities = groups.labels.flatMap((label) => {
+      const communities = groups.labels.flatMap((label, index) => {
         const members = items.filter((node) => node.cluster === label.id);
         if (members.length < 2) return [];
-        const outline = communityOutline(members.map((node) => project(node.x, node.y, node.h, width, height)), 36);
-        return outline.length >= 3 ? [{ label, members, outline }] : [];
+        const world = communityOutline(members.map((node) => ({ x: node.x, y: node.y })), BLOB_PAD);
+        const outline = world.map((point) => project(point.x, point.y, ground ? ground.sample(point.x, point.y) : 0, width, height));
+        return outline.length >= 3 ? [{ label, members, outline, color: communityColors[index % communityColors.length] }] : [];
       });
       for (const community of communities) {
         traceBlob(context, community.outline);
-        context.fillStyle = 'rgba(124, 114, 156, 0.18)';
+        context.fillStyle = community.color.fill;
         context.fill();
       }
       if (!scene || surface === 'star') for (const edge of edges) {
@@ -445,7 +404,7 @@ function GraphCanvas({ nodes, edges, selectedId, spatial, onSelect }: { nodes: G
       }
       for (const community of communities) {
         traceBlob(context, community.outline);
-        context.strokeStyle = 'rgba(168, 156, 196, 0.72)';
+        context.strokeStyle = community.color.stroke;
         context.lineWidth = 1.5;
         context.stroke();
         const top = community.outline.reduce((best, point) => point.y < best.y ? point : best, community.outline[0]);
