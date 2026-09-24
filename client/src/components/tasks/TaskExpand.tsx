@@ -277,7 +277,7 @@ function CloseDetailButton() {
 function DetailFrame({ presentation, children }: { presentation: 'panel' | 'modal'; children: ReactNode }) {
   const edit = useEdit();
   if (presentation === 'panel') return <aside role="dialog" aria-modal="false" aria-label="任务详情" className="flex h-full min-h-0 flex-col">{children}</aside>;
-  return <Dialog open onOpenChange={(open) => { if (!open) edit.requestClose(); }}><DialogContent showCloseButton={false} surface="glass" className="flex h-[min(92dvh,840px)] max-h-[92dvh] flex-col overflow-hidden p-0 sm:max-w-2xl"><DialogTitle className="sr-only">任务详情</DialogTitle><DialogDescription className="sr-only">编辑任务详情、标签、旗标和日期。</DialogDescription>{children}</DialogContent></Dialog>;
+  return <Dialog open onOpenChange={(open) => { if (!open) edit.requestClose(); }}><DialogContent showCloseButton={false} surface="glass" className="flex h-[min(92dvh,840px)] max-h-[92dvh] max-w-[min(42rem,calc(100%-3rem))] flex-col overflow-hidden p-0"><DialogTitle className="sr-only">任务详情</DialogTitle><DialogDescription className="sr-only">编辑任务详情、标签、旗标和日期。</DialogDescription>{children}</DialogContent></Dialog>;
 }
 
 export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children' | 'fallback'> & { fallback?: Task; presentation: 'panel' | 'modal' }>(function TaskDetailPane({ presentation, fallback, ...props }, ref) {

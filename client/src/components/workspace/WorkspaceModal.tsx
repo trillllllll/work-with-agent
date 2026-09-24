@@ -37,9 +37,9 @@ export function WorkspaceModal({ view, onViewChange, onClose, settings, trash, c
         overlayClassName="bg-slate-950/20 backdrop-blur-md backdrop-saturate-150 dark:bg-black/35"
         closeButtonClassName="top-5 right-5 z-10 size-9 rounded-full border border-white/30 bg-white/35 p-2 text-foreground/70 opacity-100 shadow-sm backdrop-blur-xl transition-colors hover:bg-white/60 hover:text-foreground dark:border-white/10 dark:bg-white/10 dark:hover:bg-white/20 [&_svg]:size-4"
         className={cn(
-          'glass-overlay flex h-[80dvh] w-[min(78vw,1120px)] max-w-none flex-col gap-0 rounded-[24px] p-0 text-foreground duration-300',
+          'glass-overlay flex h-[80dvh] w-[min(78vw,1120px)] max-w-[min(1120px,calc(100%-2rem))] flex-col gap-0 rounded-[24px] p-0 text-foreground duration-300',
           'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.98] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.98] motion-reduce:!animate-none',
-          'max-md:h-[calc(100dvh-1rem)] max-md:w-[calc(100vw-1rem)] max-md:rounded-[20px]',
+          'max-md:h-[calc(100dvh-1rem)] max-md:rounded-[20px]',
         )}
       >
         <DialogHeader className="relative shrink-0 border-b border-black/[0.06] px-6 pb-4 pt-5 pr-16 text-left dark:border-white/[0.08] sm:px-8 sm:pt-6 sm:pr-20">
