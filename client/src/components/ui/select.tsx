@@ -66,6 +66,8 @@ function SelectContent({
         )}
         position={position}
         align={align}
+        onClick={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
         {...props}
       >
         <SelectScrollUpButton />

@@ -33,7 +33,7 @@ export function HandoffPanel({ task, disabled = false }: { task: Task; disabled?
 }
 export function RunsPage() {
   const list = useQuery({ queryKey: ['handoffs'], queryFn: () => api<any[]>('/api/v1/handoffs'), refetchInterval: 5000 });
-  return <section className="mx-auto max-w-5xl space-y-5 p-5 sm:p-7"><h1 className="text-2xl font-semibold">AI 执行</h1><p className="text-sm text-muted-foreground">在任务详情中准备交接，在这里跟踪执行、收回产物并验收。</p>{list.error && <p role="alert">{list.error.message}</p>}{list.isLoading ? <p>正在加载…</p> : !list.data?.length ? <p className="py-8 text-sm text-muted-foreground">还没有交接记录。</p> : list.data.map((handoff) => <HandoffCard key={handoff.id} handoff={handoff} />)}</section>;
+  return <section className="mx-auto max-w-5xl space-y-5 p-5 sm:p-7"><h1 className="text-2xl font-semibold">AI 执行</h1><p className="text-sm text-muted-foreground">在任务菜单里准备交接，在这里跟踪执行、收回产物并验收。</p>{list.error && <p role="alert">{list.error.message}</p>}{list.isLoading ? <p>正在加载…</p> : !list.data?.length ? <p className="py-8 text-sm text-muted-foreground">还没有交接记录。</p> : list.data.map((handoff) => <HandoffCard key={handoff.id} handoff={handoff} />)}</section>;
 }
 function HandoffCard({ handoff: initial, task }: { handoff: any; task?: Task }) {
   const [open, setOpen] = useState(false);

@@ -247,6 +247,11 @@
     transform: translateY(-1px);
   }
 
+  .task-row[data-expanded='true'],
+  .task-row[data-expanded='true']:hover {
+    transform: none;
+  }
+
   .task-drag-handle {
     opacity: 0;
   }

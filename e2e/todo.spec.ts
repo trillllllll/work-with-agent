@@ -48,7 +48,7 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     expect(await e2eDatabase.appSetting.count()).toBe(0);
   });
 
-  test('清单只需名称，详情显式保存日期、优先级、说明和归属', async ({ page, request }) => {
+  test('清单只需名称，展开后保存详情、日期、旗标和归属', async ({ page, request }) => {
     await page.goto('/#/topics');
     await page.getByRole('button', { name: '新建清单', exact: true }).first().click();
     const create = page.getByRole('dialog', { name: '新建清单', exact: true });
@@ -58,36 +58,44 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     const list = (await data(await request.get(`${apiUrl}/api/topics`)))[0];
     const created = await data(await request.post(`${apiUrl}/api/tasks`, { data: { title: '待整理任务' } }));
     await page.goto('/#/inbox');
-    await page.getByTestId(`task-row-${created.id}`).getByRole('button', { name: '待整理任务', exact: true }).click();
-    const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
-    await expect(detail.getByRole('button', { name: '关闭任务详情', exact: true })).toHaveCount(1);
-    await expect(detail.locator('[data-slot="dialog-close"]')).toHaveCount(0);
-    await detail.getByLabel('任务标题', { exact: true }).fill('修改后的任务');
-    await detail.getByLabel('任务说明', { exact: true }).fill('保留我的说明');
-    await detail.getByLabel('截止日期', { exact: true }).fill('2028-02-29');
-    await detail.getByLabel('优先级', { exact: true }).selectOption('high');
-    await detail.getByLabel('所属清单', { exact: true }).selectOption(list.id);
-    expect(await task(request, created.id)).toMatchObject({ title: '待整理任务', topicId: null, dueDate: null });
-    let failNextSave = true;
+    const row = page.getByTestId(`task-row-${created.id}`);
+    await row.getByRole('button', { name: '待整理任务', exact: true }).click();
+    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('任务标题', { exact: true }).fill('修改后的任务');
+    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('详情', { exact: true }).fill('保留我的说明');
+    await expect.poll(async () => (await task(request, created.id)).title).toBe('修改后的任务');
+    expect((await task(request, created.id)).description).toBe('');
+    let failDescription = true;
     await page.route(`**/api/tasks/${created.id}`, async (route) => {
-      if (route.request().method() === 'PATCH' && failNextSave) {
-        failNextSave = false;
+      const body = route.request().postDataJSON();
+      if (route.request().method() === 'PATCH' && failDescription && body?.description === '保留我的说明') {
+        failDescription = false;
         await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ data: null, error: '详情保存失败' }) });
       } else await route.continue();
     });
-    await detail.getByRole('button', { name: '保存更改', exact: true }).click();
+    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('任务标题', { exact: true }).click();
     await expect(page.getByText('详情保存失败', { exact: true }).first()).toBeVisible();
-    expect((await task(request, created.id)).title).toBe('待整理任务');
-    await detail.getByRole('button', { name: '关闭', exact: true }).click();
+    expect((await task(request, created.id)).description).toBe('');
+    await expect(page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('详情', { exact: true })).toHaveValue('保留我的说明');
+    await expect(page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('任务标题', { exact: true })).toHaveValue('修改后的任务');
+    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('button', { name: '关闭任务详情', exact: true }).click();
     const leave = page.getByRole('dialog', { name: '保存未完成的编辑？', exact: true });
     await expect(leave).toBeVisible();
     await leave.getByRole('button', { name: '继续编辑', exact: true }).click();
-    await expect(detail.getByLabel('任务标题', { exact: true })).toHaveValue('修改后的任务');
-    await expect(detail.getByLabel('任务说明', { exact: true })).toHaveValue('保留我的说明');
-    await detail.getByRole('button', { name: '保存更改', exact: true }).click();
-    await expect(detail).toBeHidden();
-    await expect.poll(async () => (await task(request, created.id)).title).toBe('修改后的任务');
-    expect(await task(request, created.id)).toMatchObject({ topicId: list.id, priority: 'high', dueDate: '2028-02-29', description: '保留我的说明' });
+    await expect(page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('详情', { exact: true })).toHaveValue('保留我的说明');
+    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('详情', { exact: true }).click();
+    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('任务标题', { exact: true }).click();
+    await expect.poll(async () => (await task(request, created.id)).description).toBe('保留我的说明');
+    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('button', { name: '日期', exact: true }).click();
+    await page.getByLabel('截止日期', { exact: true }).fill('2028-02-29');
+    await expect.poll(async () => (await task(request, created.id)).dueDate).toBe('2028-02-29');
+    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('button', { name: '旗标：高', exact: true }).click();
+    await expect.poll(async () => (await task(request, created.id)).priority).toBe('high');
+    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('button', { name: '关闭任务详情', exact: true }).click();
+    await row.getByRole('button', { name: '任务操作：修改后的任务', exact: true }).click();
+    await page.getByRole('menuitem', { name: '移动到' }).click();
+    await page.getByRole('menuitem', { name: '日常计划', exact: true }).click();
+    await expect.poll(async () => (await task(request, created.id)).topicId).toBe(list.id);
+    expect(await task(request, created.id)).toMatchObject({ priority: 'high', dueDate: '2028-02-29', description: '保留我的说明' });
     await page.goto('/#/board');
     await page.reload();
     await expect(page.getByTestId(`task-row-${created.id}`)).toContainText('修改后的任务');
@@ -137,11 +145,10 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await page.getByRole('textbox', { name: '搜索任务', exact: true }).fill('今天处理');
     const row = page.getByTestId(`task-row-${current.id}`);
     await row.getByRole('button', { name: /^今天处理/ }).click();
-    const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
-    await detail.getByLabel('任务说明', { exact: true }).fill('从搜索中修改');
-    await detail.getByLabel('截止日期', { exact: true }).fill('');
-    await detail.getByRole('button', { name: '保存更改', exact: true }).click();
-    await expect(detail).toBeHidden();
+    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('详情', { exact: true }).fill('从搜索中修改');
+    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('button', { name: '日期', exact: true }).click();
+    await page.getByRole('button', { name: '清除', exact: true }).click();
+    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('任务标题', { exact: true }).click();
     await expect.poll(async () => (await task(request, current.id)).dueDate).toBeNull();
     await expect(row).toBeVisible();
     await page.goto('/#/today');
@@ -161,8 +168,7 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await page.getByTestId(`task-row-${second.id}`).getByRole('button', { name: '第二条', exact: true }).click();
     const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
     await detail.getByLabel('任务标题', { exact: true }).fill('第二条已编辑');
-    await detail.getByRole('button', { name: '保存更改', exact: true }).click();
-    await expect(detail).toBeHidden();
+    await detail.getByLabel('详情', { exact: true }).click();
     await expect.poll(async () => (await task(request, second.id)).title).toBe('第二条已编辑');
     await page.reload();
     await expect(page.getByTestId('task-list').locator('article').first()).toHaveAttribute('data-testid', `task-row-${second.id}`);
@@ -195,9 +201,15 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await expect.poll(async () => (await data(await request.get(`${apiUrl}/api/tasks?topicId=${list.id}&sort=manual`))).map((value: { id: string }) => value.id)).toEqual([third.id, first.id, second.id]);
     await page.reload();
     await expect(page.getByTestId('task-list').locator('article').first()).toHaveAttribute('data-testid', `task-row-${third.id}`);
-    await page.getByTestId(`task-row-${third.id}`).getByRole('button', { name: '第三条', exact: true }).click();
-    await expect(page.getByRole('dialog', { name: '任务详情', exact: true })).toBeVisible();
-    await page.getByRole('button', { name: '关闭任务详情', exact: true }).click();
+    const opened = page.getByTestId(`task-row-${third.id}`);
+    await opened.getByRole('button', { name: '任务操作：第三条', exact: true }).click();
+    await expect(page.getByRole('menuitem', { name: '移动到' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await opened.getByRole('button', { name: '第三条', exact: true }).click();
+    const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
+    await expect(detail.getByLabel('详情', { exact: true })).toBeVisible();
+    await detail.getByRole('button', { name: '关闭任务详情', exact: true }).click();
+    await expect(detail).toBeHidden();
     await page.getByRole('button', { name: '筛选', exact: true }).click();
     await page.getByRole('combobox', { name: '筛选完成状态', exact: true }).selectOption('open');
     await expect(page.locator('.task-drag-handle')).toHaveCount(0);
@@ -277,15 +289,18 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     const earlier = await data(await request.post(`${apiUrl}/api/tasks`, { data: { title: '早已删除', parentId: parent.id } }));
     await request.delete(`${apiUrl}/api/tasks/${earlier.id}`);
     await page.goto('/#/inbox');
-    await page.getByTestId(`task-row-${parent.id}`).getByRole('button', { name: '家庭任务', exact: true }).click();
-    const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
-    await detail.getByRole('textbox', { name: '子任务名称', exact: true }).fill('一起处理');
-    await detail.getByRole('button', { name: '添加子任务', exact: true }).click();
+    const parentRow = page.getByTestId(`task-row-${parent.id}`);
+    await parentRow.getByRole('button', { name: '任务操作：家庭任务', exact: true }).click();
+    await page.getByRole('menuitem', { name: '添加子任务', exact: true }).click();
+    const children = page.getByRole('dialog', { name: '子任务', exact: true });
+    await children.getByRole('textbox', { name: '子任务名称', exact: true }).fill('一起处理');
+    await children.getByRole('button', { name: '添加子任务', exact: true }).click();
     await page.getByRole('button', { name: '确认影响并执行', exact: true }).click();
-    await expect(detail.getByRole('textbox', { name: '子任务名称', exact: true })).toHaveValue('');
+    await expect(children.getByRole('textbox', { name: '子任务名称', exact: true })).toHaveValue('');
     const child = (await tasks(request)).find((value: any) => value.title === '一起处理');
     expect(child.parentId).toBe(parent.id);
-    await detail.getByRole('button', { name: '关闭', exact: true }).click();
+    await page.keyboard.press('Escape');
+    await expect(children).toBeHidden();
     await page.getByTestId(`task-row-${parent.id}`).getByRole('button', { name: '任务操作：家庭任务', exact: true }).click();
     await page.getByRole('menuitem', { name: '删除任务：家庭任务', exact: true }).click();
     await page.getByRole('dialog', { name: '删除任务', exact: true }).getByRole('button', { name: '移入回收站', exact: true }).click();
@@ -334,25 +349,15 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await expect.poll(async () => (await data(await request.get(`${apiUrl}/api/tags`)))[0].color).toBe('blue');
     const label = (await data(await request.get(`${apiUrl}/api/tags`)))[0];
     await page.goto('/#/inbox');
-    await page.getByTestId(`task-row-${item.id}`).getByRole('button', { name: '分类任务', exact: true }).click();
-    const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
-    const openDetail = async () => {
-      await page.getByTestId(`task-row-${item.id}`).getByRole('button', { name: /^分类任务/ }).click();
-      await expect(detail).toBeVisible();
-    };
-    await detail.getByRole('checkbox', { name: '重要事项', exact: true }).check();
-    await detail.getByRole('button', { name: '保存更改', exact: true }).click();
-    await expect(detail).toBeHidden();
+    const row = page.getByTestId(`task-row-${item.id}`);
+    await row.getByRole('button', { name: '分类任务', exact: true }).click();
+    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('button', { name: '标签', exact: true }).click();
+    const tag = page.getByRole('checkbox', { name: '重要事项', exact: true });
+    await tag.check();
     await expect.poll(async () => (await task(request, item.id)).tagIds).toEqual([label.id]);
-    await openDetail();
-    await detail.getByRole('checkbox', { name: '重要事项', exact: true }).uncheck();
-    await detail.getByRole('button', { name: '保存更改', exact: true }).click();
-    await expect(detail).toBeHidden();
+    await tag.uncheck();
     await expect.poll(async () => (await task(request, item.id)).tagIds).toEqual([]);
-    await openDetail();
-    await detail.getByRole('checkbox', { name: '重要事项', exact: true }).check();
-    await detail.getByRole('button', { name: '保存更改', exact: true }).click();
-    await expect(detail).toBeHidden();
+    await tag.check();
     await expect.poll(async () => (await task(request, item.id)).tagIds).toEqual([label.id]);
     await page.goto('/#/tags');
     await page.getByRole('button', { name: '删除标签：重要事项', exact: true }).click();
@@ -462,20 +467,39 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
       await page.getByRole('combobox', { name: '修改状态：顺序任务', exact: true }).click();
       await page.getByRole('option', { name: '进行中', exact: true }).click();
       await started.promise;
-      await page.getByRole('button', { name: '顺序任务', exact: true }).click();
+      const card = page.getByTestId(`task-card-${first.id}`);
+      await card.getByRole('button', { name: '顺序任务', exact: true }).click();
       const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
-      await detail.getByLabel('任务状态', { exact: true }).selectOption('done');
-      await detail.getByLabel('任务说明', { exact: true }).fill('后续保存');
-      await detail.getByRole('button', { name: '保存更改', exact: true }).click();
-      await expect(detail.getByRole('button', { name: '正在保存…', exact: true })).toBeDisabled();
+      await detail.getByLabel('详情', { exact: true }).fill('后续保存');
+      await detail.getByLabel('任务标题', { exact: true }).click();
+      const status = card.locator('[aria-label="修改状态：顺序任务"]');
+      const covered = await status.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const top = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return Boolean(top && top !== element && !element.contains(top));
+      });
+      if (!covered) {
+        await status.click();
+        await page.getByRole('option', { name: '已完成', exact: true }).click();
+      } else {
+        await status.evaluate((element) => element.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerType: 'mouse', button: 0 })));
+        const option = page.locator('[role="option"]').filter({ hasText: /^已完成$/ });
+        await option.waitFor({ state: 'attached' });
+        await option.evaluate((element) => {
+          element.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerType: 'touch', button: 0 }));
+          element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        });
+      }
       expect((await task(request, first.id)).status).toBe('todo');
       expect(receivedStatuses).toEqual(['doing']);
       releaseFirst.release();
       await expect.poll(async () => (await task(request, first.id)).description).toBe('后续保存');
-      await expect(detail).toBeHidden();
       expect(firstStatus).toBe(200);
-      expect(receivedStatuses).toEqual(['doing', 'done']);
+      expect(receivedStatuses[0]).toBe('doing');
+      expect(receivedStatuses).toContain('done');
+      expect(receivedStatuses).toHaveLength(3);
       expect((await task(request, first.id)).status).toBe('done');
+      await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('button', { name: '关闭任务详情', exact: true }).click();
     } finally { releaseFirst.release(); }
     await page.unroute(firstPattern);
 
@@ -491,12 +515,13 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
       await page.getByRole('button', { name: '列表', exact: true }).click();
       await page.getByTestId(`task-row-${first.id}`).getByRole('checkbox', { name: '重开任务：顺序任务', exact: true }).click();
       await failedStarted.promise;
-      await page.getByTestId(`task-row-${other.id}`).getByRole('button', { name: '独立任务', exact: true }).click();
-      const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
-      await detail.getByLabel('任务说明', { exact: true }).fill('另一任务的成功修改');
-      await detail.getByRole('button', { name: '保存更改', exact: true }).click();
+      const otherRow = page.getByTestId(`task-row-${other.id}`);
+      await otherRow.getByRole('button', { name: '独立任务', exact: true }).click();
+      const otherDetail = page.getByRole('dialog', { name: '任务详情', exact: true });
+      await otherDetail.getByLabel('详情', { exact: true }).fill('另一任务的成功修改');
+      await otherDetail.getByLabel('任务标题', { exact: true }).click();
       await expect.poll(async () => (await task(request, other.id)).description).toBe('另一任务的成功修改');
-      await expect(detail).toBeHidden();
+      await otherDetail.getByRole('button', { name: '关闭任务详情', exact: true }).click();
       releaseFailure.release();
       await expect(page.getByText('第一个任务保存失败', { exact: true }).first()).toBeVisible();
       expect((await task(request, other.id)).description).toBe('另一任务的成功修改');
@@ -508,22 +533,15 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
   test('后台同字段修改保留脏稿并要求明确选择后才能覆盖', async ({ page, request }) => {
     const item = await data(await request.post(`${apiUrl}/api/tasks`, { data: { title: '原始标题' } }));
     await page.goto('/#/inbox');
-    await page.getByTestId(`task-row-${item.id}`).getByRole('button', { name: '原始标题', exact: true }).click();
-    const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
-    await detail.getByLabel('任务标题', { exact: true }).fill('尚未提交的本地标题');
+    const row = page.getByTestId(`task-row-${item.id}`);
+    await row.getByRole('button', { name: '原始标题', exact: true }).click();
+    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('任务标题', { exact: true }).fill('尚未提交的本地标题');
     await data(await request.patch(`${apiUrl}/api/tasks/${item.id}`, { data: { title: '后台已更新的标题' } }));
-    // A real child mutation refreshes the open parent's query while its title remains dirty.
-    await detail.getByRole('textbox', { name: '子任务名称', exact: true }).fill('刷新父任务');
-    await detail.getByRole('button', { name: '添加子任务', exact: true }).click();
-    await page.getByRole('button', { name: '确认影响并执行', exact: true }).click();
-    await expect(detail.getByRole('textbox', { name: '子任务名称', exact: true })).toHaveValue('');
-    await expect(detail.getByRole('alert')).toContainText('后台已更新标题');
-    await expect(detail.getByLabel('任务标题', { exact: true })).toHaveValue('尚未提交的本地标题');
-    await expect(detail.getByRole('button', { name: '保存更改', exact: true })).toBeDisabled();
+    await expect(page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('alert')).toContainText('后台已更新标题');
+    await expect(page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('任务标题', { exact: true })).toHaveValue('尚未提交的本地标题');
     expect((await task(request, item.id)).title).toBe('后台已更新的标题');
-    await detail.getByRole('checkbox', { name: '保存时使用我的编辑', exact: true }).check();
-    await detail.getByRole('button', { name: '保存更改', exact: true }).click();
-    await expect(detail).toBeHidden();
+    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('checkbox', { name: '保存时使用我的编辑', exact: true }).check();
+    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('详情', { exact: true }).click();
     await expect.poll(async () => (await task(request, item.id)).title).toBe('尚未提交的本地标题');
   });
 

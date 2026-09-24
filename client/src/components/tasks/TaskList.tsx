@@ -2,16 +2,16 @@ import { forwardRef, useRef, useState, type ReactNode } from 'react';
 import { DndContext, DragOverlay, MouseSensor, TouchSensor, closestCenter, pointerWithin, useSensor, useSensors, type CollisionDetection, type DragEndEvent, type DragMoveEvent, type DragOverEvent, type DragStartEvent, type DraggableSyntheticListeners } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { ArrowDown, ArrowUp, CalendarDays, FolderInput, GripVertical, MoreHorizontal, Trash2 } from 'lucide-react';
-import type { Task, Topic } from '@/lib/api.js';
+import { CalendarDays, GripVertical } from 'lucide-react';
+import type { Tag, Task, Topic } from '@/lib/api.js';
 import { priorities, statuses } from '@/lib/api.js';
-import { Button } from '@/components/ui/button.js';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from '@/components/ui/dropdown-menu.js';
+import type { TaskDraft } from '@/lib/todo.js';
 import { cn } from '@/lib/utils.js';
 import { dragIndentOffset, projectTaskDrop, reorderTaskGroup, type OrderRow } from './task-order.js';
+import { TaskActions, TaskMenuButton, type TaskActionProps } from './TaskActionsMenu.js';
 
-type Props = { tasks: Task[]; topics: Topic[]; onOpen: (id: string) => void; onToggle: (task: Task) => Promise<unknown>; onMove: (task: Task, topicId: string | null) => Promise<unknown>; onDelete: (task: Task) => void; onReorder?: (tasks: Task[], parentId: string | null) => Promise<unknown>; onNest?: (task: Task, parentId: string | null, orderedIds: string[]) => Promise<unknown>; hierarchical?: boolean; readonly?: boolean; busy?: boolean; selectedTaskId?: string };
-type Actions = Pick<Props, 'topics' | 'onOpen' | 'onToggle' | 'onMove' | 'onDelete' | 'onReorder' | 'hierarchical' | 'readonly' | 'busy' | 'selectedTaskId'> & { dropParentId?: string };
+type Props = { tasks: Task[]; topics: Topic[]; tags: Tag[]; onOpen: (id: string) => void; onToggle: (task: Task) => Promise<unknown>; onMove: (task: Task, topicId: string | null) => Promise<unknown>; onDelete: (task: Task) => void; onSave: (task: Task, patch: Partial<TaskDraft>) => Promise<Task | undefined>; onCreate: (input: { title: string; topicId: string | null; parentId: string | null }) => Promise<unknown>; onReorder?: (tasks: Task[], parentId: string | null) => Promise<unknown>; onNest?: (task: Task, parentId: string | null, orderedIds: string[]) => Promise<unknown>; hierarchical?: boolean; readonly?: boolean; busy?: boolean; selectedTaskId?: string; textDirty?: boolean };
+type Actions = Pick<Props, 'topics' | 'tags' | 'onOpen' | 'onToggle' | 'onMove' | 'onDelete' | 'onSave' | 'onCreate' | 'onReorder' | 'hierarchical' | 'readonly' | 'busy' | 'selectedTaskId' | 'textDirty'> & { dropParentId?: string };
 
 const levelCollision: CollisionDetection = (args) => {
   const data = args.active.data.current;
@@ -30,7 +30,7 @@ const levelCollision: CollisionDetection = (args) => {
 const sortTasks = (tasks: Task[]) => [...tasks].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id.localeCompare(b.id));
 function stopDrag(event: { stopPropagation: () => void }) { event.stopPropagation(); }
 
-export function TaskList({ tasks, topics, onOpen, onToggle, onMove, onDelete, onReorder, onNest, hierarchical = false, readonly = false, busy, selectedTaskId }: Props) {
+export function TaskList({ tasks, topics, tags, onOpen, onToggle, onMove, onDelete, onSave, onCreate, onReorder, onNest, hierarchical = false, readonly = false, busy, selectedTaskId, textDirty }: Props) {
   const sensors = useSensors(useSensor(MouseSensor, { activationConstraint: { distance: 6 } }), useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }));
   const skipClick = useRef(false);
   const [drag, setDrag] = useState<{ id: string; width: number; overId: string; x: number } | null>(null);
@@ -43,7 +43,7 @@ export function TaskList({ tasks, topics, onOpen, onToggle, onMove, onDelete, on
   const projection = drag && hierarchical && onNest ? projectTaskDrop(rows, drag.id, drag.overId, drag.x) : null;
   const activeRow = drag ? rows.find((row) => row.id === drag.id) : undefined;
   const shift = projection && activeRow ? (projection.parentId && !activeRow.parentId ? dragIndentOffset : !projection.parentId && activeRow.parentId ? -dragIndentOffset : 0) : 0;
-  const actions = { topics, onOpen, onToggle, onMove, onDelete, onReorder, hierarchical, readonly, busy, selectedTaskId, skipClick, dropParentId: projection?.parentId ?? '' };
+  const actions = { topics, tags, onOpen, onToggle, onMove, onDelete, onSave, onCreate, onReorder, hierarchical, readonly, busy, selectedTaskId, textDirty, skipClick, dropParentId: projection?.parentId ?? '' };
   function siblings(groupId: string) {
     if (groupId === 'root' || groupId === 'flat') return roots;
     return ordered.filter((task) => task.parentId === groupId);
@@ -98,24 +98,18 @@ function StaticTask({ task, group, index, nested, actions, children }: { task: T
 }
 
 const TaskArticle = forwardRef<HTMLElement, { task: Task; group?: Task[]; index?: number; nested?: boolean; actions: Actions & { skipClick: { current: boolean } }; listeners?: DraggableSyntheticListeners; preview?: boolean }>(function TaskArticle({ task, group = [], index = 0, nested = false, actions, listeners, preview }, ref) {
-  const { topics, onOpen, onToggle, onMove, onDelete, onReorder, hierarchical, readonly, busy, selectedTaskId, skipClick } = actions;
+  const { topics, tags, onOpen, onToggle, onMove, onDelete, onSave, onCreate, onReorder, hierarchical, readonly, busy, selectedTaskId, textDirty, skipClick } = actions;
+  const selected = !preview && selectedTaskId === task.id;
   const showHandle = Boolean(onReorder) || preview;
-  return <article ref={ref} {...(preview ? {} : listeners)} data-testid={preview ? undefined : `task-row-${task.id}`} data-selected={!preview && selectedTaskId === task.id || undefined} data-drop-parent={!preview && actions.dropParentId === task.id || undefined} className={cn('task-row group flex min-h-12 items-center gap-2 rounded-xl border border-transparent px-2.5 py-2', !preview && onReorder && 'cursor-grab', selectedTaskId === task.id && !preview ? 'border-[var(--glass-border)] bg-[var(--glass-hover)] shadow-[inset_0_1px_0_var(--glass-highlight)]' : 'hover:bg-[var(--glass-subtle)]', nested && 'ml-7 border-l-[3px] border-l-border')}>
+  const open = () => { if (!skipClick.current) onOpen(task.id); };
+  const article = <article ref={ref} {...(preview ? {} : listeners)} data-testid={preview ? undefined : `task-row-${task.id}`} data-selected={selected || undefined} data-drop-parent={!preview && actions.dropParentId === task.id || undefined} onClick={(event) => { if (preview || skipClick.current) return; const target = event.target; if (!(target instanceof Element) || target.closest('button, a, select, label, input, [role="menu"], [role="menuitem"], [role="listbox"], [role="option"]')) return; open(); }} className={cn('task-row group flex min-h-12 items-center gap-2 rounded-xl border border-transparent px-2.5 py-2', !preview && onReorder && 'cursor-grab', selected ? 'border-[var(--glass-border)] bg-[var(--glass-hover)] shadow-[inset_0_1px_0_var(--glass-highlight)]' : 'hover:bg-[var(--glass-subtle)]', nested && 'ml-7 border-l-[3px] border-l-border')}>
     {showHandle && <span className="task-drag-handle cursor-grab text-muted-foreground/60" title="拖动排序"><GripVertical className="size-4" /></span>}
     <input type="checkbox" className="task-checkbox size-[18px] shrink-0 accent-primary" checked={task.status === 'done'} disabled={preview || readonly || busy} aria-label={`${task.status === 'done' ? '重开' : '完成'}任务：${task.title}`} onMouseDown={stopDrag} onTouchStart={stopDrag} onPointerDown={stopDrag} onChange={() => { void onToggle(task).catch(() => undefined); }} />
-    <button type="button" aria-label={task.title} className="min-w-0 flex-1 py-0.5 text-left" disabled={preview} onClick={() => { if (skipClick.current) return; onOpen(task.id); }}><span className={cn('block break-words text-sm font-medium', task.status === 'done' && 'text-muted-foreground line-through')}>{task.title}</span><span aria-hidden="true" className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">{task.priority !== 'none' && <span className="task-meta-pill">{priorities.find((value) => value.value === task.priority)?.label}</span>}{task.status !== 'todo' && task.status !== 'done' && <span className="task-meta-pill">{statuses.find((value) => value.value === task.status)?.label}</span>}<span className="task-place-chip">{task.topic?.name ?? '收集箱'}</span>{task.tags?.map((tag) => <span key={tag.id} className="task-tag-chip" data-color={tag.color || 'violet'}>#{tag.name}</span>)}{!hierarchical && task.parentId && <span className="task-meta-pill">子任务</span>}</span></button>
+    <button type="button" aria-label={task.title} className="min-w-0 flex-1 py-0.5 text-left" disabled={preview} onClick={(event) => { event.stopPropagation(); open(); }}><span className={cn('block break-words text-sm font-medium', task.status === 'done' && 'text-muted-foreground line-through')}>{task.title}</span><span aria-hidden="true" className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">{task.priority !== 'none' && <span className="task-meta-pill">{priorities.find((value) => value.value === task.priority)?.label}</span>}{task.status !== 'todo' && task.status !== 'done' && <span className="task-meta-pill">{statuses.find((value) => value.value === task.status)?.label}</span>}<span className="task-place-chip">{task.topic?.name ?? '收集箱'}</span>{task.tags?.map((tag) => <span key={tag.id} className="task-tag-chip" data-color={tag.color || 'violet'}>#{tag.name}</span>)}{!hierarchical && task.parentId && <span className="task-meta-pill">子任务</span>}</span></button>
     {task.dueDate && <time className="hidden shrink-0 items-center gap-1 text-xs text-muted-foreground sm:flex"><CalendarDays className="size-3.5" />{task.dueDate}</time>}
-    {!readonly && !preview && <DropdownMenu>
-      <DropdownMenuTrigger asChild><Button variant="ghost" size="icon-xs" disabled={busy} aria-label={`任务操作：${task.title}`} onMouseDown={stopDrag} onTouchStart={stopDrag} onPointerDown={stopDrag}><MoreHorizontal /></Button></DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-44">
-        <DropdownMenuSub><DropdownMenuSubTrigger><FolderInput />移动到</DropdownMenuSubTrigger><DropdownMenuSubContent>
-          <DropdownMenuItem disabled={!task.topicId} onSelect={() => { void onMove(task, null).catch(() => undefined); }}>收集箱</DropdownMenuItem>
-          {topics.map((topic) => <DropdownMenuItem key={topic.id} disabled={task.topicId === topic.id} onSelect={() => { void onMove(task, topic.id).catch(() => undefined); }}>{topic.name}</DropdownMenuItem>)}
-        </DropdownMenuSubContent></DropdownMenuSub>
-        {onReorder && <><DropdownMenuItem disabled={busy || index === 0} aria-label={`上移任务：${task.title}`} onSelect={() => { const next = reorderTaskGroup(group, task.id, group[index - 1]?.id ?? ''); if (next) void onReorder(next, task.parentId ?? null).catch(() => undefined); }}><ArrowUp />上移</DropdownMenuItem><DropdownMenuItem disabled={busy || index === group.length - 1} aria-label={`下移任务：${task.title}`} onSelect={() => { const next = reorderTaskGroup(group, task.id, group[index + 1]?.id ?? ''); if (next) void onReorder(next, task.parentId ?? null).catch(() => undefined); }}><ArrowDown />下移</DropdownMenuItem></>}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem variant="destructive" aria-label={`删除任务：${task.title}`} onSelect={() => onDelete(task)}><Trash2 />移入回收站</DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>}
+    {!preview && <TaskMenuButton />}
   </article>;
+  if (preview) return article;
+  const menu: TaskActionProps = { topics, tags, readonly, busy, textDirty, onOpen, onToggle, onMove, onDelete, onSave, onCreate, onReorder };
+  return <TaskActions task={task} group={group} index={index} {...menu}>{article}</TaskActions>;
 });

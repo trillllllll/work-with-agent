@@ -68,7 +68,7 @@ export function BoardView({ detail, hasTopic, grouped, tasksLoading, summaryBusy
             {statuses.map(({ value, label }) => (
               <BoardColumn key={value} label={label} count={grouped[value].length} isTodo={value === 'todo'} onAddTask={onNewTask}>
                 {grouped[value].map((task) => (
-                  <TaskCard key={task.id} task={task} onEdit={onEditTask} onDelete={onDeleteTask} onUpdateStatus={onUpdateTaskStatus} />
+                  <TaskCard key={task.id} task={task} topics={detail ? [detail] : []} tags={[]} onOpen={(id) => { const found = grouped[value].find((item) => item.id === id); if (found) onEditTask(found); }} onToggle={async (item) => onUpdateTaskStatus(item.id, item.status === 'done' ? 'todo' : 'done')} onMove={async () => undefined} onDelete={onDeleteTask} onSave={async () => undefined} onCreate={async () => undefined} onUpdateStatus={onUpdateTaskStatus} />
                 ))}
               </BoardColumn>
             ))}
