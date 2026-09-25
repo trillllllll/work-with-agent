@@ -37,6 +37,7 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     const created = (await tasks(request)).find((value: any) => value.title === '只填写标题');
     const row = page.getByTestId(`task-row-${created.id}`);
     await row.getByRole('checkbox', { name: '完成任务：只填写标题', exact: true }).click();
+    await page.getByText('已完成 · 1', { exact: true }).click();
     await expect(row.getByRole('checkbox', { name: '重开任务：只填写标题', exact: true })).toBeChecked();
     await expect.poll(async () => (await task(request, created.id)).status).toBe('done');
     await row.getByRole('checkbox', { name: '重开任务：只填写标题', exact: true }).click();
@@ -183,7 +184,7 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     const second = await data(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: list.id, title: '第二条' } }));
     const third = await data(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: list.id, title: '第三条' } }));
     await page.goto('/#/board');
-    await expect(page.getByText('包含已完成任务。上下拖动调整顺序，向右拖成子任务，向左拖回根任务。', { exact: true })).toBeVisible();
+    await expect(page.getByText('上下拖动调整顺序，向右拖成子任务，向左拖回根任务。', { exact: true })).toBeVisible();
     const start = page.getByTestId(`task-row-${third.id}`);
     const target = page.getByTestId(`task-row-${first.id}`);
     await expect(start).toBeVisible();
@@ -385,6 +386,7 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await page.getByRole('button', { name: '确认影响并执行', exact: true }).click();
     await expect.poll(async () => (await task(request, parent.id)).status).toBe('done');
     await expect.poll(async () => (await task(request, child.id)).status).toBe('done');
+    await page.getByText('已完成 · 1', { exact: true }).click();
     await childRow.getByRole('checkbox', { name: '重开任务：尚未完成的子任务', exact: true }).click();
     await page.getByRole('button', { name: '确认影响并执行', exact: true }).click();
     await expect(childRow.getByRole('checkbox', { name: '完成任务：尚未完成的子任务', exact: true })).not.toBeChecked();
@@ -513,6 +515,7 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     });
     try {
       await page.getByRole('button', { name: '列表', exact: true }).click();
+      await page.getByText('已完成 · 1', { exact: true }).click();
       await page.getByTestId(`task-row-${first.id}`).getByRole('checkbox', { name: '重开任务：顺序任务', exact: true }).click();
       await failedStarted.promise;
       const otherRow = page.getByTestId(`task-row-${other.id}`);
