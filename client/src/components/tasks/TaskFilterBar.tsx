@@ -31,7 +31,7 @@ export function describeTaskFilters(page: View, scoped: boolean, filters: TaskFi
   const topicName = filters.topic === 'inbox' ? '收集箱' : topics.find((topic) => topic.id === filters.topic)?.name ?? '所选清单';
   const tagName = tags.find((tag) => tag.id === filters.tag)?.name ?? '所选标签';
   const parts: string[] = [];
-  if (filters.q) parts.push(`搜索：${filters.q}`);
+  if (page === 'search' && filters.q) parts.push(`搜索：${filters.q}`);
   if (showStatus && filters.status === 'open') parts.push('未完成');
   if (showStatus && filters.status === 'done') parts.push('已完成');
   if (topicFiltered) parts.push(`清单：${topicName}`);
@@ -75,6 +75,7 @@ function SearchField({ value, onChange }: { value: string; onChange: (value: str
 
 export function TaskFilterBar({ page, scoped, filters, sortMode, topics, tags, open, onOpenChange, onChange, onSort, onClear, presentation = 'bar' }: Props) {
   const { parts, summary } = describeTaskFilters(page, scoped, filters, topics, tags);
+  const search = page === 'search' ? <SearchField value={filters.q} onChange={(q) => onChange({ q })} /> : null;
   if (presentation === 'popover') {
     return <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
@@ -84,7 +85,7 @@ export function TaskFilterBar({ page, scoped, filters, sortMode, topics, tags, o
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[min(20rem,calc(100vw-2rem))] space-y-3 p-3">
-        <SearchField value={filters.q} onChange={(q) => onChange({ q })} />
+        {search}
         <FilterFields page={page} scoped={scoped} filters={filters} sortMode={sortMode} topics={topics} tags={tags} onChange={onChange} onSort={onSort} stacked />
         {parts.length > 0 && <Button type="button" size="sm" variant="ghost" onClick={onClear}>清除筛选</Button>}
       </PopoverContent>
@@ -93,7 +94,7 @@ export function TaskFilterBar({ page, scoped, filters, sortMode, topics, tags, o
   return (
     <div className="my-4 rounded-2xl glass-subtle p-3" aria-label="任务筛选">
       <div className="flex flex-wrap items-center gap-2">
-        <SearchField value={filters.q} onChange={(q) => onChange({ q })} />
+        {search}
         <Button type="button" variant="outline" size="sm" className="shrink-0" aria-expanded={open} aria-controls="task-filter-panel" onClick={() => onOpenChange(!open)}>
           筛选{parts.length ? ` ${parts.length}` : ''}
           <ChevronDown aria-hidden className={cn('size-4 transition-transform', open && 'rotate-180')} />

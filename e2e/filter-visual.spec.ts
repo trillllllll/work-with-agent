@@ -13,6 +13,7 @@ test('筛选区在桌面和窄屏可折叠且不横向溢出', async ({ page }) 
   await expect(page.getByRole('combobox', { name: '任务排序', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '打开聊天', exact: true }).click();
   expect(await fits()).toBe(false);
+  await page.getByRole('button', { name: '关闭聊天', exact: true }).click();
   await page.setViewportSize({ width: 360, height: 780 });
   await page.goto('/#/search');
   await page.getByRole('button', { name: '筛选', exact: true }).click();

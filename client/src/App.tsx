@@ -115,13 +115,13 @@ export function App() {
   const detail = topicDetail.data ?? selectedTopic;
   const archived = page === 'board' && Boolean(detail?.archivedAt);
   const scoped = page === 'inbox' || page === 'board';
-  const hasFilters = Boolean(filters.q || filters.status !== 'all' || filters.dueFrom || filters.dueTo || filters.tag);
+  const hasFilters = Boolean((page === 'search' && filters.q) || filters.status !== 'all' || filters.dueFrom || filters.dueTo || filters.tag);
   const params: Record<string, string> = { status: page === 'today' ? 'open' : filters.status, sort: scoped ? sortMode : 'date' };
   if (page === 'inbox' || (!scoped && filters.topic === 'inbox')) params.inbox = 'true';
   if (page === 'board') params.topicId = selectedTopicId;
   else if (!scoped && filters.topic !== 'all' && filters.topic !== 'inbox') params.topicId = filters.topic;
   if (archived) params.includeArchived = 'true';
-  if (filters.q) params.q = filters.q;
+  if (page === 'search' && filters.q) params.q = filters.q;
   if (filters.dueFrom) params.dueFrom = filters.dueFrom;
   if (filters.dueTo) params.dueTo = filters.dueTo;
   if (page === 'today') params.dueTo = today;

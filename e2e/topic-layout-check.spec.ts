@@ -35,6 +35,7 @@ test('清单页只留标题、上下文、录入和任务', async ({ page, reque
   await expect(main.getByRole('button', { name: '从第一行录入', exact: true })).toBeVisible();
 
   await main.getByRole('button', { name: '筛选', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: '搜索任务', exact: true })).toHaveCount(0);
   await page.getByRole('combobox', { name: '筛选完成状态', exact: true }).selectOption('open');
   await expect(main.getByText('未完成', { exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
@@ -48,8 +49,12 @@ test('清单页只留标题、上下文、录入和任务', async ({ page, reque
 
   await page.goto('/#/inbox');
   await expect(page.getByRole('button', { name: '新建任务', exact: true })).toBeVisible();
-  await expect(page.getByRole('textbox', { name: '搜索任务', exact: true })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: '搜索任务', exact: true })).toHaveCount(0);
   await page.goto('/#/today');
+  await expect(page.getByRole('textbox', { name: '搜索任务', exact: true })).toHaveCount(0);
+  await page.goto('/#/tags');
+  await expect(page.getByRole('textbox', { name: '搜索任务', exact: true })).toHaveCount(0);
+  await page.goto('/#/search');
   await expect(page.getByRole('textbox', { name: '搜索任务', exact: true })).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 780 });
@@ -58,6 +63,7 @@ test('清单页只留标题、上下文、录入和任务', async ({ page, reque
   await expect(main.getByText('把下一步放在最上面', { exact: true })).toBeVisible();
   await expect(main.getByRole('textbox', { name: '任务名称', exact: true })).toBeVisible();
   await main.getByRole('button', { name: '筛选', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: '搜索任务', exact: true })).toHaveCount(0);
   await expect(page.getByRole('combobox', { name: '筛选完成状态', exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
 });
