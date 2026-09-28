@@ -14,6 +14,7 @@ type TopicListProps = {
   onOpenInbox?: () => void;
   inboxActive?: boolean;
   className?: string;
+  variant?: 'sidebar' | 'page';
 };
 
 function classificationClass(active: boolean) {
@@ -23,7 +24,36 @@ function classificationLabelClass(active: boolean) {
   return cn('relative flex min-h-11 min-w-0 flex-1 items-center gap-2.5 px-2.5 text-left text-[13px] transition-[color,transform] duration-200 lg:min-h-10', active ? 'font-semibold text-primary' : 'text-foreground/75 hover:translate-x-0.5 hover:text-foreground');
 }
 
-export function TopicList({ topics, loading, selectedTopicId, onSelect, onEdit, onOpenInbox, inboxActive = false, className }: TopicListProps) {
+function SidebarTopicList({ topics, loading, selectedTopicId, onSelect, onEdit }: TopicListProps) {
+  if (loading) return <div className="flex flex-col gap-1">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-8 w-full rounded-lg" />)}</div>;
+  if (!topics.length) return <p className="px-2 py-2 text-xs leading-relaxed text-muted-foreground">还没有清单，先创建一个。</p>;
+  return (
+    <div className="sidebar-nav">
+      {topics.map((topic) => {
+        const active = topic.id === selectedTopicId;
+        return (
+          <div key={topic.id} className="sidebar-row" data-active={active || undefined}>
+            <button type="button" onClick={() => onSelect(topic.id)} aria-current={active ? 'page' : undefined} className="sidebar-link">
+              <span className={cn('sidebar-list-mark', topic.isExploration && 'is-explore')} aria-hidden="true" />
+              <span className="min-w-0 flex-1 truncate">{topic.name}</span>
+              {topic.isExploration && <em className="sidebar-explore-tag">探索</em>}
+            </button>
+            <button type="button" aria-label={`编辑清单：${topic.name}`} onClick={() => onEdit(topic)} className="sidebar-edit">
+              <Pencil className="size-3.5" strokeWidth={1.75} />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export function TopicList({ variant = 'page', ...props }: TopicListProps) {
+  if (variant === 'sidebar') return <SidebarTopicList {...props} />;
+  return <PageTopicList {...props} />;
+}
+
+function PageTopicList({ topics, loading, selectedTopicId, onSelect, onEdit, onOpenInbox, inboxActive = false, className }: TopicListProps) {
   return (
     <div className={cn('sidebar-topic-list flex flex-col gap-1', className)}>
       {onOpenInbox && <div data-active={inboxActive || undefined} className={classificationClass(inboxActive)}><button type="button" onClick={onOpenInbox} aria-current={inboxActive ? 'page' : undefined} className={classificationLabelClass(inboxActive)}><span className={cn('size-1.5 shrink-0 rounded-full transition-[background-color,box-shadow,transform] duration-200', inboxActive ? 'scale-110 bg-primary shadow-[0_0_0_3px_var(--accent)]' : 'bg-muted-foreground/40')} /><span className="truncate">收集箱</span></button></div>}

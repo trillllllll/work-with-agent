@@ -182,12 +182,12 @@ test.describe('Agent 工作室 MVP', () => {
     await expect(composer).toHaveValue('关闭后仍然保留');
   });
 
-  test('WWA 品牌，未保存的详情会在打开聊天前确认', async ({ page, isMobile, request }) => {
+  test('WWA 品牌在侧栏，打开聊天后未保存的详情还在', async ({ page, isMobile, request }) => {
     test.skip(Boolean(isMobile), '桌面侧栏在桌面视口验收');
     const task = await responseData<{ id: string }>(await request.post(`${apiUrl}/api/tasks`, { data: { title: '检查器任务' } }));
     await page.goto('/#/inbox');
 
-    await expect(page.getByLabel('WWA，专注，让更多可能发生', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('WWA', { exact: true })).toBeVisible();
     await expect(page.getByText('WWA', { exact: true })).toHaveCount(1);
     const row = page.getByTestId(`task-row-${task.id}`);
     await row.getByRole('button', { name: '检查器任务', exact: true }).click();
@@ -195,16 +195,11 @@ test.describe('Agent 工作室 MVP', () => {
     await detail.getByLabel('详情', { exact: true }).fill('检查器草稿');
 
     await page.getByRole('button', { name: '打开聊天', exact: true }).click();
-    const leave = page.getByRole('dialog', { name: '保存未完成的编辑？', exact: true });
-    await expect(leave).toBeVisible();
-    await leave.getByRole('button', { name: '继续编辑', exact: true }).click();
-    await expect(detail.getByLabel('详情', { exact: true })).toHaveValue('检查器草稿');
-
-    await page.getByRole('button', { name: '打开聊天', exact: true }).click();
-    await leave.getByRole('button', { name: '保存并继续', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: '保存未完成的编辑？' })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: '全局聊天' })).toBeVisible();
+    await expect(detail).toBeHidden();
     await page.getByRole('button', { name: '关闭聊天' }).click();
-    expect((await responseData<{ description: string }>(await request.get(`${apiUrl}/api/tasks/${task.id}`))).description).toBe('检查器草稿');
+    await expect(detail.getByLabel('详情', { exact: true })).toHaveValue('检查器草稿');
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
   });
 
