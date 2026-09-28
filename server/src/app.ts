@@ -2,6 +2,7 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import cors from 'cors';
 import { z } from 'zod';
 import { SettingsService } from './application/settings.js';
+import { clearManual, cliSettings, discoverCli, discoverClis, isCliProvider, saveManual } from './runner/cli-commands.js';
 import { TopicService, TaskService, TagService, ChangeService } from './application/workspace.js';
 import { AgentService } from './agent.js';
 import { securityRouter, connectionRouter, identityMiddleware, ownerMiddleware, corsOptions } from './application/security.js';
@@ -106,12 +107,34 @@ app.post('/api/tags', async (req, res, next) => { try { send(res, await tags.cre
 app.patch('/api/tags/:id', async (req, res, next) => { try { send(res, await tags.update(String(req.params.id), req.body, userContext(req))); } catch (error) { next(error); } });
 app.delete('/api/tags/:id', async (req, res, next) => { try { send(res, await tags.remove(String(req.params.id), userContext(req))); } catch (error) { next(error); } });
 
-app.get('/api/settings', async (_req, res, next) => { try { send(res, await settings.getPublic()); } catch (error) { next(error); } });
+app.get('/api/settings', async (_req, res, next) => { try { send(res, { ...await settings.getPublic(), cli: await cliSettings() }); } catch (error) { next(error); } });
+app.post('/api/settings/cli/discover', async (req, res, next) => {
+  try {
+    const provider = typeof req.body?.provider === 'string' ? req.body.provider : '';
+    if (provider && !isCliProvider(provider)) return res.status(400).json({ data: null, error: '只支持 Codex 和 Claude Code' });
+    const discovered = provider ? { [provider]: await discoverCli(provider) } : await discoverClis();
+    send(res, { ...(await settings.getPublic()), cli: await cliSettings(), discovered });
+  } catch (error) { next(error); }
+});
+app.put('/api/settings/cli', async (req, res, next) => {
+  try {
+    const provider = String(req.body?.provider ?? '');
+    if (!isCliProvider(provider)) return res.status(400).json({ data: null, error: '只支持 Codex 和 Claude Code' });
+    send(res, await saveManual(provider, String(req.body?.command ?? '')));
+  } catch (error) { next(error); }
+});
+app.delete('/api/settings/cli/:provider', async (req, res, next) => {
+  try {
+    const provider = String(req.params.provider);
+    if (!isCliProvider(provider)) return res.status(400).json({ data: null, error: '只支持 Codex 和 Claude Code' });
+    send(res, await clearManual(provider));
+  } catch (error) { next(error); }
+});
 const settingsBody = z.object({ baseUrl: z.string().trim().min(1), model: z.string().trim().min(1), apiKey: z.string().optional() });
 app.patch('/api/settings', schema(settingsBody), async (req, res, next) => {
-  try { send(res, await settings.save(req.body, (config) => agent.testConnection(config))); } catch (error) { next(error); }
+  try { send(res, { ...await settings.save(req.body, (config) => agent.testConnection(config)), cli: await cliSettings() }); } catch (error) { next(error); }
 });
-app.delete('/api/settings/api-key', async (_req, res, next) => { try { send(res, await settings.clearApiKey()); } catch (error) { next(error); } });
+app.delete('/api/settings/api-key', async (_req, res, next) => { try { send(res, { ...await settings.clearApiKey(), cli: await cliSettings() }); } catch (error) { next(error); } });
 
 const chatBody = z.object({
   conversationId: z.string().min(1).optional(),

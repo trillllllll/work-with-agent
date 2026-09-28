@@ -1,9 +1,10 @@
-import { access, readdir, readFile, writeFile, mkdir } from 'node:fs/promises';
-import { delimiter, dirname, join, resolve } from 'node:path';
+import { access, readFile, writeFile, mkdir } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { DomainError } from '../domain/task.js';
 import { providerSchema, resultJsonSchema, resultSchema, type LaunchSpec, type Permissions, type Provider, type RunResult } from './contracts.js';
+import { commandFromPath, discoverCli, fileExists, isCliProvider, pathFromProcessPath, resolveConfiguredPath, storedCommands } from './cli-commands.js';
 
 const exec = promisify(execFile);
 export type CliCommand = { command: string; prefix: string[] };
@@ -17,23 +18,31 @@ export function codexWindowsSandboxArgs(platform = process.platform, backend = p
 async function exists(path: string) { try { await access(path); return true; } catch { return false; } }
 export async function resolveCli(provider: Provider): Promise<CliCommand> {
   providerSchema.parse(provider);
+  if (isCliProvider(provider)) {
+    const saved = await storedCommands(provider);
+    if (saved.manualCommand) {
+      const path = resolveConfiguredPath(saved.manualCommand);
+      if (!await fileExists(path)) throw new DomainError('CLI_NOT_FOUND', `已保存的 ${provider} 命令不存在：${path}`, 503);
+      return commandFromPath(path);
+    }
+  }
   const configured = process.env[provider === 'codex' ? 'WWA_CODEX_BIN' : 'WWA_CLAUDE_BIN'];
   if (configured) {
     const path = resolve(configured);
     if (!await exists(path) || /\.(?:cmd|bat|ps1)$/i.test(path)) throw new DomainError('CLI_NOT_FOUND', '配置的 CLI 必须是可执行文件或 JavaScript 入口', 503);
     return /\.[cm]?js$/i.test(path) ? { command: process.execPath, prefix: [path] } : { command: path, prefix: [] };
   }
-  for (const directory of (process.env.PATH ?? '').split(delimiter).filter(Boolean)) {
-    const direct = join(directory, `${provider}${process.platform === 'win32' ? '.exe' : ''}`);
-    if (await exists(direct)) return { command: direct, prefix: [] };
-    const packageRoot = join(directory, 'node_modules', provider === 'codex' ? '@openai/codex' : '@anthropic-ai/claude-code');
-    if (provider === 'codex' && await exists(join(packageRoot, 'bin', 'codex.js'))) return { command: process.execPath, prefix: [join(packageRoot, 'bin', 'codex.js')] };
-    if (provider === 'claude') {
-      if (await exists(join(packageRoot, 'bin', 'claude.exe'))) return { command: join(packageRoot, 'bin', 'claude.exe'), prefix: [] };
-      if (await exists(join(packageRoot, 'cli.js'))) return { command: process.execPath, prefix: [join(packageRoot, 'cli.js')] };
-    }
+  if (isCliProvider(provider)) {
+    const saved = await storedCommands(provider);
+    if (saved.autoCommand && await fileExists(saved.autoCommand)) return commandFromPath(saved.autoCommand);
+    try {
+      const discovered = await discoverCli(provider);
+      if (discovered.command && await fileExists(discovered.command)) return commandFromPath(discovered.command);
+    } catch { /* The settings page reports a missing login-shell command. */ }
   }
-  throw new DomainError('CLI_NOT_FOUND', `未找到 ${provider} CLI；请先由用户安装并登录`, 503);
+  const fromPath = isCliProvider(provider) ? await pathFromProcessPath(provider) : '';
+  if (fromPath) return commandFromPath(fromPath);
+  throw new DomainError('CLI_NOT_FOUND', `未找到 ${provider} CLI；请在设置中自动检查或手动填写`, 503);
 }
 export async function capabilities() {
   return Promise.all((['codex', 'claude'] as const).map(async (provider) => {

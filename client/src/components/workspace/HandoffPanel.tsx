@@ -3,9 +3,13 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { api, type Task } from '@/lib/api.js';
 import { json, parseStored, usePlatformAction } from '@/lib/platform.js';
 import { Button } from '@/components/ui/button.js';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { Input } from '@/components/ui/input.js';
 import { Textarea } from '@/components/ui/textarea.js';
+import { MarkdownView } from '@/components/chat/MarkdownView.js';
 import { ContextPicker, type Evidence } from './ContextPicker.js';
+import { downloadFileName, isMarkdownFile } from './artifact-name.js';
+import { reviewPreview } from './review-text.js';
 
 const stateNames: Record<string, string> = { prepared: '待接手', created: '已创建', accepted: '已领取', running: '执行中', returned: '已返回，待验收', failed: '执行失败', cancelled: '已取消', unknown: '状态待核实', accepted_result: '已采纳', reviewed: '已验收', needs_input: '需要补充信息', waiting_input: '需要补充信息', rejected: '需要返工' };
 export function HandoffPanel({ task, disabled = false }: { task: Task; disabled?: boolean }) {
@@ -59,7 +63,7 @@ function HandoffCard({ handoff: initial, task }: { handoff: any; task?: Task }) 
     {(handoff.runs ?? []).map((execution: any) => {
       const result = parseStored<Record<string, any>>(execution.resultJson ?? execution.result, {});
       const workspace = parseStored<Record<string, any>>(execution.workspaceJson ?? execution.workspace, {});
-      return <section className="space-y-3 border-t pt-3" key={execution.id}><p className="text-xs text-muted-foreground">{stateNames[execution.status] ?? execution.status} · {new Date(execution.createdAt).toLocaleString()}</p>{execution.error && <p role="alert" className="text-sm text-destructive">{execution.error}</p>}{result.summary && <p className="whitespace-pre-wrap text-sm">{result.summary}</p>}{result.unfinished?.length > 0 && <p className="text-sm">未完成项：{result.unfinished.join('；')}</p>}{result.proposedCommands?.length > 0 && <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(() => api(`/api/v1/runs/${execution.id}/proposals`, { method: 'POST', body: '{}' }), '结果中的修改已加入待确认')}>将结果中的修改整理为提议</Button>}{(result.questions ?? []).map((question: string) => <p className="text-sm" key={question}>{question}</p>)}
+      return <section className="space-y-3 border-t pt-3" key={execution.id}><p className="text-xs text-muted-foreground">{stateNames[execution.status] ?? execution.status} · {new Date(execution.createdAt).toLocaleString()}</p>{execution.error && <p role="alert" className="text-sm text-destructive">{execution.error}</p>}{result.summary && <ReviewSummary text={String(result.summary)} />}{result.unfinished?.length > 0 && <p className="text-sm">未完成项：{result.unfinished.join('；')}</p>}{result.proposedCommands?.length > 0 && <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(() => api(`/api/v1/runs/${execution.id}/proposals`, { method: 'POST', body: '{}' }), '结果中的修改已加入待确认')}>将结果中的修改整理为提议</Button>}{(result.questions ?? []).map((question: string) => <p className="text-sm" key={question}>{question}</p>)}
         <RunEvents runId={execution.id} />
         {workspace.inputs?.length > 0 && <details><summary className="cursor-pointer text-xs text-muted-foreground">本次输入快照 · {workspace.inputs.length} 个文件</summary><ul className="mt-2 space-y-2 text-xs">{workspace.inputs.map((file: any) => <li className="break-all" key={file.path}>{file.path} · {file.size} 字节<code className="mt-1 block text-muted-foreground">SHA-256 {file.hash}</code></li>)}</ul></details>}
         <RunArtifacts runId={execution.id} workspace={workspace} />
@@ -75,17 +79,50 @@ function HandoffCard({ handoff: initial, task }: { handoff: any; task?: Task }) 
     })}
   </>}</article>;
 }
+function ReviewSummary({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const { long, preview } = reviewPreview(text);
+  if (!long) return <MarkdownView content={text} />;
+  return <>
+    <p className="whitespace-pre-wrap break-words text-sm">{preview}</p>
+    <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(true)}>展开</Button>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent surface="glass" className="max-h-[min(85dvh,calc(100%-3rem))] max-w-[min(42rem,calc(100%-3rem))] overflow-y-auto">
+        <DialogHeader><DialogTitle>执行结果</DialogTitle><DialogDescription>返回内容的完整说明。</DialogDescription></DialogHeader>
+        <MarkdownView content={text} />
+      </DialogContent>
+    </Dialog>
+  </>;
+}
+function ArtifactPreview({ content, encoding, markdown }: { content: string; encoding: string; markdown: boolean }) {
+  const [open, setOpen] = useState(false);
+  if (encoding !== 'utf8') return <pre className="my-3 max-h-80 overflow-auto whitespace-pre-wrap break-all text-xs">二进制产物，可下载原文件。</pre>;
+  const { long } = reviewPreview(content);
+  const body = markdown ? <MarkdownView content={content} /> : <pre className="whitespace-pre-wrap break-all text-xs">{content}</pre>;
+  return <>
+    <div className={long ? 'my-3 max-h-40 overflow-hidden rounded-lg border p-3' : 'my-3 max-h-80 overflow-auto rounded-lg border p-3'}>{body}</div>
+    {long && <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(true)}>展开</Button>}
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent surface="glass" className="max-h-[min(85dvh,calc(100%-3rem))] max-w-[min(42rem,calc(100%-3rem))] overflow-y-auto">
+        <DialogHeader><DialogTitle>产物内容</DialogTitle><DialogDescription>完整内容。</DialogDescription></DialogHeader>
+        {markdown ? <MarkdownView content={content} /> : <pre className="whitespace-pre-wrap break-all text-sm">{content}</pre>}
+      </DialogContent>
+    </Dialog>
+  </>;
+}
 function RunArtifacts({ runId, workspace }: { runId: string; workspace: Record<string, any> }) {
   const query = useQuery({ queryKey: ['artifacts', runId], queryFn: () => api<any[]>(`/api/v1/runs/${runId}/artifacts`) });
   const { run, busy } = usePlatformAction();
-  const [previewed, setPreviewed] = useState<{ id: string; content: string; name: string; encoding: string } | null>(null);
+  const [previewed, setPreviewed] = useState<{ id: string; content: string; name: string; encoding: string; reportedPath?: string | null } | null>(null);
   function download() {
     if (!previewed) return;
+    const fileName = downloadFileName(previewed.name, previewed.reportedPath);
     const content = previewed.encoding === 'base64' ? Uint8Array.from(atob(previewed.content), (char) => char.charCodeAt(0)) : previewed.content;
-    const url = URL.createObjectURL(new Blob([content]));
-    const anchor = document.createElement('a'); anchor.href = url; anchor.download = previewed.name; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const type = fileName.endsWith('.md') ? 'text/markdown;charset=utf-8' : previewed.encoding === 'base64' ? 'application/octet-stream' : 'text/plain;charset=utf-8';
+    const url = URL.createObjectURL(new Blob([content], { type }));
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = fileName; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  return <div className="space-y-2">{(query.data ?? []).map((artifact) => <div className="rounded-lg border p-3" key={artifact.id}><div className="flex flex-wrap items-center gap-3 text-sm"><strong>{artifact.name}</strong><Button size="sm" variant="ghost" disabled={busy} onClick={() => void run(async () => { const result = await api<any>(`/api/v1/artifacts/${artifact.id}/content`); setPreviewed({ ...result, id: artifact.id }); return result; }, '产物已载入')}>查看产物</Button>{artifact.kind === 'git_patch' && <Button size="sm" variant="outline" disabled={busy || previewed?.id !== artifact.id} onClick={() => void run(() => api(`/api/v1/runs/${runId}/apply`, { method: 'POST', body: json({ artifactId: artifact.id, expectedHead: workspace.baseHead ?? workspace.head ?? parseStored<any>(artifact.metadata, {}).baseHead, requestId: crypto.randomUUID() }) }), '代码变更已应用')}>应用已预览的变更</Button>}</div>{previewed && previewed.id === artifact.id && <><pre className="my-3 max-h-80 overflow-auto whitespace-pre-wrap break-all text-xs">{previewed.encoding === 'utf8' ? previewed.content : '二进制产物，可下载原文件。'}</pre><Button size="sm" variant="outline" onClick={download}>下载产物</Button></>}</div>)}</div>;
+  return <div className="space-y-2">{(query.data ?? []).map((artifact) => <div className="rounded-lg border p-3" key={artifact.id}><div className="flex flex-wrap items-center gap-3 text-sm"><strong>{artifact.name}</strong><Button size="sm" variant="ghost" disabled={busy} onClick={() => void run(async () => { const result = await api<any>(`/api/v1/artifacts/${artifact.id}/content`); setPreviewed({ ...result, id: artifact.id, reportedPath: parseStored<any>(artifact.metadata, {}).reportedPath ?? null }); return result; }, '产物已载入')}>查看产物</Button>{artifact.kind === 'git_patch' && <Button size="sm" variant="outline" disabled={busy || previewed?.id !== artifact.id} onClick={() => void run(() => api(`/api/v1/runs/${runId}/apply`, { method: 'POST', body: json({ artifactId: artifact.id, expectedHead: workspace.baseHead ?? workspace.head ?? parseStored<any>(artifact.metadata, {}).baseHead, requestId: crypto.randomUUID() }) }), '代码变更已应用')}>应用已预览的变更</Button>}</div>{previewed && previewed.id === artifact.id && <><ArtifactPreview content={previewed.content} encoding={previewed.encoding} markdown={previewed.encoding === 'utf8' && isMarkdownFile(downloadFileName(previewed.name, previewed.reportedPath))} /><Button size="sm" variant="outline" onClick={download}>下载产物</Button></>}</div>)}</div>;
 }
 
 function RunEvents({ runId }: { runId: string }) {

@@ -25,7 +25,7 @@ export default function ownerRequest(app: Express) {
     set(key: string, value: string): Builder;
     query(value: unknown): Builder;
   };
-  const build = (method: 'get' | 'post' | 'patch' | 'delete', path: string) => {
+  const build = (method: 'get' | 'post' | 'patch' | 'put' | 'delete', path: string) => {
     let body: any;
     const headers: Record<string, string> = {};
     let query: any;
@@ -68,5 +68,5 @@ export default function ownerRequest(app: Express) {
     };
     return builder;
   };
-  return { get: (path: string) => build('get', path), post: (path: string) => build('post', path), patch: (path: string) => build('patch', path), delete: (path: string) => build('delete', path) };
+  return { get: (path: string) => build('get', path), post: (path: string) => build('post', path), patch: (path: string) => build('patch', path), put: (path: string) => build('put', path), delete: (path: string) => build('delete', path) };
 }

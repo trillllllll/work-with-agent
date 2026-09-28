@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ArrowLeft } from 'lucide-react';
-import { api, type Settings } from '@/lib/api.js';
+import { api, type CliCommandSetting, type Settings } from '@/lib/api.js';
 import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
@@ -97,6 +97,8 @@ export function SettingsView({ onBack }: { onBack?: () => void }) {
         </div>
       </form>
 
+      <CliCommands settings={settingsQuery.data} />
+
       {clearKeyConfirmation && (
         <ConfirmDialog
           title="清除 API Key"
@@ -108,5 +110,62 @@ export function SettingsView({ onBack }: { onBack?: () => void }) {
         />
       )}
     </div>
+  );
+}
+
+const cliNames = { codex: 'Codex', claude: 'Claude Code' } as const;
+
+function CliCommands({ settings }: { settings?: Settings }) {
+  const queryClient = useQueryClient();
+  const [drafts, setDrafts] = useState({ codex: '', claude: '' });
+  const [notice, setNotice] = useState('');
+  const discover = useMutation({
+    mutationFn: () => api<Settings>('/api/settings/cli/discover', { method: 'POST', body: '{}' }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['settings'], data);
+      const pending = (['codex', 'claude'] as const).filter((provider) => data.discovered?.[provider] && data.cli?.[provider]?.source === 'manual' && data.discovered[provider].command && data.discovered[provider].command !== data.cli?.[provider]?.manualCommand);
+      const missing = (['codex', 'claude'] as const).filter((provider) => data.discovered?.[provider]?.message);
+      setNotice([pending.length ? `已保留手动配置。自动检查另发现：${pending.map((provider) => `${cliNames[provider]} ${data.discovered?.[provider]?.command}`).join('、')}` : '自动检查已更新。', missing.map((provider) => data.discovered?.[provider]?.message).filter(Boolean).join('；')].filter(Boolean).join(' '));
+    },
+    onError: (error: Error) => setNotice(error.message),
+  });
+  const saveManual = useMutation({
+    mutationFn: (input: { provider: 'codex' | 'claude'; command: string }) => api<CliCommandSetting>('/api/settings/cli', { method: 'PUT', body: JSON.stringify(input) }),
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['settings'] }); setNotice('手动命令已保存。'); },
+    onError: (error: Error) => setNotice(error.message),
+  });
+  const restore = useMutation({
+    mutationFn: (provider: 'codex' | 'claude') => api<CliCommandSetting>(`/api/settings/cli/${provider}`, { method: 'DELETE' }),
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['settings'] }); setNotice('已改回自动发现的命令。'); },
+    onError: (error: Error) => setNotice(error.message),
+  });
+  return (
+    <section className="mt-10 border-t glass-divider pt-6">
+      <h2 className="text-lg font-semibold">本机 AI 命令</h2>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">从登录 shell 查找 Codex 和 Claude Code 的启动命令。手动填写的绝对路径优先，自动检查不会覆盖它。</p>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <Button type="button" variant="outline" disabled={discover.isPending} onClick={() => discover.mutate()}>{discover.isPending ? '正在检查…' : '自动检查'}</Button>
+        {notice && <p className="text-xs text-muted-foreground">{notice}</p>}
+      </div>
+      {(['codex', 'claude'] as const).map((provider) => {
+        const item = settings?.cli?.[provider];
+        const source = item?.source === 'manual' ? '手动配置' : item?.source === 'auto' ? '自动发现' : '尚未找到';
+        return (
+          <form key={provider} className="glass-subtle mt-4 space-y-3 rounded-xl p-4" onSubmit={(event) => { event.preventDefault(); saveManual.mutate({ provider, command: drafts[provider] || item?.command || '' }); }}>
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h3 className="font-medium">{cliNames[provider]}</h3>
+              <span className="text-xs text-muted-foreground">{source}{item?.version ? ` · ${item.version}` : ''}</span>
+            </div>
+            <p className="break-all text-xs text-muted-foreground">{item?.command || '还没有可用命令'}</p>
+            <Label htmlFor={`cli-${provider}`}>命令路径</Label>
+            <Input id={`cli-${provider}`} value={drafts[provider]} onChange={(event) => setDrafts((current) => ({ ...current, [provider]: event.target.value }))} placeholder={item?.command || (provider === 'codex' ? '/绝对路径/codex' : '/绝对路径/claude')} />
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" size="sm" disabled={saveManual.isPending}>保存手动配置</Button>
+              {item?.source === 'manual' && <Button type="button" size="sm" variant="outline" disabled={restore.isPending} onClick={() => restore.mutate(provider)}>恢复自动</Button>}
+            </div>
+          </form>
+        );
+      })}
+    </section>
   );
 }

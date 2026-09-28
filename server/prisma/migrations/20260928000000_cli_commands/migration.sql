@@ -1,0 +1,10 @@
+ALTER TABLE "app_settings" ADD COLUMN "codex_manual_command" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "app_settings" ADD COLUMN "codex_auto_command" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "app_settings" ADD COLUMN "codex_auto_version" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "app_settings" ADD COLUMN "codex_manual_version" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "app_settings" ADD COLUMN "codex_checked_at" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "app_settings" ADD COLUMN "claude_manual_command" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "app_settings" ADD COLUMN "claude_auto_command" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "app_settings" ADD COLUMN "claude_auto_version" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "app_settings" ADD COLUMN "claude_manual_version" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "app_settings" ADD COLUMN "claude_checked_at" TEXT NOT NULL DEFAULT '';
