@@ -2,7 +2,7 @@ import { forwardRef, useRef, useState, type ReactNode } from 'react';
 import { DndContext, DragOverlay, MouseSensor, TouchSensor, closestCenter, pointerWithin, useSensor, useSensors, type CollisionDetection, type DragEndEvent, type DragMoveEvent, type DragOverEvent, type DragStartEvent, type DraggableSyntheticListeners } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { CalendarDays, GripVertical } from 'lucide-react';
+import { CalendarDays, ChevronRight, GripVertical } from 'lucide-react';
 import type { Tag, Task, Topic } from '@/lib/api.js';
 import { priorities, statuses } from '@/lib/api.js';
 import type { TaskDraft } from '@/lib/todo.js';
@@ -105,7 +105,7 @@ export function TaskList({ tasks, topics, tags, onOpen, onToggle, onMove, onDele
   })}</SortableContext>;
   const activeTask = drag ? ordered.find((task) => task.id === drag.id) : undefined;
   const activeChildren = activeTask && activeRow && !activeRow.parentId ? ordered.filter((task) => task.parentId === activeTask.id) : [];
-  const folded = foldedRoots.length > 0 && <details className="pt-2"><summary className="cursor-pointer text-sm text-muted-foreground">已完成 · {foldedRoots.length}</summary><div className="mt-2 space-y-2">{foldedRoots.map((task, index) => {
+  const folded = foldedRoots.length > 0 && <details className="pt-2"><summary className="task-fold"><ChevronRight aria-hidden className="task-fold-chevron" />已完成 · {foldedRoots.length}</summary><div className="mt-2 space-y-2">{foldedRoots.map((task, index) => {
     const children = childrenOf(task.id);
     return <StaticTask key={task.id} task={task} group={foldedRoots} index={index} nested={false} actions={resting}>{hierarchical && children.length > 0 && <div className="mt-2 space-y-2">{children.map((child, childIndex) => <StaticTask key={child.id} task={child} group={children} index={childIndex} nested actions={resting} />)}</div>}</StaticTask>;
   })}</div></details>;

@@ -77,7 +77,6 @@ test.describe('Agent 工作室 MVP', () => {
     const topic = await createTopic(request, 'E2E 成果主题');
     await configureMock(request);
     await page.goto('/#/board');
-    await page.getByText('探索与成果', { exact: true }).click();
 
     const firstChat = page.waitForResponse((response) => response.url().endsWith('/api/chat') && response.request().method() === 'POST');
     await send(page, '生成成果草稿 第一版');

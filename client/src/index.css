@@ -241,6 +241,70 @@
     background: var(--glass-bg-strong);
   }
 
+  .topic-jump,
+  .task-fold {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    width: fit-content;
+    max-width: 100%;
+    border: 1px solid var(--glass-border);
+    border-radius: 999px;
+    background: var(--glass-control);
+    color: var(--foreground);
+    cursor: pointer;
+    font-size: 0.8125rem;
+    font-weight: 550;
+    line-height: 1.2;
+    padding: 0.28rem 0.62rem 0.28rem 0.5rem;
+  }
+
+  .topic-jump {
+    margin-top: 0.45rem;
+  }
+
+  .topic-jump svg,
+  .task-fold svg {
+    width: 0.9rem;
+    height: 0.9rem;
+    flex: none;
+  }
+
+  .task-fold {
+    list-style: none;
+    color: var(--muted-foreground);
+  }
+
+  .task-fold::-webkit-details-marker {
+    display: none;
+  }
+
+  .topic-jump:hover,
+  .task-fold:hover {
+    background: var(--glass-hover);
+    color: var(--foreground);
+  }
+
+  .topic-jump:focus-visible,
+  .task-fold:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  .task-fold-chevron {
+    transition: transform 160ms ease;
+  }
+
+  details[open] > .task-fold .task-fold-chevron {
+    transform: rotate(90deg);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .task-fold-chevron {
+      transition: none;
+    }
+  }
+
   .task-row {
     transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
   }
@@ -366,6 +430,22 @@
   .quick-capture:focus-within {
     border-color: color-mix(in srgb, var(--ring) 38%, var(--glass-border));
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 12%, transparent), inset 0 1px 0 var(--glass-highlight);
+  }
+
+  .quick-capture-row [data-slot="input"] {
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .quick-capture-row [data-slot="input"]:focus-visible {
+    border-color: color-mix(in srgb, var(--ring) 55%, transparent);
+    background: var(--glass-control);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 12%, transparent);
+  }
+
+  .quick-capture-row:focus-within {
+    background: var(--glass-subtle);
   }
 
   .glass-surface {

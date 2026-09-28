@@ -90,6 +90,13 @@ describe('knowledge evidence and review closed loops', () => {
     const project = await topic();
     const initial = await knowledge.brief(ownerActor, project);
     await knowledge.saveBrief(ownerActor, { topicId: project, expectedVersion: initial.revision, manualNotes: '本周只关注文档' });
+    const saved = await prisma.workingBrief.findUniqueOrThrow({ where: { id: `topic:${project}` } });
+    expect(await knowledge.briefNotes(ownerActor, project)).toEqual({ manualNotes: '本周只关注文档' });
+    const untouched = await prisma.workingBrief.findUniqueOrThrow({ where: { id: `topic:${project}` } });
+    expect(untouched).toMatchObject({ revision: saved.revision, content: saved.content, generatedAt: saved.generatedAt });
+    const fresh = await topic();
+    expect(await knowledge.briefNotes(ownerActor, fresh)).toEqual({ manualNotes: '' });
+    expect(await prisma.workingBrief.findUnique({ where: { id: `topic:${fresh}` } })).toBeNull();
     await write('task.create', { topicId: project, title: '完善文档' });
     const regenerated = await knowledge.brief(ownerActor, project);
     expect(regenerated.manualNotes).toBe('本周只关注文档'); expect(regenerated.content).toContain('完善文档'); expect(regenerated.revision).toBe(2);

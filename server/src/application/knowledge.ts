@@ -388,6 +388,12 @@ export class KnowledgeService {
     const versions = await prisma.memoryVersion.findMany({ where: { memoryId: id }, orderBy: { revision: 'desc' } });
     return { ...row, labels: readLabels(row.labels), evidence, health: await evidenceHealth(prisma, actor, evidence), versions: versions.map((item) => ({ ...item, labels: readLabels(item.labels), evidence: readEvidence(item.evidence) })) };
   }
+  async briefNotes(actor: Actor, topicId: string | null) {
+    await checkKnowledgeScope(prisma, actor, topicId);
+    const id = topicId ? `topic:${topicId}` : 'inbox';
+    const row = await prisma.workingBrief.findUnique({ where: { id }, select: { manualNotes: true } });
+    return { manualNotes: row?.manualNotes ?? '' };
+  }
   async brief(actor: Actor, topicId: string | null) {
     const snapshot = await takeKnowledgeSnapshot(actor, { topicId });
     const id = topicId ? `topic:${topicId}` : 'inbox';
