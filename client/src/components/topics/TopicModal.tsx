@@ -23,7 +23,7 @@ export function TopicModal({ form, onChange, onClose, onSave, onDelete, busy = f
           <Label htmlFor="topic-name">清单名称</Label>
           <Input id="topic-name" required value={form.name} onChange={(event) => onChange({ ...form, name: event.target.value })} placeholder="例如：Agent 工作室" />
         </div>
-        <details className="mb-4"><summary className="mb-3 cursor-pointer text-sm text-muted-foreground">探索属性与目标</summary><div className="mb-4">
+        <details className="disclosure mb-4"><summary className="mb-3 cursor-pointer text-sm text-muted-foreground">探索属性与目标</summary><div className="mb-4">
           <Label htmlFor="topic-description">描述</Label>
           <Textarea id="topic-description" value={form.description ?? ''} onChange={(event) => onChange({ ...form, description: event.target.value })} placeholder="这个清单最终想形成什么结果？" />
         </div>

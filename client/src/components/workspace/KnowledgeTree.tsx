@@ -19,7 +19,7 @@ export function KnowledgeTree({ topicId, brief }: { topicId: string | null; brie
       {query.error && <p role="alert" className="text-sm text-destructive">{query.error.message}</p>}
       {branches.map((branch) => <div key={branch.id}>
         <button type="button" className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm hover:bg-muted" aria-pressed={selected === branch.id} onClick={() => { setSelected(branch.id); if (branch.children?.length) toggle(branch.id); }}>
-          <span>{open.includes(branch.id) || selected.startsWith(branch.id) ? '▾' : '▸'} {branch.label}</span><span className="text-xs text-muted-foreground">{branch.count}</span>
+          <span className="flex min-w-0 items-center gap-1"><span className="disclosure-chevron" data-open={open.includes(branch.id) || selected.startsWith(branch.id) || undefined} aria-hidden="true" />{branch.label}</span><span className="text-xs text-muted-foreground">{branch.count}</span>
         </button>
         {(open.includes(branch.id) || branch.children?.some((child) => child.id === selected)) && branch.children?.map((child) => <button key={child.id} type="button" className="flex w-full items-center justify-between gap-2 rounded-lg py-1.5 pr-2 pl-7 text-left text-sm hover:bg-muted" aria-pressed={selected === child.id} onClick={() => setSelected(child.id)}><span>{child.label}</span><span className="text-xs text-muted-foreground">{child.count}</span></button>)}
       </div>)}
