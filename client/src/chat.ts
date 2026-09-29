@@ -47,10 +47,11 @@ export type SseEvent = {
   code?: string;
 };
 
-const READ_ONLY_TOOLS = new Set(['list_topics', 'get_topic', 'get_topic_progress', 'list_tasks', 'get_task']);
+const READ_ONLY_TOOLS = new Set(['list_topics', 'get_topic', 'get_topic_progress', 'list_tasks', 'get_task', 'conversation_search']);
 const PREVIEW_MAX = 80;
 
-export function isReadOnlyTool(name: string) {
+export function isReadOnlyTool(name: string, args?: Record<string, unknown>) {
+  if (name === 'memory') return args?.action === 'read' || args?.action === 'search';
   return READ_ONLY_TOOLS.has(name);
 }
 
@@ -88,8 +89,18 @@ function readTitle(data: unknown) {
 
 export function toolPreview(name: string, args: Record<string, unknown> = {}, result?: ToolResult | null, status?: ToolActivityStatus) {
   if (status === 'rejected') return '已拒绝';
-  if (status === 'pending') return targetPreview(name, args) || '等待审核';
   if (status === 'error' || result?.success === false) return clip(result?.error || '执行失败');
+  if (name === 'conversation_search') {
+    if (typeof args.q === 'string' && args.q.trim()) return clip(args.q);
+    if (typeof args.messageId === 'string' && args.messageId.trim()) return '前后文';
+    return '过往对话';
+  }
+  if (name === 'memory') {
+    if (args.action === 'search') return clip(typeof args.q === 'string' && args.q.trim() ? args.q : '搜索记忆');
+    const title = textField(args, ['title']) || readTitle(result?.data);
+    return clip(title || textField(args, ['memoryId']) || '记忆');
+  }
+  if (status === 'pending') return targetPreview(name, args) || '等待审核';
   if (name === 'list_tasks') {
     const list = Array.isArray(result?.data) ? result.data : [];
     const title = readTitle(list[0]);
@@ -113,7 +124,7 @@ export function groupToolActivities(tools: ToolActivity[]): ToolGroup[] {
     run = [];
   };
   for (const activity of tools) {
-    if (activity.status === 'done' && isReadOnlyTool(activity.name)) run.push(activity);
+    if (activity.status === 'done' && isReadOnlyTool(activity.name, activity.arguments)) run.push(activity);
     else { flush(); groups.push({ kind: 'call', activity }); }
   }
   flush();
@@ -315,7 +326,11 @@ export function applyMessageEvent(messages: ChatMessage[], event: SseEvent): Cha
       ...(event.approvalId ? { approvalId: event.approvalId } : {}),
     }));
   }
-  if (event.type === 'error') return messages.map((item) => item.status === 'streaming' ? { ...item, status: 'failed' } : item);
+  if (event.type === 'error') return messages.map((item) => {
+    const tools = item.tools?.map((tool) => tool.status === 'running' ? { ...tool, status: 'error' as const, error: event.message || '执行失败', preview: toolPreview(tool.name, tool.arguments, { success: false, error: event.message || '执行失败' }, 'error') } : tool);
+    if (item.status === 'streaming') return { ...item, status: 'failed' as const, ...(tools ? { tools } : {}) };
+    return tools ? { ...item, tools } : item;
+  });
   return messages;
 }
 

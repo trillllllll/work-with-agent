@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyApprovalEvent, applyMessageEvent, groupToolActivities, pairToolMessages, parseSseFrame, toolPreview, type ToolActivity } from './chat.js';
+import { applyApprovalEvent, applyMessageEvent, groupToolActivities, isReadOnlyTool, pairToolMessages, parseSseFrame, toolPreview, type ToolActivity } from './chat.js';
 
 describe('chat SSE state', () => {
   it('parses a framed SSE delta and incrementally completes an assistant message', () => {
@@ -44,6 +44,26 @@ describe('chat SSE state', () => {
     expect(toolPreview('execute_shell', { command: 'git status' }, { success: true }, 'done')).toBe('git status');
     expect(toolPreview('create_task', { title: '甲' }, { success: false, error: '用户拒绝，数据未修改' }, 'rejected')).toBe('已拒绝');
     expect(toolPreview('update_task', { taskId: 'task-1' }, { success: false, error: '任务不存在' }, 'error')).toBe('任务不存在');
+    const memoryTools: ToolActivity[] = [
+      { toolCallId: 'm', name: 'memory', arguments: { action: 'read', memoryId: 'm1' }, status: 'done', preview: '暗号' },
+      { toolCallId: 'h', name: 'conversation_search', arguments: { q: '青鸟原句' }, status: 'done', preview: '青鸟原句' },
+      { toolCallId: 'w', name: 'memory', arguments: { action: 'add', title: '暗号' }, status: 'pending', preview: '暗号' },
+    ];
+    expect(groupToolActivities(memoryTools).map((group) => group.kind)).toEqual(['run', 'call']);
+    expect(isReadOnlyTool('memory', { action: 'read' })).toBe(true);
+    expect(isReadOnlyTool('memory', { action: 'search' })).toBe(true);
+    expect(isReadOnlyTool('memory', { action: 'add' })).toBe(false);
+    expect(isReadOnlyTool('conversation_search')).toBe(true);
+    expect(toolPreview('memory', { action: 'add', title: '暗号' }, undefined, 'pending')).toBe('暗号');
+    expect(toolPreview('memory', { action: 'read', memoryId: 'm1' }, { success: true, data: { title: '暗号' } }, 'done')).toBe('暗号');
+    expect(toolPreview('conversation_search', { q: '青鸟原句' }, { success: true, data: {} }, 'done')).toBe('青鸟原句');
+    expect(toolPreview('conversation_search', { messageId: 'm1' }, undefined, 'running')).toBe('前后文');
+    let failed = applyMessageEvent([], { type: 'message_start', messageId: 'm9' });
+    failed = applyMessageEvent(failed, { type: 'message_end', messageId: 'm9' });
+    failed = applyMessageEvent(failed, { type: 'tool_call', messageId: 'm9', toolCallId: 'blank', toolName: 'memory', arguments: { action: 'search', target: 'topic', q: '' } });
+    failed = applyMessageEvent(failed, { type: 'error', code: 'INVALID_TOOL_ARGUMENTS', message: 'search 需要关键词' });
+    expect(failed[0]?.status).toBe('completed');
+    expect(failed[0]?.tools?.[0]).toMatchObject({ status: 'error', error: 'search 需要关键词', preview: 'search 需要关键词' });
   });
 
   it('pairs stored tool rows and anchors a pending approval', () => {

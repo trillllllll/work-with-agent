@@ -47,6 +47,32 @@ describe('Agent tool gate', () => {
           { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ topicId: topic }).slice(10) } }] }, finish_reason: 'tool_calls' }] },
         ]);
       }
+      const hasToolReply = (body.messages ?? []).some((message: any) => message.role === 'tool');
+      const userText = String(user?.content ?? '');
+      const systemText = String((body.messages ?? []).find((message: any) => message.role === 'system')?.content ?? '');
+      const mentionedMemoryId = userText.match(/记忆id=(\S+)/)?.[1];
+      const mentionedRevision = Number(userText.match(/版本=(\d+)/)?.[1] ?? 0);
+      const answer = (text: string) => sseResponse([{ choices: [{ delta: { content: text }, finish_reason: 'stop' }] }]);
+      const tool = (id: string, name: string, args: Record<string, unknown>) => sseResponse([{ choices: [{ delta: { tool_calls: [{ index: 0, id, function: { name, arguments: JSON.stringify(args) } }] }, finish_reason: 'tool_calls' }] }]);
+      if (userText.includes('读取完整记忆') && hasToolReply) return answer('已读到记忆。');
+      if (userText.includes('读取完整记忆')) {
+        const memoryId = systemText.match(/id=(\S+)(?: revision=\d+ kind=\w+)? 《完整记忆标题》/)?.[1];
+        return tool('call_memory_read', 'memory', { action: 'read', target: 'inbox', memoryId });
+      }
+      if (userText.includes('空白搜索记忆') && hasToolReply) return answer('已列出记忆。');
+      if (userText.includes('空白搜索记忆')) return tool('call_memory_blank', 'memory', { action: 'search', target: 'inbox', q: '' });
+      if (userText.includes('搜索溢出记忆') && hasToolReply) return answer('已搜到记忆。');
+      if (userText.includes('搜索溢出记忆')) return tool('call_memory_search', 'memory', { action: 'search', target: 'inbox', q: '搜索专用溢出句青鸟' });
+      if (userText.includes('记下这句长期记忆')) return tool('call_memory_add', 'memory', { action: 'add', target: 'inbox', title: '待确认记忆', content: '还没批准的事实' });
+      if (userText.includes('批准这条长期记忆')) return tool('call_memory_keep', 'memory', { action: 'add', target: 'inbox', title: '长期记忆标题', content: '本地只用一种数据库' });
+      if (userText.includes('再记一次同样的长期记忆')) return tool('call_memory_dup', 'memory', { action: 'add', target: 'inbox', title: '长期记忆标题', content: '本地只用一种数据库' });
+      if (userText.includes('替换这条记忆')) return tool('call_memory_replace', 'memory', { action: 'replace', target: 'topic', memoryId: mentionedMemoryId, expectedRevision: mentionedRevision, title: '新标题', content: '新正文' });
+      if (userText.includes('改到另一清单')) return tool('call_memory_other', 'memory', { action: 'replace', target: 'topic', memoryId: mentionedMemoryId, expectedRevision: 1, title: '越权标题', content: '越权正文' });
+      if (userText.includes('退役另一清单')) return tool('call_memory_remove_other', 'memory', { action: 'remove', target: 'topic', memoryId: mentionedMemoryId, expectedRevision: 1 });
+      if (userText.includes('退役版本不对')) return tool('call_memory_remove', 'memory', { action: 'remove', target: 'topic', memoryId: mentionedMemoryId, expectedRevision: 99 });
+      if (userText.includes('没有清单却写清单记忆')) return tool('call_memory_nolist', 'memory', { action: 'add', target: 'topic', title: '不该写入', content: '没有清单' });
+      if (userText.includes('查找历史原句') && hasToolReply) return answer('已找到原句。');
+      if (userText.includes('查找历史原句')) return tool('call_history', 'conversation_search', { q: '独特青鸟原句' });
       const title = String(user?.content ?? '').replace(/^创建任务[：:]?\s*/, '') || 'Agent 任务';
       return sseResponse([
         { choices: [{ delta: { content: '我准备创建这个任务。' }, finish_reason: null }] },
@@ -73,6 +99,8 @@ describe('Agent tool gate', () => {
     expect(JSON.parse(String(modelRequest?.body)).tools).toEqual(expect.arrayContaining([
       expect.objectContaining({ function: expect.objectContaining({ name: 'create_task' }) }),
       expect.objectContaining({ function: expect.objectContaining({ name: 'list_tasks' }) }),
+      expect.objectContaining({ function: expect.objectContaining({ name: 'memory' }) }),
+      expect.objectContaining({ function: expect.objectContaining({ name: 'conversation_search' }) }),
     ]));
     expect(events.some((event) => event.event === 'message_delta' && event.delta?.includes('我准备创建'))).toBe(true);
     expect(events.some((event) => event.event === 'approval_required')).toBe(true);
@@ -289,6 +317,146 @@ describe('Agent tool gate', () => {
     } finally {
       await prisma.conversation.delete({ where: { id: conversation.id } }).catch(() => undefined);
     }
+  });
+
+  async function proposalCommands(responseText: string) {
+    const approvalId = approvalIdFrom(responseText);
+    const approval = await prisma.approval.findUniqueOrThrow({ where: { id: approvalId } });
+    const link = JSON.parse(approval.result ?? '{}') as { proposalId: string };
+    const proposal = await prisma.proposal.findUniqueOrThrow({ where: { id: link.proposalId } });
+    return { approvalId, commands: JSON.parse(proposal.commands) as Array<{ kind: string; entityId?: string; input: { title?: string; content?: string; evidence?: Array<{ type: string; id: string; revision: number }> } }> };
+  }
+
+  it('reads a memory immediately and returns the part left out of the prompt', async () => {
+    const suffix = '读到的完整后缀';
+    await prisma.memory.create({ data: { id: 'agent-memory-read', topicId: null, kind: 'fact', title: '完整记忆标题', content: `${'甲'.repeat(400)}${suffix}`, importance: 5, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } });
+    const response = await request(app).post('/api/chat').send({ message: '读取完整记忆', pageContext: { page: 'inbox' } });
+    expect(response.status).toBe(200);
+    expect(response.text).toContain('event: tool_result');
+    expect(response.text).toContain(suffix);
+    expect(response.text).toContain('已读到记忆');
+    expect(response.text).not.toContain('event: approval_required');
+    const system = modelRequestFor('读取完整记忆').messages.find((message: { role?: string }) => message.role === 'system').content as string;
+    expect(system).toContain('完整记忆标题');
+    expect(system).not.toContain(suffix);
+  });
+
+  it('lists memories when search is called without a keyword', async () => {
+    const response = await request(app).post('/api/chat').send({ message: '空白搜索记忆', pageContext: { page: 'inbox' } });
+    expect(response.text).toContain('event: tool_result');
+    expect(response.text).toContain('已列出记忆');
+    expect(response.text).not.toContain('INVALID_TOOL_ARGUMENTS');
+    expect(response.text).not.toContain('event: error');
+  });
+
+  it('searches memories that are outside the visible block', async () => {
+    await prisma.memory.create({ data: { id: 'agent-memory-search', topicId: null, kind: 'fact', title: '搜索标题', content: `搜索专用溢出句青鸟${'隐'.repeat(280)}`, importance: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } });
+    const response = await request(app).post('/api/chat').send({ message: '搜索溢出记忆', pageContext: { page: 'inbox' } });
+    expect(response.text).toContain('搜索专用溢出句青鸟');
+    expect(response.text).toContain('已搜到记忆');
+    expect(response.text).not.toContain('event: approval_required');
+  });
+
+  it('keeps a memory add pending and cites the chat in the same proposal', async () => {
+    const response = await request(app).post('/api/chat').send({ message: '记下这句长期记忆', pageContext: { page: 'inbox' } });
+    expect(response.text).toContain('event: approval_required');
+    expect(await prisma.memory.findFirst({ where: { title: '待确认记忆' } })).toBeNull();
+    expect(await prisma.material.findFirst({ where: { title: { contains: '待确认记忆' } } })).toBeNull();
+    const { approvalId, commands } = await proposalCommands(response.text);
+    const material = commands.find((command) => command.kind === 'material.create');
+    const memory = commands.find((command) => command.kind === 'memory.create');
+    expect(material?.entityId).toBeTruthy();
+    expect(memory?.input.evidence?.[0]).toMatchObject({ type: 'material', id: material?.entityId, revision: 1 });
+    expect(memory?.input.content).toBe('还没批准的事实');
+    const preview = await request(app).post(`/api/agent/approvals/${approvalId}/preview`);
+    expect(preview.status).toBe(200);
+    const previewText = JSON.stringify(preview.body);
+    expect(previewText).toContain('还没批准的事实');
+    expect(previewText).toContain('记下这句长期记忆');
+  });
+
+  it('records a rejection without writing the memory', async () => {
+    const response = await request(app).post('/api/chat').send({ message: '记下这句长期记忆', pageContext: { page: 'inbox' } });
+    const rejected = await request(app).post(`/api/agent/approvals/${approvalIdFrom(response.text)}/reject`);
+    expect(rejected.status).toBe(200);
+    const messages = await request(app).get(`/api/conversations/${conversationIdFrom(response.text)}/messages`);
+    expect(messages.body.data.some((item: { role: string; content: string }) => item.role === 'tool' && item.content.includes('用户拒绝，数据未修改'))).toBe(true);
+    expect(await prisma.memory.findFirst({ where: { title: '待确认记忆' } })).toBeNull();
+  });
+
+  it('applies an approved memory with the chat excerpt as evidence and rejects a duplicate', async () => {
+    const response = await request(app).post('/api/chat').send({ message: '批准这条长期记忆', pageContext: { page: 'inbox' } });
+    const approved = await request(app).post(`/api/agent/approvals/${approvalIdFrom(response.text)}/approve`);
+    expect(approved.status).toBe(200);
+    expect(approved.body.data.result.success).toBe(true);
+    const saved = approved.body.data.result.data;
+    expect(saved.kind).toBe('fact');
+    expect(saved.origin).toBe('ai');
+    const material = await prisma.material.findUniqueOrThrow({ where: { id: saved.evidence[0].id } });
+    expect(material.kind).toBe('thread');
+    const version = await prisma.materialVersion.findFirstOrThrow({ where: { materialId: material.id } });
+    expect(version.content).toContain('批准这条长期记忆');
+    const row = await prisma.memory.findFirstOrThrow({ where: { title: '长期记忆标题' } });
+    expect(row.origin).toBe('ai');
+    expect(row.content).toBe('本地只用一种数据库');
+
+    const duplicate = await request(app).post('/api/chat').send({ message: '再记一次同样的长期记忆', pageContext: { page: 'inbox' } });
+    expect(duplicate.text).toContain('完全相同的记忆已经存在');
+    expect(duplicate.text).not.toContain('event: error');
+    expect(await prisma.memory.count({ where: { title: '长期记忆标题', content: '本地只用一种数据库' } })).toBe(1);
+  });
+
+  it('prepares a replacement without changing the memory before approval', async () => {
+    const timestamp = new Date().toISOString();
+    const row = await prisma.memory.create({ data: { id: 'agent-memory-replace', topicId, kind: 'fact', title: '旧标题', content: '旧正文', createdAt: timestamp, updatedAt: timestamp } });
+    const response = await request(app).post('/api/chat').send({ message: `替换这条记忆 记忆id=${row.id} 版本=1`, pageContext: { topicId, page: 'board' } });
+    expect(response.text).toContain('event: approval_required');
+    const stored = await prisma.memory.findUniqueOrThrow({ where: { id: row.id } });
+    expect(stored).toMatchObject({ title: '旧标题', content: '旧正文', revision: 1 });
+    const { commands } = await proposalCommands(response.text);
+    expect(commands.map((command) => command.kind)).toEqual(['material.create', 'memory.update']);
+    expect(commands[1]?.input).toMatchObject({ title: '新标题', content: '新正文' });
+    expect(await prisma.memory.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ content: '旧正文' });
+  });
+
+  it('refuses to edit a memory outside the open list', async () => {
+    const timestamp = new Date().toISOString();
+    const other = await prisma.topic.create({ data: { name: '另一清单', createdAt: timestamp, updatedAt: timestamp } });
+    const row = await prisma.memory.create({ data: { id: 'agent-memory-other', topicId: other.id, kind: 'fact', title: '另一处标题', content: '另一处正文', createdAt: timestamp, updatedAt: timestamp } });
+    const replaced = await request(app).post('/api/chat').send({ message: `改到另一清单 记忆id=${row.id}`, pageContext: { topicId, page: 'board' } });
+    expect(replaced.text).toContain('这条记忆不属于当前范围');
+    expect(replaced.text).not.toContain('event: error');
+    const removed = await request(app).post('/api/chat').send({ message: `退役另一清单 记忆id=${row.id}`, pageContext: { topicId, page: 'board' } });
+    expect(removed.text).toContain('这条记忆不属于当前范围');
+    expect(await prisma.memory.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ title: '另一处标题', content: '另一处正文', status: 'active', revision: 1 });
+  });
+
+  it('refuses a stale revision and a topic memory when no list is open', async () => {
+    const timestamp = new Date().toISOString();
+    const row = await prisma.memory.create({ data: { id: 'agent-memory-version', topicId, kind: 'fact', title: '版本标题', content: '版本正文', createdAt: timestamp, updatedAt: timestamp } });
+    const stale = await request(app).post('/api/chat').send({ message: `退役版本不对 记忆id=${row.id}`, pageContext: { topicId, page: 'board' } });
+    expect(stale.text).toContain('记忆版本不一致，请先 read 再修改');
+    expect(stale.text).not.toContain('event: error');
+    expect(await prisma.memory.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({ content: '版本正文', status: 'active', revision: 1 });
+    const missingList = await request(app).post('/api/chat').send({ message: '没有清单却写清单记忆', pageContext: { page: 'inbox' } });
+    expect(missingList.text).toContain('没有打开清单，不能使用清单记忆');
+    expect(missingList.text).not.toContain('event: approval_required');
+    const messages = await request(app).get(`/api/conversations/${conversationIdFrom(missingList.text)}/messages`);
+    expect(messages.body.data.find((item: { role: string }) => item.role === 'assistant').status).toBe('completed');
+    expect(await prisma.memory.findFirst({ where: { title: '不该写入' } })).toBeNull();
+  });
+
+  it('finds an original sentence in another conversation without editing it', async () => {
+    const timestamp = new Date().toISOString();
+    const older = await prisma.conversation.create({ data: { createdAt: timestamp, updatedAt: timestamp } });
+    const kept = '独特青鸟原句在另一段对话';
+    const message = await prisma.message.create({ data: { conversationId: older.id, role: 'assistant', content: kept, status: 'completed', createdAt: timestamp } });
+    const response = await request(app).post('/api/chat').send({ message: '查找历史原句', pageContext: { page: 'inbox' } });
+    expect(response.text).toContain('独特青鸟原句');
+    expect(response.text).toContain('已找到原句');
+    expect(response.text).not.toContain('event: approval_required');
+    expect((await prisma.message.findUniqueOrThrow({ where: { id: message.id } })).content).toBe(kept);
+    await prisma.conversation.delete({ where: { id: older.id } });
   });
 
   afterAll(async () => {

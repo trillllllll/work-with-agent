@@ -35,6 +35,7 @@ export const toolLabels: Record<string, string> = {
   list_topics: '列出清单', get_topic: '读取清单', get_topic_progress: '读取进度', list_tasks: '查询任务', get_task: '读取任务',
   create_task: '创建任务', update_task: '更新任务', delete_task: '删除任务', create_topic: '创建主题', update_topic: '更新主题', delete_topic: '归档清单', propose_topic_summary: '提出成果草稿',
   execute_shell: '执行命令', execute_file: '文件操作', execute_http: '访问地址',
+  memory: '记忆', conversation_search: '查找过往对话',
 };
 export const API_URL = '';
 let csrfToken = '';

@@ -1,4 +1,5 @@
 import { prisma } from '../infrastructure/prisma.js';
+import { formatMemoryReference } from './agent-memory.js';
 
 const now = () => new Date().toISOString();
 const notFound = (message: string) => Object.assign(new Error(message), { status: 404 });
@@ -345,6 +346,7 @@ export class ContextService {
   async assemble(conversationId: string, pageContext: PageContextInput = {}, signal?: AbortSignal) {
     const { messages, summary } = await this.syncSummary(conversationId, signal);
     const tasks = await nearbyTasks(pageContext);
-    return { systemPrompt: formatSystemPrompt(pageContext, tasks), messages: replayWindow(messages, summary) };
+    const memory = await formatMemoryReference(pageContext);
+    return { systemPrompt: `${formatSystemPrompt(pageContext, tasks)}\n\n${memory}`, messages: replayWindow(messages, summary) };
   }
 }

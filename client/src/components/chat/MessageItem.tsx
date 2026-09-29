@@ -21,7 +21,7 @@ function payloadText(activity: ToolActivity) {
 function statusText(activity: ToolActivity) {
   if (activity.status === 'running') return '进行中';
   if (activity.status === 'pending') return '等待审核';
-  if (activity.status === 'done' && !isReadOnlyTool(activity.name)) return '已执行';
+  if (activity.status === 'done' && !isReadOnlyTool(activity.name, activity.arguments)) return '已执行';
   return '';
 }
 

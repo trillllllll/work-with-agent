@@ -23,6 +23,16 @@ describe('application services', () => {
     expect(tools.isReadOnly('create_task')).toBe(false);
     expect(tools.isKnown('delete_topic')).toBe(true);
     expect(tools.isReadOnly('delete_topic')).toBe(false);
+    expect(tools.isReadOnly('memory')).toBe(false);
+    expect(tools.isReadOnly('memory', { action: 'read' })).toBe(true);
+    expect(tools.isReadOnly('memory', { action: 'search' })).toBe(true);
+    expect(tools.isReadOnly('memory', { action: 'add' })).toBe(false);
+    expect(tools.isReadOnly('conversation_search')).toBe(true);
+    expect(tools.validate({ name: 'memory', arguments: { action: 'add', target: 'inbox', title: '甲', content: '乙' } })).toBeNull();
+    expect(tools.validate({ name: 'memory', arguments: { action: 'read', target: 'inbox' } })).toContain('memoryId');
+    expect(tools.validate({ name: 'memory', arguments: { action: 'search', target: 'inbox', q: '' } })).toBeNull();
+    expect(tools.validate({ name: 'memory', arguments: { action: 'search', target: 'topic' } })).toBeNull();
+    expect(tools.validate({ name: 'conversation_search', arguments: {} })).toContain('关键词');
   });
 
   it('enforces controlled execution boundaries', async () => {

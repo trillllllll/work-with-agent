@@ -4,6 +4,7 @@ import type { ToolCall, MutationContext } from './workspace.js';
 import { randomUUID } from 'node:crypto';
 import { CommandService, type Command } from './commands.js';
 import { internalActor } from './security.js';
+import { submitMemoryProposal } from './agent-memory.js';
 
 export type ApprovalStatus = ApprovalState;
 export type ApprovalResult = { success: boolean; data?: unknown; error?: string };
@@ -11,6 +12,7 @@ const now = () => new Date().toISOString();
 
 export class ApprovalService {
   private async prepare(call: ToolCall, audit: Pick<MutationContext, 'conversationId' | 'approvalId'> = {}, allowLegacyRefresh = false) {
+    if (call.name === 'memory') throw Object.assign(new Error('记忆审核已经生成提议'), { status: 400 });
     let result: string | undefined;
     if (!call.name.startsWith('execute_')) {
       const args = { ...call.arguments };
@@ -30,11 +32,17 @@ export class ApprovalService {
     }
     return result;
   }
-  async create(call: ToolCall, conversationId?: string) {
+  async create(call: ToolCall, conversationId?: string, pageContext?: { topicId?: string | null; taskId?: string | null }) {
     const timestamp = now();
     const id = randomUUID();
-    const prepared = await this.prepare(call, { conversationId, approvalId: id });
-    const stored = prepared ? JSON.parse(prepared) as Record<string, unknown> : {};
+    let stored: Record<string, unknown> = {};
+    if (call.name === 'memory') {
+      const proposal = await submitMemoryProposal(call.arguments, { conversationId, approvalId: id, topicId: pageContext?.topicId ?? null });
+      stored = { proposalId: proposal.proposalId, proposalRevision: proposal.proposalRevision };
+    } else {
+      const prepared = await this.prepare(call, { conversationId, approvalId: id });
+      if (prepared) stored = JSON.parse(prepared) as Record<string, unknown>;
+    }
     if (call.id) stored.toolCallId = call.id;
     return prisma.approval.create({ data: { id, toolName: call.name, arguments: JSON.stringify(call.arguments), conversationId, result: Object.keys(stored).length ? JSON.stringify(stored) : null, createdAt: timestamp, updatedAt: timestamp } });
   }

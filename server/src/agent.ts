@@ -160,25 +160,42 @@ export class AgentService {
       await this.conversations.updateMessage(assistantId, { toolCalls: serializeToolCalls(calls) });
       const toolMessages: ModelMessage[] = [];
       let hasPendingApproval = false;
+      let stopAfterTools = false;
       for (const call of calls) {
         const toolCallId = call.id ?? '';
         yield { type: 'tool_call', conversationId, messageId: assistantId, toolCallId, toolName: call.name, arguments: call.arguments };
         const validationError = this.tools.validate(call);
-        if (validationError) throw Object.assign(modelError(validationError, validationError.startsWith('未知 Tool') ? 'UNKNOWN_TOOL' : 'INVALID_TOOL_ARGUMENTS'), { conversationId });
-        if (!this.tools.isReadOnly(call.name)) {
-          const approval = await this.approvals.create(call, conversationId);
-          hasPendingApproval = true;
-          yield { type: 'approval_required', conversationId, messageId: assistantId, toolCallId, toolName: call.name, arguments: call.arguments, approvalId: approval.id };
+        if (validationError) {
+          if (call.name !== 'memory' && call.name !== 'conversation_search') throw Object.assign(modelError(validationError, validationError.startsWith('未知 Tool') ? 'UNKNOWN_TOOL' : 'INVALID_TOOL_ARGUMENTS'), { conversationId });
+          const result: ToolResult = { success: false, error: validationError, code: 'INVALID_TOOL_ARGUMENTS' };
+          await this.conversations.addMessage(conversationId, 'tool', JSON.stringify({ toolName: call.name, toolCallId: call.id, ...result }), 'completed', { toolCallId: call.id });
+          yield { type: 'tool_result', conversationId, messageId: assistantId, toolCallId, toolName: call.name, arguments: call.arguments, result };
+          toolMessages.push({ role: 'tool', tool_call_id: toolCallId, content: JSON.stringify(result) });
           continue;
         }
-        const result = await this.tools.execute(call);
+        if (!this.tools.isReadOnly(call.name, call.arguments)) {
+          try {
+            const approval = await this.approvals.create(call, conversationId, input.pageContext);
+            hasPendingApproval = true;
+            yield { type: 'approval_required', conversationId, messageId: assistantId, toolCallId, toolName: call.name, arguments: call.arguments, approvalId: approval.id };
+          } catch (error) {
+            if (call.name !== 'memory') throw error;
+            const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : undefined;
+            const result: ToolResult = { success: false, error: error instanceof Error ? error.message : '记忆写入失败', ...(code ? { code } : {}) };
+            await this.conversations.addMessage(conversationId, 'tool', JSON.stringify({ toolName: call.name, toolCallId: call.id, ...result }), 'completed', { toolCallId: call.id });
+            yield { type: 'tool_result', conversationId, messageId: assistantId, toolCallId, toolName: call.name, arguments: call.arguments, result };
+            stopAfterTools = true;
+          }
+          continue;
+        }
+        const result = await this.tools.execute(call, { source: 'agent', conversationId, topicId: input.pageContext?.topicId ?? null, taskId: input.pageContext?.taskId ?? null });
         await this.conversations.addMessage(conversationId, 'tool', JSON.stringify({ toolName: call.name, toolCallId: call.id, ...result }), 'completed', { toolCallId: call.id });
         yield { type: 'tool_result', conversationId, messageId: assistantId, toolCallId, toolName: call.name, arguments: call.arguments, result };
         toolMessages.push({ role: 'tool', tool_call_id: toolCallId, content: JSON.stringify(result) });
       }
       // A write call is intentionally never returned to the model as if it
       // had executed. The approval endpoint owns the later side effect.
-      if (hasPendingApproval) { yield { type: 'done', conversationId }; return; }
+      if (hasPendingApproval || stopAfterTools) { yield { type: 'done', conversationId }; return; }
       if (!toolMessages.length) { yield { type: 'done', conversationId }; return; }
       messages.push({
         role: 'assistant',
@@ -210,7 +227,8 @@ export class AgentService {
     if (proposal?.proposalId) {
       if (approval.status !== 'pending') throw Object.assign(new Error('该审核已处理'), { status: 409 });
       const applied = await new CommandService().approve(ownerActor, proposal.proposalId, { expectedRevision: proposal.proposalRevision, requestId: `approval:${approval.id}` });
-      const result: ToolResult = { success: true, data: applied.results?.[0] };
+      const results = Array.isArray(applied.results) ? applied.results : [];
+      const result: ToolResult = { success: true, data: results.length > 1 ? results[results.length - 1] : results[0] };
       // The Proposal and Receipt commit with the Todo mutation. This compatibility
       // Approval row is recoverable by replaying the same receipt after a crash.
       await prismaApprovalComplete(approval.id, result);

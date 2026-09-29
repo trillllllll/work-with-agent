@@ -5,6 +5,9 @@ import { taskCreateSchema, taskUpdateSchema as taskPatchSchema, topicCreateSchem
 import { CommandService, type Command } from './commands.js';
 import { assertTopicAccess, internalActor, ownerActor } from './security.js';
 import { randomUUID } from 'node:crypto';
+import { runAgentMemoryTool, validateConversationSearchArguments, validateMemoryArguments } from './agent-memory.js';
+
+type ToolRunContext = MutationContext & { topicId?: string | null; taskId?: string | null };
 
 export type ToolResult = { success: boolean; data?: unknown; error?: string; code?: string };
 export type ToolDefinition = { name: string; description: string; parameters: Record<string, unknown>; requiresApproval: boolean; validate: (args: Record<string, unknown>) => string | null; execute: (args: Record<string, unknown>) => Promise<ToolResult> };
@@ -49,13 +52,53 @@ export class ToolService {
       execute_shell: this.define('execute_shell', '在受控工作区执行白名单命令', { command: string, args: { type: 'array' }, workingDirectory: string, timeoutMs: { type: 'number' } }, true, async (a) => this.execution.execute({ kind: 'shell', input: a, approvalId: 'tool' }), ['command']),
       execute_file: this.define('execute_file', '在受控工作区进行文件操作', { operation: string, path: string, content: string, recursive: { type: 'boolean' } }, true, async (a) => this.execution.execute({ kind: 'file', input: a, approvalId: 'tool' }), ['operation', 'path']),
       execute_http: this.define('execute_http', '访问受控 HTTP(S) 目标', { method: string, url: string, headers: { type: 'object' }, body: { type: 'object' }, timeoutMs: { type: 'number' } }, true, async (a) => this.execution.execute({ kind: 'http', input: a, approvalId: 'tool' }), ['url']),
+      memory: {
+        name: 'memory',
+        description: '维护已经确认的长期记忆。target 为 inbox 时使用收集箱；为 topic 时只使用当前打开的清单，没有打开清单会失败，也不能指定其他清单。add 新增，replace 整条替换，remove 退役后不再进入每轮提示（历史版本还在），read 读取一条，search 在当前范围搜索。search 的 q 留空或传 * 时列出该范围最近的记忆，用来回答「还记得什么」。add、replace、remove 只生成待确认，不会立刻改数据。read 和 search 立即返回。只记稳定事实，用陈述句，不要把操作步骤写进记忆，同一事实只放一处。没有现成的任务、材料或记忆来源时，可传 messageIds 指向本对话消息，系统会把这些消息做成一份会话材料，和记忆放在同一个待确认里；不传则引用最新的用户消息。replace 和 remove 必须提供 memoryId 与 expectedRevision。可见记忆接近上限时先 replace 或 remove 再 add。提示里放不下的条目仍可用 read 或 search 找到。完全相同的条目会被拒绝。',
+        parameters: {
+          type: 'object', additionalProperties: false, required: ['action', 'target'],
+          properties: {
+            action: { type: 'string', enum: ['add', 'replace', 'remove', 'read', 'search'], description: 'add 新增，replace 整条替换，remove 退役，read 读取，search 搜索' },
+            target: { type: 'string', enum: ['inbox', 'topic'], description: 'inbox 是收集箱，topic 是当前打开的清单' },
+            title: { type: 'string' }, content: { type: 'string' },
+            kind: { type: 'string', enum: ['fact', 'decision', 'constraint', 'learning', 'question'] },
+            importance: { type: 'number', description: '1 到 5，省略时为 3' },
+            labels: { type: 'array', items: { type: 'string' } },
+            memoryId: { type: 'string' },
+            expectedRevision: { type: 'number', description: 'replace 和 remove 必须提供刚才读到的版本' },
+            q: { type: 'string', description: '搜索关键词。留空或 * 时列出当前范围最近的记忆' },
+            messageIds: { type: 'array', items: { type: 'string' }, description: '作为证据的本对话消息；省略时用最新的用户消息' },
+            evidence: { type: 'array', items: { type: 'object' }, description: '已有来源，每项包含 type（task、material 或 memory）和 id，不要自己填版本' },
+          },
+        },
+        requiresApproval: false,
+        validate: validateMemoryArguments,
+        execute: async () => ({ success: false, error: '记忆工具由专用路径执行' }),
+      },
+      conversation_search: {
+        name: 'conversation_search',
+        description: '在其他全局聊天里查找原文。q 搜索用户和助手原文，返回会话 id、消息 id、时间和截断正文。messageId 返回该消息前后的一小段原文。不做摘要。当前这段对话已经在上下文里，不会从这里返回。只读，不修改历史。',
+        parameters: {
+          type: 'object', additionalProperties: false,
+          properties: {
+            q: { type: 'string', description: '在其他会话的用户和助手原文里查找' },
+            messageId: { type: 'string', description: '返回这条消息前后的原文' },
+          },
+        },
+        requiresApproval: false,
+        validate: validateConversationSearchArguments,
+        execute: async () => ({ success: false, error: '历史查找由专用路径执行' }),
+      },
     };
   }
   private define(name: string, description: string, properties: Record<string, unknown>, requiresApproval: boolean, execute: (args: Record<string, unknown>) => Promise<unknown>, required: string[] = []): ToolDefinition { const parameters = { type: 'object', properties: { ...properties, ...(requiresApproval && !name.startsWith('execute_') ? { expectedRevision: { type: 'number', description: '最近读取的目标revision，修改已有对象时必须提供' } } : {}) }, ...(required.length ? { required } : {}), additionalProperties: false }; return { name, description, parameters, requiresApproval, validate: () => null, execute: async (args) => ({ success: true, data: await execute(args) }) }; }
   private requireResource<T>(value: T | null, message: string) { if (!value) throw notFound(message); return value; }
   definitions() { return Object.values(this.registry).map(({ name, description, parameters }) => ({ type: 'function' as const, function: { name, description, parameters } })); }
   isKnown(name: string) { return Boolean(this.registry[name]); }
-  isReadOnly(name: string) { return this.registry[name]?.requiresApproval === false; }
+  isReadOnly(name: string, args?: Record<string, unknown>) {
+    if (name === 'memory') return args?.action === 'read' || args?.action === 'search';
+    return this.registry[name]?.requiresApproval === false;
+  }
   validate(call: ToolCall) {
     const definition = this.registry[call.name];
     if (!definition) return `未知 Tool: ${call.name}`;
@@ -72,12 +115,13 @@ export class ToolService {
     }
     return definition.validate(call.arguments);
   }
-  async execute(call: ToolCall, context: MutationContext = { source: 'user' }): Promise<ToolResult> {
+  async execute(call: ToolCall, context: ToolRunContext = { source: 'user' }): Promise<ToolResult> {
     const validationError = this.validate(call);
     if (validationError) return { success: false, error: validationError, code: 'INVALID_INPUT' };
     try {
       const actor = context.actor ?? (context.source === 'agent' ? internalActor : ownerActor);
       if (!this.registry[call.name].requiresApproval) {
+        if (call.name === 'memory' || call.name === 'conversation_search') return runAgentMemoryTool(call, context);
         if (typeof call.arguments.topicId === 'string') assertTopicAccess(actor, call.arguments.topicId);
         if (call.name === 'list_tasks' && actor.topicIds !== 'all') return { success: true, data: await this.tasks.list(typeof call.arguments.topicId === 'string' ? call.arguments.topicId : undefined, call.arguments, { OR: [{ topicId: { in: actor.topicIds } }, ...(actor.includeInbox ? [{ topicId: null }] : [])] }) };
         if (call.name === 'list_topics' && actor.topicIds !== 'all') return { success: true, data: (await this.topics.list()).filter((topic) => (actor.topicIds as string[]).includes(topic.id)) };
