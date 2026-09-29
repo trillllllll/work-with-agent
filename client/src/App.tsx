@@ -75,6 +75,7 @@ export function App() {
   const [prompt, setPrompt] = useState<(ActionPrompt & { resolve: (value: boolean) => void }) | null>(null);
   const topicSaveLock = useRef(false);
   const detailRef = useRef<TaskDetailHandle>(null);
+  const [detailSlot, setDetailSlot] = useState<HTMLDivElement | null>(null);
   const [detailDirty, setDetailDirty] = useState(false);
   const captureRef = useRef<QuickCaptureHandle>(null);
   const previousMain = useRef<View>('inbox');
@@ -268,19 +269,19 @@ export function App() {
     if (!taskIdRef.current) return;
     detailRef.current?.requestTransition(closeTask);
   }, [page]);
-  const detailPane = taskId ? <TaskDetailPane key={taskId} ref={detailRef} id={taskId} fallback={tasks.find((task) => task.id === taskId)} tags={tags} readonly={archived} presentation={isDesktop ? 'panel' : showChat ? 'retained' : 'modal'} onSave={patchTask} onClose={closeTask} onDirtyChange={setDetailDirty} /> : null;
+  const detailPane = taskId ? <TaskDetailPane key={taskId} ref={detailRef} id={taskId} fallback={tasks.find((task) => task.id === taskId)} tags={tags} readonly={archived} presentation={isDesktop ? 'panel' : showChat ? 'retained' : 'modal'} panelSlot={detailSlot} onSave={patchTask} onClose={closeTask} onDirtyChange={setDetailDirty} /> : null;
   const hasAccessory = showChat || (isDesktop && Boolean(taskId));
   return <>
     <div className="app-backdrop h-dvh overflow-hidden bg-background p-0 xl:p-4">
       <div className={cn('app-frame h-full overflow-hidden', isDesktop ? 'grid' : 'flex flex-col')} style={isDesktop ? { gridTemplateColumns: hasAccessory ? '232px minmax(20rem, 1fr) minmax(340px, 400px)' : '232px minmax(0, 1fr)' } : undefined}>
         {isDesktop && <Sidebar route={route} page={page} topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onNavigate={navigateSafely} onSelectTopic={selectTopic} onEditTopic={setTopicForm} onNewTopic={newTopic} />}
         <main className="app-main glass-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto bg-[var(--glass-bg-strong)]">{!isDesktop && showChat ? chatPanel : content}</main>
-        {isDesktop && hasAccessory && <div className="accessory-pane min-h-0 min-w-0 border-l glass-divider xl:rounded-r-[22px] xl:border-y xl:border-r">{taskId && <div className={cn('h-full min-h-0', showChat && 'hidden')}>{detailPane}</div>}{showChat && <div className="h-full min-h-0">{chatPanel}</div>}</div>}
+        <div className={cn('accessory-pane min-h-0 min-w-0', isDesktop && hasAccessory ? 'border-l glass-divider xl:rounded-r-[22px] xl:border-y xl:border-r' : 'hidden')}><div ref={setDetailSlot} className={cn('h-full min-h-0', (!isDesktop || !taskId || showChat) && 'hidden')} />{isDesktop && showChat && <div className="h-full min-h-0">{chatPanel}</div>}</div>
         {!isDesktop && <nav aria-label="主导航" className="mobile-tab-bar glass-surface grid shrink-0 grid-cols-5 rounded-none border-x-0 border-b-0 pb-[env(safe-area-inset-bottom)]">{[...navigation.slice(0, 4), { view: 'more' as View, label: '更多', icon: Menu }].map(({ view, label, icon: Icon }) => <button key={view} className={cn('mobile-tab-item flex flex-col items-center gap-1 py-3 text-[11px]', route === view ? 'text-foreground' : 'text-muted-foreground')} onClick={() => navigateSafely(view)} aria-current={route === view ? 'page' : undefined}><Icon className="size-5" />{label}</button>)}</nav>}
       </div>
     </div>
     {workspaceView && <WorkspaceModal view={workspaceView} onViewChange={navigateSafely} onClose={() => navigateSafely(previousMain.current)} settings={<SettingsView />} changes={<ChangesPage />} trash={<TrashPage tasks={trashQuery.data ?? []} loading={trashQuery.isLoading} onRestore={(task) => run(actions.write(`/api/trash/tasks/${task.id}/restore`, 'POST', undefined, [task.id, ...(task.parentId ? [task.parentId] : []), ...(task.children ?? (trashQuery.data ?? []).filter((child) => child.parentId === task.id)).map((child) => child.id)], '任务已恢复'))} onPermanentDelete={(task) => run(permanentDelete(task))} />} />}
-    {!isDesktop && detailPane}
+    {detailPane}
     {topicForm && <TopicModal form={topicForm} onChange={setTopicForm} onClose={() => { if (!actions.pending) setTopicForm(null); }} onSave={() => run(saveTopic())} onDelete={() => run(archiveTopic(topicForm))} busy={actions.pending} />}
     {prompt && <ActionDialog prompt={prompt} onResolve={(value) => { prompt.resolve(value); setPrompt(null); }} />}
   </>;

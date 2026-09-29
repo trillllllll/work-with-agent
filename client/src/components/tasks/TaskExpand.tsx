@@ -1,4 +1,5 @@
 import { createContext, forwardRef, useContext, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { CalendarDays, Flag, Hash, X } from 'lucide-react';
 import { priorities, type Tag, type Task, type TaskPriority } from '@/lib/api.js';
 import { draftPatch, isCompositionKey, localDate, mergeTaskDraft, taskDraft, type TaskDraft } from '@/lib/todo.js';
@@ -193,7 +194,7 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
   const onTextBlur = (event: FocusEvent<HTMLElement>) => {
     const allowNull = flushOnNull.current;
     flushOnNull.current = false;
-    if (composing.current || readonly) return;
+    if (!event.currentTarget.isConnected || composing.current || readonly) return;
     if (inEditor(event.relatedTarget) || (allowNull && event.relatedTarget === null)) flushSoon();
   };
   const revertImmediate = (patch: Partial<TaskDraft>) => {
@@ -356,18 +357,67 @@ function ActivityButton({ onOpen }: { onOpen: () => void }) {
   return <Button type="button" variant="outline" size="sm" className="shrink-0 rounded-lg" aria-label="任务动态" onClick={() => { void edit.saveText().then(onOpen); }}>动态</Button>;
 }
 
-function DetailFrame({ presentation, children }: { presentation: 'panel' | 'modal' | 'retained'; children: ReactNode }) {
-  const edit = useEdit();
-  if (presentation === 'retained') return <div hidden>{children}</div>;
-  if (presentation === 'panel') return <aside role="dialog" aria-modal="false" aria-label="任务详情" className="flex h-full min-h-0 flex-col">{children}</aside>;
-  return <Dialog open onOpenChange={(open) => { if (!open) edit.requestClose(); }}><DialogContent showCloseButton={false} surface="glass" className="flex h-[min(92dvh,840px)] max-h-[92dvh] max-w-[min(42rem,calc(100%-3rem))] flex-col overflow-hidden p-0"><DialogTitle className="sr-only">任务详情</DialogTitle><DialogDescription className="sr-only">编辑任务详情、标签、旗标和日期。</DialogDescription>{children}</DialogContent></Dialog>;
+type EditorCaret = { label: '任务标题' | '详情'; start: number; end: number };
+
+function editorCaret(node: Element | null): EditorCaret | null {
+  if (!(node instanceof HTMLTextAreaElement)) return null;
+  const label = node.getAttribute('aria-label');
+  if (label !== '任务标题' && label !== '详情') return null;
+  return { label, start: node.selectionStart ?? 0, end: node.selectionEnd ?? 0 };
 }
 
-export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children' | 'fallback'> & { fallback?: Task; presentation: 'panel' | 'modal' | 'retained' }>(function TaskDetailPane({ presentation, fallback, ...props }, ref) {
+function visibleEditor(label: EditorCaret['label']) {
+  for (const node of document.querySelectorAll('textarea')) {
+    if (!(node instanceof HTMLTextAreaElement) || node.getAttribute('aria-label') !== label || !node.closest('[data-task-editor]')) continue;
+    if (node.getClientRects().length === 0) continue;
+    return node;
+  }
+  return null;
+}
+
+function placeCaret(caret: EditorCaret) {
+  const node = visibleEditor(caret.label);
+  if (!node || node.disabled) return false;
+  node.focus();
+  node.setSelectionRange(caret.start, caret.end);
+  return document.activeElement === node;
+}
+
+function rememberEditorCaret(pending: { current: EditorCaret | null }) {
+  if (typeof document === 'undefined') return;
+  const caret = editorCaret(document.activeElement);
+  if (caret) {
+    pending.current = caret;
+    return;
+  }
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && active !== document.body && !active.closest('[data-task-editor]')) pending.current = null;
+}
+
+function DetailFrame({ presentation, panelSlot, children }: { presentation: 'panel' | 'modal' | 'retained'; panelSlot: HTMLElement | null; children: ReactNode }) {
+  const edit = useEdit();
+  const presentationRef = useRef(presentation);
+  const pendingFocus = useRef<EditorCaret | null>(null);
+  presentationRef.current = presentation;
+  rememberEditorCaret(pendingFocus);
+  useLayoutEffect(() => {
+    const saved = pendingFocus.current;
+    if (saved && placeCaret(saved)) pendingFocus.current = null;
+  }, [presentation, panelSlot]);
+  if (presentation === 'retained') return <div hidden>{children}</div>;
+  if (presentation === 'panel') {
+    const aside = <aside role="dialog" aria-modal="false" aria-label="任务详情" className="flex h-full min-h-0 flex-col">{children}</aside>;
+    if (!panelSlot) return <div hidden>{aside}</div>;
+    return createPortal(aside, panelSlot);
+  }
+  return <Dialog open onOpenChange={(open) => { if (!open && presentationRef.current === 'modal') edit.requestClose(); }}><DialogContent showCloseButton={false} surface="glass" className="flex h-[min(92dvh,840px)] max-h-[92dvh] max-w-[min(42rem,calc(100%-3rem))] flex-col overflow-hidden p-0" onOpenAutoFocus={(event) => { const saved = pendingFocus.current; if (saved && placeCaret(saved)) { pendingFocus.current = null; event.preventDefault(); } }} onCloseAutoFocus={(event) => { if (presentationRef.current !== 'modal') event.preventDefault(); }}><DialogTitle className="sr-only">任务详情</DialogTitle><DialogDescription className="sr-only">编辑任务详情、标签、旗标和日期。</DialogDescription>{children}</DialogContent></Dialog>;
+}
+
+export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children' | 'fallback'> & { fallback?: Task; presentation: 'panel' | 'modal' | 'retained'; panelSlot: HTMLElement | null }>(function TaskDetailPane({ presentation, panelSlot, fallback, ...props }, ref) {
   const [activity, setActivity] = useState(false);
   const placeholder: Task = fallback ?? { id: props.id, title: '', description: '', status: 'todo', priority: 'none', dueDate: null, resultSummary: '', topicId: null, parentId: null, tagIds: [], allowedTransitions: [] };
   return <TaskExpand ref={ref} {...props} fallback={placeholder}>
-    <DetailFrame presentation={presentation}>
+    <DetailFrame presentation={presentation} panelSlot={panelSlot}>
       <div className="flex min-h-0 flex-1 flex-col">
         <header className="flex items-start gap-2 px-5 pt-5"><div className="min-w-0 flex-1"><TaskTitleField /></div><ActivityButton onOpen={() => setActivity(true)} /><CloseDetailButton /></header>
         <div className="flex min-h-0 flex-1 flex-col px-5 pb-5"><TaskExpandBody fill /></div>
