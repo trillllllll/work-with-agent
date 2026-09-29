@@ -12,11 +12,26 @@ import { OrganizationService } from '../application/knowledge-organizations.js';
 
 const topic = (value: unknown) => typeof value === 'string' && value && value !== 'inbox' && value !== 'null' ? value : null;
 const pagination = (query: Record<string, unknown>) => z.object({ cursor: z.coerce.number().int().min(0).optional(), limit: z.coerce.number().int().min(1).max(100).optional() }).parse(query);
+const queryText = (value: unknown) => typeof value === 'string' && value ? value : undefined;
+const materialListQuery = z.object({
+  taskId: z.string().min(1).optional(),
+  archived: z.enum(['only']).optional(),
+  kind: z.enum(['text', 'markdown', 'link', 'thread', 'attachment']).optional(),
+  since: z.string().datetime({ offset: true }).optional(),
+  linked: z.enum(['task']).optional(),
+  sort: z.enum(['title', 'kind', 'updatedAt']).optional(),
+  dir: z.enum(['asc', 'desc']).optional(),
+});
 const requestId = (req: Request) => typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : randomUUID();
 
 export function createKnowledgeRouter(service = new KnowledgeService(), organizations = new OrganizationService(), graph = new KnowledgeGraph(), answer = async (messages: Array<{ role: 'system' | 'user'; content: string }>) => (await new ModelAdapter().complete(messages)).text) {
   const router = Router();
-  router.get('/materials', async (req, res, next) => { try { res.json({ data: await service.materials(getActor(req), topic(req.query.topicId), { ...pagination(req.query), taskId: typeof req.query.taskId === 'string' ? req.query.taskId : undefined, includeArchived: req.query.includeArchived === 'true' }), error: null }); } catch (error) { next(error); } });
+  router.get('/materials', async (req, res, next) => {
+    try {
+      const filter = materialListQuery.parse({ taskId: queryText(req.query.taskId), archived: queryText(req.query.archived), kind: queryText(req.query.kind), since: queryText(req.query.since), linked: queryText(req.query.linked), sort: queryText(req.query.sort), dir: queryText(req.query.dir) });
+      res.json({ data: await service.materials(getActor(req), topic(req.query.topicId), { ...pagination(req.query), ...filter, includeArchived: req.query.includeArchived === 'true' }), error: null });
+    } catch (error) { next(error); }
+  });
   router.get('/materials/:id', async (req, res, next) => { try { res.json({ data: await service.material(getActor(req), String(req.params.id)), error: null }); } catch (error) { next(error); } });
   router.get('/materials/:id/versions/:revision/attachment', async (req, res, next) => {
     try {

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { ZodError } from 'zod';
 import { readdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import express from 'express';
@@ -41,7 +42,10 @@ const api = express();
 api.use(express.json());
 api.use((req, _res, next) => { (req as express.Request & { actor: Actor }).actor = ownerActor; next(); });
 api.use(createKnowledgeRouter());
-api.use((error: { status?: number; code?: string; message: string }, _req: express.Request, res: express.Response, _next: express.NextFunction) => { res.status(error.status ?? 500).json({ error: error.message, code: error.code }); });
+api.use((error: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  if (error instanceof ZodError) return res.status(400).json({ data: null, error: error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; '), code: 'VALIDATION_ERROR' });
+  res.status(error.status ?? 500).json({ error: error.message, code: error.code });
+});
 
 describe('knowledge evidence and review closed loops', () => {
   beforeEach(clean);
@@ -139,6 +143,75 @@ describe('knowledge evidence and review closed loops', () => {
     const denied = await request(api).post(`/materials/${link.id}/fetch`).send({ expectedVersion: 1 });
     expect(denied.body.code).toBe('HTTP_TARGET_DENIED');
     expect((await knowledge.material(ownerActor, link.id)).revision).toBe(1);
+  });
+
+  it('filters and sorts materials, and reads the file name from the current version', async () => {
+    const project = await topic();
+    const task = await write('task.create', { topicId: project, title: '回填任务' });
+    const text = await write('material.create', { topicId: project, kind: 'text', title: 'A 旧文本', content: '旧正文' });
+    await prisma.material.update({ where: { id: text.id }, data: { createdAt: '2020-01-01T00:00:00.000Z', updatedAt: '2020-01-01T00:00:00.000Z' } });
+    const attachment = await write('material.create', { topicId: project, kind: 'attachment', title: 'B 说明', taskId: task.id, fileName: '说明.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', attachmentBase64: Buffer.from('v1').toString('base64') });
+    await write('material.update', { fileName: '说明-v2.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', attachmentBase64: Buffer.from('v2').toString('base64') }, attachment.id, attachment.revision);
+    await prisma.material.update({ where: { id: attachment.id }, data: { createdAt: '2026-01-01T00:30:00.000Z' } });
+    const archived = await write('material.create', { topicId: project, kind: 'text', title: '已归档说明', content: '归档正文' });
+    await write('material.archive', { archived: true }, archived.id, archived.revision);
+
+    const defaults = await knowledge.materials(ownerActor, project);
+    expect(defaults.items.map((item) => item.title)).toEqual(['B 说明', 'A 旧文本']);
+    expect(defaults.items.map((item) => item.id)).not.toContain(archived.id);
+    const byTitle = await knowledge.materials(ownerActor, project, { sort: 'title', dir: 'asc' });
+    expect(byTitle.items.map((item) => item.title)).toEqual(['A 旧文本', 'B 说明']);
+    const linked = await knowledge.materials(ownerActor, project, { linked: 'task' });
+    expect(linked.items).toHaveLength(1);
+    expect(linked.items[0]).toMatchObject({ id: attachment.id, fileName: '说明-v2.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', taskTitle: '回填任务' });
+    expect(linked.items[0]).not.toHaveProperty('attachmentPath');
+    expect(linked.items[0]).not.toHaveProperty('attachmentBase64');
+    expect((await knowledge.materials(ownerActor, project, { since: '2026-01-01T00:00:00.000Z' })).items.map((item) => item.id)).toEqual([attachment.id]);
+    expect((await knowledge.materials(ownerActor, project, { since: '2026-01-01T08:00:00+08:00' })).items.map((item) => item.id)).toEqual([attachment.id]);
+    expect((await knowledge.materials(ownerActor, project, { archived: 'only' })).items.map((item) => item.id)).toEqual([archived.id]);
+    expect((await knowledge.materials(ownerActor, project, { kind: 'text' })).items.map((item) => item.id)).toEqual([text.id]);
+    const everything = await knowledge.materials(ownerActor, project, { includeArchived: true });
+    expect(everything.items).toHaveLength(3);
+    expect(everything.items.map((item) => item.id)).toEqual(expect.arrayContaining([text.id, attachment.id, archived.id]));
+
+    const listed = await request(api).get('/materials').query({ topicId: project, sort: 'title', dir: 'asc', linked: 'task' });
+    expect(listed.status).toBe(200);
+    expect(listed.body.data.items.map((item: { title: string }) => item.title)).toEqual(['B 说明']);
+    expect(listed.body.data.items[0]).toMatchObject({ fileName: '说明-v2.docx', taskTitle: '回填任务' });
+    expect(listed.text).not.toContain('attachmentPath');
+    expect(listed.text).not.toContain('attachmentBase64');
+    const shifted = await request(api).get(`/materials?topicId=${project}&since=${encodeURIComponent('2026-01-01T08:00:00+08:00')}`);
+    expect(shifted.status).toBe(200);
+    expect(shifted.body.data.items.map((item: { id: string }) => item.id)).toEqual([attachment.id]);
+    const rejected = await request(api).get('/materials').query({ topicId: project, sort: 'size' });
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('relinks a material within its list and restores the previous task on undo', async () => {
+    const project = await topic();
+    const task = await write('task.create', { topicId: project, title: '对接任务' });
+    const foreign = await write('task.create', { topicId: await topic(), title: '别的清单' });
+    const row = await write('material.create', { topicId: project, kind: 'attachment', title: '说明', fileName: '说明.md', attachmentBase64: Buffer.from('# 标题').toString('base64') });
+    const linked = await write('material.update', { taskId: task.id }, row.id, row.revision);
+    expect(linked).toMatchObject({ revision: 2, taskId: task.id });
+    expect((await knowledge.materials(ownerActor, project, { linked: 'task' })).items[0]).toMatchObject({ id: row.id, taskTitle: '对接任务' });
+    const titled = await write('material.update', { title: '新标题' }, row.id, linked.revision);
+    expect(titled).toMatchObject({ revision: 3, taskId: task.id, title: '新标题' });
+    const cleared = await write('material.update', { taskId: null }, row.id, titled.revision);
+    expect(cleared).toMatchObject({ revision: 4, taskId: null });
+    await expect(write('material.update', { taskId: foreign.id }, row.id, cleared.revision)).rejects.toMatchObject({ code: 'SOURCE_SCOPE_MISMATCH' });
+    expect((await prisma.material.findUniqueOrThrow({ where: { id: row.id } })).revision).toBe(4);
+    await commands.submit(ownerActor, { requestId: randomUUID(), commands: [{ kind: 'change.undo', targetId: cleared.changeId, input: {} }] });
+    const restored = await prisma.material.findUniqueOrThrow({ where: { id: row.id } });
+    expect(restored).toMatchObject({ revision: 5, taskId: task.id, title: '新标题' });
+    expect((await knowledge.attachment(ownerActor, row.id, restored.revision)).bytes.toString()).toBe('# 标题');
+
+    const inboxTask = await write('task.create', { title: '收集任务', topicId: null });
+    const note = await write('material.create', { topicId: null, kind: 'text', title: '收集材料', content: '正文' });
+    const linkedNote = await write('material.update', { taskId: inboxTask.id }, note.id, note.revision);
+    expect(linkedNote.taskId).toBe(inboxTask.id);
+    await expect(write('material.update', { taskId: task.id }, note.id, linkedNote.revision)).rejects.toMatchObject({ code: 'SOURCE_SCOPE_MISMATCH' });
   });
 
   it('uses one proposal protocol for built-in and external organization and confirms exactly once', async () => {

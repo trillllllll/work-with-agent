@@ -27,7 +27,7 @@ const materialSchema = z.object({
   content: contentSchema.default(''), uri: z.string().max(4000).nullable().optional(), metadata: z.record(z.unknown()).default({}),
   attachmentBase64: z.string().max(Math.ceil(attachmentLimit / 3) * 4).optional(), fileName: z.string().min(1).max(255).optional(), mimeType: z.string().max(150).optional(),
 }).strict();
-const materialUpdateSchema = materialSchema.omit({ topicId: true, taskId: true, kind: true }).partial().extend({ reason: z.string().max(1000).optional() }).strict();
+const materialUpdateSchema = materialSchema.omit({ topicId: true, taskId: true, kind: true }).partial().extend({ reason: z.string().max(1000).optional(), taskId: z.string().min(1).nullable().optional() }).strict();
 const memoryKinds = ['fact', 'decision', 'constraint', 'learning', 'question'] as const;
 const memoryKindSchema = z.enum([...memoryKinds, 'crystal']);
 const originSchema = z.enum(['manual', 'ai', 'mcp']);
@@ -35,6 +35,12 @@ const labelsSchema = z.array(z.string().trim().min(1).max(40)).max(20).transform
 const memorySchema = z.object({ topicId: z.string().min(1).nullable().default(null), kind: z.enum(memoryKinds).default('fact'), title: titleSchema, content: contentSchema.min(1), evidence: z.array(evidenceSchema).max(100).default([]), reason: z.string().trim().min(1).max(1000).default('人工记录'), importance: z.number().int().min(1).max(5).default(3), labels: labelsSchema.default([]), origin: originSchema.optional() }).strict();
 const memoryUpdateSchema = z.object({ kind: memoryKindSchema.optional(), title: titleSchema.optional(), content: contentSchema.min(1).optional(), evidence: z.array(evidenceSchema).max(100).optional(), reason: z.string().trim().min(1).max(1000).default('修订记忆'), status: z.enum(['active', 'retired', 'superseded']).optional(), importance: z.number().int().min(1).max(5).optional(), labels: labelsSchema.optional(), origin: originSchema.optional() }).strict();
 export const knowledgeFailure = (code: string, message: string, status = 409) => new DomainError(code, message, status);
+function normalizedSince(value?: string) {
+  if (!value) return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw knowledgeFailure('INVALID_SINCE', '时间筛选无效', 400);
+  return date.toISOString();
+}
 export const knowledgeHash = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex');
 const parseJson = <T>(value: string, fallback: T): T => { try { return JSON.parse(value) as T; } catch { return fallback; } };
 export function readEvidence(value: string): EvidenceRef[] { return parseJson(value, []); }
@@ -251,6 +257,10 @@ async function inspectKnowledgeCommand(tx: KnowledgeDb, actor: Actor, command: C
       const data = materialUpdateSchema.parse(input);
       const version = await tx.materialVersion.findUniqueOrThrow({ where: { materialId_revision: { materialId: material.id, revision: material.revision } } });
       validateMaterialInput({ topicId: material.topicId, kind: material.kind as z.infer<typeof materialSchema>['kind'], title: data.title ?? material.title, content: data.content ?? version.content, uri: data.uri === undefined ? material.uri : data.uri, metadata: data.metadata ?? parseJson(version.metadata, {}), attachmentBase64: data.attachmentBase64 ?? (material.kind === 'attachment' ? 'AA==' : undefined), fileName: data.fileName, mimeType: data.mimeType });
+      if (data.taskId) {
+        const source = await knowledgeSource(tx, actor, { type: 'task', id: data.taskId });
+        if (source.topicId !== material.topicId || source.unavailable) throw knowledgeFailure('SOURCE_SCOPE_MISMATCH', '关联任务不属于当前清单', 403);
+      }
     } else z.object({ archived: z.boolean() }).strict().parse(input);
     return { preconditions: { materialId: material.id, revision: material.revision, topicRevision: topic?.revision ?? null }, preview: { kind: command.kind, title: material.title, changes: Object.keys(input).filter((key) => key !== 'attachmentBase64') } };
   }
@@ -280,7 +290,7 @@ async function executeKnowledgeCommand(tx: KnowledgeDb, actor: Actor, command: C
     const attachmentPath = bytes ? context.preview ? knowledgeHash(bytes) : await storeAttachment(bytes) : previous?.attachmentPath ?? null;
     const content = data.content ?? previous?.content ?? '';
     const contentHash = knowledgeHash(`${content}\0${attachmentPath ?? ''}`);
-    const material = existing ? await tx.material.update({ where: { id: existing.id, revision: command.expectedRevision }, data: { title: data.title ?? existing.title, ...(data.uri !== undefined ? { uri: data.uri } : {}), revision: { increment: 1 }, updatedAt: timestamp } }) : await tx.material.create({ data: { id: context.entityId ?? command.entityId, topicId: 'topicId' in data ? data.topicId : null, taskId: 'taskId' in data ? data.taskId : null, kind: 'kind' in data ? data.kind : 'text', title: data.title!, uri: data.uri, createdAt: timestamp, updatedAt: timestamp } });
+    const material = existing ? await tx.material.update({ where: { id: existing.id, revision: command.expectedRevision }, data: { title: data.title ?? existing.title, ...(data.uri !== undefined ? { uri: data.uri } : {}), ...(data.taskId !== undefined ? { taskId: data.taskId } : {}), revision: { increment: 1 }, updatedAt: timestamp } }) : await tx.material.create({ data: { id: context.entityId ?? command.entityId, topicId: 'topicId' in data ? data.topicId : null, taskId: 'taskId' in data ? data.taskId : null, kind: 'kind' in data ? data.kind : 'text', title: data.title!, uri: data.uri, createdAt: timestamp, updatedAt: timestamp } });
     await tx.materialVersion.create({ data: { materialId: material.id, revision: material.revision, content, contentHash, metadata: JSON.stringify(data.metadata ?? (previous ? parseJson(previous.metadata, {}) : {})), attachmentPath, fileName: data.fileName ?? previous?.fileName, mimeType: data.mimeType ?? previous?.mimeType, createdAt: timestamp } });
     await recordChange(tx, 'material', material.id, existing ? 'update' : 'create', existing, { ...material, contentHash }, context);
     return { ...material, content, contentHash, hasAttachment: Boolean(attachmentPath) };
@@ -324,7 +334,7 @@ export async function undoKnowledgeChange(tx: KnowledgeDb, actor: Actor, record:
     if (!current || current.revision !== after.revision) throw knowledgeFailure('UNDO_CONFLICT', '材料已有后续修改');
     await checkKnowledgeScope(tx, actor, current.topicId, true);
     const source = await tx.materialVersion.findUniqueOrThrow({ where: { materialId_revision: { materialId: current.id, revision: before?.revision ?? current.revision } } });
-    const result = await tx.material.update({ where: { id: current.id, revision: current.revision }, data: { title: before?.title ?? current.title, uri: before ? before.uri : current.uri, archivedAt: before ? before.archivedAt : timestamp, revision: { increment: 1 }, updatedAt: timestamp } });
+    const result = await tx.material.update({ where: { id: current.id, revision: current.revision }, data: { title: before?.title ?? current.title, uri: before ? before.uri : current.uri, archivedAt: before ? before.archivedAt : timestamp, ...(before ? { taskId: before.taskId ?? null } : {}), revision: { increment: 1 }, updatedAt: timestamp } });
     const { id: _id, ...version } = source;
     await tx.materialVersion.create({ data: { ...version, revision: result.revision, createdAt: timestamp } });
     return result;
@@ -339,13 +349,27 @@ export async function undoKnowledgeChange(tx: KnowledgeDb, actor: Actor, record:
   return result;
 }
 
+async function withCurrentFiles<T extends { id: string; revision: number; taskId: string | null }>(items: T[]) {
+  if (!items.length) return [];
+  const versions = await prisma.materialVersion.findMany({ where: { OR: items.map((item) => ({ materialId: item.id, revision: item.revision })) }, select: { materialId: true, fileName: true, mimeType: true } });
+  const files = new Map(versions.map((version) => [version.materialId, version]));
+  const taskIds = [...new Set(items.flatMap((item) => item.taskId ? [item.taskId] : []))];
+  const tasks = taskIds.length ? await prisma.task.findMany({ where: { id: { in: taskIds } }, select: { id: true, title: true } }) : [];
+  const titles = new Map(tasks.map((task) => [task.id, task.title]));
+  return items.map((item) => ({ ...item, fileName: files.get(item.id)?.fileName ?? null, mimeType: files.get(item.id)?.mimeType ?? null, taskTitle: item.taskId ? titles.get(item.taskId) ?? null : null }));
+}
+
 export class KnowledgeService {
-  async materials(actor: Actor, topicId: string | null, options: { taskId?: string; includeArchived?: boolean; cursor?: number; limit?: number } = {}) {
+  async materials(actor: Actor, topicId: string | null, options: { taskId?: string; includeArchived?: boolean; archived?: 'only'; kind?: 'text' | 'markdown' | 'link' | 'thread' | 'attachment'; since?: string; linked?: 'task'; sort?: 'title' | 'kind' | 'updatedAt'; dir?: 'asc' | 'desc'; cursor?: number; limit?: number } = {}) {
     await checkKnowledgeScope(prisma, actor, topicId);
     const limit = Math.min(100, Math.max(1, options.limit ?? 40));
     const offset = Math.max(0, options.cursor ?? 0);
-    const where = { topicId, ...(options.taskId ? { taskId: options.taskId } : {}), ...(options.includeArchived ? {} : { archivedAt: null }) };
-    const [items, total] = await Promise.all([prisma.material.findMany({ where, orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }], take: limit, skip: offset }), prisma.material.count({ where })]);
+    const since = normalizedSince(options.since);
+    const direction = options.dir === 'asc' ? 'asc' as const : 'desc' as const;
+    const orderBy = options.sort === 'title' ? [{ title: direction }, { id: 'asc' as const }] : options.sort === 'kind' ? [{ kind: direction }, { id: 'asc' as const }] : [{ updatedAt: direction }, { id: 'asc' as const }];
+    const where = { topicId, ...(options.taskId ? { taskId: options.taskId } : options.linked === 'task' ? { taskId: { not: null } } : {}), ...(options.kind ? { kind: options.kind } : {}), ...(since ? { createdAt: { gte: since } } : {}), ...(options.archived === 'only' ? { archivedAt: { not: null } } : options.includeArchived ? {} : { archivedAt: null }) };
+    const [rows, total] = await Promise.all([prisma.material.findMany({ where, orderBy, take: limit, skip: offset }), prisma.material.count({ where })]);
+    const items = await withCurrentFiles(rows);
     return { items, total, nextCursor: offset + items.length < total ? offset + items.length : null, hasMore: offset + items.length < total };
   }
   async material(actor: Actor, id: string) {
