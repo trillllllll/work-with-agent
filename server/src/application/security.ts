@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { fileURLToPath } from 'node:url';
 import { prisma } from '../infrastructure/prisma.js';
 import { DomainError } from '../domain/task.js';
-import { DESKTOP_PORT, desktopMcpCommand, isDesktopPackage } from './desktop-paths.js';
+import { DESKTOP_PORT, desktopMcpConfiguration, isDesktopPackage } from './desktop-paths.js';
 
 export type Actor = {
   id: string;
@@ -137,9 +137,11 @@ export function connectionConfiguration(credential: string) {
   const port = Number(process.env.PORT) || (isDesktopPackage() ? DESKTOP_PORT : 3016);
   const api = `http://127.0.0.1:${port}`;
   const packaged = isDesktopPackage();
+  const launch = packaged
+    ? desktopMcpConfiguration(entry)
+    : { command: process.execPath, args: [entry] };
   return {
-    command: packaged ? desktopMcpCommand() : process.execPath,
-    args: packaged ? [] : [entry],
+    ...launch,
     env: { WWA_API_URL: api, WWA_CONNECTION_TOKEN: credential },
     url: `${api}/mcp`,
     hosts: ['codex', 'claude-code', 'grok'],

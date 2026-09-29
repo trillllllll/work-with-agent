@@ -4,6 +4,9 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const args = process.argv.slice(2);
+const defaultDataDir = process.platform === 'win32'
+  ? resolve(process.env.LOCALAPPDATA || process.env.APPDATA || homedir(), 'work-with-agent')
+  : resolve(homedir(), 'Library', 'Application Support', 'work-with-agent');
 
 function flag(name, fallback) {
   const index = args.indexOf(name);
@@ -14,7 +17,7 @@ function flag(name, fallback) {
 }
 
 const sourceDir = resolve(flag('--source-dir', resolve(root, 'server/data')));
-const dataDir = resolve(flag('--data-dir', resolve(homedir(), 'Library/Application Support/work-with-agent')));
+const dataDir = resolve(flag('--data-dir', defaultDataDir));
 const sourceDb = resolve(sourceDir, 'agent-studio.db');
 const destinationDb = resolve(dataDir, 'agent-studio.db');
 

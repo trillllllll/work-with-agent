@@ -8,10 +8,16 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 use tauri::{AppHandle, LogicalSize, Manager, RunEvent, WindowEvent};
 use tauri_plugin_dialog::DialogExt;
 
 const DESKTOP_PORT: u16 = 47316;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 struct ServerProcess(Mutex<Option<Child>>);
 
@@ -63,6 +69,7 @@ fn launch(app: &AppHandle) -> Result<(), String> {
     for directory in ["knowledge-blobs", "runner", "workspace", "logs", "bin"] {
         fs::create_dir_all(data.join(directory)).map_err(|error| format!("无法创建数据目录：{error}"))?;
     }
+    #[cfg(unix)]
     write_mcp_launcher(&data, &node, &server.join("dist/mcp/index.js"))?;
     let log = data.join("logs/server.log");
     let mut command = Command::new(&node);
@@ -82,6 +89,8 @@ fn launch(app: &AppHandle) -> Result<(), String> {
         .env("AGENT_WORKSPACE_ROOT", data.join("workspace"))
         .env("WWA_STATIC_DIR", &client)
         .env_remove("NODE_OPTIONS");
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
     let mut child = command.spawn().map_err(|error| format!("无法启动本机服务：{error}"))?;
     let stdout = child.stdout.take().ok_or("无法读取服务输出")?;
     let stderr = child.stderr.take().ok_or("无法读取服务错误输出")?;
@@ -124,7 +133,7 @@ fn launch(app: &AppHandle) -> Result<(), String> {
 
 fn bundled_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf, PathBuf), String> {
     let root = app.path().resource_dir().map_err(|error| error.to_string())?;
-    let node = existing(&root, &["node", "resources/node"]).ok_or_else(|| format!("安装包里没有 Node。查找目录：{}", root.display()))?;
+    let node = existing(&root, &["node.exe", "resources/node.exe", "node", "resources/node"]).ok_or_else(|| format!("安装包里没有 Node。查找目录：{}", root.display()))?;
     let server_entry = existing(&root, &["server/dist/index.js", "resources/server/dist/index.js"]).ok_or_else(|| format!("安装包里没有服务。查找目录：{}", root.display()))?;
     let client_entry = existing(&root, &["client/index.html", "resources/client/index.html"]).ok_or_else(|| format!("安装包里没有界面。查找目录：{}", root.display()))?;
     let server = server_entry.parent().and_then(Path::parent).ok_or("无法定位服务目录")?.to_path_buf();
@@ -142,10 +151,24 @@ fn data_dir() -> Result<PathBuf, String> {
             return Ok(PathBuf::from(value));
         }
     }
-    let home = std::env::var("HOME").map_err(|_| "找不到用户主目录")?;
-    Ok(PathBuf::from(home).join("Library/Application Support/work-with-agent"))
+
+    #[cfg(target_os = "windows")]
+    {
+        let base = std::env::var_os("LOCALAPPDATA")
+            .or_else(|| std::env::var_os("APPDATA"))
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .ok_or("找不到用户数据目录")?;
+        return Ok(PathBuf::from(base).join("work-with-agent"));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let home = std::env::var("HOME").map_err(|_| "找不到用户主目录")?;
+        return Ok(PathBuf::from(home).join("Library/Application Support/work-with-agent"));
+    }
 }
 
+#[cfg(unix)]
 fn write_mcp_launcher(data: &Path, node: &Path, entry: &Path) -> Result<(), String> {
     let script = data.join("bin/wwa-mcp");
     let body = format!("#!/bin/bash\nexec {} {} \"$@\"\n", shell_quote(node), shell_quote(entry));
@@ -157,6 +180,7 @@ fn write_mcp_launcher(data: &Path, node: &Path, entry: &Path) -> Result<(), Stri
     Ok(())
 }
 
+#[cfg(unix)]
 fn shell_quote(path: &Path) -> String {
     format!("'{}'", path.display().to_string().replace('\'', "'\\''"))
 }

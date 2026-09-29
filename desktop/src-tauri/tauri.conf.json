@@ -29,7 +29,7 @@
     "active": true,
     "targets": ["app", "dmg"],
     "resources": {
-      "../resources/node": "node",
+      "../resources/node.exe": "node.exe",
       "../resources/server/": "server/",
       "../resources/client/": "client/"
     },

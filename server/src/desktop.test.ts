@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { cp, mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 import { app } from './app.js';
 import { connectionConfiguration } from './application/security.js';
-import { desktopMcpCommand, sqliteDatabaseUrl } from './application/desktop-paths.js';
+import { desktopDataDir, desktopMcpCommand, sqliteDatabaseUrl } from './application/desktop-paths.js';
 import { mountDesktopStatic } from './desktop-static.js';
 
 const previous = {
@@ -37,7 +37,7 @@ describe('desktop connection configuration', () => {
     delete process.env.PORT;
     const config = connectionConfiguration('secret');
     expect(config.command).toBe(process.execPath);
-    expect(config.args[0]).toMatch(/dist\/mcp\/index\.js$/);
+    expect(config.args[0]).toMatch(/dist[\\/]mcp[\\/]index\.js$/);
     expect(config.env.WWA_API_URL).toBe('http://127.0.0.1:3016');
     expect(config.url).toBe('http://127.0.0.1:3016/mcp');
   });
@@ -47,12 +47,25 @@ describe('desktop connection configuration', () => {
     process.env.WWA_DATA_DIR = '/tmp/Library/Application Support/work-with-agent';
     delete process.env.PORT;
     const config = connectionConfiguration('secret');
-    expect(config.command).toBe('/tmp/Library/Application Support/work-with-agent/bin/wwa-mcp');
-    expect(config.args).toEqual([]);
+    if (process.platform === 'win32') {
+      expect(config.command).toBe(process.execPath);
+      expect(config.args).toHaveLength(1);
+      expect(config.args[0]).toMatch(/dist[\\/]mcp[\\/]index\.js$/);
+    } else {
+      expect(config.command).toBe('/tmp/Library/Application Support/work-with-agent/bin/wwa-mcp');
+      expect(config.args).toEqual([]);
+    }
     expect(config.env.WWA_API_URL).toBe('http://127.0.0.1:47316');
     expect(config.env.WWA_CONNECTION_TOKEN).toBe('secret');
     expect(config.url).toBe('http://127.0.0.1:47316/mcp');
-    expect(desktopMcpCommand()).toBe(config.command);
+    if (process.platform !== 'win32') expect(desktopMcpCommand()).toBe(config.command);
+  });
+
+  it('uses the Windows local application data directory when packaged', () => {
+    if (process.platform !== 'win32') return;
+    delete process.env.WWA_DATA_DIR;
+    const base = process.env.LOCALAPPDATA || process.env.APPDATA || homedir();
+    expect(desktopDataDir()).toBe(join(base, 'work-with-agent'));
   });
 });
 

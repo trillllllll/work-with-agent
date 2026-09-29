@@ -19,6 +19,7 @@
     "desktop:assemble": "node scripts/assemble-desktop.mjs",
     "desktop:dev": "node scripts/assemble-desktop.mjs && node scripts/tauri.mjs dev",
     "desktop:build": "node scripts/assemble-desktop.mjs && node scripts/tauri.mjs build",
+    "desktop:build:windows": "node scripts/assemble-desktop.mjs && node scripts/tauri.mjs build --bundles nsis",
     "desktop:smoke": "node scripts/desktop-smoke.mjs"
   },
   "devDependencies": {

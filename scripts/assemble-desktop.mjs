@@ -11,9 +11,27 @@ const root = resolve(import.meta.dirname, '..');
 const resources = resolve(root, 'desktop/resources');
 const serverDir = resolve(resources, 'server');
 const runtimePackages = ['@modelcontextprotocol/sdk', '@prisma/client', 'cors', 'dotenv', 'express', 'zod', 'prisma'];
+const platform = process.platform;
+const arch = process.arch;
+const target = platform === 'darwin' && arch === 'arm64'
+  ? {
+      kind: 'darwin',
+      archive: `node-v${nodeVersion}-darwin-arm64.tar.gz`,
+      extractDir: `node-v${nodeVersion}-darwin-arm64`,
+      nodePath: 'bin/node',
+    }
+  : platform === 'win32' && arch === 'x64'
+    ? {
+        kind: 'windows',
+        archive: `node-v${nodeVersion}-win-x64.zip`,
+        extractDir: `node-v${nodeVersion}-win-x64-extracted`,
+        nodePath: `node-v${nodeVersion}-win-x64/node.exe`,
+      }
+    : null;
+const npmCommand = platform === 'win32' ? 'npm.cmd' : 'npm';
 
-if (process.platform !== 'darwin' || process.arch !== 'arm64') {
-  console.error('桌面组装目前只支持 macOS Apple Silicon');
+if (!target) {
+  console.error('桌面组装目前只支持 macOS Apple Silicon 和 Windows x64');
   process.exit(1);
 }
 if (Number(process.versions.node.split('.')[0]) < 22) {
@@ -30,11 +48,15 @@ function installedVersion(name) {
 }
 
 function run(command, args, cwd) {
+  if (platform === 'win32' && command.endsWith('.cmd')) {
+    execFileSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', command, ...args], { cwd, stdio: 'inherit', env: process.env });
+    return;
+  }
   execFileSync(command, args, { cwd, stdio: 'inherit', env: process.env });
 }
 
 console.log('构建服务端和客户端…');
-run('npm', ['run', 'build'], root);
+run(npmCommand, ['run', 'build'], root);
 
 await mkdir(resources, { recursive: true });
 await ensureNode();
@@ -54,7 +76,7 @@ if (!installed) {
   console.log('安装桌面运行依赖…');
   await rm(resolve(serverDir, 'node_modules'), { recursive: true, force: true });
   writeFileSync(resolve(serverDir, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
-  run('npm', ['install', '--omit=dev', '--no-package-lock'], serverDir);
+  run(npmCommand, ['install', '--omit=dev', '--no-package-lock'], serverDir);
   writeFileSync(stampPath, stamp);
 }
 
@@ -70,25 +92,40 @@ run(process.execPath, [resolve(serverDir, 'node_modules/prisma/build/index.js'),
 console.log(`桌面运行时已组装到 ${resources}`);
 
 async function ensureNode() {
-  const binary = resolve(resources, 'node');
+  const binary = resolve(resources, 'node.exe');
   if (existsSync(binary)) {
     try {
       const version = execFileSync(binary, ['-p', 'process.version'], { encoding: 'utf8' }).trim();
       if (version === `v${nodeVersion}`) return;
     } catch { /* Replace a damaged or older binary. */ }
   }
-  const archive = resolve(tmpdir(), `node-v${nodeVersion}-darwin-arm64.tar.gz`);
+  const archive = resolve(tmpdir(), target.archive);
   if (!existsSync(archive)) {
     console.log(`下载 Node.js ${nodeVersion}…`);
-    await download(`https://nodejs.org/dist/v${nodeVersion}/node-v${nodeVersion}-darwin-arm64.tar.gz`, archive);
+    await download(`https://nodejs.org/dist/v${nodeVersion}/${target.archive}`, archive);
   }
-  const extractDir = resolve(tmpdir(), `node-v${nodeVersion}-darwin-arm64`);
+  const extractDir = resolve(tmpdir(), target.extractDir);
   await rm(extractDir, { recursive: true, force: true });
-  run('tar', ['-xzf', archive, '-C', tmpdir()], tmpdir());
-  await cp(resolve(extractDir, 'bin/node'), binary);
-  await chmod(binary, 0o755);
-  try { run('xattr', ['-c', binary], resources); } catch { /* A freshly extracted binary may have no quarantine attribute. */ }
-  run('codesign', ['--force', '--sign', '-', binary], resources);
+  if (target.kind === 'darwin') {
+    run('tar', ['-xzf', archive, '-C', tmpdir()], tmpdir());
+    await cp(resolve(tmpdir(), target.extractDir, target.nodePath), binary);
+    await chmod(binary, 0o755);
+    try { run('xattr', ['-c', binary], resources); } catch { /* A freshly extracted binary may have no quarantine attribute. */ }
+    run('codesign', ['--force', '--sign', '-', binary], resources);
+    return;
+  }
+
+  run('powershell.exe', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    `Expand-Archive -LiteralPath ${powershellQuote(archive)} -DestinationPath ${powershellQuote(extractDir)} -Force`,
+  ], tmpdir());
+  await cp(resolve(extractDir, target.nodePath), binary);
+}
+
+function powershellQuote(value) {
+  return `'${value.replaceAll("'", "''")}'`;
 }
 
 function download(url, destination) {

@@ -2,8 +2,12 @@ import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
-const cli = resolve(root, 'node_modules/.bin/tauri');
-const child = spawn(cli, process.argv.slice(2), {
+const cli = resolve(root, 'node_modules/.bin', process.platform === 'win32' ? 'tauri.cmd' : 'tauri');
+const command = process.platform === 'win32' ? process.env.ComSpec || 'cmd.exe' : cli;
+const args = process.platform === 'win32'
+  ? ['/d', '/s', '/c', cli, ...process.argv.slice(2)]
+  : process.argv.slice(2);
+const child = spawn(command, args, {
   cwd: resolve(root, 'desktop/src-tauri'),
   stdio: 'inherit',
   env: process.env,

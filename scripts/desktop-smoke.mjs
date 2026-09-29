@@ -7,7 +7,7 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const resources = resolve(root, 'desktop/resources');
-const nodeBinary = resolve(resources, 'node');
+const nodeBinary = resolve(resources, 'node.exe');
 const serverDir = resolve(resources, 'server');
 const dataDir = await mkdtemp(resolve(tmpdir(), 'wwa-desktop-smoke-'));
 const port = await freePort();
