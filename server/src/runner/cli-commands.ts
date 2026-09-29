@@ -1,6 +1,6 @@
 import { access } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
-import { delimiter, isAbsolute, join, resolve } from 'node:path';
+import { delimiter, isAbsolute, join, resolve, win32 as winPath } from 'node:path';
 import { promisify } from 'node:util';
 import { DomainError } from '../domain/task.js';
 import { prisma } from '../infrastructure/prisma.js';
@@ -61,7 +61,11 @@ export async function whichInLoginShell(provider: CliProvider) {
   if (process.platform === 'win32') {
     try {
       const { stdout } = await exec('where.exe', [provider], { windowsHide: true, timeout: 8000, maxBuffer: 100000 });
-      return stdout.split(/\r?\n/).map((line) => line.trim()).find((line) => isAbsolute(line)) ?? '';
+      for (const line of stdout.split(/\r?\n/).map((item) => item.trim()).filter((item) => isAbsolute(item))) {
+        const command = await windowsDiscoveredPath(provider, line);
+        if (command) return command;
+      }
+      return '';
     } catch { return ''; }
   }
   const shell = process.env.SHELL && !process.env.SHELL.endsWith('nologin') ? process.env.SHELL : '/bin/zsh';
@@ -72,6 +76,22 @@ export async function whichInLoginShell(provider: CliProvider) {
     const lines = stdout.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
     return [...lines].reverse().find((line) => isAbsolute(line) && line.endsWith(`/${provider}`)) ?? '';
   } catch { return ''; }
+}
+
+export async function windowsDiscoveredPath(provider: CliProvider, found: string, exists = fileExists) {
+  // npm puts a POSIX shim, a .cmd wrapper, and the real package entry point
+  // next to each other. The POSIX shim is a regular file on Windows, but it
+  // cannot be passed to CreateProcess and produces the misleading ENOENT.
+  const packageEntry = provider === 'codex'
+    ? winPath.join(winPath.dirname(found), 'node_modules', '@openai', 'codex', 'bin', 'codex.js')
+    : winPath.join(winPath.dirname(found), 'node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe');
+  if (await exists(packageEntry)) return packageEntry;
+  if (/\.(?:exe|js)$/i.test(found) && await exists(found)) return found;
+  for (const suffix of ['.exe']) {
+    const sibling = `${found}${suffix}`;
+    if (await exists(sibling)) return sibling;
+  }
+  return '';
 }
 
 function fields(provider: CliProvider, stored: StoredCli) {
