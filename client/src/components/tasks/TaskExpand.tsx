@@ -1,4 +1,4 @@
-import { createContext, forwardRef, useContext, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { createContext, forwardRef, useContext, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type MutableRefObject, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { CalendarDays, Flag, Hash, X } from 'lucide-react';
 import { priorities, type Tag, type Task, type TaskPriority } from '@/lib/api.js';
@@ -10,6 +10,8 @@ import { Textarea } from '@/components/ui/textarea.js';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { TaskActivityDialog } from './TaskActivityDialog.js';
+import { placeDescriptionCaret, readDescriptionCaret } from './DescriptionEditor.js';
+import { TaskDescription } from './TaskDescription.js';
 import { cn } from '@/lib/utils.js';
 
 type Editing = { base: TaskDraft; draft: TaskDraft; conflicts: string[] };
@@ -29,6 +31,7 @@ function stopDrag(event: { stopPropagation: () => void }) { event.stopPropagatio
 
 type EditContext = {
   draft: TaskDraft;
+  base: TaskDraft;
   readonly: boolean;
   tags: Tag[];
   conflicts: string[];
@@ -37,7 +40,8 @@ type EditContext = {
   updateText: (patch: Partial<Pick<TaskDraft, 'title' | 'description'>>) => void;
   onTextBlur: (event: FocusEvent<HTMLElement>) => void;
   onTitleKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
-  descriptionRef: RefObject<HTMLTextAreaElement | null>;
+  taskId: string;
+  openDescription: MutableRefObject<() => void>;
   onComposeStart: () => void;
   onComposeEnd: () => void;
   setPriority: (priority: TaskPriority) => void;
@@ -73,7 +77,7 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
   const [acknowledgeConflict, setAcknowledgeConflict] = useState(false);
   const seeded = useRef(false);
   const composing = useRef(false);
-  const descriptionRef = useRef<HTMLTextAreaElement>(null);
+  const openDescription = useRef<() => void>(() => {});
   const flushOnNull = useRef(false);
   const flushTimer = useRef(0);
   const savingCount = useRef(0);
@@ -147,8 +151,8 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
       finishPending();
     }
   };
-  const flushText = async () => {
-    const current = editingRef.current;
+  const flushText = async (held?: Editing | null) => {
+    const current = held === undefined ? editingRef.current : held;
     if (!current || readonly) return;
     if (current.conflicts.length && !acknowledgeRef.current) return;
     const patch = draftPatch(current.base, current.draft);
@@ -162,7 +166,9 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
   const cancelFlush = () => { window.clearTimeout(flushTimer.current); flushTimer.current = 0; };
   const flushSoon = () => {
     cancelFlush();
-    flushTimer.current = window.setTimeout(() => { flushTimer.current = 0; void flushText(); }, 0);
+    const held = editingRef.current;
+    // The timer lets a second blur in this turn replace the save. Keystrokes after the blur stay in the draft.
+    flushTimer.current = window.setTimeout(() => { flushTimer.current = 0; void flushText(held); }, 0);
   };
   const requestTransition = (action: () => void) => {
     cancelFlush();
@@ -189,7 +195,11 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
 
   const updateText = (patch: Partial<Pick<TaskDraft, 'title' | 'description'>>) => {
     setAcknowledgeConflict(false);
-    setEditing((current) => current ? { ...current, draft: { ...current.draft, ...patch } } : current);
+    const current = editingRef.current;
+    if (!current) return;
+    const next = { ...current, draft: { ...current.draft, ...patch } };
+    editingRef.current = next;
+    setEditing(next);
   };
   const onTextBlur = (event: FocusEvent<HTMLElement>) => {
     const allowNull = flushOnNull.current;
@@ -220,16 +230,19 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
     setAcknowledgeConflict(false);
   };
   const draft = editing?.draft ?? taskDraft(fallback);
+  const base = editing?.base ?? draft;
   const value: EditContext = {
-    draft, readonly, tags, conflicts: editing?.conflicts ?? [], acknowledge: acknowledgeConflict, setAcknowledge: setAcknowledgeConflict,
+    draft, base, readonly, tags, conflicts: editing?.conflicts ?? [], acknowledge: acknowledgeConflict, setAcknowledge: setAcknowledgeConflict,
     updateText, onTextBlur, onComposeStart: () => { composing.current = true; }, onComposeEnd: () => { composing.current = false; },
-    descriptionRef,
+    taskId: id,
+    openDescription,
     onTitleKeyDown: (event) => {
       if (event.key !== 'Enter' || composing.current || isCompositionKey(event.nativeEvent)) return;
       event.preventDefault();
       flushOnNull.current = true;
-      descriptionRef.current?.focus();
-      if (document.activeElement !== descriptionRef.current) event.currentTarget.blur();
+      const title = event.currentTarget;
+      openDescription.current();
+      requestAnimationFrame(() => { if (document.activeElement?.getAttribute('aria-label') !== '详情') title.blur(); });
     },
     setPriority: (priority) => { void applyImmediate({ priority }); },
     setDue: (dueDate) => { void applyImmediate({ dueDate }); },
@@ -301,7 +314,7 @@ export function TaskExpandBody({ fill = false }: { fill?: boolean }) {
   const selected = edit.tags.filter((tag) => edit.draft.tagIds?.includes(tag.id));
   return <div data-task-editor className={cn('flex flex-col', fill && 'min-h-0 flex-1')}>
     {edit.conflicts.length > 0 && <div role="alert" className="mb-3 rounded-xl border border-warning-border bg-warning-bg p-3 text-sm text-warning"><p>后台已更新{edit.conflicts.map((field) => fieldLabels[field] ?? field).join('、')}，你的编辑已保留。</p><label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={edit.acknowledge} onChange={(event) => edit.setAcknowledge(event.target.checked)} />保存时使用我的编辑</label><Button type="button" variant="ghost" size="sm" onClick={edit.resetDraft}>使用最新内容</Button></div>}
-    <Textarea ref={edit.descriptionRef} aria-label="详情" placeholder="添加详情" value={edit.draft.description} disabled={edit.readonly} onChange={(event) => edit.updateText({ description: event.target.value })} onBlur={edit.onTextBlur} onCompositionStart={edit.onComposeStart} onCompositionEnd={edit.onComposeEnd} className={cn('task-writing mt-1 px-0 py-1', fill ? 'min-h-32 flex-1' : 'min-h-20')} />
+    <TaskDescription taskId={edit.taskId} value={edit.draft.description} readonly={edit.readonly} fill={fill} openDescription={edit.openDescription} onChange={(description) => edit.updateText({ description })} onBlur={edit.onTextBlur} onComposeStart={edit.onComposeStart} onComposeEnd={edit.onComposeEnd} onSave={edit.saveText} />
     {selected.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{selected.map((tag) => <span key={tag.id} className="task-tag-chip inline-flex items-center gap-1" data-color={tag.color || 'violet'}>#{tag.name}{!edit.readonly && <button type="button" className="grid size-4 place-items-center rounded-full hover:bg-black/10 dark:hover:bg-white/10" aria-label={`从任务去掉标签：${tag.name}`} onClick={() => edit.toggleTag(tag.id, false)}><X className="size-3" /></button>}</span>)}</div>}
     <div className="mt-2 flex shrink-0 flex-wrap items-center gap-1.5">
       <DateControl />
@@ -360,15 +373,19 @@ function ActivityButton({ onOpen }: { onOpen: () => void }) {
 type EditorCaret = { label: '任务标题' | '详情'; start: number; end: number };
 
 function editorCaret(node: Element | null): EditorCaret | null {
-  if (!(node instanceof HTMLTextAreaElement)) return null;
-  const label = node.getAttribute('aria-label');
-  if (label !== '任务标题' && label !== '详情') return null;
-  return { label, start: node.selectionStart ?? 0, end: node.selectionEnd ?? 0 };
+  if (node instanceof HTMLTextAreaElement && node.getAttribute('aria-label') === '任务标题') return { label: '任务标题', start: node.selectionStart ?? 0, end: node.selectionEnd ?? 0 };
+  const content = node?.closest('[aria-label="详情"]');
+  if (content instanceof HTMLElement && content.closest('[data-task-editor]')) {
+    const range = readDescriptionCaret(content);
+    if (range) return { label: '详情', ...range };
+  }
+  return null;
 }
 
 function visibleEditor(label: EditorCaret['label']) {
-  for (const node of document.querySelectorAll('textarea')) {
-    if (!(node instanceof HTMLTextAreaElement) || node.getAttribute('aria-label') !== label || !node.closest('[data-task-editor]')) continue;
+  const selector = label === '任务标题' ? 'textarea[aria-label="任务标题"]' : '[aria-label="详情"]';
+  for (const node of document.querySelectorAll(selector)) {
+    if (!(node instanceof HTMLElement) || !node.closest('[data-task-editor]')) continue;
     if (node.getClientRects().length === 0) continue;
     return node;
   }
@@ -377,7 +394,9 @@ function visibleEditor(label: EditorCaret['label']) {
 
 function placeCaret(caret: EditorCaret) {
   const node = visibleEditor(caret.label);
-  if (!node || node.disabled) return false;
+  if (!node) return false;
+  if (caret.label === '详情') return placeDescriptionCaret(node, caret.start, caret.end);
+  if (!(node instanceof HTMLTextAreaElement) || node.disabled) return false;
   node.focus();
   node.setSelectionRange(caret.start, caret.end);
   return document.activeElement === node;
@@ -402,7 +421,9 @@ function DetailFrame({ presentation, panelSlot, children }: { presentation: 'pan
   rememberEditorCaret(pendingFocus);
   useLayoutEffect(() => {
     const saved = pendingFocus.current;
-    if (saved && placeCaret(saved)) pendingFocus.current = null;
+    if (!saved) return;
+    // The modal content is portaled on a later layout pass. Leave the caret for that dialog's autofocus.
+    if (placeCaret(saved) && presentation !== 'modal') pendingFocus.current = null;
   }, [presentation, panelSlot]);
   if (presentation === 'retained') return <div hidden>{children}</div>;
   if (presentation === 'panel') {
@@ -410,7 +431,7 @@ function DetailFrame({ presentation, panelSlot, children }: { presentation: 'pan
     if (!panelSlot) return <div hidden>{aside}</div>;
     return createPortal(aside, panelSlot);
   }
-  return <Dialog open onOpenChange={(open) => { if (!open && presentationRef.current === 'modal') edit.requestClose(); }}><DialogContent showCloseButton={false} surface="glass" className="flex h-[min(92dvh,840px)] max-h-[92dvh] max-w-[min(42rem,calc(100%-3rem))] flex-col overflow-hidden p-0" onOpenAutoFocus={(event) => { const saved = pendingFocus.current; if (saved && placeCaret(saved)) { pendingFocus.current = null; event.preventDefault(); } }} onCloseAutoFocus={(event) => { if (presentationRef.current !== 'modal') event.preventDefault(); }}><DialogTitle className="sr-only">任务详情</DialogTitle><DialogDescription className="sr-only">编辑任务详情、标签、旗标和日期。</DialogDescription>{children}</DialogContent></Dialog>;
+  return <Dialog open onOpenChange={(open) => { if (!open && presentationRef.current === 'modal') edit.requestClose(); }}><DialogContent showCloseButton={false} surface="glass" className="flex h-[min(92dvh,840px)] max-h-[92dvh] max-w-[min(42rem,calc(100%-3rem))] flex-col overflow-hidden p-0" onOpenAutoFocus={(event) => { const saved = pendingFocus.current; if (!saved) return; event.preventDefault(); if (placeCaret(saved)) pendingFocus.current = null; else requestAnimationFrame(() => { if (pendingFocus.current && placeCaret(pendingFocus.current)) pendingFocus.current = null; }); }} onCloseAutoFocus={(event) => { if (presentationRef.current !== 'modal') event.preventDefault(); }}><DialogTitle className="sr-only">任务详情</DialogTitle><DialogDescription className="sr-only">编辑任务详情、标签、旗标和日期。</DialogDescription>{children}</DialogContent></Dialog>;
 }
 
 export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children' | 'fallback'> & { fallback?: Task; presentation: 'panel' | 'modal' | 'retained'; panelSlot: HTMLElement | null }>(function TaskDetailPane({ presentation, panelSlot, fallback, ...props }, ref) {

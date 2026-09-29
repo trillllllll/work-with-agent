@@ -199,7 +199,7 @@ test.describe('Agent 工作室 MVP', () => {
     await expect(page.getByRole('heading', { name: '全局聊天' })).toBeVisible();
     await expect(detail).toBeHidden();
     await page.getByRole('button', { name: '关闭聊天' }).click();
-    await expect(detail.getByLabel('详情', { exact: true })).toHaveValue('检查器草稿');
+    await expect(detail.getByLabel('详情', { exact: true })).toHaveAttribute('data-value', '检查器草稿');
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
   });
 

@@ -10,6 +10,7 @@ import { mountMcp } from './mcp/http.js';
 import { commandsRouter } from './application/commands.js';
 import { legacyMutationMiddleware, workspaceQueryRouter } from './application/workspace-api.js';
 import { taskActivity } from './application/task-activity.js';
+import { addTaskImage, readTaskImage } from './application/task-images.js';
 import { handoffRouter } from './routes/handoffs.js';
 import { createKnowledgeRouter } from './routes/knowledge.js';
 import { createReviewsRouter } from './routes/reviews.js';
@@ -95,6 +96,17 @@ app.get('/api/tasks', async (req, res, next) => {
   } catch (error) { next(error); }
 });
 app.post('/api/tasks/reorder', async (req, res, next) => { try { send(res, await tasks.reorder(req.body, userContext(req))); } catch (error) { next(error); } });
+const taskImageBody = z.object({
+  attachmentBase64: z.string().min(1).max(Math.ceil((8 * 1024 * 1024 + 64 * 1024) / 3) * 4),
+  mimeType: z.enum(['image/webp', 'image/jpeg']),
+});
+app.post('/api/tasks/:id/images', schema(taskImageBody), async (req, res, next) => { try { send(res, await addTaskImage(String(req.params.id), req.body)); } catch (error) { next(error); } });
+app.get('/api/tasks/:id/images/:imageId', async (req, res, next) => {
+  try {
+    const image = await readTaskImage(String(req.params.id), String(req.params.imageId));
+    res.status(200).set({ 'Content-Type': image.mimeType, 'Content-Length': String(image.bytes.byteLength), 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store', 'Content-Disposition': 'inline' }).end(image.bytes);
+  } catch (error) { next(error); }
+});
 app.get('/api/tasks/:id', async (req, res, next) => { try { const task = await tasks.get(String(req.params.id)); if (!task) return res.status(404).json({ data: null, error: '任务不存在' }); send(res, task); } catch (error) { next(error); } });
 app.get('/api/tasks/:id/topic-history', async (req, res, next) => { try { send(res, await tasks.topicHistory(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/tasks/:id/activity', async (req, res, next) => { try { send(res, await taskActivity(getActor(req), String(req.params.id))); } catch (error) { next(error); } });

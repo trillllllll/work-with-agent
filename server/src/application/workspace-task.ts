@@ -3,8 +3,16 @@ import { Prisma, type Task } from '@prisma/client';
 import { DomainError, Task as TaskDomain } from '../domain/task.js';
 import { parseInput, taskCreateSchema, taskUpdateSchema, taskListSchema, reorderSchema, type TaskListOptions } from './workspace-input.js';
 import { prisma, mutationTransaction, ChangeGroup, activeTopic, editableTask, nextOrder, normalizeContext, notFound, now, readTask, setTags, taskDto, taskInclude, validateTags, assignmentData, type Db, type MutationContext } from './workspace-store.js';
+import { noteUnreferencedBlobs, pruneTaskImages, releaseUnreferencedBlobs } from './task-images.js';
 
 const rank = { none: 0, low: 1, medium: 2, high: 3 };
+
+async function finishImageBlobs(context: MutationContext | string, paths: string[]) {
+  if (!paths.length) return;
+  // Nested in a command transaction: the row delete is not visible until that transaction commits.
+  if (normalizeContext(context).db) noteUnreferencedBlobs(paths);
+  else await releaseUnreferencedBlobs(paths);
+}
 async function validateParent(tx: Db, parentId: string, taskId?: string) {
   if (parentId === taskId) throw new DomainError('INVALID_PARENT', '任务不能成为自己的子任务', 400);
   const parent = await editableTask(tx, parentId);
@@ -89,7 +97,8 @@ export class TaskService {
 
   async update(taskId: string, value: unknown, context: MutationContext | string = { source: 'user' }) {
     const input = parseInput(taskUpdateSchema, value);
-    return mutationTransaction(context, async (tx) => {
+    const dropped: string[] = [];
+    const result = await mutationTransaction(context, async (tx) => {
       const group = new ChangeGroup(tx, normalizeContext(context));
       const before = await editableTask(tx, taskId);
       const task = TaskDomain.restore(before);
@@ -132,9 +141,12 @@ export class TaskService {
       if (input.status === 'done') for (const child of unfinished) await group.task(child.id, { status: 'done' });
       if (before.parentId && before.parentId !== parentId) await touchParent(group, before.parentId, false);
       if (parentId) await touchParent(group, parentId, (input.status ?? before.status) !== 'done');
+      if (input.description !== undefined) dropped.push(...await pruneTaskImages(tx, taskId, input.description));
       const meta = await group.record('task', taskId, 'update');
       return { ...taskDto(await readTask(tx, taskId)), meta };
     });
+    await finishImageBlobs(context, dropped);
+    return result;
   }
 
   async reorder(value: unknown, context: MutationContext = { source: 'user' }) {
@@ -228,7 +240,8 @@ export class TaskService {
   }
 
   async permanentDelete(taskId: string, context: MutationContext = { source: 'user' }) {
-    return mutationTransaction(context, async (tx) => {
+    const dropped: string[] = [];
+    const result = await mutationTransaction(context, async (tx) => {
       const task = await tx.task.findUnique({ where: { id: taskId }, include: taskInclude });
       if (!task || !task.deletedAt) throw new DomainError('TASK_NOT_DELETED', '任务不在回收站');
       await activeTopic(tx, task.topicId);
@@ -236,6 +249,10 @@ export class TaskService {
       if (children.some((child) => !child.deletedAt)) throw new DomainError('TASK_HAS_ACTIVE_CHILDREN', '仍有未删除子任务，不能永久删除');
       const group = new ChangeGroup(tx, context);
       await group.scope({ kind: 'children', id: taskId });
+      const ids = [...children, task].map((member) => member.id);
+      const images = await tx.taskImage.findMany({ where: { taskId: { in: ids } } });
+      if (images.length) await tx.taskImage.deleteMany({ where: { taskId: { in: ids } } });
+      dropped.push(...images.map((image) => image.path));
       for (const member of [...children, task]) {
         await group.capture('tasks', member.id);
         await tx.task.delete({ where: { id: member.id } });
@@ -244,6 +261,8 @@ export class TaskService {
       const meta = await group.record('task', taskId, 'permanent_delete');
       return { ...taskDto(task), meta };
     });
+    await finishImageBlobs(context, dropped);
+    return result;
   }
 
   async topicHistory(taskId: string) {

@@ -987,6 +987,50 @@
   }
 }
 
+.task-detail-preview,
+.task-description-editor {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: text;
+}
+
+.task-description-editor {
+  display: flex;
+  flex-direction: column;
+}
+
+.task-description-editor .cm-editor,
+.task-description-editor .cm-scroller {
+  min-height: 5rem;
+}
+
+.task-description-editor .cm-editor {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-detail-block {
+  cursor: text;
+  max-width: 100%;
+}
+
+.task-image-hint {
+  display: none;
+}
+
+.task-image:hover .task-image-hint {
+  display: flex;
+}
+
+.task-detail-block .markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.task-detail-block .markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
 textarea.task-writing,
 textarea.task-writing:focus,
 textarea.task-writing:focus-visible {

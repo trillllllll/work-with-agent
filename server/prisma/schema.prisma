@@ -117,6 +117,18 @@ model TaskTag {
   @@map("task_tags")
 }
 
+model TaskImage {
+  id        String @id @default(cuid())
+  taskId    String @map("task_id")
+  mimeType  String @map("mime_type")
+  byteSize  Int    @map("byte_size")
+  path      String
+  createdAt String @default("") @map("created_at")
+
+  @@index([taskId])
+  @@map("task_images")
+}
+
 model TaskTopicAssignment {
   id             String  @id @default(cuid())
   taskId         String  @map("task_id")

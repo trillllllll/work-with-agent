@@ -1,7 +1,3 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../infrastructure/prisma.js';
@@ -11,6 +7,9 @@ import { assertOwner, assertTopicAccess, type Actor } from './security.js';
 import { registerCommandHandler, registerEvidenceValidator, type Command } from './commands.js';
 import { registerUndoHandler, type UndoRecord } from './undo-registry.js';
 import { jsonSchema } from './command-catalog.js';
+import { knowledgeHash, knowledgeStorageRoot, readKnowledgeBlob, storeKnowledgeBlob } from './knowledge-blobs.js';
+
+export { knowledgeHash, knowledgeStorageRoot };
 
 export type KnowledgeDb = Prisma.TransactionClient;
 export const knowledgeNow = () => new Date().toISOString();
@@ -41,7 +40,6 @@ function normalizedSince(value?: string) {
   if (Number.isNaN(date.getTime())) throw knowledgeFailure('INVALID_SINCE', '时间筛选无效', 400);
   return date.toISOString();
 }
-export const knowledgeHash = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex');
 const parseJson = <T>(value: string, fallback: T): T => { try { return JSON.parse(value) as T; } catch { return fallback; } };
 export function readEvidence(value: string): EvidenceRef[] { return parseJson(value, []); }
 export function readLabels(value: string): string[] { const parsed = parseJson<unknown>(value, []); return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []; }
@@ -128,22 +126,8 @@ function validateMaterialInput(input: z.infer<typeof materialSchema>) {
   if (input.kind === 'attachment' && !input.attachmentBase64) throw knowledgeFailure('ATTACHMENT_REQUIRED', '请选择需要保存的附件', 400);
   materialBytes(input.attachmentBase64);
 }
-export function knowledgeStorageRoot() { return resolve(process.env.KNOWLEDGE_STORAGE_ROOT || fileURLToPath(new URL('../../data/knowledge-blobs', import.meta.url))); }
 async function storeAttachment(bytes: Uint8Array) {
-  const hash = knowledgeHash(bytes);
-  const root = knowledgeStorageRoot();
-  await mkdir(root, { recursive: true });
-  const destination = resolve(root, hash);
-  try { if (knowledgeHash(await readFile(destination)) === hash) return hash; } catch { /* New immutable blob. */ }
-  const temporary = resolve(root, `.${hash}.${randomUUID()}.tmp`);
-  await writeFile(temporary, bytes, { flag: 'wx' });
-  try { await rename(temporary, destination); }
-  catch (error) {
-    // Concurrent identical uploads can win the rename; never remove the shared blob.
-    try { if (knowledgeHash(await readFile(destination)) !== hash) throw error; }
-    finally { await unlink(temporary).catch(() => {}); }
-  }
-  return hash;
+  return storeKnowledgeBlob(bytes);
 }
 function publicVersion<T extends { attachmentPath: string | null }>(row: T) {
   const { attachmentPath, ...rest } = row;
@@ -384,9 +368,8 @@ export class KnowledgeService {
     if (!material) throw knowledgeFailure('NOT_FOUND', '材料不存在', 404);
     await checkKnowledgeScope(prisma, actor, material.topicId);
     const version = await prisma.materialVersion.findUnique({ where: { materialId_revision: { materialId: id, revision } } });
-    if (!version?.attachmentPath || !/^[a-f0-9]{64}$/.test(version.attachmentPath)) throw knowledgeFailure('NOT_FOUND', '附件不存在', 404);
-    const bytes = await readFile(resolve(knowledgeStorageRoot(), version.attachmentPath)).catch(() => { throw knowledgeFailure('ATTACHMENT_MISSING', '附件原件已不可用', 404); });
-    if (knowledgeHash(bytes) !== version.attachmentPath) throw knowledgeFailure('ATTACHMENT_CORRUPT', '附件内容校验失败');
+    if (!version?.attachmentPath) throw knowledgeFailure('NOT_FOUND', '附件不存在', 404);
+    const bytes = await readKnowledgeBlob(version.attachmentPath);
     return { bytes, fileName: version.fileName ?? 'attachment', mimeType: version.mimeType ?? 'application/octet-stream' };
   }
   async memories(actor: Actor, topicId: string | null, options: { history?: boolean; status?: 'active' | 'history' | 'all'; q?: string; cursor?: number; limit?: number } = {}) {

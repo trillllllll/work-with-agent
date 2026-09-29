@@ -10,6 +10,7 @@ import { taskCreateSchema, taskUpdateSchema, topicCreateSchema, topicUpdateSchem
 import { type Db, type MutationContext, type GroupSnapshot, isGroup, now } from './workspace-store.js';
 import { type Actor, getActor, assertOwner, assertTopicAccess, actorFromConnection } from './security.js';
 import { commandDescriptor } from './command-catalog.js';
+import { discardPendingBlobs, flushUnreferencedBlobs } from './task-images.js';
 
 export type Evidence = { type: 'material' | 'memory' | 'task'; id: string; revision: number; hash?: string };
 export type Command = { kind: string; targetId?: string; expectedRevision?: number; input: Record<string, unknown>; clientRef?: string; entityId?: string; evidence?: Evidence[] };
@@ -47,7 +48,16 @@ let commandQueue = Promise.resolve();
 /** SQLite has one writer. Queue local commands so concurrent retries read the first
  * committed receipt, while the database unique key remains the final safeguard. */
 function commandTransaction<T>(run: (tx: Db) => Promise<T>): Promise<T> {
-  const result = commandQueue.then(() => prisma.$transaction(run, { timeout: 30_000 }));
+  const result = commandQueue.then(async () => {
+    try {
+      const value = await prisma.$transaction(run, { timeout: 30_000 });
+      await flushUnreferencedBlobs();
+      return value;
+    } catch (error) {
+      discardPendingBlobs();
+      throw error;
+    }
+  });
   commandQueue = result.then(() => undefined, () => undefined);
   return result;
 }

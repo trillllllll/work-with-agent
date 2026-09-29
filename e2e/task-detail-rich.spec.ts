@@ -1,0 +1,92 @@
+import { test, expect } from './fixtures.js';
+import { e2eDatabase, resetE2eDatabase } from './database.js';
+
+const apiUrl = 'http://127.0.0.1:3015';
+
+test.beforeEach(async ({ page }) => {
+  await resetE2eDatabase();
+  await page.addInitScript(() => { (window as unknown as { __REACT_GRAB_DISABLED__?: boolean }).__REACT_GRAB_DISABLED__ = true; });
+});
+test.afterAll(async () => { await e2eDatabase.$disconnect(); });
+
+test('详情里的代码块和压缩后的图片会在离开输入后显示', async ({ page, request }) => {
+  const created = await request.post(`${apiUrl}/api/tasks`, { data: { title: '记一段代码' } });
+  expect(created.ok(), await created.text()).toBe(true);
+  const task = (await created.json()).data as { id: string };
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await page.goto('/#/inbox');
+  await page.getByTestId(`task-row-${task.id}`).getByRole('button', { name: '记一段代码', exact: true }).click();
+  const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
+  await expect(detail.getByRole('button', { name: '插入代码块', exact: true })).toHaveCount(0);
+  await detail.getByLabel('详情', { exact: true }).fill('```\nconst n = 1;\n```');
+  await detail.getByLabel('任务标题', { exact: true }).click();
+  await expect(detail.locator('pre')).toContainText('const n = 1;');
+  await expect(detail.getByRole('button', { name: '复制代码', exact: true })).toBeVisible();
+
+  await page.setViewportSize({ width: 800, height: 800 });
+  await expect(detail.locator('pre')).toContainText('const n = 1;');
+  const uploaded = page.waitForRequest((call) => call.method() === 'POST' && call.url().includes(`/api/tasks/${task.id}/images`));
+  const fetched = page.waitForResponse((call) => call.request().method() === 'GET' && call.url().includes(`/api/tasks/${task.id}/images/`));
+  await page.evaluate(async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1800;
+    canvas.height = 1000;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('没有画布');
+    const gradient = context.createLinearGradient(0, 0, 1800, 1000);
+    gradient.addColorStop(0, '#234');
+    gradient.addColorStop(1, '#ec8');
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 1800, 1000);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) throw new Error('没有图片');
+    const file = new File([blob], 'wide.png', { type: 'image/png' });
+    const input = document.querySelector('input[aria-label="选择图片"]') as HTMLInputElement | null;
+    if (!input) throw new Error('没有图片选择框');
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    input.files = transfer.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  const requestBody = (await uploaded).postDataBuffer();
+  expect(requestBody.byteLength).toBeLessThan(200_000);
+  expect(requestBody.toString('utf8')).toContain('image/webp');
+  const imageResponse = await fetched;
+  expect(imageResponse.status()).toBe(200);
+  expect(imageResponse.headers()['content-type']).toContain('image/webp');
+  const image = detail.locator('img');
+  await expect(image).toBeVisible();
+  await expect.poll(() => image.evaluate((node) => (node as HTMLImageElement).naturalWidth)).toBeGreaterThanOrEqual(1700);
+  await expect(detail.getByText('右键放大', { exact: true })).toBeHidden();
+  await image.hover();
+  await expect(detail.getByText('右键放大', { exact: true })).toBeVisible();
+  await image.click({ button: 'right' });
+  const zoom = page.getByRole('dialog', { name: '图片预览', exact: true });
+  await expect(zoom.locator('img')).toBeVisible();
+  await expect.poll(() => zoom.locator('img').evaluate((node) => (node as HTMLImageElement).naturalWidth)).toBeGreaterThanOrEqual(1700);
+  const percent = zoom.locator('span.tabular-nums');
+  await expect(percent).toBeVisible();
+  const before = (await percent.textContent()) ?? '';
+  await zoom.getByRole('button', { name: '放大', exact: true }).click();
+  await expect(percent).not.toHaveText(before);
+  await zoom.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(zoom).toBeHidden();
+  await expect(detail).toBeVisible();
+  await image.click();
+  await expect(detail.getByLabel('详情', { exact: true })).toContainText('![](');
+  await detail.getByLabel('任务标题', { exact: true }).click();
+  await expect(detail.locator('img')).toBeVisible();
+  await expect(detail.locator('pre')).toContainText('const n = 1;');
+
+  await page.setViewportSize({ width: 390, height: 800 });
+  const box = await detail.boundingBox();
+  expect(box?.width ?? 390).toBeLessThan(350);
+  await expect(detail.locator('img')).toBeVisible();
+  await expect(detail.locator('pre')).toContainText('const n = 1;');
+  await detail.locator('img').click({ button: 'right' });
+  const narrowZoom = page.getByRole('dialog', { name: '图片预览', exact: true });
+  await narrowZoom.getByRole('button', { name: '放大', exact: true }).click();
+  await narrowZoom.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(narrowZoom).toBeHidden();
+  await expect(detail).toBeVisible();
+});

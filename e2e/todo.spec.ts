@@ -76,13 +76,13 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('任务标题', { exact: true }).click();
     await expect(page.getByText('详情保存失败', { exact: true }).first()).toBeVisible();
     expect((await task(request, created.id)).description).toBe('');
-    await expect(page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('详情', { exact: true })).toHaveValue('保留我的说明');
+    await expect(page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('详情', { exact: true })).toHaveAttribute('data-value', '保留我的说明');
     await expect(page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('任务标题', { exact: true })).toHaveValue('修改后的任务');
     await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('button', { name: '关闭任务详情', exact: true }).click();
     const leave = page.getByRole('dialog', { name: '保存未完成的编辑？', exact: true });
     await expect(leave).toBeVisible();
     await leave.getByRole('button', { name: '继续编辑', exact: true }).click();
-    await expect(page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('详情', { exact: true })).toHaveValue('保留我的说明');
+    await expect(page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('详情', { exact: true })).toHaveAttribute('data-value', '保留我的说明');
     await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('详情', { exact: true }).click();
     await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('任务标题', { exact: true }).click();
     await expect.poll(async () => (await task(request, created.id)).description).toBe('保留我的说明');
