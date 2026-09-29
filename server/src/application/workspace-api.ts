@@ -7,6 +7,7 @@ import { DomainError } from '../domain/task.js';
 import { getActor, assertTopicAccess, type Actor } from './security.js';
 import { CommandService, canonical, assertPayloadVisible, type Command } from './commands.js';
 import { taskDto, taskInclude } from './workspace-store.js';
+import { taskActivity } from './task-activity.js';
 import { TaskService, TopicService, ChangeService } from './workspace.js';
 import { taskListSchema, parseInput } from './workspace-input.js';
 
@@ -130,6 +131,16 @@ workspaceQueryRouter.get('/trash/tasks', async (req, res, next) => {
     if (query.topicId && query.inbox === 'true') throw new DomainError('INVALID_INPUT', '不能同时指定清单和收集箱', 400);
     const rows = await prisma.task.findMany({ where: { AND: [taskScope(actor), { deletedAt: { not: null }, ...(query.topicId ? { topicId: query.topicId } : query.inbox === 'true' ? { topicId: null } : {}) }] }, include: taskInclude, orderBy: [{ deletedAt: 'desc' }, { id: 'desc' }] });
     res.json({ data: page(rows.map(taskDto), query, canonical({ route: 'trash', actor: actor.id, revision: actor.revision, topicId: query.topicId, inbox: query.inbox === 'true' })), error: null });
+  } catch (error) { next(error); }
+});
+
+workspaceQueryRouter.get('/tasks/:id/activity', async (req, res, next) => {
+  try {
+    const actor = getActor(req);
+    const paging = pageSchema.parse(req.query);
+    const taskId = String(req.params.id);
+    const rows = await taskActivity(actor, taskId);
+    res.json({ data: page(rows, paging, canonical({ route: 'activity', actor: actor.id, revision: actor.revision, taskId })), error: null });
   } catch (error) { next(error); }
 });
 

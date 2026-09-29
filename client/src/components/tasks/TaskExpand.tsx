@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input.js';
 import { Textarea } from '@/components/ui/textarea.js';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
+import { TaskActivityDialog } from './TaskActivityDialog.js';
 import { cn } from '@/lib/utils.js';
 
 type Editing = { base: TaskDraft; draft: TaskDraft; conflicts: string[] };
@@ -42,6 +43,7 @@ type EditContext = {
   toggleTag: (id: string, checked: boolean) => void;
   resetDraft: () => void;
   requestClose: () => void;
+  saveText: () => Promise<void>;
 };
 const EditContext = createContext<EditContext | null>(null);
 function useEdit() {
@@ -233,6 +235,7 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
     },
     resetDraft,
     requestClose: () => requestTransition(onCloseRef.current),
+    saveText: async () => { cancelFlush(); await flushText(); },
   };
 
   const blocked = Boolean(editing?.conflicts.length && !acknowledgeConflict) || !draft.title.trim();
@@ -274,6 +277,11 @@ function CloseDetailButton() {
   return <Button type="button" variant="ghost" size="icon-sm" aria-label="关闭任务详情" onClick={edit.requestClose}><X /></Button>;
 }
 
+function ActivityButton({ onOpen }: { onOpen: () => void }) {
+  const edit = useEdit();
+  return <Button type="button" variant="ghost" size="sm" className="shrink-0" aria-label="任务动态" onClick={() => { void edit.saveText().then(onOpen); }}>动态</Button>;
+}
+
 function DetailFrame({ presentation, children }: { presentation: 'panel' | 'modal' | 'retained'; children: ReactNode }) {
   const edit = useEdit();
   if (presentation === 'retained') return <div hidden>{children}</div>;
@@ -282,14 +290,16 @@ function DetailFrame({ presentation, children }: { presentation: 'panel' | 'moda
 }
 
 export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children' | 'fallback'> & { fallback?: Task; presentation: 'panel' | 'modal' | 'retained' }>(function TaskDetailPane({ presentation, fallback, ...props }, ref) {
+  const [activity, setActivity] = useState(false);
   const placeholder: Task = fallback ?? { id: props.id, title: '', description: '', status: 'todo', priority: 'none', dueDate: null, resultSummary: '', topicId: null, parentId: null, tagIds: [], allowedTransitions: [] };
   return <TaskExpand ref={ref} {...props} fallback={placeholder}>
     <DetailFrame presentation={presentation}>
       <div className="flex min-h-0 flex-1 flex-col">
-        <header className="flex items-start gap-3 px-5 pb-2 pt-5"><div className="min-w-0 flex-1"><TaskTitleField className="h-11 text-lg font-semibold" /></div><CloseDetailButton /></header>
+        <header className="flex items-start gap-3 px-5 pb-2 pt-5"><div className="min-w-0 flex-1"><TaskTitleField className="h-11 text-lg font-semibold" /></div><ActivityButton onOpen={() => setActivity(true)} /><CloseDetailButton /></header>
         <div className="flex min-h-0 flex-1 flex-col px-5 pb-5"><TaskExpandBody fill /></div>
       </div>
     </DetailFrame>
+    <TaskActivityDialog taskId={props.id} open={activity} onOpenChange={setActivity} />
   </TaskExpand>;
 });
 

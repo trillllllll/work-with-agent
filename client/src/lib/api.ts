@@ -12,6 +12,16 @@ export type Tag = { id: string; name: string; color?: TagColor; revision?: numbe
 export type Task = { id: string; topicId: string | null; title: string; description: string; status: Status; allowedTransitions: Status[]; priority: TaskPriority; dueDate: string | null; resultSummary: string; createdAt?: string; updatedAt?: string; deletedAt?: string | null; parentId?: string | null; sortOrder?: number; revision?: number; deleteBatchId?: string | null; tags?: Tag[]; tagIds?: string[]; children?: Task[]; topic?: { id: string; name: string; archivedAt?: string | null } | null };
 export type TrashTask = Task & { deletedAt: string; topic?: { id: string; name: string } };
 export type TaskTopicHistory = { id: string; reason: 'created' | 'assigned' | 'unassigned' | 'topic_archived' | 'undo' | 'migration'; source: string; changedAt: string; fromTopic: { id: string; name: string } | null; toTopic: { id: string; name: string } | null };
+export type TaskActivityChange =
+  | { field: 'title' | 'description' | 'resultSummary'; before: string; after: string }
+  | { field: 'status'; before: Status; after: Status }
+  | { field: 'priority'; before: TaskPriority; after: TaskPriority }
+  | { field: 'dueDate'; before: string | null; after: string | null }
+  | { field: 'topicId'; before: { id: string | null; name: string }; after: { id: string | null; name: string } }
+  | { field: 'parentId'; before: { id: string | null; title: string }; after: { id: string | null; title: string } }
+  | { field: 'tagIds'; before: string[]; after: string[] }
+  | { field: 'deleted'; before: boolean; after: boolean };
+export type TaskActivityEvent = { id: string; at: string; actor: { kind: 'user' | 'agent'; name: string }; action: 'create' | 'update' | 'delete' | 'restore' | 'undo'; changes: TaskActivityChange[] };
 export type CliCommandSetting = { command: string; source: 'manual' | 'auto' | 'none'; version: string; checkedAt: string; manualCommand: string; autoCommand: string; discoveredCommand: string; discoveredVersion: string; applied: boolean; message: string };
 export type Settings = { baseUrl: string; model: string; apiKeyConfigured: boolean; apiKeyMasked: string | null; cli?: { codex: CliCommandSetting; claude: CliCommandSetting }; discovered?: Record<string, CliCommandSetting> };
 export type ApprovalResponse = { result: ToolResult; assistantMessage?: string; summaryError?: string };
