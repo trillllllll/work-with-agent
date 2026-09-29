@@ -1,8 +1,8 @@
-import { createContext, forwardRef, useContext, useEffect, useImperativeHandle, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { createContext, forwardRef, useContext, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { CalendarDays, Flag, Hash, X } from 'lucide-react';
 import { priorities, type Tag, type Task, type TaskPriority } from '@/lib/api.js';
 import { draftPatch, isCompositionKey, localDate, mergeTaskDraft, taskDraft, type TaskDraft } from '@/lib/todo.js';
-import { useTask } from '@/hooks/useTodo.js';
+import { useTask, useTodoActions } from '@/hooks/useTodo.js';
 import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { Textarea } from '@/components/ui/textarea.js';
@@ -35,7 +35,8 @@ type EditContext = {
   setAcknowledge: (value: boolean) => void;
   updateText: (patch: Partial<Pick<TaskDraft, 'title' | 'description'>>) => void;
   onTextBlur: (event: FocusEvent<HTMLElement>) => void;
-  onTitleKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
+  onTitleKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  descriptionRef: RefObject<HTMLTextAreaElement | null>;
   onComposeStart: () => void;
   onComposeEnd: () => void;
   setPriority: (priority: TaskPriority) => void;
@@ -71,6 +72,7 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
   const [acknowledgeConflict, setAcknowledgeConflict] = useState(false);
   const seeded = useRef(false);
   const composing = useRef(false);
+  const descriptionRef = useRef<HTMLTextAreaElement>(null);
   const flushOnNull = useRef(false);
   const flushTimer = useRef(0);
   const savingCount = useRef(0);
@@ -220,12 +222,13 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
   const value: EditContext = {
     draft, readonly, tags, conflicts: editing?.conflicts ?? [], acknowledge: acknowledgeConflict, setAcknowledge: setAcknowledgeConflict,
     updateText, onTextBlur, onComposeStart: () => { composing.current = true; }, onComposeEnd: () => { composing.current = false; },
+    descriptionRef,
     onTitleKeyDown: (event) => {
-      if (event.key === 'Enter' && !composing.current && !isCompositionKey(event.nativeEvent)) {
-        event.preventDefault();
-        flushOnNull.current = true;
-        event.currentTarget.blur();
-      }
+      if (event.key !== 'Enter' || composing.current || isCompositionKey(event.nativeEvent)) return;
+      event.preventDefault();
+      flushOnNull.current = true;
+      descriptionRef.current?.focus();
+      if (document.activeElement !== descriptionRef.current) event.currentTarget.blur();
     },
     setPriority: (priority) => { void applyImmediate({ priority }); },
     setDue: (dueDate) => { void applyImmediate({ dueDate }); },
@@ -244,32 +247,103 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
   return <EditContext.Provider value={value}>{children}{leaveDialog}{saving && <p className="sr-only" role="status">正在保存…</p>}</EditContext.Provider>;
 });
 
+function flattenTitle(value: string) {
+  return value.replace(/[^\S\n]*[\r\n]+[^\S\n]*/g, ' ');
+}
+
+function fitTitle(node: HTMLTextAreaElement) {
+  node.style.height = '0px';
+  const style = getComputedStyle(node);
+  const line = Number.parseFloat(style.lineHeight);
+  const padding = Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom);
+  const max = (Number.isFinite(line) ? line : 28) * 4 + padding;
+  const next = Math.min(node.scrollHeight, max);
+  node.style.height = `${next}px`;
+  node.style.overflowY = node.scrollHeight > max + 1 ? 'auto' : 'hidden';
+}
+
 export function TaskTitleField({ className }: { className?: string }) {
   const edit = useEdit();
-  return <Input data-task-editor aria-label="任务标题" required value={edit.draft.title} disabled={edit.readonly} onChange={(event) => edit.updateText({ title: event.target.value })} onBlur={edit.onTextBlur} onKeyDown={edit.onTitleKeyDown} onCompositionStart={edit.onComposeStart} onCompositionEnd={edit.onComposeEnd} className={cn('border-transparent bg-transparent px-0 font-medium shadow-none focus-visible:ring-0', className ?? 'h-8 text-sm')} />;
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const node = ref.current;
+    const parent = node?.parentElement;
+    if (!node || !parent) return;
+    let width = parent.clientWidth;
+    const fit = () => fitTitle(node);
+    fit();
+    const observer = new ResizeObserver(() => {
+      const next = parent.clientWidth;
+      if (next === width) return;
+      width = next;
+      fit();
+    });
+    observer.observe(parent);
+    return () => observer.disconnect();
+  }, [edit.draft.title]);
+  return <textarea ref={ref} data-task-editor aria-label="任务标题" required rows={1} value={edit.draft.title} disabled={edit.readonly} onChange={(event) => edit.updateText({ title: flattenTitle(event.target.value) })} onPaste={(event) => {
+    const text = event.clipboardData.getData('text');
+    if (!/[\r\n]/.test(text)) return;
+    event.preventDefault();
+    const flat = flattenTitle(text);
+    const node = event.currentTarget;
+    const start = node.selectionStart ?? node.value.length;
+    const end = node.selectionEnd ?? start;
+    edit.updateText({ title: `${node.value.slice(0, start)}${flat}${node.value.slice(end)}` });
+    const caret = start + flat.length;
+    requestAnimationFrame(() => node.setSelectionRange(caret, caret));
+  }} onBlur={edit.onTextBlur} onKeyDown={edit.onTitleKeyDown} onCompositionStart={edit.onComposeStart} onCompositionEnd={edit.onComposeEnd} className={cn('task-writing task-title', className)} />;
 }
 
 export function TaskExpandBody({ fill = false }: { fill?: boolean }) {
   const edit = useEdit();
   const selected = edit.tags.filter((tag) => edit.draft.tagIds?.includes(tag.id));
-  return <div data-task-editor className={cn('space-y-3', fill && 'flex min-h-0 flex-1 flex-col')}>
-    {edit.conflicts.length > 0 && <div role="alert" className="rounded-xl border border-warning-border bg-warning-bg p-3 text-sm text-warning"><p>后台已更新{edit.conflicts.map((field) => fieldLabels[field] ?? field).join('、')}，你的编辑已保留。</p><label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={edit.acknowledge} onChange={(event) => edit.setAcknowledge(event.target.checked)} />保存时使用我的编辑</label><Button type="button" variant="ghost" size="sm" onClick={edit.resetDraft}>使用最新内容</Button></div>}
-    <Textarea aria-label="详情" placeholder="添加详情" value={edit.draft.description} disabled={edit.readonly} onChange={(event) => edit.updateText({ description: event.target.value })} onBlur={edit.onTextBlur} onCompositionStart={edit.onComposeStart} onCompositionEnd={edit.onComposeEnd} className={fill ? 'min-h-64 flex-1 resize-none' : 'min-h-20'} />
-    {selected.length > 0 && <div className="flex flex-wrap gap-1.5">{selected.map((tag) => <span key={tag.id} className="task-tag-chip" data-color={tag.color || 'violet'}>#{tag.name}</span>)}</div>}
-    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+  return <div data-task-editor className={cn('flex flex-col', fill && 'min-h-0 flex-1')}>
+    {edit.conflicts.length > 0 && <div role="alert" className="mb-3 rounded-xl border border-warning-border bg-warning-bg p-3 text-sm text-warning"><p>后台已更新{edit.conflicts.map((field) => fieldLabels[field] ?? field).join('、')}，你的编辑已保留。</p><label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={edit.acknowledge} onChange={(event) => edit.setAcknowledge(event.target.checked)} />保存时使用我的编辑</label><Button type="button" variant="ghost" size="sm" onClick={edit.resetDraft}>使用最新内容</Button></div>}
+    <Textarea ref={edit.descriptionRef} aria-label="详情" placeholder="添加详情" value={edit.draft.description} disabled={edit.readonly} onChange={(event) => edit.updateText({ description: event.target.value })} onBlur={edit.onTextBlur} onCompositionStart={edit.onComposeStart} onCompositionEnd={edit.onComposeEnd} className={cn('task-writing mt-1 px-0 py-1', fill ? 'min-h-32 flex-1' : 'min-h-20')} />
+    {selected.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{selected.map((tag) => <span key={tag.id} className="task-tag-chip inline-flex items-center gap-1" data-color={tag.color || 'violet'}>#{tag.name}{!edit.readonly && <button type="button" className="grid size-4 place-items-center rounded-full hover:bg-black/10 dark:hover:bg-white/10" aria-label={`从任务去掉标签：${tag.name}`} onClick={() => edit.toggleTag(tag.id, false)}><X className="size-3" /></button>}</span>)}</div>}
+    <div className="mt-2 flex shrink-0 flex-wrap items-center gap-1.5">
       <DateControl />
       <div role="group" aria-label="旗标" className="flex items-center gap-0.5">
         {priorities.map((item) => <Button key={item.value} type="button" variant="ghost" size="icon-sm" disabled={edit.readonly} aria-pressed={edit.draft.priority === item.value} aria-label={`旗标：${item.label}`} title={item.label} onClick={() => edit.setPriority(item.value)}><Flag className={cn(flagTone[item.value], edit.draft.priority === item.value && 'fill-current')} /></Button>)}
       </div>
-      <Popover>
-        <PopoverTrigger asChild><Button type="button" variant="ghost" size="sm" disabled={edit.readonly} aria-label="标签"><Hash />标签</Button></PopoverTrigger>
-        <PopoverContent data-task-editor className="max-h-72 space-y-1 overflow-y-auto">
-          {!edit.tags.length && <p className="px-2 py-1.5 text-xs text-muted-foreground">在标签页面创建标签后即可分配。</p>}
-          {edit.tags.map((tag) => <label key={tag.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-[var(--glass-hover)]"><input type="checkbox" checked={edit.draft.tagIds?.includes(tag.id) ?? false} onChange={(event) => edit.toggleTag(tag.id, event.target.checked)} />{tag.name}</label>)}
-        </PopoverContent>
-      </Popover>
+      <TagPicker />
     </div>
   </div>;
+}
+
+function TagPicker() {
+  const edit = useEdit();
+  const actions = useTodoActions();
+  const [name, setName] = useState('');
+  const add = async () => {
+    const value = name.trim();
+    if (!value || edit.readonly || actions.pending) return;
+    const existing = edit.tags.find((tag) => tag.name === value);
+    if (existing) {
+      if (!edit.draft.tagIds?.includes(existing.id)) edit.toggleTag(existing.id, true);
+      setName('');
+      return;
+    }
+    try {
+      const created = await actions.write<Tag>('/api/tags', 'POST', { name: value }, ['tag-create'], '标签已创建');
+      if (created.data?.id) edit.toggleTag(created.data.id, true);
+      setName('');
+    } catch { /* The shared write already reports the failure and keeps the typed name. */ }
+  };
+  return <Popover>
+    <PopoverTrigger asChild><Button type="button" variant="ghost" size="sm" disabled={edit.readonly} aria-label="标签"><Hash />标签</Button></PopoverTrigger>
+    <PopoverContent data-task-editor className="space-y-2">
+      <form className="space-y-1" onSubmit={(event) => { event.preventDefault(); void add(); }}>
+        <Input aria-label="新标签名称" value={name} disabled={edit.readonly} placeholder="新标签" onChange={(event) => setName(event.target.value)} className="h-8" />
+        <Button type="submit" size="sm" className="w-full" disabled={edit.readonly || actions.pending || !name.trim()}>添加标签</Button>
+      </form>
+      <div className="max-h-56 space-y-1 overflow-y-auto">
+        {!edit.tags.length && <p className="px-2 py-1.5 text-xs text-muted-foreground">输入名称即可新增标签。</p>}
+        {edit.tags.map((tag) => <label key={tag.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-[var(--glass-hover)]"><input type="checkbox" checked={edit.draft.tagIds?.includes(tag.id) ?? false} onChange={(event) => edit.toggleTag(tag.id, event.target.checked)} />{tag.name}</label>)}
+      </div>
+    </PopoverContent>
+  </Popover>;
 }
 
 function CloseDetailButton() {
@@ -279,7 +353,7 @@ function CloseDetailButton() {
 
 function ActivityButton({ onOpen }: { onOpen: () => void }) {
   const edit = useEdit();
-  return <Button type="button" variant="ghost" size="sm" className="shrink-0" aria-label="任务动态" onClick={() => { void edit.saveText().then(onOpen); }}>动态</Button>;
+  return <Button type="button" variant="outline" size="sm" className="shrink-0 rounded-lg" aria-label="任务动态" onClick={() => { void edit.saveText().then(onOpen); }}>动态</Button>;
 }
 
 function DetailFrame({ presentation, children }: { presentation: 'panel' | 'modal' | 'retained'; children: ReactNode }) {
@@ -295,7 +369,7 @@ export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children
   return <TaskExpand ref={ref} {...props} fallback={placeholder}>
     <DetailFrame presentation={presentation}>
       <div className="flex min-h-0 flex-1 flex-col">
-        <header className="flex items-start gap-3 px-5 pb-2 pt-5"><div className="min-w-0 flex-1"><TaskTitleField className="h-11 text-lg font-semibold" /></div><ActivityButton onOpen={() => setActivity(true)} /><CloseDetailButton /></header>
+        <header className="flex items-start gap-2 px-5 pt-5"><div className="min-w-0 flex-1"><TaskTitleField /></div><ActivityButton onOpen={() => setActivity(true)} /><CloseDetailButton /></header>
         <div className="flex min-h-0 flex-1 flex-col px-5 pb-5"><TaskExpandBody fill /></div>
       </div>
     </DetailFrame>

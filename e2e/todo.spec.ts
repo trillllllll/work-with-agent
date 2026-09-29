@@ -368,6 +368,51 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     expect(await task(request, item.id)).toMatchObject({ title: '分类任务', tagIds: [] });
   });
 
+  test('详情里长标题换行，并能新增或从任务去掉标签', async ({ page, request }) => {
+    const title = '自动抓取聊天记录图片+农夫山泉股份有限公司需要换行的长标题';
+    const item = await data(await request.post(`${apiUrl}/api/tasks`, { data: { title } }));
+    await data(await request.post(`${apiUrl}/api/tags`, { data: { name: '已有标签' } }));
+    await page.goto('/#/inbox');
+    await page.getByTestId(`task-row-${item.id}`).getByRole('button', { name: title, exact: true }).click();
+    const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
+    const titleField = detail.getByLabel('任务标题', { exact: true });
+    const description = detail.getByLabel('详情', { exact: true });
+    const metrics = await titleField.evaluate((node) => {
+      const field = node as HTMLTextAreaElement;
+      const style = getComputedStyle(field);
+      return { tag: field.tagName, height: field.getBoundingClientRect().height, line: Number.parseFloat(style.lineHeight), border: style.borderTopWidth };
+    });
+    expect(metrics.tag).toBe('TEXTAREA');
+    expect(metrics.border).toBe('0px');
+    expect(metrics.height).toBeGreaterThan(metrics.line * 1.6);
+    expect(await description.evaluate((node) => getComputedStyle(node).borderTopWidth)).toBe('0px');
+    await titleField.fill('一行标题');
+    await titleField.press('Enter');
+    await expect(titleField).toHaveValue('一行标题');
+    await expect(description).toBeFocused();
+
+    await detail.getByRole('button', { name: '标签', exact: true }).click();
+    await page.getByRole('checkbox', { name: '已有标签', exact: true }).check();
+    await expect.poll(async () => (await task(request, item.id)).tagIds).toHaveLength(1);
+    await page.getByLabel('新标签名称', { exact: true }).fill('详情新标签');
+    await page.getByRole('button', { name: '添加标签', exact: true }).click();
+    await expect.poll(async () => (await task(request, item.id)).tagIds).toHaveLength(2);
+    await detail.getByRole('button', { name: '从任务去掉标签：已有标签', exact: true }).click();
+    await expect.poll(async () => (await task(request, item.id)).tagIds).toHaveLength(1);
+    const tags = await data(await request.get(`${apiUrl}/api/tags`));
+    expect(tags.map((tag: { name: string }) => tag.name).sort()).toEqual(['已有标签', '详情新标签']);
+    expect(tags.find((tag: { name: string }) => tag.name === '详情新标签')?.color).toBe('violet');
+
+    await detail.getByRole('button', { name: '标签', exact: true }).click();
+    await page.getByLabel('新标签名称', { exact: true }).fill('已有标签');
+    await page.getByRole('button', { name: '添加标签', exact: true }).click();
+    await expect.poll(async () => (await task(request, item.id)).tagIds).toHaveLength(2);
+    expect((await data(await request.get(`${apiUrl}/api/tags`))).map((tag: { name: string }) => tag.name).sort()).toEqual(['已有标签', '详情新标签']);
+    await page.goto('/#/tags');
+    await expect(page.getByRole('button', { name: '#已有标签', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: '#详情新标签', exact: true })).toBeVisible();
+  });
+
   test('完成父任务先确认，取消保持未完成，重开子任务连带重开父任务', async ({ page, request }) => {
     const parent = await data(await request.post(`${apiUrl}/api/tasks`, { data: { title: '带孩子的任务' } }));
     const child = await data(await request.post(`${apiUrl}/api/tasks`, { data: { title: '尚未完成的子任务', parentId: parent.id } }));

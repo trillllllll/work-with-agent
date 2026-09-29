@@ -986,3 +986,31 @@
     visibility: hidden;
   }
 }
+
+textarea.task-writing,
+textarea.task-writing:focus,
+textarea.task-writing:focus-visible {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  resize: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  --tw-ring-shadow: 0 0 #0000;
+}
+
+textarea.task-title {
+  display: block;
+  width: 100%;
+  min-height: calc(1.375em + 0.3rem);
+  max-height: calc(1.375em * 4 + 0.3rem);
+  overflow-x: hidden;
+  overflow-wrap: break-word;
+  padding: 0.15rem 0 0;
+  color: var(--foreground);
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.375;
+}
