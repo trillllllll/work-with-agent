@@ -31,7 +31,11 @@ export type ChangeRecord = { id: string; entityType: string; entityId: string; o
 export const statuses: { value: Status; label: string }[] = [{ value: 'todo', label: '待办' }, { value: 'doing', label: '进行中' }, { value: 'blocked', label: '已阻塞' }, { value: 'done', label: '已完成' }];
 export function availableTaskStatuses(task: Pick<Task, 'status' | 'allowedTransitions'>): Status[] { const allowed = new Set([task.status, ...(task.allowedTransitions ?? [])]); return statuses.map((item) => item.value).filter((status) => allowed.has(status)); }
 export const priorities: { value: TaskPriority; label: string }[] = [{ value: 'none', label: '无优先级' }, { value: 'low', label: '低' }, { value: 'medium', label: '中' }, { value: 'high', label: '高' }];
-export const toolLabels: Record<string, string> = { create_task: '创建任务', update_task: '更新任务', delete_task: '删除任务', create_topic: '创建主题', update_topic: '更新主题' };
+export const toolLabels: Record<string, string> = {
+  list_topics: '列出清单', get_topic: '读取清单', get_topic_progress: '读取进度', list_tasks: '查询任务', get_task: '读取任务',
+  create_task: '创建任务', update_task: '更新任务', delete_task: '删除任务', create_topic: '创建主题', update_topic: '更新主题', delete_topic: '归档清单', propose_topic_summary: '提出成果草稿',
+  execute_shell: '执行命令', execute_file: '文件操作', execute_http: '访问地址',
+};
 export const API_URL = '';
 let csrfToken = '';
 export function setCsrfToken(value: string) { csrfToken = value; }
@@ -58,7 +62,12 @@ export async function api<T = any>(path: string, init?: RequestInit): Promise<T>
 export function parseApproval(item: any): Approval {
   let args: Record<string, unknown> = {};
   try { args = typeof item.arguments === 'string' ? JSON.parse(item.arguments) : item.arguments ?? {}; } catch { /* Keep malformed legacy data visible as empty args. */ }
-  return { approvalId: item.id, toolName: item.toolName, arguments: args, status: item.status };
+  let toolCallId: string | undefined;
+  try {
+    const stored = typeof item.result === 'string' ? JSON.parse(item.result) : item.result;
+    if (typeof stored?.toolCallId === 'string') toolCallId = stored.toolCallId;
+  } catch { /* Legacy rows may store a plain result string. */ }
+  return { approvalId: item.id, toolName: item.toolName, arguments: args, status: item.status, ...(toolCallId ? { toolCallId } : {}) };
 }
 
 export async function streamChat(body: unknown, onEvent: (event: SseEvent) => void) {

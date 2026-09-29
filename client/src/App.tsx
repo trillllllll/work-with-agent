@@ -118,7 +118,7 @@ export function App() {
   const tasksQuery = useTasks(params, taskPage && (page !== 'board' || Boolean(selectedTopicId)) && (page !== 'tags' || Boolean(selectedTag)));
   const tasks = tasksQuery.data ?? [];
   const taggedSections = page === 'tags' && selectedTag ? classificationSections(tasks, topics) : [];
-  const chat = useChat({ selectedTopicId: page === 'inbox' ? '' : selectedTopicId, view: page === 'inbox' ? 'inbox' : 'board', onError: (message) => { if (message) toast.error(message); } });
+  const chat = useChat({ selectedTopicId: page === 'inbox' ? '' : selectedTopicId, taskId, view: page, onError: (message) => { if (message) toast.error(message); } });
   const transitionFromDetail = (action: () => void) => {
     if (taskId && detailRef.current) detailRef.current.requestTransition(action);
     else action();

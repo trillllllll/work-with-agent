@@ -52,8 +52,8 @@ export function MessageList({ messages, approvals, approvalPending, onApprove, o
           </div>
         )}
         <div className="flex flex-col gap-2.5">
-          {messages.map((message, index) => <MessageItem message={message} key={`${message.id ?? index}-${index}`} />)}
-          {approvals.map((approval) => <ApprovalCard key={approval.approvalId} approval={approval} pending={approvalPending} onApprove={onApprove} onReject={onReject} />)}
+          {messages.map((message, index) => <MessageItem key={`${message.id ?? index}-${index}`} message={message} approvals={approvals} approvalPending={approvalPending} onApprove={onApprove} onReject={onReject} />)}
+          {approvals.filter((approval) => !messages.some((message) => message.tools?.some((tool) => tool.approvalId === approval.approvalId || tool.toolCallId === approval.toolCallId))).map((approval) => <ApprovalCard key={approval.approvalId} approval={approval} pending={approvalPending} onApprove={onApprove} onReject={onReject} />)}
         </div>
       </div>
       {showJump && (

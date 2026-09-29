@@ -19,9 +19,13 @@ export type ChatEvent = {
   approvalId?: string;
   result?: ToolResult;
   code?: string;
+  toolCallId?: string;
 };
-type AgentContext = { pageContext: PageContext; recentTasks: unknown[]; recentMessages: Array<{ role: string; content: string }>; summary: string };
 export type ModelMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string | null; tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>; tool_call_id?: string };
+
+function serializeToolCalls(calls: ToolCall[]) {
+  return JSON.stringify(calls.map((call) => ({ id: call.id, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.arguments ?? {}) } })));
+}
 export type ModelDelta = { text?: string; toolCalls?: ToolCall[] };
 type ModelToolDefinition = { type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } };
 
@@ -125,25 +129,12 @@ export class AgentService {
 
   constructor(model: ModelAdapter | undefined = undefined, tools = new ToolService()) { this.tools = tools; this.model = model ?? new ModelAdapter(new SettingsService(), () => this.tools.definitions()); this.context = new ContextService(this.model); }
 
-  private async contextFor(conversationId: string, pageContext: PageContext): Promise<AgentContext> {
-    await this.context.compactIfNeeded(conversationId);
-    const window = await this.context.buildWindow(conversationId, pageContext);
-    return {
-      pageContext,
-      recentTasks: window.recentTasks,
-      recentMessages: window.recentMessages,
-      summary: window.summary,
-    };
-  }
-
-  private systemPrompt(context: AgentContext) { return `你是 Agent 工作室的协作助手。变更任务或主题必须使用工具，系统会要求用户审核。只读问题使用工具查询。当前上下文：${JSON.stringify(context)}`; }
-
   async *chatStream(input: { conversationId?: string; message: string; pageContext?: PageContext; signal?: AbortSignal }): AsyncGenerator<ChatEvent> {
     const conversationId = input.conversationId ?? (await this.conversations.create()).id;
     if (input.conversationId && !(await this.conversations.get(conversationId))) throw Object.assign(new Error('会话不存在'), { status: 404 });
     await this.conversations.addMessage(conversationId, 'user', input.message);
-    const context = await this.contextFor(conversationId, input.pageContext ?? {});
-    const messages: ModelMessage[] = [{ role: 'system', content: this.systemPrompt(context) }, ...context.recentMessages.map((item) => ({ role: item.role as ModelMessage['role'], content: item.content }))];
+    const assembled = await this.context.assemble(conversationId, input.pageContext ?? {}, input.signal);
+    const messages: ModelMessage[] = [{ role: 'system', content: assembled.systemPrompt }, ...assembled.messages];
     for (let round = 0; round < 8; round += 1) {
       const assistantId = (await this.conversations.addMessage(conversationId, 'assistant', '', 'streaming')).id;
       yield { type: 'message_start', conversationId, messageId: assistantId };
@@ -163,23 +154,27 @@ export class AgentService {
       }
       if (!calls.length) { yield { type: 'done', conversationId }; return; }
       calls.forEach((call, index) => { call.id ??= `call_${round}_${index}`; });
+      for (const call of calls) {
+        if (call.name === 'create_task' && call.arguments.topicId === undefined && input.pageContext?.topicId) call.arguments.topicId = input.pageContext.topicId;
+      }
+      await this.conversations.updateMessage(assistantId, { toolCalls: serializeToolCalls(calls) });
       const toolMessages: ModelMessage[] = [];
       let hasPendingApproval = false;
       for (const call of calls) {
-        if (call.name === 'create_task' && call.arguments.topicId === undefined && input.pageContext?.topicId) call.arguments.topicId = input.pageContext.topicId;
-        yield { type: 'tool_call', conversationId, toolName: call.name, arguments: call.arguments };
+        const toolCallId = call.id ?? '';
+        yield { type: 'tool_call', conversationId, messageId: assistantId, toolCallId, toolName: call.name, arguments: call.arguments };
         const validationError = this.tools.validate(call);
         if (validationError) throw Object.assign(modelError(validationError, validationError.startsWith('未知 Tool') ? 'UNKNOWN_TOOL' : 'INVALID_TOOL_ARGUMENTS'), { conversationId });
         if (!this.tools.isReadOnly(call.name)) {
           const approval = await this.approvals.create(call, conversationId);
           hasPendingApproval = true;
-          yield { type: 'approval_required', conversationId, toolName: call.name, arguments: call.arguments, approvalId: approval.id };
+          yield { type: 'approval_required', conversationId, messageId: assistantId, toolCallId, toolName: call.name, arguments: call.arguments, approvalId: approval.id };
           continue;
         }
         const result = await this.tools.execute(call);
-        await this.conversations.addMessage(conversationId, 'tool', JSON.stringify({ toolName: call.name, toolCallId: call.id, ...result }));
-        yield { type: 'tool_result', conversationId, toolName: call.name, arguments: call.arguments, result };
-        toolMessages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
+        await this.conversations.addMessage(conversationId, 'tool', JSON.stringify({ toolName: call.name, toolCallId: call.id, ...result }), 'completed', { toolCallId: call.id });
+        yield { type: 'tool_result', conversationId, messageId: assistantId, toolCallId, toolName: call.name, arguments: call.arguments, result };
+        toolMessages.push({ role: 'tool', tool_call_id: toolCallId, content: JSON.stringify(result) });
       }
       // A write call is intentionally never returned to the model as if it
       // had executed. The approval endpoint owns the later side effect.
@@ -203,9 +198,15 @@ export class AgentService {
 
   async testConnection(config: ModelConfig) { return this.model.testConnection(config); }
 
+  private async recordResolvedTool(conversationId: string | null | undefined, toolName: string, toolCallId: string | undefined, result: ToolResult) {
+    if (!conversationId || !toolCallId) return;
+    await this.conversations.addMessage(conversationId, 'tool', JSON.stringify({ toolName, toolCallId, ...result }), 'completed', { toolCallId });
+  }
+
   async approve(approvalId: string) {
     const approval = await this.approvals.get(approvalId); if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 });
     const proposal = approval.result ? JSON.parse(approval.result) : null;
+    const toolCallId = typeof proposal?.toolCallId === 'string' ? proposal.toolCallId : undefined;
     if (proposal?.proposalId) {
       if (approval.status !== 'pending') throw Object.assign(new Error('该审核已处理'), { status: 409 });
       const applied = await new CommandService().approve(ownerActor, proposal.proposalId, { expectedRevision: proposal.proposalRevision, requestId: `approval:${approval.id}` });
@@ -213,6 +214,7 @@ export class AgentService {
       // The Proposal and Receipt commit with the Todo mutation. This compatibility
       // Approval row is recoverable by replaying the same receipt after a crash.
       await prismaApprovalComplete(approval.id, result);
+      await this.recordResolvedTool(approval.conversationId, approval.toolName, toolCallId, result);
       const assistantMessage = approval.conversationId ? await this.summarize(approval.conversationId, JSON.stringify({ toolName: approval.toolName, result })) : undefined;
       if (assistantMessage && approval.conversationId) await this.conversations.addMessage(approval.conversationId, 'assistant', assistantMessage);
       return { result, assistantMessage, summaryError: !assistantMessage ? '无法生成自动总结' : undefined };
@@ -221,12 +223,20 @@ export class AgentService {
     if (approval.status !== 'pending' || !(await this.approvals.claim(approvalId))) throw Object.assign(new Error('该审核已处理'), { status: 409 });
     let result: ToolResult; try { const call = this.approvals.parse(approval); const validationError = this.tools.validate(call); result = validationError ? { success: false, error: validationError } : await this.tools.execute(call, { source: 'agent', conversationId: approval.conversationId ?? undefined, approvalId: approval.id, requestId: approval.id }); } catch (error) { result = { success: false, error: error instanceof Error ? error.message : '审核执行失败' }; }
     await this.approvals.update(approvalId, result.success ? 'executed' : 'failed', result);
+    await this.recordResolvedTool(approval.conversationId, approval.toolName, toolCallId, result);
     let assistantMessage: string | undefined;
     if (approval.conversationId) assistantMessage = await this.summarize(approval.conversationId, JSON.stringify({ toolName: approval.toolName, result }));
     if (assistantMessage && approval.conversationId) await this.conversations.addMessage(approval.conversationId, 'assistant', assistantMessage);
     return { result, assistantMessage, summaryError: result.success && !assistantMessage ? '无法生成自动总结' : undefined };
   }
-  async reject(approvalId: string) { const approval = await this.approvals.get(approvalId); if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 }); if (approval.status !== 'pending') throw Object.assign(new Error('该审核已处理'), { status: 409 }); const proposal = approval.result ? JSON.parse(approval.result) : null; if (proposal?.proposalId) await new CommandService().reject(ownerActor, proposal.proposalId, { expectedRevision: proposal.proposalRevision }); return this.approvals.update(approvalId, 'rejected'); }
+  async reject(approvalId: string) {
+    const approval = await this.approvals.get(approvalId); if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 });
+    if (approval.status !== 'pending') throw Object.assign(new Error('该审核已处理'), { status: 409 });
+    const proposal = approval.result ? JSON.parse(approval.result) : null;
+    if (proposal?.proposalId) await new CommandService().reject(ownerActor, proposal.proposalId, { expectedRevision: proposal.proposalRevision });
+    await this.recordResolvedTool(approval.conversationId, approval.toolName, typeof proposal?.toolCallId === 'string' ? proposal.toolCallId : undefined, { success: false, error: '用户拒绝，数据未修改' });
+    return this.approvals.update(approvalId, 'rejected');
+  }
   async previewApproval(approvalId: string) { return this.approvals.preview(approvalId); }
   async messages(conversationId: string) { if (!(await this.conversations.get(conversationId))) throw Object.assign(new Error('会话不存在'), { status: 404 }); return this.conversations.listMessages(conversationId); }
   async approvalList(status?: string) { if (status && !['pending', 'approved', 'rejected', 'executed', 'failed'].includes(status)) throw Object.assign(new Error('审核状态无效'), { status: 400 }); return this.approvals.list(status as any); }

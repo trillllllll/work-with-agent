@@ -33,8 +33,10 @@ export class ApprovalService {
   async create(call: ToolCall, conversationId?: string) {
     const timestamp = now();
     const id = randomUUID();
-    const result = await this.prepare(call, { conversationId, approvalId: id });
-    return prisma.approval.create({ data: { id, toolName: call.name, arguments: JSON.stringify(call.arguments), conversationId, result, createdAt: timestamp, updatedAt: timestamp } });
+    const prepared = await this.prepare(call, { conversationId, approvalId: id });
+    const stored = prepared ? JSON.parse(prepared) as Record<string, unknown> : {};
+    if (call.id) stored.toolCallId = call.id;
+    return prisma.approval.create({ data: { id, toolName: call.name, arguments: JSON.stringify(call.arguments), conversationId, result: Object.keys(stored).length ? JSON.stringify(stored) : null, createdAt: timestamp, updatedAt: timestamp } });
   }
   async preview(approvalId: string) {
     const row = await this.get(approvalId);
@@ -42,9 +44,12 @@ export class ApprovalService {
     if (row.toolName.startsWith('execute_')) throw Object.assign(new Error('受控执行使用原审核流程'), { status: 400 });
     let link = row.result ? JSON.parse(row.result) : null;
     if (!link?.proposalId) {
-      const result = await this.prepare(this.parse(row), { conversationId: row.conversationId ?? undefined, approvalId: row.id }, true);
+      const prepared = await this.prepare(this.parse(row), { conversationId: row.conversationId ?? undefined, approvalId: row.id }, true);
+      const next = prepared ? JSON.parse(prepared) as Record<string, unknown> : {};
+      if (typeof link?.toolCallId === 'string') next.toolCallId = link.toolCallId;
+      const result = JSON.stringify(next);
       await prisma.approval.update({ where: { id: row.id }, data: { result, updatedAt: now() } });
-      link = JSON.parse(result!);
+      link = next;
     }
     const proposal = await new CommandService().get(internalActor, link.proposalId);
     return { approvalId, ...link, preview: proposal.preview };

@@ -199,6 +199,8 @@ model Message {
   role           MessageRole
   content        String
   status         MessageStatus @default(completed)
+  toolCalls      String?      @map("tool_calls")
+  toolCallId     String?      @map("tool_call_id")
   compactedAt    String?       @map("compacted_at")
   createdAt      String       @default("") @map("created_at")
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

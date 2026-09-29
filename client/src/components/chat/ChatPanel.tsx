@@ -15,16 +15,17 @@ type ChatPanelProps = {
 
 export function ChatPanel({ chat, onClose }: ChatPanelProps) {
   const action = usePlatformAction();
-  const { messages, approvals, busy, interrupted, input, setInput, send, retry, approve, reject } = chat;
+  const { messages, approvals, busy, interrupted, input, setInput, send, retry, startNew, approve, reject } = chat;
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="shrink-0 border-b glass-divider px-4 pt-4 pb-3.5">
-        <div className="flex items-center justify-between gap-2">
-          <div>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
             <span className="text-[11px] font-bold tracking-[0.13em] text-muted-foreground uppercase">协作空间</span>
             <h2 className="mt-1 text-lg leading-tight font-semibold tracking-tight">全局聊天</h2>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <Button variant="ghost" size="sm" disabled={busy} onClick={startNew}>新对话</Button>
             {busy ? (
               <Badge variant="secondary" className="gap-1.5">
                 <span className="size-1.5 animate-pulse rounded-full bg-primary" />
