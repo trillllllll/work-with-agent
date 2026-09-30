@@ -1,5 +1,5 @@
 use std::fs::{self, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -61,8 +61,8 @@ pub fn run() {
 }
 
 fn launch(app: &AppHandle) -> Result<(), String> {
-    if port_open(DESKTOP_PORT) {
-        return Err(format!("端口 {DESKTOP_PORT} 已被占用。请先退出已经打开的 Work With Agent。"));
+    if let Some(message) = port_busy_message(probe_port(DESKTOP_PORT), DESKTOP_PORT) {
+        return Err(message);
     }
     let (node, server, client) = bundled_paths(app)?;
     let data = data_dir()?;
@@ -226,14 +226,112 @@ fn stop_server(app: &AppHandle) {
     }
 }
 
-fn port_open(port: u16) -> bool {
+enum PortUser {
+    Free,
+    Wwa,
+    Foreign,
+}
+
+/// Distinguish our own loopback server from an unrelated program so the busy message can point at the right fix.
+fn probe_port(port: u16) -> PortUser {
     let address = format!("127.0.0.1:{port}");
-    TcpStream::connect_timeout(&address.parse().expect("loopback address"), Duration::from_millis(300)).is_ok()
+    let Ok(mut stream) = TcpStream::connect_timeout(&address.parse().expect("loopback address"), Duration::from_millis(300)) else {
+        return PortUser::Free;
+    };
+    // The session route answers without a login and its JSON only comes from this server.
+    let request = format!("GET /api/v1/auth/session HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+    if stream.write_all(request.as_bytes()).is_err() {
+        return PortUser::Foreign;
+    }
+    let mut response = String::new();
+    let mut buffer = [0_u8; 2048];
+    loop {
+        match stream.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(size) => {
+                response.push_str(&String::from_utf8_lossy(&buffer[..size]));
+                if response.contains("\"authenticated\"") {
+                    return PortUser::Wwa;
+                }
+                if response.len() >= 64 * 1024 {
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    PortUser::Foreign
+}
+
+fn port_busy_message(user: PortUser, port: u16) -> Option<String> {
+    match user {
+        PortUser::Free => None,
+        PortUser::Wwa => Some(format!(
+            "端口 {port} 已被本机另一个 Work With Agent 服务占用。请先退出已打开的 Work With Agent；若找不到已打开的窗口，可能是上次异常退出残留的服务，重启电脑后再试。"
+        )),
+        PortUser::Foreign => Some(format!(
+            "端口 {port} 被其他程序占用，Work With Agent 无法启动。请找到占用该端口的程序并关闭后重试。"
+        )),
+    }
 }
 
 fn append_log(path: &Path, line: &str) {
     if line.contains("owner-token") { return; }
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
         let _ = writeln!(file, "{line}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_free_port_has_no_busy_message() {
+        assert!(port_busy_message(PortUser::Free, DESKTOP_PORT).is_none());
+    }
+
+    #[test]
+    fn another_instance_message_names_the_service() {
+        let message = port_busy_message(PortUser::Wwa, DESKTOP_PORT).expect("busy message");
+        assert!(message.contains("另一个 Work With Agent"));
+        assert!(message.contains("残留的服务"));
+        assert!(message.contains("47316"));
+    }
+
+    #[test]
+    fn a_foreign_occupant_is_called_out() {
+        let message = port_busy_message(PortUser::Foreign, DESKTOP_PORT).expect("busy message");
+        assert!(message.contains("其他程序"));
+        assert!(!message.contains("另一个 Work With Agent"));
+    }
+
+    #[test]
+    fn probe_recognizes_a_wwa_responder() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("address").port();
+        let responder = thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else { return };
+            let mut request = [0_u8; 512];
+            let _ = stream.read(&mut request);
+            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n{\"data\":{\"authenticated\":false},\"error\":null}");
+        });
+        assert!(matches!(probe_port(port), PortUser::Wwa));
+        responder.join().expect("responder");
+    }
+
+    #[test]
+    fn probe_reports_a_foreign_responder() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("address").port();
+        let responder = thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else { return };
+            let mut request = [0_u8; 512];
+            let _ = stream.read(&mut request);
+            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\nhello");
+        });
+        assert!(matches!(probe_port(port), PortUser::Foreign));
+        responder.join().expect("responder");
     }
 }
