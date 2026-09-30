@@ -90,3 +90,24 @@ test('详情里的代码块和压缩后的图片会在离开输入后显示', as
   await expect(narrowZoom).toBeHidden();
   await expect(detail).toBeVisible();
 });
+
+test('纯文本的 file 路径能直接改，点渲染块才回到原文', async ({ page, request }) => {
+  const fileUrl = 'file:///Users/byc/WorkSpace/AfterSend/.codex-visuals/im-code-logic-branch-graph.html';
+  const created = await request.post(`${apiUrl}/api/tasks`, { data: { title: '本地文件', description: `${fileUrl}\n\n# 标题\n` } });
+  expect(created.ok(), await created.text()).toBe(true);
+  const task = (await created.json()).data as { id: string };
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await page.goto('/#/inbox');
+  await page.getByTestId(`task-row-${task.id}`).getByRole('button', { name: '本地文件', exact: true }).click();
+  const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
+  const body = detail.getByLabel('详情', { exact: true });
+  await expect(detail.locator('.task-detail-block', { hasText: 'file://' })).toHaveCount(0);
+  await expect(detail.getByRole('heading', { name: '标题', exact: true })).toBeVisible();
+  await detail.locator('.cm-line', { hasText: 'im-code-logic-branch-graph.html' }).click();
+  await page.keyboard.type('改');
+  await expect.poll(async () => (await body.getAttribute('data-value'))?.split('\n')[0] ?? '').toContain('改');
+  await expect(detail.getByRole('heading', { name: '标题', exact: true })).toBeVisible();
+  await detail.getByRole('heading', { name: '标题', exact: true }).click();
+  await expect(detail.getByRole('heading', { name: '标题', exact: true })).toHaveCount(0);
+  await expect(body).toContainText('# 标题');
+});

@@ -71,6 +71,8 @@ class PreviewWidget extends WidgetType {
   toDOM(view: EditorView) {
     const host = document.createElement('div');
     host.className = 'task-detail-block';
+    host.dataset.blockFrom = String(this.from);
+    host.dataset.blockTo = String(this.from + this.source.length);
     this.root = createRoot(host);
     this.root.render(<BlockPreview source={this.source} taskId={this.taskId} from={this.from} handlers={this.handlers} />);
     queueMicrotask(() => view.requestMeasure());
@@ -92,12 +94,39 @@ class PreviewWidget extends WidgetType {
   }
 }
 
+function opensElsewhere(node: Element) {
+  if (node.closest('button')) return true;
+  const link = node.closest('a');
+  return Boolean(link && /^(https?:|mailto:)/i.test(link.getAttribute('href') ?? ''));
+}
+
+function controlAt(root: HTMLElement, x: number, y: number) {
+  for (const node of root.querySelectorAll<HTMLElement>('button, a[href]')) {
+    const rect = node.getBoundingClientRect();
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) continue;
+    if (opensElsewhere(node)) return true;
+  }
+  return false;
+}
+
+function previewHostAt(root: HTMLElement, x: number, y: number) {
+  const hit = root.ownerDocument.elementFromPoint(x, y);
+  const direct = hit instanceof Element ? hit.closest('.task-detail-block') : null;
+  if (direct instanceof HTMLElement && root.contains(direct)) return direct;
+  for (const node of root.querySelectorAll<HTMLElement>('.task-detail-block')) {
+    const rect = node.getBoundingClientRect();
+    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return node;
+  }
+  return null;
+}
+
 function BlockPreview({ source, taskId, from, handlers }: { source: string; taskId: string; from: number; handlers: Handlers }) {
   return <div onMouseDown={(event) => {
     if (event.button !== 0) return;
     const target = event.target;
-    if (target instanceof Element && target.closest('button, a')) return;
+    if (target instanceof Element && opensElsewhere(target)) return;
     event.preventDefault();
+    event.stopPropagation();
     handlers.edit(from);
   }} onContextMenu={(event) => {
     const target = event.target;
@@ -132,7 +161,7 @@ function buildPreview(state: EditorState, focused: boolean, taskId: string, hand
   const selection = state.selection.main;
   const editing = focused && state.facet(EditorView.editable);
   for (const block of markdownBlocks(source)) {
-    if (block.from < 0 || block.to > source.length || block.from >= block.to) continue;
+    if (!block.render || block.from < 0 || block.to > source.length || block.from >= block.to) continue;
     if (editing && blockHoldsCaret(block, selection.from, selection.to)) continue;
     builder.add(block.from, block.to, Decoration.replace({
       widget: new PreviewWidget(source.slice(block.from, block.to), taskId, block.from, handlers),
@@ -334,6 +363,25 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
     const onMouseDown = (event: Event) => {
       if (!(event instanceof MouseEvent)) return;
       pointerButton = view.hasFocus ? 0 : event.button;
+      // The widget ignores the editor's own hit test, and the lower half of a block
+      // widget resolves past the block. Claim the click while the preview is still there.
+      if (event.button !== 0 || !view.state.facet(EditorView.editable)) return;
+      if (controlAt(view.contentDOM, event.clientX, event.clientY)) return;
+      const host = previewHostAt(view.contentDOM, event.clientX, event.clientY);
+      const from = Number(host?.dataset.blockFrom);
+      const to = Number(host?.dataset.blockTo);
+      if (!host || !Number.isFinite(from) || !Number.isFinite(to)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const x = event.clientX;
+      const y = event.clientY;
+      handlersRef.current.edit(from);
+      requestAnimationFrame(() => {
+        if (!view.dom.isConnected) return;
+        const pos = view.posAtCoords({ x, y });
+        if (pos == null || pos < from || pos >= to) return;
+        view.dispatch({ selection: EditorSelection.cursor(pos) });
+      });
     };
     // Focus is synchronous inside Playwright fill(), and the block must already be source
     // before selectNodeContents runs. A right-click still has to keep the rendered image.

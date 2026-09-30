@@ -5,7 +5,7 @@ import { unified } from 'unified';
 
 const parse = unified().use(remarkParse).use(remarkGfm);
 
-export type MarkdownBlock = { from: number; to: number };
+export type MarkdownBlock = { from: number; to: number; render: boolean };
 
 export function markdownBlocks(source: string): MarkdownBlock[] {
   const tree = parse.parse(source) as Root;
@@ -13,18 +13,28 @@ export function markdownBlocks(source: string): MarkdownBlock[] {
   for (const node of tree.children) {
     const range = lineRange(source, node);
     if (!range || range.to <= range.from || !source.slice(range.from, range.to).trim()) continue;
+    const block = { ...range, render: renders(node) };
     const last = blocks[blocks.length - 1];
-    if (last && range.from < last.to) last.to = Math.max(last.to, range.to);
-    else blocks.push(range);
+    if (last && block.from < last.to) {
+      last.to = Math.max(last.to, block.to);
+      last.render = last.render || block.render;
+    } else blocks.push(block);
   }
   return blocks;
 }
 
-export function blockHoldsCaret(block: MarkdownBlock, from: number, to: number) {
+export function blockHoldsCaret(block: { from: number; to: number }, from: number, to: number) {
   return from < block.to && to >= block.from;
 }
 
-function lineRange(source: string, node: Content): MarkdownBlock | null {
+// A paragraph of only text draws the same words the editor already shows.
+// Replacing it with a block widget sends a click on its lower half to the next line.
+function renders(node: Content) {
+  if (node.type !== 'paragraph') return true;
+  return node.children.some((child) => child.type !== 'text' && child.type !== 'break');
+}
+
+function lineRange(source: string, node: Content): { from: number; to: number } | null {
   const start = node.position?.start.offset;
   const end = node.position?.end.offset;
   if (start == null || end == null || end <= start) return null;
