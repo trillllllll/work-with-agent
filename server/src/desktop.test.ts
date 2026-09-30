@@ -8,7 +8,7 @@ import supertest from 'supertest';
 import { afterEach, describe, expect, it } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 import { app } from './app.js';
-import { connectionConfiguration } from './application/security.js';
+import { connectionConfiguration, developmentMcpConfiguration } from './application/security.js';
 import { desktopDataDir, desktopMcpCommand, sqliteDatabaseUrl } from './application/desktop-paths.js';
 import { mountDesktopStatic } from './desktop-static.js';
 
@@ -32,14 +32,21 @@ function restore(name: string, value: string | undefined) {
 }
 
 describe('desktop connection configuration', () => {
-  it('keeps the development node entry on the dev API port', () => {
+  it('launches the dev source tree through tsx without a dist build', () => {
     delete process.env.WWA_PACKAGED;
     delete process.env.PORT;
     const config = connectionConfiguration('secret');
     expect(config.command).toBe(process.execPath);
-    expect(config.args[0]).toMatch(/dist[\\/]mcp[\\/]index\.js$/);
+    expect(config.args[0]).toMatch(/node_modules[\\/]tsx[\\/]dist[\\/]cli\.mjs$/);
+    expect(config.args[1]).toMatch(/src[\\/]mcp[\\/]index\.ts$/);
     expect(config.env.WWA_API_URL).toBe('http://127.0.0.1:3016');
     expect(config.url).toBe('http://127.0.0.1:3016/mcp');
+  });
+
+  it('falls back to the dist entry when the source tree is not runnable', () => {
+    const config = developmentMcpConfiguration('/srv/work-with-agent/server/dist/mcp/index.js', () => false);
+    expect(config.command).toBe(process.execPath);
+    expect(config.args).toEqual(['/srv/work-with-agent/server/dist/mcp/index.js']);
   });
 
   it('points a packaged app at the stable launcher and desktop port', () => {

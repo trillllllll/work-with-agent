@@ -1,4 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { fileURLToPath } from 'node:url';
@@ -139,13 +141,26 @@ export function connectionConfiguration(credential: string) {
   const packaged = isDesktopPackage();
   const launch = packaged
     ? desktopMcpConfiguration(entry)
-    : { command: process.execPath, args: [entry] };
+    : developmentMcpConfiguration(entry);
   return {
     ...launch,
     env: { WWA_API_URL: api, WWA_CONNECTION_TOKEN: credential },
     url: `${api}/mcp`,
     hosts: ['codex', 'claude-code', 'grok'],
   };
+}
+
+/** A dev server runs the source tree under tsx, so hosts should not depend on a possibly stale dist build. */
+export function developmentMcpConfiguration(distEntry: string, exists: (path: string) => boolean = existsSync) {
+  const modulePath = fileURLToPath(import.meta.url); // <server>/src|dist/application/security.ts
+  const serverRoot = dirname(dirname(dirname(modulePath)));
+  const sourceEntry = join(serverRoot, 'src', 'mcp', 'index.ts');
+  // npm workspaces hoist dev dependencies to the repository root; a standalone install keeps them under the server.
+  const tsxCli = [serverRoot, dirname(serverRoot)]
+    .map((root) => join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs'))
+    .find(tsxCli => exists(tsxCli));
+  if (tsxCli && exists(sourceEntry)) return { command: process.execPath, args: [tsxCli, sourceEntry] };
+  return { command: process.execPath, args: [distEntry] };
 }
 export const connectionRouter = Router();
 connectionRouter.use(ownerMiddleware);
