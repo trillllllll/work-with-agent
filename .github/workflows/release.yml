@@ -23,8 +23,6 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -41,9 +39,6 @@ jobs:
           if [ -z "$TAG" ]; then TAG="$(gh release list --limit 1 --json tagName --jq '.[0].tagName')"; fi
           if [ -z "$TAG" ]; then echo "找不到 Release 标签" >&2; exit 1; fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-      - name: 检出标签代码
-        if: github.ref_type != 'tag'
-        run: git checkout "${{ steps.tag.outputs.tag }}"
       - run: npm ci
       - run: npm run prisma:generate
       - run: npm test
@@ -59,8 +54,6 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -78,10 +71,6 @@ jobs:
           if [ -z "$TAG" ]; then TAG="$(gh release list --limit 1 --json tagName --jq '.[0].tagName')"; fi
           if [ -z "$TAG" ]; then echo "找不到 Release 标签" >&2; exit 1; fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-      - name: 检出标签代码
-        if: github.ref_type != 'tag'
-        shell: bash
-        run: git checkout "${{ steps.tag.outputs.tag }}"
       - run: npm ci
       - run: npm run prisma:generate
       - run: npm test
