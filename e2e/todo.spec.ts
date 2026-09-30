@@ -285,6 +285,71 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     expect(grandchild.parentId).toBe(parent.id);
   });
 
+  test('父任务可收起与展开子任务，刷新后保持状态', async ({ page, request }) => {
+    const parent = await data(await request.post(`${apiUrl}/api/tasks`, { data: { title: '折叠父任务' } }));
+    const first = await data(await request.post(`${apiUrl}/api/tasks`, { data: { title: '折叠子一', parentId: parent.id } }));
+    const second = await data(await request.post(`${apiUrl}/api/tasks`, { data: { title: '折叠子二', parentId: parent.id } }));
+    await page.goto('/#/inbox');
+    const parentRow = page.getByTestId(`task-row-${parent.id}`);
+    await expect(page.getByTestId(`task-row-${first.id}`)).toBeVisible();
+    await expect(page.getByTestId(`task-row-${second.id}`)).toBeVisible();
+    const collapse = parentRow.getByRole('button', { name: '收起子任务：折叠父任务', exact: true });
+    await expect(collapse).toHaveAttribute('aria-expanded', 'true');
+    await collapse.click();
+    await expect(page.getByTestId(`task-row-${first.id}`)).toHaveCount(0);
+    await expect(page.getByTestId(`task-row-${second.id}`)).toHaveCount(0);
+    await expect(parentRow.getByRole('button', { name: '展开子任务：折叠父任务', exact: true })).toHaveAttribute('aria-expanded', 'false');
+    await page.reload();
+    await expect(parentRow).toBeVisible();
+    await expect(page.getByTestId(`task-row-${first.id}`)).toHaveCount(0);
+    await parentRow.getByRole('button', { name: '展开子任务：折叠父任务', exact: true }).click();
+    await expect(page.getByTestId(`task-row-${first.id}`)).toBeVisible();
+    await expect(page.getByTestId(`task-row-${second.id}`)).toBeVisible();
+    await page.reload();
+    await expect(page.getByTestId(`task-row-${first.id}`)).toBeVisible();
+  });
+
+  test('收起的父任务按根拖动换位，向右拖成子任务后自动展开', async ({ page, request }) => {
+    const list = await data(await request.post(`${apiUrl}/api/topics`, { data: { name: '折叠拖动清单' } }));
+    const parent = await data(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: list.id, title: '甲' } }));
+    const child = await data(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: list.id, title: '甲子', parentId: parent.id } }));
+    const middle = await data(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: list.id, title: '乙' } }));
+    const last = await data(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: list.id, title: '丙' } }));
+    await page.goto('/#/board');
+    await expect(page.getByTestId(`task-row-${child.id}`)).toBeVisible();
+    await page.getByRole('button', { name: '收起子任务：甲', exact: true }).click();
+    await expect(page.getByTestId(`task-row-${child.id}`)).toHaveCount(0);
+    const start = page.getByTestId(`task-row-${parent.id}`);
+    const target = page.getByTestId(`task-row-${middle.id}`);
+    const from = await start.boundingBox();
+    const to = await target.boundingBox();
+    if (!from || !to) throw new Error('任务行没有布局');
+    const x = from.x + Math.min(160, from.width * 0.45);
+    await page.mouse.move(x, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(x, from.y + from.height / 2 + 18, { steps: 5 });
+    await page.mouse.move(x, to.y + 12, { steps: 24 });
+    const session = await page.context().newCDPSession(page);
+    await session.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y: to.y + 12, button: 'left', buttons: 0, clickCount: 1 });
+    await expect.poll(async () => (await data(await request.get(`${apiUrl}/api/tasks?topicId=${list.id}&sort=manual`))).map((value: { id: string; parentId: string | null }) => value.parentId ? null : value.id).filter(Boolean)).toEqual([middle.id, parent.id, last.id]);
+    await page.reload();
+    await expect(page.getByTestId('task-list').locator('article').first()).toHaveAttribute('data-testid', `task-row-${middle.id}`);
+    await expect(page.getByTestId(`task-row-${child.id}`)).toHaveCount(0);
+    const nestedRow = page.getByTestId(`task-row-${last.id}`);
+    const nested = await nestedRow.boundingBox();
+    if (!nested) throw new Error('任务行没有布局');
+    const nx = nested.x + Math.min(140, nested.width * 0.4);
+    const ny = nested.y + nested.height / 2;
+    await page.mouse.move(nx, ny);
+    await page.mouse.down();
+    await page.mouse.move(nx + 40, ny, { steps: 12 });
+    await session.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: nx + 40, y: ny, button: 'left', buttons: 0, clickCount: 1 });
+    await page.getByRole('button', { name: '确认影响并执行', exact: true }).click();
+    await expect.poll(async () => (await task(request, last.id)).parentId).toBe(parent.id);
+    await expect(page.getByTestId(`task-row-${child.id}`)).toBeVisible();
+    await expect(page.getByTestId(`task-row-${last.id}`)).toBeVisible();
+  });
+
   test('删除父任务后成组恢复，不复活之前已删除的子任务', async ({ page, request }) => {
     const parent = await data(await request.post(`${apiUrl}/api/tasks`, { data: { title: '家庭任务' } }));
     const earlier = await data(await request.post(`${apiUrl}/api/tasks`, { data: { title: '早已删除', parentId: parent.id } }));
