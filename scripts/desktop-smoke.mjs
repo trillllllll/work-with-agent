@@ -41,7 +41,23 @@ try {
   console.log(`桌面运行时冒烟通过，端口 ${port}`);
 } finally {
   if (child) child.kill('SIGKILL');
-  await rm(dataDir, { recursive: true, force: true });
+  await cleanup(dataDir);
+}
+
+async function cleanup(dir) {
+  // Windows 上 SQLite 可能晚一点才释放数据库文件，先重试几次；仍失败就把临时目录留给系统。
+  for (const delay of [250, 1000, 3000]) {
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, delay));
+    try {
+      await rm(dir, { recursive: true, force: true });
+      return;
+    } catch { /* 文件还被锁着，稍后再试。 */ }
+  }
+  try {
+    await rm(dir, { recursive: true, force: true });
+  } catch {
+    console.warn(`临时目录暂未清理：${dir}`);
+  }
 }
 
 function start() {
