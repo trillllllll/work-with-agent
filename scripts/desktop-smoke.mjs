@@ -14,6 +14,7 @@ const port = await freePort();
 const origin = `http://127.0.0.1:${port}`;
 
 let child;
+let proxy;
 try {
   child = start();
   const firstToken = await readyToken(child);
@@ -26,9 +27,22 @@ try {
   const first = await login(firstToken);
   const created = await api(first, '/api/tasks', { method: 'POST', body: JSON.stringify({ title: '桌面冒烟任务' }) });
   if (!created.ok) throw new Error(`创建任务失败：${created.status} ${await created.text()}`);
+  const connection = await api(first, '/api/v1/connections', { method: 'POST', body: JSON.stringify({ name: 'smoke', host: 'claude' }) });
+  if (!connection.ok) throw new Error(`创建连接失败：${connection.status} ${await connection.text()}`);
+  const credential = (await connection.json()).data.token;
+  await mcpInitialize(credential);
   await stop(child);
   child = undefined;
   await expectClosed(port);
+  const mcpClosed = await fetch(`${origin}/mcp`, { method: 'POST' }).then(() => false, () => true);
+  if (!mcpClosed) throw new Error('服务退出后 /mcp 仍可访问');
+
+  proxy = startProxy(credential);
+  const outage = await proxy.call({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'list_topics', arguments: {} } });
+  const outageDetail = outage.result?.structuredContent;
+  if (outageDetail?.code !== 'CONNECTION_UNAVAILABLE' || outageDetail?.retryable !== true) {
+    throw new Error(`服务停止期间代理应返回可重试的 CONNECTION_UNAVAILABLE，实际 ${JSON.stringify(outage)}`);
+  }
 
   child = start();
   const secondToken = await readyToken(child);
@@ -36,10 +50,16 @@ try {
   const tasks = await api(second, '/api/tasks?inbox=true');
   const body = await tasks.json();
   if (!tasks.ok || !body.data?.some((task) => task.title === '桌面冒烟任务')) throw new Error('重启后没有读到冒烟任务');
+  await mcpInitialize(credential);
+  const recovery = await proxy.call({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'list_topics', arguments: {} } });
+  if (recovery.result?.isError) throw new Error(`服务重启后同一代理应自动恢复，实际 ${JSON.stringify(recovery)}`);
+  proxy.stop();
+  proxy = undefined;
   await stop(child);
   child = undefined;
-  console.log(`桌面运行时冒烟通过，端口 ${port}`);
+  console.log(`桌面运行时冒烟通过，端口 ${port}（MCP 随服务启停并可在重启后恢复）`);
 } finally {
+  if (proxy) proxy.stop();
   if (child) child.kill('SIGKILL');
   await cleanup(dataDir);
 }
@@ -115,6 +135,82 @@ function api(session, path, init = {}) {
     ...init,
     headers: { 'content-type': 'application/json', origin, cookie: session.cookie, 'x-csrf-token': session.csrf, ...init.headers },
   });
+}
+
+async function mcpInitialize(credential) {
+  const response = await fetch(`${origin}/mcp`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${credential}`,
+      'content-type': 'application/json',
+      accept: 'application/json, text/event-stream',
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'wwa-smoke', version: '0.0.0' } },
+    }),
+  });
+  if (!response.ok) throw new Error(`MCP initialize 失败：${response.status} ${await response.text()}`);
+  if (!response.headers.get('mcp-session-id')) throw new Error('MCP initialize 未返回会话 ID');
+  const text = await response.text();
+  const payload = text.trimStart().startsWith('{')
+    ? JSON.parse(text)
+    : JSON.parse(text.split('\n').find((line) => line.startsWith('data:'))?.slice(5) ?? '{}');
+  if (payload.result?.serverInfo?.name !== 'work-with-agent') throw new Error(`MCP initialize 未返回服务信息：${text}`);
+}
+
+/** The stdio entry hosts spawn stays alive across API restarts: unreachable while down, recovered when back. */
+function startProxy(credential) {
+  const proxyProcess = spawn(nodeBinary, [resolve(serverDir, 'dist/mcp/index.js')], {
+    cwd: serverDir,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: { ...process.env, WWA_API_URL: origin, WWA_CONNECTION_TOKEN: credential },
+  });
+  const pending = new Map();
+  let buffer = '';
+  proxyProcess.stdout.on('data', (chunk) => {
+    buffer += chunk.toString();
+    let index;
+    while ((index = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, index).trim();
+      buffer = buffer.slice(index + 1);
+      if (!line) continue;
+      try {
+        const message = JSON.parse(line);
+        if (message.id !== undefined && pending.has(message.id)) {
+          pending.get(message.id)(message);
+          pending.delete(message.id);
+        }
+      } catch { /* 跳过非 JSON-RPC 输出。 */ }
+    }
+  });
+  proxyProcess.stdin.write(`${JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'wwa-smoke', version: '0.0.0' } },
+  })}\n`);
+  proxyProcess.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
+  return {
+    call(request, timeoutMs = 30_000) {
+      return new Promise((resolvePromise, reject) => {
+        const timer = setTimeout(() => {
+          pending.delete(request.id);
+          reject(new Error(`stdio 代理超时：${request.method}`));
+        }, timeoutMs);
+        pending.set(request.id, (message) => {
+          clearTimeout(timer);
+          resolvePromise(message);
+        });
+        proxyProcess.stdin.write(`${JSON.stringify(request)}\n`);
+      });
+    },
+    stop() {
+      proxyProcess.kill('SIGKILL');
+    },
+  };
 }
 
 function stop(process) {
