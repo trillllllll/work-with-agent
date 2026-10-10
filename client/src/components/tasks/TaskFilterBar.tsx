@@ -92,17 +92,18 @@ export function TaskFilterBar({ page, scoped, filters, sortMode, topics, tags, o
     </Popover>;
   }
   return (
-    <div className="my-4 rounded-2xl glass-subtle p-3" aria-label="任务筛选">
+    <div className="my-3" aria-label="任务筛选">
       <div className="flex flex-wrap items-center gap-2">
         {search}
-        <Button type="button" variant="outline" size="sm" className="shrink-0" aria-expanded={open} aria-controls="task-filter-panel" onClick={() => onOpenChange(!open)}>
-          筛选{parts.length ? ` ${parts.length}` : ''}
+        <Button type="button" variant="ghost" size="sm" className="shrink-0 -ml-1 text-muted-foreground" aria-expanded={open} aria-controls="task-filter-panel" onClick={() => onOpenChange(!open)}>
+          <ListFilter className="size-4" aria-hidden />
+          筛选{parts.length ? ` · ${parts.length}` : ''}
           <ChevronDown aria-hidden className={cn('size-4 transition-transform', open && 'rotate-180')} />
         </Button>
         {parts.length > 0 && <Button type="button" size="sm" variant="ghost" className="shrink-0" onClick={onClear}>清除筛选</Button>}
+        {!open && summary && <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{summary}</span>}
       </div>
-      {!open && summary && <p className="mt-2 text-xs leading-relaxed break-words text-muted-foreground">{summary}</p>}
-      {open && <div id="task-filter-panel" className="mt-3 border-t pt-3 glass-divider"><FilterFields page={page} scoped={scoped} filters={filters} sortMode={sortMode} topics={topics} tags={tags} onChange={onChange} onSort={onSort} /></div>}
+      {open && <div id="task-filter-panel" className="mt-2 rounded-xl border border-[var(--glass-border-soft)] bg-[var(--glass-subtle)] p-3"><FilterFields page={page} scoped={scoped} filters={filters} sortMode={sortMode} topics={topics} tags={tags} onChange={onChange} onSort={onSort} /></div>}
     </div>
   );
 }
