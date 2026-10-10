@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Archive, Bot, CalendarClock, CalendarDays, ClipboardCheck, FolderKanban, History, Inbox, Library, Plug, Plus, Search, Settings, Tags, Trash2, type LucideIcon } from 'lucide-react';
+import { Archive, Bot, CalendarClock, CalendarDays, ClipboardCheck, FolderKanban, Grid2X2, History, Inbox, Library, Plug, Plus, Search, Settings, Tags, Trash2, type LucideIcon } from 'lucide-react';
 import type { Topic, View } from '@/lib/api.js';
 import { TopicList } from '@/components/topics/TopicList.js';
 import { BrandMark } from '@/components/layout/BrandMark.js';
@@ -8,6 +8,7 @@ import { ThemeToggle } from '@/components/layout/ThemeToggle.js';
 export const navigation: { view: View; label: string; icon: LucideIcon }[] = [
   { view: 'inbox', label: '收集箱', icon: Inbox },
   { view: 'today', label: '今天', icon: CalendarDays },
+  { view: 'quadrant', label: '四象限', icon: Grid2X2 },
   { view: 'topics', label: '清单', icon: FolderKanban },
   { view: 'search', label: '搜索', icon: Search },
   { view: 'tags', label: '标签', icon: Tags },

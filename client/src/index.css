@@ -4,7 +4,7 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --radius: 0.625rem;
+  --radius: 1.25rem;
   color-scheme: light;
 
   --background: hsl(0 0% 95%);
@@ -63,7 +63,7 @@
 }
 
 .dark {
-  --radius: 0.625rem;
+  --radius: 1.25rem;
   color-scheme: dark;
 
   --background: hsl(0 0% 5%);
@@ -121,10 +121,14 @@
 }
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: calc(var(--radius) + 4px);
-  --radius-xl: calc(var(--radius) + 10px);
+  --radius-xs: var(--radius);
+  --radius-sm: var(--radius);
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius);
+  --radius-xl: var(--radius);
+  --radius-2xl: var(--radius);
+  --radius-3xl: var(--radius);
+  --radius-4xl: var(--radius);
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -230,7 +234,7 @@
   @media (min-width: 1280px) {
     .app-frame {
       border: 1px solid var(--glass-border);
-      border-radius: 22px;
+      border-radius: var(--radius);
     }
   }
 
@@ -377,7 +381,7 @@
     flex: none;
     align-items: center;
     justify-content: center;
-    border-radius: 0.375rem;
+    border-radius: var(--radius);
     color: color-mix(in srgb, var(--muted-foreground) 70%, transparent);
   }
 
@@ -392,13 +396,12 @@
   }
 
   .task-row-block[data-dragging='true'] {
-    border-radius: 0.75rem;
+    border-radius: var(--radius);
     background: color-mix(in srgb, var(--foreground) 6%, transparent);
   }
 
   .task-row[data-drop-parent='true'] {
     background: color-mix(in srgb, var(--primary) 10%, transparent);
-    box-shadow: inset 3px 0 0 var(--primary);
   }
 
   .task-drag-host {
@@ -464,7 +467,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.28rem;
-    border-radius: 0.35rem;
+    border-radius: var(--radius);
     background: color-mix(in srgb, var(--foreground) 8%, var(--glass-control));
     color: var(--foreground);
     padding: 0.08rem 0.4rem 0.08rem 0.32rem;
@@ -481,7 +484,7 @@
   }
 
   .task-checkbox {
-    border-radius: 5px;
+    border-radius: var(--radius);
   }
 
   .detail-section > summary {
@@ -693,8 +696,8 @@
 
   @media (min-width: 1280px) {
     .app-sidebar {
-      border-top-left-radius: 22px;
-      border-bottom-left-radius: 22px;
+      border-top-left-radius: var(--radius);
+      border-bottom-left-radius: var(--radius);
     }
   }
 
@@ -723,7 +726,7 @@
     height: 22px;
     flex: none;
     place-items: center;
-    border-radius: 6px;
+    border-radius: var(--radius);
     background: var(--foreground);
     color: var(--background);
   }
@@ -770,7 +773,7 @@
     align-items: center;
     gap: 8px;
     border: 0;
-    border-radius: 8px;
+    border-radius: var(--radius);
     background: transparent;
     padding: 0 8px;
     color: var(--foreground);
@@ -815,7 +818,7 @@
     display: flex;
     min-height: 32px;
     align-items: center;
-    border-radius: 8px;
+    border-radius: var(--radius);
     transition: background-color 120ms ease, transform 160ms ease;
   }
 
@@ -859,7 +862,7 @@
     height: 14px;
     flex: none;
     margin-inline: 1px;
-    border-radius: 5px;
+    border-radius: var(--radius);
     background: color-mix(in srgb, var(--foreground) 34%, transparent);
   }
 
@@ -869,7 +872,7 @@
 
   .sidebar-explore-tag {
     flex: none;
-    border-radius: 4px;
+    border-radius: var(--radius);
     background: var(--explore-bg);
     padding: 0 4px;
     color: var(--explore);
@@ -887,7 +890,7 @@
     flex: none;
     place-items: center;
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--radius);
     background: color-mix(in srgb, var(--foreground) 8%, transparent);
     color: var(--foreground);
     cursor: pointer;
@@ -909,25 +912,6 @@
   .sidebar-topic-item {
     overflow: hidden;
     transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
-  }
-
-  .sidebar-topic-item::before {
-    position: absolute;
-    left: 0;
-    top: 50%;
-    width: 3px;
-    height: 0;
-    border-radius: 999px;
-    background: var(--primary);
-    content: "";
-    opacity: 0;
-    transform: translateY(-50%);
-    transition: height 180ms ease, opacity 180ms ease;
-  }
-
-  .sidebar-topic-item[data-active="true"]::before {
-    height: 55%;
-    opacity: 1;
   }
 
   @media (prefers-reduced-motion: reduce) {

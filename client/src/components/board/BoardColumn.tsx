@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button.js';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.js';
 import { TaskActions, TaskMenuButton } from '@/components/tasks/TaskActionsMenu.js';
 
-type TaskCardProps = {
+export type TaskCardProps = {
   task: Task;
   topics: Topic[];
   tags: Tag[];
@@ -31,7 +31,7 @@ export function TaskCard({ task, topics, tags, selected = false, readonly = fals
         <button type="button" onClick={(event) => { event.stopPropagation(); onOpen(task.id); }} className="min-w-0 flex-1 text-left text-xs leading-relaxed font-bold hover:text-primary">{task.title}</button>
         <TaskMenuButton />
       </div>
-      {task.resultSummary && <div className="mt-2 rounded-lg border-l-2 border-success bg-success-bg/70 px-2 py-1.5 text-[11px] leading-relaxed text-success">结果：{task.resultSummary}</div>}
+      {task.resultSummary && <div className="mt-2 rounded-lg border border-success bg-success-bg/70 px-2 py-1.5 text-[11px] leading-relaxed text-success">结果：{task.resultSummary}</div>}
       {(priority !== 'none' || task.dueDate) && (
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
           {priority !== 'none' && <span className={priority === 'high' ? 'text-destructive' : priority === 'medium' ? 'text-warning' : 'text-primary'} title={`优先级：${priorityLabel}`}><Flag className="mr-1 inline size-3" />{priorityLabel}</span>}

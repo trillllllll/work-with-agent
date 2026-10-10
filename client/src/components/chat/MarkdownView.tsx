@@ -42,7 +42,7 @@ const markdownComponents: Components = {
   h2: ({ children }) => <h2 className="mt-3 mb-1.5 text-[15px] font-semibold">{children}</h2>,
   h3: ({ children }) => <h3 className="mt-2.5 mb-1 text-sm font-semibold">{children}</h3>,
   a: ({ children, href }) => <a href={href} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">{children}</a>,
-  blockquote: ({ children }) => <blockquote className="my-2 border-l-2 border-border pl-3 text-muted-foreground">{children}</blockquote>,
+  blockquote: ({ children }) => <blockquote className="my-2 rounded-xl border border-border px-3 py-2 text-muted-foreground">{children}</blockquote>,
   code: ({ children, className }) => {
     const isBlock = /language-/.test(className ?? '');
     if (isBlock) return <code className="font-mono">{children}</code>;

@@ -94,8 +94,8 @@ export function MessageItem({ message, approvals = [], approvalPending = false, 
     <div
       className={cn(
         'rounded-xl px-3 py-2.5',
-        role === 'user' && 'border-l-2 border-primary/60 bg-primary/[0.08]',
-        failed && 'border-l-2 border-destructive/50 bg-destructive/10',
+        role === 'user' && 'border-2 border-primary/60 bg-primary/[0.08]',
+        failed && 'border-2 border-destructive/50 bg-destructive/10',
         role === 'system' && 'bg-transparent px-1 py-1.5'
       )}
     >
