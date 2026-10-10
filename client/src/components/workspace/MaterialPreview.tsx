@@ -67,16 +67,17 @@ export function MaterialPreview({ materialId, revision, kind, content, fileName,
   }, [fileName, hasAttachment, materialId, revision]);
 
   const written = content?.trim() ?? '';
-  return <div className="space-y-3">
-    {written && (kind === 'markdown' ? <div className="max-h-[28rem] overflow-auto"><MarkdownView content={content ?? ''} /></div> : <p className="max-h-[28rem] overflow-auto whitespace-pre-wrap break-words text-sm">{content}</p>)}
+  const frame = 'absolute inset-0 h-full w-full rounded-lg border bg-white';
+  return <div className="flex h-full min-h-0 flex-col gap-3">
+    {written && (kind === 'markdown' ? <div className="min-h-0 flex-1 overflow-auto"><MarkdownView content={content ?? ''} /></div> : <p className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words text-sm">{content}</p>)}
     {body.status === 'loading' && <p className="text-sm text-muted-foreground">正在读取原件…</p>}
     {body.status === 'error' && <p className="text-sm text-destructive">无法预览，可以下载原件。</p>}
     {body.status === 'unsupported' && <p className="text-sm text-muted-foreground">这里不能排版预览，可以下载原件。</p>}
     {body.status === 'empty' && <p className="text-sm text-muted-foreground">这份文档没有可显示的正文。</p>}
-    {body.status === 'markdown' && <div className="max-h-[28rem] overflow-auto"><MarkdownView content={body.text} /></div>}
-    {body.status === 'text' && <pre className="max-h-[28rem] overflow-auto whitespace-pre-wrap break-words font-mono text-sm">{body.text}</pre>}
-    {body.status === 'html' && <iframe title="材料正文" sandbox="" srcDoc={body.text} className="h-96 w-full rounded-lg border bg-white" />}
-    {body.status === 'pdf' && <iframe title="材料正文" src={body.url} className="h-[28rem] w-full rounded-lg border bg-white" />}
-    {body.status === 'image' && <img alt={fileName || '附件预览'} src={body.url} className="max-h-[28rem] max-w-full rounded-lg" />}
+    {body.status === 'markdown' && <div className="min-h-0 flex-1 overflow-auto"><MarkdownView content={body.text} /></div>}
+    {body.status === 'text' && <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words font-mono text-sm">{body.text}</pre>}
+    {body.status === 'html' && <div className="relative min-h-0 flex-1"><iframe title="材料正文" sandbox="" srcDoc={body.text} className={frame} /></div>}
+    {body.status === 'pdf' && <div className="relative min-h-0 flex-1"><iframe title="材料正文" src={body.url} className={frame} /></div>}
+    {body.status === 'image' && <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto"><img alt={fileName || '附件预览'} src={body.url} className="max-h-full max-w-full object-contain" /></div>}
   </div>;
 }
