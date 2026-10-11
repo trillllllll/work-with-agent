@@ -291,8 +291,19 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     const second = await data(await request.post(`${apiUrl}/api/tasks`, { data: { title: '折叠子二', parentId: parent.id } }));
     await page.goto('/#/inbox');
     const parentRow = page.getByTestId(`task-row-${parent.id}`);
-    await expect(page.getByTestId(`task-row-${first.id}`)).toBeVisible();
+    const childRow = page.getByTestId(`task-row-${first.id}`);
+    await expect(childRow).toBeVisible();
     await expect(page.getByTestId(`task-row-${second.id}`)).toBeVisible();
+    const parentBox = await parentRow.boundingBox();
+    const childBox = await childRow.boundingBox();
+    if (!parentBox || !childBox) throw new Error('父子任务行没有布局');
+    expect(childBox.x - parentBox.x).toBeGreaterThanOrEqual(40);
+    await expect(childRow.locator('xpath=ancestor::*[contains(@class,"task-children")]')).toHaveCSS('margin-left', '56px');
+    const overflow = await page.getByTestId('task-list').evaluate((node) => {
+      const surface = node.closest('section') ?? node;
+      return surface.scrollWidth - surface.clientWidth;
+    });
+    expect(overflow).toBeLessThanOrEqual(1);
     const collapse = parentRow.getByRole('button', { name: '收起子任务：折叠父任务', exact: true });
     await expect(collapse).toHaveAttribute('aria-expanded', 'true');
     await collapse.click();
