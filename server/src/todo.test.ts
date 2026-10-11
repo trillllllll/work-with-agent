@@ -414,4 +414,29 @@ describe('basic Todo shared business contracts', () => {
     expect(await prisma.task.count({ where: { id: { in: [parent.id, earlier.id, current.id] } } })).toBe(0);
     expect((await request(app).post(`/api/changes/${response.body.meta.changeId}/undo`)).status).toBe(400);
   });
+
+  it('任务时间段：创建/更新/清空', async () => {
+    const item = await task({ title: '排期任务', estimatedMinutes: 90, scheduledStart: '2026-10-11T14:00', scheduledEnd: '2026-10-11T15:30' });
+    expect(await get(item.id)).toMatchObject({ estimatedMinutes: 90, scheduledStart: '2026-10-11T14:00', scheduledEnd: '2026-10-11T15:30' });
+    const patched = await request(app).patch(`/api/tasks/${item.id}`).send({ expectedRevision: item.revision, scheduledStart: '2026-10-11T16:00', scheduledEnd: '2026-10-11T17:00' });
+    expect(patched.body.data.scheduledStart).toBe('2026-10-11T16:00');
+    const cleared = await request(app).patch(`/api/tasks/${item.id}`).send({ expectedRevision: patched.body.data.revision, scheduledStart: null, scheduledEnd: null, estimatedMinutes: null });
+    expect(cleared.body.data.scheduledStart).toBeNull();
+  });
+  it('任务时间段校验：end<=start 拒绝、单端拒绝、25点拒绝', async () => {
+    for (const bad of [
+      { scheduledStart: '2026-10-11T15:00', scheduledEnd: '2026-10-11T15:00' },
+      { scheduledStart: '2026-10-11T15:00', scheduledEnd: '2026-10-11T14:00' },
+      { scheduledStart: '2026-10-11T14:00' },
+      { scheduledStart: '2026-10-11T25:00', scheduledEnd: '2026-10-11T26:00' },
+    ]) await expect(task({ title: '非法', ...bad })).rejects.toThrow();
+  });
+  it('scheduledFrom/To 过滤命中 due 或 scheduled', async () => {
+    await task({ title: '仅due', dueDate: '2026-10-12' });
+    await task({ title: '仅scheduled', scheduledStart: '2026-10-13T10:00', scheduledEnd: '2026-10-13T11:00', dueDate: '2026-11-01' });
+    const res = await request(app).get('/api/tasks?scheduledFrom=2026-10-12&scheduledTo=2026-10-13');
+    const titles = res.body.data.map((t: any) => t.title);
+    expect(titles).toContain('仅due');
+    expect(titles).toContain('仅scheduled');
+  });
 });

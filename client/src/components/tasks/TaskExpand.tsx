@@ -1,9 +1,12 @@
 import { createContext, forwardRef, useContext, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type MutableRefObject, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { CalendarDays, Flag, Hash, X } from 'lucide-react';
+import { CalendarDays, Clock, Flag, Hash, X } from 'lucide-react';
 import { priorities, type Tag, type Task, type TaskPriority } from '@/lib/api.js';
 import { draftPatch, isCompositionKey, localDate, mergeTaskDraft, taskDraft, type TaskDraft } from '@/lib/todo.js';
+import { defaultEndFor, formatTime } from '@/lib/schedule.js';
+import { useHashRoute } from '@/hooks/useHashRoute.js';
 import { useTask, useTodoActions } from '@/hooks/useTodo.js';
+import { useFocus } from '@/components/focus/FocusProvider.js';
 import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { Textarea } from '@/components/ui/textarea.js';
@@ -16,7 +19,7 @@ import { cn } from '@/lib/utils.js';
 
 type Editing = { base: TaskDraft; draft: TaskDraft; conflicts: string[] };
 export type TaskDetailHandle = { requestTransition: (action: () => void) => void };
-const fieldLabels: Record<string, string> = { title: '标题', description: '说明', status: '状态', priority: '优先级', dueDate: '截止日期', resultSummary: '结果摘要', topicId: '所属清单', parentId: '父任务', tagIds: '标签' };
+const fieldLabels: Record<string, string> = { title: '标题', description: '说明', status: '状态', priority: '优先级', dueDate: '截止日期', estimatedMinutes: '预计时长', scheduledStart: '开始时间', scheduledEnd: '结束时间', resultSummary: '结果摘要', topicId: '所属清单', parentId: '父任务', tagIds: '标签' };
 const flagTone: Record<TaskPriority, string> = { none: 'text-muted-foreground', low: 'text-primary', medium: 'text-warning', high: 'text-destructive' };
 
 function shiftDate(days: number) {
@@ -46,6 +49,8 @@ type EditContext = {
   onComposeEnd: () => void;
   setPriority: (priority: TaskPriority) => void;
   setDue: (dueDate: string | null) => void;
+  setSchedule: (schedule: { scheduledStart: string | null; scheduledEnd: string | null }) => void;
+  setEstimate: (estimatedMinutes: number | null) => void;
   toggleTag: (id: string, checked: boolean) => void;
   resetDraft: () => void;
   requestClose: () => void;
@@ -246,6 +251,8 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
     },
     setPriority: (priority) => { void applyImmediate({ priority }); },
     setDue: (dueDate) => { void applyImmediate({ dueDate }); },
+    setSchedule: (schedule) => { void applyImmediate(schedule); },
+    setEstimate: (estimatedMinutes) => { void applyImmediate({ estimatedMinutes }); },
     toggleTag: (tagId, checked) => {
       const current = editingRef.current?.draft.tagIds ?? [];
       void applyImmediate({ tagIds: checked ? [...current, tagId] : current.filter((item) => item !== tagId) });
@@ -318,10 +325,12 @@ export function TaskExpandBody({ fill = false }: { fill?: boolean }) {
     {selected.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{selected.map((tag) => <span key={tag.id} className="task-tag-chip inline-flex items-center gap-1" data-color={tag.color || 'violet'}>#{tag.name}{!edit.readonly && <button type="button" className="grid size-4 place-items-center rounded-full hover:bg-black/10 dark:hover:bg-white/10" aria-label={`从任务去掉标签：${tag.name}`} onClick={() => edit.toggleTag(tag.id, false)}><X className="size-3" /></button>}</span>)}</div>}
     <div className="mt-2 flex shrink-0 flex-wrap items-center gap-1.5">
       <DateControl />
+      <ScheduleControl />
       <div role="group" aria-label="旗标" className="flex items-center gap-0.5">
         {priorities.map((item) => <Button key={item.value} type="button" variant="ghost" size="icon-sm" disabled={edit.readonly} aria-pressed={edit.draft.priority === item.value} aria-label={`旗标：${item.label}`} title={item.label} onClick={() => edit.setPriority(item.value)}><Flag className={cn(flagTone[item.value], edit.draft.priority === item.value && 'fill-current')} /></Button>)}
       </div>
       <TagPicker />
+      <StartFocusButton />
     </div>
   </div>;
 }
@@ -436,7 +445,7 @@ function DetailFrame({ presentation, panelSlot, children }: { presentation: 'pan
 
 export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children' | 'fallback'> & { fallback?: Task; presentation: 'panel' | 'modal' | 'retained'; panelSlot: HTMLElement | null }>(function TaskDetailPane({ presentation, panelSlot, fallback, ...props }, ref) {
   const [activity, setActivity] = useState(false);
-  const placeholder: Task = fallback ?? { id: props.id, title: '', description: '', status: 'todo', priority: 'none', dueDate: null, resultSummary: '', topicId: null, parentId: null, tagIds: [], allowedTransitions: [] };
+  const placeholder: Task = fallback ?? { id: props.id, title: '', description: '', status: 'todo', priority: 'none', dueDate: null, estimatedMinutes: null, scheduledStart: null, scheduledEnd: null, resultSummary: '', topicId: null, parentId: null, tagIds: [], allowedTransitions: [] };
   return <TaskExpand ref={ref} {...props} fallback={placeholder}>
     <DetailFrame presentation={presentation} panelSlot={panelSlot}>
       <div className="flex min-h-0 flex-1 flex-col">
@@ -447,6 +456,57 @@ export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children
     <TaskActivityDialog taskId={props.id} open={activity} onOpenChange={setActivity} />
   </TaskExpand>;
 });
+
+function StartFocusButton() {
+  const edit = useEdit();
+  const { dispatch } = useFocus();
+  const { navigate } = useHashRoute();
+  return <Button type="button" variant="outline" size="sm" disabled={edit.readonly} onClick={() => {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') void Notification.requestPermission();
+    dispatch({ type: 'START', taskId: edit.taskId, taskTitle: edit.draft.title, now: Date.now() });
+    navigate('focus');
+  }}>开始专注</Button>;
+}
+
+function ScheduleControl() {
+  const edit = useEdit();
+  const [open, setOpen] = useState(false);
+  const start = edit.draft.scheduledStart;
+  const end = edit.draft.scheduledEnd;
+  const label = start && end ? `${formatTime(start)}-${formatTime(end)}` : '时段';
+  const chips = [{ label: '30分钟', minutes: 30 }, { label: '1小时', minutes: 60 }, { label: '2小时', minutes: 120 }];
+  const chooseStart = (value: string) => {
+    const next = value.slice(0, 16);
+    if (!next) {
+      edit.setSchedule({ scheduledStart: null, scheduledEnd: null });
+      return;
+    }
+    const scheduledEnd = !end || end <= next ? defaultEndFor({ estimatedMinutes: edit.draft.estimatedMinutes }, next) : end;
+    edit.setSchedule({ scheduledStart: next, scheduledEnd });
+  };
+  const chooseEnd = (value: string) => {
+    const next = value.slice(0, 16);
+    if (!start || !next || next <= start) return;
+    edit.setSchedule({ scheduledStart: start, scheduledEnd: next });
+  };
+  const chooseEstimate = (minutes: number | null) => edit.setEstimate(minutes);
+  return <Popover open={open} onOpenChange={setOpen}>
+    <PopoverTrigger asChild><Button type="button" variant="ghost" size="sm" disabled={edit.readonly} aria-label="时段"><Clock />{label}</Button></PopoverTrigger>
+    <PopoverContent data-task-editor className="w-64 space-y-2">
+      <div className="flex gap-1">{chips.map((chip) => <button key={chip.minutes} type="button" className={cn('glass-control h-8 flex-1 rounded-lg text-xs', edit.draft.estimatedMinutes === chip.minutes && 'bg-[var(--glass-hover)] font-medium')} onClick={() => chooseEstimate(chip.minutes)}>{chip.label}</button>)}</div>
+      <Input type="number" min={5} max={10080} step={5} aria-label="预计时长" value={edit.draft.estimatedMinutes ?? ''} disabled={edit.readonly} onChange={(event) => {
+        const raw = event.target.value;
+        if (!raw) { chooseEstimate(null); return; }
+        const minutes = Number(raw);
+        if (!Number.isInteger(minutes) || minutes < 1 || minutes > 10080) return;
+        chooseEstimate(minutes);
+      }} />
+      <Input type="datetime-local" aria-label="开始时间" value={start ?? ''} disabled={edit.readonly} onChange={(event) => chooseStart(event.target.value)} />
+      <Input type="datetime-local" aria-label="结束时间" value={end ?? ''} disabled={edit.readonly} onChange={(event) => chooseEnd(event.target.value)} />
+      <Button type="button" variant="ghost" size="sm" className="w-full justify-start" disabled={!start && !end} onClick={() => { edit.setSchedule({ scheduledStart: null, scheduledEnd: null }); setOpen(false); }}>清除时段</Button>
+    </PopoverContent>
+  </Popover>;
+}
 
 function DateControl() {
   const edit = useEdit();

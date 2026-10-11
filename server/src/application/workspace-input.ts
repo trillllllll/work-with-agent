@@ -11,7 +11,21 @@ export function isCalendarDate(value: string) {
 
 const id = z.string().trim().min(1);
 export const calendarDate = z.string().refine(isCalendarDate, '日期必须是有效的 YYYY-MM-DD 日历日期');
-export const taskCreateSchema = z.object({
+const localDateTimePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+export function isLocalDateTime(value: string) {
+  if (!localDateTimePattern.test(value)) return false;
+  const [date, time] = value.split('T');
+  if (!isCalendarDate(date)) return false;
+  const [hour, minute] = time.split(':').map(Number);
+  return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
+}
+export const localDateTime = z.string().refine(isLocalDateTime, '时间必须是有效的 YYYY-MM-DDTHH:mm 本地时间');
+const positiveMinutes = z.number().int().min(1, '时长必须至少 1 分钟').max(10080, '时长不能超过一周');
+const schedulePaired = (value: { scheduledStart?: string | null; scheduledEnd?: string | null }) => (value.scheduledStart === undefined && value.scheduledEnd === undefined)
+  || (value.scheduledStart === null && value.scheduledEnd === null)
+  || (typeof value.scheduledStart === 'string' && typeof value.scheduledEnd === 'string');
+const scheduleOrdered = (value: { scheduledStart?: string | null; scheduledEnd?: string | null }) => !(typeof value.scheduledStart === 'string' && typeof value.scheduledEnd === 'string') || value.scheduledStart < value.scheduledEnd;
+export const taskFields = z.object({
   topicId: id.nullable().optional(),
   parentId: id.nullable().optional(),
   title: z.string().trim().min(1, '任务标题不能为空'),
@@ -19,10 +33,14 @@ export const taskCreateSchema = z.object({
   status: z.enum(['todo', 'doing', 'blocked', 'done']).optional(),
   priority: z.enum(['none', 'low', 'medium', 'high']).optional(),
   dueDate: calendarDate.nullable().optional(),
+  estimatedMinutes: positiveMinutes.nullable().optional(),
+  scheduledStart: localDateTime.nullable().optional(),
+  scheduledEnd: localDateTime.nullable().optional(),
   resultSummary: z.string().optional(),
   tagIds: z.array(id).refine((ids) => new Set(ids).size === ids.length, '标签不能重复').optional(),
 });
-export const taskUpdateSchema = taskCreateSchema.partial().extend({ completeChildren: z.boolean().optional() });
+export const taskCreateSchema = taskFields.refine(schedulePaired, '开始与结束时间必须成对提供').refine(scheduleOrdered, '结束时间必须晚于开始时间');
+export const taskUpdateSchema = taskFields.partial().extend({ completeChildren: z.boolean().optional() }).refine(schedulePaired, '开始与结束时间必须成对提供').refine(scheduleOrdered, '结束时间必须晚于开始时间');
 export const topicCreateSchema = z.object({
   name: z.string().trim().min(1, '清单名称不能为空'),
   description: z.string().optional(),
@@ -51,6 +69,8 @@ export const taskListSchema = z.object({
   status: z.enum(['open', 'done', 'all', 'todo', 'doing', 'blocked']).optional(),
   dueFrom: calendarDate.optional(),
   dueTo: calendarDate.optional(),
+  scheduledFrom: calendarDate.optional(),
+  scheduledTo: calendarDate.optional(),
   tagIds: z.array(id).optional(),
   sort: z.enum(['manual', 'date', 'priority']).optional(),
   includeArchived: z.boolean().optional(),
@@ -58,6 +78,22 @@ export const taskListSchema = z.object({
   parentId: id.nullable().optional(),
 });
 export type TaskListOptions = z.infer<typeof taskListSchema>;
+
+export const focusSessionCreateSchema = z.object({
+  taskId: id.nullable(),
+  kind: z.enum(['focus', 'break']).default('focus'),
+  startedAt: localDateTime,
+  endedAt: localDateTime,
+  durationMinutes: z.number().int().min(0).max(1440),
+  plannedMinutes: positiveMinutes.default(25),
+  completed: z.boolean().default(true),
+}).refine((value) => value.startedAt < value.endedAt, '结束时间必须晚于开始时间');
+export const focusSessionListSchema = z.object({
+  taskId: id.optional(),
+  from: calendarDate.optional(),
+  to: calendarDate.optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+});
 
 // Strip explicitly undefined properties as well as unknown adapter fields.
 // This keeps omission identical for REST and programmatic/Tool callers.

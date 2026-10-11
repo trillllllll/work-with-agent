@@ -75,6 +75,9 @@ model Task {
   status        TaskStatus @default(todo)
   priority      TaskPriority @default(none)
   dueDate       String?    @map("due_date")
+  estimatedMinutes Int?    @map("estimated_minutes")
+  scheduledStart String?   @map("scheduled_start")
+  scheduledEnd   String?   @map("scheduled_end")
   resultSummary String     @default("") @map("result_summary")
   deletedAt String? @map("deleted_at")
   createdAt     String     @default("") @map("created_at")
@@ -83,6 +86,7 @@ model Task {
   parent        Task?      @relation("TaskChildren", fields: [parentId], references: [id], onDelete: Restrict)
   children      Task[]     @relation("TaskChildren")
   tags          TaskTag[]
+  focusSessions FocusSession[]
   topicAssignments TaskTopicAssignment[]
 
   @@index([topicId])
@@ -104,6 +108,23 @@ model Tag {
   tasks     TaskTag[]
 
   @@map("tags")
+}
+
+model FocusSession {
+  id              String  @id @default(cuid())
+  taskId          String? @map("task_id")
+  kind            String  @default("focus")
+  startedAt       String  @map("started_at")
+  endedAt         String  @map("ended_at")
+  durationMinutes Int     @map("duration_minutes")
+  plannedMinutes  Int     @default(25) @map("planned_minutes")
+  completed       Boolean @default(true)
+  createdAt       String  @default("") @map("created_at")
+  task            Task?   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([startedAt])
+  @@map("focus_sessions")
 }
 
 model TaskTag {

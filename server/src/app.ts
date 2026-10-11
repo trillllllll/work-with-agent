@@ -18,6 +18,7 @@ import { registerKnowledgeCommands } from './application/knowledge.js';
 import { registerGraphCommands } from './application/knowledge-graph.js';
 import { ReviewService } from './application/reviews.js';
 import { OrganizationService } from './application/knowledge-organizations.js';
+import { FocusService } from './application/focus.js';
 import { generateExternalReview } from './runner/review-generator.js';
 
 export const app = express();
@@ -41,6 +42,7 @@ const settings = new SettingsService();
 const agent = new AgentService();
 const changes = new ChangeService();
 const tags = new TagService();
+const focus = new FocusService();
 const userContext = (req: Request) => ({ source: 'user' as const, requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined });
 const send = (res: Response, result: unknown) => {
   if (result && typeof result === 'object' && !Array.isArray(result) && 'meta' in result) {
@@ -78,6 +80,8 @@ const taskQuery = z.object({
   status: z.enum(['open', 'done', 'all', 'todo', 'doing', 'blocked']).optional(),
   dueFrom: z.string().optional(),
   dueTo: z.string().optional(),
+  scheduledFrom: z.string().optional(),
+  scheduledTo: z.string().optional(),
   tagIds: z.string().optional(),
   sort: z.enum(['manual', 'date', 'priority']).optional(),
   includeArchived: z.enum(['true', 'false']).optional(),
@@ -89,6 +93,7 @@ app.get('/api/tasks', async (req, res, next) => {
     send(res, await tasks.list(query.topicId, {
       inbox: query.inbox === 'true', q: query.q, status: query.status,
       dueFrom: query.dueFrom, dueTo: query.dueTo,
+      scheduledFrom: query.scheduledFrom, scheduledTo: query.scheduledTo,
       tagIds: query.tagIds?.split(',').filter(Boolean), sort: query.sort,
       includeArchived: query.includeArchived === 'true',
       ...(query.parentId !== undefined ? { parentId: query.parentId === 'null' ? null : query.parentId } : {}),
@@ -110,6 +115,8 @@ app.get('/api/tasks/:id/images/:imageId', async (req, res, next) => {
 app.get('/api/tasks/:id', async (req, res, next) => { try { const task = await tasks.get(String(req.params.id)); if (!task) return res.status(404).json({ data: null, error: '任务不存在' }); send(res, task); } catch (error) { next(error); } });
 app.get('/api/tasks/:id/topic-history', async (req, res, next) => { try { send(res, await tasks.topicHistory(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/tasks/:id/activity', async (req, res, next) => { try { send(res, await taskActivity(getActor(req), String(req.params.id))); } catch (error) { next(error); } });
+app.get('/api/focus-sessions', async (req, res, next) => { try { send(res, await focus.list(req.query)); } catch (error) { next(error); } });
+app.post('/api/focus-sessions', schema(z.object({ taskId: z.string().min(1).nullable(), kind: z.enum(['focus', 'break']).optional(), startedAt: z.string().min(1), endedAt: z.string().min(1), durationMinutes: z.number().int().min(0).max(1440), plannedMinutes: z.number().int().min(1).max(10080).optional(), completed: z.boolean().optional() })), async (req, res, next) => { try { send(res, await focus.create(req.body)); } catch (error) { next(error); } });
 app.post('/api/tasks', async (req, res, next) => { try { send(res, await tasks.create(req.body, userContext(req))); } catch (error) { next(error); } });
 app.patch('/api/tasks/:id', async (req, res, next) => { try { send(res, await tasks.update(String(req.params.id), req.body, userContext(req))); } catch (error) { next(error); } });
 app.delete('/api/tasks/:id', async (req, res, next) => { try { send(res, await tasks.remove(String(req.params.id), userContext(req))); } catch (error) { next(error); } });

@@ -17,8 +17,11 @@ export function jsonSchema(schema: z.ZodTypeAny): Record<string, unknown> {
   }
   return {};
 }
+function zodObject(schema: z.ZodTypeAny): z.AnyZodObject {
+  return schema instanceof z.ZodEffects ? zodObject(schema.innerType()) : schema as z.AnyZodObject;
+}
 const schemas: Record<string, z.ZodTypeAny> = {
-  'task.create': taskCreateSchema.extend({ expectedParentRevision: z.number().int().positive().optional() }),
+  'task.create': zodObject(taskCreateSchema).extend({ expectedParentRevision: z.number().int().positive().optional() }),
   'task.update': taskUpdateSchema,
   'task.reorder': reorderSchema.extend({ expectedRevisions: z.record(z.number().int().positive()) }),
   'topic.create': topicCreateSchema, 'topic.update': topicUpdateSchema,

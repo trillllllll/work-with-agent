@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { View } from '../lib/api.js';
 
-const validViews: View[] = ['board', 'quadrant', 'chat', 'topics', 'inbox', 'settings', 'trash', 'changes', 'today', 'search', 'tags', 'archived', 'more', 'connections', 'proposals', 'knowledge', 'runs', 'reviews'];
+const validViews: View[] = ['board', 'quadrant', 'chat', 'topics', 'inbox', 'settings', 'trash', 'changes', 'today', 'search', 'tags', 'archived', 'more', 'connections', 'proposals', 'knowledge', 'runs', 'reviews', 'plan', 'focus'];
 
 function readHash(): View {
   const hash = window.location.hash.replace(/^#\/?/, '');

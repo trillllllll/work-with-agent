@@ -2,10 +2,11 @@ import { forwardRef, useRef, useState, type ReactNode } from 'react';
 import { DndContext, DragOverlay, MouseSensor, TouchSensor, closestCenter, pointerWithin, useSensor, useSensors, type CollisionDetection, type DragEndEvent, type DragMoveEvent, type DragOverEvent, type DragStartEvent, type DraggableSyntheticListeners } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { CalendarDays, GripVertical } from 'lucide-react';
+import { CalendarDays, Clock, GripVertical } from 'lucide-react';
 import type { Tag, Task, Topic } from '@/lib/api.js';
 import { priorities, statuses } from '@/lib/api.js';
 import type { TaskDraft } from '@/lib/todo.js';
+import { formatTime } from '@/lib/schedule.js';
 import { cn } from '@/lib/utils.js';
 import { dragIndentOffset, projectTaskDrop, reorderTaskGroup, type OrderRow } from './task-order.js';
 import { useTaskCollapse } from './task-collapse.js';
@@ -154,6 +155,7 @@ const TaskArticle = forwardRef<HTMLElement, { task: Task; group?: Task[]; index?
       : <span className="w-5 shrink-0" aria-hidden="true" />)}
     <input type="checkbox" className="task-checkbox size-[18px] shrink-0 accent-primary" checked={task.status === 'done'} disabled={preview || readonly || busy} aria-label={`${task.status === 'done' ? '重开' : '完成'}任务：${task.title}`} onMouseDown={stopDrag} onTouchStart={stopDrag} onPointerDown={stopDrag} onChange={() => { void onToggle(task).catch(() => undefined); }} />
     <button type="button" aria-label={task.title} className="min-w-0 flex-1 py-0.5 text-left" disabled={preview} onClick={(event) => { event.stopPropagation(); open(); }}><span className={cn('block break-words text-sm font-medium', task.status === 'done' && 'text-muted-foreground line-through')}>{task.title}</span><span aria-hidden="true" className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">{task.priority !== 'none' && <span className="task-meta-pill">{priorities.find((value) => value.value === task.priority)?.label}</span>}{task.status !== 'todo' && task.status !== 'done' && <span className="task-meta-pill">{statuses.find((value) => value.value === task.status)?.label}</span>}{!hierarchical && <span className="task-place-chip">{task.topic?.name ?? '收集箱'}</span>}{task.tags?.map((tag) => <span key={tag.id} className="task-tag-chip" data-color={tag.color || 'violet'}>#{tag.name}</span>)}{!hierarchical && task.parentId && <span className="task-meta-pill">子任务</span>}</span></button>
+    {task.scheduledStart && <span className="hidden shrink-0 items-center gap-1 text-xs text-muted-foreground min-[578px]:flex"><Clock className="size-3.5" strokeWidth={1.75} /><time dateTime={task.scheduledStart}>{formatTime(task.scheduledStart)}{task.scheduledEnd ? `-${formatTime(task.scheduledEnd)}` : ''}</time></span>}
     {task.dueDate && <time dateTime={task.dueDate} className="hidden shrink-0 items-center gap-1 text-xs text-muted-foreground min-[578px]:flex"><CalendarDays className="size-3.5" />{task.dueDate}</time>}
     {!preview && <TaskMenuButton />}
   </article>;

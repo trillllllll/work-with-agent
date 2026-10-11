@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Archive, Bot, CalendarClock, CalendarDays, ClipboardCheck, FolderKanban, Grid2X2, History, Inbox, Library, Plug, Plus, Search, Settings, Tags, Trash2, type LucideIcon } from 'lucide-react';
+import { Archive, Bot, CalendarClock, CalendarDays, CalendarRange, ClipboardCheck, FolderKanban, Grid2X2, History, Inbox, Library, Plug, Plus, Search, Settings, Tags, Timer, Trash2, type LucideIcon } from 'lucide-react';
 import type { Topic, View } from '@/lib/api.js';
 import { TopicList } from '@/components/topics/TopicList.js';
 import { BrandMark } from '@/components/layout/BrandMark.js';
@@ -21,6 +21,8 @@ export const navigation: { view: View; label: string; icon: LucideIcon }[] = [
   { view: 'knowledge', label: '项目资料', icon: Library },
   { view: 'runs', label: 'AI 执行', icon: Bot },
   { view: 'reviews', label: '定期回顾', icon: CalendarClock },
+  { view: 'plan', label: '规划', icon: CalendarRange },
+  { view: 'focus', label: '专注', icon: Timer },
 ];
 
 type SidebarProps = {
@@ -67,7 +69,7 @@ export function Sidebar({ route, page, topics, topicsLoading, selectedTopicId, o
       </div>
       <div className="sidebar-scroll glass-scrollbar">
         <nav aria-label="主导航" className="sidebar-nav">
-          {links(['today', 'search']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}
+          {links(['today', 'plan', 'focus', 'search']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}
         </nav>
         <SidebarSection label="清单" action={<button type="button" className="sidebar-add" aria-label="新建清单" onClick={onNewTopic}><Plus aria-hidden="true" className="size-3.5" strokeWidth={1.75} /></button>} />
         <nav aria-label="清单" className="sidebar-nav">

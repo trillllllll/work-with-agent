@@ -8,6 +8,7 @@ export const queryKeys = {
   topic: (id: string) => ['topic', id] as const,
   tags: ['tags'] as const,
   trash: ['trash', 'tasks'] as const,
+  focusSessions: ['focus-sessions'] as const,
 };
 
 // A shared queue also covers detail saves, list actions and grouped writes.
@@ -37,10 +38,10 @@ export function isCompositionKey(event: { isComposing?: boolean; keyCode?: numbe
 export function keepNewestTask(old: Task | undefined, next: Task): Task {
   return old && (old.revision ?? 0) > (next.revision ?? 0) ? old : next;
 }
-export const editableFields = ['title', 'description', 'status', 'priority', 'dueDate', 'resultSummary', 'topicId', 'parentId', 'tagIds'] as const;
+export const editableFields = ['title', 'description', 'status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'topicId', 'parentId', 'tagIds'] as const;
 export type TaskDraft = Pick<Task, typeof editableFields[number]>;
 export function taskDraft(task: Task): TaskDraft {
-  return { title: task.title, description: task.description ?? '', status: task.status, priority: task.priority ?? 'none', dueDate: task.dueDate ?? null, resultSummary: task.resultSummary ?? '', topicId: task.topicId ?? null, parentId: task.parentId ?? null, tagIds: task.tagIds ?? task.tags?.map((tag) => tag.id) ?? [] };
+  return { title: task.title, description: task.description ?? '', status: task.status, priority: task.priority ?? 'none', dueDate: task.dueDate ?? null, estimatedMinutes: task.estimatedMinutes ?? null, scheduledStart: task.scheduledStart ?? null, scheduledEnd: task.scheduledEnd ?? null, resultSummary: task.resultSummary ?? '', topicId: task.topicId ?? null, parentId: task.parentId ?? null, tagIds: task.tagIds ?? task.tags?.map((tag) => tag.id) ?? [] };
 }
 export function sameField(a: unknown, b: unknown) {
   return Array.isArray(a) && Array.isArray(b) ? [...a].sort().join('\0') === [...b].sort().join('\0') : a === b;

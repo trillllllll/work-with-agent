@@ -47,7 +47,14 @@ export class TaskService {
     if (query.q?.trim()) and.push({ OR: [{ title: { contains: query.q.trim() } }, { description: { contains: query.q.trim() } }] });
     if (query.status === 'open') where.status = { not: 'done' };
     else if (query.status && query.status !== 'all') where.status = query.status;
-    if (query.dueFrom || query.dueTo) where.dueDate = { ...(query.dueFrom ? { gte: query.dueFrom } : {}), ...(query.dueTo ? { lte: query.dueTo } : {}) };
+    if (query.dueFrom || query.dueTo || query.scheduledFrom || query.scheduledTo) {
+      const dueFrom = query.dueFrom ?? query.scheduledFrom;
+      const dueTo = query.dueTo ?? query.scheduledTo;
+      const ranges: Prisma.TaskWhereInput[] = [];
+      if (dueFrom || dueTo) ranges.push({ dueDate: { ...(dueFrom ? { gte: dueFrom } : {}), ...(dueTo ? { lte: dueTo } : {}) } });
+      if (query.scheduledFrom || query.scheduledTo) ranges.push({ scheduledStart: { ...(query.scheduledFrom ? { gte: `${query.scheduledFrom}T00:00` } : {}), ...(query.scheduledTo ? { lte: `${query.scheduledTo}T23:59` } : {}) } });
+      and.push({ OR: ranges });
+    }
     for (const tagId of query.tagIds ?? []) and.push({ tags: { some: { tagId } } });
     if (and.length) where.AND = and;
     const tasks = (await prisma.task.findMany({ where, include: taskInclude, orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] })).map(taskDto);

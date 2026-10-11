@@ -5,7 +5,7 @@ import { ThemeToggle } from '@/components/layout/ThemeToggle.js';
 import { cn } from '@/lib/utils.js';
 
 const groups: { label: string; views: View[] }[] = [
-  { label: '视图', views: ['inbox', 'today', 'quadrant', 'topics'] },
+  { label: '视图', views: ['inbox', 'today', 'plan', 'focus', 'quadrant', 'topics'] },
   { label: '整理', views: ['search', 'tags', 'archived'] },
   { label: '工作', views: ['connections', 'proposals', 'knowledge', 'runs', 'reviews'] },
   { label: '系统', views: ['settings', 'trash', 'changes'] },

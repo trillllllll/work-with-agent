@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { api, apiMutation, ApiError, type ApiEnvelope, type Task } from '@/lib/api.js';
+import { api, apiMutation, ApiError, type ApiEnvelope, type FocusSession, type Task } from '@/lib/api.js';
 import { enqueueWrite, localDate, queryKeys, keepNewestTask } from '@/lib/todo.js';
 import { useCommandPreview, type CommandPreview } from '@/components/dialogs/CommandPreviewProvider.js';
 
@@ -106,4 +106,17 @@ export function useTodoActions() {
   const patch = (id: string, changes: unknown, relatedIds: string[] = []) => write<Task>(`/api/tasks/${id}`, 'PATCH', changes, [id, ...relatedIds], '任务已更新');
   const create = (input: unknown, parentId?: string | null) => write<Task>('/api/tasks', 'POST', input, parentId ? [parentId] : [], '任务已创建');
   return { write, patch, create, pending: pending > 0 };
+}
+
+export function useFocusSessions(params: { taskId?: string; from?: string; to?: string } = {}) {
+  const query = new URLSearchParams(Object.entries(params).filter((entry): entry is [string, string] => Boolean(entry[1]))).toString();
+  return useQuery<FocusSession[]>({ queryKey: [...queryKeys.focusSessions, query], queryFn: ({ signal }) => api(`/api/focus-sessions${query ? `?${query}` : ''}`, { signal }) });
+}
+export function useRecordFocusSession() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { taskId: string | null; kind: 'focus' | 'break'; startedAt: string; endedAt: string; durationMinutes: number; plannedMinutes: number; completed: boolean }) =>
+      apiMutation<FocusSession>('/api/focus-sessions', { method: 'POST', body: JSON.stringify(input) }),
+    onSuccess: () => { void client.invalidateQueries({ queryKey: queryKeys.focusSessions }); },
+  });
 }
