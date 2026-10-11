@@ -294,7 +294,7 @@ export function App() {
     if (!taskIdRef.current) return;
     detailRef.current?.requestTransition(closeTask);
   }, [page]);
-  const detailPane = taskId ? <TaskDetailPane key={taskId} ref={detailRef} id={taskId} fallback={tasks.find((task) => task.id === taskId)} tags={tags} readonly={archived} presentation={isDesktop ? 'panel' : showChat ? 'retained' : 'modal'} panelSlot={detailSlot} onSave={patchTask} onClose={closeTask} onDirtyChange={setDetailDirty} /> : null;
+  const detailPane = taskId ? <TaskDetailPane key={taskId} ref={detailRef} id={taskId} fallback={tasks.find((task) => task.id === taskId)} tags={tags} readonly={archived} presentation={isDesktop ? 'panel' : showChat ? 'retained' : 'modal'} panelSlot={detailSlot} onSave={patchTask} onClose={closeTask} onDirtyChange={setDetailDirty} onToggleTask={toggleTask} onCreateTask={createTask} onOpenTask={openTask} /> : null;
   const hasAccessory = showChat || (isDesktop && Boolean(taskId));
   return <FocusProvider>
     <div className="app-backdrop h-dvh overflow-hidden bg-background p-0 xl:p-4">

@@ -506,6 +506,77 @@
     border-radius: 0.375rem;
   }
 
+  .task-info-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: auto;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--glass-divider);
+  }
+
+  .task-info-row {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    width: 100%;
+    min-height: 2.5rem;
+    padding: 0.375rem 0.5rem;
+    border-radius: 0.625rem;
+    font-size: 0.875rem;
+    color: var(--foreground);
+  }
+
+  button.task-info-row:not(:disabled):hover,
+  div.task-info-row:hover {
+    background: var(--glass-hover);
+  }
+
+  button.task-info-row:disabled {
+    opacity: 0.5;
+  }
+
+  .task-check-round {
+    display: grid;
+    place-items: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 9999px;
+    border: 1.5px solid var(--muted-foreground);
+    background: transparent;
+    color: var(--primary-foreground);
+    cursor: pointer;
+  }
+
+  .task-check-round:hover:not(:disabled) {
+    box-shadow: 0 0 0 3px var(--glass-hover);
+  }
+
+  .task-check-round[aria-checked="true"] {
+    background: var(--primary);
+    border-color: var(--primary);
+  }
+
+  .task-check-round:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  .task-subtask-progress {
+    background: color-mix(in srgb, var(--foreground) 10%, transparent);
+    border-radius: 9999px;
+    overflow: hidden;
+  }
+
+  .task-subtask-progress > span {
+    display: block;
+    height: 100%;
+    background: var(--primary);
+    transition: width 0.2s ease;
+  }
+
+
+
   .detail-section > summary {
     cursor: pointer;
     color: var(--muted-foreground);
@@ -1082,4 +1153,39 @@ textarea.task-title {
   font-size: 1.125rem;
   font-weight: 600;
   line-height: 1.375;
+}
+
+textarea.task-title.line-through {
+  color: var(--muted-foreground);
+}
+
+.cm-editor .cm-tooltip.cm-format-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.12);
+  backdrop-filter: blur(8px);
+}
+
+.cm-editor .cm-tooltip.cm-format-toolbar button {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 6px;
+  color: var(--foreground);
+}
+
+.cm-editor .cm-tooltip.cm-format-toolbar button:hover {
+  background: var(--glass-hover);
+}
+
+@media (prefers-color-scheme: dark) {
+  .cm-editor .cm-tooltip.cm-format-toolbar { box-shadow: 0 4px 16px rgb(0 0 0 / 0.4); }
+}
+
+.dark .cm-editor .cm-tooltip.cm-format-toolbar {
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.4);
 }

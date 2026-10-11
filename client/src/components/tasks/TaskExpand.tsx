@@ -1,7 +1,7 @@
 import { createContext, forwardRef, useContext, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type MutableRefObject, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { CalendarDays, Clock, Flag, Hash, X } from 'lucide-react';
-import { priorities, type Tag, type Task, type TaskPriority } from '@/lib/api.js';
+import { CalendarDays, Check, Clock, Flag, Hash, Timer, X } from 'lucide-react';
+import { priorities, type Status, type Tag, type Task, type TaskPriority } from '@/lib/api.js';
 import { draftPatch, isCompositionKey, localDate, mergeTaskDraft, taskDraft, type TaskDraft } from '@/lib/todo.js';
 import { defaultEndFor, formatTime } from '@/lib/schedule.js';
 import { useHashRoute } from '@/hooks/useHashRoute.js';
@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { TaskActivityDialog } from './TaskActivityDialog.js';
 import { placeDescriptionCaret, readDescriptionCaret } from './DescriptionEditor.js';
 import { TaskDescription } from './TaskDescription.js';
+import { SubtasksSection } from './TaskSubtasks.js';
 import { cn } from '@/lib/utils.js';
 
 type Editing = { base: TaskDraft; draft: TaskDraft; conflicts: string[] };
@@ -44,9 +45,11 @@ type EditContext = {
   onTextBlur: (event: FocusEvent<HTMLElement>) => void;
   onTitleKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   taskId: string;
+  task: Task;
   openDescription: MutableRefObject<() => void>;
   onComposeStart: () => void;
   onComposeEnd: () => void;
+  setStatus: (status: Status) => void;
   setPriority: (priority: TaskPriority) => void;
   setDue: (dueDate: string | null) => void;
   setSchedule: (schedule: { scheduledStart: string | null; scheduledEnd: string | null }) => void;
@@ -55,9 +58,12 @@ type EditContext = {
   resetDraft: () => void;
   requestClose: () => void;
   saveText: () => Promise<void>;
+  toggleSubtask: (task: Task) => Promise<unknown>;
+  createSubtask: (input: { title: string; topicId: string | null; parentId: string | null }) => Promise<unknown>;
+  openSubtask: (id: string) => void;
 };
 const EditContext = createContext<EditContext | null>(null);
-function useEdit() {
+export function useEdit() {
   const value = useContext(EditContext);
   if (!value) throw new Error('任务编辑尚未展开');
   return value;
@@ -71,10 +77,13 @@ type Props = {
   onSave: (task: Task, patch: Partial<TaskDraft>) => Promise<Task | undefined>;
   onClose: () => void;
   onDirtyChange?: (dirty: boolean) => void;
+  onToggleTask?: (task: Task) => Promise<unknown>;
+  onCreateTask?: (input: { title: string; topicId: string | null; parentId: string | null }) => Promise<unknown>;
+  onOpenTask?: (id: string) => void;
   children: ReactNode;
 };
 
-export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpand({ id, fallback, tags, readonly = false, onSave, onClose, onDirtyChange, children }, ref) {
+export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpand({ id, fallback, tags, readonly = false, onSave, onClose, onDirtyChange, onToggleTask, onCreateTask, onOpenTask, children }, ref) {
   const query = useTask(id);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [saving, setSaving] = useState(false);
@@ -240,6 +249,7 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
     draft, base, readonly, tags, conflicts: editing?.conflicts ?? [], acknowledge: acknowledgeConflict, setAcknowledge: setAcknowledgeConflict,
     updateText, onTextBlur, onComposeStart: () => { composing.current = true; }, onComposeEnd: () => { composing.current = false; },
     taskId: id,
+    task: taskRef.current,
     openDescription,
     onTitleKeyDown: (event) => {
       if (event.key !== 'Enter' || composing.current || isCompositionKey(event.nativeEvent)) return;
@@ -249,6 +259,7 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
       openDescription.current();
       requestAnimationFrame(() => { if (document.activeElement?.getAttribute('aria-label') !== '详情') title.blur(); });
     },
+    setStatus: (status) => { void applyImmediate({ status }); },
     setPriority: (priority) => { void applyImmediate({ priority }); },
     setDue: (dueDate) => { void applyImmediate({ dueDate }); },
     setSchedule: (schedule) => { void applyImmediate(schedule); },
@@ -260,6 +271,9 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
     resetDraft,
     requestClose: () => requestTransition(onCloseRef.current),
     saveText: async () => { cancelFlush(); await flushText(); },
+    toggleSubtask: onToggleTask ?? (async () => {}),
+    createSubtask: onCreateTask ?? (async () => {}),
+    openSubtask: onOpenTask ?? (() => {}),
   };
 
   const blocked = Boolean(editing?.conflicts.length && !acknowledgeConflict) || !draft.title.trim();
@@ -313,24 +327,46 @@ export function TaskTitleField({ className }: { className?: string }) {
     edit.updateText({ title: `${node.value.slice(0, start)}${flat}${node.value.slice(end)}` });
     const caret = start + flat.length;
     requestAnimationFrame(() => node.setSelectionRange(caret, caret));
-  }} onBlur={edit.onTextBlur} onKeyDown={edit.onTitleKeyDown} onCompositionStart={edit.onComposeStart} onCompositionEnd={edit.onComposeEnd} className={cn('task-writing task-title', className)} />;
+  }} onBlur={edit.onTextBlur} onKeyDown={edit.onTitleKeyDown} onCompositionStart={edit.onComposeStart} onCompositionEnd={edit.onComposeEnd} className={cn('task-writing task-title', edit.draft.status === 'done' && 'text-muted-foreground line-through', className)} />;
 }
+
+function TaskStatusCheckbox() {
+  const edit = useEdit();
+  const done = edit.draft.status === 'done';
+  return <button type="button" role="checkbox" aria-checked={done} aria-label={`${done ? '重开' : '完成'}任务：${edit.draft.title}`} disabled={edit.readonly} className="task-check-round mt-[5px] shrink-0" onClick={() => edit.setStatus(done ? 'todo' : 'done')}>{done && <Check className="size-3" aria-hidden />}</button>;
+}
+
+const InfoRow = forwardRef<HTMLButtonElement, { icon: typeof CalendarDays; label: string; value: string; hasValue: boolean; disabled?: boolean; 'aria-label': string }>(function InfoRow({ icon: Icon, label, value, hasValue, ...props }, ref) {
+  return <button ref={ref} type="button" {...props} className="task-info-row">
+    <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+    <span className="w-20 shrink-0 text-left text-muted-foreground">{label}</span>
+    <span className={cn('min-w-0 flex-1 truncate text-right', hasValue ? '' : 'text-muted-foreground')}>{value}</span>
+  </button>;
+});
 
 export function TaskExpandBody({ fill = false }: { fill?: boolean }) {
   const edit = useEdit();
-  const selected = edit.tags.filter((tag) => edit.draft.tagIds?.includes(tag.id));
   return <div data-task-editor className={cn('flex flex-col', fill && 'min-h-0 flex-1')}>
     {edit.conflicts.length > 0 && <div role="alert" className="mb-3 rounded-xl border border-warning-border bg-warning-bg p-3 text-sm text-warning"><p>后台已更新{edit.conflicts.map((field) => fieldLabels[field] ?? field).join('、')}，你的编辑已保留。</p><label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={edit.acknowledge} onChange={(event) => edit.setAcknowledge(event.target.checked)} />保存时使用我的编辑</label><Button type="button" variant="ghost" size="sm" onClick={edit.resetDraft}>使用最新内容</Button></div>}
     <TaskDescription taskId={edit.taskId} value={edit.draft.description} readonly={edit.readonly} fill={fill} openDescription={edit.openDescription} onChange={(description) => edit.updateText({ description })} onBlur={edit.onTextBlur} onComposeStart={edit.onComposeStart} onComposeEnd={edit.onComposeEnd} onSave={edit.saveText} />
-    {selected.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{selected.map((tag) => <span key={tag.id} className="task-tag-chip inline-flex items-center gap-1" data-color={tag.color || 'violet'}>#{tag.name}{!edit.readonly && <button type="button" className="grid size-4 place-items-center rounded-full hover:bg-black/10 dark:hover:bg-white/10" aria-label={`从任务去掉标签：${tag.name}`} onClick={() => edit.toggleTag(tag.id, false)}><X className="size-3" /></button>}</span>)}</div>}
-    <div className="mt-2 flex shrink-0 flex-wrap items-center gap-1.5">
+    <div className="mt-3 shrink-0"><SubtasksSection /></div>
+    <div className="task-info-rows mt-auto shrink-0">
       <DateControl />
       <ScheduleControl />
-      <div role="group" aria-label="旗标" className="flex items-center gap-0.5">
-        {priorities.map((item) => <Button key={item.value} type="button" variant="ghost" size="icon-sm" disabled={edit.readonly} aria-pressed={edit.draft.priority === item.value} aria-label={`旗标：${item.label}`} title={item.label} onClick={() => edit.setPriority(item.value)}><Flag className={cn(flagTone[item.value], edit.draft.priority === item.value && 'fill-current')} /></Button>)}
-      </div>
+      <FlagRow />
       <TagPicker />
       <StartFocusButton />
+    </div>
+  </div>;
+}
+
+function FlagRow() {
+  const edit = useEdit();
+  return <div className="task-info-row">
+    <Flag className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+    <span className="w-20 shrink-0 text-left text-muted-foreground">旗标</span>
+    <div role="group" aria-label="旗标" className="flex min-w-0 flex-1 items-center justify-end gap-0.5">
+      {priorities.map((item) => <Button key={item.value} type="button" variant="ghost" size="icon-sm" disabled={edit.readonly} aria-pressed={edit.draft.priority === item.value} aria-label={`旗标：${item.label}`} title={item.label} onClick={() => edit.setPriority(item.value)}><Flag className={cn(flagTone[item.value], edit.draft.priority === item.value && 'fill-current')} /></Button>)}
     </div>
   </div>;
 }
@@ -339,6 +375,7 @@ function TagPicker() {
   const edit = useEdit();
   const actions = useTodoActions();
   const [name, setName] = useState('');
+  const selected = edit.tags.filter((tag) => edit.draft.tagIds?.includes(tag.id));
   const add = async () => {
     const value = name.trim();
     if (!value || edit.readonly || actions.pending) return;
@@ -355,7 +392,16 @@ function TagPicker() {
     } catch { /* The shared write already reports the failure and keeps the typed name. */ }
   };
   return <Popover>
-    <PopoverTrigger asChild><Button type="button" variant="ghost" size="sm" disabled={edit.readonly} aria-label="标签"><Hash />标签</Button></PopoverTrigger>
+    <div className={cn('task-info-row', edit.readonly && 'opacity-50')}>
+      <PopoverTrigger asChild>
+        <button type="button" className="flex min-w-0 flex-1 items-center gap-[0.625rem] bg-transparent p-0 text-left" aria-label="标签" disabled={edit.readonly}>
+          <Hash className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <span className="w-20 shrink-0 text-left text-muted-foreground">标签</span>
+          {selected.length === 0 && <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">设置</span>}
+        </button>
+      </PopoverTrigger>
+      {selected.length > 0 && <div className="flex min-w-0 flex-wrap justify-end gap-1.5">{selected.map((tag) => <span key={tag.id} className="task-tag-chip inline-flex items-center gap-1" data-color={tag.color || 'violet'}>#{tag.name}{!edit.readonly && <button type="button" className="grid size-4 place-items-center rounded-full hover:bg-black/10 dark:hover:bg-white/10" aria-label={`从任务去掉标签：${tag.name}`} onClick={() => edit.toggleTag(tag.id, false)}><X className="size-3" /></button>}</span>)}</div>}
+    </div>
     <PopoverContent data-task-editor className="space-y-2">
       <form className="space-y-1" onSubmit={(event) => { event.preventDefault(); void add(); }}>
         <Input aria-label="新标签名称" value={name} disabled={edit.readonly} placeholder="新标签" onChange={(event) => setName(event.target.value)} className="h-8" />
@@ -449,8 +495,8 @@ export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children
   return <TaskExpand ref={ref} {...props} fallback={placeholder}>
     <DetailFrame presentation={presentation} panelSlot={panelSlot}>
       <div className="flex min-h-0 flex-1 flex-col">
-        <header className="flex items-start gap-2 px-5 pt-5"><div className="min-w-0 flex-1"><TaskTitleField /></div><ActivityButton onOpen={() => setActivity(true)} /><CloseDetailButton /></header>
-        <div className="flex min-h-0 flex-1 flex-col px-5 pb-5"><TaskExpandBody fill /></div>
+        <header className="flex items-start gap-2 px-5 pt-5"><TaskStatusCheckbox /><div className="min-w-0 flex-1"><TaskTitleField /></div><ActivityButton onOpen={() => setActivity(true)} /><CloseDetailButton /></header>
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-5"><TaskExpandBody fill /></div>
       </div>
     </DetailFrame>
     <TaskActivityDialog taskId={props.id} open={activity} onOpenChange={setActivity} />
@@ -461,11 +507,15 @@ function StartFocusButton() {
   const edit = useEdit();
   const { dispatch } = useFocus();
   const { navigate } = useHashRoute();
-  return <Button type="button" variant="outline" size="sm" disabled={edit.readonly} onClick={() => {
+  return <button type="button" className="task-info-row" disabled={edit.readonly} onClick={() => {
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') void Notification.requestPermission();
     dispatch({ type: 'START', taskId: edit.taskId, taskTitle: edit.draft.title, now: Date.now() });
     navigate('focus');
-  }}>开始专注</Button>;
+  }}>
+    <Timer className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+    <span className="w-20 shrink-0 text-left text-muted-foreground">开始专注</span>
+    <span className="min-w-0 flex-1 truncate text-right" />
+  </button>;
 }
 
 function ScheduleControl() {
@@ -473,7 +523,8 @@ function ScheduleControl() {
   const [open, setOpen] = useState(false);
   const start = edit.draft.scheduledStart;
   const end = edit.draft.scheduledEnd;
-  const label = start && end ? `${formatTime(start)}-${formatTime(end)}` : '时段';
+  const hasSchedule = Boolean(start && end);
+  const scheduleValue = start && end ? `${formatTime(start)}-${formatTime(end)}` : '设置';
   const chips = [{ label: '30分钟', minutes: 30 }, { label: '1小时', minutes: 60 }, { label: '2小时', minutes: 120 }];
   const chooseStart = (value: string) => {
     const next = value.slice(0, 16);
@@ -491,7 +542,7 @@ function ScheduleControl() {
   };
   const chooseEstimate = (minutes: number | null) => edit.setEstimate(minutes);
   return <Popover open={open} onOpenChange={setOpen}>
-    <PopoverTrigger asChild><Button type="button" variant="ghost" size="sm" disabled={edit.readonly} aria-label="时段"><Clock />{label}</Button></PopoverTrigger>
+    <PopoverTrigger asChild><InfoRow icon={Clock} label="时段" value={scheduleValue} hasValue={hasSchedule} disabled={edit.readonly} aria-label="时段" /></PopoverTrigger>
     <PopoverContent data-task-editor className="w-64 space-y-2">
       <div className="flex gap-1">{chips.map((chip) => <button key={chip.minutes} type="button" className={cn('glass-control h-8 flex-1 rounded-lg text-xs', edit.draft.estimatedMinutes === chip.minutes && 'bg-[var(--glass-hover)] font-medium')} onClick={() => chooseEstimate(chip.minutes)}>{chip.label}</button>)}</div>
       <Input type="number" min={5} max={10080} step={5} aria-label="预计时长" value={edit.draft.estimatedMinutes ?? ''} disabled={edit.readonly} onChange={(event) => {
@@ -513,7 +564,7 @@ function DateControl() {
   const [open, setOpen] = useState(false);
   const choose = (dueDate: string | null) => { edit.setDue(dueDate); setOpen(false); };
   return <Popover open={open} onOpenChange={setOpen}>
-    <PopoverTrigger asChild><Button type="button" variant="ghost" size="sm" disabled={edit.readonly} aria-label="日期"><CalendarDays />{edit.draft.dueDate ?? '日期'}</Button></PopoverTrigger>
+    <PopoverTrigger asChild><InfoRow icon={CalendarDays} label="日期" value={edit.draft.dueDate ?? '设置'} hasValue={Boolean(edit.draft.dueDate)} disabled={edit.readonly} aria-label="日期" /></PopoverTrigger>
     <PopoverContent data-task-editor className="space-y-1">
       <Button type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={() => choose(shiftDate(0))}>今天</Button>
       <Button type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={() => choose(shiftDate(1))}>明天</Button>

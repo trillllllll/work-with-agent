@@ -5,6 +5,7 @@ import { Compartment, EditorSelection, EditorState, RangeSetBuilder, StateEffect
 import { BlockType, type BlockInfo, Decoration, EditorView, keymap, placeholder, WidgetType, type DecorationSet } from '@codemirror/view';
 import { MarkdownView } from '@/components/chat/MarkdownView.js';
 import { blockHoldsCaret, markdownBlocks } from '@/lib/markdown-blocks.js';
+import { formatToolbar } from './description-format-toolbar.js';
 import { isTaskImageSrc } from '@/lib/task-description.js';
 import { cn } from '@/lib/utils.js';
 
@@ -327,6 +328,7 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
           editorTheme,
           editableSlot.of(EditorView.editable.of(!readonlyRef.current)),
           previewExtension(taskRef, handlersRef),
+          formatToolbar(() => composingRef.current),
           EditorView.updateListener.of((update) => {
             if (!update.docChanged) return;
             const next = update.state.doc.toString();
