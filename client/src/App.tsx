@@ -1,3 +1,4 @@
+import { isOverdue, occursOn } from './lib/schedule.js';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Menu } from 'lucide-react';
@@ -141,7 +142,7 @@ export function App() {
   const openChat = () => { setChatOpen(true); if (!isDesktop) navigate('chat'); };
   const markDragHint = () => { localStorage.setItem('todo.dragHintSeen', '1'); setDragHintSeen(true); };
   const newTopic = () => setTopicForm({ name: '', description: '', isExploration: false });
-  const createTask = (input: { title: string; topicId: string | null; parentId: string | null }) => actions.create(input, input.parentId);
+  const createTask = (input: { title: string; topicId: string | null; parentId: string | null } & Partial<TaskDraft>) => actions.create(input, input.parentId);
   const patchTask = async (task: Task, changes: Partial<TaskDraft>): Promise<Task | undefined> => {
     const keys = [task.parentId, changes.parentId, ...(task.children ?? tasks.filter((child) => child.parentId === task.id)).map((child) => child.id)].filter(Boolean) as string[];
     try { return (await actions.patch(task.id, { ...changes, expectedRevision: task.revision }, keys)).data; }
@@ -259,11 +260,11 @@ export function App() {
   };
   const run = (work: Promise<unknown>) => { void work.catch((error) => { if (!(error instanceof ApiError)) toast.error(error instanceof Error ? error.message : '操作失败'); }); };
   const listProps = { topics, tags, onOpen: openTask, onToggle: toggleTask, onMove: moveTask, onDelete: (task: Task) => run(deleteTask(task)), onSave: patchTask, onCreate: createTask, readonly: archived, busy: actions.pending, selectedTaskId: taskId, textDirty: detailDirty };
-  const planProps = { topics, tags, onOpen: openTask, onToggle: toggleTask, onSave: patchTask, onDelete: (task: Task) => run(deleteTask(task)), busy: actions.pending };
+  const planProps = { onCreate: createTask, topics, tags, onOpen: openTask, onToggle: toggleTask, onSave: patchTask, onDelete: (task: Task) => run(deleteTask(task)), busy: actions.pending };
 
   const title = page === 'board' ? detail?.name ?? '选择一个清单' : navigation.find((item) => item.view === page)?.label ?? '工作区';
   const updateFilter = (patch: Partial<TaskFilters>) => setFilters((current) => ({ ...current, ...patch }));
-  const todayGroups = [{ name: '逾期', items: tasks.filter((task) => task.dueDate && task.dueDate < today) }, { name: '今天', items: tasks.filter((task) => task.dueDate === today) }].filter((group) => group.items.length);
+  const todayGroups = [{ name: '逾期', items: tasks.filter((task) => isOverdue(task, today)) }, { name: '今天', items: tasks.filter((task) => occursOn(task, today)) }].filter((group) => group.items.length);
   const showDragHint = !hasFilters && !archived && sortMode === 'manual' && (!dragHintSeen || tasks.length === 0);
   const showHint = scoped && !quadrantView && (hasFilters || archived || sortMode !== 'manual' || showDragHint);
   const hintText = hasFilters ? '筛选期间不能手动排序；清除筛选后可调整完整列表。' : archived ? '恢复清单后可编辑和排序。' : sortMode !== 'manual' ? '切换为手动排序后，可调整任务位置。' : '上下拖动调整顺序，向右拖成子任务，向左拖回根任务。';

@@ -1,3 +1,4 @@
+import { scheduleLastDate } from '../domain/schedule.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { prisma } from '../infrastructure/prisma.js';
@@ -98,7 +99,7 @@ export class ReviewService {
         const materials = await prisma.material.findMany({ where: { topicId, archivedAt: null, updatedAt: { gte: cutoff, lte: at.toISOString() } }, orderBy: { updatedAt: 'desc' } });
         const memories = await prisma.memory.findMany({ where: { topicId, updatedAt: { gte: cutoff, lte: at.toISOString() } }, orderBy: { updatedAt: 'desc' } });
         const proposals = await prisma.organizationRequest.findMany({ where: { topicId, status: 'proposed' } });
-        lines.push('', `## ${topic?.name ?? '收集箱'}`, `- 新增：${changed.filter((task) => task.createdAt >= cutoff).length}`, `- 完成：${changed.filter((task) => task.status === 'done').length}`, `- 逾期未完成：${tasks.filter((task) => task.status !== 'done' && task.dueDate && task.dueDate < today).length}`, `- 阻塞：${tasks.filter((task) => task.status === 'blocked').length}`, `- 材料变化：${materials.length}；记忆变化：${memories.length}`, `- 待处理整理批次：${proposals.length}`, ...changed.slice(0, 50).map((task) => `  - [${task.status}] ${task.title}`));
+        lines.push('', `## ${topic?.name ?? '收集箱'}`, `- 新增：${changed.filter((task) => task.createdAt >= cutoff).length}`, `- 完成：${changed.filter((task) => task.status === 'done').length}`, `- 逾期未完成：${tasks.filter((task) => task.status !== 'done' && (scheduleLastDate(task) ?? '9999-12-31') < today).length}`, `- 阻塞：${tasks.filter((task) => task.status === 'blocked').length}`, `- 材料变化：${materials.length}；记忆变化：${memories.length}`, `- 待处理整理批次：${proposals.length}`, ...changed.slice(0, 50).map((task) => `  - [${task.status}] ${task.title}`));
         if (changed.length > 50) lines.push(`  - 另有 ${changed.length - 50} 项变化，请在任务列表查看。`);
       }
       if (skipped.length) lines.push('', `已跳过归档清单：${skipped.join('、')}`);

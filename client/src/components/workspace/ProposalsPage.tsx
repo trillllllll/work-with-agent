@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input.js';
 import { Textarea } from '@/components/ui/textarea.js';
 
 type Proposal = { id: string; status: string; revision: number; actorId: string; commands: Command[] | string; preview: unknown; createdAt: string };
-const labels: Record<string, string> = { title: '标题', name: '名称', description: '说明', content: '内容', dueDate: '截止日期', priority: '优先级', status: '状态', resultSummary: '结果摘要', reason: '理由' };
+const labels: Record<string, string> = { title: '标题', name: '名称', description: '说明', content: '内容', dueDate: '安排日期', priority: '优先级', status: '状态', resultSummary: '结果摘要', reason: '理由' };
 export function ProposalsPage() {
   const [status, setStatus] = useState('pending');
   const query = useQuery({ queryKey: ['proposals', status], queryFn: () => api<Proposal[]>(`/api/v1/proposals?status=${status}`) });

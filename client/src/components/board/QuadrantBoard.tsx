@@ -15,7 +15,7 @@ type Props = {
 
 function sortTasks(tasks: TaskCardProps['task'][]) {
   return [...tasks].sort((left, right) => {
-    const due = (left.dueDate ?? '9999-99-99').localeCompare(right.dueDate ?? '9999-99-99');
+    const due = (left.scheduledStart ?? left.dueDate ?? '9999-99-99').localeCompare(right.scheduledStart ?? right.dueDate ?? '9999-99-99');
     return due || (left.sortOrder ?? 0) - (right.sortOrder ?? 0) || left.id.localeCompare(right.id);
   });
 }

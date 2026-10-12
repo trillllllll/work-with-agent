@@ -72,7 +72,8 @@ test('规划页保持路由，并按公式摆放 14:00 时间块', async ({ page
   await expect(page.locator(`[data-drop-id="cell:${today}"]`)).toContainText('14:00');
 });
 
-test('托盘拖到 16:00 得到一小时并可以撤销', async ({ page, request }) => {
+test('托盘拖到 16:00 得到一小时并可以撤销', async ({ page, request }, testInfo) => {
+  test.skip(testInfo.project.name === 'mobile', '鼠标跨列拖动；触屏安排由 schedule.spec.ts 的详情编辑覆盖');
   const today = localKey();
   const created = await jsonData(await request.post(`${apiUrl}/api/tasks`, { data: { title: '待安排事项' } })) as { id: string };
   await page.goto('/#/plan');
@@ -81,8 +82,8 @@ test('托盘拖到 16:00 得到一小时并可以撤销', async ({ page, request
   await drag(page, tray, page.locator(`[data-drop-id="slot:${today}:16:00"]`));
   await expect(page.getByText('任务已更新').first()).toBeVisible();
   await expect.poll(async () => (await jsonData(await request.get(`${apiUrl}/api/tasks/${created.id}`)) as { scheduledStart: string; scheduledEnd: string; dueDate: string })).toMatchObject({ scheduledStart: `${today}T16:00`, scheduledEnd: `${today}T17:00`, dueDate: today });
-  await page.locator(`[data-testid="task-block"][data-task-id="${created.id}"]`).getByRole('button').click();
-  await expect(page.getByRole('button', { name: '时段' })).toContainText('16:00-17:00');
+  await page.locator(`[data-testid="task-block"][data-task-id="${created.id}"]`).getByRole('button', { name: '打开任务：待安排事项', exact: true }).click();
+  await expect(page.getByRole('button', { name: '安排时间', exact: true })).toContainText('16:00 — 17:00');
   await page.getByRole('button', { name: '撤销' }).click();
   await expect.poll(async () => (await jsonData(await request.get(`${apiUrl}/api/tasks/${created.id}`)) as { scheduledStart: string | null }).scheduledStart).toBeNull();
 });
@@ -132,14 +133,16 @@ test('一分钟专注完成后留下记录，刷新则暂停且不归零', async
   }).toBe(true);
 });
 
-test('暗色模式下规划页和专注页使用主题色', async ({ page }) => {
-  await page.goto('/#/plan');
+test('暗色模式下规划页和专注页使用主题色', async ({ page }, testInfo) => {
+  await page.goto(testInfo.project.name === 'mobile' ? '/#/more' : '/#/plan');
   await page.getByRole('button', { name: '切换主题' }).click();
   await page.getByRole('menuitem', { name: '深色' }).click();
   await expect(page.locator('html')).toHaveClass(/dark/);
+  if (testInfo.project.name === 'mobile') await page.goto('/#/plan');
   const darkTone = await page.getByRole('heading', { name: '规划' }).evaluate((node) => getComputedStyle(node).color);
   const darkChannels = darkTone.match(/\d+/g)!.map(Number);
   expect((darkChannels[0] + darkChannels[1] + darkChannels[2]) / 3).toBeGreaterThan(160);
+  await expect(page.getByTestId('plan-page').getByRole('button', { name: '今天', exact: true })).toHaveCSS('color', darkTone);
   const lightFills = await page.getByTestId('plan-page').locator('*').evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).backgroundColor).filter((color) => color === 'rgb(255, 255, 255)'));
   expect(lightFills).toEqual([]);
   await page.goto('/#/focus');
@@ -153,7 +156,7 @@ test('375px 周视图可横滑，专注芯片在底栏上方', async ({ page }) 
   const tabs = page.getByRole('navigation', { name: '主导航' });
   await expect(tabs.getByRole('button')).toHaveText(['收集箱', '今天', '四象限', '清单', '更多']);
   await page.getByRole('button', { name: '周', exact: true }).click();
-  const scroll = await page.locator('.max-md\\:overflow-x-auto').evaluate((node) => ({ scrollWidth: node.scrollWidth, clientWidth: node.clientWidth, pageWidth: document.documentElement.scrollWidth }));
+  const scroll = await page.getByTestId('calendar-horizontal-scroll').evaluate((node) => ({ scrollWidth: node.scrollWidth, clientWidth: node.clientWidth, pageWidth: document.documentElement.scrollWidth }));
   expect(scroll.scrollWidth).toBeGreaterThanOrEqual(720);
   expect(scroll.clientWidth).toBeLessThanOrEqual(375);
   expect(scroll.pageWidth).toBeLessThanOrEqual(375);

@@ -57,8 +57,8 @@ test('信息行显示当前值', async ({ page, request }) => {
   await page.goto('/#/inbox');
   await page.getByTestId(`task-row-${task.id}`).getByRole('button', { name: '有日期', exact: true }).click();
   const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
-  await expect(detail.getByRole('button', { name: '日期', exact: true })).toContainText('2031-01-02');
-  await expect(detail.getByRole('button', { name: '时段', exact: true })).toContainText('设置');
+  await expect(detail.getByRole('button', { name: '安排时间', exact: true })).toContainText('2031-01-02');
+  await expect(detail.getByRole('button', { name: '预计时长', exact: true })).toContainText('设置');
 });
 
 test('选中文本浮出格式条，加粗后 blur 渲染', async ({ page, request }) => {

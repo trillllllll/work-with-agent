@@ -423,20 +423,63 @@ describe('basic Todo shared business contracts', () => {
     const cleared = await request(app).patch(`/api/tasks/${item.id}`).send({ expectedRevision: patched.body.data.revision, scheduledStart: null, scheduledEnd: null, estimatedMinutes: null });
     expect(cleared.body.data.scheduledStart).toBeNull();
   });
-  it('任务时间段校验：end<=start 拒绝、单端拒绝、25点拒绝', async () => {
+  it('任务时间段校验：end<=start 拒绝、孤立结束拒绝、25点拒绝', async () => {
     for (const bad of [
       { scheduledStart: '2026-10-11T15:00', scheduledEnd: '2026-10-11T15:00' },
       { scheduledStart: '2026-10-11T15:00', scheduledEnd: '2026-10-11T14:00' },
-      { scheduledStart: '2026-10-11T14:00' },
+      { scheduledEnd: '2026-10-11T14:00' },
       { scheduledStart: '2026-10-11T25:00', scheduledEnd: '2026-10-11T26:00' },
     ]) await expect(task({ title: '非法', ...bad })).rejects.toThrow();
   });
   it('scheduledFrom/To 过滤命中 due 或 scheduled', async () => {
     await task({ title: '仅due', dueDate: '2026-10-12' });
-    await task({ title: '仅scheduled', scheduledStart: '2026-10-13T10:00', scheduledEnd: '2026-10-13T11:00', dueDate: '2026-11-01' });
+    await task({ title: '仅scheduled', scheduledStart: '2026-10-13T10:00', scheduledEnd: '2026-10-13T11:00' });
     const res = await request(app).get('/api/tasks?scheduledFrom=2026-10-12&scheduledTo=2026-10-13');
     const titles = res.body.data.map((t: any) => t.title);
     expect(titles).toContain('仅due');
     expect(titles).toContain('仅scheduled');
+  });  it('统一安排通过 REST 和工具创建、移动、清除并记录可撤销动态', async () => {
+    const tool = new ToolService();
+    const point = await tool.execute({ name: 'create_task', arguments: { title: '工具时间点', scheduledStart: '2026-10-12T15:00' } });
+    expect(point.data).toMatchObject({ dueDate: '2026-10-12', scheduledEnd: null });
+    const item = await task({ scheduledStart: '2026-10-11T23:00', scheduledEnd: '2026-10-12T01:00', estimatedMinutes: 60 });
+    const moved = await patch(item.id, { dueDate: '2026-10-20' });
+    expect(moved.body.data).toMatchObject({ dueDate: '2026-10-20', scheduledStart: '2026-10-20T23:00', scheduledEnd: '2026-10-21T01:00' });
+    const events = (await request(app).get(`/api/tasks/${item.id}/activity`)).body.data;
+    expect(events[0].changes.map((change: any) => change.field)).toEqual(expect.arrayContaining(['dueDate', 'scheduledStart', 'scheduledEnd']));
+    const undo = await request(app).post(`/api/changes/${moved.body.meta.changeId}/undo`);
+    expect(undo.status, JSON.stringify(undo.body)).toBe(200);
+    expect(await get(item.id)).toMatchObject({ scheduledStart: '2026-10-11T23:00', scheduledEnd: '2026-10-12T01:00' });
+    await patch(item.id, { estimatedMinutes: 120 });
+    expect(await get(item.id)).toMatchObject({ scheduledEnd: '2026-10-12T01:00', estimatedMinutes: 120 });
+    expect((await patch(item.id, { dueDate: null })).body.data).toMatchObject({ dueDate: null, scheduledStart: null, scheduledEnd: null, estimatedMinutes: 120 });
+    expect((await request(app).post('/api/tasks').send({ title: '冲突', dueDate: '2026-10-13', scheduledStart: '2026-10-12T15:00' })).status).toBe(400);
   });
+  it('日历查询按时间覆盖匹配，午夜结束不进入次日，安排日期筛选独立', async () => {
+    await task({ title: '跨日', scheduledStart: '2026-10-11T23:00', scheduledEnd: '2026-10-14T01:00' });
+    await task({ title: '午夜结束', scheduledStart: '2026-10-11T23:00', scheduledEnd: '2026-10-12T00:00' });
+    await task({ title: '当天点', scheduledStart: '2026-10-12T15:00' });
+    await task({ title: '全天', dueDate: '2026-10-12' });
+    const rows = (await request(app).get('/api/tasks?scheduledFrom=2026-10-12&scheduledTo=2026-10-12')).body.data;
+    expect(rows.map((row: any) => row.title).sort()).toEqual(['全天', '当天点', '跨日'].sort());
+    const tools = new ToolService();
+    const toolRows = await tools.execute({ name: 'list_tasks', arguments: { scheduledFrom: '2026-10-12', scheduledTo: '2026-10-12' } });
+    expect(toolRows.success, toolRows.error).toBe(true);
+    expect((toolRows.data as Array<{ title: string }>).map((row) => row.title).sort()).toEqual(['全天', '当天点', '跨日'].sort());
+    const starts = (await request(app).get('/api/tasks?dueFrom=2026-10-12&dueTo=2026-10-12')).body.data;
+    expect(starts.map((row: any) => row.title).sort()).toEqual(['全天', '当天点'].sort());
+    expect((await request(app).get('/api/tasks?scheduledFrom=2026-10-13&scheduledTo=2026-10-12')).status).toBe(400);
+  });
+  it('旧快照撤销按真实时段归一化，不能恢复冲突日期', async () => {
+    const item = await task({ title: '旧快照', scheduledStart: '2026-10-11T23:00', scheduledEnd: '2026-10-12T01:00' });
+    const changed = await patch(item.id, { title: '修改标题' });
+    const record = await prisma.changeRecord.findUniqueOrThrow({ where: { id: changed.body.meta.changeId } });
+    const before = JSON.parse(record.beforeSnapshot!);
+    before.entities.tasks[item.id].dueDate = '2026-11-01';
+    await prisma.changeRecord.update({ where: { id: record.id }, data: { beforeSnapshot: JSON.stringify(before) } });
+    const undone = await request(app).post(`/api/changes/${record.id}/undo`);
+    expect(undone.status, JSON.stringify(undone.body)).toBe(200);
+    expect(await get(item.id)).toMatchObject({ title: '旧快照', dueDate: '2026-10-11', scheduledStart: '2026-10-11T23:00', scheduledEnd: '2026-10-12T01:00' });
+  });
+
 });

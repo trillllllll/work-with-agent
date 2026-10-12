@@ -2,8 +2,9 @@ import { createContext, forwardRef, useContext, useEffect, useImperativeHandle, 
 import { createPortal } from 'react-dom';
 import { CalendarDays, Check, Clock, Flag, Hash, Timer, X } from 'lucide-react';
 import { priorities, type Status, type Tag, type Task, type TaskPriority } from '@/lib/api.js';
-import { draftPatch, isCompositionKey, localDate, mergeTaskDraft, taskDraft, type TaskDraft } from '@/lib/todo.js';
-import { defaultEndFor, formatTime } from '@/lib/schedule.js';
+import { draftPatch, isCompositionKey, mergeTaskDraft, taskDraft, type TaskDraft } from '@/lib/todo.js';
+import { scheduleLabel } from '@/lib/schedule.js';
+import { ScheduleFields, scheduleError, type ScheduleValue } from './ScheduleFields.js';
 import { useHashRoute } from '@/hooks/useHashRoute.js';
 import { useTask, useTodoActions } from '@/hooks/useTodo.js';
 import { useFocus } from '@/components/focus/FocusProvider.js';
@@ -20,14 +21,9 @@ import { cn } from '@/lib/utils.js';
 
 type Editing = { base: TaskDraft; draft: TaskDraft; conflicts: string[] };
 export type TaskDetailHandle = { requestTransition: (action: () => void) => void };
-const fieldLabels: Record<string, string> = { title: '标题', description: '说明', status: '状态', priority: '优先级', dueDate: '截止日期', estimatedMinutes: '预计时长', scheduledStart: '开始时间', scheduledEnd: '结束时间', resultSummary: '结果摘要', topicId: '所属清单', parentId: '父任务', tagIds: '标签' };
+const fieldLabels: Record<string, string> = { title: '标题', description: '说明', status: '状态', priority: '优先级', dueDate: '安排日期', estimatedMinutes: '预计时长', scheduledStart: '开始时间', scheduledEnd: '结束时间', resultSummary: '结果摘要', topicId: '所属清单', parentId: '父任务', tagIds: '标签' };
 const flagTone: Record<TaskPriority, string> = { none: 'text-muted-foreground', low: 'text-primary', medium: 'text-warning', high: 'text-destructive' };
 
-function shiftDate(days: number) {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  return localDate(date);
-}
 function inEditor(target: EventTarget | null) {
   return target instanceof Element && Boolean(target.closest('[data-task-editor]'));
 }
@@ -51,9 +47,8 @@ type EditContext = {
   onComposeEnd: () => void;
   setStatus: (status: Status) => void;
   setPriority: (priority: TaskPriority) => void;
-  setDue: (dueDate: string | null) => void;
-  setSchedule: (schedule: { scheduledStart: string | null; scheduledEnd: string | null }) => void;
-  setEstimate: (estimatedMinutes: number | null) => void;
+  setSchedule: (schedule: ScheduleValue, task: Task) => Promise<boolean>;
+  setEstimate: (estimatedMinutes: number | null, task: Task) => Promise<boolean>;
   toggleTag: (id: string, checked: boolean) => void;
   resetDraft: () => void;
   requestClose: () => void;
@@ -95,6 +90,7 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
   const flushOnNull = useRef(false);
   const flushTimer = useRef(0);
   const savingCount = useRef(0);
+  const savedVersions = useRef(new Map<number, number>());
   const pending = useRef<(() => void) | null>(null);
   const editingRef = useRef(editing);
   const taskRef = useRef(query.data ?? fallback);
@@ -142,14 +138,18 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
     if (dirtyRef.current) setLeaveAction(() => next);
     else next();
   };
-  const runSave = async (patch: Partial<TaskDraft>) => {
-    const current = taskRef.current;
+  const runSave = async (patch: Partial<TaskDraft>, current = taskRef.current) => {
     if (!current || !Object.keys(patch).length) return undefined;
     savingCount.current += 1;
     setSaving(true);
     try {
-      const result = await onSaveRef.current(current, patch);
+      // An open popover keeps its original version. Advance only through writes
+      // completed by this editor; an external refresh never supplies a version.
+      let revision = current.revision;
+      while (revision !== undefined && savedVersions.current.has(revision)) revision = savedVersions.current.get(revision)!;
+      const result = await onSaveRef.current({ ...current, revision }, patch);
       if (result) {
+        if (revision !== undefined && result.revision !== undefined && result.revision > revision) savedVersions.current.set(revision, result.revision);
         const incoming = taskDraft(result);
         const currentEdit = editingRef.current;
         const merged = currentEdit ? mergeTaskDraft({ ...currentEdit.base, ...patch }, currentEdit.draft, incoming) : { draft: incoming, conflicts: [] as string[] };
@@ -229,13 +229,14 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
       return { ...current, draft: reverted };
     });
   };
-  const applyImmediate = async (patch: Partial<TaskDraft>) => {
-    if (readonly) return;
+  const applyImmediate = async (patch: Partial<TaskDraft>, currentTask = taskRef.current) => {
+    if (readonly) return false;
     setEditing((current) => current ? { ...current, draft: { ...current.draft, ...patch } } : current);
     try {
-      const result = await runSave(patch);
+      const result = await runSave(patch, currentTask);
       if (!result) revertImmediate(patch);
-    } catch { revertImmediate(patch); }
+      return Boolean(result);
+    } catch { revertImmediate(patch); return false; }
   };
   const resetDraft = () => {
     const latest = taskDraft(taskRef.current);
@@ -261,9 +262,8 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
     },
     setStatus: (status) => { void applyImmediate({ status }); },
     setPriority: (priority) => { void applyImmediate({ priority }); },
-    setDue: (dueDate) => { void applyImmediate({ dueDate }); },
-    setSchedule: (schedule) => { void applyImmediate(schedule); },
-    setEstimate: (estimatedMinutes) => { void applyImmediate({ estimatedMinutes }); },
+    setSchedule: (schedule, task) => applyImmediate(schedule, task),
+    setEstimate: (estimatedMinutes, task) => applyImmediate({ estimatedMinutes }, task),
     toggleTag: (tagId, checked) => {
       const current = editingRef.current?.draft.tagIds ?? [];
       void applyImmediate({ tagIds: checked ? [...current, tagId] : current.filter((item) => item !== tagId) });
@@ -351,8 +351,8 @@ export function TaskExpandBody({ fill = false }: { fill?: boolean }) {
     <TaskDescription taskId={edit.taskId} value={edit.draft.description} readonly={edit.readonly} fill={fill} openDescription={edit.openDescription} onChange={(description) => edit.updateText({ description })} onBlur={edit.onTextBlur} onComposeStart={edit.onComposeStart} onComposeEnd={edit.onComposeEnd} onSave={edit.saveText} />
     <div className="mt-3 shrink-0"><SubtasksSection /></div>
     <div className="task-info-rows mt-auto shrink-0">
-      <DateControl />
       <ScheduleControl />
+      <EstimateControl />
       <FlagRow />
       <TagPicker />
       <StartFocusButton />
@@ -521,56 +521,42 @@ function StartFocusButton() {
 function ScheduleControl() {
   const edit = useEdit();
   const [open, setOpen] = useState(false);
-  const start = edit.draft.scheduledStart;
-  const end = edit.draft.scheduledEnd;
-  const hasSchedule = Boolean(start && end);
-  const scheduleValue = start && end ? `${formatTime(start)}-${formatTime(end)}` : '设置';
-  const chips = [{ label: '30分钟', minutes: 30 }, { label: '1小时', minutes: 60 }, { label: '2小时', minutes: 120 }];
-  const chooseStart = (value: string) => {
-    const next = value.slice(0, 16);
-    if (!next) {
-      edit.setSchedule({ scheduledStart: null, scheduledEnd: null });
-      return;
-    }
-    const scheduledEnd = !end || end <= next ? defaultEndFor({ estimatedMinutes: edit.draft.estimatedMinutes }, next) : end;
-    edit.setSchedule({ scheduledStart: next, scheduledEnd });
+  const [value, setValue] = useState<ScheduleValue>({ dueDate: null, scheduledStart: null, scheduledEnd: null });
+  const [saving, setSaving] = useState(false);
+  const lock = useRef(false);
+  const openedTask = useRef(edit.task);
+  const changeOpen = (next: boolean) => {
+    if (lock.current) return;
+    if (next) { openedTask.current = edit.task; setValue({ dueDate: edit.draft.dueDate, scheduledStart: edit.draft.scheduledStart, scheduledEnd: edit.draft.scheduledEnd }); }
+    setOpen(next);
   };
-  const chooseEnd = (value: string) => {
-    const next = value.slice(0, 16);
-    if (!start || !next || next <= start) return;
-    edit.setSchedule({ scheduledStart: start, scheduledEnd: next });
-  };
-  const chooseEstimate = (minutes: number | null) => edit.setEstimate(minutes);
-  return <Popover open={open} onOpenChange={setOpen}>
-    <PopoverTrigger asChild><InfoRow icon={Clock} label="时段" value={scheduleValue} hasValue={hasSchedule} disabled={edit.readonly} aria-label="时段" /></PopoverTrigger>
-    <PopoverContent data-task-editor className="w-64 space-y-2">
-      <div className="flex gap-1">{chips.map((chip) => <button key={chip.minutes} type="button" className={cn('glass-control h-8 flex-1 rounded-lg text-xs', edit.draft.estimatedMinutes === chip.minutes && 'bg-[var(--glass-hover)] font-medium')} onClick={() => chooseEstimate(chip.minutes)}>{chip.label}</button>)}</div>
-      <Input type="number" min={5} max={10080} step={5} aria-label="预计时长" value={edit.draft.estimatedMinutes ?? ''} disabled={edit.readonly} onChange={(event) => {
-        const raw = event.target.value;
-        if (!raw) { chooseEstimate(null); return; }
-        const minutes = Number(raw);
-        if (!Number.isInteger(minutes) || minutes < 1 || minutes > 10080) return;
-        chooseEstimate(minutes);
-      }} />
-      <Input type="datetime-local" aria-label="开始时间" value={start ?? ''} disabled={edit.readonly} onChange={(event) => chooseStart(event.target.value)} />
-      <Input type="datetime-local" aria-label="结束时间" value={end ?? ''} disabled={edit.readonly} onChange={(event) => chooseEnd(event.target.value)} />
-      <Button type="button" variant="ghost" size="sm" className="w-full justify-start" disabled={!start && !end} onClick={() => { edit.setSchedule({ scheduledStart: null, scheduledEnd: null }); setOpen(false); }}>清除时段</Button>
+  return <Popover open={open} onOpenChange={changeOpen}>
+    <PopoverTrigger asChild><InfoRow icon={CalendarDays} label="安排时间" value={scheduleLabel(edit.draft)} hasValue={Boolean(edit.draft.dueDate || edit.draft.scheduledStart)} disabled={edit.readonly} aria-label="安排时间" /></PopoverTrigger>
+    <PopoverContent data-task-editor className="max-h-[75dvh] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto space-y-3">
+      <ScheduleFields value={value} onChange={setValue} estimatedMinutes={edit.draft.estimatedMinutes} disabled={saving} />
+      <div className="flex justify-end gap-2"><Button type="button" variant="ghost" disabled={saving} onClick={() => changeOpen(false)}>取消</Button><Button type="button" disabled={saving || Boolean(scheduleError(value))} onClick={() => {
+        if (lock.current) return;
+        lock.current = true; setSaving(true);
+        void edit.setSchedule(value, openedTask.current).then((saved) => { if (saved) setOpen(false); }).finally(() => { lock.current = false; setSaving(false); });
+      }}>{saving ? '保存中…' : '保存安排'}</Button></div>
     </PopoverContent>
   </Popover>;
 }
 
-function DateControl() {
+function EstimateControl() {
   const edit = useEdit();
   const [open, setOpen] = useState(false);
-  const choose = (dueDate: string | null) => { edit.setDue(dueDate); setOpen(false); };
-  return <Popover open={open} onOpenChange={setOpen}>
-    <PopoverTrigger asChild><InfoRow icon={CalendarDays} label="日期" value={edit.draft.dueDate ?? '设置'} hasValue={Boolean(edit.draft.dueDate)} disabled={edit.readonly} aria-label="日期" /></PopoverTrigger>
-    <PopoverContent data-task-editor className="space-y-1">
-      <Button type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={() => choose(shiftDate(0))}>今天</Button>
-      <Button type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={() => choose(shiftDate(1))}>明天</Button>
-      <Button type="button" variant="ghost" size="sm" className="w-full justify-start" onClick={() => choose(shiftDate(7))}>下周</Button>
-      <Input type="date" aria-label="截止日期" value={edit.draft.dueDate ?? ''} onChange={(event) => choose(event.target.value || null)} />
-      <Button type="button" variant="ghost" size="sm" className="w-full justify-start" disabled={!edit.draft.dueDate} onClick={() => choose(null)}>清除</Button>
-    </PopoverContent>
+  const [value, setValue] = useState('');
+  const [saving, setSaving] = useState(false);
+  const lock = useRef(false);
+  const openedTask = useRef(edit.task);
+  const minutes = value === '' ? null : Number(value);
+  return <Popover open={open} onOpenChange={(next) => { if (lock.current) return; if (next) { openedTask.current = edit.task; setValue(String(edit.draft.estimatedMinutes ?? '')); } setOpen(next); }}>
+    <PopoverTrigger asChild><InfoRow icon={Clock} label="预计时长" value={edit.draft.estimatedMinutes ? `${edit.draft.estimatedMinutes}分钟` : '设置'} hasValue={Boolean(edit.draft.estimatedMinutes)} disabled={edit.readonly} aria-label="预计时长" /></PopoverTrigger>
+    <PopoverContent data-task-editor className="w-64 space-y-3"><p className="text-xs text-muted-foreground">用于首次安排时间段，不改变已有安排。</p><Input type="number" min={1} max={10080} aria-label="预计时长分钟" value={value} disabled={saving} onChange={(event) => setValue(event.target.value)} /><div className="flex justify-end gap-2"><Button variant="ghost" disabled={saving} onClick={() => setOpen(false)}>取消</Button><Button disabled={saving || (minutes !== null && (!Number.isInteger(minutes) || minutes < 1 || minutes > 10080))} onClick={() => {
+      if (lock.current) return;
+      lock.current = true; setSaving(true);
+      void edit.setEstimate(minutes, openedTask.current).then((saved) => { if (saved) setOpen(false); }).finally(() => { lock.current = false; setSaving(false); });
+    }}>{saving ? '保存中…' : '保存'}</Button></div></PopoverContent>
   </Popover>;
 }

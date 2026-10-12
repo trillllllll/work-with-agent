@@ -11,6 +11,9 @@ type Snap = {
   status: string;
   priority: string;
   dueDate: string | null;
+  scheduledStart: string | null;
+  scheduledEnd: string | null;
+  estimatedMinutes: number | null;
   resultSummary: string;
   topicId: string | null;
   parentId: string | null;
@@ -21,8 +24,9 @@ type Snap = {
 type RawChange =
   | { field: 'title' | 'description' | 'resultSummary'; before: string; after: string }
   | { field: 'status' | 'priority'; before: string; after: string }
-  | { field: 'dueDate'; before: string | null; after: string | null }
+  | { field: 'dueDate' | 'scheduledStart' | 'scheduledEnd'; before: string | null; after: string | null }
   | { field: 'topicId'; before: string | null; after: string | null }
+  | { field: 'estimatedMinutes'; before: number | null; after: number | null }
   | { field: 'parentId'; before: string | null; after: string | null }
   | { field: 'tagIds'; before: string[]; after: string[] }
   | { field: 'deleted'; before: boolean; after: boolean };
@@ -45,9 +49,10 @@ export type TaskActivityEvent = {
   changes: Array<
     | { field: 'title' | 'description' | 'resultSummary'; before: string; after: string }
     | { field: 'status' | 'priority'; before: string; after: string }
-    | { field: 'dueDate'; before: string | null; after: string | null }
+    | { field: 'dueDate' | 'scheduledStart' | 'scheduledEnd'; before: string | null; after: string | null }
     | { field: 'topicId'; before: { id: string | null; name: string }; after: { id: string | null; name: string } }
-    | { field: 'parentId'; before: { id: string | null; title: string }; after: { id: string | null; title: string } }
+    | { field: 'estimatedMinutes'; before: number | null; after: number | null }
+  | { field: 'parentId'; before: { id: string | null; title: string }; after: { id: string | null; title: string } }
     | { field: 'tagIds'; before: string[]; after: string[] }
     | { field: 'deleted'; before: boolean; after: boolean }
   >;
@@ -65,6 +70,9 @@ function snap(value: unknown): Snap | null {
     status: typeof raw.status === 'string' ? raw.status : 'todo',
     priority: typeof raw.priority === 'string' ? raw.priority : 'none',
     dueDate: typeof raw.dueDate === 'string' ? raw.dueDate : null,
+    scheduledStart: typeof raw.scheduledStart === 'string' ? raw.scheduledStart : null,
+    scheduledEnd: typeof raw.scheduledEnd === 'string' ? raw.scheduledEnd : null,
+    estimatedMinutes: typeof raw.estimatedMinutes === 'number' ? raw.estimatedMinutes : null,
     resultSummary: typeof raw.resultSummary === 'string' ? raw.resultSummary : '',
     topicId: typeof raw.topicId === 'string' ? raw.topicId : null,
     parentId: typeof raw.parentId === 'string' ? raw.parentId : null,
@@ -124,6 +132,8 @@ function diff(before: Snap | null, after: Snap | null, operation: string): { act
   if (before.status !== after.status && statuses.has(before.status) && statuses.has(after.status)) changes.push({ field: 'status', before: before.status, after: after.status });
   if (before.priority !== after.priority && priorities.has(before.priority) && priorities.has(after.priority)) changes.push({ field: 'priority', before: before.priority, after: after.priority });
   if (before.dueDate !== after.dueDate) changes.push({ field: 'dueDate', before: before.dueDate, after: after.dueDate });
+  for (const field of ['scheduledStart', 'scheduledEnd'] as const) if (before[field] !== after[field]) changes.push({ field, before: before[field], after: after[field] });
+  if (before.estimatedMinutes !== after.estimatedMinutes) changes.push({ field: 'estimatedMinutes', before: before.estimatedMinutes, after: after.estimatedMinutes });
   if (before.topicId !== after.topicId) changes.push({ field: 'topicId', before: before.topicId, after: after.topicId });
   if (before.parentId !== after.parentId) changes.push({ field: 'parentId', before: before.parentId, after: after.parentId });
   if (!sameTags(before.tagIds, after.tagIds)) changes.push({ field: 'tagIds', before: before.tagIds, after: after.tagIds });

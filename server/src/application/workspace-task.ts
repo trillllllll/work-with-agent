@@ -1,3 +1,4 @@
+import { emptySchedule, normalizeSchedule, shiftMinutes } from '../domain/schedule.js';
 import { randomUUID } from 'node:crypto';
 import { Prisma, type Task } from '@prisma/client';
 import { DomainError, Task as TaskDomain } from '../domain/task.js';
@@ -34,7 +35,7 @@ async function assignment(group: ChangeGroup, task: Pick<Task, 'id' | 'topicId'>
 export class TaskService {
   async list(topicId?: string, options: TaskListOptions = {}, visibility?: Prisma.TaskWhereInput) {
     const query = parseInput(taskListSchema, options);
-    if (query.dueFrom && query.dueTo && query.dueFrom > query.dueTo) throw new DomainError('INVALID_INPUT', '开始日期不能晚于结束日期', 400);
+    if ((query.dueFrom && query.dueTo && query.dueFrom > query.dueTo) || (query.scheduledFrom && query.scheduledTo && query.scheduledFrom > query.scheduledTo)) throw new DomainError('INVALID_INPUT', '开始日期不能晚于结束日期', 400);
     const where: Prisma.TaskWhereInput = {
       ...(topicId ? { topicId } : {}),
       ...(query.inbox ? { topicId: null } : {}),
@@ -47,20 +48,22 @@ export class TaskService {
     if (query.q?.trim()) and.push({ OR: [{ title: { contains: query.q.trim() } }, { description: { contains: query.q.trim() } }] });
     if (query.status === 'open') where.status = { not: 'done' };
     else if (query.status && query.status !== 'all') where.status = query.status;
-    if (query.dueFrom || query.dueTo || query.scheduledFrom || query.scheduledTo) {
-      const dueFrom = query.dueFrom ?? query.scheduledFrom;
-      const dueTo = query.dueTo ?? query.scheduledTo;
-      const ranges: Prisma.TaskWhereInput[] = [];
-      if (dueFrom || dueTo) ranges.push({ dueDate: { ...(dueFrom ? { gte: dueFrom } : {}), ...(dueTo ? { lte: dueTo } : {}) } });
-      if (query.scheduledFrom || query.scheduledTo) ranges.push({ scheduledStart: { ...(query.scheduledFrom ? { gte: `${query.scheduledFrom}T00:00` } : {}), ...(query.scheduledTo ? { lte: `${query.scheduledTo}T23:59` } : {}) } });
-      and.push({ OR: ranges });
+    if (query.dueFrom || query.dueTo) and.push({ dueDate: { ...(query.dueFrom ? { gte: query.dueFrom } : {}), ...(query.dueTo ? { lte: query.dueTo } : {}) } });
+    if (query.scheduledFrom || query.scheduledTo) {
+      const from = query.scheduledFrom ? `${query.scheduledFrom}T00:00` : undefined;
+      const until = query.scheduledTo ? shiftMinutes(`${query.scheduledTo}T00:00`, 1440) : undefined;
+      and.push({ OR: [
+        { scheduledStart: null, dueDate: { not: null, ...(query.scheduledFrom ? { gte: query.scheduledFrom } : {}), ...(query.scheduledTo ? { lte: query.scheduledTo } : {}) } },
+        { scheduledEnd: null, scheduledStart: { not: null, ...(from ? { gte: from } : {}), ...(until ? { lt: until } : {}) } },
+        { scheduledStart: { not: null, ...(until ? { lt: until } : {}) }, scheduledEnd: { not: null, ...(from ? { gt: from } : {}) } },
+      ] });
     }
     for (const tagId of query.tagIds ?? []) and.push({ tags: { some: { tagId } } });
     if (and.length) where.AND = and;
     const tasks = (await prisma.task.findMany({ where, include: taskInclude, orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] })).map(taskDto);
     const sort = query.sort ?? (query.q || query.tagIds?.length || query.dueFrom || query.dueTo ? 'date' : 'manual');
     if (sort !== 'manual') tasks.sort((a, b) => {
-      const date = (a.dueDate ?? '9999-99-99').localeCompare(b.dueDate ?? '9999-99-99');
+      const date = (a.scheduledStart ?? a.dueDate ?? '9999-99-99').localeCompare(b.scheduledStart ?? b.dueDate ?? '9999-99-99');
       const priority = rank[b.priority] - rank[a.priority];
       return (sort === 'priority' ? priority || date : date || priority) || a.id.localeCompare(b.id);
     });
@@ -93,6 +96,7 @@ export class TaskService {
       await group.capture('tasks', id);
       const timestamp = now();
       const { tagIds, ...fields } = input;
+      Object.assign(fields, normalizeSchedule(emptySchedule, input));
       await tx.task.create({ data: { ...fields, id, topicId, parentId, status: 'todo', sortOrder: await nextOrder(tx, topicId, parentId), createdAt: timestamp, updatedAt: timestamp } });
       await setTags(tx, id, tagIds ?? []);
       await touchParent(group, parentId, true);
@@ -134,6 +138,7 @@ export class TaskService {
       }
       if (children.length) await group.scope({ kind: 'children', id: taskId });
       const { tagIds, completeChildren: _completeChildren, ...fields } = input;
+      Object.assign(fields, normalizeSchedule(before, input));
       await group.task(taskId, { ...fields, parentId, topicId, ...(moved ? { sortOrder: await nextOrder(tx, topicId, parentId) } : {}) });
       if (tagIds) await setTags(tx, taskId, tagIds);
       await assignment(group, before, topicId);

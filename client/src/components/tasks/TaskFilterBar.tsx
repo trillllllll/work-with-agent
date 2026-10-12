@@ -36,7 +36,7 @@ export function describeTaskFilters(page: View, scoped: boolean, filters: TaskFi
   if (showStatus && filters.status === 'done') parts.push('已完成');
   if (topicFiltered) parts.push(`清单：${topicName}`);
   if (showTag && filters.tag) parts.push(`标签：${tagName}`);
-  if (showDates && (filters.dueFrom || filters.dueTo)) parts.push(`截止日期 ${filters.dueFrom || '不限'} 至 ${filters.dueTo || '不限'}`);
+  if (showDates && (filters.dueFrom || filters.dueTo)) parts.push(`安排日期 ${filters.dueFrom || '不限'} 至 ${filters.dueTo || '不限'}`);
   return { parts, summary: parts.join(' · ') };
 }
 
@@ -52,15 +52,15 @@ function FilterFields({ page, scoped, filters, sortMode, topics, tags, onChange,
   const showTag = page !== 'tags';
   return <div className={cn('grid grid-cols-1 gap-3', !stacked && 'sm:grid-cols-3')}>
     {showStatus && <Field label="状态"><select className={selectClass} aria-label="筛选完成状态" value={filters.status} onChange={(event) => onChange({ status: event.target.value })}><option value="all">全部状态</option><option value="open">未完成</option><option value="done">已完成</option></select></Field>}
-    {scoped && <Field label="排序"><select className={selectClass} aria-label="任务排序" value={sortMode} onChange={(event) => onSort(event.target.value)}><option value="manual">手动排序</option><option value="date">按截止日期</option><option value="priority">按优先级</option></select></Field>}
+    {scoped && <Field label="排序"><select className={selectClass} aria-label="任务排序" value={sortMode} onChange={(event) => onSort(event.target.value)}><option value="manual">手动排序</option><option value="date">按安排日期</option><option value="priority">按优先级</option></select></Field>}
     {!scoped && <Field label="清单"><select className={selectClass} aria-label="筛选清单" value={filters.topic} onChange={(event) => onChange({ topic: event.target.value })}><option value="all">全部清单</option><option value="inbox">收集箱</option>{topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}</select></Field>}
     {showTag && <Field label="标签"><select className={selectClass} aria-label="筛选标签" value={filters.tag} onChange={(event) => onChange({ tag: event.target.value })}><option value="">全部标签</option>{tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select></Field>}
     {showDates && <div className={cn('min-w-0', !stacked && 'sm:col-span-3')}>
-      <p className="text-xs text-muted-foreground">截止日期</p>
+      <p className="text-xs text-muted-foreground">安排日期</p>
       <div className="mt-1 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
-        <Input className="h-9 w-full min-w-0 text-xs" type="date" aria-label="截止日期从" value={filters.dueFrom} onChange={(event) => onChange({ dueFrom: event.target.value })} />
+        <Input className="h-9 w-full min-w-0 text-xs" type="date" aria-label="安排日期从" value={filters.dueFrom} onChange={(event) => onChange({ dueFrom: event.target.value })} />
         <span className="text-xs text-muted-foreground">至</span>
-        <Input className="h-9 w-full min-w-0 text-xs" type="date" aria-label="截止日期到" value={filters.dueTo} onChange={(event) => onChange({ dueTo: event.target.value })} />
+        <Input className="h-9 w-full min-w-0 text-xs" type="date" aria-label="安排日期到" value={filters.dueTo} onChange={(event) => onChange({ dueTo: event.target.value })} />
       </div>
     </div>}
   </div>;

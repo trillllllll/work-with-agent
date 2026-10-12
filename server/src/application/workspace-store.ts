@@ -1,3 +1,4 @@
+import { normalizeLegacySchedule } from '../domain/schedule.js';
 import { Prisma, type Task, type Topic, type Tag, type ChangeRecord } from '@prisma/client';
 import { prisma } from '../infrastructure/prisma.js';
 import { DomainError, allowedTaskTransitions } from '../domain/task.js';
@@ -182,6 +183,7 @@ export async function restoreGroup(tx: Db, before: GroupSnapshot, after: GroupSn
   for (const [id, row] of Object.entries(before.entities.tasks)) {
     if (!row) { await tx.task.delete({ where: { id } }); continue; }
     const { tagIds, parentId, ...fields } = row;
+    Object.assign(fields, normalizeLegacySchedule(row));
     const current = after.entities.tasks[id];
     const data = { ...fields, parentId: null, revision: (current?.revision ?? row.revision) + 1, updatedAt: updatedAfter(current?.updatedAt ?? row.updatedAt) };
     await tx.task.upsert({ where: { id }, create: data, update: data });

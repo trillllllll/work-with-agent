@@ -86,8 +86,10 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('详情', { exact: true }).click();
     await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('任务标题', { exact: true }).click();
     await expect.poll(async () => (await task(request, created.id)).description).toBe('保留我的说明');
-    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('button', { name: '日期', exact: true }).click();
-    await page.getByLabel('截止日期', { exact: true }).fill('2028-02-29');
+    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('button', { name: '安排时间', exact: true }).click();
+    await page.getByLabel('安排方式', { exact: true }).selectOption('allday');
+    await page.getByLabel('安排日期', { exact: true }).fill('2028-02-29');
+    await page.getByRole('button', { name: '保存安排', exact: true }).click();
     await expect.poll(async () => (await task(request, created.id)).dueDate).toBe('2028-02-29');
     await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('button', { name: '旗标：高', exact: true }).click();
     await expect.poll(async () => (await task(request, created.id)).priority).toBe('high');
@@ -147,8 +149,9 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     const row = page.getByTestId(`task-row-${current.id}`);
     await row.getByRole('button', { name: /^今天处理/ }).click();
     await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('详情', { exact: true }).fill('从搜索中修改');
-    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('button', { name: '日期', exact: true }).click();
-    await page.getByRole('button', { name: '清除', exact: true }).click();
+    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('button', { name: '安排时间', exact: true }).click();
+    await page.getByRole('button', { name: '清除安排', exact: true }).click();
+    await page.getByRole('button', { name: '保存安排', exact: true }).click();
     await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('任务标题', { exact: true }).click();
     await expect.poll(async () => (await task(request, current.id)).dueDate).toBeNull();
     await expect(row).toBeVisible();

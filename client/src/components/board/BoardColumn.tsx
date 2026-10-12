@@ -35,7 +35,7 @@ export function TaskCard({ task, topics, tags, selected = false, readonly = fals
       {(priority !== 'none' || task.dueDate) && (
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
           {priority !== 'none' && <span className={priority === 'high' ? 'text-destructive' : priority === 'medium' ? 'text-warning' : 'text-primary'} title={`优先级：${priorityLabel}`}><Flag className="mr-1 inline size-3" />{priorityLabel}</span>}
-          {task.dueDate && <span title={`截止日期：${task.dueDate}`}><CalendarDays className="mr-1 inline size-3" />{task.dueDate}</span>}
+          {task.dueDate && <span title={`安排日期：${task.dueDate}`}><CalendarDays className="mr-1 inline size-3" />{task.dueDate}</span>}
         </div>
       )}
       <Select value={task.status} onValueChange={(value) => onUpdateStatus(task.id, value as Status)} disabled={readonly}>

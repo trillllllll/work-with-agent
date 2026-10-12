@@ -40,7 +40,7 @@ test('窄窗口打开任务后列表仍可读，日期仍显示', async ({ page,
         scrollOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
       };
     });
-    expect(metrics.dateShown, `${width}px 应显示截止日期`).toBe(true);
+    expect(metrics.dateShown, `${width}px 应显示安排日期`).toBe(true);
     expect(metrics.dateText).toContain(dueDate);
     expect(metrics.rowWidth, `${width}px 任务行宽度`).toBeGreaterThan(240);
     expect(metrics.mainWidth, `${width}px 列表栏宽度`).toBeGreaterThan(width >= 1024 ? 360 : 240);

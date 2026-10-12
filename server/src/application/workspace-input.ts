@@ -21,10 +21,6 @@ export function isLocalDateTime(value: string) {
 }
 export const localDateTime = z.string().refine(isLocalDateTime, '时间必须是有效的 YYYY-MM-DDTHH:mm 本地时间');
 const positiveMinutes = z.number().int().min(1, '时长必须至少 1 分钟').max(10080, '时长不能超过一周');
-const schedulePaired = (value: { scheduledStart?: string | null; scheduledEnd?: string | null }) => (value.scheduledStart === undefined && value.scheduledEnd === undefined)
-  || (value.scheduledStart === null && value.scheduledEnd === null)
-  || (typeof value.scheduledStart === 'string' && typeof value.scheduledEnd === 'string');
-const scheduleOrdered = (value: { scheduledStart?: string | null; scheduledEnd?: string | null }) => !(typeof value.scheduledStart === 'string' && typeof value.scheduledEnd === 'string') || value.scheduledStart < value.scheduledEnd;
 export const taskFields = z.object({
   topicId: id.nullable().optional(),
   parentId: id.nullable().optional(),
@@ -39,8 +35,8 @@ export const taskFields = z.object({
   resultSummary: z.string().optional(),
   tagIds: z.array(id).refine((ids) => new Set(ids).size === ids.length, '标签不能重复').optional(),
 });
-export const taskCreateSchema = taskFields.refine(schedulePaired, '开始与结束时间必须成对提供').refine(scheduleOrdered, '结束时间必须晚于开始时间');
-export const taskUpdateSchema = taskFields.partial().extend({ completeChildren: z.boolean().optional() }).refine(schedulePaired, '开始与结束时间必须成对提供').refine(scheduleOrdered, '结束时间必须晚于开始时间');
+export const taskCreateSchema = taskFields;
+export const taskUpdateSchema = taskFields.partial().extend({ completeChildren: z.boolean().optional() });
 export const topicCreateSchema = z.object({
   name: z.string().trim().min(1, '清单名称不能为空'),
   description: z.string().optional(),

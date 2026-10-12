@@ -38,6 +38,8 @@ function sentence(change: TaskActivityChange) {
   if (change.field === 'status') return <>把状态从{label('status', change.before)}改成{label('status', change.after)}</>;
   if (change.field === 'priority') return <>把旗标从{label('priority', change.before)}改成{label('priority', change.after)}</>;
   if (change.field === 'dueDate') return <>把日期从{change.before ?? '无'}改成{change.after ?? '无'}</>;
+  if (change.field === 'scheduledStart' || change.field === 'scheduledEnd') return <>把{change.field === 'scheduledStart' ? '开始时间' : '结束时间'}从{change.before?.replace('T', ' ') ?? '无'}改成{change.after?.replace('T', ' ') ?? '无'}</>;
+  if (change.field === 'estimatedMinutes') return <>把预计时长从{change.before === null ? '无' : `${change.before}分钟`}改成{change.after === null ? '无' : `${change.after}分钟`}</>;
   if (change.field === 'topicId') return <>把清单从{change.before.name}改成{change.after.name}</>;
   if (change.field === 'parentId') return <>把父任务从{change.before.title}改成{change.after.title}</>;
   if (change.field === 'tagIds') return <>把标签从{names(change.before)}改成{names(change.after)}</>;

@@ -16,8 +16,9 @@ export type TaskActivityChange =
   | { field: 'title' | 'description' | 'resultSummary'; before: string; after: string }
   | { field: 'status'; before: Status; after: Status }
   | { field: 'priority'; before: TaskPriority; after: TaskPriority }
-  | { field: 'dueDate'; before: string | null; after: string | null }
+  | { field: 'dueDate' | 'scheduledStart' | 'scheduledEnd'; before: string | null; after: string | null }
   | { field: 'topicId'; before: { id: string | null; name: string }; after: { id: string | null; name: string } }
+  | { field: 'estimatedMinutes'; before: number | null; after: number | null }
   | { field: 'parentId'; before: { id: string | null; title: string }; after: { id: string | null; title: string } }
   | { field: 'tagIds'; before: string[]; after: string[] }
   | { field: 'deleted'; before: boolean; after: boolean };

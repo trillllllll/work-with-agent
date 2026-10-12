@@ -1,229 +1,221 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { DndContext, DragOverlay, PointerSensor, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core';
+import { DndContext, DragOverlay, PointerSensor, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent, type DragMoveEvent, type DragStartEvent, type DragOverEvent } from '@dnd-kit/core';
 import type { Tag, Task, Topic } from '@/lib/api.js';
 import { useLocalDate, useTasks } from '@/hooks/useTodo.js';
-import { addDays, applyDrop, eachDate, formatTime, layoutTimed, localDateTime, minutesOf, mondayOf, rangeOf, scheduleDateKey, type TimedBlock } from '@/lib/schedule.js';
+import { addDays, addMinutes, applyDrop, eachDate, formatTime, isOverdue, layoutTimed, localDateTime, minutesBetween, minutesOf, occursOn, rangeOf, resizeSchedule, scheduleDateKey, scheduleLabel, shiftMonth, type SchedulePatch, type TimedBlock } from '@/lib/schedule.js';
 import { cn } from '@/lib/utils.js';
+import { Button } from '@/components/ui/button.js';
+import { Input } from '@/components/ui/input.js';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
+import { ScheduleFields, scheduleError, type ScheduleValue } from '@/components/tasks/ScheduleFields.js';
+import { isCompositionKey } from '@/lib/todo.js';
 
 type Mode = 'day' | 'week' | 'month';
 type Props = {
-  topics: Topic[];
-  tags: Tag[];
+  topics: Topic[]; tags: Tag[];
   onOpen: (id: string) => void;
   onToggle: (task: Task) => Promise<Task | undefined> | void;
-  onSave: (task: Task, patch: Partial<Pick<Task, 'dueDate' | 'scheduledStart' | 'scheduledEnd' | 'estimatedMinutes'>>) => Promise<Task | undefined> | void;
-  onDelete: (task: Task) => void;
-  busy: boolean;
+  onSave: (task: Task, patch: SchedulePatch) => Promise<Task | undefined> | void;
+  onCreate: (input: { title: string; topicId: string | null; parentId: null } & ScheduleValue) => Promise<unknown>;
+  onDelete: (task: Task) => void; busy: boolean;
 };
-
-const dayHour = 56;
-const weekHeight = 672;
-const weekStartMin = 6 * 60;
-const weekSpan = 18 * 60;
-
+const hourHeight = 56;
+const timelineHeight = hourHeight * 24;
 function priorityColor(priority: Task['priority']) {
-  if (priority === 'high') return 'var(--destructive)';
-  if (priority === 'medium') return 'var(--warning)';
-  if (priority === 'low') return 'var(--primary)';
-  return 'var(--muted-foreground)';
+  return priority === 'high' ? 'var(--destructive)' : priority === 'medium' ? 'var(--warning)' : priority === 'low' ? 'var(--primary)' : 'var(--muted-foreground)';
 }
 function dateLabel(value: string, options: Intl.DateTimeFormatOptions) {
   const [year, month, day] = value.split('-').map(Number);
   return new Intl.DateTimeFormat('zh-CN', options).format(new Date(year, month - 1, day));
 }
-function shiftAnchor(mode: Mode, anchor: string, direction: -1 | 1) {
-  if (mode === 'day') return addDays(anchor, direction);
-  if (mode === 'week') return addDays(anchor, direction * 7);
-  const [year, month, day] = anchor.split('-').map(Number);
-  const date = new Date(year, month - 1 + direction, day);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
 function rangeLabel(mode: Mode, anchor: string, range: [string, string]) {
-  if (mode === 'day') return `${dateLabel(anchor, { month: 'numeric', day: 'numeric' })} ${dateLabel(anchor, { weekday: 'short' })}`;
-  if (mode === 'week') return `${dateLabel(range[0], { month: 'numeric', day: 'numeric' })} - ${dateLabel(range[1], { month: 'numeric', day: 'numeric' })}`;
-  return dateLabel(anchor, { year: 'numeric', month: 'long' });
+  return mode === 'day' ? `${dateLabel(anchor, { month: 'numeric', day: 'numeric' })} ${dateLabel(anchor, { weekday: 'short' })}` : mode === 'week' ? `${range[0]} — ${range[1]}` : dateLabel(anchor, { year: 'numeric', month: 'long' });
 }
-
-function DropTarget({ id, className, style, children, onClick }: { id: string; className?: string; style?: CSSProperties; children?: ReactNode; onClick?: () => void }) {
+function DropTarget({ id, className, style, children }: { id: string; className?: string; style?: CSSProperties; children?: ReactNode }) {
   const { setNodeRef, isOver } = useDroppable({ id });
-  return <div ref={setNodeRef} data-drop-id={id} style={style} onClick={onClick} className={cn(className, isOver && 'outline-2 outline-[var(--primary)]/40')}>{children}</div>;
+  return <div ref={setNodeRef} data-drop-id={id} style={style} className={cn(className, isOver && 'bg-primary/10 outline-2 outline-primary/40')}>{children}</div>;
 }
-
-function DragTask({ task, className, style, children }: { task: Task; className?: string; style?: CSSProperties; children: ReactNode }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id, data: { task }, disabled: false });
-  return <div ref={setNodeRef} style={style} className={cn(className, isDragging && 'opacity-40')} {...listeners} {...attributes}>{children}</div>;
+function DragTask({ task, instance, busy, offset = 0, className, style, children }: { task: Task; instance: string; busy: boolean; offset?: number; className?: string; style?: CSSProperties; children: ReactNode }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `${task.id}:${instance}`, data: { task, offset }, disabled: busy });
+  return <div ref={setNodeRef} style={{ ...style, touchAction: 'manipulation' }} className={cn(className, isDragging && 'opacity-40')} {...listeners} {...attributes}>{children}</div>;
 }
-
+function ResizeHandle({ task, edge, busy, onOpen }: { task: Task; onOpen: Props['onOpen']; edge: 'start' | 'end'; busy: boolean }) {
+  const { attributes, listeners, setNodeRef } = useDraggable({ id: `${task.id}:resize:${edge}`, data: { task, edge }, disabled: busy });
+  return <button type="button" ref={setNodeRef} {...attributes} {...listeners} onPointerDown={(event) => { event.stopPropagation(); listeners?.onPointerDown?.(event); }} aria-label={`${edge === 'start' ? '调整开始' : '调整结束'}：${task.title}`} title="拖动调整时间；也可在任务详情中编辑" style={{ touchAction: 'none' }} onClick={(event) => { event.stopPropagation(); onOpen(task.id); }} className={cn('absolute inset-x-1 z-10 h-2 cursor-ns-resize rounded focus-visible:bg-primary/30', edge === 'start' ? 'top-0' : 'bottom-0')} />;
+}
 function Check({ task, busy, onToggle }: { task: Task; busy: boolean; onToggle: Props['onToggle'] }) {
-  return <input type="checkbox" className="task-checkbox size-4 shrink-0 accent-primary" checked={task.status === 'done'} disabled={busy} aria-label={`${task.status === 'done' ? '重开' : '完成'}任务：${task.title}`} onPointerDown={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} onChange={() => { void onToggle(task); }} />;
+  return <input type="checkbox" className="task-checkbox size-4 shrink-0 accent-primary" checked={task.status === 'done'} disabled={busy} aria-label={`${task.status === 'done' ? '重开' : '完成'}任务：${task.title}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} onChange={() => { void Promise.resolve(onToggle(task)).catch(() => undefined); }} />;
 }
-
-function TimedTask({ block, compact, scale, origin, busy, onOpen, onToggle }: { block: TimedBlock; compact?: boolean; scale: number; origin: number; busy: boolean; onOpen: Props['onOpen']; onToggle: Props['onToggle'] }) {
+function TimedTask({ block, dateKey, busy, onOpen, onToggle }: { block: TimedBlock; dateKey: string; busy: boolean; onOpen: Props['onOpen']; onToggle: Props['onToggle'] }) {
   const task = block.task;
-  const top = Math.max(0, (block.startMin - origin) / 60 * scale);
-  const height = Math.max(24, (block.endMin - block.startMin) / 60 * scale - 2);
-  return <DragTask task={task} className="absolute z-[1]" style={{ top, height, left: `calc(${block.lane / block.laneCount * 100}% + 2px)`, width: `calc(${100 / block.laneCount}% - 4px)` }}>
-    <article data-testid="task-block" data-task-id={task.id} className={cn('h-full overflow-hidden rounded-lg border px-2 py-1 text-[13px] leading-tight', task.status === 'done' && 'opacity-55 line-through')} style={{ background: 'var(--glass-control)', borderColor: 'var(--glass-border)', borderLeftWidth: 3, borderLeftColor: priorityColor(task.priority) }}>
-      <div className="flex items-start gap-1">
+  const height = block.point ? 28 : Math.max(24, (block.endMin - block.startMin) / 60 * hourHeight - 2);
+  const top = Math.min(block.startMin / 60 * hourHeight, timelineHeight - height);
+  const offset = minutesBetween(task.scheduledStart!, addMinutes(`${dateKey}T00:00`, block.startMin));
+  return <DragTask task={task} instance={dateKey} offset={offset} busy={busy} className="absolute z-[2]" style={{ top, height, left: `calc(${block.lane / block.laneCount * 100}% + 2px)`, width: `calc(${100 / block.laneCount}% - 4px)` }}>
+    <article data-testid="task-block" data-task-id={task.id} data-date={dateKey} data-point={block.point} title={scheduleLabel(task)} className={cn('relative h-full overflow-hidden rounded-lg border px-1.5 text-xs leading-tight', block.point ? 'flex items-center border-dashed' : 'pt-2 pb-1', task.status === 'done' && 'opacity-55 line-through')} style={{ background: 'var(--glass-control)', borderColor: 'var(--glass-border)', borderLeftWidth: block.point ? 1 : 3, borderLeftColor: priorityColor(task.priority) }}>
+      {!block.point && block.startsHere && <ResizeHandle task={task} edge="start" busy={busy} onOpen={onOpen} />}
+      <div className="flex min-w-0 items-start gap-1">
         <Check task={task} busy={busy} onToggle={onToggle} />
-        <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onOpen(task.id)}>
-          {compact ? <span className="block truncate">{formatTime(task.scheduledStart!)} {task.title}</span> : <>
-            <span className="block truncate">{task.title}</span>
-            {height >= 44 && task.scheduledEnd && <span className="text-[11px] text-muted-foreground tabular-nums">{formatTime(task.scheduledStart!)}-{formatTime(task.scheduledEnd)}</span>}
-          </>}
+        <button type="button" className="min-w-0 flex-1 text-left" aria-label={`打开任务：${task.title}`} onClick={() => onOpen(task.id)}>
+          <span className="block truncate">{block.point && <span>● {formatTime(task.scheduledStart!)} </span>}{!block.startsHere && '↳ '}{task.title}</span>
+          {height >= 44 && <span className="block truncate text-[10px] text-muted-foreground tabular-nums">{block.startsHere ? formatTime(task.scheduledStart!) : '00:00'}—{block.endsHere ? formatTime(task.scheduledEnd!) : '24:00'}</span>}
         </button>
       </div>
+      {!block.point && block.endsHere && <ResizeHandle task={task} edge="end" busy={busy} onOpen={onOpen} />}
     </article>
   </DragTask>;
 }
-
-function NowLine({ dateKey, today, scale, origin, height }: { dateKey: string; today: string; scale: number; origin: number; height: number }) {
-  const [now, setNow] = useState(() => localDateTime());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(localDateTime()), 30000);
-    return () => window.clearInterval(timer);
-  }, []);
-  if (dateKey !== today) return null;
-  const top = (minutesOf(now) - origin) / 60 * scale;
-  if (top < 0 || top > height) return null;
-  return <div className="pointer-events-none absolute right-0 left-0 z-10 h-0.5 bg-[var(--destructive)]" style={{ top }}><span className="absolute top-[-3px] left-0 size-2 rounded-full bg-[var(--destructive)]" /></div>;
+function NowLine({ dateKey, today }: { dateKey: string; today: string }) {
+  const [now, setNow] = useState(localDateTime);
+  useEffect(() => { const timer = window.setInterval(() => setNow(localDateTime()), 30000); return () => window.clearInterval(timer); }, []);
+  return dateKey === today ? <div className="pointer-events-none absolute inset-x-0 z-10 h-0.5 bg-destructive" style={{ top: minutesOf(now) / 60 * hourHeight }} /> : null;
 }
-
-function DayTimeline({ dateKey, tasks, today, busy, onOpen, onToggle }: { dateKey: string; tasks: Task[]; today: string; busy: boolean; onOpen: Props['onOpen']; onToggle: Props['onToggle'] }) {
+function Timeline({ days, tasks, today, busy, onOpen, onToggle, onCreate }: { days: string[]; tasks: Task[]; today: string; busy: boolean; onOpen: Props['onOpen']; onToggle: Props['onToggle']; onCreate: (value: ScheduleValue) => void }) {
   const scroller = useRef<HTMLDivElement>(null);
-  const blocks = layoutTimed(tasks, dateKey);
-  const untimed = tasks.filter((task) => scheduleDateKey(task) === dateKey && !task.scheduledStart);
-  useEffect(() => {
-    const node = scroller.current;
-    if (!node) return;
-    const top = minutesOf(localDateTime()) / 60 * dayHour - 120;
-    node.scrollTop = Math.min(Math.max(top, 0), Math.max(0, node.scrollHeight - node.clientHeight));
-  }, [dateKey]);
-  return <div>
-    <DropTarget id={`allday:${dateKey}`} className="mb-3 flex min-h-12 flex-wrap items-center gap-1.5 rounded-xl px-2" style={{ background: 'color-mix(in srgb, var(--muted) 45%, transparent)' }}>
-      {untimed.map((task) => <DragTask key={task.id} task={task}><button type="button" className="rounded-md px-2 py-1 text-xs" onClick={() => onOpen(task.id)}>{task.title}</button></DragTask>)}
-    </DropTarget>
-    <div ref={scroller} className="max-h-[70vh] overflow-y-auto">
-      <div className="flex">
-        <div className="w-12 shrink-0">
-          {Array.from({ length: 24 }, (_, hour) => <div key={hour} className="h-14 border-b border-[var(--glass-divider)] pr-2 text-right text-xs text-muted-foreground tabular-nums">{String(hour).padStart(2, '0')}:00</div>)}
-        </div>
-        <div className="relative min-w-0 flex-1" style={{ height: 24 * dayHour }}>
+  const columns = `48px repeat(${days.length}, minmax(0, 1fr))`;
+  useEffect(() => { if (scroller.current) scroller.current.scrollTop = Math.max(0, minutesOf(localDateTime()) / 60 * hourHeight - 120); }, [days[0], days.length]);
+  return <div data-testid="calendar-horizontal-scroll" className="overflow-x-auto rounded-xl border border-[var(--glass-divider)]"><div style={{ minWidth: days.length === 7 ? 760 : undefined }}>
+    <div className="grid" style={{ gridTemplateColumns: columns }}>
+      <div className="p-1 text-[10px] text-muted-foreground">全天</div>
+      {days.map((day) => <div key={day} className="min-w-0 border-l border-[var(--glass-divider)]">
+        <DropTarget id={`dayhead:${day}`} className="p-1 text-center text-xs"><button type="button" onClick={() => onCreate({ dueDate: day, scheduledStart: null, scheduledEnd: null })} aria-label={`在${day}添加全天任务`} className="w-full rounded py-1 hover:bg-muted">{dateLabel(day, { weekday: 'short' })} <span className={cn(day === today && 'font-bold text-primary')}>{Number(day.slice(8))}</span> ＋</button></DropTarget>
+        <DropTarget id={`allday:${day}`} className="min-h-12 space-y-1 p-1">
+          {tasks.filter((task) => !task.scheduledStart && task.dueDate === day).map((task) => <DragTask key={task.id} task={task} instance={`all:${day}`} busy={busy}><div className={cn('flex items-center gap-1 rounded bg-muted/50 px-1 py-1 text-xs', task.status === 'done' && 'opacity-55 line-through')}><Check task={task} busy={busy} onToggle={onToggle} /><button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => onOpen(task.id)}>{task.title}</button></div></DragTask>)}
+        </DropTarget>
+      </div>)}
+    </div>
+    <div ref={scroller} data-testid="timeline-scroll" className="max-h-[65vh] overflow-y-auto border-t border-[var(--glass-divider)]">
+      <div className="grid" style={{ gridTemplateColumns: columns, height: timelineHeight }}>
+        <div>{Array.from({ length: 24 }, (_, hour) => <div key={hour} className="border-b border-[var(--glass-divider)] pr-1 text-right text-[10px] tabular-nums text-muted-foreground" style={{ height: hourHeight }}>{String(hour).padStart(2, '0')}:00</div>)}</div>
+        {days.map((day) => <div key={day} className="relative border-l border-[var(--glass-divider)]">
           {Array.from({ length: 48 }, (_, index) => {
-            const hour = Math.floor(index / 2);
-            const minute = index % 2 ? '30' : '00';
-            const id = `slot:${dateKey}:${String(hour).padStart(2, '0')}:${minute}`;
-            return <DropTarget key={id} id={id} className="absolute right-0 left-0" style={{ top: index * (dayHour / 2), height: dayHour / 2 }} />;
+            const start = addMinutes(`${day}T00:00`, index * 30);
+            const id = `slot:${day}:${start.slice(11, 13)}:${start.slice(14, 16)}`;
+            return <DropTarget key={id} id={id} className="absolute inset-x-0" style={{ top: index * hourHeight / 2, height: hourHeight / 2 }}><button type="button" disabled={busy} aria-label={`在${start.replace('T', ' ')}添加任务`} className="h-full w-full hover:bg-primary/5 focus-visible:bg-primary/10" onClick={() => onCreate({ dueDate: day, scheduledStart: start, scheduledEnd: addMinutes(start, 60) })} /></DropTarget>;
           })}
-          {Array.from({ length: 24 }, (_, hour) => <div key={hour} className="pointer-events-none absolute right-0 left-0 border-b border-[var(--glass-divider)]" style={{ top: hour * dayHour, height: dayHour }} />)}
-          {blocks.map((block) => <TimedTask key={block.id} block={block} scale={dayHour} origin={0} busy={busy} onOpen={onOpen} onToggle={onToggle} />)}
-          <NowLine dateKey={dateKey} today={today} scale={dayHour} origin={0} height={24 * dayHour} />
-        </div>
+          {Array.from({ length: 24 }, (_, hour) => <div key={hour} className="pointer-events-none absolute inset-x-0 border-b border-[var(--glass-divider)]" style={{ top: hour * hourHeight, height: hourHeight }} />)}
+          {layoutTimed(tasks, day).map((block) => <TimedTask key={block.id} block={block} dateKey={day} busy={busy} onOpen={onOpen} onToggle={onToggle} />)}
+          <NowLine dateKey={day} today={today} />
+        </div>)}
       </div>
     </div>
-  </div>;
+  </div></div>;
+}
+function CreateScheduledTask({ initial, topics, onClose, onCreate }: { initial: ScheduleValue; topics: Topic[]; onClose: () => void; onCreate: Props['onCreate'] }) {
+  const [value, setValue] = useState(initial);
+  const [title, setTitle] = useState('');
+  const [topicId, setTopicId] = useState('');
+  const [saving, setSaving] = useState(false);
+  const lock = useRef(false);
+  const composing = useRef(false);
+  return <Dialog open onOpenChange={(open) => { if (!open && !lock.current) onClose(); }}><DialogContent surface="glass" className="max-h-[90dvh] overflow-y-auto"><DialogHeader><DialogTitle>创建任务</DialogTitle><DialogDescription>填写标题并确认安排时间。</DialogDescription></DialogHeader>
+    <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); if (lock.current || composing.current || !title.trim() || scheduleError(value)) return; lock.current = true; setSaving(true); void onCreate({ title: title.trim(), topicId: topicId || null, parentId: null, ...value }).then(onClose).catch(() => undefined).finally(() => { lock.current = false; setSaving(false); }); }}>
+      <Input aria-label="任务标题" autoFocus value={title} disabled={saving} onChange={(event) => setTitle(event.target.value)} onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }} onKeyDown={(event) => { if (event.key === 'Enter' && (composing.current || isCompositionKey(event.nativeEvent))) event.preventDefault(); }} />
+      <label className="block text-sm">所属清单<select aria-label="所属清单" className="glass-control mt-1 h-9 w-full rounded px-2" value={topicId} disabled={saving} onChange={(event) => setTopicId(event.target.value)}><option value="">收集箱</option>{topics.filter((topic) => !topic.archivedAt).map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}</select></label>
+      <ScheduleFields value={value} onChange={setValue} disabled={saving} />
+      <div className="flex justify-end gap-2"><Button type="button" variant="ghost" disabled={saving} onClick={onClose}>取消</Button><Button type="submit" disabled={saving || !title.trim() || Boolean(scheduleError(value))}>{saving ? '创建中…' : '创建任务'}</Button></div>
+    </form>
+  </DialogContent></Dialog>;
 }
 
-function trayOf(tasks: Task[], today: string, rangeEnd: string) {
-  const rank = (task: Task) => !task.dueDate ? 1 : task.dueDate < today ? 0 : 2;
-  return tasks
-    .filter((task) => !task.scheduledStart && !task.scheduledEnd && (!task.dueDate || task.dueDate < today || task.dueDate > rangeEnd))
-    .sort((a, b) => rank(a) - rank(b) || (a.dueDate ?? '').localeCompare(b.dueDate ?? '') || a.title.localeCompare(b.title, 'zh'))
-    .slice(0, 50);
-}
-
-export function PlanPage({ onOpen, onToggle, onSave, busy }: Props) {
+export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: Props) {
   const today = useLocalDate();
   const [mode, setMode] = useState<Mode>('day');
   const [anchor, setAnchor] = useState(today);
+  const [showCompleted, setShowCompleted] = useState(() => localStorage.getItem('todo.plan.showCompleted') !== 'false');
+  const [trayFilter, setTrayFilter] = useState('unplanned');
+  const [search, setSearch] = useState('');
   const [dragging, setDragging] = useState<Task | null>(null);
+  const [preview, setPreview] = useState<{ task: Task; patch: SchedulePatch } | null>(null);
+  const [creating, setCreating] = useState<ScheduleValue | null>(null);
+  const previewRef = useRef(preview);
+  const dragData = useRef<{ task: Task; edge?: 'start' | 'end'; offset?: number } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const saveLock = useRef(false);
   const range = rangeOf(mode, anchor);
-  const planned = useTasks({ status: 'open', dueFrom: range[0], dueTo: range[1], scheduledFrom: range[0], scheduledTo: range[1] });
+  const planned = useTasks({ status: showCompleted ? 'all' : 'open', scheduledFrom: range[0], scheduledTo: range[1] });
   const trayQuery = useTasks({ status: 'open', sort: 'date' });
-  const tasks = planned.data ?? [];
-  const tray = useMemo(() => trayOf(trayQuery.data ?? [], today, range[1]), [trayQuery.data, today, range]);
+  const tasks = (planned.data ?? []).map((task) => preview?.task.id === task.id ? { ...task, ...preview.patch } : task);
+  const tray = useMemo(() => (trayQuery.data ?? []).filter((task) => (trayFilter === 'all' || (trayFilter === 'unplanned' ? !scheduleDateKey(task) : Boolean(scheduleDateKey(task)))) && task.title.toLocaleLowerCase().includes(search.toLocaleLowerCase())).sort((a, b) => Number(isOverdue(b, today)) - Number(isOverdue(a, today)) || (scheduleDateKey(a) ?? '').localeCompare(scheduleDateKey(b) ?? '') || a.id.localeCompare(b.id)), [trayQuery.data, trayFilter, search, today]);
+  const disabled = busy || saving;
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
-  const onDragStart = (event: DragStartEvent) => setDragging(event.active.data.current?.task as Task ?? null);
+  const clearDrag = () => { setDragging(null); setPreview(null); previewRef.current = null; dragData.current = null; };
+  const save = async (task: Task, patch: SchedulePatch) => {
+    if (saveLock.current) return;
+    saveLock.current = true; setSaving(true);
+    try { await onSave(task, patch); } catch { /* Shared writer displays errors and refreshes version conflicts. */ }
+    finally { saveLock.current = false; setSaving(false); }
+  };
+  const onDragStart = (event: DragStartEvent) => {
+    const data = event.active.data.current;
+    dragData.current = data ? { task: data.task, edge: data.edge, offset: data.offset } : null;
+    setDragging(data?.edge ? null : data?.task ?? null);
+  };
+  const onDragMove = (event: DragMoveEvent) => {
+    const data = dragData.current;
+    if (!data?.edge) return;
+    const patch = resizeSchedule(data.task, data.edge, event.delta.y / hourHeight * 60);
+    previewRef.current = patch ? { task: data.task, patch } : null;
+    setPreview(previewRef.current);
+  };
+  const dropPatch = (event: DragEndEvent | DragOverEvent): SchedulePatch | null => {
+    const data = dragData.current;
+    if (!data?.task || !event.over) return null;
+    const target = String(event.over.id);
+    const patch = applyDrop(data.task, target);
+    if (!patch || !data.offset || !data.task.scheduledStart) return patch;
+    // Grabbing a continuation moves the grabbed day's segment, not the original first day.
+    if (target.startsWith('slot:') && patch.scheduledStart) {
+      patch.scheduledStart = addMinutes(patch.scheduledStart, -data.offset);
+      patch.scheduledEnd = data.task.scheduledEnd ? addMinutes(patch.scheduledStart, minutesBetween(data.task.scheduledStart, data.task.scheduledEnd)) : null;
+      patch.dueDate = patch.scheduledStart.slice(0, 10);
+    } else if ((target.startsWith('dayhead:') || target.startsWith('cell:')) && patch.dueDate) {
+      const dayOffset = Math.round(minutesBetween(`${data.task.scheduledStart.slice(0, 10)}T00:00`, addMinutes(data.task.scheduledStart, data.offset).slice(0, 10) + 'T00:00') / 1440);
+      return applyDrop(data.task, `cell:${addDays(patch.dueDate, -dayOffset)}`);
+    }
+    return patch;
+  };
   const onDragEnd = (event: DragEndEvent) => {
-    const task = event.active.data.current?.task as Task | undefined;
-    setDragging(null);
-    if (!task || !event.over) return;
-    const patch = applyDrop(task, String(event.over.id));
-    if (patch) void onSave(task, patch);
+    const data = dragData.current;
+    const patch = data?.edge ? previewRef.current?.patch : dropPatch(event);
+    clearDrag();
+    if (data?.task && patch && !disabled) void save(data.task, patch);
   };
   const days = eachDate(range[0], range[1]);
-  const loading = planned.isLoading || trayQuery.isLoading;
   const error = planned.error || trayQuery.error;
-
-  return <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragging(null)}>
-    <div data-testid="plan-page" className="mx-auto max-w-5xl p-4 pb-10 sm:p-6">
-      <header className="mb-4 flex h-12 flex-wrap items-center justify-between gap-3">
+  return <DndContext sensors={sensors} autoScroll={Boolean(dragging)} collisionDetection={pointerWithin} onDragStart={onDragStart} onDragMove={onDragMove} onDragOver={(event) => { if (dragData.current?.edge) return; const patch = dropPatch(event); setPreview(patch && dragData.current ? { task: dragData.current.task, patch } : null); }} onDragEnd={onDragEnd} onDragCancel={clearDrag}>
+    <div data-testid="plan-page" className="mx-auto max-w-7xl p-4 pb-10 sm:p-6">
+      <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">规划</h1>
-        <div className="glass-control inline-flex rounded-full p-1">
-          {(['day', 'week', 'month'] as const).map((item) => <button key={item} type="button" data-plan-mode={item} aria-pressed={mode === item} className={cn('h-8 rounded-full px-4 text-sm', mode === item ? 'bg-[var(--glass-hover)] font-medium' : 'text-muted-foreground')} onClick={() => setMode(item)}>{item === 'day' ? '日' : item === 'week' ? '周' : '月'}</button>)}
-        </div>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <button type="button" aria-label="上一段" className="grid size-8 place-items-center rounded-full hover:bg-[var(--glass-hover)]" onClick={() => setAnchor(shiftAnchor(mode, anchor, -1))}>‹</button>
-          <button type="button" className="rounded-full px-2 py-1 hover:bg-[var(--glass-hover)]" onClick={() => setAnchor(today)}>今天</button>
-          <button type="button" aria-label="下一段" className="grid size-8 place-items-center rounded-full hover:bg-[var(--glass-hover)]" onClick={() => setAnchor(shiftAnchor(mode, anchor, 1))}>›</button>
-          <span>{rangeLabel(mode, anchor, range)}</span>
-        </div>
+        <div className="glass-control inline-flex rounded-full p-1">{(['day', 'week', 'month'] as const).map((item) => <button key={item} type="button" data-plan-mode={item} aria-pressed={mode === item} className={cn('h-8 rounded-full px-4 text-sm', mode === item ? 'bg-[var(--glass-hover)] font-medium' : 'text-muted-foreground')} onClick={() => { clearDrag(); setMode(item); }}>{item === 'day' ? '日' : item === 'week' ? '周' : '月'}</button>)}</div>
+        <div className="flex flex-wrap items-center gap-2 text-sm"><button type="button" aria-label="上一段" className="size-8 rounded hover:bg-muted" onClick={() => setAnchor(mode === 'month' ? shiftMonth(anchor, -1) : addDays(anchor, mode === 'week' ? -7 : -1))}>‹</button><Button variant="ghost" size="sm" className="text-foreground" onClick={() => setAnchor(today)}>今天</Button><button type="button" aria-label="下一段" className="size-8 rounded hover:bg-muted" onClick={() => setAnchor(mode === 'month' ? shiftMonth(anchor, 1) : addDays(anchor, mode === 'week' ? 7 : 1))}>›</button><span className="text-xs text-muted-foreground">{rangeLabel(mode, anchor, range)}</span></div>
+        <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={showCompleted} onChange={(event) => { setShowCompleted(event.target.checked); localStorage.setItem('todo.plan.showCompleted', String(event.target.checked)); }} />显示已完成</label>
       </header>
-      {loading ? <p className="py-12 text-center text-muted-foreground">正在加载任务…</p> : error ? <p role="alert" className="text-destructive">{error.message}</p> : <div className="grid gap-4 lg:grid-cols-[1fr_260px]">
+      {error ? <p role="alert" className="text-destructive">{error.message}</p> : planned.isLoading || trayQuery.isLoading ? <p className="py-12 text-center text-muted-foreground">正在加载任务…</p> : <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
         <div className="min-w-0">
-          {!tasks.length && !tray.length && <p className="mb-3 text-center text-sm text-muted-foreground">暂无任务</p>}
-          {mode === 'day' && <DayTimeline dateKey={anchor} tasks={tasks} today={today} busy={busy} onOpen={onOpen} onToggle={onToggle} />}
-          {mode === 'week' && <div className="max-md:overflow-x-auto"><div className="max-md:min-w-[720px]">
-            <div className="grid grid-cols-7">
-              {days.map((day) => <DropTarget key={day} id={`dayhead:${day}`} className="py-2 text-center">
-                <div className="text-xs text-muted-foreground">{dateLabel(day, { weekday: 'short' })}</div>
-                <div className={cn('mx-auto mt-1 grid size-6 place-items-center text-sm font-medium', day === today && 'rounded-full bg-[var(--primary)] text-[var(--primary-foreground)]')}>{Number(day.slice(8))}</div>
-              </DropTarget>)}
-            </div>
-            <div className="grid grid-cols-7" style={{ height: weekHeight }}>
-              {days.map((day) => <div key={day} className="relative border-l border-[var(--glass-divider)] last:border-r">
-                {Array.from({ length: 36 }, (_, index) => {
-                  const minuteOfDay = weekStartMin + index * 30;
-                  const hour = Math.floor(minuteOfDay / 60);
-                  const minute = minuteOfDay % 60 === 0 ? '00' : '30';
-                  const id = `slot:${day}:${String(hour).padStart(2, '0')}:${minute}`;
-                  return <DropTarget key={id} id={id} className="absolute right-0 left-0" style={{ top: index * (weekHeight / 36), height: weekHeight / 36 }} />;
-                })}
-                {layoutTimed(tasks, day).filter((block) => block.endMin > weekStartMin && block.startMin < 24 * 60).map((block) => <TimedTask key={block.id} block={{ ...block, startMin: Math.max(block.startMin, weekStartMin), endMin: Math.min(block.endMin, 24 * 60) }} compact scale={weekHeight / 18} origin={weekStartMin} busy={busy} onOpen={onOpen} onToggle={onToggle} />)}
-                <NowLine dateKey={day} today={today} scale={weekHeight / 18} origin={weekStartMin} height={weekHeight} />
-              </div>)}
-            </div>
-          </div></div>}
-          {mode === 'month' && <div>
+          {mode !== 'month' ? <Timeline days={days} tasks={tasks} today={today} busy={disabled} onOpen={onOpen} onToggle={onToggle} onCreate={setCreating} /> : <div className="overflow-x-auto"><div className="min-w-[560px]">
             <div className="grid grid-cols-7 py-2 text-center text-xs text-muted-foreground">{['一', '二', '三', '四', '五', '六', '日'].map((label) => <div key={label}>{label}</div>)}</div>
-            <div className="grid grid-cols-7">
-              {days.map((day) => {
-                const items = tasks.filter((task) => scheduleDateKey(task) === day).sort((a, b) => (a.scheduledStart ?? '9').localeCompare(b.scheduledStart ?? '9'));
-                const inMonth = day.slice(0, 7) === anchor.slice(0, 7);
-                return <DropTarget key={day} id={`cell:${day}`} className={cn('min-h-[112px] border-t border-l border-[var(--glass-divider)] p-1.5 [&:nth-child(7n)]:border-r', !inMonth && 'opacity-50')} onClick={() => { setAnchor(day); setMode('day'); }}>
-                  <div className={cn('mb-1 text-sm', day === today && 'grid size-6 place-items-center rounded-full bg-[var(--primary)] text-[var(--primary-foreground)]')}>{Number(day.slice(8))}</div>
-                  {items.slice(0, 3).map((task) => <DragTask key={task.id} task={task}><div className="mb-0.5 flex h-6 items-center gap-1 truncate rounded-md px-1.5 text-[11px]"><span className="w-[3px] self-stretch rounded-full" style={{ background: priorityColor(task.priority) }} />{task.scheduledStart && <span className="tabular-nums text-muted-foreground">{formatTime(task.scheduledStart)} </span>}<span className="truncate">{task.title}</span></div></DragTask>)}
-                  {items.length > 3 && <div className="text-[11px] text-muted-foreground">+{items.length - 3}</div>}
-                </DropTarget>;
-              })}
-            </div>
-          </div>}
+            <div className="grid grid-cols-7">{days.map((day) => {
+              const items = tasks.filter((task) => occursOn(task, day)).sort((a, b) => (a.scheduledStart ?? '').localeCompare(b.scheduledStart ?? '') || a.id.localeCompare(b.id));
+              return <DropTarget key={day} id={`cell:${day}`} className={cn('min-h-28 min-w-0 border-t border-l border-[var(--glass-divider)] p-1 [&:nth-child(7n)]:border-r', day.slice(0, 7) !== anchor.slice(0, 7) && 'opacity-50')}>
+                <div className="mb-1 flex justify-between"><button type="button" aria-label={`查看${day}`} className={cn('rounded px-1 text-sm', day === today && 'bg-primary text-primary-foreground')} onClick={() => { setAnchor(day); setMode('day'); }}>{Number(day.slice(8))}</button><button type="button" aria-label={`在${day}添加全天任务`} disabled={disabled} onClick={() => setCreating({ dueDate: day, scheduledStart: null, scheduledEnd: null })}>＋</button></div>
+                {items.slice(0, 3).map((task) => <DragTask key={task.id} task={task} instance={`month:${day}`} offset={task.scheduledStart && day !== task.scheduledStart.slice(0, 10) ? minutesBetween(task.scheduledStart, `${day}T00:00`) : 0} busy={disabled}><button type="button" title={scheduleLabel(task)} className={cn('mb-1 block w-full truncate rounded px-1 text-left text-[11px]', task.status === 'done' && 'opacity-55 line-through')} style={{ borderLeft: `3px solid ${priorityColor(task.priority)}` }} onClick={() => onOpen(task.id)}>{scheduleDateKey(task) !== day ? '↳ ' : task.scheduledStart ? `${formatTime(task.scheduledStart)} ` : ''}{task.title}</button></DragTask>)}
+                {items.length > 3 && <button type="button" className="text-xs text-primary" onClick={() => { setAnchor(day); setMode('day'); }}>+{items.length - 3} 查看全部</button>}
+              </DropTarget>;
+            })}</div>
+          </div></div>}
         </div>
-        <aside className="glass-subtle max-h-64 overflow-y-auto rounded-2xl p-2 lg:max-h-none">
-          <div className="flex items-center gap-2 px-2 py-1 text-xs font-medium text-muted-foreground">未安排<span className="tabular-nums">{tray.length}</span></div>
-          {!tray.length && <p className="py-8 text-center text-sm text-muted-foreground">没有待安排的任务</p>}
-          {tray.map((task, index) => {
-            const overdue = Boolean(task.dueDate && task.dueDate < today);
-            const previous = tray[index - 1];
-            const showOverdue = overdue && !(previous?.dueDate && previous.dueDate < today);
-            return <div key={task.id}>
-              {showOverdue && <p className="px-2 pt-1 text-xs text-[var(--destructive)]">逾期</p>}
-              <DragTask task={task}><div data-testid="tray-item" className="flex h-10 cursor-grab items-center gap-2 rounded-lg px-2 text-sm hover:bg-[var(--glass-hover)]"><span className="h-4 w-[3px] rounded-full" style={{ background: priorityColor(task.priority) }} /><span className="truncate">{task.title}</span></div></DragTask>
-            </div>;
-          })}
+        <aside className="glass-subtle min-w-0 rounded-2xl p-3">
+          <div className="mb-2 flex justify-between text-sm font-medium">安排任务<span className="tabular-nums text-muted-foreground">{tray.length}</span></div>
+          <Input type="search" aria-label="搜索安排任务" placeholder="搜索任务…" value={search} onChange={(event) => setSearch(event.target.value)} />
+          <select aria-label="安排任务筛选" value={trayFilter} onChange={(event) => setTrayFilter(event.target.value)} className="glass-control my-2 h-9 w-full rounded px-2 text-sm"><option value="unplanned">未安排</option><option value="planned">已安排</option><option value="all">全部</option></select>
+          <DropTarget id="unschedule" className="mb-2 rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">拖到这里取消安排</DropTarget>
+          <div className="max-h-64 space-y-1 overflow-y-auto xl:max-h-[60vh]">{!tray.length && <p className="py-6 text-center text-sm text-muted-foreground">没有符合条件的任务</p>}{tray.map((task) => <DragTask key={task.id} task={task} instance="tray" busy={disabled}><button type="button" data-testid="tray-item" className="block w-full cursor-grab rounded-lg px-2 py-2 text-left hover:bg-muted" onClick={() => onOpen(task.id)}><span className="block truncate text-sm">{task.title}</span><span className={cn('block truncate text-[10px] text-muted-foreground', isOverdue(task, today) && 'text-destructive')}>{isOverdue(task, today) && '逾期 · '}{scheduleLabel(task)}</span></button></DragTask>)}</div>
+          <p className="mt-3 text-[11px] text-muted-foreground">可拖动安排，也可打开任务详情编辑时间。</p>
         </aside>
       </div>}
     </div>
-    <DragOverlay>{dragging && <div className="glass-control rounded-lg px-2 py-1 text-[13px] shadow-[var(--glass-shadow)]">{dragging.title}</div>}</DragOverlay>
+    <DragOverlay>{dragging && <div className="glass-control max-w-64 rounded-lg px-3 py-2 text-sm shadow-lg"><p className="truncate">{dragging.title}</p><p className="text-xs text-muted-foreground">{scheduleLabel({ ...dragging, ...preview?.patch })}</p></div>}</DragOverlay>
+    {creating && <CreateScheduledTask initial={creating} topics={topics} onClose={() => setCreating(null)} onCreate={onCreate} />}
   </DndContext>;
 }

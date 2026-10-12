@@ -32,10 +32,12 @@ describe('stdio MCP authenticated HTTP contract', () => {
     expect(tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(['list_tasks', 'submit_commands', 'get_proposal', 'get_material', 'claim_handoff', 'report_run']));
   });
   it('preserves pagination and authenticated connection identity', async () => {
-    const result = await client.callTool({ name: 'list_tasks', arguments: { topicId: 'scope-1', inbox: false, cursor: 'cursor-1', limit: 2 } });
+    const result = await client.callTool({ name: 'list_tasks', arguments: { topicId: 'scope-1', inbox: false, cursor: 'cursor-1', limit: 2, scheduledFrom: '2026-10-12', scheduledTo: '2026-10-12' } });
     expect(result.structuredContent).toMatchObject({ data: { nextCursor: 'cursor-2', hasMore: true }, httpStatus: 200 });
     expect(calls.at(-1)).toMatchObject({ authorization: 'Bearer isolated-test-connection' });
     expect(calls.at(-1)?.url).toContain('inbox=false');
+    expect(calls.at(-1)?.url).toContain('scheduledFrom=2026-10-12');
+    expect(calls.at(-1)?.url).toContain('scheduledTo=2026-10-12');
   });
   it('does not erase false, null, empty sets or request IDs, and distinguishes a proposal', async () => {
     const body = { requestId: 'same-logical-request', commands: [{ kind: 'task.update', targetId: 'task-1', expectedRevision: 3, input: { dueDate: null, tagIds: [], completeChildren: false, description: '' } }] };
