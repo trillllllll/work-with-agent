@@ -13,6 +13,7 @@ use std::os::windows::process::CommandExt;
 
 use tauri::{AppHandle, LogicalSize, Manager, RunEvent, WindowEvent};
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_window_state::StateFlags;
 
 const DESKTOP_PORT: u16 = 47316;
 
@@ -31,15 +32,28 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(
+            // Omit VISIBLE. Exit persists is_visible(), so a hidden window would reopen hidden.
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    StateFlags::SIZE
+                        | StateFlags::POSITION
+                        | StateFlags::MAXIMIZED
+                        | StateFlags::DECORATIONS
+                        | StateFlags::FULLSCREEN,
+                )
+                .build(),
+        )
         .manage(ServerProcess(Mutex::new(None)))
         .setup(|app| {
-            let handle = app.handle().clone();
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_min_size(Some(LogicalSize::new(578.0, 640.0)));
+                let _ = window.show();
+                let window_for_close = window.clone();
                 window.on_window_event(move |event| {
-                    if let WindowEvent::CloseRequested { .. } = event {
-                        handle.exit(0);
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = window_for_close.hide();
                     }
                 });
             }
@@ -53,10 +67,17 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("启动 Work With Agent 失败")
-        .run(|app, event| {
-            if let RunEvent::Exit = event {
-                stop_server(app);
+        .run(|app, event| match event {
+            RunEvent::Exit => stop_server(app),
+            #[cfg(target_os = "macos")]
+            RunEvent::Reopen { .. } => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
             }
+            _ => {}
         });
 }
 
