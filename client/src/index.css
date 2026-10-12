@@ -1171,6 +1171,78 @@ textarea.task-title.line-through {
   color: var(--muted-foreground);
 }
 
+.task-detail-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 20px 20px 0;
+}
+
+.task-parent-row {
+  display: flex;
+  flex: 0 0 32px;
+  align-items: center;
+  box-sizing: border-box;
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
+  max-width: 100%;
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.task-parent-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  width: fit-content;
+  height: 32px;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 20px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.task-parent-link:hover {
+  background: var(--glass-hover);
+  color: var(--foreground);
+}
+
+.task-parent-link:focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: 2px;
+}
+
+.task-parent-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-parent-chevron {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+}
+
 .cm-editor .cm-tooltip.cm-format-toolbar {
   display: flex;
   align-items: center;

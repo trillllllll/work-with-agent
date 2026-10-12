@@ -1,7 +1,7 @@
 import { createContext, forwardRef, useContext, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type MutableRefObject, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { CalendarDays, Check, Clock, Flag, Hash, Timer, X } from 'lucide-react';
-import { priorities, type Status, type Tag, type Task, type TaskPriority } from '@/lib/api.js';
+import { CalendarDays, Check, ChevronRight, Clock, Flag, Hash, Timer, X } from 'lucide-react';
+import { ApiError, priorities, type Status, type Tag, type Task, type TaskPriority } from '@/lib/api.js';
 import { draftPatch, isCompositionKey, mergeTaskDraft, taskDraft, type TaskDraft } from '@/lib/todo.js';
 import { scheduleLabel } from '@/lib/schedule.js';
 import { ScheduleFields, scheduleError, type ScheduleValue } from './ScheduleFields.js';
@@ -56,6 +56,7 @@ type EditContext = {
   toggleSubtask: (task: Task) => Promise<unknown>;
   createSubtask: (input: { title: string; topicId: string | null; parentId: string | null }) => Promise<unknown>;
   openSubtask: (id: string) => void;
+  openTask: (id: string) => void;
 };
 const EditContext = createContext<EditContext | null>(null);
 export function useEdit() {
@@ -274,6 +275,7 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
     toggleSubtask: onToggleTask ?? (async () => {}),
     createSubtask: onCreateTask ?? (async () => {}),
     openSubtask: onOpenTask ?? (() => {}),
+    openTask: onOpenTask ?? (() => {}),
   };
 
   const blocked = Boolean(editing?.conflicts.length && !acknowledgeConflict) || !draft.title.trim();
@@ -457,6 +459,37 @@ function placeCaret(caret: EditorCaret) {
   return document.activeElement === node;
 }
 
+function ParentTaskLink() {
+  const edit = useEdit();
+  const parentId = edit.task.parentId ?? null;
+  const query = useTask(parentId ?? '');
+  if (parentId === null) return null;
+
+  const unavailable = <div data-testid="task-parent-row" className="task-parent-row">父任务不可用</div>;
+  const loading = <div data-testid="task-parent-row" className="task-parent-row" role="status">正在加载父任务…</div>;
+  const notFound = query.error instanceof ApiError && query.error.status === 404;
+  const parent = query.data;
+  const matched = Boolean(parent && parent.id === parentId);
+  const navigable = parentId !== edit.taskId && !notFound && matched && !parent?.deletedAt;
+
+  const openParent = () => {
+    if (!parentId || parentId === edit.taskId || !navigable) return;
+    edit.openTask(parentId);
+  };
+
+  if (parentId === edit.taskId || notFound) return unavailable;
+  if (parent && parent.id === parentId) {
+    if (parent.deletedAt) return unavailable;
+    return <div data-testid="task-parent-row" className="task-parent-row"><button type="button" data-testid="task-parent-link" className="task-parent-link" title={parent.title} aria-label={`打开父任务：${parent.title}`} onClick={openParent}><span data-testid="task-parent-title" className="task-parent-title">{parent.title}</span><ChevronRight aria-hidden="true" width={14} height={14} strokeWidth={1.5} className="task-parent-chevron" /></button></div>;
+  }
+  if (parent && parent.id !== parentId) return unavailable;
+  if (query.isFetching) return loading;
+  if (query.isError) {
+    return <div data-testid="task-parent-row" className="task-parent-row"><button type="button" className="task-parent-link" aria-label="重新加载父任务" onClick={() => { void query.refetch(); }}>加载失败，重试</button></div>;
+  }
+  return loading;
+}
+
 function rememberEditorCaret(pending: { current: EditorCaret | null }) {
   if (typeof document === 'undefined') return;
   const caret = editorCaret(document.activeElement);
@@ -486,7 +519,8 @@ function DetailFrame({ presentation, panelSlot, children }: { presentation: 'pan
     if (!panelSlot) return <div hidden>{aside}</div>;
     return createPortal(aside, panelSlot);
   }
-  return <Dialog open onOpenChange={(open) => { if (!open && presentationRef.current === 'modal') edit.requestClose(); }}><DialogContent showCloseButton={false} surface="glass" className="flex h-[min(92dvh,840px)] max-h-[92dvh] max-w-[min(42rem,calc(100%-3rem))] flex-col overflow-hidden p-0" onOpenAutoFocus={(event) => { const saved = pendingFocus.current; if (!saved) return; event.preventDefault(); if (placeCaret(saved)) pendingFocus.current = null; else requestAnimationFrame(() => { if (pendingFocus.current && placeCaret(pendingFocus.current)) pendingFocus.current = null; }); }} onCloseAutoFocus={(event) => { if (presentationRef.current !== 'modal') event.preventDefault(); }}><DialogTitle className="sr-only">任务详情</DialogTitle><DialogDescription className="sr-only">编辑任务详情、标签、旗标和日期。</DialogDescription>{children}</DialogContent></Dialog>;
+  // The shared dialog zoom scales the pane from 0.95, so a 32px parent row measures about 30.8px until the animation ends.
+  return <Dialog open onOpenChange={(open) => { if (!open && presentationRef.current === 'modal') edit.requestClose(); }}><DialogContent showCloseButton={false} surface="glass" motion="none" className="flex h-[min(92dvh,840px)] max-h-[92dvh] max-w-[min(42rem,calc(100%-3rem))] flex-col overflow-hidden p-0" onOpenAutoFocus={(event) => { const saved = pendingFocus.current; if (!saved) return; event.preventDefault(); if (placeCaret(saved)) pendingFocus.current = null; else requestAnimationFrame(() => { if (pendingFocus.current && placeCaret(pendingFocus.current)) pendingFocus.current = null; }); }} onCloseAutoFocus={(event) => { if (presentationRef.current !== 'modal') event.preventDefault(); }}><DialogTitle className="sr-only">任务详情</DialogTitle><DialogDescription className="sr-only">编辑任务详情、标签、旗标和日期。</DialogDescription>{children}</DialogContent></Dialog>;
 }
 
 export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children' | 'fallback'> & { fallback?: Task; presentation: 'panel' | 'modal' | 'retained'; panelSlot: HTMLElement | null }>(function TaskDetailPane({ presentation, panelSlot, fallback, ...props }, ref) {
@@ -494,8 +528,11 @@ export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children
   const placeholder: Task = fallback ?? { id: props.id, title: '', description: '', status: 'todo', priority: 'none', dueDate: null, estimatedMinutes: null, scheduledStart: null, scheduledEnd: null, resultSummary: '', topicId: null, parentId: null, tagIds: [], allowedTransitions: [] };
   return <TaskExpand ref={ref} {...props} fallback={placeholder}>
     <DetailFrame presentation={presentation} panelSlot={panelSlot}>
-      <div className="flex min-h-0 flex-1 flex-col">
-        <header className="flex items-start gap-2 px-5 pt-5"><TaskStatusCheckbox /><div className="min-w-0 flex-1"><TaskTitleField /></div><ActivityButton onOpen={() => setActivity(true)} /><CloseDetailButton /></header>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="task-detail-header">
+          <ParentTaskLink />
+          <div data-testid="task-detail-title-row" className="flex min-w-0 items-start gap-2"><TaskStatusCheckbox /><div className="min-w-0 flex-1"><TaskTitleField /></div><ActivityButton onOpen={() => setActivity(true)} /><CloseDetailButton /></div>
+        </header>
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-5"><TaskExpandBody fill /></div>
       </div>
     </DetailFrame>
