@@ -44,6 +44,13 @@
   --tag-amber-fg: hsl(32 78% 30%); --tag-amber-bg: hsl(40 100% 94%); --tag-amber-border: hsl(36 60% 74%);
   --tag-rose-fg: hsl(345 62% 40%); --tag-rose-bg: hsl(345 100% 96%); --tag-rose-border: hsl(345 50% 82%);
   --tag-slate-fg: hsl(220 9% 32%); --tag-slate-bg: hsl(220 14% 94%); --tag-slate-border: hsl(220 8% 76%);
+  --time-band-blue-bg: #EAF2FF; --time-band-blue-fg: #1E40AF;
+  --time-band-green-bg: #EAF7EF; --time-band-green-fg: #166534;
+  --time-band-orange-bg: #FFF3E5; --time-band-orange-fg: #9A3412;
+  --time-band-purple-bg: #F3EDFF; --time-band-purple-fg: #6B21A8;
+  --time-band-pink-bg: #FCECF3; --time-band-pink-fg: #9D174D;
+  --time-band-gray-bg: #F0F2F5; --time-band-gray-fg: #374151;
+
   /* 轻透玻璃语义令牌 */
   --glass-bg: rgb(250 250 250 / 0.94);
   --glass-bg-strong: rgb(255 255 255 / 0.97);
@@ -103,6 +110,13 @@
   --tag-amber-fg: hsl(38 90% 72%); --tag-amber-bg: hsl(34 40% 14%); --tag-amber-border: hsl(34 32% 28%);
   --tag-rose-fg: hsl(345 80% 78%); --tag-rose-bg: hsl(345 32% 16%); --tag-rose-border: hsl(345 26% 32%);
   --tag-slate-fg: hsl(220 12% 78%); --tag-slate-bg: hsl(220 10% 16%); --tag-slate-border: hsl(220 8% 32%);
+  --time-band-blue-bg: #18263D; --time-band-blue-fg: #BFDBFE;
+  --time-band-green-bg: #182D25; --time-band-green-fg: #BBF7D0;
+  --time-band-orange-bg: #35271C; --time-band-orange-fg: #FED7AA;
+  --time-band-purple-bg: #2A213B; --time-band-purple-fg: #E9D5FF;
+  --time-band-pink-bg: #352130; --time-band-pink-fg: #FBCFE8;
+  --time-band-gray-bg: #252B35; --time-band-gray-fg: #E5E7EB;
+
   --glass-bg: rgb(27 27 27 / 0.95);
   --glass-bg-strong: rgb(31 31 31 / 0.97);
   --glass-subtle: rgb(255 255 255 / 0.065);

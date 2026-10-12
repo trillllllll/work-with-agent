@@ -545,3 +545,15 @@ model CodeApplication {
   updatedAt String
   @@index([runId])
 }
+
+model PlanTimeBand {
+  id           String @id
+  name         String
+  startMinute  Int    @map("start_minute")
+  endMinute    Int    @map("end_minute")
+  weekdaysJson String @map("weekdays_json")
+  color        String
+  position     Int
+
+  @@map("plan_time_bands")
+}

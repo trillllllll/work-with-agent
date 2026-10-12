@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 export const e2eDatabase = new PrismaClient({ datasourceUrl: 'file:../../e2e/.data/agent-studio-e2e.db' });
 
 export async function resetE2eDatabase() {
+  await e2eDatabase.planTimeBand.deleteMany();
   for (const name of ['codeApplication', 'handoffReview', 'artifact', 'runEvent', 'run', 'handoff', 'reviewBatch', 'reviewRule', 'organizationRequest', 'workingBrief', 'graphLink', 'entity', 'memoryVersion', 'memory', 'materialVersion', 'material', 'requestReceipt', 'proposal', 'connection'] as const) await e2eDatabase[name].deleteMany();
   const hash = (value: string) => createHash('sha256').update(value).digest('hex');
   const token = 'wwa-e2e-owner-session';

@@ -19,6 +19,7 @@ import { registerGraphCommands } from './application/knowledge-graph.js';
 import { ReviewService } from './application/reviews.js';
 import { OrganizationService } from './application/knowledge-organizations.js';
 import { FocusService } from './application/focus.js';
+import { listPlanTimeBands, replacePlanTimeBands } from './application/plan-time-bands.js';
 import { generateExternalReview } from './runner/review-generator.js';
 
 export const app = express();
@@ -115,6 +116,8 @@ app.get('/api/tasks/:id/images/:imageId', async (req, res, next) => {
 app.get('/api/tasks/:id', async (req, res, next) => { try { const task = await tasks.get(String(req.params.id)); if (!task) return res.status(404).json({ data: null, error: '任务不存在' }); send(res, task); } catch (error) { next(error); } });
 app.get('/api/tasks/:id/topic-history', async (req, res, next) => { try { send(res, await tasks.topicHistory(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/tasks/:id/activity', async (req, res, next) => { try { send(res, await taskActivity(getActor(req), String(req.params.id))); } catch (error) { next(error); } });
+app.get('/api/plan/time-bands', async (_req, res, next) => { try { send(res, await listPlanTimeBands()); } catch (error) { next(error); } });
+app.put('/api/plan/time-bands', async (req, res, next) => { try { send(res, await replacePlanTimeBands(req.body)); } catch (error) { next(error); } });
 app.get('/api/focus-sessions', async (req, res, next) => { try { send(res, await focus.list(req.query)); } catch (error) { next(error); } });
 app.post('/api/focus-sessions', schema(z.object({ taskId: z.string().min(1).nullable(), kind: z.enum(['focus', 'break']).optional(), startedAt: z.string().min(1), endedAt: z.string().min(1), durationMinutes: z.number().int().min(0).max(1440), plannedMinutes: z.number().int().min(1).max(10080).optional(), completed: z.boolean().optional() })), async (req, res, next) => { try { send(res, await focus.create(req.body)); } catch (error) { next(error); } });
 app.post('/api/tasks', async (req, res, next) => { try { send(res, await tasks.create(req.body, userContext(req))); } catch (error) { next(error); } });

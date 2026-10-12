@@ -9,6 +9,10 @@ import { Input } from '@/components/ui/input.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { ScheduleFields, scheduleError, type ScheduleValue } from '@/components/tasks/ScheduleFields.js';
 import { isCompositionKey } from '@/lib/todo.js';
+import type { PlanTimeBand } from '@/lib/api.js';
+import { TimeBandLayer } from './TimeBandLayer.js';
+import { TimeBandControls } from './TimeBandDialog.js';
+import { usePlanTimeBands } from './usePlanTimeBands.js';
 
 type Mode = 'day' | 'week' | 'month';
 type Props = {
@@ -70,7 +74,7 @@ function NowLine({ dateKey, today }: { dateKey: string; today: string }) {
   useEffect(() => { const timer = window.setInterval(() => setNow(localDateTime()), 30000); return () => window.clearInterval(timer); }, []);
   return dateKey === today ? <div className="pointer-events-none absolute inset-x-0 z-10 h-0.5 bg-destructive" style={{ top: minutesOf(now) / 60 * hourHeight }} /> : null;
 }
-function Timeline({ days, tasks, today, busy, onOpen, onToggle, onCreate }: { days: string[]; tasks: Task[]; today: string; busy: boolean; onOpen: Props['onOpen']; onToggle: Props['onToggle']; onCreate: (value: ScheduleValue) => void }) {
+function Timeline({ days, tasks, today, busy, bands, onOpen, onToggle, onCreate }: { days: string[]; tasks: Task[]; today: string; busy: boolean; bands: readonly PlanTimeBand[]; onOpen: Props['onOpen']; onToggle: Props['onToggle']; onCreate: (value: ScheduleValue) => void }) {
   const scroller = useRef<HTMLDivElement>(null);
   const columns = `48px repeat(${days.length}, minmax(0, 1fr))`;
   useEffect(() => { if (scroller.current) scroller.current.scrollTop = Math.max(0, minutesOf(localDateTime()) / 60 * hourHeight - 120); }, [days[0], days.length]);
@@ -87,13 +91,14 @@ function Timeline({ days, tasks, today, busy, onOpen, onToggle, onCreate }: { da
     <div ref={scroller} data-testid="timeline-scroll" className="max-h-[65vh] overflow-y-auto border-t border-[var(--glass-divider)]">
       <div className="grid" style={{ gridTemplateColumns: columns, height: timelineHeight }}>
         <div>{Array.from({ length: 24 }, (_, hour) => <div key={hour} className="border-b border-[var(--glass-divider)] pr-1 text-right text-[10px] tabular-nums text-muted-foreground" style={{ height: hourHeight }}>{String(hour).padStart(2, '0')}:00</div>)}</div>
-        {days.map((day) => <div key={day} className="relative border-l border-[var(--glass-divider)]">
+        {days.map((day) => <div key={day} data-testid="time-band-day" data-date={day} className="relative isolate border-l border-[var(--glass-divider)]">
+          <TimeBandLayer bands={bands} dateKey={day} />
           {Array.from({ length: 48 }, (_, index) => {
             const start = addMinutes(`${day}T00:00`, index * 30);
             const id = `slot:${day}:${start.slice(11, 13)}:${start.slice(14, 16)}`;
-            return <DropTarget key={id} id={id} className="absolute inset-x-0" style={{ top: index * hourHeight / 2, height: hourHeight / 2 }}><button type="button" disabled={busy} aria-label={`在${start.replace('T', ' ')}添加任务`} className="h-full w-full hover:bg-primary/5 focus-visible:bg-primary/10" onClick={() => onCreate({ dueDate: day, scheduledStart: start, scheduledEnd: addMinutes(start, 60) })} /></DropTarget>;
+            return <DropTarget key={id} id={id} className="absolute inset-x-0 z-[1]" style={{ top: index * hourHeight / 2, height: hourHeight / 2 }}><button type="button" disabled={busy} aria-label={`在${start.replace('T', ' ')}添加任务`} className="h-full w-full bg-transparent hover:bg-primary/5 focus-visible:bg-primary/10" onClick={() => onCreate({ dueDate: day, scheduledStart: start, scheduledEnd: addMinutes(start, 60) })} /></DropTarget>;
           })}
-          {Array.from({ length: 24 }, (_, hour) => <div key={hour} className="pointer-events-none absolute inset-x-0 border-b border-[var(--glass-divider)]" style={{ top: hour * hourHeight, height: hourHeight }} />)}
+          {Array.from({ length: 24 }, (_, hour) => <div key={hour} className="pointer-events-none absolute inset-x-0 z-[1] border-b border-[var(--glass-divider)]" style={{ top: hour * hourHeight, height: hourHeight }} />)}
           {layoutTimed(tasks, day).map((block) => <TimedTask key={block.id} block={block} dateKey={day} busy={busy} onOpen={onOpen} onToggle={onToggle} />)}
           <NowLine dateKey={day} today={today} />
         </div>)}
@@ -120,6 +125,7 @@ function CreateScheduledTask({ initial, topics, onClose, onCreate }: { initial: 
 
 export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: Props) {
   const today = useLocalDate();
+  const timeBands = usePlanTimeBands();
   const [mode, setMode] = useState<Mode>('day');
   const [anchor, setAnchor] = useState(today);
   const [showCompleted, setShowCompleted] = useState(() => localStorage.getItem('todo.plan.showCompleted') !== 'false');
@@ -190,10 +196,11 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
         <div className="glass-control inline-flex rounded-full p-1">{(['day', 'week', 'month'] as const).map((item) => <button key={item} type="button" data-plan-mode={item} aria-pressed={mode === item} className={cn('h-8 rounded-full px-4 text-sm', mode === item ? 'bg-[var(--glass-hover)] font-medium' : 'text-muted-foreground')} onClick={() => { clearDrag(); setMode(item); }}>{item === 'day' ? '日' : item === 'week' ? '周' : '月'}</button>)}</div>
         <div className="flex flex-wrap items-center gap-2 text-sm"><button type="button" aria-label="上一段" className="size-8 rounded hover:bg-muted" onClick={() => setAnchor(mode === 'month' ? shiftMonth(anchor, -1) : addDays(anchor, mode === 'week' ? -7 : -1))}>‹</button><Button variant="ghost" size="sm" className="text-foreground" onClick={() => setAnchor(today)}>今天</Button><button type="button" aria-label="下一段" className="size-8 rounded hover:bg-muted" onClick={() => setAnchor(mode === 'month' ? shiftMonth(anchor, 1) : addDays(anchor, mode === 'week' ? 7 : 1))}>›</button><span className="text-xs text-muted-foreground">{rangeLabel(mode, anchor, range)}</span></div>
         <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={showCompleted} onChange={(event) => { setShowCompleted(event.target.checked); localStorage.setItem('todo.plan.showCompleted', String(event.target.checked)); }} />显示已完成</label>
+        <TimeBandControls />
       </header>
       {error ? <p role="alert" className="text-destructive">{error.message}</p> : planned.isLoading || trayQuery.isLoading ? <p className="py-12 text-center text-muted-foreground">正在加载任务…</p> : <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
         <div className="min-w-0">
-          {mode !== 'month' ? <Timeline days={days} tasks={tasks} today={today} busy={disabled} onOpen={onOpen} onToggle={onToggle} onCreate={setCreating} /> : <div className="overflow-x-auto"><div className="min-w-[560px]">
+          {mode !== 'month' ? <Timeline days={days} tasks={tasks} today={today} busy={disabled} bands={timeBands.data?.bands ?? []} onOpen={onOpen} onToggle={onToggle} onCreate={setCreating} /> : <div className="overflow-x-auto"><div className="min-w-[560px]">
             <div className="grid grid-cols-7 py-2 text-center text-xs text-muted-foreground">{['一', '二', '三', '四', '五', '六', '日'].map((label) => <div key={label}>{label}</div>)}</div>
             <div className="grid grid-cols-7">{days.map((day) => {
               const items = tasks.filter((task) => occursOn(task, day)).sort((a, b) => (a.scheduledStart ?? '').localeCompare(b.scheduledStart ?? '') || a.id.localeCompare(b.id));

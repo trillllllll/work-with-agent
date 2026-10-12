@@ -28,6 +28,22 @@ export type CliCommandSetting = { command: string; source: 'manual' | 'auto' | '
 export type Settings = { baseUrl: string; model: string; apiKeyConfigured: boolean; apiKeyMasked: string | null; cli?: { codex: CliCommandSetting; claude: CliCommandSetting }; discovered?: Record<string, CliCommandSetting> };
 export type ApprovalResponse = { result: ToolResult; assistantMessage?: string; assistantMessageId?: string; summaryError?: string };
 export type View = 'board' | 'quadrant' | 'chat' | 'topics' | 'inbox' | 'settings' | 'trash' | 'changes' | 'today' | 'search' | 'tags' | 'archived' | 'more' | 'connections' | 'proposals' | 'knowledge' | 'runs' | 'reviews' | 'plan' | 'focus';
+export type TimeBandColor = 'blue' | 'green' | 'orange' | 'purple' | 'pink' | 'gray';
+export type PlanTimeBand = {
+  id: string;
+  name: string;
+  startMinute: number;
+  endMinute: number;
+  weekdays: number[];
+  color: TimeBandColor;
+};
+export type PlanTimeBandsPayload = { bands: PlanTimeBand[] };
+export type TimeBandSegment = {
+  bandId: string;
+  startMinute: number;
+  endMinute: number;
+  color: TimeBandColor;
+};
 export type FocusSession = {
   id: string; taskId: string | null; kind: 'focus' | 'break';
   startedAt: string; endedAt: string; durationMinutes: number;
