@@ -1,9 +1,13 @@
 import { useImperativeHandle, useLayoutEffect, useRef, type FocusEvent, type Ref } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from '@/lib/query-client.js';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { Compartment, EditorSelection, EditorState, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import { BlockType, type BlockInfo, Decoration, EditorView, keymap, placeholder, WidgetType, type DecorationSet } from '@codemirror/view';
 import { MarkdownView } from '@/components/chat/MarkdownView.js';
+import { MaterialReference } from '@/components/library/MaterialReference.js';
+import { materialIdFromHref } from '@/lib/material-citation.js';
 import { blockHoldsCaret, markdownBlocks } from '@/lib/markdown-blocks.js';
 import { formatToolbar } from './description-format-toolbar.js';
 import { isTaskImageSrc } from '@/lib/task-description.js';
@@ -75,7 +79,7 @@ class PreviewWidget extends WidgetType {
     host.dataset.blockFrom = String(this.from);
     host.dataset.blockTo = String(this.from + this.source.length);
     this.root = createRoot(host);
-    this.root.render(<BlockPreview source={this.source} taskId={this.taskId} from={this.from} handlers={this.handlers} />);
+    this.root.render(<QueryClientProvider client={queryClient}><BlockPreview source={this.source} taskId={this.taskId} from={this.from} handlers={this.handlers} /></QueryClientProvider>);
     queueMicrotask(() => view.requestMeasure());
     return host;
   }
@@ -93,6 +97,13 @@ class PreviewWidget extends WidgetType {
   ignoreEvent() {
     return true;
   }
+}
+
+function plainText(node: unknown): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(plainText).join('');
+  if (node && typeof node === 'object' && 'props' in node) return plainText((node as { props?: { children?: unknown } }).props?.children);
+  return '';
 }
 
 function opensElsewhere(node: Element) {
@@ -139,7 +150,7 @@ function BlockPreview({ source, taskId, from, handlers }: { source: string; task
     event.preventDefault();
     handlers.zoom(src);
   }}>
-    <MarkdownView content={source} components={{
+    <MarkdownView content={source} allowMaterialLinks components={{
       img: ({ src, alt }) => {
         const address = typeof src === 'string' ? src : undefined;
         if (!isTaskImageSrc(taskId, address)) return null;
@@ -149,6 +160,11 @@ function BlockPreview({ source, taskId, from, handlers }: { source: string; task
             <span className="rounded-full bg-slate-950/75 px-2 py-0.5 text-xs text-white">右键放大</span>
           </span>
         </span>;
+      },
+      a: ({ href, children }) => {
+        const materialId = materialIdFromHref(typeof href === 'string' ? href : '');
+        if (!materialId) return <a href={href} target="_blank" rel="noreferrer">{children}</a>;
+        return <MaterialReference materialId={materialId} fallback={plainText(children)} />;
       },
     }} />
   </div>;

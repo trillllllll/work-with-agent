@@ -30,7 +30,7 @@ type MessageRole = 'user' | 'assistant' | 'tool' | 'system';
 type MessageStatus = 'streaming' | 'completed' | 'failed';
 type PageContextInput = { topicId?: string | null; taskId?: string | null; page?: string | null };
 type SummaryModel = {
-  complete(messages: Array<{ role: string; content: string | null }>, signal?: AbortSignal, includeTools?: boolean): Promise<{ text: string }>;
+  complete(messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> | null }>, signal?: AbortSignal, includeTools?: boolean): Promise<{ text: string }>;
 };
 type StoredMessage = {
   id: string;

@@ -3,6 +3,8 @@ import { DESKTOP_PORT, isDesktopPackage } from './application/desktop-paths.js';
 import { createOwnerBootstrapToken } from './application/security.js';
 import { reconcileLocalRuns } from './application/runs.js';
 import { startReviewScheduler } from './application/reviews.js';
+import { recoverInterruptedUploads } from './application/library/uploads.js';
+import { startLibraryWorker } from './application/library/worker.js';
 import { mountDesktopStatic } from './desktop-static.js';
 
 async function start() {
@@ -37,7 +39,9 @@ async function start() {
   const timer = setInterval(() => { void reconcileLocalRuns(); }, 2_000);
   timer.unref();
   const stopReviews = startReviewScheduler(reviewService);
-  server.on('close', () => { clearInterval(timer); stopReviews(); });
+  void recoverInterruptedUploads();
+  const stopLibrary = startLibraryWorker();
+  server.on('close', () => { clearInterval(timer); stopReviews(); stopLibrary(); });
 }
 
 start().catch((error) => {

@@ -26,7 +26,8 @@ export type ChatEvent = {
   toolCallId?: string;
   preview?: TaskBatchPreview;
 };
-export type ModelMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string | null; tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>; tool_call_id?: string };
+export type ModelContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
+export type ModelMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string | ModelContentPart[] | null; tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>; tool_call_id?: string };
 
 function serializeToolCalls(calls: ToolCall[]) {
   return JSON.stringify(calls.map((call) => ({ id: call.id, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.arguments ?? {}) } })));

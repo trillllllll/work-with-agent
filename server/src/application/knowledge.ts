@@ -8,6 +8,9 @@ import { registerCommandHandler, registerEvidenceValidator, type Command } from 
 import { registerUndoHandler, type UndoRecord } from './undo-registry.js';
 import { jsonSchema } from './command-catalog.js';
 import { knowledgeHash, knowledgeStorageRoot, readKnowledgeBlob, storeKnowledgeBlob } from './knowledge-blobs.js';
+import { topicVisible } from './library/access.js';
+import { applyLegacyPointer, materialSnapshot, replaceOrganization, restoreOrganization, seedLegacyLink } from './library/links.js';
+import { afterMaterialVersion, applyTaskPointer, createMaterialFromUpload, isTaskOnlyUpdate, isUploadCreate, uploadMaterialInput } from './library/material-write.js';
 
 export { knowledgeHash, knowledgeStorageRoot };
 
@@ -225,11 +228,20 @@ export async function takeKnowledgeSnapshot(actor: Actor, input: { topicId: stri
 async function inspectKnowledgeCommand(tx: KnowledgeDb, actor: Actor, command: Command) {
   const input = command.input;
   if (command.kind === 'material.create') {
+    if (isUploadCreate(input)) {
+      const data = uploadMaterialInput.parse(input);
+      const topic = await checkKnowledgeScope(tx, actor, data.topicId, true);
+      return { preconditions: { topic: topic ? { id: topic.id, revision: topic.revision } : null, uploadId: data.uploadId }, preview: { kind: command.kind, topicId: data.topicId, hasAttachment: true } };
+    }
     const data = materialSchema.parse(input);
     validateMaterialInput(data);
     const topic = await checkKnowledgeScope(tx, actor, data.topicId, true);
     let task: { id: string; revision: number } | null = null;
-    if (data.taskId) { const source = await knowledgeSource(tx, actor, { type: 'task', id: data.taskId }); if (source.topicId !== data.topicId || source.unavailable) throw knowledgeFailure('SOURCE_SCOPE_MISMATCH', '关联任务不属于当前清单', 403); task = { id: source.id, revision: source.revision }; }
+    if (data.taskId) {
+      const source = await knowledgeSource(tx, actor, { type: 'task', id: data.taskId });
+      if (source.unavailable) throw knowledgeFailure('TASK_NOT_EDITABLE', '回收站中的任务不能关联');
+      task = { id: source.id, revision: source.revision };
+    }
     return { preconditions: { topic: topic ? { id: topic.id, revision: topic.revision } : null, task }, preview: { kind: command.kind, title: data.title, topicId: data.topicId, hasAttachment: Boolean(data.attachmentBase64) } };
   }
   if (command.kind.startsWith('material.')) {
@@ -243,7 +255,7 @@ async function inspectKnowledgeCommand(tx: KnowledgeDb, actor: Actor, command: C
       validateMaterialInput({ topicId: material.topicId, kind: material.kind as z.infer<typeof materialSchema>['kind'], title: data.title ?? material.title, content: data.content ?? version.content, uri: data.uri === undefined ? material.uri : data.uri, metadata: data.metadata ?? parseJson(version.metadata, {}), attachmentBase64: data.attachmentBase64 ?? (material.kind === 'attachment' ? 'AA==' : undefined), fileName: data.fileName, mimeType: data.mimeType });
       if (data.taskId) {
         const source = await knowledgeSource(tx, actor, { type: 'task', id: data.taskId });
-        if (source.topicId !== material.topicId || source.unavailable) throw knowledgeFailure('SOURCE_SCOPE_MISMATCH', '关联任务不属于当前清单', 403);
+        if (source.unavailable) throw knowledgeFailure('TASK_NOT_EDITABLE', '回收站中的任务不能关联');
       }
     } else z.object({ archived: z.boolean() }).strict().parse(input);
     return { preconditions: { materialId: material.id, revision: material.revision, topicRevision: topic?.revision ?? null }, preview: { kind: command.kind, title: material.title, changes: Object.keys(input).filter((key) => key !== 'attachmentBase64') } };
@@ -266,27 +278,35 @@ async function inspectKnowledgeCommand(tx: KnowledgeDb, actor: Actor, command: C
 async function executeKnowledgeCommand(tx: KnowledgeDb, actor: Actor, command: Command, context: MutationContext) {
   await inspectKnowledgeCommand(tx, actor, command);
   const timestamp = knowledgeNow();
+  if (command.kind === 'material.create' && isUploadCreate(command.input)) return createMaterialFromUpload(tx, actor, uploadMaterialInput.parse(command.input), context);
   if (command.kind === 'material.create' || command.kind === 'material.update') {
     const existing = command.kind === 'material.update' ? await tx.material.findUniqueOrThrow({ where: { id: command.targetId } }) : null;
+    if (existing && isTaskOnlyUpdate(command.input)) return applyTaskPointer(tx, actor, existing, materialUpdateSchema.parse(command.input).taskId ?? null, context);
     const previous = existing ? await tx.materialVersion.findUniqueOrThrow({ where: { materialId_revision: { materialId: existing.id, revision: existing.revision } } }) : null;
     const data = existing ? materialUpdateSchema.parse(command.input) : materialSchema.parse(command.input);
+    const beforeSnap = existing ? await materialSnapshot(tx, existing) : null;
+    const linkChanged = Boolean(existing && data.taskId !== undefined && data.taskId !== existing.taskId && await applyLegacyPointer(tx, existing, data.taskId ?? null, actor));
     const bytes = materialBytes(data.attachmentBase64);
     const attachmentPath = bytes ? context.preview ? knowledgeHash(bytes) : await storeAttachment(bytes) : previous?.attachmentPath ?? null;
     const content = data.content ?? previous?.content ?? '';
     const contentHash = knowledgeHash(`${content}\0${attachmentPath ?? ''}`);
-    const material = existing ? await tx.material.update({ where: { id: existing.id, revision: command.expectedRevision }, data: { title: data.title ?? existing.title, ...(data.uri !== undefined ? { uri: data.uri } : {}), ...(data.taskId !== undefined ? { taskId: data.taskId } : {}), revision: { increment: 1 }, updatedAt: timestamp } }) : await tx.material.create({ data: { id: context.entityId ?? command.entityId, topicId: 'topicId' in data ? data.topicId : null, taskId: 'taskId' in data ? data.taskId : null, kind: 'kind' in data ? data.kind : 'text', title: data.title!, uri: data.uri, createdAt: timestamp, updatedAt: timestamp } });
+    const material = existing ? await tx.material.update({ where: { id: existing.id, revision: command.expectedRevision }, data: { title: data.title ?? existing.title, ...(data.uri !== undefined ? { uri: data.uri } : {}), ...(data.taskId !== undefined ? { taskId: data.taskId } : {}), ...(linkChanged ? { organizationRevision: { increment: 1 } } : {}), revision: { increment: 1 }, updatedAt: timestamp } }) : await tx.material.create({ data: { id: context.entityId ?? command.entityId, topicId: 'topicId' in data ? data.topicId : null, taskId: 'taskId' in data ? data.taskId : null, kind: 'kind' in data ? data.kind : 'text', title: data.title!, uri: data.uri, createdAt: timestamp, updatedAt: timestamp } });
     await tx.materialVersion.create({ data: { materialId: material.id, revision: material.revision, content, contentHash, metadata: JSON.stringify(data.metadata ?? (previous ? parseJson(previous.metadata, {}) : {})), attachmentPath, fileName: data.fileName ?? previous?.fileName, mimeType: data.mimeType ?? previous?.mimeType, createdAt: timestamp } });
-    await recordChange(tx, 'material', material.id, existing ? 'update' : 'create', existing, { ...material, contentHash }, context);
+    if (!existing && material.taskId) await seedLegacyLink(tx, material.id, material.taskId, actor);
+    await afterMaterialVersion(tx, material);
+    await recordChange(tx, 'material', material.id, existing ? 'update' : 'create', beforeSnap, { ...await materialSnapshot(tx, material), contentHash }, context);
     return { ...material, content, contentHash, hasAttachment: Boolean(attachmentPath) };
   }
   if (command.kind === 'material.archive') {
     const before = await tx.material.findUniqueOrThrow({ where: { id: command.targetId } });
+    const beforeSnap = await materialSnapshot(tx, before);
     const data = z.object({ archived: z.boolean() }).parse(command.input);
     const result = await tx.material.update({ where: { id: before.id, revision: command.expectedRevision }, data: { archivedAt: data.archived ? timestamp : null, revision: { increment: 1 }, updatedAt: timestamp } });
     const latest = await tx.materialVersion.findUniqueOrThrow({ where: { materialId_revision: { materialId: before.id, revision: before.revision } } });
     const { id: _id, ...version } = latest;
     await tx.materialVersion.create({ data: { ...version, revision: result.revision, createdAt: timestamp } });
-    await recordChange(tx, 'material', before.id, data.archived ? 'archive' : 'restore', before, result, context);
+    await afterMaterialVersion(tx, result);
+    await recordChange(tx, 'material', before.id, data.archived ? 'archive' : 'restore', beforeSnap, await materialSnapshot(tx, result), context);
     return result;
   }
   const existing = command.kind !== 'memory.create' ? await tx.memory.findUniqueOrThrow({ where: { id: command.targetId } }) : null;
@@ -310,6 +330,12 @@ export async function undoKnowledgeChange(tx: KnowledgeDb, actor: Actor, record:
   const before = record.beforeSnapshot ? JSON.parse(record.beforeSnapshot) : null;
   const after = record.afterSnapshot ? JSON.parse(record.afterSnapshot) : null;
   if (!after) throw knowledgeFailure('UNDO_CONFLICT', '缺少可验证的知识版本');
+  if (record.entityType === 'material' && before?.links && before.revision === after.revision) {
+    const current = await tx.material.findUnique({ where: { id: record.entityId } });
+    if (!current) throw knowledgeFailure('UNDO_CONFLICT', '材料已有后续修改');
+    await checkKnowledgeScope(tx, actor, current.topicId, true);
+    return restoreOrganization(tx, current, before, after);
+  }
   const dependents = await tx.memory.findMany({ where: { status: 'active', id: { not: record.entityId } }, select: { evidence: true } });
   if (dependents.some((row) => readEvidence(row.evidence).some((ref) => ref.type === record.entityType && ref.id === record.entityId && ref.revision === after.revision))) throw knowledgeFailure('UNDO_CONFLICT', '该版本已有后续有效记忆引用，不能撤销');
   const timestamp = knowledgeNow();
@@ -321,6 +347,11 @@ export async function undoKnowledgeChange(tx: KnowledgeDb, actor: Actor, record:
     const result = await tx.material.update({ where: { id: current.id, revision: current.revision }, data: { title: before?.title ?? current.title, uri: before ? before.uri : current.uri, archivedAt: before ? before.archivedAt : timestamp, ...(before ? { taskId: before.taskId ?? null } : {}), revision: { increment: 1 }, updatedAt: timestamp } });
     const { id: _id, ...version } = source;
     await tx.materialVersion.create({ data: { ...version, revision: result.revision, createdAt: timestamp } });
+    await afterMaterialVersion(tx, result);
+    if (before?.links) {
+      if (current.organizationRevision !== after.organizationRevision) throw knowledgeFailure('UNDO_CONFLICT', '材料整理已有后续修改');
+      await replaceOrganization(tx, result.id, before);
+    }
     return result;
   }
   const current = await tx.memory.findUnique({ where: { id: record.entityId } });
@@ -333,14 +364,14 @@ export async function undoKnowledgeChange(tx: KnowledgeDb, actor: Actor, record:
   return result;
 }
 
-async function withCurrentFiles<T extends { id: string; revision: number; taskId: string | null }>(items: T[]) {
+async function withCurrentFiles<T extends { id: string; revision: number; taskId: string | null }>(actor: Actor, items: T[]) {
   if (!items.length) return [];
   const versions = await prisma.materialVersion.findMany({ where: { OR: items.map((item) => ({ materialId: item.id, revision: item.revision })) }, select: { materialId: true, fileName: true, mimeType: true } });
   const files = new Map(versions.map((version) => [version.materialId, version]));
   const taskIds = [...new Set(items.flatMap((item) => item.taskId ? [item.taskId] : []))];
-  const tasks = taskIds.length ? await prisma.task.findMany({ where: { id: { in: taskIds } }, select: { id: true, title: true } }) : [];
-  const titles = new Map(tasks.map((task) => [task.id, task.title]));
-  return items.map((item) => ({ ...item, fileName: files.get(item.id)?.fileName ?? null, mimeType: files.get(item.id)?.mimeType ?? null, taskTitle: item.taskId ? titles.get(item.taskId) ?? null : null }));
+  const tasks = taskIds.length ? await prisma.task.findMany({ where: { id: { in: taskIds } }, select: { id: true, title: true, topicId: true } }) : [];
+  const titles = new Map(tasks.filter((task) => topicVisible(actor, task.topicId)).map((task) => [task.id, task.title]));
+  return items.map((item) => ({ ...item, fileName: files.get(item.id)?.fileName ?? null, mimeType: files.get(item.id)?.mimeType ?? null, taskId: item.taskId && titles.has(item.taskId) ? item.taskId : null, taskTitle: item.taskId && titles.has(item.taskId) ? titles.get(item.taskId) ?? null : null }));
 }
 
 export class KnowledgeService {
@@ -353,7 +384,7 @@ export class KnowledgeService {
     const orderBy = options.sort === 'title' ? [{ title: direction }, { id: 'asc' as const }] : options.sort === 'kind' ? [{ kind: direction }, { id: 'asc' as const }] : [{ updatedAt: direction }, { id: 'asc' as const }];
     const where = { topicId, ...(options.taskId ? { taskId: options.taskId } : options.linked === 'task' ? { taskId: { not: null } } : {}), ...(options.kind ? { kind: options.kind } : {}), ...(since ? { createdAt: { gte: since } } : {}), ...(options.archived === 'only' ? { archivedAt: { not: null } } : options.includeArchived ? {} : { archivedAt: null }) };
     const [rows, total] = await Promise.all([prisma.material.findMany({ where, orderBy, take: limit, skip: offset }), prisma.material.count({ where })]);
-    const items = await withCurrentFiles(rows);
+    const items = await withCurrentFiles(actor, rows);
     return { items, total, nextCursor: offset + items.length < total ? offset + items.length : null, hasMore: offset + items.length < total };
   }
   async material(actor: Actor, id: string) {
@@ -361,7 +392,8 @@ export class KnowledgeService {
     if (!material) throw knowledgeFailure('NOT_FOUND', '材料不存在', 404);
     await checkKnowledgeScope(prisma, actor, material.topicId);
     const versions = await prisma.materialVersion.findMany({ where: { materialId: id }, orderBy: { revision: 'desc' } });
-    return { ...material, versions: versions.map((value) => ({ ...publicVersion(value), metadata: parseJson(value.metadata, {}) })) };
+    const [visible] = await withCurrentFiles(actor, [material]);
+    return { ...material, taskId: visible.taskId, taskTitle: visible.taskTitle, versions: versions.map((value) => ({ ...publicVersion(value), metadata: parseJson(value.metadata, {}) })) };
   }
   async attachment(actor: Actor, id: string, revision: number) {
     const material = await prisma.material.findUnique({ where: { id } });

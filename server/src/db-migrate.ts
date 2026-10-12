@@ -1,4 +1,5 @@
 import { migrateTaskSchedules } from './schedule-migration.js';
+import { migrateLibrary } from './application/library/migrate.js';
 import 'dotenv/config';
 import { execFileSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
@@ -48,6 +49,7 @@ export async function migrateDatabase(datasourceUrl = process.env.DATABASE_URL) 
     }
     runPrisma(['migrate', 'deploy']);
     await migrateTaskSchedules(prisma);
+    await migrateLibrary(prisma);
   } finally {
     await prisma.$disconnect();
   }

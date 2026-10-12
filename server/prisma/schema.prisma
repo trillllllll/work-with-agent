@@ -88,6 +88,7 @@ model Task {
   tags          TaskTag[]
   focusSessions FocusSession[]
   topicAssignments TaskTopicAssignment[]
+  materialLinks MaterialTaskLink[]
 
   @@index([topicId])
   @@index([topicId, deletedAt])
@@ -317,9 +318,15 @@ model Material {
   archivedAt String?
   createdAt String
   updatedAt String
+  folderId String?
+  organizationRevision Int @default(1)
   versions MaterialVersion[]
+  folder LibraryFolder? @relation(fields: [folderId], references: [id], onDelete: Restrict)
+  tags MaterialTag[]
+  taskLinks MaterialTaskLink[]
   @@index([topicId, archivedAt, updatedAt])
   @@index([taskId])
+  @@index([folderId, archivedAt, updatedAt])
 }
 model MaterialVersion {
   id String @id @default(cuid())
@@ -333,6 +340,8 @@ model MaterialVersion {
   fileName String?
   createdAt String
   material Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  extractions MaterialExtraction[]
+  searchDocuments LibrarySearchDocument[]
   @@unique([materialId, revision])
 }
 model Memory {
@@ -544,6 +553,146 @@ model CodeApplication {
   createdAt String
   updatedAt String
   @@index([runId])
+}
+
+model LibraryFolder {
+  id String @id
+  parentId String?
+  name String
+  normalizedName String
+  revision Int @default(1)
+  createdAt String
+  updatedAt String
+  parent LibraryFolder? @relation("LibraryFolderTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children LibraryFolder[] @relation("LibraryFolderTree")
+  materials Material[]
+  @@index([parentId])
+}
+
+model LibraryTag {
+  id String @id
+  name String
+  normalizedName String @unique
+  revision Int @default(1)
+  createdAt String
+  updatedAt String
+  materials MaterialTag[]
+}
+
+model MaterialTag {
+  materialId String
+  tagId String
+  material Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  tag LibraryTag @relation(fields: [tagId], references: [id], onDelete: Restrict)
+  @@id([materialId, tagId])
+  @@index([tagId, materialId])
+}
+
+model MaterialTaskLink {
+  materialId String
+  taskId String
+  manual Boolean @default(false)
+  legacy Boolean @default(false)
+  createdAt String
+  createdBy String
+  material Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  @@id([materialId, taskId])
+  @@index([taskId, materialId])
+}
+
+model LibraryUpload {
+  id String @id
+  actorId String
+  requestKey String
+  fileName String
+  mimeType String
+  declaredSize Int
+  actualSize Int?
+  sha256 String?
+  state String @default("pending")
+  leaseToken String?
+  materialId String?
+  resultRevision Int?
+  errorCode String?
+  createdAt String
+  updatedAt String
+  expiresAt String
+  @@unique([actorId, requestKey])
+  @@index([state, expiresAt])
+}
+
+model MaterialExtraction {
+  id String @id
+  materialId String
+  revision Int
+  parserVersion String @default("library-v1")
+  status String @default("queued")
+  generation Int @default(0)
+  indexedGeneration Int @default(0)
+  attempts Int @default(0)
+  leaseToken String?
+  leaseUntil String?
+  nextAttemptAt String
+  errorCode String?
+  errorsJson String @default("[]")
+  createdAt String
+  updatedAt String
+  version MaterialVersion @relation(fields: [materialId, revision], references: [materialId, revision], onDelete: Cascade)
+  chunks MaterialChunk[]
+  @@unique([materialId, revision])
+  @@index([status, nextAttemptAt, leaseUntil])
+}
+
+model MaterialChunk {
+  id String @id
+  extractionId String
+  generation Int
+  ordinal Int
+  text String
+  textHash String
+  locatorJson String
+  method String
+  createdAt String
+  extraction MaterialExtraction @relation(fields: [extractionId], references: [id], onDelete: Cascade)
+  searchDocuments LibrarySearchDocument[]
+  @@unique([extractionId, generation, ordinal])
+}
+
+model LibrarySearchDocument {
+  id String @id
+  materialId String
+  revision Int
+  chunkId String?
+  titleNorm String
+  fileNameNorm String
+  tagsNorm String
+  bodyNorm String
+  normalizationMapJson String @default("[]")
+  version MaterialVersion @relation(fields: [materialId, revision], references: [materialId, revision], onDelete: Cascade)
+  chunk MaterialChunk? @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+  postings LibrarySearchPosting[]
+  @@index([materialId, revision])
+}
+
+model LibrarySearchPosting {
+  token String
+  documentId String
+  document LibrarySearchDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  @@id([token, documentId])
+  @@index([documentId])
+}
+
+model LibraryAnswer {
+  id String @id
+  actorId String
+  requestKey String
+  question String
+  filtersJson String
+  status String
+  resultJson String
+  createdAt String
+  @@unique([actorId, requestKey])
 }
 
 model PlanTimeBand {

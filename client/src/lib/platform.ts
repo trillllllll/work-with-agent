@@ -5,7 +5,7 @@ import { api } from './api.js';
 
 export type Command = { kind: string; targetId?: string; expectedRevision?: number; input?: Record<string, unknown>; clientRef?: string };
 export type CommandResult = { status: 'applied' | 'pending_approval'; proposalId?: string; results?: any[]; changeId?: string };
-export async function submitCommands(commands: Command[], requestId = crypto.randomUUID()) {
+export async function submitCommands(commands: Command[], requestId: string = crypto.randomUUID()) {
   return api<CommandResult>('/api/v1/commands', { method: 'POST', body: JSON.stringify({ requestId, commands }) });
 }
 export const json = (value: unknown) => JSON.stringify(value);
@@ -36,6 +36,10 @@ export const operationNames: Record<string, string> = {
   'task.create': '创建任务', 'task.update': '修改任务', 'task.delete': '删除任务', 'task.restore': '恢复任务', 'task.reorder': '调整任务顺序',
   'topic.create': '创建清单', 'topic.update': '修改清单', 'topic.archive': '归档清单', 'topic.restore': '恢复清单',
   'material.create': '保存材料', 'material.update': '修订材料', 'material.archive': '调整材料归档',
+  'material.replace': '更新资料版本', 'material.organize': '整理资料', 'material.links': '调整资料关联', 'material.reextract': '重新解析资料',
+  'libraryFolder.create': '创建文件夹', 'libraryFolder.update': '修改文件夹', 'libraryFolder.delete': '删除文件夹',
+  'libraryTag.create': '创建资料标签', 'libraryTag.update': '重命名资料标签', 'libraryTag.delete': '删除资料标签',
+  'task.reference_materials': '引用资料',
   'memory.create': '保存记忆', 'memory.update': '修订记忆', 'memory.retire': '保留为历史记忆', 'memory.crystallize': '沉淀结晶记忆',
   'entity.create': '建立实体', 'entity.update': '修订实体', 'entity.delete': '删除实体', 'graph.link': '建立关系', 'graph.unlink': '移除关系',
   create_task: '创建任务', update_task: '修改任务', delete_task: '删除任务', restore_task: '恢复任务', reorder_tasks: '调整任务顺序',

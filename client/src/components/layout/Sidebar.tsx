@@ -18,7 +18,7 @@ export const navigation: { view: View; label: string; icon: LucideIcon }[] = [
   { view: 'settings', label: '设置', icon: Settings },
   { view: 'connections', label: 'AI 连接', icon: Plug },
   { view: 'proposals', label: '待确认', icon: ClipboardCheck },
-  { view: 'knowledge', label: '项目资料', icon: Library },
+  { view: 'library', label: '项目资料', icon: Library },
   { view: 'runs', label: 'AI 执行', icon: Bot },
   { view: 'reviews', label: '定期回顾', icon: CalendarClock },
   { view: 'plan', label: '规划', icon: CalendarRange },
@@ -81,7 +81,7 @@ export function Sidebar({ route, page, topics, topicsLoading, selectedTopicId, o
         </nav>
         <SidebarSection label="工作" />
         <nav aria-label="工作" className="sidebar-nav">
-          {links(['connections', 'proposals', 'knowledge', 'runs', 'reviews']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}
+          {links(['connections', 'proposals', 'library', 'runs', 'reviews']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}
         </nav>
       </div>
       <div className="sidebar-footer">

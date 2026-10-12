@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { TaskActivityDialog } from './TaskActivityDialog.js';
 import { placeDescriptionCaret, readDescriptionCaret } from './DescriptionEditor.js';
+import { TaskMaterials } from '@/components/library/TaskMaterials.js';
 import { TaskDescription } from './TaskDescription.js';
 import { SubtasksSection } from './TaskSubtasks.js';
 import { cn } from '@/lib/utils.js';
@@ -351,6 +352,7 @@ export function TaskExpandBody({ fill = false }: { fill?: boolean }) {
   return <div data-task-editor className={cn('flex flex-col', fill && 'min-h-0 flex-1')}>
     {edit.conflicts.length > 0 && <div role="alert" className="mb-3 rounded-xl border border-warning-border bg-warning-bg p-3 text-sm text-warning"><p>后台已更新{edit.conflicts.map((field) => fieldLabels[field] ?? field).join('、')}，你的编辑已保留。</p><label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={edit.acknowledge} onChange={(event) => edit.setAcknowledge(event.target.checked)} />保存时使用我的编辑</label><Button type="button" variant="ghost" size="sm" onClick={edit.resetDraft}>使用最新内容</Button></div>}
     <TaskDescription taskId={edit.taskId} value={edit.draft.description} readonly={edit.readonly} fill={fill} openDescription={edit.openDescription} onChange={(description) => edit.updateText({ description })} onBlur={edit.onTextBlur} onComposeStart={edit.onComposeStart} onComposeEnd={edit.onComposeEnd} onSave={edit.saveText} />
+    <TaskMaterials taskId={edit.taskId} topicId={edit.task?.topicId ?? null} description={edit.draft.description} readonly={edit.readonly} saveText={edit.saveText} />
     <div className="mt-3 shrink-0"><SubtasksSection /></div>
     <div className="task-info-rows mt-auto shrink-0">
       <ScheduleControl />

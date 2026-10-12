@@ -10,7 +10,7 @@ async function project(request: APIRequestContext, name: string) {
 }
 
 async function openKnowledge(page: Page, topicId: string) {
-  await page.goto('/#/knowledge');
+  await page.goto('/#/knowledge/materials');
   await page.getByLabel('资料所属清单', { exact: true }).selectOption(topicId);
 }
 

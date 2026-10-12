@@ -32,7 +32,7 @@ test.afterAll(() => e2eDatabase.$disconnect());
 test('固定说明迟到保存只更新原清单，保留保存后的新输入及另一清单草稿', async ({ page, request }) => {
   const first = await project(request, '说明清单 A');
   const second = await project(request, '说明清单 B');
-  await page.goto('/#/knowledge');
+  await page.goto('/#/knowledge/materials');
   const scope = page.getByLabel('资料所属清单', { exact: true });
   await scope.selectOption(first);
   await page.getByRole('button', { name: '当前简报', exact: true }).click();
@@ -60,7 +60,7 @@ test('固定说明迟到保存只更新原清单，保留保存后的新输入�
 test('材料保存锁住提交表单，切清单的新编辑实例不受旧响应关闭', async ({ page, request }) => {
   const first = await project(request, '材料清单 A');
   const second = await project(request, '材料清单 B');
-  await page.goto('/#/knowledge');
+  await page.goto('/#/knowledge/materials');
   const scope = page.getByLabel('资料所属清单', { exact: true });
   await scope.selectOption(first);
   await page.getByRole('button', { name: '保存材料', exact: true }).click();

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import ReactMarkdown, { type Components } from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Check, Copy } from 'lucide-react';
 
@@ -60,10 +60,13 @@ const markdownComponents: Components = {
   strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
 };
 
-export function MarkdownView({ content, components }: { content: string; components?: Components }) {
+export function MarkdownView({ content, components, allowMaterialLinks = false }: { content: string; components?: Components; allowMaterialLinks?: boolean }) {
+  const urlTransform = allowMaterialLinks
+    ? (url: string) => url.startsWith('wwa-material:') ? url : defaultUrlTransform(url)
+    : undefined;
   return (
     <div className="markdown-body text-[13.5px] leading-relaxed break-words">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ ...markdownComponents, ...components }}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ ...markdownComponents, ...components }} urlTransform={urlTransform}>
         {content}
       </ReactMarkdown>
     </div>

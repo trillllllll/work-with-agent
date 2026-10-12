@@ -32,7 +32,7 @@ test('用户会话和连接权限覆盖旧 REST，提议经确认后才修改任
 });
 
 test('无需模型保存资料、修订原文、记录记忆和维护当前简报', async ({ page }) => {
-  await page.goto('/#/knowledge');
+  await page.goto('/#/knowledge/materials');
   await page.getByRole('button', { name: '保存材料', exact: true }).click();
   await page.getByLabel('材料标题', { exact: true }).fill('项目约束');
   await page.getByLabel('材料正文', { exact: true }).fill('第一版必须支持中文资料。');

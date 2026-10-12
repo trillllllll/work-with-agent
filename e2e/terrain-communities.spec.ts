@@ -19,7 +19,7 @@ async function remember(request: APIRequestContext, topicId: string, name: strin
 }
 
 async function openTerrain(page: Page, topicId: string) {
-  await page.goto('/#/knowledge');
+  await page.goto('/#/knowledge/materials');
   await page.getByLabel('资料所属清单', { exact: true }).selectOption(topicId);
   await page.getByRole('button', { name: '关系', exact: true }).click();
   await page.getByRole('button', { name: '3D', exact: true }).click();

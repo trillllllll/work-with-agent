@@ -19,9 +19,9 @@ type ResourceEditing = { id: string; scope: string; resource?: Resource };
 type BriefDraft = { notes: string; revision: number };
 type KnowledgeTab = 'materials' | 'memories' | 'brief' | 'search' | 'tree' | 'graph';
 const memoryKinds = { fact: '事实', decision: '决策', constraint: '约束', learning: '经验', question: '未决问题' };
-export function KnowledgePage({ topics, initialTopicId = '', taskId }: { topics: Topic[]; initialTopicId?: string; taskId?: string }) {
+export function KnowledgePage({ topics, initialTopicId = '', taskId, initialTab }: { topics: Topic[]; initialTopicId?: string; taskId?: string; initialTab?: KnowledgeTab }) {
   const [topicId, setTopic] = useState(initialTopicId);
-  const [tab, setTab] = useState<KnowledgeTab>('materials');
+  const [tab, setTab] = useState<KnowledgeTab>(initialTab ?? 'materials');
   const [cursor, setCursor] = useState(0);
   const [search, setSearch] = useState('');
   const [memoryQuery, setMemoryQuery] = useState('');
@@ -35,6 +35,7 @@ export function KnowledgePage({ topics, initialTopicId = '', taskId }: { topics:
   const activeEditor = editing?.scope === editorScope ? editing : null;
   const openEditor = (resource?: Resource) => setEditing({ id: crypto.randomUUID(), scope: editorScope, resource });
   const updateBriefDraft = (update: (current: BriefDraft | null) => BriefDraft | null) => setBriefDrafts((drafts) => ({ ...drafts, [topicId]: update(drafts[topicId] ?? null) }));
+  useEffect(() => { if (initialTab) setTab(initialTab); }, [initialTab]);
   useEffect(() => { setCursor(0); setOpened(''); }, [topicId, tab]);
   const list = useQuery({ queryKey: ['knowledge', 'memories', topicId, cursor, memoryStatus, memoryQuery], queryFn: () => api<PageResult<Resource>>(`/api/v1/knowledge/memories?${scope}&cursor=${cursor}&status=${memoryStatus}&q=${encodeURIComponent(memoryQuery)}`), enabled: tab === 'memories' });
   const detail = useQuery({ queryKey: ['knowledge', 'memories', opened], queryFn: () => api<Resource>(`/api/v1/knowledge/memories/${opened}`), enabled: Boolean(opened) && tab === 'memories' });

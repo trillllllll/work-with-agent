@@ -5,7 +5,16 @@ export const e2eDatabase = new PrismaClient({ datasourceUrl: 'file:../../e2e/.da
 
 export async function resetE2eDatabase() {
   await e2eDatabase.planTimeBand.deleteMany();
-  for (const name of ['codeApplication', 'handoffReview', 'artifact', 'runEvent', 'run', 'handoff', 'reviewBatch', 'reviewRule', 'organizationRequest', 'workingBrief', 'graphLink', 'entity', 'memoryVersion', 'memory', 'materialVersion', 'material', 'requestReceipt', 'proposal', 'connection'] as const) await e2eDatabase[name].deleteMany();
+  for (const name of ['librarySearchPosting', 'librarySearchDocument', 'materialChunk', 'materialExtraction', 'materialTag', 'materialTaskLink', 'libraryAnswer', 'libraryUpload', 'codeApplication', 'handoffReview', 'artifact', 'runEvent', 'run', 'handoff', 'reviewBatch', 'reviewRule', 'organizationRequest', 'workingBrief', 'graphLink', 'entity', 'memoryVersion', 'memory', 'materialVersion', 'material', 'requestReceipt', 'proposal', 'connection'] as const) await e2eDatabase[name].deleteMany();
+  const folders = await e2eDatabase.libraryFolder.findMany({ select: { id: true, parentId: true } });
+  const pending = new Map(folders.map((folder) => [folder.id, folder.parentId]));
+  while (pending.size) {
+    const leaves = [...pending].filter(([id]) => ![...pending.values()].includes(id)).map(([id]) => id);
+    if (!leaves.length) break;
+    await e2eDatabase.libraryFolder.deleteMany({ where: { id: { in: leaves } } });
+    for (const id of leaves) pending.delete(id);
+  }
+  await e2eDatabase.libraryTag.deleteMany();
   const hash = (value: string) => createHash('sha256').update(value).digest('hex');
   const token = 'wwa-e2e-owner-session';
   await e2eDatabase.localSession.upsert({ where: { id: 'e2e-owner' }, create: { id: 'e2e-owner', tokenHash: hash(token), csrfHash: hash(hash(`csrf:${token}`)), expiresAt: '2099-01-01T00:00:00.000Z', createdAt: new Date().toISOString() }, update: {} });

@@ -14,6 +14,7 @@ import { OrganizationService, type OrganizationModel } from './knowledge-organiz
 import { ReviewService } from './reviews.js';
 import { latestOccurrence, scheduledInstant } from './reviews-clock.js';
 import { createKnowledgeRouter } from '../routes/knowledge.js';
+import { clearLibraryData, clearLibraryTaxonomy } from './library/cleanup.js';
 
 registerKnowledgeCommands();
 registerGraphCommands();
@@ -21,11 +22,13 @@ const commands = new CommandService();
 const knowledge = new KnowledgeService();
 process.env.KNOWLEDGE_STORAGE_ROOT = resolve(process.cwd(), 'data/test-knowledge-blobs');
 async function clean() {
+  await clearLibraryData(prisma);
   await prisma.reviewBatch.deleteMany(); await prisma.reviewRule.deleteMany();
   await prisma.organizationRequest.deleteMany(); await prisma.workingBrief.deleteMany();
   await prisma.graphLink.deleteMany(); await prisma.entity.deleteMany();
   await prisma.memoryVersion.deleteMany(); await prisma.memory.deleteMany();
   await prisma.materialVersion.deleteMany(); await prisma.material.deleteMany();
+  await clearLibraryTaxonomy(prisma);
   await prisma.proposal.deleteMany(); await prisma.requestReceipt.deleteMany(); await prisma.changeRecord.deleteMany();
   await prisma.connection.deleteMany();
   await prisma.taskTag.deleteMany(); await prisma.taskTopicAssignment.deleteMany(); await prisma.task.updateMany({ data: { parentId: null } }); await prisma.task.deleteMany(); await prisma.topic.deleteMany();
@@ -188,30 +191,38 @@ describe('knowledge evidence and review closed loops', () => {
     expect(rejected.body.code).toBe('VALIDATION_ERROR');
   });
 
-  it('relinks a material within its list and restores the previous task on undo', async () => {
+  it('relinks a material across lists without a content version and restores links on undo', async () => {
     const project = await topic();
     const task = await write('task.create', { topicId: project, title: '对接任务' });
     const foreign = await write('task.create', { topicId: await topic(), title: '别的清单' });
     const row = await write('material.create', { topicId: project, kind: 'attachment', title: '说明', fileName: '说明.md', attachmentBase64: Buffer.from('# 标题').toString('base64') });
+    const versionsBefore = await prisma.materialVersion.count({ where: { materialId: row.id } });
     const linked = await write('material.update', { taskId: task.id }, row.id, row.revision);
-    expect(linked).toMatchObject({ revision: 2, taskId: task.id });
+    expect(linked).toMatchObject({ revision: 1, organizationRevision: 2, taskId: task.id });
+    expect(await prisma.materialVersion.count({ where: { materialId: row.id } })).toBe(versionsBefore);
     expect((await knowledge.materials(ownerActor, project, { linked: 'task' })).items[0]).toMatchObject({ id: row.id, taskTitle: '对接任务' });
     const titled = await write('material.update', { title: '新标题' }, row.id, linked.revision);
-    expect(titled).toMatchObject({ revision: 3, taskId: task.id, title: '新标题' });
+    expect(titled).toMatchObject({ revision: 2, taskId: task.id, title: '新标题', organizationRevision: 2 });
     const cleared = await write('material.update', { taskId: null }, row.id, titled.revision);
-    expect(cleared).toMatchObject({ revision: 4, taskId: null });
-    await expect(write('material.update', { taskId: foreign.id }, row.id, cleared.revision)).rejects.toMatchObject({ code: 'SOURCE_SCOPE_MISMATCH' });
-    expect((await prisma.material.findUniqueOrThrow({ where: { id: row.id } })).revision).toBe(4);
+    expect(cleared).toMatchObject({ revision: 2, taskId: null, organizationRevision: 3 });
+    expect(await prisma.materialVersion.count({ where: { materialId: row.id } })).toBe(versionsBefore + 1);
     await commands.submit(ownerActor, { requestId: randomUUID(), commands: [{ kind: 'change.undo', targetId: cleared.changeId, input: {} }] });
     const restored = await prisma.material.findUniqueOrThrow({ where: { id: row.id } });
-    expect(restored).toMatchObject({ revision: 5, taskId: task.id, title: '新标题' });
+    expect(restored).toMatchObject({ revision: 2, taskId: task.id, title: '新标题', organizationRevision: 4 });
+    expect(await prisma.materialVersion.count({ where: { materialId: row.id } })).toBe(versionsBefore + 1);
     expect((await knowledge.attachment(ownerActor, row.id, restored.revision)).bytes.toString()).toBe('# 标题');
+    expect((await prisma.materialTaskLink.findUniqueOrThrow({ where: { materialId_taskId: { materialId: row.id, taskId: task.id } } })).legacy).toBe(true);
+    const across = await write('material.update', { taskId: foreign.id }, row.id, restored.revision);
+    expect(across).toMatchObject({ revision: 2, taskId: foreign.id });
+    expect(await prisma.materialTaskLink.findUnique({ where: { materialId_taskId: { materialId: row.id, taskId: task.id } } })).toBeNull();
+    expect((await prisma.materialTaskLink.findUniqueOrThrow({ where: { materialId_taskId: { materialId: row.id, taskId: foreign.id } } })).legacy).toBe(true);
 
     const inboxTask = await write('task.create', { title: '收集任务', topicId: null });
     const note = await write('material.create', { topicId: null, kind: 'text', title: '收集材料', content: '正文' });
     const linkedNote = await write('material.update', { taskId: inboxTask.id }, note.id, note.revision);
-    expect(linkedNote.taskId).toBe(inboxTask.id);
-    await expect(write('material.update', { taskId: task.id }, note.id, linkedNote.revision)).rejects.toMatchObject({ code: 'SOURCE_SCOPE_MISMATCH' });
+    expect(linkedNote).toMatchObject({ taskId: inboxTask.id, revision: note.revision });
+    const moved = await write('material.update', { taskId: task.id }, note.id, linkedNote.revision);
+    expect(moved).toMatchObject({ taskId: task.id, revision: note.revision });
   });
 
   it('uses one proposal protocol for built-in and external organization and confirms exactly once', async () => {

@@ -5,6 +5,9 @@ import { DomainError, Task as TaskDomain } from '../domain/task.js';
 import { parseInput, taskCreateSchema, taskUpdateSchema, taskListSchema, reorderSchema, type TaskListOptions } from './workspace-input.js';
 import { prisma, mutationTransaction, ChangeGroup, activeTopic, editableTask, nextOrder, normalizeContext, notFound, now, readTask, setTags, taskDto, taskInclude, validateTags, assignmentData, type Db, type MutationContext } from './workspace-store.js';
 import { noteUnreferencedBlobs, pruneTaskImages, releaseUnreferencedBlobs } from './task-images.js';
+import { ownerActor } from './security.js';
+import { detachMaterialsFromDeletedTasks } from './library/links.js';
+import { syncNewMaterialReferences } from './library/references.js';
 
 const rank = { none: 0, low: 1, medium: 2, high: 3 };
 
@@ -154,6 +157,10 @@ export class TaskService {
       if (before.parentId && before.parentId !== parentId) await touchParent(group, before.parentId, false);
       if (parentId) await touchParent(group, parentId, (input.status ?? before.status) !== 'done');
       if (input.description !== undefined) dropped.push(...await pruneTaskImages(tx, taskId, input.description));
+      if (input.description !== undefined && input.description !== before.description) {
+        const mutation = normalizeContext(context);
+        await syncNewMaterialReferences(tx, mutation.actor ?? ownerActor, taskId, before.description, input.description, mutation);
+      }
       const meta = await group.record('task', taskId, 'update');
       return { ...taskDto(await readTask(tx, taskId)), meta };
     });
@@ -262,6 +269,7 @@ export class TaskService {
       const group = new ChangeGroup(tx, context);
       await group.scope({ kind: 'children', id: taskId });
       const ids = [...children, task].map((member) => member.id);
+      await detachMaterialsFromDeletedTasks(tx, ids);
       const images = await tx.taskImage.findMany({ where: { taskId: { in: ids } } });
       if (images.length) await tx.taskImage.deleteMany({ where: { taskId: { in: ids } } });
       dropped.push(...images.map((image) => image.path));

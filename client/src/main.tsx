@@ -3,7 +3,8 @@ if (import.meta.env.DEV) {
 }
 
 import { createRoot } from 'react-dom/client';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from './lib/query-client.js';
 import { ThemeProvider } from 'next-themes';
 import { Toaster } from '@/components/ui/sonner';
 import { App } from './App.js';
@@ -12,7 +13,7 @@ import { CommandPreviewProvider } from './components/dialogs/CommandPreviewProvi
 import './index.css';
 
 createRoot(document.getElementById('root')!).render(
-  <QueryClientProvider client={new QueryClient()}>
+  <QueryClientProvider client={queryClient}>
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem storageKey="agent-studio.theme" disableTransitionOnChange>
       <SessionGate><CommandPreviewProvider><App /></CommandPreviewProvider></SessionGate>
       <Toaster richColors position="top-center" />

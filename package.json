@@ -14,6 +14,8 @@
     "test:all": "npm test && npm run e2e",
     "db:migrate": "npm run db:migrate -w server",
     "e2e": "playwright test",
+    "test:library:migration": "tsx scripts/library-migration.ts",
+    "test:library:performance": "tsx scripts/library-performance.ts",
     "e2e:real": "node e2e/run-real.mjs",
     "db:backup": "node scripts/backup.mjs",
     "desktop:assemble": "node scripts/assemble-desktop.mjs",

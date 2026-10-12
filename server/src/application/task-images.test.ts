@@ -25,6 +25,14 @@ function webp(payload: string) {
   return Buffer.concat([header, body]);
 }
 async function clean() {
+  await prisma.librarySearchPosting.deleteMany();
+  await prisma.librarySearchDocument.deleteMany();
+  await prisma.materialChunk.deleteMany();
+  await prisma.materialExtraction.deleteMany();
+  await prisma.materialTag.deleteMany();
+  await prisma.materialTaskLink.deleteMany();
+  await prisma.libraryAnswer.deleteMany();
+  await prisma.libraryUpload.deleteMany();
   await prisma.taskImage.deleteMany();
   await prisma.materialVersion.deleteMany();
   await prisma.material.deleteMany();

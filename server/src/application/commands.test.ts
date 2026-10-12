@@ -33,6 +33,14 @@ describe('identity, shared commands and atomic proposals', () => {
   afterAll(async () => {
     await prisma.memoryVersion.deleteMany({ where: { memoryId: { in: memoryIds } } });
     await prisma.memory.deleteMany({ where: { id: { in: memoryIds } } });
+    if (materialIds.length) {
+      await prisma.librarySearchPosting.deleteMany({ where: { document: { materialId: { in: materialIds } } } });
+      await prisma.librarySearchDocument.deleteMany({ where: { materialId: { in: materialIds } } });
+      await prisma.materialChunk.deleteMany({ where: { extraction: { materialId: { in: materialIds } } } });
+      await prisma.materialExtraction.deleteMany({ where: { materialId: { in: materialIds } } });
+      await prisma.materialTag.deleteMany({ where: { materialId: { in: materialIds } } });
+      await prisma.materialTaskLink.deleteMany({ where: { materialId: { in: materialIds } } });
+    }
     await prisma.materialVersion.deleteMany({ where: { materialId: { in: materialIds } } });
     await prisma.material.deleteMany({ where: { id: { in: materialIds } } });
     await prisma.taskTag.deleteMany({ where: { taskId: { in: taskIds } } });
