@@ -624,7 +624,7 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
       expect(receivedStatuses[0]).toBe('doing');
       expect(receivedStatuses).toContain('done');
       expect(receivedStatuses).toHaveLength(3);
-      expect((await task(request, first.id)).status).toBe('done');
+      await expect.poll(async () => (await task(request, first.id)).status).toBe('done');
       await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('button', { name: '关闭任务详情', exact: true }).click();
     } finally { releaseFirst.release(); }
     await page.unroute(firstPattern);
