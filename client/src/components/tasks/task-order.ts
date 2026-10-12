@@ -23,6 +23,12 @@ export function reorderTaskGroup<T extends { id: string }>(group: T[], activeId:
   return arrayMove(group, from, to);
 }
 
+// Keep the visible proposal intact and append siblings it did not include.
+export function completeSiblingIds(proposedIds: string[], siblingIds: string[]): string[] {
+  const present = new Set(proposedIds);
+  return [...proposedIds, ...siblingIds.filter((id) => !present.has(id))];
+}
+
 export function projectTaskDrop(rows: OrderRow[], activeId: string, overId: string, deltaX: number): DropProjection | null {
   const active = rows.find((row) => row.id === activeId);
   const overIsVisible = rows.some((row) => row.id === overId);

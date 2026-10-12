@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { projectTaskDrop, reorderTaskGroup, withSortOrder, type OrderRow } from './task-order.js';
+import { completeSiblingIds, projectTaskDrop, reorderTaskGroup, withSortOrder, type OrderRow } from './task-order.js';
 
 const group = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
 
@@ -16,6 +16,28 @@ describe('reorderTaskGroup', () => {
     expect(reorderTaskGroup(group, 'a', 'a')).toBeNull();
     expect(reorderTaskGroup(group, 'a', 'missing')).toBeNull();
     expect(reorderTaskGroup(group, 'missing', 'b')).toBeNull();
+  });
+
+  it('moves a completed sibling through the mixed order', () => {
+    const mixed = [
+      { id: 'A', status: 'todo' },
+      { id: 'B', status: 'done' },
+      { id: 'C', status: 'todo' },
+    ];
+    expect(reorderTaskGroup(mixed, 'B', 'A')).toEqual([mixed[1], mixed[0], mixed[2]]);
+    expect(reorderTaskGroup(mixed, 'B', 'C')).toEqual([mixed[0], mixed[2], mixed[1]]);
+    expect(reorderTaskGroup(mixed, 'B', 'B')).toBeNull();
+  });
+});
+
+describe('completeSiblingIds', () => {
+  it('keeps a proposal that already lists every sibling', () => {
+    expect(completeSiblingIds(['B', 'A', 'C'], ['A', 'B', 'C'])).toEqual(['B', 'A', 'C']);
+  });
+
+  it('appends hidden siblings without rearranging the proposal', () => {
+    expect(completeSiblingIds(['P'], ['P', 'Q'])).toEqual(['P', 'Q']);
+    expect(completeSiblingIds(['C', 'A'], ['A', 'B', 'C'])).toEqual(['C', 'A', 'B']);
   });
 });
 
@@ -51,6 +73,17 @@ describe('projectTaskDrop', () => {
 
   it('reorders siblings when the horizontal move stays under the threshold', () => {
     expect(projectTaskDrop(tree, 'a2', 'a1', 8)).toEqual({ parentId: 'A', orderedIds: ['a2', 'a1'] });
+  });
+
+  it('reorders a completed child among its mixed siblings', () => {
+    const rows: OrderRow[] = [
+      { id: 'P', parentId: null, hasChildren: true },
+      { id: 'A', parentId: 'P', hasChildren: false },
+      { id: 'B', parentId: 'P', hasChildren: false },
+      { id: 'C', parentId: 'P', hasChildren: false },
+    ];
+    expect(projectTaskDrop(rows, 'B', 'A', 0)).toEqual({ parentId: 'P', orderedIds: ['B', 'A', 'C'] });
+    expect(projectTaskDrop(rows, 'B', 'C', 0)).toEqual({ parentId: 'P', orderedIds: ['A', 'C', 'B'] });
   });
 });
 

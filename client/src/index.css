@@ -393,10 +393,17 @@
   }
 
   .task-row {
+    border-radius: 0.5rem;
     transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
   }
 
   .task-drag-handle {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
     opacity: 0;
   }
 
@@ -427,7 +434,7 @@
   }
 
   .task-row-block[data-dragging='true'] {
-    border-radius: 0.75rem;
+    border-radius: 0.5rem;
     background: color-mix(in srgb, var(--foreground) 6%, transparent);
   }
 
