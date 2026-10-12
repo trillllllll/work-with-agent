@@ -12,6 +12,14 @@ describe('chat SSE state', () => {
     expect(messages).toEqual([{ id: 'm1', role: 'assistant', content: '你好', status: 'completed' }]);
   });
 
+  it('marks the replaced batch approval as superseded', () => {
+    const preview = { schemaVersion: 1 as const, summary: '整组调整', operationCount: 1, beforeTasks: [], afterTasks: [], changes: [] };
+    const first = applyApprovalEvent([], { type: 'approval_required', approvalId: 'old', toolName: 'propose_task_changes', arguments: { summary: '第一份' }, preview });
+    const next = applyApprovalEvent(first, { type: 'approval_required', approvalId: 'new', toolName: 'propose_task_changes', arguments: { summary: '第二份', supersedesApprovalId: 'old' }, preview: { ...preview, summary: '第二份' } });
+    expect(next.find((item) => item.approvalId === 'old')).toMatchObject({ status: 'rejected', supersededByApprovalId: 'new' });
+    expect(next.find((item) => item.approvalId === 'new')?.status).toBe('pending');
+  });
+
   it('adds a pending approval and preserves failed streamed text', () => {
     const approval = parseSseFrame('event: approval_required\ndata: {"approvalId":"a1","toolName":"create_task","arguments":{"title":"整理文档"}}');
     const approvals = applyApprovalEvent([], approval!);

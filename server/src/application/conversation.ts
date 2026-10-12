@@ -1,4 +1,6 @@
 import { prisma } from '../infrastructure/prisma.js';
+import { TASK_BATCH_INSTRUCTIONS } from '../domain/task-batch.js';
+import { readStoredApproval } from '../domain/task-batch-types.js';
 import { formatMemoryReference } from './agent-memory.js';
 
 const now = () => new Date().toISOString();
@@ -117,43 +119,54 @@ function capToolContent(content: string) {
   return `${content.slice(0, TOOL_RESULT_CAP)}\n…[工具结果已截断]`;
 }
 
-function attachToolResults(rows: StoredMessage[]) {
-  const toolById = new Map<string, StoredMessage>();
-  const claimed = new Set<string>();
-  for (const row of rows) {
-    if (row.role === 'tool' && row.toolCallId && !toolById.has(row.toolCallId)) toolById.set(row.toolCallId, row);
-    if (row.role === 'assistant') for (const call of parseToolCalls(row.toolCalls) ?? []) claimed.add(call.id);
+function toolAssistantId(row: StoredMessage) {
+  if (row.role !== 'tool') return undefined;
+  try {
+    const parsed = JSON.parse(row.content) as { assistantMessageId?: unknown };
+    return typeof parsed.assistantMessageId === 'string' ? parsed.assistantMessageId : undefined;
+  } catch {
+    return undefined;
   }
-  const consumed = new Set<string>();
+}
+
+function matchToolRows(rows: StoredMessage[]) {
+  const tools = rows.map((row, index) => ({ row, index })).filter((item) => item.row.role === 'tool' && item.row.toolCallId);
+  const used = new Set<number>();
+  return (assistantId: string, callId: string) => {
+    const scoped = tools.find((item) => !used.has(item.index) && item.row.toolCallId === callId && toolAssistantId(item.row) === assistantId);
+    const open = tools.find((item) => !used.has(item.index) && item.row.toolCallId === callId && !toolAssistantId(item.row));
+    const match = scoped ?? open;
+    if (!match) return undefined;
+    used.add(match.index);
+    return match.row;
+  };
+}
+
+function assistantClaims(rows: StoredMessage[], callId: string) {
+  return rows.some((row) => row.role === 'assistant' && (parseToolCalls(row.toolCalls) ?? []).some((call) => call.id === callId));
+}
+
+function attachToolResults(rows: StoredMessage[]) {
+  const take = matchToolRows(rows);
   const ordered: StoredMessage[] = [];
   for (const row of rows) {
-    if (row.role === 'tool' && row.toolCallId && claimed.has(row.toolCallId)) continue;
+    if (row.role === 'tool' && row.toolCallId && assistantClaims(rows, row.toolCallId)) continue;
     ordered.push(row);
     if (row.role !== 'assistant') continue;
     for (const call of parseToolCalls(row.toolCalls) ?? []) {
-      const tool = toolById.get(call.id);
-      if (!tool || consumed.has(call.id)) continue;
-      consumed.add(call.id);
-      ordered.push(tool);
+      const tool = take(row.id, call.id);
+      if (tool) ordered.push(tool);
     }
   }
   return ordered;
 }
 
 export function replayMessages(rows: StoredMessage[]): ReplayMessage[] {
-  const toolById = new Map<string, StoredMessage>();
-  for (const row of rows) {
-    if (row.role === 'tool' && row.toolCallId && !toolById.has(row.toolCallId)) toolById.set(row.toolCallId, row);
-  }
-  const claimed = new Set<string>();
-  for (const row of rows) {
-    if (row.role !== 'assistant') continue;
-    for (const call of parseToolCalls(row.toolCalls) ?? []) if (toolById.has(call.id)) claimed.add(call.id);
-  }
+  const take = matchToolRows(rows);
   const messages: ReplayMessage[] = [];
   for (const row of rows) {
     if (row.role === 'tool') {
-      if (row.toolCallId && claimed.has(row.toolCallId)) continue;
+      if (row.toolCallId && assistantClaims(rows, row.toolCallId)) continue;
       const assistant = [...messages].reverse().find((message) => message.role === 'assistant');
       const note = legacyToolNote(row.content);
       if (assistant) assistant.content = `${assistant.content ?? ''}${note}`;
@@ -161,15 +174,14 @@ export function replayMessages(rows: StoredMessage[]): ReplayMessage[] {
       continue;
     }
     if (row.role === 'assistant') {
-      const toolCalls = (parseToolCalls(row.toolCalls) ?? []).filter((call) => toolById.has(call.id));
+      const paired = (parseToolCalls(row.toolCalls) ?? []).flatMap((call) => {
+        const tool = take(row.id, call.id);
+        return tool ? [{ call, tool }] : [];
+      });
       const content = row.content.trim();
-      if (!content && !toolCalls.length) continue;
-      messages.push({ role: 'assistant', content: content ? row.content : null, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) });
-      for (const call of toolCalls) {
-        const tool = toolById.get(call.id);
-        if (!tool) continue;
-        messages.push({ role: 'tool', tool_call_id: call.id, content: capToolContent(tool.content) });
-      }
+      if (!content && !paired.length) continue;
+      messages.push({ role: 'assistant', content: content ? row.content : null, ...(paired.length ? { tool_calls: paired.map((item) => item.call) } : {}) });
+      for (const item of paired) messages.push({ role: 'tool', tool_call_id: item.call.id, content: capToolContent(item.tool.content) });
       continue;
     }
     if (!row.content.trim()) continue;
@@ -248,7 +260,7 @@ function pageLine(pageContext: PageContextInput) {
   return pageLabels[page] ?? page;
 }
 
-export function formatSystemPrompt(pageContext: PageContextInput, tasks: Array<{ id: string; title: string; status: string }>) {
+export function formatSystemPrompt(pageContext: PageContextInput, tasks: Array<{ id: string; title: string; status: string }>, pendingBatches: string[] = []) {
   const topicId = typeof pageContext.topicId === 'string' && pageContext.topicId ? pageContext.topicId : '';
   const taskId = typeof pageContext.taskId === 'string' && pageContext.taskId ? pageContext.taskId : '';
   const taskLines = tasks.length
@@ -263,7 +275,19 @@ export function formatSystemPrompt(pageContext: PageContextInput, tasks: Array<{
     '',
     '附近任务：',
     taskLines,
+    '',
+    TASK_BATCH_INSTRUCTIONS,
+    ...(pendingBatches.length ? ['', '当前会话待确认的整组修改：', ...pendingBatches] : []),
   ].join('\n');
+}
+
+async function pendingBatchLines(conversationId: string) {
+  const rows = await prisma.approval.findMany({ where: { conversationId, status: 'pending', toolName: 'propose_task_changes' }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
+  return rows.flatMap((row) => {
+    const read = readStoredApproval(row.result);
+    if (read.resultState !== 'batch') return [];
+    return [`approvalId=${row.id} summary=${read.summary ?? ''}`];
+  });
 }
 
 async function nearbyTasks(pageContext: PageContextInput) {
@@ -347,6 +371,7 @@ export class ContextService {
     const { messages, summary } = await this.syncSummary(conversationId, signal);
     const tasks = await nearbyTasks(pageContext);
     const memory = await formatMemoryReference(pageContext);
-    return { systemPrompt: `${formatSystemPrompt(pageContext, tasks)}\n\n${memory}`, messages: replayWindow(messages, summary) };
+    const pending = await pendingBatchLines(conversationId);
+    return { systemPrompt: `${formatSystemPrompt(pageContext, tasks, pending)}\n\n${memory}`, messages: replayWindow(messages, summary) };
   }
 }

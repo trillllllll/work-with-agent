@@ -52,6 +52,37 @@ const server = http.createServer(async (req, res) => {
       { choices: [{ delta: { tool_calls: [{ index: 0, id: 'e2e_summary', function: { name: 'propose_topic_summary', arguments: JSON.stringify({ topicId, summary, expectedRevision: topic.revision }) } }] }, finish_reason: 'tool_calls' }] },
     ]);
   }
+  const toolData = (message) => {
+    try { const value = JSON.parse(message.content); return value?.success ? value.data : null; } catch { return null; }
+  };
+  if (latestUser.includes('看看现在状态')) return stream(res, [{ choices: [{ delta: { content: '整组提议仍在等待确认。' }, finish_reason: 'stop' }] }]);
+  if (latestUser.includes('整组确认k8s文档')) {
+    const lastUser = messages.findLastIndex((item) => item.role === 'user');
+    const listed = messages.slice(Math.max(0, lastUser + 1)).map(toolData).find((data) => Array.isArray(data) && data.some((task) => String(task?.title ?? '').includes('按大威的意见')));
+    if (!listed) {
+      return stream(res, [
+        { choices: [{ delta: { content: '我先读取相关任务。' }, finish_reason: null }] },
+        { choices: [{ delta: { tool_calls: [{ index: 0, id: `e2e_batch_list_${messages.length}`, function: { name: 'list_tasks', arguments: '{}' } }] }, finish_reason: 'tool_calls' }] },
+      ]);
+    }
+    const parent = listed.find((task) => String(task.title).includes('按大威的意见'));
+    const child = listed.find((task) => String(task.title).includes('核对，第9节'));
+    const approvalId = messages.find((item) => item.role === 'system')?.content.match(/approvalId=(\S+)/)?.[1];
+    const replacing = latestUser.includes('替换这份整组提议') && approvalId;
+    const args = {
+      summary: '整组调整',
+      ...(replacing ? { supersedesApprovalId: approvalId } : {}),
+      operations: [
+        { kind: 'task.create', clientRef: 'parent', input: { title: parent.title, topicId: parent.topicId } },
+        { kind: 'task.update', targetId: parent.id, expectedRevision: parent.revision, input: { title: '执行修改', parentId: { $ref: 'parent' } } },
+        { kind: 'task.update', targetId: child.id, expectedRevision: child.revision, input: { parentId: { $ref: 'parent' } } },
+      ],
+    };
+    return stream(res, [
+      { choices: [{ delta: { content: replacing ? '我改用新的整组提议替换上一份。' : '我准备一次确认整组修改。' }, finish_reason: null }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: `e2e_batch_${messages.length}`, function: { name: 'propose_task_changes', arguments: JSON.stringify(args) } }] }, finish_reason: 'tool_calls' }] },
+    ]);
+  }
   if (latestUser.includes('读取受控文件') && !messages.some((item) => item.role === 'tool')) {
     return stream(res, [
       { choices: [{ delta: { content: '我准备读取工作区文件。' }, finish_reason: null }] },

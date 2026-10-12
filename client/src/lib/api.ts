@@ -1,3 +1,4 @@
+import { readStoredApproval } from '../../../server/src/domain/task-batch-types.js';
 import { parseSseFrame, type Approval, type SseEvent, type ToolResult } from '../chat.js';
 
 export type Topic = { id: string; name: string; description: string; isExploration: boolean; goal?: string; draftSummary?: string; finalSummary?: string; summaryStatus?: string; summaryUpdatedAt?: string | null; archivedAt?: string | null; revision?: number };
@@ -25,7 +26,7 @@ export type TaskActivityChange =
 export type TaskActivityEvent = { id: string; at: string; actor: { kind: 'user' | 'agent'; name: string }; action: 'create' | 'update' | 'delete' | 'restore' | 'undo'; changes: TaskActivityChange[] };
 export type CliCommandSetting = { command: string; source: 'manual' | 'auto' | 'none'; version: string; checkedAt: string; manualCommand: string; autoCommand: string; discoveredCommand: string; discoveredVersion: string; applied: boolean; message: string };
 export type Settings = { baseUrl: string; model: string; apiKeyConfigured: boolean; apiKeyMasked: string | null; cli?: { codex: CliCommandSetting; claude: CliCommandSetting }; discovered?: Record<string, CliCommandSetting> };
-export type ApprovalResponse = { result: ToolResult; assistantMessage?: string; summaryError?: string };
+export type ApprovalResponse = { result: ToolResult; assistantMessage?: string; assistantMessageId?: string; summaryError?: string };
 export type View = 'board' | 'quadrant' | 'chat' | 'topics' | 'inbox' | 'settings' | 'trash' | 'changes' | 'today' | 'search' | 'tags' | 'archived' | 'more' | 'connections' | 'proposals' | 'knowledge' | 'runs' | 'reviews' | 'plan' | 'focus';
 export type FocusSession = {
   id: string; taskId: string | null; kind: 'focus' | 'break';
@@ -41,7 +42,7 @@ export const toolLabels: Record<string, string> = {
   list_topics: '列出清单', get_topic: '读取清单', get_topic_progress: '读取进度', list_tasks: '查询任务', get_task: '读取任务',
   create_task: '创建任务', update_task: '更新任务', delete_task: '删除任务', create_topic: '创建主题', update_topic: '更新主题', delete_topic: '归档清单', propose_topic_summary: '提出成果草稿',
   execute_shell: '执行命令', execute_file: '文件操作', execute_http: '访问地址',
-  memory: '记忆', conversation_search: '查找过往对话',
+  memory: '记忆', conversation_search: '查找过往对话', propose_task_changes: '整组任务修改',
 };
 export const API_URL = '';
 let csrfToken = '';
@@ -69,12 +70,20 @@ export async function api<T = any>(path: string, init?: RequestInit): Promise<T>
 export function parseApproval(item: any): Approval {
   let args: Record<string, unknown> = {};
   try { args = typeof item.arguments === 'string' ? JSON.parse(item.arguments) : item.arguments ?? {}; } catch { /* Keep malformed legacy data visible as empty args. */ }
-  let toolCallId: string | undefined;
-  try {
-    const stored = typeof item.result === 'string' ? JSON.parse(item.result) : item.result;
-    if (typeof stored?.toolCallId === 'string') toolCallId = stored.toolCallId;
-  } catch { /* Legacy rows may store a plain result string. */ }
-  return { approvalId: item.id, toolName: item.toolName, arguments: args, status: item.status, ...(toolCallId ? { toolCallId } : {}) };
+  const stored = readStoredApproval(item?.result);
+  return {
+    approvalId: item.id,
+    toolName: item.toolName,
+    arguments: args,
+    status: item.status,
+    ...(item.conversationId ? { conversationId: item.conversationId } : {}),
+    ...(stored.toolCallId ? { toolCallId: stored.toolCallId } : {}),
+    ...(stored.preview ? { preview: stored.preview } : {}),
+    ...(stored.outcome ? { outcome: stored.outcome } : {}),
+    ...(stored.supersededByApprovalId ? { supersededByApprovalId: stored.supersededByApprovalId } : {}),
+    ...(stored.resultState ? { resultState: stored.resultState } : {}),
+    ...(stored.summary ? { summary: stored.summary } : {}),
+  };
 }
 
 export async function streamChat(body: unknown, onEvent: (event: SseEvent) => void) {

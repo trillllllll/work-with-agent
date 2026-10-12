@@ -5,6 +5,7 @@ import { groupToolActivities, isReadOnlyTool } from '@/chat.js';
 import { toolLabels } from '@/lib/api.js';
 import { cn } from '@/lib/utils.js';
 import { ApprovalCard } from './ApprovalCard.js';
+import { isTaskBatchApproval, TaskBatchCard } from './TaskBatchCard.js';
 import { MarkdownView } from './MarkdownView.js';
 
 const roleLabels: Record<string, string> = { user: '你', assistant: 'Agent', tool: 'Tool', system: '系统' };
@@ -25,7 +26,8 @@ function statusText(activity: ToolActivity) {
   return '';
 }
 
-function ToolCallRow({ activity, approval, pending, onApprove, onReject }: { activity: ToolActivity; approval?: Approval; pending: boolean; onApprove: (id: string) => void; onReject: (id: string) => void }) {
+function ToolCallRow({ activity, approval, pending, executing, unknown, onApprove, onReject }: { activity: ToolActivity; approval?: Approval; pending: boolean; executing: boolean; unknown: boolean; onApprove: (id: string) => void; onReject: (id: string) => void }) {
+  if (isTaskBatchApproval(approval) && approval) return <TaskBatchCard approval={approval} executing={executing} unknown={unknown} onApprove={onApprove} onReject={onReject} />;
   const [open, setOpen] = useState(false);
   const payload = payloadText(activity);
   const label = toolLabels[activity.name] ?? activity.name;
@@ -57,7 +59,7 @@ function ToolCallRow({ activity, approval, pending, onApprove, onReject }: { act
   );
 }
 
-function ToolRun({ activities, approvalFor, pending, onApprove, onReject }: { activities: ToolActivity[]; approvalFor: (activity: ToolActivity) => Approval | undefined; pending: boolean; onApprove: (id: string) => void; onReject: (id: string) => void }) {
+function ToolRun({ activities, approvalFor, pending, executingApprovalId, unknownApprovalIds, onApprove, onReject }: { activities: ToolActivity[]; approvalFor: (activity: ToolActivity) => Approval | undefined; pending: boolean; executingApprovalId: string; unknownApprovalIds: string[]; onApprove: (id: string) => void; onReject: (id: string) => void }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="rounded-lg border border-border/80 bg-muted/40">
@@ -67,7 +69,10 @@ function ToolRun({ activities, approvalFor, pending, onApprove, onReject }: { ac
       </button>
       {open && (
         <div className="flex flex-col gap-1 border-t border-border/70 p-1.5">
-          {activities.map((activity) => <ToolCallRow key={activity.toolCallId} activity={activity} approval={approvalFor(activity)} pending={pending} onApprove={onApprove} onReject={onReject} />)}
+          {activities.map((activity) => {
+            const approval = approvalFor(activity);
+            return <ToolCallRow key={activity.toolCallId} activity={activity} approval={approval} pending={pending} executing={approval?.approvalId === executingApprovalId} unknown={Boolean(approval && unknownApprovalIds.includes(approval.approvalId))} onApprove={onApprove} onReject={onReject} />;
+          })}
         </div>
       )}
     </div>
@@ -79,7 +84,7 @@ function looksLikeJson(content: string) {
   return (trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'));
 }
 
-export function MessageItem({ message, approvals = [], approvalPending = false, onApprove = () => undefined, onReject = () => undefined }: { message: ChatMessage; approvals?: Approval[]; approvalPending?: boolean; onApprove?: (id: string) => void; onReject?: (id: string) => void }) {
+export function MessageItem({ message, approvals = [], approvalPending = false, executingApprovalId = '', unknownApprovalIds = [], onApprove = () => undefined, onReject = () => undefined }: { message: ChatMessage; approvals?: Approval[]; approvalPending?: boolean; executingApprovalId?: string; unknownApprovalIds?: string[]; onApprove?: (id: string) => void; onReject?: (id: string) => void }) {
   const role = message.role;
   if (role === 'tool') return null;
   const label = roleLabels[role] ?? role;
@@ -118,9 +123,9 @@ export function MessageItem({ message, approvals = [], approvalPending = false, 
       {groups.length > 0 && (
         <div className={cn('flex flex-col gap-1.5', content && 'mt-2')}>
           {groups.map((group) => group.kind === 'run' ? (
-            <ToolRun key={group.activities.map((item) => item.toolCallId).join('-')} activities={group.activities} approvalFor={approvalFor} pending={approvalPending} onApprove={onApprove} onReject={onReject} />
+            <ToolRun key={group.activities.map((item) => item.toolCallId).join('-')} activities={group.activities} approvalFor={approvalFor} pending={approvalPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} onApprove={onApprove} onReject={onReject} />
           ) : (
-            <ToolCallRow key={group.activity.toolCallId} activity={group.activity} approval={approvalFor(group.activity)} pending={approvalPending} onApprove={onApprove} onReject={onReject} />
+            <ToolCallRow key={group.activity.toolCallId} activity={group.activity} approval={approvalFor(group.activity)} pending={approvalPending} executing={approvalFor(group.activity)?.approvalId === executingApprovalId} unknown={Boolean(approvalFor(group.activity) && unknownApprovalIds.includes(approvalFor(group.activity)!.approvalId))} onApprove={onApprove} onReject={onReject} />
           ))}
         </div>
       )}

@@ -1,3 +1,5 @@
+import type { BatchOutcome, TaskBatchPreview } from '../../server/src/domain/task-batch-types.js';
+
 export type ChatMessage = {
   id?: string;
   role: 'user' | 'assistant' | 'tool' | 'system';
@@ -29,9 +31,15 @@ export type Approval = {
   arguments: Record<string, unknown>;
   status?: string;
   toolCallId?: string;
+  conversationId?: string;
+  preview?: TaskBatchPreview;
+  outcome?: BatchOutcome;
+  supersededByApprovalId?: string;
+  resultState?: 'batch' | 'proposal' | 'result' | 'unreadable';
+  summary?: string;
 };
 
-export type ToolResult = { success: boolean; data?: unknown; error?: string };
+export type ToolResult = { success: boolean; data?: unknown; error?: string; code?: string };
 
 export type SseEvent = {
   type: string;
@@ -45,6 +53,7 @@ export type SseEvent = {
   toolCallId?: string;
   result?: ToolResult;
   code?: string;
+  preview?: TaskBatchPreview;
 };
 
 const READ_ONLY_TOOLS = new Set(['list_topics', 'get_topic', 'get_topic_progress', 'list_tasks', 'get_task', 'conversation_search']);
@@ -217,18 +226,32 @@ function legacyActivity(message: ChatMessage): ToolActivity {
   };
 }
 
-export function pairToolMessages(messages: ChatMessage[], approvals: Approval[] = []): ChatMessage[] {
-  const toolRows = new Map<string, ChatMessage>();
-  const claimed = new Set<string>();
-  for (const message of messages) {
-    if (message.role === 'tool' && message.toolCallId && !toolRows.has(message.toolCallId)) toolRows.set(message.toolCallId, message);
-    if (message.role === 'assistant') for (const call of parseStoredCalls(message.toolCalls)) claimed.add(call.id);
+function toolAssistantId(message: ChatMessage) {
+  try {
+    const parsed = JSON.parse(message.content) as { assistantMessageId?: unknown };
+    return typeof parsed.assistantMessageId === 'string' ? parsed.assistantMessageId : undefined;
+  } catch {
+    return undefined;
   }
+}
+
+export function pairToolMessages(messages: ChatMessage[], approvals: Approval[] = []): ChatMessage[] {
+  const tools = messages.map((message, index) => ({ message, index })).filter((item) => item.message.role === 'tool' && item.message.toolCallId);
+  const consumed = new Set<number>();
+  const take = (assistantId: string | undefined, callId: string) => {
+    const scoped = assistantId ? tools.find((item) => !consumed.has(item.index) && item.message.toolCallId === callId && toolAssistantId(item.message) === assistantId) : undefined;
+    const open = tools.find((item) => !consumed.has(item.index) && item.message.toolCallId === callId && !toolAssistantId(item.message));
+    const match = scoped ?? open;
+    if (!match) return undefined;
+    consumed.add(match.index);
+    return match.message;
+  };
+  const claimed = (callId: string) => messages.some((message) => message.role === 'assistant' && parseStoredCalls(message.toolCalls).some((call) => call.id === callId));
   const used = new Set<string>();
   const visible: ChatMessage[] = [];
   for (const message of messages) {
     if (message.role === 'tool') {
-      if (message.toolCallId && claimed.has(message.toolCallId)) continue;
+      if (message.toolCallId && claimed(message.toolCallId)) continue;
       const legacy = legacyActivity(message);
       const host = [...visible].reverse().find((item) => item.role === 'assistant');
       if (host) host.tools = [...(host.tools ?? []), legacy];
@@ -239,8 +262,8 @@ export function pairToolMessages(messages: ChatMessage[], approvals: Approval[] 
       visible.push({ ...message });
       continue;
     }
-    const tools = parseStoredCalls(message.toolCalls).map((call) => activityForCall(call, toolRows.get(call.id), approvals, used));
-    visible.push({ ...message, tools });
+    const rows = parseStoredCalls(message.toolCalls).map((call) => activityForCall(call, take(message.id, call.id), approvals, used));
+    visible.push({ ...message, tools: rows });
   }
   return visible;
 }
@@ -336,6 +359,18 @@ export function applyMessageEvent(messages: ChatMessage[], event: SseEvent): Cha
 
 export function applyApprovalEvent(approvals: Approval[], event: SseEvent): Approval[] {
   if (event.type !== 'approval_required' || !event.approvalId) return approvals;
-  const next = { approvalId: event.approvalId, toolName: event.toolName ?? '', arguments: event.arguments ?? {}, ...(event.toolCallId ? { toolCallId: event.toolCallId } : {}) };
-  return [...approvals.filter((item) => item.approvalId !== next.approvalId), next];
+  const supersedes = typeof event.arguments?.supersedesApprovalId === 'string' ? event.arguments.supersedesApprovalId : '';
+  const next: Approval = {
+    approvalId: event.approvalId,
+    toolName: event.toolName ?? '',
+    arguments: event.arguments ?? {},
+    status: 'pending',
+    ...(event.toolCallId ? { toolCallId: event.toolCallId } : {}),
+    ...(event.conversationId ? { conversationId: event.conversationId } : {}),
+    ...(event.preview ? { preview: event.preview, resultState: 'batch' as const, summary: event.preview.summary } : {}),
+  };
+  const kept = approvals.filter((item) => item.approvalId !== next.approvalId).map((item) => (
+    supersedes && item.approvalId === supersedes ? { ...item, status: 'rejected', supersededByApprovalId: next.approvalId } : item
+  ));
+  return [...kept, next];
 }

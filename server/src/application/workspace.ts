@@ -9,7 +9,7 @@ import { ownerActor } from './security.js';
 
 export { TaskService, TopicService, TagService };
 export type { MutationContext };
-export type ToolCall = { name: string; arguments: Record<string, unknown>; id?: string };
+export type ToolCall = { name: string; arguments: Record<string, unknown>; id?: string; invalidArguments?: boolean };
 type StoredChange = { entityType: string; entityId: string; operation: string; beforeSnapshot: string | null; afterSnapshot: string | null };
 
 export class WorkspaceMutation {

@@ -6,6 +6,7 @@ import { CommandService, type Command } from './commands.js';
 import { assertTopicAccess, internalActor, ownerActor } from './security.js';
 import { randomUUID } from 'node:crypto';
 import { runAgentMemoryTool, validateConversationSearchArguments, validateMemoryArguments } from './agent-memory.js';
+import { PROPOSE_TASK_CHANGES_DESCRIPTION, proposeTaskChangesParameters } from '../domain/task-batch.js';
 
 type ToolRunContext = MutationContext & { topicId?: string | null; taskId?: string | null };
 
@@ -52,6 +53,14 @@ export class ToolService {
       execute_shell: this.define('execute_shell', '在受控工作区执行白名单命令', { command: string, args: { type: 'array' }, workingDirectory: string, timeoutMs: { type: 'number' } }, true, async (a) => this.execution.execute({ kind: 'shell', input: a, approvalId: 'tool' }), ['command']),
       execute_file: this.define('execute_file', '在受控工作区进行文件操作', { operation: string, path: string, content: string, recursive: { type: 'boolean' } }, true, async (a) => this.execution.execute({ kind: 'file', input: a, approvalId: 'tool' }), ['operation', 'path']),
       execute_http: this.define('execute_http', '访问受控 HTTP(S) 目标', { method: string, url: string, headers: { type: 'object' }, body: { type: 'object' }, timeoutMs: { type: 'number' } }, true, async (a) => this.execution.execute({ kind: 'http', input: a, approvalId: 'tool' }), ['url']),
+      propose_task_changes: {
+        name: 'propose_task_changes',
+        description: PROPOSE_TASK_CHANGES_DESCRIPTION,
+        parameters: proposeTaskChangesParameters,
+        requiresApproval: true,
+        validate: () => null,
+        execute: async () => ({ success: false, error: '整组修改只通过待确认执行', code: 'INVALID_BATCH' }),
+      },
       memory: {
         name: 'memory',
         description: '维护已经确认的长期记忆。target 为 inbox 时使用收集箱；为 topic 时只使用当前打开的清单，没有打开清单会失败，也不能指定其他清单。add 新增，replace 整条替换，remove 退役后不再进入每轮提示（历史版本还在），read 读取一条，search 在当前范围搜索。search 的 q 留空或传 * 时列出该范围最近的记忆，用来回答「还记得什么」。add、replace、remove 只生成待确认，不会立刻改数据。read 和 search 立即返回。只记稳定事实，用陈述句，不要把操作步骤写进记忆，同一事实只放一处。没有现成的任务、材料或记忆来源时，可传 messageIds 指向本对话消息，系统会把这些消息做成一份会话材料，和记忆放在同一个待确认里；不传则引用最新的用户消息。replace 和 remove 必须提供 memoryId 与 expectedRevision。可见记忆接近上限时先 replace 或 remove 再 add。提示里放不下的条目仍可用 read 或 search 找到。完全相同的条目会被拒绝。',

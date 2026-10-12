@@ -24,8 +24,45 @@ export function useChat({ selectedTopicId, taskId = '', view, onError }: UseChat
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [busy, setBusy] = useState(false);
   const [interrupted, setInterrupted] = useState(false);
+  const [executingApprovalId, setExecutingApprovalId] = useState('');
+  const [unknownApprovalIds, setUnknownApprovalIds] = useState<string[]>([]);
+  const approvalsRef = useRef(approvals);
+  const conversationRef = useRef(conversationId);
+  const busyRef = useRef(busy);
+  const mutatingRef = useRef(false);
+  const loadGeneration = useRef(0);
+  approvalsRef.current = approvals;
+  conversationRef.current = conversationId;
+  busyRef.current = busy;
 
-  const invalidate = () => { void invalidateTodo(queryClient); };
+  const invalidate = () => { void invalidateTodo(queryClient); void queryClient.invalidateQueries({ queryKey: ['proposals'] }); };
+
+  const reloadConversation = async (id = conversationRef.current, force = false) => {
+    if (!id || busyRef.current) return;
+    if (!force && (mutatingRef.current || newConversationRef.current === id)) return;
+    const generation = ++loadGeneration.current;
+    try {
+      const [history, listed] = await Promise.all([api(`/api/conversations/${id}/messages`), api('/api/agent/approvals')]);
+      if (generation !== loadGeneration.current || conversationRef.current !== id || busyRef.current) return;
+      const nextApprovals = (listed as Parameters<typeof parseApproval>[0][]).map(parseApproval).filter((item) => item.conversationId === id);
+      setMessages(pairToolMessages(history.map((message: ChatMessage) => ({ id: message.id, role: message.role, content: message.content, status: message.status, toolCalls: message.toolCalls, toolCallId: message.toolCallId })), nextApprovals));
+      setApprovals(nextApprovals);
+      setUnknownApprovalIds((current) => current.filter((approvalId) => {
+        const item = nextApprovals.find((approval) => approval.approvalId === approvalId);
+        return Boolean(item && item.status === 'pending' && !item.outcome && !item.supersededByApprovalId);
+      }));
+    } catch (reason) {
+      if (generation !== loadGeneration.current) return;
+      if (reason instanceof ApiError && reason.status === 404) {
+        localStorage.removeItem('agent-studio.conversationId');
+        setConversationId('');
+        setMessages([]);
+        setApprovals([]);
+        return;
+      }
+      onErrorRef.current(reason instanceof Error ? reason.message : '会话读取失败');
+    }
+  };
 
   useEffect(() => {
     if (!conversationId) return;
@@ -34,24 +71,24 @@ export function useChat({ selectedTopicId, taskId = '', view, onError }: UseChat
       newConversationRef.current = '';
       return;
     }
-    Promise.all([api(`/api/conversations/${conversationId}/messages`), api('/api/agent/approvals?status=pending')]).then(([history, pending]) => {
-      const approvals = pending.map(parseApproval);
-      setMessages(pairToolMessages(history.map((message: ChatMessage) => ({ id: message.id, role: message.role, content: message.content, status: message.status, toolCalls: message.toolCalls, toolCallId: message.toolCallId })), approvals));
-      setApprovals((current) => {
-        const merged = new Map(current.map((item) => [item.approvalId, item]));
-        pending.map(parseApproval).forEach((item: Approval) => merged.set(item.approvalId, item));
-        return [...merged.values()];
-      });
-    }).catch((reason: unknown) => {
-      if (reason instanceof ApiError && reason.status === 404) {
-        localStorage.removeItem('agent-studio.conversationId');
-        setConversationId('');
-        setMessages([]);
-        return;
-      }
-      onErrorRef.current(reason instanceof Error ? reason.message : '会话读取失败');
-    });
+    void reloadConversation(conversationId, true);
   }, [conversationId]);
+
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === 'visible') void reloadConversation(); };
+    const onFocus = () => { void reloadConversation(); };
+    const events = new EventSource('/api/v1/events', { withCredentials: true });
+    const changed = () => { void reloadConversation(); };
+    events.onmessage = changed;
+    events.addEventListener('change', changed);
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      events.close();
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, []);
 
   const settleTool = (tool: NonNullable<ChatMessage['tools']>[number], status: ToolActivityStatus, result?: ToolResult) => ({
     ...tool,
@@ -61,21 +98,65 @@ export function useChat({ selectedTopicId, taskId = '', view, onError }: UseChat
     ...(status === 'error' ? { error: result?.error || '执行失败' } : {}),
     ...(status === 'rejected' ? { error: '用户拒绝，数据未修改' } : {}),
   });
-  const approve = useMutation<ApprovalResponse, Error, string>({ mutationFn: (approvalId: string) => api(`/api/agent/approvals/${approvalId}/approve`, { method: 'POST' }), onSuccess: (response, approvalId) => {
-    setApprovals((current) => current.filter((item) => item.approvalId !== approvalId));
-    invalidate();
-    setMessages((current) => {
-      const status: ToolActivityStatus = response.result?.success === false ? 'error' : 'done';
-      const next: ChatMessage[] = current.map((message) => ({ ...message, tools: message.tools?.map((tool) => tool.approvalId === approvalId ? settleTool(tool, status, response.result) : tool) }));
-      if (response.assistantMessage) next.push({ role: 'assistant', content: response.assistantMessage, status: 'completed' });
-      return next;
-    });
-    if (response.summaryError) onErrorRef.current(response.summaryError);
-  }, onError: (e: Error) => onErrorRef.current(e.message) });
-  const reject = useMutation({ mutationFn: (approvalId: string) => api(`/api/agent/approvals/${approvalId}/reject`, { method: 'POST' }), onSuccess: (_result, approvalId) => {
-    setApprovals((current) => current.filter((item) => item.approvalId !== approvalId));
-    setMessages((current) => current.map((message) => ({ ...message, tools: message.tools?.map((tool) => tool.approvalId === approvalId ? settleTool(tool, 'rejected', { success: false, error: '用户拒绝，数据未修改' }) : tool) })));
-  }, onError: (e: Error) => onErrorRef.current(e.message) });
+  const batchApproval = (approvalId: string, response?: ApprovalResponse) => {
+    const current = approvalsRef.current.find((item) => item.approvalId === approvalId);
+    return Boolean(current && (current.resultState === 'batch' || current.preview)) || Boolean(response?.assistantMessageId);
+  };
+  const finishMutation = (approvalId: string) => {
+    mutatingRef.current = false;
+    setExecutingApprovalId((current) => current === approvalId ? '' : current);
+  };
+  const approve = useMutation<ApprovalResponse, Error, string>({
+    mutationFn: (approvalId: string) => api(`/api/agent/approvals/${approvalId}/approve`, { method: 'POST' }),
+    onMutate: (approvalId) => { mutatingRef.current = true; setExecutingApprovalId(approvalId); setUnknownApprovalIds((current) => current.filter((id) => id !== approvalId)); },
+    onSuccess: (response, approvalId) => {
+      if (batchApproval(approvalId, response)) {
+        void reloadConversation(conversationRef.current, true).finally(() => { finishMutation(approvalId); invalidate(); });
+        return;
+      }
+      finishMutation(approvalId);
+      setApprovals((current) => current.filter((item) => item.approvalId !== approvalId));
+      invalidate();
+      setMessages((current) => {
+        const status: ToolActivityStatus = response.result?.success === false ? 'error' : 'done';
+        const next: ChatMessage[] = current.map((message) => ({ ...message, tools: message.tools?.map((tool) => tool.approvalId === approvalId ? settleTool(tool, status, response.result) : tool) }));
+        if (response.assistantMessage) next.push({ role: 'assistant', content: response.assistantMessage, status: 'completed' });
+        return next;
+      });
+      if (response.summaryError) onErrorRef.current(response.summaryError);
+    },
+    onError: (error: Error, approvalId) => {
+      if (batchApproval(approvalId)) {
+        setUnknownApprovalIds((current) => current.includes(approvalId) ? current : [...current, approvalId]);
+        void reloadConversation(conversationRef.current, true).finally(() => finishMutation(approvalId));
+        return;
+      }
+      finishMutation(approvalId);
+      onErrorRef.current(error.message);
+    },
+  });
+  const reject = useMutation<ApprovalResponse, Error, string>({
+    mutationFn: (approvalId: string) => api(`/api/agent/approvals/${approvalId}/reject`, { method: 'POST' }),
+    onMutate: (approvalId) => { mutatingRef.current = true; setExecutingApprovalId(approvalId); setUnknownApprovalIds((current) => current.filter((id) => id !== approvalId)); },
+    onSuccess: (response, approvalId) => {
+      if (batchApproval(approvalId, response)) {
+        void reloadConversation(conversationRef.current, true).finally(() => { finishMutation(approvalId); invalidate(); });
+        return;
+      }
+      finishMutation(approvalId);
+      setApprovals((current) => current.filter((item) => item.approvalId !== approvalId));
+      setMessages((current) => current.map((message) => ({ ...message, tools: message.tools?.map((tool) => tool.approvalId === approvalId ? settleTool(tool, 'rejected', { success: false, error: '用户拒绝，数据未修改' }) : tool) })));
+    },
+    onError: (error: Error, approvalId) => {
+      if (batchApproval(approvalId)) {
+        setUnknownApprovalIds((current) => current.includes(approvalId) ? current : [...current, approvalId]);
+        void reloadConversation(conversationRef.current, true).finally(() => finishMutation(approvalId));
+        return;
+      }
+      finishMutation(approvalId);
+      onErrorRef.current(error.message);
+    },
+  });
 
   const send = async (event: FormEvent) => {
     event.preventDefault();
@@ -105,9 +186,11 @@ export function useChat({ selectedTopicId, taskId = '', view, onError }: UseChat
     setConversationId('');
     setMessages([]);
     setApprovals([]);
+    setExecutingApprovalId('');
+    setUnknownApprovalIds([]);
     setInterrupted(false);
     setInput('');
   };
 
-  return { conversationId, selectedTopicId, messages, approvals, busy, interrupted, input, setInput, send, retry, startNew, approve, reject };
+  return { conversationId, selectedTopicId, messages, approvals, busy, interrupted, input, setInput, send, retry, startNew, approve, reject, executingApprovalId, unknownApprovalIds };
 }

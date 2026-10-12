@@ -43,6 +43,7 @@ export function ApprovalCard({ approval, pending, onApprove, onReject }: { appro
         <span className="text-[11px] font-bold tracking-[0.06em] text-warning uppercase">需要审核</span>
       </div>
       <strong className="mt-1.5 block text-[13px] font-semibold">{toolLabels[approval.toolName] ?? approval.toolName}</strong>
+      {approval.resultState === 'unreadable' && <p className="mt-1.5 text-[12px] text-destructive">历史结果无法解析</p>}
       {collapsible ? (
         <Collapsible open={open} onOpenChange={setOpen}>
           <CollapsibleTrigger className="mt-1.5 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">

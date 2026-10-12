@@ -44,7 +44,6 @@
   --tag-amber-fg: hsl(32 78% 30%); --tag-amber-bg: hsl(40 100% 94%); --tag-amber-border: hsl(36 60% 74%);
   --tag-rose-fg: hsl(345 62% 40%); --tag-rose-bg: hsl(345 100% 96%); --tag-rose-border: hsl(345 50% 82%);
   --tag-slate-fg: hsl(220 9% 32%); --tag-slate-bg: hsl(220 14% 94%); --tag-slate-border: hsl(220 8% 76%);
-
   /* 轻透玻璃语义令牌 */
   --glass-bg: rgb(250 250 250 / 0.94);
   --glass-bg-strong: rgb(255 255 255 / 0.97);
@@ -104,7 +103,6 @@
   --tag-amber-fg: hsl(38 90% 72%); --tag-amber-bg: hsl(34 40% 14%); --tag-amber-border: hsl(34 32% 28%);
   --tag-rose-fg: hsl(345 80% 78%); --tag-rose-bg: hsl(345 32% 16%); --tag-rose-border: hsl(345 26% 32%);
   --tag-slate-fg: hsl(220 12% 78%); --tag-slate-bg: hsl(220 10% 16%); --tag-slate-border: hsl(220 8% 32%);
-
   --glass-bg: rgb(27 27 27 / 0.95);
   --glass-bg-strong: rgb(31 31 31 / 0.97);
   --glass-subtle: rgb(255 255 255 / 0.065);
@@ -1188,4 +1186,297 @@ textarea.task-title.line-through {
 
 .dark .cm-editor .cm-tooltip.cm-format-toolbar {
   box-shadow: 0 4px 16px rgb(0 0 0 / 0.4);
+}
+
+.task-batch-card {
+  --batch-bg: #ffffff;
+  --batch-panel: #f5f5f5;
+  --batch-text: #171717;
+  --batch-muted: #626262;
+  --batch-border: #d6d6d6;
+  --batch-primary: #171717;
+  --batch-on-primary: #ffffff;
+  --batch-primary-hover: #333333;
+  --batch-secondary-hover: #eeeeee;
+  --batch-pending-text: #805400;
+  --batch-pending-bg: #fff8e6;
+  --batch-success-text: #166534;
+  --batch-success-bg: #f0fdf4;
+  --batch-error-text: #b91c1c;
+  --batch-error-bg: #fef2f2;
+  --batch-focus: #2563eb;
+  container-type: inline-size;
+  container-name: task-batch;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 640px;
+  min-width: 0;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--batch-border);
+  border-radius: 12px;
+  background: var(--batch-bg);
+  color: var(--batch-text);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  animation: none;
+  font-family: inherit;
+  overflow-wrap: anywhere;
+}
+
+.dark .task-batch-card {
+  --batch-bg: #171717;
+  --batch-panel: #222222;
+  --batch-text: #f5f5f5;
+  --batch-muted: #b3b3b3;
+  --batch-border: #454545;
+  --batch-primary: #f5f5f5;
+  --batch-on-primary: #171717;
+  --batch-primary-hover: #d9d9d9;
+  --batch-secondary-hover: #303030;
+  --batch-pending-text: #f5d382;
+  --batch-pending-bg: #33270d;
+  --batch-success-text: #86efac;
+  --batch-success-bg: #132b1c;
+  --batch-error-text: #fca5a5;
+  --batch-error-bg: #351919;
+  --batch-focus: #93c5fd;
+}
+
+.task-batch-title {
+  margin: 0 0 8px;
+  color: var(--batch-text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.task-batch-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
+  padding: 2px 8px;
+  border-radius: 8px;
+  color: var(--batch-muted);
+  background: transparent;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.task-batch-status[data-tone='pending'],
+.task-batch-status[data-tone='executing'],
+.task-batch-status[data-tone='unknown'] {
+  color: var(--batch-pending-text);
+  background: var(--batch-pending-bg);
+}
+
+.task-batch-status[data-tone='executed'] {
+  color: var(--batch-success-text);
+  background: var(--batch-success-bg);
+}
+
+.task-batch-status[data-tone='failed'],
+.task-batch-status[data-tone='rejected'] {
+  color: var(--batch-error-text);
+  background: var(--batch-error-bg);
+}
+
+.task-batch-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
+.task-batch-summary {
+  margin: 12px 0;
+  color: var(--batch-text);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.task-batch-trees {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  min-width: 0;
+}
+
+.task-batch-panel {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--batch-border);
+  border-radius: 8px;
+  background: var(--batch-panel);
+}
+
+.task-batch-panel h3,
+.task-batch-changes h3 {
+  margin: 0 0 8px;
+  color: var(--batch-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.task-batch-nodes,
+.task-batch-children,
+.task-batch-changes ul,
+.task-batch-details ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-batch-children {
+  margin-left: 8px;
+  padding-left: 20px;
+  border-left: 1px solid var(--batch-border);
+}
+
+.task-batch-node {
+  min-width: 0;
+  min-height: 32px;
+  padding-block: 6px;
+  color: var(--batch-text);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.task-batch-kind {
+  display: inline-block;
+  margin-right: 6px;
+  color: var(--batch-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.task-batch-node-title {
+  overflow-wrap: anywhere;
+}
+
+.task-batch-changes {
+  margin-top: 12px;
+}
+
+.task-batch-changes li,
+.task-batch-details li,
+.task-batch-alert,
+.task-batch-summary {
+  overflow-wrap: anywhere;
+}
+
+.task-batch-changes ul {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-batch-changes li,
+.task-batch-alert {
+  color: var(--batch-text);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.task-batch-alert {
+  margin: 12px 0 0;
+  color: var(--batch-error-text);
+}
+
+.task-batch-details {
+  margin-top: 12px;
+}
+
+.task-batch-details summary {
+  color: var(--batch-muted);
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.task-batch-details ul {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.task-batch-details li {
+  color: var(--batch-muted);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.task-batch-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.task-batch-card button {
+  box-sizing: border-box;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.task-batch-card button.task-batch-primary {
+  border: 1px solid var(--batch-primary);
+  background: var(--batch-primary);
+  color: var(--batch-on-primary);
+}
+
+.task-batch-card button.task-batch-primary:hover:not(:disabled) {
+  background: var(--batch-primary-hover);
+  border-color: var(--batch-primary-hover);
+}
+
+.task-batch-card button.task-batch-secondary {
+  border: 1px solid var(--batch-border);
+  background: var(--batch-bg);
+  color: var(--batch-text);
+}
+
+.task-batch-card button.task-batch-secondary:hover:not(:disabled) {
+  background: var(--batch-secondary-hover);
+}
+
+.task-batch-card button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.task-batch-card button:focus-visible {
+  outline: 2px solid var(--batch-focus);
+  outline-offset: 2px;
+}
+
+@container task-batch (min-width: 480px) {
+  .task-batch-trees {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@container task-batch (max-width: 479px) {
+  .task-batch-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .task-batch-card button {
+    width: 100%;
+    min-height: 44px;
+  }
 }
