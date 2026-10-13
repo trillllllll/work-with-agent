@@ -56,6 +56,17 @@ export function createLibraryRouter(service = new LibraryService()) {
     } catch (error) { next(error); }
   });
   router.get('/chunks/:id', async (req, res, next) => { try { res.json({ data: await service.chunk(getActor(req), String(req.params.id)), error: null }); } catch (error) { next(error); } });
+  router.get('/materials/:id/versions/:revision/source', async (req, res, next) => {
+    try {
+      const source = await service.source(getActor(req), String(req.params.id), z.coerce.number().int().positive().parse(req.params.revision));
+      if (source.kind === 'text') {
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.send(source.content);
+        return;
+      }
+      res.json({ data: source, error: null });
+    } catch (error) { next(error); }
+  });
   router.get('/folders', async (req, res, next) => { try { res.json({ data: await service.folders(getActor(req)), error: null }); } catch (error) { next(error); } });
   router.get('/tags', async (req, res, next) => { try { res.json({ data: await service.tags(getActor(req)), error: null }); } catch (error) { next(error); } });
   router.get('/search', async (req, res, next) => {
@@ -91,13 +102,15 @@ export function createLibraryRouter(service = new LibraryService()) {
         res.json({ data: { id: started.upload.id, state: 'ready', sha256: started.upload.sha256, actualSize: started.upload.actualSize, duplicates }, error: null });
         return;
       }
+      if (!started.receipt) throw libraryError('UPLOAD_INTERRUPTED', '上传接收没有开始');
       try {
-        const body = await writeUploadBody(started.upload.id, started.upload.declaredSize, req);
-        const ready = await finishReceive(actor, started.upload.id, body);
+        const body = await writeUploadBody(started.receipt, started.upload.declaredSize, req);
+        const ready = await finishReceive(actor, started.receipt, body);
         const duplicates = ready.sha256 ? await service.duplicates(actor, ready.sha256) : [];
         res.json({ data: { id: ready.id, state: 'ready', sha256: ready.sha256, actualSize: ready.actualSize, duplicates }, error: null });
       } catch (error) {
-        if ((error as { code?: string }).code !== 'UPLOAD_SIZE_MISMATCH' && (error as { code?: string }).code !== 'UPLOAD_TOO_LARGE') await failReceive(started.upload.id, 'UPLOAD_INTERRUPTED');
+        const code = (error as { code?: string }).code;
+        if (code !== 'UPLOAD_SIZE_MISMATCH' && code !== 'UPLOAD_TOO_LARGE' && code !== 'UPLOAD_STALE_ATTEMPT' && code !== 'UPLOAD_CANCELLED') await failReceive(started.receipt.uploadId, 'UPLOAD_INTERRUPTED', started.receipt.token);
         throw error;
       }
     } catch (error) { next(error); }

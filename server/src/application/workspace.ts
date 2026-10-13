@@ -68,11 +68,14 @@ export class ChangeService {
       const after = record.afterSnapshot ? JSON.parse(record.afterSnapshot) : null;
       if (hasUndoHandler(record.entityType) || before?.version === 3) {
         if (before?.version === 3) {
-          for (let index = before.changes.length - 1; index >= 0; index--) {
+          const taskIds = new Set<string>(before.changes.filter((item: { entityType: string }) => item.entityType === 'task').map((item: { entityId: string }) => item.entityId));
+          const owned = { ...context, requestId: undefined, undoOwnership: { taskIdsRestoredByGroup: taskIds } };
+          for (let index = 0; index < before.changes.length; index += 1) await assertUndoCurrent(tx, before.changes[index], after.changes[index]);
+          for (let index = before.changes.length - 1; index >= 0; index -= 1) {
             const item = before.changes[index];
             const part = { ...item, beforeSnapshot: item.snapshot, afterSnapshot: after.changes[index].snapshot };
-            if (hasUndoHandler(item.entityType)) await externalUndo(tx, context.actor ?? ownerActor, part, { ...context, requestId: undefined });
-            else await this.mutations.restore(part, context, tx);
+            if (hasUndoHandler(item.entityType)) await externalUndo(tx, owned.actor ?? ownerActor, part, owned);
+            else await this.mutations.restore(part, owned, tx);
           }
         } else await externalUndo(tx, context.actor ?? ownerActor, record, { ...context, requestId: undefined });
         await tx.changeRecord.update({ where: { id }, data: { undoneAt: now() } });
@@ -84,6 +87,33 @@ export class ChangeService {
       const meta = await undo.record(record.entityType, record.entityId, `undo:${record.operation}`, id);
       return { success: true, meta };
     });
+  }
+}
+
+async function assertUndoCurrent(tx: Db, beforeItem: { entityType: string; entityId: string; operation: string; snapshot: string | null }, afterItem: { snapshot: string | null }) {
+  const beforeSnap = beforeItem.snapshot ? JSON.parse(beforeItem.snapshot) : null;
+  const afterSnap = afterItem.snapshot ? JSON.parse(afterItem.snapshot) : null;
+  if (beforeItem.entityType === 'task') {
+    const current = await tx.task.findUnique({ where: { id: beforeItem.entityId } });
+    if (!afterSnap || !current || current.revision !== afterSnap.revision) throw conflict('对象已发生后续变更，无法撤销');
+    if (afterSnap.updatedAt !== undefined && current.updatedAt !== afterSnap.updatedAt) throw conflict('对象已发生后续变更，无法撤销');
+    return;
+  }
+  if (beforeItem.entityType === 'material') {
+    const current = await tx.material.findUnique({ where: { id: beforeItem.entityId } });
+    if (!afterSnap || !current || current.revision !== afterSnap.revision) throw conflict('对象已发生后续变更，无法撤销');
+    if (beforeSnap?.links && beforeSnap.revision === afterSnap.revision && current.organizationRevision !== afterSnap.organizationRevision) throw conflict('对象已发生后续变更，无法撤销');
+    return;
+  }
+  if (beforeItem.entityType === 'libraryFolder' || beforeItem.entityType === 'libraryTag') {
+    const current = beforeItem.entityType === 'libraryFolder'
+      ? await tx.libraryFolder.findUnique({ where: { id: beforeItem.entityId } })
+      : await tx.libraryTag.findUnique({ where: { id: beforeItem.entityId } });
+    if (beforeItem.operation === 'delete' || afterSnap?.deleted) {
+      if (current) throw conflict('对象已发生后续变更，无法撤销');
+      return;
+    }
+    if (!afterSnap || !current || current.revision !== afterSnap.revision) throw conflict('对象已发生后续变更，无法撤销');
   }
 }
 
@@ -146,7 +176,9 @@ async function legacySnapshots(tx: Db, record: StoredChange, before: any, after:
   const group = new ChangeGroup(tx, context);
   await group.capture(kind, record.entityId);
   const current = kind === 'tasks' ? await tx.task.findUnique({ where: { id: record.entityId } }) : await tx.topic.findUnique({ where: { id: record.entityId } });
-  if (after && (!current || current.updatedAt !== after.updatedAt || ('revision' in after && current.revision !== after.revision))) throw conflict('对象已发生后续变更，无法撤销');
+  if (after && !current) throw conflict('对象已发生后续变更，无法撤销');
+  if (after && current && 'revision' in after && current.revision !== after.revision) throw conflict('对象已发生后续变更，无法撤销');
+  if (after && current && after.updatedAt !== undefined && current.updatedAt !== after.updatedAt) throw conflict('对象已发生后续变更，无法撤销');
   if (!after && current) throw conflict('对象已发生后续变更，无法撤销');
 
   if (record.entityType === 'topic' && record.operation === 'archive') {

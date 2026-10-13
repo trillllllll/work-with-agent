@@ -47,7 +47,7 @@ export async function referenceMaterials(tx: LibraryDb, actor: Actor, taskId: st
   if (description === null) throw libraryError('INVALID_RANGE', '正文插入位置无效', 400);
   const timestamp = libraryNow();
   const updated = await tx.task.update({ where: { id: task.id, revision: task.revision }, data: { description, revision: { increment: 1 }, updatedAt: timestamp } });
-  await recordChange(tx, 'task', task.id, 'update', { id: task.id, revision: task.revision, description: task.description }, { id: task.id, revision: updated.revision, description }, context);
+  await recordChange(tx, 'task', task.id, 'update', { id: task.id, revision: task.revision, description: task.description, updatedAt: task.updatedAt }, { id: task.id, revision: updated.revision, description, updatedAt: timestamp }, context);
   for (const materialId of ids) await cite(tx, actor, materialId, task.id, context);
   return { id: task.id, revision: updated.revision, description, materialIds: ids };
 }

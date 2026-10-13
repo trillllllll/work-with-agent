@@ -31,7 +31,7 @@ async function withOcr<T>(run: () => Promise<T>) {
 
 export function startLibraryWorker() {
   if (timer) return () => undefined;
-  const pump = () => { while (running < 2) { running += 1; void runLibraryWorkerOnce().finally(() => { running -= 1; }); } };
+  const pump = () => { while (running < 2) { running += 1; void runLibraryWorkerOnce().catch(() => undefined).finally(() => { running -= 1; }); } };
   timer = setInterval(pump, 1000);
   timer.unref();
   pump();
@@ -56,16 +56,19 @@ export async function runLibraryWorkerOnce() {
     return tx.materialExtraction.findUnique({ where: { id } });
   });
   if (!claimed?.leaseToken) return { claimed: false as const };
-  const directory = await mkdtemp(join(tmpdir(), 'wwa-library-'));
+  const lifetime = { stop() {} };
+  let directory: string | null = null;
   let aborted = false;
-  const renew = setInterval(() => {
-    void prisma.materialExtraction.updateMany({ where: { id: claimed.id, leaseToken: claimed.leaseToken, generation: claimed.generation }, data: { leaseUntil: new Date(Date.now() + 120_000).toISOString() } }).then((result) => {
-      if (!result.count) aborted = true;
-    });
-  }, 30_000);
-  renew.unref();
+  let renew: ReturnType<typeof setInterval> | null = null;
   try {
-    const outcome = await parseClaim(claimed, directory, () => aborted);
+    directory = await mkdtemp(join(tmpdir(), 'wwa-library-'));
+    renew = setInterval(() => {
+      void prisma.materialExtraction.updateMany({ where: { id: claimed.id, leaseToken: claimed.leaseToken, generation: claimed.generation }, data: { leaseUntil: new Date(Date.now() + 120_000).toISOString() } }).then((result) => {
+        if (!result.count) aborted = true;
+      }).catch(() => undefined);
+    }, 30_000);
+    renew.unref();
+    const outcome = await parseClaim(claimed, directory, () => aborted, lifetime);
     if (aborted || outcome.kind === 'stale') return { claimed: true as const, published: false as const };
     if (outcome.kind === 'retry') {
       await scheduleRetry(claimed.id, claimed.leaseToken, claimed.generation, claimed.attempts, outcome.errorCode);
@@ -74,13 +77,22 @@ export async function runLibraryWorkerOnce() {
     const published = await publishExtraction(claimed.id, claimed.leaseToken, claimed.generation, outcome);
     if (published) publishWorkspaceChange({ kind: 'library.extraction', materialId: claimed.materialId, revision: claimed.revision, status: outcome.status });
     return { claimed: true as const, published };
+  } catch (error) {
+    lifetime.stop();
+    const message = error instanceof Error ? error.message : '解析失败';
+    await prisma.materialExtraction.updateMany({
+      where: { id: claimed.id, leaseToken: claimed.leaseToken, generation: claimed.generation },
+      data: { status: 'failed', errorCode: 'PARSE_FAILED', errorsJson: JSON.stringify([{ locator: null, code: 'PARSE_FAILED', message }]), leaseToken: null, leaseUntil: null, updatedAt: libraryNow() },
+    }).catch(() => undefined);
+    return { claimed: true as const, published: false as const, failed: true as const };
   } finally {
-    clearInterval(renew);
-    await rm(directory, { recursive: true, force: true });
+    if (renew) clearInterval(renew);
+    lifetime.stop();
+    if (directory) await rm(directory, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
-async function parseClaim(claimed: { id: string; materialId: string; revision: number; generation: number; leaseToken: string | null }, directory: string, aborted: () => boolean): Promise<{ kind: 'publish'; status: 'ready' | 'partial' | 'failed' | 'unsupported' | 'blocked'; errorCode: string | null; errors: Extracted['errors']; segments: Segment[] } | { kind: 'retry'; errorCode: string } | { kind: 'stale' }> {
+async function parseClaim(claimed: { id: string; materialId: string; revision: number; generation: number; attempts: number; leaseToken: string | null }, directory: string, aborted: () => boolean, lifetime: { stop: () => void }): Promise<{ kind: 'publish'; status: 'ready' | 'partial' | 'failed' | 'unsupported' | 'blocked'; errorCode: string | null; errors: Extracted['errors']; segments: Segment[] } | { kind: 'retry'; errorCode: string } | { kind: 'stale' }> {
   const version = await prisma.materialVersion.findUnique({ where: { materialId_revision: { materialId: claimed.materialId, revision: claimed.revision } } });
   const material = await prisma.material.findUnique({ where: { id: claimed.materialId } });
   if (!version || !material) return { kind: 'publish', status: 'failed', errorCode: 'FILE_CORRUPT', errors: [{ locator: null, code: 'FILE_CORRUPT', message: '版本已不存在' }], segments: [] };
@@ -97,7 +109,7 @@ async function parseClaim(claimed: { id: string; materialId: string; revision: n
   const jobPath = join(directory, 'job.json');
   const resultPath = join(directory, 'result.json');
   await writeFile(jobPath, JSON.stringify({ bytesPath, outDir: join(directory, 'out'), fileName: version.fileName ?? '', mimeType: version.mimeType ?? '', kind: material.kind }));
-  const extracted = await runChild(jobPath, resultPath, aborted);
+  const extracted = await runChild(jobPath, resultPath, aborted, lifetime);
   if (aborted()) return { kind: 'stale' };
   if (!extracted) return { kind: 'publish', status: 'failed', errorCode: 'FILE_CORRUPT', errors: [{ locator: null, code: 'FILE_CORRUPT', message: '解析进程没有返回结果' }], segments: [] };
   if (extracted.status === 'failed' || extracted.status === 'unsupported') return { kind: 'publish', status: extracted.status, errorCode: extracted.errorCode, errors: extracted.errors, segments: [] };
@@ -116,7 +128,10 @@ async function parseClaim(claimed: { id: string; materialId: string; revision: n
     if (aborted()) return { kind: 'stale' };
     if (!image.imagePath) { errors.push({ locator: locatorOrNull(image.locator), code: 'PAGE_FAILED', message: '没有可识字的图像' }); continue; }
     const outcome = await withOcr(() => recognize(model, image.imagePath!));
-    if (outcome.kind === 'retry') return outcome;
+    if (outcome.kind === 'retry') {
+      if (claimed.attempts >= 3) { errors.push({ locator: locatorOrNull(image.locator), code: outcome.errorCode, message: '这一页识字失败' }); continue; }
+      return outcome;
+    }
     if (outcome.kind === 'blocked') {
       if (!segments.length) return { kind: 'publish', status: 'blocked', errorCode: 'VISION_UNSUPPORTED', errors: [...errors, { locator: null, code: 'VISION_UNSUPPORTED', message: '模型不支持识字' }], segments: [] };
       errors.push({ locator: locatorOrNull(image.locator), code: 'VISION_UNSUPPORTED', message: '模型不支持识字' });
@@ -158,13 +173,14 @@ function locatorOrNull(value: Record<string, unknown>) {
   return parsed.success ? parsed.data : null;
 }
 
-function runChild(jobPath: string, resultPath: string, aborted: () => boolean) {
+function runChild(jobPath: string, resultPath: string, aborted: () => boolean, lifetime: { stop: () => void }) {
   const compiled = fileURLToPath(new URL('./extract-cli.js', import.meta.url));
   const source = fileURLToPath(new URL('./extract-cli.ts', import.meta.url));
   const fromSource = import.meta.url.includes('/src/');
   const args = fromSource ? ['--max-old-space-size=512', '--import', 'tsx', source, jobPath, resultPath] : ['--max-old-space-size=512', compiled, jobPath, resultPath];
   return new Promise<Extracted | null>((resolve) => {
     const child = spawn(process.execPath, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    lifetime.stop = () => { child.kill('SIGKILL'); };
     const killer = setTimeout(() => child.kill('SIGKILL'), 120_000);
     const watch = setInterval(() => { if (aborted()) child.kill('SIGKILL'); }, 1000);
     child.on('close', () => {
@@ -200,11 +216,11 @@ async function publishExtraction(id: string, token: string | null, generation: n
         const pieces = splitSegment(segment.text);
         for (const piece of pieces) {
           const locator = locatorSchema.parse({ ...segment.locator, start: piece.start, end: piece.end });
-          const row = await tx.materialChunk.create({ data: { id: randomUUID(), extractionId: current.id, generation, ordinal, text: piece.text, textHash: knowledgeHash(piece.text), locatorJson: JSON.stringify(locator), method: segment.method, createdAt: timestamp } });
-          created.push(row);
+          created.push({ id: randomUUID(), extractionId: current.id, generation, ordinal, text: piece.text, textHash: knowledgeHash(piece.text), locatorJson: JSON.stringify(locator), method: segment.method, createdAt: timestamp });
           ordinal += 1;
         }
       }
+      for (let index = 0; index < created.length; index += 200) await tx.materialChunk.createMany({ data: created.slice(index, index + 200) });
       await replaceActiveDocuments(tx, material, version, await tagNames(tx, material.id), created);
     }
     await tx.materialExtraction.update({ where: { id }, data: {
@@ -216,7 +232,7 @@ async function publishExtraction(id: string, token: string | null, generation: n
       leaseToken: null, leaseUntil: null, updatedAt: libraryNow(),
     } });
     return true;
-  });
+  }, { maxWait: 10_000, timeout: 60_000 });
 }
 
 export async function publishLibraryExtraction(id: string, token: string | null, generation: number, outcome: { status: 'ready' | 'partial' | 'failed' | 'unsupported' | 'blocked'; errorCode: string | null; errors: Extracted['errors']; segments: Segment[] }) {

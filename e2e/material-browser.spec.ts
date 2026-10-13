@@ -41,6 +41,8 @@ test('一份资料可以同时关联多个任务，预览留在栏内而不是�
   const taskA = await request.post(`${base}/api/tasks`, { data: { title: '跨清单任务甲', topicId: (await topicA.json()).data.id } });
   const taskB = await request.post(`${base}/api/tasks`, { data: { title: '跨清单任务乙', topicId: (await topicB.json()).data.id } });
   expect(taskA.ok() && taskB.ok()).toBe(true);
+  const taskAId = (await taskA.json()).data.id as string;
+  const taskBId = (await taskB.json()).data.id as string;
   const material = await command(request, [{ kind: 'material.create', input: { topicId: null, kind: 'text', title: '多任务资料', content: '同一份资料关联两件任务' } }]) as { id: string };
 
   await page.setViewportSize({ width: 1600, height: 1000 });
@@ -52,10 +54,20 @@ test('一份资料可以同时关联多个任务，预览留在栏内而不是�
   expect(box.width).toBeLessThan(500);
   await expect(page.getByRole('combobox', { name: '关联任务', exact: true })).toHaveCount(0);
 
-  await preview.getByLabel('添加关联任务', { exact: true }).selectOption({ label: '跨清单任务甲' });
+  await preview.getByRole('textbox', { name: '搜索任务', exact: true }).fill('跨清单任务甲');
+  const rowA = preview.getByTestId(`task-picker-row-${taskAId}`);
+  await expect(rowA).toBeVisible();
+  await expect(rowA).toContainText('清单甲');
+  await expect(rowA).toContainText('待办');
+  await expect(preview.getByTestId(`task-picker-row-${taskBId}`)).toHaveCount(0);
+  await preview.getByRole('checkbox', { name: '选择 跨清单任务甲', exact: true }).check();
   await preview.getByRole('button', { name: '关联', exact: true }).click();
   await expect(preview.getByRole('button', { name: '跨清单任务甲', exact: true })).toBeVisible();
-  await preview.getByLabel('添加关联任务', { exact: true }).selectOption({ label: '跨清单任务乙' });
+  await preview.getByRole('textbox', { name: '搜索任务', exact: true }).fill('跨清单任务乙');
+  const rowB = preview.getByTestId(`task-picker-row-${taskBId}`);
+  await expect(rowB).toContainText('清单乙');
+  await expect(rowB).toContainText('待办');
+  await preview.getByRole('checkbox', { name: '选择 跨清单任务乙', exact: true }).check();
   await preview.getByRole('button', { name: '关联', exact: true }).click();
   await expect(preview.getByRole('button', { name: '跨清单任务甲', exact: true })).toBeVisible();
   await expect(preview.getByRole('button', { name: '跨清单任务乙', exact: true })).toBeVisible();

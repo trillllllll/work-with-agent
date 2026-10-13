@@ -4,7 +4,16 @@ import { ApiError, api, authHeaders } from '@/lib/api.js';
 import { submitCommands, type Command } from '@/lib/platform.js';
 import type { MaterialSummary } from './types.js';
 
-export type UploadStatus = 'queued' | 'uploading' | 'duplicate' | 'creating' | 'done' | 'failed' | 'skipped';
+export type UploadStatus = 'queued' | 'uploading' | 'duplicate' | 'creating' | 'done' | 'failed' | 'skipped' | 'cancelled';
+
+export type UploadTarget = {
+  topicId: string | null;
+  folderId: string | null;
+  taskIds: string[];
+  replaceMaterialId?: string;
+  expectedRevision?: number;
+  silent?: boolean;
+};
 
 export type UploadRecord = {
   localId: string;
@@ -20,18 +29,25 @@ export type UploadRecord = {
   batchId: string;
   target: UploadTarget;
   folderId?: string | null;
+  cancelRequested?: boolean;
+  action?: 'create' | 'reuse';
+  reuseMaterialId?: string;
 };
 
-export type UploadTarget = { topicId: string | null; folderId: string | null; taskIds: string[] };
-
 type DirectoryReader = { readEntries: (success: (entries: FileSystemEntry[]) => void, failure: (error: DOMException) => void) => void };
+type ReadyUpload = { id: string; state?: string; duplicates?: MaterialSummary[] };
+type OpenedUpload = { id: string; state?: string; materialId?: string | null };
+type ServerUpload = { id: string; state?: string; materialId?: string | null };
+type Batch = { pending: number; added: number; failed: number; toasted: boolean; silent: boolean; resolve: () => void };
 
-type ReadyUpload = { id: string; state: 'ready'; sha256: string; actualSize: number; duplicates: MaterialSummary[] };
-
+const poolLimit = 3;
+let active = 0;
 let records: UploadRecord[] = [];
 const listeners = new Set<() => void>();
 const changed = new Set<() => void>();
-const batches = new Map<string, { pending: number; added: number; failed: number; toasted: boolean }>();
+const batches = new Map<string, Batch>();
+const settled = new Set<string>();
+const xhrs = new Map<string, XMLHttpRequest>();
 
 function emit() {
   records = records.slice();
@@ -41,6 +57,15 @@ function emit() {
 function update(localId: string, patch: Partial<UploadRecord>) {
   records = records.map((item) => item.localId === localId ? { ...item, ...patch } : item);
   emit();
+}
+
+function current(localId: string) {
+  return records.find((item) => item.localId === localId);
+}
+
+function cancelled(localId: string) {
+  const record = current(localId);
+  return !record || record.cancelRequested || record.status === 'cancelled';
 }
 
 export function subscribeUploads(listener: () => void) {
@@ -63,10 +88,6 @@ export function onLibraryChanged(listener: () => void) {
 
 function notifyChanged() {
   changed.forEach((listener) => listener());
-}
-
-export function uploadRequestKey(file: File, relativePath: string) {
-  return `${file.name}\n${file.size}\n${file.lastModified}\n${relativePath}`.slice(0, 200);
 }
 
 export function assertRelativePath(path: string) {
@@ -120,16 +141,19 @@ export async function filesFromTransfer(transfer: DataTransfer) {
   return groups.flat().sort((left, right) => left.relativePath.localeCompare(right.relativePath));
 }
 
-function putBytes(id: string, file: File, onProgress: (value: number | null) => void) {
+function putBytes(id: string, file: File, localId: string, onProgress: (value: number | null) => void) {
   return new Promise<ReadyUpload>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+    xhrs.set(localId, xhr);
     xhr.open('PUT', `/api/v1/library/uploads/${encodeURIComponent(id)}/content`);
     xhr.withCredentials = true;
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
     for (const [key, value] of Object.entries(authHeaders())) xhr.setRequestHeader(key, value);
     xhr.upload.onprogress = (event) => onProgress(event.lengthComputable && event.total > 0 ? event.loaded / event.total : null);
-    xhr.onerror = () => reject(new Error('上传失败'));
+    xhr.onabort = () => { xhrs.delete(localId); reject(new DOMException('已取消', 'AbortError')); };
+    xhr.onerror = () => { xhrs.delete(localId); reject(new Error('上传失败')); };
     xhr.onload = () => {
+      xhrs.delete(localId);
       let body: { data?: ReadyUpload; error?: string | { message?: string } } = {};
       try { body = JSON.parse(xhr.responseText) as typeof body; } catch { /* The status still decides success. */ }
       if (xhr.status >= 200 && xhr.status < 300 && body.data) resolve(body.data);
@@ -137,6 +161,12 @@ function putBytes(id: string, file: File, onProgress: (value: number | null) => 
     };
     xhr.send(file);
   });
+}
+
+async function deleteUpload(id: string) {
+  try {
+    await fetch(`/api/v1/library/uploads/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include', headers: authHeaders() });
+  } catch { /* The queue still leaves the cancelled state. */ }
 }
 
 function folderLabel(value: string) {
@@ -157,6 +187,7 @@ function lockFolders<T>(work: () => Promise<T>) {
 
 async function rememberFolders() {
   const listed = await api<{ items: Array<{ id: string; parentId: string | null; name: string }> }>('/api/v1/library/folders');
+  folderIds.clear();
   for (const folder of listed.items) folderIds.set(`${folder.parentId ?? ''}\n${folder.name.toLowerCase()}`, folder.id);
 }
 
@@ -165,10 +196,7 @@ async function ensureFolder(parentId: string | null, rawName: string) {
   const key = `${parentId ?? ''}\n${name.toLowerCase()}`;
   const cached = folderIds.get(key);
   if (cached) return cached;
-  await rememberFolders();
-  const existing = folderIds.get(key);
-  if (existing) return existing;
-  const created = await submitCommands([{ kind: 'libraryFolder.create', input: { parentId, name } }], `library-folder:${key}`);
+  const created = await submitCommands([{ kind: 'libraryFolder.create', input: { parentId, name } }], crypto.randomUUID());
   const id = created.results?.[0]?.id as string | undefined;
   if (!id) throw new Error('文件夹没有创建');
   folderIds.set(key, id);
@@ -178,30 +206,54 @@ async function ensureFolder(parentId: string | null, rawName: string) {
 export async function folderForPath(relativePath: string, root: string | null) {
   const parts = relativePath.split('/').slice(0, -1);
   return lockFolders(async () => {
+    await rememberFolders();
     let parent = root;
     for (const part of parts) parent = await ensureFolder(parent, part);
     return parent;
   });
 }
 
-async function createMaterial(record: UploadRecord, target: UploadTarget, action: 'create' | 'reuse', reuseMaterialId?: string) {
-  const folderId = record.folderId === undefined ? await folderForPath(record.relativePath, target.folderId) : record.folderId;
-  const command: Command = {
+function commitRequestId(record: UploadRecord) {
+  return `library-commit:${record.requestKey}:${record.action ?? 'create'}:${record.reuseMaterialId ?? ''}:${record.target.replaceMaterialId ?? ''}`;
+}
+
+async function sendCommit(record: UploadRecord) {
+  const requestId = commitRequestId(record);
+  if (record.target.replaceMaterialId) {
+    await submitCommands([{
+      kind: 'material.replace',
+      targetId: record.target.replaceMaterialId,
+      expectedRevision: record.target.expectedRevision,
+      input: { uploadId: record.uploadId },
+    }], requestId);
+    return;
+  }
+  await submitCommands([{
     kind: 'material.create',
     input: {
       uploadId: record.uploadId,
-      duplicateAction: action,
-      ...(reuseMaterialId ? { reuseMaterialId } : {}),
-      topicId: target.topicId,
-      folderId,
-      taskIds: target.taskIds,
+      duplicateAction: record.action ?? 'create',
+      ...(record.reuseMaterialId ? { reuseMaterialId: record.reuseMaterialId } : {}),
+      topicId: record.target.topicId,
+      folderId: record.folderId ?? null,
+      taskIds: record.target.taskIds,
     },
-  };
-  await submitCommands([command], `library-upload:${record.requestKey}:${action}:${reuseMaterialId ?? ''}:${folderId ?? ''}`);
+  }], requestId);
 }
 
-function finishItem(record: UploadRecord, status: 'done' | 'failed' | 'skipped', error?: string) {
-  update(record.localId, { status, error, progress: status === 'done' ? 1 : record.progress });
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function readUpload(id: string) {
+  return api<ServerUpload>(`/api/v1/library/uploads/${encodeURIComponent(id)}`);
+}
+
+function finishItem(record: UploadRecord, status: 'done' | 'failed' | 'skipped' | 'cancelled', error?: string) {
+  if (settled.has(record.localId)) return;
+  settled.add(record.localId);
+  const progress = status === 'done' ? 1 : record.progress;
+  update(record.localId, { status, error, progress, cancelRequested: status === 'cancelled' ? true : record.cancelRequested });
   const batch = batches.get(record.batchId);
   if (!batch) return;
   batch.pending -= 1;
@@ -209,47 +261,202 @@ function finishItem(record: UploadRecord, status: 'done' | 'failed' | 'skipped',
   if (status === 'failed') batch.failed += 1;
   if (batch.pending === 0 && !batch.toasted) {
     batch.toasted = true;
-    toast.success(`已添加 ${batch.added} 份资料，${batch.failed} 份失败`);
+    if (!batch.silent) toast.success(`已添加 ${batch.added} 份资料，${batch.failed} 份失败`);
     if (batch.added) notifyChanged();
+    batch.resolve();
   }
 }
 
-async function runUpload(record: UploadRecord, target: UploadTarget) {
+async function commitWithRecovery(record: UploadRecord) {
+  const localId = record.localId;
+  const retryReady = async (uploadId: string) => {
+    const latest = current(localId) ?? record;
+    await sendCommit({ ...latest, uploadId });
+    finishItem(current(localId) ?? latest, 'done');
+  };
+  const reupload = async (uploadId: string) => {
+    const latest = current(localId) ?? record;
+    await putBytes(uploadId, latest.file, localId, (progress) => update(localId, { progress }));
+    await sendCommit({ ...latest, uploadId, folderId: latest.folderId });
+    finishItem(current(localId) ?? latest, 'done');
+  };
   try {
-    update(record.localId, { status: 'uploading', progress: null, error: undefined });
-    const opened = await api<{ id: string; state: string; maxBytes: number }>('/api/v1/library/uploads', {
+    if (cancelled(localId)) {
+      finishItem(current(localId) ?? record, 'cancelled');
+      return;
+    }
+    await sendCommit(current(localId) ?? record);
+    finishItem(current(localId) ?? record, 'done');
+  } catch (error) {
+    const uploadId = (current(localId) ?? record).uploadId;
+    if (!uploadId) throw error;
+    let upload: ServerUpload;
+    try { upload = await readUpload(uploadId); }
+    catch { throw error; }
+    if (upload.state === 'committed') {
+      finishItem(current(localId) ?? record, 'done');
+      return;
+    }
+    if (upload.state === 'cancelled' || cancelled(localId)) {
+      if (upload.state !== 'cancelled') await deleteUpload(uploadId);
+      finishItem(current(localId) ?? record, 'cancelled');
+      return;
+    }
+    if (upload.state === 'ready') {
+      await retryReady(uploadId);
+      return;
+    }
+    if (upload.state === 'failed') {
+      await reupload(uploadId);
+      return;
+    }
+    if (upload.state === 'receiving' || upload.state === 'pending') {
+      update(localId, { status: 'uploading', error: undefined });
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        await delay(400);
+        if (cancelled(localId)) {
+          await deleteUpload(uploadId);
+          finishItem(current(localId) ?? record, 'cancelled');
+          return;
+        }
+        const again = await readUpload(uploadId);
+        if (again.state === 'committed') { finishItem(current(localId) ?? record, 'done'); return; }
+        if (again.state === 'cancelled') { finishItem(current(localId) ?? record, 'cancelled'); return; }
+        if (again.state === 'ready') { await retryReady(uploadId); return; }
+        if (again.state === 'failed') { await reupload(uploadId); return; }
+      }
+      void watchUpload(localId, uploadId);
+      return;
+    }
+    throw error;
+  }
+}
+
+async function watchUpload(localId: string, uploadId: string) {
+  const record = current(localId);
+  if (!record) return;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    await delay(1000);
+    if (settled.has(localId)) return;
+    if (cancelled(localId)) {
+      await deleteUpload(uploadId);
+      finishItem(current(localId) ?? record, 'cancelled');
+      return;
+    }
+    try {
+      const upload = await readUpload(uploadId);
+      if (upload.state === 'committed') { finishItem(current(localId) ?? record, 'done'); return; }
+      if (upload.state === 'cancelled') { finishItem(current(localId) ?? record, 'cancelled'); return; }
+      if (upload.state === 'ready') {
+        await sendCommit({ ...(current(localId) ?? record), uploadId });
+        finishItem(current(localId) ?? record, 'done');
+        return;
+      }
+      if (upload.state === 'failed') {
+        const latest = current(localId) ?? record;
+        await putBytes(uploadId, latest.file, localId, (progress) => update(localId, { progress }));
+        await sendCommit({ ...latest, uploadId });
+        finishItem(current(localId) ?? record, 'done');
+        return;
+      }
+      update(localId, { status: 'uploading', error: undefined });
+    } catch (error) {
+      finishItem(current(localId) ?? record, 'failed', error instanceof Error ? error.message : '上传状态未确认');
+      return;
+    }
+  }
+  if (!settled.has(localId)) finishItem(current(localId) ?? record, 'failed', '上传状态未确认');
+}
+
+async function runUpload(localId: string) {
+  const record = current(localId);
+  if (!record) return;
+  try {
+    if (cancelled(localId)) {
+      finishItem(record, 'cancelled');
+      return;
+    }
+    update(localId, { status: 'uploading', progress: null, error: undefined });
+    const opened = await api<OpenedUpload>('/api/v1/library/uploads', {
       method: 'POST',
       body: JSON.stringify({ requestKey: record.requestKey, fileName: record.name, mimeType: record.file.type || 'application/octet-stream', size: record.file.size }),
     });
-    update(record.localId, { uploadId: opened.id });
-    const ready = await putBytes(opened.id, record.file, (progress) => update(record.localId, { progress }));
-    const folderId = await folderForPath(record.relativePath, target.folderId);
-    const current = records.find((item) => item.localId === record.localId) ?? record;
-    const next = { ...current, uploadId: ready.id, folderId, target };
-    if (ready.duplicates?.length) {
-      update(record.localId, { status: 'duplicate', uploadId: ready.id, duplicates: ready.duplicates, progress: 1, folderId });
+    update(localId, { uploadId: opened.id });
+    if (cancelled(localId)) {
+      await deleteUpload(opened.id);
+      finishItem(current(localId) ?? record, 'cancelled');
       return;
     }
-    update(record.localId, { status: 'creating', uploadId: ready.id, progress: 1, folderId });
-    await createMaterial(next, target, 'create');
-    finishItem(next, 'done');
-    notifyChanged();
+    if (opened.state === 'committed') {
+      finishItem(current(localId) ?? record, 'done');
+      return;
+    }
+    if (opened.state === 'cancelled') {
+      finishItem(current(localId) ?? record, 'cancelled');
+      return;
+    }
+    const latestTarget = (current(localId) ?? record).target;
+    const folderId = latestTarget.replaceMaterialId ? (current(localId)?.folderId ?? null) : await folderForPath(record.relativePath, latestTarget.folderId);
+    update(localId, { folderId });
+    if (opened.state === 'receiving') {
+      update(localId, { status: 'uploading', folderId });
+      void watchUpload(localId, opened.id);
+      return;
+    }
+    let duplicates: MaterialSummary[] = [];
+    if (opened.state !== 'ready') {
+      const ready = await putBytes(opened.id, record.file, localId, (progress) => update(localId, { progress }));
+      duplicates = ready.duplicates ?? [];
+      update(localId, { uploadId: ready.id || opened.id, progress: 1, folderId });
+    } else {
+      update(localId, { progress: 1, folderId });
+    }
+    if (cancelled(localId)) {
+      await deleteUpload(opened.id);
+      finishItem(current(localId) ?? record, 'cancelled');
+      return;
+    }
+    const staged = current(localId) ?? record;
+    if (duplicates.length && !staged.target.replaceMaterialId) {
+      update(localId, { status: 'duplicate', duplicates, uploadId: opened.id, folderId, progress: 1 });
+      return;
+    }
+    update(localId, { status: 'creating', uploadId: opened.id, folderId, progress: 1 });
+    await commitWithRecovery({ ...staged, uploadId: opened.id, folderId, status: 'creating' });
   } catch (error) {
+    if (cancelled(localId) || (error instanceof DOMException && error.name === 'AbortError')) {
+      const uploadId = current(localId)?.uploadId;
+      if (uploadId) await deleteUpload(uploadId);
+      finishItem(current(localId) ?? record, 'cancelled');
+      return;
+    }
     const message = error instanceof ApiError || error instanceof Error ? error.message : '上传失败';
-    finishItem(record, 'failed', message);
+    finishItem(current(localId) ?? record, 'failed', message);
   }
 }
 
-async function pump(queue: UploadRecord[], target: UploadTarget) {
-  let index = 0;
-  const workers = Array.from({ length: Math.min(3, queue.length) }, async () => {
-    while (index < queue.length) {
-      const current = queue[index];
-      index += 1;
-      if (current) await runUpload(current, target);
+function schedule() {
+  for (const record of records) {
+    if (record.status !== 'queued' || record.cancelRequested) continue;
+    if (active >= poolLimit) return;
+    active += 1;
+    update(record.localId, { status: 'uploading', progress: null, error: undefined });
+    void runGuarded(record.localId);
+  }
+}
+
+async function runGuarded(localId: string) {
+  try {
+    const record = current(localId);
+    if (!record || record.cancelRequested) {
+      if (record) finishItem(record, 'cancelled');
+      return;
     }
-  });
-  await Promise.all(workers);
+    await runUpload(localId);
+  } finally {
+    active = Math.max(0, active - 1);
+    schedule();
+  }
 }
 
 export async function enqueueUploads(files: Array<{ file: File; relativePath: string }>, target: UploadTarget) {
@@ -260,7 +467,7 @@ export async function enqueueUploads(files: Array<{ file: File; relativePath: st
   for (const item of sorted) {
     const record: UploadRecord = {
       localId: crypto.randomUUID(),
-      requestKey: uploadRequestKey(item.file, item.relativePath),
+      requestKey: crypto.randomUUID(),
       file: item.file,
       relativePath: item.relativePath,
       name: item.file.name.slice(0, 255),
@@ -268,6 +475,7 @@ export async function enqueueUploads(files: Array<{ file: File; relativePath: st
       progress: null,
       batchId,
       target,
+      action: 'create',
     };
     try {
       assertRelativePath(item.relativePath);
@@ -277,49 +485,85 @@ export async function enqueueUploads(files: Array<{ file: File; relativePath: st
       rejected.push({ ...record, status: 'failed', error: error instanceof Error ? error.message : '路径无效' });
     }
   }
-  const batch = { pending: accepted.length + rejected.length, added: 0, failed: 0, toasted: false };
-  if (!batch.pending) return;
-  batches.set(batchId, batch);
+  const pending = accepted.length + rejected.length;
+  if (!pending) return;
+  let resolveBatch = () => {};
+  const done = new Promise<void>((resolve) => { resolveBatch = resolve; });
+  batches.set(batchId, { pending, added: 0, failed: 0, toasted: false, silent: Boolean(target.silent), resolve: resolveBatch });
   records = [...records, ...rejected, ...accepted];
   emit();
   for (const record of rejected) finishItem(record, 'failed', record.error);
-  if (accepted.length) await pump(accepted, target);
+  schedule();
+  await done;
 }
 
 export async function stageUpload(file: File, relativePath = file.name) {
-  const requestKey = uploadRequestKey(file, assertRelativePath(relativePath));
+  const requestKey = crypto.randomUUID();
   const opened = await api<{ id: string }>('/api/v1/library/uploads', {
     method: 'POST',
     body: JSON.stringify({ requestKey, fileName: file.name.slice(0, 255), mimeType: file.type || 'application/octet-stream', size: file.size }),
   });
-  await putBytes(opened.id, file, () => {});
+  await putBytes(opened.id, file, requestKey, () => {});
   return opened.id;
 }
 
 export async function retryUpload(localId: string) {
-  const record = records.find((item) => item.localId === localId);
+  const record = current(localId);
   if (!record || record.status !== 'failed') return;
+  settled.delete(localId);
   const batchId = `retry-${crypto.randomUUID()}`;
-  batches.set(batchId, { pending: 1, added: 0, failed: 0, toasted: false });
-  const next = { ...record, batchId, status: 'queued' as const, error: undefined };
-  update(localId, { batchId, status: 'queued', error: undefined });
-  await runUpload(next, record.target);
+  let resolveBatch = () => {};
+  const done = new Promise<void>((resolve) => { resolveBatch = resolve; });
+  batches.set(batchId, { pending: 1, added: 0, failed: 0, toasted: false, silent: Boolean(record.target.silent), resolve: resolveBatch });
+  update(localId, { batchId, status: 'queued', error: undefined, cancelRequested: false, progress: null });
+  schedule();
+  await done;
 }
 
-export async function resolveDuplicate(localId: string, action: 'reuse' | 'create' | 'skip', target: UploadTarget, reuseMaterialId?: string) {
-  const record = records.find((item) => item.localId === localId);
+export function cancelQueued(localId: string) {
+  const record = current(localId);
+  if (!record || settled.has(localId)) return;
+  update(localId, { cancelRequested: true });
+  const xhr = xhrs.get(localId);
+  if (xhr) {
+    xhr.abort();
+    return;
+  }
+  if (record.status === 'queued') {
+    finishItem({ ...record, cancelRequested: true }, 'cancelled');
+    return;
+  }
+  if (record.status === 'duplicate') {
+    void (async () => {
+      if (record.uploadId) await deleteUpload(record.uploadId);
+      finishItem(current(localId) ?? record, 'cancelled');
+    })();
+    return;
+  }
+}
+
+export function clearFinishedUploads() {
+  const finished = new Set(['done', 'skipped', 'cancelled']);
+  records = records.filter((item) => !finished.has(item.status));
+  emit();
+}
+
+export async function resolveDuplicate(localId: string, action: 'reuse' | 'create' | 'skip', _target: UploadTarget, reuseMaterialId?: string) {
+  const record = current(localId);
   if (!record || record.status !== 'duplicate') return;
+  if (action === 'reuse' && !reuseMaterialId) return;
   if (action === 'skip') {
+    if (record.uploadId) await deleteUpload(record.uploadId);
     finishItem(record, 'skipped');
     return;
   }
   try {
-    update(localId, { status: 'creating' });
-    await createMaterial(record, target, action === 'reuse' ? 'reuse' : 'create', action === 'reuse' ? reuseMaterialId : undefined);
-    finishItem({ ...record, status: 'creating' }, 'done');
-    notifyChanged();
+    const folderId = record.folderId === undefined ? await folderForPath(record.relativePath, record.target.folderId) : record.folderId;
+    update(localId, { status: 'creating', folderId, action: action === 'reuse' ? 'reuse' : 'create', reuseMaterialId: action === 'reuse' ? reuseMaterialId : undefined });
+    const next = current(localId) ?? record;
+    await commitWithRecovery({ ...next, folderId, action: action === 'reuse' ? 'reuse' : 'create', reuseMaterialId: action === 'reuse' ? reuseMaterialId : undefined });
   } catch (error) {
-    finishItem(record, 'failed', error instanceof Error ? error.message : '保存失败');
+    finishItem(current(localId) ?? record, 'failed', error instanceof Error ? error.message : '保存失败');
   }
 }
 

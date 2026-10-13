@@ -334,7 +334,7 @@ export async function undoKnowledgeChange(tx: KnowledgeDb, actor: Actor, record:
     const current = await tx.material.findUnique({ where: { id: record.entityId } });
     if (!current) throw knowledgeFailure('UNDO_CONFLICT', '材料已有后续修改');
     await checkKnowledgeScope(tx, actor, current.topicId, true);
-    return restoreOrganization(tx, current, before, after);
+    return restoreOrganization(tx, current, before, after, _context);
   }
   const dependents = await tx.memory.findMany({ where: { status: 'active', id: { not: record.entityId } }, select: { evidence: true } });
   if (dependents.some((row) => readEvidence(row.evidence).some((ref) => ref.type === record.entityType && ref.id === record.entityId && ref.revision === after.revision))) throw knowledgeFailure('UNDO_CONFLICT', '该版本已有后续有效记忆引用，不能撤销');

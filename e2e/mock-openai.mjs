@@ -17,6 +17,14 @@ const server = http.createServer(async (req, res) => {
   if (body.model === 'mock-upstream' || latestUser.includes('上游错误')) return json(res, 502, { error: { message: 'mock upstream failure' } });
   if (!body.stream && body.model === 'mock-invalid') return json(res, 200, { choices: [] });
   if (!body.stream) return json(res, 200, { choices: [{ message: { role: 'assistant', content: '连接成功' }, finish_reason: 'stop' }] });
+  const systemText = messages.filter((item) => item.role === 'system').map((item) => String(item.content ?? '')).join('\n');
+  if (systemText.includes('不要新增编号')) {
+    return stream(res, [{ choices: [{ delta: { content: JSON.stringify({ paragraphs: [{ text: '根据资料回答', citationIds: ['C1'] }] }) }, finish_reason: 'stop' }] }]);
+  }
+  if (systemText.includes('最多 4 个检索短语')) {
+    const query = [...latestUser].slice(0, 80).join('');
+    return stream(res, [{ choices: [{ delta: { content: JSON.stringify({ queries: query ? [query] : [] }) }, finish_reason: 'stop' }] }]);
+  }
   if (latestUser.includes('无效响应')) {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
     res.end('data: {invalid-json}\n\ndata: [DONE]\n\n');

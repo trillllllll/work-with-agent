@@ -9,7 +9,7 @@ import { imageMarkdown, isTaskImageSrc } from '@/lib/task-description.js';
 import { compressTaskImage, fileToBase64, isRasterImage } from '@/lib/task-image.js';
 import { cn } from '@/lib/utils.js';
 
-export function TaskDescription({ taskId, value, readonly, fill, openDescription, onChange, onBlur, onComposeStart, onComposeEnd, onSave }: {
+export function TaskDescription({ taskId, value, readonly, fill, openDescription, onChange, onBlur, onComposeStart, onComposeEnd, onSave, onOpenLinkedTask }: {
   taskId: string;
   value: string;
   readonly: boolean;
@@ -19,7 +19,8 @@ export function TaskDescription({ taskId, value, readonly, fill, openDescription
   onBlur: (event: FocusEvent<HTMLElement>) => void;
   onComposeStart: () => void;
   onComposeEnd: () => void;
-  onSave: () => Promise<void>;
+  onSave: () => Promise<unknown>;
+  onOpenLinkedTask?: (taskId: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [zoomed, setZoomed] = useState<string | null>(null);
@@ -69,7 +70,7 @@ export function TaskDescription({ taskId, value, readonly, fill, openDescription
       <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" aria-label="选择图片" onChange={(event) => { const files = [...(event.target.files ?? [])]; event.target.value = ''; if (files.length) void addImages(files); }} />
     </div>}
     {busy && <p className="mt-1 text-xs text-muted-foreground" role="status">正在压缩图片…</p>}
-    <DescriptionEditor ref={editorRef} value={value} taskId={taskId} readonly={readonly} fill={fill} openDescription={openDescription} onChange={onChange} onBlur={onBlur} onComposeStart={onComposeStart} onComposeEnd={onComposeEnd} onPasteImages={(files) => { void addImages(files); }} onZoom={(src) => { if (!isTaskImageSrc(taskId, src)) return; editorRef.current?.blur(); setZoomed(src); }} />
+    <DescriptionEditor ref={editorRef} value={value} taskId={taskId} readonly={readonly} fill={fill} openDescription={openDescription} onChange={onChange} onBlur={onBlur} onComposeStart={onComposeStart} onComposeEnd={onComposeEnd} onPasteImages={(files) => { void addImages(files); }} onZoom={(src) => { if (!isTaskImageSrc(taskId, src)) return; editorRef.current?.blur(); setZoomed(src); }} onOpenLinkedTask={onOpenLinkedTask} />
     <ImageZoomDialog src={zoomed} onClose={() => setZoomed(null)} />
   </div>;
 }

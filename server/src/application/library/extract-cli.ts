@@ -112,6 +112,10 @@ function cellText(value: ExcelJS.CellValue) {
 }
 
 async function readXlsx(bytes: Buffer): Promise<Result> {
+  let zip: JSZip;
+  try { zip = await JSZip.loadAsync(bytes); }
+  catch { return finish('failed', [], [{ locator: null, code: 'FILE_CORRUPT', message: 'XLSX 无法读取' }], 'FILE_CORRUPT'); }
+  if (!await zipXmlBudget(zip)) return finish('partial', [], [{ locator: null, code: 'XML_LIMIT', message: 'Office 文档解压后的 XML 超过 256 MiB，未继续解析' }], 'XML_LIMIT');
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(bytes as unknown as ExcelJS.Buffer);
   const segments: Segment[] = [];

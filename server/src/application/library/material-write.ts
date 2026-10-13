@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import { canonical } from '../commands.js';
 import { knowledgeHash, readKnowledgeBlob, storeKnowledgeBlob } from '../knowledge-blobs.js';
 import { recordChange, type MutationContext } from '../workspace-store.js';
 import type { Actor } from '../security.js';
@@ -64,6 +66,26 @@ async function assertFolder(tx: LibraryDb, folderId: string | null) {
   if (!await tx.libraryFolder.findUnique({ where: { id: folderId } })) throw libraryError('NOT_FOUND', '文件夹不存在', 404);
 }
 
+type UploadCommitResult = { id: string; revision: number; organizationRevision: number };
+
+function commitHash(intent: unknown) {
+  return createHash('sha256').update(canonical(intent)).digest('hex');
+}
+
+async function replayCommit(tx: LibraryDb, upload: { commitRequestHash: string | null; commitResultJson: string | null; materialId: string | null }, hash: string) {
+  if (!upload.commitRequestHash) {
+    if (!upload.materialId) throw libraryError('UPLOAD_ALREADY_COMMITTED', '上传已经保存为资料');
+    return tx.material.findUniqueOrThrow({ where: { id: upload.materialId } });
+  }
+  if (upload.commitRequestHash !== hash) throw libraryError('IDEMPOTENCY_CONFLICT', '相同上传不能用于不同提交');
+  const stored = JSON.parse(upload.commitResultJson ?? '{}') as UploadCommitResult;
+  return tx.material.findUniqueOrThrow({ where: { id: stored.id } });
+}
+
+function commitData(hash: string, result: UploadCommitResult, timestamp: string) {
+  return { state: 'committed' as const, materialId: result.id, resultRevision: result.revision, commitRequestHash: hash, commitResultJson: JSON.stringify(result), updatedAt: timestamp };
+}
+
 export async function createMaterialFromUpload(tx: LibraryDb, actor: Actor, input: {
   uploadId: string;
   duplicateAction: 'create' | 'reuse';
@@ -74,7 +96,11 @@ export async function createMaterialFromUpload(tx: LibraryDb, actor: Actor, inpu
 }, context: MutationContext) {
   const upload = await tx.libraryUpload.findUnique({ where: { id: input.uploadId } });
   if (!upload || upload.actorId !== actor.id) throw libraryError('NOT_FOUND', '上传不存在', 404);
-  if (upload.state === 'committed' && upload.materialId) return tx.material.findUniqueOrThrow({ where: { id: upload.materialId } });
+  const hash = commitHash({
+    operation: 'create', uploadId: input.uploadId, duplicateAction: input.duplicateAction, reuseMaterialId: input.reuseMaterialId ?? null,
+    topicId: input.topicId, folderId: input.folderId, taskIds: [...new Set(input.taskIds)].sort(),
+  });
+  if (upload.state === 'committed') return replayCommit(tx, upload, hash);
   if (upload.expiresAt < libraryNow()) throw libraryError('UPLOAD_EXPIRED', '上传已过期');
   if (upload.state !== 'ready' || !upload.sha256) throw libraryError('UPLOAD_NOT_READY', '文件尚未上传完成', 409);
   await assertWritableTopic(tx, actor, input.topicId);
@@ -87,9 +113,9 @@ export async function createMaterialFromUpload(tx: LibraryDb, actor: Actor, inpu
     if (version.attachmentPath !== upload.sha256) throw libraryError('UPLOAD_HASH_MISMATCH', '已有资料的原件与上传文件不同');
     const before = await materialSnapshot(tx, material);
     const changed = await addManualLinks(tx, material.id, input.taskIds, actor);
-    if (!context.preview) await tx.libraryUpload.update({ where: { id: upload.id }, data: { state: 'committed', materialId: material.id, resultRevision: material.revision, updatedAt: timestamp } });
-    if (!changed) return material;
-    return (await import('./links.js')).bumpOrganization(tx, material, context, before);
+    const saved = changed ? await (await import('./links.js')).bumpOrganization(tx, material, context, before) : material;
+    if (!context.preview) await tx.libraryUpload.update({ where: { id: upload.id }, data: commitData(hash, { id: saved.id, revision: saved.revision, organizationRevision: saved.organizationRevision }, timestamp) });
+    return saved;
   }
   const bytes = context.preview ? null : await readUploadBytes(tx, upload.id);
   if (bytes && knowledgeHash(bytes) !== upload.sha256) throw libraryError('UPLOAD_CORRUPT', '上传内容校验失败');
@@ -110,22 +136,20 @@ export async function createMaterialFromUpload(tx: LibraryDb, actor: Actor, inpu
   } });
   await addManualLinks(tx, material.id, input.taskIds, actor);
   await afterMaterialVersion(tx, material);
-  if (!context.preview) await tx.libraryUpload.update({ where: { id: upload.id }, data: { state: 'committed', materialId: material.id, resultRevision: material.revision, updatedAt: timestamp } });
+  if (!context.preview) await tx.libraryUpload.update({ where: { id: upload.id }, data: commitData(hash, { id: material.id, revision: material.revision, organizationRevision: material.organizationRevision }, timestamp) });
   const after = await materialSnapshot(tx, material);
   await recordChange(tx, 'material', material.id, 'create', null, after, context);
   return material;
 }
 
 export async function replaceMaterialFromUpload(tx: LibraryDb, actor: Actor, materialId: string, expectedRevision: number | undefined, uploadId: string, context: MutationContext) {
+  const upload = await tx.libraryUpload.findUnique({ where: { id: uploadId } });
+  if (!upload || upload.actorId !== actor.id) throw libraryError('NOT_FOUND', '上传不存在', 404);
+  const hash = commitHash({ operation: 'replace', uploadId, materialId, expectedRevision: expectedRevision ?? 0 });
+  if (upload.state === 'committed') return replayCommit(tx, upload, hash);
   const material = await writableMaterial(tx, actor, materialId);
   const { assertExpected } = await import('./access.js');
   assertExpected(material.revision, expectedRevision);
-  const upload = await tx.libraryUpload.findUnique({ where: { id: uploadId } });
-  if (!upload || upload.actorId !== actor.id) throw libraryError('NOT_FOUND', '上传不存在', 404);
-  if (upload.state === 'committed') {
-    if (upload.materialId === material.id) return tx.material.findUniqueOrThrow({ where: { id: material.id } });
-    throw libraryError('UPLOAD_ALREADY_COMMITTED', '上传已经保存为资料');
-  }
   if (upload.state !== 'ready' || !upload.sha256) throw libraryError('UPLOAD_NOT_READY', '文件尚未上传完成', 409);
   const before = await materialSnapshot(tx, material);
   const previous = await tx.materialVersion.findUniqueOrThrow({ where: { materialId_revision: { materialId: material.id, revision: material.revision } } });
@@ -145,7 +169,7 @@ export async function replaceMaterialFromUpload(tx: LibraryDb, actor: Actor, mat
     metadata: previous.metadata, attachmentPath, fileName: upload.fileName, mimeType: upload.mimeType, createdAt: timestamp,
   } });
   await afterMaterialVersion(tx, updated);
-  if (!context.preview) await tx.libraryUpload.update({ where: { id: upload.id }, data: { state: 'committed', materialId: material.id, resultRevision: updated.revision, updatedAt: timestamp } });
+  if (!context.preview) await tx.libraryUpload.update({ where: { id: upload.id }, data: commitData(hash, { id: updated.id, revision: updated.revision, organizationRevision: updated.organizationRevision }, timestamp) });
   await recordChange(tx, 'material', material.id, 'update', before, await materialSnapshot(tx, updated), context);
   return updated;
 }

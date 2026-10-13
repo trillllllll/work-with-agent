@@ -26,6 +26,7 @@ type Handlers = {
   edit: (pos: number) => void;
   zoom: (src: string) => void;
   remeasure: () => void;
+  openLinkedTask?: (taskId: string) => void;
 };
 
 export type DescriptionHandle = {
@@ -164,7 +165,7 @@ function BlockPreview({ source, taskId, from, handlers }: { source: string; task
       a: ({ href, children }) => {
         const materialId = materialIdFromHref(typeof href === 'string' ? href : '');
         if (!materialId) return <a href={href} target="_blank" rel="noreferrer">{children}</a>;
-        return <MaterialReference materialId={materialId} fallback={plainText(children)} />;
+        return <MaterialReference materialId={materialId} fallback={plainText(children)} onOpenTask={handlers.openLinkedTask} />;
       },
     }} />
   </div>;
@@ -286,7 +287,7 @@ const editorTheme = EditorView.theme({
   '.cm-placeholder': { color: 'var(--muted-foreground)' },
 });
 
-export function DescriptionEditor({ value, taskId, readonly, fill, openDescription, onChange, onBlur, onComposeStart, onComposeEnd, onPasteImages, onZoom, ref }: {
+export function DescriptionEditor({ value, taskId, readonly, fill, openDescription, onChange, onBlur, onComposeStart, onComposeEnd, onPasteImages, onZoom, onOpenLinkedTask, ref }: {
   value: string;
   taskId: string;
   readonly: boolean;
@@ -298,6 +299,7 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
   onComposeEnd: () => void;
   onPasteImages: (files: File[]) => void;
   onZoom: (src: string) => void;
+  onOpenLinkedTask?: (taskId: string) => void;
   ref?: Ref<DescriptionHandle>;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -321,6 +323,7 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
   readonlyRef.current = readonly;
   taskRef.current = taskId;
   handlersRef.current.zoom = onZoom;
+  handlersRef.current.openLinkedTask = onOpenLinkedTask;
 
   useImperativeHandle(ref, () => ({
     insert: (text) => { const view = viewRef.current; if (view) insertText(view, text); },
@@ -394,10 +397,14 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
       const x = event.clientX;
       const y = event.clientY;
       handlersRef.current.edit(from);
+      const placed = view.state.selection;
+      // Select-all can land before this frame. A newer selection has to win.
       requestAnimationFrame(() => {
-        if (!view.dom.isConnected) return;
+        if (!view.dom.isConnected || !view.state.selection.eq(placed)) return;
         const pos = view.posAtCoords({ x, y });
         if (pos == null || pos < from || pos >= to) return;
+        const caret = view.state.selection.main;
+        if (caret.empty && caret.head === pos) return;
         view.dispatch({ selection: EditorSelection.cursor(pos) });
       });
     };

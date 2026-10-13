@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from 'react';
-import type { LibraryFilters, LibraryViewName, MaterialKind } from './types.js';
+import type { LibraryFilters, LibraryPreviewTarget, LibraryViewName, MaterialKind } from './types.js';
 
 const storageKey = 'wwa.library';
+export const libraryPageSize = 40;
 
 export type LibrarySnapshot = {
   query: string;
@@ -11,26 +12,64 @@ export type LibrarySnapshot = {
   folderId: string;
   tagIds: string[];
   view: LibraryViewName;
-  selectedId: string;
+  cursor: number;
+  pageSize: 40;
+  selectedIds: string[];
+  preview: LibraryPreviewTarget | null;
   scrollTop: number;
 };
 
 const defaults: LibrarySnapshot = {
-  query: '', kind: '', taskTopicId: '', taskId: '', folderId: '', tagIds: [], view: 'all', selectedId: '', scrollTop: 0,
+  query: '', kind: '', taskTopicId: '', taskId: '', folderId: '', tagIds: [], view: 'all', cursor: 0, pageSize: libraryPageSize, selectedIds: [], preview: null, scrollTop: 0,
 };
 
+const kindValues = new Set(['', 'text', 'markdown', 'link', 'thread', 'attachment']);
+const viewValues = new Set<LibraryViewName>(['all', 'recent', 'unfiled', 'archived']);
+const filterKeys = ['query', 'kind', 'taskTopicId', 'taskId', 'folderId', 'tagIds', 'view'] as const;
+
+function sameIds(left: string[], right: string[]) {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
+function readPreview(parsed: Record<string, unknown>): LibraryPreviewTarget | null {
+  const preview = parsed.preview;
+  if (preview && typeof preview === 'object') {
+    const record = preview as Record<string, unknown>;
+    if (typeof record.materialId === 'string' && record.materialId) {
+      return {
+        materialId: record.materialId,
+        revision: typeof record.revision === 'number' ? record.revision : null,
+        chunkId: typeof record.chunkId === 'string' && record.chunkId ? record.chunkId : null,
+      };
+    }
+  }
+  if (typeof parsed.selectedId === 'string' && parsed.selectedId) return { materialId: parsed.selectedId, revision: null, chunkId: null };
+  return null;
+}
+
 function readSnapshot(): LibrarySnapshot {
-  if (typeof sessionStorage === 'undefined') return { ...defaults };
+  if (typeof sessionStorage === 'undefined') return { ...defaults, tagIds: [], selectedIds: [] };
   try {
-    const parsed = JSON.parse(sessionStorage.getItem(storageKey) || 'null') as Partial<LibrarySnapshot> | null;
-    if (!parsed || typeof parsed !== 'object') return { ...defaults };
+    const parsed = JSON.parse(sessionStorage.getItem(storageKey) || 'null') as Record<string, unknown> | null;
+    if (!parsed || typeof parsed !== 'object') return { ...defaults, tagIds: [], selectedIds: [] };
+    const kind = typeof parsed.kind === 'string' && kindValues.has(parsed.kind) ? parsed.kind as LibrarySnapshot['kind'] : '';
+    const view = typeof parsed.view === 'string' && viewValues.has(parsed.view as LibraryViewName) ? parsed.view as LibraryViewName : 'all';
     return {
-      ...defaults,
-      ...parsed,
-      tagIds: Array.isArray(parsed.tagIds) ? parsed.tagIds.filter((id) => typeof id === 'string') : [],
+      query: typeof parsed.query === 'string' ? parsed.query : '',
+      kind,
+      taskTopicId: typeof parsed.taskTopicId === 'string' ? parsed.taskTopicId : '',
+      taskId: typeof parsed.taskId === 'string' ? parsed.taskId : '',
+      folderId: typeof parsed.folderId === 'string' ? parsed.folderId : '',
+      tagIds: Array.isArray(parsed.tagIds) ? parsed.tagIds.filter((id): id is string => typeof id === 'string') : [],
+      view,
+      cursor: typeof parsed.cursor === 'number' && parsed.cursor >= 0 ? Math.floor(parsed.cursor) : 0,
+      pageSize: libraryPageSize,
+      selectedIds: Array.isArray(parsed.selectedIds) ? parsed.selectedIds.filter((id): id is string => typeof id === 'string') : [],
+      preview: readPreview(parsed),
+      scrollTop: typeof parsed.scrollTop === 'number' && parsed.scrollTop >= 0 ? parsed.scrollTop : 0,
     };
   } catch {
-    return { ...defaults };
+    return { ...defaults, tagIds: [], selectedIds: [] };
   }
 }
 
@@ -46,7 +85,17 @@ export function getLibrarySnapshot() {
 }
 
 export function patchLibrary(patch: Partial<LibrarySnapshot>) {
-  snapshot = { ...snapshot, ...patch };
+  const filtersChanged = filterKeys.some((key) => {
+    if (!Object.prototype.hasOwnProperty.call(patch, key)) return false;
+    if (key === 'tagIds') return !sameIds(snapshot.tagIds, patch.tagIds ?? []);
+    return patch[key] !== snapshot[key];
+  });
+  const next: LibrarySnapshot = { ...snapshot, ...patch, pageSize: libraryPageSize };
+  if (filtersChanged) {
+    if (!Object.prototype.hasOwnProperty.call(patch, 'cursor')) next.cursor = 0;
+    if (!Object.prototype.hasOwnProperty.call(patch, 'selectedIds')) next.selectedIds = [];
+  }
+  snapshot = next;
   try { sessionStorage.setItem(storageKey, JSON.stringify(snapshot)); } catch { /* Private mode can reject storage. */ }
   emit();
 }
@@ -80,7 +129,8 @@ export function librarySearchParams(state: LibrarySnapshot) {
   if (filters.taskId) params.set('taskId', filters.taskId);
   if (filters.taskTopicId) params.set('taskTopicId', filters.taskTopicId);
   if (filters.kind) params.set('kind', filters.kind);
-  params.set('limit', '100');
+  params.set('cursor', String(state.cursor));
+  params.set('limit', String(libraryPageSize));
   return params;
 }
 

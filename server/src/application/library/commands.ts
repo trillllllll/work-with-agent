@@ -1,14 +1,15 @@
 import { z } from 'zod';
 import { registerCommandHandler, type Command } from '../commands.js';
 import { jsonSchema } from '../command-catalog.js';
-import type { Actor } from '../security.js';
+import { actorFromConnection, type Actor } from '../security.js';
 import type { MutationContext } from '../workspace-store.js';
 import type { LibraryDb } from './access.js';
-import { createFolder, updateFolder, deleteFolder, createTag, updateTag, deleteTag, organizeMaterial, changeLinks } from './links.js';
+import { assertExpected, assertWritableTopic, libraryError, topicVisible, writableMaterial } from './access.js';
+import { createFolder, updateFolder, deleteFolder, createTag, updateTag, deleteTag, organizeMaterial, changeLinks, ensureReadableTasks, undoLibraryFolder, undoLibraryTag } from './links.js';
 import { replaceMaterialFromUpload, uploadMaterialInput } from './material-write.js';
 import { referenceMaterials } from './references.js';
 import { requeueExtraction } from './worker.js';
-import { libraryError } from './access.js';
+import { registerUndoHandler } from '../undo-registry.js';
 import { prisma } from '../../infrastructure/prisma.js';
 
 const folderCreate = z.object({ parentId: z.string().min(1).nullable(), name: z.string() }).strict();
@@ -29,18 +30,52 @@ const reference = z.object({
   expectedMaterialRevisions: z.record(z.number().int().positive()), expectedOrganizationRevisions: z.record(z.number().int().positive()),
 }).strict();
 
+async function currentActor(tx: LibraryDb, actor: Actor) {
+  if (actor.kind !== 'connection' || !actor.connectionId) return actor;
+  const row = await tx.connection.findUnique({ where: { id: actor.connectionId } });
+  if (!row || row.status !== 'active') throw libraryError('CONNECTION_REVOKED', '连接已撤销', 401);
+  return actorFromConnection(row);
+}
+
 async function inspectLibrary(tx: LibraryDb, actor: Actor, command: Command, schema: z.ZodTypeAny) {
   const input = schema.parse(command.input ?? {});
+  const current = await currentActor(tx, actor);
   if (command.kind === 'material.reextract' || command.kind === 'material.replace' || command.kind === 'material.organize' || command.kind === 'material.links') {
-    const material = await tx.material.findUnique({ where: { id: command.targetId } });
-    if (!material) throw libraryError('NOT_FOUND', '资料不存在', 404);
-    if (material.revision !== command.expectedRevision) throw libraryError('VERSION_CONFLICT', '内容已经变化，请刷新后重试');
+    const material = await writableMaterial(tx, current, command.targetId ?? '');
+    assertExpected(material.revision, command.expectedRevision);
+    if (command.kind === 'material.organize') {
+      const parsed = organize.parse(input);
+      assertExpected(material.organizationRevision, parsed.expectedOrganizationRevision, '整理已经变化，请刷新后重试');
+      if (parsed.folderId) {
+        const folder = await tx.libraryFolder.findUnique({ where: { id: parsed.folderId } });
+        if (!folder) throw libraryError('NOT_FOUND', '文件夹不存在', 404);
+      }
+      if (parsed.tagIds?.length) {
+        const ids = [...new Set(parsed.tagIds)];
+        const found = await tx.libraryTag.findMany({ where: { id: { in: ids } } });
+        if (found.length !== ids.length) throw libraryError('NOT_FOUND', '标签不存在', 404);
+      }
+    }
+    if (command.kind === 'material.links') {
+      const parsed = links.parse(input);
+      assertExpected(material.organizationRevision, parsed.expectedOrganizationRevision, '整理已经变化，请刷新后重试');
+      const taskIds = [...new Set([...parsed.addTaskIds, ...parsed.removeTaskIds])];
+      if (taskIds.some((id) => parsed.addTaskIds.includes(id) && parsed.removeTaskIds.includes(id))) throw libraryError('INVALID_LINKS', '同一任务不能同时关联和解除', 400);
+      await ensureReadableTasks(tx, current, taskIds);
+    }
+    if (command.kind === 'material.replace') {
+      const upload = await tx.libraryUpload.findUnique({ where: { id: replace.parse(input).uploadId } });
+      if (!upload || upload.actorId !== current.id) throw libraryError('NOT_FOUND', '上传不存在', 404);
+    }
     return { preconditions: { materialId: material.id, revision: material.revision, organizationRevision: material.organizationRevision }, preview: { kind: command.kind, title: material.title } };
   }
   if (command.kind === 'task.reference_materials') {
     const task = await tx.task.findUnique({ where: { id: command.targetId } });
-    if (!task) throw libraryError('NOT_FOUND', '任务不存在', 404);
-    if (task.revision !== command.expectedRevision) throw libraryError('VERSION_CONFLICT', '任务已经变化，请刷新后重试');
+    if (!task || task.deletedAt || !topicVisible(current, task.topicId)) throw libraryError('NOT_FOUND', '任务不存在', 404);
+    await assertWritableTopic(tx, current, task.topicId);
+    assertExpected(task.revision, command.expectedRevision, '任务已经变化，请刷新后重试');
+    const parsed = reference.parse(input);
+    for (const materialId of [...new Set(parsed.materialIds)]) await writableMaterial(tx, current, materialId);
     return { preconditions: { taskId: task.id, revision: task.revision }, preview: { kind: command.kind } };
   }
   if (command.kind.endsWith('.update') || command.kind.endsWith('.delete')) {
@@ -54,24 +89,24 @@ async function inspectLibrary(tx: LibraryDb, actor: Actor, command: Command, sch
 }
 
 async function run(tx: LibraryDb, actor: Actor, command: Command, context: MutationContext) {
-  if (command.kind === 'material.replace') return replaceMaterialFromUpload(tx, actor, command.targetId ?? '', command.expectedRevision, replace.parse(command.input).uploadId, context);
-  if (command.kind === 'material.organize') return organizeMaterial(tx, actor, command.targetId ?? '', command.expectedRevision, organize.parse(command.input), context);
-  if (command.kind === 'material.links') return changeLinks(tx, actor, command.targetId ?? '', command.expectedRevision, links.parse(command.input), context);
+  const current = await currentActor(tx, actor);
+  if (command.kind === 'material.replace') return replaceMaterialFromUpload(tx, current, command.targetId ?? '', command.expectedRevision, replace.parse(command.input).uploadId, context);
+  if (command.kind === 'material.organize') return organizeMaterial(tx, current, command.targetId ?? '', command.expectedRevision, organize.parse(command.input), context);
+  if (command.kind === 'material.links') return changeLinks(tx, current, command.targetId ?? '', command.expectedRevision, links.parse(command.input), context);
   if (command.kind === 'material.reextract') {
     z.object({}).strict().parse(command.input ?? {});
-    const material = await tx.material.findUnique({ where: { id: command.targetId } });
-    if (!material) throw libraryError('NOT_FOUND', '资料不存在', 404);
-    if (!Number.isInteger(command.expectedRevision) || material.revision !== command.expectedRevision) throw libraryError('VERSION_CONFLICT', '内容已经变化，请刷新后重试');
+    const material = await writableMaterial(tx, current, command.targetId ?? '');
+    assertExpected(material.revision, command.expectedRevision);
     await requeueExtraction(tx, material.id, material.revision);
     return { id: material.id, revision: material.revision, organizationRevision: material.organizationRevision };
   }
-  if (command.kind === 'libraryFolder.create') return createFolder(tx, actor, folderCreate.parse(command.input), context.entityId ?? command.entityId);
-  if (command.kind === 'libraryFolder.update') return updateFolder(tx, actor, command.targetId ?? '', command.expectedRevision, folderUpdate.parse(command.input));
-  if (command.kind === 'libraryFolder.delete') { z.object({}).strict().parse(command.input ?? {}); return deleteFolder(tx, actor, command.targetId ?? '', command.expectedRevision); }
-  if (command.kind === 'libraryTag.create') return createTag(tx, actor, tagCreate.parse(command.input).name, context.entityId ?? command.entityId);
-  if (command.kind === 'libraryTag.update') return updateTag(tx, actor, command.targetId ?? '', command.expectedRevision, tagUpdate.parse(command.input).name);
-  if (command.kind === 'libraryTag.delete') { z.object({}).strict().parse(command.input ?? {}); return deleteTag(tx, actor, command.targetId ?? '', command.expectedRevision); }
-  if (command.kind === 'task.reference_materials') return referenceMaterials(tx, actor, command.targetId ?? '', command.expectedRevision, reference.parse(command.input), context);
+  if (command.kind === 'libraryFolder.create') return createFolder(tx, current, folderCreate.parse(command.input), context.entityId ?? command.entityId, context);
+  if (command.kind === 'libraryFolder.update') return updateFolder(tx, current, command.targetId ?? '', command.expectedRevision, folderUpdate.parse(command.input), context);
+  if (command.kind === 'libraryFolder.delete') { z.object({}).strict().parse(command.input ?? {}); return deleteFolder(tx, current, command.targetId ?? '', command.expectedRevision, context); }
+  if (command.kind === 'libraryTag.create') return createTag(tx, current, tagCreate.parse(command.input).name, context.entityId ?? command.entityId, context);
+  if (command.kind === 'libraryTag.update') return updateTag(tx, current, command.targetId ?? '', command.expectedRevision, tagUpdate.parse(command.input).name, context);
+  if (command.kind === 'libraryTag.delete') { z.object({}).strict().parse(command.input ?? {}); return deleteTag(tx, current, command.targetId ?? '', command.expectedRevision, context); }
+  if (command.kind === 'task.reference_materials') return referenceMaterials(tx, current, command.targetId ?? '', command.expectedRevision, reference.parse(command.input), context);
   throw libraryError('UNKNOWN_COMMAND', '不支持的资料命令', 400);
 }
 
@@ -105,6 +140,8 @@ export function registerLibraryCommands() {
       execute: (tx, actor, command, context) => run(tx, actor, command, context),
     });
   }
+  registerUndoHandler('libraryFolder', undoLibraryFolder);
+  registerUndoHandler('libraryTag', undoLibraryTag);
 }
 
 export const libraryUploadCreateSchema = uploadMaterialInput;

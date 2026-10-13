@@ -6,10 +6,29 @@ import type { PrismaClient } from '@prisma/client';
 import { knowledgeStorageRoot } from '../knowledge-blobs.js';
 import { libraryNow } from './access.js';
 import { writeMetaDocument } from './index-docs.js';
-import { displayName } from './text.js';
+import { codePointLength, displayName } from './text.js';
 
 const migrationName = 'library-organization-v1';
 const rootId = 'migration-library-root-v1';
+
+function clippedName(base: string, suffix: string) {
+  const normalized = base.normalize('NFKC').trim().replace(/[\s\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/gu, ' ');
+  const room = 80 - codePointLength(suffix);
+  const clipped = Array.from(normalized).slice(0, Math.max(0, room)).join('').trim() || '资料';
+  return displayName(`${clipped}${suffix}`, 1, 80);
+}
+
+function siblingName(base: string, source: string, taken: Set<string>) {
+  const digest = createHash('sha256').update(source).digest('hex').slice(0, 12);
+  const hashSuffix = ` [${digest}]`;
+  let named = clippedName(base, hashSuffix);
+  let serial = 2;
+  while (!named || taken.has(named.normalizedName)) {
+    named = clippedName(base, `${hashSuffix} ${serial}`);
+    serial += 1;
+  }
+  return named;
+}
 
 export type LibraryMigrationReport = {
   materialCountBefore: number;
@@ -35,17 +54,24 @@ export async function migrateLibrary(prisma: PrismaClient) {
     const rootName = displayName('原有资料', 1, 80)!;
     await tx.libraryFolder.upsert({ where: { id: rootId }, create: { id: rootId, parentId: null, ...rootName, createdAt: timestamp, updatedAt: timestamp }, update: {} });
     const materials = await tx.material.findMany();
-    const topicIds = [...new Set(materials.map((material) => material.topicId))];
+    const topicIds = [...new Set(materials.map((material) => material.topicId))].sort((left, right) => (left ?? '').localeCompare(right ?? ''));
     const folderByTopic = new Map<string, string>();
+    const taken = new Set((await tx.libraryFolder.findMany({ where: { parentId: rootId }, select: { normalizedName: true } })).map((folder) => folder.normalizedName));
     for (const topicId of topicIds) {
       const key = topicId ?? '';
       const id = topicId ? `migration-library-topic-${createHash('sha256').update(topicId).digest('hex').slice(0, 24)}` : 'migration-library-inbox-v1';
+      const existing = await tx.libraryFolder.findUnique({ where: { id } });
+      if (existing) {
+        taken.add(existing.normalizedName);
+        folderByTopic.set(key, id);
+        continue;
+      }
       const topic = topicId ? await tx.topic.findUnique({ where: { id: topicId } }) : null;
       const base = topic?.name ?? (topicId ? `原清单 ${topicId}` : '收集箱');
       let named = displayName(base, 1, 80) ?? displayName('原有资料', 1, 80)!;
-      const clash = await tx.libraryFolder.findFirst({ where: { parentId: rootId, normalizedName: named.normalizedName, id: { not: id } } });
-      if (clash) named = displayName(`${named.name} ${id.slice(0, 8)}`, 1, 80) ?? named;
-      await tx.libraryFolder.upsert({ where: { id }, create: { id, parentId: rootId, ...named, createdAt: timestamp, updatedAt: timestamp }, update: {} });
+      if (taken.has(named.normalizedName)) named = siblingName(base, topicId ?? 'inbox', taken);
+      taken.add(named.normalizedName);
+      await tx.libraryFolder.create({ data: { id, parentId: rootId, ...named, createdAt: timestamp, updatedAt: timestamp } });
       folderByTopic.set(key, id);
     }
     const dangling = new Set<string>();

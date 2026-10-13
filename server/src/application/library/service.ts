@@ -10,7 +10,7 @@ const week = 7 * 24 * 60 * 60 * 1000;
 type ExtractionStatus = 'queued' | 'running' | 'ready' | 'partial' | 'blocked' | 'failed' | 'unsupported';
 
 function taskGrant(actor: Actor) {
-  if (actor.topicIds === 'all') return { deletedAt: null };
+  if (actor.topicIds === 'all') return actor.includeInbox ? { deletedAt: null } : { deletedAt: null, topicId: { not: null } };
   const topics = actor.topicIds.length ? [{ topicId: { in: actor.topicIds } }] : [];
   const inbox = actor.includeInbox ? [{ topicId: null }] : [];
   const grants = [...topics, ...inbox];
@@ -40,7 +40,9 @@ export async function materialWhere(actor: Actor, filters: LibraryFilters) {
   const archived = archivedMode(filters);
   const recursive = filters.recursive !== false;
   const where: Record<string, unknown> = {};
-  if (actor.topicIds !== 'all') {
+  if (actor.topicIds === 'all') {
+    if (!actor.includeInbox) where.topicId = { not: null };
+  } else {
     const topics = actor.topicIds.length ? [{ topicId: { in: actor.topicIds } }] : [];
     const inbox = actor.includeInbox ? [{ topicId: null }] : [];
     const grants = [...topics, ...inbox];
@@ -88,8 +90,20 @@ function summarize(actor: Actor, row: Material, tags: Array<{ id: string; name: 
     folderId: row.folderId, fileName: file?.fileName ?? null, mimeType: file?.mimeType ?? null,
     archivedAt: row.archivedAt, createdAt: row.createdAt, updatedAt: row.updatedAt,
     tags: tags.sort((left, right) => left.name.localeCompare(right.name)), linkedTaskCount,
-    extraction: { status: (extraction?.status ?? 'queued') as ExtractionStatus, errorCode: extraction?.errorCode ?? null },
+    extraction: { status: (extraction?.status ?? 'queued') as ExtractionStatus, errorCode: extraction?.errorCode ?? null, errors: parseErrors(extraction?.errorsJson) },
   };
+}
+
+function parseErrors(value: string | undefined) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+
+function libraryRows<T extends { id: string }>(items: T[], score: number | null = null, hits: unknown[] = []) {
+  return items.map((item) => ({ ...item, score, hits }));
 }
 
 export class LibraryService {
@@ -99,7 +113,7 @@ export class LibraryService {
       prisma.material.findMany({ where, orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }], skip: cursor, take: limit }),
       prisma.material.count({ where }),
     ]);
-    const items = await summaries(actor, rows);
+    const items = libraryRows(await summaries(actor, rows));
     return { items, total, nextCursor: cursor + items.length < total ? cursor + items.length : null };
   }
 
@@ -116,7 +130,7 @@ export class LibraryService {
       content: current ? { revision: current.revision, fileName: current.fileName, mimeType: current.mimeType, hasAttachment: Boolean(current.attachmentPath), contentHash: current.contentHash } : null,
       versions: versions.map((version) => ({
         revision: version.revision, createdAt: version.createdAt, fileName: version.fileName, mimeType: version.mimeType,
-        hasAttachment: Boolean(version.attachmentPath), extraction: { status: (byRevision.get(version.revision)?.status ?? 'queued') as ExtractionStatus, errorCode: byRevision.get(version.revision)?.errorCode ?? null },
+        hasAttachment: Boolean(version.attachmentPath), extraction: { status: (byRevision.get(version.revision)?.status ?? 'queued') as ExtractionStatus, errorCode: byRevision.get(version.revision)?.errorCode ?? null, errors: parseErrors(byRevision.get(version.revision)?.errorsJson) },
       })),
     };
   }
@@ -139,7 +153,7 @@ export class LibraryService {
     const where = {
       taskId,
       material: {
-        ...(actor.topicIds === 'all' ? {} : { OR: [{ topicId: { in: actor.topicIds } }, ...(actor.includeInbox ? [{ topicId: null }] : [])] }),
+        ...(actor.topicIds === 'all' ? (actor.includeInbox ? {} : { topicId: { not: null } }) : { OR: [{ topicId: { in: actor.topicIds } }, ...(actor.includeInbox ? [{ topicId: null }] : [])] }),
         ...(archived === 'exclude' ? { archivedAt: null } : archived === 'only' ? { archivedAt: { not: null } } : {}),
       },
     };
@@ -147,7 +161,7 @@ export class LibraryService {
       prisma.materialTaskLink.findMany({ where, include: { material: true }, orderBy: { materialId: 'asc' }, skip: cursor, take: limit }),
       prisma.materialTaskLink.count({ where }),
     ]);
-    return { items: await summaries(actor, rows.map((row) => row.material)), total, nextCursor: cursor + rows.length < total ? cursor + rows.length : null };
+    return { items: libraryRows(await summaries(actor, rows.map((row) => row.material))), total, nextCursor: cursor + rows.length < total ? cursor + rows.length : null };
   }
 
   async content(actor: Actor, id: string, revision: number, cursor = 0, limit = 40) {
@@ -183,7 +197,24 @@ export class LibraryService {
   }
 
   async search(actor: Actor, q: string, filters: LibraryFilters, cursor = 0, limit = 40, history = false) {
-    return librarySearch(actor, q, filters, cursor, limit, history);
+    const page = await librarySearch(actor, q, filters, cursor, limit, history);
+    const ids = [...new Set(page.items.map((item) => item.id))];
+    const materials = ids.length ? await prisma.material.findMany({ where: { id: { in: ids } } }) : [];
+    const summaryRows = await summaries(actor, materials);
+    const byId = new Map(summaryRows.map((row) => [row.id, row]));
+    const items = page.items.flatMap((item) => {
+      const summary = byId.get(item.id);
+      return summary ? [{ ...summary, score: item.score, hits: item.hits }] : [];
+    });
+    return { items, total: page.total, nextCursor: page.nextCursor };
+  }
+
+  async source(actor: Actor, id: string, revision: number) {
+    await readableMaterial(prisma, actor, id);
+    const version = await prisma.materialVersion.findUnique({ where: { materialId_revision: { materialId: id, revision } } });
+    if (!version) throw libraryError('NOT_FOUND', '资料版本不存在', 404);
+    if (version.attachmentPath) return { kind: 'attachment' as const, materialId: id, revision: version.revision, fileName: version.fileName, mimeType: version.mimeType };
+    return { kind: 'text' as const, content: version.content, revision: version.revision };
   }
 
   async duplicates(actor: Actor, sha256: string) {

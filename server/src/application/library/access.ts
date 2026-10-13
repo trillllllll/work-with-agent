@@ -7,9 +7,8 @@ export const libraryNow = () => new Date().toISOString();
 export const libraryError = (code: string, message: string, status = 409) => new DomainError(code, message, status);
 
 export function topicVisible(actor: Actor, topicId: string | null) {
-  if (actor.topicIds === 'all') return true;
   if (topicId === null) return actor.includeInbox;
-  return actor.topicIds.includes(topicId);
+  return actor.topicIds === 'all' || actor.topicIds.includes(topicId);
 }
 
 export async function assertWritableTopic(tx: LibraryDb, actor: Actor, topicId: string | null) {

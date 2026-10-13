@@ -612,6 +612,10 @@ model LibraryUpload {
   sha256 String?
   state String @default("pending")
   leaseToken String?
+  receiveLeaseUntil String?
+  contentKey String?
+  commitRequestHash String?
+  commitResultJson String?
   materialId String?
   resultRevision Int?
   errorCode String?
@@ -620,6 +624,7 @@ model LibraryUpload {
   expiresAt String
   @@unique([actorId, requestKey])
   @@index([state, expiresAt])
+  @@index([state, receiveLeaseUntil], map: "LibraryUpload_receiveLease")
 }
 
 model MaterialExtraction {
@@ -672,12 +677,20 @@ model LibrarySearchDocument {
   version MaterialVersion @relation(fields: [materialId, revision], references: [materialId, revision], onDelete: Cascade)
   chunk MaterialChunk? @relation(fields: [chunkId], references: [id], onDelete: Cascade)
   postings LibrarySearchPosting[]
+  normMap LibrarySearchNormMap?
   @@index([materialId, revision])
+}
+
+model LibrarySearchNormMap {
+  documentId String @id
+  normalizationMapJson String
+  document LibrarySearchDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 }
 
 model LibrarySearchPosting {
   token String
   documentId String
+  materialId String
   document LibrarySearchDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
   @@id([token, documentId])
   @@index([documentId])

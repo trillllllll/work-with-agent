@@ -177,19 +177,18 @@ export async function changeLinks(tx: LibraryDb, actor: Actor, materialId: strin
   if (add.some((id) => remove.includes(id))) throw libraryError('INVALID_LINKS', '同一任务不能同时关联和解除', 400);
   for (const taskId of [...add, ...remove]) await loadTask(tx, actor, taskId);
   const before = await materialSnapshot(tx, material);
-  const beforeDescriptions: NonNullable<OrganizationSnapshot['taskDescriptions']> = {};
-  const afterDescriptions: NonNullable<OrganizationSnapshot['taskDescriptions']> = {};
+  let descriptionsChanged = false;
   for (const taskId of remove) {
     const task = await tx.task.findUniqueOrThrow({ where: { id: taskId } });
     const hits = materialReferences(task.description).filter((hit) => hit.materialId === material.id);
     if (!hits.length) continue;
     if (!input.removeInlineReferences) throw libraryError('MATERIAL_STILL_REFERENCED', '任务正文仍引用这份资料');
     assertExpected(task.revision, input.expectedTaskRevisions[taskId], '任务已经变化，请刷新后重试');
-    beforeDescriptions[taskId] = { revision: task.revision, description: task.description };
-    afterDescriptions[taskId] = { revision: task.revision };
+    descriptionsChanged = true;
     const description = stripMaterialReferences(task.description, material.id);
-    await tx.task.update({ where: { id: taskId, revision: task.revision }, data: { description, revision: { increment: 1 }, updatedAt: libraryNow() } });
-    await recordChange(tx, 'task', taskId, 'update', { id: taskId, revision: task.revision, description: task.description }, { id: taskId, revision: task.revision + 1, description }, context);
+    const editedAt = libraryNow();
+    await tx.task.update({ where: { id: taskId, revision: task.revision }, data: { description, revision: { increment: 1 }, updatedAt: editedAt } });
+    await recordChange(tx, 'task', taskId, 'update', { id: taskId, revision: task.revision, description: task.description, updatedAt: task.updatedAt }, { id: taskId, revision: task.revision + 1, description, updatedAt: editedAt }, context);
   }
   const timestamp = libraryNow();
   for (const taskId of add) {
@@ -204,11 +203,10 @@ export async function changeLinks(tx: LibraryDb, actor: Actor, materialId: strin
   }
   const current = await tx.material.findUniqueOrThrow({ where: { id: material.id } });
   const links = await readLinks(tx, material.id);
-  if (sameLinks(before.links, links) && current.taskId === before.taskId && !Object.keys(beforeDescriptions).length) return current;
+  if (sameLinks(before.links, links) && current.taskId === before.taskId && !descriptionsChanged) return current;
   const updated = await tx.material.update({ where: { id: material.id }, data: { organizationRevision: { increment: 1 }, updatedAt: timestamp } });
-  const beforeRecord = Object.keys(beforeDescriptions).length ? { ...before, taskDescriptions: beforeDescriptions } : before;
-  const after = { ...await materialSnapshot(tx, updated), ...(Object.keys(afterDescriptions).length ? { taskDescriptions: afterDescriptions } : {}) };
-  await recordChange(tx, 'material', material.id, 'update', beforeRecord, after, context);
+  const after = await materialSnapshot(tx, updated);
+  await recordChange(tx, 'material', material.id, 'update', before, after, context);
   return updated;
 }
 
@@ -230,11 +228,13 @@ export async function replaceOrganization(tx: LibraryDb, materialId: string, bef
   return tx.material.update({ where: { id: materialId }, data: { folderId: before.folderId, taskId: before.taskId, organizationRevision: { increment: 1 }, updatedAt: timestamp } });
 }
 
-export async function restoreOrganization(tx: LibraryDb, current: Material, before: OrganizationSnapshot, after: OrganizationSnapshot) {
+export async function restoreOrganization(tx: LibraryDb, current: Material, before: OrganizationSnapshot, after: OrganizationSnapshot, context?: MutationContext) {
   if (current.revision !== after.revision || current.organizationRevision !== after.organizationRevision) throw libraryError('UNDO_CONFLICT', '材料已有后续修改');
   const timestamp = libraryNow();
+  const restoredByTask = context?.undoOwnership?.taskIdsRestoredByGroup;
   if (before.taskDescriptions) {
     for (const [taskId, snapshot] of Object.entries(before.taskDescriptions)) {
+      if (restoredByTask?.has(taskId)) continue;
       const task = await tx.task.findUnique({ where: { id: taskId } });
       const edited = after.taskDescriptions?.[taskId];
       if (!task || !edited || task.revision !== edited.revision + 1) throw libraryError('UNDO_CONFLICT', '引用过的任务已有后续修改');
@@ -244,17 +244,30 @@ export async function restoreOrganization(tx: LibraryDb, current: Material, befo
   return replaceOrganization(tx, current.id, before);
 }
 
-export async function createFolder(tx: LibraryDb, actor: Actor, input: { parentId: string | null; name: string }, entityId?: string) {
+type FolderSnapshot = { id: string; parentId: string | null; name: string; normalizedName: string; revision: number; createdAt: string; updatedAt: string };
+type TagSnapshot = { id: string; name: string; normalizedName: string; revision: number; createdAt: string; updatedAt: string };
+
+function folderSnapshot(folder: FolderSnapshot): FolderSnapshot {
+  return { id: folder.id, parentId: folder.parentId, name: folder.name, normalizedName: folder.normalizedName, revision: folder.revision, createdAt: folder.createdAt, updatedAt: folder.updatedAt };
+}
+
+function tagSnapshot(tag: TagSnapshot): TagSnapshot {
+  return { id: tag.id, name: tag.name, normalizedName: tag.normalizedName, revision: tag.revision, createdAt: tag.createdAt, updatedAt: tag.updatedAt };
+}
+
+export async function createFolder(tx: LibraryDb, actor: Actor, input: { parentId: string | null; name: string }, entityId: string | undefined, context: MutationContext) {
   if (actor.kind !== 'user') throw libraryError('OWNER_REQUIRED', '只有本机用户可以管理文件夹', 403);
   const named = displayName(input.name, 1, 80);
   if (!named) throw libraryError('INVALID_NAME', '文件夹名称需要 1 到 80 个字符', 400);
   await placeFolder(tx, null, input.parentId);
   await assertSiblingName(tx, input.parentId, named.normalizedName);
   const timestamp = libraryNow();
-  return tx.libraryFolder.create({ data: { id: entityId ?? randomUUID(), parentId: input.parentId, ...named, createdAt: timestamp, updatedAt: timestamp } });
+  const created = await tx.libraryFolder.create({ data: { id: entityId ?? randomUUID(), parentId: input.parentId, ...named, createdAt: timestamp, updatedAt: timestamp } });
+  await recordChange(tx, 'libraryFolder', created.id, 'create', null, folderSnapshot(created), context);
+  return created;
 }
 
-export async function updateFolder(tx: LibraryDb, actor: Actor, id: string, expectedRevision: number | undefined, input: { parentId?: string | null; name?: string }) {
+export async function updateFolder(tx: LibraryDb, actor: Actor, id: string, expectedRevision: number | undefined, input: { parentId?: string | null; name?: string }, context: MutationContext) {
   if (actor.kind !== 'user') throw libraryError('OWNER_REQUIRED', '只有本机用户可以管理文件夹', 403);
   const folder = await tx.libraryFolder.findUnique({ where: { id } });
   if (!folder) throw libraryError('NOT_FOUND', '文件夹不存在', 404);
@@ -264,16 +277,20 @@ export async function updateFolder(tx: LibraryDb, actor: Actor, id: string, expe
   if (!named) throw libraryError('INVALID_NAME', '文件夹名称需要 1 到 80 个字符', 400);
   if (parentId !== folder.parentId) await placeFolder(tx, id, parentId);
   if (named.normalizedName !== folder.normalizedName || parentId !== folder.parentId) await assertSiblingName(tx, parentId, named.normalizedName, id);
-  return tx.libraryFolder.update({ where: { id, revision: folder.revision }, data: { parentId, ...named, revision: { increment: 1 }, updatedAt: libraryNow() } });
+  const before = folderSnapshot(folder);
+  const updated = await tx.libraryFolder.update({ where: { id, revision: folder.revision }, data: { parentId, ...named, revision: { increment: 1 }, updatedAt: libraryNow() } });
+  await recordChange(tx, 'libraryFolder', id, 'update', before, folderSnapshot(updated), context);
+  return updated;
 }
 
-export async function deleteFolder(tx: LibraryDb, actor: Actor, id: string, expectedRevision: number | undefined) {
+export async function deleteFolder(tx: LibraryDb, actor: Actor, id: string, expectedRevision: number | undefined, context: MutationContext) {
   if (actor.kind !== 'user') throw libraryError('OWNER_REQUIRED', '只有本机用户可以管理文件夹', 403);
   const folder = await tx.libraryFolder.findUnique({ where: { id } });
   if (!folder) throw libraryError('NOT_FOUND', '文件夹不存在', 404);
   assertExpected(folder.revision, expectedRevision);
   if (await tx.libraryFolder.count({ where: { parentId: id } }) || await tx.material.count({ where: { folderId: id } })) throw libraryError('FOLDER_NOT_EMPTY', '只能删除空文件夹');
   await tx.libraryFolder.delete({ where: { id } });
+  await recordChange(tx, 'libraryFolder', id, 'delete', folderSnapshot(folder), { id, deleted: true }, context);
   return { id, deleted: true };
 }
 
@@ -311,16 +328,18 @@ async function subtreeHeight(tx: LibraryDb, id: string): Promise<number> {
   return 1 + Math.max(...heights);
 }
 
-export async function createTag(tx: LibraryDb, actor: Actor, name: string, entityId?: string) {
+export async function createTag(tx: LibraryDb, actor: Actor, name: string, entityId: string | undefined, context: MutationContext) {
   if (actor.kind !== 'user') throw libraryError('OWNER_REQUIRED', '只有本机用户可以管理标签', 403);
   const named = displayName(name, 1, 40);
   if (!named) throw libraryError('INVALID_NAME', '标签名称需要 1 到 40 个字符', 400);
   if (await tx.libraryTag.findUnique({ where: { normalizedName: named.normalizedName } })) throw libraryError('TAG_NAME_CONFLICT', '已有同名标签');
   const timestamp = libraryNow();
-  return tx.libraryTag.create({ data: { id: entityId ?? randomUUID(), ...named, createdAt: timestamp, updatedAt: timestamp } });
+  const created = await tx.libraryTag.create({ data: { id: entityId ?? randomUUID(), ...named, createdAt: timestamp, updatedAt: timestamp } });
+  await recordChange(tx, 'libraryTag', created.id, 'create', null, tagSnapshot(created), context);
+  return created;
 }
 
-export async function updateTag(tx: LibraryDb, actor: Actor, id: string, expectedRevision: number | undefined, name: string) {
+export async function updateTag(tx: LibraryDb, actor: Actor, id: string, expectedRevision: number | undefined, name: string, context: MutationContext) {
   if (actor.kind !== 'user') throw libraryError('OWNER_REQUIRED', '只有本机用户可以管理标签', 403);
   const tag = await tx.libraryTag.findUnique({ where: { id } });
   if (!tag) throw libraryError('NOT_FOUND', '标签不存在', 404);
@@ -329,20 +348,74 @@ export async function updateTag(tx: LibraryDb, actor: Actor, id: string, expecte
   if (!named) throw libraryError('INVALID_NAME', '标签名称需要 1 到 40 个字符', 400);
   const conflict = await tx.libraryTag.findUnique({ where: { normalizedName: named.normalizedName } });
   if (conflict && conflict.id !== id) throw libraryError('TAG_NAME_CONFLICT', '已有同名标签');
+  const before = tagSnapshot(tag);
   const updated = await tx.libraryTag.update({ where: { id, revision: tag.revision }, data: { ...named, revision: { increment: 1 }, updatedAt: libraryNow() } });
   const materials = await tx.materialTag.findMany({ where: { tagId: id }, select: { materialId: true } });
   for (const row of materials) await retagMaterialDocuments(tx, row.materialId, await tagNames(tx, row.materialId));
+  await recordChange(tx, 'libraryTag', id, 'update', before, tagSnapshot(updated), context);
   return updated;
 }
 
-export async function deleteTag(tx: LibraryDb, actor: Actor, id: string, expectedRevision: number | undefined) {
+export async function deleteTag(tx: LibraryDb, actor: Actor, id: string, expectedRevision: number | undefined, context: MutationContext) {
   if (actor.kind !== 'user') throw libraryError('OWNER_REQUIRED', '只有本机用户可以管理标签', 403);
   const tag = await tx.libraryTag.findUnique({ where: { id } });
   if (!tag) throw libraryError('NOT_FOUND', '标签不存在', 404);
   assertExpected(tag.revision, expectedRevision);
   if (await tx.materialTag.count({ where: { tagId: id } })) throw libraryError('TAG_IN_USE', '标签仍在使用');
   await tx.libraryTag.delete({ where: { id } });
+  await recordChange(tx, 'libraryTag', id, 'delete', tagSnapshot(tag), { id, deleted: true }, context);
   return { id, deleted: true };
+}
+
+export async function undoLibraryFolder(tx: LibraryDb, actor: Actor, record: { entityId: string; operation: string; beforeSnapshot: string | null; afterSnapshot: string | null }) {
+  if (actor.kind !== 'user') throw libraryError('OWNER_REQUIRED', '只有本机用户可以管理文件夹', 403);
+  const before = record.beforeSnapshot ? JSON.parse(record.beforeSnapshot) as FolderSnapshot | null : null;
+  const after = record.afterSnapshot ? JSON.parse(record.afterSnapshot) as FolderSnapshot & { deleted?: boolean } : null;
+  if (!after) throw libraryError('UNDO_CONFLICT', '缺少可验证的文件夹版本');
+  if (record.operation === 'create' || !before) {
+    const current = await tx.libraryFolder.findUnique({ where: { id: record.entityId } });
+    if (!current || current.revision !== after.revision) throw libraryError('UNDO_CONFLICT', '文件夹已有后续修改');
+    if (await tx.libraryFolder.count({ where: { parentId: current.id } }) || await tx.material.count({ where: { folderId: current.id } })) throw libraryError('UNDO_CONFLICT', '文件夹已不为空');
+    await tx.libraryFolder.delete({ where: { id: current.id } });
+    return { id: current.id, deleted: true };
+  }
+  if (record.operation === 'delete' || after.deleted) {
+    if (await tx.libraryFolder.findUnique({ where: { id: before.id } })) throw libraryError('UNDO_CONFLICT', '文件夹已恢复');
+    if (before.parentId && !await tx.libraryFolder.findUnique({ where: { id: before.parentId } })) throw libraryError('UNDO_CONFLICT', '原文件夹已不存在');
+    if (await tx.libraryFolder.findFirst({ where: { parentId: before.parentId, normalizedName: before.normalizedName } })) throw libraryError('UNDO_CONFLICT', '同一层已有同名文件夹');
+    return tx.libraryFolder.create({ data: before });
+  }
+  const current = await tx.libraryFolder.findUnique({ where: { id: record.entityId } });
+  if (!current || current.revision !== after.revision) throw libraryError('UNDO_CONFLICT', '文件夹已有后续修改');
+  await placeFolder(tx, current.id, before.parentId);
+  await assertSiblingName(tx, before.parentId, before.normalizedName, current.id);
+  return tx.libraryFolder.update({ where: { id: current.id }, data: { parentId: before.parentId, name: before.name, normalizedName: before.normalizedName, revision: { increment: 1 }, updatedAt: libraryNow() } });
+}
+
+export async function undoLibraryTag(tx: LibraryDb, actor: Actor, record: { entityId: string; operation: string; beforeSnapshot: string | null; afterSnapshot: string | null }) {
+  if (actor.kind !== 'user') throw libraryError('OWNER_REQUIRED', '只有本机用户可以管理标签', 403);
+  const before = record.beforeSnapshot ? JSON.parse(record.beforeSnapshot) as TagSnapshot | null : null;
+  const after = record.afterSnapshot ? JSON.parse(record.afterSnapshot) as TagSnapshot & { deleted?: boolean } : null;
+  if (!after) throw libraryError('UNDO_CONFLICT', '缺少可验证的标签版本');
+  if (record.operation === 'create' || !before) {
+    const current = await tx.libraryTag.findUnique({ where: { id: record.entityId } });
+    if (!current || current.revision !== after.revision) throw libraryError('UNDO_CONFLICT', '标签已有后续修改');
+    if (await tx.materialTag.count({ where: { tagId: current.id } })) throw libraryError('UNDO_CONFLICT', '标签仍在使用');
+    await tx.libraryTag.delete({ where: { id: current.id } });
+    return { id: current.id, deleted: true };
+  }
+  if (record.operation === 'delete' || after.deleted) {
+    if (await tx.libraryTag.findUnique({ where: { id: before.id } })) throw libraryError('UNDO_CONFLICT', '标签已恢复');
+    if (await tx.libraryTag.findUnique({ where: { normalizedName: before.normalizedName } })) throw libraryError('UNDO_CONFLICT', '已有同名标签');
+    return tx.libraryTag.create({ data: before });
+  }
+  const current = await tx.libraryTag.findUnique({ where: { id: record.entityId } });
+  if (!current || current.revision !== after.revision) throw libraryError('UNDO_CONFLICT', '标签已有后续修改');
+  if (await tx.libraryTag.findFirst({ where: { normalizedName: before.normalizedName, id: { not: current.id } } })) throw libraryError('UNDO_CONFLICT', '已有同名标签');
+  const updated = await tx.libraryTag.update({ where: { id: current.id }, data: { name: before.name, normalizedName: before.normalizedName, revision: { increment: 1 }, updatedAt: libraryNow() } });
+  const materials = await tx.materialTag.findMany({ where: { tagId: current.id }, select: { materialId: true } });
+  for (const row of materials) await retagMaterialDocuments(tx, row.materialId, await tagNames(tx, row.materialId));
+  return updated;
 }
 
 export async function ensureReadableTasks(tx: LibraryDb, actor: Actor, taskIds: string[]) {

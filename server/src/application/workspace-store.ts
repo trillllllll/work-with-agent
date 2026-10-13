@@ -4,7 +4,8 @@ import { prisma } from '../infrastructure/prisma.js';
 import { DomainError, allowedTaskTransitions } from '../domain/task.js';
 import type { Actor } from './security.js';
 
-export type MutationContext = { source: 'user' | 'agent'; conversationId?: string; approvalId?: string; requestId?: string; actor?: Actor; proposalId?: string; db?: Db; entityId?: string; preview?: boolean; auditRecords?: ChangeRecord[] };
+export type UndoOwnership = { taskIdsRestoredByGroup: ReadonlySet<string> };
+export type MutationContext = { source: 'user' | 'agent'; conversationId?: string; approvalId?: string; requestId?: string; actor?: Actor; proposalId?: string; db?: Db; entityId?: string; preview?: boolean; auditRecords?: ChangeRecord[]; undoOwnership?: UndoOwnership };
 export type Db = Prisma.TransactionClient;
 export const now = () => new Date().toISOString();
 function updatedAfter(previous?: string) {

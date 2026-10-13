@@ -30,7 +30,7 @@ export type LibraryMigrationRehearsal = {
   thirdRun: null;
 };
 
-function applyMigrationsBeforeLibrary(file: string) {
+function applySchemaBeforeLibrary(file: string) {
   const names = readdirSync(migrations).filter((name) => name !== 'migration_lock.toml' && name < libraryMigration).sort();
   const db = new DatabaseSync(file);
   try {
@@ -50,6 +50,16 @@ function applyMigrationsBeforeLibrary(file: string) {
       const checksum = createHash('sha256').update(readFileSync(join(migrations, name, 'migration.sql'))).digest('hex');
       insert.run(randomUUID(), checksum, '2026-10-01 00:00:00', name, '2026-10-01 00:00:00');
     }
+    return db;
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+}
+
+function applyMigrationsBeforeLibrary(file: string) {
+  const db = applySchemaBeforeLibrary(file);
+  try {
     const missingBlob = 'ab'.repeat(32);
     db.prepare('INSERT INTO topics (id, name) VALUES (?, ?)').run('migration-topic-1', '迁移清单');
     db.prepare('INSERT INTO tasks (id, topic_id, title) VALUES (?, ?, ?)').run('migration-task-1', 'migration-topic-1', '迁移任务');
@@ -106,6 +116,85 @@ export async function rehearseLibraryMigration(): Promise<LibraryMigrationRehear
       const thirdRun = await migrateLibrary(client);
       if (thirdRun !== null) throw new Error('迁移标记还在时又执行了一次');
       return { report, folderCountBefore, folderCountAfter, linkCountBefore, linkCountAfter, secondRun, thirdRun };
+    } finally {
+      await client.$disconnect();
+    }
+  } finally {
+    if (previousKnowledge === undefined) delete process.env.KNOWLEDGE_STORAGE_ROOT;
+    else process.env.KNOWLEDGE_STORAGE_ROOT = previousKnowledge;
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+function topicFolderId(topicId: string) {
+  return `migration-library-topic-${createHash('sha256').update(topicId).digest('hex').slice(0, 24)}`;
+}
+
+export type SameNameMigrationRehearsal = {
+  identicalNames: string[];
+  longNames: string[];
+  nfkcNames: string[];
+  report: LibraryMigrationRehearsal['report'];
+  secondRun: null;
+  renamedName: string;
+  materialFolderId: string | null;
+};
+
+/** Three identical names, two 80-character names, and an NFKC pair stay unique without moving a later rename. */
+export async function rehearseSameNameLibraryMigration(): Promise<SameNameMigrationRehearsal> {
+  const directory = await mkdtemp(join(tmpdir(), 'wwa-library-same-name-'));
+  const file = join(directory, 'same-name.db');
+  const databaseUrl = `file:${file}`;
+  const previousKnowledge = process.env.KNOWLEDGE_STORAGE_ROOT;
+  process.env.KNOWLEDGE_STORAGE_ROOT = join(directory, 'blobs');
+  const longName = '长'.repeat(80);
+  const topics = [
+    ['long-a', longName],
+    ['long-b', longName],
+    ['nfkc-a', 'ABC同名'],
+    ['nfkc-b', 'ＡＢＣ同名'],
+    ['same-a', '同名清单'],
+    ['same-b', '同名清单'],
+    ['same-c', '同名清单'],
+  ] as const;
+  const db = applySchemaBeforeLibrary(file);
+  try {
+    const topic = db.prepare('INSERT INTO topics (id, name) VALUES (?, ?)');
+    const material = db.prepare('INSERT INTO Material (id, topicId, taskId, kind, title, revision, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, 1, ?, ?)');
+    const version = db.prepare('INSERT INTO MaterialVersion (id, materialId, revision, content, contentHash, metadata, attachmentPath, createdAt) VALUES (?, ?, 1, ?, ?, ?, ?, ?)');
+    for (const [id, name] of topics) {
+      topic.run(id, name);
+      material.run(`material-${id}`, id, null, 'text', `资料${id}`, '2026-10-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z');
+      version.run(`version-${id}`, `material-${id}`, `正文${id}`, 'f'.repeat(64), '{}', null, '2026-10-01T00:00:00.000Z');
+    }
+  } finally {
+    db.close();
+  }
+  try {
+    await migrateDatabase(databaseUrl);
+    const client = new PrismaClient({ datasourceUrl: databaseUrl });
+    try {
+      const reportPath = join(directory, 'library-migration', 'report.json');
+      const report = JSON.parse(await readFile(reportPath, 'utf8')) as LibraryMigrationRehearsal['report'];
+      const namesFor = async (ids: string[]) => {
+        const folders = await Promise.all(ids.map((id) => client.libraryFolder.findUniqueOrThrow({ where: { id: topicFolderId(id) } })));
+        return folders.map((folder) => folder.name);
+      };
+      const identicalNames = await namesFor(['same-a', 'same-b', 'same-c']);
+      const longNames = await namesFor(['long-a', 'long-b']);
+      const nfkcNames = await namesFor(['nfkc-a', 'nfkc-b']);
+      const renamedId = topicFolderId('same-a');
+      await client.libraryFolder.update({ where: { id: renamedId }, data: { name: '用户后来整理的文件夹', normalizedName: '用户后来整理的文件夹' } });
+      await client.material.update({ where: { id: 'material-same-a' }, data: { folderId: null } });
+      const secondRun = await migrateLibrary(client);
+      const renamed = await client.libraryFolder.findUniqueOrThrow({ where: { id: renamedId } });
+      const moved = await client.material.findUniqueOrThrow({ where: { id: 'material-same-a' } });
+      return {
+        identicalNames, longNames, nfkcNames, report,
+        secondRun: secondRun as null,
+        renamedName: renamed.name,
+        materialFolderId: moved.folderId,
+      };
     } finally {
       await client.$disconnect();
     }

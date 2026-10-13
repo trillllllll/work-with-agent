@@ -21,7 +21,7 @@ import { SubtasksSection } from './TaskSubtasks.js';
 import { cn } from '@/lib/utils.js';
 
 type Editing = { base: TaskDraft; draft: TaskDraft; conflicts: string[] };
-export type TaskDetailHandle = { requestTransition: (action: () => void) => void };
+export type TaskDetailHandle = { requestTransition: (action: () => void) => void; ensureSaved: () => Promise<boolean> };
 const fieldLabels: Record<string, string> = { title: '标题', description: '说明', status: '状态', priority: '优先级', dueDate: '安排日期', estimatedMinutes: '预计时长', scheduledStart: '开始时间', scheduledEnd: '结束时间', resultSummary: '结果摘要', topicId: '所属清单', parentId: '父任务', tagIds: '标签' };
 const flagTone: Record<TaskPriority, string> = { none: 'text-muted-foreground', low: 'text-primary', medium: 'text-warning', high: 'text-destructive' };
 
@@ -53,7 +53,8 @@ type EditContext = {
   toggleTag: (id: string, checked: boolean) => void;
   resetDraft: () => void;
   requestClose: () => void;
-  saveText: () => Promise<void>;
+  saveText: () => Promise<boolean>;
+  openLinkedTask: (taskId: string) => Promise<void>;
   toggleSubtask: (task: Task) => Promise<unknown>;
   createSubtask: (input: { title: string; topicId: string | null; parentId: string | null }) => Promise<unknown>;
   openSubtask: (id: string) => void;
@@ -92,6 +93,7 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
   const flushOnNull = useRef(false);
   const flushTimer = useRef(0);
   const savingCount = useRef(0);
+  const saveWaiters = useRef<Array<() => void>>([]);
   const savedVersions = useRef(new Map<number, number>());
   const pending = useRef<(() => void) | null>(null);
   const editingRef = useRef(editing);
@@ -163,9 +165,18 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
       return result;
     } finally {
       savingCount.current -= 1;
-      if (!savingCount.current) setSaving(false);
+      if (!savingCount.current) {
+        setSaving(false);
+        const waiters = saveWaiters.current;
+        saveWaiters.current = [];
+        waiters.forEach((resolve) => resolve());
+      }
       finishPending();
     }
+  };
+  const idle = () => {
+    if (!savingCount.current) return Promise.resolve();
+    return new Promise<void>((resolve) => { saveWaiters.current.push(resolve); });
   };
   const flushText = async (held?: Editing | null) => {
     const current = held === undefined ? editingRef.current : held;
@@ -192,9 +203,21 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
     if (dirtyRef.current) setLeaveAction(() => action);
     else action();
   };
+  const ensureSaved = async () => {
+    cancelFlush();
+    await idle();
+    await flushText();
+    await idle();
+    return !dirtyRef.current;
+  };
   const transitionRef = useRef(requestTransition);
+  const ensureRef = useRef(ensureSaved);
   transitionRef.current = requestTransition;
-  useImperativeHandle(ref, () => ({ requestTransition: (action: () => void) => transitionRef.current(action) }), []);
+  ensureRef.current = ensureSaved;
+  useImperativeHandle(ref, () => ({
+    requestTransition: (action: () => void) => transitionRef.current(action),
+    ensureSaved: () => ensureRef.current(),
+  }), []);
   useEffect(() => {
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
@@ -272,7 +295,13 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
     },
     resetDraft,
     requestClose: () => requestTransition(onCloseRef.current),
-    saveText: async () => { cancelFlush(); await flushText(); },
+    saveText: () => ensureSaved(),
+    openLinkedTask: async (nextId: string) => {
+      if (!nextId || nextId === id) return;
+      const saved = await ensureSaved();
+      if (!saved) return;
+      onOpenTask?.(nextId);
+    },
     toggleSubtask: onToggleTask ?? (async () => {}),
     createSubtask: onCreateTask ?? (async () => {}),
     openSubtask: onOpenTask ?? (() => {}),
@@ -351,8 +380,8 @@ export function TaskExpandBody({ fill = false }: { fill?: boolean }) {
   const edit = useEdit();
   return <div data-task-editor className={cn('flex flex-col', fill && 'min-h-0 flex-1')}>
     {edit.conflicts.length > 0 && <div role="alert" className="mb-3 rounded-xl border border-warning-border bg-warning-bg p-3 text-sm text-warning"><p>后台已更新{edit.conflicts.map((field) => fieldLabels[field] ?? field).join('、')}，你的编辑已保留。</p><label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={edit.acknowledge} onChange={(event) => edit.setAcknowledge(event.target.checked)} />保存时使用我的编辑</label><Button type="button" variant="ghost" size="sm" onClick={edit.resetDraft}>使用最新内容</Button></div>}
-    <TaskDescription taskId={edit.taskId} value={edit.draft.description} readonly={edit.readonly} fill={fill} openDescription={edit.openDescription} onChange={(description) => edit.updateText({ description })} onBlur={edit.onTextBlur} onComposeStart={edit.onComposeStart} onComposeEnd={edit.onComposeEnd} onSave={edit.saveText} />
-    <TaskMaterials taskId={edit.taskId} topicId={edit.task?.topicId ?? null} description={edit.draft.description} readonly={edit.readonly} saveText={edit.saveText} />
+    <TaskDescription taskId={edit.taskId} value={edit.draft.description} readonly={edit.readonly} fill={fill} openDescription={edit.openDescription} onChange={(description) => edit.updateText({ description })} onBlur={edit.onTextBlur} onComposeStart={edit.onComposeStart} onComposeEnd={edit.onComposeEnd} onSave={edit.saveText} onOpenLinkedTask={(taskId) => { void edit.openLinkedTask(taskId); }} />
+    <TaskMaterials taskId={edit.taskId} topicId={edit.task?.topicId ?? null} description={edit.draft.description} readonly={edit.readonly} saveText={edit.saveText} onOpenLinkedTask={edit.openLinkedTask} />
     <div className="mt-3 shrink-0"><SubtasksSection /></div>
     <div className="task-info-rows mt-auto shrink-0">
       <ScheduleControl />
@@ -426,7 +455,7 @@ function CloseDetailButton() {
 
 function ActivityButton({ onOpen }: { onOpen: () => void }) {
   const edit = useEdit();
-  return <Button type="button" variant="outline" size="sm" className="shrink-0 rounded-lg" aria-label="任务动态" onClick={() => { void edit.saveText().then(onOpen); }}>动态</Button>;
+  return <Button type="button" variant="outline" size="sm" className="shrink-0 rounded-lg" aria-label="任务动态" onClick={() => { void edit.saveText().then((saved) => { if (saved) onOpen(); }); }}>动态</Button>;
 }
 
 type EditorCaret = { label: '任务标题' | '详情'; start: number; end: number };
