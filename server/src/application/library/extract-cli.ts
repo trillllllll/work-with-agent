@@ -216,7 +216,7 @@ function extensionOf(fileName: string) {
 async function extract(bytes: Buffer, fileName: string, mimeType: string, kind: string, outDir: string): Promise<Result> {
   const extension = extensionOf(fileName);
   try {
-    if (kind === 'text' || kind === 'markdown' || ['txt', 'md', 'markdown', 'csv', 'json', 'log'].includes(extension) || mimeType.startsWith('text/')) return readText(bytes);
+    if (kind === 'text' || kind === 'markdown' || kind === 'thread' || ['txt', 'md', 'markdown', 'csv', 'json', 'log'].includes(extension) || mimeType.startsWith('text/')) return readText(bytes);
     if (extension === 'docx' || mimeType.includes('wordprocessingml')) return readDocx(bytes);
     if (extension === 'xlsx' || mimeType.includes('spreadsheetml')) return readXlsx(bytes);
     if (extension === 'pptx' || mimeType.includes('presentationml')) return readPptx(bytes);

@@ -371,6 +371,48 @@ test('文本资料预览显示原件正文', async ({ page, request }) => {
   await expect(page.getByTestId('library-preview')).toContainText('原件正文可见甲');
 });
 
+test('会话资料带着空解析位置时预览仍显示正文', async ({ page, request }) => {
+  const created = await command(request, [{ kind: 'material.create', input: { topicId: null, kind: 'thread', title: '会话摘录可见', content: '会话正文可见乙', metadata: { completeness: 'excerpt' } } }]) as { id: string };
+  const extraction = await e2eDatabase.materialExtraction.findFirstOrThrow({ where: { materialId: created.id } });
+  await e2eDatabase.materialExtraction.update({
+    where: { id: extraction.id },
+    data: {
+      status: 'unsupported',
+      errorCode: 'UNSUPPORTED',
+      errorsJson: JSON.stringify([{ locator: null, code: 'UNSUPPORTED', message: '暂不支持此格式的正文解析' }]),
+      leaseToken: null,
+      generation: { increment: 100 },
+    },
+  });
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.addInitScript(() => { localStorage.setItem('agent-studio.theme', 'dark'); });
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await openLibrary(page);
+  await page.getByTestId(`library-row-${created.id}`).click();
+  const preview = page.getByTestId('library-preview');
+  await expect(preview).toBeVisible();
+  await expect(preview.getByRole('heading', { name: '会话摘录可见' })).toBeVisible();
+  await expect(preview.getByRole('button', { name: '关闭', exact: true })).toBeVisible();
+  await expect(preview).toContainText('会话正文可见乙');
+  await expect(preview).toContainText('暂不支持此格式的正文解析');
+  await expect(page.getByRole('heading', { name: '资料库', exact: true })).toBeVisible();
+  expect(errors.join('\n')).not.toMatch(/locator/);
+
+  await page.setViewportSize({ width: 700, height: 800 });
+  await expect(preview).toBeVisible();
+  await expect(preview).toContainText('会话正文可见乙');
+  await preview.getByRole('button', { name: '关闭', exact: true }).click();
+  await expect(preview).toBeHidden();
+
+  const text = await createMaterial(request, '文本仍可预览', '文本正文仍在');
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.getByTestId(`library-row-${text.id}`).click();
+  await expect(page.getByTestId('library-preview')).toContainText('文本正文仍在');
+  await page.getByTestId('library-preview').getByRole('button', { name: '关闭', exact: true }).click();
+  await expect(page.getByTestId('library-preview')).toBeHidden();
+});
+
 test('搜索失败时显示重试，而不是空列表文案', async ({ page, request }) => {
   await createMaterial(request, '仍在库里', '仍在库里的正文');
   await page.setViewportSize({ width: 1400, height: 900 });

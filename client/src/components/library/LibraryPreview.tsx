@@ -146,7 +146,10 @@ export function LibraryPreview({ target, onTargetChange, onClose, onOpenTask }: 
       {tab === 'text' && <ChunkBrowser materialId={id} revision={viewed} highlightId={verified ? target.chunkId : null} />}
     </div>
     <p className="library-preview-block library-meta" style={{ color: status === 'failed' || status === 'blocked' ? 'var(--lib-danger)' : status === 'partial' ? 'var(--lib-warning)' : 'var(--lib-success)' }}>{extractionCopy[status]}{extraction.errorCode ? ` · ${extraction.errorCode}` : ''}</p>
-    {(extraction.errors ?? []).map((error, index) => <p key={`${error.code}-${index}`} className="library-preview-block library-meta" style={{ color: 'var(--lib-danger)' }}>{formatLocator(error.locator)} · {error.message}</p>)}
+    {(extraction.errors ?? []).map((error, index) => {
+      const place = formatLocator(error.locator);
+      return <p key={`${error.code}-${index}`} className="library-preview-block library-meta" style={{ color: 'var(--lib-danger)' }}>{place ? `${place} · ${error.message}` : error.message}</p>;
+    })}
     {(status === 'failed' || status === 'blocked' || status === 'partial') && <div className="library-preview-block"><button type="button" className="library-btn" onClick={() => { void command('material.reextract', {}); }}>重试解析</button></div>}
     <div className="library-preview-block">
       <h3 className="library-name">关联任务</h3>

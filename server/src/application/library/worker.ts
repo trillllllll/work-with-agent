@@ -29,12 +29,21 @@ async function withOcr<T>(run: () => Promise<T>) {
   finally { ocrActive -= 1; ocrQueue.shift()?.(); }
 }
 
+export async function requeueUnsupportedThreads() {
+  const now = libraryNow();
+  const result = await prisma.materialExtraction.updateMany({
+    where: { status: 'unsupported', errorCode: 'UNSUPPORTED', version: { material: { kind: 'thread' } } },
+    data: { status: 'queued', errorCode: null, errorsJson: '[]', attempts: 0, leaseToken: null, leaseUntil: null, nextAttemptAt: now, updatedAt: now },
+  });
+  return result.count;
+}
+
 export function startLibraryWorker() {
   if (timer) return () => undefined;
   const pump = () => { while (running < 2) { running += 1; void runLibraryWorkerOnce().catch(() => undefined).finally(() => { running -= 1; }); } };
   timer = setInterval(pump, 1000);
   timer.unref();
-  pump();
+  void requeueUnsupportedThreads().catch(() => undefined).finally(() => { if (timer) pump(); });
   return () => { if (timer) clearInterval(timer); timer = null; };
 }
 

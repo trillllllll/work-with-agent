@@ -15,7 +15,7 @@ import { ownerActor } from './security.js';
 import { ownerSession } from '../test-auth.js';
 import { rehearseSameNameLibraryMigration } from './library/migration-rehearsal.js';
 import { beginReceive, cancelUpload, finishReceive, isContainedPath } from './library/uploads.js';
-import { runLibraryWorkerOnce } from './library/worker.js';
+import { requeueUnsupportedThreads, runLibraryWorkerOnce } from './library/worker.js';
 
 const databaseUrl = process.env.DATABASE_URL ?? '';
 if (databaseUrl.includes('agent-studio')) throw new Error('资料修复测试不能使用开发数据库');
@@ -488,4 +488,34 @@ it('解析过程抛错后服务仍能响应，并且该任务进入失败状态'
   const health = await api('get', '/api/v1/library/materials?limit=1');
   expect(health.status).toBe(200);
   expect(health.body.error).toBeNull();
+});
+
+it('会话正文可以解析，已经标成不支持的会话会重新排队', async () => {
+  const token = randomUUID().slice(0, 8);
+  const thread = await command('material.create', { topicId: null, kind: 'thread', title: `会话资料${token}`, content: `会话甲${token}\n会话乙`, metadata: { completeness: 'excerpt' } });
+  const plain = await command('material.create', { topicId: null, kind: 'text', title: `普通文本${token}`, content: `普通正文${token}` });
+  const unsupported = JSON.stringify([{ locator: null, code: 'UNSUPPORTED', message: '暂不支持此格式的正文解析' }]);
+  await prisma.materialExtraction.updateMany({
+    where: { materialId: { in: [thread.result.id, plain.result.id] } },
+    data: { status: 'unsupported', errorCode: 'UNSUPPORTED', errorsJson: unsupported, attempts: 2, leaseToken: null, leaseUntil: null },
+  });
+  await requeueUnsupportedThreads();
+  const queued = await prisma.materialExtraction.findUniqueOrThrow({ where: { materialId_revision: { materialId: thread.result.id, revision: 1 } } });
+  const untouched = await prisma.materialExtraction.findUniqueOrThrow({ where: { materialId_revision: { materialId: plain.result.id, revision: 1 } } });
+  expect(queued.status).toBe('queued');
+  expect(queued.errorCode).toBeNull();
+  expect(queued.attempts).toBe(0);
+  expect(JSON.parse(queued.errorsJson)).toEqual([]);
+  expect(untouched.status).toBe('unsupported');
+  expect(untouched.errorCode).toBe('UNSUPPORTED');
+  await holdOtherExtractions([thread.result.id], () => drain([thread.result.id]));
+  const saved = await detail(thread.result.id);
+  expect(saved.extraction.status).toBe('ready');
+  expect(saved.extraction.errors).toEqual([]);
+  const content = await api('get', `/api/v1/library/materials/${thread.result.id}/content?revision=1&cursor=0&limit=40`);
+  expect(content.status, JSON.stringify(content.body)).toBe(200);
+  const items = content.body.data.items as Array<{ text: string; locator: { kind: string; startLine: number } }>;
+  expect(items.some((item) => item.text.includes(`会话甲${token}`) && item.locator.kind === 'line' && item.locator.startLine === 1)).toBe(true);
+  const stillPlain = await prisma.materialExtraction.findUniqueOrThrow({ where: { materialId_revision: { materialId: plain.result.id, revision: 1 } } });
+  expect(stillPlain.status).toBe('unsupported');
 });

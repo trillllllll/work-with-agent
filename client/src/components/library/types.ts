@@ -2,7 +2,7 @@ export type MaterialKind = 'text' | 'markdown' | 'link' | 'thread' | 'attachment
 export type ExtractionStatus = 'queued' | 'running' | 'ready' | 'partial' | 'blocked' | 'failed' | 'unsupported';
 export type LibraryViewName = 'all' | 'recent' | 'unfiled' | 'archived';
 
-export type ExtractionError = { locator: Locator; code: string; message: string };
+export type ExtractionError = { locator: Locator | null; code: string; message: string };
 export type ExtractionInfo = { status: ExtractionStatus; errorCode: string | null; errors?: ExtractionError[] };
 
 export type MaterialSummary = {
@@ -126,7 +126,8 @@ export const kindLabels: Record<MaterialKind, string> = {
   attachment: '附件',
 };
 
-export function formatLocator(locator: Locator) {
+export function formatLocator(locator: Locator | null | undefined) {
+  if (!locator) return '';
   if (locator.kind === 'line') return `第 ${locator.startLine}–${locator.endLine} 行`;
   if (locator.kind === 'paragraph') return `第 ${locator.paragraph} 段`;
   if (locator.kind === 'page') return `第 ${locator.page} 页`;
