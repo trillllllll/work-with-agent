@@ -50,6 +50,55 @@ test('全天和跨午夜任务在日周月都可找到，时间点不占用时�
   await expect(page.getByRole('heading', { name: /^逾期/ })).toHaveCount(0);
 });
 
+test('全天任务超过两条时收起，展开后刷新和周视图保持', async ({ page }) => {
+  const day = today();
+  await e2eDatabase.task.createMany({ data: [
+    { id: 'allday-1', title: '全天甲', dueDate: day, sortOrder: 0 },
+    { id: 'allday-2', title: '全天乙', dueDate: day, sortOrder: 1 },
+    { id: 'allday-3', title: '全天丙', dueDate: day, sortOrder: 2 },
+  ] });
+  await page.goto('/#/plan');
+  const zone = page.locator(`[data-drop-id="allday:${day}"]`);
+  await expect(zone).toContainText('全天甲');
+  await expect(zone).toContainText('全天乙');
+  await expect(page.getByText('全天丙', { exact: true })).toHaveCount(0);
+  await expect(zone.getByRole('button', { name: '还有 1 个', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '展开全天任务', exact: true })).toHaveAttribute('aria-expanded', 'false');
+  await page.screenshot({ path: '/tmp/wwa-allday-collapsed-light.png' });
+  await zone.getByRole('button', { name: '还有 1 个', exact: true }).click();
+  await expect(page.getByText('全天丙', { exact: true })).toBeVisible();
+  const expanded = page.getByRole('button', { name: '收起全天任务', exact: true });
+  await expect(expanded).toHaveAttribute('aria-expanded', 'true');
+  await expect(zone).toHaveCSS('max-height', '144px');
+  await expect(zone).toHaveCSS('overflow-y', 'auto');
+  await page.screenshot({ path: '/tmp/wwa-allday-expanded-light.png' });
+  await page.evaluate(() => document.documentElement.classList.add('dark'));
+  await page.screenshot({ path: '/tmp/wwa-allday-expanded-dark.png' });
+  await page.evaluate(() => document.documentElement.classList.remove('dark'));
+  await expanded.click();
+  await expect(page.getByText('全天丙', { exact: true })).toHaveCount(0);
+  await expect(zone).toHaveCSS('max-height', 'none');
+  await page.getByRole('button', { name: '展开全天任务', exact: true }).click();
+  await page.reload();
+  await expect(page.getByText('全天丙', { exact: true })).toBeVisible();
+  await e2eDatabase.task.createMany({ data: Array.from({ length: 8 }, (_, index) => ({ id: `allday-extra-${index}`, title: `全天更多${index}`, dueDate: day, sortOrder: 3 + index })) });
+  await page.reload();
+  const capped = await zone.evaluate((node) => ({ client: node.clientHeight, scroll: node.scrollHeight }));
+  expect(capped.client).toBeLessThanOrEqual(144);
+  expect(capped.scroll).toBeGreaterThan(capped.client);
+  expect(await page.getByTestId('timeline-scroll').evaluate((node) => node.getBoundingClientRect().top)).toBeLessThan(700);
+  await page.getByRole('button', { name: '周', exact: true }).click();
+  await expect(page.locator(`[data-drop-id="allday:${day}"]`)).toContainText('全天丙');
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await page.screenshot({ path: '/tmp/wwa-allday-week-1200.png' });
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.screenshot({ path: '/tmp/wwa-allday-week-390.png' });
+  await page.setViewportSize({ width: 375, height: 800 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+  const scroll = page.getByTestId('calendar-horizontal-scroll');
+  expect(await scroll.evaluate((node) => node.scrollWidth)).toBeGreaterThan(375);
+});
+
 test('详情安排显式保存，取消不写入，时长按钮改变结束时间', async ({ page, request }) => {
   const day = today();
   const item = (await (await request.post(`${api}/api/tasks`, { data: { title: '编辑安排', scheduledStart: `${day}T14:00`, scheduledEnd: `${day}T15:00`, estimatedMinutes: 60 } })).json()).data;
