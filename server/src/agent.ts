@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { ToolService, type ToolResult } from './application/tool-registry.js';
 import type { ToolCall } from './application/workspace.js';
 import { ApprovalService } from './application/approval.js';
-import { TaskService } from './application/workspace.js';
+import { ChangeService, TaskService } from './application/workspace.js';
 import { SettingsService, type ModelConfig } from './application/settings.js';
 import { ContextService, ConversationService } from './application/conversation.js';
 import { CommandService, canonical } from './application/commands.js';
@@ -290,6 +290,16 @@ export class AgentService {
     if (readStoredApproval(approval.result).resultState === 'batch') return approveTaskBatch(approvalId);
     const proposal = approval.result ? JSON.parse(approval.result) : null;
     const toolCallId = typeof proposal?.toolCallId === 'string' ? proposal.toolCallId : undefined;
+    if (approval.toolName === 'library' && typeof proposal?.undoChangeId === 'string') {
+      if (approval.status !== 'pending') throw Object.assign(new Error('该审核已处理'), { status: 409 });
+      const undone = await new ChangeService().undo(proposal.undoChangeId, { source: 'user', actor: ownerActor, conversationId: approval.conversationId ?? undefined, approvalId: approval.id });
+      const result: ToolResult = { success: true, data: undone };
+      await prismaApprovalComplete(approval.id, result);
+      await this.recordResolvedTool(approval.conversationId, approval.toolName, toolCallId, result);
+      const assistantMessage = approval.conversationId ? await this.summarize(approval.conversationId, JSON.stringify({ toolName: approval.toolName, result })) : undefined;
+      if (assistantMessage && approval.conversationId) await this.conversations.addMessage(approval.conversationId, 'assistant', assistantMessage);
+      return { result, assistantMessage, summaryError: !assistantMessage ? '无法生成自动总结' : undefined };
+    }
     if (proposal?.proposalId) {
       if (approval.status !== 'pending') throw Object.assign(new Error('该审核已处理'), { status: 409 });
       const applied = await new CommandService().approve(ownerActor, proposal.proposalId, { expectedRevision: proposal.proposalRevision, requestId: `approval:${approval.id}` });

@@ -62,6 +62,10 @@ describe('chat SSE state', () => {
     expect(isReadOnlyTool('memory', { action: 'search' })).toBe(true);
     expect(isReadOnlyTool('memory', { action: 'add' })).toBe(false);
     expect(isReadOnlyTool('conversation_search')).toBe(true);
+    expect(isReadOnlyTool('library', { action: 'list' })).toBe(true);
+    expect(isReadOnlyTool('library', { action: 'ask' })).toBe(true);
+    expect(isReadOnlyTool('library', { action: 'links' })).toBe(false);
+    expect(toolPreview('library', { action: 'links', title: '合同' }, undefined, 'pending')).toBe('合同');
     expect(toolPreview('memory', { action: 'add', title: '暗号' }, undefined, 'pending')).toBe('暗号');
     expect(toolPreview('memory', { action: 'read', memoryId: 'm1' }, { success: true, data: { title: '暗号' } }, 'done')).toBe('暗号');
     expect(toolPreview('conversation_search', { q: '青鸟原句' }, { success: true, data: {} }, 'done')).toBe('青鸟原句');

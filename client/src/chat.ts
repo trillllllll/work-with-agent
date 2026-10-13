@@ -59,8 +59,11 @@ export type SseEvent = {
 const READ_ONLY_TOOLS = new Set(['list_topics', 'get_topic', 'get_topic_progress', 'list_tasks', 'get_task', 'conversation_search']);
 const PREVIEW_MAX = 80;
 
+const LIBRARY_READS = new Set(['list', 'search', 'read', 'content', 'linked_tasks', 'task_materials', 'folders', 'tags', 'ask']);
+
 export function isReadOnlyTool(name: string, args?: Record<string, unknown>) {
   if (name === 'memory') return args?.action === 'read' || args?.action === 'search';
+  if (name === 'library') return LIBRARY_READS.has(String(args?.action ?? ''));
   return READ_ONLY_TOOLS.has(name);
 }
 
@@ -103,6 +106,11 @@ export function toolPreview(name: string, args: Record<string, unknown> = {}, re
     if (typeof args.q === 'string' && args.q.trim()) return clip(args.q);
     if (typeof args.messageId === 'string' && args.messageId.trim()) return '前后文';
     return '过往对话';
+  }
+  if (name === 'library') {
+    const title = textField(args, ['title', 'name', 'question', 'q']) || readTitle(result?.data);
+    if (title) return clip(title);
+    return clip(typeof args.action === 'string' && args.action ? args.action : '项目资料');
   }
   if (name === 'memory') {
     if (args.action === 'search') return clip(typeof args.q === 'string' && args.q.trim() ? args.q : '搜索记忆');

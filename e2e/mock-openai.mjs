@@ -91,6 +91,22 @@ const server = http.createServer(async (req, res) => {
       { choices: [{ delta: { tool_calls: [{ index: 0, id: `e2e_batch_${messages.length}`, function: { name: 'propose_task_changes', arguments: JSON.stringify(args) } }] }, finish_reason: 'tool_calls' }] },
     ]);
   }
+  if (latestUser.includes('读取项目资料') && !messages.some((item) => item.role === 'tool')) {
+    return stream(res, [
+      { choices: [{ delta: { content: '我先查看项目资料。' }, finish_reason: null }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'e2e_library_list', function: { name: 'library', arguments: JSON.stringify({ action: 'list', limit: 20 }) } }] }, finish_reason: 'tool_calls' }] },
+    ]);
+  }
+  if (latestUser.includes('关联这份项目资料') && !messages.some((item) => item.role === 'tool')) {
+    const materialId = latestUser.match(/materialId=(\S+)/)?.[1] ?? '';
+    const revision = Number(latestUser.match(/materialRevision=(\d+)/)?.[1] ?? 0);
+    const organizationRevision = Number(latestUser.match(/organizationRevision=(\d+)/)?.[1] ?? 0);
+    const taskId = latestUser.match(/taskId=(\S+)/)?.[1] ?? '';
+    return stream(res, [
+      { choices: [{ delta: { content: '我准备关联这份资料。' }, finish_reason: null }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'e2e_library_links', function: { name: 'library', arguments: JSON.stringify({ action: 'links', materialId, revision, organizationRevision, addTaskIds: [taskId], removeTaskIds: [], removeInlineReferences: false }) } }] }, finish_reason: 'tool_calls' }] },
+    ]);
+  }
   if (latestUser.includes('读取受控文件') && !messages.some((item) => item.role === 'tool')) {
     return stream(res, [
       { choices: [{ delta: { content: '我准备读取工作区文件。' }, finish_reason: null }] },

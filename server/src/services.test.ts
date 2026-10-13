@@ -33,6 +33,12 @@ describe('application services', () => {
     expect(tools.validate({ name: 'memory', arguments: { action: 'search', target: 'inbox', q: '' } })).toBeNull();
     expect(tools.validate({ name: 'memory', arguments: { action: 'search', target: 'topic' } })).toBeNull();
     expect(tools.validate({ name: 'conversation_search', arguments: {} })).toContain('关键词');
+    expect(tools.isReadOnly('library', { action: 'list' })).toBe(true);
+    expect(tools.isReadOnly('library', { action: 'search' })).toBe(true);
+    expect(tools.isReadOnly('library', { action: 'ask' })).toBe(true);
+    expect(tools.isReadOnly('library', { action: 'links' })).toBe(false);
+    expect(tools.validate({ name: 'library', arguments: { action: 'replace' } })).toContain('action');
+    expect(tools.validate({ name: 'library', arguments: { action: 'links', materialId: 'm1' } })).toContain('revision');
   });
 
   it('enforces controlled execution boundaries', async () => {

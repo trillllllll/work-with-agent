@@ -6,6 +6,7 @@ import { CommandService, type Command } from './commands.js';
 import { assertTopicAccess, internalActor, ownerActor } from './security.js';
 import { randomUUID } from 'node:crypto';
 import { runAgentMemoryTool, validateConversationSearchArguments, validateMemoryArguments } from './agent-memory.js';
+import { isLibraryReadAction, LIBRARY_TOOL_DESCRIPTION, libraryToolParameters, runAgentLibraryTool, validateLibraryArguments } from './agent-library.js';
 import { PROPOSE_TASK_CHANGES_DESCRIPTION, proposeTaskChangesParameters } from '../domain/task-batch.js';
 
 type ToolRunContext = MutationContext & { topicId?: string | null; taskId?: string | null };
@@ -84,6 +85,14 @@ export class ToolService {
         validate: validateMemoryArguments,
         execute: async () => ({ success: false, error: '记忆工具由专用路径执行' }),
       },
+      library: {
+        name: 'library',
+        description: LIBRARY_TOOL_DESCRIPTION,
+        parameters: libraryToolParameters,
+        requiresApproval: false,
+        validate: validateLibraryArguments,
+        execute: async () => ({ success: false, error: '项目资料由专用路径执行' }),
+      },
       conversation_search: {
         name: 'conversation_search',
         description: '在其他全局聊天里查找原文。q 搜索用户和助手原文，返回会话 id、消息 id、时间和截断正文。messageId 返回该消息前后的一小段原文。不做摘要。当前这段对话已经在上下文里，不会从这里返回。只读，不修改历史。',
@@ -106,6 +115,7 @@ export class ToolService {
   isKnown(name: string) { return Boolean(this.registry[name]); }
   isReadOnly(name: string, args?: Record<string, unknown>) {
     if (name === 'memory') return args?.action === 'read' || args?.action === 'search';
+    if (name === 'library') return isLibraryReadAction(args?.action);
     return this.registry[name]?.requiresApproval === false;
   }
   validate(call: ToolCall) {
@@ -131,6 +141,7 @@ export class ToolService {
       const actor = context.actor ?? (context.source === 'agent' ? internalActor : ownerActor);
       if (!this.registry[call.name].requiresApproval) {
         if (call.name === 'memory' || call.name === 'conversation_search') return runAgentMemoryTool(call, context);
+        if (call.name === 'library') return runAgentLibraryTool(call);
         if (typeof call.arguments.topicId === 'string') assertTopicAccess(actor, call.arguments.topicId);
         if (call.name === 'list_tasks' && actor.topicIds !== 'all') return { success: true, data: await this.tasks.list(typeof call.arguments.topicId === 'string' ? call.arguments.topicId : undefined, call.arguments, { OR: [{ topicId: { in: actor.topicIds } }, ...(actor.includeInbox ? [{ topicId: null }] : [])] }) };
         if (call.name === 'list_topics' && actor.topicIds !== 'all') return { success: true, data: (await this.topics.list()).filter((topic) => (actor.topicIds as string[]).includes(topic.id)) };

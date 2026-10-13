@@ -3,8 +3,9 @@ import { prisma } from '../infrastructure/prisma.js';
 import type { ToolCall, MutationContext } from './workspace.js';
 import { randomUUID } from 'node:crypto';
 import { CommandService, type Command } from './commands.js';
-import { internalActor } from './security.js';
+import { internalActor, ownerActor } from './security.js';
 import { submitMemoryProposal } from './agent-memory.js';
+import { storeLibraryUndo, submitLibraryProposal } from './agent-library.js';
 
 export type ApprovalStatus = ApprovalState;
 export type ApprovalResult = { success: boolean; data?: unknown; error?: string };
@@ -13,6 +14,7 @@ const now = () => new Date().toISOString();
 export class ApprovalService {
   private async prepare(call: ToolCall, audit: Pick<MutationContext, 'conversationId' | 'approvalId'> = {}, allowLegacyRefresh = false) {
     if (call.name === 'memory') throw Object.assign(new Error('记忆审核已经生成提议'), { status: 400 });
+    if (call.name === 'library') throw Object.assign(new Error('资料审核已经生成提议'), { status: 400 });
     let result: string | undefined;
     if (!call.name.startsWith('execute_')) {
       const args = { ...call.arguments };
@@ -39,6 +41,10 @@ export class ApprovalService {
     if (call.name === 'memory') {
       const proposal = await submitMemoryProposal(call.arguments, { conversationId, approvalId: id, topicId: pageContext?.topicId ?? null });
       stored = { proposalId: proposal.proposalId, proposalRevision: proposal.proposalRevision };
+    } else if (call.name === 'library') {
+      stored = call.arguments.action === 'undo'
+        ? await storeLibraryUndo(call.arguments)
+        : await submitLibraryProposal(call.arguments, { conversationId, approvalId: id });
     } else {
       const prepared = await this.prepare(call, { conversationId, approvalId: id });
       if (prepared) stored = JSON.parse(prepared) as Record<string, unknown>;
@@ -51,7 +57,9 @@ export class ApprovalService {
     if (!row || row.status !== 'pending') throw Object.assign(new Error('审核不存在或已处理'), { status: 409 });
     if (row.toolName.startsWith('execute_')) throw Object.assign(new Error('受控执行使用原审核流程'), { status: 400 });
     let link = row.result ? JSON.parse(row.result) : null;
+    if (row.toolName === 'library' && typeof link?.undoChangeId === 'string') throw Object.assign(new Error('撤销没有业务提议'), { status: 400 });
     if (!link?.proposalId) {
+      if (row.toolName === 'library') throw Object.assign(new Error('资料审核已经生成提议'), { status: 400 });
       const prepared = await this.prepare(this.parse(row), { conversationId: row.conversationId ?? undefined, approvalId: row.id }, true);
       const next = prepared ? JSON.parse(prepared) as Record<string, unknown> : {};
       if (typeof link?.toolCallId === 'string') next.toolCallId = link.toolCallId;
@@ -59,7 +67,7 @@ export class ApprovalService {
       await prisma.approval.update({ where: { id: row.id }, data: { result, updatedAt: now() } });
       link = next;
     }
-    const proposal = await new CommandService().get(internalActor, link.proposalId);
+    const proposal = await new CommandService().get(row.toolName === 'library' ? ownerActor : internalActor, link.proposalId);
     return { approvalId, ...link, preview: proposal.preview };
   }
   async get(approvalId: string) { return prisma.approval.findUnique({ where: { id: approvalId } }); }

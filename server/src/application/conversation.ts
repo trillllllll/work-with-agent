@@ -268,6 +268,7 @@ export function formatSystemPrompt(pageContext: PageContextInput, tasks: Array<{
     : '无';
   return [
     '你是 Agent 工作室的协作助手。变更任务或主题必须使用工具，系统会要求用户审核。只读问题使用工具查询。',
+    '查或改项目资料用 library；memory 只记稳定事实。上传文件不在工具里。',
     '',
     `当前页面：${pageLine(pageContext)}`,
     `当前清单：${topicId || '收集箱'}`,

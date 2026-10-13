@@ -184,14 +184,12 @@ export class LibraryService {
     return { id: chunk.id, materialId: chunk.extraction.materialId, revision: chunk.extraction.revision, generation: chunk.generation, ordinal: chunk.ordinal, text: chunk.text, method: chunk.method, locator: locatorSchema.parse(JSON.parse(chunk.locatorJson)) };
   }
 
-  async folders(actor: Actor) {
-    assertOwner(actor);
+  async folders(_actor: Actor) {
     const items = await prisma.libraryFolder.findMany({ orderBy: [{ name: 'asc' }, { id: 'asc' }] });
     return { items: items.map((folder) => ({ id: folder.id, parentId: folder.parentId, name: folder.name, revision: folder.revision })) };
   }
 
-  async tags(actor: Actor) {
-    assertOwner(actor);
+  async tags(_actor: Actor) {
     const items = await prisma.libraryTag.findMany({ orderBy: [{ normalizedName: 'asc' }, { id: 'asc' }] });
     return { items: items.map((tag) => ({ id: tag.id, name: tag.name, revision: tag.revision })) };
   }
