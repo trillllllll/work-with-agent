@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { runAgentMemoryTool, validateConversationSearchArguments, validateMemoryArguments } from './agent-memory.js';
 import { isLibraryReadAction, LIBRARY_TOOL_DESCRIPTION, libraryToolParameters, runAgentLibraryTool, validateLibraryArguments } from './agent-library.js';
 import { PROPOSE_TASK_CHANGES_DESCRIPTION, proposeTaskChangesParameters } from '../domain/task-batch.js';
+import { taskFileGrants } from './task-file-grants.js';
 
 type ToolRunContext = MutationContext & { topicId?: string | null; taskId?: string | null };
 
@@ -52,7 +53,7 @@ export class ToolService {
       update_topic: this.define('update_topic', '更新主题', { topicId: string, name: string, description: string, isExploration: { type: 'boolean' } }, true, async (a) => this.topics.update(String(a.topicId), { name: a.name as string | undefined, description: a.description as string | undefined, isExploration: a.isExploration as boolean | undefined }), ['topicId']),
       propose_topic_summary: this.define('propose_topic_summary', '提出主题成果草稿', { topicId: string, summary: string }, true, async (a) => this.topics.generateSummary(String(a.topicId), String(a.summary)), ['topicId', 'summary']),
       execute_shell: this.define('execute_shell', '在受控工作区执行白名单命令', { command: string, args: { type: 'array' }, workingDirectory: string, timeoutMs: { type: 'number' } }, true, async (a) => this.execution.execute({ kind: 'shell', input: a, approvalId: 'tool' }), ['command']),
-      execute_file: this.define('execute_file', '在受控工作区进行文件操作', { operation: string, path: string, content: string, recursive: { type: 'boolean' } }, true, async (a) => this.execution.execute({ kind: 'file', input: a, approvalId: 'tool' }), ['operation', 'path']),
+      execute_file: this.define('execute_file', '读取或列出文件。相对路径只在受控工作区内。任务标题或详情里写明的绝对路径和 file:// 可以 read，所在的那一层目录可以 list。write、mkdir、delete 只在受控工作区。', { operation: string, path: string, content: string, recursive: { type: 'boolean' } }, true, async (a) => this.execution.execute({ kind: 'file', input: a, approvalId: 'tool' }), ['operation', 'path']),
       execute_http: this.define('execute_http', '访问受控 HTTP(S) 目标', { method: string, url: string, headers: { type: 'object' }, body: { type: 'object' }, timeoutMs: { type: 'number' } }, true, async (a) => this.execution.execute({ kind: 'http', input: a, approvalId: 'tool' }), ['url']),
       propose_task_changes: {
         name: 'propose_task_changes',
@@ -151,7 +152,9 @@ export class ToolService {
       }
       if (['execute_shell', 'execute_file', 'execute_http'].includes(call.name)) {
         const kind = call.name === 'execute_shell' ? 'shell' : call.name === 'execute_file' ? 'file' : 'http';
-        const execution = await this.execution.execute({ kind, input: call.arguments, approvalId: context.approvalId ?? 'direct', timeoutMs: Number(call.arguments.timeoutMs) || undefined });
+        const operation = String(call.arguments.operation || 'read');
+        const fileGrants = call.name === 'execute_file' && (operation === 'read' || operation === 'list') ? await taskFileGrants() : undefined;
+        const execution = await this.execution.execute({ kind, input: call.arguments, approvalId: context.approvalId ?? 'direct', timeoutMs: Number(call.arguments.timeoutMs) || undefined, fileGrants });
         if (context.approvalId && !this.isExecutionValidationFailure(execution)) await this.recordExecution(call, execution, context);
         return { success: execution.success, data: execution, ...(execution.success ? {} : { error: execution.error, code: execution.errorCode }) };
       }
@@ -169,6 +172,14 @@ export class ToolService {
       const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : undefined;
       return { success: false, error: error instanceof Error ? error.message : 'Tool 执行失败', ...(code ? { code } : {}) };
     }
+  }
+  async fileAccessDenial(args: Record<string, unknown>): Promise<ToolResult | null> {
+    if (!this.execution.probe) return null;
+    const operation = String(args.operation || 'read');
+    const fileGrants = operation === 'read' || operation === 'list' ? await taskFileGrants() : undefined;
+    const execution = await this.execution.probe({ kind: 'file', input: args, approvalId: 'probe', fileGrants });
+    if (execution.success) return null;
+    return { success: false, error: execution.error, code: execution.errorCode, data: execution };
   }
   private async recordExecution(call: ToolCall, result: ExecutionResult, context: MutationContext) { await prisma.changeRecord.create({ data: { entityType: 'execution', entityId: context.approvalId!, operation: 'execute', beforeSnapshot: null, afterSnapshot: JSON.stringify({ toolName: call.name, input: redact(call.arguments), result: redact(result) }), source: context.source, conversationId: context.conversationId, approvalId: context.approvalId, requestId: context.requestId ?? context.approvalId, createdAt: now() } }); }
   private isExecutionValidationFailure(result: ExecutionResult) { return Boolean(result.errorCode && /(?:_DENIED|_INVALID_|_INVALID$|_INVALID_PATH$)/.test(result.errorCode)); }

@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import request from './test-auth.js';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { app } from './app.js';
@@ -73,6 +76,10 @@ describe('Agent tool gate', () => {
       if (userText.includes('没有清单却写清单记忆')) return tool('call_memory_nolist', 'memory', { action: 'add', target: 'topic', title: '不该写入', content: '没有清单' });
       if (userText.includes('查找历史原句') && hasToolReply) return answer('已找到原句。');
       if (userText.includes('查找历史原句')) return tool('call_history', 'conversation_search', { q: '独特青鸟原句' });
+      if (userText.includes('读取越界文件') && hasToolReply) return answer('路径被拒绝。');
+      if (userText.includes('读取越界文件')) return tool('call_outside_file', 'execute_file', { operation: 'read', path: '/etc/passwd' });
+      if (userText.includes('读取授权文件') && hasToolReply) return answer('已读到授权文件。');
+      if (userText.includes('读取授权文件')) return tool('call_granted_file', 'execute_file', { operation: 'read', path: userText.match(/路径=(\S+)/)?.[1] ?? '' });
       const title = String(user?.content ?? '').replace(/^创建任务[：:]?\s*/, '') || 'Agent 任务';
       return sseResponse([
         { choices: [{ delta: { content: '我准备创建这个任务。' }, finish_reason: null }] },
@@ -114,6 +121,35 @@ describe('Agent tool gate', () => {
     const after = await request(app).get(`/api/tasks?topicId=${topicId}`);
     expect(after.body.data).toHaveLength(1);
     taskId = after.body.data[0].id;
+  });
+
+  it('reports an out-of-range file path without asking for approval', async () => {
+    const response = await request(app).post('/api/chat').send({ message: '读取越界文件', pageContext: { page: 'inbox' } });
+    expect(response.status).toBe(200);
+    expect(response.text).toContain('FILE_PATH_DENIED');
+    expect(response.text).not.toContain('event: approval_required');
+    expect(response.text).toContain('路径被拒绝');
+  });
+
+  it('reads a file cited by a task after approval', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'wwa-cited-'));
+    const file = join(dir, 'note.html');
+    const task = await prisma.task.create({ data: { title: '授权读取', description: `file://${file}` } });
+    try {
+      await writeFile(file, 'cited-body');
+      const response = await request(app).post('/api/chat').send({ message: `读取授权文件 路径=${file}`, pageContext: { page: 'inbox' } });
+      expect(response.status).toBe(200);
+      expect(response.text).toContain('event: approval_required');
+      expect(response.text).not.toContain('FILE_PATH_DENIED');
+      const approvalId = response.text.match(/"approvalId":"([^"]+)"/)?.[1];
+      const approved = await request(app).post(`/api/agent/approvals/${approvalId}/approve`);
+      expect(approved.status).toBe(200);
+      expect(approved.body.data.result.success).toBe(true);
+      expect(JSON.stringify(approved.body.data.result.data)).toContain('cited-body');
+    } finally {
+      await prisma.task.delete({ where: { id: task.id } });
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it('executes read-only tools and continues with a final model answer', async () => {

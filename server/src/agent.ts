@@ -221,6 +221,14 @@ export class AgentService {
           continue;
         }
         if (!this.tools.isReadOnly(call.name, call.arguments)) {
+          if (call.name === 'execute_file') {
+            const denial = await this.tools.fileAccessDenial(call.arguments);
+            if (denial) {
+              const result = await fail(denial);
+              yield { type: 'tool_result', conversationId, messageId: assistantId, toolCallId, toolName: call.name, arguments: call.arguments, result };
+              continue;
+            }
+          }
           try {
             if (call.name === 'propose_task_changes') {
               const prepared = await prepareTaskBatch({ conversationId, assistantMessageId: assistantId, sourceUserMessageId, toolCallId, arguments: call.arguments as never, pageContext: input.pageContext });
