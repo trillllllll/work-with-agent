@@ -34,7 +34,9 @@ nginx -t && nginx -s reload                                         # 改 nginx 
 certbot renew --dry-run                                             # 证书续期演练
 ```
 
-升级流程见 `docs/deployment.md`（git pull → compose up -d --build，自动跑迁移）。
+升级流程见 `docs/deployment.md`。**注意：VPS 直连 GitHub 被墙**（git fetch 报 `Failure when receiving data from the peer`），实际升级走 tarball/scp：本地 `git archive` 或直接 scp 变更文件到 `/opt/work-with-agent`，再 `docker compose up -d --build`。已验证此流程（scp 两个文件 → 重建 → healthy）。
+
+## VPS 现已对齐 git 提交 8478c59 的服务端代码（2026-10-14）。
 
 ## 验收记录
 
