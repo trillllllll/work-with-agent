@@ -11,14 +11,14 @@ async function project(request: APIRequestContext, name: string) {
 
 async function openKnowledge(page: Page, topicId: string) {
   await page.goto('/#/knowledge/materials');
-  await page.getByLabel('资料所属清单', { exact: true }).selectOption(topicId);
+  await page.getByLabel('所属清单', { exact: true }).selectOption(topicId);
 }
 
 test('记忆可以按重要度和标签浏览，并在知识树与关系图里出现', async ({ page, request }) => {
   const topicId = await project(request, '记忆清单');
   await openKnowledge(page, topicId);
-  await page.getByRole('button', { name: '记忆', exact: true }).click();
-  await page.getByRole('button', { name: '记录记忆', exact: true }).click();
+  await page.getByRole('tab', { name: '长期记忆', exact: true }).click();
+  await page.getByRole('button', { name: '手动记录', exact: true }).click();
   await page.getByLabel('记忆标题', { exact: true }).fill('采用 SQLite');
   await page.getByLabel('记忆正文', { exact: true }).fill('本地清单继续使用 SQLite。');
   await page.getByLabel('记忆类型', { exact: true }).selectOption('decision');
@@ -31,12 +31,14 @@ test('记忆可以按重要度和标签浏览，并在知识树与关系图里�
   await expect(card).toContainText('存储');
   await expect(card).toContainText('本地');
   await expect(card.getByLabel('重要度 5，满分 5')).toBeVisible();
-  await page.getByRole('button', { name: '知识树', exact: true }).click();
+  await page.getByRole('button', { name: '查看方式', exact: true }).click();
+  await page.getByRole('menuitem', { name: '知识树', exact: true }).click();
   await page.getByRole('button', { name: /决策/ }).click();
   await expect(page.getByRole('button', { name: /采用 SQLite/ })).toBeVisible();
-  await page.getByRole('button', { name: /工作记忆/ }).click();
+  await page.getByRole('button', { name: /当前进展/ }).click();
   await expect(page.getByLabel('简报固定说明')).toBeVisible();
-  await page.getByRole('button', { name: '关系', exact: true }).click();
+  await page.getByRole('button', { name: '查看方式', exact: true }).click();
+  await page.getByRole('menuitem', { name: '关系图', exact: true }).click();
   await expect(page.getByLabel('知识关系图')).toBeVisible();
   const clusters = page.getByRole('group', { name: '聚类' });
   await expect(clusters).toContainText(/存储|本地/);
@@ -63,15 +65,16 @@ test('记忆可以按重要度和标签浏览，并在知识树与关系图里�
   await page.getByRole('button', { name: '知识星图', exact: true }).click();
   await expect(page.getByText('铺在透视平面上。')).toBeVisible();
   await expect(page.getByRole('heading', { name: '采用 SQLite' })).toBeVisible();
-  await page.getByRole('button', { name: '记忆', exact: true }).click();
+  await page.getByRole('tab', { name: '长期记忆', exact: true }).click();
   await page.getByRole('button', { name: /采用 SQLite/ }).click();
   await page.getByRole('button', { name: '设为历史', exact: true }).click();
-  await expect(page.getByText('暂无记忆，可以先手动保存。')).toBeVisible();
+  await expect(page.getByText('当前没有活跃记忆。', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '历史', exact: true }).click();
   await expect(page.getByRole('button', { name: /采用 SQLite/ })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole('button', { name: /采用 SQLite/ })).toBeVisible();
-  await page.getByRole('button', { name: '关系', exact: true }).click();
+  await page.getByRole('button', { name: '查看方式', exact: true }).click();
+  await page.getByRole('menuitem', { name: '关系图', exact: true }).click();
   await page.getByRole('button', { name: '3D', exact: true }).click();
   await expect(page.getByRole('button', { name: '地形', exact: true })).toBeVisible();
   await expect(page.getByText('高度代表什么？')).toBeVisible();

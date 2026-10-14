@@ -145,7 +145,7 @@ export function MaterialBrowser({ topicId, taskId, onCreate, onEdit, children }:
           <tbody>
             {!list.isLoading && !list.data?.items.length && <tr><td colSpan={taskId ? 3 : 4} className="px-3 py-6 text-muted-foreground">暂无材料。可以导入文件，或保存一段文本。</td></tr>}
             {list.data?.items.map((item) => <tr key={item.id} className={cn('border-t', opened === item.id && 'bg-primary/10')} aria-selected={opened === item.id}>
-              <td className="px-3 py-2"><button type="button" className="text-left font-medium" aria-haspopup="dialog" aria-expanded={opened === item.id} onClick={() => { setOrganizeResult(null); setOpened(item.id); }}>{item.title}</button></td>
+              <td className="px-3 py-2"><button type="button" className="text-left font-medium" aria-haspopup="dialog" aria-expanded={opened === item.id} onClick={() => { setOrganizeResult(null); setOpened(item.id); }}>{item.title}</button>{item.id.startsWith('auto-chat:') && <span className="ctx-badge">自动聊天摘录</span>}</td>
               <td className="px-3 py-2 text-muted-foreground">{materialTypeLabel(item.kind, item.fileName)}</td>
               <td className="px-3 py-2 text-muted-foreground">{formatWhen(item.updatedAt)}</td>
               {!taskId && <td className="px-3 py-2 text-muted-foreground">{item.taskTitle ?? ''}</td>}
@@ -157,7 +157,7 @@ export function MaterialBrowser({ topicId, taskId, onCreate, onEdit, children }:
         <DialogContent surface="glass" overlayClassName="z-[60]" className="z-[60] flex h-[min(46rem,calc(100dvh-3rem))] w-[min(64rem,calc(100%-3rem))] max-w-none flex-col gap-3 overflow-hidden p-4">
           <div className="min-w-0 shrink-0 pr-10">
             <DialogTitle className="truncate text-base" title={resource?.id === opened ? resource.title : undefined}>{resource?.id === opened ? resource.title : '材料预览'}</DialogTitle>
-            <DialogDescription className="truncate text-xs">{resource?.id === opened ? `${materialTypeLabel(resource.kind, currentVersion(resource)?.fileName ?? resource.fileName)} · 版本 ${resource.revision}${resource.archivedAt ? ' · 已归档' : ''}` : detail.error ? '无法读取这份材料' : '正在读取…'}</DialogDescription>
+            <DialogDescription className="truncate text-xs">{resource?.id === opened ? `${materialTypeLabel(resource.kind, currentVersion(resource)?.fileName ?? resource.fileName)} · 版本 ${resource.revision}${resource.archivedAt ? ' · 已归档' : ''}${resource.id.startsWith('auto-chat:') ? ' · 自动聊天摘录' : ''}` : detail.error ? '无法读取这份材料' : '正在读取…'}</DialogDescription>
           </div>
           <div className="relative min-h-[8rem] min-w-0 flex-1">
             <div className="absolute inset-0 overflow-hidden">

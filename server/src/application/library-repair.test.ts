@@ -474,12 +474,16 @@ it('解析过程抛错后服务仍能响应，并且该任务进入失败状态'
   const created = await command('material.create', { topicId: null, kind: 'text', title: `解析崩溃${token}`, content: `崩溃正文${token}` });
   const extraction = await prisma.materialExtraction.findUniqueOrThrow({ where: { materialId_revision: { materialId: created.result.id, revision: 1 } } });
   await prisma.materialExtraction.update({ where: { id: extraction.id }, data: { nextAttemptAt: '1970-01-01T00:00:00.000Z' } });
-  const lookup = vi.spyOn(prisma.materialVersion, 'findUnique').mockRejectedValueOnce(new Error('解析进程崩溃'));
+  const materialVersion = prisma.materialVersion;
+  const findUnique = materialVersion.findUnique;
+  const lookup = vi.spyOn(materialVersion, 'findUnique').mockRejectedValueOnce(new Error('解析进程崩溃'));
   try {
     const outcome = await holdOtherExtractions([created.result.id], () => runLibraryWorkerOnce());
     expect(outcome).toMatchObject({ claimed: true, failed: true });
   } finally {
     lookup.mockRestore();
+    // Prisma 的 findUnique 由代理提供。spy 的描述符值是 undefined，mockRestore 会把它写回去并挡住真正的方法。
+    materialVersion.findUnique = findUnique;
   }
   const row = await prisma.materialExtraction.findUniqueOrThrow({ where: { id: extraction.id } });
   expect(row.status).toBe('failed');
@@ -510,7 +514,7 @@ it('会话正文可以解析，已经标成不支持的会话会重新排队', a
   expect(untouched.errorCode).toBe('UNSUPPORTED');
   await holdOtherExtractions([thread.result.id], () => drain([thread.result.id]));
   const saved = await detail(thread.result.id);
-  expect(saved.extraction.status).toBe('ready');
+  expect(saved.extraction.status, JSON.stringify(saved.extraction)).toBe('ready');
   expect(saved.extraction.errors).toEqual([]);
   const content = await api('get', `/api/v1/library/materials/${thread.result.id}/content?revision=1&cursor=0&limit=40`);
   expect(content.status, JSON.stringify(content.body)).toBe(200);

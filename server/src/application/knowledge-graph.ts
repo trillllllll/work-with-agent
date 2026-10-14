@@ -92,7 +92,7 @@ export class KnowledgeGraph {
     const branches = [
       { id: 'memories', label: '记忆', count: memories.length, children: [...kindCounts.entries()].map(([kind, count]) => ({ id: `kind:${kind}`, label: kindNames[kind] ?? kind, count })) },
       { id: 'occurred', label: '发生于', count: memories.length, children: [...dayCounts.entries()].sort(([left], [right]) => right.localeCompare(left)).map(([day, count]) => ({ id: `day:${day}`, label: dayLabel(day), count })) },
-      { id: 'brief', label: '工作记忆', count: 1, children: [] },
+      { id: 'brief', label: '当前进展', count: 1, children: [] },
       { id: 'threads', label: '会话', count: materials.length, children: [] },
       { id: 'artifacts', label: '产物', count: artifacts.length, children: [] },
     ];

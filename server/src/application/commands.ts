@@ -437,7 +437,7 @@ export class CommandService {
       return { commands, preview: inspections.map((inspection) => inspection.preview), previewToken, requiresConfirmation: needsPreview(commands, inspections) };
     });
   }
-  async submit(actor: Actor, value: unknown, options: { forceProposal?: boolean; audit?: Pick<MutationContext, 'conversationId' | 'approvalId'> } = {}): Promise<any> {
+  async submit(actor: Actor, value: unknown, options: { forceProposal?: boolean; audit?: Pick<MutationContext, 'conversationId' | 'approvalId'>; beforePersist?: (tx: Db, commands: Command[]) => Promise<{ reuseProposalId?: string } | void>; afterProposal?: (tx: Db, proposalId: string, commands: Command[]) => Promise<void> } = {}): Promise<any> {
     const input = submitSchema.parse(value);
     const requestHash = digest(input.commands);
     const response = await commandTransaction(async (tx) => {
@@ -460,10 +460,16 @@ export class CommandService {
       // Automatic grants cover the requested task's fields. Effects on related
       // tasks always need owner confirmation, even with a valid preview ticket.
       const connectionCascade = current.kind === 'connection' && needsPreview(commands, inspections);
-      if (!options.forceProposal && !connectionCascade && canApply(current, commands)) result = { status: 'applied', requestId: input.requestId, ...await executeBatch(tx, current, commands, undefined, options.audit) };
+      const hooked = options.beforePersist ? await options.beforePersist(tx, commands) : undefined;
+      if (hooked?.reuseProposalId) {
+        const proposal = await tx.proposal.findUnique({ where: { id: hooked.reuseProposalId } });
+        if (!proposal) throw new DomainError('NOT_FOUND', '可复用的提议不存在', 404);
+        result = { status: 'pending_approval', requestId: input.requestId, proposalId: proposal.id, proposalRevision: proposal.revision, preview: JSON.parse(proposal.preview), reused: true };
+      } else if (!options.forceProposal && !connectionCascade && canApply(current, commands)) result = { status: 'applied', requestId: input.requestId, ...await executeBatch(tx, current, commands, undefined, options.audit) };
       else {
         const timestamp = now();
         const proposal = await tx.proposal.create({ data: { actorId: current.id, connectionId: current.connectionId, commands: JSON.stringify(commands), preconditions: JSON.stringify({ actor: current, audit: options.audit, inspections: inspections.map((item) => item.preconditions) }), preview: JSON.stringify(inspections.map((item) => item.preview)), createdAt: timestamp, updatedAt: timestamp } });
+        if (options.afterProposal) await options.afterProposal(tx, proposal.id, commands);
         result = { status: 'pending_approval', requestId: input.requestId, proposalId: proposal.id, proposalRevision: proposal.revision, preview: JSON.parse(proposal.preview) };
       }
       await tx.requestReceipt.create({ data: { actorId: current.id, requestId: input.requestId, requestHash, response: JSON.stringify({ result, scopeRevision: current.revision }), createdAt: now() } });

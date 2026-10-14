@@ -3,6 +3,8 @@ import { ModelAdapter } from '../agent.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { assertOwner, type Actor } from './security.js';
 import { canonical, CommandService, type Command } from './commands.js';
+import { identityFromCommand, lookupSuggestion, memorySuggestionHooks, suggestionKey } from './auto-memory-suggestions.js';
+import { scopeKey } from './auto-memory-types.js';
 import { checkKnowledgeScope, evidenceSchema, knowledgeFailure, knowledgeHash, knowledgeNow, takeKnowledgeSnapshot, validateKnowledgeEvidence, type KnowledgeSnapshot } from './knowledge.js';
 
 const sourceIds = z.array(z.string().min(1)).max(100).optional();
@@ -106,7 +108,27 @@ export class OrganizationService {
         const proposed = data.commands.map((command) => ({ ...command, evidence: refs })) as Command[];
         const semanticKey = (items: Command[]) => canonical(items.map(({ entityId: _id, clientRef: _ref, ...command }) => command));
         const existing = generator.kind === 'connection' ? undefined : (await prisma.proposal.findMany({ where: { status: 'pending', actorId: { startsWith: 'organization:' } }, orderBy: { createdAt: 'desc' }, take: 200 })).find((proposal) => semanticKey(JSON.parse(proposal.commands) as Command[]) === semanticKey(proposed));
-        submission = existing ? { status: 'pending_approval', proposalId: existing.id, proposalRevision: existing.revision, reused: true } : await new CommandService().submit(generator, { requestId: `organization:${row.id}:${hash}`, commands: proposed }, { forceProposal: true });
+        if (existing) submission = { status: 'pending_approval', proposalId: existing.id, proposalRevision: existing.revision, reused: true };
+        else {
+          const scope = scopeKey(row.topicId);
+          const kept: Command[] = [];
+          let reusedProposalId: string | undefined;
+          for (const command of proposed) {
+            if (command.kind.startsWith('memory.')) {
+              const identity = identityFromCommand(command, scope);
+              if (identity?.title && identity.content && identity.evidence.length) {
+                const saved = await lookupSuggestion(prisma, suggestionKey(identity));
+                if (saved) { reusedProposalId = saved.proposalId; continue; }
+              }
+            }
+            kept.push(command);
+          }
+          if (!kept.length && reusedProposalId) submission = { status: 'pending_approval', proposalId: reusedProposalId, reused: true };
+          else if (kept.length) {
+            const hooks = memorySuggestionHooks(row.topicId, knowledgeNow());
+            submission = await new CommandService().submit(generator, { requestId: `organization:${row.id}:${hash}`, commands: kept }, { forceProposal: true, beforePersist: hooks.beforePersist, afterProposal: hooks.afterProposal });
+          }
+        }
         const proposalId = (submission as { proposalId?: string }).proposalId;
         if (proposalId) proposalIds.push(proposalId);
         if ((submission as { status?: string }).status !== 'pending_approval') throw knowledgeFailure('UNEXPECTED_APPLY', '整理提议必须等待人工确认');

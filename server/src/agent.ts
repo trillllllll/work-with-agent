@@ -7,6 +7,9 @@ import { SettingsService, type ModelConfig } from './application/settings.js';
 import { ContextService, ConversationService } from './application/conversation.js';
 import { CommandService, canonical } from './application/commands.js';
 import { ownerActor } from './application/security.js';
+import { checkKnowledgeScope } from './application/knowledge.js';
+import { appendAutoMemoryAssistant, beginAutoMemoryTurn, completeAutoMemoryTurn, failAutoMemoryTurn } from './application/auto-memory-chat.js';
+import { prisma } from './infrastructure/prisma.js';
 import { DomainError } from './domain/task.js';
 import { readStoredApproval, type TaskBatchPreview } from './domain/task-batch-types.js';
 import { approveTaskBatch, prepareTaskBatch, rejectTaskBatch, taskBatchCommitError } from './application/chat-task-batch.js';
@@ -139,7 +142,19 @@ export class AgentService {
   async *chatStream(input: { conversationId?: string; message: string; pageContext?: PageContext; signal?: AbortSignal }): AsyncGenerator<ChatEvent> {
     const conversationId = input.conversationId ?? (await this.conversations.create()).id;
     if (input.conversationId && !(await this.conversations.get(conversationId))) throw Object.assign(new Error('会话不存在'), { status: 404 });
+    const turnTopicId = input.pageContext?.topicId ?? null;
+    await checkKnowledgeScope(prisma, ownerActor, turnTopicId);
     const sourceUserMessageId = (await this.conversations.addMessage(conversationId, 'user', input.message)).id;
+    await beginAutoMemoryTurn({ conversationId, userMessageId: sourceUserMessageId, topicId: turnTopicId, createdAt: new Date().toISOString() });
+    let turnOpen = true;
+    const finishTurn = async (status: 'completed' | 'failed') => {
+      if (!turnOpen) return;
+      turnOpen = false;
+      const at = new Date().toISOString();
+      if (status === 'completed') await completeAutoMemoryTurn(sourceUserMessageId, at);
+      else await failAutoMemoryTurn(sourceUserMessageId, at);
+    };
+    try {
     const assembled = await this.context.assemble(conversationId, input.pageContext ?? {}, input.signal);
     const messages: ModelMessage[] = [{ role: 'system', content: assembled.systemPrompt }, ...assembled.messages];
     const failureCounts = new Map<string, number>();
@@ -154,13 +169,14 @@ export class AgentService {
           if (delta.toolCalls) calls.push(...delta.toolCalls);
         }
         await this.conversations.updateMessage(assistantId, { content: text, status: 'completed' });
+        await appendAutoMemoryAssistant(sourceUserMessageId, assistantId);
         yield { type: 'message_end', conversationId, messageId: assistantId };
       } catch (error) {
         await this.conversations.updateMessage(assistantId, { content: text, status: 'failed' });
         if (error && typeof error === 'object') (error as { conversationId?: string }).conversationId ??= conversationId;
         throw error;
       }
-      if (!calls.length) { yield { type: 'done', conversationId }; return; }
+      if (!calls.length) { yield { type: 'done', conversationId }; await finishTurn('completed'); return; }
       calls.forEach((call, index) => { call.id ??= `call_${round}_${index}`; });
       for (const call of calls) {
         if (call.name === 'create_task' && call.arguments.topicId === undefined && input.pageContext?.topicId) call.arguments.topicId = input.pageContext.topicId;
@@ -263,13 +279,15 @@ export class AgentService {
         yield { type: 'message_start', conversationId, messageId: message.id };
         yield { type: 'message_delta', conversationId, messageId: message.id, delta: explanation };
         yield { type: 'message_end', conversationId, messageId: message.id };
+        await appendAutoMemoryAssistant(sourceUserMessageId, message.id);
         yield { type: 'done', conversationId };
+        await finishTurn('completed');
         return;
       }
       // A write call is intentionally never returned to the model as if it
       // had executed. The approval endpoint owns the later side effect.
-      if (hasPendingApproval) { yield { type: 'done', conversationId }; return; }
-      if (!toolMessages.length) { yield { type: 'done', conversationId }; return; }
+      if (hasPendingApproval) { yield { type: 'done', conversationId }; await finishTurn('completed'); return; }
+      if (!toolMessages.length) { yield { type: 'done', conversationId }; await finishTurn('completed'); return; }
       messages.push({
         role: 'assistant',
         content: text || null,
@@ -277,7 +295,12 @@ export class AgentService {
       });
       messages.push(...toolMessages);
     }
+    await finishTurn('failed');
     throw modelError('Tool 调用轮次超过上限', 'TOOL_ROUND_LIMIT');
+    } catch (error) {
+      await finishTurn('failed');
+      throw error;
+    }
   }
 
   async chat(input: { conversationId?: string; message: string; pageContext?: PageContext; signal?: AbortSignal }) { const events: ChatEvent[] = []; for await (const event of this.chatStream(input)) events.push(event); return { conversationId: events.find((event) => event.conversationId)?.conversationId, events }; }

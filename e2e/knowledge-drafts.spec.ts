@@ -33,9 +33,9 @@ test('固定说明迟到保存只更新原清单，保留保存后的新输入�
   const first = await project(request, '说明清单 A');
   const second = await project(request, '说明清单 B');
   await page.goto('/#/knowledge/materials');
-  const scope = page.getByLabel('资料所属清单', { exact: true });
+  const scope = page.getByLabel('所属清单', { exact: true });
   await scope.selectOption(first);
-  await page.getByRole('button', { name: '当前简报', exact: true }).click();
+  await page.getByRole('tab', { name: '当前进展', exact: true }).click();
   const notes = page.getByLabel('简报固定说明', { exact: true });
   await notes.fill('A 已提交的说明');
   const delayed = await holdResponse(page, '/api/v1/knowledge/brief', 'PUT');
@@ -61,7 +61,7 @@ test('材料保存锁住提交表单，切清单的新编辑实例不受旧响�
   const first = await project(request, '材料清单 A');
   const second = await project(request, '材料清单 B');
   await page.goto('/#/knowledge/materials');
-  const scope = page.getByLabel('资料所属清单', { exact: true });
+  const scope = page.getByLabel('所属清单', { exact: true });
   await scope.selectOption(first);
   await page.getByRole('button', { name: '保存材料', exact: true }).click();
   await page.getByLabel('材料标题', { exact: true }).fill('A 的材料');

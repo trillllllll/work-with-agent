@@ -9,6 +9,7 @@ import { KnowledgeService, knowledgeFailure } from '../application/knowledge.js'
 import { KnowledgeGraph } from '../application/knowledge-graph.js';
 import { ModelAdapter } from '../agent.js';
 import { OrganizationService } from '../application/knowledge-organizations.js';
+import { sharedAutoMemoryService } from '../application/auto-memory.js';
 
 const topic = (value: unknown) => typeof value === 'string' && value && value !== 'inbox' && value !== 'null' ? value : null;
 const pagination = (query: Record<string, unknown>) => z.object({ cursor: z.coerce.number().int().min(0).optional(), limit: z.coerce.number().int().min(1).max(100).optional() }).parse(query);
@@ -111,6 +112,43 @@ export function createKnowledgeRouter(service = new KnowledgeService(), organiza
       const brief = await prisma.workingBrief.findUnique({ where: { id: topicId ? `topic:${topicId}` : 'inbox' } });
       const bundle = { format: 'work-with-agent-knowledge-v1', topicId, exportedAt: new Date().toISOString(), materials, memories, manualNotes: brief?.manualNotes ?? '' };
       res.set({ 'Content-Disposition': 'attachment; filename="project-knowledge.json"', 'Content-Type': 'application/json; charset=utf-8' }).send(JSON.stringify(bundle, null, 2));
+    } catch (error) { next(error); }
+  });
+  const autoMemory = () => sharedAutoMemoryService();
+  const autoTopic = (value: unknown) => {
+    if (value === null || value === undefined || value === '' || value === 'inbox' || value === 'null') return null;
+    if (typeof value !== 'string') throw knowledgeFailure('NOT_FOUND', '清单不存在', 404);
+    return value;
+  };
+  router.get('/auto-memory', async (req, res, next) => {
+    try {
+      assertOwner(getActor(req));
+      res.json({ data: await autoMemory().state(autoTopic(req.query.topicId)), error: null });
+    } catch (error) { next(error); }
+  });
+  router.patch('/auto-memory', async (req, res, next) => {
+    try {
+      const body = z.object({ topicId: z.string().min(1).nullable(), enabled: z.boolean(), expectedRevision: z.number().int().positive() }).parse(req.body);
+      res.json({ data: await autoMemory().setEnabled(getActor(req), autoTopic(body.topicId), body.enabled, body.expectedRevision), error: null });
+    } catch (error) { next(error); }
+  });
+  router.post('/auto-memory/run', async (req, res, next) => {
+    try {
+      const body = z.object({ topicId: z.string().min(1).nullable(), requestId: z.string().uuid() }).parse(req.body);
+      res.json({ data: await autoMemory().run(getActor(req), autoTopic(body.topicId), body.requestId), error: null });
+    } catch (error) { next(error); }
+  });
+  router.post('/auto-memory/jobs/:id/retry', async (req, res, next) => {
+    try {
+      const body = z.object({ requestId: z.string().uuid() }).parse(req.body);
+      res.json({ data: await autoMemory().retry(getActor(req), String(req.params.id), body.requestId), error: null });
+    } catch (error) { next(error); }
+  });
+  router.get('/auto-memory/proposals', async (req, res, next) => {
+    try {
+      assertOwner(getActor(req));
+      const page = z.object({ cursor: z.coerce.number().int().min(0).default(0), limit: z.coerce.number().int().min(1).max(100).default(20) }).parse(req.query);
+      res.json({ data: await autoMemory().proposals(autoTopic(req.query.topicId), page.cursor, page.limit), error: null });
     } catch (error) { next(error); }
   });
   return router;

@@ -14,6 +14,7 @@ import { OrganizationService, type OrganizationModel } from './knowledge-organiz
 import { ReviewService } from './reviews.js';
 import { latestOccurrence, scheduledInstant } from './reviews-clock.js';
 import { createKnowledgeRouter } from '../routes/knowledge.js';
+import { clearAutoMemory } from './auto-memory.js';
 import { clearLibraryData, clearLibraryTaxonomy } from './library/cleanup.js';
 
 registerKnowledgeCommands();
@@ -22,6 +23,7 @@ const commands = new CommandService();
 const knowledge = new KnowledgeService();
 process.env.KNOWLEDGE_STORAGE_ROOT = resolve(process.cwd(), 'data/test-knowledge-blobs');
 async function clean() {
+  await clearAutoMemory(prisma);
   await clearLibraryData(prisma);
   await prisma.reviewBatch.deleteMany(); await prisma.reviewRule.deleteMany();
   await prisma.organizationRequest.deleteMany(); await prisma.workingBrief.deleteMany();

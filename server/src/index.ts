@@ -3,6 +3,7 @@ import { DESKTOP_PORT, isDesktopPackage, isServerMode, publicWorkspaceUrl } from
 import { createOwnerBootstrapToken, resolveOwnerKeyHash } from './application/security.js';
 import { reconcileLocalRuns } from './application/runs.js';
 import { startReviewScheduler } from './application/reviews.js';
+import { sharedAutoMemoryService, startAutoMemoryScheduler } from './application/auto-memory.js';
 import { recoverInterruptedUploads } from './application/library/uploads.js';
 import { startLibraryWorker } from './application/library/worker.js';
 import { mountDesktopStatic } from './desktop-static.js';
@@ -20,6 +21,8 @@ async function start() {
   // Fail fast on a malformed configured key; generate and log one only on first boot.
   if (isServerMode()) resolveOwnerKeyHash();
   if (process.env.WWA_STATIC_DIR) mountDesktopStatic(app, process.env.WWA_STATIC_DIR);
+  const autoMemory = sharedAutoMemoryService();
+  await autoMemory.prepareStartup();
 
   const port = Number(process.env.PORT) || (isDesktopPackage() ? DESKTOP_PORT : 3016);
   const host = process.env.WWA_BIND_HOST ?? (isServerMode() ? '0.0.0.0' : '127.0.0.1');
@@ -53,11 +56,12 @@ async function start() {
   const timer = setInterval(() => { void reconcileLocalRuns(); }, 2_000);
   timer.unref();
   const stopReviews = startReviewScheduler(reviewService);
+  const stopAutoMemory = startAutoMemoryScheduler(autoMemory);
   void recoverInterruptedUploads();
   const stopLibrary = startLibraryWorker();
   const { startSnapshotScheduler } = await import('./application/snapshots.js');
   const stopSnapshots = startSnapshotScheduler();
-  server.on('close', () => { clearInterval(timer); stopReviews(); stopLibrary(); stopSnapshots(); });
+  server.on('close', () => { clearInterval(timer); stopReviews(); stopAutoMemory(); stopLibrary(); stopSnapshots(); });
 }
 
 start().catch((error) => {

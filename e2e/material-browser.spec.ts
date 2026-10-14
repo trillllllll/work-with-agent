@@ -17,20 +17,24 @@ test.beforeEach(async ({ page }) => {
 });
 test.afterAll(() => e2eDatabase.$disconnect());
 
-test('旧资料入口进入资料库，记忆和简报仍可从资料库打开', async ({ page }) => {
+test('工作上下文和资料库分别打开，记忆和当前进展仍可从资料库进入', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.goto('/#/knowledge');
+  await expect(page.getByRole('heading', { name: '工作上下文', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: '当前进展', exact: true })).toHaveAttribute('aria-selected', 'true');
+
+  await page.goto('/#/library');
   await expect(page).toHaveURL(/#\/library$/);
   await expect(page.getByRole('heading', { name: '资料库', exact: true })).toBeVisible();
   await expect(page.getByRole('dialog', { name: '材料', exact: true })).toHaveCount(0);
 
   await page.getByRole('button', { name: '记忆', exact: true }).click();
-  await expect(page).toHaveURL(/#\/knowledge\/memories$/);
-  await expect(page.getByRole('button', { name: '记录记忆', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/#\/knowledge\/memories\?topicId=/);
+  await expect(page.getByRole('button', { name: '手动记录', exact: true })).toBeVisible();
 
   await page.goto('/#/library');
-  await page.getByRole('button', { name: '当前简报', exact: true }).click();
-  await expect(page).toHaveURL(/#\/knowledge\/brief$/);
+  await page.getByRole('button', { name: '当前进展', exact: true }).click();
+  await expect(page).toHaveURL(/#\/knowledge\/brief\?topicId=/);
   await expect(page.getByLabel('简报固定说明', { exact: true })).toBeVisible();
 });
 

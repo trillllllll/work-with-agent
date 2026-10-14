@@ -4,7 +4,7 @@ import { prisma } from '../infrastructure/prisma.js';
 import { DomainError } from '../domain/task.js';
 import { recordChange, type MutationContext } from './workspace-store.js';
 import { assertOwner, assertTopicAccess, type Actor } from './security.js';
-import { registerCommandHandler, registerEvidenceValidator, type Command } from './commands.js';
+import { registerCommandHandler, registerEvidenceValidator, runSerializedCommand, type Command } from './commands.js';
 import { registerUndoHandler, type UndoRecord } from './undo-registry.js';
 import { jsonSchema } from './command-catalog.js';
 import { knowledgeHash, knowledgeStorageRoot, readKnowledgeBlob, storeKnowledgeBlob } from './knowledge-blobs.js';
@@ -314,6 +314,19 @@ async function executeKnowledgeCommand(tx: KnowledgeDb, actor: Actor, command: C
   const evidence = data.evidence ?? (existing ? readEvidence(existing.evidence) : []);
   const labels = data.labels ?? (existing ? readLabels(existing.labels) : []);
   return persistMemory(tx, actor, command, context, { existing, topicId: existing ? existing.topicId : 'topicId' in data ? data.topicId : null, title: data.title ?? existing!.title, content: data.content ?? existing!.content, kind: data.kind ?? existing!.kind, status: ('status' in data && data.status) || existing?.status || 'active', evidence, reason: data.reason, importance: data.importance ?? existing?.importance ?? 3, labels, origin: memoryOrigin(actor, data.origin, existing?.origin) });
+}
+
+/** Private archive of one completed built-in chat excerpt. Callers cannot choose an arbitrary id. */
+export async function createAutoChatMaterial(spec: { materialId: string; topicId: string | null; title: string; content: string; metadata: Record<string, unknown> }) {
+  if (!spec.materialId.startsWith('auto-chat:')) throw knowledgeFailure('INVALID_CONTENT', '自动聊天摘录标识无效', 400);
+  const actor: Actor = { id: 'auto-memory-archive', kind: 'internal', topicIds: spec.topicId ? [spec.topicId] : [], includeInbox: spec.topicId === null, autoActions: [], revision: 1 };
+  const existing = await prisma.material.findUnique({ where: { id: spec.materialId } });
+  if (existing) return existing;
+  return runSerializedCommand((tx) => executeKnowledgeCommand(tx, actor, {
+    kind: 'material.create',
+    entityId: spec.materialId,
+    input: { topicId: spec.topicId, kind: 'thread', title: spec.title, content: spec.content, metadata: spec.metadata },
+  }, { source: 'agent', actor, entityId: spec.materialId }));
 }
 
 export function registerKnowledgeCommands() {

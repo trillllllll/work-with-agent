@@ -23,7 +23,7 @@ test('清单页只留标题、上下文、录入和任务', async ({ page, reque
   await expect(main.getByRole('heading', { name: '布局清单', exact: true })).toBeVisible();
   await expect(main.getByText('把下一步放在最上面', { exact: true })).toBeVisible();
   await expect(main.getByText('固定说明第一行', { exact: false })).toBeVisible();
-  await expect(main.getByRole('button', { name: '项目资料', exact: true })).toBeVisible();
+  await expect(main.getByRole('button', { name: '工作上下文', exact: true })).toBeVisible();
   await expect(main.getByText('资料、记忆与当前简报')).toHaveCount(0);
   await expect(main.getByText('探索与成果')).toHaveCount(0);
   await expect(main.getByRole('button', { name: '新建任务', exact: true })).toHaveCount(0);
@@ -43,9 +43,9 @@ test('清单页只留标题、上下文、录入和任务', async ({ page, reque
   await expect(page.getByRole('dialog', { name: '任务详情', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '关闭任务详情', exact: true }).click();
 
-  await main.getByRole('button', { name: '项目资料', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '项目资料', exact: true })).toBeVisible();
-  await expect(page.getByLabel('资料所属清单')).toHaveValue(topic.id);
+  await main.getByRole('button', { name: '工作上下文', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '工作上下文', exact: true })).toBeVisible();
+  await expect(page.getByLabel('所属清单')).toHaveValue(topic.id);
 
   await page.goto('/#/inbox');
   await expect(page.getByRole('button', { name: '新建任务', exact: true })).toBeVisible();

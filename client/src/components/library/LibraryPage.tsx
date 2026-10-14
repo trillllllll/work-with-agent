@@ -11,6 +11,7 @@ import { TaskLinkPicker } from './TaskLinkPicker.js';
 import { clearLibraryFilters, libraryFilters, libraryPageSize, librarySearchParams, patchLibrary, useLibrarySnapshot } from './store.js';
 import { extractionCopy, formatUpdated, kindLabels, normalizeRow, type AnswerResult, type LibraryFolder, type LibraryPreviewTarget, type LibraryRow, type LibraryTag, type MaterialDetail, type Page } from './types.js';
 import { enqueueUploads, filesFromList, filesFromTransfer, onLibraryChanged } from './upload.js';
+import { knowledgeHash } from '@/hooks/useHashRoute.js';
 
 type Editor =
   | { kind: 'folder-create'; parentId: string | null }
@@ -19,7 +20,7 @@ type Editor =
   | { kind: 'tag-rename'; tag: LibraryTag }
   | { kind: 'material-rename'; id: string; title: string };
 
-export function LibraryPage({ topics, onOpenTask }: { topics: Topic[]; onOpenTask: (taskId: string) => void | Promise<void> }) {
+export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topics: Topic[]; selectedTopicId?: string; onOpenTask: (taskId: string) => void | Promise<void> }) {
   const snapshot = useLibrarySnapshot();
   const client = useQueryClient();
   const surfaceRef = useRef<HTMLElement>(null);
@@ -174,8 +175,8 @@ export function LibraryPage({ topics, onOpenTask }: { topics: Topic[]; onOpenTas
       <header className="library-titlebar">
         <h1 className="library-title">资料库</h1>
         <div className="library-title-links">
-          <button type="button" className="library-btn" onClick={() => { window.location.hash = '/knowledge/memories'; }}>记忆</button>
-          <button type="button" className="library-btn" onClick={() => { window.location.hash = '/knowledge/brief'; }}>当前简报</button>
+          <button type="button" className="library-btn" onClick={() => { window.location.hash = knowledgeHash('memories', selectedTopicId); }}>记忆</button>
+          <button type="button" className="library-btn" onClick={() => { window.location.hash = knowledgeHash('brief', selectedTopicId); }}>当前进展</button>
         </div>
       </header>
       <div className="library-toolbar">

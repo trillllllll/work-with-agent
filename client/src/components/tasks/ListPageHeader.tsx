@@ -31,7 +31,7 @@ export function ListPageHeader({ page, title, scoped, archived, today, detail, b
         <div className="min-w-0 space-y-1">
           <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
           {page === 'board' && detail?.goal && <p className="line-clamp-1 text-sm text-muted-foreground">{detail.goal}</p>}
-          {page === 'board' && detail && <button type="button" className="topic-jump" onClick={onOpenKnowledge}><Library aria-hidden />项目资料<ChevronRight aria-hidden /></button>}
+          {page === 'board' && detail && <button type="button" className="topic-jump" onClick={onOpenKnowledge}><Library aria-hidden />工作上下文<ChevronRight aria-hidden /></button>}
           {page === 'board' && briefNotes && <p className="line-clamp-2 text-sm whitespace-pre-wrap text-muted-foreground">{briefNotes}</p>}
           {filterSummary && <p className="text-xs text-muted-foreground">{filterSummary}</p>}
           {page === 'inbox' && <p className="max-w-xl text-xs text-muted-foreground">这是一个分类，这里只显示放在收集箱里的任务。</p>}

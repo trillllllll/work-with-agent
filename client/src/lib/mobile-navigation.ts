@@ -47,7 +47,7 @@ export const MOBILE_NAVIGATION_LABELS: Record<MobileNavigationView, string> = {
   settings: '设置',
   connections: 'AI 连接',
   proposals: '待确认',
-  library: '项目资料',
+  library: '资料库',
   runs: 'AI 执行',
   reviews: '定期回顾',
   plan: '规划',

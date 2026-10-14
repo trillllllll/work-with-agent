@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { DomainError } from '../domain/task.js';
 import { prisma } from '../infrastructure/prisma.js';
+import { memorySuggestionHooks } from './auto-memory-suggestions.js';
 import { CommandService, type Command } from './commands.js';
 import { knowledgeSource, readEvidence, readLabels, type EvidenceRef } from './knowledge.js';
 import { internalActor } from './security.js';
@@ -284,7 +285,8 @@ export async function submitMemoryProposal(args: Record<string, unknown>, contex
   if (invalid) throw failure('INVALID_TOOL_ARGUMENTS', invalid, 400);
   const topicId = targetTopicId(args.target, context.topicId);
   const commands = await commandsFor(args.action as MemoryAction, args, topicId, context);
-  const response = await new CommandService().submit(internalActor, { requestId: `builtin:${randomUUID()}`, commands }, { audit: { conversationId: context.conversationId, approvalId: context.approvalId } });
+  const hooks = memorySuggestionHooks(topicId, new Date().toISOString());
+  const response = await new CommandService().submit(internalActor, { requestId: `builtin:${randomUUID()}`, commands }, { audit: { conversationId: context.conversationId, approvalId: context.approvalId }, beforePersist: hooks.beforePersist, afterProposal: hooks.afterProposal });
   if (response.status !== 'pending_approval') throw failure('APPROVAL_REQUIRED', '记忆写入必须等待确认', 409);
   return { proposalId: response.proposalId as string, proposalRevision: response.proposalRevision as number };
 }

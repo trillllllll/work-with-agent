@@ -720,3 +720,80 @@ model PlanTimeBand {
 
   @@map("plan_time_bands")
 }
+
+model AutoMemoryScope {
+  id              String  @id
+  topicId         String?
+  enabled         Boolean @default(true)
+  revision        Int     @default(1)
+  initializedAt   String?
+  dirtySince      String?
+  dueAt           String?
+  lastStartedAt   String?
+  lastCompletedAt String?
+  createdAt       String
+  updatedAt       String
+}
+
+model AutoMemorySource {
+  id              String  @id
+  scopeKey        String
+  sourceType      String
+  sourceId        String
+  part            Int
+  revision        Int
+  observedHash    String
+  processedHash   String?
+  failedHash      String?
+  available       Boolean @default(true)
+  firstObservedAt String
+  changedAt       String
+  updatedAt       String
+
+  @@unique([scopeKey, sourceType, sourceId, part])
+  @@index([scopeKey, available, changedAt])
+}
+
+model AutoMemoryJob {
+  id             String  @id @default(cuid())
+  scopeKey       String
+  inputHash      String
+  attempt        Int     @default(1)
+  status         String  @default("queued")
+  snapshot       String
+  modelOutput    String?
+  proposalIds    String  @default("[]")
+  leaseToken     String?
+  leaseExpiresAt String?
+  errorCode      String?
+  errorMessage   String?
+  createdAt      String
+  startedAt      String?
+  completedAt    String?
+
+  @@unique([scopeKey, inputHash, attempt])
+  @@index([status, createdAt])
+}
+
+model AutoMemoryTurn {
+  id                  String  @id
+  conversationId      String
+  topicId             String?
+  userMessageId       String  @unique
+  assistantMessageIds String  @default("[]")
+  status              String  @default("collecting")
+  materialIds         String  @default("[]")
+  createdAt           String
+  completedAt         String?
+
+  @@index([status, createdAt])
+}
+
+model MemorySuggestionKey {
+  id         String @id
+  scopeKey   String
+  proposalId String
+  createdAt  String
+
+  @@index([scopeKey, proposalId])
+}

@@ -17,7 +17,7 @@ test('外部整理请求展示可复制提示词，已提交的请求不再展�
   const submitted = await owner(request, '/api/v1/knowledge/organizations', { topicId: null, purpose: '已提交的整理', provider: 'external' });
   await owner(request, `/api/v1/knowledge/organizations/${submitted.id}/candidates`, { summary: '有一条待办', commands: [{ kind: 'task.create', input: { title: '整理产生的待办' } }] });
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
-  await page.goto('/#/knowledge/materials');
+  await page.goto('/#/knowledge/brief');
   await page.getByText('AI 辅助整理', { exact: true }).click();
   await expect(page.getByLabel('整理方式', { exact: true })).toHaveValue('external');
   await expect(page.getByRole('button', { name: '准备整理', exact: true })).toBeEnabled();
