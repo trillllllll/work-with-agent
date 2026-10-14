@@ -130,7 +130,7 @@ function formatBytes(size: number) {
 function BackupSection() {
   const queryClient = useQueryClient();
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
-  const [restoreConfirmation, setRestoreConfirmation] = useState(false);
+  const [restoreMode, setRestoreMode] = useState<'merge' | 'replace' | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const snapshotsQuery = useQuery<SnapshotEntry[]>({ queryKey: ['server-snapshots'], queryFn: () => api('/api/v1/server/snapshots') });
 
@@ -148,10 +148,10 @@ function BackupSection() {
     toast.success('快照已开始下载。');
   }
 
-  const restore = useMutation<void, Error, void>({
-    mutationFn: async () => {
+  const restore = useMutation<void, Error, 'merge' | 'replace'>({
+    mutationFn: async (mode) => {
       if (!restoreFile) throw new Error('请先选择快照文件');
-      const response = await fetch('/api/v1/server/snapshot/import', {
+      const response = await fetch(`/api/v1/server/snapshot/import?mode=${mode}`, {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/zip', ...authHeaders() },
@@ -159,6 +159,13 @@ function BackupSection() {
       });
       const body = await response.json().catch(() => ({ error: '响应格式错误' }));
       if (!response.ok) throw new Error(typeof body.error === 'string' ? body.error : '恢复失败');
+      if (mode === 'merge') {
+        const inserted = body.data?.inserted ?? 0;
+        const skipped = body.data?.skipped ?? 0;
+        toast.success(`已并入 ${inserted} 条，跳过 ${skipped} 条已有记录。`);
+        await queryClient.invalidateQueries();
+        return;
+      }
       // The service exits to apply the restored database; wait for it to come back.
       for (let attempt = 0; attempt < 120; attempt += 1) {
         await new Promise((done) => setTimeout(done, 1_000));
@@ -170,18 +177,19 @@ function BackupSection() {
       }
       window.location.reload();
     },
-    onSuccess: () => { setRestoreFile(null); setRestoreConfirmation(false); if (fileInput.current) fileInput.current.value = ''; void queryClient.invalidateQueries({ queryKey: ['server-snapshots'] }); },
-    onError: (error) => { setRestoreConfirmation(false); toast.error(error.message); },
+    onSuccess: () => { setRestoreFile(null); setRestoreMode(null); if (fileInput.current) fileInput.current.value = ''; void queryClient.invalidateQueries({ queryKey: ['server-snapshots'] }); },
+    onError: (error) => { setRestoreMode(null); toast.error(error.message); },
   });
 
   return (
     <section className="mt-10 border-t glass-divider pt-6">
       <h2 className="text-lg font-semibold">备份与恢复</h2>
-      <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">快照包含全部工作数据（任务、材料、对话、记忆）。下载的快照可在任何一台 Work With Agent 上恢复。</p>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">快照包含全部工作数据（任务、材料、对话、记忆）。并入会补上没有的记录并保留这边已有的 id。覆盖会用快照换掉当前库。</p>
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Button type="button" variant="outline" onClick={() => { void download().catch((error) => toast.error(error.message)); }}><Download className="size-4" />下载快照</Button>
         <input ref={fileInput} id="restore-file" type="file" accept=".zip" className="hidden" onChange={(event) => setRestoreFile(event.target.files?.[0] ?? null)} />
-        <Button type="button" variant="outline" disabled={!restoreFile || restore.isPending} onClick={() => setRestoreConfirmation(true)}><RotateCcw className="size-4" />{restore.isPending ? '正在恢复…' : '恢复此快照'}</Button>
+        <Button type="button" variant="outline" disabled={!restoreFile || restore.isPending} onClick={() => setRestoreMode('merge')}>{restore.isPending && restoreMode === 'merge' ? '正在并入…' : '并入此快照'}</Button>
+        <Button type="button" variant="outline" disabled={!restoreFile || restore.isPending} onClick={() => setRestoreMode('replace')}><RotateCcw className="size-4" />{restore.isPending && restoreMode === 'replace' ? '正在恢复…' : '恢复此快照'}</Button>
         <Button type="button" variant="ghost" onClick={() => fileInput.current?.click()}>{restoreFile ? `已选择：${restoreFile.name}` : '选择快照文件…'}</Button>
       </div>
       {!!snapshotsQuery.data?.length && (
@@ -194,14 +202,16 @@ function BackupSection() {
           ))}
         </ul>
       )}
-      {restoreConfirmation && (
+      {restoreMode && (
         <ConfirmDialog
-          title="恢复快照"
+          title={restoreMode === 'merge' ? '并入快照' : '恢复快照'}
           itemName={restoreFile?.name ?? '选中的快照'}
-          description="当前数据会先自动备份一份，然后用快照内容替换。恢复期间服务会短暂重启。"
+          description={restoreMode === 'merge'
+            ? '已有 id 保持原样，快照里缺的记录会补上，这边多出来的记录保留。设置和登录会话不动，服务不用重启。开始前会先自动备份一份。'
+            : '当前数据会先自动备份一份，然后用快照内容替换。恢复期间服务会短暂重启。'}
           busy={restore.isPending}
-          onCancel={() => setRestoreConfirmation(false)}
-          onConfirm={() => restore.mutate()}
+          onCancel={() => { if (!restore.isPending) setRestoreMode(null); }}
+          onConfirm={() => restore.mutate(restoreMode)}
         />
       )}
     </section>

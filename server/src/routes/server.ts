@@ -29,14 +29,29 @@ export function createServerRouter() {
       if (contentType !== 'application/zip' && contentType !== 'application/octet-stream') {
         throw new DomainError('VALIDATION_ERROR', '请以 application/zip 原始字节上传快照', 400);
       }
+      const requested = Array.isArray(req.query.mode) ? req.query.mode[0] : req.query.mode;
+      if (requested !== undefined && requested !== 'merge' && requested !== 'replace') {
+        throw new DomainError('VALIDATION_ERROR', 'mode 只能是 merge 或 replace', 400);
+      }
+      const mode = requested === 'merge' ? 'merge' : 'replace';
       const staging = await mkdtemp(join(tmpdir(), 'wwa-snapshot-import-'));
       try {
         const uploaded = join(staging, 'snapshot.zip');
         await streamToDisk(req, uploaded, snapshotUploadLimit);
-        const { manifest } = await importSnapshot(await readFile(uploaded));
-        res.json({ data: { imported: true, snapshotVersion: manifest.appVersion, schemaVersion: manifest.schemaVersion }, error: null });
-        // The SQLite connection still points at the replaced file's inode; restart to pick up the new database.
-        scheduleRestart();
+        const result = await importSnapshot(await readFile(uploaded), { mode });
+        res.json({
+          data: {
+            imported: true,
+            mode: result.mode,
+            inserted: result.inserted,
+            skipped: result.skipped,
+            snapshotVersion: result.manifest.appVersion,
+            schemaVersion: result.manifest.schemaVersion,
+          },
+          error: null,
+        });
+        // Replace swaps the database file at the next startup. Merge writes into the open file.
+        if (mode === 'replace') scheduleRestart();
       } finally {
         await rm(staging, { recursive: true, force: true });
       }

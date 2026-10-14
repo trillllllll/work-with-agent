@@ -1,4 +1,4 @@
-import { mkdtempSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, existsSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -128,6 +128,76 @@ describe('snapshot import', () => {
       await restored.$disconnect();
     }
     expect(existsSync(join(target, 'blobs', blobs.knowledgeHash('attachment-bytes')))).toBe(true);
+  }, 120_000);
+});
+
+describe('snapshot merge', () => {
+  it('adds missing rows, keeps existing ids, and does not replace the live database', async () => {
+    process.env.DATABASE_URL = `file:${join(scratch, 'source', 'agent-studio.db')}`;
+    process.env.WWA_DATA_DIR = join(scratch, 'source-data');
+    process.env.KNOWLEDGE_STORAGE_ROOT = join(scratch, 'source-blobs');
+    const source = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL });
+    try {
+      await source.topic.create({ data: { id: 'topic-snap', name: '快照清单' } });
+      await source.task.create({ data: { id: 'task-same', title: '快照里的标题', topicId: 'topic-snap' } });
+      await source.task.create({ data: { id: 'task-snap-name', title: '同名任务', topicId: 'topic-snap' } });
+      await source.entity.create({ data: { id: 'entity-snap', topicKey: 'same-key', name: '同名概念', createdAt: '2026-10-14T00:00:00.000Z', updatedAt: '2026-10-14T00:00:00.000Z' } });
+      await source.appSetting.upsert({ where: { id: 'default' }, create: { id: 'default', openaiApiKey: 'snapshot-key', createdAt: '2026-10-14T00:00:00.000Z', updatedAt: '2026-10-14T00:00:00.000Z' }, update: { openaiApiKey: 'snapshot-key' } });
+    } finally {
+      await source.$disconnect();
+    }
+    const extraBlob = await blobs.storeKnowledgeBlob(Buffer.from('only-in-snapshot'));
+    const exported = await getSnapshotZip();
+
+    const target = join(scratch, 'merge-target');
+    await mkdir(target, { recursive: true });
+    const targetUrl = `file:${join(target, 'agent-studio.db')}`;
+    process.env.DATABASE_URL = targetUrl;
+    process.env.WWA_DATA_DIR = join(target, 'data');
+    process.env.KNOWLEDGE_STORAGE_ROOT = join(target, 'blobs');
+    const { migrateDatabase } = await import('./db-migrate.js');
+    await migrateDatabase(targetUrl);
+    const live = new PrismaClient({ datasourceUrl: targetUrl });
+    try {
+      await live.topic.create({ data: { id: 'topic-live', name: '当前清单' } });
+      await live.topic.create({ data: { id: 'topic-only-live', name: '只在当前' } });
+      await live.task.create({ data: { id: 'task-same', title: '当前库标题', topicId: 'topic-live' } });
+      await live.task.create({ data: { id: 'task-live-name', title: '同名任务', topicId: 'topic-live' } });
+      await live.entity.create({ data: { id: 'entity-live', topicKey: 'same-key', name: '同名概念', createdAt: '2026-10-14T00:00:00.000Z', updatedAt: '2026-10-14T00:00:00.000Z' } });
+      await live.appSetting.upsert({ where: { id: 'default' }, create: { id: 'default', openaiApiKey: 'live-key', createdAt: '2026-10-14T00:00:00.000Z', updatedAt: '2026-10-14T00:00:00.000Z' }, update: { openaiApiKey: 'live-key' } });
+    } finally {
+      await live.$disconnect();
+    }
+    const existingBlob = join(target, 'blobs', blobs.knowledgeHash('attachment-bytes'));
+    await mkdir(join(target, 'blobs'), { recursive: true });
+    writeFileSync(existingBlob, Buffer.from('attachment-bytes'));
+    const earlier = new Date('2020-01-01T00:00:00Z');
+    utimesSync(existingBlob, earlier, earlier);
+
+    const response = await supertest(app).put('/api/v1/server/snapshot/import?mode=merge').set(owner()).set('Content-Type', 'application/zip').send(exported.body as Buffer);
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    expect(response.body.data.mode).toBe('merge');
+    expect(response.body.data.inserted).toBeGreaterThan(0);
+    expect(response.body.data.skipped).toBeGreaterThan(0);
+    expect(existsSync(`${join(target, 'agent-studio.db')}.pending-import`)).toBe(false);
+
+    const merged = new PrismaClient({ datasourceUrl: targetUrl });
+    try {
+      expect(await merged.topic.findMany({ where: { id: { in: ['topic-snap', 'topic-live', 'topic-only-live'] } }, select: { id: true }, orderBy: { id: 'asc' } })).toEqual([
+        { id: 'topic-live' },
+        { id: 'topic-only-live' },
+        { id: 'topic-snap' },
+      ]);
+      expect((await merged.task.findUniqueOrThrow({ where: { id: 'task-same' } })).title).toBe('当前库标题');
+      expect(await merged.task.count({ where: { id: 'task-same' } })).toBe(1);
+      expect(await merged.task.count({ where: { title: '同名任务' } })).toBe(2);
+      expect(await merged.entity.findMany({ where: { topicKey: 'same-key', name: '同名概念' }, select: { id: true } })).toEqual([{ id: 'entity-live' }]);
+      expect((await merged.appSetting.findUniqueOrThrow({ where: { id: 'default' } })).openaiApiKey).toBe('live-key');
+    } finally {
+      await merged.$disconnect();
+    }
+    expect(statSync(existingBlob).mtime.toISOString()).toBe(earlier.toISOString());
+    expect(existsSync(join(target, 'blobs', extraBlob))).toBe(true);
   }, 120_000);
 });
 

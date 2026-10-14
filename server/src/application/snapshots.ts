@@ -10,6 +10,7 @@ import { DomainError } from '../domain/task.js';
 import { serverVersion } from './security.js';
 import { desktopDataDir } from './desktop-paths.js';
 import { knowledgeStorageRoot } from './knowledge-blobs.js';
+import { mergeSnapshotDatabase } from './snapshot-merge.js';
 
 const appVersion = serverVersion;
 
@@ -108,25 +109,9 @@ function assertCompatible(manifest: SnapshotManifest) {
   }
 }
 
-type ImportOptions = { backup?: boolean };
+type ImportOptions = { backup?: boolean; mode?: 'merge' | 'replace' };
 
-/**
- * Validates a snapshot and stages its database as `<db>.pending-import` plus
- * merges knowledge blobs. The SQLite file cannot be replaced while this process
- * holds it open (notably on Windows), so {@link applyPendingImport} finishes the
- * swap at the next startup, before Prisma connects.
- */
-export async function importSnapshot(zipBytes: Buffer, options: ImportOptions = {}) {
-  const zip = await JSZip.loadAsync(zipBytes).catch(() => { throw new DomainError('SNAPSHOT_INVALID', '无法读取快照文件', 400); });
-  const manifest = await readManifest(zip);
-  assertCompatible(manifest);
-  const dbEntry = zip.file('agent-studio.db');
-  if (!dbEntry) throw new DomainError('SNAPSHOT_INVALID', '快照缺少数据库文件', 400);
-  if (options.backup !== false) await writeBackupSnapshot('import');
-  const live = databasePath();
-  await mkdir(dirname(live), { recursive: true });
-  await writeFile(`${live}.pending-import`, await dbEntry.async('nodebuffer'));
-  // Hash-addressed blobs merge cleanly: identical content is identical files.
+async function copySnapshotBlobs(zip: JSZip) {
   const blobsRoot = knowledgeStorageRoot();
   await mkdir(blobsRoot, { recursive: true });
   const entries = Object.values(zip.files).filter((entry) => !entry.dir && entry.name.startsWith('knowledge-blobs/') && !entry.name.slice('knowledge-blobs/'.length).includes('/'));
@@ -137,7 +122,42 @@ export async function importSnapshot(zipBytes: Buffer, options: ImportOptions = 
     if (existsSync(target)) continue;
     await writeFile(target, await entry.async('nodebuffer'));
   }
-  return { manifest };
+}
+
+/**
+ * Validates a snapshot and either stages a full database replace or merges rows
+ * into the live database. Replace finishes in {@link applyPendingImport} on the
+ * next startup, because the open SQLite file cannot be swapped on Windows.
+ * Merge keeps existing primary keys, adds missing rows, and leaves live-only rows.
+ */
+export async function importSnapshot(zipBytes: Buffer, options: ImportOptions = {}) {
+  const mode = options.mode ?? 'replace';
+  const zip = await JSZip.loadAsync(zipBytes).catch(() => { throw new DomainError('SNAPSHOT_INVALID', '无法读取快照文件', 400); });
+  const manifest = await readManifest(zip);
+  assertCompatible(manifest);
+  const dbEntry = zip.file('agent-studio.db');
+  if (!dbEntry) throw new DomainError('SNAPSHOT_INVALID', '快照缺少数据库文件', 400);
+  if (options.backup !== false) await writeBackupSnapshot('import');
+  const live = databasePath();
+  await mkdir(dirname(live), { recursive: true });
+  const dbBytes = await dbEntry.async('nodebuffer');
+  await copySnapshotBlobs(zip);
+  if (mode === 'merge') {
+    if (!existsSync(live)) throw new DomainError('SNAPSHOT_MERGE_FAILED', '当前数据库不存在，无法并入', 500);
+    const staging = await mkdtemp(join(tmpdir(), 'wwa-snapshot-merge-'));
+    try {
+      const incoming = join(staging, 'incoming.db');
+      await writeFile(incoming, dbBytes);
+      const { migrateDatabase } = await import('../db-migrate.js');
+      await migrateDatabase(`file:${incoming}`);
+      const counts = await mergeSnapshotDatabase(live, incoming);
+      return { manifest, mode, ...counts };
+    } finally {
+      await rm(staging, { recursive: true, force: true });
+    }
+  }
+  await writeFile(`${live}.pending-import`, dbBytes);
+  return { manifest, mode, inserted: 0, skipped: 0 };
 }
 
 /** Moves a staged import into place. Called at startup, when no SQLite connection exists yet. */
