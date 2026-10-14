@@ -1,17 +1,19 @@
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::TcpStream;
+use std::net::{TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
-use tauri::{AppHandle, LogicalSize, Manager, RunEvent, WindowEvent};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, LogicalSize, Manager, RunEvent, Url, WindowEvent};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_window_state::StateFlags;
 
@@ -22,6 +24,25 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 struct ServerProcess(Mutex<Option<Child>>);
 
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LauncherConfig {
+    mode: String,
+    #[serde(default)]
+    remote_url: String,
+}
+
+impl LauncherConfig {
+    fn local() -> Self {
+        Self { mode: "local".to_string(), remote_url: String::new() }
+    }
+}
+
+/// Set once the remote workspace page signals it loaded a Work With Agent client.
+static LAUNCH_CONFIRMED: AtomicBool = AtomicBool::new(false);
+/// The bundled splash page URL, captured before the window navigates anywhere else.
+static SPLASH_URL: OnceLock<Url> = OnceLock::new();
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -31,6 +52,24 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
+        .plugin(
+            // The workspace client redirects to these sentinel paths to talk to the shell
+            // from either origin; both navigations are cancelled and handled here.
+            tauri::plugin::Builder::<tauri::Wry, ()>::new("wwa-navigation")
+                .on_navigation(|webview, url| {
+                    let path = url.path().trim_end_matches('/');
+                    if path == "/wwa-launcher-done" {
+                        LAUNCH_CONFIRMED.store(true, Ordering::SeqCst);
+                        return false;
+                    }
+                    if path == "/wwa-launcher" {
+                        open_launcher(webview.app_handle());
+                        return false;
+                    }
+                    true
+                })
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(
             // Omit VISIBLE. Exit persists is_visible(), so a hidden window would reopen hidden.
@@ -45,10 +84,12 @@ pub fn run() {
                 .build(),
         )
         .manage(ServerProcess(Mutex::new(None)))
+        .invoke_handler(tauri::generate_handler![launcher_config_get, launcher_config_set, launcher_retry])
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_min_size(Some(LogicalSize::new(578.0, 640.0)));
                 let _ = window.show();
+                let _ = SPLASH_URL.set(window.url().unwrap_or_else(|_| "index.html".parse().expect("splash url")));
                 let window_for_close = window.clone();
                 window.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
@@ -82,16 +123,25 @@ pub fn run() {
 }
 
 fn launch(app: &AppHandle) -> Result<(), String> {
+    let data = data_dir()?;
+    match read_launcher_config(&data) {
+        // First run without a choice yet: the splash page shows the mode picker on its own.
+        None => Ok(()),
+        Some(config) if config.mode == "remote" && !config.remote_url.is_empty() => launch_remote(app, &config.remote_url),
+        _ => launch_local(app, &data),
+    }
+}
+
+fn launch_local(app: &AppHandle, data: &Path) -> Result<(), String> {
     if let Some(message) = port_busy_message(probe_port(DESKTOP_PORT), DESKTOP_PORT) {
         return Err(message);
     }
     let (node, server, client) = bundled_paths(app)?;
-    let data = data_dir()?;
     for directory in ["knowledge-blobs", "runner", "workspace", "logs", "bin"] {
         fs::create_dir_all(data.join(directory)).map_err(|error| format!("无法创建数据目录：{error}"))?;
     }
     #[cfg(unix)]
-    write_mcp_launcher(&data, &node, &server.join("dist/mcp/index.js"))?;
+    write_mcp_launcher(data, &node, &server.join("dist/mcp/index.js"))?;
     let log = data.join("logs/server.log");
     let mut command = Command::new(&node);
     command
@@ -103,7 +153,7 @@ fn launch(app: &AppHandle) -> Result<(), String> {
         .env("WWA_PACKAGED", "1")
         .env("PORT", DESKTOP_PORT.to_string())
         .env("CLIENT_ORIGIN", format!("http://127.0.0.1:{DESKTOP_PORT}"))
-        .env("WWA_DATA_DIR", &data)
+        .env("WWA_DATA_DIR", data)
         .env("DATABASE_URL", format!("file:{}", data.join("agent-studio.db").display()))
         .env("KNOWLEDGE_STORAGE_ROOT", data.join("knowledge-blobs"))
         .env("WWA_RUNNER_DIR", data.join("runner"))
@@ -116,6 +166,7 @@ fn launch(app: &AppHandle) -> Result<(), String> {
     let stdout = child.stdout.take().ok_or("无法读取服务输出")?;
     let stderr = child.stderr.take().ok_or("无法读取服务错误输出")?;
     app.state::<ServerProcess>().0.lock().expect("server lock").replace(child);
+    watch_restart_codes(app);
     let recent = Arc::new(Mutex::new(String::new()));
     let logged = recent.clone();
     let error_log = log.clone();
@@ -150,6 +201,121 @@ fn launch(app: &AppHandle) -> Result<(), String> {
     let url = line.trim().trim_start_matches("Open workspace: ").trim().to_string();
     open_workspace(app, url);
     Ok(())
+}
+
+fn launch_remote(app: &AppHandle, remote_url: &str) -> Result<(), String> {
+    let url = remote_url.trim_end_matches('/');
+    probe_remote(url)?;
+    LAUNCH_CONFIRMED.store(false, Ordering::SeqCst);
+    open_workspace(app, format!("{url}/?launcher=1"));
+    // The remote page confirms itself by redirecting to /wwa-launcher-done, which
+    // on_navigation cancels. If nothing confirms in time, the address probably is
+    // not a Work With Agent server.
+    let handle = app.clone();
+    let address = url.to_string();
+    thread::spawn(move || {
+        for _ in 0..30 {
+            if LAUNCH_CONFIRMED.load(Ordering::SeqCst) { return; }
+            thread::sleep(Duration::from_secs(1));
+        }
+        if LAUNCH_CONFIRMED.load(Ordering::SeqCst) { return; }
+        show_launch_error(&handle, format!("{address} 没有在 30 秒内打开 Work With Agent 工作区。请核对这是否为正确的服务器地址。"));
+    });
+    Ok(())
+}
+
+/// Checks the remote workspace is reachable at the TCP level before navigating.
+fn probe_remote(remote_url: &str) -> Result<(), String> {
+    let parsed = remote_url.parse::<Url>().map_err(|_| format!("远程服务器地址无效：{remote_url}"))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err(format!("远程服务器地址必须以 http:// 或 https:// 开头：{remote_url}"));
+    }
+    let port = parsed.port_or_known_default().ok_or("无法确定远程服务器端口")?;
+    let address = format!("{}:{}", parsed.host_str().ok_or("远程服务器地址缺少主机名")?, port);
+    let socket = address.to_socket_addrs().map_err(|error| format!("无法解析远程服务器地址 {address}：{error}"))?
+        .next().ok_or(format!("无法解析远程服务器地址 {address}"))?;
+    TcpStream::connect_timeout(&socket, Duration::from_secs(8)).map_err(|error| format!("无法连接远程服务器 {address}：{error}"))?;
+    Ok(())
+}
+
+fn launcher_config_path(data: &Path) -> PathBuf {
+    data.join("launcher.json")
+}
+
+fn read_launcher_config(data: &Path) -> Option<LauncherConfig> {
+    let text = fs::read_to_string(launcher_config_path(data)).ok()?;
+    let config: LauncherConfig = serde_json::from_str(&text).ok()?;
+    (config.mode == "local" || config.mode == "remote").then_some(config)
+}
+
+fn write_launcher_config(data: &Path, config: &LauncherConfig) -> Result<(), String> {
+    fs::create_dir_all(data).map_err(|error| format!("无法创建数据目录：{error}"))?;
+    let text = serde_json::to_string_pretty(config).map_err(|error| error.to_string())?;
+    fs::write(launcher_config_path(data), text).map_err(|error| format!("无法保存启动配置：{error}"))
+}
+
+#[tauri::command]
+fn launcher_config_get() -> Result<Option<LauncherConfig>, String> {
+    Ok(read_launcher_config(&data_dir()?))
+}
+
+#[tauri::command]
+fn launcher_config_set(mode: String, remote_url: String) -> Result<(), String> {
+    if mode != "local" && mode != "remote" { return Err("未知启动模式".to_string()); }
+    let remote_url = remote_url.trim().trim_end_matches('/').to_string();
+    if mode == "remote" { probe_remote(&remote_url)?; }
+    let config = if mode == "remote" { LauncherConfig { mode, remote_url } } else { LauncherConfig::local() };
+    write_launcher_config(&data_dir()?, &config)
+}
+
+#[tauri::command]
+fn launcher_retry(app: AppHandle) -> Result<(), String> {
+    stop_server(&app);
+    let handle = app.clone();
+    thread::spawn(move || {
+        if let Err(message) = launch(&handle) {
+            show_message(&handle, message);
+        }
+    });
+    Ok(())
+}
+
+/// Returns the window to the bundled splash page with the mode picker open.
+fn open_launcher(app: &AppHandle) {
+    let Some(window) = app.get_webview_window("main") else { return };
+    let mut target = SPLASH_URL.get().cloned().unwrap_or_else(|| "index.html".parse().expect("splash url"));
+    target.set_query(Some("switch=1"));
+    let _ = window.navigate(target);
+    let _ = window.show();
+}
+
+/// A snapshot import restarts the server with exit code 75; bring it straight
+/// back up so the workspace reconnects without an app restart.
+fn watch_restart_codes(app: &AppHandle) {
+    let handle = app.clone();
+    thread::spawn(move || loop {
+        thread::sleep(Duration::from_millis(500));
+        let Some(state) = handle.try_state::<ServerProcess>() else { return };
+        let status = {
+            let mut guard = state.0.lock().expect("server lock");
+            match guard.as_mut() {
+                Some(child) => child.try_wait().ok().flatten(),
+                None => return,
+            }
+        };
+        let Some(status) = status else { continue };
+        if status.code() != Some(75) { return; }
+        handle.state::<ServerProcess>().0.lock().expect("server lock").take();
+        match data_dir() {
+            Ok(data) => {
+                if let Err(message) = launch_local(&handle, &data) {
+                    show_message(&handle, message);
+                }
+            }
+            Err(message) => show_message(&handle, message),
+        }
+        return;
+    });
 }
 
 fn bundled_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf, PathBuf), String> {
@@ -197,7 +363,7 @@ fn write_mcp_launcher(data: &Path, node: &Path, entry: &Path) -> Result<(), Stri
     let mut permissions = fs::metadata(&script).map_err(|error| error.to_string())?.permissions();
     use std::os::unix::fs::PermissionsExt;
     permissions.set_mode(0o755);
-    fs::set_permissions(&script, permissions).map_err(|error| format!("无法标记 MCP 启动脚本为可执行：{error}"))?;
+    fs::set_permissions(&script, permissions).map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -218,6 +384,7 @@ fn open_workspace(app: &AppHandle, url: String) {
 }
 
 fn show_message(app: &AppHandle, message: String) {
+    show_launch_error(app, message.clone());
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         if let Some(window) = handle.get_webview_window("main") {
@@ -225,6 +392,17 @@ fn show_message(app: &AppHandle, message: String) {
             let _ = window.eval(&format!("const status = document.getElementById('status'); if (status) status.textContent = {text};"));
         }
         handle.dialog().message(&message).title("Work With Agent").blocking_show();
+    });
+}
+
+/// Renders the error with recovery buttons when the splash page is on screen.
+fn show_launch_error(app: &AppHandle, message: String) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(window) = handle.get_webview_window("main") {
+            let text = serde_json::to_string(&message).unwrap_or_else(|_| "\"启动失败\"".to_string());
+            let _ = window.eval(&format!("window.wwaLaunchError && window.wwaLaunchError({text});"));
+        }
     });
 }
 
@@ -354,5 +532,36 @@ mod tests {
         });
         assert!(matches!(probe_port(port), PortUser::Foreign));
         responder.join().expect("responder");
+    }
+
+    #[test]
+    fn launcher_config_round_trip() {
+        let directory = std::env::temp_dir().join(format!("wwa-launcher-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(&directory).expect("create temp dir");
+        assert!(read_launcher_config(&directory).is_none());
+        write_launcher_config(&directory, &LauncherConfig { mode: "remote".to_string(), remote_url: "https://wwa.example.com".to_string() }).expect("write");
+        let config = read_launcher_config(&directory).expect("read back");
+        assert_eq!(config.mode, "remote");
+        assert_eq!(config.remote_url, "https://wwa.example.com");
+        write_launcher_config(&directory, &LauncherConfig::local()).expect("write");
+        assert_eq!(read_launcher_config(&directory).expect("read back").mode, "local");
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn unknown_modes_are_ignored() {
+        let directory = std::env::temp_dir().join(format!("wwa-launcher-invalid-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(&directory).expect("create temp dir");
+        fs::write(launcher_config_path(&directory), r#"{"mode":"weird","remoteUrl":"x"}"#).expect("write");
+        assert!(read_launcher_config(&directory).is_none());
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn remote_probe_rejects_bad_urls() {
+        assert!(probe_remote("not a url").is_err());
+        assert!(probe_remote("ftp://example.com").is_err());
     }
 }

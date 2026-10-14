@@ -12,6 +12,7 @@ const serverDir = resolve(resources, 'server');
 const dataDir = await mkdtemp(resolve(tmpdir(), 'wwa-desktop-smoke-'));
 const port = await freePort();
 const origin = `http://127.0.0.1:${port}`;
+let remoteData;
 
 let child;
 let proxy;
@@ -24,7 +25,7 @@ try {
   if (!anonymous.ok) throw new Error(`会话接口不可用（${anonymous.status}）`);
   const mcp = await fetch(`${origin}/mcp`, { method: 'POST' });
   if (mcp.status !== 401) throw new Error(`未授权的 MCP 请求应被拒绝，实际是 ${mcp.status}`);
-  const first = await login(firstToken);
+  const first = await login({ bootstrapToken: firstToken });
   const created = await api(first, '/api/tasks', { method: 'POST', body: JSON.stringify({ title: '桌面冒烟任务' }) });
   if (!created.ok) throw new Error(`创建任务失败：${created.status} ${await created.text()}`);
   const connection = await api(first, '/api/v1/connections', { method: 'POST', body: JSON.stringify({ name: 'smoke', host: 'claude' }) });
@@ -46,7 +47,7 @@ try {
 
   child = start();
   const secondToken = await readyToken(child);
-  const second = await login(secondToken);
+  const second = await login({ bootstrapToken: secondToken });
   const tasks = await api(second, '/api/tasks?inbox=true');
   const body = await tasks.json();
   if (!tasks.ok || !body.data?.some((task) => task.title === '桌面冒烟任务')) throw new Error('重启后没有读到冒烟任务');
@@ -58,10 +59,48 @@ try {
   await stop(child);
   child = undefined;
   console.log(`桌面运行时冒烟通过，端口 ${port}（MCP 随服务启停并可在重启后恢复）`);
+
+  // —— 服务器模式：桌面壳远程探测的同一接口与凭据流。 ——
+  const remotePort = await freePort();
+  const remoteOrigin = `http://127.0.0.1:${remotePort}`;
+  const ownerKey = 'smoke-owner-key-0123456789abcdef';
+  remoteData = await mkdtemp(resolve(tmpdir(), 'wwa-desktop-smoke-server-'));
+  child = start({
+    PORT: String(remotePort),
+    CLIENT_ORIGIN: remoteOrigin,
+    WWA_PUBLIC_URL: remoteOrigin,
+    WWA_DATA_DIR: remoteData,
+    DATABASE_URL: `file:${resolve(remoteData, 'agent-studio.db')}`,
+    KNOWLEDGE_STORAGE_ROOT: resolve(remoteData, 'knowledge-blobs'),
+    WWA_RUNNER_DIR: resolve(remoteData, 'runner'),
+    AGENT_WORKSPACE_ROOT: resolve(remoteData, 'workspace'),
+    WWA_SERVER_MODE: '1',
+    WWA_BIND_HOST: '127.0.0.1',
+    WWA_OWNER_KEY: ownerKey,
+  });
+  const banner = await waitLine(child, 'API listening');
+  if (/owner-token=/.test(banner)) throw new Error('服务器模式不应在日志里打印一次性启动凭据');
+  const info = await (await fetch(`${remoteOrigin}/api/v1/server/info`)).json();
+  if (info.data?.mode !== 'server' || !info.data?.version) throw new Error(`服务器模式探测失败：${JSON.stringify(info)}`);
+  const bootstrap = await login({ bootstrapToken: 'anything' }, remoteOrigin).then(() => 'ok', (error) => error.message);
+  if (bootstrap === 'ok') throw new Error('服务器模式下一次性启动凭据应被禁用');
+  const rejected = await fetch(`${remoteOrigin}/api/v1/auth/session`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: remoteOrigin },
+    body: JSON.stringify({ ownerKey: 'wrong-owner-key-0123456789' }),
+  });
+  if (rejected.status !== 401) throw new Error(`错误访问密钥应返回 401，实际 ${rejected.status}`);
+  const remote = await login({ ownerKey }, remoteOrigin);
+  const remoteTask = await api(remote, '/api/tasks', { method: 'POST', body: JSON.stringify({ title: '服务器模式冒烟任务' }) }, remoteOrigin);
+  if (!remoteTask.ok) throw new Error(`服务器模式创建任务失败：${remoteTask.status} ${await remoteTask.text()}`);
+  await stop(child);
+  child = undefined;
+  console.log(`服务器模式冒烟通过，端口 ${remotePort}（owner key 登录，bootstrap 凭据禁用）`);
 } finally {
   if (proxy) proxy.stop();
   if (child) child.kill('SIGKILL');
   await cleanup(dataDir);
+  if (remoteData) await cleanup(remoteData);
 }
 
 async function cleanup(dir) {
@@ -80,7 +119,7 @@ async function cleanup(dir) {
   }
 }
 
-function start() {
+function start(overrides = {}) {
   return spawn(nodeBinary, [resolve(serverDir, 'dist/index.js')], {
     cwd: serverDir,
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -95,7 +134,27 @@ function start() {
       KNOWLEDGE_STORAGE_ROOT: resolve(dataDir, 'knowledge-blobs'),
       WWA_RUNNER_DIR: resolve(dataDir, 'runner'),
       AGENT_WORKSPACE_ROOT: resolve(dataDir, 'workspace'),
+      ...overrides,
     },
+  });
+}
+
+/** Resolves with the output seen so far once a matching line appears. */
+function waitLine(process, pattern) {
+  return new Promise((resolvePromise, reject) => {
+    let buffer = '';
+    const timer = setTimeout(() => reject(new Error(`等待 ${pattern} 超时`)), 60_000);
+    const check = () => {
+      if (buffer.includes(pattern)) {
+        clearTimeout(timer);
+        process.stderr.removeAllListeners('data');
+        process.stdout.removeAllListeners('data');
+        resolvePromise(buffer);
+      }
+    };
+    process.once('exit', (code) => { clearTimeout(timer); reject(new Error(`服务在 ${pattern} 前退出（${code}）\n${buffer}`)); });
+    process.stderr.on('data', (chunk) => { buffer += chunk.toString(); check(); });
+    process.stdout.on('data', (chunk) => { buffer += chunk.toString(); check(); });
   });
 }
 
@@ -117,11 +176,11 @@ function readyToken(process) {
   });
 }
 
-async function login(token) {
-  const response = await fetch(`${origin}/api/v1/auth/session`, {
+async function login(credential, at = origin) {
+  const response = await fetch(`${at}/api/v1/auth/session`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', origin },
-    body: JSON.stringify({ bootstrapToken: token }),
+    headers: { 'content-type': 'application/json', origin: at },
+    body: JSON.stringify(credential),
   });
   if (!response.ok) throw new Error(`登录失败：${response.status} ${await response.text()}`);
   const cookie = response.headers.getSetCookie?.().map((item) => item.split(';')[0]).join('; ')
@@ -130,10 +189,10 @@ async function login(token) {
   return { cookie, csrf };
 }
 
-function api(session, path, init = {}) {
-  return fetch(`${origin}${path}`, {
+function api(session, path, init = {}, at = origin) {
+  return fetch(`${at}${path}`, {
     ...init,
-    headers: { 'content-type': 'application/json', origin, cookie: session.cookie, 'x-csrf-token': session.csrf, ...init.headers },
+    headers: { 'content-type': 'application/json', origin: at, cookie: session.cookie, 'x-csrf-token': session.csrf, ...init.headers },
   });
 }
 

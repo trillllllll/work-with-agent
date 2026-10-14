@@ -1,12 +1,14 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { prisma } from '../infrastructure/prisma.js';
 import { DomainError } from '../domain/task.js';
-import { DESKTOP_PORT, desktopMcpConfiguration, isDesktopPackage } from './desktop-paths.js';
+import { DESKTOP_PORT, desktopDataDir, desktopMcpConfiguration, isDesktopPackage, isServerMode, publicWorkspaceUrl } from './desktop-paths.js';
 
 export type Actor = {
   id: string;
@@ -23,6 +25,18 @@ const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 const token = () => randomBytes(32).toString('base64url');
 const cookieName = 'wwa_session';
 const bootstrapTokens = new Map<string, number>();
+/** Prefer the repository root's version; packaged runtimes may only ship server/package.json. */
+function readVersion() {
+  for (const relative of ['../../../package.json', '../../package.json']) {
+    try {
+      const version = (createRequire(import.meta.url)(relative) as { version?: string }).version;
+      if (version) return version;
+    } catch { /* keep looking */ }
+  }
+  return 'unknown';
+}
+const serverVersion = readVersion();
+export { serverVersion };
 
 /** Startup and tests obtain explicit one-use credentials; there is no authentication bypass. */
 export function createOwnerBootstrapToken() {
@@ -30,6 +44,85 @@ export function createOwnerBootstrapToken() {
   bootstrapTokens.set(hash(value), Date.now() + 10 * 60_000);
   return value;
 }
+
+// ---- Server mode owner key -------------------------------------------------
+// Local mode logs a fresh one-use bootstrap token at startup. A network-facing
+// deployment needs a persistent credential instead: WWA_OWNER_KEY from the
+// environment, or a generated key file next to the database.
+
+const ownerKeyMinimum = 20;
+let serverOwnerKeyHash: string | null = null;
+
+export function resetOwnerKeyCache() {
+  serverOwnerKeyHash = null;
+}
+
+function ownerKeyFile() {
+  return join(desktopDataDir(), 'owner-key');
+}
+
+function equalTokens(given: string, expected: string) {
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/** Resolves the server-mode owner key digest, generating and logging the plaintext exactly once. */
+export function resolveOwnerKeyHash(): string | null {
+  if (!isServerMode()) return null;
+  if (serverOwnerKeyHash) return serverOwnerKeyHash;
+  const fromEnv = process.env.WWA_OWNER_KEY;
+  if (fromEnv) {
+    if (fromEnv.length < ownerKeyMinimum) throw new DomainError('OWNER_KEY_INVALID', `WWA_OWNER_KEY 至少需要 ${ownerKeyMinimum} 个字符`, 500);
+    serverOwnerKeyHash = hash(fromEnv);
+    return serverOwnerKeyHash;
+  }
+  try {
+    const stored = readFileSync(ownerKeyFile(), 'utf8').trim();
+    if (stored.length >= ownerKeyMinimum) {
+      serverOwnerKeyHash = hash(stored);
+      return serverOwnerKeyHash;
+    }
+  } catch { /* fall through to generation */ }
+  const generated = token();
+  mkdirSync(desktopDataDir(), { recursive: true });
+  writeFileSync(ownerKeyFile(), `${generated}\n`, { mode: 0o600 });
+  console.log(`Owner access key（仅本次生成时显示，请保存到密码管理器）: ${generated}`);
+  serverOwnerKeyHash = hash(generated);
+  return serverOwnerKeyHash;
+}
+
+// ---- Login rate limiting ---------------------------------------------------
+// A network-exposed login endpoint must survive credential guessing.
+
+const loginWindowMs = 15 * 60_000;
+const loginMaxFailures = 10;
+const loginFailures = new Map<string, number[]>();
+
+export function resetLoginRateLimiter() {
+  loginFailures.clear();
+}
+
+function clientAddress(req: Request) {
+  const forwarded = req.headers['x-forwarded-for'];
+  return (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(',')[0].trim() || req.ip || 'unknown';
+}
+function loginBlocked(req: Request) {
+  const cutoff = Date.now() - loginWindowMs;
+  const recent = (loginFailures.get(clientAddress(req)) ?? []).filter((at) => at >= cutoff);
+  return recent.length >= loginMaxFailures;
+}
+function recordLoginFailure(req: Request) {
+  const address = clientAddress(req);
+  const cutoff = Date.now() - loginWindowMs;
+  const recent = (loginFailures.get(address) ?? []).filter((at) => at >= cutoff);
+  recent.push(Date.now());
+  loginFailures.set(address, recent);
+}
+function clearLoginFailures(req: Request) {
+  loginFailures.delete(clientAddress(req));
+}
+
 export function assertOwner(actor: Actor) {
   if (actor.kind !== 'user') throw new DomainError('FORBIDDEN', '此操作需要本机用户确认', 403);
 }
@@ -56,13 +149,22 @@ function cookies(req: Request) {
     return separator < 0 ? [] : [[item.slice(0, separator).trim(), item.slice(separator + 1).trim()]];
   }));
 }
+/** Origins the deployment expects browsers to come from: CLIENT_ORIGIN plus the public workspace URL in server mode. */
+function configuredOrigins() {
+  return [...(process.env.CLIENT_ORIGIN?.split(',').map((item) => item.trim()).filter(Boolean) ?? []), ...(isServerMode() && publicWorkspaceUrl() ? [publicWorkspaceUrl()] : [])];
+}
 function allowedOrigin(origin: string) {
-  const configured = process.env.CLIENT_ORIGIN?.split(',').map((item) => item.trim()).filter(Boolean);
-  return (configured ?? ['http://localhost:5176', 'http://127.0.0.1:5176', 'http://localhost:3016', 'http://127.0.0.1:3016']).includes(origin);
+  const configured = configuredOrigins();
+  return (configured.length ? configured : ['http://localhost:5176', 'http://127.0.0.1:5176', 'http://localhost:3016', 'http://127.0.0.1:3016']).includes(origin);
 }
 export function checkLocalOrigin(req: Request) {
   const origin = req.headers.origin;
   if (origin && !allowedOrigin(origin)) throw new DomainError('ORIGIN_DENIED', '请求来源不受信任', 403);
+  if (isServerMode()) {
+    const hosts = configuredOrigins().map((value) => new URL(value).hostname);
+    if (!hosts.length || !hosts.includes(req.hostname)) throw new DomainError('HOST_DENIED', '只允许已配置的工作区地址', 403);
+    return;
+  }
   const hostname = req.hostname;
   if (!['localhost', '127.0.0.1', '::1', '[::1]'].includes(hostname)) throw new DomainError('HOST_DENIED', '只允许本机工作区地址', 403);
 }
@@ -115,18 +217,47 @@ securityRouter.get('/auth/session', async (req, res, next) => {
     res.json({ data: { authenticated: identity?.actor.kind === 'user', ...(identity?.actor.kind === 'user' ? { csrfToken: identity.csrfToken, actor: identity.actor } : {}) }, error: null });
   } catch (error) { next(error); }
 });
+securityRouter.get('/server/info', (_req, res) => {
+  res.json({ data: { mode: isServerMode() ? 'server' : 'local', version: serverVersion }, error: null });
+});
+
+function cookieSecure(req: Request) {
+  return process.env.WWA_PUBLIC_HTTPS === '1' || req.headers['x-forwarded-proto'] === 'https';
+}
+
+/** Bootstrap tokens are single-use launcher credentials for loopback mode; a network deployment must not honor them. */
+function grantBootstrapSession(bootstrapToken: string) {
+  if (isServerMode()) return false;
+  const digest = hash(bootstrapToken);
+  const expires = bootstrapTokens.get(digest);
+  if (!expires || expires < Date.now()) return false;
+  bootstrapTokens.delete(digest);
+  return true;
+}
+function grantOwnerKeySession(ownerKey: string) {
+  const expected = resolveOwnerKeyHash();
+  if (!expected) return false;
+  return equalTokens(hash(ownerKey), expected);
+}
+
 securityRouter.post('/auth/session', async (req, res, next) => {
   try {
     checkLocalOrigin(req);
-    const { bootstrapToken } = z.object({ bootstrapToken: z.string().min(20) }).parse(req.body);
-    const digest = hash(bootstrapToken);
-    const expires = bootstrapTokens.get(digest);
-    if (!expires || expires < Date.now()) throw new DomainError('BOOTSTRAP_EXPIRED', '启动凭据无效或已过期，请从启动器重新打开', 401);
-    bootstrapTokens.delete(digest);
+    if (loginBlocked(req)) throw new DomainError('LOGIN_RATE_LIMITED', '尝试次数过多，请 15 分钟后再试', 429);
+    const body = z.union([
+      z.object({ bootstrapToken: z.string().min(20) }),
+      z.object({ ownerKey: z.string().min(ownerKeyMinimum) }),
+    ]).parse(req.body);
+    const granted = 'ownerKey' in body ? grantOwnerKeySession(body.ownerKey) : grantBootstrapSession(body.bootstrapToken);
+    if (!granted) {
+      recordLoginFailure(req);
+      throw new DomainError('AUTH_REQUIRED', '凭据无效，请核对后重试', 401);
+    }
+    clearLoginFailures(req);
     const sessionToken = token();
     const csrfToken = hash(`csrf:${sessionToken}`);
     await prisma.localSession.create({ data: { id: token(), tokenHash: hash(sessionToken), csrfHash: hash(csrfToken), createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString() } });
-    res.cookie(cookieName, sessionToken, { httpOnly: true, sameSite: 'strict', path: '/', maxAge: 7 * 86_400_000 });
+    res.cookie(cookieName, sessionToken, { httpOnly: true, sameSite: 'strict', path: '/', maxAge: 7 * 86_400_000, ...(cookieSecure(req) ? { secure: true } : {}) });
     res.json({ data: { authenticated: true, csrfToken, actor: ownerActor }, error: null });
   } catch (error) { next(error); }
 });
@@ -137,7 +268,7 @@ const publicConnection = ({ tokenHash: _tokenHash, ...value }: { tokenHash: stri
 export function connectionConfiguration(credential: string) {
   const entry = fileURLToPath(new URL('../mcp/index.js', import.meta.url)).replace(/[/\\]src[/\\]/, '/dist/');
   const port = Number(process.env.PORT) || (isDesktopPackage() ? DESKTOP_PORT : 3016);
-  const api = `http://127.0.0.1:${port}`;
+  const api = (isServerMode() && publicWorkspaceUrl()) || `http://127.0.0.1:${port}`;
   const packaged = isDesktopPackage();
   const launch = packaged
     ? desktopMcpConfiguration(entry)

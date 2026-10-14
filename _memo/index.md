@@ -1,8 +1,8 @@
 ---
 createAt: 2026-09-10
-updateAt: 2026-09-21
-summary: Agent 工作室 MVP 验收、受控执行安全和 Git 协作约定索引
-tags: [index, mvp, e2e, security, git]
+updateAt: 2026-10-13
+summary: Agent 工作室 MVP 验收、受控执行安全、Git 协作约定和 Windows 桌面打包索引
+tags: [index, mvp, e2e, security, git, desktop]
 ---
 
 # Agent 工作室项目记忆
@@ -15,6 +15,8 @@ Agent 工作室是一个本地优先的任务与主题工作台，包含主题�
 
 - [MVP 验收与交付](./2026-09-10_mvp-acceptance.md)
 - [全局玻璃化 UI 改版](./2026-09-15_global-glass-ui.md)
+- [Windows 桌面打包与安装（v0.2.0）](./2026-10-13_windows-desktop-build-install.md)
+- [多端数据同步：VPS 部署与验收](./2026-10-14_vps-deployment-sync.md)
 - [第二至第五阶段实现及验收](../docs/stages-2-5-implementation.md)：统一命令与身份、MCP、材料记忆、Handoff/runner、定时回顾；真实宿主和数据迁移结果以此记录为准。
 - [当前 API 与宿主接入](../docs/stages-2-5-api.md)：认证、版本、预览、提议、启动和恢复操作。
 

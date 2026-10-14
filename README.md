@@ -141,6 +141,16 @@ grok mcp add work_with_agent --scope user --transport http http://127.0.0.1:3016
 
 细节见 [本机身份](./docs/stages-2-5-api.md#本机身份)。
 
+## 多端同步（可选）
+
+默认每台电脑各自独立。想多台设备共用一份数据时，可以把同一个服务部署到自己的服务器（VPS/NAS）：
+
+- 桌面应用一键切到「连接服务器」模式；手机浏览器输入访问密钥直接用。
+- 自带每日快照备份、一键恢复和换机迁移。
+- 数据始终在你自己的服务器上。
+
+部署步骤见 [自托管服务器部署](./docs/deployment.md)。
+
 <a id="english"></a>
 
 ## English

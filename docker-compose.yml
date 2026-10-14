@@ -1,0 +1,27 @@
+# One always-on Work With Agent instance; every device (desktop app, phone
+# browser) connects to it and shares the same data.
+#
+# Copy this file to compose.override.yml (or export the variables) and fill in
+# your own values. See docs/deployment.md for the full walkthrough.
+
+services:
+  wwa:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    image: work-with-agent:latest
+    container_name: work-with-agent
+    restart: unless-stopped
+    environment:
+      # A long random secret. Generate with: openssl rand -base64 32
+      WWA_OWNER_KEY: ${WWA_OWNER_KEY:?请在环境变量中设置 WWA_OWNER_KEY}
+      # The address browsers use to reach this server; cookies and CORS follow it.
+      WWA_PUBLIC_URL: ${WWA_PUBLIC_URL:?请设置 WWA_PUBLIC_URL，例如 https://wwa.example.com}
+      WWA_PUBLIC_HTTPS: 1
+      CLIENT_ORIGIN: ${WWA_PUBLIC_URL}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      # Only nginx (or your reverse proxy) on this host talks to the container.
+      - "127.0.0.1:12716:3016"
+    volumes:
+      - ./data:/data

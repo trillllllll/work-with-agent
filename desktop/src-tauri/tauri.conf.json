@@ -9,6 +9,7 @@
     "beforeDevCommand": "node ../../scripts/splash-server.mjs"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "label": "main",

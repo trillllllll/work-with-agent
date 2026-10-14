@@ -7,6 +7,16 @@ export function isDesktopPackage() {
   return process.env.WWA_PACKAGED === '1';
 }
 
+/** Server mode exposes the workspace over the network for multi-device access instead of staying loopback-only. */
+export function isServerMode() {
+  return process.env.WWA_SERVER_MODE === '1';
+}
+
+/** The address remote clients use to reach this workspace, e.g. https://wwa.example.com. */
+export function publicWorkspaceUrl() {
+  return process.env.WWA_PUBLIC_URL?.replace(/\/+$/, '') || '';
+}
+
 /** Shared with the Tauri shell. A custom WWA_DATA_DIR is for tests and smoke runs. */
 export function desktopDataDir() {
   if (process.env.WWA_DATA_DIR) return process.env.WWA_DATA_DIR;

@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft } from 'lucide-react';
-import { api, type CliCommandSetting, type Settings } from '@/lib/api.js';
+import { ArrowLeft, Download, RotateCcw } from 'lucide-react';
+import { api, authHeaders, type CliCommandSetting, type Settings } from '@/lib/api.js';
 import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
@@ -99,6 +99,10 @@ export function SettingsView({ onBack }: { onBack?: () => void }) {
 
       <CliCommands settings={settingsQuery.data} />
 
+      <BackupSection />
+
+      <ServerInfo />
+
       {clearKeyConfirmation && (
         <ConfirmDialog
           title="清除 API Key"
@@ -114,6 +118,123 @@ export function SettingsView({ onBack }: { onBack?: () => void }) {
 }
 
 const cliNames = { codex: 'Codex', claude: 'Claude Code' } as const;
+
+export type ServerInfo = { mode: 'local' | 'server'; version: string };
+type SnapshotEntry = { name: string; size: number; createdAt: string };
+
+function formatBytes(size: number) {
+  if (size >= 1_048_576) return `${(size / 1_048_576).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(size / 1_024))} KB`;
+}
+
+function BackupSection() {
+  const queryClient = useQueryClient();
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [restoreConfirmation, setRestoreConfirmation] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const snapshotsQuery = useQuery<SnapshotEntry[]>({ queryKey: ['server-snapshots'], queryFn: () => api('/api/v1/server/snapshots') });
+
+  async function download() {
+    const response = await fetch('/api/v1/server/snapshot', { credentials: 'include', headers: authHeaders() });
+    if (!response.ok) throw new Error(`下载失败（${response.status}）`);
+    const disposition = response.headers.get('Content-Disposition') ?? '';
+    const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `wwa-snapshot-${Date.now()}.zip`;
+    const url = URL.createObjectURL(await response.blob());
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    toast.success('快照已开始下载。');
+  }
+
+  const restore = useMutation<void, Error, void>({
+    mutationFn: async () => {
+      if (!restoreFile) throw new Error('请先选择快照文件');
+      const response = await fetch('/api/v1/server/snapshot/import', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/zip', ...authHeaders() },
+        body: restoreFile,
+      });
+      const body = await response.json().catch(() => ({ error: '响应格式错误' }));
+      if (!response.ok) throw new Error(typeof body.error === 'string' ? body.error : '恢复失败');
+      // The service exits to apply the restored database; wait for it to come back.
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        await new Promise((done) => setTimeout(done, 1_000));
+        const probe = await fetch('/api/v1/server/info').catch(() => null);
+        if (probe?.ok) {
+          window.location.reload();
+          return;
+        }
+      }
+      window.location.reload();
+    },
+    onSuccess: () => { setRestoreFile(null); setRestoreConfirmation(false); if (fileInput.current) fileInput.current.value = ''; void queryClient.invalidateQueries({ queryKey: ['server-snapshots'] }); },
+    onError: (error) => { setRestoreConfirmation(false); toast.error(error.message); },
+  });
+
+  return (
+    <section className="mt-10 border-t glass-divider pt-6">
+      <h2 className="text-lg font-semibold">备份与恢复</h2>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">快照包含全部工作数据（任务、材料、对话、记忆）。下载的快照可在任何一台 Work With Agent 上恢复。</p>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <Button type="button" variant="outline" onClick={() => { void download().catch((error) => toast.error(error.message)); }}><Download className="size-4" />下载快照</Button>
+        <input ref={fileInput} id="restore-file" type="file" accept=".zip" className="hidden" onChange={(event) => setRestoreFile(event.target.files?.[0] ?? null)} />
+        <Button type="button" variant="outline" disabled={!restoreFile || restore.isPending} onClick={() => setRestoreConfirmation(true)}><RotateCcw className="size-4" />{restore.isPending ? '正在恢复…' : '恢复此快照'}</Button>
+        <Button type="button" variant="ghost" onClick={() => fileInput.current?.click()}>{restoreFile ? `已选择：${restoreFile.name}` : '选择快照文件…'}</Button>
+      </div>
+      {!!snapshotsQuery.data?.length && (
+        <ul className="glass-subtle mt-4 space-y-1.5 rounded-xl p-4 text-xs text-muted-foreground">
+          {snapshotsQuery.data.slice(0, 5).map((snapshot) => (
+            <li key={snapshot.name} className="flex items-baseline justify-between gap-3">
+              <span className="truncate font-mono">{snapshot.name}</span>
+              <span className="shrink-0">{formatBytes(snapshot.size)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {restoreConfirmation && (
+        <ConfirmDialog
+          title="恢复快照"
+          itemName={restoreFile?.name ?? '选中的快照'}
+          description="当前数据会先自动备份一份，然后用快照内容替换。恢复期间服务会短暂重启。"
+          busy={restore.isPending}
+          onCancel={() => setRestoreConfirmation(false)}
+          onConfirm={() => restore.mutate()}
+        />
+      )}
+    </section>
+  );
+}
+
+function ServerInfo() {
+  const infoQuery = useQuery<ServerInfo>({ queryKey: ['server-info'], queryFn: () => api('/api/v1/server/info') });
+  const inDesktopShell = typeof window !== 'undefined' && '__TAURI__' in window;
+  if (infoQuery.isError) return null;
+  const info = infoQuery.data;
+  return (
+    <section className="mt-10 border-t glass-divider pt-6">
+      <h2 className="text-lg font-semibold">服务器</h2>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
+        {info?.mode === 'server' ? '当前连接的是自托管服务器，所有设备共用这一份数据。' : '当前使用本机数据。切换到自托管服务器可实现多设备同步（见部署文档）。'}
+      </p>
+      <dl className="glass-subtle mt-4 grid gap-3 rounded-xl p-4 text-sm sm:grid-cols-2">
+        <div>
+          <dt className="text-xs text-muted-foreground">模式</dt>
+          <dd className="mt-0.5">{info ? (info.mode === 'server' ? '服务器（多端同步）' : '本机') : '…'}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted-foreground">服务版本</dt>
+          <dd className="mt-0.5 font-mono">{info?.version ?? '…'}</dd>
+        </div>
+      </dl>
+      {inDesktopShell && (
+        <Button type="button" variant="outline" className="mt-4" onClick={() => { window.location.assign('/wwa-launcher'); }}>切换工作区模式</Button>
+      )}
+    </section>
+  );
+}
 
 function CliCommands({ settings }: { settings?: Settings }) {
   const queryClient = useQueryClient();

@@ -12,6 +12,7 @@ import { legacyMutationMiddleware, workspaceQueryRouter } from './application/wo
 import { taskActivity } from './application/task-activity.js';
 import { addTaskImage, readTaskImage } from './application/task-images.js';
 import { handoffRouter } from './routes/handoffs.js';
+import { createServerRouter } from './routes/server.js';
 import { createKnowledgeRouter } from './routes/knowledge.js';
 import { createReviewsRouter } from './routes/reviews.js';
 import { registerKnowledgeCommands } from './application/knowledge.js';
@@ -33,6 +34,7 @@ registerLibraryCommands();
 app.use('/api/v1', securityRouter);
 app.use('/api/v1', identityMiddleware);
 app.use('/api/v1/connections', connectionRouter);
+app.use('/api/v1/server', createServerRouter());
 app.use('/api/v1', commandsRouter, workspaceQueryRouter, handoffRouter);
 app.use('/api/v1/knowledge', createKnowledgeRouter());
 app.use('/api/v1/library', createLibraryRouter());
