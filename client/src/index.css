@@ -2066,3 +2066,18 @@ textarea.task-title.line-through {
     min-height: 44px;
   }
 }
+
+/* 宽度与 client/src/lib/plan-time-bands.ts 的 planTimeline 一致。 */
+.plan-calendar {
+  --plan-band-rail: 112px;
+}
+
+@media (max-width: 639px) {
+  .plan-calendar {
+    --plan-band-rail: 80px;
+  }
+}
+
+.plan-calendar.plan-calendar-week {
+  --plan-band-rail: 80px;
+}

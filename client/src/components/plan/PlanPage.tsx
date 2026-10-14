@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { ScheduleFields, scheduleError, type ScheduleValue } from '@/components/tasks/ScheduleFields.js';
 import { isCompositionKey } from '@/lib/todo.js';
 import type { PlanTimeBand } from '@/lib/api.js';
+import { isoWeekday, planTimeline, planTimelineMinWidth, resolveTimeBandSegments } from '@/lib/plan-time-bands.js';
 import { TimeBandLayer } from './TimeBandLayer.js';
 import { TimeBandControls } from './TimeBandDialog.js';
 import { usePlanTimeBands } from './usePlanTimeBands.js';
@@ -55,7 +56,7 @@ function TimedTask({ block, dateKey, busy, onOpen, onToggle }: { block: TimedBlo
   const height = block.point ? 28 : Math.max(24, (block.endMin - block.startMin) / 60 * hourHeight - 2);
   const top = Math.min(block.startMin / 60 * hourHeight, timelineHeight - height);
   const offset = minutesBetween(task.scheduledStart!, addMinutes(`${dateKey}T00:00`, block.startMin));
-  return <DragTask task={task} instance={dateKey} offset={offset} busy={busy} className="absolute z-[2]" style={{ top, height, left: `calc(${block.lane / block.laneCount * 100}% + 2px)`, width: `calc(${100 / block.laneCount}% - 4px)` }}>
+  return <DragTask task={task} instance={dateKey} offset={offset} busy={busy} className="pointer-events-auto absolute z-[2]" style={{ top, height, left: `calc(${block.lane / block.laneCount * 100}% + 2px)`, width: `calc(${100 / block.laneCount}% - 4px)` }}>
     <article data-testid="task-block" data-task-id={task.id} data-date={dateKey} data-point={block.point} title={scheduleLabel(task)} className={cn('relative h-full overflow-hidden rounded-lg border px-1.5 text-xs leading-tight', block.point ? 'flex items-center border-dashed' : 'pt-2 pb-1', task.status === 'done' && 'opacity-55 line-through')} style={{ background: 'var(--glass-control)', borderColor: 'var(--glass-border)', borderLeftWidth: block.point ? 1 : 3, borderLeftColor: priorityColor(task.priority) }}>
       {!block.point && block.startsHere && <ResizeHandle task={task} edge="start" busy={busy} onOpen={onOpen} />}
       <div className="flex min-w-0 items-start gap-1">
@@ -77,12 +78,13 @@ function NowLine({ dateKey, today }: { dateKey: string; today: string }) {
 const allDayPreviewLimit = 2;
 function Timeline({ days, tasks, today, busy, bands, allDayOpen, onAllDayOpen, onOpen, onToggle, onCreate }: { days: string[]; tasks: Task[]; today: string; busy: boolean; bands: readonly PlanTimeBand[]; allDayOpen: boolean | null; onAllDayOpen: (open: boolean) => void; onOpen: Props['onOpen']; onToggle: Props['onToggle']; onCreate: (value: ScheduleValue) => void }) {
   const scroller = useRef<HTMLDivElement>(null);
-  const columns = `48px repeat(${days.length}, minmax(0, 1fr))`;
+  const columns = `${planTimeline.hourGutter}px repeat(${days.length}, minmax(0, 1fr))`;
+  const bandDays = new Set(days.filter((day) => resolveTimeBandSegments(bands, isoWeekday(day)).length > 0));
   const allDayByDay = new Map(days.map((day) => [day, tasks.filter((task) => !task.scheduledStart && task.dueDate === day)]));
   const hasAllDay = [...allDayByDay.values()].some((items) => items.length > 0);
   const allDayExpanded = allDayOpen ?? ![...allDayByDay.values()].some((items) => items.length > allDayPreviewLimit);
   useEffect(() => { if (scroller.current) scroller.current.scrollTop = Math.max(0, minutesOf(localDateTime()) / 60 * hourHeight - 120); }, [days[0], days.length]);
-  return <div data-testid="calendar-horizontal-scroll" className="overflow-x-auto rounded-xl border border-[var(--glass-divider)]"><div style={{ minWidth: days.length === 7 ? 760 : undefined }}>
+  return <div data-testid="calendar-horizontal-scroll" data-plan-span={days.length > 1 ? 'week' : 'day'} className={cn('plan-calendar min-w-0 overflow-x-auto rounded-xl border border-[var(--glass-divider)]', days.length > 1 && 'plan-calendar-week')}><div style={{ minWidth: planTimelineMinWidth(days.length, bandDays.size > 0) }}>
     <div className="grid" style={{ gridTemplateColumns: columns }}>
       <div className="min-h-0 self-start p-1 text-center text-[10px] text-muted-foreground">{hasAllDay ? <button type="button" aria-expanded={allDayExpanded} aria-label={allDayExpanded ? '收起全天任务' : '展开全天任务'} className="flex w-full flex-col items-center gap-0.5 rounded py-1 hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]" onClick={() => onAllDayOpen(!allDayExpanded)}><span className="disclosure-chevron" data-open={allDayExpanded || undefined} aria-hidden="true" />全天</button> : '全天'}</div>
       {days.map((day) => {
@@ -101,17 +103,23 @@ function Timeline({ days, tasks, today, busy, bands, allDayOpen, onAllDayOpen, o
     <div ref={scroller} data-testid="timeline-scroll" className="max-h-[65vh] overflow-y-auto border-t border-[var(--glass-divider)]">
       <div className="grid" style={{ gridTemplateColumns: columns, height: timelineHeight }}>
         <div>{Array.from({ length: 24 }, (_, hour) => <div key={hour} className="border-b border-[var(--glass-divider)] pr-1 text-right text-[10px] tabular-nums text-muted-foreground" style={{ height: hourHeight }}>{String(hour).padStart(2, '0')}:00</div>)}</div>
-        {days.map((day) => <div key={day} data-testid="time-band-day" data-date={day} className="relative isolate border-l border-[var(--glass-divider)]">
-          <TimeBandLayer bands={bands} dateKey={day} />
-          {Array.from({ length: 48 }, (_, index) => {
-            const start = addMinutes(`${day}T00:00`, index * 30);
-            const id = `slot:${day}:${start.slice(11, 13)}:${start.slice(14, 16)}`;
-            return <DropTarget key={id} id={id} className="absolute inset-x-0 z-[1]" style={{ top: index * hourHeight / 2, height: hourHeight / 2 }}><button type="button" disabled={busy} aria-label={`在${start.replace('T', ' ')}添加任务`} className="h-full w-full bg-transparent hover:bg-primary/5 focus-visible:bg-primary/10" onClick={() => onCreate({ dueDate: day, scheduledStart: start, scheduledEnd: addMinutes(start, 60) })} /></DropTarget>;
-          })}
-          {Array.from({ length: 24 }, (_, hour) => <div key={hour} className="pointer-events-none absolute inset-x-0 z-[1] border-b border-[var(--glass-divider)]" style={{ top: hour * hourHeight, height: hourHeight }} />)}
-          {layoutTimed(tasks, day).map((block) => <TimedTask key={block.id} block={block} dateKey={day} busy={busy} onOpen={onOpen} onToggle={onToggle} />)}
-          <NowLine dateKey={day} today={today} />
-        </div>)}
+        {days.map((day) => {
+          const banded = bandDays.has(day);
+          return <div key={day} data-testid="time-band-day" data-date={day} data-band-rail={banded ? 'true' : 'false'} className="relative isolate border-l border-[var(--glass-divider)]">
+            <TimeBandLayer bands={bands} dateKey={day} />
+            {banded && <div data-testid="time-band-rail" className="pointer-events-none absolute inset-y-0 z-[1] border-r border-[var(--glass-divider)]" style={{ width: 'var(--plan-band-rail, 112px)' }} />}
+            {Array.from({ length: 48 }, (_, index) => {
+              const start = addMinutes(`${day}T00:00`, index * 30);
+              const id = `slot:${day}:${start.slice(11, 13)}:${start.slice(14, 16)}`;
+              return <DropTarget key={id} id={id} className="absolute inset-x-0 z-[1]" style={{ top: index * hourHeight / 2, height: hourHeight / 2 }}><button type="button" disabled={busy} aria-label={`在${start.replace('T', ' ')}添加任务`} className="h-full w-full bg-transparent hover:bg-primary/5 focus-visible:bg-primary/10" onClick={() => onCreate({ dueDate: day, scheduledStart: start, scheduledEnd: addMinutes(start, 60) })} /></DropTarget>;
+            })}
+            {Array.from({ length: 24 }, (_, hour) => <div key={hour} className="pointer-events-none absolute inset-x-0 z-[1] border-b border-[var(--glass-divider)]" style={{ top: hour * hourHeight, height: hourHeight }} />)}
+            <div data-testid="plan-task-lane" className="pointer-events-none absolute inset-y-0 right-0 z-[2]" style={{ left: banded ? 'var(--plan-band-rail, 112px)' : 0 }}>
+              {layoutTimed(tasks, day).map((block) => <TimedTask key={block.id} block={block} dateKey={day} busy={busy} onOpen={onOpen} onToggle={onToggle} />)}
+            </div>
+            <NowLine dateKey={day} today={today} />
+          </div>;
+        })}
       </div>
     </div>
   </div></div>;

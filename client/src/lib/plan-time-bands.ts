@@ -42,20 +42,46 @@ export function formatMinuteLabel(minute: number) {
   return `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
 }
 
+export function timeBandRange(band: Pick<PlanTimeBand, 'startMinute' | 'endMinute'>) {
+  return `${formatMinuteLabel(band.startMinute)}–${formatMinuteLabel(band.endMinute)}`;
+}
+
 export function timeBandLabel(band: Pick<PlanTimeBand, 'name' | 'startMinute' | 'endMinute'>) {
-  return `${band.name} ${formatMinuteLabel(band.startMinute)}–${formatMinuteLabel(band.endMinute)}`;
+  return `${band.name} ${timeBandRange(band)}`;
+}
+
+/** 日视图侧栏 112；窄屏与周视图 80。周视图任务区至少 120。dayBorder 是日期列左边线，算进最小宽度后任务区才够 120。 */
+export const planTimeline = { hourGutter: 48, weekMin: 760, railDay: 112, railCompact: 80, taskMin: 120, dayBorder: 1 } as const;
+export const timeBandNameHeight = 20;
+export const timeBandBothHeight = 36;
+
+export function planTimelineMinWidth(dayCount: number, anyBands: boolean) {
+  if (dayCount !== 7) return undefined;
+  if (!anyBands) return planTimeline.weekMin;
+  return planTimeline.hourGutter + dayCount * (planTimeline.railCompact + planTimeline.taskMin + planTimeline.dayBorder);
+}
+
+export type TimeBandLabelMode = 'hidden' | 'name' | 'both';
+export type TimeBandSegmentLabel = { name: string; range: string | null; text: string };
+
+export function timeBandLabelMode(height: number): TimeBandLabelMode {
+  if (height < timeBandNameHeight) return 'hidden';
+  if (height < timeBandBothHeight) return 'name';
+  return 'both';
 }
 
 export function timeBandSegmentLabels(bands: readonly PlanTimeBand[], segments: readonly TimeBandSegment[]) {
   const byId = new Map(bands.map((band) => [band.id, band]));
   const shown = new Set<string>();
-  const labels = segments.map(() => null as string | null);
+  const labels = segments.map(() => null as TimeBandSegmentLabel | null);
   const ordered = segments.map((segment, index) => ({ segment, index })).sort((left, right) => left.segment.startMinute - right.segment.startMinute || left.index - right.index);
   for (const { segment, index } of ordered) {
-    if (shown.has(segment.bandId) || timeBandGeometry(segment).height < 20) continue;
+    const mode = timeBandLabelMode(timeBandGeometry(segment).height);
+    if (shown.has(segment.bandId) || mode === 'hidden') continue;
     shown.add(segment.bandId);
     const band = byId.get(segment.bandId);
-    labels[index] = band ? timeBandLabel(band) : null;
+    if (!band) continue;
+    labels[index] = { name: band.name, range: mode === 'both' ? timeBandRange(band) : null, text: timeBandLabel(band) };
   }
   return labels;
 }
