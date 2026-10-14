@@ -439,7 +439,7 @@ export function TaskExpandBody({ fill = false }: { fill?: boolean }) {
   const edit = useEdit();
   const record = edit.textRecord;
   const textConflicts = Object.entries(record?.conflicts ?? {}) as Array<[TextField, NonNullable<TaskTextDraftV1['conflicts'][TextField]>]>;
-  return <div data-task-editor className={cn('flex flex-col', fill && 'min-h-0 flex-1')}>
+  return <div data-task-editor className={cn('flex flex-col', fill && 'min-h-full')}>
     {textConflicts.length > 0 && <div role="alert" className="mb-3 rounded-xl border border-warning-border bg-warning-bg p-3 text-sm text-warning">
       <p className="flex items-center gap-2"><AlertTriangle className="size-4 shrink-0" aria-hidden />正文或标题与后台更新冲突，本地与远端内容都已保留。</p>
       <div className="mt-2 flex flex-wrap gap-2">
@@ -634,7 +634,7 @@ export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children
           <ParentTaskLink />
           <div data-testid="task-detail-title-row" className="flex min-w-0 items-start gap-2"><TaskStatusCheckbox /><div className="min-w-0 flex-1"><TaskTitleField /></div><ActivityButton onOpen={() => setActivity(true)} /><CloseDetailButton /></div>
         </header>
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-5"><TaskExpandBody fill /></div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5"><TaskExpandBody fill /></div>
       </div>
     </DetailFrame>
     <TaskActivityDialog taskId={props.id} open={activity} onOpenChange={setActivity} />

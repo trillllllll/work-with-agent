@@ -1115,6 +1115,22 @@
   flex-direction: column;
 }
 
+/* 基准高度按内容，只拉长不压矮。flex: 1 1 0% 会把正文收到 8rem，字会盖住下面的资料。 */
+.task-description-fill,
+.task-description-grow {
+  flex: 1 0 auto;
+  min-width: 0;
+}
+
+.task-description-fill {
+  display: flex;
+  flex-direction: column;
+}
+
+.task-description-grow {
+  min-height: 8rem;
+}
+
 /* ---------- 轻量编辑器：正文视觉契约 ---------- */
 
 :root {
@@ -1130,12 +1146,20 @@
 }
 
 .task-description-input {
+  display: flex;
+  flex-direction: column;
   width: 100%;
-  min-height: 128px;
+  min-height: 8rem;
+}
+
+.task-description-grow .task-description-input,
+.task-description-input .ProseMirror {
+  flex: 1 0 auto;
 }
 
 .task-description-input .ProseMirror {
-  min-height: 128px;
+  box-sizing: border-box;
+  min-height: 8rem;
   padding: 8px 0 4px;
   font-size: 14px;
   line-height: 24px;

@@ -440,8 +440,8 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
     editor.commands.focus();
   };
 
-  return <div className={cn('task-description-editor', fill && 'flex min-h-32 flex-1 flex-col')}>
-    <EditorContent editor={editor} className={cn('task-description-input min-h-32 w-full', fill && 'flex-1')} />
+  return <div className={cn('task-description-editor', fill && 'task-description-grow')}>
+    <EditorContent editor={editor} className="task-description-input w-full" />
     {editor && !readonly && <FormatToolbar editor={editor} composing={() => composingRef.current} taskId={taskId} />}
     {rawDialog && createPortal(<div className="task-raw-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setRawDialog(null); }}>
       <div className="task-raw-dialog" role="dialog" aria-label="编辑原文片段">

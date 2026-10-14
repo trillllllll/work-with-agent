@@ -64,7 +64,7 @@ export function TaskDescription({ taskId, value, readonly, fill, openDescription
     }
   };
 
-  return <div className={cn(fill && 'flex min-h-0 flex-1 flex-col')} onDragOver={(event) => { if (!readonly && [...event.dataTransfer.items].some((item) => item.kind === 'file')) event.preventDefault(); }} onDrop={(event) => {
+  return <div className={cn(fill && 'task-description-fill')} onDragOver={(event) => { if (!readonly && [...event.dataTransfer.items].some((item) => item.kind === 'file')) event.preventDefault(); }} onDrop={(event) => {
     // 编辑器已处理的拖放带 defaultPrevented。
     if (readonly || event.defaultPrevented) return;
     const images = [...(event.dataTransfer?.files ?? [])].filter(isRasterImage);
