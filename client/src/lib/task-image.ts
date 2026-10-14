@@ -73,11 +73,50 @@ async function sizedSource(file: File) {
   }
 }
 
+function withTimeout<T>(work: Promise<T>, timeoutMs: number) {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('图片压缩超时')), timeoutMs);
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error('图片压缩失败'));
+      },
+    );
+  });
+}
+
+function blobBytes(blob: Blob, timeoutMs: number) {
+  return withTimeout(blob.arrayBuffer().then((buffer) => new Uint8Array(buffer)), timeoutMs);
+}
+
 async function encode(file: File, fileType: 'image/webp' | 'image/jpeg') {
   const imageCompression = (await import('browser-image-compression')).default;
-  const options = { maxSizeMB: 3, maxWidthOrHeight: maxEdge, alwaysKeepResolution: true, fileType, initialQuality: 0.92, useWebWorker: true, libURL: new URL(compressionLibUrl, window.location.href).href };
-  try { return await imageCompression(file, options); }
-  catch { return await imageCompression(file, { ...options, useWebWorker: false }); }
+  const options = { maxSizeMB: 3, maxWidthOrHeight: maxEdge, alwaysKeepResolution: true, fileType, initialQuality: 0.92, libURL: new URL(compressionLibUrl, window.location.href).href };
+  const run = (useWebWorker: boolean) => imageCompression(file, { ...options, useWebWorker });
+  // WebKit 的 Worker 可能不返回，或把 WebP 原样交回成 PNG。WebP 失败就抛出，由调用方改压 JPEG；JPEG 再改走主线程。
+  let compressed: Blob;
+  try { compressed = await withTimeout(run(true), 4_000); }
+  catch (error) {
+    if (fileType === 'image/webp') throw error;
+    compressed = await withTimeout(run(false), 8_000);
+  }
+  let bytes: Uint8Array;
+  try { bytes = await blobBytes(compressed, 2_000); }
+  catch (error) {
+    if (fileType === 'image/webp') throw error;
+    compressed = await withTimeout(run(false), 8_000);
+    bytes = await blobBytes(compressed, 4_000);
+  }
+  const mimeType = imageMime(bytes);
+  if (mimeType !== fileType) throw new Error(fileType === 'image/webp' ? '不是 WebP' : '不是 JPEG');
+  const stem = file.name.replace(/\.[^.]+$/, '') || 'image';
+  const copy = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(copy).set(bytes);
+  return new File([copy], `${stem}.${mimeType === 'image/webp' ? 'webp' : 'jpg'}`, { type: mimeType, lastModified: file.lastModified });
 }
 
 /** Shrink a pasted or chosen image before upload. Animated images become one still frame. */

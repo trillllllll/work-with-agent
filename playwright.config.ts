@@ -21,6 +21,8 @@ export default defineConfig({
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
     { name: 'mobile', use: { ...devices['Pixel 7'] } },
+    // 限定编辑器相关用例的 WebKit 项目。
+    { name: 'webkit-editor', use: { ...devices['Desktop Safari'] }, testMatch: /task-editor-lightweight|task-detail-editor|task-detail-rich|task-materials/ },
   ],
   webServer: [
     {

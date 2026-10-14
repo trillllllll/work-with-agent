@@ -127,12 +127,23 @@ for (const width of [1200, 800, 393]) {
   });
 }
 
-test('未保存标题：继续编辑保留草稿，舍弃后才跳转', async ({
+test('未保存标题：本地草稿安全后直接打开父任务，回来仍能恢复', async ({
   page, request,
 }) => {
   const parent = await createTask(request, '父任务');
   const child = await createTask(request, '子任务', parent.id);
   await showOnlyChild(page, child);
+  // 按住浏览器里的保存请求，证明离开不等服务端，草稿仍在本地。
+  let releasePatch = () => {};
+  const held = new Promise<void>((resolve) => { releasePatch = resolve; });
+  await page.route(`**/api/tasks/${child.id}`, async (route) => {
+    if (route.request().method() !== 'PATCH') {
+      await route.fallback();
+      return;
+    }
+    await held;
+    await route.fallback();
+  });
   await openChild(page, child);
   await expect(detail(page).getByTestId('task-parent-link')).toBeVisible();
 
@@ -140,22 +151,21 @@ test('未保存标题：继续编辑保留草稿，舍弃后才跳转', async ({
     .fill('未保存的新标题');
   await detail(page).getByTestId('task-parent-link').click();
 
-  const confirm = page.getByRole('dialog', {
+  await expect(page.getByRole('dialog', {
     name: '保存未完成的编辑？', exact: true,
-  });
-  await expect(confirm).toBeVisible();
-  await confirm.getByRole('button', { name: '继续编辑', exact: true }).click();
+  })).toHaveCount(0);
+  await expect(detail(page).getByLabel('任务标题', { exact: true }))
+    .toHaveValue('父任务');
+  expect((await readTask(request, child.id)).title).toBe('子任务');
 
+  await detail(page).getByRole('button', { name: '子任务', exact: true }).click();
   await expect(detail(page).getByLabel('任务标题', { exact: true }))
     .toHaveValue('未保存的新标题');
   expect((await readTask(request, child.id)).title).toBe('子任务');
 
-  await detail(page).getByTestId('task-parent-link').click();
-  await confirm.getByRole('button', { name: '舍弃更改', exact: true }).click();
-
-  await expect(detail(page).getByLabel('任务标题', { exact: true }))
-    .toHaveValue('父任务');
-  expect((await readTask(request, child.id)).title).toBe('子任务');
+  releasePatch();
+  await expect.poll(async () => (await readTask(request, child.id)).title)
+    .toBe('未保存的新标题');
 });
 
 test('父任务 404：显示不可用，不显示可点击入口', async ({
@@ -277,8 +287,9 @@ test('父任务加载中不提供跳转，释放请求后显示名称', async ({
   });
   try {
     await openChild(page, child);
-    await expect(detail(page).getByRole('status'))
-      .toHaveText('正在加载父任务…');
+    const loading = detail(page).getByTestId('task-parent-row');
+    await expect(loading).toHaveText('正在加载父任务…');
+    await expect(loading).toHaveAttribute('role', 'status');
     await expect(detail(page).getByTestId('task-parent-link')).toHaveCount(0);
   } finally {
     release();
@@ -302,31 +313,29 @@ test('根任务不请求空父 ID', async ({ page, request }) => {
   expect(invalidTaskRequests).toEqual([]);
 });
 
-test('保存并继续后打开父任务，子任务标题已写入', async ({ page, request }) => {
+test('离开后后台写入子任务标题，不弹保存确认，也不连带改父任务', async ({ page, request }) => {
   const parent = await createTask(request, '父任务');
   const child = await createTask(request, '子任务', parent.id);
   await showOnlyChild(page, child);
   await openChild(page, child);
   await detail(page).getByLabel('任务标题', { exact: true }).fill('修改后的子任务');
   await detail(page).getByTestId('task-parent-link').click();
-  const confirm = page.getByRole('dialog', { name: '保存未完成的编辑？', exact: true });
-  await expect(confirm).toBeVisible();
-  await confirm.getByRole('button', { name: '保存并继续', exact: true }).click();
-  await page.getByRole('button', { name: '确认影响并执行', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '保存未完成的编辑？', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '确认影响并执行', exact: true })).toHaveCount(0);
 
   await expect(detail(page).getByLabel('任务标题', { exact: true }))
     .toHaveValue(parent.title);
-  expect((await readTask(request, child.id)).title).toBe('修改后的子任务');
+  await expect.poll(async () => (await readTask(request, child.id)).title).toBe('修改后的子任务');
   expect((await readTask(request, parent.id)).title).toBe(parent.title);
 });
 
-test('保存失败时留在子任务，草稿和确认框都还在', async ({ page, request }) => {
+test('保存失败时仍打开父任务，回来能恢复草稿且服务端未变', async ({ page, request }) => {
   const parent = await createTask(request, '父任务');
   const child = await createTask(request, '子任务', parent.id);
   await showOnlyChild(page, child);
   await page.route(`**/api/tasks/${child.id}`, async route => {
     if (route.request().method() !== 'PATCH') {
-      await route.continue();
+      await route.fallback();
       return;
     }
     await route.fulfill({
@@ -337,16 +346,18 @@ test('保存失败时留在子任务，草稿和确认框都还在', async ({ pa
   });
   await openChild(page, child);
   await detail(page).getByLabel('任务标题', { exact: true }).fill('修改后的子任务');
-  await detail(page).getByTestId('task-parent-link').click();
-  const confirm = page.getByRole('dialog', { name: '保存未完成的编辑？', exact: true });
-  await expect(confirm).toBeVisible();
   const failed = page.waitForResponse(response => response.request().method() === 'PATCH' && new URL(response.url()).pathname === `/api/tasks/${child.id}`);
-  await confirm.getByRole('button', { name: '保存并继续', exact: true }).click();
+  await detail(page).getByTestId('task-parent-link').click();
   expect((await failed).status()).toBe(500);
 
   await expect(page.getByRole('dialog', {
     name: '保存未完成的编辑？', exact: true,
-  })).toBeVisible();
+  })).toHaveCount(0);
+  await expect(detail(page).getByLabel('任务标题', { exact: true }))
+    .toHaveValue(parent.title);
+  expect((await readTask(request, child.id)).title).toBe(child.title);
+
+  await detail(page).getByRole('button', { name: '子任务', exact: true }).click();
   await expect(detail(page).getByLabel('任务标题', { exact: true }))
     .toHaveValue('修改后的子任务');
   expect((await readTask(request, child.id)).title).toBe(child.title);

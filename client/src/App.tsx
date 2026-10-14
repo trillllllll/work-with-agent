@@ -306,6 +306,17 @@ export function App() {
     if (!taskIdRef.current) return;
     detailRef.current?.requestTransition(closeTask);
   }, [page]);
+  // 右下角“未同步”列表打开任务。
+  const openUnsynced = useRef((id: string) => {});
+  openUnsynced.current = (id: string) => { openTask(id); };
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const id = (event as CustomEvent<{ taskId: string }>).detail?.taskId;
+      if (id) openUnsynced.current(id);
+    };
+    window.addEventListener('wwa-open-task', handler);
+    return () => window.removeEventListener('wwa-open-task', handler);
+  }, []);
   const detailPane = taskId ? <TaskDetailPane key={taskId} ref={detailRef} id={taskId} fallback={tasks.find((task) => task.id === taskId)} tags={tags} readonly={archived} presentation={isDesktop ? 'panel' : showChat ? 'retained' : 'modal'} panelSlot={detailSlot} onSave={patchTask} onClose={closeTask} onDirtyChange={setDetailDirty} onToggleTask={toggleTask} onCreateTask={createTask} onOpenTask={openTask} /> : null;
   const hasAccessory = showChat || (isDesktop && Boolean(taskId));
   return <FocusProvider>

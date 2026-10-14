@@ -61,7 +61,7 @@ test('信息行显示当前值', async ({ page, request }) => {
   await expect(detail.getByRole('button', { name: '预计时长', exact: true })).toContainText('设置');
 });
 
-test('选中文本浮出格式条，加粗后 blur 渲染', async ({ page, request }) => {
+test('选中文本浮出格式条，加粗后立即保持格式', async ({ page, request }) => {
   const created = await request.post(`${apiUrl}/api/tasks`, { data: { title: '写一句' } });
   expect(created.ok(), await created.text()).toBe(true);
   const task = (await created.json()).data as { id: string };
@@ -74,9 +74,11 @@ test('选中文本浮出格式条，加粗后 blur 渲染', async ({ page, reque
   await body.click();
   await page.keyboard.press('End');
   await page.keyboard.press('Shift+Home');
-  const bar = detail.getByRole('toolbar', { name: '格式', exact: true });
+  const bar = page.getByRole('toolbar', { name: '格式', exact: true });
   await expect(bar).toBeVisible();
   await bar.getByRole('button', { name: '加粗', exact: true }).click();
+  // 加粗后无需失焦，排版结果立即可见。
+  await expect(body.locator('strong')).toContainText('hello world');
   await expect(body).toHaveAttribute('data-value', '**hello world**');
   await detail.getByLabel('任务标题', { exact: true }).click();
   await expect(detail.locator('strong')).toContainText('hello world');

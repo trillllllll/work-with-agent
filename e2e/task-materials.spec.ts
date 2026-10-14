@@ -154,12 +154,12 @@ test('编辑中解除关联不会丢掉未保存正文', async ({ page, request 
   await picker.getByRole('button', { name: '插入引用', exact: true }).click();
   await expect(page.getByTestId(`material-reference-${material.id}`)).toBeVisible();
   const description = page.getByLabel('详情', { exact: true });
-  const box = await description.boundingBox();
-  await description.click({ position: { x: Math.max(24, (box?.width ?? 240) - 12), y: 18 } });
-  await page.keyboard.press('Meta+A');
-  const draft = `[仍被引用](wwa-material:${material.id})未保存补充甲`;
-  await page.keyboard.insertText(draft);
-  await expect.poll(async () => description.getAttribute('data-value')).toBe(draft);
+  await description.click();
+  await page.keyboard.press('End');
+  await page.keyboard.insertText('未保存补充甲');
+  await expect(description).toContainText('未保存补充甲');
+  await expect.poll(async () => description.getAttribute('data-value')).toContain(`wwa-material:${material.id}`);
+  await expect.poll(async () => description.getAttribute('data-value')).toContain('未保存补充甲');
   await page.getByTestId(`task-material-${material.id}`).getByRole('button', { name: '解除关联', exact: true }).click();
   const confirm = page.getByRole('dialog', { name: '解除关联', exact: true });
   await confirm.getByRole('button', { name: '解除关联', exact: true }).click();

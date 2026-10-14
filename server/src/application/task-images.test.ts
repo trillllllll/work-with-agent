@@ -70,7 +70,7 @@ describe('task detail images', () => {
     }
   });
 
-  it('stores compressed bytes outside the description and drops images the description no longer uses', async () => {
+  it('stores compressed bytes outside the description and keeps unreferenced images until permanent delete', async () => {
     const item = await task();
     const other = await task('另一任务');
     const kept = jpeg('TASK_IMAGE_MARKER_KEEP');
@@ -84,10 +84,13 @@ describe('task detail images', () => {
     expect(JSON.stringify(uploaded.body)).not.toContain('TASK_IMAGE_MARKER_KEEP');
     expect(await prisma.changeRecord.count()).toBe(before);
 
+    // 保存不含 removed 图片的正文：图片记录与文件都保留，供撤销与草稿恢复。
     const saved = await request(app).patch(`/api/tasks/${item.id}`).send({ description: `说明\n![](${uploaded.body.data.url})\n` });
     expect(saved.status, JSON.stringify(saved.body)).toBe(200);
     expect(saved.body.data.description).toBe(`说明\n![](${uploaded.body.data.url})\n`);
-    expect(await prisma.taskImage.count({ where: { taskId: item.id } })).toBe(1);
+    expect(await prisma.taskImage.count({ where: { taskId: item.id } })).toBe(2);
+    expect((await request(app).get(removed.body.data.url)).status).toBe(200);
+    await expect(readFile(resolve(knowledgeStorageRoot(), knowledgeHash(dropped)))).resolves.toEqual(dropped);
 
     const bytes = await request(app).get(uploaded.body.data.url);
     expect(bytes.status).toBe(200);
@@ -95,9 +98,24 @@ describe('task detail images', () => {
     expect(bytes.headers['x-content-type-options']).toBe('nosniff');
     expect(Buffer.from(bytes.body)).toEqual(kept);
     expect((await request(app).get(`/api/tasks/${other.id}/images/${uploaded.body.data.id}`)).status).toBe(404);
-    expect((await request(app).get(removed.body.data.url)).status).toBe(404);
+
+    // 删除正文图片 → 保存 → 撤销恢复引用：图片仍可读，字节与上传一致。
+    const without = await request(app).patch(`/api/tasks/${item.id}`).send({ description: '说明\n' });
+    expect(without.status, JSON.stringify(without.body)).toBe(200);
+    const restored = await request(app).get(uploaded.body.data.url);
+    expect(restored.status).toBe(200);
+    expect(Buffer.from(restored.body)).toEqual(kept);
+    const undone = await request(app).post(`/api/changes/${without.body.meta.changeId}/undo`).send({});
+    expect(undone.status, JSON.stringify(undone.body)).toBe(200);
+    expect((await request(app).get(uploaded.body.data.url)).status).toBe(200);
+
+    // 永久删除任务后：该任务图片记录清零；未被资料使用的 blob 被回收。
+    await request(app).delete(`/api/tasks/${item.id}`).send({});
+    const purge = await request(app).post(`/api/trash/tasks/${item.id}/permanent`).send({});
+    expect(purge.status, JSON.stringify(purge.body)).toBe(200);
+    expect(await prisma.taskImage.count({ where: { taskId: item.id } })).toBe(0);
     await expect(readFile(resolve(knowledgeStorageRoot(), knowledgeHash(dropped)))).rejects.toThrow();
-    expect(await readFile(resolve(knowledgeStorageRoot(), knowledgeHash(kept)))).toEqual(kept);
+    await expect(readFile(resolve(knowledgeStorageRoot(), knowledgeHash(kept)))).rejects.toThrow();
 
     const records = await prisma.changeRecord.findMany();
     const snapshot = JSON.stringify(records);

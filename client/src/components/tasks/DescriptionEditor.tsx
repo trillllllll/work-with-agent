@@ -1,300 +1,173 @@
-import { useImperativeHandle, useLayoutEffect, useRef, type FocusEvent, type Ref } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { QueryClientProvider } from '@tanstack/react-query';
-import { queryClient } from '@/lib/query-client.js';
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
-import { Compartment, EditorSelection, EditorState, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
-import { BlockType, type BlockInfo, Decoration, EditorView, keymap, placeholder, WidgetType, type DecorationSet } from '@codemirror/view';
-import { MarkdownView } from '@/components/chat/MarkdownView.js';
-import { MaterialReference } from '@/components/library/MaterialReference.js';
-import { materialIdFromHref } from '@/lib/material-citation.js';
-import { blockHoldsCaret, markdownBlocks } from '@/lib/markdown-blocks.js';
-import { formatToolbar } from './description-format-toolbar.js';
-import { isTaskImageSrc } from '@/lib/task-description.js';
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from 'react';
+import { createPortal } from 'react-dom';
+import { Editor, type Extensions, type JSONContent } from '@tiptap/core';
+import { NodeSelection, type EditorState } from '@tiptap/pm/state';
+import { Fragment, Slice, type Node as PMNode } from '@tiptap/pm/model';
+import type { EditorView } from '@tiptap/pm/view';
+import { EditorContent, useEditor } from '@tiptap/react';
+import { StarterKit } from '@tiptap/starter-kit';
+import { Link } from '@tiptap/extension-link';
+import { Placeholder } from '@tiptap/extension-placeholder';
+import { ListKit } from '@tiptap/extension-list';
+import { TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
+import { Bold, Code, Italic, Link2, List, ListOrdered, ListTodo, MoreHorizontal, Quote, Strikethrough } from 'lucide-react';
+import { parseDescription, serializeDescription, type DescriptionModel } from '@/lib/description-codec.js';
+import type { EditorSelectionBookmark } from '@/lib/task-editor-types.js';
+import { AlignedTable, findUploadPosition, MaterialReferenceNode, RawMarkdownNode, TaskImageNode, TaskItemPointerSync, taskImageContent, uploadKey, UploadDecorations } from './description-extensions.js';
+import { Button } from '@/components/ui/button.js';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.js';
 import { cn } from '@/lib/utils.js';
 
-const views = new WeakMap<HTMLElement, EditorView>();
-const previewRefresh = StateEffect.define<null>();
-const setFocused = StateEffect.define<boolean>();
-const editableSlot = new Compartment();
-
-// EditContext keeps its own selection. A block widget then makes a select-all insert
-// land at the caret, in front of the existing text. This editor stays on the DOM path.
-(EditorView as unknown as { EDIT_CONTEXT: boolean }).EDIT_CONTEXT = false;
-
-type Handlers = {
-  edit: (pos: number) => void;
-  zoom: (src: string) => void;
-  remeasure: () => void;
-  openLinkedTask?: (taskId: string) => void;
-};
-
 export type DescriptionHandle = {
-  insert: (text: string) => void;
-  blur: () => void;
   focus: () => void;
+  blur: () => void;
+  insertImages: (urls: string[]) => void;
+  addUpload: (uploadId: string, fileName: string) => void;
+  hasUpload: (uploadId: string) => boolean;
+  resolveUpload: (uploadId: string, src: string) => boolean;
+  removeUpload: (uploadId: string) => void;
+  bookmark: () => EditorSelectionBookmark | null;
+  insertMaterialReferences: (references: { materialId: string; label: string }[], range?: { from: number; to: number }) => string | null;
 };
 
-export function readDescriptionCaret(node: HTMLElement) {
-  const view = views.get(node);
-  if (!view) return null;
-  const range = view.state.selection.main;
-  return { start: range.from, end: range.to };
+// 每个任务只有一个活动编辑器；离开详情后的上传回执按任务定位。
+const activeEditors = new Map<string, Editor>();
+export function taskEditor(taskId: string) {
+  return activeEditors.get(taskId) ?? null;
 }
 
-export function placeDescriptionCaret(node: HTMLElement, start: number, end: number) {
-  const view = views.get(node);
-  if (!view || !view.state.facet(EditorView.editable)) return false;
-  const length = view.state.doc.length;
-  const from = Math.max(0, Math.min(start, length));
-  const to = Math.max(from, Math.min(end, length));
-  // Reveal the caret block before focusing, so the selection is not inside a widget.
-  view.dispatch({ selection: EditorSelection.range(from, to), effects: setFocused.of(true) });
-  view.focus();
-  return view.root.activeElement === view.contentDOM;
+/** 上传完成后把图片插回捕获任务的映射位置；装饰不存在或已取消时返回 false。 */
+export function resolveTaskUploadOnEditor(taskId: string, uploadId: string, src: string): boolean {
+  const editor = activeEditors.get(taskId);
+  if (!editor || editor.isDestroyed) return false;
+  const decorations = uploadKey.getState(editor.state)?.decorations;
+  if (!decorations || findUploadPosition(decorations, uploadId) == null) return false;
+  const pos = findUploadPosition(decorations, uploadId)!;
+  const plan = taskImageContent(editor.state.doc, pos, src, editor.schema.nodes.image);
+  editor.chain()
+    .insertContentAt(plan.at, plan.content)
+    .command(({ tr, dispatch }) => {
+      if (dispatch) tr.setMeta(uploadKey, { type: 'remove', uploadId });
+      return true;
+    })
+    .run();
+  return true;
 }
 
-function insertText(view: EditorView, text: string) {
-  const range = view.state.selection.main;
-  view.dispatch({
-    changes: { from: range.from, to: range.to, insert: text },
-    selection: EditorSelection.cursor(range.from + text.length),
-  });
-  view.focus();
+/** 移除上传装饰（取消或失败）。 */
+export function removeTaskUploadFromEditor(taskId: string, uploadId: string) {
+  const editor = activeEditors.get(taskId);
+  if (!editor || editor.isDestroyed) return;
+  editor.view.dispatch(editor.state.tr.setMeta(uploadKey, { type: 'remove', uploadId }));
 }
 
-class PreviewWidget extends WidgetType {
-  private root: Root | null = null;
-
-  constructor(readonly source: string, readonly taskId: string, readonly from: number, readonly handlers: Handlers) {
-    super();
-  }
-
-  eq(other: PreviewWidget) {
-    return other.source === this.source && other.taskId === this.taskId && other.from === this.from;
-  }
-
-  toDOM(view: EditorView) {
-    const host = document.createElement('div');
-    host.className = 'task-detail-block';
-    host.dataset.blockFrom = String(this.from);
-    host.dataset.blockTo = String(this.from + this.source.length);
-    this.root = createRoot(host);
-    this.root.render(<QueryClientProvider client={queryClient}><BlockPreview source={this.source} taskId={this.taskId} from={this.from} handlers={this.handlers} /></QueryClientProvider>);
-    queueMicrotask(() => view.requestMeasure());
-    return host;
-  }
-
-  get estimatedHeight() {
-    return 32;
-  }
-
-  destroy() {
-    const root = this.root;
-    this.root = null;
-    if (root) queueMicrotask(() => root.unmount());
-  }
-
-  ignoreEvent() {
-    return true;
-  }
+/** 读取当前任务编辑器的选区 bookmark；包含文档长度用于位置有效性校验。 */
+export function readTaskBookmark(taskId: string): (EditorSelectionBookmark & { docSize: number }) | null {
+  const editor = activeEditors.get(taskId);
+  if (!editor || editor.isDestroyed) return null;
+  const selection = editor.state.selection;
+  return {
+    taskId,
+    anchor: selection.anchor,
+    head: selection.head,
+    docSize: editor.state.doc.content.size,
+    kind: selection instanceof NodeSelection ? 'node' : 'text',
+  };
 }
 
-function plainText(node: unknown): string {
-  if (typeof node === 'string' || typeof node === 'number') return String(node);
-  if (Array.isArray(node)) return node.map(plainText).join('');
-  if (node && typeof node === 'object' && 'props' in node) return plainText((node as { props?: { children?: unknown } }).props?.children);
-  return '';
+/** 在当前任务的富文本文档上替换选区并插入资料引用，返回序列化后的完整正文。 */
+export function insertMaterialReferencesIntoTask(taskId: string, references: { materialId: string; label: string }[], range: { from: number; to: number }): string | null {
+  const editor = activeEditors.get(taskId);
+  if (!editor || editor.isDestroyed || !references.length) return null;
+  const size = editor.state.doc.content.size;
+  const from = Math.max(0, Math.min(range.from, size));
+  const to = Math.max(from, Math.min(range.to, size));
+  // 一次编辑事务，保留可撤销性。
+  editor.chain().focus()
+    .insertContentAt({ from, to }, references.map((reference) => ({ type: 'materialReference', attrs: reference })))
+    .run();
+  return (editor.getJSON() as unknown) === null ? null : serializeCurrent(editor);
 }
 
-function opensElsewhere(node: Element) {
-  if (node.closest('button')) return true;
-  const link = node.closest('a');
-  return Boolean(link && /^(https?:|mailto:)/i.test(link.getAttribute('href') ?? ''));
+function serializeCurrent(editor: Editor): string | null {
+  // 通过 onUpdate 序列化已在 dispatch 内完成；这里读取 DOM 上同步维护的值。
+  const value = editor.view.dom.getAttribute('data-value');
+  return value == null ? null : value;
 }
 
-function controlAt(root: HTMLElement, x: number, y: number) {
-  for (const node of root.querySelectorAll<HTMLElement>('button, a[href]')) {
-    const rect = node.getBoundingClientRect();
-    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) continue;
-    if (opensElsewhere(node)) return true;
-  }
-  return false;
-}
-
-function previewHostAt(root: HTMLElement, x: number, y: number) {
-  const hit = root.ownerDocument.elementFromPoint(x, y);
-  const direct = hit instanceof Element ? hit.closest('.task-detail-block') : null;
-  if (direct instanceof HTMLElement && root.contains(direct)) return direct;
-  for (const node of root.querySelectorAll<HTMLElement>('.task-detail-block')) {
-    const rect = node.getBoundingClientRect();
-    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return node;
+export function readDescriptionCaret(node: HTMLElement | null) {
+  if (!node) return null;
+  for (const editor of activeEditors.values()) {
+    if (editor.isDestroyed || !editor.view.dom.contains(node) && editor.view.dom !== node) continue;
+    const selection = editor.state.selection;
+    return { start: selection.from, end: selection.to };
   }
   return null;
 }
 
-function BlockPreview({ source, taskId, from, handlers }: { source: string; taskId: string; from: number; handlers: Handlers }) {
-  return <div onMouseDown={(event) => {
-    if (event.button !== 0) return;
-    const target = event.target;
-    if (target instanceof Element && opensElsewhere(target)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    handlers.edit(from);
-  }} onContextMenu={(event) => {
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    const image = target.closest('img');
-    if (!(image instanceof HTMLImageElement)) return;
-    const src = image.getAttribute('src');
-    if (!src || !isTaskImageSrc(taskId, src)) return;
-    event.preventDefault();
-    handlers.zoom(src);
-  }}>
-    <MarkdownView content={source} allowMaterialLinks components={{
-      img: ({ src, alt }) => {
-        const address = typeof src === 'string' ? src : undefined;
-        if (!isTaskImageSrc(taskId, address)) return null;
-        return <span className="task-image relative my-2 inline-block max-w-full">
-          <img src={address} alt={typeof alt === 'string' ? alt : ''} className="block max-h-80 max-w-full rounded-lg" onLoad={() => handlers.remeasure()} />
-          <span className="task-image-hint pointer-events-none absolute inset-x-0 bottom-2 justify-center">
-            <span className="rounded-full bg-slate-950/75 px-2 py-0.5 text-xs text-white">右键放大</span>
-          </span>
-        </span>;
-      },
-      a: ({ href, children }) => {
-        const materialId = materialIdFromHref(typeof href === 'string' ? href : '');
-        if (!materialId) return <a href={href} target="_blank" rel="noreferrer">{children}</a>;
-        return <MaterialReference materialId={materialId} fallback={plainText(children)} onOpenTask={handlers.openLinkedTask} />;
-      },
-    }} />
-  </div>;
-}
-
-type PreviewState = { deco: DecorationSet; focused: boolean };
-
-function buildPreview(state: EditorState, focused: boolean, taskId: string, handlers: Handlers) {
-  const builder = new RangeSetBuilder<Decoration>();
-  const source = state.doc.toString();
-  const selection = state.selection.main;
-  const editing = focused && state.facet(EditorView.editable);
-  for (const block of markdownBlocks(source)) {
-    if (!block.render || block.from < 0 || block.to > source.length || block.from >= block.to) continue;
-    if (editing && blockHoldsCaret(block, selection.from, selection.to)) continue;
-    builder.add(block.from, block.to, Decoration.replace({
-      widget: new PreviewWidget(source.slice(block.from, block.to), taskId, block.from, handlers),
-      block: true,
-    }));
+export function placeDescriptionCaret(node: HTMLElement | null, start: number, end: number) {
+  if (!node) return false;
+  for (const editor of activeEditors.values()) {
+    if (editor.isDestroyed || (editor.view.dom !== node && !editor.view.dom.contains(node))) continue;
+    if (!editor.isEditable) return false;
+    const length = editor.state.doc.content.size;
+    const from = Math.max(0, Math.min(start, length));
+    const to = Math.max(from, Math.min(end, length));
+    editor.chain().focus().setTextSelection({ from, to }).run();
+    return editor.view.hasFocus();
   }
-  return builder.finish();
+  return false;
 }
 
-// Block widgets have to come from a state field. View plugins supply decorations too late to replace lines.
-function previewExtension(taskRef: { current: string }, handlersRef: { current: Handlers }) {
-  const field = StateField.define<PreviewState>({
-    create(state) {
-      return { deco: buildPreview(state, false, taskRef.current, handlersRef.current), focused: false };
-    },
-    update(value, tr) {
-      let focused = value.focused;
-      let refresh = false;
-      for (const effect of tr.effects) {
-        if (effect.is(setFocused)) focused = effect.value;
-        else if (effect.is(previewRefresh)) refresh = true;
-      }
-      const editableChanged = tr.state.facet(EditorView.editable) !== tr.startState.facet(EditorView.editable);
-      if (!refresh && !editableChanged && focused === value.focused && !tr.docChanged && !tr.selection) {
-        return { deco: value.deco.map(tr.changes), focused };
-      }
-      return { deco: buildPreview(tr.state, focused, taskRef.current, handlersRef.current), focused };
-    },
-    provide: (preview) => EditorView.decorations.from(preview, (value) => value.deco),
-  });
-  return [field, EditorView.focusChangeEffect.of((_state, focused) => setFocused.of(focused))];
+/** 代码块、行内代码和原文片段中禁用 Markdown 输入规则。 */
+function guardMarkdownRules(extensions: Extensions): Extensions {
+  for (const extension of extensions) {
+    const holder = extension as unknown as { config?: { addInputRules?: (...args: unknown[]) => unknown[] } };
+    const original = holder.config?.addInputRules;
+    if (!holder.config || typeof original !== 'function') continue;
+    holder.config.addInputRules = function (this: unknown, ...args: unknown[]) {
+      const rules = (original.apply(this, args) ?? []) as Array<{ handler?: (state: EditorState, match: RegExpMatchArray, start: number, end: number) => unknown }>;
+      return rules.map((rule) => {
+        const handler = rule.handler;
+        if (typeof handler !== 'function') return rule;
+        return {
+          ...rule,
+          handler(state: EditorState, match: RegExpMatchArray, start: number, end: number) {
+            const $from = state.doc.resolve(start);
+            if ($from.parent.type.spec.code) return false;
+            if ($from.marks().some((mark: { type: { name: string } }) => mark.type.name === 'code')) return false;
+            return handler(state, match, start, end);
+          },
+        };
+      });
+    };
+  }
+  return extensions;
 }
 
-function blockIsText(type: BlockType | readonly BlockInfo[]): boolean {
-  if (Array.isArray(type)) return type.every((block) => blockIsText(block.type));
-  return type === BlockType.Text;
-}
-
-// Playwright fill() replaces the DOM selection. A block widget or the empty-doc placeholder drops that mutation.
-function shouldApplyInsert(view: EditorView, text: string) {
-  if (!view.state.facet(EditorView.editable) || view.composing) return false;
-  const { from, to } = view.state.selection.main;
-  if (view.state.doc.length === 0) return text.length > 1;
-  if (from === 0 && to === view.state.doc.length) return true;
-  if (!blockIsText(view.lineBlockAt(from).type)) return true;
-  return to !== from && !blockIsText(view.lineBlockAt(Math.min(view.state.doc.length, Math.max(from, to - 1))).type);
-}
-
-function applyTypedText(view: EditorView, text: string) {
-  view.dispatch({
-    ...view.state.changeByRange((range) => ({
-      changes: { from: range.from, to: range.to, insert: text },
-      range: EditorSelection.cursor(range.from + text.length),
-    })),
-    userEvent: 'input',
-    scrollIntoView: true,
-  });
-}
-
-function replaceDocument(view: EditorView, text: string) {
-  view.dispatch({
-    changes: { from: 0, to: view.state.doc.length, insert: text },
-    selection: EditorSelection.cursor(text.length),
-    userEvent: 'input',
-    scrollIntoView: true,
-  });
-}
-
-function rangeCoversContent(view: EditorView, startContainer: Node, startOffset: number, endContainer: Node, endOffset: number) {
-  return startContainer === view.contentDOM && endContainer === view.contentDOM && startOffset === 0 && endOffset === view.contentDOM.childNodes.length;
-}
-
-const selectingDoc = new WeakSet<EditorView>();
-
-function selectWholeDocument(view: EditorView) {
-  if (selectingDoc.has(view) || !view.state.facet(EditorView.editable)) return;
-  const selection = view.dom.ownerDocument.getSelection();
-  if (!selection || selection.rangeCount !== 1) return;
-  const range = selection.getRangeAt(0);
-  let covers = rangeCoversContent(view, range.startContainer, range.startOffset, range.endContainer, range.endOffset);
-  if (!covers && view.contentDOM.contains(range.commonAncestorContainer) && view.state.doc.length > 0) {
-    try {
-      covers = view.posAtDOM(range.startContainer, range.startOffset) === 0 && view.posAtDOM(range.endContainer, range.endOffset) === view.state.doc.length;
-    } catch {
-      covers = false;
+// 剪贴板文本是否包含完整、可识别的 Markdown 结构。
+function looksLikeMarkdown(text: string) {
+  const { doc } = parseDescription(text, 'clipboard');
+  const structural = new Set(['heading', 'codeBlock', 'bulletList', 'orderedList', 'taskList', 'blockquote', 'table', 'rawMarkdown']);
+  let found = false;
+  const visit = (node: JSONContent) => {
+    if (typeof node.type === 'string' && structural.has(node.type)) found = true;
+    for (const mark of node.marks ?? []) {
+      if (mark.type === 'link' || mark.type === 'code') found = true;
     }
-  }
-  if (!covers) return;
-  const next = EditorSelection.single(0, view.state.doc.length);
-  if (view.state.selection.eq(next)) return;
-  selectingDoc.add(view);
-  try {
-    view.dispatch({ selection: next, effects: setFocused.of(true), userEvent: 'select' });
-  } finally {
-    selectingDoc.delete(view);
-  }
+    for (const child of node.content ?? []) visit(child);
+  };
+  visit(doc);
+  return found;
 }
 
-const editorTheme = EditorView.theme({
-  '&': { backgroundColor: 'transparent', color: 'inherit', height: '100%' },
-  '&.cm-focused': { outline: 'none' },
-  '.cm-scroller': { fontFamily: 'inherit', lineHeight: '1.7', overflow: 'auto' },
-  '.cm-content': { padding: '0.25rem 0', caretColor: 'currentColor' },
-  '.cm-line': { padding: '0' },
-  '.cm-placeholder': { color: 'var(--muted-foreground)' },
-});
-
-export function DescriptionEditor({ value, taskId, readonly, fill, openDescription, onChange, onBlur, onComposeStart, onComposeEnd, onPasteImages, onZoom, onOpenLinkedTask, ref }: {
+export function DescriptionEditor({ value, taskId, readonly, fill, openDescription, onEdit, onComposeStart, onComposeEnd, onPasteImages, onZoom, onOpenLinkedTask, ref }: {
   value: string;
   taskId: string;
   readonly: boolean;
   fill: boolean;
   openDescription: { current: () => void };
-  onChange: (value: string) => void;
-  onBlur: (event: FocusEvent<HTMLElement>) => void;
+  onEdit: (description: string) => void;
   onComposeStart: () => void;
   onComposeEnd: () => void;
   onPasteImages: (files: File[]) => void;
@@ -302,186 +175,482 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
   onOpenLinkedTask?: (taskId: string) => void;
   ref?: Ref<DescriptionHandle>;
 }) {
-  const hostRef = useRef<HTMLDivElement>(null);
-  const viewRef = useRef<EditorView | null>(null);
-  const valueRef = useRef(value);
-  const onChangeRef = useRef(onChange);
-  const onBlurRef = useRef(onBlur);
-  const onComposeStartRef = useRef(onComposeStart);
-  const onComposeEndRef = useRef(onComposeEnd);
-  const onPasteRef = useRef(onPasteImages);
-  const readonlyRef = useRef(readonly);
-  const taskRef = useRef(taskId);
+  const [rawDialog, setRawDialog] = useState<{ pos: number; markdown: string } | null>(null);
+  const modelRef = useRef<DescriptionModel | null>(null);
+  const lastLocalRef = useRef(value);
   const composingRef = useRef(false);
-  const handlersRef = useRef<Handlers>({ edit: () => {}, zoom: onZoom, remeasure: () => viewRef.current?.requestMeasure() });
-  valueRef.current = value;
-  onChangeRef.current = onChange;
-  onBlurRef.current = onBlur;
-  onComposeStartRef.current = onComposeStart;
-  onComposeEndRef.current = onComposeEnd;
+  const plainPasteRef = useRef(false);
+  const taskIdRef = useRef(taskId);
+  const onEditRef = useRef(onEdit);
+  const onPasteRef = useRef(onPasteImages);
+  const onOpenLinkedTaskRef = useRef(onOpenLinkedTask);
+  taskIdRef.current = taskId;
+  onEditRef.current = onEdit;
   onPasteRef.current = onPasteImages;
-  readonlyRef.current = readonly;
-  taskRef.current = taskId;
-  handlersRef.current.zoom = onZoom;
-  handlersRef.current.openLinkedTask = onOpenLinkedTask;
+  onOpenLinkedTaskRef.current = onOpenLinkedTask;
+
+  const openMaterial = useCallback((materialId: string) => {
+    window.dispatchEvent(new CustomEvent('wwa-preview-material', { detail: { taskId: taskIdRef.current, materialId } }));
+  }, []);
+
+  const editor = useEditor({
+    extensions: guardMarkdownRules([
+      StarterKit.configure({
+        horizontalRule: false,
+        underline: false,
+        link: false,
+        heading: { levels: [1, 2, 3, 4, 5, 6] },
+        // 列表只从 ListKit 注册一次。StarterKit 再带一份时，重复的 appendTransaction 会抛出 mismatched transaction。
+        bulletList: false,
+        orderedList: false,
+        listItem: false,
+        listKeymap: false,
+      }),
+      Link.configure({
+        openOnClick: false,
+        autolink: true,
+        linkOnPaste: true,
+        protocols: ['http', 'https', 'mailto'],
+        HTMLAttributes: { rel: 'noreferrer', target: '_blank' },
+      }),
+      ListKit.configure({ taskItem: { nested: true } }),
+      Placeholder.configure({ placeholder: '添加详情', showOnlyWhenEditable: true }),
+      UploadDecorations,
+      AlignedTable.configure({ resizable: false }),
+      TableRow,
+      TableCell,
+      TableHeader,
+      TaskImageNode(() => taskIdRef.current, { zoom: (src) => onZoomRef.current(src) }),
+      TaskItemPointerSync,
+      MaterialReferenceNode({ openMaterial }),
+      RawMarkdownNode({ editRaw: (pos, markdown) => setRawDialog({ pos, markdown }) }),
+    ]),
+    content: (() => {
+      const parsed = parseDescription(value, taskId);
+      modelRef.current = parsed.model;
+      return parsed.doc;
+    })(),
+    editable: !readonly,
+    enablePasteRules: true,
+    editorProps: {
+      attributes: { 'aria-label': '详情', role: 'textbox', 'aria-multiline': 'true', class: 'task-prose', 'data-task-editor-prose': 'true' },
+      handleKeyDown: (_view, event) => {
+        // 粘贴为纯文本：Mod+Shift+V。
+        if (event.key.toLowerCase() === 'v' && event.shiftKey && (event.metaKey || event.ctrlKey)) plainPasteRef.current = true;
+        return false;
+      },
+      handlePaste: (view, event) => {
+        if (readonly) return false;
+        const clipboard = event.clipboardData;
+        const images = [...(clipboard?.files ?? [])].filter((file) => file.type.startsWith('image/') && file.type !== 'image/svg+xml');
+        if (images.length) {
+          event.preventDefault();
+          event.stopPropagation();
+          onPasteRef.current(images);
+          return true;
+        }
+        const plain = clipboard?.getData('text/plain') ?? '';
+        const html = clipboard?.getData('text/html');
+        if (plainPasteRef.current) {
+          plainPasteRef.current = false;
+          event.preventDefault();
+          insertPlainText(view, plain);
+          return true;
+        }
+        plainPasteRef.current = false;
+        if (html) {
+          // 交给 schema 白名单解析：脚本、事件属性与不支持嵌入会被丢弃；
+          // 图片地址由 TaskImageNode 校验，只接受当前任务的图片。
+          return false;
+        }
+        if (!plain) return false;
+        event.preventDefault();
+        if (looksLikeMarkdown(plain)) {
+          const { doc } = parseDescription(plain, taskIdRef.current);
+          insertPlainDoc(view, doc);
+          return true;
+        }
+        insertPlainText(view, plain);
+        return true;
+      },
+      handleDrop: (view, event, _drag, moved) => {
+        if (readonly || moved) return false;
+        const files = [...(event.dataTransfer?.files ?? [])].filter((file) => file.type.startsWith('image/') && file.type !== 'image/svg+xml');
+        if (!files.length) return false;
+        event.preventDefault();
+        event.stopPropagation();
+        onPasteRef.current(files);
+        return true;
+      },
+    },
+    onUpdate: ({ editor: current }) => {
+      const model = modelRef.current;
+      if (!model) return;
+      const serialized = serializeDescription(model, current.getJSON());
+      if (serialized === lastLocalRef.current) return;
+      lastLocalRef.current = serialized;
+      current.view.dom.setAttribute('data-value', serialized);
+      onEditRef.current(serialized);
+    },
+  });
+
+  const onZoomRef = useRef(onZoom);
+  onZoomRef.current = onZoom;
+
+  useEffect(() => {
+    if (!editor) return;
+    activeEditors.set(taskId, editor);
+    editor.view.dom.setAttribute('data-value', value);
+    return () => {
+      if (activeEditors.get(taskId) === editor) activeEditors.delete(taskId);
+    };
+  }, [editor, taskId]);
+
+  useLayoutEffect(() => {
+    if (!editor) return;
+    editor.setEditable(!readonly);
+  }, [editor, readonly]);
+
+  // 外部值（冲突解决、远端合并、草稿恢复）到达时替换内容；本地编辑不回写。
+  useLayoutEffect(() => {
+    if (!editor) return;
+    if (value === lastLocalRef.current) return;
+    const parsed = parseDescription(value, taskId);
+    modelRef.current = parsed.model;
+    lastLocalRef.current = value;
+    editor.commands.setContent(parsed.doc, { emitUpdate: false });
+    editor.view.dom.setAttribute('data-value', value);
+  }, [value, editor, taskId]);
 
   useImperativeHandle(ref, () => ({
-    insert: (text) => { const view = viewRef.current; if (view) insertText(view, text); },
-    blur: () => viewRef.current?.contentDOM.blur(),
-    focus: () => viewRef.current?.focus(),
-  }), []);
-
-  useLayoutEffect(() => {
-    const parent = hostRef.current;
-    if (!parent) return;
-    const view = new EditorView({
-      parent,
-      state: EditorState.create({
-        doc: valueRef.current,
-        extensions: [
-          history(),
-          keymap.of([...historyKeymap, ...defaultKeymap]),
-          placeholder('添加详情'),
-          EditorView.lineWrapping,
-          EditorView.contentAttributes.of({ 'aria-label': '详情' }),
-          editorTheme,
-          editableSlot.of(EditorView.editable.of(!readonlyRef.current)),
-          previewExtension(taskRef, handlersRef),
-          formatToolbar(() => composingRef.current),
-          EditorView.updateListener.of((update) => {
-            if (!update.docChanged) return;
-            const next = update.state.doc.toString();
-            update.view.contentDOM.setAttribute('data-value', next);
-            if (next === valueRef.current) return;
-            valueRef.current = next;
-            onChangeRef.current(next);
-          }),
-          EditorView.domEventHandlers({
-            blur: (event, editor) => {
-              const related = event.relatedTarget;
-              if (related instanceof Element && related.closest('[data-description-tools]')) return true;
-              onBlurRef.current({ currentTarget: editor.contentDOM, relatedTarget: related } as FocusEvent<HTMLElement>);
-              return false;
-            },
-            compositionstart: () => { composingRef.current = true; onComposeStartRef.current(); return false; },
-            compositionend: () => { composingRef.current = false; onComposeEndRef.current(); return false; },
-            paste: (event) => takeFiles(event.clipboardData?.files, event),
-            drop: (event) => takeFiles(event.dataTransfer?.files, event),
-            dragover: (event) => {
-              const items = [...(event.dataTransfer?.items ?? [])];
-              if (!items.some((item) => item.kind === 'file')) return false;
-              event.preventDefault();
-              return true;
-            },
-          }),
-        ],
-      }),
-    });
-    view.contentDOM.setAttribute('data-value', valueRef.current);
-    views.set(view.contentDOM, view);
-    viewRef.current = view;
-    let pointerButton = 0;
-    const onMouseDown = (event: Event) => {
-      if (!(event instanceof MouseEvent)) return;
-      pointerButton = view.hasFocus ? 0 : event.button;
-      // The widget ignores the editor's own hit test, and the lower half of a block
-      // widget resolves past the block. Claim the click while the preview is still there.
-      if (event.button !== 0 || !view.state.facet(EditorView.editable)) return;
-      if (controlAt(view.contentDOM, event.clientX, event.clientY)) return;
-      const host = previewHostAt(view.contentDOM, event.clientX, event.clientY);
-      const from = Number(host?.dataset.blockFrom);
-      const to = Number(host?.dataset.blockTo);
-      if (!host || !Number.isFinite(from) || !Number.isFinite(to)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      const x = event.clientX;
-      const y = event.clientY;
-      handlersRef.current.edit(from);
-      const placed = view.state.selection;
-      // Select-all can land before this frame. A newer selection has to win.
-      requestAnimationFrame(() => {
-        if (!view.dom.isConnected || !view.state.selection.eq(placed)) return;
-        const pos = view.posAtCoords({ x, y });
-        if (pos == null || pos < from || pos >= to) return;
-        const caret = view.state.selection.main;
-        if (caret.empty && caret.head === pos) return;
-        view.dispatch({ selection: EditorSelection.cursor(pos) });
-      });
-    };
-    // Focus is synchronous inside Playwright fill(), and the block must already be source
-    // before selectNodeContents runs. A right-click still has to keep the rendered image.
-    const onFocus = () => {
-      const button = pointerButton;
-      pointerButton = 0;
-      if (button !== 0 || !view.state.facet(EditorView.editable)) return;
-      view.dispatch({ effects: setFocused.of(true) });
-    };
-    const onBeforeInput = (event: Event) => {
-      if (!(event instanceof InputEvent) || event.inputType !== 'insertText' || composingRef.current) return;
-      if (typeof event.data !== 'string') return;
-      const covers = event.getTargetRanges?.().some((range) => rangeCoversContent(view, range.startContainer, range.startOffset, range.endContainer, range.endOffset)) ?? false;
-      if (!covers && !shouldApplyInsert(view, event.data)) return;
-      // A non-empty Android document already has its selection. preventDefault does not stop the insert there.
-      if (/Android\b/.test(navigator.userAgent) && view.state.doc.length > 0) return;
-      event.preventDefault();
-      event.stopPropagation();
-      if (covers) replaceDocument(view, event.data);
-      else applyTypedText(view, event.data);
-    };
-    const onSelectionChange = () => selectWholeDocument(view);
-    view.contentDOM.addEventListener('mousedown', onMouseDown, true);
-    view.contentDOM.addEventListener('focus', onFocus, true);
-    view.contentDOM.addEventListener('beforeinput', onBeforeInput, true);
-    // Bubble, registered after CodeMirror, so a select-all wins over its own mapping.
-    view.dom.ownerDocument.addEventListener('selectionchange', onSelectionChange);
-    handlersRef.current.edit = (pos) => {
-      const length = view.state.doc.length;
-      view.dispatch({
-        selection: EditorSelection.cursor(Math.max(0, Math.min(pos, length))),
-        effects: setFocused.of(true),
-      });
-      view.focus();
-    };
-    openDescription.current = () => { view.focus(); };
-    return () => {
-      openDescription.current = () => {};
-      view.contentDOM.removeEventListener('mousedown', onMouseDown, true);
-      view.contentDOM.removeEventListener('focus', onFocus, true);
-      view.contentDOM.removeEventListener('beforeinput', onBeforeInput, true);
-      view.dom.ownerDocument.removeEventListener('selectionchange', onSelectionChange);
-      views.delete(view.contentDOM);
-      view.destroy();
-      if (viewRef.current === view) viewRef.current = null;
-    };
-    function takeFiles(list: FileList | null | undefined, event: Event) {
-      const images = [...(list ?? [])].filter((file) => file.type.startsWith('image/') && file.type !== 'image/svg+xml');
-      if (!images.length || readonlyRef.current) return false;
-      event.preventDefault();
-      onPasteRef.current(images);
+    focus: () => editor?.commands.focus(),
+    blur: () => editor?.view.dom.blur(),
+    insertImages: (urls) => {
+      if (!editor) return;
+      const chain = editor.chain().focus();
+      for (const url of urls) {
+        const plan = taskImageContent(editor.state.doc, editor.state.selection.to, url, editor.schema.nodes.image);
+        chain.insertContentAt(plan.at, plan.content);
+      }
+      chain.run();
+    },
+    addUpload: (uploadId, fileName) => {
+      if (!editor || editor.isDestroyed) return;
+      const pos = taskImageContent(editor.state.doc, editor.state.selection.to, '', editor.schema.nodes.image).at;
+      editor.view.dispatch(editor.state.tr.setMeta(uploadKey, { type: 'add', uploadId, pos, fileName }));
+    },
+    hasUpload: (uploadId) => {
+      if (!editor || editor.isDestroyed) return false;
+      const decorations = uploadKey.getState(editor.state)?.decorations;
+      return decorations ? findUploadPosition(decorations, uploadId) != null : false;
+    },
+    resolveUpload: (uploadId, src) => {
+      if (!editor || editor.isDestroyed) return false;
+      const decorations = uploadKey.getState(editor.state)?.decorations;
+      const pos = decorations ? findUploadPosition(decorations, uploadId) : null;
+      if (pos == null) return false;
+      const plan = taskImageContent(editor.state.doc, pos, src, editor.schema.nodes.image);
+      editor.chain()
+        .insertContentAt(plan.at, plan.content)
+        .command(({ tr, dispatch }) => {
+          if (dispatch) tr.setMeta(uploadKey, { type: 'remove', uploadId });
+          return true;
+        })
+        .run();
       return true;
-    }
-  }, [openDescription]);
+    },
+    removeUpload: (uploadId) => {
+      if (!editor || editor.isDestroyed) return;
+      editor.view.dispatch(editor.state.tr.setMeta(uploadKey, { type: 'remove', uploadId }));
+    },
+    bookmark: () => {
+      if (!editor) return null;
+      const selection = editor.state.selection;
+      return { taskId, anchor: selection.anchor, head: selection.head, kind: selection instanceof NodeSelection ? 'node' : 'text' };
+    },
+    insertMaterialReferences: (references, range) => {
+      if (!editor || !references.length) return null;
+      const target = range ?? { from: editor.state.selection.from, to: editor.state.selection.to };
+      const valid = Math.min(target.from, target.to);
+      const end = Math.max(target.from, target.to);
+      editor.chain().focus()
+        .insertContentAt({ from: valid, to: end }, references.map((reference) => ({ type: 'materialReference', attrs: reference })))
+        .run();
+      const model = modelRef.current;
+      if (!model) return null;
+      const serialized = serializeDescription(model, editor.getJSON());
+      lastLocalRef.current = serialized;
+      editor.view.dom.setAttribute('data-value', serialized);
+      return serialized;
+    },
+  }), [editor, taskId]);
 
-  useLayoutEffect(() => {
-    viewRef.current?.dispatch({ effects: editableSlot.reconfigure(EditorView.editable.of(!readonly)) });
-  }, [readonly]);
-
-  useLayoutEffect(() => {
-    const view = viewRef.current;
-    if (!view) return;
-    if (view.state.doc.toString() !== value) {
-      const head = view.state.selection.main.head;
-      view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: value },
-        selection: EditorSelection.cursor(Math.min(head, value.length)),
+  useEffect(() => {
+    if (!editor) return;
+    const dom = editor.view.dom;
+    const onCompositionStart = () => {
+      composingRef.current = true;
+      onComposeStart();
+    };
+    const onCompositionEnd = () => {
+      composingRef.current = false;
+      // 下一轮事件循环读取最终文档并更新一次草稿。
+      queueMicrotask(() => {
+        if (editor.isDestroyed) return;
+        const model = modelRef.current;
+        if (!model) return;
+        const serialized = serializeDescription(model, editor.getJSON());
+        if (serialized !== lastLocalRef.current) {
+          lastLocalRef.current = serialized;
+          editor.view.dom.setAttribute('data-value', serialized);
+          onEditRef.current(serialized);
+        }
+        onComposeEnd();
       });
+    };
+    dom.addEventListener('compositionstart', onCompositionStart);
+    dom.addEventListener('compositionend', onCompositionEnd);
+    openDescription.current = () => editor.commands.focus();
+    return () => {
+      dom.removeEventListener('compositionstart', onCompositionStart);
+      dom.removeEventListener('compositionend', onCompositionEnd);
+      if (openDescription.current === (() => editor.commands.focus())) openDescription.current = () => {};
+    };
+  }, [editor, openDescription, onComposeStart, onComposeEnd]);
+
+  const applyRawEdit = () => {
+    if (!editor || !rawDialog) return;
+    const node = editor.state.doc.nodeAt(rawDialog.pos);
+    if (node?.type.name === 'rawMarkdown') {
+      const from = rawDialog.pos;
+      const to = rawDialog.pos + node.nodeSize;
+      const replacement = parseDescription(`${rawDialog.markdown}\n`, taskId);
+      const blocks = replacement.doc.content ?? [];
+      const convertible = blocks.length >= 1 && blocks.every((block) => block.type !== 'rawMarkdown');
+      if (convertible) {
+        editor.chain().focus().insertContentAt({ from, to }, { type: 'doc', content: blocks }).run();
+      } else {
+        editor.chain().focus().command(({ tr, dispatch }) => {
+          if (dispatch) tr.setNodeMarkup(from, undefined, { ...node.attrs, markdown: rawDialog.markdown });
+          return true;
+        }).run();
+      }
     }
-    view.contentDOM.setAttribute('data-value', value);
-  }, [value]);
+    setRawDialog(null);
+    editor.commands.focus();
+  };
 
-  useLayoutEffect(() => {
-    viewRef.current?.dispatch({ effects: previewRefresh.of(null) });
-  }, [taskId]);
+  return <div className={cn('task-description-editor', fill && 'flex min-h-32 flex-1 flex-col')}>
+    <EditorContent editor={editor} className={cn('task-description-input min-h-32 w-full', fill && 'flex-1')} />
+    {editor && !readonly && <FormatToolbar editor={editor} composing={() => composingRef.current} taskId={taskId} />}
+    {rawDialog && createPortal(<div className="task-raw-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setRawDialog(null); }}>
+      <div className="task-raw-dialog" role="dialog" aria-label="编辑原文片段">
+        <p className="task-raw-dialog-title">编辑原文片段</p>
+        <textarea className="task-raw-dialog-input" aria-label="原文内容" value={rawDialog.markdown} onChange={(event) => setRawDialog({ ...rawDialog, markdown: event.target.value })} rows={8} />
+        <div className="mt-2 flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setRawDialog(null)}>取消</Button>
+          <Button size="sm" onClick={applyRawEdit}>应用</Button>
+        </div>
+      </div>
+    </div>, document.body)}
+  </div>;
+}
 
-  return <div ref={hostRef} className={cn('task-description-editor mt-1 min-h-20', fill && 'flex min-h-32 flex-1 flex-col')} />;
+/** 把纯文本插入为普通文字；换行转换为硬换行，不触发 Markdown 格式识别。 */
+function insertPlainText(view: EditorView, text: string) {
+  const schema = view.state.schema;
+  const nodes: PMNode[] = [];
+  text.split('\n').forEach((line, index) => {
+    if (index > 0) nodes.push(schema.nodes.hardBreak.create());
+    if (line) nodes.push(schema.text(line));
+  });
+  const paragraph = schema.nodes.paragraph.create(null, nodes.length ? nodes : undefined);
+  view.dispatch(view.state.tr.replaceSelection(new Slice(Fragment.fromArray([paragraph]), 0, 0)).scrollIntoView());
+}
+
+/** 通过适配层插入剪贴板里可识别的 Markdown 文档。 */
+function insertPlainDoc(view: EditorView, doc: JSONContent) {
+  const schema = view.state.schema;
+  const nodes: PMNode[] = [];
+  for (const block of doc.content ?? []) {
+    if (block.type === 'paragraph') {
+      const inline: PMNode[] = [];
+      for (const child of block.content ?? []) {
+        if (child.type === 'text') inline.push(schema.text(child.text ?? ''));
+        else if (child.type === 'hardBreak') inline.push(schema.nodes.hardBreak.create());
+        else if (child.type === 'image') inline.push(schema.nodes.image.create({ src: child.attrs?.src ?? '', alt: child.attrs?.alt ?? '' }));
+      }
+      nodes.push(schema.nodes.paragraph.create(null, inline.length ? inline : undefined));
+    } else if (block.type === 'heading') {
+      const inline: PMNode[] = (block.content ?? []).map((child) => schema.text(child.text ?? ''));
+      nodes.push(schema.nodes.heading.create({ level: block.attrs?.level ?? 1 }, inline));
+    } else if (block.type === 'codeBlock') {
+      nodes.push(schema.nodes.codeBlock.create(block.attrs?.language ? { language: block.attrs.language } : null, block.text ? schema.text(block.text) : undefined));
+    }
+  }
+  if (!nodes.length) return;
+  view.dispatch(view.state.tr.replaceSelection(new Slice(Fragment.fromArray(nodes), 0, 0)).scrollIntoView());
+}
+
+type ToolbarProps = { editor: Editor; composing: () => boolean; taskId: string };
+
+function FormatToolbar({ editor, composing }: ToolbarProps) {
+  const [visible, setVisible] = useState(false);
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkHref, setLinkHref] = useState('');
+  const touch = useTouchInput();
+
+  useEffect(() => {
+    const update = () => {
+      if (composing()) { setVisible(false); return; }
+      const { from, to, empty } = editor.state.selection;
+      if (empty || !editor.isEditable || !editor.view.hasFocus() && !document.activeElement?.closest('[data-format-tools]')) {
+        setVisible(false);
+        setLinkOpen(false);
+        return;
+      }
+      try {
+        const start = editor.view.coordsAtPos(from);
+        const end = editor.view.coordsAtPos(to);
+        const top = Math.min(start.top, end.top);
+        const left = (start.left + end.left) / 2;
+        setCoords({ top, left });
+        setVisible(true);
+      } catch {
+        setVisible(false);
+      }
+    };
+    editor.on('selectionUpdate', update);
+    editor.on('transaction', update);
+    editor.on('focus', update);
+    editor.on('blur', () => {
+      window.setTimeout(() => {
+        if (document.activeElement?.closest('[data-format-tools]')) return;
+        setVisible(false);
+      }, 80);
+    });
+    update();
+    return () => {
+      editor.off('selectionUpdate', update);
+      editor.off('transaction', update);
+      editor.off('focus', update);
+    };
+  }, [editor, composing]);
+
+  if (!visible || !coords) return null;
+
+  const buttonClass = touch ? 'task-format-button touch' : 'task-format-button';
+  const run = (command: () => void) => {
+    command();
+    editor.view.focus();
+  };
+  const currentLink = editor.getAttributes('link').href as string | undefined;
+
+  const bar = <div className="task-format-toolbar" data-format-tools role="toolbar" aria-label="格式" style={{ top: 0, left: 0 }} ref={(node) => {
+    if (!node) return;
+    const rect = node.getBoundingClientRect();
+    const margin = 8;
+    let top = coords.top - rect.height - 8;
+    if (top < margin) top = coords.top + 24;
+    let left = coords.left - rect.width / 2;
+    left = Math.max(margin, Math.min(left, window.innerWidth - rect.width - margin));
+    node.style.top = `${top}px`;
+    node.style.left = `${left}px`;
+  }}>
+    {touch ? <>
+      <ToolbarButton className={buttonClass} label="加粗" icon={Bold} pressed={editor.isActive('bold')} onClick={() => run(() => editor.chain().focus().toggleBold().run())} />
+      <ToolbarButton className={buttonClass} label="无序列表" icon={List} pressed={editor.isActive('bulletList')} onClick={() => run(() => editor.chain().focus().toggleBulletList().run())} />
+      <ToolbarButton className={buttonClass} label="勾选项" icon={ListTodo} pressed={editor.isActive('taskList')} onClick={() => run(() => editor.chain().focus().toggleTaskList().run())} />
+      <Popover open={linkOpen} onOpenChange={setLinkOpen}>
+        <PopoverTrigger asChild>
+          <button type="button" className={cn(buttonClass, 'task-format-more')} aria-label="更多格式" onMouseDown={(event) => event.preventDefault()}><MoreHorizontal className="size-4" aria-hidden /></button>
+        </PopoverTrigger>
+        <PopoverContent data-format-tools className="task-format-menu w-44" align="start">
+          <MoreFormats editor={editor} onLink={() => { setLinkHref(currentLink ?? ''); setLinkOpen(true); }} />
+        </PopoverContent>
+      </Popover>
+    </> : <>
+      <ToolbarButton className={buttonClass} label="加粗" icon={Bold} pressed={editor.isActive('bold')} onClick={() => run(() => editor.chain().focus().toggleBold().run())} />
+      <ToolbarButton className={buttonClass} label="斜体" icon={Italic} pressed={editor.isActive('italic')} onClick={() => run(() => editor.chain().focus().toggleItalic().run())} />
+      <ToolbarButton className={buttonClass} label="删除线" icon={Strikethrough} pressed={editor.isActive('strike')} onClick={() => run(() => editor.chain().focus().toggleStrike().run())} />
+      <ToolbarButton className={buttonClass} label="行内代码" icon={Code} pressed={editor.isActive('code')} onClick={() => run(() => editor.chain().focus().toggleCode().run())} />
+      <button type="button" className={cn(buttonClass, editor.isActive('link') && 'is-active')} aria-label="链接" aria-pressed={editor.isActive('link')} title="链接"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => { setLinkHref(currentLink ?? ''); setLinkOpen(true); }}>
+        <Link2 className="size-4" aria-hidden />
+      </button>
+      <Popover open={linkOpen} onOpenChange={setLinkOpen}>
+        <PopoverTrigger asChild>
+          <button type="button" className={cn(buttonClass, 'task-format-more')} aria-label="更多格式" onMouseDown={(event) => event.preventDefault()}><MoreHorizontal className="size-4" aria-hidden /></button>
+        </PopoverTrigger>
+        <PopoverContent data-format-tools className="task-format-menu w-44" align="start">
+          <MoreFormats editor={editor} onLink={() => { setLinkHref(currentLink ?? ''); setLinkOpen(true); }} />
+        </PopoverContent>
+      </Popover>
+    </>}
+  </div>;
+
+  return createPortal(<>
+    {bar}
+    <LinkPopover editor={editor} open={linkOpen} setOpen={setLinkOpen} href={linkHref} setHref={setLinkHref} />
+  </>, document.body);
+}
+
+function MoreFormats({ editor, onLink }: { editor: Editor; onLink: () => void }) {
+  const item = (label: string, active: boolean, run: () => void) => <button type="button" className={cn('task-format-menu-item', active && 'is-active')} aria-pressed={active} onClick={() => { run(); editor.view.focus(); }}>{label}</button>;
+  return <div className="task-format-menu-list">
+    {item('标题 1', editor.isActive('heading', { level: 1 }), () => editor.chain().focus().toggleHeading({ level: 1 }).run())}
+    {item('标题 2', editor.isActive('heading', { level: 2 }), () => editor.chain().focus().toggleHeading({ level: 2 }).run())}
+    {item('标题 3', editor.isActive('heading', { level: 3 }), () => editor.chain().focus().toggleHeading({ level: 3 }).run())}
+    {item('无序列表', editor.isActive('bulletList'), () => editor.chain().focus().toggleBulletList().run())}
+    {item('有序列表', editor.isActive('orderedList'), () => editor.chain().focus().toggleOrderedList().run())}
+    {item('勾选项', editor.isActive('taskList'), () => editor.chain().focus().toggleTaskList().run())}
+    {item('引用', editor.isActive('blockquote'), () => editor.chain().focus().toggleBlockquote().run())}
+    {item('代码块', editor.isActive('codeBlock'), () => editor.chain().focus().toggleCodeBlock().run())}
+    {item('表格', editor.isActive('table'), () => editor.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run())}
+    {item('链接', editor.isActive('link'), onLink)}
+  </div>;
+}
+
+function ToolbarButton({ className, label, icon: Icon, pressed, onClick }: { className: string; label: string; icon: typeof Bold; pressed: boolean; onClick: () => void }) {
+  return <button type="button" className={cn(className, pressed && 'is-active')} aria-label={label} aria-pressed={pressed} title={label}
+    onMouseDown={(event) => event.preventDefault()}
+    onClick={onClick}>
+    <Icon className="size-4" aria-hidden />
+  </button>;
+}
+
+function LinkPopover({ editor, open, setOpen, href, setHref }: { editor: Editor; open: boolean; setOpen: (value: boolean) => void; href: string; setHref: (value: string) => void }) {
+  if (!open) return null;
+  const sanitized = /^https?:|mailto:/i.test(href) ? href : '';
+  return createPortal(<div className="task-link-popover" data-format-tools role="dialog" aria-label="链接">
+    <input className="task-link-input" aria-label="链接地址" placeholder="https:// 或 mailto:" value={href} onChange={(event) => setHref(event.target.value)} onKeyDown={(event) => {
+      if (event.key === 'Enter') { event.preventDefault(); apply(); }
+      if (event.key === 'Escape') setOpen(false);
+    }} />
+    <div className="task-link-actions">
+      {sanitized && <a className="task-link-action" href={sanitized} target="_blank" rel="noreferrer">打开</a>}
+      <button type="button" className="task-link-action" disabled={!sanitized} onClick={() => { editor.chain().focus().extendMarkRange('link').setLink({ href: sanitized }).run(); setOpen(false); }}>应用</button>
+      <button type="button" className="task-link-action" onClick={() => { editor.chain().focus().extendMarkRange('link').unsetLink().run(); setOpen(false); }}>移除链接</button>
+      <button type="button" className="task-link-action" onClick={() => setOpen(false)}>取消</button>
+    </div>
+  </div>, document.body);
+  function apply() {
+    if (!sanitized) return;
+    editor.chain().focus().extendMarkRange('link').setLink({ href: sanitized }).run();
+    setOpen(false);
+  }
+}
+
+function useTouchInput() {
+  const [touch, setTouch] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia('(pointer: coarse)');
+    setTouch(query.matches);
+    const listener = (event: MediaQueryListEvent) => setTouch(event.matches);
+    query.addEventListener('change', listener);
+    return () => query.removeEventListener('change', listener);
+  }, []);
+  return touch;
 }

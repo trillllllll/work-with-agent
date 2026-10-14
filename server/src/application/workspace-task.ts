@@ -4,7 +4,7 @@ import { Prisma, type Task } from '@prisma/client';
 import { DomainError, Task as TaskDomain } from '../domain/task.js';
 import { parseInput, taskCreateSchema, taskUpdateSchema, taskListSchema, reorderSchema, type TaskListOptions } from './workspace-input.js';
 import { prisma, mutationTransaction, ChangeGroup, activeTopic, editableTask, nextOrder, normalizeContext, notFound, now, readTask, setTags, taskDto, taskInclude, validateTags, assignmentData, type Db, type MutationContext } from './workspace-store.js';
-import { noteUnreferencedBlobs, pruneTaskImages, releaseUnreferencedBlobs } from './task-images.js';
+import { noteUnreferencedBlobs, releaseUnreferencedBlobs } from './task-images.js';
 import { ownerActor } from './security.js';
 import { detachMaterialsFromDeletedTasks } from './library/links.js';
 import { syncNewMaterialReferences } from './library/references.js';
@@ -111,7 +111,9 @@ export class TaskService {
 
   async update(taskId: string, value: unknown, context: MutationContext | string = { source: 'user' }) {
     const input = parseInput(taskUpdateSchema, value);
-    const dropped: string[] = [];
+    // 纯文字更新（title/description）：自动保存不得触碰父任务、排序或触发关联变更确认。
+    const textOnly = Object.keys(input).length > 0 && Object.keys(input).every((key) => key === 'title' || key === 'description');
+    if (textOnly) return this.updateText(taskId, input, context);
     const result = await mutationTransaction(context, async (tx) => {
       const group = new ChangeGroup(tx, normalizeContext(context));
       const before = await editableTask(tx, taskId);
@@ -156,7 +158,7 @@ export class TaskService {
       if (input.status === 'done') for (const child of unfinished) await group.task(child.id, { status: 'done' });
       if (before.parentId && before.parentId !== parentId) await touchParent(group, before.parentId, false);
       if (parentId) await touchParent(group, parentId, (input.status ?? before.status) !== 'done');
-      if (input.description !== undefined) dropped.push(...await pruneTaskImages(tx, taskId, input.description));
+      // 正文保存只改变引用；未引用图片随任务保留，任务永久删除时统一回收。
       if (input.description !== undefined && input.description !== before.description) {
         const mutation = normalizeContext(context);
         await syncNewMaterialReferences(tx, mutation.actor ?? ownerActor, taskId, before.description, input.description, mutation);
@@ -164,8 +166,31 @@ export class TaskService {
       const meta = await group.record('task', taskId, 'update');
       return { ...taskDto(await readTask(tx, taskId)), meta };
     });
-    await finishImageBlobs(context, dropped);
     return result;
+  }
+
+  /**
+   * 纯文字更新：沿用命令权限、expectedRevision 和事务检查，但只更新当前任务，
+   * 不 touchParent、不重开父任务、不改排序与归属；与现值相同则不产生变更记录。
+   */
+  private async updateText(taskId: string, input: { title?: string; description?: string }, context: MutationContext | string) {
+    return mutationTransaction(context, async (tx) => {
+      const group = new ChangeGroup(tx, normalizeContext(context));
+      const before = await editableTask(tx, taskId);
+      const fields: { title?: string; description?: string } = {};
+      if (input.title !== undefined && input.title !== before.title) fields.title = input.title;
+      if (input.description !== undefined && input.description !== before.description) fields.description = input.description;
+      if (!Object.keys(fields).length) {
+        return { ...taskDto(before), meta: { changeId: undefined, affectedTaskIds: [taskId] } };
+      }
+      await group.task(taskId, fields);
+      if (fields.description !== undefined) {
+        const mutation = normalizeContext(context);
+        await syncNewMaterialReferences(tx, mutation.actor ?? ownerActor, taskId, before.description, fields.description, mutation);
+      }
+      const meta = await group.record('task', taskId, 'update');
+      return { ...taskDto(await readTask(tx, taskId)), meta };
+    });
   }
 
   async reorder(value: unknown, context: MutationContext = { source: 'user' }) {

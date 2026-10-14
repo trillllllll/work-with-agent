@@ -6,9 +6,9 @@ import { FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, ApiError, type Task } from '@/lib/api.js';
 import { queryKeys } from '@/lib/todo.js';
-import { submitCommands } from '@/lib/platform.js';
+import { useEditorRuntime } from '@/lib/task-editor-runtime.js';
 import { descriptionCitesMaterial } from '@/lib/material-citation.js';
-import { readDescriptionCaret } from '@/components/tasks/DescriptionEditor.js';
+import { insertMaterialReferencesIntoTask, readTaskBookmark } from '@/components/tasks/DescriptionEditor.js';
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from '@/components/ui/dialog.js';
 import { LibraryPreview } from './LibraryPreview.js';
 import { enqueueUploads } from './upload.js';
@@ -16,7 +16,8 @@ import { kindLabels, normalizeRow, type LibraryPreviewTarget, type LibraryRow, t
 
 export function TaskMaterials({ taskId, topicId, description, readonly, saveText, onOpenLinkedTask }: { taskId: string; topicId: string | null; description: string; readonly: boolean; saveText: () => Promise<boolean>; onOpenLinkedTask?: (taskId: string) => Promise<void> | void }) {
   const client = useQueryClient();
-  const selectionRef = useRef<{ start: number; end: number } | null>(null);
+  const runtime = useEditorRuntime();
+  const bookmarkRef = useRef<{ from: number; to: number } | null>(null);
   const [over, setOver] = useState(false);
   const [picking, setPicking] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
@@ -42,41 +43,68 @@ export function TaskMaterials({ taskId, topicId, description, readonly, saveText
   const items = materials.data?.items ?? [];
   const linked = new Set(items.map((item) => item.id));
   const refresh = () => client.invalidateQueries({ queryKey: ['library', 'task-materials', taskId] });
-  const captureSelection = () => {
-    const node = document.querySelector<HTMLElement>('[data-task-editor] [aria-label="详情"]');
-    if (node) selectionRef.current = readDescriptionCaret(node);
-  };
   const upload = async (files: File[]) => {
     if (!files.length || readonly) return;
     await enqueueUploads(files.map((file) => ({ file, relativePath: file.name })), { topicId, folderId: null, taskIds: [taskId] });
     await refresh();
   };
+
   const cite = async () => {
     if (!picked.length) return;
     const saved = await saveText();
     if (!saved) return;
-    const task = await api<Task>(`/api/tasks/${taskId}?includeArchived=true`);
-    const length = task.description.length;
-    const caret = selectionRef.current;
-    const start = caret && caret.start <= length ? caret.start : length;
-    const end = caret && caret.end <= length ? caret.end : length;
-    const from = Math.min(start, end);
-    const to = Math.max(start, end);
+    const coordinator = runtime?.coordinator ?? null;
+    let revision: number | undefined;
+    if (coordinator) {
+      revision = coordinator.getRecord(taskId)?.base.revision;
+    }
+    if (revision == null) {
+      const task = await api<Task>(`/api/tasks/${taskId}?includeArchived=true`);
+      revision = task.revision;
+    }
+    // 打开选择框时记下的选区优先。弹层抢走焦点后，编辑器选区可能变化；失效时不默认插到末尾。
+    const live = readTaskBookmark(taskId);
+    const captured = bookmarkRef.current;
+    if (!live) {
+      toast.error('编辑器不可用，请重新打开任务');
+      return;
+    }
+    const range = captured ?? { from: Math.min(live.anchor, live.head), to: Math.max(live.anchor, live.head) };
+    if (range.from > live.docSize || range.to > live.docSize || range.from < 0) {
+      toast.error('插入位置已失效，请关闭后重新选择位置');
+      return;
+    }
     try {
       const selected = await Promise.all(picked.map((itemId) => api<MaterialDetail>(`/api/v1/library/materials/${itemId}`)));
-      await submitCommands([{
+      const references = selected.map((item) => ({ materialId: item.id, label: item.title }));
+      const nextDescription = insertMaterialReferencesIntoTask(taskId, references, range);
+      if (nextDescription == null) {
+        toast.error('编辑器不可用，请重新打开任务');
+        return;
+      }
+      const command = {
         kind: 'task.reference_materials',
-        targetId: task.id,
-        expectedRevision: task.revision,
+        targetId: taskId,
+        expectedRevision: revision,
         input: {
           materialIds: selected.map((item) => item.id),
-          from,
-          to,
+          description: nextDescription,
           expectedMaterialRevisions: Object.fromEntries(selected.map((item) => [item.id, item.revision])),
           expectedOrganizationRevisions: Object.fromEntries(selected.map((item) => [item.id, item.organizationRevision])),
         },
-      }]);
-      await client.invalidateQueries({ queryKey: queryKeys.task(task.id) });
+      };
+      const sent = coordinator
+        ? await coordinator.sendReference(taskId, command, nextDescription)
+        : false;
+      if (!sent) {
+        if (coordinator?.getRecord(taskId)?.blockedReason === 'reference-conflict') {
+          toast.error('资料版本已变化，请重试');
+        } else {
+          toast.error('没有插入引用');
+        }
+        return;
+      }
+      await client.invalidateQueries({ queryKey: queryKeys.task(taskId) });
       await refresh();
       setPicking(false);
       setPicked([]);
@@ -95,7 +123,7 @@ export function TaskMaterials({ taskId, topicId, description, readonly, saveText
         expectedRevision: item.revision,
         input: { expectedOrganizationRevision: item.organizationRevision, addTaskIds: [taskId], removeTaskIds: [], removeInlineReferences: false, expectedTaskRevisions: {} },
       }));
-      for (let index = 0; index < commands.length; index += 50) await submitCommands(commands.slice(index, index + 50));
+      for (let index = 0; index < commands.length; index += 50) await submitBatch(commands.slice(index, index + 50));
       await refresh();
       setPicking(false);
       setPicked([]);
@@ -105,7 +133,7 @@ export function TaskMaterials({ taskId, topicId, description, readonly, saveText
     const saved = await saveText();
     if (!saved) return;
     const task = await api<Task>(`/api/tasks/${taskId}?includeArchived=true`);
-    await submitCommands([{
+    await submitBatch([{
       kind: 'material.links',
       targetId: material.id,
       expectedRevision: material.revision,
@@ -120,6 +148,17 @@ export function TaskMaterials({ taskId, topicId, description, readonly, saveText
     await client.invalidateQueries({ queryKey: queryKeys.task(task.id) });
     await refresh();
   };
+
+  // 编辑器里的资料引用节点点击后打开预览。
+  useEffect(() => {
+    const onPreview = (event: Event) => {
+      const detail = (event as CustomEvent<{ taskId: string; materialId: string }>).detail;
+      if (!detail || detail.taskId !== taskId) return;
+      setPreview({ materialId: detail.materialId, revision: null, chunkId: null });
+    };
+    window.addEventListener('wwa-preview-material', onPreview);
+    return () => window.removeEventListener('wwa-preview-material', onPreview);
+  }, [taskId]);
 
   return <section className="library-surface task-materials" data-testid="task-materials" onDragOver={(event) => {
     if (readonly || ![...event.dataTransfer.items].some((item) => item.kind === 'file')) return;
@@ -139,7 +178,10 @@ export function TaskMaterials({ taskId, topicId, description, readonly, saveText
       {!readonly && <div className="flex gap-2">
         <label className="library-btn">上传文件<input className="sr-only" type="file" multiple aria-label="上传文件" onChange={(event) => { const files = [...(event.target.files ?? [])]; event.target.value = ''; void upload(files); }} /></label>
         <Dialog open={picking} onOpenChange={(open) => { setPicking(open); if (!open) setPreview(null); }}>
-          <DialogTrigger asChild><button type="button" className="library-btn" onMouseDown={captureSelection} onClick={captureSelection}>引用已有资料</button></DialogTrigger>
+          <DialogTrigger asChild><button type="button" className="library-btn" onMouseDown={() => { bookmarkRef.current = null; }} onClick={() => {
+            const bookmark = readTaskBookmark(taskId);
+            bookmarkRef.current = bookmark ? { from: Math.min(bookmark.anchor, bookmark.head), to: Math.max(bookmark.anchor, bookmark.head) } : null;
+          }}>引用已有资料</button></DialogTrigger>
           <DialogContent className="library-surface material-picker" showCloseButton={false}>
             <DialogTitle>引用已有资料</DialogTitle>
             <DialogDescription className="sr-only">搜索并选择要引用的资料</DialogDescription>
@@ -175,6 +217,11 @@ export function TaskMaterials({ taskId, topicId, description, readonly, saveText
     </div>}
     {preview && !picking && createPortal(<div className="library-preview-host library-surface"><LibraryPreview target={preview} onTargetChange={setPreview} onClose={() => setPreview(null)} onOpenTask={(linkedId) => { void onOpenLinkedTask?.(linkedId); }} /></div>, document.body)}
   </section>;
+}
+
+async function submitBatch(commands: unknown[]) {
+  const { submitCommands } = await import('@/lib/platform.js');
+  return submitCommands(commands as Parameters<typeof submitCommands>[0]);
 }
 
 function PickerBody({ taskId, linked, picked, setPicked, onPreview }: { taskId: string; linked: Set<string>; picked: string[]; setPicked: (ids: string[]) => void; onPreview: (target: LibraryPreviewTarget) => void }) {

@@ -1,13 +1,16 @@
-import { createContext, forwardRef, useContext, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type MutableRefObject, type ReactNode } from 'react';
+import { createContext, forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type KeyboardEvent, type MutableRefObject, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { CalendarDays, Check, ChevronRight, Clock, Flag, Hash, Timer, X } from 'lucide-react';
+import { AlertTriangle, CalendarDays, Check, ChevronRight, Clock, Flag, Hash, Timer, X } from 'lucide-react';
 import { ApiError, priorities, type Status, type Tag, type Task, type TaskPriority } from '@/lib/api.js';
-import { draftPatch, isCompositionKey, mergeTaskDraft, taskDraft, type TaskDraft } from '@/lib/todo.js';
+import { isCompositionKey, sameField, taskDraft, queryKeys, type TaskDraft } from '@/lib/todo.js';
 import { scheduleLabel } from '@/lib/schedule.js';
 import { ScheduleFields, scheduleError, type ScheduleValue } from './ScheduleFields.js';
 import { useHashRoute } from '@/hooks/useHashRoute.js';
 import { useTask, useTodoActions } from '@/hooks/useTodo.js';
 import { useFocus } from '@/components/focus/FocusProvider.js';
+import { useEditorRuntime } from '@/lib/task-editor-runtime.js';
+import type { SaveStatus, TaskDetailHandle, TaskTextDraftV1, TextField } from '@/lib/task-editor-types.js';
+export type { TaskDetailHandle };
 import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { Textarea } from '@/components/ui/textarea.js';
@@ -18,17 +21,25 @@ import { placeDescriptionCaret, readDescriptionCaret } from './DescriptionEditor
 import { TaskMaterials } from '@/components/library/TaskMaterials.js';
 import { TaskDescription } from './TaskDescription.js';
 import { SubtasksSection } from './TaskSubtasks.js';
+import { saveStatusLabel, SaveStatusRow } from './task-save-status.js';
 import { cn } from '@/lib/utils.js';
 
-type Editing = { base: TaskDraft; draft: TaskDraft; conflicts: string[] };
-export type TaskDetailHandle = { requestTransition: (action: () => void) => void; ensureSaved: () => Promise<boolean> };
+// 非文字字段仍走本地草稿；title/description 由应用级协调器负责。
+const metaFields = ['status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'topicId', 'parentId', 'tagIds'] as const;
+type MetaDraft = Pick<TaskDraft, typeof metaFields[number]>;
+type Editing = { base: MetaDraft; draft: MetaDraft; conflicts: string[] };
+
 const fieldLabels: Record<string, string> = { title: '标题', description: '说明', status: '状态', priority: '优先级', dueDate: '安排日期', estimatedMinutes: '预计时长', scheduledStart: '开始时间', scheduledEnd: '结束时间', resultSummary: '结果摘要', topicId: '所属清单', parentId: '父任务', tagIds: '标签' };
 const flagTone: Record<TaskPriority, string> = { none: 'text-muted-foreground', low: 'text-primary', medium: 'text-warning', high: 'text-destructive' };
+
+function metaOf(task: Task): MetaDraft {
+  const draft = taskDraft(task);
+  return Object.fromEntries(metaFields.map((field) => [field, draft[field]])) as MetaDraft;
+}
 
 function inEditor(target: EventTarget | null) {
   return target instanceof Element && Boolean(target.closest('[data-task-editor]'));
 }
-function stopDrag(event: { stopPropagation: () => void }) { event.stopPropagation(); }
 
 type EditContext = {
   draft: TaskDraft;
@@ -39,13 +50,16 @@ type EditContext = {
   acknowledge: boolean;
   setAcknowledge: (value: boolean) => void;
   updateText: (patch: Partial<Pick<TaskDraft, 'title' | 'description'>>) => void;
-  onTextBlur: (event: FocusEvent<HTMLElement>) => void;
   onTitleKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   taskId: string;
   task: Task;
   openDescription: MutableRefObject<() => void>;
   onComposeStart: () => void;
   onComposeEnd: () => void;
+  textStatus: SaveStatus;
+  textRecord: TaskTextDraftV1 | null;
+  resolveKeepMine: () => void;
+  resolveKeepRemote: () => void;
   setStatus: (status: Status) => void;
   setPriority: (priority: TaskPriority) => void;
   setSchedule: (schedule: ScheduleValue, task: Task) => Promise<boolean>;
@@ -83,57 +97,92 @@ type Props = {
 
 export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpand({ id, fallback, tags, readonly = false, onSave, onClose, onDirtyChange, onToggleTask, onCreateTask, onOpenTask, children }, ref) {
   const query = useTask(id);
+  const coordinator = useEditorRuntime()?.coordinator ?? null;
   const [editing, setEditing] = useState<Editing | null>(null);
   const [saving, setSaving] = useState(false);
   const [leaveAction, setLeaveAction] = useState<(() => void) | null>(null);
   const [acknowledgeConflict, setAcknowledgeConflict] = useState(false);
+  const [textRecord, setTextRecord] = useState<TaskTextDraftV1 | null>(null);
+  const [textStatus, setTextStatus] = useState<SaveStatus>('clean');
+  const [staleBranches, setStaleBranches] = useState<TaskTextDraftV1[]>([]);
   const seeded = useRef(false);
-  const composing = useRef(false);
   const openDescription = useRef<() => void>(() => {});
-  const flushOnNull = useRef(false);
-  const flushTimer = useRef(0);
   const savingCount = useRef(0);
   const saveWaiters = useRef<Array<() => void>>([]);
   const savedVersions = useRef(new Map<number, number>());
   const pending = useRef<(() => void) | null>(null);
   const editingRef = useRef(editing);
   const taskRef = useRef(query.data ?? fallback);
-  const acknowledgeRef = useRef(acknowledgeConflict);
   const dirtyRef = useRef(false);
   const onSaveRef = useRef(onSave);
   const onCloseRef = useRef(onClose);
+  const textRecordRef = useRef<TaskTextDraftV1 | null>(null);
+  const textDirtyRef = useRef(false);
   editingRef.current = editing;
   taskRef.current = query.data ?? fallback;
-  acknowledgeRef.current = acknowledgeConflict;
   onSaveRef.current = onSave;
   onCloseRef.current = onClose;
+  textRecordRef.current = textRecord;
+
+  // ---------- 协调器：打开分支、订阅状态、接收外部更新 ----------
+
+  useEffect(() => {
+    if (!coordinator) return;
+    const task = taskRef.current;
+    void coordinator.openTask(id, { revision: task.revision ?? 1, title: task.title, description: task.description ?? '' })
+      .then((result) => { if (result.staleBranches.length) setStaleBranches(result.staleBranches); })
+      .catch(() => {});
+    const unsubscribe = coordinator.subscribe(id, (event) => {
+      setTextRecord(event.record);
+      setTextStatus(event.status);
+      textDirtyRef.current = event.status !== 'clean';
+    });
+    return unsubscribe;
+  }, [coordinator, id, query.data]);
+
+  const currentText = useCallback((patch: Partial<Pick<TaskDraft, 'title' | 'description'>>) => {
+    const record = textRecordRef.current;
+    const base = record?.draft ?? { title: taskRef.current.title, description: taskRef.current.description ?? '' };
+    return { title: patch.title ?? base.title, description: patch.description ?? base.description };
+  }, []);
+
+  const updateText = (patch: Partial<Pick<TaskDraft, 'title' | 'description'>>) => {
+    setAcknowledgeConflict(false);
+    coordinator?.onUserEdit(id, currentText(patch));
+  };
+  const onComposeStart = () => coordinator?.setComposing(id, true);
+  const onComposeEnd = () => coordinator?.setComposing(id, false);
+
+  // ---------- 非文字字段本地草稿 ----------
 
   useEffect(() => {
     if (query.data || seeded.current) return;
     seeded.current = true;
-    const incoming = taskDraft(fallback);
+    const incoming = metaOf(fallback);
     setEditing({ base: incoming, draft: incoming, conflicts: [] });
   }, [query.data, fallback]);
 
   useEffect(() => {
     if (!query.data) return;
-    const incoming = taskDraft(query.data);
+    const incoming = metaOf(query.data);
     setEditing((current) => {
       if (!current) return { base: incoming, draft: incoming, conflicts: [] };
-      const merged = mergeTaskDraft(current.base, current.draft, incoming);
-      return { base: incoming, draft: merged.draft, conflicts: [...new Set([...current.conflicts, ...merged.conflicts])] };
+      const next = { ...current.draft };
+      const conflicts = [...current.conflicts];
+      for (const field of metaFields) {
+        if (sameField(current.base[field], current.draft[field])) Object.assign(next, { [field]: incoming[field] });
+        else if (!sameField(current.base[field], incoming[field]) && !sameField(current.draft[field], incoming[field]) && !conflicts.includes(field)) conflicts.push(field);
+      }
+      return { base: incoming, draft: next, conflicts };
     });
-  }, [query.data]);
+    // 同一查询刷新也是协调器的外部更新通道。
+    coordinator?.externalUpdate(id, { revision: query.data.revision ?? 1, title: query.data.title, description: query.data.description ?? '' });
+  }, [query.data, coordinator, id]);
 
-  const dirty = Boolean(editing && (editing.draft.title !== editing.base.title || editing.draft.description !== editing.base.description || editing.conflicts.length > 0));
+  const metaDirty = Boolean(editing && (metaFields.some((field) => !sameField(editing.base[field], editing.draft[field])) || editing.conflicts.length > 0));
+  const dirty = metaDirty || textDirtyRef.current;
   dirtyRef.current = dirty;
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
-  useEffect(() => {
-    if (!dirty) return;
-    const prevent = (event: BeforeUnloadEvent) => { event.preventDefault(); };
-    window.addEventListener('beforeunload', prevent);
-    return () => window.removeEventListener('beforeunload', prevent);
-  }, [dirty]);
 
   const finishPending = () => {
     const next = pending.current;
@@ -154,13 +203,8 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
       const result = await onSaveRef.current({ ...current, revision }, patch);
       if (result) {
         if (revision !== undefined && result.revision !== undefined && result.revision > revision) savedVersions.current.set(revision, result.revision);
-        const incoming = taskDraft(result);
-        const currentEdit = editingRef.current;
-        const merged = currentEdit ? mergeTaskDraft({ ...currentEdit.base, ...patch }, currentEdit.draft, incoming) : { draft: incoming, conflicts: [] as string[] };
-        const stillDirty = merged.draft.title !== incoming.title || merged.draft.description !== incoming.description || merged.conflicts.length > 0;
-        dirtyRef.current = stillDirty;
-        setEditing({ base: incoming, draft: merged.draft, conflicts: merged.conflicts });
-        if (!stillDirty) setAcknowledgeConflict(false);
+        const incoming = metaOf(result);
+        setEditing((currentEdit) => currentEdit ? { ...currentEdit, base: incoming, conflicts: [] } : currentEdit);
       }
       return result;
     } finally {
@@ -178,37 +222,32 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
     if (!savingCount.current) return Promise.resolve();
     return new Promise<void>((resolve) => { saveWaiters.current.push(resolve); });
   };
-  const flushText = async (held?: Editing | null) => {
-    const current = held === undefined ? editingRef.current : held;
+  const flushMeta = async () => {
+    const current = editingRef.current;
     if (!current || readonly) return;
-    if (current.conflicts.length && !acknowledgeRef.current) return;
-    const patch = draftPatch(current.base, current.draft);
-    const text: Partial<TaskDraft> = {};
-    if (patch.title !== undefined && patch.title.trim()) text.title = patch.title;
-    if (patch.description !== undefined) text.description = patch.description;
-    if (!Object.keys(text).length) return;
-    try { await runSave(text); }
+    if (current.conflicts.length && !acknowledgeConflict) return;
+    const patch: Partial<TaskDraft> = {};
+    for (const field of metaFields) if (!sameField(current.base[field], current.draft[field])) Object.assign(patch, { [field]: current.draft[field] });
+    if (!Object.keys(patch).length) return;
+    try { await runSave(patch); }
     catch { /* The shared mutation already reports the failure and the draft stays. */ }
   };
-  const cancelFlush = () => { window.clearTimeout(flushTimer.current); flushTimer.current = 0; };
-  const flushSoon = () => {
-    cancelFlush();
-    const held = editingRef.current;
-    // The timer lets a second blur in this turn replace the save. Keystrokes after the blur stay in the draft.
-    flushTimer.current = window.setTimeout(() => { flushTimer.current = 0; void flushText(held); }, 0);
+
+  const ensureSaved = async () => {
+    await flushMeta();
+    await idle();
+    if (!coordinator) return true;
+    return coordinator.ensureSaved(id);
+  };
+  const prepareLeave = async () => {
+    await idle();
+    if (!coordinator) return true;
+    return coordinator.prepareLeave(id);
   };
   const requestTransition = (action: () => void) => {
-    cancelFlush();
     if (savingCount.current) { pending.current = action; return; }
-    if (dirtyRef.current) setLeaveAction(() => action);
-    else action();
-  };
-  const ensureSaved = async () => {
-    cancelFlush();
-    await idle();
-    await flushText();
-    await idle();
-    return !dirtyRef.current;
+    if (metaDirty) { setLeaveAction(() => action); return; }
+    void prepareLeave().then((safe) => { if (safe) action(); else setLeaveAction(() => action); });
   };
   const transitionRef = useRef(requestTransition);
   const ensureRef = useRef(ensureSaved);
@@ -217,6 +256,7 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
   useImperativeHandle(ref, () => ({
     requestTransition: (action: () => void) => transitionRef.current(action),
     ensureSaved: () => ensureRef.current(),
+    prepareLeave: () => prepareLeave(),
   }), []);
   useEffect(() => {
     const onKey = (event: globalThis.KeyboardEvent) => {
@@ -230,61 +270,60 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, []);
-  useEffect(() => () => { window.clearTimeout(flushTimer.current); }, []);
 
-  const updateText = (patch: Partial<Pick<TaskDraft, 'title' | 'description'>>) => {
+  const resetDraft = () => {
+    const latest = metaOf(taskRef.current);
+    setEditing({ base: latest, draft: latest, conflicts: [] });
     setAcknowledgeConflict(false);
-    const current = editingRef.current;
-    if (!current) return;
-    const next = { ...current, draft: { ...current.draft, ...patch } };
-    editingRef.current = next;
-    setEditing(next);
+    coordinator?.resolveConflictsKeepRemote(id);
   };
-  const onTextBlur = (event: FocusEvent<HTMLElement>) => {
-    const allowNull = flushOnNull.current;
-    flushOnNull.current = false;
-    if (!event.currentTarget.isConnected || composing.current || readonly) return;
-    if (inEditor(event.relatedTarget) || (allowNull && event.relatedTarget === null)) flushSoon();
-  };
-  const revertImmediate = (patch: Partial<TaskDraft>) => {
-    setEditing((current) => {
-      if (!current) return current;
-      const reverted = { ...current.draft };
-      for (const key of Object.keys(patch) as (keyof TaskDraft)[]) Object.assign(reverted, { [key]: current.base[key] });
-      return { ...current, draft: reverted };
-    });
-  };
+
   const applyImmediate = async (patch: Partial<TaskDraft>, currentTask = taskRef.current) => {
     if (readonly) return false;
     setEditing((current) => current ? { ...current, draft: { ...current.draft, ...patch } } : current);
     try {
       const result = await runSave(patch, currentTask);
-      if (!result) revertImmediate(patch);
-      return Boolean(result);
-    } catch { revertImmediate(patch); return false; }
+      if (!result) {
+        setEditing((current) => {
+          if (!current) return current;
+          const reverted = { ...current.draft };
+          for (const key of Object.keys(patch) as (keyof TaskDraft)[]) Object.assign(reverted, { [key]: current.base[key as keyof MetaDraft] });
+          return { ...current, draft: reverted };
+        });
+        return false;
+      }
+      return true;
+    } catch {
+      setEditing((current) => {
+        if (!current) return current;
+        const reverted = { ...current.draft };
+        for (const key of Object.keys(patch) as (keyof TaskDraft)[]) Object.assign(reverted, { [key]: current.base[key as keyof MetaDraft] });
+        return { ...current, draft: reverted };
+      });
+      return false;
+    }
   };
-  const resetDraft = () => {
-    const latest = taskDraft(taskRef.current);
-    dirtyRef.current = false;
-    setEditing({ base: latest, draft: latest, conflicts: [] });
-    setAcknowledgeConflict(false);
-  };
-  const draft = editing?.draft ?? taskDraft(fallback);
-  const base = editing?.base ?? draft;
+
+  const textDraft = textRecord?.draft ?? { title: taskRef.current.title, description: taskRef.current.description ?? '' };
+  const textBase = textRecord?.base ?? { revision: taskRef.current.revision ?? 1, ...textDraft };
+  const fullDraft: TaskDraft = { ...editing?.draft, ...textDraft } as TaskDraft;
+  const fullBase: TaskDraft = { ...editing?.base, title: textBase.title, description: textBase.description } as TaskDraft;
+  const textConflicts = textRecord?.conflicts ?? {};
   const value: EditContext = {
-    draft, base, readonly, tags, conflicts: editing?.conflicts ?? [], acknowledge: acknowledgeConflict, setAcknowledge: setAcknowledgeConflict,
-    updateText, onTextBlur, onComposeStart: () => { composing.current = true; }, onComposeEnd: () => { composing.current = false; },
-    taskId: id,
-    task: taskRef.current,
-    openDescription,
-    onTitleKeyDown: (event) => {
-      if (event.key !== 'Enter' || composing.current || isCompositionKey(event.nativeEvent)) return;
+    draft: fullDraft, base: fullBase, readonly, tags, conflicts: [...(editing?.conflicts ?? []), ...Object.keys(textConflicts)], acknowledge: acknowledgeConflict, setAcknowledge: setAcknowledgeConflict,
+    updateText, onComposeStart, onComposeEnd, onTitleKeyDown: (event) => {
+      if (event.key !== 'Enter' || isCompositionKey(event.nativeEvent)) return;
       event.preventDefault();
-      flushOnNull.current = true;
       const title = event.currentTarget;
       openDescription.current();
       requestAnimationFrame(() => { if (document.activeElement?.getAttribute('aria-label') !== '详情') title.blur(); });
     },
+    taskId: id,
+    task: taskRef.current,
+    openDescription,
+    textStatus, textRecord,
+    resolveKeepMine: () => coordinator?.resolveConflictsKeepMine(id),
+    resolveKeepRemote: () => coordinator?.resolveConflictsKeepRemote(id),
     setStatus: (status) => { void applyImmediate({ status }); },
     setPriority: (priority) => { void applyImmediate({ priority }); },
     setSchedule: (schedule, task) => applyImmediate(schedule, task),
@@ -308,11 +347,31 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
     openTask: onOpenTask ?? (() => {}),
   };
 
-  const blocked = Boolean(editing?.conflicts.length && !acknowledgeConflict) || !draft.title.trim();
-  const leaveDialog = leaveAction && <Dialog open onOpenChange={(open) => { if (!open) setLeaveAction(null); }}><DialogContent surface="glass"><DialogHeader><DialogTitle>保存未完成的编辑？</DialogTitle><DialogDescription>任务有未保存的更改。</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => setLeaveAction(null)}>继续编辑</Button><Button variant="outline" onClick={() => { const action = leaveAction; resetDraft(); setLeaveAction(null); action(); }}>舍弃更改</Button><Button disabled={saving || blocked} onClick={() => { void flushText().then(() => { if (dirtyRef.current) return; const action = leaveAction; setLeaveAction(null); action?.(); }); }}>保存并继续</Button></div></DialogContent></Dialog>;
+  const blocked = Boolean(editing?.conflicts.length && !acknowledgeConflict) || !fullDraft.title.trim();
+  const leaveDialog = leaveAction && <Dialog open onOpenChange={(open) => { if (!open) setLeaveAction(null); }}><DialogContent surface="glass"><DialogHeader><DialogTitle>保存未完成的编辑？</DialogTitle><DialogDescription>任务有未保存的更改。</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => setLeaveAction(null)}>继续编辑</Button><Button variant="outline" onClick={() => { const action = leaveAction; resetDraft(); setLeaveAction(null); action(); }}>舍弃更改</Button><Button disabled={saving || blocked} onClick={() => { void flushMeta().then(() => prepareLeave()).then((safe) => { if (!safe) return; const action = leaveAction; setLeaveAction(null); action?.(); }); }}>保存并继续</Button></div></DialogContent></Dialog>;
 
-  return <EditContext.Provider value={value}>{children}{leaveDialog}{saving && <p className="sr-only" role="status">正在保存…</p>}</EditContext.Provider>;
+  return <EditContext.Provider value={value}>{children}
+    {staleBranches.length > 1 && <StaleBranchDialog taskId={id} branches={staleBranches} onResolved={() => setStaleBranches([])} />}
+    {leaveDialog}
+    {saving && <p className="sr-only" role="status">正在保存…</p>}
+  </EditContext.Provider>;
 });
+
+function StaleBranchDialog({ taskId, branches, onResolved }: { taskId: string; branches: TaskTextDraftV1[]; onResolved: () => void }) {
+  const coordinator = useEditorRuntime()?.coordinator ?? null;
+  const [busy, setBusy] = useState(false);
+  const restore = async (branchId: string) => {
+    if (!coordinator || busy) return;
+    setBusy(true);
+    try { await coordinator.restoreBranch(taskId, branchId); onResolved(); }
+    finally { setBusy(false); }
+  };
+  return <Dialog open><DialogContent surface="glass"><DialogHeader><DialogTitle>发现多份未同步草稿</DialogTitle><DialogDescription>这个任务存在多份不同窗口留下的草稿，自动同步已暂停。选择要继续编辑的一份。</DialogDescription></DialogHeader><div className="max-h-72 space-y-2 overflow-y-auto">{branches.map((branch) => <button key={branch.branchId} type="button" disabled={busy} className="w-full rounded-xl border border-border p-3 text-left hover:bg-[var(--glass-hover)]" onClick={() => { void restore(branch.branchId); }}>
+    <p className="truncate text-sm font-medium">{branch.draft.title || '（无标题）'}</p>
+    <p className="mt-1 line-clamp-2 whitespace-pre-wrap text-xs text-muted-foreground">{branch.draft.description.slice(0, 160)}</p>
+    <p className="mt-1 text-xs text-muted-foreground">更新于 {new Date(branch.updatedAt).toLocaleString()}</p>
+  </button>)}</div></DialogContent></Dialog>;
+}
 
 function flattenTitle(value: string) {
   return value.replace(/[^\S\n]*[\r\n]+[^\S\n]*/g, ' ');
@@ -359,7 +418,7 @@ export function TaskTitleField({ className }: { className?: string }) {
     edit.updateText({ title: `${node.value.slice(0, start)}${flat}${node.value.slice(end)}` });
     const caret = start + flat.length;
     requestAnimationFrame(() => node.setSelectionRange(caret, caret));
-  }} onBlur={edit.onTextBlur} onKeyDown={edit.onTitleKeyDown} onCompositionStart={edit.onComposeStart} onCompositionEnd={edit.onComposeEnd} className={cn('task-writing task-title', edit.draft.status === 'done' && 'text-muted-foreground line-through', className)} />;
+  }} onKeyDown={edit.onTitleKeyDown} onCompositionStart={edit.onComposeStart} onCompositionEnd={edit.onComposeEnd} className={cn('task-writing task-title', edit.draft.status === 'done' && 'text-muted-foreground line-through', className)} />;
 }
 
 function TaskStatusCheckbox() {
@@ -378,9 +437,20 @@ const InfoRow = forwardRef<HTMLButtonElement, { icon: typeof CalendarDays; label
 
 export function TaskExpandBody({ fill = false }: { fill?: boolean }) {
   const edit = useEdit();
+  const record = edit.textRecord;
+  const textConflicts = Object.entries(record?.conflicts ?? {}) as Array<[TextField, NonNullable<TaskTextDraftV1['conflicts'][TextField]>]>;
   return <div data-task-editor className={cn('flex flex-col', fill && 'min-h-0 flex-1')}>
-    {edit.conflicts.length > 0 && <div role="alert" className="mb-3 rounded-xl border border-warning-border bg-warning-bg p-3 text-sm text-warning"><p>后台已更新{edit.conflicts.map((field) => fieldLabels[field] ?? field).join('、')}，你的编辑已保留。</p><label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={edit.acknowledge} onChange={(event) => edit.setAcknowledge(event.target.checked)} />保存时使用我的编辑</label><Button type="button" variant="ghost" size="sm" onClick={edit.resetDraft}>使用最新内容</Button></div>}
-    <TaskDescription taskId={edit.taskId} value={edit.draft.description} readonly={edit.readonly} fill={fill} openDescription={edit.openDescription} onChange={(description) => edit.updateText({ description })} onBlur={edit.onTextBlur} onComposeStart={edit.onComposeStart} onComposeEnd={edit.onComposeEnd} onSave={edit.saveText} onOpenLinkedTask={(taskId) => { void edit.openLinkedTask(taskId); }} />
+    {textConflicts.length > 0 && <div role="alert" className="mb-3 rounded-xl border border-warning-border bg-warning-bg p-3 text-sm text-warning">
+      <p className="flex items-center gap-2"><AlertTriangle className="size-4 shrink-0" aria-hidden />正文或标题与后台更新冲突，本地与远端内容都已保留。</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Button type="button" size="sm" onClick={edit.resolveKeepMine}>使用我的内容</Button>
+        <Button type="button" variant="ghost" size="sm" onClick={edit.resolveKeepRemote}>使用最新内容</Button>
+      </div>
+      <pre className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap rounded-lg bg-black/5 p-2 text-xs dark:bg-white/5">{textConflicts.map(([field, conflict]) => `${fieldLabels[field] ?? field}\n本地：${conflict.local.slice(0, 200) || '（空）'}\n远端：${conflict.remote.slice(0, 200) || '（空）'}`).join('\n\n')}</pre>
+    </div>}
+    {record?.blockedReason === 'invalid-title' && <div role="alert" className="mb-3 rounded-xl border border-warning-border bg-warning-bg p-3 text-sm text-warning">标题不能为空，自动保存已暂停；补齐标题后继续。</div>}
+    <TaskDescription key={edit.taskId} taskId={edit.taskId} value={edit.draft.description} readonly={edit.readonly} fill={fill} openDescription={edit.openDescription} onEdit={(description) => edit.updateText({ description })} onComposeStart={edit.onComposeStart} onComposeEnd={edit.onComposeEnd} onOpenLinkedTask={(taskId) => { void edit.openLinkedTask(taskId); }} />
+    <SaveStatusRow status={edit.textStatus} taskId={edit.taskId} />
     <TaskMaterials taskId={edit.taskId} topicId={edit.task?.topicId ?? null} description={edit.draft.description} readonly={edit.readonly} saveText={edit.saveText} onOpenLinkedTask={edit.openLinkedTask} />
     <div className="mt-3 shrink-0"><SubtasksSection /></div>
     <div className="task-info-rows mt-auto shrink-0">
@@ -628,3 +698,5 @@ function EstimateControl() {
     }}>{saving ? '保存中…' : '保存'}</Button></div></PopoverContent>
   </Popover>;
 }
+
+export { saveStatusLabel };

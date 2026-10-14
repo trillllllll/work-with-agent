@@ -25,10 +25,16 @@ const links = z.object({
   expectedTaskRevisions: z.record(z.number().int().positive()).default({}),
 }).strict();
 const replace = z.object({ uploadId: z.string().min(1) }).strict();
-const reference = z.object({
+const referenceRange = z.object({
   materialIds: z.array(z.string().min(1)).min(1), from: z.number().int().min(0), to: z.number().int().min(0),
   expectedMaterialRevisions: z.record(z.number().int().positive()), expectedOrganizationRevisions: z.record(z.number().int().positive()),
 }).strict();
+const referenceWhole = z.object({
+  materialIds: z.array(z.string().min(1)).min(1), description: z.string(),
+  expectedMaterialRevisions: z.record(z.number().int().positive()), expectedOrganizationRevisions: z.record(z.number().int().positive()),
+}).strict();
+// 范围偏移与整篇正文两种输入互斥：混传或都不传都会同时违背两个分支。
+const reference = z.union([referenceRange, referenceWhole]);
 
 async function currentActor(tx: LibraryDb, actor: Actor) {
   if (actor.kind !== 'connection' || !actor.connectionId) return actor;
@@ -128,7 +134,7 @@ export function registerLibraryCommands() {
     'libraryTag.create': '创建资料标签。',
     'libraryTag.update': '重命名资料标签。',
     'libraryTag.delete': '删除未被使用的资料标签。',
-    'task.reference_materials': '在任务正文插入资料引用，并在同一事务建立关联。',
+    'task.reference_materials': '在任务正文插入资料引用，并在同一事务建立关联。from/to 为源码范围偏移；description 为整篇正文提交，二者互斥。',
   };
   for (const [kind, schema] of Object.entries(schemas)) {
     registerCommandHandler(kind, {
