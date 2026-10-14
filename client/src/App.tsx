@@ -1,7 +1,6 @@
 import { isOverdue, occursOn } from './lib/schedule.js';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Menu } from 'lucide-react';
 import { api, ApiError, statuses, type Status, type Tag, type Task, type TaskPriority, type Topic, type TrashTask, type View } from './lib/api.js';
 import { queryKeys, type TaskDraft } from './lib/todo.js';
 import { useChat } from './hooks/useChat.js';
@@ -9,6 +8,9 @@ import { useHashRoute } from './hooks/useHashRoute.js';
 import { useMediaQuery } from './hooks/useMediaQuery.js';
 import { useLocalDate, useTasks, useTodoActions } from './hooks/useTodo.js';
 import { useWorkspaceEvents } from './hooks/useWorkspaceEvents.js';
+import { useMobileNavigation } from './hooks/useMobileNavigation.js';
+import { DEFAULT_MOBILE_NAVIGATION, mobileSelectedView } from './lib/mobile-navigation.js';
+import { mobileNavigationItem, moreItem, navigationItems } from './lib/navigation-items.js';
 import { ConnectionsPage } from './components/workspace/ConnectionsPage.js';
 import { ProposalsPage } from './components/workspace/ProposalsPage.js';
 import { KnowledgePage } from './components/workspace/KnowledgePage.js';
@@ -35,7 +37,7 @@ import { TaskList } from './components/tasks/TaskList.js';
 import { withSortOrder } from './components/tasks/task-order.js';
 import { TagManager } from './components/tasks/TagManager.js';
 import { MorePage } from './components/layout/MorePage.js';
-import { Sidebar, navigation } from './components/layout/Sidebar.js';
+import { Sidebar } from './components/layout/Sidebar.js';
 import { PlanPage } from './components/plan/PlanPage.js';
 import { FocusPage } from './components/focus/FocusPage.js';
 import { FocusChip } from './components/focus/FocusChip.js';
@@ -71,6 +73,7 @@ export function App() {
   useWorkspaceEvents();
   const { route, knowledgeSection, navigate } = useHashRoute();
   const isDesktop = useMediaQuery('(min-width: 1024px)');
+  const mobileNavigation = useMobileNavigation();
   const [selectedTopicId, setSelectedTopicId] = useState(() => localStorage.getItem('todo.selectedTopic') ?? '');
   const [chatOpen, setChatOpen] = useState(false);
   const [topicForm, setTopicForm] = useState<Partial<Topic> | null>(null);
@@ -273,7 +276,7 @@ export function App() {
   const listProps = { topics, tags, onOpen: openTask, onToggle: toggleTask, onMove: moveTask, onDelete: (task: Task) => run(deleteTask(task)), onSave: patchTask, onCreate: createTask, readonly: archived, busy: actions.pending, selectedTaskId: taskId, textDirty: detailDirty };
   const planProps = { onCreate: createTask, topics, tags, onOpen: openTask, onToggle: toggleTask, onSave: patchTask, onDelete: (task: Task) => run(deleteTask(task)), busy: actions.pending };
 
-  const title = page === 'board' ? detail?.name ?? '选择一个清单' : navigation.find((item) => item.view === page)?.label ?? '工作区';
+  const title = page === 'board' ? detail?.name ?? '选择一个清单' : navigationItems.find((item) => item.view === page)?.label ?? '工作区';
   const updateFilter = (patch: Partial<TaskFilters>) => setFilters((current) => ({ ...current, ...patch }));
   const todayGroups = [{ name: '逾期', items: tasks.filter((task) => isOverdue(task, today)) }, { name: '今天', items: tasks.filter((task) => occursOn(task, today)) }].filter((group) => group.items.length);
   const showDragHint = !hasFilters && !archived && sortMode === 'manual' && (!dragHintSeen || tasks.length === 0);
@@ -325,7 +328,13 @@ export function App() {
         {isDesktop && <Sidebar route={route} page={page} topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onNavigate={navigateSafely} onSelectTopic={selectTopic} onEditTopic={setTopicForm} onNewTopic={newTopic} />}
         <main className="app-main glass-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto bg-[var(--glass-bg-strong)]">{!isDesktop && showChat ? chatPanel : content}</main>
         <div className={cn('accessory-pane min-h-0 min-w-0', isDesktop && hasAccessory ? 'border-l glass-divider xl:rounded-r-xl xl:border-y xl:border-r' : 'hidden')}><div ref={setDetailSlot} className={cn('h-full min-h-0', (!isDesktop || !taskId || showChat) && 'hidden')} />{isDesktop && showChat && <div className="h-full min-h-0">{chatPanel}</div>}</div>
-        {!isDesktop && <nav aria-label="主导航" className="mobile-tab-bar glass-surface grid shrink-0 grid-cols-5 rounded-none border-x-0 border-b-0 pb-[env(safe-area-inset-bottom)]">{[...navigation.slice(0, 4), { view: 'more' as View, label: '更多', icon: Menu }].map(({ view, label, icon: Icon }) => <button key={view} className={cn('mobile-tab-item flex flex-col items-center gap-1 py-3 text-[11px]', route === view ? 'text-foreground' : 'text-muted-foreground')} onClick={() => navigateSafely(view)} aria-current={route === view ? 'page' : undefined}><Icon className="size-5" />{label}</button>)}</nav>}
+        {!isDesktop && (() => {
+          // 服务端配置驱动手机底栏；初次加载失败时按默认四项显示，不回写服务器。
+          const visibleViews = mobileNavigation.data?.visibleViews ?? DEFAULT_MOBILE_NAVIGATION.visibleViews;
+          const items = [...visibleViews.map(mobileNavigationItem), moreItem];
+          const selected = mobileSelectedView(route, visibleViews);
+          return <nav aria-label="主导航" data-testid="mobile-bottom-navigation" className="mobile-tab-bar glass-surface grid shrink-0 rounded-none border-x-0 border-b-0 pb-[env(safe-area-inset-bottom)]" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>{items.map(({ view, label, icon: Icon }) => <button key={view} data-view={view} className={cn('mobile-tab-item flex min-w-0 flex-col items-center gap-1 py-3 text-[11px]', selected === view ? 'text-foreground' : 'text-muted-foreground')} onClick={() => navigateSafely(view)} aria-current={selected === view ? 'page' : undefined}><Icon className="size-5" />{label}</button>)}</nav>;
+        })()}
       </div>
     </div>
     <UploadQueue />

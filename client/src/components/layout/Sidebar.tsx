@@ -1,29 +1,10 @@
 import type { ReactNode } from 'react';
-import { Archive, Bot, CalendarClock, CalendarDays, CalendarRange, ClipboardCheck, FolderKanban, Grid2X2, History, Inbox, Library, Plug, Plus, Search, Settings, Tags, Timer, Trash2, type LucideIcon } from 'lucide-react';
+import { Inbox, Plus, type LucideIcon } from 'lucide-react';
 import type { Topic, View } from '@/lib/api.js';
+import { navigationItems } from '@/lib/navigation-items.js';
 import { TopicList } from '@/components/topics/TopicList.js';
 import { BrandMark } from '@/components/layout/BrandMark.js';
 import { ThemeToggle } from '@/components/layout/ThemeToggle.js';
-
-export const navigation: { view: View; label: string; icon: LucideIcon }[] = [
-  { view: 'inbox', label: '收集箱', icon: Inbox },
-  { view: 'today', label: '今天', icon: CalendarDays },
-  { view: 'quadrant', label: '四象限', icon: Grid2X2 },
-  { view: 'topics', label: '清单', icon: FolderKanban },
-  { view: 'search', label: '搜索', icon: Search },
-  { view: 'tags', label: '标签', icon: Tags },
-  { view: 'archived', label: '已归档', icon: Archive },
-  { view: 'trash', label: '回收站', icon: Trash2 },
-  { view: 'changes', label: '变更历史', icon: History },
-  { view: 'settings', label: '设置', icon: Settings },
-  { view: 'connections', label: 'AI 连接', icon: Plug },
-  { view: 'proposals', label: '待确认', icon: ClipboardCheck },
-  { view: 'library', label: '项目资料', icon: Library },
-  { view: 'runs', label: 'AI 执行', icon: Bot },
-  { view: 'reviews', label: '定期回顾', icon: CalendarClock },
-  { view: 'plan', label: '规划', icon: CalendarRange },
-  { view: 'focus', label: '专注', icon: Timer },
-];
 
 type SidebarProps = {
   route: View;
@@ -38,7 +19,7 @@ type SidebarProps = {
 };
 
 function links(views: View[]) {
-  return navigation.filter((item) => views.includes(item.view));
+  return navigationItems.filter((item) => views.includes(item.view));
 }
 
 function SidebarLink({ active, label, icon: Icon, onClick }: { active: boolean; label: string; icon: LucideIcon; onClick: () => void }) {

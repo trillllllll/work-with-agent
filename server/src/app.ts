@@ -23,6 +23,8 @@ import { ReviewService } from './application/reviews.js';
 import { OrganizationService } from './application/knowledge-organizations.js';
 import { FocusService } from './application/focus.js';
 import { listPlanTimeBands, replacePlanTimeBands } from './application/plan-time-bands.js';
+import { isValidVisibleViews, type MobileNavigationView } from './domain/mobile-navigation.js';
+import { readMobileNavigation, writeMobileNavigation } from './application/mobile-navigation.js';
 import { generateExternalReview } from './runner/review-generator.js';
 
 export const app = express();
@@ -165,6 +167,19 @@ app.patch('/api/settings', schema(settingsBody), async (req, res, next) => {
   try { send(res, { ...await settings.save(req.body, (config) => agent.testConnection(config)), cli: await cliSettings() }); } catch (error) { next(error); }
 });
 app.delete('/api/settings/api-key', async (_req, res, next) => { try { send(res, { ...await settings.clearApiKey(), cli: await cliSettings() }); } catch (error) { next(error); } });
+
+// 手机底栏配置独立于模型设置：不触发连接测试，也不复用 /api/settings 的表单。
+app.get('/api/settings/mobile-navigation', async (_req, res, next) => { try { send(res, await readMobileNavigation()); } catch (error) { next(error); } });
+app.put('/api/settings/mobile-navigation', async (req, res, next) => {
+  try {
+    const body: unknown = req.body;
+    const acceptable = typeof body === 'object' && body !== null && !Array.isArray(body)
+      && Object.keys(body).length === 1
+      && isValidVisibleViews((body as { visibleViews?: unknown }).visibleViews);
+    if (!acceptable) return res.status(400).json({ data: null, error: '手机底栏配置无效：请选择最多 4 个不重复的有效入口。' });
+    send(res, await writeMobileNavigation((body as { visibleViews: MobileNavigationView[] }).visibleViews));
+  } catch (error) { next(error); }
+});
 
 const chatBody = z.object({
   conversationId: z.string().min(1).optional(),

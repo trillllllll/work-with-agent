@@ -22,6 +22,7 @@ model AppSetting {
   claudeAutoVersion String @default("") @map("claude_auto_version")
   claudeManualVersion String @default("") @map("claude_manual_version")
   claudeCheckedAt String @default("") @map("claude_checked_at")
+  mobileNavigationJson String @default("[\"inbox\",\"today\",\"quadrant\",\"topics\"]") @map("mobile_navigation_json")
   createdAt     String   @default("") @map("created_at")
   updatedAt     String   @default("") @map("updated_at")
 

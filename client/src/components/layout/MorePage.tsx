@@ -1,6 +1,6 @@
 import { ChevronRight, MessageSquare } from 'lucide-react';
 import type { View } from '@/lib/api.js';
-import { navigation } from '@/components/layout/Sidebar.js';
+import { navigationItems } from '@/lib/navigation-items.js';
 import { ThemeToggle } from '@/components/layout/ThemeToggle.js';
 import { cn } from '@/lib/utils.js';
 
@@ -43,7 +43,7 @@ export function MorePage({ route, onNavigate }: MorePageProps) {
             <h2 className="mb-1.5 px-3 text-xs font-medium text-muted-foreground">{group.label}</h2>
             <div className="glass-subtle overflow-hidden rounded-2xl">
               {group.views.map((view, index) => {
-                const item = navigation.find((entry) => entry.view === view)!;
+                const item = navigationItems.find((entry) => entry.view === view)!;
                 const Icon = item.icon;
                 const active = route === view;
                 return (
