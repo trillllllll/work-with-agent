@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import express from 'express';
 import request from 'supertest';
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ZodError } from 'zod';
 import { prisma } from '../infrastructure/prisma.js';
 import { CommandService } from './commands.js';
@@ -111,6 +111,29 @@ describe('auto memory distillation', () => {
     service = newService();
   });
   afterAll(clean);
+
+  it('keeps committed sources scheduled when a later source scan fails, then resumes idempotently', async () => {
+    const topicId = await topic();
+    const first = await write('material.create', { topicId, title: '第一份', content: '第一份事实', kind: 'text' });
+    const second = await write('material.create', { topicId, title: '第二份', content: '第二份事实', kind: 'text' });
+    const scanner = service as unknown as { prepareMaterial: (...args: unknown[]) => Promise<unknown> };
+    const prepare = scanner.prepareMaterial.bind(service);
+    let calls = 0;
+    const spy = vi.spyOn(scanner, 'prepareMaterial').mockImplementation(async (...args) => {
+      if (++calls === 2) throw new Error('injected scan interruption');
+      return prepare(...args);
+    });
+    try {
+      await expect(service.scan()).rejects.toThrow('injected scan interruption');
+      expect(await prisma.autoMemorySource.count({ where: { scopeKey: scopeKey(topicId), available: true } })).toBe(1);
+      expect(await prisma.autoMemoryScope.findUniqueOrThrow({ where: { id: scopeKey(topicId) } })).toMatchObject({ dirtySince: new Date(nowMs).toISOString(), dueAt: new Date(nowMs + 60_000).toISOString() });
+    } finally { spy.mockRestore(); }
+    await service.scan();
+    await service.scan();
+    const sources = await prisma.autoMemorySource.findMany({ where: { scopeKey: scopeKey(topicId), available: true } });
+    expect(sources.map((row) => row.sourceId).sort()).toEqual([first.id, second.id].sort());
+    expect(sources.map((row) => row.revision)).toEqual([1, 1]);
+  });
 
   it('backfills an enabled scope, proposes once, and writes memory only after approval', async () => {
     const topicId = await topic();
@@ -268,9 +291,13 @@ describe('auto memory distillation', () => {
     nowMs += 60_000;
     const left = service.tick();
     const right = other.tick();
-    await Promise.race([left, right]);
-    expect(model.calls).toHaveLength(1);
-    release();
+    try {
+      await Promise.race([left, right]);
+      // The losing claimant may return before the winner gets its next pooled
+      // read. Wait for observable model entry instead of relying on that order.
+      await waitFor(() => model.calls.length === 1);
+      expect(model.calls).toHaveLength(1);
+    } finally { release(); }
     await Promise.all([left, right]);
     expect(model.calls).toHaveLength(1);
     expect(await prisma.autoMemoryJob.count({ where: { status: { in: ['running', 'proposed', 'completed'] } } })).toBe(1);

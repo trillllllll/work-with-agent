@@ -16,6 +16,7 @@ import { recoverExpiredDecisions } from './decision.js';
 import { appendRunEvent } from './events.js';
 import { builtinToolMessageId } from './ids.js';
 import { waitRuns } from './wake.js';
+import { TextBatcher } from './text-batcher.js';
 
 const LEASE_MS = 120_000;
 const MODEL_TIMEOUT_MS = 90_000;
@@ -42,6 +43,7 @@ const initialCursor = (): RunCursor => ({ schemaVersion: 1, phase: 'model', roun
 let slots = 0;
 const pending: Array<{ runId: string; stream: ModelStream; contextService: ContextService }> = [];
 const runningIds = new Set<string>();
+const deferred = new Map<string, (typeof pending)[number]>();
 let ticking = false;
 let schedulerStream: ModelStream | null = null;
 let schedulerContext: ContextService | null = null;
@@ -138,7 +140,10 @@ async function writeToolRow(runId: string, conversationId: string, assistantMess
 }
 
 export function scheduleRun(runId: string, stream: ModelStream, contextService: ContextService) {
-  if (runningIds.has(runId) || pending.some((item) => item.runId === runId)) return;
+  // Approval can queue a continuation before the previous loop has unwound.
+  // Retain its model/context and dispatch after that loop releases its slot.
+  if (runningIds.has(runId)) { deferred.set(runId, { runId, stream, contextService }); return; }
+  if (pending.some((item) => item.runId === runId)) return;
   pending.push({ runId, stream, contextService });
   void pump();
 }
@@ -159,6 +164,9 @@ async function pump() {
     void runLoop(job.runId, job.stream, job.contextService).finally(() => {
       slots -= 1;
       runningIds.delete(job.runId);
+      const next = deferred.get(job.runId);
+      deferred.delete(job.runId);
+      if (next) scheduleRun(next.runId, next.stream, next.contextService);
       void checkAgentRuns();
     });
   }
@@ -238,37 +246,32 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
   await saveCursor(runId, token, nextCursor);
   await recordEvent(runId, token, { type: 'message_start', conversationId: run.conversationId, messageId: assistant.id });
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS);
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, MODEL_TIMEOUT_MS);
   timer.unref?.();
   let text = '';
   const calls: ToolCall[] = [];
-  let pendingText = '';
-  let flushChain = Promise.resolve();
-  const flush = (force: boolean) => {
-    if (!force && !pendingText) return;
-    const delta = pendingText;
-    pendingText = '';
-    if (!delta) return;
-    text += delta;
-    flushChain = flushChain.then(() => recordEvent(runId, token, { type: 'message_delta', conversationId: run.conversationId, messageId: assistant.id, delta }));
-  };
+  const batcher = new TextBatcher(
+    (delta) => recordEvent(runId, token, { type: 'message_delta', conversationId: run.conversationId, messageId: assistant.id, delta }),
+    () => controller.abort(),
+  );
   try {
     for await (const chunk of stream(messages, controller.signal, true)) {
       if (chunk.text) {
-        pendingText += chunk.text;
-        flush(false);
+        text += chunk.text;
+        await batcher.add(chunk.text);
       }
       if (chunk.toolCalls) calls.push(...chunk.toolCalls);
     }
-    flush(true);
-    await flushChain;
+    await batcher.finish();
   } catch (error) {
     clearTimeout(timer);
-    await flushChain.catch(() => undefined);
+    let failure = error;
+    try { await batcher.finish(); } catch (writeError) { failure = writeError; }
     try { await applyExecutorSideEffect(runId, token, assistant.id, { content: text, status: 'failed' }); }
     catch (leaseError) { if (!isLeaseLoss(leaseError)) throw leaseError; }
-    if (controller.signal.aborted) throw Object.assign(new Error('模型请求超时'), { code: 'MODEL_TIMEOUT' });
-    throw error;
+    if (timedOut) throw Object.assign(new Error('模型请求超时'), { code: 'MODEL_TIMEOUT' });
+    throw failure;
   } finally {
     clearTimeout(timer);
   }

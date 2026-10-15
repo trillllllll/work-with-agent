@@ -5,6 +5,7 @@ import { memorySuggestionHooks } from './auto-memory-suggestions.js';
 import { CommandService, type Command } from './commands.js';
 import { knowledgeSource, readEvidence, readLabels, type EvidenceRef } from './knowledge.js';
 import { internalActor } from './security.js';
+import type { Db } from './workspace-store.js';
 
 const INBOX_WITH_TOPIC = 1400;
 const SCOPED_LIMIT = 2200;
@@ -159,9 +160,9 @@ function evidenceInputs(value: unknown): EvidenceInput[] {
   });
 }
 
-async function resolveEvidence(refs: EvidenceInput[], topicId: string | null, memoryId?: string) {
+async function resolveEvidence(refs: EvidenceInput[], topicId: string | null, memoryId?: string, db: Db = prisma) {
   if (refs.some((ref) => ref.type === 'memory' && ref.id === memoryId)) throw failure('CYCLIC_EVIDENCE', '记忆不能引用自身作为依据', 400);
-  return prisma.$transaction(async (tx) => {
+  const resolve = async (tx: Db) => {
     const resolved: EvidenceRef[] = [];
     for (const ref of refs) {
       const source = await knowledgeSource(tx, internalActor, ref);
@@ -170,18 +171,19 @@ async function resolveEvidence(refs: EvidenceInput[], topicId: string | null, me
       resolved.push({ type: source.type, id: source.id, revision: source.revision, hash: source.hash });
     }
     return resolved;
-  });
+  };
+  return db === prisma ? prisma.$transaction(resolve) : resolve(db);
 }
 
-async function assertUnique(topicId: string | null, title: string, content: string, exceptId?: string) {
-  const rows = await prisma.memory.findMany({ where: { topicId, status: 'active' }, select: { id: true, title: true, content: true } });
+async function assertUnique(topicId: string | null, title: string, content: string, exceptId?: string, db: Db = prisma) {
+  const rows = await db.memory.findMany({ where: { topicId, status: 'active' }, select: { id: true, title: true, content: true } });
   const duplicate = rows.find((row) => row.id !== exceptId && row.title.trim() === title && row.content.trim() === content);
   if (duplicate) throw failure('DUPLICATE_MEMORY', '完全相同的记忆已经存在', 409);
 }
 
-async function sourceMessages(conversationId: string | undefined, messageIds: string[] | undefined) {
+async function sourceMessages(conversationId: string | undefined, messageIds: string[] | undefined, db: Db = prisma) {
   if (!conversationId) throw failure('INVALID_MESSAGES', '没有可引用的对话', 400);
-  const rows = await prisma.message.findMany({
+  const rows = await db.message.findMany({
     where: { conversationId },
     orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     select: { id: true, role: true, content: true },
@@ -212,8 +214,8 @@ function threadBody(messages: Array<{ role: string; content: string }>) {
   return parts.join('\n\n');
 }
 
-async function requireMemory(memoryId: string, topicId: string | null, expectedRevision?: number) {
-  const memory = await prisma.memory.findUnique({ where: { id: memoryId } });
+async function requireMemory(memoryId: string, topicId: string | null, expectedRevision?: number, db: Db = prisma) {
+  const memory = await db.memory.findUnique({ where: { id: memoryId } });
   if (!memory) throw failure('NOT_FOUND', '记忆不存在', 404);
   if (memory.topicId !== topicId) throw failure('MEMORY_SCOPE', '这条记忆不属于当前范围', 403);
   if (expectedRevision !== undefined && memory.revision !== expectedRevision) throw failure('VERSION_CONFLICT', '记忆版本不一致，请先 read 再修改', 409);
@@ -230,42 +232,42 @@ function optionalFields(args: Record<string, unknown>) {
 }
 
 /** AI 不能提交空证据。没有可引用的任务、材料或记忆时，把聊天原文做成同一提议里的会话材料。 */
-export async function commandsFor(action: MemoryAction, args: Record<string, unknown>, topicId: string | null, context: AgentMemoryContext, excerptRef = 'chat-source') {
+export async function commandsFor(action: MemoryAction, args: Record<string, unknown>, topicId: string | null, context: AgentMemoryContext, excerptRef = 'chat-source', db: Db = prisma) {
   const title = typeof args.title === 'string' ? args.title.trim() : '';
   const content = typeof args.content === 'string' ? args.content.trim() : '';
   const given = evidenceInputs(args.evidence);
   const messageIds = stringList(args.messageIds);
   if (action === 'add') {
-    await assertUnique(topicId, title, content);
-    const resolved = given.length ? await resolveEvidence(given, topicId) : [];
+    await assertUnique(topicId, title, content, undefined, db);
+    const resolved = given.length ? await resolveEvidence(given, topicId, undefined, db) : [];
     const input = { topicId, title, content, origin: 'ai', reason: '来自全局聊天', ...optionalFields(args) };
     if (resolved.length) return [{ kind: 'memory.create', input: { ...input, evidence: resolved } }];
-    return withThread(context, topicId, title, { kind: 'memory.create', input: { ...input, evidence: threadEvidence(excerptRef) } }, messageIds, excerptRef);
+    return withThread(context, topicId, title, { kind: 'memory.create', input: { ...input, evidence: threadEvidence(excerptRef) } }, messageIds, excerptRef, db);
   }
-  const memory = await requireMemory(String(args.memoryId), topicId, Number(args.expectedRevision));
+  const memory = await requireMemory(String(args.memoryId), topicId, Number(args.expectedRevision), db);
   if (memory.status !== 'active') throw failure('MEMORY_RETIRED', '这条记忆已经退役', 409);
   const stored = readEvidence(memory.evidence);
   if (action === 'replace') {
-    await assertUnique(topicId, title, content, memory.id);
+    await assertUnique(topicId, title, content, memory.id, db);
     const input = { title, content, origin: 'ai', reason: '来自全局聊天', ...optionalFields(args) };
     const command: Command = { kind: 'memory.update', targetId: memory.id, expectedRevision: memory.revision, input };
-    if (given.length) return [{ ...command, input: { ...input, evidence: await resolveEvidence(given, topicId, memory.id) } }];
+    if (given.length) return [{ ...command, input: { ...input, evidence: await resolveEvidence(given, topicId, memory.id, db) } }];
     if (stored.length) return [command];
-    return withThread(context, topicId, title, { ...command, input: { ...input, evidence: threadEvidence(excerptRef) } }, messageIds, excerptRef);
+    return withThread(context, topicId, title, { ...command, input: { ...input, evidence: threadEvidence(excerptRef) } }, messageIds, excerptRef, db);
   }
   const input = { title: memory.title, content: memory.content, origin: 'ai', reason: '退役不再进入上下文' };
   const command: Command = { kind: 'memory.retire', targetId: memory.id, expectedRevision: memory.revision, input };
-  if (given.length) return [{ ...command, input: { ...input, evidence: await resolveEvidence(given, topicId, memory.id) } }];
+  if (given.length) return [{ ...command, input: { ...input, evidence: await resolveEvidence(given, topicId, memory.id, db) } }];
   if (stored.length) return [command];
-  return withThread(context, topicId, memory.title, { ...command, input: { ...input, evidence: threadEvidence(excerptRef) } }, messageIds, excerptRef);
+  return withThread(context, topicId, memory.title, { ...command, input: { ...input, evidence: threadEvidence(excerptRef) } }, messageIds, excerptRef, db);
 }
 
 function threadEvidence(excerptRef: string) {
   return [{ type: 'material' as const, id: { $ref: excerptRef }, revision: 1 }];
 }
 
-async function withThread(context: AgentMemoryContext, topicId: string | null, title: string, memory: Command, messageIds: string[] | undefined, excerptRef: string) {
-  const messages = await sourceMessages(context.conversationId, messageIds);
+async function withThread(context: AgentMemoryContext, topicId: string | null, title: string, memory: Command, messageIds: string[] | undefined, excerptRef: string, db: Db) {
+  const messages = await sourceMessages(context.conversationId, messageIds, db);
   const material: Command = {
     kind: 'material.create',
     clientRef: excerptRef,

@@ -50,11 +50,11 @@ function validateWorkspace(command: { kind: string; targetId?: string; expectedR
   return parseWorkspaceCommand(command);
 }
 
-async function orderTaskParentMoves(commands: Command[]): Promise<Command[]> {
+async function orderTaskParentMoves(commands: Command[], db: Db): Promise<Command[]> {
   const taskIndexes = commands.flatMap((command, index) => command.kind === 'task.create' || command.kind === 'task.update' ? [index] : []);
   if (taskIndexes.length < 2) return commands;
   const ids = commands.flatMap((command) => command.targetId && command.kind.startsWith('task.') ? [command.targetId] : []);
-  const rows = ids.length ? await prisma.task.findMany({ where: { OR: [{ id: { in: ids } }, { parentId: { in: ids } }] }, select: { id: true, parentId: true, title: true } }) : [];
+  const rows = ids.length ? await db.task.findMany({ where: { OR: [{ id: { in: ids } }, { parentId: { in: ids } }] }, select: { id: true, parentId: true, title: true } }) : [];
   const finalParent = new Map(rows.map((row) => [row.id, row.parentId]));
   for (const command of commands) {
     if (command.kind === 'task.create' && command.entityId) finalParent.set(command.entityId, typeof command.input.parentId === 'string' ? command.input.parentId : null);
@@ -92,7 +92,7 @@ async function orderTaskParentMoves(commands: Command[]): Promise<Command[]> {
   return commands.map((command, index) => slots.has(index) ? ordered[cursor++]! : command);
 }
 
-export async function compileChangeOperations(operations: ChangeOperation[], context: { conversationId: string; topicId: string | null }) {
+export async function compileChangeOperations(operations: ChangeOperation[], context: { conversationId: string; topicId: string | null }, db: Db = prisma) {
   const workspace = mergeWorkspace(operations).map((command) => validateWorkspace(command));
   const commands: Command[] = workspace.map((command) => ({ kind: command.kind, ...(command.targetId ? { targetId: command.targetId } : {}), ...(command.expectedRevision ? { expectedRevision: command.expectedRevision } : {}), ...(command.clientRef ? { clientRef: command.clientRef } : {}), input: command.input }));
   let excerpt = 0;
@@ -109,7 +109,7 @@ export async function compileChangeOperations(operations: ChangeOperation[], con
       if (invalid) throw new DomainError('INVALID_TOOL_ARGUMENTS', invalid, 400);
       excerpt += 1;
       const topicId = targetTopicId(operation.args.target, context.topicId);
-      const compiled = await commandsFor(operation.args.action as 'add' | 'replace' | 'remove', operation.args, topicId, { conversationId: context.conversationId }, `chat-source-${excerpt}`);
+      const compiled = await commandsFor(operation.args.action as 'add' | 'replace' | 'remove', operation.args, topicId, { conversationId: context.conversationId }, `chat-source-${excerpt}`, db);
       commands.push(...compiled);
     }
   }
@@ -118,19 +118,19 @@ export async function compileChangeOperations(operations: ChangeOperation[], con
     if (command.kind === 'task.create') return { ...command, input: parseInput(taskCreateSchema, command.input) };
     if (command.kind === 'task.update') return { ...command, input: parseInput(taskUpdateSchema, command.input) };
     return command;
-  }));
+  }), db);
   for (const command of normalized) {
     if (command.kind !== 'task.reorder') continue;
     const topicId = typeof command.input.topicId === 'string' ? command.input.topicId : null;
     const parentId = typeof command.input.parentId === 'string' ? command.input.parentId : null;
-    const members = await prisma.task.findMany({ where: { topicId, parentId, deletedAt: null }, select: { id: true, revision: true } });
+    const members = await db.task.findMany({ where: { topicId, parentId, deletedAt: null }, select: { id: true, revision: true } });
     command.input = { ...command.input, expectedRevisions: Object.fromEntries(members.map((row) => [row.id, row.revision])) };
   }
   const explicitIds = normalized.flatMap((command) => [command.targetId, command.entityId].filter((id): id is string => Boolean(id)));
   const taskIds = normalized.filter((command) => command.kind.startsWith('task.') && command.targetId).map((command) => command.targetId!);
   const baseTaskRevisions: Record<string, number> = {};
   if (taskIds.length) {
-    const rows = await prisma.task.findMany({ where: { id: { in: taskIds } }, select: { id: true, revision: true } });
+    const rows = await db.task.findMany({ where: { id: { in: taskIds } }, select: { id: true, revision: true } });
     for (const row of rows) baseTaskRevisions[row.id] = row.revision;
     if (rows.length !== new Set(taskIds).size) throw new DomainError('NOT_FOUND', '要修改的任务不存在', 404);
   }

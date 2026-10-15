@@ -95,7 +95,7 @@ export class AutoMemoryService {
   async scan() {
     return this.enqueue(async () => {
       await archiveCompletedTurns();
-      await prisma.$transaction(async (tx) => { await this.scanWithin(tx); }, { timeout: 60_000 });
+      await this.scanWithin();
     });
   }
 
@@ -256,52 +256,69 @@ export class AutoMemoryService {
     };
   }
 
-  private async scanWithin(tx: Db) {
-    const topics = await tx.topic.findMany({ where: { archivedAt: null }, orderBy: { id: 'asc' }, select: { id: true } });
-    for (const topicId of [null, ...topics.map((topic) => topic.id)]) await this.scanScope(tx, topicId);
+  private async scanWithin() {
+    const topics = await prisma.topic.findMany({ where: { archivedAt: null }, orderBy: { id: 'asc' }, select: { id: true } });
+    for (const topicId of [null, ...topics.map((topic) => topic.id)]) await this.scanScope(topicId);
   }
 
-  private async scanScope(tx: Db, topicId: string | null) {
-    const scope = await this.ensureScope(tx, topicId);
+  private async scanScope(topicId: string | null) {
+    const scope = await this.ensureScope(prisma, topicId);
     if (!scope.enabled) return;
-    const seen = new Set<string>();
-    let changed = false;
-    const stamp = () => { changed = true; };
+    // Keep old identities as well, so moved/deleted sources are retired. Re-read
+    // each source in its own transaction instead of trusting this enumeration.
+    const current = await prisma.autoMemorySource.findMany({ where: { scopeKey: scope.id, available: true }, select: { sourceType: true, sourceId: true }, distinct: ['sourceType', 'sourceId'] });
+    const sources = new Map<string, { type: 'material' | 'task'; id: string }>();
+    for (const row of current) {
+      if (row.sourceType === 'material' || row.sourceType === 'task') sources.set(`${row.sourceType}:${row.sourceId}`, { type: row.sourceType, id: row.sourceId });
+    }
     let materialCursor: string | undefined;
     while (true) {
-      const materials = await tx.material.findMany({ where: { topicId, archivedAt: null, ...(materialCursor ? { id: { gt: materialCursor } } : {}) }, orderBy: { id: 'asc' }, take: PAGE_SIZE });
-      for (const material of materials) {
-        const prepared = await this.prepareMaterial(tx, material);
-        if (await this.upsertParts(tx, scope.id, 'material', material.id, prepared, seen, stamp)) changed = true;
-      }
+      const materials = await prisma.material.findMany({ where: { topicId, archivedAt: null, ...(materialCursor ? { id: { gt: materialCursor } } : {}) }, orderBy: { id: 'asc' }, take: PAGE_SIZE, select: { id: true } });
+      for (const row of materials) sources.set(`material:${row.id}`, { type: 'material', id: row.id });
       if (materials.length < PAGE_SIZE) break;
       materialCursor = materials[materials.length - 1].id;
     }
     let taskCursor: string | undefined;
     while (true) {
-      const tasks = await tx.task.findMany({ where: { topicId, deletedAt: null, ...(taskCursor ? { id: { gt: taskCursor } } : {}) }, orderBy: { id: 'asc' }, take: PAGE_SIZE });
-      for (const task of tasks) {
-        const prepared = prepareTask(task);
-        if (await this.upsertParts(tx, scope.id, 'task', task.id, prepared, seen, stamp)) changed = true;
-      }
+      const tasks = await prisma.task.findMany({ where: { topicId, deletedAt: null, ...(taskCursor ? { id: { gt: taskCursor } } : {}) }, orderBy: { id: 'asc' }, take: PAGE_SIZE, select: { id: true } });
+      for (const row of tasks) sources.set(`task:${row.id}`, { type: 'task', id: row.id });
       if (tasks.length < PAGE_SIZE) break;
       taskCursor = tasks[tasks.length - 1].id;
     }
-    const current = await tx.autoMemorySource.findMany({ where: { scopeKey: scope.id, available: true }, select: { id: true } });
-    const missing = current.filter((row) => !seen.has(row.id)).map((row) => row.id);
-    if (missing.length) await tx.autoMemorySource.updateMany({ where: { id: { in: missing } }, data: { available: false, updatedAt: this.iso() } });
-    const fresh = await tx.autoMemoryScope.findUniqueOrThrow({ where: { id: scope.id } });
-    const now = this.iso();
-    if (changed) {
-      const dirtySince = fresh.dirtySince ?? now;
-      const dueAt = new Date(Math.min(this.nowMs() + QUIET_PERIOD_MS, new Date(dirtySince).getTime() + MAX_COALESCE_MS)).toISOString();
-      await tx.autoMemoryScope.update({ where: { id: scope.id }, data: { dirtySince, dueAt, initializedAt: fresh.initializedAt ?? now, updatedAt: now } });
-    } else if (!fresh.initializedAt) {
-      await tx.autoMemoryScope.update({ where: { id: scope.id }, data: { initializedAt: now, updatedAt: now } });
+    for (const source of sources.values()) {
+      await prisma.$transaction(async (tx) => {
+        const fresh = await tx.autoMemoryScope.findUniqueOrThrow({ where: { id: scope.id } });
+        if (!fresh.enabled) return;
+        if (topicId && !(await tx.topic.findFirst({ where: { id: topicId, archivedAt: null }, select: { id: true } }))) return;
+        let parts: Prepared[] = [];
+        if (source.type === 'material') {
+          const material = await tx.material.findFirst({ where: { id: source.id, topicId, archivedAt: null } });
+          if (material) parts = await this.prepareMaterial(tx, material);
+        } else {
+          const task = await tx.task.findFirst({ where: { id: source.id, topicId, deletedAt: null } });
+          if (task) parts = prepareTask(task);
+        }
+        const seen = new Set<string>();
+        const changed = await this.upsertParts(tx, scope.id, source.type, source.id, parts, seen);
+        const old = await tx.autoMemorySource.findMany({ where: { scopeKey: scope.id, sourceType: source.type, sourceId: source.id, available: true }, select: { id: true } });
+        const missing = old.filter((row) => !seen.has(row.id)).map((row) => row.id);
+        if (missing.length) await tx.autoMemorySource.updateMany({ where: { id: { in: missing } }, data: { available: false, updatedAt: this.iso() } });
+        // Persist scheduling alongside the source: a later scan failure must
+        // not leave already-committed changes without a due date.
+        if (changed) await this.markScanChanged(tx, fresh);
+      });
     }
+    await prisma.autoMemoryScope.updateMany({ where: { id: scope.id, enabled: true, initializedAt: null }, data: { initializedAt: this.iso(), updatedAt: this.iso() } });
   }
 
-  private async upsertParts(tx: Db, key: string, sourceType: AutoSourceType, sourceId: string, parts: Prepared[], seen: Set<string>, stamp: () => void) {
+  private async markScanChanged(tx: Db, scope: ScopeRow) {
+    const now = this.iso();
+    const dirtySince = scope.dirtySince ?? now;
+    const dueAt = new Date(Math.min(this.nowMs() + QUIET_PERIOD_MS, new Date(dirtySince).getTime() + MAX_COALESCE_MS)).toISOString();
+    await tx.autoMemoryScope.update({ where: { id: scope.id }, data: { dirtySince, dueAt, initializedAt: scope.initializedAt ?? now, updatedAt: now } });
+  }
+
+  private async upsertParts(tx: Db, key: string, sourceType: AutoSourceType, sourceId: string, parts: Prepared[], seen: Set<string>) {
     let changed = false;
     const now = this.iso();
     for (const part of parts) {
@@ -311,11 +328,9 @@ export class AutoMemoryService {
       if (!existing) {
         await tx.autoMemorySource.create({ data: { id, scopeKey: key, sourceType, sourceId, part: part.part, revision: Math.max(1, part.revision), observedHash: part.observedHash, available: true, firstObservedAt: now, changedAt: now, updatedAt: now } });
         changed = true;
-        stamp();
       } else if (existing.observedHash !== part.observedHash || !existing.available) {
         await tx.autoMemorySource.update({ where: { id }, data: { observedHash: part.observedHash, revision: existing.revision + 1, changedAt: now, failedHash: null, available: true, updatedAt: now } });
         changed = true;
-        stamp();
       }
     }
     return changed;

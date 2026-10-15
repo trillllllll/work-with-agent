@@ -283,7 +283,7 @@ export async function repreviewApproval(approvalId: string, input: { requestKey?
     if (approval.status !== 'pending' && approval.status !== 'failed') throw new DomainError('APPROVAL_ALREADY_HANDLED', '该审核已处理', 409);
     const operations = structuredClone(envelope.requestedOperations) as ChangeOperation[];
     await refreshOperationRevisions(tx, operations);
-    const compiled = await compileChangeOperations(operations, { conversationId: approval.conversationId, topicId: null });
+    const compiled = await compileChangeOperations(operations, { conversationId: approval.conversationId, topicId: null }, tx);
     const auditRecords: import('@prisma/client').ChangeRecord[] = [];
     const inspections = await inspectCommands(tx, ownerActor, compiled.commands, compiled.batch, auditRecords, internalActor);
     const reviewWithoutHash = buildReview({ intent: envelope.review.intent, requestedOperationCount: operations.length, commandCount: compiled.commands.length, explicitIds: compiled.explicitIds, records: auditRecords });

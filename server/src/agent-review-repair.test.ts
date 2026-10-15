@@ -3,6 +3,8 @@ import { prisma } from './infrastructure/prisma.js';
 import { AgentService, type ModelMessage } from './agent.js';
 import type { ToolCall } from './application/workspace.js';
 import { approveAppChanges, repreviewApproval } from './agent/decision.js';
+import { compileChangeOperations } from './agent/propose.js';
+import type { ChangeOperation } from './agent/capabilities.js';
 
 const now = () => new Date().toISOString();
 const baseContext = {
@@ -31,6 +33,32 @@ async function proposalFor(taskId: string, revision: number, title: string, key:
 }
 
 describe('repreview and adjustment', () => {
+  it('compiles memory evidence and chat excerpts using the existing transaction connection', async () => {
+    const task = await prisma.task.create({ data: { title: '事务证据', createdAt: now(), updatedAt: now() } });
+    const conversation = await prisma.conversation.create({ data: { createdAt: now(), updatedAt: now() } });
+    await prisma.message.create({ data: { conversationId: conversation.id, role: 'user', content: '事务中的聊天事实', status: 'completed', createdAt: now() } });
+    const memory = await prisma.memory.create({ data: { kind: 'fact', title: '旧标题', content: '旧事实', createdAt: now(), updatedAt: now() } });
+    try {
+      const cases: Array<Extract<ChangeOperation, { family: 'memory' }>['args']> = [
+        { action: 'add', target: 'inbox', title: '新标题', content: '新事实' },
+        { action: 'add', target: 'inbox', title: '证据标题', content: '证据事实', evidence: [{ type: 'task', id: task.id }] },
+        { action: 'replace', target: 'inbox', memoryId: memory.id, expectedRevision: 1, title: '替换标题', content: '替换事实' },
+        { action: 'remove', target: 'inbox', memoryId: memory.id, expectedRevision: 1 },
+      ];
+      for (const args of cases) {
+        const compiled = await prisma.$transaction((tx) => compileChangeOperations([{ family: 'memory', args }], { conversationId: conversation.id, topicId: null }, tx));
+        expect(compiled.commands.some((command) => command.kind.startsWith('memory.'))).toBe(true);
+        expect(compiled.commands.some((command) => command.kind === 'material.create')).toBe(!('evidence' in args));
+      }
+      expect((await prisma.memory.findUniqueOrThrow({ where: { id: memory.id } })).content).toBe('旧事实');
+    } finally {
+      await prisma.memory.delete({ where: { id: memory.id } });
+      await prisma.message.deleteMany({ where: { conversationId: conversation.id } });
+      await prisma.conversation.delete({ where: { id: conversation.id } });
+      await prisma.task.delete({ where: { id: task.id } });
+    }
+  });
+
   it('creates one replacement for a request key and keeps the old card when generation fails', async () => {
     const task = await prisma.task.create({ data: { title: `重预览样本-${Date.now()}`, createdAt: now(), updatedAt: now() } });
     const first = await proposalFor(task.id, task.revision, '第一版标题', `repreview-${task.id}`);
