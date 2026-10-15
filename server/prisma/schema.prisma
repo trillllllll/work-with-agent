@@ -201,8 +201,10 @@ model Conversation {
   tokenEstimate Int   @default(0) @map("token_estimate")
   createdAt String    @default("") @map("created_at")
   updatedAt String    @default("") @map("updated_at")
+  activeRunId String? @map("active_run_id")
   messages  Message[]
   approvals Approval[]
+  agentRuns AgentRun[]
 
   @@map("conversations")
 }
@@ -223,6 +225,7 @@ model ChangeRecord {
   requestId String? @map("request_id")
   reversalOf String? @map("reversal_of")
   undoneAt String? @map("undone_at")
+  approvedByActorId String? @map("approved_by_actor_id")
   createdAt String @default("") @map("created_at")
   @@index([entityType, entityId, createdAt])
   @@map("change_records")
@@ -237,6 +240,7 @@ model Message {
   toolCalls      String?      @map("tool_calls")
   toolCallId     String?      @map("tool_call_id")
   compactedAt    String?       @map("compacted_at")
+  partsJson      String       @default("[]") @map("parts_json")
   createdAt      String       @default("") @map("created_at")
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
@@ -251,12 +255,58 @@ model Approval {
   arguments String
   status    ApprovalStatus @default(pending)
   result    String?
+  runId     String?        @map("run_id")
+  decisionToken String?    @map("decision_token")
+  decisionExpiresAt String? @map("decision_expires_at")
   createdAt String         @default("") @map("created_at")
   updatedAt String         @default("") @map("updated_at")
   conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  run       AgentRun?      @relation(fields: [runId], references: [id], onDelete: SetNull)
 
   @@index([conversationId])
+  @@index([runId])
   @@map("approvals")
+}
+
+model AgentRun {
+  id                  String   @id @default(cuid())
+  conversationId      String   @map("conversation_id")
+  sourceUserMessageId String   @unique @map("source_user_message_id")
+  requestKey          String   @unique @map("request_key")
+  requestHash         String   @map("request_hash")
+  state               String   @default("queued")
+  pauseReason         String?  @map("pause_reason")
+  contextJson         String   @map("context_json")
+  modelMessagesJson   String   @map("model_messages_json")
+  cursorJson          String   @map("cursor_json")
+  nextEventSeq        Int      @default(0) @map("next_event_seq")
+  leaseToken          String?  @map("lease_token")
+  leaseExpiresAt      String?  @map("lease_expires_at")
+  errorCode           String?  @map("error_code")
+  errorMessage        String?  @map("error_message")
+  createdAt           String   @map("created_at")
+  updatedAt           String   @map("updated_at")
+  completedAt         String?  @map("completed_at")
+  conversation        Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  approvals           Approval[]
+  events              AgentRunEvent[]
+
+  @@index([state, updatedAt])
+  @@index([conversationId, createdAt])
+  @@map("agent_runs")
+}
+
+model AgentRunEvent {
+  id        String   @id @default(cuid())
+  runId     String   @map("run_id")
+  seq       Int
+  type      String
+  dataJson  String   @map("data_json")
+  createdAt String   @map("created_at")
+  run       AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, seq])
+  @@map("agent_run_events")
 }
 
 model LocalSession {

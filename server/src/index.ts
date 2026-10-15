@@ -1,4 +1,4 @@
-import { app, reviewService } from './app.js';
+import { agent, app, reviewService } from './app.js';
 import { DESKTOP_PORT, isDesktopPackage, isServerMode, publicWorkspaceUrl } from './application/desktop-paths.js';
 import { createOwnerBootstrapToken, resolveOwnerKeyHash } from './application/security.js';
 import { reconcileLocalRuns } from './application/runs.js';
@@ -23,6 +23,7 @@ async function start() {
   if (process.env.WWA_STATIC_DIR) mountDesktopStatic(app, process.env.WWA_STATIC_DIR);
   const autoMemory = sharedAutoMemoryService();
   await autoMemory.prepareStartup();
+  await agent.boot();
 
   const port = Number(process.env.PORT) || (isDesktopPackage() ? DESKTOP_PORT : 3016);
   const host = process.env.WWA_BIND_HOST ?? (isServerMode() ? '0.0.0.0' : '127.0.0.1');

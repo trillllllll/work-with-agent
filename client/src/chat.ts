@@ -1,4 +1,14 @@
-import type { BatchOutcome, TaskBatchPreview } from '../../server/src/domain/task-batch-types.js';
+import type { AppOutcome, AppReview, BatchOutcome, TaskBatchPreview } from '../../server/src/domain/task-batch-types.js';
+
+export type ExternalPromptPart = {
+  schemaVersion: 1;
+  type: 'external_prompt';
+  id: string;
+  capability: 'web_research' | 'local_execution' | 'external_application' | 'other' | string;
+  limitation: string;
+  title: string;
+  prompt: string;
+};
 
 export type ChatMessage = {
   id?: string;
@@ -8,6 +18,8 @@ export type ChatMessage = {
   toolCalls?: string | null;
   toolCallId?: string | null;
   tools?: ToolActivity[];
+  parts?: ExternalPromptPart[];
+  partsJson?: string | null;
 };
 
 export type ToolActivityStatus = 'running' | 'done' | 'error' | 'pending' | 'rejected';
@@ -35,8 +47,14 @@ export type Approval = {
   preview?: TaskBatchPreview;
   outcome?: BatchOutcome;
   supersededByApprovalId?: string;
-  resultState?: 'batch' | 'proposal' | 'result' | 'unreadable';
+  resultState?: 'batch' | 'proposal' | 'result' | 'app_changes' | 'unreadable';
   summary?: string;
+  appReview?: AppReview;
+  appOutcome?: AppOutcome;
+  proposalRevision?: number;
+  previewHash?: string;
+  requestedOperations?: unknown[];
+  reversesApprovalId?: string | null;
 };
 
 export type ToolResult = { success: boolean; data?: unknown; error?: string; code?: string };
@@ -54,9 +72,19 @@ export type SseEvent = {
   result?: ToolResult;
   code?: string;
   preview?: TaskBatchPreview;
+  review?: AppReview;
+  proposalId?: string;
+  proposalRevision?: number;
+  previewHash?: string;
+  runId?: string;
+  seq?: number;
+  state?: string;
+  pauseReason?: string | null;
+  part?: ExternalPromptPart;
+  supersedesApprovalId?: string;
 };
 
-const READ_ONLY_TOOLS = new Set(['list_topics', 'get_topic', 'get_topic_progress', 'list_tasks', 'get_task', 'conversation_search']);
+const READ_ONLY_TOOLS = new Set(['list_topics', 'get_topic', 'get_topic_progress', 'list_tasks', 'get_task', 'conversation_search', 'get_time', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'get_change_schema']);
 const PREVIEW_MAX = 80;
 
 const LIBRARY_READS = new Set(['list', 'search', 'read', 'content', 'linked_tasks', 'task_materials', 'folders', 'tags', 'ask']);
@@ -102,6 +130,11 @@ function readTitle(data: unknown) {
 export function toolPreview(name: string, args: Record<string, unknown> = {}, result?: ToolResult | null, status?: ToolActivityStatus) {
   if (status === 'rejected') return '已拒绝';
   if (status === 'error' || result?.success === false) return clip(result?.error || '执行失败');
+  if (name === 'propose_changes') return clip(typeof args.summary === 'string' && args.summary.trim() ? args.summary : '等待确认');
+  if (name === 'prepare_external_prompt') return '已整理提示词';
+  if (name === 'get_time' || name === 'get_work_context' || name === 'query_tasks' || name === 'query_topics' || name === 'get_task_activity' || name === 'search_workspace' || name === 'library_read' || name === 'memory_read' || name === 'get_change_schema') {
+    return clip(textField(args, ['q', 'title', 'taskId']) || (status === 'running' ? '正在读取' : '已读取'));
+  }
   if (name === 'conversation_search') {
     if (typeof args.q === 'string' && args.q.trim()) return clip(args.q);
     if (typeof args.messageId === 'string' && args.messageId.trim()) return '前后文';
@@ -136,8 +169,7 @@ export function groupToolActivities(tools: ToolActivity[]): ToolGroup[] {
   const groups: ToolGroup[] = [];
   let run: ToolActivity[] = [];
   const flush = () => {
-    if (run.length > 1) groups.push({ kind: 'run', activities: run });
-    else if (run.length === 1) groups.push({ kind: 'call', activity: run[0]! });
+    if (run.length > 0) groups.push({ kind: 'run', activities: run });
     run = [];
   };
   for (const activity of tools) {
@@ -357,17 +389,89 @@ export function applyMessageEvent(messages: ChatMessage[], event: SseEvent): Cha
       ...(event.approvalId ? { approvalId: event.approvalId } : {}),
     }));
   }
-  if (event.type === 'error') return messages.map((item) => {
-    const tools = item.tools?.map((tool) => tool.status === 'running' ? { ...tool, status: 'error' as const, error: event.message || '执行失败', preview: toolPreview(tool.name, tool.arguments, { success: false, error: event.message || '执行失败' }, 'error') } : tool);
-    if (item.status === 'streaming') return { ...item, status: 'failed' as const, ...(tools ? { tools } : {}) };
-    return tools ? { ...item, tools } : item;
-  });
+  if (event.type === 'external_prompt' && event.part && event.part.type === 'external_prompt' && event.part.prompt) {
+    const part = event.part;
+    const index = assistantIndex(messages, event.messageId);
+    if (index < 0) return [...messages, { role: 'assistant' as const, content: '', status: 'completed' as const, parts: [part] }];
+    return messages.map((item, itemIndex) => {
+      if (itemIndex !== index) return item;
+      const parts = item.parts ?? [];
+      if (parts.some((current) => current.id === part.id)) return item;
+      return { ...item, parts: [...parts, part] };
+    });
+  }
+  if (event.type === 'run_state' && event.pauseReason === 'new_user_message') {
+    if (messages.some((item) => item.content === '已暂停后续处理')) return messages;
+    return [...messages, { role: 'system' as const, content: '已暂停后续处理', status: 'completed' as const }];
+  }
+  if (event.type === 'error') {
+    const next = messages.map((item) => {
+      const tools = item.tools?.map((tool) => tool.status === 'running' ? { ...tool, status: 'error' as const, error: event.message || '执行失败', preview: toolPreview(tool.name, tool.arguments, { success: false, error: event.message || '执行失败' }, 'error') } : tool);
+      if (item.status === 'streaming') return { ...item, status: 'failed' as const, ...(tools ? { tools } : {}) };
+      return tools ? { ...item, tools } : item;
+    });
+    if (event.message?.includes('后续回答未完成') && !next.some((item) => item.content.includes('后续回答未完成'))) {
+      next.push({ role: 'system', content: '后续回答未完成', status: 'completed' });
+    }
+    return next;
+  }
   return messages;
+}
+
+export function parseExternalParts(raw: string | null | undefined): ExternalPromptPart[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((item) => {
+      if (!item || typeof item !== 'object') return [];
+      const part = item as ExternalPromptPart;
+      if (part.type !== 'external_prompt' || typeof part.prompt !== 'string' || typeof part.id !== 'string') return [];
+      return [part];
+    });
+  } catch {
+    return [];
+  }
+}
+
+export type ReviewCardState = 'pending' | 'approving' | 'rejecting' | 'unknown' | 'executed' | 'rejected' | 'failed' | 'superseded' | 'unreadable' | 'capability_removed';
+
+export function reviewCardState(approval: Approval, phase: '' | 'approve' | 'reject', unknown: boolean): ReviewCardState {
+  if (approval.toolName.startsWith('execute_')) return 'capability_removed';
+  if (approval.resultState === 'unreadable' && !approval.appReview) return 'unreadable';
+  if (approval.supersededByApprovalId) return 'superseded';
+  if (unknown) return 'unknown';
+  if (phase === 'approve') return 'approving';
+  if (phase === 'reject') return 'rejecting';
+  const outcome = approval.appOutcome?.status;
+  if (outcome === 'executed' || approval.status === 'executed') return 'executed';
+  if (outcome === 'rejected' || approval.status === 'rejected') return 'rejected';
+  if (outcome === 'failed' || approval.status === 'failed') return 'failed';
+  if (approval.status === 'pending' || !approval.status) return 'pending';
+  return 'pending';
+}
+
+export function reviewStatusCopy(state: ReviewCardState, approval: Approval, unresolved = false) {
+  if (state === 'pending') return '等待确认';
+  if (state === 'approving') return '正在修改…';
+  if (state === 'rejecting') return '正在取消…';
+  if (state === 'unknown') return unresolved ? '结果待核对' : '正在核对执行结果…';
+  if (state === 'executed') {
+    const count = approval.appOutcome?.status === 'executed' ? approval.appOutcome.appliedOperationCount : approval.appReview?.affectedEntityCount ?? 0;
+    return `已修改 ${count} 个对象`;
+  }
+  if (state === 'rejected') return '已取消，未修改数据';
+  if (state === 'failed' && approval.appOutcome?.status === 'failed' && approval.appOutcome.code === 'VERSION_CONFLICT') return '内容已变化，本次未修改';
+  if (state === 'failed') return '本次未修改';
+  if (state === 'superseded') return '已由新方案替代';
+  if (state === 'unreadable') return '无法读取这份历史方案';
+  return '此能力已移出内置 AI';
 }
 
 export function applyApprovalEvent(approvals: Approval[], event: SseEvent): Approval[] {
   if (event.type !== 'approval_required' || !event.approvalId) return approvals;
-  const supersedes = typeof event.arguments?.supersedesApprovalId === 'string' ? event.arguments.supersedesApprovalId : '';
+  const fromArguments = typeof event.arguments?.supersedesApprovalId === 'string' ? event.arguments.supersedesApprovalId : '';
+  const supersedes = typeof event.supersedesApprovalId === 'string' ? event.supersedesApprovalId : fromArguments;
   const next: Approval = {
     approvalId: event.approvalId,
     toolName: event.toolName ?? '',
@@ -376,6 +480,7 @@ export function applyApprovalEvent(approvals: Approval[], event: SseEvent): Appr
     ...(event.toolCallId ? { toolCallId: event.toolCallId } : {}),
     ...(event.conversationId ? { conversationId: event.conversationId } : {}),
     ...(event.preview ? { preview: event.preview, resultState: 'batch' as const, summary: event.preview.summary } : {}),
+    ...(event.review?.previewHash ? { resultState: 'app_changes' as const, appReview: event.review, previewHash: event.previewHash ?? event.review.previewHash, proposalRevision: event.proposalRevision, summary: event.review.intent } : {}),
   };
   const kept = approvals.filter((item) => item.approvalId !== next.approvalId).map((item) => (
     supersedes && item.approvalId === supersedes ? { ...item, status: 'rejected', supersededByApprovalId: next.approvalId } : item

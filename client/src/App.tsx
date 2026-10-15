@@ -138,7 +138,7 @@ export function App() {
   const tasksQuery = useTasks(params, taskPage && (page !== 'board' || Boolean(selectedTopicId)) && (page !== 'tags' || Boolean(selectedTag)));
   const tasks = tasksQuery.data ?? [];
   const taggedSections = page === 'tags' && selectedTag ? classificationSections(tasks, topics) : [];
-  const chat = useChat({ selectedTopicId: page === 'inbox' ? '' : selectedTopicId, taskId, view: page, onError: (message) => { if (message) toast.error(message); } });
+  const chat = useChat({ selectedTopicId: page === 'inbox' ? '' : selectedTopicId, taskId, view: page, filters, sort: sortMode, includeArchived: archived, today, onError: (message) => { if (message) toast.error(message); } });
   const transitionFromDetail = (action: () => void) => {
     if (taskId && detailRef.current) detailRef.current.requestTransition(action);
     else action();
@@ -335,9 +335,12 @@ export function App() {
   return <FocusProvider>
     <div className="app-backdrop h-dvh overflow-hidden bg-background p-0 xl:p-4">
       <div className={cn('app-frame h-full overflow-hidden', isDesktop ? 'grid' : 'flex flex-col')} style={isDesktop ? { gridTemplateColumns: hasAccessory ? '232px minmax(20rem, 1fr) minmax(340px, 400px)' : '232px minmax(0, 1fr)' } : undefined}>
-        {isDesktop && <Sidebar route={route} page={page} topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onNavigate={navigateSafely} onSelectTopic={selectTopic} onEditTopic={setTopicForm} onNewTopic={newTopic} />}
-        <main className="app-main glass-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto bg-[var(--glass-bg-strong)]">{!isDesktop && showChat ? chatPanel : content}</main>
-        <div className={cn('accessory-pane min-h-0 min-w-0', isDesktop && hasAccessory ? 'border-l glass-divider xl:rounded-r-xl xl:border-y xl:border-r' : 'hidden')}><div ref={setDetailSlot} className={cn('h-full min-h-0', (!isDesktop || !taskId || showChat) && 'hidden')} />{isDesktop && showChat && <div className="h-full min-h-0">{chatPanel}</div>}</div>
+        {isDesktop ? <Sidebar key="sidebar" route={route} page={page} topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onNavigate={navigateSafely} onSelectTopic={selectTopic} onEditTopic={setTopicForm} onNewTopic={newTopic} /> : <div key="sidebar" className="hidden" />}
+        <main key="main" className={cn('app-main glass-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto bg-[var(--glass-bg-strong)]', !isDesktop && showChat && 'hidden')}>{content}</main>
+        <div key="accessory" className={cn('accessory-pane min-h-0 min-w-0', (isDesktop && hasAccessory) || (!isDesktop && showChat) ? cn('flex min-h-0 flex-1 flex-col', isDesktop && 'border-l glass-divider xl:rounded-r-xl xl:border-y xl:border-r') : 'hidden')}>
+          <div ref={setDetailSlot} className={cn('min-h-0', isDesktop && taskId && !showChat ? 'h-full flex-1' : 'hidden')} />
+          {showChat && <div className="h-full min-h-0 flex-1">{chatPanel}</div>}
+        </div>
         {!isDesktop && (() => {
           // 服务端配置驱动手机底栏；初次加载失败时按默认四项显示，不回写服务器。
           const visibleViews = mobileNavigation.data?.visibleViews ?? DEFAULT_MOBILE_NAVIGATION.visibleViews;

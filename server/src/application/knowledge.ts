@@ -294,7 +294,7 @@ async function executeKnowledgeCommand(tx: KnowledgeDb, actor: Actor, command: C
     await tx.materialVersion.create({ data: { materialId: material.id, revision: material.revision, content, contentHash, metadata: JSON.stringify(data.metadata ?? (previous ? parseJson(previous.metadata, {}) : {})), attachmentPath, fileName: data.fileName ?? previous?.fileName, mimeType: data.mimeType ?? previous?.mimeType, createdAt: timestamp } });
     if (!existing && material.taskId) await seedLegacyLink(tx, material.id, material.taskId, actor);
     await afterMaterialVersion(tx, material);
-    await recordChange(tx, 'material', material.id, existing ? 'update' : 'create', beforeSnap, { ...await materialSnapshot(tx, material), contentHash }, context);
+    await recordChange(tx, 'material', material.id, existing ? 'update' : 'create', beforeSnap ? { ...beforeSnap, content: previous?.content ?? '' } : null, { ...await materialSnapshot(tx, material), content, contentHash }, context);
     return { ...material, content, contentHash, hasAttachment: Boolean(attachmentPath) };
   }
   if (command.kind === 'material.archive') {

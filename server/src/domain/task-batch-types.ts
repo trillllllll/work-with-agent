@@ -61,6 +61,37 @@ export type BatchApprovalEnvelope = {
   supersededByApprovalId?: string;
 };
 
+export type AppReviewField = { key: string; label: string; before: unknown; after: unknown; beforeText: string; afterText: string };
+export type AppReviewEntity = {
+  entityType: string;
+  entityId: string;
+  titleBefore: string | null;
+  titleAfter: string | null;
+  operation: string;
+  origin: 'explicit' | 'related';
+  revisionBefore: number | null;
+  revisionAfter: number | null;
+  fields: AppReviewField[];
+};
+export type AppReview = {
+  schemaVersion: 1;
+  title: string;
+  intent: string;
+  requestedOperationCount: number;
+  commandCount: number;
+  affectedEntityCount: number;
+  relatedEntityCount: number;
+  atomic: true;
+  reversibility: 'supported' | 'unsupported';
+  reversibilityReason: string | null;
+  consequences: string[];
+  entities: AppReviewEntity[];
+  previewHash: string;
+};
+export type AppOutcome =
+  | { status: 'executed'; appliedOperationCount: number; changeId: string | null; affected?: Array<{ type: string; id: string; title: string }>; completedAt: string }
+  | { status: 'rejected' | 'failed'; appliedOperationCount: 0; code: string; message: string; completedAt: string };
+
 export type StoredApprovalRead = {
   toolCallId?: string;
   preview?: TaskBatchPreview;
@@ -70,9 +101,14 @@ export type StoredApprovalRead = {
   proposalId?: string;
   proposalRevision?: number;
   assistantMessageId?: string;
+  appReview?: AppReview;
+  appOutcome?: AppOutcome;
+  previewHash?: string;
+  requestedOperations?: unknown[];
+  reversesApprovalId?: string | null;
   legacyProposal?: { proposalId: string; proposalRevision?: number; toolCallId?: string };
   legacyResult?: { success?: boolean; data?: unknown; error?: string; code?: string };
-  resultState?: 'batch' | 'proposal' | 'result' | 'unreadable';
+  resultState?: 'batch' | 'proposal' | 'result' | 'app_changes' | 'unreadable';
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -96,6 +132,24 @@ export function readStoredApproval(result: unknown): StoredApprovalRead {
       proposalId: typeof value.proposalId === 'string' ? value.proposalId : undefined,
       proposalRevision: typeof value.proposalRevision === 'number' ? value.proposalRevision : undefined,
       assistantMessageId: typeof value.assistantMessageId === 'string' ? value.assistantMessageId : undefined,
+    };
+  }
+  if (value.schemaVersion === 2 && value.kind === 'app_changes') {
+    const review = isRecord(value.review) && typeof value.review.previewHash === 'string' && Array.isArray(value.review.entities) ? value.review as AppReview : undefined;
+    const outcome = isRecord(value.outcome) && (value.outcome.status === 'executed' || value.outcome.status === 'rejected' || value.outcome.status === 'failed') ? value.outcome as AppOutcome : undefined;
+    return {
+      resultState: 'app_changes',
+      toolCallId: typeof value.toolCallId === 'string' ? value.toolCallId : undefined,
+      proposalId: typeof value.proposalId === 'string' ? value.proposalId : undefined,
+      proposalRevision: typeof value.proposalRevision === 'number' ? value.proposalRevision : undefined,
+      assistantMessageId: typeof value.assistantMessageId === 'string' ? value.assistantMessageId : undefined,
+      summary: typeof review?.intent === 'string' ? review.intent : undefined,
+      appReview: review,
+      appOutcome: outcome,
+      previewHash: review?.previewHash,
+      requestedOperations: Array.isArray(value.requestedOperations) ? value.requestedOperations : undefined,
+      reversesApprovalId: typeof value.reversesApprovalId === 'string' ? value.reversesApprovalId : value.reversesApprovalId === null ? null : undefined,
+      supersededByApprovalId: typeof value.supersededByApprovalId === 'string' ? value.supersededByApprovalId : undefined,
     };
   }
   if (typeof value.proposalId === 'string' && typeof value.success !== 'boolean') {

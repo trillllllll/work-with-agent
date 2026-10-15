@@ -7,9 +7,12 @@ import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { Textarea } from '@/components/ui/textarea.js';
 import { TaskBatchCard } from '@/components/chat/TaskBatchCard.js';
+import { ReviewCard } from '@/components/chat/ReviewCard.js';
+import type { AppOutcome, AppReview } from '../../../../server/src/domain/task-batch-types.js';
 
 type BatchCard = { approvalId: string; status: string; preview?: Approval['preview']; outcome?: Approval['outcome']; supersededByApprovalId?: string };
-type Proposal = { id: string; status: string; revision: number; actorId: string; commands: Command[] | string; preview: unknown; createdAt: string; batchCard?: BatchCard };
+type AppChangeCard = { approvalId: string; status: string; review?: AppReview; proposalRevision: number; outcome?: AppOutcome; previewHash?: string };
+type Proposal = { id: string; status: string; revision: number; actorId: string; commands: Command[] | string; preview: unknown; createdAt: string; batchCard?: BatchCard; appChangeCard?: AppChangeCard };
 function asBatchPreview(value: unknown): Approval['preview'] | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const preview = value as NonNullable<Approval['preview']>;
@@ -42,6 +45,29 @@ function BatchProposalCard({ proposal, onSettled }: { proposal: Proposal; onSett
   };
   return <TaskBatchCard approval={approval} executing={executing} unknown={unknown} onApprove={() => void run('approve')} onReject={() => void run('reject')} />;
 }
+function AppChangeProposalCard({ proposal, onSettled }: { proposal: Proposal; onSettled: (proposal: Proposal) => void }) {
+  const client = useQueryClient();
+  const card = proposal.appChangeCard;
+  const review = card?.review;
+  const [phase, setPhase] = useState<'' | 'approve' | 'reject'>('');
+  const [unknown, setUnknown] = useState(false);
+  if (!card || !review?.previewHash) return null;
+  const approval: Approval = { approvalId: card.approvalId, toolName: 'propose_changes', arguments: {}, status: card.status, resultState: 'app_changes', appReview: review, appOutcome: card.outcome, proposalRevision: card.proposalRevision, previewHash: card.previewHash ?? review.previewHash, summary: review.intent };
+  const settle = () => client.invalidateQueries({ queryKey: ['proposals'] });
+  const run = async (path: 'approve' | 'reject') => {
+    setPhase(path);
+    setUnknown(false);
+    try {
+      await api(`/api/agent/approvals/${approval.approvalId}/${path}`, { method: 'POST', body: JSON.stringify({ expectedProposalRevision: approval.proposalRevision, previewHash: approval.previewHash }) });
+      onSettled({ ...proposal, appChangeCard: { ...card, status: path === 'approve' ? 'executed' : 'rejected' } });
+      await settle();
+    } catch {
+      setUnknown(true);
+      await settle().catch(() => undefined);
+    } finally { setPhase(''); }
+  };
+  return <ReviewCard approval={approval} phase={phase} unknown={unknown} onApprove={() => void run('approve')} onReject={() => void run('reject')} onChanged={() => void settle()} />;
+}
 const labels: Record<string, string> = { title: '标题', name: '名称', description: '说明', content: '内容', dueDate: '安排日期', priority: '优先级', status: '状态', resultSummary: '结果摘要', reason: '理由' };
 export function ProposalsPage() {
   const [status, setStatus] = useState('pending');
@@ -52,7 +78,7 @@ export function ProposalsPage() {
   for (const proposal of pinned) rows.set(proposal.id, proposal);
   const visible = [...rows.values()];
   const pin = (proposal: Proposal) => setPinned((current) => [...current.filter((item) => item.id !== proposal.id), proposal]);
-  return <section className="mx-auto max-w-4xl space-y-5 p-5 sm:p-7"><header className="flex flex-wrap justify-between gap-3"><div><h1 className="text-2xl font-semibold">待确认</h1><p className="mt-2 text-sm text-muted-foreground">检查业务改动和依据后再应用。存在依赖的修改会一起提交。</p></div><select className="glass-control h-10 rounded-lg px-3" aria-label="提议状态" value={status} onChange={(event) => { setStatus(event.target.value); setPinned([]); }}><option value="pending">待确认</option><option value="applied">已执行</option><option value="rejected">已拒绝</option></select></header>{query.error && <p role="alert">{query.error.message}</p>}{query.isLoading && !visible.length ? <p>正在加载…</p> : !visible.length ? <p className="py-8 text-sm text-muted-foreground">暂无此状态的提议。</p> : visible.map((proposal) => proposal.batchCard || asBatchPreview(proposal.preview) ? <BatchProposalCard key={`${proposal.id}:${proposal.revision}`} proposal={proposal} onSettled={pin} /> : <ProposalCard key={`${proposal.id}:${proposal.revision}`} proposal={proposal} />)}</section>;
+  return <section className="mx-auto max-w-4xl space-y-5 p-5 sm:p-7"><header className="flex flex-wrap justify-between gap-3"><div><h1 className="text-2xl font-semibold">待确认</h1><p className="mt-2 text-sm text-muted-foreground">检查业务改动和依据后再应用。存在依赖的修改会一起提交。</p></div><select className="glass-control h-10 rounded-lg px-3" aria-label="提议状态" value={status} onChange={(event) => { setStatus(event.target.value); setPinned([]); }}><option value="pending">待确认</option><option value="applied">已执行</option><option value="rejected">已拒绝</option></select></header>{query.error && <p role="alert">{query.error.message}</p>}{query.isLoading && !visible.length ? <p>正在加载…</p> : !visible.length ? <p className="py-8 text-sm text-muted-foreground">暂无此状态的提议。</p> : visible.map((proposal) => proposal.appChangeCard?.review ? <AppChangeProposalCard key={`${proposal.id}:${proposal.revision}`} proposal={proposal} onSettled={pin} /> : proposal.batchCard || asBatchPreview(proposal.preview) ? <BatchProposalCard key={`${proposal.id}:${proposal.revision}`} proposal={proposal} onSettled={pin} /> : <ProposalCard key={`${proposal.id}:${proposal.revision}`} proposal={proposal} />)}</section>;
 }
 function ProposalCard({ proposal }: { proposal: Proposal }) {
   const original = parseStored<Command[]>(proposal.commands, []);

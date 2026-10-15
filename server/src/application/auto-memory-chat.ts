@@ -2,11 +2,12 @@ import { prisma } from '../infrastructure/prisma.js';
 import { DomainError } from '../domain/task.js';
 import { createAutoChatMaterial } from './knowledge.js';
 import { readJson, splitCodePoints, SOURCE_PART_CHARS } from './auto-memory-types.js';
+import type { Db } from './workspace-store.js';
 
-export async function beginAutoMemoryTurn(input: { conversationId: string; userMessageId: string; topicId: string | null; createdAt: string }) {
-  const existing = await prisma.autoMemoryTurn.findUnique({ where: { id: input.userMessageId } });
+export async function beginAutoMemoryTurn(input: { conversationId: string; userMessageId: string; topicId: string | null; createdAt: string }, tx: Db | typeof prisma = prisma) {
+  const existing = await tx.autoMemoryTurn.findUnique({ where: { id: input.userMessageId } });
   if (existing) return existing;
-  return prisma.autoMemoryTurn.create({
+  return tx.autoMemoryTurn.create({
     data: {
       id: input.userMessageId,
       conversationId: input.conversationId,
@@ -37,9 +38,12 @@ export async function failAutoMemoryTurn(userMessageId: string, completedAt: str
   await prisma.autoMemoryTurn.updateMany({ where: { id: userMessageId, status: 'collecting' }, data: { status: 'failed', completedAt } });
 }
 
-/** Leftover collecting rows belong to a process that did not finish the turn. */
+/** Leftover collecting rows belong to a process that did not finish the turn.
+ * A run that is still queued, running, waiting, or paused keeps its turn. */
 export async function failCollectingTurns(completedAt: string) {
-  await prisma.autoMemoryTurn.updateMany({ where: { status: 'collecting' }, data: { status: 'failed', completedAt } });
+  const active = await prisma.agentRun.findMany({ where: { state: { in: ['queued', 'running', 'waiting_approval', 'paused'] } }, select: { sourceUserMessageId: true } });
+  const keep = active.map((run) => run.sourceUserMessageId);
+  await prisma.autoMemoryTurn.updateMany({ where: { status: 'collecting', ...(keep.length ? { id: { notIn: keep } } : {}) }, data: { status: 'failed', completedAt } });
 }
 
 function excerptText(user: string, assistants: string[]) {

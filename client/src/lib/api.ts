@@ -26,7 +26,7 @@ export type TaskActivityChange =
 export type TaskActivityEvent = { id: string; at: string; actor: { kind: 'user' | 'agent'; name: string }; action: 'create' | 'update' | 'delete' | 'restore' | 'undo'; changes: TaskActivityChange[] };
 export type CliCommandSetting = { command: string; source: 'manual' | 'auto' | 'none'; version: string; checkedAt: string; manualCommand: string; autoCommand: string; discoveredCommand: string; discoveredVersion: string; applied: boolean; message: string };
 export type Settings = { baseUrl: string; model: string; apiKeyConfigured: boolean; apiKeyMasked: string | null; cli?: { codex: CliCommandSetting; claude: CliCommandSetting }; discovered?: Record<string, CliCommandSetting> };
-export type ApprovalResponse = { result: ToolResult; assistantMessage?: string; assistantMessageId?: string; summaryError?: string };
+export type ApprovalResponse = { result?: ToolResult; assistantMessage?: string; assistantMessageId?: string; summaryError?: string; approval?: unknown; run?: unknown };
 export type View = 'board' | 'quadrant' | 'chat' | 'topics' | 'inbox' | 'settings' | 'trash' | 'changes' | 'today' | 'search' | 'tags' | 'archived' | 'more' | 'connections' | 'proposals' | 'knowledge' | 'library' | 'runs' | 'reviews' | 'plan' | 'focus';
 export type TimeBandColor = 'blue' | 'green' | 'orange' | 'purple' | 'pink' | 'gray';
 export type PlanTimeBand = {
@@ -59,6 +59,8 @@ export const toolLabels: Record<string, string> = {
   create_task: '创建任务', update_task: '更新任务', delete_task: '删除任务', create_topic: '创建主题', update_topic: '更新主题', delete_topic: '归档清单', propose_topic_summary: '提出成果草稿',
   execute_shell: '执行命令', execute_file: '文件操作', execute_http: '访问地址',
   memory: '记忆', conversation_search: '查找过往对话', library: '项目资料', propose_task_changes: '整组任务修改',
+  get_time: '当前时间', get_work_context: '工作上下文', query_tasks: '查询任务', query_topics: '查询清单', get_task_activity: '任务动态',
+  search_workspace: '搜索', library_read: '读取资料', memory_read: '读取记忆', get_change_schema: '修改说明', propose_changes: '修改方案', prepare_external_prompt: '外部提示词',
 };
 export const API_URL = '';
 let csrfToken = '';
@@ -99,6 +101,12 @@ export function parseApproval(item: any): Approval {
     ...(stored.supersededByApprovalId ? { supersededByApprovalId: stored.supersededByApprovalId } : {}),
     ...(stored.resultState ? { resultState: stored.resultState } : {}),
     ...(stored.summary ? { summary: stored.summary } : {}),
+    ...(stored.appReview ? { appReview: stored.appReview } : {}),
+    ...(stored.appOutcome ? { appOutcome: stored.appOutcome } : {}),
+    ...(stored.proposalRevision !== undefined ? { proposalRevision: stored.proposalRevision } : {}),
+    ...(stored.previewHash ? { previewHash: stored.previewHash } : {}),
+    ...(stored.requestedOperations ? { requestedOperations: stored.requestedOperations } : {}),
+    ...(stored.reversesApprovalId !== undefined ? { reversesApprovalId: stored.reversesApprovalId } : {}),
   };
 }
 

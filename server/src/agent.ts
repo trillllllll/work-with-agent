@@ -13,10 +13,14 @@ import { prisma } from './infrastructure/prisma.js';
 import { DomainError } from './domain/task.js';
 import { readStoredApproval, type TaskBatchPreview } from './domain/task-batch-types.js';
 import { approveTaskBatch, prepareTaskBatch, rejectTaskBatch, taskBatchCommitError } from './application/chat-task-batch.js';
+import { builtinToolDefinitions } from './agent/capabilities.js';
+import { approveAppChanges, readEnvelope, rejectAppChanges, repreviewApproval, undoPreview, type DecisionInput } from './agent/decision.js';
+import { bootRuns, followRun, resumeRun, runEvents, runView, scheduleRun, startChat, stopRun } from './agent/runs.js';
+import { approvalView } from './agent/views.js';
 
 export type PageContext = { topicId?: string | null; taskId?: string | null; page?: string | null };
 export type ChatEvent = {
-  type: 'message_start' | 'message_delta' | 'message_end' | 'tool_call' | 'tool_result' | 'approval_required' | 'error' | 'done';
+  type: 'message_start' | 'message_delta' | 'message_end' | 'tool_call' | 'tool_result' | 'approval_required' | 'approval_resolved' | 'run_state' | 'external_prompt' | 'error' | 'done';
   conversationId?: string;
   messageId?: string;
   delta?: string;
@@ -28,6 +32,15 @@ export type ChatEvent = {
   code?: string;
   toolCallId?: string;
   preview?: TaskBatchPreview;
+  runId?: string;
+  seq?: number;
+  state?: string;
+  pauseReason?: string | null;
+  part?: unknown;
+  review?: unknown;
+  proposalId?: string;
+  proposalRevision?: number;
+  previewHash?: string;
 };
 export type ModelContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
 export type ModelMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string | ModelContentPart[] | null; tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>; tool_call_id?: string };
@@ -137,173 +150,20 @@ export class AgentService {
   private tasks = new TaskService();
   private context: ContextService;
 
-  constructor(model: ModelAdapter | undefined = undefined, tools = new ToolService()) { this.tools = tools; this.model = model ?? new ModelAdapter(new SettingsService(), () => this.tools.definitions()); this.context = new ContextService(this.model); }
+  constructor(model: ModelAdapter | undefined = undefined, tools = new ToolService()) { this.tools = tools; this.model = model ?? new ModelAdapter(new SettingsService(), () => builtinToolDefinitions()); this.context = new ContextService(this.model); }
 
-  async *chatStream(input: { conversationId?: string; message: string; pageContext?: PageContext; signal?: AbortSignal }): AsyncGenerator<ChatEvent> {
-    const conversationId = input.conversationId ?? (await this.conversations.create()).id;
-    if (input.conversationId && !(await this.conversations.get(conversationId))) throw Object.assign(new Error('会话不存在'), { status: 404 });
-    const turnTopicId = input.pageContext?.topicId ?? null;
-    await checkKnowledgeScope(prisma, ownerActor, turnTopicId);
-    const sourceUserMessageId = (await this.conversations.addMessage(conversationId, 'user', input.message)).id;
-    await beginAutoMemoryTurn({ conversationId, userMessageId: sourceUserMessageId, topicId: turnTopicId, createdAt: new Date().toISOString() });
-    let turnOpen = true;
-    const finishTurn = async (status: 'completed' | 'failed') => {
-      if (!turnOpen) return;
-      turnOpen = false;
-      const at = new Date().toISOString();
-      if (status === 'completed') await completeAutoMemoryTurn(sourceUserMessageId, at);
-      else await failAutoMemoryTurn(sourceUserMessageId, at);
-    };
-    try {
-    const assembled = await this.context.assemble(conversationId, input.pageContext ?? {}, input.signal);
-    const messages: ModelMessage[] = [{ role: 'system', content: assembled.systemPrompt }, ...assembled.messages];
-    const failureCounts = new Map<string, number>();
-    for (let round = 0; round < 8; round += 1) {
-      const assistantId = (await this.conversations.addMessage(conversationId, 'assistant', '', 'streaming')).id;
-      yield { type: 'message_start', conversationId, messageId: assistantId };
-      let text = '';
-      const calls: ToolCall[] = [];
-      try {
-        for await (const delta of this.model.stream(messages, input.signal)) {
-          if (delta.text) { text += delta.text; yield { type: 'message_delta', conversationId, messageId: assistantId, delta: delta.text }; }
-          if (delta.toolCalls) calls.push(...delta.toolCalls);
-        }
-        await this.conversations.updateMessage(assistantId, { content: text, status: 'completed' });
-        await appendAutoMemoryAssistant(sourceUserMessageId, assistantId);
-        yield { type: 'message_end', conversationId, messageId: assistantId };
-      } catch (error) {
-        await this.conversations.updateMessage(assistantId, { content: text, status: 'failed' });
-        if (error && typeof error === 'object') (error as { conversationId?: string }).conversationId ??= conversationId;
-        throw error;
-      }
-      if (!calls.length) { yield { type: 'done', conversationId }; await finishTurn('completed'); return; }
-      calls.forEach((call, index) => { call.id ??= `call_${round}_${index}`; });
-      for (const call of calls) {
-        if (call.name === 'create_task' && call.arguments.topicId === undefined && input.pageContext?.topicId) call.arguments.topicId = input.pageContext.topicId;
-      }
-      await this.conversations.updateMessage(assistantId, { toolCalls: serializeToolCalls(calls) });
-      const toolMessages: ModelMessage[] = [];
-      let hasPendingApproval = false;
-      let stopped = false;
-      const noteFailure = (name: string, args: Record<string, unknown>, code: string) => {
-        const key = createHash('sha256').update(name + canonical(args) + code).digest('hex');
-        const count = (failureCounts.get(key) ?? 0) + 1;
-        failureCounts.set(key, count);
-        return count >= 2;
-      };
-      const acceptedWrite = (call: ToolCall) => !call.invalidArguments && !this.tools.validate(call) && !this.tools.isReadOnly(call.name, call.arguments);
-      const writes = calls.filter(acceptedWrite);
-      const proposes = writes.filter((call) => call.name === 'propose_task_changes');
-      const mixesOtherWrite = proposes.length > 0 && writes.some((call) => call.name !== 'propose_task_changes');
-      let committingProposes = 0;
-      if (!mixesOtherWrite && proposes.length > 1) {
-        for (const call of proposes) if (!(await taskBatchCommitError(call.arguments, input.pageContext))) committingProposes += 1;
-      }
-      const blockedWrites = mixesOtherWrite || committingProposes > 1;
-      const recordTool = async (call: ToolCall, result: ToolResult) => {
-        const content = JSON.stringify({ toolName: call.name, toolCallId: call.id, assistantMessageId: assistantId, ...result });
-        await this.conversations.addMessage(conversationId, 'tool', content, 'completed', { toolCallId: call.id });
-        toolMessages.push({ role: 'tool', tool_call_id: call.id ?? '', content });
-        return content;
-      };
-      for (const call of calls) {
-        const toolCallId = call.id ?? '';
-        yield { type: 'tool_call', conversationId, messageId: assistantId, toolCallId, toolName: call.name, arguments: call.arguments };
-        const fail = async (result: ToolResult) => {
-          await recordTool(call, result);
-          if (noteFailure(call.name, call.arguments, result.code ?? 'TOOL_ERROR')) stopped = true;
-          return result;
-        };
-        if (stopped) {
-          const result: ToolResult = { success: false, code: 'TOOL_CANCELLED', error: '本轮未执行：相同调用已连续失败' };
-          await recordTool(call, result);
-          yield { type: 'tool_result', conversationId, messageId: assistantId, toolCallId, toolName: call.name, arguments: call.arguments, result };
-          continue;
-        }
-        if (call.invalidArguments) {
-          const result = await fail({ success: false, code: 'INVALID_TOOL_ARGUMENTS', error: 'Tool 参数不是有效 JSON' });
-          yield { type: 'tool_result', conversationId, messageId: assistantId, toolCallId, toolName: call.name, arguments: call.arguments, result };
-          continue;
-        }
-        const validationError = this.tools.validate(call);
-        if (validationError) {
-          const result = await fail({ success: false, error: validationError, code: validationError.startsWith('未知 Tool') ? 'UNKNOWN_TOOL' : 'INVALID_TOOL_ARGUMENTS' });
-          yield { type: 'tool_result', conversationId, messageId: assistantId, toolCallId, toolName: call.name, arguments: call.arguments, result };
-          continue;
-        }
-        if (blockedWrites && acceptedWrite(call)) {
-          const result = await fail({ success: false, code: 'INVALID_BATCH', error: '整组修改不能和其它写入放在同一轮' });
-          yield { type: 'tool_result', conversationId, messageId: assistantId, toolCallId, toolName: call.name, arguments: call.arguments, result };
-          continue;
-        }
-        if (!this.tools.isReadOnly(call.name, call.arguments)) {
-          if (call.name === 'execute_file') {
-            const denial = await this.tools.fileAccessDenial(call.arguments);
-            if (denial) {
-              const result = await fail(denial);
-              yield { type: 'tool_result', conversationId, messageId: assistantId, toolCallId, toolName: call.name, arguments: call.arguments, result };
-              continue;
-            }
-          }
-          try {
-            if (call.name === 'propose_task_changes') {
-              const prepared = await prepareTaskBatch({ conversationId, assistantMessageId: assistantId, sourceUserMessageId, toolCallId, arguments: call.arguments as never, pageContext: input.pageContext });
-              hasPendingApproval = true;
-              yield { type: 'approval_required', conversationId, messageId: assistantId, toolCallId, toolName: call.name, arguments: call.arguments, approvalId: prepared.approvalId, preview: prepared.preview };
-            } else {
-              const approval = await this.approvals.create(call, conversationId, input.pageContext);
-              hasPendingApproval = true;
-              yield { type: 'approval_required', conversationId, messageId: assistantId, toolCallId, toolName: call.name, arguments: call.arguments, approvalId: approval.id };
-            }
-          } catch (error) {
-            if (!(error instanceof DomainError)) throw error;
-            const result = await fail({ success: false, error: error.message, code: error.code });
-            yield { type: 'tool_result', conversationId, messageId: assistantId, toolCallId, toolName: call.name, arguments: call.arguments, result };
-          }
-          continue;
-        }
-        let result: ToolResult;
-        try {
-          result = await this.tools.execute(call, { source: 'agent', conversationId, topicId: input.pageContext?.topicId ?? null, taskId: input.pageContext?.taskId ?? null });
-        } catch (error) {
-          if (!(error instanceof DomainError)) throw error;
-          result = { success: false, error: error.message, code: error.code };
-        }
-        await recordTool(call, result);
-        yield { type: 'tool_result', conversationId, messageId: assistantId, toolCallId, toolName: call.name, arguments: call.arguments, result };
-        if (!result.success && noteFailure(call.name, call.arguments, result.code ?? 'TOOL_ERROR')) stopped = true;
-      }
-      if (stopped) {
-        const explanation = '相同的工具调用已连续失败两次，已停止继续尝试。';
-        const message = await this.conversations.addMessage(conversationId, 'assistant', explanation);
-        yield { type: 'message_start', conversationId, messageId: message.id };
-        yield { type: 'message_delta', conversationId, messageId: message.id, delta: explanation };
-        yield { type: 'message_end', conversationId, messageId: message.id };
-        await appendAutoMemoryAssistant(sourceUserMessageId, message.id);
-        yield { type: 'done', conversationId };
-        await finishTurn('completed');
-        return;
-      }
-      // A write call is intentionally never returned to the model as if it
-      // had executed. The approval endpoint owns the later side effect.
-      if (hasPendingApproval) { yield { type: 'done', conversationId }; await finishTurn('completed'); return; }
-      if (!toolMessages.length) { yield { type: 'done', conversationId }; await finishTurn('completed'); return; }
-      messages.push({
-        role: 'assistant',
-        content: text || null,
-        tool_calls: calls.map((call) => ({ id: call.id ?? `call_${Math.random().toString(36).slice(2)}`, type: 'function' as const, function: { name: call.name, arguments: JSON.stringify(call.arguments) } })),
-      });
-      messages.push(...toolMessages);
-    }
-    await finishTurn('failed');
-    throw modelError('Tool 调用轮次超过上限', 'TOOL_ROUND_LIMIT');
-    } catch (error) {
-      await finishTurn('failed');
-      throw error;
-    }
+  private streamModel(messages: ModelMessage[], signal?: AbortSignal) { return this.model.stream(messages, signal, true); }
+
+  async boot() { await bootRuns((messages, signal) => this.streamModel(messages, signal), this.context); }
+
+  async *chatStream(input: { conversationId?: string; message: string; pageContext?: PageContext; context?: unknown; requestKey?: string; signal?: AbortSignal }): AsyncGenerator<ChatEvent> {
+    const run = await startChat(input);
+    if (run.state === 'queued') scheduleRun(run.id, (messages, signal) => this.streamModel(messages, signal), this.context);
+    yield* followRun(run.id);
+    return;
   }
 
-  async chat(input: { conversationId?: string; message: string; pageContext?: PageContext; signal?: AbortSignal }) { const events: ChatEvent[] = []; for await (const event of this.chatStream(input)) events.push(event); return { conversationId: events.find((event) => event.conversationId)?.conversationId, events }; }
+  async chat(input: { conversationId?: string; message: string; pageContext?: PageContext; context?: unknown; requestKey?: string; signal?: AbortSignal }) { const events: ChatEvent[] = []; for await (const event of this.chatStream(input)) events.push(event); return { conversationId: events.find((event) => event.conversationId)?.conversationId, events }; }
 
   async summarize(conversationId: string, text: string, signal?: AbortSignal) {
     try { const result = await this.model.complete([{ role: 'system', content: '请用简短中文说明刚才的任务变更结果，不要调用工具。' }, { role: 'user', content: text }], signal); return result.text || '变更已执行。'; } catch { return undefined; }
@@ -316,8 +176,15 @@ export class AgentService {
     await this.conversations.addMessage(conversationId, 'tool', JSON.stringify({ toolName, toolCallId, ...result }), 'completed', { toolCallId });
   }
 
-  async approve(approvalId: string) {
+  async approve(approvalId: string, input: DecisionInput = {}): Promise<any> {
     const approval = await this.approvals.get(approvalId); if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 });
+    if (approval.toolName.startsWith('execute_')) throw new DomainError('CAPABILITY_REMOVED', '此能力已移出内置 AI', 409);
+    const envelope = readEnvelope(approval.result);
+    if (envelope) {
+      const body = await approveAppChanges(approvalId, input);
+      if (body && typeof body === 'object' && (body as { resumed?: boolean }).resumed) scheduleRun(envelope.runId, (messages, signal) => this.streamModel(messages, signal), this.context);
+      return { approval: await approvalView(approvalId), run: await runView(envelope.runId), ...(body as object) };
+    }
     if (readStoredApproval(approval.result).resultState === 'batch') return approveTaskBatch(approvalId);
     const proposal = approval.result ? JSON.parse(approval.result) : null;
     const toolCallId = typeof proposal?.toolCallId === 'string' ? proposal.toolCallId : undefined;
@@ -344,18 +211,19 @@ export class AgentService {
       if (assistantMessage && approval.conversationId) await this.conversations.addMessage(approval.conversationId, 'assistant', assistantMessage);
       return { result, assistantMessage, summaryError: !assistantMessage ? '无法生成自动总结' : undefined };
     }
-    if (!approval.toolName.startsWith('execute_')) throw Object.assign(new Error('旧审核缺少版本快照，请重新生成提议后确认'), { status: 409, code: 'APPROVAL_REPREVIEW_REQUIRED' });
-    if (approval.status !== 'pending' || !(await this.approvals.claim(approvalId))) throw Object.assign(new Error('该审核已处理'), { status: 409 });
-    let result: ToolResult; try { const call = this.approvals.parse(approval); const validationError = this.tools.validate(call); result = validationError ? { success: false, error: validationError } : await this.tools.execute(call, { source: 'agent', conversationId: approval.conversationId ?? undefined, approvalId: approval.id, requestId: approval.id }); } catch (error) { result = { success: false, error: error instanceof Error ? error.message : '审核执行失败' }; }
-    await this.approvals.update(approvalId, result.success ? 'executed' : 'failed', result);
-    await this.recordResolvedTool(approval.conversationId, approval.toolName, toolCallId, result);
-    let assistantMessage: string | undefined;
-    if (approval.conversationId) assistantMessage = await this.summarize(approval.conversationId, JSON.stringify({ toolName: approval.toolName, result }));
-    if (assistantMessage && approval.conversationId) await this.conversations.addMessage(approval.conversationId, 'assistant', assistantMessage);
-    return { result, assistantMessage, summaryError: result.success && !assistantMessage ? '无法生成自动总结' : undefined };
+    throw new DomainError('APPROVAL_REPREVIEW_REQUIRED', '这份历史方案需要先重新生成预览，才能确认', 409);
   }
-  async reject(approvalId: string) {
+  async reject(approvalId: string, input: DecisionInput = {}): Promise<any> {
     const approval = await this.approvals.get(approvalId); if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 });
+    const envelope = readEnvelope(approval.result);
+    if (envelope) {
+      const body = await rejectAppChanges(approvalId, input);
+      return { approval: await approvalView(approvalId), run: envelope.runId ? await runView(envelope.runId) : null, ...(body as object) };
+    }
+    if (approval.toolName.startsWith('execute_')) {
+      if (approval.status !== 'pending') throw Object.assign(new Error('该审核已处理'), { status: 409 });
+      return this.approvals.update(approvalId, 'rejected');
+    }
     if (readStoredApproval(approval.result).resultState === 'batch') return rejectTaskBatch(approvalId);
     if (approval.status !== 'pending') throw Object.assign(new Error('该审核已处理'), { status: 409 });
     const proposal = approval.result ? JSON.parse(approval.result) : null;
@@ -364,6 +232,13 @@ export class AgentService {
     return this.approvals.update(approvalId, 'rejected');
   }
   async previewApproval(approvalId: string) { return this.approvals.preview(approvalId); }
+  async getRun(runId: string) { const run = await runView(runId); if (!run) throw Object.assign(new Error('请求不存在'), { status: 404 }); return run; }
+  async listRunEvents(runId: string, after = 0) { return runEvents(runId, after); }
+  async resume(runId: string) { const run = await resumeRun(runId, (messages, signal) => this.streamModel(messages, signal), this.context); return runView(run.id); }
+  async stop(runId: string) { const run = await stopRun(runId); return runView(run.id); }
+  async getApproval(approvalId: string) { const approval = await approvalView(approvalId); if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 }); return { approval, run: approval.runId ? await runView(approval.runId) : null }; }
+  async repreview(approvalId: string) { return repreviewApproval(approvalId); }
+  async prepareUndo(approvalId: string) { return undoPreview(approvalId); }
   async messages(conversationId: string) { if (!(await this.conversations.get(conversationId))) throw Object.assign(new Error('会话不存在'), { status: 404 }); return this.conversations.listMessages(conversationId); }
   async approvalList(status?: string) { if (status && !['pending', 'approved', 'rejected', 'executed', 'failed'].includes(status)) throw Object.assign(new Error('审核状态无效'), { status: 400 }); return this.approvals.list(status as any); }
 }

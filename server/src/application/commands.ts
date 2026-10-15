@@ -346,13 +346,15 @@ async function commandForBatch(tx: Db, command: Command, batch?: BatchRevisionMo
   if (!row) throw new DomainError('NOT_FOUND', '任务不存在', 404);
   return { ...command, expectedRevision: row.revision };
 }
-async function executeBatch(tx: Db, actor: Actor, commands: Command[], proposalId?: string, audit: Pick<MutationContext, 'conversationId' | 'approvalId'> = {}, batch?: BatchRevisionMode) {
+async function executeBatch(tx: Db, actor: Actor, commands: Command[], proposalId?: string, audit: Pick<MutationContext, 'conversationId' | 'approvalId'> = {}, batch?: BatchRevisionMode, attribution?: CommandAttribution) {
   if (batch?.revisionMode === 'batch-base-v1') await assertBatchBase(tx, actor, batch.baseTaskRevisions);
   const changes: ChangeRecord[] = [];
   const results: unknown[] = [];
+  const recordedActor = attribution?.actor ?? actor;
+  const source = attribution?.source ?? (actor.kind === 'user' ? 'user' : 'agent');
   for (const command of commands) {
     const effective = await commandForBatch(tx, command, batch);
-    results.push(await requireHandler(effective).execute(tx, actor, effective, { ...audit, source: actor.kind === 'user' ? 'user' : 'agent', actor, db: tx, proposalId, entityId: effective.entityId, auditRecords: changes }));
+    results.push(await requireHandler(effective).execute(tx, actor, effective, { ...audit, source, actor: recordedActor, approvedByActorId: attribution?.approvedByActorId, db: tx, proposalId, entityId: effective.entityId, auditRecords: changes }));
   }
   let changeId = changes[0]?.id;
   if (changes.length > 1) {
@@ -362,7 +364,7 @@ async function executeBatch(tx: Db, actor: Actor, commands: Command[], proposalI
     const parts = changes.filter((row) => !workspace.includes(row));
     if (combinedWorkspace) parts.unshift({ ...workspace[0], entityType: 'workspace', operation: 'batch', beforeSnapshot: JSON.stringify(combinedWorkspace.before), afterSnapshot: JSON.stringify(combinedWorkspace.after) });
     await tx.changeRecord.deleteMany({ where: { id: { in: changes.map((row) => row.id) } } });
-    const record = await tx.changeRecord.create({ data: { entityType: merged ? 'workspace' : 'proposal', entityId: proposalId ?? randomUUID(), operation: commands[0].kind === 'change.undo' ? 'undo:batch' : 'batch', beforeSnapshot: JSON.stringify(merged?.before ?? { version: 3, changes: parts.map((row) => ({ entityType: row.entityType, entityId: row.entityId, operation: row.operation, snapshot: row.beforeSnapshot })) }), afterSnapshot: JSON.stringify(merged?.after ?? { version: 3, changes: parts.map((row) => ({ entityType: row.entityType, entityId: row.entityId, operation: row.operation, snapshot: row.afterSnapshot })) }), source: actor.kind === 'user' ? 'user' : 'agent', actorId: actor.id, connectionId: actor.connectionId, proposalId, createdAt: now() } });
+    const record = await tx.changeRecord.create({ data: { entityType: merged ? 'workspace' : 'proposal', entityId: proposalId ?? randomUUID(), operation: commands[0].kind === 'change.undo' ? 'undo:batch' : 'batch', beforeSnapshot: JSON.stringify(merged?.before ?? { version: 3, changes: parts.map((row) => ({ entityType: row.entityType, entityId: row.entityId, operation: row.operation, snapshot: row.beforeSnapshot })) }), afterSnapshot: JSON.stringify(merged?.after ?? { version: 3, changes: parts.map((row) => ({ entityType: row.entityType, entityId: row.entityId, operation: row.operation, snapshot: row.afterSnapshot })) }), source, actorId: recordedActor.id, connectionId: recordedActor.connectionId, proposalId, approvedByActorId: attribution?.approvedByActorId ?? null, createdAt: now() } });
     changeId = record.id;
   }
   const affectedTaskIds = [...new Set(results.flatMap((result: any) => result?.meta?.affectedTaskIds ?? []))];
@@ -370,7 +372,7 @@ async function executeBatch(tx: Db, actor: Actor, commands: Command[], proposalI
   return { results: normalizedResults, changeId, meta: { changeId, affectedTaskIds } };
 }
 
-async function inspectBatch(tx: Db, actor: Actor, commands: Command[], batch?: BatchRevisionMode) {
+async function inspectBatch(tx: Db, actor: Actor, commands: Command[], batch?: BatchRevisionMode, auditRecords?: ChangeRecord[], recordActor?: Actor) {
   const inspections: Inspection[] = [];
   const evidenceReadsets: unknown[] = [];
   for (const command of commands) {
@@ -388,7 +390,8 @@ async function inspectBatch(tx: Db, actor: Actor, commands: Command[], batch?: B
       if (handler.ownerOnly) assertOwner(actor);
       const inspected = await handler.inspect(tx, actor, effective);
       const evidence = evidenceReadsets[index];
-      const after = await handler.execute(tx, actor, effective, { source: actor.kind === 'user' ? 'user' : 'agent', actor, db: tx, entityId: effective.entityId, preview: true });
+      const recording = recordActor ?? actor;
+      const after = await handler.execute(tx, actor, effective, { source: recordActor ? 'agent' : actor.kind === 'user' ? 'user' : 'agent', actor: recording, db: tx, entityId: effective.entityId, preview: true, auditRecords });
       inspections.push({ preconditions: stablePreconditions({ command: inspected.preconditions, evidence }), preview: { detail: inspected.preview, after } });
     }
     if (batch?.onPreview) await batch.onPreview(tx);
@@ -398,8 +401,9 @@ async function inspectBatch(tx: Db, actor: Actor, commands: Command[], batch?: B
     await tx.$executeRawUnsafe('RELEASE SAVEPOINT command_preview');
   }
 }
-export function inspectCommands(tx: Db, actor: Actor, commands: Command[], batch?: BatchRevisionMode) { return inspectBatch(tx, actor, commands, batch); }
-export function executeCommands(tx: Db, actor: Actor, commands: Command[], proposalId?: string, audit: Pick<MutationContext, 'conversationId' | 'approvalId'> = {}, batch?: BatchRevisionMode) { return executeBatch(tx, actor, commands, proposalId, audit, batch); }
+export type CommandAttribution = { source: 'agent' | 'user'; actor: Actor; approvedByActorId?: string | null };
+export function inspectCommands(tx: Db, actor: Actor, commands: Command[], batch?: BatchRevisionMode, auditRecords?: ChangeRecord[], recordActor?: Actor) { return inspectBatch(tx, actor, commands, batch, auditRecords, recordActor); }
+export function executeCommands(tx: Db, actor: Actor, commands: Command[], proposalId?: string, audit: Pick<MutationContext, 'conversationId' | 'approvalId'> = {}, batch?: BatchRevisionMode, attribution?: CommandAttribution) { return executeBatch(tx, actor, commands, proposalId, audit, batch, attribution); }
 function needsPreview(commands: Command[], inspections: Inspection[]) {
   return commands.some((command, index) => {
     const preview = inspections[index].preview as any;
@@ -487,12 +491,20 @@ export class CommandService {
     await assertPayloadVisible(prisma, current, { commands: JSON.parse(row.commands), preview: JSON.parse(row.preview), result: row.result ? JSON.parse(row.result) : null });
     const preview = JSON.parse(row.preview);
     let batchCard: { approvalId: string; status: string; preview: unknown; outcome?: unknown; supersededByApprovalId?: string } | undefined;
+    let appChangeCard: { approvalId: string; status: string; review: unknown; proposalRevision: number; outcome?: unknown; previewHash?: string } | undefined;
     if (stored.revisionMode === 'batch-base-v1' && typeof stored.chatBatch?.approvalId === 'string') {
       const approval = await prisma.approval.findUnique({ where: { id: stored.chatBatch.approvalId } });
       const read = readStoredApproval(approval?.result);
       batchCard = { approvalId: stored.chatBatch.approvalId, status: approval?.status ?? 'pending', preview: read.preview ?? preview, outcome: read.outcome, supersededByApprovalId: read.supersededByApprovalId };
     }
-    return { ...row, commands: JSON.parse(row.commands), preview, result: row.result ? JSON.parse(row.result) : null, preconditions: undefined, ...(batchCard ? { batchCard } : {}) };
+    if (!batchCard && preview && typeof preview.previewHash === 'string' && Array.isArray(preview.entities)) {
+      const approval = await prisma.approval.findFirst({ where: { toolName: 'propose_changes', result: { contains: `"proposalId":"${row.id}"` } } });
+      if (approval) {
+        const read = readStoredApproval(approval.result);
+        appChangeCard = { approvalId: approval.id, status: approval.status, review: read.appReview ?? preview, proposalRevision: read.proposalRevision ?? row.revision, outcome: read.appOutcome, previewHash: read.previewHash };
+      }
+    }
+    return { ...row, commands: JSON.parse(row.commands), preview, result: row.result ? JSON.parse(row.result) : null, preconditions: undefined, ...(batchCard ? { batchCard } : {}), ...(appChangeCard ? { appChangeCard } : {}) };
   }
   async list(actor: Actor, status?: string) {
     const mapped = status === 'applied' ? 'executed' : status;
@@ -517,6 +529,14 @@ export class CommandService {
     assertOwner(actor);
     const input = z.object({ expectedRevision: z.number().int().min(1), requestId: z.string().min(1) }).parse(value);
     const existing = await prisma.proposal.findUnique({ where: { id } });
+    if (existing?.preview) {
+      try {
+        const preview = JSON.parse(existing.preview) as { previewHash?: unknown; entities?: unknown };
+        if (typeof preview.previewHash === 'string' && Array.isArray(preview.entities)) throw new DomainError('REVIEW_REQUIRED', '请刷新页面后确认这份预览', 409);
+      } catch (error) {
+        if (error instanceof DomainError) throw error;
+      }
+    }
     const batch = existing ? batchPreconditions(existing.preconditions) : null;
     if (existing && batch) {
       if (existing.status === 'pending' && existing.revision !== input.expectedRevision) throw new DomainError('VERSION_CONFLICT', '提议已处理或发生变化');

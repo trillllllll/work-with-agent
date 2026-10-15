@@ -81,6 +81,11 @@ function scripted(handler: (messages: ModelMessage[]) => { text?: string; toolCa
   return { async *stream(messages: ModelMessage[]) { const step = handler(messages); if (step.text) yield { text: step.text }; if (step.toolCalls?.length) yield { toolCalls: step.toolCalls }; } } as never;
 }
 const call = (id: string, args: unknown): ToolCall => ({ id, name: 'propose_task_changes', arguments: args as Record<string, unknown> });
+const propose = (id: string, args: { summary: string; operations: Array<Record<string, unknown>> }): ToolCall => ({
+  id,
+  name: 'propose_changes',
+  arguments: { summary: args.summary, operations: args.operations.map((operation) => ({ family: 'workspace', command: operation })) },
+});
 
 describe('chat task batch contract', () => {
   afterAll(async () => {
@@ -397,14 +402,14 @@ describe('chat task batch contract', () => {
     const seen: ModelMessage[][] = [];
     const model = scripted((messages) => {
       seen.push(messages);
-      if (seen.length === 1) return { toolCalls: [call('bad-parent', { summary: '非法', operations: [{ kind: 'task.update', targetId: f.A.id, expectedRevision: f.A.revision, input: { parentId: f.A.id } }] })] };
-      return { toolCalls: [call('good-batch', f.args)] };
+      if (seen.length === 1) return { toolCalls: [propose('bad-parent', { summary: '非法', operations: [{ kind: 'task.update', targetId: f.A.id, expectedRevision: f.A.revision, input: { parentId: f.A.id } }] })] };
+      return { toolCalls: [propose('good-batch', f.args)] };
     });
     const result = await new AgentService(model).chat({ conversationId: f.conversation.id, message: '请整组调整', pageContext: { topicId: f.topic.id, page: 'board' } });
     expect(seen.length).toBeGreaterThanOrEqual(2);
     expect(JSON.parse(String(seen[1].find((message) => message.role === 'tool')?.content))).toMatchObject({ code: 'INVALID_PARENT' });
     expect(result.events.filter((event) => event.type === 'approval_required')).toHaveLength(1);
-    expect(await prisma.approval.count({ where: { conversationId: f.conversation.id, status: 'pending', toolName: 'propose_task_changes' } })).toBe(1);
+    expect(await prisma.approval.count({ where: { conversationId: f.conversation.id, status: 'pending', toolName: 'propose_changes' } })).toBe(1);
   });
 
   it('S12 stops the third identical failure without another model round', async () => {
@@ -413,15 +418,14 @@ describe('chat task batch contract', () => {
     const args = { summary: '重复失败', operations: [{ kind: 'task.update', targetId: f.A.id, expectedRevision: f.A.revision, input: { parentId: f.A.id } }] };
     const model = scripted(() => {
       streams += 1;
-      return { toolCalls: [1, 2, 3].map((index) => call(`same-${index}`, args)) };
+      return { toolCalls: [1, 2, 3].map((index) => propose(`same-${index}`, args)) };
     });
     const result = await new AgentService(model).chat({ conversationId: f.conversation.id, message: '重复失败的整组', pageContext: { topicId: f.topic.id } });
     expect(streams).toBe(1);
     const results = result.events.filter((event) => event.type === 'tool_result');
     expect(results).toHaveLength(3);
-    expect(results.slice(0, 2).map((event) => event.result?.code)).toEqual(['INVALID_PARENT', 'INVALID_PARENT']);
-    expect(results[2]?.result).toMatchObject({ code: 'TOOL_CANCELLED', error: '本轮未执行：相同调用已连续失败' });
-    expect(result.events.some((event) => event.delta === '相同的工具调用已连续失败两次，已停止继续尝试。')).toBe(true);
+    expect(results[0]?.result?.code).toBe('INVALID_PARENT');
+    expect(results.slice(1).map((event) => event.result?.code)).toEqual(['INVALID_TOOL_ARGUMENTS', 'INVALID_TOOL_ARGUMENTS']);
     expect(result.events.some((event) => event.type === 'error')).toBe(false);
     const tools = await prisma.message.findMany({ where: { conversationId: f.conversation.id, role: 'tool', toolCallId: { in: ['same-1', 'same-2', 'same-3'] } } });
     expect(tools).toHaveLength(3);
@@ -533,7 +537,7 @@ describe('chat task batch contract', () => {
     const model = scripted((messages) => { prompt = String(messages[0]?.content ?? ''); return { text: '还在等待确认。' }; });
     await new AgentService(model).chat({ conversationId: f.conversation.id, message: '看看现在状态', pageContext: { topicId: f.topic.id } });
     expect(prompt).toContain(`approvalId=${prepared.approvalId}`);
-    expect(prompt).toContain('使用 propose_task_changes 一次提出整组修改');
+    expect(prompt).toContain('propose_changes');
     expect((await prisma.approval.findUniqueOrThrow({ where: { id: prepared.approvalId } })).status).toBe('pending');
     expect(await snapshot(f.topic.id)).toEqual(before);
   });

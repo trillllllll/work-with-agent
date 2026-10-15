@@ -58,6 +58,7 @@ describe('chat SSE state', () => {
       { toolCallId: 'w', name: 'memory', arguments: { action: 'add', title: '暗号' }, status: 'pending', preview: '暗号' },
     ];
     expect(groupToolActivities(memoryTools).map((group) => group.kind)).toEqual(['run', 'call']);
+    expect(groupToolActivities([{ toolCallId: 'lib', name: 'library_read', arguments: { action: 'list' }, status: 'done', preview: '已读取' }]).map((group) => group.kind)).toEqual(['run']);
     expect(isReadOnlyTool('memory', { action: 'read' })).toBe(true);
     expect(isReadOnlyTool('memory', { action: 'search' })).toBe(true);
     expect(isReadOnlyTool('memory', { action: 'add' })).toBe(false);

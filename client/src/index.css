@@ -2049,6 +2049,7 @@ textarea.task-title.line-through {
 
 
 .task-batch-card {
+  transition: color 120ms, background-color 120ms, border-color 120ms, opacity 120ms;
   --batch-bg: #ffffff;
   --batch-panel: #f5f5f5;
   --batch-text: #171717;
@@ -2139,10 +2140,15 @@ textarea.task-title.line-through {
   background: var(--batch-success-bg);
 }
 
-.task-batch-status[data-tone='failed'],
-.task-batch-status[data-tone='rejected'] {
+.task-batch-status[data-tone='failed'] {
   color: var(--batch-error-text);
   background: var(--batch-error-bg);
+}
+
+.task-batch-status[data-tone='rejected'],
+.task-batch-status[data-tone='neutral'] {
+  color: var(--batch-muted);
+  background: transparent;
 }
 
 .task-batch-icon {
@@ -2338,6 +2344,85 @@ textarea.task-title.line-through {
   .task-batch-card button {
     width: 100%;
     min-height: 44px;
+  }
+
+  .task-batch-card button.task-batch-primary {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+}
+
+.review-entities {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.review-entity h3,
+.review-field-label {
+  margin: 0;
+  color: var(--batch-text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.review-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.review-diff {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+  color: var(--batch-text);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.review-inline {
+  margin-top: 8px;
+}
+
+.review-tech-trigger {
+  margin-top: 12px;
+  color: var(--batch-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.external-prompt-body,
+.external-prompt-manual {
+  box-sizing: border-box;
+  width: 100%;
+  max-height: 320px;
+  margin: 12px 0 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--batch-border);
+  border-radius: 8px;
+  background: var(--batch-panel);
+  color: var(--batch-text);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  white-space: pre-wrap;
+}
+
+@container task-batch (min-width: 480px) {
+  .review-diff {
+    grid-template-columns: 1fr auto 1fr;
+    align-items: start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-batch-card,
+  .task-batch-card * {
+    transition: none;
   }
 }
 

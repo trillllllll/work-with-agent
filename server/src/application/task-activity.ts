@@ -1,4 +1,7 @@
+import { createHash } from 'node:crypto';
 import { prisma } from '../infrastructure/prisma.js';
+import { redact } from '../infrastructure/controlled-execution.js';
+import { DomainError } from '../domain/task.js';
 import { assertTopicAccess, type Actor } from './security.js';
 import { notFound } from './workspace-store.js';
 
@@ -33,18 +36,23 @@ type RawChange =
 
 type RawEvent = {
   id: string;
-  at: string;
+  at: string | null;
   source: string;
   actorId: string | null;
   connectionId: string | null;
+  approvedByActorId: string | null;
+  synthetic: boolean;
   action: 'create' | 'update' | 'delete' | 'restore' | 'undo';
   changes: RawChange[];
 };
 
 export type TaskActivityEvent = {
   id: string;
-  at: string;
-  actor: { kind: 'user' | 'agent'; name: string };
+  at: string | null;
+  evidence?: 'change_record' | 'task_created_at';
+  actor: { kind: 'user' | 'agent' | 'unknown'; name: string };
+  approvedBy?: { kind: 'user'; name: string } | null;
+  nameResolution?: 'current';
   action: RawEvent['action'];
   changes: Array<
     | { field: 'title' | 'description' | 'resultSummary'; before: string; after: string }
@@ -163,7 +171,7 @@ function tagNames(ids: string[], names: Map<string, string>) {
   return ids.map((id) => names.get(id) ?? '已删除的标签');
 }
 
-export async function taskActivity(actor: Actor, taskId: string): Promise<TaskActivityEvent[]> {
+export async function taskActivity(actor: Actor, taskId: string, stats?: { skippedUnreadableRecords: number }): Promise<TaskActivityEvent[]> {
   const task = await prisma.task.findUnique({ where: { id: taskId }, select: { id: true, topicId: true, createdAt: true } });
   if (!task) throw notFound('任务不存在');
   assertTopicAccess(actor, task.topicId);
@@ -174,18 +182,27 @@ export async function taskActivity(actor: Actor, taskId: string): Promise<TaskAc
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
   });
   const raw: RawEvent[] = [];
+  const unreadable = (value: string | null) => {
+    if (!value || !value.includes(taskId)) return false;
+    try { JSON.parse(value); return false; } catch { return true; }
+  };
   for (const record of records) {
+    if (unreadable(record.beforeSnapshot) || unreadable(record.afterSnapshot)) {
+      if (stats) stats.skippedUnreadableRecords += 1;
+      continue;
+    }
     const before = readTaskState(record.beforeSnapshot, taskId);
     const after = readTaskState(record.afterSnapshot, taskId);
     if (!before.present && !after.present) continue;
     const change = diff(before.present ? before.task : null, after.present ? after.task : null, record.operation);
     if (!change) continue;
-    raw.push({ id: record.id, at: record.createdAt, source: record.source, actorId: record.actorId, connectionId: record.connectionId, ...change });
+    const at = normalizeActivityTime(record.createdAt);
+    raw.push({ id: record.id, at, source: record.source, actorId: record.actorId, connectionId: record.connectionId, approvedByActorId: record.approvedByActorId ?? null, synthetic: false, ...change });
   }
   if (!raw.some((event) => event.action === 'create')) {
-    raw.push({ id: `created:${task.id}`, at: task.createdAt, source: 'user', actorId: actor.kind === 'user' ? actor.id : null, connectionId: null, action: 'create', changes: [] });
+    raw.push({ id: `created:${task.id}`, at: normalizeActivityTime(task.createdAt), source: 'unknown', actorId: null, connectionId: null, approvedByActorId: null, synthetic: true, action: 'create', changes: [] });
   }
-  raw.sort((left, right) => right.at.localeCompare(left.at) || right.id.localeCompare(left.id));
+  raw.sort((left, right) => (right.at ?? '').localeCompare(left.at ?? '') || right.id.localeCompare(left.id));
 
   const topicIds = new Set<string>();
   const parentIds = new Set<string>();
@@ -216,13 +233,85 @@ export async function taskActivity(actor: Actor, taskId: string): Promise<TaskAc
     if (change.field === 'tagIds') return { field: 'tagIds', before: tagNames(change.before, tagMap), after: tagNames(change.after, tagMap) };
     return change;
   };
-  return raw.map((event) => ({
+  return raw.map((event) => presentEvent(event, present, connectionMap));
+}
+
+function normalizeActivityTime(value: string | null | undefined) {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) return null;
+  return new Date(parsed).toISOString();
+}
+
+function presentEvent(event: RawEvent, present: (change: RawChange) => TaskActivityEvent['changes'][number], connectionMap: Map<string, string>): TaskActivityEvent {
+  const actor = event.synthetic
+    ? { kind: 'unknown' as const, name: '未记录' }
+    : event.source === 'user' || event.actorId === 'local-owner'
+      ? { kind: 'user' as const, name: '你' }
+      : event.source === 'agent' || event.actorId === 'builtin-agent'
+        ? { kind: 'agent' as const, name: 'AI' }
+        : event.connectionId && connectionMap.get(event.connectionId)
+          ? { kind: 'agent' as const, name: connectionMap.get(event.connectionId)! }
+          : { kind: 'unknown' as const, name: '未记录' };
+  return {
     id: event.id,
     at: event.at,
+    evidence: event.synthetic ? 'task_created_at' : 'change_record',
     action: event.action,
-    actor: event.source === 'user' || event.actorId === 'local-owner'
-      ? { kind: 'user' as const, name: '你' }
-      : { kind: 'agent' as const, name: (event.connectionId && connectionMap.get(event.connectionId)) || 'AI' },
-    changes: event.changes.map(present),
-  }));
+    actor,
+    approvedBy: event.approvedByActorId ? { kind: 'user', name: '你' } : null,
+    nameResolution: 'current',
+    changes: redact(event.changes.map(present)) as TaskActivityEvent['changes'],
+  };
+}
+
+const activityFields = ['title', 'description', 'resultSummary', 'status', 'priority', 'dueDate', 'scheduledStart', 'scheduledEnd', 'estimatedMinutes', 'topicId', 'parentId', 'tagIds', 'deleted'] as const;
+
+export async function queryTaskActivity(actor: Actor, query: {
+  taskId: string;
+  from?: string | null;
+  to?: string;
+  actors?: Array<'user' | 'agent' | 'unknown'>;
+  fields?: Array<(typeof activityFields)[number]>;
+  cursor?: string;
+  limit?: number;
+}, clock: { now: () => Date } = { now: () => new Date() }) {
+  const stats = { skippedUnreadableRecords: 0 };
+  const events = await taskActivity(actor, query.taskId, stats);
+  const effectiveTo = query.to ? normalizeActivityTime(query.to) : clock.now().toISOString();
+  if (query.to && !effectiveTo) throw new DomainError('INVALID_INPUT', '结束时间无效', 400);
+  const effectiveFrom = query.from === null ? null : query.from ? normalizeActivityTime(query.from) : new Date(Date.parse(effectiveTo!) - 30 * 24 * 60 * 60 * 1000).toISOString();
+  if (query.from && !effectiveFrom) throw new DomainError('INVALID_INPUT', '开始时间无效', 400);
+  let unknownTimeRecords = 0;
+  const actors = query.actors?.length ? new Set(query.actors) : null;
+  const fields = query.fields?.length ? new Set(query.fields) : null;
+  const filtered = events.flatMap((event) => {
+    if (!event.at) { unknownTimeRecords += 1; if (effectiveFrom !== null || query.to) return []; }
+    else if ((effectiveFrom && event.at < effectiveFrom) || (effectiveTo && event.at > effectiveTo)) return [];
+    if (actors && !actors.has(event.actor.kind)) return [];
+    const changes = fields ? event.changes.filter((change) => fields.has(change.field)) : event.changes;
+    if (fields && event.action === 'update' && !changes.length) return [];
+    return [{ ...event, changes }];
+  });
+  const fingerprint = createHash('sha256').update(filtered.map((event) => `${event.id}:${event.at ?? ''}`).join('\n')).digest('hex');
+  const limit = Math.min(100, Math.max(1, query.limit ?? 20));
+  let offset = 0;
+  if (query.cursor) {
+    let decoded: { fingerprint?: string; offset?: number };
+    try { decoded = JSON.parse(Buffer.from(query.cursor, 'base64url').toString('utf8')); }
+    catch { throw new DomainError('CURSOR_STALE', '分页已失效，请从第一页重新读取', 409); }
+    if (decoded.fingerprint !== fingerprint) throw new DomainError('CURSOR_STALE', '动态已变化，请从第一页重新读取', 409);
+    offset = decoded.offset ?? 0;
+  }
+  const items = filtered.slice(offset, offset + limit);
+  const next = offset + items.length;
+  return {
+    taskId: query.taskId,
+    from: effectiveFrom,
+    to: effectiveTo,
+    items,
+    hasMore: next < filtered.length,
+    nextCursor: next < filtered.length ? Buffer.from(JSON.stringify({ fingerprint, offset: next })).toString('base64url') : null,
+    coverage: { excludesPureReorder: true as const, skippedUnreadableRecords: stats.skippedUnreadableRecords, unknownTimeRecords },
+  };
 }

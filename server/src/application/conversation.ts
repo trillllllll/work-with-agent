@@ -32,7 +32,7 @@ type PageContextInput = { topicId?: string | null; taskId?: string | null; page?
 type SummaryModel = {
   complete(messages: Array<{ role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> | null }>, signal?: AbortSignal, includeTools?: boolean): Promise<{ text: string }>;
 };
-type StoredMessage = {
+export type StoredMessage = {
   id: string;
   role: MessageRole;
   content: string;

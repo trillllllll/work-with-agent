@@ -4,6 +4,7 @@ import type { Approval, ChatMessage } from '@/chat.js';
 import { Button } from '@/components/ui/button.js';
 import { MessageItem } from './MessageItem.js';
 import { ApprovalCard } from './ApprovalCard.js';
+import { isAppChangeApproval, ReviewCard } from './ReviewCard.js';
 import { isTaskBatchApproval, TaskBatchCard } from './TaskBatchCard.js';
 
 type MessageListProps = {
@@ -12,11 +13,14 @@ type MessageListProps = {
   approvalPending: boolean;
   executingApprovalId: string;
   unknownApprovalIds: string[];
+  unresolvedApprovalIds: string[];
+  phase: '' | 'approve' | 'reject';
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
+  onChanged: () => void;
 };
 
-export function MessageList({ messages, approvals, approvalPending, executingApprovalId, unknownApprovalIds, onApprove, onReject }: MessageListProps) {
+export function MessageList({ messages, approvals, approvalPending, executingApprovalId, unknownApprovalIds, unresolvedApprovalIds, phase, onApprove, onReject, onChanged }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const nearBottomRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
@@ -55,12 +59,12 @@ export function MessageList({ messages, approvals, approvalPending, executingApp
           </div>
         )}
         <div className="flex flex-col gap-2.5">
-          {messages.map((message, index) => <MessageItem key={`${message.id ?? index}-${index}`} message={message} approvals={approvals} approvalPending={approvalPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} onApprove={onApprove} onReject={onReject} />)}
+          {messages.map((message, index) => <MessageItem key={`${message.id ?? index}-${index}`} message={message} approvals={approvals} approvalPending={approvalPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} unresolvedApprovalIds={unresolvedApprovalIds} phase={phase} onApprove={onApprove} onReject={onReject} onChanged={onChanged} />)}
           {approvals.filter((approval) => {
             const matched = messages.some((message) => message.tools?.some((tool) => tool.approvalId === approval.approvalId || tool.toolCallId === approval.toolCallId));
             if (matched) return false;
-            return isTaskBatchApproval(approval) || !approval.status || approval.status === 'pending';
-          }).map((approval) => isTaskBatchApproval(approval) ? <TaskBatchCard key={approval.approvalId} approval={approval} executing={approval.approvalId === executingApprovalId} unknown={unknownApprovalIds.includes(approval.approvalId)} onApprove={onApprove} onReject={onReject} /> : <ApprovalCard key={approval.approvalId} approval={approval} pending={approvalPending} onApprove={onApprove} onReject={onReject} />)}
+            return isTaskBatchApproval(approval) || isAppChangeApproval(approval) || !approval.status || approval.status === 'pending';
+          }).map((approval) => isAppChangeApproval(approval) ? <ReviewCard key={approval.approvalId} approval={approval} phase={approval.approvalId === executingApprovalId ? phase : ''} unknown={unknownApprovalIds.includes(approval.approvalId)} unresolved={unresolvedApprovalIds.includes(approval.approvalId)} onApprove={onApprove} onReject={onReject} onChanged={onChanged} /> : isTaskBatchApproval(approval) ? <TaskBatchCard key={approval.approvalId} approval={approval} executing={approval.approvalId === executingApprovalId} unknown={unknownApprovalIds.includes(approval.approvalId)} onApprove={onApprove} onReject={onReject} /> : <ApprovalCard key={approval.approvalId} approval={approval} pending={approvalPending} onApprove={onApprove} onReject={onReject} />)}
         </div>
       </div>
       {showJump && (

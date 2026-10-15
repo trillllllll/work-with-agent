@@ -43,10 +43,11 @@ test('读取项目资料不出现审核卡', async ({ page, isMobile }) => {
   await page.goto('/');
   await ask(page, '读取项目资料');
   await expect(page.getByText('我先查看项目资料。', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '项目资料 list' })).toBeVisible();
+  await expect(page.getByText('查询了 1 项', { exact: true })).toBeVisible();
   await expect(page.getByText('当前任务已读取完成。', { exact: true })).toBeVisible();
   await expect(page.getByText('需要审核')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '批准执行' })).toHaveCount(0);
+  await expect(page.getByTestId('approval-card')).toHaveCount(0);
 });
 
 test('拒绝项目资料关联后数据不变，窄屏仍能点审核按钮', async ({ page, isMobile, request }) => {
@@ -57,21 +58,23 @@ test('拒绝项目资料关联后数据不变，窄屏仍能点审核按钮', as
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/');
   await ask(page, `关联这份项目资料 materialId=${created.id} materialRevision=${created.revision} organizationRevision=${created.organizationRevision} taskId=${task.id}`);
-  const card = page.locator('.glass-subtle').filter({ hasText: '需要审核' });
+  const card = page.getByTestId('approval-card');
   await expect(card).toHaveCount(1);
-  await expect(card.getByText('项目资料', { exact: true })).toBeVisible();
+  await expect(card).toHaveAttribute('data-state', 'pending');
+  await expect(card.getByRole('button', { name: '确认修改', exact: true })).toBeVisible();
   expect((await linkedTasks(request, created.id)).items).toEqual([]);
 
   await page.setViewportSize({ width: 390, height: 800 });
-  const reject = card.getByRole('button', { name: '拒绝', exact: true });
-  const approve = card.getByRole('button', { name: '批准执行', exact: true });
+  const reject = card.getByRole('button', { name: '取消', exact: true });
+  const approve = card.getByRole('button', { name: '确认修改', exact: true });
+  await reject.scrollIntoViewIfNeeded();
   await expect(reject).toBeVisible();
   await expect(approve).toBeEnabled();
   const boxes = await Promise.all([reject.boundingBox(), approve.boundingBox()]);
   expect(boxes.every((box) => box && box.width >= 24 && box.height >= 24 && box.y >= 0 && box.y + box.height <= 800)).toBe(true);
   await reject.click();
-  await expect(card).toHaveCount(0);
-  await expect(page.getByText('已拒绝', { exact: true })).toBeVisible();
+  await expect(card).toHaveAttribute('data-state', 'rejected');
+  await expect(card.getByRole('status')).toContainText('已取消，未修改数据');
   expect((await linkedTasks(request, created.id)).items).toEqual([]);
   const stored = await request.get(`${api}/api/v1/library/materials/${created.id}`);
   expect(stored.ok(), await stored.text()).toBe(true);

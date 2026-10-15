@@ -48,7 +48,7 @@ app.use('/api', identityMiddleware, ownerMiddleware, legacyMutationMiddleware);
 const topics = new TopicService();
 const tasks = new TaskService();
 const settings = new SettingsService();
-const agent = new AgentService();
+export const agent = new AgentService();
 const changes = new ChangeService();
 const tags = new TagService();
 const focus = new FocusService();
@@ -184,7 +184,9 @@ app.put('/api/settings/mobile-navigation', async (req, res, next) => {
 const chatBody = z.object({
   conversationId: z.string().min(1).optional(),
   message: z.string().trim().min(1),
+  requestKey: z.string().min(1).max(200).optional(),
   pageContext: z.object({ topicId: z.string().nullable().optional(), taskId: z.string().nullable().optional(), page: z.string().nullable().optional() }).optional(),
+  context: z.unknown().optional(),
 });
 const sse = (res: Response, event: string, data: unknown) => {
   if (!res.destroyed && !res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -192,11 +194,10 @@ const sse = (res: Response, event: string, data: unknown) => {
 app.post('/api/chat', schema(chatBody), async (req, res) => {
   res.status(200).set({ 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
   res.flushHeaders?.();
-  const controller = new AbortController();
   let closed = false;
-  res.on('close', () => { if (!res.writableEnded) { closed = true; controller.abort(); } });
+  res.on('close', () => { if (!res.writableEnded) closed = true; });
   try {
-    for await (const event of agent.chatStream({ ...req.body, signal: controller.signal })) {
+    for await (const event of agent.chatStream(req.body)) {
       if (closed) return;
       sse(res, event.type, event);
     }
@@ -215,9 +216,16 @@ app.post('/api/chat', schema(chatBody), async (req, res) => {
 
 app.get('/api/conversations/:id/messages', async (req, res, next) => { try { send(res, await agent.messages(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/agent/approvals', async (req, res, next) => { try { send(res, await agent.approvalList(typeof req.query.status === 'string' ? req.query.status : undefined)); } catch (error) { next(error); } });
-app.post('/api/agent/approvals/:id/approve', async (req, res, next) => { try { send(res, await agent.approve(String(req.params.id))); } catch (error) { next(error); } });
+app.get('/api/agent/approvals/:id', async (req, res, next) => { try { send(res, await agent.getApproval(String(req.params.id))); } catch (error) { next(error); } });
+app.post('/api/agent/approvals/:id/approve', async (req, res, next) => { try { send(res, await agent.approve(String(req.params.id), req.body ?? {})); } catch (error) { next(error); } });
 app.post('/api/agent/approvals/:id/preview', async (req, res, next) => { try { send(res, await agent.previewApproval(String(req.params.id))); } catch (error) { next(error); } });
-app.post('/api/agent/approvals/:id/reject', async (req, res, next) => { try { send(res, await agent.reject(String(req.params.id))); } catch (error) { next(error); } });
+app.post('/api/agent/approvals/:id/reject', async (req, res, next) => { try { send(res, await agent.reject(String(req.params.id), req.body ?? {})); } catch (error) { next(error); } });
+app.post('/api/agent/approvals/:id/repreview', async (req, res, next) => { try { send(res, await agent.repreview(String(req.params.id))); } catch (error) { next(error); } });
+app.post('/api/agent/approvals/:id/undo-preview', async (req, res, next) => { try { send(res, await agent.prepareUndo(String(req.params.id))); } catch (error) { next(error); } });
+app.get('/api/agent/runs/:id', async (req, res, next) => { try { send(res, await agent.getRun(String(req.params.id))); } catch (error) { next(error); } });
+app.get('/api/agent/runs/:id/events', async (req, res, next) => { try { send(res, await agent.listRunEvents(String(req.params.id), Number(req.query.after ?? 0) || 0)); } catch (error) { next(error); } });
+app.post('/api/agent/runs/:id/resume', async (req, res, next) => { try { send(res, await agent.resume(String(req.params.id))); } catch (error) { next(error); } });
+app.post('/api/agent/runs/:id/stop', async (req, res, next) => { try { send(res, await agent.stop(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/changes', async (req, res, next) => { try { send(res, await changes.list(typeof req.query.entityType === 'string' ? req.query.entityType : undefined, typeof req.query.entityId === 'string' ? req.query.entityId : undefined)); } catch (error) { next(error); } });
 app.post('/api/changes/:id/undo', async (req, res, next) => { try { send(res, await changes.undo(String(req.params.id), userContext(req))); } catch (error) { next(error); } });
 

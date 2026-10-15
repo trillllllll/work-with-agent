@@ -5,7 +5,7 @@ import { DomainError, allowedTaskTransitions } from '../domain/task.js';
 import type { Actor } from './security.js';
 
 export type UndoOwnership = { taskIdsRestoredByGroup: ReadonlySet<string> };
-export type MutationContext = { source: 'user' | 'agent'; conversationId?: string; approvalId?: string; requestId?: string; actor?: Actor; proposalId?: string; db?: Db; entityId?: string; preview?: boolean; auditRecords?: ChangeRecord[]; undoOwnership?: UndoOwnership };
+export type MutationContext = { source: 'user' | 'agent'; conversationId?: string; approvalId?: string; requestId?: string; actor?: Actor; proposalId?: string; db?: Db; entityId?: string; preview?: boolean; auditRecords?: ChangeRecord[]; undoOwnership?: UndoOwnership; approvedByActorId?: string | null };
 export type Db = Prisma.TransactionClient;
 export const now = () => new Date().toISOString();
 function updatedAfter(previous?: string) {
@@ -127,7 +127,7 @@ export class ChangeGroup {
 }
 
 export async function recordChange(tx: Db, entityType: string, entityId: string, operation: string, before: unknown, after: unknown, context: MutationContext, reversalOf?: string) {
-  const record = await tx.changeRecord.create({ data: { entityType, entityId, operation, beforeSnapshot: before ? JSON.stringify(before) : null, afterSnapshot: after ? JSON.stringify(after) : null, source: context.source, conversationId: context.conversationId, approvalId: context.approvalId, requestId: context.requestId, actorId: context.actor?.id, connectionId: context.actor?.connectionId, proposalId: context.proposalId, reversalOf, createdAt: now() } });
+  const record = await tx.changeRecord.create({ data: { entityType, entityId, operation, beforeSnapshot: before ? JSON.stringify(before) : null, afterSnapshot: after ? JSON.stringify(after) : null, source: context.source, conversationId: context.conversationId, approvalId: context.approvalId, requestId: context.requestId, actorId: context.actor?.id, connectionId: context.actor?.connectionId, proposalId: context.proposalId, reversalOf, approvedByActorId: context.approvedByActorId ?? null, createdAt: now() } });
   context.auditRecords?.push(record);
   return record;
 }

@@ -348,7 +348,7 @@ async function readLibrary(action: LibraryAction, args: Record<string, unknown>)
   };
 }
 
-function commandFor(action: LibraryAction, args: Record<string, unknown>): Command {
+export function commandFor(action: LibraryAction, args: Record<string, unknown>): Command {
   const materialId = text(args.materialId);
   const revision = Number(args.revision);
   if (action === 'create') {

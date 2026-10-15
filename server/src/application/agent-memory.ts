@@ -144,7 +144,7 @@ export function validateConversationSearchArguments(args: Record<string, unknown
   return null;
 }
 
-function targetTopicId(target: unknown, pageTopicId: string | null | undefined) {
+export function targetTopicId(target: unknown, pageTopicId: string | null | undefined) {
   if (target === 'inbox') return null;
   const topicId = openTopicId(pageTopicId);
   if (!topicId) throw failure('MEMORY_SCOPE', '没有打开清单，不能使用清单记忆', 400);
@@ -230,7 +230,7 @@ function optionalFields(args: Record<string, unknown>) {
 }
 
 /** AI 不能提交空证据。没有可引用的任务、材料或记忆时，把聊天原文做成同一提议里的会话材料。 */
-async function commandsFor(action: MemoryAction, args: Record<string, unknown>, topicId: string | null, context: AgentMemoryContext) {
+export async function commandsFor(action: MemoryAction, args: Record<string, unknown>, topicId: string | null, context: AgentMemoryContext, excerptRef = 'chat-source') {
   const title = typeof args.title === 'string' ? args.title.trim() : '';
   const content = typeof args.content === 'string' ? args.content.trim() : '';
   const given = evidenceInputs(args.evidence);
@@ -240,7 +240,7 @@ async function commandsFor(action: MemoryAction, args: Record<string, unknown>, 
     const resolved = given.length ? await resolveEvidence(given, topicId) : [];
     const input = { topicId, title, content, origin: 'ai', reason: '来自全局聊天', ...optionalFields(args) };
     if (resolved.length) return [{ kind: 'memory.create', input: { ...input, evidence: resolved } }];
-    return withThread(context, topicId, title, { kind: 'memory.create', input: { ...input, evidence: threadEvidence() } }, messageIds);
+    return withThread(context, topicId, title, { kind: 'memory.create', input: { ...input, evidence: threadEvidence(excerptRef) } }, messageIds, excerptRef);
   }
   const memory = await requireMemory(String(args.memoryId), topicId, Number(args.expectedRevision));
   if (memory.status !== 'active') throw failure('MEMORY_RETIRED', '这条记忆已经退役', 409);
@@ -251,24 +251,24 @@ async function commandsFor(action: MemoryAction, args: Record<string, unknown>, 
     const command: Command = { kind: 'memory.update', targetId: memory.id, expectedRevision: memory.revision, input };
     if (given.length) return [{ ...command, input: { ...input, evidence: await resolveEvidence(given, topicId, memory.id) } }];
     if (stored.length) return [command];
-    return withThread(context, topicId, title, { ...command, input: { ...input, evidence: threadEvidence() } }, messageIds);
+    return withThread(context, topicId, title, { ...command, input: { ...input, evidence: threadEvidence(excerptRef) } }, messageIds, excerptRef);
   }
   const input = { title: memory.title, content: memory.content, origin: 'ai', reason: '退役不再进入上下文' };
   const command: Command = { kind: 'memory.retire', targetId: memory.id, expectedRevision: memory.revision, input };
   if (given.length) return [{ ...command, input: { ...input, evidence: await resolveEvidence(given, topicId, memory.id) } }];
   if (stored.length) return [command];
-  return withThread(context, topicId, memory.title, { ...command, input: { ...input, evidence: threadEvidence() } }, messageIds);
+  return withThread(context, topicId, memory.title, { ...command, input: { ...input, evidence: threadEvidence(excerptRef) } }, messageIds, excerptRef);
 }
 
-function threadEvidence() {
-  return [{ type: 'material' as const, id: { $ref: 'chat-source' }, revision: 1 }];
+function threadEvidence(excerptRef: string) {
+  return [{ type: 'material' as const, id: { $ref: excerptRef }, revision: 1 }];
 }
 
-async function withThread(context: AgentMemoryContext, topicId: string | null, title: string, memory: Command, messageIds?: string[]) {
+async function withThread(context: AgentMemoryContext, topicId: string | null, title: string, memory: Command, messageIds: string[] | undefined, excerptRef: string) {
   const messages = await sourceMessages(context.conversationId, messageIds);
   const material: Command = {
     kind: 'material.create',
-    clientRef: 'chat-source',
+    clientRef: excerptRef,
     input: {
       topicId,
       kind: 'thread',

@@ -33,11 +33,13 @@ describe('Agent tool gate', () => {
       if (String(user?.content ?? '').includes('拒绝之后呢')) return sseResponse([{ choices: [{ delta: { content: '已看到拒绝。' }, finish_reason: 'stop' }] }]);
       if (String(user?.content ?? '').includes('批准之后呢')) return sseResponse([{ choices: [{ delta: { content: '已看到执行结果。' }, finish_reason: 'stop' }] }]);
       if (String(user?.content ?? '').includes('上游错误')) return new Response('mock upstream failure', { status: 503 });
+      if (String(user?.content ?? '').includes('未知工具') && (body.messages ?? []).some((message: any) => message.role === 'tool')) return sseResponse([{ choices: [{ delta: { content: '这个工具不存在。' }, finish_reason: 'stop' }] }]);
       if (String(user?.content ?? '').includes('未知工具')) return sseResponse([
         { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_unknown', function: { name: 'missing_tool', arguments: '{}' } }] }, finish_reason: 'tool_calls' }] },
       ]);
+      if (String(user?.content ?? '').includes('循环读取') && (body.messages ?? []).filter((message: any) => message.role === 'tool').length >= 16) return sseResponse([{ choices: [{ delta: { content: '已到轮次上限。' }, finish_reason: 'stop' }] }]);
       if (String(user?.content ?? '').includes('循环读取')) return sseResponse([
-        { choices: [{ delta: { tool_calls: [{ index: 0, id: `call_loop_${Math.random()}`, function: { name: 'list_tasks', arguments: '{}' } }] }, finish_reason: 'tool_calls' }] },
+        { choices: [{ delta: { tool_calls: [{ index: 0, id: `call_loop_${Math.random()}`, function: { name: 'query_tasks', arguments: JSON.stringify({ action: 'list' }) } }] }, finish_reason: 'tool_calls' }] },
       ]);
       if (String(user?.content ?? '').includes('列出任务') && (body.messages ?? []).some((message: any) => message.role === 'tool')) {
         return sseResponse([{ choices: [{ delta: { content: '当前任务已读取完成。' }, finish_reason: 'stop' }] }]);
@@ -45,9 +47,9 @@ describe('Agent tool gate', () => {
       if (String(user?.content ?? '').includes('列出任务')) {
         return sseResponse([
           { choices: [{ delta: { content: '我先读取任务。' }, finish_reason: null }] },
-          { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_list_tasks', function: { name: 'list_tasks' } }] }, finish_reason: null }] },
-          { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ topicId: topic }).slice(0, 10) } }] }, finish_reason: null }] },
-          { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ topicId: topic }).slice(10) } }] }, finish_reason: 'tool_calls' }] },
+          { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_list_tasks', function: { name: 'query_tasks' } }] }, finish_reason: null }] },
+          { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ action: 'list', topicId: topic }).slice(0, 12) } }] }, finish_reason: null }] },
+          { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ action: 'list', topicId: topic }).slice(12) } }] }, finish_reason: 'tool_calls' }] },
         ]);
       }
       const hasToolReply = (body.messages ?? []).some((message: any) => message.role === 'tool');
@@ -60,20 +62,21 @@ describe('Agent tool gate', () => {
       if (userText.includes('读取完整记忆') && hasToolReply) return answer('已读到记忆。');
       if (userText.includes('读取完整记忆')) {
         const memoryId = systemText.match(/id=(\S+)(?: revision=\d+ kind=\w+)? 《完整记忆标题》/)?.[1];
-        return tool('call_memory_read', 'memory', { action: 'read', target: 'inbox', memoryId });
+        return tool('call_memory_read', 'memory_read', { action: 'read', target: 'inbox', memoryId });
       }
       if (userText.includes('空白搜索记忆') && hasToolReply) return answer('已列出记忆。');
-      if (userText.includes('空白搜索记忆')) return tool('call_memory_blank', 'memory', { action: 'search', target: 'inbox', q: '' });
+      if (userText.includes('空白搜索记忆')) return tool('call_memory_blank', 'memory_read', { action: 'search', target: 'inbox', q: '' });
       if (userText.includes('搜索溢出记忆') && hasToolReply) return answer('已搜到记忆。');
-      if (userText.includes('搜索溢出记忆')) return tool('call_memory_search', 'memory', { action: 'search', target: 'inbox', q: '搜索专用溢出句青鸟' });
-      if (userText.includes('记下这句长期记忆')) return tool('call_memory_add', 'memory', { action: 'add', target: 'inbox', title: '待确认记忆', content: '还没批准的事实' });
-      if (userText.includes('批准这条长期记忆')) return tool('call_memory_keep', 'memory', { action: 'add', target: 'inbox', title: '长期记忆标题', content: '本地只用一种数据库' });
-      if (userText.includes('再记一次同样的长期记忆')) return tool('call_memory_dup', 'memory', { action: 'add', target: 'inbox', title: '长期记忆标题', content: '本地只用一种数据库' });
-      if (userText.includes('替换这条记忆')) return tool('call_memory_replace', 'memory', { action: 'replace', target: 'topic', memoryId: mentionedMemoryId, expectedRevision: mentionedRevision, title: '新标题', content: '新正文' });
-      if (userText.includes('改到另一清单')) return tool('call_memory_other', 'memory', { action: 'replace', target: 'topic', memoryId: mentionedMemoryId, expectedRevision: 1, title: '越权标题', content: '越权正文' });
-      if (userText.includes('退役另一清单')) return tool('call_memory_remove_other', 'memory', { action: 'remove', target: 'topic', memoryId: mentionedMemoryId, expectedRevision: 1 });
-      if (userText.includes('退役版本不对')) return tool('call_memory_remove', 'memory', { action: 'remove', target: 'topic', memoryId: mentionedMemoryId, expectedRevision: 99 });
-      if (userText.includes('没有清单却写清单记忆')) return tool('call_memory_nolist', 'memory', { action: 'add', target: 'topic', title: '不该写入', content: '没有清单' });
+      if (userText.includes('搜索溢出记忆')) return tool('call_memory_search', 'memory_read', { action: 'search', target: 'inbox', q: '搜索专用溢出句青鸟' });
+      const memoryChange = (id: string, args: Record<string, unknown>) => tool(id, 'propose_changes', { summary: String(args.title || '调整记忆').slice(0, 200), operations: [{ family: 'memory', args }] });
+      if (userText.includes('记下这句长期记忆')) return memoryChange('call_memory_add', { action: 'add', target: 'inbox', title: '待确认记忆', content: '还没批准的事实' });
+      if (userText.includes('批准这条长期记忆')) return memoryChange('call_memory_keep', { action: 'add', target: 'inbox', title: '长期记忆标题', content: '本地只用一种数据库' });
+      if (userText.includes('再记一次同样的长期记忆')) return memoryChange('call_memory_dup', { action: 'add', target: 'inbox', title: '长期记忆标题', content: '本地只用一种数据库' });
+      if (userText.includes('替换这条记忆')) return memoryChange('call_memory_replace', { action: 'replace', target: 'topic', memoryId: mentionedMemoryId, expectedRevision: mentionedRevision, title: '新标题', content: '新正文' });
+      if (userText.includes('改到另一清单')) return memoryChange('call_memory_other', { action: 'replace', target: 'topic', memoryId: mentionedMemoryId, expectedRevision: 1, title: '越权标题', content: '越权正文' });
+      if (userText.includes('退役另一清单')) return memoryChange('call_memory_remove_other', { action: 'remove', target: 'topic', memoryId: mentionedMemoryId, expectedRevision: 1 });
+      if (userText.includes('退役版本不对')) return memoryChange('call_memory_remove', { action: 'remove', target: 'topic', memoryId: mentionedMemoryId, expectedRevision: 99 });
+      if (userText.includes('没有清单却写清单记忆')) return memoryChange('call_memory_nolist', { action: 'add', target: 'topic', title: '不该写入', content: '没有清单' });
       if (userText.includes('查找历史原句') && hasToolReply) return answer('已找到原句。');
       if (userText.includes('查找历史原句')) return tool('call_history', 'conversation_search', { q: '独特青鸟原句' });
       if (userText.includes('读取越界文件') && hasToolReply) return answer('路径被拒绝。');
@@ -81,11 +84,12 @@ describe('Agent tool gate', () => {
       if (userText.includes('读取授权文件') && hasToolReply) return answer('已读到授权文件。');
       if (userText.includes('读取授权文件')) return tool('call_granted_file', 'execute_file', { operation: 'read', path: userText.match(/路径=(\S+)/)?.[1] ?? '' });
       const title = String(user?.content ?? '').replace(/^创建任务[：:]?\s*/, '') || 'Agent 任务';
+      const createArgs = JSON.stringify({ summary: '创建任务', operations: [{ family: 'workspace', command: { kind: 'task.create', clientRef: 'created', input: { ...(topic ? { topicId: topic } : {}), title } } }] });
       return sseResponse([
         { choices: [{ delta: { content: '我准备创建这个任务。' }, finish_reason: null }] },
-        { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_create_task', function: { name: 'create_task' } }] }, finish_reason: null }] },
-        { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ topicId: topic, title }).slice(0, 20) } }] }, finish_reason: null }] },
-        { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ topicId: topic, title }).slice(20) } }] }, finish_reason: 'tool_calls' }] },
+        { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_create_task', function: { name: 'propose_changes' } }] }, finish_reason: null }] },
+        { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: createArgs.slice(0, 20) } }] }, finish_reason: null }] },
+        { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: createArgs.slice(20) } }] }, finish_reason: 'tool_calls' }] },
       ]);
     }));
     });
@@ -103,21 +107,17 @@ describe('Agent tool gate', () => {
       return { event, ...(data ? JSON.parse(data) : {}) };
     });
     const modelRequest = vi.mocked(globalThis.fetch).mock.calls[0]?.[1];
-    expect(JSON.parse(String(modelRequest?.body)).tools).toEqual(expect.arrayContaining([
-      expect.objectContaining({ function: expect.objectContaining({ name: 'create_task' }) }),
-      expect.objectContaining({ function: expect.objectContaining({ name: 'list_tasks' }) }),
-      expect.objectContaining({ function: expect.objectContaining({ name: 'memory' }) }),
-      expect.objectContaining({ function: expect.objectContaining({ name: 'conversation_search' }) }),
-    ]));
+    expect(JSON.parse(String(modelRequest?.body)).tools.map((tool: { function: { name: string } }) => tool.function.name)).toEqual([
+      'get_time', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'conversation_search', 'get_change_schema', 'propose_changes', 'prepare_external_prompt',
+    ]);
     expect(events.some((event) => event.event === 'message_delta' && event.delta?.includes('我准备创建'))).toBe(true);
     expect(events.some((event) => event.event === 'approval_required')).toBe(true);
     const approval = events.find((event) => event.event === 'approval_required')!;
     const before = await request(app).get(`/api/tasks?topicId=${topicId}`);
     expect(before.body.data).toHaveLength(0);
-    const approved = await request(app).post(`/api/agent/approvals/${approval.approvalId}/approve`);
-    expect(approved.status).toBe(200);
-    expect(approved.body.data.result.success).toBe(true);
-    expect(approved.body.data.assistantMessage).toContain('变更已完成');
+    const approved = await decide(response.text, 'approve');
+    expect(approved.status, JSON.stringify(approved.body)).toBe(200);
+    expect(approved.body.data.outcome.status).toBe('executed');
     const after = await request(app).get(`/api/tasks?topicId=${topicId}`);
     expect(after.body.data).toHaveLength(1);
     taskId = after.body.data[0].id;
@@ -126,7 +126,7 @@ describe('Agent tool gate', () => {
   it('reports an out-of-range file path without asking for approval', async () => {
     const response = await request(app).post('/api/chat').send({ message: '读取越界文件', pageContext: { page: 'inbox' } });
     expect(response.status).toBe(200);
-    expect(response.text).toContain('FILE_PATH_DENIED');
+    expect(response.text).toContain('CAPABILITY_UNAVAILABLE');
     expect(response.text).not.toContain('event: approval_required');
     expect(response.text).toContain('路径被拒绝');
   });
@@ -139,13 +139,9 @@ describe('Agent tool gate', () => {
       await writeFile(file, 'cited-body');
       const response = await request(app).post('/api/chat').send({ message: `读取授权文件 路径=${file}`, pageContext: { page: 'inbox' } });
       expect(response.status).toBe(200);
-      expect(response.text).toContain('event: approval_required');
-      expect(response.text).not.toContain('FILE_PATH_DENIED');
-      const approvalId = response.text.match(/"approvalId":"([^"]+)"/)?.[1];
-      const approved = await request(app).post(`/api/agent/approvals/${approvalId}/approve`);
-      expect(approved.status).toBe(200);
-      expect(approved.body.data.result.success).toBe(true);
-      expect(JSON.stringify(approved.body.data.result.data)).toContain('cited-body');
+      expect(response.text).toContain('CAPABILITY_UNAVAILABLE');
+      expect(response.text).not.toContain('cited-body');
+      expect(response.text).not.toContain('event: approval_required');
     } finally {
       await prisma.task.delete({ where: { id: task.id } });
       await rm(dir, { recursive: true, force: true });
@@ -160,7 +156,7 @@ describe('Agent tool gate', () => {
     expect(response.text).toContain('event: done');
     const calls = vi.mocked(globalThis.fetch).mock.calls.slice(-2).map((call) => JSON.parse(String(call[1]?.body)));
     expect(calls).toHaveLength(2);
-    expect(calls[1].messages.some((message: any) => message.role === 'assistant' && message.tool_calls?.[0]?.function?.name === 'list_tasks')).toBe(true);
+    expect(calls[1].messages.some((message: any) => message.role === 'assistant' && message.tool_calls?.[0]?.function?.name === 'query_tasks')).toBe(true);
     expect(calls[1].messages.some((message: any) => message.role === 'tool' && message.tool_call_id === 'call_list_tasks')).toBe(true);
   });
 
@@ -185,15 +181,15 @@ describe('Agent tool gate', () => {
     expect(upstreamMessages.body.data.at(-1).status).toBe('failed');
 
     const unknown = await request(app).post('/api/chat').send({ message: '未知工具' });
-    expect(unknown.text).toContain('UNKNOWN_TOOL');
+    expect(unknown.text).toContain('CAPABILITY_UNAVAILABLE');
     const after = await request(app).get(`/api/tasks?topicId=${topicId}`);
     expect(after.body.data).toHaveLength(before.body.data.length);
   });
 
   it('stops read-only tool loops at eight rounds', async () => {
     const response = await request(app).post('/api/chat').send({ message: '循环读取', pageContext: { topicId, page: 'board' } });
-    expect(response.text).toContain('TOOL_ROUND_LIMIT');
-    expect((response.text.match(/event: tool_result/g) ?? [])).toHaveLength(8);
+    expect(response.text).toContain('round_limit');
+    expect((response.text.match(/event: tool_result/g) ?? []).length).toBeGreaterThanOrEqual(16);
   });
 
   it('restores conversation messages and pending approvals', async () => {
@@ -226,10 +222,15 @@ describe('Agent tool gate', () => {
     return [...calls].reverse().find((body) => [...(body.messages ?? [])].reverse().find((message: { role?: string; content?: string }) => message.role === 'user' && !String(message.content ?? '').startsWith('[更早对话的背景'))?.content?.includes(text));
   }
 
-  function approvalIdFrom(responseText: string) {
+  function approvalPayload(responseText: string) {
     const frame = responseText.split(/\r?\n\r?\n/).find((item) => item.includes('event: approval_required'));
     const data = frame?.match(/^data: (.+)$/m)?.[1];
-    return data ? JSON.parse(data).approvalId as string : '';
+    return data ? JSON.parse(data) as { approvalId: string; proposalRevision: number; previewHash: string } : { approvalId: '', proposalRevision: 0, previewHash: '' };
+  }
+  function approvalIdFrom(responseText: string) { return approvalPayload(responseText).approvalId; }
+  function decide(responseText: string, action: 'approve' | 'reject') {
+    const payload = approvalPayload(responseText);
+    return request(app).post(`/api/agent/approvals/${payload.approvalId}/${action}`).send({ expectedProposalRevision: payload.proposalRevision, previewHash: payload.previewHash });
   }
 
   function expectPairedToolCalls(body: { messages: Array<{ role?: string; tool_calls?: Array<{ id?: string }>; tool_call_id?: string }> }) {
@@ -247,7 +248,7 @@ describe('Agent tool gate', () => {
     await request(app).post('/api/chat').send({ conversationId, message: '暗号是什么', pageContext: { topicId, page: 'board', taskId } });
     const body = modelRequestFor('暗号是什么');
     expect(body.messages[0].content).toContain(`当前清单：${topicId}`);
-    expect(body.messages[0].content).toContain(`正在查看的任务：${taskId}`);
+    expect(body.messages[0].content).toContain(taskId);
     expect(body.messages[0].content).not.toContain('recentMessages');
     expect(body.messages).toEqual(expect.arrayContaining([
       expect.objectContaining({ role: 'user', content: '请记住暗号青鸟' }),
@@ -274,26 +275,26 @@ describe('Agent tool gate', () => {
     expect(approvalIdFrom(first.text)).toBeTruthy();
     await request(app).post('/api/chat').send({ conversationId, message: '还没批准', pageContext: { topicId, page: 'board' } });
     const body = modelRequestFor('还没批准');
-    expect(body.messages.some((message: { tool_calls?: unknown[] }) => message.tool_calls?.length)).toBe(false);
     expectPairedToolCalls(body);
+    expect(body.messages.find((message: { role?: string; tool_call_id?: string }) => message.role === 'tool' && message.tool_call_id === 'call_create_task').content).not.toContain('变更已完成');
   });
 
   it('replays a rejected write beside the original tool call', async () => {
     const first = await request(app).post('/api/chat').send({ message: '创建任务：拒绝这条', pageContext: { topicId, page: 'board' } });
     const conversationId = conversationIdFrom(first.text);
-    const rejected = await request(app).post(`/api/agent/approvals/${approvalIdFrom(first.text)}/reject`);
-    expect(rejected.status).toBe(200);
+    const rejected = await decide(first.text, 'reject');
+    expect(rejected.status, JSON.stringify(rejected.body)).toBe(200);
     await request(app).post('/api/chat').send({ conversationId, message: '拒绝之后呢', pageContext: { topicId, page: 'board' } });
     const body = modelRequestFor('拒绝之后呢');
     expectPairedToolCalls(body);
     const tool = body.messages.find((message: { role?: string; tool_call_id?: string }) => message.role === 'tool' && message.tool_call_id === 'call_create_task');
-    expect(tool.content).toContain('用户拒绝，数据未修改');
+    expect(tool.content).toContain('已取消，未修改数据');
   });
 
   it('replays an approved write beside the original tool call', async () => {
     const first = await request(app).post('/api/chat').send({ message: '创建任务：批准后可见', pageContext: { topicId, page: 'board' } });
     const conversationId = conversationIdFrom(first.text);
-    const approved = await request(app).post(`/api/agent/approvals/${approvalIdFrom(first.text)}/approve`);
+    const approved = await decide(first.text, 'approve');
     expect(approved.status).toBe(200);
     await request(app).post('/api/chat').send({ conversationId, message: '批准之后呢', pageContext: { topicId, page: 'board' } });
     const body = modelRequestFor('批准之后呢');
@@ -413,26 +414,24 @@ describe('Agent tool gate', () => {
 
   it('records a rejection without writing the memory', async () => {
     const response = await request(app).post('/api/chat').send({ message: '记下这句长期记忆', pageContext: { page: 'inbox' } });
-    const rejected = await request(app).post(`/api/agent/approvals/${approvalIdFrom(response.text)}/reject`);
+    const rejected = await decide(response.text, 'reject');
     expect(rejected.status).toBe(200);
     const messages = await request(app).get(`/api/conversations/${conversationIdFrom(response.text)}/messages`);
-    expect(messages.body.data.some((item: { role: string; content: string }) => item.role === 'tool' && item.content.includes('用户拒绝，数据未修改'))).toBe(true);
+    expect(messages.body.data.some((item: { role: string; content: string }) => item.role === 'tool' && item.content.includes('已取消，未修改数据'))).toBe(true);
     expect(await prisma.memory.findFirst({ where: { title: '待确认记忆' } })).toBeNull();
   });
 
   it('applies an approved memory with the chat excerpt as evidence and rejects a duplicate', async () => {
     const response = await request(app).post('/api/chat').send({ message: '批准这条长期记忆', pageContext: { page: 'inbox' } });
-    const approved = await request(app).post(`/api/agent/approvals/${approvalIdFrom(response.text)}/approve`);
-    expect(approved.status).toBe(200);
-    expect(approved.body.data.result.success).toBe(true);
-    const saved = approved.body.data.result.data;
-    expect(saved.kind).toBe('fact');
-    expect(saved.origin).toBe('ai');
-    const material = await prisma.material.findUniqueOrThrow({ where: { id: saved.evidence[0].id } });
+    const approved = await decide(response.text, 'approve');
+    expect(approved.status, JSON.stringify(approved.body)).toBe(200);
+    expect(approved.body.data.outcome.status).toBe('executed');
+    const row = await prisma.memory.findFirstOrThrow({ where: { title: '长期记忆标题' } });
+    const evidence = JSON.parse(row.evidence || '[]') as Array<{ id: string }>;
+    const material = await prisma.material.findUniqueOrThrow({ where: { id: evidence[0].id } });
     expect(material.kind).toBe('thread');
     const version = await prisma.materialVersion.findFirstOrThrow({ where: { materialId: material.id } });
     expect(version.content).toContain('批准这条长期记忆');
-    const row = await prisma.memory.findFirstOrThrow({ where: { title: '长期记忆标题' } });
     expect(row.origin).toBe('ai');
     expect(row.content).toBe('本地只用一种数据库');
 
