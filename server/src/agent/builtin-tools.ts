@@ -13,6 +13,7 @@ import type { StoredChatContext } from './chat-context.js';
 import { externalPromptInput, externalPromptPart, renderExternalPrompt } from './external-prompt.js';
 import { prepareChanges } from './propose.js';
 import { getCurrentTime, type Clock } from './time.js';
+import { searchWorkspace } from './workspace-search.js';
 
 const tasks = new TaskService();
 const topics = new TopicService();
@@ -172,90 +173,6 @@ async function libraryRead(args: Record<string, unknown>) {
 function libraryArchived(value: unknown): 'exclude' | 'only' | 'include' | undefined {
   if (value === 'exclude' || value === 'only' || value === 'include') return value;
   return undefined;
-}
-
-function snippet(text: string, query: string) {
-  const index = text.toLocaleLowerCase('en-US').indexOf(query.toLocaleLowerCase('en-US'));
-  const start = Math.max(0, (index < 0 ? 0 : index) - 40);
-  return text.slice(start, start + 160);
-}
-
-async function searchWorkspace(args: Record<string, unknown>, context: StoredChatContext) {
-  const q = typeof args.q === 'string' ? args.q.trim() : '';
-  if ([...q].length < 1 || [...q].length > 200) throw new DomainError('INVALID_TOOL_ARGUMENTS', 'q 需要 1～200 个字符', 400);
-  const requested = Array.isArray(args.types) && args.types.length ? args.types.filter((item): item is 'task' | 'material' | 'memory' | 'conversation' => item === 'task' || item === 'material' || item === 'memory' || item === 'conversation') : ['task', 'material', 'memory', 'conversation'] as const;
-  const scope = args.scope === undefined ? 'current' : args.scope;
-  if (scope !== 'current' && scope !== 'all') throw new DomainError('INVALID_TOOL_ARGUMENTS', 'scope 只能是 current 或 all', 400);
-  const limit = pageLimit(args.limit, 20, 50);
-  const scopeKey = scope === 'all' ? 'all' : context.scope.kind === 'topic' ? `topic:${context.scope.topicId}` : context.scope.kind;
-  const fingerprint = createHash('sha256').update(canonical({ q, requested, scopeKey, actor: ownerActor.id })).digest('hex');
-  let decoded: { fingerprint?: string; offsets?: Record<string, number> } = {};
-  if (args.cursor !== undefined) {
-    try { decoded = JSON.parse(Buffer.from(String(args.cursor), 'base64url').toString('utf8')); }
-    catch { throw new DomainError('CURSOR_STALE', '分页已失效，请从第一页重新读取', 409); }
-    if (decoded.fingerprint !== fingerprint) throw new DomainError('CURSOR_STALE', '查询条件已变化，请从第一页重新读取', 409);
-  }
-  const topicId = context.scope.kind === 'topic' ? context.scope.topicId : null;
-  const currentFilter = scope === 'all' ? {} : context.scope.kind === 'inbox' ? { topicId: null } : context.scope.kind === 'topic' ? { topicId } : {};
-  const errors: Array<{ type: string; message: string }> = [];
-  const buckets: Record<string, Array<Record<string, unknown>>> = { task: [], material: [], memory: [], conversation: [] };
-  const offsets = decoded.offsets ?? {};
-  const take = async (type: string, load: () => Promise<Array<Record<string, unknown>>>) => {
-    if (!requested.includes(type as 'task')) return;
-    try {
-      const rows = await load();
-      buckets[type] = rows;
-    } catch (error) {
-      errors.push({ type, message: error instanceof Error ? error.message : '读取失败' });
-    }
-  };
-  await take('task', async () => (await prisma.task.findMany({ where: { ...currentFilter, deletedAt: null, OR: [{ title: { contains: q } }, { description: { contains: q } }] }, orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }], take: 200, select: { id: true, title: true, description: true, revision: true, updatedAt: true, topicId: true } })).map((row) => ({ type: 'task', id: row.id, title: row.title, snippet: snippet(`${row.title}\n${row.description}`, q), locator: { topicId: row.topicId }, revision: row.revision, at: row.updatedAt })));
-  await take('material', async () => {
-    const rows = await prisma.material.findMany({ where: { ...currentFilter, archivedAt: null }, include: { versions: { orderBy: { revision: 'desc' }, take: 1 } }, take: 200 });
-    return rows.flatMap((row) => {
-      const version = row.versions[0];
-      const body = `${row.title}\n${version?.content ?? ''}`;
-      if (!body.toLocaleLowerCase('en-US').includes(q.toLocaleLowerCase('en-US'))) return [];
-      return [{ type: 'material', id: row.id, title: row.title, snippet: snippet(body, q), locator: { topicId: row.topicId, revision: row.revision }, revision: row.revision, at: row.updatedAt }];
-    });
-  });
-  await take('memory', async () => {
-    const where = scope === 'all' ? { status: 'active' } : context.scope.kind === 'topic' ? { status: 'active', OR: [{ topicId }, { topicId: null }] } : { status: 'active', topicId: null };
-    const rows = await prisma.memory.findMany({ where, orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }], take: 200 });
-    return rows.flatMap((row) => {
-      const body = `${row.title}\n${row.content}`;
-      if (!body.toLocaleLowerCase('en-US').includes(q.toLocaleLowerCase('en-US'))) return [];
-      return [{ type: 'memory', id: row.id, title: row.title, snippet: snippet(body, q), locator: { topicId: row.topicId }, scopeLabel: row.topicId === null && context.scope.kind === 'topic' ? '收集箱' : undefined, revision: row.revision, at: row.updatedAt }];
-    });
-  });
-  await take('conversation', async () => {
-    const turns = await prisma.autoMemoryTurn.findMany({ where: scope === 'all' ? {} : { topicId: context.scope.kind === 'topic' ? topicId : null }, select: { userMessageId: true, assistantMessageIds: true, topicId: true } });
-    const ids = turns.flatMap((turn) => {
-      let assistants: string[] = [];
-      try { assistants = JSON.parse(turn.assistantMessageIds) as string[]; } catch { assistants = []; }
-      return [turn.userMessageId, ...assistants];
-    });
-    if (!ids.length) return [];
-    const rows = await prisma.message.findMany({ where: { id: { in: ids }, content: { contains: q }, role: { in: ['user', 'assistant'] } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 200, select: { id: true, conversationId: true, content: true, createdAt: true, role: true } });
-    return rows.map((row) => ({ type: 'conversation', id: row.id, title: row.role === 'user' ? '你的消息' : '助手消息', snippet: snippet(row.content, q), locator: { conversationId: row.conversationId, messageId: row.id }, at: row.createdAt }));
-  });
-  const order = ['task', 'material', 'memory', 'conversation'];
-  const positions = Object.fromEntries(order.map((type) => [type, offsets[type] ?? 0])) as Record<string, number>;
-  const items: Record<string, unknown>[] = [];
-  while (items.length < limit) {
-    let progressed = false;
-    for (const type of order) {
-      const row = buckets[type]?.[positions[type] ?? 0];
-      if (!row) continue;
-      positions[type] = (positions[type] ?? 0) + 1;
-      items.push(row);
-      progressed = true;
-      if (items.length >= limit) break;
-    }
-    if (!progressed) break;
-  }
-  const hasMore = order.some((type) => (buckets[type]?.length ?? 0) > (positions[type] ?? 0));
-  return { items, errors, hasMore, nextCursor: hasMore ? Buffer.from(JSON.stringify({ fingerprint, offsets: positions })).toString('base64url') : null, scope: scopeKey };
 }
 
 async function memoryRead(args: Record<string, unknown>, context: StoredChatContext) {

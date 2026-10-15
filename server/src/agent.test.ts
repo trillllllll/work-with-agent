@@ -2,9 +2,10 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from './test-auth.js';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { app } from './app.js';
 import { ContextService } from './application/conversation.js';
+import { resetRunSchedulerState } from './agent/runs.js';
 import { prisma } from './services.js';
 
 describe('Agent tool gate', () => {
@@ -19,6 +20,7 @@ describe('Agent tool gate', () => {
   };
 
   beforeAll(() => {
+    resetRunSchedulerState();
     return prisma.appSetting.upsert({ where: { id: 'default' }, create: { id: 'default', openaiBaseUrl: 'http://mock-openai/v1', openaiApiKey: 'test-key', openaiModel: 'test-model', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, update: { openaiBaseUrl: 'http://mock-openai/v1', openaiApiKey: 'test-key', openaiModel: 'test-model', updatedAt: new Date().toISOString() } }).then(() => {
     vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? '{}'));
@@ -68,7 +70,7 @@ describe('Agent tool gate', () => {
       if (userText.includes('空白搜索记忆')) return tool('call_memory_blank', 'memory_read', { action: 'search', target: 'inbox', q: '' });
       if (userText.includes('搜索溢出记忆') && hasToolReply) return answer('已搜到记忆。');
       if (userText.includes('搜索溢出记忆')) return tool('call_memory_search', 'memory_read', { action: 'search', target: 'inbox', q: '搜索专用溢出句青鸟' });
-      const memoryChange = (id: string, args: Record<string, unknown>) => tool(id, 'propose_changes', { summary: String(args.title || '调整记忆').slice(0, 200), operations: [{ family: 'memory', args }] });
+      const memoryChange = (id: string, args: Record<string, unknown>) => hasToolReply ? answer('已看到审核结果。') : tool(id, 'propose_changes', { summary: String(args.title || '调整记忆').slice(0, 200), operations: [{ family: 'memory', args }] });
       if (userText.includes('记下这句长期记忆')) return memoryChange('call_memory_add', { action: 'add', target: 'inbox', title: '待确认记忆', content: '还没批准的事实' });
       if (userText.includes('批准这条长期记忆')) return memoryChange('call_memory_keep', { action: 'add', target: 'inbox', title: '长期记忆标题', content: '本地只用一种数据库' });
       if (userText.includes('再记一次同样的长期记忆')) return memoryChange('call_memory_dup', { action: 'add', target: 'inbox', title: '长期记忆标题', content: '本地只用一种数据库' });
@@ -83,6 +85,7 @@ describe('Agent tool gate', () => {
       if (userText.includes('读取越界文件')) return tool('call_outside_file', 'execute_file', { operation: 'read', path: '/etc/passwd' });
       if (userText.includes('读取授权文件') && hasToolReply) return answer('已读到授权文件。');
       if (userText.includes('读取授权文件')) return tool('call_granted_file', 'execute_file', { operation: 'read', path: userText.match(/路径=(\S+)/)?.[1] ?? '' });
+      if (hasToolReply) return answer('已看到执行结果。');
       const title = String(user?.content ?? '').replace(/^创建任务[：:]?\s*/, '') || 'Agent 任务';
       const createArgs = JSON.stringify({ summary: '创建任务', operations: [{ family: 'workspace', command: { kind: 'task.create', clientRef: 'created', input: { ...(topic ? { topicId: topic } : {}), title } } }] });
       return sseResponse([
@@ -93,6 +96,15 @@ describe('Agent tool gate', () => {
       ]);
     }));
     });
+  });
+
+  afterEach(async () => {
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+      const active = await prisma.agentRun.count({ where: { state: { in: ['queued', 'running'] } } });
+      if (!active) return;
+      await new Promise((resolve) => setTimeout(resolve, 15));
+    }
   });
 
   it('requires approval before creating a task', async () => {
@@ -295,7 +307,8 @@ describe('Agent tool gate', () => {
     const first = await request(app).post('/api/chat').send({ message: '创建任务：批准后可见', pageContext: { topicId, page: 'board' } });
     const conversationId = conversationIdFrom(first.text);
     const approved = await decide(first.text, 'approve');
-    expect(approved.status).toBe(200);
+    expect(first.text).toContain('event: approval_required');
+    expect(approved.status, JSON.stringify(approved.body)).toBe(200);
     await request(app).post('/api/chat').send({ conversationId, message: '批准之后呢', pageContext: { topicId, page: 'board' } });
     const body = modelRequestFor('批准之后呢');
     expectPairedToolCalls(body);

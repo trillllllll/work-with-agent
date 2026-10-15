@@ -20,8 +20,10 @@ import { waitRuns } from './wake.js';
 const LEASE_MS = 120_000;
 const MODEL_TIMEOUT_MS = 90_000;
 const MAX_LOOPS = 2;
-const nowIso = () => new Date().toISOString();
-const expiry = () => new Date(Date.now() + LEASE_MS).toISOString();
+let clock = () => new Date();
+export function setRunClock(fn: (() => Date) | null) { clock = fn ?? (() => new Date()); }
+const nowIso = () => clock().toISOString();
+const expiry = () => new Date(clock().getTime() + LEASE_MS).toISOString();
 
 export const runCursorSchema = z.object({
   schemaVersion: z.literal(1),
@@ -40,6 +42,10 @@ const initialCursor = (): RunCursor => ({ schemaVersion: 1, phase: 'model', roun
 let slots = 0;
 const pending: Array<{ runId: string; stream: ModelStream; contextService: ContextService }> = [];
 const runningIds = new Set<string>();
+let ticking = false;
+let schedulerStream: ModelStream | null = null;
+let schedulerContext: ContextService | null = null;
+export function resetRunSchedulerState() { schedulerStream = null; schedulerContext = null; }
 
 function isLeaseLoss(error: unknown) {
   return error instanceof DomainError && (error.code === 'LEASE_LOST' || error.code === 'RUN_SUPERSEDED');
@@ -63,6 +69,7 @@ async function recordSettled(runId: string, data: ChatEvent) {
     const conversation = await tx.conversation.findUnique({ where: { id: run.conversationId }, select: { activeRunId: true } });
     if (conversation?.activeRunId !== run.id) return;
     if (run.state !== 'running' && run.state !== 'waiting_approval') return;
+    if (run.state === 'running' && (!run.leaseToken || !run.leaseExpiresAt || run.leaseExpiresAt <= nowIso())) return;
     await appendRunEvent(tx, runId, data.type, { ...data, conversationId: run.conversationId, runId });
   });
 }
@@ -95,13 +102,14 @@ async function saveCursor(runId: string, token: string, cursor: RunCursor) {
   if (!updated.count) throw new DomainError('LEASE_LOST', '这次请求已经失去执行权', 409);
 }
 
-async function saveMessages(runId: string, messages: ModelMessage[]) {
+async function saveMessages(runId: string, token: string, messages: ModelMessage[]) {
   await prisma.$transaction(async (tx) => {
     const run = await tx.agentRun.findUnique({ where: { id: runId } });
     if (!run) return;
     const conversation = await tx.conversation.findUnique({ where: { id: run.conversationId }, select: { activeRunId: true } });
     if (conversation?.activeRunId !== run.id) return;
-    if (run.state !== 'running' && run.state !== 'waiting_approval') return;
+    const owned = run.state === 'running' && run.leaseToken === token && Boolean(run.leaseExpiresAt && run.leaseExpiresAt > nowIso());
+    if (!owned && run.state !== 'waiting_approval') return;
     await tx.agentRun.update({ where: { id: runId }, data: { modelMessagesJson: JSON.stringify(messages), updatedAt: nowIso() } });
   });
 }
@@ -116,6 +124,12 @@ function publicResult(result: BuiltinResult) {
 }
 
 async function writeToolRow(runId: string, conversationId: string, assistantMessageId: string, toolCallId: string, content: string) {
+  const run = await prisma.agentRun.findUnique({ where: { id: runId } });
+  if (!run) return null;
+  const conversation = await prisma.conversation.findUnique({ where: { id: run.conversationId }, select: { activeRunId: true } });
+  if (conversation?.activeRunId !== run.id) return null;
+  if (run.state === 'running' && (!run.leaseToken || !run.leaseExpiresAt || run.leaseExpiresAt <= nowIso())) return null;
+  if (run.state !== 'running' && run.state !== 'waiting_approval') return null;
   const id = builtinToolMessageId(runId, assistantMessageId, toolCallId);
   const existing = await prisma.message.findUnique({ where: { id }, select: { id: true } });
   if (existing) await prisma.message.update({ where: { id }, data: { content, status: 'completed' } });
@@ -145,7 +159,7 @@ async function pump() {
     void runLoop(job.runId, job.stream, job.contextService).finally(() => {
       slots -= 1;
       runningIds.delete(job.runId);
-      void pump();
+      void checkAgentRuns();
     });
   }
 }
@@ -207,7 +221,7 @@ async function ensureMessages(runId: string, token: string, contextService: Cont
     contextService,
   });
   await ownsLease(runId, token);
-  await saveMessages(runId, messages);
+  await saveMessages(runId, token, messages);
   return messages;
 }
 
@@ -251,18 +265,15 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
   } catch (error) {
     clearTimeout(timer);
     await flushChain.catch(() => undefined);
-    await prisma.message.update({ where: { id: assistant.id }, data: { content: text, status: 'failed' } });
+    try { await applyExecutorSideEffect(runId, token, assistant.id, { content: text, status: 'failed' }); }
+    catch (leaseError) { if (!isLeaseLoss(leaseError)) throw leaseError; }
     if (controller.signal.aborted) throw Object.assign(new Error('模型请求超时'), { code: 'MODEL_TIMEOUT' });
     throw error;
   } finally {
     clearTimeout(timer);
   }
   calls.forEach((call, index) => { call.id ??= `call_${cursor.round}_${index}`; });
-  await ownsLease(runId, token);
-  await prisma.message.update({
-    where: { id: assistant.id },
-    data: { content: text, status: 'completed', toolCalls: calls.length ? JSON.stringify(calls.map((call) => ({ id: call.id, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.arguments ?? {}) } }))) : null },
-  });
+  await applyExecutorSideEffect(runId, token, assistant.id, { content: text, status: 'completed', toolCalls: calls.length ? JSON.stringify(calls.map((call) => ({ id: call.id, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.arguments ?? {}) } }))) : null });
   await appendAutoMemoryAssistant(run.sourceUserMessageId, assistant.id);
   await recordEvent(runId, token, { type: 'message_end', conversationId: run.conversationId, messageId: assistant.id });
   const assistantMessage: ModelMessage = {
@@ -271,7 +282,7 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
     ...(calls.length ? { tool_calls: calls.map((call) => ({ id: call.id ?? '', type: 'function' as const, function: { name: call.name, arguments: JSON.stringify(call.arguments ?? {}) } })) } : {}),
   };
   messages.push(assistantMessage);
-  await saveMessages(runId, messages);
+  await saveMessages(runId, token, messages);
   if (!calls.length) {
     await finishOwned(runId, token);
     return 'completed' as const;
@@ -315,7 +326,7 @@ async function toolTurn(runId: string, token: string, contextService: ContextSer
     const content = JSON.stringify({ toolName: call.function.name, toolCallId: call.id, assistantMessageId, ...publicResult(result) });
     await writeToolRow(runId, run.conversationId, assistantMessageId, call.id, content);
     messages.push({ role: 'tool', tool_call_id: call.id, content });
-    await saveMessages(runId, messages);
+    await saveMessages(runId, token, messages);
     await recordSettled(runId, { type: 'tool_result', conversationId: run.conversationId, messageId: assistantMessageId, toolCallId: call.id, toolName: call.function.name, arguments: args, result: publicResult(result) });
     if (result.part) await recordSettled(runId, { type: 'external_prompt', conversationId: run.conversationId, messageId: assistantMessageId, toolCallId: call.id, part: result.part });
     if (result.approval) {
@@ -328,7 +339,7 @@ async function toolTurn(runId: string, token: string, contextService: ContextSer
         messages.push({ role: 'tool', tool_call_id: later.id, content: skippedContent });
         await recordSettled(runId, { type: 'tool_result', conversationId: run.conversationId, messageId: assistantMessageId, toolCallId: later.id, toolName: later.function.name, result: skipped });
       }
-      await saveMessages(runId, messages);
+      await saveMessages(runId, token, messages);
       return 'waiting' as const;
     }
     await saveCursor(runId, token, { ...cursor, assistantMessageId, phase: 'tools', nextToolIndex: index + 1 });
@@ -388,6 +399,11 @@ export async function startChat(input: { conversationId?: string; message: strin
     conversationId = (await prisma.conversation.create({ data: { createdAt: timestamp, updatedAt: timestamp } })).id;
   }
   const stored = await validateScopeAndResolveIds(contextFromRequest({ context: input.context, pageContext: input.pageContext }));
+  if (stored.referencedApprovalId) {
+    if (!input.conversationId) throw new DomainError('INVALID_REFERENCE', '这份方案不属于当前会话', 400);
+    const referenced = await prisma.approval.findUnique({ where: { id: stored.referencedApprovalId }, select: { conversationId: true } });
+    if (!referenced || referenced.conversationId !== input.conversationId) throw new DomainError('INVALID_REFERENCE', '这份方案不属于当前会话', 400);
+  }
   const topicId = stored.scope.kind === 'topic' ? stored.scope.topicId : null;
   await checkKnowledgeScope(prisma, ownerActor, stored.scope.kind === 'all' ? null : topicId);
   const requestHash = createHash('sha256').update(canonical({ message, context: stored })).digest('hex');
@@ -478,8 +494,12 @@ export async function stopRun(runId: string) {
   });
 }
 
-export async function bootRuns(stream: ModelStream, contextService: ContextService) {
-  await recoverExpiredDecisions();
+export async function applyExecutorSideEffect(runId: string, token: string, messageId: string, data: { content: string; status?: 'streaming' | 'completed' | 'failed'; toolCalls?: string | null }) {
+  await ownsLease(runId, token);
+  await prisma.message.update({ where: { id: messageId }, data });
+}
+
+async function pauseExpiredRuns() {
   const running = await prisma.agentRun.findMany({ where: { state: 'running' } });
   for (const run of running) {
     if (run.leaseExpiresAt && run.leaseExpiresAt > nowIso()) continue;
@@ -494,8 +514,57 @@ export async function bootRuns(stream: ModelStream, contextService: ContextServi
       await appendRunEvent(tx, fresh.id, 'run_state', { type: 'run_state', runId: fresh.id, conversationId: fresh.conversationId, state: 'paused', pauseReason: 'interrupted', message: '处理被中断。可以继续此请求。' });
     });
   }
-  const queued = await prisma.agentRun.findMany({ where: { state: 'queued' }, orderBy: { createdAt: 'asc' }, take: MAX_LOOPS });
-  for (const run of queued) scheduleRun(run.id, stream, contextService);
+}
+
+async function enqueueQueued() {
+  if (!schedulerStream || !schedulerContext) return;
+  const running = await prisma.agentRun.findMany({ where: { state: 'running' }, select: { id: true, leaseExpiresAt: true } });
+  const orphans = running.filter((run) => !runningIds.has(run.id) && Boolean(run.leaseExpiresAt && run.leaseExpiresAt > nowIso())).length;
+  const room = MAX_LOOPS - slots - pending.length - orphans;
+  if (room <= 0) return;
+  const queued = await prisma.agentRun.findMany({ where: { state: 'queued' }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
+  let added = 0;
+  for (const run of queued) {
+    if (added >= room) break;
+    if (runningIds.has(run.id) || pending.some((item) => item.runId === run.id)) continue;
+    const conversation = await prisma.conversation.findUnique({ where: { id: run.conversationId }, select: { activeRunId: true } });
+    if (conversation?.activeRunId !== run.id) continue;
+    scheduleRun(run.id, schedulerStream, schedulerContext);
+    added += 1;
+  }
+}
+
+export async function checkAgentRuns(stream?: ModelStream, contextService?: ContextService) {
+  if (stream) schedulerStream = stream;
+  if (contextService) schedulerContext = contextService;
+  if (ticking) return;
+  ticking = true;
+  try {
+    await recoverExpiredDecisions();
+    await pauseExpiredRuns();
+    await enqueueQueued();
+    await pump();
+  } finally {
+    ticking = false;
+  }
+}
+
+export function startRunScheduler(stream: ModelStream, contextService: ContextService, intervalMs = 2000) {
+  void checkAgentRuns(stream, contextService);
+  const timer = setInterval(() => { void checkAgentRuns(stream, contextService); }, intervalMs);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+
+export async function bootRuns(stream: ModelStream, contextService: ContextService) {
+  await checkAgentRuns(stream, contextService);
+}
+
+export async function activeRunView(conversationId: string) {
+  const conversation = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { activeRunId: true } });
+  if (!conversation) throw Object.assign(new Error('会话不存在'), { status: 404 });
+  if (!conversation.activeRunId) return null;
+  return runView(conversation.activeRunId);
 }
 
 export async function runView(runId: string) {

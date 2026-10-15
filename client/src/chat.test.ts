@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyApprovalEvent, applyMessageEvent, groupToolActivities, isReadOnlyTool, pairToolMessages, parseSseFrame, toolPreview, type ToolActivity } from './chat.js';
+import { applyApprovalEvent, applyMessageEvent, approvalsOnMessage, groupToolActivities, isReadOnlyTool, pairToolMessages, parseSseFrame, toolPreview, unplacedApprovals, type ToolActivity } from './chat.js';
 
 describe('chat SSE state', () => {
   it('parses a framed SSE delta and incrementally completes an assistant message', () => {
@@ -86,5 +86,15 @@ describe('chat SSE state', () => {
     ], [{ approvalId: 'ap1', toolName: 'create_task', arguments: { title: '整理文档' }, toolCallId: 'call_create' }]);
     expect(visible.some((message) => message.role === 'tool')).toBe(false);
     expect(visible[0]?.tools?.some((tool) => tool.toolCallId === 'call_create' && tool.status === 'pending' && tool.approvalId === 'ap1' && tool.preview === '整理文档')).toBe(true);
+  });
+
+  it('keeps every proposal from one tool call and renders an orphan once', () => {
+    const message = { id: 'm1', role: 'assistant' as const, content: '方案', tools: [{ toolCallId: 'call', name: 'propose_changes', arguments: {}, status: 'done' as const, preview: '方案' }] };
+    const oldApproval = { approvalId: 'old', toolName: 'propose_changes', arguments: {}, status: 'rejected', toolCallId: 'call', assistantMessageId: 'm1', supersededByApprovalId: 'new' };
+    const nextApproval = { approvalId: 'new', toolName: 'propose_changes', arguments: {}, status: 'pending', toolCallId: 'call', assistantMessageId: 'm1' };
+    const orphan = { approvalId: 'orphan', toolName: 'propose_changes', arguments: {}, status: 'pending' };
+    expect(approvalsOnMessage(message, [oldApproval, nextApproval, orphan]).map((item) => item.approvalId)).toEqual(['old', 'new']);
+    expect(unplacedApprovals([message], [oldApproval, nextApproval, orphan]).map((item) => item.approvalId)).toEqual(['orphan']);
+    expect(unplacedApprovals([message], [oldApproval, nextApproval, orphan, orphan])).toHaveLength(1);
   });
 });

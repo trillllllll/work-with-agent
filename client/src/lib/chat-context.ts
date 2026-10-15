@@ -21,6 +21,7 @@ export function buildChatContext(input: {
   sort?: string;
   includeArchived?: boolean;
   today?: string;
+  referencedApprovalId?: string | null;
 }) {
   const filters = input.filters;
   const status = filters?.status && filters.status !== 'all' ? filters.status : undefined;
@@ -53,6 +54,6 @@ export function buildChatContext(input: {
     selectedTaskIds: input.taskId ? [input.taskId] : [],
     taskFilter: hasFilter ? taskFilter : null,
     timeZone: zone,
-    referencedApprovalId: null,
+    referencedApprovalId: input.referencedApprovalId ?? null,
   };
 }

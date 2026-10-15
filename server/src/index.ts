@@ -62,7 +62,7 @@ async function start() {
   const stopLibrary = startLibraryWorker();
   const { startSnapshotScheduler } = await import('./application/snapshots.js');
   const stopSnapshots = startSnapshotScheduler();
-  server.on('close', () => { clearInterval(timer); stopReviews(); stopAutoMemory(); stopLibrary(); stopSnapshots(); });
+  server.on('close', () => { clearInterval(timer); stopReviews(); stopAutoMemory(); stopLibrary(); stopSnapshots(); agent.stopScheduler(); });
 }
 
 start().catch((error) => {

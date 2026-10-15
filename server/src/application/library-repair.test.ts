@@ -346,7 +346,7 @@ it('检索故障返回 SEARCH_UNAVAILABLE，相同请求键不能换成另一个
   expect(first.status, JSON.stringify(first.body)).toBe(200);
   expect(first.body.data.status).toBe('model_unavailable');
   const changed = await api('post', '/api/v1/library/answers', { requestKey: key, question: '第二个完全不同的问题', filters: {} });
-  expect(changed.status).toBe(409);
+  expect(changed.status, `${changed.status} ${changed.headers['content-type'] ?? ''} ${changed.text}`).toBe(409);
   expect(changed.body.code).toBe('IDEMPOTENCY_CONFLICT');
   expect(JSON.stringify(changed.body)).not.toContain('第一个问题');
 });

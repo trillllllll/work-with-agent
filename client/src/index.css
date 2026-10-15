@@ -2282,8 +2282,24 @@ textarea.task-title.line-through {
 .task-batch-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 12px;
   margin-top: 16px;
+}
+
+.task-batch-title:focus {
+  outline: 2px solid var(--batch-focus);
+  outline-offset: 2px;
+}
+
+.approval-locate {
+  animation: approval-locate 1.2s linear;
+}
+
+@keyframes approval-locate {
+  from, to {
+    outline: 2px solid var(--batch-focus);
+    outline-offset: 2px;
+  }
 }
 
 .task-batch-card button {
@@ -2423,6 +2439,11 @@ textarea.task-title.line-through {
   .task-batch-card,
   .task-batch-card * {
     transition: none;
+  }
+
+  .approval-locate {
+    animation: none;
+    outline: none;
   }
 }
 

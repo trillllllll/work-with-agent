@@ -491,7 +491,7 @@ export class CommandService {
     await assertPayloadVisible(prisma, current, { commands: JSON.parse(row.commands), preview: JSON.parse(row.preview), result: row.result ? JSON.parse(row.result) : null });
     const preview = JSON.parse(row.preview);
     let batchCard: { approvalId: string; status: string; preview: unknown; outcome?: unknown; supersededByApprovalId?: string } | undefined;
-    let appChangeCard: { approvalId: string; status: string; review: unknown; proposalRevision: number; outcome?: unknown; previewHash?: string } | undefined;
+    let appChangeCard: { approvalId: string; status: string; review: unknown; proposalRevision: number; outcome?: unknown; previewHash?: string; conversationId?: string | null } | undefined;
     if (stored.revisionMode === 'batch-base-v1' && typeof stored.chatBatch?.approvalId === 'string') {
       const approval = await prisma.approval.findUnique({ where: { id: stored.chatBatch.approvalId } });
       const read = readStoredApproval(approval?.result);
@@ -501,7 +501,7 @@ export class CommandService {
       const approval = await prisma.approval.findFirst({ where: { toolName: 'propose_changes', result: { contains: `"proposalId":"${row.id}"` } } });
       if (approval) {
         const read = readStoredApproval(approval.result);
-        appChangeCard = { approvalId: approval.id, status: approval.status, review: read.appReview ?? preview, proposalRevision: read.proposalRevision ?? row.revision, outcome: read.appOutcome, previewHash: read.previewHash };
+        appChangeCard = { approvalId: approval.id, status: approval.status, review: read.appReview ?? preview, proposalRevision: read.proposalRevision ?? row.revision, outcome: read.appOutcome, previewHash: read.previewHash, conversationId: approval.conversationId };
       }
     }
     return { ...row, commands: JSON.parse(row.commands), preview, result: row.result ? JSON.parse(row.result) : null, preconditions: undefined, ...(batchCard ? { batchCard } : {}), ...(appChangeCard ? { appChangeCard } : {}) };

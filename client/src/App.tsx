@@ -164,6 +164,11 @@ export function App() {
     setChatOpen(false);
   };
   const openChat = () => { setChatOpen(true); if (!isDesktop) navigate('chat'); };
+  useEffect(() => {
+    const onAdjust = () => { setChatOpen(true); if (!isDesktop) navigate('chat'); };
+    window.addEventListener('wwa-adjust-approval', onAdjust);
+    return () => window.removeEventListener('wwa-adjust-approval', onAdjust);
+  }, [isDesktop, navigate]);
   const markDragHint = () => { localStorage.setItem('todo.dragHintSeen', '1'); setDragHintSeen(true); };
   const newTopic = () => setTopicForm({ name: '', description: '', isExploration: false });
   const createTask = (input: { title: string; topicId: string | null; parentId: string | null } & Partial<TaskDraft>) => actions.create(input, input.parentId);

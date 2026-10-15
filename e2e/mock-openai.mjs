@@ -140,6 +140,24 @@ const server = http.createServer(async (req, res) => {
       operations: [{ family: 'library', args: { action: 'links', materialId, revision, organizationRevision, addTaskIds: [taskId], removeTaskIds: [], removeInlineReferences: false } }],
     }, '我准备关联这份资料。');
   }
+  if (latestUser.includes('调整时生成失败')) return json(res, 502, { error: { message: 'mock upstream failure' } });
+  if (latestUser.includes('请生成调整样本') || latestUser.includes('请把方案改短') || latestUser.includes('修复预览标题')) {
+    if (toolSince('propose_changes')) return stream(res, [{ choices: [{ delta: { content: '方案已经放在确认卡里。' }, finish_reason: 'stop' }] }]);
+    const title = latestUser.includes('修复预览标题') ? '修复样本' : '调整样本';
+    const listed = sinceUser.map(toolData).find((data) => Array.isArray(data?.items) && data.items.some((task) => String(task?.title ?? '').includes(title)));
+    if (!listed) return callTool(`e2e_repair_list_${messages.length}`, 'query_tasks', { action: 'list', limit: 50 }, '我先读取要调整的任务。');
+    const task = listed.items.find((item) => String(item.title).includes(title));
+    const nextTitle = latestUser.includes('请把方案改短') ? '短标题' : latestUser.includes('修复预览标题') ? '修复后的标题' : '调整后的标题';
+    return callTool(`e2e_repair_${messages.length}`, 'propose_changes', {
+      summary: nextTitle,
+      operations: [{ family: 'workspace', command: { kind: 'task.update', targetId: task.id, expectedRevision: task.revision, input: { title: nextTitle } } }],
+    }, '我准备确认这个修改。');
+  }
+  if (latestUser.includes('继续处理到上限')) {
+    const times = sinceUser.filter((item) => item.role === 'tool' && String(item.content).includes('"toolName":"get_time"')).length;
+    if (times >= 16) return stream(res, [{ choices: [{ delta: { content: '后续回答已经完成' }, finish_reason: 'stop' }] }]);
+    return callTool(`e2e_more_${times}`, 'get_time', {}, '继续读取时间。');
+  }
   if (latestUser.includes('读取受控文件') && !messages.some((item) => item.role === 'tool')) {
     return stream(res, [
       { choices: [{ delta: { content: '我准备读取工作区文件。' }, finish_reason: null }] },

@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { prisma } from './infrastructure/prisma.js';
 import { AgentService, type ModelMessage } from './agent.js';
 import type { ToolCall } from './application/workspace.js';
 import { ContextService } from './application/conversation.js';
-import { bootRuns, resumeRun } from './agent/runs.js';
+import { bootRuns, resetRunSchedulerState, resumeRun } from './agent/runs.js';
 import { recoverExpiredDecisions } from './agent/decision.js';
 
 const now = () => new Date().toISOString();
@@ -16,6 +16,8 @@ async function conversationWith(content: string) {
   const message = await prisma.message.create({ data: { conversationId: conversation.id, role: 'user', content, status: 'completed', createdAt: timestamp } });
   return { conversation, message, timestamp };
 }
+
+afterAll(() => { resetRunSchedulerState(); });
 
 describe('agent run recovery', () => {
   it('allows only one active run per conversation', async () => {

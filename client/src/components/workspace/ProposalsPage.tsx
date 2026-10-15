@@ -11,7 +11,7 @@ import { ReviewCard } from '@/components/chat/ReviewCard.js';
 import type { AppOutcome, AppReview } from '../../../../server/src/domain/task-batch-types.js';
 
 type BatchCard = { approvalId: string; status: string; preview?: Approval['preview']; outcome?: Approval['outcome']; supersededByApprovalId?: string };
-type AppChangeCard = { approvalId: string; status: string; review?: AppReview; proposalRevision: number; outcome?: AppOutcome; previewHash?: string };
+type AppChangeCard = { approvalId: string; status: string; review?: AppReview; proposalRevision: number; outcome?: AppOutcome; previewHash?: string; conversationId?: string | null };
 type Proposal = { id: string; status: string; revision: number; actorId: string; commands: Command[] | string; preview: unknown; createdAt: string; batchCard?: BatchCard; appChangeCard?: AppChangeCard };
 function asBatchPreview(value: unknown): Approval['preview'] | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
@@ -52,7 +52,7 @@ function AppChangeProposalCard({ proposal, onSettled }: { proposal: Proposal; on
   const [phase, setPhase] = useState<'' | 'approve' | 'reject'>('');
   const [unknown, setUnknown] = useState(false);
   if (!card || !review?.previewHash) return null;
-  const approval: Approval = { approvalId: card.approvalId, toolName: 'propose_changes', arguments: {}, status: card.status, resultState: 'app_changes', appReview: review, appOutcome: card.outcome, proposalRevision: card.proposalRevision, previewHash: card.previewHash ?? review.previewHash, summary: review.intent };
+  const approval: Approval = { approvalId: card.approvalId, toolName: 'propose_changes', arguments: {}, status: card.status, resultState: 'app_changes', appReview: review, appOutcome: card.outcome, proposalRevision: card.proposalRevision, previewHash: card.previewHash ?? review.previewHash, summary: review.intent, ...(card.conversationId ? { conversationId: card.conversationId } : {}) };
   const settle = () => client.invalidateQueries({ queryKey: ['proposals'] });
   const run = async (path: 'approve' | 'reject') => {
     setPhase(path);

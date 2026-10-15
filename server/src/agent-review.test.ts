@@ -225,7 +225,7 @@ describe('server owned change review', () => {
     ], '这组会冲突'));
     const conflictChat = await conflictAgent.chat({ message: `冲突事务-${stamp}`, pageContext: { page: 'inbox' }, requestKey: `review-conflict-${stamp}` });
     const changed = await api.patch(`/api/tasks/${current.id}`).send({ description: '审批前被改过' });
-    expect(changed.ok, JSON.stringify(changed.body)).toBe(true);
+    expect(changed.ok, `${changed.status} ${changed.headers['content-type'] ?? ''} ${changed.text}`).toBe(true);
     const allBusinessRowsBeforeApprove = await businessRows();
     const conflict = await decide(conflictAgent, approvalFrom(conflictChat.events));
     expect(conflict.outcome).toMatchObject({ status: 'failed', appliedOperationCount: 0, code: 'VERSION_CONFLICT' });

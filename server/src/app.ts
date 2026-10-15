@@ -215,12 +215,13 @@ app.post('/api/chat', schema(chatBody), async (req, res) => {
 });
 
 app.get('/api/conversations/:id/messages', async (req, res, next) => { try { send(res, await agent.messages(String(req.params.id))); } catch (error) { next(error); } });
+app.get('/api/conversations/:id/active-run', async (req, res, next) => { try { send(res, await agent.activeRun(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/agent/approvals', async (req, res, next) => { try { send(res, await agent.approvalList(typeof req.query.status === 'string' ? req.query.status : undefined)); } catch (error) { next(error); } });
 app.get('/api/agent/approvals/:id', async (req, res, next) => { try { send(res, await agent.getApproval(String(req.params.id))); } catch (error) { next(error); } });
 app.post('/api/agent/approvals/:id/approve', async (req, res, next) => { try { send(res, await agent.approve(String(req.params.id), req.body ?? {})); } catch (error) { next(error); } });
 app.post('/api/agent/approvals/:id/preview', async (req, res, next) => { try { send(res, await agent.previewApproval(String(req.params.id))); } catch (error) { next(error); } });
 app.post('/api/agent/approvals/:id/reject', async (req, res, next) => { try { send(res, await agent.reject(String(req.params.id), req.body ?? {})); } catch (error) { next(error); } });
-app.post('/api/agent/approvals/:id/repreview', async (req, res, next) => { try { send(res, await agent.repreview(String(req.params.id))); } catch (error) { next(error); } });
+app.post('/api/agent/approvals/:id/repreview', async (req, res, next) => { try { send(res, await agent.repreview(String(req.params.id), req.body ?? {})); } catch (error) { next(error); } });
 app.post('/api/agent/approvals/:id/undo-preview', async (req, res, next) => { try { send(res, await agent.prepareUndo(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/agent/runs/:id', async (req, res, next) => { try { send(res, await agent.getRun(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/agent/runs/:id/events', async (req, res, next) => { try { send(res, await agent.listRunEvents(String(req.params.id), Number(req.query.after ?? 0) || 0)); } catch (error) { next(error); } });

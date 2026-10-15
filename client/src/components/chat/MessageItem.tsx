@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import type { Approval, ChatMessage, ToolActivity } from '@/chat.js';
-import { groupToolActivities, isReadOnlyTool } from '@/chat.js';
+import { approvalsOnMessage, groupToolActivities, isReadOnlyTool } from '@/chat.js';
 import { toolLabels } from '@/lib/api.js';
 import { cn } from '@/lib/utils.js';
 import { ApprovalCard } from './ApprovalCard.js';
@@ -29,7 +29,7 @@ function statusText(activity: ToolActivity) {
 }
 
 function ToolCallRow({ activity, approval, pending, executing, unknown, unresolved, phase, onApprove, onReject, onChanged }: { activity: ToolActivity; approval?: Approval; pending: boolean; executing: boolean; unknown: boolean; unresolved: boolean; phase: '' | 'approve' | 'reject'; onApprove: (id: string) => void; onReject: (id: string) => void; onChanged: () => void }) {
-  if (isAppChangeApproval(approval) && approval) return <ReviewCard approval={approval} phase={executing ? phase : ''} unknown={unknown} unresolved={unresolved} onApprove={onApprove} onReject={onReject} onChanged={onChanged} />;
+  if (isAppChangeApproval(approval) && approval) return null;
   if (isTaskBatchApproval(approval) && approval) return <TaskBatchCard approval={approval} executing={executing} unknown={unknown} onApprove={onApprove} onReject={onReject} />;
   const [open, setOpen] = useState(false);
   const payload = payloadText(activity);
@@ -87,7 +87,7 @@ function looksLikeJson(content: string) {
   return (trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'));
 }
 
-export function MessageItem({ message, approvals = [], approvalPending = false, executingApprovalId = '', unknownApprovalIds = [], unresolvedApprovalIds = [], phase = '', onApprove = () => undefined, onReject = () => undefined, onChanged = () => undefined }: { message: ChatMessage; approvals?: Approval[]; approvalPending?: boolean; executingApprovalId?: string; unknownApprovalIds?: string[]; unresolvedApprovalIds?: string[]; phase?: '' | 'approve' | 'reject'; onApprove?: (id: string) => void; onReject?: (id: string) => void; onChanged?: () => void }) {
+export function MessageItem({ message, approvals = [], approvalPending = false, executingApprovalId = '', unknownApprovalIds = [], unresolvedApprovalIds = [], phase = '', onApprove = () => undefined, onReject = () => undefined, onChanged = () => undefined, onRepreviewed }: { message: ChatMessage; approvals?: Approval[]; approvalPending?: boolean; executingApprovalId?: string; unknownApprovalIds?: string[]; unresolvedApprovalIds?: string[]; phase?: '' | 'approve' | 'reject'; onApprove?: (id: string) => void; onReject?: (id: string) => void; onChanged?: () => void; onRepreviewed?: (body: { approvalId?: string; previewHash?: string; supersedesApprovalId?: string; approval?: { id: string; status: string; toolName: string; conversationId?: string | null; envelope?: unknown } }) => void }) {
   const role = message.role;
   if (role === 'tool') return null;
   const label = roleLabels[role] ?? role;
@@ -132,6 +132,7 @@ export function MessageItem({ message, approvals = [], approvalPending = false, 
           ))}
         </div>
       )}
+      {approvalsOnMessage(message, approvals).filter(isAppChangeApproval).map((approval) => <ReviewCard key={approval.approvalId} approval={approval} phase={approval.approvalId === executingApprovalId ? phase : ''} unknown={unknownApprovalIds.includes(approval.approvalId)} unresolved={unresolvedApprovalIds.includes(approval.approvalId)} onApprove={onApprove} onReject={onReject} onChanged={onChanged} onRepreviewed={onRepreviewed} />)}
       {message.parts?.map((part) => <ExternalPromptCard key={part.id} part={part} />)}
     </div>
   );

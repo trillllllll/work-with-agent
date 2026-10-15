@@ -55,6 +55,7 @@ export type Approval = {
   previewHash?: string;
   requestedOperations?: unknown[];
   reversesApprovalId?: string | null;
+  assistantMessageId?: string;
 };
 
 export type ToolResult = { success: boolean; data?: unknown; error?: string; code?: string };
@@ -275,6 +276,30 @@ function toolAssistantId(message: ChatMessage) {
   }
 }
 
+export function approvalsOnMessage(message: ChatMessage, approvals: Approval[]) {
+  const callIds = new Set((message.tools ?? []).map((tool) => tool.toolCallId));
+  const seen = new Set<string>();
+  const matched: Approval[] = [];
+  for (const approval of approvals) {
+    const byMessage = Boolean(message.id && approval.assistantMessageId === message.id);
+    const byCall = !approval.assistantMessageId && Boolean(approval.toolCallId && callIds.has(approval.toolCallId));
+    if ((!byMessage && !byCall) || seen.has(approval.approvalId)) continue;
+    seen.add(approval.approvalId);
+    matched.push(approval);
+  }
+  return matched;
+}
+
+export function unplacedApprovals(messages: ChatMessage[], approvals: Approval[]) {
+  const placed = new Set(messages.flatMap((message) => approvalsOnMessage(message, approvals).map((item) => item.approvalId)));
+  const seen = new Set<string>();
+  return approvals.filter((approval) => {
+    if (placed.has(approval.approvalId) || seen.has(approval.approvalId)) return false;
+    seen.add(approval.approvalId);
+    return true;
+  });
+}
+
 export function pairToolMessages(messages: ChatMessage[], approvals: Approval[] = []): ChatMessage[] {
   const tools = messages.map((message, index) => ({ message, index })).filter((item) => item.message.role === 'tool' && item.message.toolCallId);
   const consumed = new Set<number>();
@@ -478,6 +503,7 @@ export function applyApprovalEvent(approvals: Approval[], event: SseEvent): Appr
     arguments: event.arguments ?? {},
     status: 'pending',
     ...(event.toolCallId ? { toolCallId: event.toolCallId } : {}),
+    ...(event.messageId ? { assistantMessageId: event.messageId } : {}),
     ...(event.conversationId ? { conversationId: event.conversationId } : {}),
     ...(event.preview ? { preview: event.preview, resultState: 'batch' as const, summary: event.preview.summary } : {}),
     ...(event.review?.previewHash ? { resultState: 'app_changes' as const, appReview: event.review, previewHash: event.previewHash ?? event.review.previewHash, proposalRevision: event.proposalRevision, summary: event.review.intent } : {}),

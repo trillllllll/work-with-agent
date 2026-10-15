@@ -1,48 +1,12 @@
 import { z } from 'zod';
+import { workspaceChangeDocument, workspaceCommandJsonSchema, workspaceWriteKinds } from './workspace-commands.js';
+
+export { workspaceWriteKinds };
 
 export const CAPABILITY_UNAVAILABLE = {
   success: false as const,
   code: 'CAPABILITY_UNAVAILABLE',
   error: '内置 AI 不支持此操作。可以整理成提示词交给具备对应能力的工具。',
-};
-
-export const workspaceWriteKinds = [
-  'task.create', 'task.update', 'task.delete', 'task.restore', 'task.reorder',
-  'topic.create', 'topic.update', 'topic.archive', 'topic.restore', 'topic.move_tasks_to_inbox',
-  'tag.create', 'tag.update', 'tag.delete',
-] as const;
-
-const taskInputSchema = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    topicId: { type: ['string', 'null'] },
-    parentId: { anyOf: [{ type: 'string' }, { type: 'null' }, { type: 'object', additionalProperties: false, required: ['$ref'], properties: { $ref: { type: 'string' } } }] },
-    title: { type: 'string' },
-    description: { type: 'string' },
-    status: { enum: ['todo', 'doing', 'blocked', 'done'] },
-    priority: { enum: ['none', 'low', 'medium', 'high'] },
-    dueDate: { type: ['string', 'null'], description: '安排日期 YYYY-MM-DD，不是独立截止日期' },
-    scheduledStart: { type: ['string', 'null'], description: '本地墙上时间 YYYY-MM-DDTHH:mm' },
-    scheduledEnd: { type: ['string', 'null'], description: '本地墙上时间 YYYY-MM-DDTHH:mm' },
-    estimatedMinutes: { type: ['integer', 'null'], minimum: 1, maximum: 10080 },
-    resultSummary: { type: 'string' },
-    tagIds: { type: 'array', items: { type: 'string' } },
-    completeChildren: { type: 'boolean' },
-  },
-} as const;
-
-const workspaceCommandSchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['kind', 'input'],
-  properties: {
-    kind: { enum: [...workspaceWriteKinds] },
-    targetId: { type: 'string' },
-    expectedRevision: { type: 'integer', minimum: 1 },
-    clientRef: { type: 'string' },
-    input: taskInputSchema,
-  },
 };
 
 const libraryActions = ['create', 'update', 'archive', 'organize', 'links', 'folder_create', 'folder_update', 'folder_delete', 'tag_create', 'tag_update', 'tag_delete', 'reference'] as const;
@@ -61,7 +25,7 @@ export const proposeChangesParameters = {
       maxItems: 50,
       items: {
         oneOf: [
-          { type: 'object', additionalProperties: false, required: ['family', 'command'], properties: { family: { const: 'workspace' }, command: workspaceCommandSchema } },
+          { type: 'object', additionalProperties: false, required: ['family', 'command'], properties: { family: { const: 'workspace' }, command: workspaceCommandJsonSchema() } },
           { type: 'object', additionalProperties: false, required: ['family', 'args'], properties: { family: { const: 'library' }, clientRef: { type: 'string' }, args: { type: 'object', additionalProperties: false, required: ['action'], properties: { action: { enum: [...libraryActions] }, materialId: { type: 'string' }, revision: { type: 'integer' }, organizationRevision: { type: 'integer' }, title: { type: 'string' }, content: { type: 'string' }, uri: { type: ['string', 'null'] }, kind: { type: 'string' }, topicId: { type: ['string', 'null'] }, folderId: { type: ['string', 'null'] }, parentId: { type: ['string', 'null'] }, name: { type: 'string' }, tagIds: { type: 'array', items: { type: 'string' } }, addTaskIds: { type: 'array', items: { type: 'string' } }, removeTaskIds: { type: 'array', items: { type: 'string' } }, taskId: { type: 'string' }, materialIds: { type: 'array', items: { type: 'string' } }, archived: { type: 'boolean' }, metadata: { type: 'object' }, expectedTaskRevisions: { type: 'object' }, expectedMaterialRevisions: { type: 'object' }, expectedOrganizationRevisions: { type: 'object' }, removeInlineReferences: { type: 'boolean' }, from: { type: 'integer' }, to: { type: 'integer' }, tagId: { type: 'string' } } } } },
           { type: 'object', additionalProperties: false, required: ['family', 'args'], properties: { family: { const: 'memory' }, args: { type: 'object', additionalProperties: false, required: ['action'], properties: { action: { enum: [...memoryActions] }, title: { type: 'string' }, content: { type: 'string' }, memoryId: { type: 'string' }, expectedRevision: { type: 'integer' }, kind: { type: 'string' }, importance: { type: 'integer' }, labels: { type: 'array', items: { type: 'string' } }, evidence: { type: 'array', items: { type: 'object' } }, messageIds: { type: 'array', items: { type: 'string' } }, target: { enum: ['inbox', 'topic'] } } } } },
         ],
@@ -240,9 +204,7 @@ export function strictTaskInput(kind: string, input: Record<string, unknown>) {
 }
 
 export function changeSchemaDocument(family: 'workspace' | 'library' | 'memory', kind?: string) {
-  if (family === 'workspace') {
-    return { family, kind: kind ?? null, taskInput: taskInputSchema, command: workspaceCommandSchema, kinds: workspaceWriteKinds, notes: ['create 必须有非空 title，初始状态为 todo。', 'update 至少提供一个字段。省略的字段保持原值。', 'null 清空可空字段，[] 清空集合。', '已有对象必须带刚读取的 expectedRevision。', '新对象用 clientRef，引用写 {"$ref":"clientRef"}。'] };
-  }
+  if (family === 'workspace') return workspaceChangeDocument(kind);
   if (family === 'library') return { family, actions: libraryActions, excluded: ['upload', 'replace', 'reextract', 'undo', 'ask'] };
   return { family, actions: memoryActions, notes: ['没有现成证据时，聊天摘录和记忆放在同一份提议里。'] };
 }

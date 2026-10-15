@@ -15,7 +15,7 @@ import { readStoredApproval, type TaskBatchPreview } from './domain/task-batch-t
 import { approveTaskBatch, prepareTaskBatch, rejectTaskBatch, taskBatchCommitError } from './application/chat-task-batch.js';
 import { builtinToolDefinitions } from './agent/capabilities.js';
 import { approveAppChanges, readEnvelope, rejectAppChanges, repreviewApproval, undoPreview, type DecisionInput } from './agent/decision.js';
-import { bootRuns, followRun, resumeRun, runEvents, runView, scheduleRun, startChat, stopRun } from './agent/runs.js';
+import { activeRunView, followRun, resumeRun, runEvents, runView, scheduleRun, startChat, startRunScheduler, stopRun } from './agent/runs.js';
 import { approvalView } from './agent/views.js';
 
 export type PageContext = { topicId?: string | null; taskId?: string | null; page?: string | null };
@@ -150,11 +150,18 @@ export class AgentService {
   private tasks = new TaskService();
   private context: ContextService;
 
+  private stopRuns: (() => void) | null = null;
+
   constructor(model: ModelAdapter | undefined = undefined, tools = new ToolService()) { this.tools = tools; this.model = model ?? new ModelAdapter(new SettingsService(), () => builtinToolDefinitions()); this.context = new ContextService(this.model); }
 
   private streamModel(messages: ModelMessage[], signal?: AbortSignal) { return this.model.stream(messages, signal, true); }
 
-  async boot() { await bootRuns((messages, signal) => this.streamModel(messages, signal), this.context); }
+  async boot() {
+    this.stopRuns?.();
+    this.stopRuns = startRunScheduler((messages, signal) => this.streamModel(messages, signal), this.context);
+  }
+
+  stopScheduler() { this.stopRuns?.(); this.stopRuns = null; }
 
   async *chatStream(input: { conversationId?: string; message: string; pageContext?: PageContext; context?: unknown; requestKey?: string; signal?: AbortSignal }): AsyncGenerator<ChatEvent> {
     const run = await startChat(input);
@@ -237,7 +244,8 @@ export class AgentService {
   async resume(runId: string) { const run = await resumeRun(runId, (messages, signal) => this.streamModel(messages, signal), this.context); return runView(run.id); }
   async stop(runId: string) { const run = await stopRun(runId); return runView(run.id); }
   async getApproval(approvalId: string) { const approval = await approvalView(approvalId); if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 }); return { approval, run: approval.runId ? await runView(approval.runId) : null }; }
-  async repreview(approvalId: string) { return repreviewApproval(approvalId); }
+  async repreview(approvalId: string, input: { requestKey?: string } = {}) { return repreviewApproval(approvalId, input); }
+  async activeRun(conversationId: string) { return activeRunView(conversationId); }
   async prepareUndo(approvalId: string) { return undoPreview(approvalId); }
   async messages(conversationId: string) { if (!(await this.conversations.get(conversationId))) throw Object.assign(new Error('会话不存在'), { status: 404 }); return this.conversations.listMessages(conversationId); }
   async approvalList(status?: string) { if (status && !['pending', 'approved', 'rejected', 'executed', 'failed'].includes(status)) throw Object.assign(new Error('审核状态无效'), { status: 400 }); return this.approvals.list(status as any); }

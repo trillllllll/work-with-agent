@@ -20,8 +20,14 @@ let security: typeof import('./application/security.js');
 let blobs: typeof import('./application/knowledge-blobs.js');
 let sessionCookie = '';
 let csrf = '';
+let previousDatabaseUrl: string | undefined;
+let previousDataDir: string | undefined;
+let previousBlobRoot: string | undefined;
 
 beforeAll(async () => {
+  previousDatabaseUrl = process.env.DATABASE_URL;
+  previousDataDir = process.env.WWA_DATA_DIR;
+  previousBlobRoot = process.env.KNOWLEDGE_STORAGE_ROOT;
   scratch = mkdtempSync(join(tmpdir(), 'wwa-snapshot-'));
   await mkdir(join(scratch, 'source'), { recursive: true });
   process.env.DATABASE_URL = `file:${join(scratch, 'source', 'agent-studio.db')}`;
@@ -44,6 +50,12 @@ beforeAll(async () => {
 }, 180_000);
 
 afterAll(async () => {
+  if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+  else process.env.DATABASE_URL = previousDatabaseUrl;
+  if (previousDataDir === undefined) delete process.env.WWA_DATA_DIR;
+  else process.env.WWA_DATA_DIR = previousDataDir;
+  if (previousBlobRoot === undefined) delete process.env.KNOWLEDGE_STORAGE_ROOT;
+  else process.env.KNOWLEDGE_STORAGE_ROOT = previousBlobRoot;
   await rm(scratch, { recursive: true, force: true }).catch(() => {});
 });
 

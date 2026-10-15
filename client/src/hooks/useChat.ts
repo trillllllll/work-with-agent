@@ -44,25 +44,38 @@ export function useChat({ selectedTopicId, taskId = '', view, filters, sort, inc
   const [unknownApprovalIds, setUnknownApprovalIds] = useState<string[]>([]);
   const [unresolvedApprovalIds, setUnresolvedApprovalIds] = useState<string[]>([]);
   const [pausedRun, setPausedRun] = useState<{ id: string; reason: string } | null>(null);
+  const [referencedApproval, setReferencedApproval] = useState<{ id: string; title: string } | null>(null);
   const library = useLibrarySnapshot();
   const approvalsRef = useRef(approvals);
   const conversationRef = useRef(conversationId);
   const busyRef = useRef(busy);
   const mutatingRef = useRef(false);
   const loadGeneration = useRef(0);
+  const seenEvents = useRef(new Set<string>());
   approvalsRef.current = approvals;
   conversationRef.current = conversationId;
   busyRef.current = busy;
 
   const invalidate = () => { void invalidateTodo(queryClient); void queryClient.invalidateQueries({ queryKey: ['proposals'] }); };
 
+  const resumableReason = (reason: string | null | undefined) => Boolean(reason && ['new_user_message', 'interrupted', 'round_limit'].includes(reason));
   const reloadConversation = async (id = conversationRef.current, force = false) => {
-    if (!id || busyRef.current) return;
+    if (!id) return;
+    if (!force && busyRef.current) return;
     if (!force && (mutatingRef.current || newConversationRef.current === id)) return;
     const generation = ++loadGeneration.current;
     try {
-      const [history, listed] = await Promise.all([api(`/api/conversations/${id}/messages`), api('/api/agent/approvals')]);
-      if (generation !== loadGeneration.current || conversationRef.current !== id || busyRef.current) return;
+      const [history, listed, active] = await Promise.all([
+        api(`/api/conversations/${id}/messages`),
+        api('/api/agent/approvals'),
+        api<{ id: string; state: string; pauseReason?: string | null } | null>(`/api/conversations/${id}/active-run`),
+      ]);
+      if (generation !== loadGeneration.current || conversationRef.current !== id) return;
+      if (!force && busyRef.current) return;
+      if (!busyRef.current) {
+        if (active?.state === 'paused' && resumableReason(active.pauseReason)) setPausedRun({ id: active.id, reason: active.pauseReason! });
+        else setPausedRun(null);
+      }
       const nextApprovals = (listed as Parameters<typeof parseApproval>[0][]).map(parseApproval).filter((item) => item.conversationId === id);
       setMessages(pairToolMessages(history.map((message: ChatMessage) => ({ id: message.id, role: message.role, content: message.content, status: message.status, toolCalls: message.toolCalls, toolCallId: message.toolCallId, parts: parseExternalParts(message.partsJson) })), nextApprovals));
       setApprovals(nextApprovals);
@@ -107,6 +120,17 @@ export function useChat({ selectedTopicId, taskId = '', view, filters, sort, inc
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', refresh);
     };
+  }, []);
+
+  useEffect(() => {
+    const onAdjust = (event: Event) => {
+      const detail = (event as CustomEvent<{ approvalId?: string; conversationId?: string | null; title?: string }>).detail;
+      if (!detail?.approvalId) return;
+      setReferencedApproval({ id: detail.approvalId, title: detail.title || '修改方案' });
+      if (detail.conversationId && detail.conversationId !== conversationRef.current) setConversationId(detail.conversationId);
+    };
+    window.addEventListener('wwa-adjust-approval', onAdjust);
+    return () => window.removeEventListener('wwa-adjust-approval', onAdjust);
   }, []);
 
   const settleTool = (tool: NonNullable<ChatMessage['tools']>[number], status: ToolActivityStatus, result?: ToolResult) => ({
@@ -213,24 +237,22 @@ export function useChat({ selectedTopicId, taskId = '', view, filters, sort, inc
   const send = async (event: FormEvent) => {
     event.preventDefault();
     const message = input.trim();
+    const reference = referencedApproval;
     if (!message || busy) return;
-    setInput(''); onErrorRef.current(''); setInterrupted(false); setBusy(true); setPausedRun(null);
+    onErrorRef.current(''); setInterrupted(false); setBusy(true); setPausedRun(null);
     setMessages((current) => [...current, { role: 'user', content: message }]);
+    let accepted = false;
     let receivedDone = false;
     let receivedError = false;
     let runId = '';
     let lastSeq = 0;
-    const consume = (event: SseEvent) => {
-      if (event.runId) runId = event.runId;
-      if (typeof event.seq === 'number') lastSeq = Math.max(lastSeq, event.seq);
-      if (event.type === 'run_state' && event.state === 'paused' && event.runId && event.pauseReason) setPausedRun({ id: event.runId, reason: event.pauseReason });
-      if (event.type === 'run_state' && (event.state === 'completed' || event.state === 'waiting_approval')) setPausedRun(null);
-      if (event.conversationId && event.conversationId !== conversationId) { if (!conversationId) newConversationRef.current = event.conversationId; setConversationId(event.conversationId); localStorage.setItem('agent-studio.conversationId', event.conversationId); }
-      setMessages((current) => applyMessageEvent(current, event));
-      setApprovals((current) => applyApprovalEvent(current, event));
-      if (event.type === 'error') { receivedError = true; if (!event.message?.includes('后续回答未完成')) onErrorRef.current(event.code ? `${event.message ?? '聊天失败'}（${event.code}）` : (event.message ?? '聊天失败')); }
-      if (event.type === 'done' || event.type === 'run_state' && (event.state === 'completed' || event.state === 'waiting_approval' || event.state === 'paused' || event.state === 'failed' || event.state === 'cancelled')) receivedDone = true;
-      if (event.type === 'done') invalidate();
+    const consume = (serverEvent: SseEvent) => {
+      if (serverEvent.runId) runId = serverEvent.runId;
+      if (typeof serverEvent.seq === 'number') lastSeq = Math.max(lastSeq, serverEvent.seq);
+      const applied = applyLiveEvent(serverEvent);
+      if (!applied) return;
+      if (serverEvent.type === 'error') receivedError = true;
+      if (serverEvent.type === 'done' || serverEvent.type === 'run_state' && (serverEvent.state === 'completed' || serverEvent.state === 'waiting_approval' || serverEvent.state === 'paused' || serverEvent.state === 'failed' || serverEvent.state === 'cancelled')) receivedDone = true;
     };
     try {
       const materialId = view === 'library' ? library.preview?.materialId ?? null : null;
@@ -238,31 +260,113 @@ export function useChat({ selectedTopicId, taskId = '', view, filters, sort, inc
         conversationId: conversationId || undefined,
         message,
         requestKey: crypto.randomUUID(),
-        context: buildChatContext({ page: view, topicId: selectedTopicId, taskId, materialId, filters, sort, includeArchived, today }),
-      }, consume);
-      if (!receivedDone && !receivedError && runId) {
-        const deadline = Date.now() + 100_000;
-        while (Date.now() < deadline && !receivedDone) {
-          const events = await api<Array<{ seq: number; type: string; data: SseEvent }>>(`/api/agent/runs/${runId}/events?after=${lastSeq}`);
-          for (const item of events) consume({ ...item.data, type: item.data.type || item.type, runId, seq: item.seq });
-          const run = await api<{ state: string }>(`/api/agent/runs/${runId}`);
-          if (['completed', 'paused', 'failed', 'cancelled', 'waiting_approval'].includes(run.state)) { receivedDone = true; break; }
-          await sleep(500);
-        }
+        context: buildChatContext({ page: view, topicId: selectedTopicId, taskId, materialId, filters, sort, includeArchived, today, referencedApprovalId: reference?.id ?? null }),
+      }, consume, { onAccepted: () => { accepted = true; } });
+      if (!receivedDone && !receivedError && runId) await trackRun(runId, lastSeq);
+      if (!receivedDone && !receivedError && !runId) setInterrupted(true);
+      if (accepted && !receivedError) {
+        setInput((current) => current.trim() === message ? '' : current);
+        setReferencedApproval((current) => current?.id === reference?.id ? null : current);
       }
-      if (!receivedDone && !receivedError) setInterrupted(true);
-    } catch (reason) { setInterrupted(true); onErrorRef.current(reason instanceof Error ? reason.message : '聊天连接中断'); }
+    } catch (reason) {
+      if (!accepted) {
+        setMessages((current) => {
+          const next = [...current];
+          const last = next[next.length - 1];
+          if (last?.role === 'user' && last.content === message && !last.id) next.pop();
+          return next;
+        });
+      }
+      setInterrupted(true);
+      onErrorRef.current(reason instanceof Error ? reason.message : '聊天连接中断');
+    }
     finally { setBusy(false); }
   };
   const resume = async () => {
-    if (!pausedRun || busy) return;
+    if (!pausedRun || busyRef.current) return;
+    const runId = pausedRun.id;
     setBusy(true);
+    setInterrupted(false);
     try {
-      await api(`/api/agent/runs/${pausedRun.id}/resume`, { method: 'POST', body: '{}' });
-      setPausedRun(null);
+      const prior = await api<Array<{ seq: number }>>(`/api/agent/runs/${runId}/events?after=0`);
+      const after = prior.reduce((max, item) => Math.max(max, item.seq), 0);
+      await api(`/api/agent/runs/${runId}/resume`, { method: 'POST', body: '{}' });
+      await trackRun(runId, after);
       await reloadConversation(conversationRef.current, true);
     } catch (reason) { onErrorRef.current(reason instanceof Error ? reason.message : '暂时不能继续这个请求'); }
     finally { setBusy(false); }
+  };
+  const applyLiveEvent = (event: SseEvent) => {
+    if (event.runId && typeof event.seq === 'number') {
+      const key = `${event.runId}:${event.seq}`;
+      if (seenEvents.current.has(key)) return false;
+      seenEvents.current.add(key);
+    }
+    if (event.type === 'run_state' && event.state === 'paused' && event.runId && event.pauseReason) setPausedRun({ id: event.runId, reason: event.pauseReason });
+    if (event.type === 'run_state' && (event.state === 'completed' || event.state === 'waiting_approval')) setPausedRun(null);
+    if (event.conversationId && event.conversationId !== conversationRef.current) {
+      if (!conversationRef.current) newConversationRef.current = event.conversationId;
+      setConversationId(event.conversationId);
+      localStorage.setItem('agent-studio.conversationId', event.conversationId);
+    }
+    setMessages((current) => applyMessageEvent(current, event));
+    setApprovals((current) => applyApprovalEvent(current, event));
+    if (event.type === 'error' && !event.message?.includes('后续回答未完成')) onErrorRef.current(event.code ? `${event.message ?? '聊天失败'}（${event.code}）` : (event.message ?? '聊天失败'));
+    if (event.type === 'done') invalidate();
+    return true;
+  };
+  const trackRun = async (runId: string, after: number) => {
+    let lastSeq = after;
+    const deadline = Date.now() + 100_000;
+    while (Date.now() < deadline) {
+      const events = await api<Array<{ seq: number; type: string; data: SseEvent }>>(`/api/agent/runs/${runId}/events?after=${lastSeq}`);
+      for (const item of events) {
+        lastSeq = Math.max(lastSeq, item.seq);
+        applyLiveEvent({ ...item.data, type: item.data.type || item.type, runId, seq: item.seq });
+      }
+      const run = await api<{ state: string; pauseReason?: string | null; errorMessage?: string | null }>(`/api/agent/runs/${runId}`);
+      if (run.state === 'paused') {
+        setPausedRun(resumableReason(run.pauseReason) ? { id: runId, reason: run.pauseReason! } : null);
+        return;
+      }
+      if (['completed', 'failed', 'cancelled', 'waiting_approval'].includes(run.state)) {
+        setPausedRun(null);
+        if (run.state === 'failed' && run.errorMessage) onErrorRef.current(run.errorMessage);
+        return;
+      }
+      await sleep(400);
+    }
+    setInterrupted(true);
+  };
+  const showRepreview = (body: { approvalId?: string; previewHash?: string; supersedesApprovalId?: string; approval?: { id: string; status: string; toolName: string; conversationId?: string | null; envelope?: unknown } }) => {
+    const view = body.approval;
+    const envelope = view?.envelope && typeof view.envelope === 'object' ? view.envelope as { assistantMessageId?: string; toolCallId?: string; review?: Approval['appReview']; proposalRevision?: number; outcome?: Approval['appOutcome']; supersededByApprovalId?: string | null } : undefined;
+    const review = envelope?.review;
+    if (!view?.id || !review?.previewHash) {
+      void reloadConversation(conversationRef.current, true);
+      return;
+    }
+    const next: Approval = {
+      approvalId: view.id,
+      toolName: view.toolName,
+      arguments: {},
+      status: view.status,
+      ...(view.conversationId ? { conversationId: view.conversationId } : {}),
+      ...(envelope?.assistantMessageId ? { assistantMessageId: envelope.assistantMessageId } : {}),
+      ...(envelope?.toolCallId ? { toolCallId: envelope.toolCallId } : {}),
+      resultState: 'app_changes',
+      appReview: review,
+      previewHash: review.previewHash,
+      proposalRevision: envelope?.proposalRevision,
+      summary: review.intent,
+      ...(envelope?.outcome ? { appOutcome: envelope.outcome } : {}),
+      ...(envelope?.supersededByApprovalId ? { supersededByApprovalId: envelope.supersededByApprovalId } : {}),
+    };
+    setApprovals((current) => [
+      ...current.filter((item) => item.approvalId !== next.approvalId).map((item) => item.approvalId === body.supersedesApprovalId ? { ...item, status: 'rejected', supersededByApprovalId: next.approvalId } : item),
+      next,
+    ]);
+    window.dispatchEvent(new CustomEvent('wwa-locate-approval', { detail: { approvalId: next.approvalId } }));
   };
   const refreshApprovals = () => { void reloadConversation(conversationRef.current, true); };
   const retry = () => { const last = [...messages].reverse().find((item) => item.role === 'user'); if (last) { setInput(last.content); setInterrupted(false); } };
@@ -277,7 +381,9 @@ export function useChat({ selectedTopicId, taskId = '', view, filters, sort, inc
     setUnknownApprovalIds([]);
     setInterrupted(false);
     setInput('');
+    setReferencedApproval(null);
+    setPausedRun(null);
   };
 
-  return { conversationId, selectedTopicId, messages, approvals, busy, interrupted, input, setInput, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun };
+  return { conversationId, selectedTopicId, messages, approvals, busy, interrupted, input, setInput, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference: () => setReferencedApproval(null), showRepreview };
 }

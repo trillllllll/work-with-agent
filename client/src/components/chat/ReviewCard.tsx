@@ -110,7 +110,7 @@ export function isAppChangeApproval(approval?: Approval | null) {
   return Boolean(approval && (approval.resultState === 'app_changes' || approval.appReview));
 }
 
-export function ReviewCard({ approval, phase = '', unknown = false, unresolved = false, onApprove, onReject, onChanged }: {
+export function ReviewCard({ approval, phase = '', unknown = false, unresolved = false, onApprove, onReject, onChanged, onRepreviewed }: {
   approval: Approval;
   phase?: '' | 'approve' | 'reject';
   unknown?: boolean;
@@ -118,12 +118,14 @@ export function ReviewCard({ approval, phase = '', unknown = false, unresolved =
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
   onChanged?: () => void;
+  onRepreviewed?: (body: { approvalId?: string; previewHash?: string; supersedesApprovalId?: string; approval?: { id: string; status: string; toolName: string; conversationId?: string | null; envelope?: unknown } }) => void;
 }) {
   const [localPhase, setLocalPhase] = useState<'' | 'approve' | 'reject'>('');
   const [showAll, setShowAll] = useState(false);
-  const [adjusting, setAdjusting] = useState(false);
   const [techOpen, setTechOpen] = useState(false);
   const [busyAction, setBusyAction] = useState('');
+  const [localError, setLocalError] = useState('');
+  const [requestKey] = useState(() => crypto.randomUUID());
   useEffect(() => { if (!phase) setLocalPhase(''); }, [phase, approval.status]);
   const state = reviewCardState(approval, phase || localPhase, unknown);
   const review = approval.appReview;
@@ -136,14 +138,21 @@ export function ReviewCard({ approval, phase = '', unknown = false, unresolved =
   const cancel = () => { setLocalPhase('reject'); onReject(approval.approvalId); };
   const followUp = async (path: 'repreview' | 'undo-preview') => {
     setBusyAction(path);
+    setLocalError('');
     try {
-      await api(`/api/agent/approvals/${approval.approvalId}/${path}`, { method: 'POST', body: '{}' });
-      onChanged?.();
+      const body = await api(`/api/agent/approvals/${approval.approvalId}/${path}`, { method: 'POST', body: JSON.stringify(path === 'repreview' ? { requestKey } : {}) });
+      if (path === 'repreview') onRepreviewed?.(body);
+      else onChanged?.();
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : '重新生成预览失败');
     } finally { setBusyAction(''); }
+  };
+  const adjust = () => {
+    window.dispatchEvent(new CustomEvent('wwa-adjust-approval', { detail: { approvalId: approval.approvalId, conversationId: approval.conversationId, title: review?.title || review?.intent || '修改方案' } }));
   };
   return (
     <section className="task-batch-card" aria-label={review?.title || '修改方案'} data-testid="approval-card" data-approval-id={approval.approvalId} data-state={state}>
-      <h2 className="task-batch-title">{review?.title || '修改方案'}</h2>
+      <h2 className="task-batch-title" tabIndex={-1}>{review?.title || '修改方案'}</h2>
       <p className="task-batch-status" data-tone={state === 'rejected' || state === 'superseded' || state === 'capability_removed' ? 'neutral' : state === 'approving' || state === 'rejecting' ? 'pending' : state} role="status">
         <span>{reviewStatusCopy(state, approval, unresolved)}</span>
       </p>
@@ -168,17 +177,17 @@ export function ReviewCard({ approval, phase = '', unknown = false, unresolved =
           </ul>
         </CollapsibleContent>
       </Collapsible>
-      {adjusting && <p className="task-batch-summary">请在输入框说明要如何调整。当前方案仍等待确认，不会自动替换。</p>}
+      {localError && <p className="task-batch-alert" role="alert">{localError}</p>}
       {state === 'pending' && (
         <div className="task-batch-actions">
           <button type="button" className="task-batch-secondary" disabled={decisionLocked} onClick={cancel}>取消</button>
-          <button type="button" className="task-batch-secondary" disabled={decisionLocked} onClick={() => setAdjusting(true)}>调整方案</button>
+          <button type="button" className="task-batch-secondary" disabled={decisionLocked} onClick={adjust}>调整方案</button>
           <button type="button" className="task-batch-primary" disabled={decisionLocked} onClick={confirm}>确认修改</button>
         </div>
       )}
       {conflict && <div className="task-batch-actions"><button type="button" className="task-batch-primary" disabled={Boolean(busyAction)} onClick={() => void followUp('repreview')}>重新生成预览</button></div>}
       {canUndo && <div className="task-batch-actions"><button type="button" className="task-batch-secondary" disabled={Boolean(busyAction)} onClick={() => void followUp('undo-preview')}>撤销</button></div>}
-      {state === 'superseded' && approval.supersededByApprovalId && <p className="task-batch-summary">查看新方案 {approval.supersededByApprovalId}</p>}
+      {state === 'superseded' && approval.supersededByApprovalId && <div className="task-batch-actions"><button type="button" className="task-batch-secondary" onClick={() => window.dispatchEvent(new CustomEvent('wwa-locate-approval', { detail: { approvalId: approval.supersededByApprovalId } }))}>查看新方案</button></div>}
     </section>
   );
 }

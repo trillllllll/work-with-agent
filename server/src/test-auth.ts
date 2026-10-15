@@ -9,7 +9,7 @@ export async function ownerSession(app: Express) {
   if (!session) {
     session = (async () => {
       const response = await supertest(app).post('/api/v1/auth/session').send({ bootstrapToken: createOwnerBootstrapToken() });
-      if (response.status !== 200) throw new Error(`Owner login failed: ${JSON.stringify(response.body)}`);
+      if (response.status !== 200) throw new Error(`Owner login failed: ${response.status} ${response.headers['content-type'] ?? ''} ${response.text.slice(0, 500)}`);
       return { cookie: (response.headers['set-cookie'] as unknown as string[])[0].split(';')[0], csrf: response.body.data.csrfToken as string };
     })();
     sessions.set(app, session);

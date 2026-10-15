@@ -6,14 +6,13 @@ import { commandFor, validateLibraryArguments } from '../application/agent-libra
 import { commandsFor, targetTopicId, validateMemoryArguments } from '../application/agent-memory.js';
 import { internalActor, ownerActor } from '../application/security.js';
 import { now, type Db } from '../application/workspace-store.js';
-import { reorderSchema, tagCreateSchema, tagUpdateSchema, taskCreateSchema, taskUpdateSchema, topicCreateSchema, topicUpdateSchema, parseInput } from '../application/workspace-input.js';
+import { taskCreateSchema, taskUpdateSchema, parseInput } from '../application/workspace-input.js';
 import { prisma } from '../infrastructure/prisma.js';
-import { proposeChangesInput, strictTaskInput, type ChangeOperation } from './capabilities.js';
+import { proposeChangesInput, type ChangeOperation } from './capabilities.js';
+import { parseWorkspaceCommand } from './workspace-commands.js';
 import { appendRunEvent } from './events.js';
 import { buildReview, previewHashOf } from './review.js';
 import { codePoints } from './text.js';
-
-const creates = new Set(['task.create', 'topic.create', 'tag.create']);
 
 function fail(error: unknown): never {
   if (error instanceof DomainError) throw error;
@@ -48,26 +47,7 @@ function mergeWorkspace(operations: ChangeOperation[]) {
 }
 
 function validateWorkspace(command: { kind: string; targetId?: string; expectedRevision?: number; clientRef?: string; input: Record<string, unknown> }) {
-  if (!creates.has(command.kind) && command.kind !== 'task.reorder' && command.expectedRevision === undefined) throw new DomainError('PRECONDITION_REQUIRED', '修改已有对象必须携带刚读取的版本', 428);
-  if (command.kind === 'task.create' || command.kind === 'task.update') {
-    const input = strictTaskInput(command.kind, command.input) as Record<string, unknown>;
-    if (command.kind === 'task.create' && (typeof input.title !== 'string' || !input.title.trim())) throw new DomainError('INVALID_TOOL_ARGUMENTS', '新建任务必须有标题', 400);
-    if (command.kind === 'task.update' && !Object.keys(input).length) throw new DomainError('INVALID_TOOL_ARGUMENTS', '任务修改至少要包含一个字段', 400);
-    return { ...command, input };
-  }
-  if (command.kind === 'task.reorder') return { ...command, input: parseInput(reorderSchema, command.input) };
-  if (command.kind === 'task.delete' || command.kind === 'task.restore') return { ...command, input: {} };
-  if (command.kind === 'topic.create') return { ...command, input: parseInput(topicCreateSchema, command.input) };
-  if (command.kind === 'topic.update') {
-    const input = parseInput(topicUpdateSchema, command.input);
-    if (!Object.keys(input).length) throw new DomainError('INVALID_TOOL_ARGUMENTS', '清单修改至少要包含一个字段', 400);
-    return { ...command, input };
-  }
-  if (command.kind === 'topic.archive' || command.kind === 'topic.restore' || command.kind === 'topic.move_tasks_to_inbox') return { ...command, input: {} };
-  if (command.kind === 'tag.create') return { ...command, input: parseInput(tagCreateSchema, command.input) };
-  if (command.kind === 'tag.update') return { ...command, input: parseInput(tagUpdateSchema, command.input) };
-  if (command.kind === 'tag.delete') return { ...command, input: {} };
-  throw new DomainError('CAPABILITY_UNAVAILABLE', '内置 AI 不支持此操作。可以整理成提示词交给具备对应能力的工具。', 400);
+  return parseWorkspaceCommand(command);
 }
 
 async function orderTaskParentMoves(commands: Command[]): Promise<Command[]> {
@@ -139,6 +119,13 @@ export async function compileChangeOperations(operations: ChangeOperation[], con
     if (command.kind === 'task.update') return { ...command, input: parseInput(taskUpdateSchema, command.input) };
     return command;
   }));
+  for (const command of normalized) {
+    if (command.kind !== 'task.reorder') continue;
+    const topicId = typeof command.input.topicId === 'string' ? command.input.topicId : null;
+    const parentId = typeof command.input.parentId === 'string' ? command.input.parentId : null;
+    const members = await prisma.task.findMany({ where: { topicId, parentId, deletedAt: null }, select: { id: true, revision: true } });
+    command.input = { ...command.input, expectedRevisions: Object.fromEntries(members.map((row) => [row.id, row.revision])) };
+  }
   const explicitIds = normalized.flatMap((command) => [command.targetId, command.entityId].filter((id): id is string => Boolean(id)));
   const taskIds = normalized.filter((command) => command.kind.startsWith('task.') && command.targetId).map((command) => command.targetId!);
   const baseTaskRevisions: Record<string, number> = {};
@@ -149,6 +136,13 @@ export async function compileChangeOperations(operations: ChangeOperation[], con
   }
   const batch = Object.keys(baseTaskRevisions).length ? { revisionMode: 'batch-base-v1' as const, baseTaskRevisions } : undefined;
   return { commands: normalized, explicitIds, batch };
+}
+
+function readReferencedApproval(contextJson: string) {
+  try {
+    const parsed = JSON.parse(contextJson) as { referencedApprovalId?: unknown };
+    return typeof parsed.referencedApprovalId === 'string' ? parsed.referencedApprovalId : '';
+  } catch { return ''; }
 }
 
 async function ownsRun(tx: Db, runId: string, leaseToken: string) {
@@ -194,9 +188,19 @@ export async function prepareChanges(input: {
     const preconditions = { revisionMode: compiled!.batch?.revisionMode ?? null, baseTaskRevisions: compiled!.batch?.baseTaskRevisions ?? {}, inspections: inspections.map((item) => item.preconditions), actor: ownerActor, initiator: internalActor, audit: { conversationId: input.conversationId } };
     const previewHash = previewHashOf(compiled!.commands, preconditions, reviewWithoutHash);
     const review = { ...reviewWithoutHash, previewHash };
+    const referencedApprovalId = readReferencedApproval(run.contextJson);
+    let supersedesApprovalId = parsed!.supersedesApprovalId;
+    if (referencedApprovalId) {
+      const referenced = await tx.approval.findUnique({ where: { id: referencedApprovalId } });
+      if (!referenced || referenced.conversationId !== input.conversationId) throw new DomainError('INVALID_REFERENCE', '这份方案不属于当前会话', 400);
+      if (referenced.status === 'pending') {
+        if (supersedesApprovalId && supersedesApprovalId !== referencedApprovalId) throw new DomainError('INVALID_BATCH', '只能替换正在调整的方案', 400);
+        supersedesApprovalId = referencedApprovalId;
+      }
+    }
     let superseded: { approvalId: string; proposalId: string; envelope: Record<string, unknown> } | undefined;
-    if (parsed!.supersedesApprovalId) {
-      const old = await tx.approval.findUnique({ where: { id: parsed!.supersedesApprovalId } });
+    if (supersedesApprovalId) {
+      const old = await tx.approval.findUnique({ where: { id: supersedesApprovalId } });
       const envelope = old?.result ? JSON.parse(old.result) as Record<string, unknown> : null;
       if (!old || old.conversationId !== input.conversationId || old.status !== 'pending' || !envelope) throw new DomainError('INVALID_BATCH', '只能替换同一会话里待确认的方案', 400);
       const proposalId = typeof envelope.proposalId === 'string' ? envelope.proposalId : '';
@@ -211,7 +215,7 @@ export async function prepareChanges(input: {
       assistantMessageId: input.assistantMessageId, sourceUserMessageId: input.sourceUserMessageId, toolCallId: input.toolCallId,
       requestedOperations: parsed!.operations, review, outcome: null, supersededByApprovalId: null, reversesApprovalId: null,
     };
-    const approval = await tx.approval.create({ data: { conversationId: input.conversationId, toolName: 'propose_changes', arguments: JSON.stringify(parsed), result: JSON.stringify(envelope), runId: run.id, createdAt: timestamp, updatedAt: timestamp } });
+    const approval = await tx.approval.create({ data: { conversationId: input.conversationId, toolName: 'propose_changes', arguments: JSON.stringify({ ...parsed, ...(supersedesApprovalId ? { supersedesApprovalId } : {}) }), result: JSON.stringify(envelope), runId: run.id, createdAt: timestamp, updatedAt: timestamp } });
     if (superseded) {
       const closed = await tx.proposal.updateMany({ where: { id: superseded.proposalId, status: 'pending' }, data: { status: 'rejected', revision: { increment: 1 }, updatedAt: timestamp } });
       if (!closed.count) throw new DomainError('APPROVAL_ALREADY_HANDLED', '该审核已处理');
@@ -224,7 +228,7 @@ export async function prepareChanges(input: {
     await appendRunEvent(tx, run.id, 'approval_required', {
       type: 'approval_required', conversationId: input.conversationId, messageId: input.assistantMessageId, toolCallId: input.toolCallId,
       toolName: 'propose_changes', approvalId: approval.id, proposalId: proposal.id, proposalRevision: proposal.revision, previewHash, review,
-      ...(parsed!.supersedesApprovalId ? { supersedesApprovalId: parsed!.supersedesApprovalId } : {}),
+      ...(supersedesApprovalId ? { supersedesApprovalId } : {}),
     });
     await tx.agentRun.update({ where: { id: run.id }, data: { state: 'waiting_approval', leaseToken: null, leaseExpiresAt: null, updatedAt: timestamp } });
     return response;

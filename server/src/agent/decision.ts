@@ -10,6 +10,7 @@ import { appendRunEvent } from './events.js';
 import { builtinToolMessageId } from './ids.js';
 import { compileChangeOperations } from './propose.js';
 import { buildReview, previewHashOf, type ApprovalReview } from './review.js';
+import type { ChangeOperation } from './capabilities.js';
 
 const REMOVED = '此能力已移出内置 AI';
 
@@ -211,24 +212,78 @@ export async function rejectAppChanges(approvalId: string, input: DecisionInput)
   });
 }
 
-export async function repreviewApproval(approvalId: string) {
-  const approval = await prisma.approval.findUnique({ where: { id: approvalId } });
-  if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 });
-  const envelope = readEnvelope(approval.result);
-  if (!envelope) throw new DomainError('REVIEW_REQUIRED', '无法读取这份历史方案，请重新生成预览', 409);
-  if (!approval.conversationId || !envelope.runId) throw new DomainError('REVIEW_REQUIRED', '这份方案不能重新预览', 409);
-  const operations = envelope.requestedOperations as import('./capabilities.js').ChangeOperation[];
+async function refreshOperationRevisions(db: Db, operations: ChangeOperation[]) {
   for (const operation of operations) {
-    if (operation.family !== 'workspace' || !operation.command.targetId) continue;
-    const task = await prisma.task.findUnique({ where: { id: operation.command.targetId }, select: { revision: true } });
-    if (task && operation.command.kind.startsWith('task.')) operation.command.expectedRevision = task.revision;
-    const topic = operation.command.kind.startsWith('topic.') ? await prisma.topic.findUnique({ where: { id: operation.command.targetId }, select: { revision: true } }) : null;
-    if (topic) operation.command.expectedRevision = topic.revision;
+    if (operation.family === 'workspace' && operation.command.targetId && operation.command.expectedRevision !== undefined) {
+      const id = operation.command.targetId;
+      const row = operation.command.kind.startsWith('task.') ? await db.task.findUnique({ where: { id }, select: { revision: true } })
+        : operation.command.kind.startsWith('topic.') ? await db.topic.findUnique({ where: { id }, select: { revision: true } })
+          : operation.command.kind.startsWith('tag.') ? await db.tag.findUnique({ where: { id }, select: { revision: true } }) : null;
+      if (row) operation.command.expectedRevision = row.revision;
+    }
+    if (operation.family === 'library') {
+      const args = operation.args as Record<string, unknown>;
+      if (typeof args.materialId === 'string' && ('revision' in args || 'organizationRevision' in args)) {
+        const row = await db.material.findUnique({ where: { id: args.materialId }, select: { revision: true, organizationRevision: true } });
+        if (row && 'revision' in args) args.revision = row.revision;
+        if (row && 'organizationRevision' in args) args.organizationRevision = row.organizationRevision;
+      }
+      await refreshRevisionMap(args.expectedMaterialRevisions, (id) => db.material.findUnique({ where: { id }, select: { revision: true } }).then((row) => row?.revision));
+      await refreshRevisionMap(args.expectedOrganizationRevisions, (id) => db.material.findUnique({ where: { id }, select: { organizationRevision: true } }).then((row) => row?.organizationRevision));
+      await refreshRevisionMap(args.expectedTaskRevisions, (id) => db.task.findUnique({ where: { id }, select: { revision: true } }).then((row) => row?.revision));
+    }
+    if (operation.family === 'memory') {
+      const args = operation.args as { memoryId?: unknown; expectedRevision?: unknown };
+      if (typeof args.memoryId === 'string' && typeof args.expectedRevision === 'number') {
+        const row = await db.memory.findUnique({ where: { id: args.memoryId }, select: { revision: true } });
+        if (row) args.expectedRevision = row.revision;
+      }
+    }
   }
-  const run = await prisma.agentRun.findUnique({ where: { id: envelope.runId } });
-  if (!run) throw new DomainError('NOT_FOUND', '原请求不存在', 404);
-  const compiled = await compileChangeOperations(operations, { conversationId: approval.conversationId, topicId: null });
-  return runSerializedCommand(async (tx) => {
+}
+
+async function refreshRevisionMap(value: unknown, read: (id: string) => Promise<number | undefined>) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+  const map = value as Record<string, number>;
+  for (const id of Object.keys(map)) {
+    const revision = await read(id);
+    if (revision !== undefined) map[id] = revision;
+  }
+}
+
+async function approvalViewFor(id: string) {
+  const { approvalView } = await import('./views.js');
+  return approvalView(id);
+}
+
+export async function repreviewApproval(approvalId: string, input: { requestKey?: string } = {}) {
+  const requestKey = input.requestKey?.trim();
+  if (input.requestKey !== undefined && (!requestKey || requestKey.length > 200)) throw new DomainError('INVALID_REQUEST', 'requestKey 无效', 400);
+  const requestId = requestKey ? `builtin-repreview:${approvalId}:${requestKey}` : '';
+  const requestHash = requestId ? createHash('sha256').update(canonical({ approvalId, requestKey })).digest('hex') : '';
+  const created = await runSerializedCommand(async (tx) => {
+    if (requestId) {
+      const receipt = await tx.requestReceipt.findUnique({ where: { actorId_requestId: { actorId: ownerActor.id, requestId } } });
+      if (receipt) {
+        if (receipt.requestHash !== requestHash) throw new DomainError('IDEMPOTENCY_CONFLICT', '相同请求标识不能提交不同内容');
+        return JSON.parse(receipt.response) as { approvalId: string; previewHash: string; supersedesApprovalId: string };
+      }
+    }
+    const approval = await tx.approval.findUnique({ where: { id: approvalId } });
+    if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 });
+    const envelope = readEnvelope(approval.result);
+    if (!envelope) throw new DomainError('REVIEW_REQUIRED', '无法读取这份历史方案，请重新生成预览', 409);
+    if (!approval.conversationId || !envelope.runId) throw new DomainError('REVIEW_REQUIRED', '这份方案不能重新预览', 409);
+    if (approval.status === 'executed') throw new DomainError('APPROVAL_ALREADY_HANDLED', '该审核已处理', 409);
+    const approveReceipt = await tx.requestReceipt.findUnique({ where: { actorId_requestId: { actorId: ownerActor.id, requestId: receiptId(approval.id, envelope.proposalRevision, 'approve') } } });
+    if (approveReceipt) {
+      const body = JSON.parse(approveReceipt.response) as { outcome?: { status?: string } };
+      if (body.outcome?.status === 'executed') throw new DomainError('APPROVAL_ALREADY_HANDLED', '该审核已处理', 409);
+    }
+    if (approval.status !== 'pending' && approval.status !== 'failed') throw new DomainError('APPROVAL_ALREADY_HANDLED', '该审核已处理', 409);
+    const operations = structuredClone(envelope.requestedOperations) as ChangeOperation[];
+    await refreshOperationRevisions(tx, operations);
+    const compiled = await compileChangeOperations(operations, { conversationId: approval.conversationId, topicId: null });
     const auditRecords: import('@prisma/client').ChangeRecord[] = [];
     const inspections = await inspectCommands(tx, ownerActor, compiled.commands, compiled.batch, auditRecords, internalActor);
     const reviewWithoutHash = buildReview({ intent: envelope.review.intent, requestedOperationCount: operations.length, commandCount: compiled.commands.length, explicitIds: compiled.explicitIds, records: auditRecords });
@@ -239,19 +294,25 @@ export async function repreviewApproval(approvalId: string) {
     const timestamp = now();
     const proposal = await tx.proposal.create({ data: { actorId: internalActor.id, commands: JSON.stringify(compiled.commands), preconditions: JSON.stringify(preconditions), preview: JSON.stringify(review), createdAt: timestamp, updatedAt: timestamp } });
     const nextEnvelope = { ...envelope, proposalId: proposal.id, proposalRevision: proposal.revision, review, outcome: null, supersededByApprovalId: null, requestedOperations: operations };
-    const created = await tx.approval.create({ data: { conversationId: approval.conversationId, toolName: 'propose_changes', arguments: approval.arguments, result: JSON.stringify(nextEnvelope), runId: envelope.runId, createdAt: timestamp, updatedAt: timestamp } });
-    const previous = readEnvelope(approval.result) ?? envelope;
-    await tx.approval.update({ where: { id: approval.id }, data: { result: JSON.stringify({ ...previous, supersededByApprovalId: created.id }), updatedAt: timestamp } });
-    if (approval.status === 'pending') {
-      await tx.approval.updateMany({ where: { id: approval.id, status: 'pending' }, data: { status: 'rejected', updatedAt: timestamp } });
-      await tx.proposal.updateMany({ where: { id: envelope.proposalId, status: 'pending' }, data: { status: 'rejected', updatedAt: timestamp } });
-    }
-    const conversation = approval.conversationId ? await tx.conversation.findUnique({ where: { id: approval.conversationId } }) : null;
+    const fresh = await tx.approval.findUnique({ where: { id: approval.id } });
+    if (!fresh || fresh.status !== approval.status) throw new DomainError('APPROVAL_ALREADY_HANDLED', '该审核已处理', 409);
+    const createdApproval = await tx.approval.create({ data: { conversationId: approval.conversationId, toolName: 'propose_changes', arguments: approval.arguments, result: JSON.stringify(nextEnvelope), runId: envelope.runId, createdAt: timestamp, updatedAt: timestamp } });
+    const previous = readEnvelope(fresh.result) ?? envelope;
+    const marked = await tx.approval.updateMany({
+      where: { id: approval.id, status: approval.status },
+      data: { result: JSON.stringify({ ...previous, supersededByApprovalId: createdApproval.id }), ...(approval.status === 'pending' ? { status: 'rejected' } : {}), updatedAt: timestamp },
+    });
+    if (!marked.count) throw new DomainError('APPROVAL_ALREADY_HANDLED', '该审核已处理', 409);
+    if (approval.status === 'pending') await tx.proposal.updateMany({ where: { id: envelope.proposalId, status: 'pending' }, data: { status: 'rejected', updatedAt: timestamp } });
+    const conversation = await tx.conversation.findUnique({ where: { id: approval.conversationId } });
     if (conversation?.activeRunId === envelope.runId) {
       await tx.agentRun.updateMany({ where: { id: envelope.runId, state: { in: ['paused', 'waiting_approval'] } }, data: { state: 'waiting_approval', pauseReason: null, leaseToken: null, leaseExpiresAt: null, updatedAt: timestamp } });
     }
-    return { approvalId: created.id, previewHash, supersedesApprovalId: approval.id };
+    const body = { approvalId: createdApproval.id, previewHash, supersedesApprovalId: approval.id };
+    if (requestId) await tx.requestReceipt.create({ data: { actorId: ownerActor.id, requestId, requestHash, response: JSON.stringify(body), createdAt: timestamp } });
+    return body;
   });
+  return { ...created, approval: await approvalViewFor(created.approvalId) };
 }
 
 export async function undoPreview(approvalId: string) {

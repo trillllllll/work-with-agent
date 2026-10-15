@@ -15,7 +15,7 @@ type ChatPanelProps = {
 
 export function ChatPanel({ chat, onClose }: ChatPanelProps) {
   const action = usePlatformAction();
-  const { messages, approvals, busy, interrupted, input, setInput, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun } = chat;
+  const { messages, approvals, busy, interrupted, input, setInput, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference, showRepreview } = chat;
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="shrink-0 border-b glass-divider px-4 pt-4 pb-3.5">
@@ -44,7 +44,7 @@ export function ChatPanel({ chat, onClose }: ChatPanelProps) {
         {chat.conversationId && messages.length > 0 && <Button className="mt-2" size="sm" variant="ghost" disabled={busy || action.busy} onClick={() => void action.run(() => api('/api/v1/knowledge/materials/from-conversation', { method: 'POST', body: json({ conversationId: chat.conversationId, topicId: chat.selectedTopicId || null, title: `会话记录 ${new Date().toLocaleString()}` }) }), '完整会话已保存到项目资料')}>主动保存本次完整会话</Button>}
       </header>
 
-      <MessageList messages={messages} approvals={approvals} approvalPending={approve.isPending || reject.isPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} unresolvedApprovalIds={unresolvedApprovalIds} phase={decisionPhase} onApprove={(id) => approve.mutate(id)} onReject={(id) => reject.mutate(id)} onChanged={refreshApprovals} />
+      <MessageList messages={messages} approvals={approvals} approvalPending={approve.isPending || reject.isPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} unresolvedApprovalIds={unresolvedApprovalIds} phase={decisionPhase} onApprove={(id) => approve.mutate(id)} onReject={(id) => reject.mutate(id)} onChanged={refreshApprovals} onRepreviewed={showRepreview} />
       {pausedRun && ['new_user_message', 'interrupted', 'round_limit'].includes(pausedRun.reason) && (
         <div className="mx-3 mb-2 flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-xs">
           <span>{pausedRun.reason === 'new_user_message' ? '已暂停后续处理' : '这个请求已暂停。'}</span>
@@ -61,7 +61,7 @@ export function ChatPanel({ chat, onClose }: ChatPanelProps) {
         </div>
       )}
 
-      <ChatComposer input={input} busy={busy} onChange={setInput} onSend={send} />
+      <ChatComposer input={input} busy={busy} reference={referencedApproval} onChange={setInput} onSend={send} onCancelReference={clearReference} />
     </div>
   );
 }
