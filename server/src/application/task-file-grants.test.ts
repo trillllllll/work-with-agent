@@ -1,6 +1,7 @@
 import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir, homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ControlledExecutionAdapter, ToolService, prisma } from '../services.js';
 import { formatSystemPrompt } from './conversation.js';
@@ -111,7 +112,9 @@ describe('task file grants', () => {
 
   it('refuses an uncited absolute path before approval and lists the workspace', async () => {
     const tools = new ToolService();
-    expect(await tools.fileAccessDenial({ operation: 'read', path: '/etc/passwd' })).toMatchObject({ code: 'FILE_PATH_DENIED' });
+    const uncited = join(await tempDir(), 'uncited.txt');
+    await writeFile(uncited, 'not cited by any task');
+    expect(await tools.fileAccessDenial({ operation: 'read', path: uncited })).toMatchObject({ code: 'FILE_PATH_DENIED' });
     expect(await tools.fileAccessDenial({ operation: 'explode', path: '.' })).toMatchObject({ code: 'FILE_OPERATION_DENIED' });
     expect(await tools.fileAccessDenial({ operation: 'list', path: '.' })).toBeNull();
     const listed = await new ControlledExecutionAdapter().execute({ kind: 'file', input: { operation: 'list', path: '.' }, approvalId: 'a' });
@@ -121,9 +124,12 @@ describe('task file grants', () => {
   });
 
   it('recognizes file urls and keeps shallow directories closed', () => {
-    const cited = pathsInText('file:///Users/byc/WorkSpace/AfterSend/.archify/workflow-x/note.html。 https://example.com/a /tmp/also.txt');
-    expect(cited).toContain('/Users/byc/WorkSpace/AfterSend/.archify/workflow-x/note.html');
-    expect(cited).toContain('/tmp/also.txt');
+    const workspace = resolve('/Users/byc/WorkSpace');
+    const file = join(workspace, 'AfterSend', '.archify', 'workflow-x', 'note.html');
+    const plain = resolve('/tmp/also.txt');
+    const cited = pathsInText(`${pathToFileURL(file).href}。 https://example.com/a ${plain}`);
+    expect(cited).toContain(file);
+    expect(cited).toContain(plain);
     expect(cited.some((path) => path.startsWith('http'))).toBe(false);
     expect(isBroadDirectory('/Users/byc/WorkSpace')).toBe(true);
     expect(isBroadDirectory('/Users/byc')).toBe(true);

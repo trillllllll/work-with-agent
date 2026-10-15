@@ -37,7 +37,7 @@ describe('safe schedule migration', () => {
       expect(await prisma.task.findMany({ orderBy: { id: 'asc' } })).toEqual(rows);
       expect(await readdir(join(directory, 'schedule-backups'))).toEqual(backups);
     } finally { await prisma.$disconnect(); await rm(directory, { recursive: true, force: true }); }
-  });
+  }, 30_000); // Applies all migrations and verifies an on-disk backup on CI.
   it('reports malformed rows without changing tasks or marking completion', async () => {
     const { directory, prisma } = await database();
     try {
