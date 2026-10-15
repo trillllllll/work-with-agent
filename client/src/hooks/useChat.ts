@@ -187,7 +187,28 @@ export function useChat({ selectedTopicId, taskId = '', view, filters, sort, inc
     onMutate: (approvalId) => { mutatingRef.current = true; setExecutingApprovalId(approvalId); setDecisionPhase('approve'); setUnknownApprovalIds((current) => current.filter((id) => id !== approvalId)); setUnresolvedApprovalIds((current) => current.filter((id) => id !== approvalId)); },
     onSuccess: (response, approvalId) => {
       if (keptApproval(approvalId, response)) {
-        void reloadConversation(conversationRef.current, true).finally(() => { finishMutation(approvalId); invalidate(); });
+        const runId = response.resumed && response.run?.id ? response.run.id : '';
+        void (async () => {
+          try {
+            await reloadConversation(conversationRef.current, true);
+          } finally {
+            finishMutation(approvalId);
+            invalidate();
+          }
+          if (!runId) return;
+          setInterrupted(false);
+          busyRef.current = true;
+          setBusy(true);
+          try {
+            await trackRun(runId, 0);
+          } catch (reason) {
+            onErrorRef.current(reason instanceof Error ? reason.message : '暂时不能继续这个请求');
+          } finally {
+            try { await reloadConversation(conversationRef.current, true); } catch { /* reloadConversation already reports a read failure. */ }
+            busyRef.current = false;
+            setBusy(false);
+          }
+        })();
         return;
       }
       finishMutation(approvalId);

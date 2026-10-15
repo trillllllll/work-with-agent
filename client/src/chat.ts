@@ -368,10 +368,15 @@ function withTool(messages: ChatMessage[], messageId: string | undefined, toolCa
 }
 
 export function applyMessageEvent(messages: ChatMessage[], event: SseEvent): ChatMessage[] {
-  if (event.type === 'message_start') return [...messages, { id: event.messageId, role: 'assistant', content: '', status: 'streaming' }];
+  if (event.type === 'message_start') {
+    const index = event.messageId ? messages.findIndex((item) => item.id === event.messageId) : -1;
+    if (index >= 0) return messages;
+    return [...messages, { id: event.messageId, role: 'assistant', content: '', status: 'streaming' }];
+  }
   if (event.type === 'message_delta') {
     const index = event.messageId ? messages.findIndex((item) => item.id === event.messageId) : messages.length - 1;
     if (index < 0 || messages[index].role !== 'assistant') return messages;
+    if (messages[index].status === 'completed' || messages[index].status === 'failed') return messages;
     return messages.map((item, itemIndex) => itemIndex === index ? { ...item, content: item.content + (event.delta ?? ''), status: 'streaming' } : item);
   }
   if (event.type === 'message_end') return messages.map((item) => item.id === event.messageId ? { ...item, status: 'completed' } : item);
@@ -426,8 +431,9 @@ export function applyMessageEvent(messages: ChatMessage[], event: SseEvent): Cha
     });
   }
   if (event.type === 'run_state' && event.pauseReason === 'new_user_message') {
-    if (messages.some((item) => item.content === '已暂停后续处理')) return messages;
-    return [...messages, { role: 'system' as const, content: '已暂停后续处理', status: 'completed' as const }];
+    const settled = messages.map((item) => item.status === 'streaming' ? { ...item, status: 'completed' as const } : item);
+    if (settled.some((item) => item.content === '已暂停后续处理')) return settled;
+    return [...settled, { role: 'system' as const, content: '已暂停后续处理', status: 'completed' as const }];
   }
   if (event.type === 'error') {
     const next = messages.map((item) => {

@@ -57,6 +57,13 @@ function readCursor(raw: string): RunCursor {
   return runCursorSchema.parse(JSON.parse(raw));
 }
 
+async function completeOpenAssistant(tx: { message: { updateMany(args: { where: { id: string; status: 'streaming' }; data: { status: 'completed' } }): Promise<unknown> } }, cursorJson: string) {
+  let assistantMessageId: string | null = null;
+  try { assistantMessageId = readCursor(cursorJson).assistantMessageId; } catch { return; }
+  if (!assistantMessageId) return;
+  await tx.message.updateMany({ where: { id: assistantMessageId, status: 'streaming' }, data: { status: 'completed' } });
+}
+
 function readContext(raw: string): StoredChatContext {
   const parsed = JSON.parse(raw) as StoredChatContext;
   const { timeZoneSource, ...rest } = parsed;
@@ -422,6 +429,7 @@ export async function startChat(input: { conversationId?: string; message: strin
       const old = await tx.agentRun.findUnique({ where: { id: conversation.activeRunId } });
       if (old && (old.state === 'queued' || old.state === 'running' || old.state === 'waiting_approval')) {
         const timestamp = nowIso();
+        await completeOpenAssistant(tx, old.cursorJson);
         await tx.agentRun.update({ where: { id: old.id }, data: { state: 'paused', pauseReason: 'new_user_message', leaseToken: null, leaseExpiresAt: null, updatedAt: timestamp } });
         await appendRunEvent(tx, old.id, 'run_state', { type: 'run_state', runId: old.id, conversationId, state: 'paused', pauseReason: 'new_user_message', message: '已暂停后续处理' });
       }
@@ -491,6 +499,7 @@ export async function stopRun(runId: string) {
     if (!run) throw new DomainError('NOT_FOUND', '请求不存在', 404);
     if (run.state !== 'queued' && run.state !== 'running' && run.state !== 'waiting_approval') throw new DomainError('RUN_NOT_STOPPABLE', '这个请求已经结束', 409);
     const timestamp = nowIso();
+    await completeOpenAssistant(tx, run.cursorJson);
     await tx.agentRun.update({ where: { id: run.id }, data: { state: 'paused', pauseReason: 'user_stopped', leaseToken: null, leaseExpiresAt: null, updatedAt: timestamp } });
     await appendRunEvent(tx, run.id, 'run_state', { type: 'run_state', runId: run.id, conversationId: run.conversationId, state: 'paused', pauseReason: 'user_stopped', message: '已暂停后续处理' });
     return run;

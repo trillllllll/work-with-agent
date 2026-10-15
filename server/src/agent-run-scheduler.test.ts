@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { prisma } from './infrastructure/prisma.js';
 import type { ModelMessage } from './agent.js';
-import { ContextService } from './application/conversation.js';
-import { applyExecutorSideEffect, checkAgentRuns, resetRunSchedulerState, setRunClock } from './agent/runs.js';
+import { ContextService, ConversationService } from './application/conversation.js';
+import { applyExecutorSideEffect, checkAgentRuns, resetRunSchedulerState, setRunClock, startChat, stopRun } from './agent/runs.js';
 
 const cursor = JSON.stringify({ schemaVersion: 1, phase: 'model', round: 0, budgetEndRound: 16, assistantMessageId: null, nextToolIndex: 0 });
 const context = JSON.stringify({ schemaVersion: 2, page: 'inbox', scope: { kind: 'inbox' }, taskId: null, materialId: null, selectedTaskIds: [], taskFilter: null, timeZone: 'Asia/Shanghai', timeZoneSource: 'default', referencedApprovalId: null });
@@ -91,5 +91,50 @@ describe('continuous run recovery', () => {
     } finally {
       waiting.splice(0).forEach((release) => release());
     }
+  });
+
+  it('completes the open assistant when a newer message pauses the run', async () => {
+    const createdAt = new Date().toISOString();
+    const conversation = await prisma.conversation.create({ data: { id: 'repair-conv-cutin', createdAt, updatedAt: createdAt } });
+    const user = await prisma.message.create({ data: { id: 'repair-msg-cutin-user', conversationId: conversation.id, role: 'user', content: '先改时间', status: 'completed', createdAt } });
+    const assistant = await prisma.message.create({ data: { id: 'repair-msg-cutin-assistant', conversationId: conversation.id, role: 'assistant', content: '改到一半', status: 'streaming', createdAt } });
+    const cursorJson = JSON.stringify({ schemaVersion: 1, phase: 'model', round: 1, budgetEndRound: 16, assistantMessageId: assistant.id, nextToolIndex: 0 });
+    const run = await prisma.agentRun.create({ data: { id: 'repair-run-cutin', conversationId: conversation.id, sourceUserMessageId: user.id, requestKey: 'repair-key-cutin', requestHash: 'cutin', state: 'running', leaseToken: 'cutin-token', leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(), contextJson: context, modelMessagesJson: '[]', cursorJson, createdAt, updatedAt: createdAt } });
+    await prisma.conversation.update({ where: { id: conversation.id }, data: { activeRunId: run.id } });
+    const visible = await new ConversationService().listMessages(conversation.id);
+    expect(visible.find((row) => row.id === assistant.id)?.status).toBe('streaming');
+    const next = await startChat({ conversationId: conversation.id, message: '你怎么了', pageContext: { page: 'inbox' }, requestKey: 'repair-key-cutin-next' });
+    expect(next.state).toBe('queued');
+    const stored = await prisma.message.findUniqueOrThrow({ where: { id: assistant.id } });
+    expect(stored.status).toBe('completed');
+    expect(stored.content).toBe('改到一半');
+    expect((await prisma.agentRun.findUniqueOrThrow({ where: { id: run.id } })).pauseReason).toBe('new_user_message');
+    expect((await prisma.message.findFirst({ where: { conversationId: conversation.id, role: 'user', content: '你怎么了' } }))?.status).toBe('completed');
+  });
+
+  it('shows a paused streaming row as finished and leaves the stored row untouched', async () => {
+    const createdAt = new Date().toISOString();
+    const conversation = await prisma.conversation.create({ data: { id: 'repair-conv-stale', createdAt, updatedAt: createdAt } });
+    const user = await prisma.message.create({ data: { id: 'repair-msg-stale-user', conversationId: conversation.id, role: 'user', content: '旧输出', status: 'completed', createdAt } });
+    const assistant = await prisma.message.create({ data: { id: 'repair-msg-stale-assistant', conversationId: conversation.id, role: 'assistant', content: '', status: 'streaming', createdAt } });
+    const cursorJson = JSON.stringify({ schemaVersion: 1, phase: 'model', round: 1, budgetEndRound: 16, assistantMessageId: assistant.id, nextToolIndex: 0 });
+    const run = await prisma.agentRun.create({ data: { id: 'repair-run-stale', conversationId: conversation.id, sourceUserMessageId: user.id, requestKey: 'repair-key-stale', requestHash: 'stale', state: 'paused', pauseReason: 'new_user_message', contextJson: context, modelMessagesJson: '[]', cursorJson, createdAt, updatedAt: createdAt } });
+    await prisma.conversation.update({ where: { id: conversation.id }, data: { activeRunId: run.id } });
+    const visible = await new ConversationService().listMessages(conversation.id);
+    expect(visible.find((row) => row.id === assistant.id)?.status).toBe('completed');
+    expect((await prisma.message.findUniqueOrThrow({ where: { id: assistant.id } })).status).toBe('streaming');
+  });
+
+  it('completes the open assistant when the run is stopped', async () => {
+    const createdAt = new Date().toISOString();
+    const conversation = await prisma.conversation.create({ data: { id: 'repair-conv-stop', createdAt, updatedAt: createdAt } });
+    const user = await prisma.message.create({ data: { id: 'repair-msg-stop-user', conversationId: conversation.id, role: 'user', content: '停一下', status: 'completed', createdAt } });
+    const assistant = await prisma.message.create({ data: { id: 'repair-msg-stop-assistant', conversationId: conversation.id, role: 'assistant', content: '', status: 'streaming', createdAt } });
+    const cursorJson = JSON.stringify({ schemaVersion: 1, phase: 'model', round: 1, budgetEndRound: 16, assistantMessageId: assistant.id, nextToolIndex: 0 });
+    const run = await prisma.agentRun.create({ data: { id: 'repair-run-stop', conversationId: conversation.id, sourceUserMessageId: user.id, requestKey: 'repair-key-stop', requestHash: 'stop', state: 'running', contextJson: context, modelMessagesJson: '[]', cursorJson, createdAt, updatedAt: createdAt } });
+    await prisma.conversation.update({ where: { id: conversation.id }, data: { activeRunId: run.id } });
+    await stopRun(run.id);
+    expect((await prisma.message.findUniqueOrThrow({ where: { id: assistant.id } })).status).toBe('completed');
+    expect((await prisma.agentRun.findUniqueOrThrow({ where: { id: run.id } })).pauseReason).toBe('user_stopped');
   });
 });

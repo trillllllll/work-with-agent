@@ -58,8 +58,26 @@ export class ConversationService {
   async updateMessage(messageId: string, data: { content?: string; status?: MessageStatus; toolCalls?: string | null }) {
     return prisma.message.update({ where: { id: messageId }, data });
   }
-  async listMessages(conversationId: string) { return prisma.message.findMany({ where: { conversationId }, orderBy: messageOrder }); }
+  async listMessages(conversationId: string) {
+    const rows = await prisma.message.findMany({ where: { conversationId }, orderBy: messageOrder });
+    if (!rows.some((row) => row.status === 'streaming')) return rows;
+    const liveId = await liveStreamingMessageId(conversationId);
+    return rows.map((row) => row.status === 'streaming' && row.id !== liveId ? { ...row, status: 'completed' as const } : row);
+  }
   async updateSummary(conversationId: string, summary: string) { return prisma.conversation.update({ where: { id: conversationId }, data: { summary, updatedAt: now() } }); }
+}
+
+async function liveStreamingMessageId(conversationId: string) {
+  const conversation = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { activeRunId: true } });
+  if (!conversation?.activeRunId) return null;
+  const run = await prisma.agentRun.findUnique({ where: { id: conversation.activeRunId }, select: { state: true, cursorJson: true } });
+  if (!run || (run.state !== 'queued' && run.state !== 'running')) return null;
+  try {
+    const cursor = JSON.parse(run.cursorJson) as { assistantMessageId?: unknown };
+    return typeof cursor.assistantMessageId === 'string' ? cursor.assistantMessageId : null;
+  } catch {
+    return null;
+  }
 }
 
 function clip(text: string, max: number) {

@@ -87,6 +87,16 @@ async function waitFor(read: () => Promise<string | null | undefined>) {
   return latest;
 }
 
+async function waitForRow<T>(read: () => Promise<T | null>) {
+  const started = Date.now();
+  while (Date.now() - started < 5000) {
+    const row = await read();
+    if (row) return row;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error('streaming follow-up did not start');
+}
+
 describe('server owned change review', () => {
   it('previews without writing, then applies one idempotent receipt', async () => {
     const stamp = Date.now();
@@ -364,5 +374,43 @@ describe('server owned change review', () => {
     const stored = await prisma.agentRun.findUniqueOrThrow({ where: { id: event.runId } });
     expect(stored.modelMessagesJson).not.toContain(`新的消息请停-${stamp}`);
     expect(stored.state).not.toBe('running');
+  });
+
+  it('closes the streaming follow-up when a newer message arrives', async () => {
+    const stamp = Date.now();
+    const item = await task({ title: `续写中-${stamp}` });
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const agent = new AgentService({
+      stream: async function* (messages: ModelMessage[]) {
+        const text = latestUser(messages);
+        if (text.includes(`插话-${stamp}`)) {
+          yield { text: '现在可以继续。' };
+          return;
+        }
+        if (messages.some((message) => message.role === 'tool')) {
+          await gate;
+          yield { text: '这句不该再占着输出。' };
+          return;
+        }
+        yield { text: '我准备修改。', toolCalls: [{ id: `call-hold-${stamp}`, name: 'propose_changes', arguments: { summary: '改标题', operations: [{ family: 'workspace', command: { kind: 'task.update', targetId: item.id, expectedRevision: item.revision, input: { title: `续写后-${stamp}` } } }] } }] };
+      },
+    } as never);
+    try {
+      const first = await agent.chat({ message: `续写中改标题-${stamp}`, pageContext: { page: 'inbox' }, requestKey: `review-hold-${stamp}` });
+      const event = approvalFrom(first.events);
+      const approved = await decide(agent, event);
+      expect(approved.resumed).toBe(true);
+      const streaming = await waitForRow(async () => prisma.message.findFirst({ where: { conversationId: first.conversationId, role: 'assistant', status: 'streaming' } }));
+      expect(streaming?.content).toBe('');
+      const next = await agent.chat({ conversationId: first.conversationId, message: `插话-${stamp}`, pageContext: { page: 'inbox' }, requestKey: `review-cutin-${stamp}` });
+      expect(next.events.some((item) => item.type === 'message_end')).toBe(true);
+      expect((await prisma.message.findUniqueOrThrow({ where: { id: streaming!.id } })).status).toBe('completed');
+      expect((await freshTask(item.id)).title).toBe(`续写后-${stamp}`);
+      const followUp = next.events.find((item) => item.type === 'message_delta');
+      expect(JSON.stringify(followUp)).toContain('现在可以继续。');
+    } finally {
+      release();
+    }
   });
 });

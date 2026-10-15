@@ -88,6 +88,30 @@ describe('chat SSE state', () => {
     expect(visible[0]?.tools?.some((tool) => tool.toolCallId === 'call_create' && tool.status === 'pending' && tool.approvalId === 'ap1' && tool.preview === '整理文档')).toBe(true);
   });
 
+  it('does not open a second bubble when the same assistant starts again', () => {
+    let messages = applyMessageEvent([], { type: 'message_start', messageId: 'm1' });
+    messages = applyMessageEvent(messages, { type: 'message_delta', messageId: 'm1', delta: '已改好。' });
+    messages = applyMessageEvent(messages, { type: 'message_end', messageId: 'm1' });
+    messages = applyMessageEvent(messages, { type: 'message_start', messageId: 'm1' });
+    expect(messages).toEqual([{ id: 'm1', role: 'assistant', content: '已改好。', status: 'completed' }]);
+    expect(applyMessageEvent(messages, { type: 'message_delta', messageId: 'm1', delta: '已改好。' })).toEqual(messages);
+    const again = applyMessageEvent([{ id: 'm2', role: 'assistant', content: '', status: 'streaming' }], { type: 'message_start', messageId: 'm2' });
+    expect(again).toHaveLength(1);
+    expect(again[0]?.status).toBe('streaming');
+  });
+
+  it('closes a streaming assistant when a newer message pauses the run', () => {
+    const messages = applyMessageEvent(
+      [{ id: 'm1', role: 'assistant', content: '改到一半', status: 'streaming' }],
+      { type: 'run_state', pauseReason: 'new_user_message', state: 'paused' },
+    );
+    expect(messages[0]).toMatchObject({ id: 'm1', content: '改到一半', status: 'completed' });
+    expect(messages.filter((item) => item.content === '已暂停后续处理')).toHaveLength(1);
+    const again = applyMessageEvent(messages, { type: 'run_state', pauseReason: 'new_user_message', state: 'paused' });
+    expect(again.filter((item) => item.content === '已暂停后续处理')).toHaveLength(1);
+    expect(again[0]?.status).toBe('completed');
+  });
+
   it('keeps every proposal from one tool call and renders an orphan once', () => {
     const message = { id: 'm1', role: 'assistant' as const, content: '方案', tools: [{ toolCallId: 'call', name: 'propose_changes', arguments: {}, status: 'done' as const, preview: '方案' }] };
     const oldApproval = { approvalId: 'old', toolName: 'propose_changes', arguments: {}, status: 'rejected', toolCallId: 'call', assistantMessageId: 'm1', supersededByApprovalId: 'new' };
