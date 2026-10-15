@@ -485,7 +485,7 @@ describe('auto memory distillation', () => {
     expect(parts.map((part) => part.part)).toEqual([0, 1, 2]);
     expect(parts[2].text).toBe('尾');
     expect(parts.reduce((sum, part) => sum + part.text.length, 0)).toBe(12_001);
-  });
+  }, 30_000); // 101 sources across 13 extraction turns on slower CI filesystems.
 
   it('stops distilling a deleted or moved source in the old scope and sees it in the new scope', async () => {
     const origin = await topic('原清单');

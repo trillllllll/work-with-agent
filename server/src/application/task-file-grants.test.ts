@@ -15,8 +15,12 @@ afterEach(async () => {
 });
 
 async function tempDir() {
-  const dir = await mkdtemp(join(tmpdir(), 'wwa-grant-'));
-  createdDirs.push(dir);
+  const root = await mkdtemp(join(tmpdir(), 'wwa-grant-'));
+  createdDirs.push(root);
+  // /tmp is shallower than macOS tmpdir(); keep granted fixture directories
+  // beyond the production rule's three-segment boundary on every platform.
+  const dir = join(root, 'fixtures');
+  await mkdir(dir);
   return dir;
 }
 
