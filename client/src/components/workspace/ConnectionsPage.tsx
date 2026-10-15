@@ -1,3 +1,4 @@
+import { usePageContext } from '@/lib/assistant-context.js';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, type Topic } from '@/lib/api.js';
@@ -18,6 +19,7 @@ export function ConnectionsPage({ topics }: { topics: Topic[] }) {
   const list = useQuery({ queryKey: ['connections'], queryFn: () => api<Connection[]>('/api/v1/connections') });
   const { run, busy } = usePlatformAction();
   const [editing, setEditing] = useState<Connection | null>(null);
+  usePageContext('connections', { pageState: { selectedId: editing?.id ?? '' } });
   const [name, setName] = useState('');
   const [host, setHost] = useState('codex');
   const [selected, setSelected] = useState<string[]>([]);

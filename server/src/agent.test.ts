@@ -120,7 +120,7 @@ describe('Agent tool gate', () => {
     });
     const modelRequest = vi.mocked(globalThis.fetch).mock.calls[0]?.[1];
     expect(JSON.parse(String(modelRequest?.body)).tools.map((tool: { function: { name: string } }) => tool.function.name)).toEqual([
-      'get_time', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'conversation_search', 'get_change_schema', 'propose_changes', 'prepare_external_prompt',
+      'read_app_knowledge', 'read_page_state', 'get_time', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'conversation_search', 'get_change_schema', 'propose_changes', 'prepare_external_prompt',
     ]);
     expect(events.some((event) => event.event === 'message_delta' && event.delta?.includes('我准备创建'))).toBe(true);
     expect(events.some((event) => event.event === 'approval_required')).toBe(true);

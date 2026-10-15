@@ -34,9 +34,9 @@ function agentFor(operations: unknown[], summary: string) {
 }
 
 describe('workspace command contract', () => {
-  it('keeps the twelve built-in tools and agrees on every valid or illegal command', () => {
+  it('keeps the fourteen built-in tools and agrees on every valid or illegal command', () => {
     expect(builtinTools.map((tool) => tool.name)).toEqual([
-      'get_time', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace',
+      'read_app_knowledge', 'read_page_state', 'get_time', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace',
       'library_read', 'memory_read', 'conversation_search', 'get_change_schema', 'propose_changes', 'prepare_external_prompt',
     ]);
     const valid = [

@@ -1,3 +1,4 @@
+import { askAssistant, usePageContext } from '@/lib/assistant-context.js';
 import { createContext, forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type KeyboardEvent, type MutableRefObject, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, CalendarDays, Check, ChevronRight, Clock, Flag, Hash, Timer, X } from 'lucide-react';
@@ -604,24 +605,30 @@ function rememberEditorCaret(pending: { current: EditorCaret | null }) {
 
 function DetailFrame({ presentation, panelSlot, children }: { presentation: 'panel' | 'modal' | 'retained'; panelSlot: HTMLElement | null; children: ReactNode }) {
   const edit = useEdit();
+  const [host] = useState(() => { const node = document.createElement('div'); node.className = 'flex h-full min-h-0 flex-col'; return node; });
+  const [modalSlot, setModalSlot] = useState<HTMLDivElement | null>(null);
   const presentationRef = useRef(presentation);
   const pendingFocus = useRef<EditorCaret | null>(null);
   presentationRef.current = presentation;
   rememberEditorCaret(pendingFocus);
+  usePageContext('task', { taskId: edit.taskId, taskRevision: edit.task.revision ?? null, label: `任务 · ${edit.task.title}`, scope: edit.task.topicId ? { kind: 'topic', topicId: edit.task.topicId } : { kind: 'inbox' }, selectedTaskIds: [edit.taskId] });
   useLayoutEffect(() => {
-    const saved = pendingFocus.current;
-    if (!saved) return;
-    // The modal content is portaled on a later layout pass. Leave the caret for that dialog's autofocus.
-    if (placeCaret(saved) && presentation !== 'modal') pendingFocus.current = null;
-  }, [presentation, panelSlot]);
-  if (presentation === 'retained') return <div hidden>{children}</div>;
-  if (presentation === 'panel') {
-    const aside = <aside role="dialog" aria-modal="false" aria-label="任务详情" className="flex h-full min-h-0 flex-col">{children}</aside>;
-    if (!panelSlot) return <div hidden>{aside}</div>;
-    return createPortal(aside, panelSlot);
-  }
-  // The shared dialog zoom scales the pane from 0.95, so a 32px parent row measures about 30.8px until the animation ends.
-  return <Dialog open onOpenChange={(open) => { if (!open && presentationRef.current === 'modal') edit.requestClose(); }}><DialogContent showCloseButton={false} surface="glass" motion="none" className="flex h-[min(92dvh,840px)] max-h-[92dvh] max-w-[min(42rem,calc(100%-3rem))] flex-col overflow-hidden p-0" onOpenAutoFocus={(event) => { const saved = pendingFocus.current; if (!saved) return; event.preventDefault(); if (placeCaret(saved)) pendingFocus.current = null; else requestAnimationFrame(() => { if (pendingFocus.current && placeCaret(pendingFocus.current)) pendingFocus.current = null; }); }} onCloseAutoFocus={(event) => { if (presentationRef.current !== 'modal') event.preventDefault(); }}><DialogTitle className="sr-only">任务详情</DialogTitle><DialogDescription className="sr-only">编辑任务详情、标签、旗标和日期。</DialogDescription>{children}</DialogContent></Dialog>;
+    const slot = presentation === 'panel' ? panelSlot : presentation === 'modal' ? modalSlot : null;
+    if (slot) { slot.appendChild(host); if (pendingFocus.current && placeCaret(pendingFocus.current)) pendingFocus.current = null; }
+    return () => { host.remove(); };
+  }, [host, presentation, panelSlot, modalSlot]);
+  return <>
+    {createPortal(<aside role={presentation === 'modal' ? undefined : 'dialog'} aria-modal={presentation === 'modal' ? undefined : false} aria-label={presentation === 'modal' ? undefined : '任务详情'} className="flex h-full min-h-0 flex-col">{children}</aside>, host)}
+    {presentation === 'modal' && <Dialog open onOpenChange={(open) => { if (!open && presentationRef.current === 'modal') edit.requestClose(); }}><DialogContent showCloseButton={false} surface="glass" motion="none" className="flex h-[min(92dvh,840px)] max-h-[92dvh] max-w-[min(42rem,calc(100%-3rem))] flex-col overflow-hidden p-0" onOpenAutoFocus={(event) => { if (pendingFocus.current) event.preventDefault(); }} onCloseAutoFocus={(event) => { if (presentationRef.current !== 'modal') event.preventDefault(); }}><DialogTitle className="sr-only">任务详情</DialogTitle><DialogDescription className="sr-only">编辑任务详情、标签、旗标和日期。</DialogDescription><div ref={setModalSlot} className="h-full min-h-0" /></DialogContent></Dialog>}
+  </>;
+}
+
+function TaskAssistantActions() {
+  const edit = useEdit();
+  return <div className="flex flex-wrap gap-2 pb-2">
+    <Button size="sm" variant="ghost" onClick={() => askAssistant()}>AI 助手</Button>
+    <Button size="sm" variant="ghost" onMouseDown={(event) => event.preventDefault()} onClick={() => askAssistant({ kind: 'draft', title: edit.draft.title || '当前任务草稿', text: `${edit.draft.title}\n\n${edit.draft.description}`, taskId: edit.taskId, unsaved: true })}>带上当前草稿</Button>
+  </div>;
 }
 
 export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children' | 'fallback'> & { fallback?: Task; presentation: 'panel' | 'modal' | 'retained'; panelSlot: HTMLElement | null }>(function TaskDetailPane({ presentation, panelSlot, fallback, ...props }, ref) {
@@ -631,6 +638,7 @@ export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children
     <DetailFrame presentation={presentation} panelSlot={panelSlot}>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="task-detail-header">
+          <TaskAssistantActions />
           <ParentTaskLink />
           <div data-testid="task-detail-title-row" className="flex min-w-0 items-start gap-2"><TaskStatusCheckbox /><div className="min-w-0 flex-1"><TaskTitleField /></div><ActivityButton onOpen={() => setActivity(true)} /><CloseDetailButton /></div>
         </header>

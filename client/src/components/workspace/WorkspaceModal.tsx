@@ -6,6 +6,9 @@ import { cn } from '@/lib/utils.js';
 export type WorkspaceModalView = 'settings' | 'trash' | 'changes';
 
 type WorkspaceModalProps = {
+  assistantOpen?: boolean;
+  assistantSlot?: (node: HTMLDivElement | null) => void;
+  onOpenAssistant?: () => void;
   view: WorkspaceModalView;
   onViewChange: (view: WorkspaceModalView) => void;
   onClose: () => void;
@@ -26,23 +29,26 @@ const titles: Record<WorkspaceModalView, { eyebrow: string; title: string; descr
   changes: { eyebrow: '审计记录', title: '变更历史', description: '查看工作区变更，并撤销仍然安全可逆的操作' },
 };
 
-export function WorkspaceModal({ view, onViewChange, onClose, settings, trash, changes }: WorkspaceModalProps) {
+export function WorkspaceModal({ assistantOpen, assistantSlot, onOpenAssistant, view, onViewChange, onClose, settings, trash, changes }: WorkspaceModalProps) {
   const content = view === 'settings' ? settings : view === 'trash' ? trash : changes;
   const current = titles[view];
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent
-        showCloseButton
+        showCloseButton={!assistantOpen}
         overlayClassName="bg-slate-950/20 backdrop-blur-md backdrop-saturate-150 dark:bg-black/35"
         closeButtonClassName="top-5 right-5 z-10 size-9 rounded-full border border-white/30 bg-white/35 p-2 text-foreground/70 opacity-100 shadow-sm backdrop-blur-xl transition-colors hover:bg-white/60 hover:text-foreground dark:border-white/10 dark:bg-white/10 dark:hover:bg-white/20 [&_svg]:size-4"
         className={cn(
           'glass-overlay flex h-[80dvh] w-[min(78vw,1120px)] max-w-[min(1120px,calc(100%-2rem))] flex-col gap-0 rounded-xl p-0 text-foreground duration-300',
           'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.98] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.98] motion-reduce:!animate-none',
           'max-md:h-[calc(100dvh-1rem)]',
+          assistantOpen && 'assistant-workspace-open lg:!w-[calc(100vw-2rem)] lg:!max-w-[1440px]',
         )}
       >
+        <div className={cn("flex min-h-0 flex-1", assistantOpen && "max-lg:flex-col")}><div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", assistantOpen && "max-lg:hidden")}>
         <DialogHeader className="relative shrink-0 border-b border-black/[0.06] px-6 pb-4 pt-5 pr-16 text-left dark:border-white/[0.08] sm:px-8 sm:pt-6 sm:pr-20">
+          <button type="button" className="mb-2 self-start text-sm text-primary" onClick={onOpenAssistant}>AI 助手</button>
           <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/80">{current.eyebrow}</span>
           <DialogTitle className="mt-1.5 text-[26px] font-semibold tracking-[-0.025em]">{current.title}</DialogTitle>
           <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-muted-foreground">{current.description}</p>
@@ -78,6 +84,7 @@ export function WorkspaceModal({ view, onViewChange, onClose, settings, trash, c
         <section className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-white/15 dark:bg-black/10">
           <div className="glass-scrollbar h-full min-h-0 overflow-y-auto overscroll-contain">{content}</div>
         </section>
+        </div><div ref={assistantSlot} className={cn("w-[400px] shrink-0 border-l max-lg:h-full max-lg:w-full", !assistantOpen && "hidden")} /></div>
       </DialogContent>
     </Dialog>
   );

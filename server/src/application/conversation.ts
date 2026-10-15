@@ -1,3 +1,4 @@
+import { withChatAttachments } from './chat-attachments.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { TASK_BATCH_INSTRUCTIONS } from '../domain/task-batch.js';
 import { readStoredApproval } from '../domain/task-batch-types.js';
@@ -340,7 +341,7 @@ export class ContextService {
   private async load(conversationId: string) {
     const conversation = await prisma.conversation.findUnique({ where: { id: conversationId } });
     if (!conversation) throw notFound('会话不存在');
-    const messages = (await prisma.message.findMany({ where: { conversationId }, orderBy: messageOrder })).map(asStored);
+    const messages = (await withChatAttachments(await prisma.message.findMany({ where: { conversationId }, orderBy: messageOrder }))).map(asStored);
     return { conversation, messages: messages.filter((message) => message.status !== 'streaming') };
   }
 

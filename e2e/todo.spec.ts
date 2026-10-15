@@ -25,7 +25,7 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
   test('默认收集箱可连续创建、直接完成和重开，刷新后保持数据', async ({ page, request }) => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: '收集箱', exact: true })).toBeVisible();
-    await expect(page.getByRole('heading', { name: '全局聊天' })).toBeHidden();
+    await expect(page.getByRole('heading', { name: 'AI 助手' })).toBeHidden();
     expect((await data(await request.get(`${apiUrl}/api/settings`))).apiKeyConfigured).toBe(false);
     const capture = page.getByRole('textbox', { name: '收集任务名称', exact: true });
     await capture.fill('只填写标题');

@@ -1,3 +1,5 @@
+import type { ChatContextV2, ChatContextV3 } from '../../server/src/agent/chat-context.js';
+import type { AssistantSource } from '../../server/src/agent/assistant-sources.js';
 import type { AppOutcome, AppReview, BatchOutcome, TaskBatchPreview } from '../../server/src/domain/task-batch-types.js';
 
 export type ExternalPromptPart = {
@@ -11,6 +13,8 @@ export type ExternalPromptPart = {
 };
 
 export type ChatMessage = {
+  context?: ChatContextV2 | ChatContextV3 | null;
+  sources?: AssistantSource[];
   id?: string;
   role: 'user' | 'assistant' | 'tool' | 'system';
   content: string;
@@ -61,6 +65,8 @@ export type Approval = {
 export type ToolResult = { success: boolean; data?: unknown; error?: string; code?: string };
 
 export type SseEvent = {
+  context?: ChatContextV2 | ChatContextV3;
+  sources?: AssistantSource[];
   type: string;
   conversationId?: string;
   messageId?: string;
@@ -85,7 +91,7 @@ export type SseEvent = {
   supersedesApprovalId?: string;
 };
 
-const READ_ONLY_TOOLS = new Set(['list_topics', 'get_topic', 'get_topic_progress', 'list_tasks', 'get_task', 'conversation_search', 'get_time', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'get_change_schema']);
+const READ_ONLY_TOOLS = new Set(['read_app_knowledge', 'read_page_state', 'list_topics', 'get_topic', 'get_topic_progress', 'list_tasks', 'get_task', 'conversation_search', 'get_time', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'get_change_schema']);
 const PREVIEW_MAX = 80;
 
 const LIBRARY_READS = new Set(['list', 'search', 'read', 'content', 'linked_tasks', 'task_materials', 'folders', 'tags', 'ask']);
@@ -368,6 +374,11 @@ function withTool(messages: ChatMessage[], messageId: string | undefined, toolCa
 }
 
 export function applyMessageEvent(messages: ChatMessage[], event: SseEvent): ChatMessage[] {
+  if (event.type === 'user_context' && event.context) {
+    const found = messages.findIndex((item) => item.id === event.messageId);
+    const index = found >= 0 ? found : messages.reduce((last, item, index) => item.role === 'user' && !item.id ? index : last, -1);
+    return messages.map((item, itemIndex) => itemIndex === index ? { ...item, id: event.messageId, context: event.context } : item);
+  }
   if (event.type === 'message_start') {
     const index = event.messageId ? messages.findIndex((item) => item.id === event.messageId) : -1;
     if (index >= 0) return messages;
@@ -419,6 +430,7 @@ export function applyMessageEvent(messages: ChatMessage[], event: SseEvent): Cha
       ...(event.approvalId ? { approvalId: event.approvalId } : {}),
     }));
   }
+  if (event.type === 'sources' && event.sources) return messages.map((item) => item.id === event.messageId ? { ...item, sources: event.sources } : item);
   if (event.type === 'external_prompt' && event.part && event.part.type === 'external_prompt' && event.part.prompt) {
     const part = event.part;
     const index = assistantIndex(messages, event.messageId);

@@ -1,3 +1,4 @@
+import { withChatAttachments } from '../application/chat-attachments.js';
 import { randomUUID } from 'node:crypto';
 import { Router, type Request } from 'express';
 import { z } from 'zod';
@@ -65,7 +66,7 @@ export function createKnowledgeRouter(service = new KnowledgeService(), organiza
       const input = z.object({ conversationId: z.string().min(1), topicId: z.string().nullable().default(null), title: z.string().trim().min(1), messageIds: z.array(z.string()).optional() }).parse(req.body);
       const conversation = await prisma.conversation.findUnique({ where: { id: input.conversationId }, include: { messages: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] } } });
       if (!conversation) throw knowledgeFailure('NOT_FOUND', '会话不存在', 404);
-      const selected = input.messageIds ? conversation.messages.filter((row) => input.messageIds!.includes(row.id)) : conversation.messages;
+      const selected = await withChatAttachments(input.messageIds ? conversation.messages.filter((row) => input.messageIds!.includes(row.id)) : conversation.messages);
       if (input.messageIds && selected.length !== new Set(input.messageIds).size) throw knowledgeFailure('INVALID_MESSAGES', '选择的消息不属于该会话', 400);
       res.json({ data: await submit(req, { kind: 'material.create', input: { topicId: input.topicId, kind: 'thread', title: input.title, content: selected.map((row) => `## ${row.role}\n\n${row.content}`).join('\n\n'), metadata: { provider: 'builtin', sessionId: input.conversationId, messageIds: selected.map((row) => row.id), completeness: input.messageIds ? 'excerpt' : 'full' } } }), error: null });
     } catch (error) { next(error); }

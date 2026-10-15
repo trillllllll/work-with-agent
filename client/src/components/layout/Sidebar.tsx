@@ -7,6 +7,7 @@ import { BrandMark } from '@/components/layout/BrandMark.js';
 import { ThemeToggle } from '@/components/layout/ThemeToggle.js';
 
 type SidebarProps = {
+  compact?: boolean;
   route: View;
   page: View;
   topics: Topic[];
@@ -24,7 +25,7 @@ function links(views: View[]) {
 
 function SidebarLink({ active, label, icon: Icon, onClick }: { active: boolean; label: string; icon: LucideIcon; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} data-active={active || undefined} aria-current={active ? 'page' : undefined} className="sidebar-link">
+    <button type="button" onClick={onClick} title={label} aria-label={label} data-active={active || undefined} aria-current={active ? 'page' : undefined} className="sidebar-link">
       <Icon aria-hidden="true" className="size-4" strokeWidth={1.75} />
       <span className="min-w-0 flex-1 truncate">{label}</span>
     </button>
@@ -40,10 +41,14 @@ function SidebarSection({ label, action }: { label: string; action?: ReactNode }
   );
 }
 
-export function Sidebar({ route, page, topics, topicsLoading, selectedTopicId, onNavigate, onSelectTopic, onEditTopic, onNewTopic }: SidebarProps) {
+export function Sidebar({ compact, route, page, topics, topicsLoading, selectedTopicId, onNavigate, onSelectTopic, onEditTopic, onNewTopic }: SidebarProps) {
   const current = (view: View) => route === view;
+  if (compact) return <aside className="app-sidebar assistant-compact-nav" style={{ gridColumn: 1, gridRow: '1 / 3' }}>
+    <div className="flex justify-center py-3"><ThemeToggle /></div>
+    <nav aria-label="主导航" className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto">{navigationItems.map(({ view, label, icon: Icon }) => <button key={view} type="button" title={label} aria-label={label} aria-current={route === view ? 'page' : undefined} className="grid size-10 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => onNavigate(view)}><Icon className="size-4" /></button>)}</nav>
+  </aside>;
   return (
-    <aside className="app-sidebar">
+    <aside className={compact ? "app-sidebar assistant-compact-nav" : "app-sidebar"} style={{ gridColumn: 1, gridRow: "1 / 3" }}>
       <div className="sidebar-header">
         <BrandMark />
         <ThemeToggle />

@@ -1,3 +1,4 @@
+import { usePageContext } from '@/lib/assistant-context.js';
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { History, Undo2 } from 'lucide-react';
@@ -58,6 +59,7 @@ function undoKeys(record: ChangeRecord, activeTasks: Task[]) {
 export function ChangesPage() {
   const [entityType, setEntityType] = useState('');
   const [entityId, setEntityId] = useState('');
+  usePageContext('changes', { pageState: { kind: entityType, selectedId: entityId } });
   const actions = useTodoActions();
   const records = useQuery<ChangeRecord[]>({ queryKey: ['changes', entityType, entityId], queryFn: () => api(`/api/changes?${new URLSearchParams({ ...(entityType ? { entityType } : {}), ...(entityId ? { entityId } : {}) })}`) });
   const topics = useQuery<Topic[]>({ queryKey: ['topics'], queryFn: () => api('/api/topics') });

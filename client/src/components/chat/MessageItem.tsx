@@ -1,3 +1,5 @@
+import { ContextSummary } from './ContextSummary.js';
+import { SourceLinks } from './SourceLinks.js';
 import { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import type { Approval, ChatMessage, ToolActivity } from '@/chat.js';
@@ -123,6 +125,8 @@ export function MessageItem({ message, approvals = [], approvalPending = false, 
       ) : (
         <MarkdownView content={content} />
       ))}
+      {message.role === 'user' && <ContextSummary context={message.context} />}
+      <SourceLinks sources={message.sources ?? []} />
       {groups.length > 0 && (
         <div className={cn('flex flex-col gap-1.5', content && 'mt-2')}>
           {groups.map((group) => group.kind === 'run' ? (

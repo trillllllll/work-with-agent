@@ -491,3 +491,12 @@
     animation-duration: 0s !important;
   }
 }
+
+/* Keep the composer mounted while its saved page and assistant share the screen. */
+@media (min-width: 1024px) {
+  .app-backdrop[data-assistant-open] .library-dialog { right: 400px; }
+  .app-backdrop[data-assistant-open] .library-dialog > section { max-width: 100%; }
+}
+@media (min-width: 1280px) {
+  .app-backdrop[data-assistant-open] .library-dialog { right: 416px; }
+}

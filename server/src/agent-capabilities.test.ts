@@ -21,10 +21,10 @@ function agentFor(script: (messages: ModelMessage[]) => { text?: string; toolCal
 describe('builtin capability boundary', () => {
   afterEach(() => { vi.restoreAllMocks(); });
 
-  it('offers only the twelve builtin tools', () => {
+  it('offers only the fourteen builtin tools', () => {
     const toolNames = builtinToolDefinitions().map((tool) => tool.function.name);
     expect(toolNames).toEqual([
-      'get_time', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace',
+      'read_app_knowledge', 'read_page_state', 'get_time', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace',
       'library_read', 'memory_read', 'conversation_search', 'get_change_schema', 'propose_changes', 'prepare_external_prompt',
     ]);
     expect(toolNames).not.toEqual(expect.arrayContaining(['execute_shell', 'execute_file', 'execute_http', 'delete_topic']));

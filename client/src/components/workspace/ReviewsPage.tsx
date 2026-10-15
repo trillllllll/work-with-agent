@@ -1,3 +1,4 @@
+import { usePageContext } from '@/lib/assistant-context.js';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, type Topic } from '@/lib/api.js';
@@ -9,6 +10,7 @@ export function ReviewsPage({ topics }: { topics: Topic[] }) {
   const rules = useQuery({ queryKey: ['review-rules'], queryFn: () => api<any[]>('/api/v1/reviews/rules') });
   const batches = useQuery({ queryKey: ['review-batches'], queryFn: () => api<any[]>('/api/v1/reviews/batches'), refetchInterval: 30_000 });
   const [editing, setEditing] = useState<any>(null);
+  usePageContext('reviews', { pageState: { selectedId: editing?.id ?? '' } });
   const [name, setName] = useState('');
   const [frequency, setFrequency] = useState('daily');
   const [timeOfDay, setTime] = useState('21:00');

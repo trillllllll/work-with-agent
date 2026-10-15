@@ -1,3 +1,4 @@
+import { usePageContext } from '@/lib/assistant-context.js';
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api.js';
@@ -71,6 +72,7 @@ function AppChangeProposalCard({ proposal, onSettled }: { proposal: Proposal; on
 const labels: Record<string, string> = { title: '标题', name: '名称', description: '说明', content: '内容', dueDate: '安排日期', priority: '优先级', status: '状态', resultSummary: '结果摘要', reason: '理由' };
 export function ProposalsPage() {
   const [status, setStatus] = useState('pending');
+  usePageContext('proposals', { pageState: { status } });
   const [pinned, setPinned] = useState<Proposal[]>([]);
   const query = useQuery({ queryKey: ['proposals', status], queryFn: () => api<Proposal[]>(`/api/v1/proposals?status=${status}`) });
   const rows = new Map<string, Proposal>();

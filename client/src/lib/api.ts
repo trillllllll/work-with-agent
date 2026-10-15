@@ -55,6 +55,7 @@ export const statuses: { value: Status; label: string }[] = [{ value: 'todo', la
 export function availableTaskStatuses(task: Pick<Task, 'status' | 'allowedTransitions'>): Status[] { const allowed = new Set([task.status, ...(task.allowedTransitions ?? [])]); return statuses.map((item) => item.value).filter((status) => allowed.has(status)); }
 export const priorities: { value: TaskPriority; label: string }[] = [{ value: 'none', label: '无优先级' }, { value: 'low', label: '低' }, { value: 'medium', label: '中' }, { value: 'high', label: '高' }];
 export const toolLabels: Record<string, string> = {
+  read_app_knowledge: '应用功能说明', read_page_state: '页面状态',
   list_topics: '列出清单', get_topic: '读取清单', get_topic_progress: '读取进度', list_tasks: '查询任务', get_task: '读取任务',
   create_task: '创建任务', update_task: '更新任务', delete_task: '删除任务', create_topic: '创建主题', update_topic: '更新主题', delete_topic: '归档清单', propose_topic_summary: '提出成果草稿',
   execute_shell: '执行命令', execute_file: '文件操作', execute_http: '访问地址',

@@ -18,6 +18,17 @@ const server = http.createServer(async (req, res) => {
   if (!body.stream && body.model === 'mock-invalid') return json(res, 200, { choices: [] });
   if (!body.stream) return json(res, 200, { choices: [{ message: { role: 'assistant', content: '连接成功' }, finish_reason: 'stop' }] });
   const systemText = messages.filter((item) => item.role === 'system').map((item) => String(item.content ?? '')).join('\n');
+  if (latestUser.startsWith('AI验收')) {
+    const userIndex = messages.findLastIndex((item) => item.role === 'user');
+    if (!messages.slice(userIndex + 1).some((item) => item.role === 'tool')) return stream(res, [
+      { choices: [{ delta: { content: '正在读取当前页面。' }, finish_reason: null }] },
+      { choices: [{ delta: { tool_calls: [
+        { index: 0, id: 'ai_page', function: { name: 'read_page_state', arguments: '{}' } },
+        { index: 1, id: 'ai_help', function: { name: 'read_app_knowledge', arguments: '{"page":"plan"}' } },
+      ] }, finish_reason: 'tool_calls' }] },
+    ]);
+    return stream(res, [{ choices: [{ delta: { content: 'AI验收完成，已读取当前页面与功能说明。' }, finish_reason: 'stop' }] }]);
+  }
   if (systemText.includes('不要新增编号')) {
     return stream(res, [{ choices: [{ delta: { content: JSON.stringify({ paragraphs: [{ text: '根据资料回答', citationIds: ['C1'] }] }) }, finish_reason: 'stop' }] }]);
   }

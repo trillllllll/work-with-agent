@@ -1,3 +1,4 @@
+import { askAssistant } from '@/lib/assistant-context.js';
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from 'react';
 import { createPortal } from 'react-dom';
 import { Editor, type Extensions, type JSONContent } from '@tiptap/core';
@@ -494,7 +495,7 @@ function insertPlainDoc(view: EditorView, doc: JSONContent) {
 
 type ToolbarProps = { editor: Editor; composing: () => boolean; taskId: string };
 
-function FormatToolbar({ editor, composing }: ToolbarProps) {
+function FormatToolbar({ editor, composing, taskId }: ToolbarProps) {
   const [visible, setVisible] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -558,6 +559,7 @@ function FormatToolbar({ editor, composing }: ToolbarProps) {
     node.style.top = `${top}px`;
     node.style.left = `${left}px`;
   }}>
+    <button type="button" className={buttonClass} aria-label="询问 AI" onMouseDown={(event) => event.preventDefault()} onClick={() => { const { from, to } = editor.state.selection; askAssistant({ kind: 'selection', title: '任务正文选中文字', text: editor.state.doc.textBetween(from, to, '\n'), taskId, unsaved: true }); }}>询问 AI</button>
     {touch ? <>
       <ToolbarButton className={buttonClass} label="加粗" icon={Bold} pressed={editor.isActive('bold')} onClick={() => run(() => editor.chain().focus().toggleBold().run())} />
       <ToolbarButton className={buttonClass} label="无序列表" icon={List} pressed={editor.isActive('bulletList')} onClick={() => run(() => editor.chain().focus().toggleBulletList().run())} />

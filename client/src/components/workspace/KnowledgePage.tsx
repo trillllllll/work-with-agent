@@ -1,3 +1,4 @@
+import { usePageContext } from '@/lib/assistant-context.js';
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError, type Topic } from '@/lib/api.js';
@@ -126,6 +127,7 @@ export function KnowledgePage({
   const [opened, setOpened] = useState('');
   const searchQuery = useSubmittedQuery(searchInput);
   const memoryQuery = useSubmittedQuery(memoryInput);
+  usePageContext(embedded ? 'embedded-knowledge' : 'knowledge', { scope: topicId ? { kind: 'topic', topicId } : { kind: 'inbox' }, section, pageState: { selectedId: opened, status: memoryStatus, query: section === 'memories' ? memoryQuery.submitted : searchQuery.submitted } });
   const knownTopics = [...topics, ...archivedTopics.filter((topic) => !topics.some((item) => item.id === topic.id))];
   const missing = !embedded && topicExplicit && topicId !== '' && topicsReady && !knownTopics.some((topic) => topic.id === topicId);
   const scope = scopeQuery(topicId);

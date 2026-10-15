@@ -1,3 +1,8 @@
+import { withChatAttachments } from '../application/chat-attachments.js';
+import { KnowledgeService } from '../application/knowledge.js';
+import { assertTopicAccess } from '../application/security.js';
+import { libraryFiltersSchema } from '../application/library/schema.js';
+import { readAppKnowledge, readPageState } from './app-knowledge.js';
 import { createHash } from 'node:crypto';
 import { DomainError } from '../domain/task.js';
 import { canonical } from '../application/commands.js';
@@ -101,7 +106,10 @@ async function queryTasks(args: Record<string, unknown>, context: StoredChatCont
     return task;
   }
   if (action !== 'list') throw new DomainError('INVALID_TOOL_ARGUMENTS', 'query_tasks.action 只能是 list、get、tags、trash 或 assignments', 400);
-  const scoped = scopeTopic(context, args.topicId);
+  const usePage = args.scope !== 'all' && args.usePageFilter !== false && args.topicId === undefined;
+  const selected = usePage ? context.selectedTaskIds : [];
+  args = { ...(usePage && !selected.length ? context.taskFilter ?? {} : {}), ...args };
+  const scoped = args.scope === 'all' || selected.length ? {} : scopeTopic(context, args.topicId);
   const listed = await tasks.list('topicId' in scoped ? scoped.topicId : undefined, {
     ...('inbox' in scoped ? { inbox: true } : {}),
     q: typeof args.q === 'string' ? args.q : undefined,
@@ -116,8 +124,8 @@ async function queryTasks(args: Record<string, unknown>, context: StoredChatCont
     includeDeleted: args.includeDeleted === true,
   });
   const limit = pageLimit(args.limit, 20, 100);
-  const fingerprint = createHash('sha256').update(canonical({ action, scoped, q: args.q ?? null, status: args.status ?? null, dueFrom: args.dueFrom ?? null, dueTo: args.dueTo ?? null, scheduledFrom: args.scheduledFrom ?? null, scheduledTo: args.scheduledTo ?? null, tagIds: args.tagIds ?? null, sort: args.sort ?? null, includeArchived: args.includeArchived === true, includeDeleted: args.includeDeleted === true, actor: ownerActor.id })).digest('hex');
-  const page = slicePage(listed, fingerprint, args.cursor, limit);
+  const fingerprint = createHash('sha256').update(canonical({ action, scoped, selected, q: args.q ?? null, status: args.status ?? null, dueFrom: args.dueFrom ?? null, dueTo: args.dueTo ?? null, scheduledFrom: args.scheduledFrom ?? null, scheduledTo: args.scheduledTo ?? null, tagIds: args.tagIds ?? null, sort: args.sort ?? null, includeArchived: args.includeArchived === true, includeDeleted: args.includeDeleted === true, actor: ownerActor.id })).digest('hex');
+  const page = slicePage(selected.length ? listed.filter((item) => selected.includes(item.id)) : listed, fingerprint, args.cursor, limit);
   return { ...page, coverage: { archived: args.includeArchived === true ? 'included' : 'excluded', deleted: args.includeDeleted === true ? 'included' : 'excluded' } };
 }
 
@@ -158,7 +166,7 @@ async function libraryRead(args: Record<string, unknown>) {
     return { revision, items: chunks.items, total: chunks.total, truncated: chunks.nextCursor !== null, nextCursor: chunks.nextCursor === null ? null : String(chunks.nextCursor) };
   }
   if (action === 'list' || action === 'search') {
-    const filters = { archived: libraryArchived(args.archived), ...(typeof args.folderId === 'string' ? { folderId: args.folderId } : {}) };
+    const filters = libraryFiltersSchema.parse({ ...(args.filters && typeof args.filters === 'object' ? args.filters : {}), ...(args.archived ? { archived: libraryArchived(args.archived) } : {}), ...(typeof args.folderId === 'string' && args.folderId ? { folderId: args.folderId } : {}) });
     const found = action === 'list' ? await library.materials(ownerActor, filters, cursor, limit) : await library.search(ownerActor, String(args.q ?? ''), filters, cursor, limit);
     return { items: found.items, total: found.total, hasMore: found.nextCursor !== null, nextCursor: found.nextCursor === null ? null : String(found.nextCursor) };
   }
@@ -178,7 +186,31 @@ function libraryArchived(value: unknown): 'exclude' | 'only' | 'include' | undef
 async function memoryRead(args: Record<string, unknown>, context: StoredChatContext) {
   const invalid = validateMemoryArguments({ ...args, action: args.action });
   if (invalid) throw new DomainError('INVALID_TOOL_ARGUMENTS', invalid, 400);
-  const topicId = args.target === 'inbox' || context.scope.kind !== 'topic' ? null : context.scope.topicId;
+  let topicId = typeof args.topicId === 'string' ? args.topicId : args.target === 'inbox' || context.scope.kind !== 'topic' ? null : context.scope.topicId;
+  if (args.action === 'read' && typeof args.memoryId === 'string') {
+    const row = await prisma.memory.findUnique({ where: { id: args.memoryId } });
+    if (!row) throw new DomainError('NOT_FOUND', '记忆不存在', 404);
+    assertTopicAccess(ownerActor, row.topicId);
+    const pageRevision = context.schemaVersion === 3 && context.section === 'memory' && context.pageState.selectedId === row.id ? context.pageState.selectedRevision : undefined;
+    const revision = args.revision ?? pageRevision ?? row.revision;
+    if (typeof revision !== 'number' || !Number.isInteger(revision) || revision < 1) throw new DomainError('INVALID_TOOL_ARGUMENTS', '记忆版本无效', 400);
+    const version = revision === row.revision ? row : await prisma.memoryVersion.findUnique({ where: { memoryId_revision: { memoryId: row.id, revision } } });
+    if (!version) throw new DomainError('NOT_FOUND', '记忆版本不存在', 404);
+    const chars = [...version.content];
+    return { success: true, data: { id: row.id, topicId: row.topicId, revision, kind: version.kind, title: version.title, content: chars.slice(0, 20000).join(''), importance: version.importance, labels: JSON.parse(version.labels), status: version.status, truncated: chars.length > 20000 } };
+  }
+  if (args.action === 'search') {
+    const page = context.schemaVersion === 3 && context.page === 'knowledge' ? context.pageState : null;
+    const status = args.status ?? page?.status ?? 'active';
+    if (!['active', 'history', 'all'].includes(String(status))) throw new DomainError('INVALID_TOOL_ARGUMENTS', '记忆状态无效', 400);
+    const q = String(args.q ?? page?.query ?? '');
+    if (args.scope === 'all') {
+      const rows = await prisma.memory.findMany({ where: { ...(status === 'active' ? { status: 'active' } : status === 'history' ? { status: { in: ['retired', 'superseded'] } } : {}), OR: [{ title: { contains: q } }, { content: { contains: q } }] }, orderBy: [{ importance: 'desc' }, { id: 'asc' }], take: 21 });
+      return { success: true, data: { matches: rows.slice(0, 20).map((row) => ({ id: row.id, title: row.title, revision: row.revision, topicId: row.topicId, content: [...row.content].slice(0, 2000).join(''), status: row.status })), truncated: rows.length > 20, coverage: '全部可访问清单，最多 20 条摘要；需要正文时按 ID 读取' } };
+    }
+    const found = await new KnowledgeService().memories(ownerActor, topicId, { status: status as 'active' | 'history' | 'all', q, limit: 20 });
+    return { success: true, data: { matches: found.items.map((row) => ({ id: row.id, title: row.title, revision: row.revision, status: row.status, content: [...row.content].slice(0, 2000).join('') })), total: found.total, truncated: found.hasMore } };
+  }
   return runAgentMemoryTool({ name: 'memory', arguments: args }, { topicId });
 }
 
@@ -193,6 +225,11 @@ export async function executeBuiltinTool(input: {
   try {
     if (!isBuiltinTool(input.name)) return CAPABILITY_UNAVAILABLE;
     const args = input.args;
+    if (input.name === 'read_app_knowledge') return { success: true, data: readAppKnowledge(args) };
+    if (input.name === 'read_page_state') {
+      if (Object.keys(args).length) throw new DomainError('INVALID_TOOL_ARGUMENTS', 'read_page_state 不接受额外参数', 400);
+      return { success: true, data: await readPageState(input.context) };
+    }
     if (input.name === 'get_time') {
       if (Object.keys(args).some((key) => key !== 'timeZone')) throw new DomainError('INVALID_TOOL_ARGUMENTS', 'get_time 只接受 timeZone', 400);
       return { success: true, data: getCurrentTime({ timeZone: typeof args.timeZone === 'string' ? args.timeZone : undefined }, input.context, input.clock) };
@@ -204,11 +241,26 @@ export async function executeBuiltinTool(input: {
       return { success: true, data: await queryTaskActivity(ownerActor, { taskId: String(args.taskId ?? ''), from: args.from === undefined ? undefined : args.from as string | null, to: typeof args.to === 'string' ? args.to : undefined, actors: Array.isArray(args.actors) ? args.actors as Array<'user' | 'agent' | 'unknown'> : undefined, fields: Array.isArray(args.fields) ? args.fields as never : undefined, cursor: typeof args.cursor === 'string' ? args.cursor : undefined, limit: args.limit === undefined ? undefined : Number(args.limit) }, input.clock) };
     }
     if (input.name === 'search_workspace') return { success: true, data: redact(await searchWorkspace(args, input.context)) };
-    if (input.name === 'library_read') return { success: true, data: redact(await libraryRead(args)) };
+    if (input.name === 'library_read') {
+      const revision = input.context.schemaVersion === 3 && args.materialId === input.context.materialId ? input.context.materialRevision : null;
+      const page = input.context.schemaVersion === 3 && input.context.page === 'library' && args.usePageFilter !== false ? input.context.pageState : null;
+      const pageFilters = page ? { ...(page.folderId ? { folderId: page.folderId } : {}), ...(page.tagIds?.length ? { tagIds: page.tagIds } : {}), ...(page.kind ? { kind: page.kind } : {}), ...(page.libraryView ? { view: page.libraryView } : {}), ...(page.taskTopicId ? { taskTopicId: page.taskTopicId } : {}), ...(page.linkedTaskId ? { taskId: page.linkedTaskId } : {}) } : {};
+      const effectiveArgs: Record<string, unknown> = { ...(page ? { filters: pageFilters, q: page.query || '' } : {}), ...args };
+      if (args.action === 'list' && args.q === undefined && page?.query) effectiveArgs.action = 'search';
+      const readArgs = revision && args.action === 'content' && args.revision === undefined ? { ...effectiveArgs, revision } : effectiveArgs;
+      const data = await libraryRead(readArgs);
+      return { success: true, data: redact({ ...data, ...(revision && args.action === 'read' ? { viewedRevision: revision, note: '正文使用本次发送时的 viewedRevision；revision 是资料当前最新版本。' } : {}) }) };
+    }
     if (input.name === 'memory_read') return redact(await memoryRead(args, input.context)) as BuiltinResult;
     if (input.name === 'conversation_search') {
       const invalid = validateConversationSearchArguments(args);
       if (invalid) throw new DomainError('INVALID_TOOL_ARGUMENTS', invalid, 400);
+      if (typeof args.messageId === 'string' && args.messageId) {
+        const row = await prisma.message.findUnique({ where: { id: args.messageId } });
+        if (!row || !['user', 'assistant'].includes(row.role)) throw new DomainError('NOT_FOUND', '消息不存在', 404);
+        const [expanded] = await withChatAttachments([row]);
+        return { success: true, data: redact({ conversationId: row.conversationId, messages: [{ messageId: row.id, role: row.role, content: expanded.content, createdAt: row.createdAt }], truncated: false }) };
+      }
       const topicId = input.context.scope.kind === 'topic' ? input.context.scope.topicId : null;
       return redact(await runAgentMemoryTool({ name: 'conversation_search', arguments: args }, { conversationId: input.run.conversationId, topicId })) as BuiltinResult;
     }

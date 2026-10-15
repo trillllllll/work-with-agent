@@ -1,4 +1,5 @@
 import './library.css';
+import { askAssistant, usePageContext } from '@/lib/assistant-context.js';
 import { useEffect, useLayoutEffect, useRef, useState, type DragEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -41,6 +42,7 @@ export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topi
   const [pageNotice, setPageNotice] = useState('');
   const params = librarySearchParams(snapshot);
   const searching = debounced.trim().length > 0;
+  usePageContext('library-list', { pageState: { query: debounced, folderId: snapshot.folderId, tagIds: snapshot.tagIds, kind: snapshot.kind, libraryView: snapshot.view, taskTopicId: snapshot.taskTopicId, linkedTaskId: snapshot.taskId } });
   const list = useQuery({
     queryKey: ['library', 'list', searching ? debounced : '', params.toString()],
     queryFn: ({ signal }) => searching
@@ -379,7 +381,7 @@ function Composer({ kind, onClose, onRefresh }: { kind: 'text' | 'link'; onClose
   };
   return <div className="library-dialog library-surface" role="dialog" aria-label={kind === 'link' ? '添加链接' : '添加文本'}>
     <section>
-      <h2 className="library-name">{kind === 'link' ? '链接' : '文本'}</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="library-name">{kind === 'link' ? '链接' : '文本'}</h2><button type="button" className="library-btn" onClick={() => askAssistant()}>AI 助手</button><button type="button" className="library-btn" onClick={() => askAssistant({ kind: 'draft', title: title || '新资料草稿', text: `${title}\n\n${body}`, unsaved: true })}>带上当前草稿</button></div>
       <input className="library-search mt-3 w-full" aria-label={kind === 'link' ? '链接标题' : '文本标题'} value={title} onChange={(event) => setTitle(event.target.value)} />
       <textarea className="library-search mt-2 h-24 w-full py-2" aria-label={kind === 'link' ? '链接地址' : '文本内容'} value={body} onChange={(event) => setBody(event.target.value)} />
       <div className="mt-3 flex gap-2">

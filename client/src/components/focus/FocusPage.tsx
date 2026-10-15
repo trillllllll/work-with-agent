@@ -1,3 +1,4 @@
+import { usePageContext } from '@/lib/assistant-context.js';
 import { Pause, Play, SkipForward, Square } from 'lucide-react';
 import { useLocalDate, useFocusSessions, useTasks } from '@/hooks/useTodo.js';
 import { addDays, formatTime, mondayOf } from '@/lib/schedule.js';
@@ -13,6 +14,7 @@ export function FocusPage() {
   const today = useLocalDate();
   const start = mondayOf(today);
   const days = Array.from({ length: 7 }, (_, index) => addDays(start, index));
+  usePageContext('focus', { pageState: { selectedId: state.taskId ?? '', status: state.phase, dateFrom: days[0], dateTo: days[6] } });
   const sessions = useFocusSessions({ from: days[0], to: days[6] });
   const tasks = useTasks({ status: 'all' });
   const titles = new Map((tasks.data ?? []).map((task) => [task.id, task.title]));

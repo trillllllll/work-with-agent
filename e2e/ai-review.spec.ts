@@ -100,7 +100,7 @@ test('确认安排修改后留在原页面，刷新仍是已完成卡片', async
   expect(page.url()).toBe(urlBeforeApprove);
   await expect(card.getByRole('button', { name: '确认修改', exact: true })).toHaveCount(0);
   await expect(card.getByRole('status')).toContainText('已修改');
-  const chatHeader = page.locator('header').filter({ has: page.getByRole('heading', { name: '全局聊天' }) });
+  const chatHeader = page.locator('header').filter({ has: page.getByRole('heading', { name: 'AI 助手' }) });
   await expect(page.getByText('安排方案已放在确认卡里。')).toBeVisible();
   await expect(page.getByText('正在输出…')).toHaveCount(0);
   await expect(chatHeader.getByText('可用', { exact: true })).toBeVisible();
@@ -111,7 +111,7 @@ test('确认安排修改后留在原页面，刷新仍是已完成卡片', async
   await expect(page.getByTestId('approval-card')).toHaveCount(1);
   await expect(page.getByTestId('approval-card')).toHaveAttribute('data-state', 'executed');
   await expect(page.getByText('正在输出…')).toHaveCount(0);
-  await expect(page.locator('header').filter({ has: page.getByRole('heading', { name: '全局聊天' }) }).getByText('可用', { exact: true })).toBeVisible();
+  await expect(page.locator('header').filter({ has: page.getByRole('heading', { name: 'AI 助手' }) }).getByText('可用', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const stored = await e2eDatabase.task.findUniqueOrThrow({ where: { id: task.id } });
   expect(stored).toMatchObject({ dueDate: '2026-10-16', scheduledStart: '2026-10-16T11:00', scheduledEnd: '2026-10-16T12:00' });

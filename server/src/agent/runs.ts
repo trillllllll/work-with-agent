@@ -1,3 +1,4 @@
+import { sourceReadTools, sourcesFromTool } from './assistant-sources.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { ChatEvent, ModelMessage, PageContext } from '../agent.js';
@@ -333,6 +334,21 @@ async function toolTurn(runId: string, token: string, contextService: ContextSer
     } else {
       result = await executeBuiltinTool({ name: call.function.name, args, context, run: { id: runId, leaseToken: token, conversationId: run.conversationId, assistantMessageId, sourceUserMessageId: run.sourceUserMessageId }, toolCallId: call.id });
     }
+    const sources = await sourcesFromTool(call.function.name, args, result);
+    if (sourceReadTools.has(call.function.name)) {
+      await prisma.$transaction(async (tx) => {
+        const owned = await tx.agentRun.findUnique({ where: { id: runId } });
+        if (!owned || owned.state !== 'running' || owned.leaseToken !== token || !owned.leaseExpiresAt || owned.leaseExpiresAt <= nowIso()) throw new DomainError('LEASE_LOST', '这次请求已经失去执行权', 409);
+        const conversation = await tx.conversation.findUnique({ where: { id: owned.conversationId }, select: { activeRunId: true } });
+        if (conversation?.activeRunId !== runId) throw new DomainError('RUN_SUPERSEDED', '已有更新的请求', 409);
+        const row = await tx.message.findUniqueOrThrow({ where: { id: assistantMessageId }, select: { partsJson: true } });
+        const partId = `sources:${call.id}`;
+        const parts = (JSON.parse(row.partsJson || '[]') as Array<{ type: string; id?: string; sources?: typeof sources }>).filter((part) => part.id !== partId);
+        parts.push({ type: 'assistant_sources', id: partId, sources });
+        await tx.message.update({ where: { id: assistantMessageId }, data: { partsJson: JSON.stringify(parts) } });
+        await appendRunEvent(tx, runId, 'sources', { type: 'sources', runId, conversationId: run.conversationId, messageId: assistantMessageId, sources: parts.flatMap((part) => part.sources ?? []) });
+      });
+    }
     const content = JSON.stringify({ toolName: call.function.name, toolCallId: call.id, assistantMessageId, ...publicResult(result) });
     await writeToolRow(runId, run.conversationId, assistantMessageId, call.id, content);
     messages.push({ role: 'tool', tool_call_id: call.id, content });
@@ -400,6 +416,15 @@ export async function startChat(input: { conversationId?: string; message: strin
   if (!message) throw new DomainError('INVALID_MESSAGE', '消息不能为空', 400);
   if (input.requestKey !== undefined && (input.requestKey.trim().length < 1 || input.requestKey.length > 200)) throw new DomainError('INVALID_REQUEST', 'requestKey 无效', 400);
   const requestKey = input.requestKey?.trim() || `ephemeral:${randomUUID()}`;
+  const requestedContext = contextFromRequest({ context: input.context, pageContext: input.pageContext });
+  // Hash the stable request, not the resolved data revisions, so a reconnect reuses
+  // the first snapshot even when the underlying objects have since changed.
+  const requestHash = createHash('sha256').update(canonical({ message, context: requestedContext })).digest('hex');
+  const accepted = await prisma.agentRun.findUnique({ where: { requestKey } });
+  if (accepted) {
+    if (accepted.requestHash !== requestHash || (input.conversationId && input.conversationId !== accepted.conversationId)) throw new DomainError('IDEMPOTENCY_CONFLICT', '相同请求标识不能提交不同内容', 409);
+    return accepted;
+  }
   let conversationId = input.conversationId;
   if (conversationId) {
     const existingConversation = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { id: true } });
@@ -408,7 +433,7 @@ export async function startChat(input: { conversationId?: string; message: strin
     const timestamp = nowIso();
     conversationId = (await prisma.conversation.create({ data: { createdAt: timestamp, updatedAt: timestamp } })).id;
   }
-  const stored = await validateScopeAndResolveIds(contextFromRequest({ context: input.context, pageContext: input.pageContext }));
+  const stored = await validateScopeAndResolveIds(requestedContext);
   if (stored.referencedApprovalId) {
     if (!input.conversationId) throw new DomainError('INVALID_REFERENCE', '这份方案不属于当前会话', 400);
     const referenced = await prisma.approval.findUnique({ where: { id: stored.referencedApprovalId }, select: { conversationId: true } });
@@ -416,7 +441,6 @@ export async function startChat(input: { conversationId?: string; message: strin
   }
   const topicId = stored.scope.kind === 'topic' ? stored.scope.topicId : null;
   await checkKnowledgeScope(prisma, ownerActor, stored.scope.kind === 'all' ? null : topicId);
-  const requestHash = createHash('sha256').update(canonical({ message, context: stored })).digest('hex');
   return prisma.$transaction(async (tx) => {
     const existing = await tx.agentRun.findUnique({ where: { requestKey } });
     if (existing) {
@@ -443,6 +467,8 @@ export async function startChat(input: { conversationId?: string; message: strin
         createdAt: timestamp, updatedAt: timestamp,
       },
     });
+    const { timeZoneSource, ...publicContext } = stored;
+    await appendRunEvent(tx, created.id, 'user_context', { type: 'user_context', runId: created.id, conversationId, messageId: user.id, context: publicContext });
     await tx.conversation.update({ where: { id: conversationId }, data: { activeRunId: created.id, updatedAt: timestamp } });
     await beginAutoMemoryTurn({ conversationId, userMessageId: user.id, topicId, createdAt: timestamp }, tx);
     return created;

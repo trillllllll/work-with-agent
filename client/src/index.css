@@ -2461,3 +2461,26 @@ textarea.task-title.line-through {
 .plan-calendar.plan-calendar-week {
   --plan-band-rail: 80px;
 }
+
+/* Keep the navigation usable when a 400px assistant shares a narrow desktop. */
+.assistant-compact-nav { padding-inline: 4px; overflow: hidden; }
+.assistant-compact-nav .sidebar-header { padding: 8px 0; justify-content: center; }
+.assistant-compact-nav .sidebar-header > :first-child,
+.assistant-compact-nav .sidebar-section,
+.assistant-compact-nav .sidebar-link > span { display: none; }
+.assistant-compact-nav .sidebar-link { justify-content: center; padding-inline: 8px; }
+.assistant-compact-nav .sidebar-nav { padding-inline: 0; }
+.assistant-compact-nav .sidebar-scroll { padding-inline: 0; }
+.assistant-compact-nav [aria-label="清单"] { overflow: hidden; }
+
+@media (max-width: 1023px) {
+  .app-backdrop[data-assistant-open] { height: var(--assistant-viewport-height, 100dvh); }
+  .assistant-workspace-open {
+    top: 0 !important; left: 0 !important; transform: none !important; translate: none !important;
+    width: 100vw !important; max-width: 100vw !important;
+    height: var(--assistant-viewport-height, 100dvh) !important;
+    max-height: var(--assistant-viewport-height, 100dvh) !important;
+    border-radius: 0;
+  }
+  [data-testid="ai-assistant"] textarea { font-size: 16px; }
+}

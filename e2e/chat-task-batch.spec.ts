@@ -24,7 +24,7 @@ async function openChat(page: Page) {
 }
 
 async function closeChat(page: Page) {
-  const close = page.getByRole('button', { name: '关闭聊天', exact: true });
+  const close = page.getByRole('button', { name: /^(关闭聊天|返回当前页面)$/ });
   if (await close.isVisible()) await close.click();
 }
 

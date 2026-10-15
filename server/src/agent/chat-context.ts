@@ -33,7 +33,33 @@ export const chatContextV2 = z.object({
 }).strict();
 
 export type ChatContextV2 = z.infer<typeof chatContextV2>;
-export type StoredChatContext = ChatContextV2 & { timeZoneSource: 'context' | 'default' };
+const short = z.string().max(300);
+export const chatAttachment = z.object({
+  id: short.min(1), kind: z.enum(['draft', 'selection']), title: short,
+  text: z.string().refine((value) => [...value].length <= 20000, '单个附件最多 20,000 字符'),
+  taskId: short.optional(), materialId: short.optional(), unsaved: z.boolean(),
+}).strict();
+export const chatContextV3 = chatContextV2.extend({
+  schemaVersion: z.literal(3),
+  label: short,
+  section: short.nullable(),
+  mode: z.enum(['follow', 'pinned']),
+  taskRevision: z.number().int().positive().nullable(),
+  materialRevision: z.number().int().positive().nullable(),
+  materialVersionMode: z.enum(['latest', 'historical']).optional(),
+  selectedMaterialIds: z.array(short.min(1)).max(100),
+  pageState: z.object({
+    layout: short.optional(), showCompleted: z.boolean().optional(),
+    dateFrom: short.optional(), dateTo: short.optional(), anchor: short.optional(),
+    query: short.optional(), folderId: short.optional(), tagIds: z.array(short).max(100).optional(),
+    kind: short.optional(), libraryView: short.optional(), taskTopicId: short.optional(), linkedTaskId: short.optional(),
+    selectedId: short.optional(), selectedRevision: z.number().int().positive().optional(), status: short.optional(),
+  }).strict(),
+  attachments: z.array(chatAttachment).max(20).refine((items) => items.reduce((sum, item) => sum + [...item.text].length, 0) <= 40000, '附件合计最多 40,000 字符'),
+}).strict();
+export type ChatContextV3 = z.infer<typeof chatContextV3>;
+export type ChatAttachment = z.infer<typeof chatAttachment>;
+export type StoredChatContext = (ChatContextV2 | ChatContextV3) & { timeZoneSource: 'context' | 'default' };
 
 export function scopeFromLegacy(page: string | null | undefined, topicId: string | null | undefined): ChatContextV2['scope'] {
   const name = page?.trim() || '';
@@ -47,7 +73,8 @@ export function scopeFromLegacy(page: string | null | undefined, topicId: string
 
 export function contextFromRequest(input: { context?: unknown; pageContext?: { topicId?: string | null; taskId?: string | null; page?: string | null } | null }): StoredChatContext {
   if (input.context && typeof input.context === 'object') {
-    const parsed = chatContextV2.safeParse({
+    const version = (input.context as { schemaVersion?: unknown }).schemaVersion;
+    const parsed = (version === 3 ? chatContextV3 : chatContextV2).safeParse({
       ...(input.context as object),
       selectedTaskIds: [...new Set(((input.context as { selectedTaskIds?: string[] }).selectedTaskIds ?? []))].slice(0, 100),
     });
@@ -78,14 +105,28 @@ export async function validateScopeAndResolveIds(context: StoredChatContext): Pr
     if (!topic) throw new DomainError('NOT_FOUND', '当前清单不存在', 404);
   }
   if (context.taskId) {
-    const task = await prisma.task.findUnique({ where: { id: context.taskId }, select: { id: true, topicId: true } });
+    const task = await prisma.task.findUnique({ where: { id: context.taskId }, select: { id: true, topicId: true, revision: true } });
     if (!task) throw new DomainError('NOT_FOUND', '当前任务不存在', 404);
     assertTopicAccess(ownerActor, task.topicId);
+    if (context.schemaVersion === 3) context = { ...context, taskRevision: task.revision };
   }
   if (context.materialId) {
-    const material = await prisma.material.findUnique({ where: { id: context.materialId }, select: { id: true, topicId: true } });
+    const material = await prisma.material.findUnique({ where: { id: context.materialId }, select: { id: true, topicId: true, revision: true } });
     if (!material) throw new DomainError('NOT_FOUND', '当前资料不存在', 404);
     assertTopicAccess(ownerActor, material.topicId);
+    if (context.schemaVersion === 3 && (context.materialRevision === null || context.materialVersionMode === 'latest')) context = { ...context, materialRevision: material.revision };
+  }
+  if (context.schemaVersion === 3) {
+    if (context.materialId && context.materialRevision) {
+      const version = await prisma.materialVersion.findUnique({ where: { materialId_revision: { materialId: context.materialId, revision: context.materialRevision } }, select: { id: true } });
+      if (!version) throw new DomainError('NOT_FOUND', '资料版本不存在', 404);
+    }
+    const ids = [...new Set(context.selectedMaterialIds)];
+    if (ids.length) {
+      const rows = await prisma.material.findMany({ where: { id: { in: ids } }, select: { id: true, topicId: true } });
+      if (rows.length !== ids.length) throw new DomainError('NOT_FOUND', '选中的资料不存在', 404);
+      rows.forEach((row) => assertTopicAccess(ownerActor, row.topicId));
+    }
   }
   const selected = [...new Set(context.selectedTaskIds)].slice(0, 100);
   if (selected.length) {

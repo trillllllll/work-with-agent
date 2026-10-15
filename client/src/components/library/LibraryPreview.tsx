@@ -1,3 +1,4 @@
+import { askAssistant, usePageContext } from '@/lib/assistant-context.js';
 import { useEffect, useRef, useState } from 'react';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -120,6 +121,7 @@ export function LibraryPreview({ target, onTargetChange, onClose, onOpenTask }: 
     } catch (error) { toast.error(error instanceof Error ? error.message : '下载失败'); }
   };
 
+  usePageContext('library', { label: material ? `资料 · ${material.title}` : '资料库', materialId: id, materialRevision: viewed || null, materialVersionMode: target.revision == null ? 'latest' : 'historical' });
   if (!material || !extraction) return <aside className="library-panel library-preview" data-testid="library-preview" aria-label="资料预览"><p className="library-meta p-3">{detail.error instanceof Error ? detail.error.message : '正在读取资料'}</p></aside>;
   const status = extraction.status;
   return <aside className="library-panel library-preview library-sheet" data-testid="library-preview" aria-label="资料预览">
@@ -128,6 +130,8 @@ export function LibraryPreview({ target, onTargetChange, onClose, onOpenTask }: 
         <h2 className="library-name truncate" title={material.title}>{material.title}</h2>
         {viewed > 0 && <p className="library-meta" data-testid="library-preview-version">版本 {viewed}</p>}
       </div>
+      <button type="button" className="library-btn" onClick={() => askAssistant()}>AI 助手</button>
+      <button type="button" className="library-btn" onMouseDown={(event) => event.preventDefault()} onClick={() => { const selection = window.getSelection(); const node = selection?.anchorNode?.parentElement; if (selection && !selection.isCollapsed && node?.closest('[data-testid="library-preview"]')) askAssistant({ kind: 'selection', title: material.title, text: selection.toString(), materialId: id, unsaved: false }); else toast.error('请先选中资料正文'); }}>询问选中文字</button>
       <button type="button" className="library-btn" onClick={onClose}>关闭</button>
     </div>
     <div className="library-preview-tabs" role="tablist" aria-label="预览内容">

@@ -1,3 +1,4 @@
+import { usePageContext } from '@/lib/assistant-context.js';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { DndContext, DragOverlay, PointerSensor, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent, type DragMoveEvent, type DragStartEvent, type DragOverEvent } from '@dnd-kit/core';
 import type { Tag, Task, Topic } from '@/lib/api.js';
@@ -161,6 +162,7 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
   const [saving, setSaving] = useState(false);
   const saveLock = useRef(false);
   const range = rangeOf(mode, anchor);
+  usePageContext('plan', { label: `${mode === 'day' ? '日' : mode === 'week' ? '周' : '月'}规划 · ${range[0]}–${range[1]}`, taskFilter: { status: showCompleted ? 'all' : 'open', scheduledFrom: range[0], scheduledTo: range[1] }, pageState: { layout: mode, dateFrom: range[0], dateTo: range[1], anchor, showCompleted } });
   const planned = useTasks({ status: showCompleted ? 'all' : 'open', scheduledFrom: range[0], scheduledTo: range[1] });
   const trayQuery = useTasks({ status: 'open', sort: 'date' });
   const tasks = (planned.data ?? []).map((task) => preview?.task.id === task.id ? { ...task, ...preview.patch } : task);

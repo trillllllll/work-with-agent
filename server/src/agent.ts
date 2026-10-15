@@ -1,3 +1,5 @@
+import type { ChatContextV2, ChatContextV3 } from './agent/chat-context.js';
+import type { AssistantSource } from './agent/assistant-sources.js';
 import { createHash } from 'node:crypto';
 import { ToolService, type ToolResult } from './application/tool-registry.js';
 import type { ToolCall } from './application/workspace.js';
@@ -20,7 +22,9 @@ import { approvalView } from './agent/views.js';
 
 export type PageContext = { topicId?: string | null; taskId?: string | null; page?: string | null };
 export type ChatEvent = {
-  type: 'message_start' | 'message_delta' | 'message_end' | 'tool_call' | 'tool_result' | 'approval_required' | 'approval_resolved' | 'run_state' | 'external_prompt' | 'error' | 'done';
+  context?: ChatContextV2 | ChatContextV3;
+  sources?: AssistantSource[];
+  type: 'user_context' | 'sources' | 'message_start' | 'message_delta' | 'message_end' | 'tool_call' | 'tool_result' | 'approval_required' | 'approval_resolved' | 'run_state' | 'external_prompt' | 'error' | 'done';
   conversationId?: string;
   messageId?: string;
   delta?: string;
@@ -247,7 +251,9 @@ export class AgentService {
   async repreview(approvalId: string, input: { requestKey?: string } = {}) { return repreviewApproval(approvalId, input); }
   async activeRun(conversationId: string) { return activeRunView(conversationId); }
   async prepareUndo(approvalId: string) { return undoPreview(approvalId); }
-  async messages(conversationId: string) { if (!(await this.conversations.get(conversationId))) throw Object.assign(new Error('会话不存在'), { status: 404 }); return this.conversations.listMessages(conversationId); }
+  async messages(conversationId: string) { if (!(await this.conversations.get(conversationId))) throw Object.assign(new Error('会话不存在'), { status: 404 }); const [messages, runs] = await Promise.all([this.conversations.listMessages(conversationId), prisma.agentRun.findMany({ where: { conversationId }, select: { sourceUserMessageId: true, contextJson: true } })]);
+    const contexts = new Map(runs.map((run) => [run.sourceUserMessageId, (() => { const { timeZoneSource, ...context } = JSON.parse(run.contextJson); return context; })()]));
+    return messages.map((message) => ({ ...message, ...(message.role === 'user' ? { context: contexts.get(message.id) ?? null } : {}), sources: (JSON.parse(message.partsJson || '[]') as Array<{ type: string; sources?: AssistantSource[] }>).filter((part) => part.type === 'assistant_sources').flatMap((part) => part.sources ?? []) })); }
   async approvalList(status?: string) { if (status && !['pending', 'approved', 'rejected', 'executed', 'failed'].includes(status)) throw Object.assign(new Error('审核状态无效'), { status: 400 }); return this.approvals.list(status as any); }
 }
 

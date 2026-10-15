@@ -58,7 +58,7 @@ test('打开聊天后未保存的标题还在', async ({ page, request }) => {
   await detail.getByLabel('任务标题', { exact: true }).fill('还没保存的标题');
   await page.getByRole('button', { name: '打开聊天', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '保存未完成的编辑？' })).toHaveCount(0);
-  await expect(detail).toBeHidden();
+  await expect(detail).toBeVisible();
   await expect(page.getByRole('button', { name: '关闭聊天', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '关闭聊天', exact: true }).click();
   await expect(detail.getByLabel('任务标题', { exact: true })).toHaveValue('还没保存的标题');

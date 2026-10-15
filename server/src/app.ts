@@ -1,3 +1,4 @@
+import { resolveAssistantSource } from './agent/assistant-sources.js';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
 import { z } from 'zod';
@@ -214,6 +215,7 @@ app.post('/api/chat', schema(chatBody), async (req, res) => {
   }
 });
 
+app.get('/api/v1/assistant/sources/:kind/:id', async (req, res, next) => { try { send(res, await resolveAssistantSource(String(req.params.kind), String(req.params.id), req.query.revision === undefined ? undefined : Number(req.query.revision))); } catch (error) { next(error); } });
 app.get('/api/conversations/:id/messages', async (req, res, next) => { try { send(res, await agent.messages(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/conversations/:id/active-run', async (req, res, next) => { try { send(res, await agent.activeRun(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/agent/approvals', async (req, res, next) => { try { send(res, await agent.approvalList(typeof req.query.status === 'string' ? req.query.status : undefined)); } catch (error) { next(error); } });

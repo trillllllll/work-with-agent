@@ -1,3 +1,4 @@
+import { attachmentError, type ChatAttachment, type ChatContextV3 } from '@/lib/assistant-context.js';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { applyApprovalEvent, applyMessageEvent, pairToolMessages, parseExternalParts, toolPreview, type Approval, type ChatMessage, type SseEvent, type ToolActivityStatus, type ToolResult } from '../chat.js';
@@ -18,6 +19,7 @@ import { invalidateTodo } from './useTodo.js';
 export type { View };
 
 type UseChatOptions = {
+  pageContext?: ChatContextV3;
   selectedTopicId: string;
   taskId?: string;
   view: View;
@@ -28,7 +30,7 @@ type UseChatOptions = {
   onError: (message: string) => void;
 };
 
-export function useChat({ selectedTopicId, taskId = '', view, filters, sort, includeArchived = false, today = '', onError }: UseChatOptions) {
+export function useChat({ pageContext, selectedTopicId, taskId = '', view, filters, sort, includeArchived = false, today = '', onError }: UseChatOptions) {
   const queryClient = useQueryClient();
   const onErrorRef = useRef(onError);
   const newConversationRef = useRef('');
@@ -46,6 +48,29 @@ export function useChat({ selectedTopicId, taskId = '', view, filters, sort, inc
   const [pausedRun, setPausedRun] = useState<{ id: string; reason: string } | null>(null);
   const [referencedApproval, setReferencedApproval] = useState<{ id: string; title: string } | null>(null);
   const library = useLibrarySnapshot();
+  const [pinnedContext, setPinnedContext] = useState<ChatContextV3 | null>(null);
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const activeContext = pinnedContext ?? pageContext;
+  const context = activeContext ? { ...activeContext, mode: pinnedContext ? 'pinned' as const : 'follow' as const, attachments } : undefined;
+  const contextRef = useRef(context);
+  contextRef.current = context;
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
+  const addAttachment = (item: ChatAttachment) => {
+    const next = [...attachmentsRef.current, item];
+    const error = attachmentError(next);
+    if (error) { onErrorRef.current(error); return; }
+    attachmentsRef.current = next;
+    setAttachments(next);
+  };
+  useEffect(() => {
+    const handle = (event: Event) => {
+      const item = (event as CustomEvent<{ attachment?: ChatAttachment }>).detail?.attachment;
+      if (item) addAttachment(item);
+    };
+    window.addEventListener('wwa-open-assistant', handle);
+    return () => window.removeEventListener('wwa-open-assistant', handle);
+  }, []);
   const approvalsRef = useRef(approvals);
   const conversationRef = useRef(conversationId);
   const busyRef = useRef(busy);
@@ -77,7 +102,7 @@ export function useChat({ selectedTopicId, taskId = '', view, filters, sort, inc
         else setPausedRun(null);
       }
       const nextApprovals = (listed as Parameters<typeof parseApproval>[0][]).map(parseApproval).filter((item) => item.conversationId === id);
-      setMessages(pairToolMessages(history.map((message: ChatMessage) => ({ id: message.id, role: message.role, content: message.content, status: message.status, toolCalls: message.toolCalls, toolCallId: message.toolCallId, parts: parseExternalParts(message.partsJson) })), nextApprovals));
+      setMessages(pairToolMessages(history.map((message: ChatMessage) => ({ id: message.id, role: message.role, content: message.content, status: message.status, toolCalls: message.toolCalls, toolCallId: message.toolCallId, parts: parseExternalParts(message.partsJson), context: message.context, sources: message.sources })), nextApprovals));
       setApprovals(nextApprovals);
       setUnknownApprovalIds((current) => current.filter((approvalId) => {
         const item = nextApprovals.find((approval) => approval.approvalId === approvalId);
@@ -261,7 +286,9 @@ export function useChat({ selectedTopicId, taskId = '', view, filters, sort, inc
     const reference = referencedApproval;
     if (!message || busy) return;
     onErrorRef.current(''); setInterrupted(false); setBusy(true); setPausedRun(null);
-    setMessages((current) => [...current, { role: 'user', content: message }]);
+    const requestContext = structuredClone(contextRef.current ?? buildChatContext({ page: view, topicId: selectedTopicId, taskId, materialId: view === 'library' ? library.preview?.materialId ?? null : null, filters, sort, includeArchived, today }));
+    requestContext.referencedApprovalId = reference?.id ?? null;
+    setMessages((current) => [...current, { role: 'user', content: message, context: requestContext }]);
     let accepted = false;
     let receivedDone = false;
     let receivedError = false;
@@ -276,17 +303,18 @@ export function useChat({ selectedTopicId, taskId = '', view, filters, sort, inc
       if (serverEvent.type === 'done' || serverEvent.type === 'run_state' && (serverEvent.state === 'completed' || serverEvent.state === 'waiting_approval' || serverEvent.state === 'paused' || serverEvent.state === 'failed' || serverEvent.state === 'cancelled')) receivedDone = true;
     };
     try {
-      const materialId = view === 'library' ? library.preview?.materialId ?? null : null;
       await streamChat({
         conversationId: conversationId || undefined,
         message,
         requestKey: crypto.randomUUID(),
-        context: buildChatContext({ page: view, topicId: selectedTopicId, taskId, materialId, filters, sort, includeArchived, today, referencedApprovalId: reference?.id ?? null }),
+        context: requestContext,
       }, consume, { onAccepted: () => { accepted = true; } });
       if (!receivedDone && !receivedError && runId) await trackRun(runId, lastSeq);
       if (!receivedDone && !receivedError && !runId) setInterrupted(true);
       if (accepted && !receivedError) {
         setInput((current) => current.trim() === message ? '' : current);
+        const sentIds = new Set(requestContext.schemaVersion === 3 ? requestContext.attachments.map((item) => item.id) : []);
+        setAttachments((current) => current.filter((item) => !sentIds.has(item.id)));
         setReferencedApproval((current) => current?.id === reference?.id ? null : current);
       }
     } catch (reason) {
@@ -390,7 +418,7 @@ export function useChat({ selectedTopicId, taskId = '', view, filters, sort, inc
     window.dispatchEvent(new CustomEvent('wwa-locate-approval', { detail: { approvalId: next.approvalId } }));
   };
   const refreshApprovals = () => { void reloadConversation(conversationRef.current, true); };
-  const retry = () => { const last = [...messages].reverse().find((item) => item.role === 'user'); if (last) { setInput(last.content); setInterrupted(false); } };
+  const retry = () => { const last = [...messages].reverse().find((item) => item.role === 'user'); if (last) { setInput(last.content); if (last.context?.schemaVersion === 3) { setPinnedContext(structuredClone(last.context)); setAttachments(structuredClone(last.context.attachments)); } setInterrupted(false); } };
   const startNew = () => {
     if (busy) return;
     localStorage.removeItem('agent-studio.conversationId');
@@ -402,9 +430,11 @@ export function useChat({ selectedTopicId, taskId = '', view, filters, sort, inc
     setUnknownApprovalIds([]);
     setInterrupted(false);
     setInput('');
+    setPinnedContext(null);
+    setAttachments([]);
     setReferencedApproval(null);
     setPausedRun(null);
   };
 
-  return { conversationId, selectedTopicId, messages, approvals, busy, interrupted, input, setInput, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference: () => setReferencedApproval(null), showRepreview };
+  return { context, pinned: Boolean(pinnedContext), togglePin: () => setPinnedContext((current) => current ? null : structuredClone(pageContext ?? null)), attachments, removeAttachment: (id: string) => setAttachments((current) => current.filter((item) => item.id !== id)), conversationId, selectedTopicId, messages, approvals, busy, interrupted, input, setInput, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference: () => setReferencedApproval(null), showRepreview };
 }

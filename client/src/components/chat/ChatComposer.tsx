@@ -14,6 +14,7 @@ type ChatComposerProps = {
 
 export function ChatComposer({ input, busy, reference, onChange, onSend, onCancelReference }: ChatComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => { const focus = () => textareaRef.current?.focus(); window.addEventListener('wwa-focus-assistant', focus); return () => window.removeEventListener('wwa-focus-assistant', focus); }, []);
   useEffect(() => { if (reference) textareaRef.current?.focus(); }, [reference?.id]);
   const resize = () => {
     const el = textareaRef.current;
@@ -38,6 +39,7 @@ export function ChatComposer({ input, busy, reference, onChange, onSend, onCance
       <div className="flex items-end gap-2">
         <Textarea
           ref={textareaRef}
+          aria-label="向 AI 提问"
           value={input}
           rows={1}
           placeholder="例如：创建任务：整理 API 文档"

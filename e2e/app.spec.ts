@@ -157,7 +157,7 @@ test.describe('Agent 工作室 MVP', () => {
     test.skip(Boolean(isMobile), '聊天栏桌面布局在桌面视口验收');
     await page.goto('/#/board');
 
-    const chatHeading = page.getByRole('heading', { name: '全局聊天' });
+    const chatHeading = page.getByRole('heading', { name: 'AI 助手' });
     const boardSection = page.getByRole('main');
     await expect(chatHeading).toBeHidden();
     await page.getByRole('button', { name: '打开聊天', exact: true }).click();
@@ -196,8 +196,8 @@ test.describe('Agent 工作室 MVP', () => {
 
     await page.getByRole('button', { name: '打开聊天', exact: true }).click();
     await expect(page.getByRole('dialog', { name: '保存未完成的编辑？' })).toHaveCount(0);
-    await expect(page.getByRole('heading', { name: '全局聊天' })).toBeVisible();
-    await expect(detail).toBeHidden();
+    await expect(page.getByRole('heading', { name: 'AI 助手' })).toBeVisible();
+    await expect(detail).toBeVisible();
     await page.getByRole('button', { name: '关闭聊天' }).click();
     await expect(detail.getByLabel('详情', { exact: true })).toHaveAttribute('data-value', '检查器草稿');
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
@@ -207,21 +207,21 @@ test.describe('Agent 工作室 MVP', () => {
     test.skip(!isMobile, '聊天栏移动布局在移动视口验收');
     await page.goto('/#/chat');
 
-    const chatHeading = page.getByRole('heading', { name: '全局聊天' });
+    const chatHeading = page.getByRole('heading', { name: 'AI 助手' });
     await expect(chatHeading).toBeVisible();
-    await expect(page.getByRole('button', { name: '关闭聊天' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '返回当前页面' })).toBeVisible();
 
-    await page.getByRole('button', { name: '关闭聊天' }).click();
+    await page.getByRole('button', { name: '返回当前页面' }).click();
     await expect(page).toHaveURL(/#\/(?:inbox)?$/);
     await expect(chatHeading).toBeHidden();
     await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
     await expect(page.getByRole('button', { name: '收集箱', exact: true })).toHaveAttribute('aria-current', 'page');
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
 
-    await page.getByRole('button', { name: '打开聊天', exact: true }).click();
-    await expect(page).toHaveURL(/#\/chat$/);
+    await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
+    await expect(page).toHaveURL(/#\/(?:inbox)?$/);
     await expect(chatHeading).toBeVisible();
-    await expect(page.getByRole('button', { name: '关闭聊天' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '返回当前页面' })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
   });
 
