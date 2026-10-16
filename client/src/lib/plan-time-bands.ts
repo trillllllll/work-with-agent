@@ -50,15 +50,14 @@ export function timeBandLabel(band: Pick<PlanTimeBand, 'name' | 'startMinute' | 
   return `${band.name} ${timeBandRange(band)}`;
 }
 
-/** 日视图侧栏 112；窄屏与周视图 80。周视图任务区至少 120。dayBorder 是日期列左边线，算进最小宽度后任务区才够 120。 */
-export const planTimeline = { hourGutter: 48, weekMin: 760, railDay: 112, railCompact: 80, taskMin: 120, dayBorder: 1 } as const;
+/** 日视图保留标签侧栏（112 / 窄屏 80）；周视图仅铺底色，七列共享完整宽度。 */
+export const planTimeline = { hourGutter: 48, weekMin: 760, railDay: 112, railCompact: 80 } as const;
 export const timeBandNameHeight = 20;
 export const timeBandBothHeight = 36;
 
-export function planTimelineMinWidth(dayCount: number, anyBands: boolean) {
+export function planTimelineMinWidth(dayCount: number) {
   if (dayCount !== 7) return undefined;
-  if (!anyBands) return planTimeline.weekMin;
-  return planTimeline.hourGutter + dayCount * (planTimeline.railCompact + planTimeline.taskMin + planTimeline.dayBorder);
+  return planTimeline.weekMin;
 }
 
 export type TimeBandLabelMode = 'hidden' | 'name' | 'both';

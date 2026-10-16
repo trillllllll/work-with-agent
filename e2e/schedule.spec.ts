@@ -23,6 +23,8 @@ async function openDetails(page: Page, title: string) {
 
 test.beforeEach(async ({ page }) => {
   await resetE2eDatabase();
+  await page.clock.setFixedTime(new Date(`${today()}T12:00:00`));
+  await page.addInitScript(() => { if (localStorage.getItem('todo.plan.showCompleted') === null) localStorage.setItem('todo.plan.showCompleted', 'true'); });
   await page.addInitScript(() => { (window as unknown as { __REACT_GRAB_DISABLED__?: boolean }).__REACT_GRAB_DISABLED__ = true; });
 });
 test.afterAll(async () => { await e2eDatabase.$disconnect(); });
@@ -34,6 +36,7 @@ test('全天和跨午夜任务在日周月都可找到，时间点不占用时�
   const range = await create({ title: '跨午夜事项', scheduledStart: `${previous}T23:00`, scheduledEnd: `${day}T01:00` });
   const point = await create({ title: '时间点事项', scheduledStart: `${day}T15:00` });
   await page.goto('/#/plan');
+  await page.getByRole('button', { name: '日', exact: true }).click();
   await expect(page.locator(`[data-drop-id="allday:${day}"]`)).toContainText(allDay.title);
   const continuation = page.locator(`[data-task-id="${range.id}"]`);
   await expect(continuation).toHaveCount(1);
@@ -58,6 +61,7 @@ test('全天任务超过两条时收起，展开后刷新和周视图保持', as
     { id: 'allday-3', title: '全天丙', dueDate: day, sortOrder: 2 },
   ] });
   await page.goto('/#/plan');
+  await page.getByRole('button', { name: '日', exact: true }).click();
   const zone = page.locator(`[data-drop-id="allday:${day}"]`);
   await expect(zone).toContainText('全天甲');
   await expect(zone).toContainText('全天乙');
@@ -103,7 +107,8 @@ test('详情安排显式保存，取消不写入，时长按钮改变结束时�
   const day = today();
   const item = (await (await request.post(`${api}/api/tasks`, { data: { title: '编辑安排', scheduledStart: `${day}T14:00`, scheduledEnd: `${day}T15:00`, estimatedMinutes: 60 } })).json()).data;
   const read = async () => (await (await request.get(`${api}/api/tasks/${item.id}`)).json()).data;
-  await page.goto('/#/plan'); await openDetails(page, '编辑安排');
+  await page.goto('/#/plan');
+  await page.getByRole('button', { name: '日', exact: true }).click(); await openDetails(page, '编辑安排');
   await page.getByRole('button', { name: '2小时', exact: true }).click();
   expect((await read()).scheduledEnd).toBe(`${day}T15:00`);
   await page.getByRole('button', { name: '取消', exact: true }).click();
@@ -126,6 +131,7 @@ test('详情安排显式保存，取消不写入，时长按钮改变结束时�
 test('空白处创建支持输入法和取消，完成后保留且隐藏选择可恢复', async ({ page, request }) => {
   const day = today();
   await page.goto('/#/plan');
+  await page.getByRole('button', { name: '日', exact: true }).click();
   const slot = page.getByRole('button', { name: `在${day} 15:00添加任务`, exact: true });
   await slot.click();
   let dialog = page.getByRole('dialog', { name: '创建任务', exact: true });
@@ -154,6 +160,8 @@ test('安排任务超过50条可搜索、筛选并打开，窄屏周视图没有
   // Seed directly in the isolated E2E database to avoid 55 command round-trips.
   await e2eDatabase.task.createMany({ data: Array.from({ length: 55 }, (_, index) => ({ id: `tray-${index}`, title: `待安排${index}` })) });
   await page.goto('/#/plan');
+  await page.getByRole('button', { name: '日', exact: true }).click();
+  await page.getByRole('button', { name: /^待安排/ }).click();
   await expect(page.getByTestId('tray-item')).toHaveCount(55);
   await page.getByLabel('搜索安排任务').fill('待安排54');
   await expect(page.getByTestId('tray-item')).toHaveCount(1);
@@ -179,7 +187,9 @@ test('拖动安排、缩放、拖回取消和撤销保持一致', async ({ page,
   const item = (await (await request.post(`${api}/api/tasks`, { data: { title: '拖动完整闭环', estimatedMinutes: 90 } })).json()).data;
   const read = async () => (await (await request.get(`${api}/api/tasks/${item.id}`)).json()).data;
   await page.goto('/#/plan');
+  await page.getByRole('button', { name: '日', exact: true }).click();
   const slot = page.locator(`[data-drop-id="slot:${day}:14:00"]`);
+  await page.getByRole('button', { name: /^待安排/ }).click();
   await drag(page, page.getByTestId('tray-item'), slot);
   await expect.poll(async () => (await read()).scheduledStart).toBe(`${day}T14:00`);
   const block = page.locator(`[data-task-id="${item.id}"]`);
@@ -203,7 +213,8 @@ test('打开弹层期间外部更新会触发版本冲突，不覆盖安排或�
   const day = today();
   const item = (await (await request.post(`${api}/api/tasks`, { data: { title: '外部并发安排', scheduledStart: `${day}T14:00`, scheduledEnd: `${day}T15:00`, estimatedMinutes: 60 } })).json()).data;
   const read = async () => (await (await request.get(`${api}/api/tasks/${item.id}`)).json()).data;
-  await page.goto('/#/plan'); await openDetails(page, '外部并发安排');
+  await page.goto('/#/plan');
+  await page.getByRole('button', { name: '日', exact: true }).click(); await openDetails(page, '外部并发安排');
   await page.getByRole('button', { name: '2小时', exact: true }).click();
   await request.patch(`${api}/api/tasks/${item.id}`, { data: { scheduledStart: `${day}T17:00`, scheduledEnd: `${day}T18:00` } });
   await expect(page.getByRole('button', { name: '安排时间', exact: true })).toContainText('17:00');
@@ -232,11 +243,13 @@ test('拖动保存失败后恢复原安排，不留下预览块', async ({ page,
   const day = today();
   const item = (await (await request.post(`${api}/api/tasks`, { data: { title: '保存失败安排', scheduledStart: `${day}T14:00`, scheduledEnd: `${day}T15:00` } })).json()).data;
   await page.goto('/#/plan');
+  await page.getByRole('button', { name: '日', exact: true }).click();
   await page.route(`**/api/tasks/${item.id}`, async (route) => {
     if (route.request().method() === 'PATCH') return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ data: null, code: 'TEST_FAILURE', error: '安排保存失败' }) });
     return route.continue();
   });
   const block = page.locator(`[data-task-id="${item.id}"]`);
+  await page.getByRole('button', { name: /^待安排/ }).click();
   await drag(page, block.getByRole('button', { name: '打开任务：保存失败安排', exact: true }), page.locator('[data-drop-id="unschedule"]'));
   await expect(page.getByText('安排保存失败', { exact: true })).toBeVisible();
   await expect(block).toHaveCount(1);

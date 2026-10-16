@@ -26,6 +26,7 @@ test.use({ timezoneId: 'Asia/Shanghai' });
 
 test.beforeEach(async ({ page }) => {
   await resetE2eDatabase();
+  await page.addInitScript(() => { if (localStorage.getItem('todo.plan.showCompleted') === null) localStorage.setItem('todo.plan.showCompleted', 'true'); });
   await page.clock.setFixedTime(new Date(fixedTime));
   await page.addInitScript(() => {
     (window as unknown as { __REACT_GRAB_DISABLED__?: boolean }).__REACT_GRAB_DISABLED__ = true;
@@ -41,6 +42,7 @@ async function saveBands(request: { put: (url: string, options: { data: unknown 
 async function openPlan(page: Page) {
   await page.goto('/#/plan');
   await expect(page.getByRole('heading', { name: '规划', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '日', exact: true }).click();
 }
 
 async function switchDark(page: Page, project: string) {
@@ -365,7 +367,7 @@ test('结束 24:00 可以保存，并且下边界不超过一天的高度', asyn
   await expect(dialog.getByRole('textbox', { name: '结束时间', exact: true })).toHaveValue('24:00');
 });
 
-const weekMinWithRails = 48 + 7 * (80 + 120 + 1);
+const weekMinWidth = 760;
 
 function band(id: string, name: string, startMinute: number, endMinute: number, color: string) {
   return { id: `00000000-0000-4000-8000-${id}`, name, startMinute, endMinute, weekdays: [1, 2, 3, 4, 5], color };
@@ -499,11 +501,13 @@ test('标签留在侧栏，任务文字与标签不相交', async ({ page, reque
   };
   const checkWeek = async (width: number) => {
     await show('week', width);
-    expect(await page.getByTestId('calendar-horizontal-scroll').evaluate((node) => node.scrollWidth)).toBeGreaterThanOrEqual(weekMinWithRails);
+    expect(await page.getByTestId('calendar-horizontal-scroll').evaluate((node) => node.scrollWidth)).toBeGreaterThanOrEqual(weekMinWidth);
     for (const date of ['2026-10-12', '2026-10-13', '2026-10-16']) {
       const column = page.locator(`[data-testid="time-band-day"][data-date="${date}"]`);
-      const metrics = await expectRail(column, 80);
-      expect(metrics.laneWidth).toBeGreaterThanOrEqual(120);
+      const metrics = await expectRail(column, 0);
+      expect(metrics.laneWidth).toBeGreaterThanOrEqual(100);
+      await expect(column.getByTestId('time-band-layer')).toHaveCSS('opacity', '0.28');
+      await expect(column.getByTestId('time-band-label').first()).not.toBeVisible();
     }
     const saturday = page.locator('[data-testid="time-band-day"][data-date="2026-10-17"]');
     await expect(saturday).toHaveAttribute('data-band-rail', 'false');

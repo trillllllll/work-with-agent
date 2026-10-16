@@ -186,10 +186,9 @@ describe('时间段背景', () => {
   });
 
   it('周视图有时间段时为侧栏和任务区预留宽度', () => {
-    expect(planTimeline).toEqual({ hourGutter: 48, weekMin: 760, railDay: 112, railCompact: 80, taskMin: 120, dayBorder: 1 });
-    expect(planTimelineMinWidth(7, false)).toBe(760);
-    expect(planTimelineMinWidth(7, true)).toBe(48 + 7 * (80 + 120 + 1));
-    expect(planTimelineMinWidth(1, true)).toBeUndefined();
+    expect(planTimeline).toEqual({ hourGutter: 48, weekMin: 760, railDay: 112, railCompact: 80 });
+    expect(planTimelineMinWidth(7)).toBe(760);
+    expect(planTimelineMinWidth(1)).toBeUndefined();
     const css = readFileSync(fileURLToPath(new URL('../index.css', import.meta.url)), 'utf8');
     expect(css).toContain(`--plan-band-rail: ${planTimeline.railDay}px`);
     expect(css).toContain(`--plan-band-rail: ${planTimeline.railCompact}px`);

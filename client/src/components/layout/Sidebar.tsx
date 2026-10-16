@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Inbox, Plus, type LucideIcon } from 'lucide-react';
+import { ChevronDown, Ellipsis, Inbox, Plus, type LucideIcon } from 'lucide-react';
 import type { Topic, View } from '@/lib/api.js';
 import { navigationItems } from '@/lib/navigation-items.js';
 import { TopicList } from '@/components/topics/TopicList.js';
@@ -43,12 +43,13 @@ function SidebarSection({ label, action }: { label: string; action?: ReactNode }
 
 export function Sidebar({ compact, route, page, topics, topicsLoading, selectedTopicId, onNavigate, onSelectTopic, onEditTopic, onNewTopic }: SidebarProps) {
   const current = (view: View) => route === view;
+  const planning = page === 'plan';
   if (compact) return <aside className="app-sidebar assistant-compact-nav" style={{ gridColumn: 1, gridRow: '1 / 3' }}>
     <div className="flex justify-center py-3"><ThemeToggle /></div>
     <nav aria-label="主导航" className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto">{navigationItems.map(({ view, label, icon: Icon }) => <button key={view} type="button" title={label} aria-label={label} aria-current={route === view ? 'page' : undefined} className="grid size-10 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => onNavigate(view)}><Icon className="size-4" /></button>)}</nav>
   </aside>;
   return (
-    <aside className={compact ? "app-sidebar assistant-compact-nav" : "app-sidebar"} style={{ gridColumn: 1, gridRow: "1 / 3" }}>
+    <aside className={`app-sidebar${planning ? ' planning-sidebar' : ''}`} style={{ gridColumn: 1, gridRow: "1 / 3" }}>
       <div className="sidebar-header">
         <BrandMark />
         <ThemeToggle />
@@ -62,17 +63,18 @@ export function Sidebar({ compact, route, page, topics, topicsLoading, selectedT
           <SidebarLink active={page === 'inbox'} label="收集箱" icon={Inbox} onClick={() => onNavigate('inbox')} />
           <TopicList variant="sidebar" topics={topics} loading={topicsLoading} selectedTopicId={page === 'board' ? selectedTopicId : ''} onSelect={onSelectTopic} onEdit={onEditTopic} />
         </nav>
-        <nav aria-label="整理" className="sidebar-nav sidebar-nav-follow">
+        {!planning && <nav aria-label="整理" className="sidebar-nav sidebar-nav-follow">
           {links(['tags', 'archived']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}
-        </nav>
-        <SidebarSection label="工作" />
+        </nav>}
+        {planning ? <details className="mt-5"><summary className="sidebar-link text-muted-foreground"><span className="flex-1">工作</span><ChevronDown className="size-3.5" /></summary><nav aria-label="工作" className="sidebar-nav">{links(['connections', 'proposals', 'knowledge', 'library', 'runs', 'reviews']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}</nav></details> : <><SidebarSection label="工作" />
         <nav aria-label="工作" className="sidebar-nav">
           {links(['connections', 'proposals', 'knowledge', 'library', 'runs', 'reviews']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}
-        </nav>
+        </nav></>}
       </div>
       <div className="sidebar-footer">
         <nav aria-label="工具" className="sidebar-nav">
-          {links(['trash', 'changes', 'settings']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}
+          {planning && <details><summary className="sidebar-link"><Ellipsis className="size-4" /><span className="flex-1">更多</span><ChevronDown className="size-3.5" /></summary>{links(['tags', 'archived', 'trash', 'changes']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}</details>}
+          {links(planning ? ['settings'] : ['trash', 'changes', 'settings']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}
         </nav>
       </div>
     </aside>

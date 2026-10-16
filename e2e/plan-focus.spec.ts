@@ -25,6 +25,7 @@ async function jsonData(response: { ok: () => boolean; text: () => Promise<strin
 async function drag(page: Page, from: Locator, to: Locator) {
   await from.scrollIntoViewIfNeeded();
   await to.scrollIntoViewIfNeeded();
+  await to.evaluate((node) => { const scroller = node.closest('[data-testid="timeline-scroll"]'); if (scroller) { const target = node.getBoundingClientRect(); const box = scroller.getBoundingClientRect(); scroller.scrollTop += target.top + target.height / 2 - box.top - box.height / 2; } });
   const source = await from.boundingBox();
   const target = await to.boundingBox();
   if (!source || !target) throw new Error('拖动区域没有布局');
@@ -42,6 +43,8 @@ async function drag(page: Page, from: Locator, to: Locator) {
 
 test.beforeEach(async ({ page }) => {
   await resetE2eDatabase();
+  await page.clock.setFixedTime(new Date(`${localKey()}T12:00:00`));
+  await page.addInitScript(() => { if (localStorage.getItem('todo.plan.showCompleted') === null) localStorage.setItem('todo.plan.showCompleted', 'true'); });
   await page.addInitScript(() => {
     (window as unknown as { __REACT_GRAB_DISABLED__?: boolean }).__REACT_GRAB_DISABLED__ = true;
     if (typeof Notification !== 'undefined') Object.defineProperty(Notification, 'permission', { configurable: true, get: () => 'denied' });
@@ -53,6 +56,7 @@ test('规划页保持路由，并按公式摆放 14:00 时间块', async ({ page
   const today = localKey();
   const created = await jsonData(await request.post(`${apiUrl}/api/tasks`, { data: { title: '下午安排', estimatedMinutes: 90, dueDate: today, scheduledStart: `${today}T14:00`, scheduledEnd: `${today}T15:30` } })) as { id: string };
   await page.goto('/#/plan');
+  await page.getByRole('button', { name: '日', exact: true }).click();
   await expect(page).toHaveURL(/#\/plan$/);
   await expect(page.getByRole('heading', { name: '规划', exact: true })).toBeVisible();
   const block = page.locator(`[data-testid="task-block"][data-task-id="${created.id}"]`);
@@ -77,6 +81,8 @@ test('托盘拖到 16:00 得到一小时并可以撤销', async ({ page, request
   const today = localKey();
   const created = await jsonData(await request.post(`${apiUrl}/api/tasks`, { data: { title: '待安排事项' } })) as { id: string };
   await page.goto('/#/plan');
+  await page.getByRole('button', { name: '日', exact: true }).click();
+  await page.getByRole('button', { name: /^待安排/ }).click();
   const tray = page.getByTestId('tray-item').filter({ hasText: '待安排事项' });
   await expect(tray).toBeVisible();
   await drag(page, tray, page.locator(`[data-drop-id="slot:${today}:16:00"]`));
@@ -94,6 +100,7 @@ test('月视图拖到另一天保留时分', async ({ page, request }) => {
   const next = tomorrow.slice(0, 7) === today.slice(0, 7) ? tomorrow : addDays(today, -1);
   const created = await jsonData(await request.post(`${apiUrl}/api/tasks`, { data: { title: '跨日安排', dueDate: today, scheduledStart: `${today}T14:00`, scheduledEnd: `${today}T15:30` } })) as { id: string };
   await page.goto('/#/plan');
+  await page.getByRole('button', { name: '日', exact: true }).click();
   await page.getByRole('button', { name: '月', exact: true }).click();
   const source = page.locator(`[data-drop-id="cell:${today}"]`).getByText('跨日安排');
   await drag(page, source, page.locator(`[data-drop-id="cell:${next}"]`));
@@ -139,6 +146,7 @@ test('暗色模式下规划页和专注页使用主题色', async ({ page }, tes
   await page.getByRole('menuitem', { name: '深色' }).click();
   await expect(page.locator('html')).toHaveClass(/dark/);
   if (testInfo.project.name === 'mobile') await page.goto('/#/plan');
+  await page.getByRole('button', { name: '日', exact: true }).click();
   const darkTone = await page.getByRole('heading', { name: '规划' }).evaluate((node) => getComputedStyle(node).color);
   const darkChannels = darkTone.match(/\d+/g)!.map(Number);
   expect((darkChannels[0] + darkChannels[1] + darkChannels[2]) / 3).toBeGreaterThan(160);
@@ -153,6 +161,7 @@ test('暗色模式下规划页和专注页使用主题色', async ({ page }, tes
 test('375px 周视图可横滑，专注芯片在底栏上方', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 800 });
   await page.goto('/#/plan');
+  await page.getByRole('button', { name: '日', exact: true }).click();
   const tabs = page.getByRole('navigation', { name: '主导航' });
   await expect(tabs.getByRole('button')).toHaveText(['收集箱', '今天', '四象限', '清单', '更多']);
   await page.getByRole('button', { name: '周', exact: true }).click();
