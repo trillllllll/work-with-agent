@@ -79,6 +79,24 @@ test('task and AI coexist, manual draft attachment, selection and mobile return 
   await expect(page.getByRole('textbox', { name: '详情', exact: true })).toContainText('已保存的正文');
 });
 
+test('a valid 300-character task title can chat without clipping the attached draft', async ({ page, request }) => {
+  const title = '长'.repeat(300);
+  const description = '正文必须保持完整';
+  const created = await request.post(api + '/api/tasks', { data: { title, description, topicId: null } });
+  expect(created.ok()).toBe(true);
+  const task = (await created.json()).data;
+  await page.goto('/');
+  await page.getByRole('button', { name: title, exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '任务详情', exact: true }).last()).toBeVisible();
+  await page.getByRole('button', { name: '带上当前草稿', exact: true }).click();
+  const sent = await ask(page, 'AI验收长标题');
+  expect(sent.context.taskId).toBe(task.id);
+  expect(sent.context.label).toBe(('任务 · ' + title).slice(0, 300));
+  expect(sent.context.attachments[0].title).toBe(title);
+  expect(sent.context.attachments[0].text).toBe(title + '\n\n' + description);
+  expect((await (await request.get(api + '/api/tasks/' + task.id)).json()).data.title).toBe(title);
+});
+
 test('desktop widths and theme remain usable with current content visible', async ({ page, isMobile }) => {
   test.skip(isMobile, 'desktop layout sizes');
   await page.goto('/');

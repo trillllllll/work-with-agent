@@ -1,4 +1,4 @@
-import { attachmentError, type ChatAttachment, type ChatContextV3 } from '@/lib/assistant-context.js';
+import { contextLabel, attachmentError, type ChatAttachment, type ChatContextV3 } from '@/lib/assistant-context.js';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { applyApprovalEvent, applyMessageEvent, pairToolMessages, parseExternalParts, toolPreview, type Approval, type ChatMessage, type SseEvent, type ToolActivityStatus, type ToolResult } from '../chat.js';
@@ -51,7 +51,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
   const [pinnedContext, setPinnedContext] = useState<ChatContextV3 | null>(null);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const activeContext = pinnedContext ?? pageContext;
-  const context = activeContext ? { ...activeContext, mode: pinnedContext ? 'pinned' as const : 'follow' as const, attachments } : undefined;
+  const context = activeContext ? { ...activeContext, label: contextLabel(activeContext.label), mode: pinnedContext ? 'pinned' as const : 'follow' as const, attachments } : undefined;
   const contextRef = useRef(context);
   contextRef.current = context;
   const attachmentsRef = useRef(attachments);

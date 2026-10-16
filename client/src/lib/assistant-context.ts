@@ -19,6 +19,11 @@ export function usePageContext(page: string, value: Partial<ChatContextV3>) {
 export function usePageContexts() {
   return useSyncExternalStore((listener) => { listeners.add(listener); return () => { listeners.delete(listener); }; }, () => snapshot);
 }
+/** Only the display label is shortened; keep object titles and attachment text intact. */
+export function contextLabel(label: string) {
+  const clipped = label.slice(0, 300);
+  return /[\uD800-\uDBFF]$/.test(clipped) ? clipped.slice(0, -1) : clipped;
+}
 export function attachmentError(items: ChatAttachment[]) {
   if (items.length > 20) return '每条消息最多添加 20 个附件';
   if (items.some((item) => [...item.text].length > 20000)) return '单个附件最多 20,000 字符，请缩小选择范围';

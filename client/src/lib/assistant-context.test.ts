@@ -1,10 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { attachmentError, suggestions, type ChatAttachment } from './assistant-context.js';
+import { contextLabel, attachmentError, suggestions, type ChatAttachment } from './assistant-context.js';
 import { buildChatContext } from './chat-context.js';
 import { applyMessageEvent } from '../chat.js';
 describe('assistant context', () => {
   it('does not inherit a stale topic on workspace pages', () => {
     for (const page of ['settings', 'connections', 'runs', 'reviews', 'plan']) expect(buildChatContext({ page, topicId: 'stale', taskId: '' }).scope).toEqual({ kind: 'all' });
+  });
+  it('bounds display labels for task, material and list names without splitting emoji', () => {
+    for (const label of ['任务 · ' + '长'.repeat(300), '资料 · ' + '长'.repeat(300), '清单'.repeat(400), '来源'.repeat(200)]) {
+      expect(contextLabel(label)).toBe(label.slice(0, 300));
+      expect(contextLabel(label).length).toBeLessThanOrEqual(300);
+    }
+    const label = 'a'.repeat(299) + '😀' + '原文';
+    expect(contextLabel(label)).toBe('a'.repeat(299));
+    expect(label).toBe('a'.repeat(299) + '😀原文');
+    expect(contextLabel('a'.repeat(298) + '😀')).toBe('a'.repeat(298) + '😀');
+    expect(contextLabel('普通标题')).toBe('普通标题');
   });
   it('counts Unicode code points and never silently clips attached text', () => {
     const item: ChatAttachment = { id: '1', kind: 'draft', title: '草稿', text: '😀'.repeat(20000), unsaved: true };
