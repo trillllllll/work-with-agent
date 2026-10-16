@@ -1,7 +1,7 @@
 import { askAssistant, usePageContext } from '@/lib/assistant-context.js';
 import { createContext, forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type KeyboardEvent, type MutableRefObject, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, CalendarDays, Check, ChevronRight, Clock, Flag, Hash, Timer, X } from 'lucide-react';
+import { AlertTriangle, CalendarDays, Check, ChevronRight, Clock, Flag, FolderKanban, Hash, Timer, X } from 'lucide-react';
 import { ApiError, priorities, type Status, type Tag, type Task, type TaskPriority } from '@/lib/api.js';
 import { isCompositionKey, sameField, taskDraft, queryKeys, type TaskDraft } from '@/lib/todo.js';
 import { scheduleLabel } from '@/lib/schedule.js';
@@ -455,12 +455,23 @@ export function TaskExpandBody({ fill = false }: { fill?: boolean }) {
     <TaskMaterials taskId={edit.taskId} topicId={edit.task?.topicId ?? null} description={edit.draft.description} readonly={edit.readonly} saveText={edit.saveText} onOpenLinkedTask={edit.openLinkedTask} />
     <div className="mt-3 shrink-0"><SubtasksSection /></div>
     <div className="task-info-rows mt-auto shrink-0">
+      <TopicRow />
       <ScheduleControl />
       <EstimateControl />
       <FlagRow />
       <TagPicker />
       <StartFocusButton />
     </div>
+  </div>;
+}
+
+function TopicRow() {
+  const edit = useEdit();
+  const name = edit.task.topic?.name ?? '收集箱';
+  return <div data-testid="task-topic-row" className="task-info-row">
+    <FolderKanban className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+    <span className="w-20 shrink-0 text-left text-muted-foreground">所属清单</span>
+    <span className="min-w-0 flex-1 truncate text-right"><span className="task-place-chip">{name}</span></span>
   </div>;
 }
 

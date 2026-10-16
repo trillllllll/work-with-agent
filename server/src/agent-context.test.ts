@@ -43,5 +43,23 @@ describe('builtin run context', () => {
     expect(seen).toContain('get_time');
     expect(seen).not.toContain('execute_shell');
     expect(nearby.split('\n').filter((line) => line.startsWith('- ')).length).toBeLessThanOrEqual(8);
+    const topicName = String(topic.body.data.name);
+    expect(seen).toContain(`当前清单：${topicName} ${topicId}`);
+    expect(seen.split('【选中对象】')[1]?.split('【已确认记忆】')[0] ?? '').toContain(`清单 ${topicName} ${topicId}`);
+    expect(nearby).toContain(`清单 ${topicName} ${topicId}`);
+  });
+
+  it('labels selected and nearby tasks with their topic, falling back to 收集箱', async () => {
+    const loose = (await api.post('/api/tasks').send({ title: '无清单上下文样本' })).body.data;
+    let seen = '';
+    const agent = new AgentService({
+      stream: async function* (messages: ModelMessage[]) {
+        seen = String(messages[0]?.content ?? '');
+        yield { text: '知道了。' };
+      },
+    } as never);
+    await agent.chat({ message: '这个任务在哪', pageContext: { page: 'inbox', taskId: loose.id } });
+    expect(seen).toContain('当前清单：收集箱');
+    expect(seen.split('【选中对象】')[1]?.split('【已确认记忆】')[0] ?? '').toContain('清单 收集箱');
   });
 });

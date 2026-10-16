@@ -61,6 +61,23 @@ test('信息行显示当前值', async ({ page, request }) => {
   await expect(detail.getByRole('button', { name: '预计时长', exact: true })).toContainText('设置');
 });
 
+test('详情显示所属清单，无清单时显示收集箱', async ({ page, request }) => {
+  const topic = (await (await request.post(`${apiUrl}/api/topics`, { data: { name: '发布准备' } })).json()).data as { id: string };
+  const inTopic = (await (await request.post(`${apiUrl}/api/tasks`, { data: { title: '清单内任务', topicId: topic.id } })).json()).data as { id: string };
+  const loose = (await (await request.post(`${apiUrl}/api/tasks`, { data: { title: '无清单任务' } })).json()).data as { id: string };
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await page.goto('/#/board');
+  await page.reload();
+  await page.getByTestId(`task-row-${inTopic.id}`).getByRole('button', { name: '清单内任务', exact: true }).click();
+  const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
+  await expect(detail.getByTestId('task-topic-row')).toContainText('所属清单');
+  await expect(detail.getByTestId('task-topic-row').locator('.task-place-chip')).toHaveText('发布准备');
+  await detail.getByRole('button', { name: '关闭任务详情', exact: true }).click();
+  await page.goto('/#/inbox');
+  await page.getByTestId(`task-row-${loose.id}`).getByRole('button', { name: '无清单任务', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '任务详情', exact: true }).getByTestId('task-topic-row').locator('.task-place-chip')).toHaveText('收集箱');
+});
+
 test('选中文本浮出格式条，加粗后立即保持格式', async ({ page, request }) => {
   const created = await request.post(`${apiUrl}/api/tasks`, { data: { title: '写一句' } });
   expect(created.ok(), await created.text()).toBe(true);

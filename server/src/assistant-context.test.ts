@@ -36,6 +36,12 @@ describe('global assistant context', () => {
     expect((filtered.data as any).items.map((row: any) => row.id)).toEqual([a.id]);
     const global = await execute('query_tasks', { action: 'list', scope: 'all', q: c.title }, context({ selectedTaskIds: [a.id], taskFilter: { q: 'not-c' } }));
     expect((global.data as any).items.map((row: any) => row.id)).toEqual([c.id]);
+    expect((global.data as any).items[0].topic).toMatchObject({ id: topic.id, name: topic.name });
+    expect((picked.data as any).items[0].topic).toBeNull();
+    const renamed = `assistant-renamed-${Date.now()}`;
+    await api.patch(`/api/topics/${topic.id}`).send({ name: renamed });
+    const reread = await execute('query_tasks', { action: 'list', scope: 'all', q: c.title }, context({ selectedTaskIds: [a.id], taskFilter: { q: 'not-c' } }));
+    expect((reread.data as any).items[0].topic).toMatchObject({ id: topic.id, name: renamed });
     const next = await validateScopeAndResolveIds(contextFromRequest({ context: context({ taskId: a.id, taskRevision: 999 }) }));
     expect(next.schemaVersion === 3 && next.taskRevision).toBe(a.revision);
   });
