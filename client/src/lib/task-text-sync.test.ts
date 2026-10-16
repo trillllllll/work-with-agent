@@ -125,11 +125,11 @@ describe('TaskTextSyncCoordinator', () => {
     coordinator.dispose();
   });
 
-  it('输入后 799ms 网络发送次数为 0；800ms 且本地事务完成后恰好发送一次', async () => {
+  it('输入后 1999ms 网络发送次数为 0；2000ms 且本地事务完成后恰好发送一次', async () => {
     const { coordinator, clock, transport, open, edit } = await setup();
     await open();
     edit('hello');
-    clock.advance(799);
+    clock.advance(1999);
     await flush();
     expect(transport.sent).toHaveLength(0);
 
@@ -145,14 +145,93 @@ describe('TaskTextSyncCoordinator', () => {
     const { coordinator, clock, transport, open, edit } = await setup();
     await open();
     edit('A');
-    clock.advance(500);
+    clock.advance(1500);
     edit('AB');
-    clock.advance(500);
+    clock.advance(1999);
     await flush();
     expect(transport.sent).toHaveLength(0);
-    clock.advance(300);
+    clock.advance(1);
     expect(await until(() => transport.sent.length === 1)).toBe(true);
     expect(JSON.parse(transport.sent[0].bodyJson)).toEqual({ expectedRevision: 1, description: 'AB' });
+    coordinator.dispose();
+  });
+
+  it('saveNow（标题失焦）取消防抖立即发送', async () => {
+    const { coordinator, clock, transport, open, edit } = await setup();
+    await open();
+    edit('blur save');
+    clock.advance(100);
+    coordinator.saveNow('task-1');
+    await flush();
+    expect(await until(() => transport.pending.length === 1)).toBe(true);
+    // 已取消的防抖计时不能再触发第二次发送。
+    clock.advance(10_000);
+    await flush();
+    expect(transport.sent).toHaveLength(1);
+    expect(JSON.parse(transport.sent[0].bodyJson)).toEqual({ expectedRevision: 1, description: 'blur save' });
+    coordinator.dispose();
+  });
+
+  it('持续输入无停顿时，最长等待 10 秒落一次检查点', async () => {
+    const { coordinator, clock, transport, open } = await setup();
+    await open();
+    // 每 1500ms 输入一次，任何两次之间都不到 2000ms 防抖阈值；
+    // 纯防抖下不应有任何发送，请求只能来自 10s 检查点。
+    for (let index = 0; index < 7; index += 1) {
+      coordinator.onUserEdit('task-1', { title: '标题', description: `draft-${index}` });
+      clock.advance(1500);
+    }
+    expect(await until(() => transport.pending.length === 1)).toBe(true);
+    expect(JSON.parse(transport.sent[0].bodyJson)).toEqual({ expectedRevision: 1, description: 'draft-6' });
+    clock.advance(10_000);
+    await flush();
+    expect(transport.sent).toHaveLength(1);
+    coordinator.dispose();
+  });
+
+  it('检查点保存被确认后重开等待窗口，不会每次 ACK 都立刻再发', async () => {
+    const { coordinator, clock, transport, open } = await setup();
+    await open();
+    for (let index = 0; index < 7; index += 1) {
+      coordinator.onUserEdit('task-1', { title: '标题', description: `draft-${index}` });
+      clock.advance(1500);
+    }
+    expect(await until(() => transport.pending.length === 1)).toBe(true);
+    transport.succeed(0, { revision: 2, title: '标题', description: 'draft-6' });
+    await flush();
+    // ACK 后继续输入：等待窗口从 ACK 时刻重开，仍按防抖节奏保存。
+    coordinator.onUserEdit('task-1', { title: '标题', description: 'more' });
+    clock.advance(1999);
+    await flush();
+    expect(transport.sent).toHaveLength(1);
+    clock.advance(1);
+    expect(await until(() => transport.sent.length === 2)).toBe(true);
+    coordinator.dispose();
+  });
+
+  it('输入高频路径的本地持久化按 250ms 节流，关键路径先冲刷', async () => {
+    const realStore = new TaskDraftStore(new IDBFactory());
+    let puts = 0;
+    const counted = Object.assign(Object.create(Object.getPrototypeOf(realStore)), realStore, {
+      put: (record: TaskTextDraftV1) => { puts += 1; return realStore.put(record); },
+    });
+    const { coordinator, clock, transport, open } = await setup({ store: counted });
+    await open();
+    await flush();
+    const baseline = puts;
+    for (let index = 0; index < 5; index += 1) coordinator.onUserEdit('task-1', { title: '标题', description: `d-${index}` });
+    await flush();
+    expect(puts).toBe(baseline);
+    clock.advance(250);
+    await flush();
+    expect(puts).toBe(baseline + 1);
+    const persisted = await realStore.load(scopeKey, 'task-1');
+    expect(persisted[0]?.draft.description).toBe('d-4');
+    // 节流挂起时进入关键路径（发请求）会先冲刷，再带 outbox 写一次。
+    coordinator.onUserEdit('task-1', { title: '标题', description: 'd-5' });
+    coordinator.saveNow('task-1');
+    expect(await until(() => transport.pending.length === 1)).toBe(true);
+    expect(puts).toBeGreaterThanOrEqual(baseline + 3);
     coordinator.dispose();
   });
 
@@ -165,7 +244,7 @@ describe('TaskTextSyncCoordinator', () => {
     const { coordinator, clock, transport, open } = await setup({ store: slowStore });
     await open();
     coordinator.onUserEdit('task-1', { title: '标题', description: 'hello' });
-    clock.advance(800);
+    clock.advance(2000);
     await flush();
     expect(transport.sent).toHaveLength(0);
     expect(coordinator.status('task-1')).toBe('local-pending');
@@ -180,7 +259,7 @@ describe('TaskTextSyncCoordinator', () => {
     const { coordinator, clock, transport, open } = await setup({ store: failingStore });
     await open();
     coordinator.onUserEdit('task-1', { title: '标题', description: 'hello' });
-    clock.advance(800);
+    clock.advance(2000);
     await flush();
     expect(transport.sent).toHaveLength(0);
     expect(coordinator.status('task-1')).toBe('storage-error');
@@ -193,7 +272,7 @@ describe('TaskTextSyncCoordinator', () => {
     const { coordinator, clock, transport, open, edit } = await setup();
     await open();
     edit('hello');
-    clock.advance(800);
+    clock.advance(2000);
     expect(await until(() => transport.pending.length === 1)).toBe(true);
     transport.fail(0, { kind: 'network' });
     await flush();
@@ -208,14 +287,14 @@ describe('TaskTextSyncCoordinator', () => {
     const { coordinator, clock, transport, open, edit } = await setup();
     await open();
     edit('A');
-    clock.advance(800);
+    clock.advance(2000);
     expect(await until(() => transport.pending.length === 1)).toBe(true);
     edit('AB');
     transport.succeed(0, { revision: 2, title: '标题', description: 'A' });
     await flush();
     expect(coordinator.getRecord('task-1')?.draft.description).toBe('AB');
     expect(coordinator.getRecord('task-1')?.base.description).toBe('A');
-    clock.advance(800);
+    clock.advance(2000);
     expect(await until(() => transport.sent.length === 2)).toBe(true);
     expect(JSON.parse(transport.sent[1].bodyJson)).toEqual({ expectedRevision: 2, description: 'AB' });
     coordinator.dispose();
@@ -247,7 +326,7 @@ describe('TaskTextSyncCoordinator', () => {
     const { coordinator, clock, transport, open, edit } = await setup();
     await open();
     edit('old');
-    clock.advance(800);
+    clock.advance(2000);
     expect(await until(() => transport.pending.length === 1)).toBe(true);
     await coordinator.openTask('task-2', { revision: 1, title: '乙', description: '' });
     coordinator.onUserEdit('task-2', { title: '乙', description: 'new' });
@@ -269,7 +348,7 @@ describe('TaskTextSyncCoordinator', () => {
     const { coordinator, store, clock, transport, open, edit } = await setup();
     await open();
     edit('offline draft');
-    clock.advance(800);
+    clock.advance(2000);
     expect(await until(() => transport.pending.length === 1)).toBe(true);
     transport.fail(0, { kind: 'network' });
     await flush();
@@ -286,7 +365,7 @@ describe('TaskTextSyncCoordinator', () => {
     });
     await open();
     edit('local text');
-    clock.advance(800);
+    clock.advance(2000);
     expect(await until(() => transport.pending.length === 1)).toBe(true);
     transport.fail(0, { kind: 'rejected', status: 409, code: 'VERSION_CONFLICT', body: {} });
     await flush();
@@ -326,7 +405,7 @@ describe('TaskTextSyncCoordinator', () => {
     const { coordinator, setAuthed, clock, transport, open, edit } = await setup();
     await open();
     edit('secret');
-    clock.advance(800);
+    clock.advance(2000);
     expect(await until(() => transport.pending.length === 1)).toBe(true);
     transport.fail(0, { kind: 'rejected', status: 401, code: 'AUTH_REQUIRED', body: {} });
     await flush();
@@ -346,7 +425,7 @@ describe('TaskTextSyncCoordinator', () => {
     const { coordinator, clock, transport, store, open, edit } = await setup();
     await open();
     edit('gone');
-    clock.advance(800);
+    clock.advance(2000);
     expect(await until(() => transport.pending.length === 1)).toBe(true);
     transport.fail(0, { kind: 'rejected', status: 404, code: 'NOT_FOUND', body: {} });
     await flush();
@@ -413,7 +492,7 @@ describe('TaskTextSyncCoordinator', () => {
     const harness = await setup();
     await harness.open();
     harness.edit('replay me');
-    harness.clock.advance(800);
+    harness.clock.advance(2000);
     expect(await until(() => harness.transport.pending.length === 1)).toBe(true);
     const original = harness.transport.sent[0];
     harness.coordinator.dispose();
@@ -452,7 +531,7 @@ describe('TaskTextSyncCoordinator', () => {
     await flush();
     expect(transport.sent).toHaveLength(0);
     coordinator.setComposing('task-1', false);
-    clock.advance(800);
+    clock.advance(2000);
     expect(await until(() => transport.pending.length === 1)).toBe(true);
     transport.succeed(0, { revision: 2, title: '标题', description: '组词中' });
     await flush();

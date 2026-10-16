@@ -8,6 +8,22 @@ import { useCommandPreview, type CommandPreview } from '@/components/dialogs/Com
 export function invalidateTodo(client: QueryClient) {
   return Promise.all(['tasks', 'task', 'topics', 'topic', 'tags', 'trash', 'changes', 'task-topic-history'].map((key) => client.invalidateQueries({ queryKey: [key] })));
 }
+const TASK_SCOPE = ['tasks', 'task', 'changes'] as const;
+const FULL_SCOPE = ['tasks', 'task', 'topics', 'topic', 'tags', 'trash', 'changes', 'task-topic-history'] as const;
+/** 写入成功后的失效范围：常规任务编辑只刷任务相关查询，结构性变更再带上对应实体。 */
+function invalidationScope(path: string, body: Record<string, unknown>): readonly string[] {
+  const structural = body.topicId !== undefined || body.parentId !== undefined;
+  if (path.startsWith('/api/tasks/reorder')) return TASK_SCOPE;
+  if (/^\/api\/tasks\/[^/]+$/.test(path)) {
+    if (structural) return [...TASK_SCOPE, 'topics', 'topic', 'task-topic-history'];
+    return TASK_SCOPE;
+  }
+  if (path.startsWith('/api/tasks')) return [...TASK_SCOPE, 'trash'];
+  if (path.startsWith('/api/topics')) return ['topics', 'topic', 'tasks', 'task', 'task-topic-history', 'changes', 'trash'];
+  if (path.startsWith('/api/tags')) return ['tags', 'tasks', 'task', 'changes'];
+  if (path.startsWith('/api/trash')) return ['trash', 'tasks', 'task', 'changes'];
+  return FULL_SCOPE;
+}
 export function useTasks(params: Record<string, string>, enabled = true) {
   const query = new URLSearchParams(params).toString();
   return useQuery<Task[]>({ queryKey: queryKeys.taskList(query), queryFn: ({ signal }) => api(`/api/tasks?${query}`, { signal }), enabled });
@@ -79,7 +95,7 @@ export function useTodoActions() {
           client.setQueryData<Task>(queryKeys.task(task.id), merge);
           client.setQueriesData<Task[]>({ queryKey: queryKeys.tasks }, (old) => Array.isArray(old) ? old.map((item) => item.id === task.id ? merge(item) : item) : old);
         }
-        await invalidateTodo(client);
+        await Promise.all(invalidationScope(path, record).map((key) => client.invalidateQueries({ queryKey: [key] })));
         return result;
       });
       response.meta?.warnings?.forEach((warning) => toast.info(warning));

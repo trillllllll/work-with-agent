@@ -52,6 +52,8 @@ type EditContext = {
   setAcknowledge: (value: boolean) => void;
   updateText: (patch: Partial<Pick<TaskDraft, 'title' | 'description'>>) => void;
   onTitleKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  /** 标题失焦时立即冲刷文字保存，取代等待防抖。 */
+  saveTextNow: () => void;
   taskId: string;
   task: Task;
   openDescription: MutableRefObject<() => void>;
@@ -312,7 +314,7 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
   const textConflicts = textRecord?.conflicts ?? {};
   const value: EditContext = {
     draft: fullDraft, base: fullBase, readonly, tags, conflicts: [...(editing?.conflicts ?? []), ...Object.keys(textConflicts)], acknowledge: acknowledgeConflict, setAcknowledge: setAcknowledgeConflict,
-    updateText, onComposeStart, onComposeEnd, onTitleKeyDown: (event) => {
+    updateText, onComposeStart, onComposeEnd, saveTextNow: () => coordinator?.saveNow(id), onTitleKeyDown: (event) => {
       if (event.key !== 'Enter' || isCompositionKey(event.nativeEvent)) return;
       event.preventDefault();
       const title = event.currentTarget;
@@ -419,7 +421,7 @@ export function TaskTitleField({ className }: { className?: string }) {
     edit.updateText({ title: `${node.value.slice(0, start)}${flat}${node.value.slice(end)}` });
     const caret = start + flat.length;
     requestAnimationFrame(() => node.setSelectionRange(caret, caret));
-  }} onKeyDown={edit.onTitleKeyDown} onCompositionStart={edit.onComposeStart} onCompositionEnd={edit.onComposeEnd} className={cn('task-writing task-title', edit.draft.status === 'done' && 'text-muted-foreground line-through', className)} />;
+  }} onKeyDown={edit.onTitleKeyDown} onBlur={edit.saveTextNow} onCompositionStart={edit.onComposeStart} onCompositionEnd={edit.onComposeEnd} className={cn('task-writing task-title', edit.draft.status === 'done' && 'text-muted-foreground line-through', className)} />;
 }
 
 function TaskStatusCheckbox() {

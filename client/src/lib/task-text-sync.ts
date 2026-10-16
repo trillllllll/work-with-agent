@@ -2,7 +2,11 @@ import { mergeText } from './task-text-merge.js';
 import type { TaskDraftStore } from './task-draft-store.js';
 import type { FieldConflict, SaveStatus, TaskText, TaskTextDraftV1, TextField, TextVersion } from './task-editor-types.js';
 
-export const EDIT_DEBOUNCE_MS = 800;
+export const EDIT_DEBOUNCE_MS = 2000;
+/** 连续编辑的最长等待：期间即使不停输入，也按此间隔落一次检查点。 */
+export const MAX_DIRTY_WAIT_MS = 10_000;
+/** 输入高频路径的本地持久化节流；关键路径会先冲刷再继续。 */
+export const PERSIST_THROTTLE_MS = 250;
 export const NETWORK_WAIT_MS = 15_000;
 export const RETRY_DELAYS_MS = [2_000, 5_000, 15_000];
 const CONFLICT_CODES = ['VERSION_CONFLICT', 'CONFLICT', 'PRECONDITION_FAILED'];
@@ -92,6 +96,8 @@ export class TaskTextSyncCoordinator {
   private readonly pumping = new Map<string, Promise<void>>();
   private readonly debounceTimers = new Map<string, () => void>();
   private readonly retryTimers = new Map<string, () => void>();
+  private readonly persistTimers = new Map<string, () => void>();
+  private readonly dirtySince = new Map<string, number>();
   private readonly composing = new Set<string>();
   private readonly compositionWaiters = new Map<string, Array<() => void>>();
   private readonly pendingExternal = new Map<string, TextVersion>();
@@ -287,9 +293,9 @@ export class TaskTextSyncCoordinator {
       const waiters = this.compositionWaiters.get(taskId);
       this.compositionWaiters.delete(taskId);
       waiters?.forEach((resolve) => resolve());
-      // 组词结束后安排 now + 800ms 保存；编辑器的最终 onUserEdit 会再刷新计时。
+      // 组词结束后安排防抖保存；编辑器的最终 onUserEdit 会再刷新计时。
       const record = this.records.get(this.key(taskId));
-      if (record && !textEqual(record.draft, record.base)) this.scheduleSave(taskId, EDIT_DEBOUNCE_MS);
+      if (record && !textEqual(record.draft, record.base)) this.scheduleSave(taskId, this.saveDelay(this.key(taskId)));
     }
   }
 
@@ -311,9 +317,12 @@ export class TaskTextSyncCoordinator {
     record.recordVersion += 1;
     record.updatedAt = this.deps.now();
     this.storageFailed.delete(key);
-    void this.persist(taskId, record);
+    this.trackDirty(key, record);
+    // 受控输入的回显依赖订阅事件，必须在本地持久化之前同步发出。
+    this.emit(taskId);
+    this.schedulePersist(taskId);
     if (this.composing.has(taskId)) return;
-    this.scheduleSave(taskId, EDIT_DEBOUNCE_MS);
+    this.scheduleSave(taskId, this.saveDelay(key));
   }
 
   private flushQueuedEdit(taskId: string) {
@@ -325,6 +334,24 @@ export class TaskTextSyncCoordinator {
   private cancelDebounce(taskId: string) {
     this.debounceTimers.get(taskId)?.();
     this.debounceTimers.delete(taskId);
+  }
+
+  /** 距下次自动保存的等待：常规走防抖；持续编辑超过上限后收敛到检查点。 */
+  private saveDelay(key: string): number {
+    const since = this.dirtySince.get(key);
+    if (since === undefined) return EDIT_DEBOUNCE_MS;
+    return Math.max(0, Math.min(EDIT_DEBOUNCE_MS, MAX_DIRTY_WAIT_MS - (this.deps.now() - since)));
+  }
+
+  private trackDirty(key: string, record: TaskTextDraftV1) {
+    if (textEqual(record.draft, record.base)) this.dirtySince.delete(key);
+    else if (!this.dirtySince.has(key)) this.dirtySince.set(key, this.deps.now());
+  }
+
+  /** 失焦等需要立刻保存的场景：取消计时的防抖，马上同步一次。 */
+  saveNow(taskId: string) {
+    this.cancelDebounce(taskId);
+    void this.pump(taskId);
   }
 
   private scheduleSave(taskId: string, ms: number) {
@@ -355,7 +382,31 @@ export class TaskTextSyncCoordinator {
     return chain;
   }
 
+  /** 输入期间的落盘节流：写入的是触发时刻的内存最新记录。 */
+  private schedulePersist(taskId: string) {
+    const key = this.key(taskId);
+    if (this.persistTimers.has(key)) return;
+    const cancel = this.deps.schedule(() => {
+      this.persistTimers.delete(key);
+      const record = this.records.get(key);
+      if (record) void this.persist(taskId, record);
+    }, PERSIST_THROTTLE_MS);
+    this.persistTimers.set(key, cancel);
+  }
+
+  /** 关键路径（发请求、离开详情）前冲掉挂起的节流写入。 */
+  private flushPersist(taskId: string) {
+    const key = this.key(taskId);
+    const cancel = this.persistTimers.get(key);
+    if (!cancel) return;
+    this.persistTimers.delete(key);
+    cancel();
+    const record = this.records.get(key);
+    if (record) void this.persist(taskId, record);
+  }
+
   private async waitForPersist(taskId: string): Promise<boolean> {
+    this.flushPersist(taskId);
     await this.persistChains.get(this.key(taskId));
     return !this.storageFailed.has(this.key(taskId));
   }
@@ -566,6 +617,9 @@ export class TaskTextSyncCoordinator {
     record.recordVersion += 1;
     record.updatedAt = this.deps.now();
     this.retryExhausted.delete(key);
+    // 检查点已落：仍脏的话从现在重开最长等待窗口，避免之后每次 ACK 都立刻再发。
+    if (textEqual(record.draft, record.base)) this.dirtySince.delete(key);
+    else this.dirtySince.set(key, this.deps.now());
     void this.persist(taskId, record).then(() => {
       const latest = this.records.get(key);
       if (!latest) return;
@@ -581,7 +635,7 @@ export class TaskTextSyncCoordinator {
         }).then(() => this.emit(taskId));
         return;
       }
-      if (!textEqual(latest.draft, latest.base)) this.scheduleSave(taskId, EDIT_DEBOUNCE_MS);
+      if (!textEqual(latest.draft, latest.base)) this.scheduleSave(taskId, this.saveDelay(key));
     });
     this.emit(taskId);
   }
@@ -589,6 +643,7 @@ export class TaskTextSyncCoordinator {
   private finishClean(taskId: string) {
     const key = this.key(taskId);
     this.retryExhausted.delete(key);
+    this.dirtySince.delete(key);
     const queued = this.pendingExternal.get(taskId);
     this.pendingExternal.delete(taskId);
     if (queued) this.mergeExternal(taskId, queued, { immediate: true });

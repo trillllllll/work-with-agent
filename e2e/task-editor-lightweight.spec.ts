@@ -60,7 +60,7 @@ test('打开和聚焦带格式正文不产生写入，也不显示源码', async
   expect(after.revision).toBe(task.revision);
 });
 
-test('正文输入800ms后自动保存，不要求失焦', async ({ page, request }) => {
+test('正文输入2000ms后自动保存，不要求失焦', async ({ page, request }) => {
   const created = await request.post(`${api}/api/tasks`, {
     data: { title: '自动保存' },
   });
