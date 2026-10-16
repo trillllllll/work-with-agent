@@ -16,6 +16,8 @@ import { assertSingleMemoryScope } from './auto-memory-suggestions.js';
 import { AUTO_MEMORY_SYSTEM_PROMPT, scopeKey, type FrozenSnapshot } from './auto-memory-types.js';
 import { clearLibraryData, clearLibraryTaxonomy } from './library/cleanup.js';
 import { rehearseAutoMemoryMigration } from './auto-memory-migration.js';
+import { readMemoryUsage } from './auto-memory-model.js';
+import { listMemoryJobs } from './auto-memory-jobs.js';
 import { DomainError } from '../domain/task.js';
 
 registerKnowledgeCommands();
@@ -602,6 +604,104 @@ describe('auto memory distillation', () => {
     expect(await prisma.memory.count()).toBe(0);
   });
 
+  it('saves API usage before rejecting invalid fields and reports a safe field path', async () => {
+    const topicId = await topic();
+    await write('material.create', { topicId, title: '来源', content: '正文', kind: 'text' });
+    service = new AutoMemoryService({ now: () => new Date(nowMs), hasModelConfig: async () => true, model: {
+      async complete() { return { text: JSON.stringify({ summary: '', candidates: [{ action: 'secret-invalid-action' }] }), responseModel: 'actual', usage: readMemoryUsage({ prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 }) }; },
+    } });
+    await service.scan(); nowMs += 60_000; await service.tick();
+    const job = await prisma.autoMemoryJob.findFirstOrThrow();
+    expect(job).toMatchObject({ errorCode: 'INVALID_MODEL_OUTPUT', inputTokens: 11, outputTokens: 7, totalTokens: 18, responseModel: 'actual' });
+    expect(job.errorMessage).toContain('candidates.0.action');
+    expect(job.errorMessage).not.toContain('secret-invalid-action');
+    expect((await listMemoryJobs(ownerActor, { topicId })).summary.totalTokens).toBe(18);
+  });
+
+  it('recovers a legacy format failure once and never loops on a new failure', async () => {
+    const topicId = await topic();
+    await write('material.create', { topicId, title: '来源', content: '正文', kind: 'text' });
+    model.impl = async () => ({ text: 'invalid' });
+    await service.scan(); nowMs += 60_000; await service.tick();
+    const job = await prisma.autoMemoryJob.findFirstOrThrow();
+    const snapshot = JSON.parse(job.snapshot); snapshot.promptVersion = 1;
+    await prisma.autoMemoryJob.update({ where: { id: job.id }, data: { snapshot: JSON.stringify(snapshot), usageStatus: 'legacy' } });
+    await prisma.autoMemorySource.updateMany({ data: { formatRecoveryVersion: 0 } });
+    await service.scan();
+    expect((await service.state(topicId)).pendingSourceCount).toBe(1);
+    await service.scan(); nowMs += 60_000; await service.tick();
+    expect(model.calls).toHaveLength(2);
+    await service.scan(); nowMs += 300_000; await service.tick();
+    expect(model.calls).toHaveLength(2);
+    expect((await prisma.autoMemorySource.findFirstOrThrow()).formatRecoveryVersion).toBe(2);
+  });
+
+  it('defers legacy recovery for disabled scopes and rejects recovery of deleted sources', async () => {
+    const topicId = await topic();
+    const material = await write('material.create', { topicId, title: '来源', content: '正文', kind: 'text' });
+    model.impl = async () => ({ text: 'invalid' });
+    await service.scan(); nowMs += 60_000; await service.tick();
+    const job = await prisma.autoMemoryJob.findFirstOrThrow();
+    const snapshot = JSON.parse(job.snapshot); snapshot.promptVersion = 1;
+    await prisma.autoMemoryJob.update({ where: { id: job.id }, data: { snapshot: JSON.stringify(snapshot) } });
+    await prisma.autoMemorySource.updateMany({ data: { formatRecoveryVersion: 0 } });
+    await prisma.autoMemoryScope.update({ where: { id: scopeKey(topicId) }, data: { enabled: false } });
+    await service.scan();
+    expect((await prisma.autoMemorySource.findFirstOrThrow()).failedHash).not.toBeNull();
+    await prisma.autoMemoryScope.update({ where: { id: scopeKey(topicId) }, data: { enabled: true } });
+    await prisma.material.update({ where: { id: material.id }, data: { archivedAt: new Date(nowMs).toISOString() } });
+    await service.scan(); nowMs += 60_000; await service.tick();
+    expect(model.calls).toHaveLength(1);
+    expect((await prisma.autoMemorySource.findFirstOrThrow()).available).toBe(false);
+  });
+
+  it('counts an interrupted saved model response once when its output is reused', async () => {
+    const topicId = await topic();
+    await write('material.create', { topicId, title: '来源', content: '正文', kind: 'text' });
+    service = new AutoMemoryService({ now: () => new Date(nowMs), hasModelConfig: async () => true, afterOutputSaved: async () => { throw new AutoMemoryCrash(); }, model: {
+      async complete(messages) { return { text: JSON.stringify(candidateFrom(snapshotOf(messages))), usage: readMemoryUsage({ prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 }) }; },
+    } });
+    await service.scan(); nowMs += 60_000;
+    await expect(service.tick()).rejects.toBeInstanceOf(AutoMemoryCrash);
+    const running = await prisma.autoMemoryJob.findFirstOrThrow();
+    nowMs += 121_000; await service.tick();
+    await service.retry(ownerActor, running.id, randomUUID());
+    const data = await listMemoryJobs(ownerActor, { topicId });
+    expect(data.total).toBe(2);
+    expect(data.summary).toMatchObject({ inputTokens: 11, outputTokens: 7, totalTokens: 18, missingUsageCount: 0 });
+    expect(data.items.find((item) => item.reusedFromJobId)).toMatchObject({ reusedFromJobId: running.id, usageStatus: 'reused', totalTokens: null });
+  });
+
+  it('does not reuse a truncated but valid JSON response after a crash', async () => {
+    const topicId = await topic();
+    await write('material.create', { topicId, title: '来源', content: '正文', kind: 'text' });
+    let calls = 0;
+    service = new AutoMemoryService({ now: () => new Date(nowMs), hasModelConfig: async () => true,
+      afterOutputSaved: async () => { if (calls === 1) throw new AutoMemoryCrash(); },
+      model: { async complete(messages) { calls += 1; return { text: JSON.stringify(candidateFrom(snapshotOf(messages))), finishReason: calls === 1 ? 'length' : 'stop', usage: readMemoryUsage({ prompt_tokens: 10, completion_tokens: 5 }) }; } },
+    });
+    await service.scan(); nowMs += 60_000;
+    await expect(service.tick()).rejects.toBeInstanceOf(AutoMemoryCrash);
+    const saved = await prisma.autoMemoryJob.findFirstOrThrow();
+    expect(saved.modelFinishReason).toBe('length');
+    nowMs += 121_000; await service.tick();
+    await service.retry(ownerActor, saved.id, randomUUID());
+    expect(calls).toBe(2);
+    expect((await listMemoryJobs(ownerActor, { topicId })).summary.totalTokens).toBe(30);
+  });
+
+  it('marks legacy non-format failures checked without retrying or rereading all history', async () => {
+    const topicId = await topic();
+    await write('material.create', { topicId, title: '来源', content: '正文', kind: 'text' });
+    model.impl = async () => { throw new Error('upstream failure'); };
+    await service.scan(); nowMs += 60_000; await service.tick();
+    await prisma.autoMemorySource.updateMany({ data: { formatRecoveryVersion: 0 } });
+    const source = await prisma.autoMemorySource.findFirstOrThrow();
+    await service.scan(); await service.scan();
+    expect(await prisma.autoMemorySource.findUniqueOrThrow({ where: { id: source.id } })).toMatchObject({ formatRecoveryVersion: 2, failedHash: source.observedHash });
+    expect(model.calls).toHaveLength(1);
+  });
+
   it('rejects a connection actor on every new auto-memory route', async () => {
     const app = express();
     app.use(express.json());
@@ -619,6 +719,7 @@ describe('auto memory distillation', () => {
       request(app).patch('/api/v1/knowledge/auto-memory').send({ topicId: null, enabled: false, expectedRevision: 1 }),
       request(app).post('/api/v1/knowledge/auto-memory/run').send({ topicId: null, requestId }),
       request(app).post('/api/v1/knowledge/auto-memory/jobs/missing/retry').send({ requestId }),
+      request(app).get('/api/v1/knowledge/auto-memory/jobs').query({ topicId: 'all' }),
       request(app).get('/api/v1/knowledge/auto-memory/proposals').query({ topicId: 'inbox' }),
     ]) expect((await call).status).toBe(403);
   });

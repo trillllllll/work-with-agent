@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { View } from '../lib/api.js';
 
 const validViews: View[] = ['board', 'quadrant', 'chat', 'topics', 'inbox', 'settings', 'trash', 'changes', 'today', 'search', 'tags', 'archived', 'more', 'connections', 'proposals', 'knowledge', 'library', 'runs', 'reviews', 'plan', 'focus'];
-const knowledgeSections = ['materials', 'memories', 'brief', 'search', 'tree', 'graph'] as const;
+const knowledgeSections = ['materials', 'memories', 'brief', 'search', 'tree', 'graph', 'extractions'] as const;
 export type KnowledgeSection = (typeof knowledgeSections)[number];
 
 type HashState = {

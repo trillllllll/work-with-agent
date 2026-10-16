@@ -1,0 +1,11 @@
+ALTER TABLE "AutoMemorySource" ADD COLUMN "formatRecoveryVersion" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "AutoMemoryJob" ADD COLUMN "requestedModel" TEXT;
+ALTER TABLE "AutoMemoryJob" ADD COLUMN "responseModel" TEXT;
+ALTER TABLE "AutoMemoryJob" ADD COLUMN "modelFinishReason" TEXT;
+ALTER TABLE "AutoMemoryJob" ADD COLUMN "provider" TEXT;
+ALTER TABLE "AutoMemoryJob" ADD COLUMN "inputTokens" INTEGER;
+ALTER TABLE "AutoMemoryJob" ADD COLUMN "outputTokens" INTEGER;
+ALTER TABLE "AutoMemoryJob" ADD COLUMN "totalTokens" INTEGER;
+ALTER TABLE "AutoMemoryJob" ADD COLUMN "usageStatus" TEXT NOT NULL DEFAULT 'legacy';
+ALTER TABLE "AutoMemoryJob" ADD COLUMN "reusedFromJobId" TEXT;
+CREATE INDEX "AutoMemoryJob_provider_requestedModel_createdAt_idx" ON "AutoMemoryJob"("provider", "requestedModel", "createdAt");

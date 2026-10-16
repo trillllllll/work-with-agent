@@ -16,6 +16,12 @@ const server = http.createServer(async (req, res) => {
   const latestUser = String([...messages].reverse().find((item) => item.role === 'user')?.content ?? '');
   if (body.model === 'mock-upstream' || latestUser.includes('上游错误')) return json(res, 502, { error: { message: 'mock upstream failure' } });
   if (!body.stream && body.model === 'mock-invalid') return json(res, 200, { choices: [] });
+  if (!body.stream && messages.some((item) => item.role === 'system' && String(item.content).includes('有来源的长期记忆'))) {
+    const snapshot = JSON.parse(latestUser);
+    const source = snapshot.sources[0];
+    const output = { summary: '从真实来源生成候选', candidates: [{ action: 'create', targetId: null, expectedRevision: null, kind: 'fact', title: source.title + '的事实', content: source.text, reason: '来源正文已说明', importance: 3, labels: ['提取测试'], evidence: [{ type: source.sourceType, id: source.sourceId, revision: source.revision, hash: source.evidenceHash }] }] };
+    return json(res, 200, { model: body.model + '-actual', choices: [{ message: { role: 'assistant', content: JSON.stringify(output) }, finish_reason: 'stop' }], ...(body.model === 'mock-no-usage' ? {} : { usage: { prompt_tokens: 120, completion_tokens: 30, total_tokens: 150 } }) });
+  }
   if (!body.stream) return json(res, 200, { choices: [{ message: { role: 'assistant', content: '连接成功' }, finish_reason: 'stop' }] });
   const systemText = messages.filter((item) => item.role === 'system').map((item) => String(item.content ?? '')).join('\n');
   if (latestUser.startsWith('AI验收')) {

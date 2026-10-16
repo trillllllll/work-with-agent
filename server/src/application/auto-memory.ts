@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { Prisma, PrismaClient } from '@prisma/client';
-import { ModelAdapter } from '../agent.js';
+import { MemoryModelAdapter, type MemoryModel } from './auto-memory-model.js';
 import { DomainError } from '../domain/task.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { archiveCompletedTurns, failCollectingTurns } from './auto-memory-chat.js';
@@ -18,6 +18,7 @@ import {
 } from './auto-memory-suggestions.js';
 import {
   AUTO_MEMORY_SYSTEM_PROMPT,
+  AUTO_MEMORY_PROMPT_VERSION,
   JOB_LEASE_MS,
   MAX_COALESCE_MS,
   MEMORY_CONTEXT_LIMIT,
@@ -47,7 +48,6 @@ import {
 } from './auto-memory-types.js';
 import { CommandService, canonical, type Command } from './commands.js';
 import { knowledgeHash, readLabels } from './knowledge.js';
-import type { OrganizationModel } from './knowledge-organizations.js';
 import { assertOwner, type Actor } from './security.js';
 import { SettingsService } from './settings.js';
 
@@ -66,7 +66,7 @@ export class AutoMemoryService {
 
   constructor(private readonly deps: {
     now: () => Date;
-    model: OrganizationModel;
+    model: MemoryModel;
     hasModelConfig: () => Promise<boolean>;
     afterOutputSaved?: () => Promise<void>;
   }) {}
@@ -212,18 +212,18 @@ export class AutoMemoryService {
     if (topic?.archivedAt) throw new DomainError('TOPIC_ARCHIVED', '已归档，暂停提炼', 409);
     if (!(await this.deps.hasModelConfig())) throw new DomainError('MODEL_UNCONFIGURED', '尚未配置内置模型', 409);
     const snapshot = readJson<FrozenSnapshot | null>(job.snapshot, null);
-    const parsed = job.modelOutput ? parseOutput(job.modelOutput) : null;
+    const parsed = job.modelOutput && job.modelFinishReason !== 'length' ? parseOutput(job.modelOutput) : null;
     if (job.errorCode === 'INTERRUPTED' && parsed && snapshot) {
       const matches = await this.sourcesMatch(snapshot.sources, snapshot.topicId);
       const attempt = await this.nextAttempt(job.scopeKey, job.inputHash);
       if (!matches) {
-        const created = await prisma.autoMemoryJob.create({ data: { scopeKey: job.scopeKey, inputHash: job.inputHash, attempt, status: 'failed', snapshot: job.snapshot, modelOutput: job.modelOutput, errorCode: 'SOURCE_STALE', errorMessage: '来源已变化，将重新提炼', proposalIds: '[]', createdAt: this.iso(), completedAt: this.iso() } });
+        const created = await prisma.autoMemoryJob.create({ data: { scopeKey: job.scopeKey, inputHash: job.inputHash, attempt, status: 'failed', snapshot: job.snapshot, modelOutput: job.modelOutput, requestedModel: job.requestedModel, responseModel: job.responseModel, modelFinishReason: job.modelFinishReason, provider: job.provider, usageStatus: 'reused', reusedFromJobId: job.reusedFromJobId ?? job.id, errorCode: 'SOURCE_STALE', errorMessage: '来源已变化，将重新提炼', proposalIds: '[]', createdAt: this.iso(), completedAt: this.iso() } });
         await this.scan();
         return this.writeReceipt(actor.id, storedId, requestHash, jobView(created));
       }
       const token = randomBytes(16).toString('hex');
       const now = this.iso();
-      const created = await prisma.autoMemoryJob.create({ data: { scopeKey: job.scopeKey, inputHash: job.inputHash, attempt, status: 'running', snapshot: job.snapshot, modelOutput: job.modelOutput, proposalIds: '[]', leaseToken: token, leaseExpiresAt: new Date(this.nowMs() + JOB_LEASE_MS).toISOString(), createdAt: now, startedAt: now } });
+      const created = await prisma.autoMemoryJob.create({ data: { scopeKey: job.scopeKey, inputHash: job.inputHash, attempt, status: 'running', snapshot: job.snapshot, modelOutput: job.modelOutput, requestedModel: job.requestedModel, responseModel: job.responseModel, modelFinishReason: job.modelFinishReason, provider: job.provider, usageStatus: 'reused', reusedFromJobId: job.reusedFromJobId ?? job.id, proposalIds: '[]', leaseToken: token, leaseExpiresAt: new Date(this.nowMs() + JOB_LEASE_MS).toISOString(), createdAt: now, startedAt: now } });
       await this.persist({ jobId: created.id, token, scopeKey: job.scopeKey, topicId: scope.topicId, snapshot }, parsed);
       const saved = await prisma.autoMemoryJob.findUniqueOrThrow({ where: { id: created.id } });
       return this.writeReceipt(actor.id, storedId, requestHash, jobView(saved));
@@ -308,7 +308,43 @@ export class AutoMemoryService {
         if (changed) await this.markScanChanged(tx, fresh);
       });
     }
+    await this.recoverFormatFailures(scope);
     await prisma.autoMemoryScope.updateMany({ where: { id: scope.id, enabled: true, initializedAt: null }, data: { initializedAt: this.iso(), updatedAt: this.iso() } });
+  }
+
+  private async recoverFormatFailures(scope: ScopeRow) {
+    const sources = await prisma.autoMemorySource.findMany({ where: { scopeKey: scope.id, available: true, failedHash: { not: null }, formatRecoveryVersion: { lt: AUTO_MEMORY_PROMPT_VERSION } } });
+    if (!sources.length) return;
+    const unresolved = new Map(sources.filter((source) => source.failedHash === source.observedHash).map((source) => [source.id, source]));
+    const latestBySource = new Map<string, { status: string; errorCode: string | null; promptVersion: number }>();
+    let cursor: string | undefined;
+    while (unresolved.size) {
+      const page = await prisma.autoMemoryJob.findMany({ where: { scopeKey: scope.id }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: PAGE_SIZE, ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}), select: { id: true, status: true, errorCode: true, snapshot: true } });
+      for (const job of page) {
+        const snapshot = readJson<FrozenSnapshot | null>(job.snapshot, null);
+        for (const item of snapshot?.sources ?? []) {
+          if (unresolved.get(item.rowId)?.observedHash !== item.observedHash) continue;
+          latestBySource.set(item.rowId, { status: job.status, errorCode: job.errorCode, promptVersion: snapshot!.promptVersion });
+          unresolved.delete(item.rowId);
+        }
+      }
+      if (page.length < PAGE_SIZE) break;
+      cursor = page[page.length - 1].id;
+    }
+    for (const source of sources) {
+      if (source.failedHash !== source.observedHash) continue;
+      const latest = latestBySource.get(source.id);
+      const eligible = latest?.status === 'failed' && latest.errorCode === 'INVALID_MODEL_OUTPUT' && latest.promptVersion < AUTO_MEMORY_PROMPT_VERSION;
+      await prisma.$transaction(async (tx) => {
+        const current = await tx.autoMemoryScope.findUniqueOrThrow({ where: { id: scope.id } });
+        if (!current.enabled || (scope.topicId && !(await tx.topic.findFirst({ where: { id: scope.topicId, archivedAt: null } })))) return;
+        if (!isAutoSourceType(source.sourceType)) return;
+        const fresh = await this.freezeSource(tx, scope.topicId, source.sourceType, source.sourceId, source.part, source.observedHash);
+        if (!fresh || fresh.pendingReason) return;
+        const recovered = await tx.autoMemorySource.updateMany({ where: { id: source.id, available: true, observedHash: source.observedHash, failedHash: source.observedHash, formatRecoveryVersion: { lt: AUTO_MEMORY_PROMPT_VERSION } }, data: { ...(eligible ? { failedHash: null } : {}), formatRecoveryVersion: AUTO_MEMORY_PROMPT_VERSION, updatedAt: this.iso() } });
+        if (eligible && recovered.count) await this.markScanChanged(tx, current);
+      });
+    }
   }
 
   private async markScanChanged(tx: Db, scope: ScopeRow) {
@@ -326,10 +362,10 @@ export class AutoMemoryService {
       seen.add(id);
       const existing = await tx.autoMemorySource.findUnique({ where: { id } });
       if (!existing) {
-        await tx.autoMemorySource.create({ data: { id, scopeKey: key, sourceType, sourceId, part: part.part, revision: Math.max(1, part.revision), observedHash: part.observedHash, available: true, firstObservedAt: now, changedAt: now, updatedAt: now } });
+        await tx.autoMemorySource.create({ data: { id, scopeKey: key, sourceType, sourceId, part: part.part, revision: Math.max(1, part.revision), observedHash: part.observedHash, available: true, formatRecoveryVersion: AUTO_MEMORY_PROMPT_VERSION, firstObservedAt: now, changedAt: now, updatedAt: now } });
         changed = true;
       } else if (existing.observedHash !== part.observedHash || !existing.available) {
-        await tx.autoMemorySource.update({ where: { id }, data: { observedHash: part.observedHash, revision: existing.revision + 1, changedAt: now, failedHash: null, available: true, updatedAt: now } });
+        await tx.autoMemorySource.update({ where: { id }, data: { observedHash: part.observedHash, revision: existing.revision + 1, changedAt: now, failedHash: null, formatRecoveryVersion: AUTO_MEMORY_PROMPT_VERSION, available: true, updatedAt: now } });
         changed = true;
       }
     }
@@ -409,12 +445,12 @@ export class AutoMemoryService {
           return 'empty' as const;
         }
         const memories = await this.freezeMemories(tx, scope.topicId);
-        const snapshot: FrozenSnapshot = { promptVersion: 1, scopeKey: scope.id, topicId: scope.topicId, sources: selected, memories: memories.items, memoryTotal: memories.total, memoriesTruncated: memories.total > MEMORY_CONTEXT_LIMIT };
+        const snapshot: FrozenSnapshot = { promptVersion: AUTO_MEMORY_PROMPT_VERSION, scopeKey: scope.id, topicId: scope.topicId, sources: selected, memories: memories.items, memoryTotal: memories.total, memoriesTruncated: memories.total > MEMORY_CONTEXT_LIMIT };
         const inputHash = sha256(canonical(snapshot));
         const attempt = ((await tx.autoMemoryJob.findFirst({ where: { scopeKey: scope.id, inputHash }, orderBy: { attempt: 'desc' } }))?.attempt ?? 0) + 1;
         const now = this.iso();
         const token = randomBytes(16).toString('hex');
-        const job = await tx.autoMemoryJob.create({ data: { scopeKey: scope.id, inputHash, attempt, status: 'queued', snapshot: JSON.stringify(snapshot), proposalIds: '[]', createdAt: now } });
+        const job = await tx.autoMemoryJob.create({ data: { scopeKey: scope.id, inputHash, attempt, status: 'queued', usageStatus: 'not_requested', snapshot: JSON.stringify(snapshot), proposalIds: '[]', createdAt: now } });
         const leaseExpiresAt = new Date(this.nowMs() + JOB_LEASE_MS).toISOString();
         const switched = await tx.autoMemoryJob.updateMany({ where: { id: job.id, status: 'queued' }, data: { status: 'running', leaseToken: token, leaseExpiresAt, startedAt: now } });
         if (!switched.count) return 'busy' as const;
@@ -431,23 +467,31 @@ export class AutoMemoryService {
     const job = await prisma.autoMemoryJob.findUnique({ where: { id: claim.jobId } });
     if (!job || job.status !== 'running' || job.leaseToken !== claim.token) return;
     let text = '';
+    let finishReason: string | null = null;
     try {
-      const result = await this.deps.model.complete([
+      const prepared = this.deps.model.prepare ? await this.deps.model.prepare() : null;
+      await prisma.autoMemoryJob.update({ where: { id: claim.jobId }, data: { usageStatus: 'unavailable', ...(prepared ? { requestedModel: prepared.requestedModel, provider: prepared.provider } : {}) } });
+      const result = await (prepared ?? this.deps.model).complete([
         { role: 'system', content: AUTO_MEMORY_SYSTEM_PROMPT },
         { role: 'user', content: JSON.stringify(claim.snapshot) },
       ], AbortSignal.timeout(MODEL_TIMEOUT_MS));
       text = result.text;
+      finishReason = result.finishReason ?? null;
+      await prisma.autoMemoryJob.update({ where: { id: claim.jobId }, data: { responseModel: result.responseModel ?? null, modelFinishReason: finishReason, ...(result.usage ?? {}) } });
     } catch (error) {
       if (await this.lost(claim.jobId, claim.token)) return;
       const timedOut = error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError');
-      await this.failJob(claim, timedOut ? 'MODEL_TIMEOUT' : 'MODEL_FAILED', timedOut ? '提炼超时，请稍后重试' : '提炼失败，请稍后重试', true);
+      await this.failJob(claim, timedOut ? 'MODEL_TIMEOUT' : 'MODEL_FAILED', timedOut ? '提炼超时，请稍后重试' : (error instanceof Error && /^(模型服务 HTTP \d{3}|模型网络请求失败|模型服务返回了无效响应 JSON|未配置模型服务)$/.test(error.message) ? error.message : '模型调用失败，请稍后重试'), true);
       return;
     }
     const saved = await prisma.autoMemoryJob.updateMany({ where: { id: claim.jobId, status: 'running', leaseToken: claim.token }, data: { modelOutput: text } });
     if (!saved.count) return;
     if (this.deps.afterOutputSaved) await this.deps.afterOutputSaved();
     let parsed: AutoMemoryOutput;
-    try { parsed = requireOutput(text); }
+    try {
+      if (finishReason === 'length') throw new DomainError('INVALID_MODEL_OUTPUT', '模型输出被截断（finish_reason=length）', 502);
+      parsed = requireOutput(text);
+    }
     catch (error) {
       if (error instanceof AutoMemoryCrash) throw error;
       if (await this.lost(claim.jobId, claim.token)) return;
@@ -749,9 +793,9 @@ function parseOutput(text: string) {
 
 function requireOutput(text: string): AutoMemoryOutput {
   let value: unknown;
-  try { value = JSON.parse(text); } catch { throw new DomainError('INVALID_MODEL_OUTPUT', '模型输出无法采用', 502); }
+  try { value = JSON.parse(text); } catch { throw new DomainError('INVALID_MODEL_OUTPUT', '模型输出不是有效 JSON', 502); }
   const parsed = autoMemoryOutputSchema.safeParse(value);
-  if (!parsed.success) throw new DomainError('INVALID_MODEL_OUTPUT', '模型输出无法采用', 502);
+  if (!parsed.success) throw new DomainError('INVALID_MODEL_OUTPUT', parsed.error.issues.slice(0, 6).map((issue) => (issue.path.join('.') || 'root') + ': ' + issue.code).join('; '), 502);
   return parsed.data;
 }
 
@@ -775,7 +819,7 @@ let shared: AutoMemoryService | undefined;
 export function sharedAutoMemoryService() {
   shared ??= new AutoMemoryService({
     now: () => new Date(),
-    model: { async complete(messages, signal) { const result = await new ModelAdapter().complete(messages, signal, false); return { text: result.text }; } },
+    model: new MemoryModelAdapter(),
     hasModelConfig: async () => Boolean(await new SettingsService().credentials()),
   });
   return shared;

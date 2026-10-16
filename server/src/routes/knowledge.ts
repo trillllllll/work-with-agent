@@ -1,3 +1,4 @@
+import { listMemoryJobs } from '../application/auto-memory-jobs.js';
 import { withChatAttachments } from '../application/chat-attachments.js';
 import { randomUUID } from 'node:crypto';
 import { Router, type Request } from 'express';
@@ -144,6 +145,10 @@ export function createKnowledgeRouter(service = new KnowledgeService(), organiza
       const body = z.object({ requestId: z.string().uuid() }).parse(req.body);
       res.json({ data: await autoMemory().retry(getActor(req), String(req.params.id), body.requestId), error: null });
     } catch (error) { next(error); }
+  });
+  router.get('/auto-memory/jobs', async (req, res, next) => {
+    try { res.json({ data: await listMemoryJobs(getActor(req), req.query), error: null }); }
+    catch (error) { next(error); }
   });
   router.get('/auto-memory/proposals', async (req, res, next) => {
     try {

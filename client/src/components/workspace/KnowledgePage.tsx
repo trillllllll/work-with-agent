@@ -1,3 +1,4 @@
+import { MemoryExtractionJobs } from './MemoryExtractionJobs.js';
 import { usePageContext } from '@/lib/assistant-context.js';
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -127,13 +128,14 @@ export function KnowledgePage({
   const [opened, setOpened] = useState('');
   const searchQuery = useSubmittedQuery(searchInput);
   const memoryQuery = useSubmittedQuery(memoryInput);
-  usePageContext(embedded ? 'embedded-knowledge' : 'knowledge', { scope: topicId ? { kind: 'topic', topicId } : { kind: 'inbox' }, section, pageState: { selectedId: opened, status: memoryStatus, query: section === 'memories' ? memoryQuery.submitted : searchQuery.submitted } });
+  usePageContext(embedded ? 'embedded-knowledge' : 'knowledge', { scope: section === 'extractions' && topicId === 'all' ? { kind: 'all' } : topicId ? { kind: 'topic', topicId } : { kind: 'inbox' }, section, pageState: { selectedId: opened, status: memoryStatus, query: section === 'memories' ? memoryQuery.submitted : searchQuery.submitted } });
   const knownTopics = [...topics, ...archivedTopics.filter((topic) => !topics.some((item) => item.id === topic.id))];
-  const missing = !embedded && topicExplicit && topicId !== '' && topicsReady && !knownTopics.some((topic) => topic.id === topicId);
+  const missing = !embedded && topicExplicit && topicId !== '' && !(section === 'extractions' && topicId === 'all') && topicsReady && !knownTopics.some((topic) => topic.id === topicId);
   const scope = scopeQuery(topicId);
   const editorScope = `${topicId}:${section}`;
   const activeEditor = editing?.scope === editorScope ? editing : null;
   const locate = (nextSection: KnowledgeTab, nextTopic = topicId) => {
+    if (nextSection !== 'extractions' && nextTopic === 'all') nextTopic = '';
     if (embedded) { setLocalTopic(nextTopic); setLocalSection(nextSection); return; }
     onLocate?.(nextSection, nextTopic);
   };
@@ -145,7 +147,7 @@ export function KnowledgePage({
   const auto = useQuery({
     queryKey: ['auto-memory', topicId],
     queryFn: ({ signal }) => api<AutoMemoryState>(`/api/v1/knowledge/auto-memory?${scope}`, { signal }),
-    enabled: !embedded && !missing,
+    enabled: !embedded && !missing && section !== 'extractions',
     refetchInterval: (query) => {
       if (document.visibilityState !== 'visible') return false;
       const name = query.state.data?.state;
@@ -173,8 +175,8 @@ export function KnowledgePage({
   const materials = <MaterialBrowser topicId={topicId || null} taskId={taskId} onCreate={() => openEditor()} onEdit={(item) => openEditor(item as Resource)}>{activeEditor && <ResourceEditor key={activeEditor.id} type="materials" resource={activeEditor.resource} topicId={topicId || null} taskId={taskId} onClose={() => setEditing((current) => current?.id === activeEditor.id ? null : current)} />}</MaterialBrowser>;
   const memories = <MemoryBrowser embedded={embedded} topicId={topicId} scope={scope} cursor={cursor} setCursor={setCursor} status={memoryStatus} setStatus={(value) => { setMemoryStatus(value); setCursor(0); }} input={memoryInput} setInput={setMemoryInput} submitted={memoryQuery.submitted} onCompositionStart={memoryQuery.onCompositionStart} onCompositionEnd={memoryQuery.onCompositionEnd} opened={opened} setOpened={setOpened} activeEditor={activeEditor} openEditor={openEditor} closeEditor={() => setEditing((current) => current?.id === activeEditor?.id ? null : current)} auto={auto.data} onShowProposals={() => locate('brief')} onShowMaterials={() => locate('materials')} />;
   const search = <ContextSearch topicId={topicId} scope={scope} cursor={cursor} setCursor={setCursor} input={searchInput} setInput={setSearchInput} submitted={searchQuery.submitted} history={searchHistory} setHistory={(value) => { setSearchHistory(value); setCursor(0); }} onCompositionStart={searchQuery.onCompositionStart} onCompositionEnd={searchQuery.onCompositionEnd} />;
-  const body = missing ? <p role="alert" className="ctx-error">这个清单不存在。</p> : section === 'tree' ? <KnowledgeTree topicId={topicId || null} brief={brief} /> : section === 'graph' ? <KnowledgeGraph topicId={topicId || null} /> : section === 'search' ? search : section === 'materials' ? materials : section === 'memories' ? memories : <>
-    {!embedded && <AutoStatus topicId={topicId} state={auto.data} error={auto.error} onRetry={() => void auto.refetch()} onOpenSettings={onOpenSettings} />}
+  const body = missing ? <p role="alert" className="ctx-error">这个清单不存在。</p> : section === 'extractions' ? <MemoryExtractionJobs topicId={topicId} /> : section === 'tree' ? <KnowledgeTree topicId={topicId || null} brief={brief} /> : section === 'graph' ? <KnowledgeGraph topicId={topicId || null} /> : section === 'search' ? search : section === 'materials' ? materials : section === 'memories' ? memories : <>
+    {!embedded && <AutoStatus topicId={topicId} state={auto.data} error={auto.error} onRetry={() => void auto.refetch()} onOpenSettings={onOpenSettings} onShowRecords={() => locate('extractions')} />}
     {!embedded && <MemoryProposals topicId={topicId} scope={scope} count={auto.data?.pendingProposalCount ?? 0} />}
     {brief}
     {!embedded && <OrganizationPanel topicId={topicId || null} />}
@@ -199,8 +201,8 @@ export function KnowledgePage({
           </div>
           <div data-testid="context-toolbar" className="ctx-tools">
             <label className="ctx-muted">所属清单
-              <select aria-label="所属清单" className="ctx-select" value={topicId} onChange={(event) => locate(section === 'search' || section === 'tree' || section === 'graph' ? section : (primaryTabs.some(([value]) => value === section) ? section : 'brief'), event.target.value)}>
-                <option value="">收集箱</option>
+              <select aria-label="所属清单" className="ctx-select" value={topicId} onChange={(event) => locate(section === 'search' || section === 'tree' || section === 'graph' || section === 'extractions' ? section : (primaryTabs.some(([value]) => value === section) ? section : 'brief'), event.target.value)}>
+                <option value="">收集箱</option>{section === 'extractions' && <option value="all">全部清单</option>}
                 {missing && <option value={topicId}>未知清单</option>}
                 {knownTopics.map((topic) => <option key={topic.id} value={topic.id}>{topic.name}{topic.archivedAt ? '（已归档）' : ''}</option>)}
               </select>
@@ -229,15 +231,17 @@ export function KnowledgePage({
             return <button key={value} id={`context-tab-${value}`} type="button" role="tab" className="ctx-tab" aria-selected={selected} tabIndex={selected || fallback ? 0 : -1} onClick={() => locate(value)}>{label}</button>;
           })}
         </div>
-        {section !== 'tree' && section !== 'graph' && section !== 'search' && <p className="ctx-tab-note">{tabNote}</p>}
+        {section !== 'tree' && section !== 'graph' && section !== 'search' && section !== 'extractions' && <p className="ctx-tab-note">{tabNote}</p>}
         {section === 'memories' && <p className="ctx-tab-note">聊天摘要由系统自动维护，不显示在这里。自动提炼的建议确认后才成为长期记忆。</p>}
+        {section === 'memories' && <div className="ctx-tools"><Button variant="outline" onClick={() => locate('extractions')}>提取记录</Button></div>}
+        {section === 'extractions' && <div className="ctx-tools"><Button variant="ghost" onClick={() => locate('memories', topicId === 'all' ? '' : topicId)}>返回长期记忆</Button></div>}
         {body}
       </div>
     </div>
   </section>;
 }
 
-function AutoStatus({ topicId, state, error, onRetry, onOpenSettings }: { topicId: string; state?: AutoMemoryState; error: Error | null; onRetry: () => void; onOpenSettings?: () => void }) {
+function AutoStatus({ topicId, state, error, onRetry, onOpenSettings, onShowRecords }: { topicId: string; state?: AutoMemoryState; error: Error | null; onRetry: () => void; onOpenSettings?: () => void; onShowRecords: () => void }) {
   const client = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
@@ -302,6 +306,7 @@ function AutoStatus({ topicId, state, error, onRetry, onOpenSettings }: { topicI
     </div>
     <div className="ctx-actions">
       {state?.state === 'unconfigured' && <Button type="button" className="ctx-btn" onClick={onOpenSettings}>配置模型</Button>}
+      <Button type="button" className="ctx-btn" onClick={onShowRecords}>提取记录</Button>
       {error && <Button type="button" className="ctx-btn" onClick={onRetry}>重试</Button>}
       <Button type="button" className="ctx-btn ctx-btn-primary" disabled={busy || !state || state.state === 'disabled' || state.state === 'archived' || state.state === 'unconfigured'} onClick={() => void run()}>立即提炼</Button>
       <Button type="button" className="ctx-btn" disabled={busy || !state || state.state === 'archived'} onClick={() => void toggle()}>{state?.enabled === false ? '开启自动提炼' : '暂停自动提炼'}</Button>

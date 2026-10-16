@@ -795,6 +795,7 @@ model AutoMemorySource {
   observedHash    String
   processedHash   String?
   failedHash      String?
+  formatRecoveryVersion Int @default(0)
   available       Boolean @default(true)
   firstObservedAt String
   changedAt       String
@@ -812,6 +813,15 @@ model AutoMemoryJob {
   status         String  @default("queued")
   snapshot       String
   modelOutput    String?
+  requestedModel String?
+  responseModel  String?
+  modelFinishReason String?
+  provider       String?
+  inputTokens    Int?
+  outputTokens   Int?
+  totalTokens    Int?
+  usageStatus    String @default("legacy")
+  reusedFromJobId String?
   proposalIds    String  @default("[]")
   leaseToken     String?
   leaseExpiresAt String?
@@ -823,6 +833,7 @@ model AutoMemoryJob {
 
   @@unique([scopeKey, inputHash, attempt])
   @@index([status, createdAt])
+  @@index([provider, requestedModel, createdAt])
 }
 
 model AutoMemoryTurn {
