@@ -22,3 +22,8 @@ e2e/.data/
 desktop/resources/
 desktop/src-tauri/target/
 desktop/src-tauri/gen/
+
+# Local agent tooling; keep project sources and docs tracked.
+.archify/
+.ccb/
+.nodeterm/
