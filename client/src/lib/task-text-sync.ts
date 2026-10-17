@@ -348,12 +348,6 @@ export class TaskTextSyncCoordinator {
     else if (!this.dirtySince.has(key)) this.dirtySince.set(key, this.deps.now());
   }
 
-  /** 失焦等需要立刻保存的场景：取消计时的防抖，马上同步一次。 */
-  saveNow(taskId: string) {
-    this.cancelDebounce(taskId);
-    void this.pump(taskId);
-  }
-
   private scheduleSave(taskId: string, ms: number) {
     this.cancelDebounce(taskId);
     const cancel = this.deps.schedule(() => {

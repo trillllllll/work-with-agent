@@ -156,22 +156,6 @@ describe('TaskTextSyncCoordinator', () => {
     coordinator.dispose();
   });
 
-  it('saveNow（标题失焦）取消防抖立即发送', async () => {
-    const { coordinator, clock, transport, open, edit } = await setup();
-    await open();
-    edit('blur save');
-    clock.advance(100);
-    coordinator.saveNow('task-1');
-    await flush();
-    expect(await until(() => transport.pending.length === 1)).toBe(true);
-    // 已取消的防抖计时不能再触发第二次发送。
-    clock.advance(10_000);
-    await flush();
-    expect(transport.sent).toHaveLength(1);
-    expect(JSON.parse(transport.sent[0].bodyJson)).toEqual({ expectedRevision: 1, description: 'blur save' });
-    coordinator.dispose();
-  });
-
   it('持续输入无停顿时，最长等待 10 秒落一次检查点', async () => {
     const { coordinator, clock, transport, open } = await setup();
     await open();
@@ -229,7 +213,7 @@ describe('TaskTextSyncCoordinator', () => {
     expect(persisted[0]?.draft.description).toBe('d-4');
     // 节流挂起时进入关键路径（发请求）会先冲刷，再带 outbox 写一次。
     coordinator.onUserEdit('task-1', { title: '标题', description: 'd-5' });
-    coordinator.saveNow('task-1');
+    void coordinator.ensureSaved('task-1');
     expect(await until(() => transport.pending.length === 1)).toBe(true);
     expect(puts).toBeGreaterThanOrEqual(baseline + 3);
     coordinator.dispose();

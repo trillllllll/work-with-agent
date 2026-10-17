@@ -18,7 +18,7 @@ Tiptap 3 编辑内核、自动保存协调器、服务端纯文字分支、旧 e
 
 ### 阶段 2 · 草稿仓库与同步协调器
 - `client/src/lib/task-draft-store.ts`：原生 IndexedDB（`wwa-task-editor` / `drafts`，keyPath `[scopeKey, taskId, branchId]`）。写入以 `transaction.oncomplete` 为准；条件删除校验版本/outbox/文字。
-- `client/src/lib/task-text-sync.ts`：`TaskTextSyncCoordinator`。2s 防抖（2026-10-17 从 800ms 调整，另加标题失焦 `saveNow`、10s 连续输入检查点、250ms 输入落盘节流，见 `docs/editor-save.md`）、15s 网络超时、2s/5s/15s 重试、持久化 outbox 幂等重放、字段级三方合并、`prepareLeave`/`ensureSaved` 分离、多分支草稿隔离、中文组词暂停。
+- `client/src/lib/task-text-sync.ts`：`TaskTextSyncCoordinator`。2s 防抖（2026-10-17 从 800ms 调整，同日取消失焦触发、标题与正文逻辑统一，另加 10s 连续输入检查点、250ms 输入落盘节流，见 `docs/editor-save.md`）、15s 网络超时、2s/5s/15s 重试、持久化 outbox 幂等重放、字段级三方合并、`prepareLeave`/`ensureSaved` 分离、多分支草稿隔离、中文组词暂停。
 - 测试：`task-text-sync.test.ts` 覆盖契约 8.4 强制断言矩阵（1999/2000ms、连续输入、事务未完成、超时重试同 ID、ACK 不覆盖后续输入、并发=1、跨任务、离线、冲突、401/404、多分支、条件删除、重载重放、重订阅立即拿到内存草稿、打开完成前的输入仍保留）。
 
 ### 阶段 3 · 服务端调整
@@ -82,7 +82,7 @@ Tiptap 3 编辑内核、自动保存协调器、服务端纯文字分支、旧 e
 - 四类证据见下。图片撤销只在服务端单测里点了撤销；e2e「删除正文中的图片后，图片记录仍可访问直到任务永久删除」没有点撤销。
 
 #### 保存竞争
-`client/src/lib/task-text-sync.test.ts`：1999ms 不发送、2000ms 发送一次；连续输入只提交最后一次；并发为 1；超时重试的 `requestId` 与 body 与首次相同；旧请求 ACK 后保留更新的草稿；页面重载重放原来的 outbox id。2026-10-17 起另覆盖：`saveNow` 失焦立即发送并取消计时、10s 检查点、检查点 ACK 后重开等待窗口、250ms 落盘节流与关键路径冲刷。
+`client/src/lib/task-text-sync.test.ts`：1999ms 不发送、2000ms 发送一次；连续输入只提交最后一次；并发为 1；超时重试的 `requestId` 与 body 与首次相同；旧请求 ACK 后保留更新的草稿；页面重载重放原来的 outbox id。2026-10-17 起另覆盖：10s 检查点、检查点 ACK 后重开等待窗口、250ms 落盘节流与关键路径冲刷。
 
 #### 离线恢复
 同一文件：本地事务 abort 时 `prepareLeave` 为 false 且不发请求；断网切换任务后 IndexedDB 草稿还在；401 停止重试直到重新认证；404 不复活任务；远端冲突保留三份字段值。
