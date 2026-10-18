@@ -115,6 +115,25 @@ describe('TaskTextSyncCoordinator', () => {
     coordinator.dispose();
   });
 
+  it('每次更新都向订阅者发出新的记录快照', async () => {
+    const { coordinator, open, edit } = await setup();
+    await open();
+    const records: Array<TaskTextDraftV1 | null> = [];
+    const stop = coordinator.subscribe('task-1', (event) => { records.push(event.record); });
+    edit('', 'task-1', 'A');
+    edit('', 'task-1', 'AB');
+    edit('', 'task-1', 'ABC');
+    expect(records.map((record) => record?.draft.title)).toEqual(['标题', 'A', 'AB', 'ABC']);
+    // 引用必须逐次更新，否则 React 会因 Object.is 相等跳过重渲染，受控输入不回显。
+    for (let index = 1; index < records.length; index += 1) expect(records[index]).not.toBe(records[index - 1]);
+    // 发出去的是快照：既不是内部记录，也不会被后续编辑原地改写。
+    for (const record of records) expect(record).not.toBe(coordinator.getRecord('task-1'));
+    expect(records[0]?.draft.title).toBe('标题');
+    expect(records[1]?.draft.title).toBe('A');
+    stop();
+    coordinator.dispose();
+  });
+
   it('打开完成前的输入在记录创建后仍保留', async () => {
     const { coordinator } = await setup();
     const opening = coordinator.openTask('task-1', base);

@@ -142,10 +142,11 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
   }, [coordinator, id, query.data]);
 
   const currentText = useCallback((patch: Partial<Pick<TaskDraft, 'title' | 'description'>>) => {
-    const record = textRecordRef.current;
+    // 订阅发来的是快照，比最新编辑晚一帧；下一次编辑必须基于协调器里的活记录合并。
+    const record = coordinator?.getRecord(id) ?? textRecordRef.current;
     const base = record?.draft ?? { title: taskRef.current.title, description: taskRef.current.description ?? '' };
     return { title: patch.title ?? base.title, description: patch.description ?? base.description };
-  }, []);
+  }, [coordinator, id]);
 
   const updateText = (patch: Partial<Pick<TaskDraft, 'title' | 'description'>>) => {
     setAcknowledgeConflict(false);

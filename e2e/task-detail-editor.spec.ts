@@ -100,3 +100,33 @@ test('选中文本浮出格式条，加粗后立即保持格式', async ({ page,
   await detail.getByLabel('任务标题', { exact: true }).click();
   await expect(detail.locator('strong')).toContainText('hello world');
 });
+
+test('连续输入逐字回显，停顿后才提交一次', async ({ page, request }) => {
+  const created = await request.post(`${apiUrl}/api/tasks`, { data: { title: 'T' } });
+  expect(created.ok(), await created.text()).toBe(true);
+  const task = (await created.json()).data as { id: string };
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await page.goto('/#/inbox');
+  await page.getByTestId(`task-row-${task.id}`).getByRole('button', { name: 'T', exact: true }).click();
+  const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
+  const patches: string[] = [];
+  page.on('request', (req) => {
+    if (req.method() === 'PATCH' && req.url().includes(`/api/tasks/${task.id}`)) patches.push(req.postData() ?? '');
+  });
+  const title = detail.getByLabel('任务标题', { exact: true });
+  await title.click();
+  await title.press('End');
+  await title.pressSequentially('ABCD', { delay: 150 });
+  // 防抖期内零请求，且每个字符必须立即回显（不等待保存状态变化）。
+  expect(patches).toHaveLength(0);
+  await expect(title).toHaveValue('TABCD', { timeout: 1000 });
+  const body = detail.getByLabel('详情', { exact: true });
+  await body.click();
+  await body.pressSequentially('EFGH', { delay: 150 });
+  expect(patches).toHaveLength(0);
+  await expect(body).toContainText('EFGH', { timeout: 1000 });
+  await expect.poll(() => patches.length, { timeout: 8000 }).toBe(1);
+  const payload = JSON.parse(patches[0]) as { title?: string; description?: string };
+  expect(payload.title).toBe('TABCD');
+  expect(payload.description).toContain('EFGH');
+});

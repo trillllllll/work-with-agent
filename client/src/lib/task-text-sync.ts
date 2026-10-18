@@ -130,7 +130,9 @@ export class TaskTextSyncCoordinator {
 
   private emit(taskId: string) {
     const record = this.records.get(this.key(taskId)) ?? null;
-    const event: SyncEvent = { taskId, status: this.status(taskId), record, unsyncedCount: this.unsyncedTaskIds().length };
+    // 订阅者拿到必须是独立快照：内部 record 会被原地更新（含 resolveConflictsKeepRemote 直接改 draft 字段），
+    // 外发同一引用会让 React 因引用相等跳过重渲染，受控输入就不再逐字回显。
+    const event: SyncEvent = { taskId, status: this.status(taskId), record: record ? structuredClone(record) : null, unsyncedCount: this.unsyncedTaskIds().length };
     for (const listener of this.subscribers.get(taskId) ?? []) listener(event);
     this.deps.onEvent?.(event);
   }
