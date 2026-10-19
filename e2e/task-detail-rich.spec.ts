@@ -153,3 +153,74 @@ test('删除正文中的图片后，图片记录仍可访问直到任务永久�
   const stillThere = await request.get(`${apiUrl}${uploadedUrl}`);
   expect(stillThere.status()).toBe(200);
 });
+
+test('详情正文画出有序列表序号，待办列表仍无序号', async ({ page, request }) => {
+  await page.addInitScript(() => localStorage.setItem('agent-studio.theme', 'dark'));
+  const description = '3. 甲\n4. 乙\n\n- 圆点\n\n间隔\n\n- [ ] 待办\n\n10. 十\n11. 十一\n';
+  const created = await request.post(`${apiUrl}/api/tasks`, { data: { title: '序号样本', description } });
+  expect(created.ok(), await created.text()).toBe(true);
+  const task = (await created.json()).data as { id: string };
+  const blank = await request.post(`${apiUrl}/api/tasks`, { data: { title: '现打序号', description: '' } });
+  expect(blank.ok(), await blank.text()).toBe(true);
+  const fresh = (await blank.json()).data as { id: string };
+
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await page.goto('/#/inbox');
+  await page.getByTestId(`task-row-${task.id}`).getByRole('button', { name: '序号样本', exact: true }).click();
+  const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
+  const prose = detail.locator('.task-prose');
+  await expect(page.locator('html')).toHaveClass(/dark/);
+
+  const ordered = prose.locator('ol');
+  await expect(ordered).toHaveCount(2);
+  await expect(ordered.nth(0)).toHaveAttribute('start', '3');
+  await expect(ordered.nth(1)).toHaveAttribute('start', '10');
+  const styles = await ordered.nth(0).evaluate((node) => {
+    const item = node.querySelector('li');
+    if (!item) throw new Error('没有列表项');
+    const marker = getComputedStyle(item, '::marker');
+    const text = getComputedStyle(item);
+    return {
+      type: getComputedStyle(node).listStyleType,
+      markerColor: marker.color,
+      textColor: text.color,
+    };
+  });
+  expect(styles.type).toBe('decimal');
+  expect(styles.markerColor).toBe(styles.textColor);
+  const channels = styles.markerColor.match(/\d+/g)?.slice(0, 3).map(Number) ?? [];
+  expect(channels.length).toBe(3);
+  const luminance = (0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]) / 255;
+  expect(luminance).toBeGreaterThan(0.6);
+
+  await expect(prose.locator('ul:not([data-type="taskList"])')).toHaveCSS('list-style-type', 'disc');
+  await expect(prose.locator('ul[data-type="taskList"]')).toHaveCSS('list-style-type', 'none');
+  await expect(prose.locator('ul[data-type="taskList"] input[type="checkbox"]')).toBeVisible();
+  await expect(prose.getByText('甲', { exact: true })).toBeVisible();
+  await expect(prose.getByText('十', { exact: true })).toBeVisible();
+
+  const room = await ordered.nth(1).evaluate((node) => {
+    const item = node.querySelector('li');
+    if (!item) throw new Error('没有列表项');
+    const listBox = node.getBoundingClientRect();
+    const itemBox = item.getBoundingClientRect();
+    return { gap: itemBox.left - listBox.left, listLeft: listBox.left, itemLeft: itemBox.left };
+  });
+  expect(room.gap).toBeGreaterThanOrEqual(20);
+
+  await detail.getByRole('button', { name: '关闭任务详情', exact: true }).click();
+  await page.getByTestId(`task-row-${fresh.id}`).getByRole('button', { name: '现打序号', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: '任务详情', exact: true }).locator('.task-prose');
+  await editor.click();
+  await page.keyboard.type('1. ');
+  await page.keyboard.type('甲');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('乙');
+  const typed = editor.locator('ol');
+  await expect(typed).toHaveCount(1);
+  await expect(typed).toHaveCSS('list-style-type', 'decimal');
+  await expect(typed.locator('li')).toHaveCount(2);
+  await expect(typed.locator('li').nth(0)).toContainText('甲');
+  await expect(typed.locator('li').nth(1)).toContainText('乙');
+  await expect(typed).not.toHaveAttribute('start');
+});
