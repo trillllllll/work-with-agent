@@ -11,7 +11,7 @@
 
 [快速开始](#quick-start) · [下载安装](#下载安装) · [English](#english)
 
-<img src="./docs/readme/task-list-light.png" width="880" alt="浅色界面：清单「登录改造」，打开任务「把登录改成一次性链接」">
+<img src="./docs/readme/task-list-light-zh.png" width="880" alt="浅色界面：清单「登录改造」，右侧打开任务「把登录改成一次性链接」，带两份资料和子任务">
 
 ## 功能
 
@@ -20,17 +20,21 @@
 | 收集箱、今天、清单、搜索、标签 | 记下任务，补上说明、日期、优先级和子任务，拖动调整顺序 |
 | AI 连接 | 为 Codex、Claude Code 或 Grok 发一张可撤销的凭据，并圈定它能看的清单 |
 | 待确认 | AI 的写入停在这里，接受或拒绝之后数据才变 |
-| 项目资料、资料库 | 保存材料、有来源的记忆，以及整理后的候选 |
+| 工作上下文、资料库 | 保存材料、有来源的记忆，以及整理后的候选 |
 | AI 执行 | 把任务连同目标、约束和验收说明交接出去，再收回进展和结果 |
 | 定期回顾 | 按日或按周生成一份报告和待确认建议；规则默认关闭 |
 
 术语见 [CONTEXT.md](./CONTEXT.md)。接口与交接见 [接口与宿主接入](./docs/stages-2-5-api.md)。
 
-<img src="./docs/readme/task-list-dark.png" width="880" alt="深色界面：同一清单和任务详情">
+<img src="./docs/readme/task-list-dark-zh.png" width="880" alt="深色界面：同一清单和任务详情，侧栏里每个清单有自己的颜色">
 
-项目资料里，确认过的记忆会按关系收成社区，也可以铺成三维地形。下面用的是示例数据：登录、清单、记忆和交接各自成团，高处是更重要、连接更多的知识。
+「规划」按日、周、月排开有安排时间的任务，没有具体时间的放在顶部全天一栏。同一时段挤在一起的任务会叠成一张卡片。
 
-<img src="./docs/readme/knowledge-graph-dark.png" width="880" alt="深色三维地形：示例项目记忆分成登录、清单、记忆、交接四个社区">
+<img src="./docs/readme/plan-week-zh.png" width="880" alt="浅色界面：规划的周视图，周三下午三条重叠的任务叠成一张卡片">
+
+在「工作上下文」里，确认过的记忆会按关系收成社区，也可以铺成三维地形。下面用的是示例数据：登录、清单、记忆和交接各自成团，高处是更重要、连接更多的知识。
+
+<img src="./docs/readme/knowledge-graph-dark-zh.png" width="880" alt="深色三维地形：示例项目记忆分成登录、清单、记忆、交接四个社区">
 
 ## 架构
 
@@ -229,6 +233,8 @@ CI（`.github/workflows/ci.yml`）在 Node.js 22 上执行 `npm ci`、`npm run p
 
 A local task list. Codex, Claude Code, and Grok read the same tasks and project memory. Writes wait for your approval.
 
+> The app's interface is currently Chinese only, so the screenshots are in the Chinese section above.
+
 - Capture first: Inbox, Today, lists, tags, subtasks, and manual order. Tasks do not need a model.
 - Hand it to an AI: copy a config from AI connections. The host reads tasks, materials, and memories over MCP.
 - You approve the write. Proposals land in the review queue. Data stays in local SQLite. The dev API listens on `127.0.0.1`.
@@ -256,7 +262,5 @@ To share one dataset, set `WWA_OWNER_KEY` and `WWA_PUBLIC_URL`, then run `docker
 [architecture.svg](./architecture.svg) is the work loop: capture, context, handoff, and the result coming back.
 
 Confirmed memories group into communities and can be shown as 3D terrain. The sample puts sign-in, lists, memory, and handoff on their own ground, with more important knowledge higher up.
-
-<img src="./docs/readme/knowledge-graph-dark.png" width="880" alt="Dark 3D terrain: sample project memory grouped into four communities">
 
 [Apache License 2.0](./LICENSE). Issues and pull requests are welcome. Run `npm run test:all` before submitting, and describe the behavior change and test coverage in the PR.
