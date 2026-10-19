@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { api } from '@/lib/api.js';
 import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
+import { inDesktopShell, notificationMode, notificationSupport, pairNodeOnThisComputer, requestNotificationPermission, setNotificationMode, stopNodeOnThisComputer } from '@/lib/desktop-shell.js';
 
 type NodeRow = { id: string; name: string; status: string; online: boolean; lastSeenAt: string | null; platform: string; capabilities: { providers?: Array<{ provider: string; available: boolean; version: string }>; allowedRoots?: string[]; maxConcurrent?: number } };
 type Location = { id: string; nodeId: string; nodeName: string; nodeOnline: boolean; path: string; status: string; error: string | null };
@@ -18,13 +19,14 @@ export function OrchestrationSettings() {
   const projects = useQuery({ queryKey: ['projects'], queryFn: () => api<Project[]>('/api/projects'), refetchInterval: 5_000 });
   const topics = useQuery({ queryKey: ['topics', 'orchestration-settings'], queryFn: () => api<Topic[]>('/api/topics') });
   const [nodeName, setNodeName] = useState('');
-  const [issued, setIssued] = useState<{ command: string; token: string } | null>(null);
+  const [issued, setIssued] = useState<{ command: string; token: string; serverUrl: string } | null>(null);
   const [project, setProject] = useState({ name: '', defaultBranch: 'main', defaultProvider: 'codex' });
   const refresh = () => { void client.invalidateQueries({ queryKey: ['nodes'] }); void client.invalidateQueries({ queryKey: ['projects'] }); };
-  const createNode = useMutation({ mutationFn: () => api<{ command: string; token: string }>('/api/nodes', { method: 'POST', body: JSON.stringify({ name: nodeName.trim() }) }), onSuccess: (data) => { setIssued(data); setNodeName(''); refresh(); }, onError: (error) => toast.error(error.message) });
+  const createNode = useMutation({ mutationFn: () => api<{ command: string; token: string; serverUrl: string }>('/api/nodes', { method: 'POST', body: JSON.stringify({ name: nodeName.trim() }) }), onSuccess: (data) => { setIssued(data); setNodeName(''); refresh(); }, onError: (error) => toast.error(error.message) });
   const revoke = useMutation({ mutationFn: (id: string) => api(`/api/nodes/${id}/revoke`, { method: 'POST', body: '{}' }), onSuccess: refresh, onError: (error) => toast.error(error.message) });
   const createProject = useMutation({ mutationFn: () => api('/api/projects', { method: 'POST', body: JSON.stringify(project) }), onSuccess: () => { setProject({ name: '', defaultBranch: 'main', defaultProvider: 'codex' }); refresh(); }, onError: (error) => toast.error(error.message) });
   const activeNodes = (nodes.data ?? []).filter((node) => node.status === 'active');
+  const desktop = inDesktopShell();
   return <section className="mt-8 border-t pt-8" aria-label="主控编排设置">
     <h2 className="text-lg font-semibold">主控编排</h2>
     <p className="mt-1 text-sm text-muted-foreground">WWA 服务可以跑在远端服务器上。真正写代码、合入、跑测试的是你电脑上的「本机执行端」：它主动连到这里领任务，在本机启动 Codex / Claude。服务端看不到你的文件。</p>
@@ -38,7 +40,11 @@ export function OrchestrationSettings() {
     <form className="mt-2 flex gap-2" onSubmit={(event) => { event.preventDefault(); if (nodeName.trim()) createNode.mutate(); }}>
       <Input value={nodeName} onChange={(event) => setNodeName(event.target.value)} placeholder="执行端名称，例如：我的笔记本" className="max-w-xs" /><Button disabled={!nodeName.trim() || createNode.isPending}>新建执行端</Button>
     </form>
-    {issued && <div role="status" className="mt-2 space-y-1 rounded bg-muted p-2 text-xs"><p>在你的电脑上（WWA 源码目录里）运行下面的命令。令牌只显示这一次；<code>--roots</code> 填允许执行端访问的代码目录，只能在本机修改。</p><code className="block break-all">{issued.command}</code><Button size="sm" variant="ghost" onClick={() => { void navigator.clipboard?.writeText(issued.command); toast.success('已复制'); }}>复制命令</Button></div>}
+    {issued && <div role="status" className="mt-2 space-y-1 rounded bg-muted p-2 text-xs"><p>在你的电脑上（WWA 源码目录里）运行下面的命令。令牌只显示这一次；<code>--roots</code> 填允许执行端访问的代码目录，只能在本机修改。</p><code className="block break-all">{issued.command}</code><Button size="sm" variant="ghost" onClick={() => { void navigator.clipboard?.writeText(issued.command); toast.success('已复制'); }}>复制命令</Button>
+      {desktop && <div className="border-t pt-2"><p>也可以直接让桌面应用在这台电脑上运行执行端：选择允许它访问的代码目录后，桌面应用会在后台启动并在每次打开时自动拉起。</p><Button size="sm" onClick={() => { pairNodeOnThisComputer(issued.serverUrl, issued.token); setIssued(null); }}>在这台电脑上启动执行端</Button></div>}</div>}
+    {desktop && <p className="mt-2 text-xs text-muted-foreground">桌面应用托管的执行端：<Button size="sm" variant="ghost" onClick={() => stopNodeOnThisComputer()}>停止并移除本机执行端配置</Button>（不会吊销服务端令牌，需要时在上面吊销）</p>}
+
+    <NotificationSetting />
 
     <h3 className="mt-6 font-medium">项目</h3>
     <div className="mt-2 space-y-3 text-sm">{projects.data?.map((item) => <ProjectCard key={item.id} project={item} nodes={activeNodes} onChanged={refresh} />)}</div>
@@ -74,4 +80,15 @@ function TopicBinding({ topic, projects }: { topic: Topic; projects: Project[] }
   const binding = useQuery({ queryKey: ['project-binding', 'topic', topic.id], queryFn: () => api<{ projectId: string | null }>(`/api/project-bindings/topic/${topic.id}`) });
   const save = useMutation({ mutationFn: (projectId: string | null) => api(`/api/project-bindings/topic/${topic.id}`, { method: 'PUT', body: JSON.stringify({ projectId }) }), onSuccess: () => void client.invalidateQueries({ queryKey: ['project-binding'] }), onError: (error) => toast.error(error.message) });
   return <li className="flex items-center gap-2"><span className="w-40 truncate">{topic.name}</span><select className="rounded border bg-background px-2 py-0.5" value={binding.data?.projectId ?? ''} onChange={(event) => save.mutate(event.target.value || null)}><option value="">（无）</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></li>;
+}
+
+/** System notifications when a round waits for acceptance or pauses. Off switch is per device. */
+function NotificationSetting() {
+  const [mode, setMode] = useState(notificationMode());
+  const [support, setSupport] = useState(notificationSupport());
+  const label = support === 'desktop' ? '由桌面应用显示系统通知' : support === 'granted' ? '浏览器已允许通知（页面不在前台时显示）' : support === 'denied' ? '浏览器拒绝了通知权限，请在浏览器设置里允许' : support === 'unsupported' ? '当前浏览器不支持系统通知' : '需要浏览器授权';
+  return <div className="mt-4 text-sm"><h3 className="font-medium">系统通知</h3>
+    <label className="mt-1 flex items-center gap-2"><input type="checkbox" checked={mode === 'on'} onChange={(event) => { const next = event.target.checked ? 'on' : 'off'; setNotificationMode(next); setMode(next); }} /><span>编排待验收或暂停时发系统通知</span></label>
+    <p className="text-xs text-muted-foreground">{label}{support === 'default' && <Button size="sm" variant="ghost" onClick={() => { void requestNotificationPermission().then(() => setSupport(notificationSupport())); }}>允许通知</Button>}</p>
+  </div>;
 }

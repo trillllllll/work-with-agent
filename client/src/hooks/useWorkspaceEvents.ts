@@ -1,4 +1,6 @@
 import { useEffect } from 'react';
+import { systemNotify } from '@/lib/desktop-shell.js';
+import { pauseReasonLabels } from '@/components/orchestration/labels.js';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -54,6 +56,7 @@ export function useWorkspaceEvents() {
           notified.add(`orch:${event.orchestrationId}:${event.status}:${event.pauseReason ?? ''}`);
           if (event.status === 'awaiting_acceptance') toast.success('主控编排完成，任务待验收');
           else toast.warning('编排已暂停，需要你处理');
+          void systemNotify(event.status === 'awaiting_acceptance' ? '任务待验收' : '编排已暂停', event.status === 'awaiting_acceptance' ? '主控编排已完成，所有子任务已合入并通过核对，等你验收。' : `需要你处理：${pauseReasonLabels[event.pauseReason ?? ''] ?? event.pauseReason ?? ''}`, `orch:${event.orchestrationId}`);
         }
         if (event.kind === 'review' && !notified.has(key)) {
           notified.add(key);

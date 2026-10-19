@@ -6,9 +6,9 @@ import { Button } from '@/components/ui/button.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { orchestrationStatusLabels, pauseReasonLabels, stepKindLabels, stepStatusLabels } from './labels.js';
 
-type Step = { id: string; kind: string; subtaskId: string | null; status: string; attempt: number; continueCount: number; branch: string | null; error: string | null; mergeCommit: string | null; resultCommit: string | null; dependsOn: string[] };
+type Step = { id: string; kind: string; subtaskId: string | null; nodeId?: string | null; status: string; attempt: number; continueCount: number; branch: string | null; error: string | null; mergeCommit: string | null; resultCommit: string | null; dependsOn: string[] };
 type PlanStep = { taskId: string; dependsOn: string[]; acceptanceCriteria: string; rationale: string };
-type Orchestration = { id: string; taskId: string; round: number; status: string; revision: number; integrationBranch: string; integrationHead: string | null; pauseReason: string | null; finalComment: string | null; pushedAt: string | null; grant: { provider: string; maxParallel: number; allowShell: boolean }; plan: { goalCriteria: string; steps: PlanStep[]; fallback?: string }; taskSnapshot: { subtasks: Array<{ id: string; title: string }> }; steps?: Step[]; locations?: Array<{ id: string; nodeName: string; online: boolean; path: string }>; node?: { name: string; online: boolean } | null; events?: Array<{ seq: number; type: string; actorKind: string; createdAt: string; payload: any }> };
+type Orchestration = { id: string; taskId: string; round: number; status: string; revision: number; integrationBranch: string; integrationHead: string | null; pauseReason: string | null; finalComment: string | null; pushedAt: string | null; pullRequestUrl?: string | null; nodeId?: string | null; nodes?: Array<{ id: string; name: string; online: boolean; primary: boolean; gh: boolean }>; grant: { provider: string; maxParallel: number; allowShell: boolean }; plan: { goalCriteria: string; steps: PlanStep[]; fallback?: string }; taskSnapshot: { subtasks: Array<{ id: string; title: string }> }; steps?: Step[]; locations?: Array<{ id: string; nodeId: string; nodeName: string; online: boolean; path: string; originUrl?: string | null; protocol?: number }>; node?: { name: string; online: boolean } | null; events?: Array<{ seq: number; type: string; actorKind: string; createdAt: string; payload: any }> };
 type Project = { id: string; name: string };
 const OPEN = ['draft', 'running', 'paused', 'awaiting_acceptance'];
 
@@ -63,7 +63,11 @@ function LaunchForm({ draft, taskId, onStarted }: { draft: Orchestration; taskId
   const [provider, setProvider] = useState(draft.grant.provider);
   const [maxParallel, setMaxParallel] = useState(draft.grant.maxParallel);
   const [allowShell, setAllowShell] = useState(draft.grant.allowShell);
-  const start = useMutation({ mutationFn: () => api(`/api/orchestrations/${draft.id}/start`, { method: 'POST', body: JSON.stringify({ expectedRevision: draft.revision, locationId, provider, maxParallel, allowShell }) }), onSuccess: () => { toast.success('已开始运行'); onStarted(); }, onError: (error) => toast.error(error.message) });
+  const [extra, setExtra] = useState<string[]>([]);
+  const primary = draft.locations?.find((location) => location.id === locationId);
+  const others = (draft.locations ?? []).filter((location) => location.id !== locationId);
+  const extraIds = extra.filter((id) => others.some((location) => location.id === id));
+  const start = useMutation({ mutationFn: () => api(`/api/orchestrations/${draft.id}/start`, { method: 'POST', body: JSON.stringify({ expectedRevision: draft.revision, locationId, extraLocationIds: extraIds, provider, maxParallel, allowShell }) }), onSuccess: () => { toast.success('已开始运行'); onStarted(); }, onError: (error) => toast.error(error.message) });
   void taskId;
   return <div className="space-y-4 text-sm">
     {draft.plan.fallback && <p role="status" className="rounded bg-amber-500/10 p-2 text-amber-700 dark:text-amber-300">{draft.plan.fallback}</p>}
@@ -76,6 +80,10 @@ function LaunchForm({ draft, taskId, onStarted }: { draft: Orchestration; taskId
       <label className="flex items-center gap-2"><span className="w-24 text-muted-foreground">执行位置</span><select className="flex-1 rounded border bg-background px-2 py-1" value={locationId} onChange={(event) => setLocationId(event.target.value)}>
         {!draft.locations?.length && <option value="">（没有已验证的位置，先在设置里给项目添加位置）</option>}
         {draft.locations?.map((location) => <option key={location.id} value={location.id}>{location.nodeName}{location.online ? '' : '（离线）'} · {location.path}</option>)}</select></label>
+      {others.length > 0 && <fieldset className="space-y-1"><legend className="text-muted-foreground">跨机并行（可选）</legend>
+        {others.map((location) => { const usable = (location.protocol ?? 0) >= 2 && !!location.originUrl && !!primary?.originUrl; return <label key={location.id} className="flex items-center gap-2 text-xs"><input type="checkbox" disabled={!usable} checked={extraIds.includes(location.id)} onChange={(event) => setExtra(event.target.checked ? [...extraIds, location.id] : extraIds.filter((id) => id !== location.id))} /><span>{location.nodeName}{location.online ? '' : '（离线）'} · {location.path}</span>{!usable && <span className="text-muted-foreground">（{(location.protocol ?? 0) < 2 ? '执行端版本太旧' : '仓库没有 origin 远端'}）</span>}</label>; })}
+        <p className="text-xs text-muted-foreground">勾选后，子任务也会派给这些机器。集成分支和子任务分支会推送到 origin 中转（不强推），合入、核对仍在上面选的执行位置完成。</p>
+      </fieldset>}
       <label className="flex items-center gap-2"><span className="w-24 text-muted-foreground">本机 AI</span><select className="rounded border bg-background px-2 py-1" value={provider} onChange={(event) => setProvider(event.target.value)}><option value="codex">Codex</option><option value="claude">Claude</option></select></label>
       <label className="flex items-center gap-2"><span className="w-24 text-muted-foreground">最大并行</span><input type="number" min={1} max={4} className="w-20 rounded border bg-background px-2 py-1" value={maxParallel} onChange={(event) => setMaxParallel(Math.max(1, Math.min(4, Number(event.target.value) || 1)))} /></label>
       <label className="flex items-center gap-2"><input type="checkbox" checked={allowShell} onChange={(event) => setAllowShell(event.target.checked)} /><span>允许本机 AI 运行测试命令</span></label>
@@ -89,16 +97,22 @@ function Progress({ row, onRedispatch }: { row: Orchestration; onRedispatch: (dr
   const client = useQueryClient();
   const titles = new Map(row.taskSnapshot.subtasks.map((task) => [task.id, task.title]));
   const act = useMutation({ mutationFn: ({ path, body }: { path: string; body?: unknown }) => api<any>(`/api/orchestrations/${row.id}/${path}`, { method: 'POST', body: JSON.stringify(body ?? {}) }), onSuccess: (data, variables) => { void client.invalidateQueries({ queryKey: ['orchestrations'] }); void client.invalidateQueries({ queryKey: ['orchestration'] }); if (variables.path === 'redispatch') onRedispatch(data); }, onError: (error) => toast.error(error.message) });
-  const steps = (row.steps ?? []).filter((step) => step.kind !== 'push' || step.status !== 'succeeded');
+  const steps = (row.steps ?? []).filter((step) => !['push', 'publish', 'pull_request'].includes(step.kind) || step.status !== 'succeeded');
+  const nodeNames = new Map((row.nodes ?? []).map((node) => [node.id, node.name]));
+  const multi = (row.nodes ?? []).length > 1;
+  const primaryNode = (row.nodes ?? []).find((node) => node.primary);
   const events = (row.events ?? []).slice(-15).reverse();
   return <div className="space-y-4 text-sm">
-    <div className="flex flex-wrap items-center gap-2"><span className="rounded bg-muted px-2 py-0.5 font-medium">{orchestrationStatusLabels[row.status] ?? row.status}</span><span>第 {row.round} 轮</span><code className="text-xs">{row.integrationBranch}</code>{row.integrationHead && <code className="text-xs">{row.integrationHead.slice(0, 10)}</code>}{row.node && <span className="text-xs text-muted-foreground">执行端：{row.node.name}{row.node.online ? '（在线）' : '（离线）'}</span>}</div>
+    <div className="flex flex-wrap items-center gap-2"><span className="rounded bg-muted px-2 py-0.5 font-medium">{orchestrationStatusLabels[row.status] ?? row.status}</span><span>第 {row.round} 轮</span><code className="text-xs">{row.integrationBranch}</code>{row.integrationHead && <code className="text-xs">{row.integrationHead.slice(0, 10)}</code>}{multi ? <span className="text-xs text-muted-foreground">执行端：{(row.nodes ?? []).map((node) => `${node.name}${node.primary ? '（主）' : ''}${node.online ? '' : '（离线）'}`).join('、')}</span> : row.node && <span className="text-xs text-muted-foreground">执行端：{row.node.name}{row.node.online ? '（在线）' : '（离线）'}</span>}</div>
+    {row.pullRequestUrl && <p className="text-xs">PR：<a className="underline" href={row.pullRequestUrl} target="_blank" rel="noreferrer">{row.pullRequestUrl}</a></p>}
     {row.pauseReason && <p role="alert" className="rounded bg-amber-500/10 p-2">{pauseReasonLabels[row.pauseReason] ?? row.pauseReason}</p>}
     {row.finalComment && <p className="rounded bg-muted p-2">主控意见：{row.finalComment}</p>}
     <ul className="space-y-1">{steps.map((step) => <li key={step.id} className="flex flex-wrap items-center gap-2 rounded border px-2 py-1">
       <span className="w-16 text-muted-foreground">{stepKindLabels[step.kind] ?? step.kind}</span>
       <span className="min-w-0 flex-1 truncate">{step.subtaskId ? titles.get(step.subtaskId) ?? step.subtaskId : ''}{step.attempt > 1 ? ` · 第 ${step.attempt} 次` : ''}{step.continueCount ? ` · 继续 ${step.continueCount}` : ''}</span>
+      {multi && step.kind === 'develop' && step.nodeId && <span className="text-xs text-muted-foreground">@{nodeNames.get(step.nodeId) ?? step.nodeId}</span>}
       <span className={step.status === 'needs_user' ? 'text-amber-600' : 'text-muted-foreground'}>{stepStatusLabels[step.status] ?? step.status}</span>
+      {step.status === 'needs_user' && step.kind === 'publish' && <Button size="sm" variant="ghost" onClick={() => act.mutate({ path: `steps/${step.id}/retry`, body: { mode: 'fresh' } })}>重新推送</Button>}
       {step.status === 'needs_user' && ['develop', 'merge', 'setup'].includes(step.kind) && <>
         {step.kind === 'develop' && <Button size="sm" variant="ghost" onClick={() => act.mutate({ path: `steps/${step.id}/retry`, body: { mode: 'continue', comment: step.error ?? undefined } })}>带意见继续</Button>}
         {step.kind === 'merge' && step.mergeCommit && <Button size="sm" variant="ghost" onClick={() => act.mutate({ path: `steps/${step.id}/retry`, body: { mode: 'reverify' } })}>重新核对</Button>}
@@ -112,6 +126,7 @@ function Progress({ row, onRedispatch }: { row: Orchestration; onRedispatch: (dr
       {row.status === 'paused' && <Button size="sm" variant="outline" onClick={() => act.mutate({ path: 'resume' })}>继续</Button>}
       {row.status === 'awaiting_acceptance' && <Button size="sm" onClick={() => act.mutate({ path: 'accept' })}>验收通过</Button>}
       {['accepted', 'awaiting_acceptance'].includes(row.status) && <Button size="sm" variant="outline" onClick={() => act.mutate({ path: 'push' })}>{row.pushedAt ? '再次推送集成分支' : '推送集成分支'}</Button>}
+      {['accepted', 'awaiting_acceptance'].includes(row.status) && row.pushedAt && !row.pullRequestUrl && primaryNode?.gh && <Button size="sm" variant="outline" disabled={steps.some((step) => step.kind === 'pull_request' && step.status === 'dispatched')} onClick={() => act.mutate({ path: 'pull-request' })}>创建 PR</Button>}
       {['running', 'paused', 'awaiting_acceptance', 'accepted', 'cancelled'].includes(row.status) && <Button size="sm" variant="ghost" onClick={() => act.mutate({ path: 'redispatch' })}>改完任务后重新派发</Button>}
       {['running', 'paused', 'awaiting_acceptance'].includes(row.status) && <Button size="sm" variant="ghost" className="text-destructive" onClick={() => act.mutate({ path: 'cancel' })}>取消</Button>}
     </div>
