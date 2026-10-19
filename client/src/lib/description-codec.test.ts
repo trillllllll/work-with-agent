@@ -226,4 +226,116 @@ describe('description codec', () => {
     const reparsed = parseDescription(output, 'task-a');
     expect(reparsed.doc.content?.[0]?.content?.[0]?.text).toBe('a ` b');
   });
+
+  // 相邻的同符号列表项会被 CommonMark 合并成一个列表，序列化必须交替符号。
+  const bulletItem = (text: string): JSONContent => ({
+    type: 'listItem',
+    content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+  });
+  const taskEntry = (checked: boolean, text: string): JSONContent => ({
+    type: 'taskItem',
+    attrs: { checked },
+    content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+  });
+  const listOf = (type: string, items: JSONContent[]): JSONContent => ({ type, content: items });
+  const docTypes = (markdown: string) => parseDescription(markdown, 'task-a').doc.content?.map((node) => node.type);
+
+  it('相邻无序列表与任务列表换符号，往返后仍是两个列表', () => {
+    const { model } = parseDescription('', 'task-a');
+    const edited: JSONContent = {
+      type: 'doc',
+      content: [listOf('bulletList', [bulletItem('甲')]), listOf('taskList', [taskEntry(false, '乙')])],
+    };
+    const output = serializeDescription(model, edited);
+    expect(output).toBe('- 甲\n\n* [ ] 乙');
+    expect(docTypes(output)).toEqual(['bulletList', 'taskList']);
+  });
+
+  it('任务列表在前、无序列表在后同样换符号', () => {
+    const { model } = parseDescription('', 'task-a');
+    const edited: JSONContent = {
+      type: 'doc',
+      content: [listOf('taskList', [taskEntry(true, '甲')]), listOf('bulletList', [bulletItem('乙')])],
+    };
+    const output = serializeDescription(model, edited);
+    expect(output).toBe('- [x] 甲\n\n* 乙');
+    expect(docTypes(output)).toEqual(['taskList', 'bulletList']);
+  });
+
+  it('多个列表连排时符号交替，边界全部保留', () => {
+    const { model } = parseDescription('', 'task-a');
+    const edited: JSONContent = {
+      type: 'doc',
+      content: [
+        listOf('bulletList', [bulletItem('甲')]),
+        listOf('bulletList', [bulletItem('乙')]),
+        listOf('taskList', [taskEntry(false, '丙')]),
+        listOf('taskList', [taskEntry(true, '丁')]),
+      ],
+    };
+    const output = serializeDescription(model, edited);
+    expect(output).toBe('- 甲\n\n* 乙\n\n- [ ] 丙\n\n* [x] 丁');
+    expect(docTypes(output)).toEqual(['bulletList', 'bulletList', 'taskList', 'taskList']);
+  });
+
+  it('被段落隔开的列表不换符号，输出与旧版一致', () => {
+    const { model } = parseDescription('', 'task-a');
+    const edited: JSONContent = {
+      type: 'doc',
+      content: [
+        listOf('bulletList', [bulletItem('甲')]),
+        { type: 'paragraph', content: [{ type: 'text', text: '间隔' }] },
+        listOf('bulletList', [bulletItem('乙')]),
+        { type: 'orderedList', attrs: { start: 1 }, content: [bulletItem('丙')] },
+        listOf('taskList', [taskEntry(false, '丁')]),
+      ],
+    };
+    const output = serializeDescription(model, edited);
+    expect(output).toBe('- 甲\n\n间隔\n\n- 乙\n\n1. 丙\n\n- [ ] 丁');
+    expect(docTypes(output)).toEqual(['bulletList', 'paragraph', 'bulletList', 'orderedList', 'taskList']);
+  });
+
+  it('引用块内相邻列表同样换符号', () => {
+    const { model } = parseDescription('', 'task-a');
+    const edited: JSONContent = {
+      type: 'doc',
+      content: [{
+        type: 'blockquote',
+        content: [listOf('bulletList', [bulletItem('甲')]), listOf('taskList', [taskEntry(false, '乙')])],
+      }],
+    };
+    const output = serializeDescription(model, edited);
+    expect(output).toBe('> - 甲\n>\n> * [ ] 乙');
+    const reparsed = parseDescription(output, 'task-a');
+    const quote = reparsed.doc.content?.[0];
+    expect(quote?.type).toBe('blockquote');
+    expect(quote?.content?.map((node) => node.type)).toEqual(['bulletList', 'taskList']);
+  });
+
+  it('同一个列表项内相邻的嵌套列表换符号，往返不产生原文片段', () => {
+    const { model } = parseDescription('', 'task-a');
+    const edited: JSONContent = {
+      type: 'doc',
+      content: [listOf('bulletList', [{
+        type: 'listItem',
+        content: [
+          { type: 'paragraph', content: [{ type: 'text', text: '父项' }] },
+          listOf('bulletList', [bulletItem('甲')]),
+          listOf('taskList', [taskEntry(false, '乙')]),
+        ],
+      }])],
+    };
+    const output = serializeDescription(model, edited);
+    expect(output).toBe('- 父项\n  - 甲\n  * [ ] 乙');
+    const reparsed = parseDescription(output, 'task-a');
+    expect(reparsed.doc.content?.[0]?.type).toBe('bulletList');
+    const nested = reparsed.doc.content?.[0]?.content?.[0]?.content?.slice(1);
+    expect(nested?.map((node) => node.type)).toEqual(['bulletList', 'taskList']);
+  });
+
+  it('混合列表来源仍整体保留为原文片段（解析端行为不变）', () => {
+    const source = '- 甲\n\n- [ ] 乙\n';
+    const { doc } = parseDescription(source, 'task-a');
+    expect(doc.content?.map((node) => node.type)).toEqual(['rawMarkdown']);
+  });
 });

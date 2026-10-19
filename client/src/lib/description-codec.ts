@@ -36,14 +36,19 @@ export function parseDescription(markdown: string, taskId: string): {
 export function serializeDescription(model: DescriptionModel, doc: JSONContent): string {
   if (docsEqual(doc, model.originalDoc)) return model.originalMarkdown;
   const parts: string[] = [];
+  let lastBullet: string | null = null;
   for (const node of doc.content ?? []) {
     if (node.type === 'rawMarkdown') {
       const raw = node.attrs?.markdown;
       if (typeof raw === 'string' && raw.trim()) parts.push(raw);
+      lastBullet = null;
       continue;
     }
-    const part = serializeBlock(node, '');
-    if (part.trim()) parts.push(part);
+    const serialized = serializeBlock(node, '', lastBullet);
+    if (serialized.text.trim()) {
+      parts.push(serialized.text);
+      lastBullet = serialized.bullet;
+    }
   }
   return parts.join('\n\n');
 }
@@ -252,36 +257,57 @@ function applyMark(node: JSONContent, mark: { type: string; attrs?: Record<strin
 
 // ---------- 序列化：Tiptap 文档 -> Markdown ----------
 
-function serializeBlock(node: JSONContent, indent: string): string {
+// CommonMark 会把相邻的同符号列表项合并成一个列表，空行也不例外。
+// bulletList 与 taskList 都默认用 `-`，相邻时必须换符号，列表边界才能在往返中保留。
+function nextBullet(last: string | null): string {
+  return last === '-' ? '*' : '-';
+}
+
+type SerializedBlock = { text: string; bullet: string | null };
+
+function serializeBlock(node: JSONContent, indent: string, lastBullet: string | null): SerializedBlock {
   switch (node.type) {
     case 'paragraph':
-      return serializeInline(node.content, { indent });
+      return { text: serializeInline(node.content, { indent }), bullet: null };
     case 'heading':
-      return `${'#'.repeat(clampLevel(node.attrs?.level))} ${serializeInline(node.content, { indent })}`;
+      return { text: `${'#'.repeat(clampLevel(node.attrs?.level))} ${serializeInline(node.content, { indent })}`, bullet: null };
     case 'codeBlock': {
       const text = codeBlockText(node);
       const language = typeof node.attrs?.language === 'string' ? node.attrs.language : '';
       const fence = '`'.repeat(Math.max(3, longestRun(text, '`') + 1));
       // CommonMark 会剥掉闭合围栏前的最后一个换行；补足与不补，重解析结果都一致。
       const tail = text.endsWith('\n') ? '' : '\n';
-      return `${fence}${language}\n${text}${tail}${fence}`;
+      return { text: `${fence}${language}\n${text}${tail}${fence}`, bullet: null };
     }
     case 'blockquote': {
-      const inner = (node.content ?? []).map((child) => serializeBlock(child, indent)).filter((part) => part.trim());
-      return inner.join('\n\n').split('\n').map((line) => (line ? `> ${line}` : '>')).join('\n');
+      // 引块内部是独立容器，符号邻接状态单独起算。
+      const inner: string[] = [];
+      let quoteBullet: string | null = null;
+      for (const child of node.content ?? []) {
+        const part = serializeBlock(child, indent, quoteBullet);
+        if (part.text.trim()) {
+          inner.push(part.text);
+          quoteBullet = part.bullet;
+        }
+      }
+      return { text: inner.join('\n\n').split('\n').map((line) => (line ? `> ${line}` : '>')).join('\n'), bullet: null };
     }
-    case 'bulletList':
-      return serializeListItems(node.content, { marker: () => '- ', indent });
+    case 'bulletList': {
+      const bullet = nextBullet(lastBullet);
+      return { text: serializeListItems(node.content, { marker: () => `${bullet} `, indent }), bullet };
+    }
     case 'orderedList': {
       const start = typeof node.attrs?.start === 'number' && Number.isFinite(node.attrs.start) ? Math.max(1, Math.trunc(node.attrs.start)) : 1;
-      return serializeListItems(node.content, { marker: (index) => `${start + index}. `, indent });
+      return { text: serializeListItems(node.content, { marker: (index) => `${start + index}. `, indent }), bullet: null };
     }
-    case 'taskList':
-      return serializeListItems(node.content, { marker: (_index, checked) => `- [${checked ? 'x' : ' '}] `, indent });
+    case 'taskList': {
+      const bullet = nextBullet(lastBullet);
+      return { text: serializeListItems(node.content, { marker: (_index, checked) => `${bullet} [${checked ? 'x' : ' '}] `, indent }), bullet };
+    }
     case 'table':
-      return serializeTable(node);
+      return { text: serializeTable(node), bullet: null };
     default:
-      return '';
+      return { text: '', bullet: null };
   }
 }
 
@@ -296,13 +322,20 @@ function serializeListItems(items: readonly JSONContent[] | undefined, context: 
     const paragraph = children.find((child) => child.type === 'paragraph');
     lines.push(`${context.indent}${marker}${serializeInline(paragraph?.content, { indent: '' })}`);
     const nestedIndent = `${context.indent}${' '.repeat(marker.length)}`;
+    let nestedBullet: string | null = null;
     for (const child of children) {
       if (child.type === 'bulletList' || child.type === 'orderedList' || child.type === 'taskList') {
-        const nested = serializeBlock(child, nestedIndent);
-        if (nested.trim()) lines.push(nested);
+        const nested = serializeBlock(child, nestedIndent, nestedBullet);
+        if (nested.text.trim()) {
+          lines.push(nested.text);
+          nestedBullet = nested.bullet;
+        }
       } else if (child.type === 'rawMarkdown') {
         const raw = child.attrs?.markdown;
-        if (typeof raw === 'string' && raw.trim()) lines.push(`${nestedIndent}${raw}`);
+        if (typeof raw === 'string' && raw.trim()) {
+          lines.push(`${nestedIndent}${raw}`);
+          nestedBullet = null;
+        }
       }
     }
   });

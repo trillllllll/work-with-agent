@@ -12,7 +12,7 @@ Tiptap 3 编辑内核、自动保存协调器、服务端纯文字分支、旧 e
 
 ### 阶段 1 · 数据类型与 Markdown 适配层
 - `client/src/lib/task-editor-types.ts`：全部数据契约（TaskText / TextVersion / TaskTextDraftV1 / PendingRequest / SaveStatus 等）。
-- `client/src/lib/description-codec.ts`：Markdown ⇄ Tiptap JSON 适配层。未修改逐字返回原文；不支持块保留为 `rawMarkdown` 原文片段；`wwa-material:` 资料引用解析为原子 `materialReference` 节点。
+- `client/src/lib/description-codec.ts`：Markdown ⇄ Tiptap JSON 适配层。未修改逐字返回原文；不支持块保留为 `rawMarkdown` 原文片段；`wwa-material:` 资料引用解析为原子 `materialReference` 节点。2026-10-19 起，相邻的项目符号族列表（bulletList/taskList）序列化时交替 `-`/`*`，防止重新解析合并（见第五节）。
 - `client/src/lib/task-text-merge.ts`：字段级三方合并（标题按 trim 比较，正文逐字）。
 - 测试：`description-codec.test.ts`（22）、`task-text-merge.test.ts`（4）全部通过。
 
@@ -57,6 +57,8 @@ Tiptap 3 编辑内核、自动保存协调器、服务端纯文字分支、旧 e
 | `git diff --check` | 干净 |
 
 以上为 2026-10-14 的历史验收结果，当轮没有跑完整仓库 e2e。相关实现已进入 main；2026-10-16 整理文档时未重新运行编辑器验收，也未补做真实 macOS 中文输入法验证。
+
+2026-10-19：序列化相邻列表符号交替修复后实测——`description-codec.test.ts` 29/29（新增 7 条相邻列表往返用例），client 单测 163/163，`tsc -b` 通过；原始缺陷场景（有序+无序+任务三个相邻列表）端到端往返无原文片段。
 
 ---
 
@@ -118,6 +120,7 @@ Tiptap 3 编辑内核、自动保存协调器、服务端纯文字分支、旧 e
 - `waitForRequest` 的响应对象没有 `postDataBuffer()`，要用 `(await resp).request().postDataBuffer()`；`waitForResponse` 的 `.json()` 只能读一次。
 - 勾选正文列表（taskList）保存后规范化会去掉块尾 `\n`。
 - 列表扩展只能注册一次。StarterKit 要关掉 `bulletList`、`orderedList`、`listItem`、`listKeymap`，任务列表用 `ListKit.configure({ taskItem: { nested: true } })`。两份列表插件的 `appendTransaction` 会抛 `Applying a mismatched transaction`，上传装饰插不进去。
+- CommonMark 把相邻的同符号列表项合并成一个列表，空行也不例外；bulletList 和 taskList 都默认用 `-`，相邻时会把「无序列表+任务列表」合并成混合列表，解析端整块回退原文片段。序列化已按 `lastBullet` 交替 `-`/`*`（含引块内与单个列表项内的嵌套列表），有序列表、段落、引用块本身会打断邻接。
 - WebKit 画布不能编码 WebP 时，压缩库会交回 PNG 或一个读不完的 Blob。必须按魔数拒绝非 WebP，再改压 JPEG。Worker 压缩和读字节都要有超时，超时后走主线程。能编码 WebP 的浏览器仍上传 WebP。
 - 触屏上 TaskItem 对 `mousedown` `preventDefault`，原生勾选框会亮，但 `change` 不发生。`TaskItemPointerSync` 在 `pointerup` / `click` 之后把 `input.checked` 写回节点，且只在和 `attrs.checked` 不一致时写，避免桌面鼠标点两次。
 - 图片插入点若落在代码块内，要插到代码块之后；父节点不能容纳行内图片时外包一段落。否则 1200→800 重挂编辑器后，选区在 `<code>` 开头，正文会变成空围栏加粘在图片后面的代码。
