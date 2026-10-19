@@ -31,6 +31,8 @@ if (inBrowser) i18n.use(LanguageDetector);
 void i18n.use(initReactI18next).init({
   resources,
   ns: namespaces,
+  // Resources are bundled, so initialise synchronously and render translated text on the first paint.
+  initAsync: false,
   defaultNS: 'common',
   fallbackNS: 'common',
   fallbackLng: defaultLanguage,
