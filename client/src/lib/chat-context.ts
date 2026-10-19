@@ -9,7 +9,7 @@ export function chatScope(page: string, topicId: string): { kind: 'inbox' } | { 
   if (page === 'knowledge') return { kind: 'all' };
   if (allPages.has(page)) return { kind: 'all' };
   if (page === 'board' && topicId) return { kind: 'topic', topicId };
-  if (['settings', 'connections', 'proposals', 'changes', 'runs', 'reviews', 'more'].includes(page)) return { kind: 'all' };
+  if (['settings', 'connections', 'proposals', 'skills', 'changes', 'runs', 'reviews', 'more'].includes(page)) return { kind: 'all' };
   return { kind: 'inbox' };
 }
 

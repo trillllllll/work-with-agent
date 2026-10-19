@@ -66,9 +66,9 @@ export function Sidebar({ compact, route, page, topics, topicsLoading, selectedT
         {!planning && <nav aria-label="整理" className="sidebar-nav sidebar-nav-follow">
           {links(['tags', 'archived']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}
         </nav>}
-        {planning ? <details className="mt-5"><summary className="sidebar-link text-muted-foreground"><span className="flex-1">工作</span><ChevronDown className="size-3.5" /></summary><nav aria-label="工作" className="sidebar-nav">{links(['connections', 'proposals', 'knowledge', 'library', 'runs', 'reviews']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}</nav></details> : <><SidebarSection label="工作" />
+        {planning ? <details className="mt-5"><summary className="sidebar-link text-muted-foreground"><span className="flex-1">工作</span><ChevronDown className="size-3.5" /></summary><nav aria-label="工作" className="sidebar-nav">{links(['connections', 'proposals', 'knowledge', 'library', 'skills', 'runs', 'reviews']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}</nav></details> : <><SidebarSection label="工作" />
         <nav aria-label="工作" className="sidebar-nav">
-          {links(['connections', 'proposals', 'knowledge', 'library', 'runs', 'reviews']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}
+          {links(['connections', 'proposals', 'knowledge', 'library', 'skills', 'runs', 'reviews']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}
         </nav></>}
       </div>
       <div className="sidebar-footer">

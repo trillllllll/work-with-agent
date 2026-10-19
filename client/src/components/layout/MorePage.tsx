@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils.js';
 const groups: { label: string; views: View[] }[] = [
   { label: '视图', views: ['inbox', 'today', 'plan', 'focus', 'quadrant', 'topics'] },
   { label: '整理', views: ['search', 'tags', 'archived'] },
-  { label: '工作', views: ['connections', 'proposals', 'knowledge', 'library', 'runs', 'reviews'] },
+  { label: '工作', views: ['connections', 'proposals', 'knowledge', 'library', 'skills', 'runs', 'reviews'] },
   { label: '系统', views: ['settings', 'trash', 'changes'] },
 ];
 
