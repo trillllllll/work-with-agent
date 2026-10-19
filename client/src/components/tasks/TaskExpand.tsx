@@ -615,7 +615,7 @@ function ParentTaskLink() {
   if (parent && parent.id !== parentId) return unavailable;
   if (query.isFetching) return loading;
   if (query.isError) {
-    return <div data-testid="task-parent-row" className="task-parent-row"><button type="button" className="task-parent-link" aria-label={t('taskExpand.parentRetry')} onClick={() => { void query.refetch(); }}>{t('taskExpand.parentRetry')}</button></div>;
+    return <div data-testid="task-parent-row" className="task-parent-row"><button type="button" className="task-parent-link" aria-label={t('taskExpand.parentRetryLabel')} onClick={() => { void query.refetch(); }}>{t('taskExpand.parentRetry')}</button></div>;
   }
   return loading;
 }

@@ -243,6 +243,7 @@
     "parentUnavailable": "Parent task unavailable",
     "parentLoading": "Loading parent task…",
     "openParent": "Open parent task: {{title}}",
+    "parentRetryLabel": "Reload parent task",
     "parentRetry": "Couldn't load. Retry",
     "contextLabel": "Task · {{title}}",
     "detailLabel": "Task details",

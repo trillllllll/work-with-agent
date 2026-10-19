@@ -241,6 +241,7 @@
     "parentUnavailable": "父任务不可用",
     "parentLoading": "正在加载父任务…",
     "openParent": "打开父任务：{{title}}",
+    "parentRetryLabel": "重新加载父任务",
     "parentRetry": "加载失败，重试",
     "contextLabel": "任务 · {{title}}",
     "detailLabel": "任务详情",
