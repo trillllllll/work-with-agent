@@ -46,6 +46,16 @@ export async function readTaskImage(taskId: string, imageId: string) {
   return { bytes: await readKnowledgeBlob(row.path), mimeType: row.mimeType };
 }
 
+export function taskImageResponseHeaders(image: { bytes: Uint8Array; mimeType: string }) {
+  return {
+    'Content-Type': image.mimeType,
+    'Content-Length': String(image.bytes.byteLength),
+    'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': 'private, no-store',
+    'Content-Disposition': 'inline',
+  };
+}
+
 export async function pruneTaskImages(tx: Db, taskId: string, description: string) {
   const keep = taskImageIds(taskId, description);
   const rows = await tx.taskImage.findMany({ where: { taskId } });

@@ -130,7 +130,7 @@ Grok：
 grok mcp add work_with_agent --scope user --transport http http://127.0.0.1:3016/mcp --header "Authorization: Bearer 创建连接时显示的凭据"
 ```
 
-重新加载宿主的 MCP，让它调用 `list_tasks`。没有勾选「允许直接执行」的写入会进「待确认」，这时数据还没有改。
+重新加载宿主的 MCP，让它调用 `list_tasks`。没有勾选「允许直接执行」的写入会进「待确认」，这时数据还没有改。`get_task` 会附带任务说明里引用的截图，材料原件用 `get_material_attachment` 读取。
 
 ## 数据留在本机
 
@@ -171,7 +171,7 @@ npm run db:migrate
 npm run dev
 ```
 
-Open the one-time login link printed by the API. The web UI is <http://127.0.0.1:5176> and the API is <http://127.0.0.1:3016>. `npm run desktop:build` produces a macOS Apple Silicon app, while `npm run desktop:build:windows` produces a Windows x64 NSIS installer under `desktop/src-tauri/target/release/bundle/nsis/`. The Windows app stores data in `%LOCALAPPDATA%\work-with-agent\` and its packaged MCP configuration invokes the bundled `node.exe` with `server/dist/mcp/index.js`. Import an existing database with `node scripts/import-desktop-data.mjs` before the first launch. Copy a new AI connection from the desktop app. Its macOS stdio command is `~/Library/Application Support/work-with-agent/bin/wwa-mcp`, and Grok uses `http://127.0.0.1:47316/mcp`. Configurations that still point at port 3016 keep talking to the dev server. Build `npm run build -w server` before connecting a host to the dev server. Create a connection in the app, then point Codex, Claude Code, or Grok at `server/dist/mcp/index.js` with `WWA_API_URL` and `WWA_CONNECTION_TOKEN`. Grok uses `http://127.0.0.1:3016/mcp` with a bearer token. Ask the host to call `list_tasks`. Unapproved writes stay in the proposal queue.
+Open the one-time login link printed by the API. The web UI is <http://127.0.0.1:5176> and the API is <http://127.0.0.1:3016>. `npm run desktop:build` produces a macOS Apple Silicon app, while `npm run desktop:build:windows` produces a Windows x64 NSIS installer under `desktop/src-tauri/target/release/bundle/nsis/`. The Windows app stores data in `%LOCALAPPDATA%\work-with-agent\` and its packaged MCP configuration invokes the bundled `node.exe` with `server/dist/mcp/index.js`. Import an existing database with `node scripts/import-desktop-data.mjs` before the first launch. Copy a new AI connection from the desktop app. Its macOS stdio command is `~/Library/Application Support/work-with-agent/bin/wwa-mcp`, and Grok uses `http://127.0.0.1:47316/mcp`. Configurations that still point at port 3016 keep talking to the dev server. Build `npm run build -w server` before connecting a host to the dev server. Create a connection in the app, then point Codex, Claude Code, or Grok at `server/dist/mcp/index.js` with `WWA_API_URL` and `WWA_CONNECTION_TOKEN`. Grok uses `http://127.0.0.1:3016/mcp` with a bearer token. Ask the host to call `list_tasks`. `get_task` includes screenshots referenced in the task description, and `get_material_attachment` reads a material file. Unapproved writes stay in the proposal queue.
 
 Confirmed memories group into communities and can be shown as 3D terrain. The sample puts sign-in, lists, memory, and handoff on their own ground, with more important knowledge higher up.
 

@@ -12,7 +12,7 @@ import { mountMcp } from './mcp/http.js';
 import { commandsRouter } from './application/commands.js';
 import { legacyMutationMiddleware, workspaceQueryRouter } from './application/workspace-api.js';
 import { taskActivity } from './application/task-activity.js';
-import { addTaskImage, readTaskImage } from './application/task-images.js';
+import { addTaskImage, readTaskImage, taskImageResponseHeaders } from './application/task-images.js';
 import { handoffRouter } from './routes/handoffs.js';
 import { createServerRouter } from './routes/server.js';
 import { createKnowledgeRouter } from './routes/knowledge.js';
@@ -120,7 +120,7 @@ app.post('/api/tasks/:id/images', schema(taskImageBody), async (req, res, next) 
 app.get('/api/tasks/:id/images/:imageId', async (req, res, next) => {
   try {
     const image = await readTaskImage(String(req.params.id), String(req.params.imageId));
-    res.status(200).set({ 'Content-Type': image.mimeType, 'Content-Length': String(image.bytes.byteLength), 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store', 'Content-Disposition': 'inline' }).end(image.bytes);
+    res.status(200).set(taskImageResponseHeaders(image)).end(image.bytes);
   } catch (error) { next(error); }
 });
 app.get('/api/tasks/:id', async (req, res, next) => { try { const task = await tasks.get(String(req.params.id)); if (!task) return res.status(404).json({ data: null, error: '任务不存在' }); send(res, task); } catch (error) { next(error); } });

@@ -39,7 +39,8 @@ export function createKnowledgeRouter(service = new KnowledgeService(), organiza
   router.get('/materials/:id/versions/:revision/attachment', async (req, res, next) => {
     try {
       const result = await service.attachment(getActor(req), String(req.params.id), z.coerce.number().int().positive().parse(req.params.revision));
-      res.set({ 'Content-Type': 'application/octet-stream', 'X-Content-Type-Options': 'nosniff', 'Content-Disposition': `attachment; filename="attachment"; filename*=UTF-8''${encodeURIComponent(result.fileName)}` }).send(result.bytes);
+      const mimeHeader = (result.mimeType || 'application/octet-stream').replace(/[^\t\x20-\x7e]/g, '').slice(0, 200) || 'application/octet-stream';
+      res.set({ 'Content-Type': 'application/octet-stream', 'X-Content-Type-Options': 'nosniff', 'X-WWA-Mime-Type': mimeHeader, 'Content-Disposition': `attachment; filename="attachment"; filename*=UTF-8''${encodeURIComponent(result.fileName)}` }).send(result.bytes);
     } catch (error) { next(error); }
   });
   const submit = async (req: Request, command: Command) => new CommandService().submit(getActor(req), { requestId: requestId(req), commands: [command] });
