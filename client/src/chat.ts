@@ -14,6 +14,20 @@ export type ExternalPromptPart = {
   prompt: string;
 };
 
+/** A pending worktree deletion card the assistant created; the user confirms or cancels it in the chat. */
+export type WorktreeCleanupPart = {
+  schemaVersion: 1;
+  type: 'worktree_cleanup';
+  id: string;
+  cleanupId: string;
+  nodeName: string;
+  removableCount: number;
+  blockedCount: number;
+  reason: string;
+};
+
+export type ChatPart = ExternalPromptPart | WorktreeCleanupPart;
+
 export type ChatMessage = {
   blocks?: ContentBlock[];
   blocksJson?: string | null;
@@ -27,7 +41,7 @@ export type ChatMessage = {
   toolCalls?: string | null;
   toolCallId?: string | null;
   tools?: ToolActivity[];
-  parts?: ExternalPromptPart[];
+  parts?: ChatPart[];
   partsJson?: string | null;
 };
 
@@ -99,11 +113,11 @@ export type SseEvent = {
   seq?: number;
   state?: string;
   pauseReason?: string | null;
-  part?: ExternalPromptPart;
+  part?: ChatPart;
   supersedesApprovalId?: string;
 };
 
-const READ_ONLY_TOOLS = new Set(['image_search', 'present_reply', 'read_app_knowledge', 'read_page_state', 'list_topics', 'get_topic', 'get_topic_progress', 'list_tasks', 'get_task', 'conversation_search', 'get_time', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'get_change_schema']);
+const READ_ONLY_TOOLS = new Set(['image_search', 'present_reply', 'read_app_knowledge', 'read_page_state', 'list_topics', 'get_topic', 'get_topic_progress', 'list_tasks', 'get_task', 'conversation_search', 'get_time', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'get_change_schema', 'orchestration_read']);
 const PREVIEW_MAX = 80;
 
 const LIBRARY_READS = new Set(['list', 'search', 'read', 'content', 'linked_tasks', 'task_materials', 'folders', 'tags', 'ask']);
@@ -166,6 +180,8 @@ export function toolPreview(name: string, args: Record<string, unknown> = {}, re
   if (status === 'error' || result?.success === false) return clip(result?.error || '执行失败');
   if (name === 'propose_changes') return clip(typeof args.summary === 'string' && args.summary.trim() ? args.summary : '等待确认');
   if (name === 'prepare_external_prompt') return '已整理提示词';
+  if (name === 'propose_worktree_cleanup') return '等待你确认删除';
+  if (name === 'orchestration_read') return orchestrationReadPreview(args, status);
   if (name === 'get_time' || name === 'get_work_context' || name === 'query_tasks' || name === 'query_topics' || name === 'get_task_activity' || name === 'search_workspace' || name === 'library_read' || name === 'memory_read' || name === 'get_change_schema') {
     return clip(textField(args, ['q', 'title', 'taskId']) || (status === 'running' ? '正在读取' : '已读取'));
   }
@@ -484,7 +500,7 @@ export function applyMessageEvent(messages: ChatMessage[], event: SseEvent): Cha
     }));
   }
   if (event.type === 'sources' && event.sources) return messages.map((item) => item.id === event.messageId ? { ...item, sources: event.sources } : item);
-  if (event.type === 'external_prompt' && event.part && event.part.type === 'external_prompt' && event.part.prompt) {
+  if (event.type === 'external_prompt' && event.part && isChatPart(event.part)) {
     const part = event.part;
     const index = assistantIndex(messages, event.messageId);
     if (index < 0) return [...messages, { role: 'assistant' as const, content: '', status: 'completed' as const, parts: [part] }];
@@ -514,16 +530,29 @@ export function applyMessageEvent(messages: ChatMessage[], event: SseEvent): Cha
   return messages;
 }
 
-export function parseExternalParts(raw: string | null | undefined): ExternalPromptPart[] {
+function isChatPart(value: unknown): value is ChatPart {
+  if (!value || typeof value !== 'object') return false;
+  const part = value as Partial<ExternalPromptPart> & Partial<WorktreeCleanupPart>;
+  if (typeof part.id !== 'string') return false;
+  if (part.type === 'external_prompt') return typeof part.prompt === 'string' && part.prompt.length > 0;
+  if (part.type === 'worktree_cleanup') return typeof part.cleanupId === 'string' && part.cleanupId.length > 0;
+  return false;
+}
+
+const orchestrationReadLabels: Record<string, string> = { attention: '需要关注的编排', list: '编排轮次', get: '编排详情', nodes: '执行端', worktrees: 'worktree 列表' };
+function orchestrationReadPreview(args: Record<string, unknown>, status?: ToolActivityStatus) {
+  const label = typeof args.action === 'string' ? orchestrationReadLabels[args.action] : undefined;
+  return label ?? (status === 'running' ? '正在读取' : '已读取');
+}
+
+export function parseExternalParts(raw: string | null | undefined): ChatPart[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
     return parsed.flatMap((item) => {
       if (!item || typeof item !== 'object') return [];
-      const part = item as ExternalPromptPart;
-      if (part.type !== 'external_prompt' || typeof part.prompt !== 'string' || typeof part.id !== 'string') return [];
-      return [part];
+      return isChatPart(item) ? [item] : [];
     });
   } catch {
     return [];

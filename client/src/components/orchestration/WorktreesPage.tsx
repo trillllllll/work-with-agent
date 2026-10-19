@@ -104,3 +104,29 @@ export function CleanupCardView({ card }: { card: CleanupCard }) {
     <div className="mt-2 flex gap-2"><Button size="sm" variant="destructive" disabled={!card.removableCount || confirm.isPending} onClick={() => confirm.mutate()}>确认删除</Button><Button size="sm" variant="ghost" onClick={() => cancel.mutate()}>取消</Button></div>
   </div>;
 }
+
+const cardStatusText: Record<string, string> = { cancelled: '已取消，没有删除任何 worktree。', expired: '卡片已过期，没有删除任何 worktree。', failed: '执行端删除失败。' };
+
+/** The assistant's cleanup proposal inside the chat. It reads the card's live state; only the buttons here (or on #/worktrees) can confirm it. */
+export function WorktreeCleanupChatCard({ cleanupId }: { cleanupId: string }) {
+  const query = useQuery({
+    queryKey: ['worktrees', 'cleanup', cleanupId],
+    queryFn: ({ signal }) => api<CleanupCard>(`/api/worktree-cleanups/${cleanupId}`, { signal }),
+    refetchInterval: (current) => current.state.data?.status === 'confirmed' ? 3000 : false,
+  });
+  const card = query.data;
+  if (query.error) return <p role="alert" className="mt-3 text-xs text-destructive">删除卡片读取失败：{query.error.message}</p>;
+  if (!card) return <p className="mt-3 text-xs text-muted-foreground">正在读取删除卡片…</p>;
+  const expired = card.status === 'pending' && Date.parse(card.expiresAt) < Date.now();
+  if ((card.status === 'pending' && !expired) || card.status === 'confirmed') return <CleanupCardView card={card} />;
+  if (card.status === 'done') {
+    const removed = card.result?.removed ?? [];
+    const skipped = card.result?.skipped ?? [];
+    return <div role="status" aria-label="worktree 删除结果" className="mt-3 rounded border p-3 text-xs">
+      <div className="font-medium">执行端「{card.nodeName}」已删除 {removed.length} 个 worktree</div>
+      {removed.map((item) => <div key={item.path} className="text-muted-foreground">{item.path}{item.branch ? ` · ${item.branch}${item.branchDeleted ? '（分支已删除）' : item.branchNote ? `（${item.branchNote}）` : ''}` : ''}</div>)}
+      {skipped.map((item) => <div key={item.path} className="text-amber-600">保留 {item.path}：{item.reason}</div>)}
+    </div>;
+  }
+  return <p role="status" className="mt-3 rounded bg-muted p-2 text-xs">{expired ? cardStatusText.expired : cardStatusText[card.status] ?? card.status}{card.result?.error ? ` ${card.result.error}` : ''}</p>;
+}

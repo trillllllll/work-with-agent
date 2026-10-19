@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button.js';
 import { cn } from '@/lib/utils.js';
 import { ApprovalCard } from './ApprovalCard.js';
 import { ExternalPromptCard } from './ExternalPromptCard.js';
+import { WorktreeCleanupChatCard } from '@/components/orchestration/WorktreesPage.js';
 import { isAppChangeApproval, ReviewCard } from './ReviewCard.js';
 import { isTaskBatchApproval, TaskBatchCard } from './TaskBatchCard.js';
 import { MarkdownView } from './MarkdownView.js';
@@ -164,7 +165,7 @@ export function MessageItem({ message, approvals = [], approvalPending = false, 
         </div>
       )}
       {approvalsOnMessage(message, approvals).filter(isAppChangeApproval).map((approval) => <ReviewCard key={approval.approvalId} approval={approval} phase={approval.approvalId === executingApprovalId ? phase : ''} unknown={unknownApprovalIds.includes(approval.approvalId)} unresolved={unresolvedApprovalIds.includes(approval.approvalId)} onApprove={onApprove} onReject={onReject} onChanged={onChanged} onRepreviewed={onRepreviewed} />)}
-      {message.parts?.map((part) => <ExternalPromptCard key={part.id} part={part} />)}
+      {message.parts?.map((part) => part.type === 'worktree_cleanup' ? <WorktreeCleanupChatCard key={part.id} cleanupId={part.cleanupId} /> : <ExternalPromptCard key={part.id} part={part} />)}
     </div>
   );
 }

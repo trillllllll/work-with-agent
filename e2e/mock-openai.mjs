@@ -191,6 +191,15 @@ const server = http.createServer(async (req, res) => {
     const taskId = latestUser.match(/taskId=(\S+)/)?.[1] ?? '';
     return callTool('e2e_activity', 'get_task_activity', { taskId }, '我先读取任务动态。');
   }
+  if (latestUser.includes('清理已验收的 worktree')) {
+    if (toolSince('propose_worktree_cleanup')) return stream(res, [{ choices: [{ delta: { content: '删除卡片已经生成，请在卡片上确认。' }, finish_reason: 'stop' }] }]);
+    const listed = sinceUser.map(toolData).find((data) => Array.isArray(data?.items) && data.items.some((view) => Array.isArray(view?.worktrees)));
+    if (!listed) return callTool('e2e_orch_read', 'orchestration_read', { action: 'worktrees' }, '我先看看执行端上报的 worktree。');
+    const view = listed.items.find((item) => item.worktrees.some((entry) => entry.action === 'remove'));
+    const entry = view?.worktrees.find((item) => item.action === 'remove');
+    if (!view || !entry) return stream(res, [{ choices: [{ delta: { content: '没有可以删除的 worktree。' }, finish_reason: 'stop' }] }]);
+    return callTool('e2e_orch_cleanup', 'propose_worktree_cleanup', { nodeId: view.node.id, paths: [entry.path], reason: '轮次已验收' }, `准备删除 ${entry.name}。`);
+  }
   if (latestUser.includes('整理成外部提示词')) {
     if (toolSince('prepare_external_prompt')) return stream(res, [{ choices: [{ delta: { content: '提示词已经放在卡片里，可以复制。' }, finish_reason: 'stop' }] }]);
     return callTool('e2e_external', 'prepare_external_prompt', {

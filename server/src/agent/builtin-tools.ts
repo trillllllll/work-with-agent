@@ -20,6 +20,7 @@ import { externalPromptInput, externalPromptPart, renderExternalPrompt } from '.
 import { prepareChanges } from './propose.js';
 import { getCurrentTime, type Clock } from './time.js';
 import { searchWorkspace } from './workspace-search.js';
+import { proposeWorktreeCleanup, readOrchestration } from './orchestration-tools.js';
 
 const tasks = new TaskService();
 const topics = new TopicService();
@@ -290,6 +291,11 @@ export async function executeBuiltinTool(input: {
       if (!parts.some((item) => item && typeof item === 'object' && (item as { id?: string }).id === part.id)) parts.push(part);
       await prisma.message.update({ where: { id: input.run.assistantMessageId }, data: { partsJson: JSON.stringify(parts) } });
       return { success: true, data: { status: 'ready', partId: part.id, title: part.title, limitation: part.limitation }, part };
+    }
+    if (input.name === 'orchestration_read') return { success: true, data: redact(await readOrchestration(args)) };
+    if (input.name === 'propose_worktree_cleanup') {
+      const proposed = await proposeWorktreeCleanup(args, input.run.assistantMessageId, input.toolCallId);
+      return { success: true, data: proposed.data, part: proposed.part };
     }
     if (input.name === 'propose_changes') {
       const prepared = await prepareChanges({ runId: input.run.id, leaseToken: input.run.leaseToken, conversationId: input.run.conversationId, assistantMessageId: input.run.assistantMessageId, sourceUserMessageId: input.run.sourceUserMessageId, toolCallId: input.toolCallId, topicId: input.context.scope.kind === 'topic' ? input.context.scope.topicId : null, args });
