@@ -175,7 +175,7 @@ export function TaskMaterials({ taskId, topicId, description, readonly, saveText
   }}>
     <div className="task-materials-head">
       <h2 className="library-name">资料 · {materials.data?.total ?? items.length}</h2>
-      {!readonly && <div className="flex gap-2">
+      {!readonly && <div className="task-materials-actions">
         <label className="library-btn">上传文件<input className="sr-only" type="file" multiple aria-label="上传文件" onChange={(event) => { const files = [...(event.target.files ?? [])]; event.target.value = ''; void upload(files); }} /></label>
         <Dialog open={picking} onOpenChange={(open) => { setPicking(open); if (!open) setPreview(null); }}>
           <DialogTrigger asChild><button type="button" className="library-btn" onMouseDown={() => { bookmarkRef.current = null; }} onClick={() => {
