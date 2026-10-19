@@ -1,6 +1,7 @@
 import http from 'node:http';
 
-const port = 4010;
+// Alternate ports let parallel suites share one machine (see playwright.orchestration.config.ts).
+const port = Number(process.env.MOCK_OPENAI_PORT ?? 4010);
 const json = (res, status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
 const stream = (res, chunks) => {
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
@@ -14,6 +15,19 @@ const server = http.createServer(async (req, res) => {
   const body = JSON.parse(raw || '{}');
   const messages = body.messages ?? [];
   const latestUser = String([...messages].reverse().find((item) => item.role === 'user')?.content ?? '');
+  const system = String(messages.find((item) => item.role === 'system')?.content ?? '');
+  if (system.includes('[编排计划]') || system.includes('[编排验收]') || system.includes('[编排最终验收]')) {
+    // Orchestrator model: independent subtasks, accept every report, final satisfied.
+    let output;
+    if (system.includes('[编排计划]')) {
+      const subtasks = JSON.parse(latestUser.match(/子任务：(\[.*\])/)[1]);
+      output = { goalCriteria: '每个子任务的文件都已合入集成分支', steps: subtasks.map((task) => ({ taskId: task.id, dependsOn: [], acceptanceCriteria: `${task.title} 已提交`, rationale: 'mock 计划：互不依赖' })) };
+    } else if (system.includes('[编排验收]')) output = { decision: 'accept', comment: 'mock 审阅通过' };
+    else output = { satisfied: true, comment: 'mock：主任务已满足' };
+    const content = JSON.stringify(output);
+    if (body.stream) return stream(res, [{ choices: [{ delta: { content }, finish_reason: null }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] }]);
+    return json(res, 200, { choices: [{ message: { role: 'assistant', content }, finish_reason: 'stop' }] });
+  }
   if (body.model === 'mock-upstream' || latestUser.includes('上游错误')) return json(res, 502, { error: { message: 'mock upstream failure' } });
   if (!body.stream && body.model === 'mock-invalid') return json(res, 200, { choices: [] });
   if (!body.stream && messages.some((item) => item.role === 'system' && String(item.content).includes('有来源的长期记忆'))) {
