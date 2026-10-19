@@ -1,6 +1,6 @@
 import { readStoredApproval } from '../../../server/src/domain/task-batch-types.js';
 import { parseSseFrame, type Approval, type SseEvent, type ToolResult } from '../chat.js';
-import { t } from '../i18n/index.js';
+import { currentLanguage, t } from '../i18n/index.js';
 
 function labels<K extends string>(keys: Record<K, string>): Record<K, string> {
   const result = {} as Record<K, string>;
@@ -82,7 +82,8 @@ export const toolLabels: Record<string, string> = labels({
 export const API_URL = '';
 let csrfToken = '';
 export function setCsrfToken(value: string) { csrfToken = value; }
-export function authHeaders(): Record<string, string> { return csrfToken ? { 'X-CSRF-Token': csrfToken } : {}; }
+/** Every API call carries the CSRF token (when signed in) and the chosen UI language, so server messages match it. */
+export function authHeaders(): Record<string, string> { return { 'X-WWA-Language': currentLanguage(), ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}) }; }
 
 export type MutationMeta = { changeId?: string; affectedTaskIds?: string[]; warnings?: string[] };
 export type ApiEnvelope<T> = { data: T; error: null; meta?: MutationMeta };

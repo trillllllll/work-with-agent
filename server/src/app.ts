@@ -28,10 +28,13 @@ import { listPlanTimeBands, replacePlanTimeBands } from './application/plan-time
 import { isValidVisibleViews, type MobileNavigationView } from './domain/mobile-navigation.js';
 import { readMobileNavigation, writeMobileNavigation } from './application/mobile-navigation.js';
 import { generateExternalReview } from './runner/review-generator.js';
+import { localeMiddleware, translateMessage, translatePayload } from './i18n/index.js';
 
 export const app = express();
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '12mb' }));
+// After the body parser: its stream callbacks would otherwise drop the request's locale context.
+app.use(localeMiddleware);
 registerKnowledgeCommands();
 registerGraphCommands();
 registerLibraryCommands();
@@ -64,7 +67,7 @@ const send = (res: Response, result: unknown) => {
 };
 const schema = (value: z.ZodTypeAny) => (req: Request, res: Response, next: NextFunction) => {
   const parsed = value.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ data: null, error: parsed.error.flatten() });
+  if (!parsed.success) return res.status(400).json({ data: null, error: parsed.error.flatten((issue) => translateMessage(issue.message, res.locals.locale)) });
   req.body = parsed.data;
   return next();
 };
@@ -194,7 +197,7 @@ const chatBody = z.object({
   context: z.unknown().optional(),
 });
 const sse = (res: Response, event: string, data: unknown) => {
-  if (!res.destroyed && !res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  if (!res.destroyed && !res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(translatePayload(data, res.locals.locale))}\n\n`);
 };
 app.post('/api/chat', schema(chatBody), async (req, res) => {
   res.status(200).set({ 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
@@ -243,7 +246,7 @@ mountMcp(app);
 
 app.use((error: any, _req: Request, res: Response, _next: NextFunction) => {
   if (res.headersSent) return;
-  if (error instanceof z.ZodError) return res.status(400).json({ data: null, error: error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; '), code: 'VALIDATION_ERROR' });
+  if (error instanceof z.ZodError) return res.status(400).json({ data: null, error: error.issues.map((issue) => `${issue.path.join('.')}: ${translateMessage(issue.message, res.locals.locale)}`).join('; '), code: 'VALIDATION_ERROR' });
   const status = Number(error?.status) || 500;
   res.status(status).json({ data: null, error: error?.message ?? '服务器错误', ...(error?.code ? { code: error.code } : {}), ...(error?.details ? { details: error.details } : {}) });
 });

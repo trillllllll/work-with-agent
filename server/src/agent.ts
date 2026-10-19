@@ -256,7 +256,7 @@ export class AgentService {
     if (approval.status !== 'pending') throw Object.assign(new Error('该审核已处理'), { status: 409 });
     const proposal = approval.result ? JSON.parse(approval.result) : null;
     if (proposal?.proposalId) await new CommandService().reject(ownerActor, proposal.proposalId, { expectedRevision: proposal.proposalRevision });
-    await this.recordResolvedTool(approval.conversationId, approval.toolName, typeof proposal?.toolCallId === 'string' ? proposal.toolCallId : undefined, { success: false, error: '用户拒绝，数据未修改' });
+    await this.recordResolvedTool(approval.conversationId, approval.toolName, typeof proposal?.toolCallId === 'string' ? proposal.toolCallId : undefined, { success: false, error: '用户拒绝，数据未修改' }); // i18n-ignore: protocol text; the client matches it (userRejectedError)
     return this.approvals.update(approvalId, 'rejected');
   }
   async previewApproval(approvalId: string) { return this.approvals.preview(approvalId); }
