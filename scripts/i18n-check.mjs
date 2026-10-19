@@ -1,10 +1,13 @@
-// Verifies client i18n: every namespace has the same keys in each locale, and
-// no Chinese text is left in client/src outside the locale files.
+// Verifies i18n: every client namespace has the same keys in each locale, no
+// Chinese text is left in client/src outside the locale files, and every
+// user-visible server message (scripts/server-messages.mjs) has an English entry
+// in server/src/i18n/locales/en.ts with the same placeholders.
 // Escape hatches: a line comment containing `i18n-ignore` on the same or previous
 // line, or `i18n-ignore-file` anywhere in a file (for model prompts / protocol text).
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import ts from 'typescript';
+import { collectServerMessages } from './server-messages.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const src = join(root, 'client/src');
@@ -63,9 +66,34 @@ for (const path of files) {
   visit(source);
 }
 
+// 3. Server locale parity: zh-CN is the source text; en must cover exactly the collected messages.
+const serverLocalePath = join(root, 'server/src/i18n/locales/en.ts');
+let serverMessageCount = 0;
+try {
+  const text = readFileSync(serverLocalePath, 'utf8');
+  const start = text.indexOf('{', text.indexOf('='));
+  const end = text.lastIndexOf('}');
+  const serverEn = JSON.parse(text.slice(start, end + 1));
+  const collected = collectServerMessages();
+  const keys = new Set(collected.map((message) => message.key));
+  serverMessageCount = keys.size;
+  const placeholders = (value) => [...value.matchAll(/\{(\d+)\}/g)].map((match) => match[1]).sort().join(',');
+  for (const message of collected) {
+    if (!(message.key in serverEn)) errors.push(`${message.file}:${message.line}: server message has no English entry: ${message.key.slice(0, 80)}`);
+  }
+  for (const [key, value] of Object.entries(serverEn)) {
+    if (!keys.has(key)) errors.push(`server en: stale entry no longer used in server/src: ${key.slice(0, 80)}`);
+    if (typeof value !== 'string' || !value.trim()) errors.push(`server en: empty translation for ${key.slice(0, 80)}`);
+    else {
+      if (cjk.test(value)) errors.push(`server en: "${key.slice(0, 60)}" still contains Chinese`);
+      if (placeholders(key) !== placeholders(value)) errors.push(`server en: placeholders differ for ${key.slice(0, 80)}`);
+    }
+  }
+} catch (error) { errors.push(`server/src/i18n/locales/en.ts: ${error.message}`); }
+
 if (errors.length) {
   console.error(errors.join('\n'));
   console.error(`\ni18n check failed: ${errors.length} problem(s), ${literalCount} untranslated literal(s).`);
   process.exit(1);
 }
-console.log(`i18n check passed: ${namespaces.size} namespace(s) in ${languages.join(', ')}, ${files.length} source files clean.`);
+console.log(`i18n check passed: ${namespaces.size} namespace(s) in ${languages.join(', ')}, ${files.length} source files clean, ${serverMessageCount} server message(s) translated.`);
