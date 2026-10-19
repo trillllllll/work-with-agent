@@ -34,7 +34,7 @@ function SidebarTopicList({ topics, loading, selectedTopicId, onSelect, onEdit }
         return (
           <div key={topic.id} className="sidebar-row" data-active={active || undefined}>
             <button type="button" onClick={() => onSelect(topic.id)} aria-current={active ? 'page' : undefined} className="sidebar-link">
-              <span className={cn('sidebar-list-mark', topic.isExploration && 'is-explore')} aria-hidden="true" />
+              <span className="sidebar-list-mark" data-color={topic.color || 'slate'} aria-hidden="true" />
               <span className="min-w-0 flex-1 truncate">{topic.name}</span>
               {topic.isExploration && <em className="sidebar-explore-tag">探索</em>}
             </button>
@@ -62,9 +62,9 @@ function PageTopicList({ topics, loading, selectedTopicId, onSelect, onEdit, onO
         return (
           <div key={topic.id} data-active={active || undefined} className={classificationClass(active)}>
             <button type="button" onClick={() => onSelect(topic.id)} aria-current={active ? 'page' : undefined} className={classificationLabelClass(active)}>
-              <span className={cn('size-1.5 shrink-0 rounded-full transition-[background-color,box-shadow,transform] duration-200', active ? 'scale-110 bg-primary shadow-[0_0_0_3px_var(--accent)]' : 'bg-muted-foreground/40')} />
+              <span className="list-color-dot" data-color={topic.color || 'slate'} aria-hidden="true" />
               <span className="truncate">{topic.name}</span>
-              {topic.isExploration && <em className="glass-topic-badge ml-auto flex w-10 shrink-0 items-center justify-center whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] not-italic text-explore">探索</em>}
+              {topic.isExploration && <em className="sidebar-explore-tag ml-auto">探索</em>}
             </button>
             <button type="button" title="编辑清单" aria-label={`编辑清单：${topic.name}`} onClick={() => onEdit(topic)} className="mr-1 grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground opacity-100 transition-[background-color,color,opacity,transform] duration-200 hover:scale-105 hover:bg-[var(--glass-hover)] hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100">
               <Pencil className="size-3.5" />

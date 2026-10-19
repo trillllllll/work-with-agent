@@ -277,7 +277,7 @@ export function App() {
     return () => window.removeEventListener('wwa-open-source', handler);
   }, []);
   const markDragHint = () => { localStorage.setItem('todo.dragHintSeen', '1'); setDragHintSeen(true); };
-  const newTopic = () => setTopicForm({ name: '', description: '', isExploration: false });
+  const newTopic = () => setTopicForm({ name: '', description: '', color: 'slate', isExploration: false });
   const createTask = (input: { title: string; topicId: string | null; parentId: string | null } & Partial<TaskDraft>) => actions.create(input, input.parentId);
   const patchTask = async (task: Task, changes: Partial<TaskDraft>): Promise<Task | undefined> => {
     const keys = [task.parentId, changes.parentId, ...(task.children ?? tasks.filter((child) => child.parentId === task.id)).map((child) => child.id)].filter(Boolean) as string[];
@@ -384,7 +384,7 @@ export function App() {
     if (!topicForm?.name?.trim() || topicSaveLock.current) return;
     topicSaveLock.current = true;
     try {
-      const response = await actions.write<Topic>(topicForm.id ? `/api/topics/${topicForm.id}` : '/api/topics', topicForm.id ? 'PATCH' : 'POST', { expectedRevision: topicForm.revision, name: topicForm.name.trim(), description: topicForm.description ?? '', isExploration: topicForm.isExploration ?? false, ...(topicForm.goal !== undefined ? { goal: topicForm.goal } : {}) }, [topicForm.id ?? 'topic-create'], topicForm.id ? '清单已更新' : '清单已创建');
+      const response = await actions.write<Topic>(topicForm.id ? `/api/topics/${topicForm.id}` : '/api/topics', topicForm.id ? 'PATCH' : 'POST', { expectedRevision: topicForm.revision, name: topicForm.name.trim(), description: topicForm.description ?? '', color: topicForm.color ?? 'slate', isExploration: topicForm.isExploration ?? false, ...(topicForm.goal !== undefined ? { goal: topicForm.goal } : {}) }, [topicForm.id ?? 'topic-create'], topicForm.id ? '清单已更新' : '清单已创建');
       setTopicForm(null); selectTopic(response.data.id);
     } catch { /* Keep the form available. */ } finally { topicSaveLock.current = false; }
   };

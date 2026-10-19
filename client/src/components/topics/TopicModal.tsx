@@ -1,4 +1,5 @@
 import type { FormEvent } from 'react';
+import { tagColors } from '@/lib/api.js';
 import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
@@ -22,6 +23,10 @@ export function TopicModal({ form, onChange, onClose, onSave, onDelete, busy = f
         <div className="mb-4">
           <Label htmlFor="topic-name">清单名称</Label>
           <Input id="topic-name" required value={form.name} onChange={(event) => onChange({ ...form, name: event.target.value })} placeholder="例如：Agent 工作室" />
+        </div>
+        <div className="mb-4">
+          <Label>颜色</Label>
+          <div className="flex items-center gap-1.5" role="group" aria-label="清单颜色">{tagColors.map((color) => <button key={color.id} type="button" className="tag-color-swatch" data-color={color.id} aria-label={color.label} aria-pressed={(form.color || 'slate') === color.id} onClick={() => onChange({ ...form, color: color.id })} />)}</div>
         </div>
         <details className="disclosure mb-4"><summary className="mb-3 cursor-pointer text-sm text-muted-foreground">探索属性与目标</summary><div className="mb-4">
           <Label htmlFor="topic-description">描述</Label>

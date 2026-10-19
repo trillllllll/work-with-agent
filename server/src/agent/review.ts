@@ -6,10 +6,11 @@ import { isGroup } from '../application/workspace-store.js';
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 const statusText: Record<string, string> = { todo: '待办', doing: '进行中', blocked: '阻塞', done: '已完成' };
+const colorText: Record<string, string> = { violet: '紫', blue: '蓝', teal: '青', green: '绿', amber: '琥珀', rose: '玫红', slate: '灰' };
 const priorityText: Record<string, string> = { none: '无', low: '低', medium: '中', high: '高' };
 
 const taskKeys = ['title', 'description', 'status', 'priority', 'dueDate', 'scheduledStart', 'scheduledEnd', 'estimatedMinutes', 'resultSummary', 'topicId', 'parentId', 'sortOrder', 'tagIds', 'deletedAt'] as const;
-const topicKeys = ['name', 'description', 'goal', 'isExploration', 'draftSummary', 'archivedAt'] as const;
+const topicKeys = ['name', 'description', 'goal', 'isExploration', 'color', 'draftSummary', 'archivedAt'] as const;
 const materialKeys = ['title', 'kind', 'content', 'uri', 'topicId', 'folderId', 'tagIds', 'taskIds', 'archivedAt'] as const;
 const memoryKeys = ['title', 'content', 'kind', 'importance', 'labels', 'status', 'evidence'] as const;
 const tagKeys = ['name', 'color'] as const;
@@ -58,6 +59,7 @@ function show(key: string, value: unknown): string {
   if (value === null || value === undefined) return '未设置';
   if (value === '' || (Array.isArray(value) && value.length === 0)) return '清空';
   if (key === 'status' && typeof value === 'string') return statusText[value] ?? value;
+  if (key === 'color' && typeof value === 'string') return colorText[value] ?? value;
   if (key === 'priority' && typeof value === 'string') return priorityText[value] ?? value;
   if (key === 'deletedAt') return value ? '已删除' : '未删除';
   if (key === 'archivedAt') return value ? '已归档' : '未归档';

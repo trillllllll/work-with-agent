@@ -48,6 +48,7 @@ model Topic {
   id            String   @id @default(cuid()) @map("id")
   name          String
   description   String   @default("")
+  color         String   @default("slate")
   isExploration Boolean  @default(false) @map("is_exploration")
   goal          String     @default("")
   draftSummary  String     @default("") @map("draft_summary")

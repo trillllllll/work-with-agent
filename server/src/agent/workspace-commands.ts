@@ -107,7 +107,7 @@ function commandSchema(kind: string, input: JsonSchema, fields: { clientRef?: bo
 
 const taskCreateJson = objectSchema(taskProperties, ['title']);
 const taskUpdateJson = objectSchema({ ...taskProperties, completeChildren: { type: 'boolean' } }, [], 1);
-const topicProperties = { name: stringSchema, description: { type: 'string' }, isExploration: { type: 'boolean' }, goal: { type: 'string' } };
+const topicProperties = { name: stringSchema, description: { type: 'string' }, color: { enum: [...tagColors] }, isExploration: { type: 'boolean' }, goal: { type: 'string' } };
 const topicCreateJson = objectSchema(topicProperties, ['name']);
 const topicUpdateJson = objectSchema({ ...topicProperties, draftSummary: { type: 'string' } }, [], 1);
 const tagProperties = { name: stringSchema, color: { enum: [...tagColors] } };
