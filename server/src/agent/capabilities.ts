@@ -63,14 +63,25 @@ export const builtinTools: BuiltinTool[] = [
   { name: 'prepare_external_prompt', description: '把超出内置能力的需求整理成可复制的提示词。不会发送、保存为资料或创建任务。', parameters: { type: 'object', additionalProperties: false, required: ['capability', 'limitation', 'goal', 'background', 'constraints', 'expectedOutput'], properties: { capability: { enum: ['web_research', 'local_execution', 'external_application', 'other'] }, limitation: { type: 'string' }, goal: { type: 'string' }, background: { type: 'array', items: { type: 'string' } }, constraints: { type: 'array', items: { type: 'string' } }, expectedOutput: { type: 'array', items: { type: 'string' } } } }, writesBusinessData: false },
 ];
 
+const loadSkillTool: BuiltinTool = {
+  name: 'load_skill',
+  description: '按名称读取一条已启用技能的当前版本正文和版本号。只用技能目录里列出的名称。',
+  parameters: { type: 'object', additionalProperties: false, required: ['name'], properties: { name: { type: 'string', minLength: 1, maxLength: 80 } } },
+  writesBusinessData: false,
+};
+
 const byName = new Map(builtinTools.map((tool) => [tool.name, tool]));
 
-export function builtinToolDefinitions() {
-  return builtinTools.map((tool) => ({ type: 'function' as const, function: { name: tool.name, description: tool.description, parameters: tool.parameters } }));
+function toolsFor(opts?: { loadSkill?: boolean }) {
+  return opts?.loadSkill ? [...builtinTools, loadSkillTool] : builtinTools;
 }
 
-export function capabilityManifest() {
-  return builtinTools.map((tool) => `- ${tool.name}：${tool.description}${tool.writesBusinessData ? ' 业务写入只生成待确认方案。' : ''}`).join('\n');
+export function builtinToolDefinitions(opts?: { loadSkill?: boolean }) {
+  return toolsFor(opts).map((tool) => ({ type: 'function' as const, function: { name: tool.name, description: tool.description, parameters: tool.parameters } }));
+}
+
+export function capabilityManifest(opts?: { loadSkill?: boolean }) {
+  return toolsFor(opts).map((tool) => `- ${tool.name}：${tool.description}${tool.writesBusinessData ? ' 业务写入只生成待确认方案。' : ''}`).join('\n');
 }
 
 export function isBuiltinTool(name: string) {
@@ -151,8 +162,8 @@ AI发起者和批准者要区分。
 普通讨论、解释、规划和起草不属于能力不足，不要无故转交外部AI。
 工具临时失败不等于产品没有该能力；失败时如实说明原因。`;
 
-export function builtinSystemPrompt() {
-  return BUILTIN_BEHAVIOR_PROMPT.replace('{{CAPABILITY_MANIFEST}}', capabilityManifest());
+export function builtinSystemPrompt(opts?: { loadSkill?: boolean }) {
+  return BUILTIN_BEHAVIOR_PROMPT.replace('{{CAPABILITY_MANIFEST}}', capabilityManifest(opts));
 }
 
 const refSchema = z.union([z.string().min(1), z.object({ $ref: z.string().min(1) }).strict()]);

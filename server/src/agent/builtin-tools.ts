@@ -222,8 +222,17 @@ export async function executeBuiltinTool(input: {
   run: { id: string; leaseToken: string; conversationId: string; assistantMessageId: string; sourceUserMessageId: string };
   toolCallId: string;
   clock?: Clock;
+  loadSkill?: boolean;
 }): Promise<BuiltinResult> {
   try {
+    if (input.name === 'load_skill') {
+      if (!input.loadSkill) return CAPABILITY_UNAVAILABLE;
+      const name = typeof input.args.name === 'string' ? input.args.name.trim() : '';
+      if (!name) return { success: false, code: 'NOT_FOUND' };
+      const skill = await prisma.skill.findFirst({ where: { name, enabled: true, deletedAt: null } });
+      if (!skill) return { success: false, code: 'NOT_FOUND' };
+      return { success: true, data: { skillId: skill.id, name: skill.name, revision: skill.revision, description: skill.description, instructions: skill.instructions } };
+    }
     if (!isBuiltinTool(input.name)) return CAPABILITY_UNAVAILABLE;
     const args = input.args;
     if (input.name === 'image_search') return { success: true, data: await searchImages(args) };

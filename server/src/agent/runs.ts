@@ -4,7 +4,7 @@ import { parseMessageBlocks, projectBlocks } from './content-blocks.js';
 import { sourceReadTools, sourcesFromTool } from './assistant-sources.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import type { ChatEvent, ModelMessage, PageContext, ModelDelta } from '../agent.js';
+import type { ChatEvent, ModelMessage, ModelToolDefinition, PageContext, ModelDelta } from '../agent.js';
 import { appendAutoMemoryAssistant, beginAutoMemoryTurn, completeAutoMemoryTurn, failAutoMemoryTurn } from '../application/auto-memory-chat.js';
 import { canonical } from '../application/commands.js';
 import { ContextService } from '../application/conversation.js';
@@ -13,7 +13,9 @@ import { ownerActor } from '../application/security.js';
 import type { ToolCall } from '../application/workspace.js';
 import { DomainError } from '../domain/task.js';
 import { prisma } from '../infrastructure/prisma.js';
+import { enabledSkillCatalog } from '../application/skills.js';
 import { assembleRunMessages } from './assemble.js';
+import { builtinToolDefinitions } from './capabilities.js';
 import { executeBuiltinTool, type BuiltinResult } from './builtin-tools.js';
 import { contextFromRequest, validateScopeAndResolveIds, type StoredChatContext } from './chat-context.js';
 import { recoverExpiredDecisions } from './decision.js';
@@ -37,10 +39,11 @@ export const runCursorSchema = z.object({
   budgetEndRound: z.number().int().min(0),
   assistantMessageId: z.string().nullable(),
   nextToolIndex: z.number().int().min(0),
+  loadSkill: z.boolean().optional(),
 });
 export type RunCursor = z.infer<typeof runCursorSchema>;
 
-export type ModelStream = (messages: ModelMessage[], signal?: AbortSignal, includeTools?: boolean) => AsyncIterable<ModelDelta>;
+export type ModelStream = (messages: ModelMessage[], signal?: AbortSignal, includeTools?: boolean, tools?: ModelToolDefinition[]) => AsyncIterable<ModelDelta>;
 
 const initialCursor = (): RunCursor => ({ schemaVersion: 1, phase: 'model', round: 0, budgetEndRound: 16, assistantMessageId: null, nextToolIndex: 0 });
 
@@ -235,6 +238,8 @@ async function ensureMessages(runId: string, token: string, contextService: Cont
   const run = await ownsLease(runId, token);
   const stored = JSON.parse(run.modelMessagesJson) as ModelMessage[];
   if (stored.length) return stored;
+  const cursor = readCursor(run.cursorJson);
+  const skills = await enabledSkillCatalog();
   const source = await prisma.message.findUnique({ where: { id: run.sourceUserMessageId }, select: { content: true } });
   const messages = await assembleRunMessages({
     runId,
@@ -243,24 +248,28 @@ async function ensureMessages(runId: string, token: string, contextService: Cont
     context: readContext(run.contextJson),
     userText: source?.content ?? '',
     contextService,
+    skills,
   });
   await ownsLease(runId, token);
   await saveMessages(runId, token, messages);
+  await saveCursor(runId, token, { ...cursor, loadSkill: skills.length > 0 });
   return messages;
 }
 
 async function modelTurn(runId: string, token: string, stream: ModelStream, contextService: ContextService) {
   const run = await ownsLease(runId, token);
-  const cursor = readCursor(run.cursorJson);
-  if (cursor.round >= cursor.budgetEndRound) {
+  const started = readCursor(run.cursorJson);
+  if (started.round >= started.budgetEndRound) {
     await pauseOwned(runId, token, 'round_limit', '这一轮处理已到上限。可以继续此请求。');
     return 'paused' as const;
   }
   const messages = await ensureMessages(runId, token, contextService);
-  const assistant = await prisma.message.create({ data: { conversationId: run.conversationId, role: 'assistant', content: '', status: 'streaming', createdAt: nowIso() } });
+  const owned = await ownsLease(runId, token);
+  const cursor = readCursor(owned.cursorJson);
+  const assistant = await prisma.message.create({ data: { conversationId: owned.conversationId, role: 'assistant', content: '', status: 'streaming', createdAt: nowIso() } });
   const nextCursor = { ...cursor, assistantMessageId: assistant.id };
   await saveCursor(runId, token, nextCursor);
-  await recordEvent(runId, token, { type: 'message_start', conversationId: run.conversationId, messageId: assistant.id });
+  await recordEvent(runId, token, { type: 'message_start', conversationId: owned.conversationId, messageId: assistant.id });
   const controller = new AbortController();
   activeModelControllers.set(runId, controller);
   let reply: ReplyStream | undefined;
@@ -276,7 +285,7 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
     () => controller.abort(),
   );
   try {
-    for await (const chunk of stream(messages, controller.signal, true)) {
+    for await (const chunk of stream(messages, controller.signal, true, builtinToolDefinitions({ loadSkill: cursor.loadSkill === true }))) {
       if (controller.signal.aborted) throw new DomainError('LEASE_LOST', '请求已停止', 409);
       if (chunk.toolDelta) {
         const delta = chunk.toolDelta;
@@ -289,7 +298,7 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
           if (!reply) {
             presentationIndex = delta.index;
             await batcher.finish();
-            reply = new ReplyStream(runId, token, run.conversationId, assistant.id, (searchId, ids) => resolveImages(run.conversationId, searchId, ids), () => controller.abort(), text);
+            reply = new ReplyStream(runId, token, owned.conversationId, assistant.id, (searchId, ids) => resolveImages(owned.conversationId, searchId, ids), () => controller.abort(), text);
             await reply.write(current.arguments);
           } else await reply.write(delta.argumentsDelta);
         }
@@ -322,8 +331,8 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
   }
   calls.forEach((call, index) => { call.id ??= `call_${cursor.round}_${index}`; });
   await applyExecutorSideEffect(runId, token, assistant.id, { content: text, status: 'completed', toolCalls: calls.length ? JSON.stringify(calls.map((call) => ({ id: call.id, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.arguments ?? {}) } }))) : null });
-  await appendAutoMemoryAssistant(run.sourceUserMessageId, assistant.id);
-  await recordEvent(runId, token, { type: 'message_end', conversationId: run.conversationId, messageId: assistant.id, status: 'completed' });
+  await appendAutoMemoryAssistant(owned.sourceUserMessageId, assistant.id);
+  await recordEvent(runId, token, { type: 'message_end', conversationId: owned.conversationId, messageId: assistant.id, status: 'completed' });
   const assistantMessage: ModelMessage = {
     role: 'assistant',
     content: text || null,
@@ -367,9 +376,9 @@ async function toolTurn(runId: string, token: string, contextService: ContextSer
     else if (call.function.name === 'propose_changes') {
       sawPropose = true;
       await saveCursor(runId, token, { ...cursor, nextToolIndex: index });
-      result = await executeBuiltinTool({ name: call.function.name, args, context, run: { id: runId, leaseToken: token, conversationId: run.conversationId, assistantMessageId, sourceUserMessageId: run.sourceUserMessageId }, toolCallId: call.id });
+      result = await executeBuiltinTool({ name: call.function.name, args, context, run: { id: runId, leaseToken: token, conversationId: run.conversationId, assistantMessageId, sourceUserMessageId: run.sourceUserMessageId }, toolCallId: call.id, loadSkill: cursor.loadSkill === true });
     } else {
-      result = await executeBuiltinTool({ name: call.function.name, args, context, run: { id: runId, leaseToken: token, conversationId: run.conversationId, assistantMessageId, sourceUserMessageId: run.sourceUserMessageId }, toolCallId: call.id });
+      result = await executeBuiltinTool({ name: call.function.name, args, context, run: { id: runId, leaseToken: token, conversationId: run.conversationId, assistantMessageId, sourceUserMessageId: run.sourceUserMessageId }, toolCallId: call.id, loadSkill: cursor.loadSkill === true });
     }
     const sources = await sourcesFromTool(call.function.name, args, result);
     if (sourceReadTools.has(call.function.name)) {
