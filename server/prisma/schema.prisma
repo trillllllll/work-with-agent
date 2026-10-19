@@ -24,6 +24,8 @@ model AppSetting {
   claudeManualVersion String @default("") @map("claude_manual_version")
   claudeCheckedAt String @default("") @map("claude_checked_at")
   mobileNavigationJson String @default("[\"inbox\",\"today\",\"quadrant\",\"topics\"]") @map("mobile_navigation_json")
+  htmlBlocksEnabled Boolean @default(true) @map("html_blocks_enabled")
+  htmlCdnAllowlist String @default("[\"https://cdn.jsdelivr.net\",\"https://cdnjs.cloudflare.com\",\"https://unpkg.com\"]") @map("html_cdn_allowlist")
   createdAt     String   @default("") @map("created_at")
   updatedAt     String   @default("") @map("updated_at")
 

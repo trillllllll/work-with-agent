@@ -8,6 +8,8 @@ import { ownerActor } from '../application/security.js';
 import { DomainError } from '../domain/task.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { builtinSystemPrompt } from './capabilities.js';
+import { htmlBlockPrompt } from './html-block.js';
+import { htmlBlockPolicy } from '../application/html-block-settings.js';
 import { readEnvelope } from './decision.js';
 import type { StoredChatContext } from './chat-context.js';
 import { codePoints } from './text.js';
@@ -124,8 +126,10 @@ export async function assembleRunMessages(input: {
   const scopeLine = input.context.scope.kind === 'topic'
     ? `当前清单：${scopeTopic ? `${scopeTopic.name} ${input.context.scope.topicId}` : input.context.scope.topicId}`
     : input.context.scope.kind === 'inbox' ? '当前清单：收集箱' : '当前范围是全部可访问的数据';
+  const htmlPolicy = await htmlBlockPolicy();
   const system = [
     builtinSystemPrompt(),
+    htmlBlockPrompt(htmlPolicy),
     appKnowledgePrompt(input.context.page),
     `【页面筛选与选中任务】\n${JSON.stringify({ taskFilter: input.context.taskFilter, selectedTaskIds: input.context.selectedTaskIds })}`,
     ...(input.context.schemaVersion === 3 ? [

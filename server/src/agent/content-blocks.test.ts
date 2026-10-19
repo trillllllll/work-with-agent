@@ -4,7 +4,7 @@ import { sanitizeSvg } from './svg-sanitize.js';
 const deniedImages = async () => { throw new Error('无权图片引用'); };
 describe('validated display blocks', () => {
   it('shares the model schema and runtime schema, rejects arbitrary option/functions/unknown keys', async () => {
-    expect((presentReplyParameters.properties as any).blocks.items.anyOf.length).toBe(5);
+    expect((presentReplyParameters.properties as any).blocks.items.anyOf.length).toBe(6);
     expect(presentReplySchema.safeParse({ blocks: [{ type: 'text', markdown: '可用' }] }).success).toBe(true);
     for (const raw of [{ type: 'text', markdown: 'x', id: 'override' }, { type: 'chart', spec: { kind: 'bar', formatter: 'alert(1)' } }, { type: 'image_search', url: 'https://invented.invalid/x.jpg' }]) await expect(validateReplyBlock(raw, deniedImages)).rejects.toThrow();
   });
