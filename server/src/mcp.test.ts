@@ -10,13 +10,13 @@ import { mountMcp } from './mcp/http.js';
 describe('stdio MCP authenticated HTTP contract', () => {
   let http: Server;
   let client: Client;
-  const calls: Array<{ url: string; authorization: string | undefined; body: any }> = [];
+  const calls: Array<{ url: string; authorization: string | undefined; loopback: string | string[] | undefined; body: any }> = [];
   beforeAll(async () => {
     http = createServer(async (req, res) => {
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
       const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : undefined;
-      calls.push({ url: req.url!, authorization: req.headers.authorization, body });
+      calls.push({ url: req.url!, authorization: req.headers.authorization, loopback: req.headers['x-wwa-loopback'], body });
       res.setHeader('Content-Type', 'application/json');
       if (req.url!.includes('/tasks/missing')) { res.statusCode = 409; res.end(JSON.stringify({ data: null, code: 'VERSION_CONFLICT', error: 'Task changed' })); return; }
       res.end(JSON.stringify({ data: body ? { status: 'pending_approval', proposalId: 'proposal-1' } : { items: [{ id: 'task-1', revision: 3 }], nextCursor: 'cursor-2', hasMore: true }, error: null }));
@@ -42,6 +42,7 @@ describe('stdio MCP authenticated HTTP contract', () => {
     const result = await client.callTool({ name: 'list_tasks', arguments: { topicId: 'scope-1', inbox: false, cursor: 'cursor-1', limit: 2, scheduledFrom: '2026-10-12', scheduledTo: '2026-10-12' } });
     expect(result.structuredContent).toMatchObject({ data: { nextCursor: 'cursor-2', hasMore: true }, httpStatus: 200 });
     expect(calls.at(-1)).toMatchObject({ authorization: 'Bearer isolated-test-connection' });
+    expect(calls.at(-1)?.loopback).toEqual(expect.any(String));
     expect(calls.at(-1)?.url).toContain('inbox=false');
     expect(calls.at(-1)?.url).toContain('scheduledFrom=2026-10-12');
     expect(calls.at(-1)?.url).toContain('scheduledTo=2026-10-12');

@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { mcpLoopbackHeaders } from '../application/security.js';
 
 export const mcpCredential = new AsyncLocalStorage<string>();
 
@@ -23,7 +24,7 @@ export function createMcpServer() {
 
   async function request(path: string, method = 'GET', body?: unknown) {
     try {
-      const response = await fetch(new URL(path, apiBase()), { method, headers: { Authorization: `Bearer ${credential()}`, 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(30_000), redirect: 'error' });
+      const response = await fetch(new URL(path, apiBase()), { method, headers: { Authorization: `Bearer ${credential()}`, 'Content-Type': 'application/json', ...mcpLoopbackHeaders() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(30_000), redirect: 'error' });
       const payload = await response.json() as Record<string, unknown>;
       const result = { ...payload, httpStatus: response.status, retryable: response.status === 429 || response.status >= 500 };
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], structuredContent: result, ...(response.ok ? {} : { isError: true }) };
