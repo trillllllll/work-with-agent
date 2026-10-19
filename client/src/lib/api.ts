@@ -27,7 +27,7 @@ export type TaskActivityEvent = { id: string; at: string; actor: { kind: 'user' 
 export type CliCommandSetting = { command: string; source: 'manual' | 'auto' | 'none'; version: string; checkedAt: string; manualCommand: string; autoCommand: string; discoveredCommand: string; discoveredVersion: string; applied: boolean; message: string };
 export type Settings = { baseUrl: string; model: string; apiKeyConfigured: boolean; apiKeyMasked: string | null; cli?: { codex: CliCommandSetting; claude: CliCommandSetting }; discovered?: Record<string, CliCommandSetting> };
 export type ApprovalResponse = { result?: ToolResult; assistantMessage?: string; assistantMessageId?: string; summaryError?: string; approval?: unknown; resumed?: boolean; run?: { id?: string; state?: string } | null };
-export type View = 'board' | 'quadrant' | 'chat' | 'topics' | 'inbox' | 'settings' | 'trash' | 'changes' | 'today' | 'search' | 'tags' | 'archived' | 'more' | 'connections' | 'proposals' | 'knowledge' | 'library' | 'runs' | 'reviews' | 'plan' | 'focus';
+export type View = 'board' | 'quadrant' | 'chat' | 'topics' | 'inbox' | 'settings' | 'trash' | 'changes' | 'today' | 'search' | 'tags' | 'archived' | 'more' | 'connections' | 'proposals' | 'knowledge' | 'library' | 'skills' | 'runs' | 'reviews' | 'plan' | 'focus';
 export type TimeBandColor = 'blue' | 'green' | 'orange' | 'purple' | 'pink' | 'gray';
 export type PlanTimeBand = {
   id: string;

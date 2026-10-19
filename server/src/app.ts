@@ -28,7 +28,7 @@ import { listPlanTimeBands, replacePlanTimeBands } from './application/plan-time
 import { isValidVisibleViews, type MobileNavigationView } from './domain/mobile-navigation.js';
 import { readMobileNavigation, writeMobileNavigation } from './application/mobile-navigation.js';
 import { generateExternalReview } from './runner/review-generator.js';
-import { createSkill, deleteSkill, diffSkill, draftSkill, getSkill, getSkillVersion, importSkill, listSkills, restoreSkill, rollbackSkill, updateSkill } from './application/skills.js';
+import { createSkill, deleteSkill, diffSkill, draftSkill, getSkill, getSkillVersion, importSkill, listSkills, registerSkillCommands, restoreSkill, rollbackSkill, updateSkill } from './application/skills.js';
 
 export const app = express();
 app.use(cors(corsOptions));
@@ -36,6 +36,7 @@ app.use(express.json({ limit: '12mb' }));
 registerKnowledgeCommands();
 registerGraphCommands();
 registerLibraryCommands();
+registerSkillCommands();
 app.use('/api/v1', securityRouter);
 app.use('/api/v1', identityMiddleware);
 app.use('/api/v1/connections', connectionRouter);
@@ -69,7 +70,7 @@ app.post('/api/skills/draft', async (req, res, next) => {
 app.post('/api/skills', async (req, res, next) => {
   try {
     const body = req.body ?? {};
-    const skill = await createSkill({ name: body.name, description: body.description, instructions: body.instructions, enabled: body.enabled, reason: body.reason });
+    const skill = await createSkill({ name: body.name, description: body.description, instructions: body.instructions, enabled: body.enabled, reason: body.reason, fromApproval: body.fromApproval });
     res.status(201).json({ data: await getSkill(skill.id), error: null });
   } catch (error) { next(error); }
 });
@@ -79,7 +80,7 @@ app.get('/api/skills/:id', async (req, res, next) => { try { send(res, await get
 app.patch('/api/skills/:id', async (req, res, next) => {
   try {
     const body = req.body ?? {};
-    const skill = await updateSkill(String(req.params.id), { expectedRevision: body.expectedRevision, name: body.name, description: body.description, instructions: body.instructions, enabled: body.enabled, reason: body.reason });
+    const skill = await updateSkill(String(req.params.id), { expectedRevision: body.expectedRevision, name: body.name, description: body.description, instructions: body.instructions, enabled: body.enabled, reason: body.reason, fromApproval: body.fromApproval });
     send(res, await getSkill(skill.id));
   } catch (error) { next(error); }
 });

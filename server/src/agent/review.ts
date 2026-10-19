@@ -15,6 +15,8 @@ const materialKeys = ['title', 'kind', 'content', 'uri', 'topicId', 'folderId', 
 const memoryKeys = ['title', 'content', 'kind', 'importance', 'labels', 'status', 'evidence'] as const;
 const tagKeys = ['name', 'color'] as const;
 const folderKeys = ['name', 'parentId'] as const;
+const skillKeys = ['name', 'description', 'instructions', 'enabled'] as const;
+const skillLabels: Record<string, string> = { name: '名称', description: '描述', instructions: '正文', enabled: '启用' };
 
 const labels: Record<string, string> = {
   title: '标题', description: '详情', status: '状态', priority: '优先级', dueDate: '安排日期', scheduledStart: '开始时间', scheduledEnd: '结束时间',
@@ -24,7 +26,7 @@ const labels: Record<string, string> = {
 };
 
 export type ReviewEntityChange = {
-  entityType: 'task' | 'topic' | 'tag' | 'material' | 'memory' | 'libraryFolder' | 'libraryTag';
+  entityType: 'task' | 'topic' | 'tag' | 'material' | 'memory' | 'libraryFolder' | 'libraryTag' | 'skill';
   entityId: string;
   titleBefore: string | null;
   titleAfter: string | null;
@@ -122,14 +124,14 @@ function fieldsFor(entityType: ReviewEntityChange['entityType'], before: Record<
     before = projectMaterialLinks(before, leftIds, includeEmpty);
     after = projectMaterialLinks(after, rightIds, includeEmpty);
   }
-  const keys = entityType === 'task' ? taskKeys : entityType === 'topic' ? topicKeys : entityType === 'material' ? materialKeys : entityType === 'memory' ? memoryKeys : entityType === 'libraryFolder' ? folderKeys : tagKeys;
+  const keys = entityType === 'task' ? taskKeys : entityType === 'topic' ? topicKeys : entityType === 'material' ? materialKeys : entityType === 'memory' ? memoryKeys : entityType === 'libraryFolder' ? folderKeys : entityType === 'skill' ? skillKeys : tagKeys;
   const fields = [];
   for (const key of keys) {
     const left = before?.[key] ?? null;
     const right = after?.[key] ?? null;
     if (canonical(left) === canonical(right)) continue;
     if (!before && (right === '' || (Array.isArray(right) && right.length === 0))) continue;
-    fields.push({ key, label: labels[key] ?? key, before: jsonValue(left), after: jsonValue(right), beforeText: show(key, left), afterText: show(key, right) });
+    fields.push({ key, label: entityType === 'skill' ? skillLabels[key] ?? key : labels[key] ?? key, before: jsonValue(left), after: jsonValue(right), beforeText: show(key, left), afterText: show(key, right) });
   }
   return fields;
 }
@@ -159,7 +161,7 @@ function absorb(slots: Map<string, Slot>, record: ChangeRecord) {
     return;
   }
   const entityType = record.entityType as Slot['entityType'];
-  if (!['task', 'topic', 'tag', 'material', 'memory', 'libraryFolder', 'libraryTag'].includes(entityType)) return;
+  if (!['task', 'topic', 'tag', 'material', 'memory', 'libraryFolder', 'libraryTag', 'skill'].includes(entityType)) return;
   remember(slots, entityType, record.entityId, before, after);
 }
 

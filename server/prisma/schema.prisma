@@ -193,6 +193,7 @@ enum ApprovalStatus {
   rejected
   executed
   failed
+  SAVED_IN_EDITOR
 }
 
 model Conversation {

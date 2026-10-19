@@ -29,6 +29,10 @@ export const proposeChangesParameters = {
           { type: 'object', additionalProperties: false, required: ['family', 'command'], properties: { family: { const: 'workspace' }, command: workspaceCommandJsonSchema() } },
           { type: 'object', additionalProperties: false, required: ['family', 'args'], properties: { family: { const: 'library' }, clientRef: { type: 'string' }, args: { type: 'object', additionalProperties: false, required: ['action'], properties: { action: { enum: [...libraryActions] }, materialId: { type: 'string' }, revision: { type: 'integer' }, organizationRevision: { type: 'integer' }, title: { type: 'string' }, content: { type: 'string' }, uri: { type: ['string', 'null'] }, kind: { type: 'string' }, topicId: { type: ['string', 'null'] }, folderId: { type: ['string', 'null'] }, parentId: { type: ['string', 'null'] }, name: { type: 'string' }, tagIds: { type: 'array', items: { type: 'string' } }, addTaskIds: { type: 'array', items: { type: 'string' } }, removeTaskIds: { type: 'array', items: { type: 'string' } }, taskId: { type: 'string' }, materialIds: { type: 'array', items: { type: 'string' } }, archived: { type: 'boolean' }, metadata: { type: 'object' }, expectedTaskRevisions: { type: 'object' }, expectedMaterialRevisions: { type: 'object' }, expectedOrganizationRevisions: { type: 'object' }, removeInlineReferences: { type: 'boolean' }, from: { type: 'integer' }, to: { type: 'integer' }, tagId: { type: 'string' } } } } },
           { type: 'object', additionalProperties: false, required: ['family', 'args'], properties: { family: { const: 'memory' }, args: { type: 'object', additionalProperties: false, required: ['action'], properties: { action: { enum: [...memoryActions] }, title: { type: 'string' }, content: { type: 'string' }, memoryId: { type: 'string' }, expectedRevision: { type: 'integer' }, kind: { type: 'string' }, importance: { type: 'integer' }, labels: { type: 'array', items: { type: 'string' } }, evidence: { type: 'array', items: { type: 'object' } }, messageIds: { type: 'array', items: { type: 'string' } }, target: { enum: ['inbox', 'topic'] } } } } },
+          { type: 'object', additionalProperties: false, required: ['family', 'command'], properties: { family: { const: 'skill' }, command: { oneOf: [
+            { type: 'object', additionalProperties: false, required: ['kind', 'input'], properties: { kind: { const: 'skill.create' }, input: { type: 'object', additionalProperties: false, required: ['name', 'description', 'instructions'], properties: { name: { type: 'string', minLength: 1, maxLength: 80 }, description: { type: 'string', minLength: 1, maxLength: 1024 }, instructions: { type: 'string', minLength: 1, maxLength: 100000 }, enabled: { type: 'boolean' }, reason: { type: 'string', maxLength: 1000 } } } } },
+            { type: 'object', additionalProperties: false, required: ['kind', 'targetId', 'expectedRevision', 'input'], properties: { kind: { const: 'skill.update' }, targetId: { type: 'string', minLength: 1 }, expectedRevision: { type: 'integer', minimum: 1 }, input: { type: 'object', additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 80 }, description: { type: 'string', minLength: 1, maxLength: 1024 }, instructions: { type: 'string', minLength: 1, maxLength: 100000 }, enabled: { type: 'boolean' }, reason: { type: 'string', maxLength: 1000 } } } } },
+          ] } } },
         ],
       },
     },
@@ -58,7 +62,7 @@ export const builtinTools: BuiltinTool[] = [
   { name: 'library_read', description: '读取资料列表、元信息、正文、文件夹、标签和关联任务。正文用游标续读，不调用另一个模型。', parameters: { type: 'object', additionalProperties: false, required: ['action'], properties: { usePageFilter: { type: 'boolean' }, filters: { type: 'object', additionalProperties: false, properties: { folderId: { type: 'string' }, tagIds: { type: 'array', items: { type: 'string' } }, taskId: { type: 'string' }, taskTopicId: { type: 'string' }, kind: { enum: ['text', 'markdown', 'link', 'thread', 'attachment'] }, view: { enum: ['all', 'recent', 'unfiled', 'archived'] }, archived: { enum: ['exclude', 'only', 'include'] } } }, action: { enum: ['list', 'search', 'read', 'content', 'linked_tasks', 'task_materials', 'folders', 'tags'] }, materialId: { type: 'string' }, taskId: { type: 'string' }, revision: { type: 'integer' }, q: { type: 'string' }, folderId: { type: ['string', 'null'] }, cursor: { type: 'string' }, limit: { type: 'integer' }, archived: { type: 'string' } } }, writesBusinessData: false },
   { name: 'memory_read', description: '读取或搜索已确认记忆。', parameters: { type: 'object', additionalProperties: false, required: ['action'], properties: { scope: { enum: ['current', 'all'] }, topicId: { type: 'string' }, status: { enum: ['active', 'history', 'all'] }, action: { enum: ['read', 'search'] }, memoryId: { type: 'string' }, revision: { type: 'integer', minimum: 1 }, q: { type: 'string' }, target: { enum: ['inbox', 'topic'] } } }, writesBusinessData: false },
   { name: 'conversation_search', description: '查找过往聊天原文。', parameters: { type: 'object', additionalProperties: false, properties: { q: { type: 'string' }, messageId: { type: 'string' } } }, writesBusinessData: false },
-  { name: 'get_change_schema', description: '按需读取某一类修改的参数说明。', parameters: { type: 'object', additionalProperties: false, required: ['family'], properties: { family: { enum: ['workspace', 'library', 'memory'] }, kind: { type: 'string' } } }, writesBusinessData: false },
+  { name: 'get_change_schema', description: '按需读取某一类修改的参数说明。', parameters: { type: 'object', additionalProperties: false, required: ['family'], properties: { family: { enum: ['workspace', 'library', 'memory', 'skill'] }, kind: { type: 'string' } } }, writesBusinessData: false },
   { name: 'propose_changes', description: '编译并生成一份待确认修改方案。不会直接修改业务数据。', parameters: proposeChangesParameters, writesBusinessData: true },
   { name: 'prepare_external_prompt', description: '把超出内置能力的需求整理成可复制的提示词。不会发送、保存为资料或创建任务。', parameters: { type: 'object', additionalProperties: false, required: ['capability', 'limitation', 'goal', 'background', 'constraints', 'expectedOutput'], properties: { capability: { enum: ['web_research', 'local_execution', 'external_application', 'other'] }, limitation: { type: 'string' }, goal: { type: 'string' }, background: { type: 'array', items: { type: 'string' } }, constraints: { type: 'array', items: { type: 'string' } }, expectedOutput: { type: 'array', items: { type: 'string' } } } }, writesBusinessData: false },
 ];
@@ -101,6 +105,7 @@ export const BUILTIN_BEHAVIOR_PROMPT = `你是 Work With Agent 的内置工作�
 【读取与修改】
 查询应用信息和当前时间可以直接调用只读工具。
 所有业务数据修改都必须通过 propose_changes 生成待确认方案。
+用户要求把做法整理成技能时，用 propose_changes 的 skill.create / skill.update 起草。
 待确认不等于已执行。用户批准后，以服务端执行回执判断是否完成。
 不得通过其他工具、旧工具名或提示词绕过确认。
 同一请求里相互关联的修改尽量合成一份原子方案。
@@ -191,6 +196,24 @@ export const workspaceCommandInput = z.object({
   input: z.record(z.unknown()),
 }).strict();
 
+export const skillCreateInput = z.object({
+  name: z.string(),
+  description: z.string(),
+  instructions: z.string(),
+  enabled: z.boolean().optional(),
+  reason: z.string().optional(),
+}).strict();
+export const skillUpdateInput = z.object({
+  name: z.string().optional(),
+  description: z.string().optional(),
+  instructions: z.string().optional(),
+  enabled: z.boolean().optional(),
+  reason: z.string().optional(),
+}).strict();
+const skillCommand = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('skill.create'), input: skillCreateInput }).strict(),
+  z.object({ kind: z.literal('skill.update'), targetId: z.string().min(1), expectedRevision: z.number().int().min(1), input: skillUpdateInput }).strict(),
+]);
 const libraryWrite = z.object({ action: z.enum(libraryActions) }).passthrough();
 const memoryWrite = z.object({
   action: z.enum(memoryActions),
@@ -210,6 +233,7 @@ export const changeOperationSchema = z.discriminatedUnion('family', [
   z.object({ family: z.literal('workspace'), command: workspaceCommandInput }).strict(),
   z.object({ family: z.literal('library'), clientRef: z.string().min(1).optional(), args: libraryWrite }).strict(),
   z.object({ family: z.literal('memory'), args: memoryWrite }).strict(),
+  z.object({ family: z.literal('skill'), command: skillCommand }).strict(),
 ]);
 
 export const proposeChangesInput = z.object({
@@ -226,8 +250,9 @@ export function strictTaskInput(kind: string, input: Record<string, unknown>) {
   return input;
 }
 
-export function changeSchemaDocument(family: 'workspace' | 'library' | 'memory', kind?: string) {
+export function changeSchemaDocument(family: 'workspace' | 'library' | 'memory' | 'skill', kind?: string) {
   if (family === 'workspace') return workspaceChangeDocument(kind);
   if (family === 'library') return { family, actions: libraryActions, excluded: ['upload', 'replace', 'reextract', 'undo', 'ask'] };
+  if (family === 'skill') return { family, commands: ['skill.create', 'skill.update'], notes: ['一份方案只能包含一条技能修改，且不能和其他修改混用。不提供删除。'] };
   return { family, actions: memoryActions, notes: ['没有现成证据时，聊天摘录和记忆放在同一份提议里。'] };
 }

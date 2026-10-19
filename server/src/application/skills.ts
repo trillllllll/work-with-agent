@@ -1,10 +1,14 @@
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
+import { skillCreateInput, skillUpdateInput } from '../agent/capabilities.js';
 import { DomainError } from '../domain/task.js';
 import { prisma } from '../infrastructure/prisma.js';
-import { runSerializedCommand } from './commands.js';
-import type { Db } from './workspace-store.js';
 import { codePoints } from '../agent/text.js';
+import { jsonSchema } from './command-catalog.js';
+import { registerCommandHandler, runSerializedCommand, type Command, type Inspection } from './commands.js';
+import { assertOwner, ownerActor, type Actor } from './security.js';
+import { registerUndoHandler, type UndoRecord } from './undo-registry.js';
+import { recordChange, type Db, type MutationContext } from './workspace-store.js';
 
 const NAME_MAX = 80;
 const DESCRIPTION_MAX = 1024;
@@ -168,7 +172,8 @@ export async function getSkillVersion(id: string, revision: number) {
   return version;
 }
 
-export async function createSkill(input: { name: string; description: string; instructions: string; enabled?: boolean; reason?: string; origin?: SkillOrigin; source?: SkillSource; id?: string }) {
+export async function createSkill(input: { name: string; description: string; instructions: string; enabled?: boolean; reason?: string; origin?: SkillOrigin; source?: SkillSource; id?: string; fromApproval?: unknown }) {
+  if (input.fromApproval !== undefined) return saveFromApproval('create', input);
   const enabled = input.enabled ?? false;
   const name = input.name;
   const description = input.description;
@@ -182,7 +187,8 @@ export async function createSkill(input: { name: string; description: string; in
   }));
 }
 
-export async function updateSkill(id: string, input: { expectedRevision: number; name?: string; description?: string; instructions?: string; enabled?: boolean; reason?: string; source?: SkillSource }) {
+export async function updateSkill(id: string, input: { expectedRevision: number; name?: string; description?: string; instructions?: string; enabled?: boolean; reason?: string; source?: SkillSource; fromApproval?: unknown }) {
+  if (input.fromApproval !== undefined) return saveFromApproval('update', { ...input, id });
   return runSerializedCommand(async (tx) => {
     const existing = await tx.skill.findUnique({ where: { id } });
     if (!existing || existing.deletedAt) throw skillFailure('NOT_FOUND', '技能不存在', 404);
@@ -403,4 +409,106 @@ export async function draftSkill(conversationId: string, model?: DraftModel) {
   } catch {
     throw skillFailure('INVALID_MODEL_OUTPUT', '模型没有返回有效 JSON，技能未保存', 502);
   }
+}
+
+function skillSnapshot(row: SkillRow) {
+  return { id: row.id, name: row.name, description: row.description, instructions: row.instructions, enabled: row.enabled, revision: row.revision, origin: row.origin, deletedAt: row.deletedAt };
+}
+
+const fromApprovalSchema = z.object({ approvalId: z.string().min(1), expectedProposalRevision: z.number().int().min(1), previewHash: z.string().min(1) }).strict();
+
+async function saveFromApproval(mode: 'create' | 'update', input: { id?: string; name?: string; description?: string; instructions?: string; enabled?: boolean; reason?: string; expectedRevision?: number; fromApproval?: unknown }) {
+  const parsed = fromApprovalSchema.safeParse(input.fromApproval);
+  if (!parsed.success) throw skillFailure('VALIDATION_ERROR', 'fromApproval 无效', 400);
+  const { loadCloseableApproval, closeAppChanges } = await import('../agent/decision.js');
+  return runSerializedCommand(async (tx) => {
+    const { approval, envelope } = await loadCloseableApproval(tx, parsed.data.approvalId, { expectedProposalRevision: parsed.data.expectedProposalRevision, previewHash: parsed.data.previewHash });
+    const proposal = await tx.proposal.findUnique({ where: { id: envelope.proposalId } });
+    let commands: Command[] = [];
+    if (proposal) { try { commands = JSON.parse(proposal.commands) as Command[]; } catch { commands = []; } }
+    const command = commands.length === 1 ? commands[0] : undefined;
+    const mismatch = mode === 'create' ? command?.kind !== 'skill.create' : command?.kind !== 'skill.update' || command.targetId !== input.id;
+    if (!proposal || proposal.status !== 'pending' || mismatch) throw skillFailure('VALIDATION_ERROR', '这份方案不能保存为当前技能', 409);
+    const reason = input.reason?.trim() ? input.reason : '在编辑器中保存';
+    const existing = mode === 'update' ? await tx.skill.findUnique({ where: { id: input.id ?? '' } }) : null;
+    if (mode === 'update' && (!existing || existing.deletedAt)) throw skillFailure('NOT_FOUND', '技能不存在', 404);
+    const next = existing
+      ? { name: input.name ?? existing.name, description: input.description ?? existing.description, instructions: input.instructions ?? existing.instructions, enabled: input.enabled ?? existing.enabled }
+      : { name: input.name ?? '', description: input.description ?? '', instructions: input.instructions ?? '', enabled: input.enabled ?? true };
+    const skill = existing
+      ? await persistSkill(tx, { existing, expectedRevision: input.expectedRevision, ...next, reason, source: 'editor-from-proposal' })
+      : await persistSkill(tx, { id: command?.entityId, ...next, reason, source: 'editor-from-proposal', origin: 'assistant' });
+    await recordChange(tx, 'skill', skill.id, existing ? 'update' : 'create', existing ? skillSnapshot(existing) : null, skillSnapshot(skill), { source: 'user', actor: ownerActor });
+    const timestamp = skillNow();
+    const message = `用户已在编辑器修改并保存为 v${skill.revision}`;
+    await closeAppChanges(tx, approval, envelope, {
+      approvalStatus: 'SAVED_IN_EDITOR',
+      proposalStatus: 'saved_in_editor',
+      outcome: { status: 'SAVED_IN_EDITOR', appliedOperationCount: 0, code: 'SAVED_IN_EDITOR', message, skillId: skill.id, revision: skill.revision, completedAt: timestamp },
+      toolResult: { success: true, data: { message, skillId: skill.id, revision: skill.revision } },
+      pauseReason: 'saved_in_editor',
+      timestamp,
+    });
+    return skill;
+  });
+}
+
+async function inspectSkill(tx: Db, _actor: Actor, command: Command): Promise<Inspection> {
+  if (command.kind === 'skill.create') {
+    const input = skillCreateInput.parse(command.input ?? {});
+    const name = cleanSkillName(input.name);
+    cleanSkillDescription(input.description);
+    cleanSkillInstructions(input.instructions);
+    const taken = await activeByName(tx, name);
+    if (taken) throw nameTaken(taken);
+    return { preconditions: { kind: command.kind, name }, preview: { kind: command.kind, name } };
+  }
+  const input = skillUpdateInput.parse(command.input ?? {});
+  const existing = await tx.skill.findUnique({ where: { id: command.targetId ?? '' } });
+  if (!existing || existing.deletedAt) throw skillFailure('NOT_FOUND', '技能不存在', 404);
+  if (existing.revision !== command.expectedRevision) throw skillFailure('VERSION_CONFLICT', '内容已经变化，请刷新后重试', 409, { currentRevision: existing.revision });
+  if (input.name !== undefined) cleanSkillName(input.name);
+  if (input.description !== undefined) cleanSkillDescription(input.description);
+  if (input.instructions !== undefined) cleanSkillInstructions(input.instructions);
+  return { preconditions: { kind: command.kind, id: existing.id, revision: existing.revision }, preview: { kind: command.kind, name: input.name ?? existing.name } };
+}
+
+async function executeSkill(tx: Db, actor: Actor, command: Command, context: MutationContext) {
+  assertOwner(actor);
+  if (command.kind === 'skill.create') {
+    const input = skillCreateInput.parse(command.input ?? {});
+    const enabled = input.enabled ?? true;
+    const skill = await persistSkill(tx, { id: context.entityId ?? command.entityId, name: input.name, description: input.description, instructions: input.instructions, enabled, reason: input.reason ?? '', source: 'assistant', origin: 'assistant' });
+    await recordChange(tx, 'skill', skill.id, 'create', null, skillSnapshot(skill), context);
+    return skill;
+  }
+  const input = skillUpdateInput.parse(command.input ?? {});
+  const existing = await tx.skill.findUnique({ where: { id: command.targetId ?? '' } });
+  if (!existing || existing.deletedAt) throw skillFailure('NOT_FOUND', '技能不存在', 404);
+  const next = { name: input.name ?? existing.name, description: input.description ?? existing.description, instructions: input.instructions ?? existing.instructions, enabled: input.enabled ?? existing.enabled };
+  const skill = await persistSkill(tx, { existing, expectedRevision: command.expectedRevision, ...next, reason: input.reason ?? '', source: 'assistant' });
+  await recordChange(tx, 'skill', skill.id, 'update', skillSnapshot(existing), skillSnapshot(skill), context);
+  return skill;
+}
+
+async function undoSkill(tx: Db, actor: Actor, record: UndoRecord, _context: MutationContext) {
+  assertOwner(actor);
+  const before = record.beforeSnapshot ? JSON.parse(record.beforeSnapshot) as SkillRow | null : null;
+  const after = record.afterSnapshot ? JSON.parse(record.afterSnapshot) as SkillRow | null : null;
+  if (!after || typeof after.revision !== 'number') throw skillFailure('UNDO_CONFLICT', '缺少可验证的技能版本');
+  const current = await tx.skill.findUnique({ where: { id: record.entityId } });
+  if (!current || current.deletedAt || current.revision !== after.revision) throw skillFailure('UNDO_CONFLICT', '技能已有后续修改');
+  if (!before) {
+    const timestamp = skillNow();
+    const updated = await tx.skill.updateMany({ where: { id: current.id, revision: current.revision, deletedAt: null }, data: { deletedAt: timestamp, enabled: false, updatedAt: timestamp } });
+    if (!updated.count) throw skillFailure('UNDO_CONFLICT', '技能已有后续修改');
+    return tx.skill.findUniqueOrThrow({ where: { id: current.id } });
+  }
+  return persistSkill(tx, { existing: current, expectedRevision: current.revision, name: before.name, description: before.description, instructions: before.instructions, enabled: before.enabled, reason: `撤销${record.operation}，保留历史版本`, source: 'manual' });
+}
+
+export function registerSkillCommands() {
+  registerCommandHandler('skill.create', { forceProposal: true, ownerOnly: true, description: '起草一条技能。确认后才写入，默认启用。', inputSchema: jsonSchema(skillCreateInput), inspect: inspectSkill, execute: executeSkill });
+  registerCommandHandler('skill.update', { forceProposal: true, ownerOnly: true, description: '修订一条技能。确认后写入新版本，不提供删除。', inputSchema: jsonSchema(skillUpdateInput), inspect: inspectSkill, execute: executeSkill });
+  registerUndoHandler('skill', undoSkill);
 }
