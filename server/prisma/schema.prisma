@@ -595,6 +595,8 @@ model AgentNode {
   platform         String  @default("")
   version          String  @default("")
   capabilitiesJson String  @default("{}")
+  inventoryJson    String  @default("null")
+  inventoryAt      String?
   lastSeenAt       String?
   createdAt        String
   updatedAt        String
@@ -662,6 +664,9 @@ model Orchestration {
   endedAt           String?
   acceptedAt        String?
   pushedAt          String?
+  extraLocationsJson String @default("[]")
+  publishedHead     String?
+  pullRequestUrl    String?
   steps             OrchestrationStep[]
   events            OrchestrationEvent[]
   @@unique([taskId, round])
@@ -690,6 +695,9 @@ model OrchestrationStep {
   lastTaskRevision   Int?
   feedback           String?
   lastJobId          String?
+  nodeId             String?
+  locationId         String?
+  repoPath           String?
   error              String?
   createdAt          String
   updatedAt          String
@@ -717,6 +725,21 @@ model NodeJob {
   node            AgentNode @relation(fields: [nodeId], references: [id], onDelete: Restrict)
   @@index([nodeId, status])
   @@index([orchestrationId])
+}
+/// A pending destructive request shown as a confirmation card; nothing is sent to the node until the user confirms.
+model WorktreeCleanup {
+  id          String  @id @default(cuid())
+  nodeId      String
+  itemsJson   String
+  deleteBranches Boolean @default(false)
+  status      String  @default("pending")
+  source      String  @default("user")
+  jobId       String?
+  resultJson  String?
+  expiresAt   String
+  createdAt   String
+  updatedAt   String
+  @@index([nodeId, status])
 }
 model OrchestrationEvent {
   id              String @id @default(cuid())
