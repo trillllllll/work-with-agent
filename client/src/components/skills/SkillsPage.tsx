@@ -74,7 +74,7 @@ function SkillDetailView({ id, onBack }: { id: string; onBack: () => void }) {
   if (!skill) return <p className="p-4 text-sm text-muted-foreground">正在加载…</p>;
   return (
     <article className="grid gap-4" aria-label={`技能：${skill.name}`} data-testid="skill-detail">
-      <Button variant="ghost" size="sm" className="justify-self-start md:hidden" onClick={onBack}><ArrowLeft />返回列表</Button>
+      <Button variant="ghost" size="sm" className="justify-self-start @3xl:hidden" onClick={onBack}><ArrowLeft />返回列表</Button>
       <header className="flex flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1">
           <h2 className="text-xl font-semibold break-words">{skill.name}</h2>
@@ -142,7 +142,7 @@ export function SkillsPage() {
   };
 
   return (
-    <section className="mx-auto grid max-w-6xl content-start gap-4 p-5 sm:p-7" aria-label="技能">
+    <section className="@container mx-auto grid max-w-6xl content-start gap-4 p-5 sm:p-7" aria-label="技能">
       <header className="flex flex-wrap items-end gap-3">
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-semibold">技能</h1>
@@ -161,8 +161,8 @@ export function SkillsPage() {
           <option value="">全部来源</option><option value="manual">手写</option><option value="import">导入</option><option value="assistant">助手</option>
         </select>
       </div>
-      <div className="grid min-h-0 gap-5 md:grid-cols-[minmax(240px,320px)_minmax(0,1fr)]">
-        <div className={cn('min-w-0', selectedId && 'hidden md:block')}>
+      <div className="grid min-h-0 gap-5 @3xl:grid-cols-[minmax(240px,320px)_minmax(0,1fr)]">
+        <div className={cn('min-w-0', selectedId && 'hidden @3xl:block')}>
           {list.error && <p role="alert" className="text-sm text-destructive">{list.error.message}</p>}
           {list.isLoading ? <p className="text-sm text-muted-foreground">正在加载…</p> : !skills.length ? <p className="py-8 text-sm text-muted-foreground">{status === 'deleted' ? '没有已删除的技能。' : q || origin || status !== 'all' ? '没有符合条件的技能。' : '还没有技能。可以新建、导入 SKILL.md，或在聊天里让助手起草。'}</p> : (
             <ul aria-label="技能列表" className="glass-subtle divide-y divide-[var(--glass-divider)] overflow-hidden rounded-xl">
@@ -179,7 +179,7 @@ export function SkillsPage() {
             </ul>
           )}
         </div>
-        <div className={cn('min-w-0', !selectedId && 'hidden md:block')}>
+        <div className={cn('min-w-0', !selectedId && 'hidden @3xl:block')}>
           {selectedId ? <SkillDetailView key={selectedId} id={selectedId} onBack={() => setSelectedId('')} /> : <p className="py-8 text-sm text-muted-foreground">选择一个技能查看正文和版本历史。</p>}
         </div>
       </div>
