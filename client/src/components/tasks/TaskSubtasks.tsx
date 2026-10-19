@@ -1,3 +1,4 @@
+import { canHaveSubtasks } from '@/lib/todo.js';
 import { QuickCapture } from './QuickCapture.js';
 import { useEdit } from './TaskExpand.js';
 import { cn } from '@/lib/utils.js';
@@ -5,7 +6,8 @@ import { cn } from '@/lib/utils.js';
 export function SubtasksSection() {
   const edit = useEdit();
   const children = edit.task.children ?? [];
-  if (edit.readonly && children.length === 0) return null;
+  const canAdd = !edit.readonly && canHaveSubtasks(edit.task);
+  if (!canAdd && children.length === 0) return null;
   const done = children.filter((child) => child.status === 'done').length;
   const pct = children.length ? Math.round(done / children.length * 100) : 0;
   return <section aria-label="子任务" className="space-y-1">
@@ -18,6 +20,6 @@ export function SubtasksSection() {
       <input type="checkbox" className="task-checkbox size-[18px] shrink-0 accent-primary" checked={child.status === 'done'} disabled={edit.readonly} aria-label={`${child.status === 'done' ? '重开' : '完成'}任务：${child.title}`} onChange={() => { void edit.toggleSubtask(child).catch(() => undefined); }} />
       <button type="button" className={cn('min-w-0 flex-1 truncate py-0.5 text-left text-sm', child.status === 'done' && 'text-muted-foreground line-through')} onClick={() => edit.openSubtask(child.id)}>{child.title}</button>
     </div>)}
-    {!edit.readonly && <QuickCapture variant="row" topicId={edit.task.topicId ?? null} parentId={edit.taskId} onCreate={edit.createSubtask} />}
+    {canAdd && <QuickCapture variant="row" topicId={edit.task.topicId ?? null} parentId={edit.taskId} onCreate={edit.createSubtask} />}
   </section>;
 }
