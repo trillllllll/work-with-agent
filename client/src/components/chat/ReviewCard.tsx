@@ -5,6 +5,9 @@ import { reviewCardState, reviewStatusCopy } from '@/chat.js';
 import type { AppReviewEntity } from '../../../../server/src/domain/task-batch-types.js';
 import { api } from '@/lib/api.js';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible.js';
+import { SkillProposalDetails } from '@/components/skills/SkillProposalCard.js';
+import { SKILL_SAVED_EVENT, type SkillSavedDetail } from '@/components/skills/SkillEditor.js';
+import { isSkillOnlyReview, openSkillEditor, skillProposalEditorDetail } from '@/components/skills/skill-format.js';
 
 const CLIP = 240;
 
@@ -131,6 +134,18 @@ export function ReviewCard({ approval, phase = '', unknown = false, unresolved =
   const state = reviewCardState(approval, phase || localPhase, unknown);
   const review = approval.appReview;
   const entities = review?.entities ?? [];
+  const skillOnly = isSkillOnlyReview(entities);
+  useEffect(() => {
+    if (!skillOnly) return;
+    const saved = (event: Event) => { if ((event as CustomEvent<SkillSavedDetail>).detail?.approvalId === approval.approvalId) onChanged?.(); };
+    window.addEventListener(SKILL_SAVED_EVENT, saved);
+    return () => window.removeEventListener(SKILL_SAVED_EVENT, saved);
+  }, [skillOnly, approval.approvalId, onChanged]);
+  const editSkill = () => {
+    const previewHash = approval.previewHash || review?.previewHash;
+    if (!entities[0] || !previewHash || approval.proposalRevision == null) return;
+    openSkillEditor(skillProposalEditorDetail(entities[0], { approvalId: approval.approvalId, expectedProposalRevision: approval.proposalRevision, previewHash }));
+  };
   const conflict = state === 'failed' && approval.appOutcome?.status === 'failed' && approval.appOutcome.code === 'VERSION_CONFLICT';
   const canUndo = state === 'executed' && approval.appOutcome?.status === 'executed' && Boolean(approval.appOutcome.changeId) && review?.reversibility === 'supported';
   const decisionLocked = state === 'approving' || state === 'rejecting' || Boolean(busyAction);
@@ -154,6 +169,7 @@ export function ReviewCard({ approval, phase = '', unknown = false, unresolved =
     <div className="flex flex-wrap items-center gap-2"><Check size={16} className="shrink-0 text-green-700 dark:text-green-300" /><h2 className="min-w-0 flex-1 text-sm font-medium" tabIndex={-1}>{entities.length === 1 ? entities[0].titleAfter || entities[0].titleBefore || review?.title : review?.title}</h2><span className="text-xs text-muted-foreground" role="status">{reviewStatusCopy(state, approval, unresolved)}</span></div>
     <div className="mt-2 flex flex-wrap gap-3">
       {entities.length === 1 && entities[0].entityType === 'task' && entities[0].operation !== 'delete' && <button type="button" className="review-tech-trigger !mt-0" onClick={() => window.dispatchEvent(new CustomEvent('wwa-open-task', { detail: { taskId: entities[0].entityId } }))}>查看任务</button>}
+      {skillOnly && <button type="button" className="review-tech-trigger !mt-0" onClick={() => { window.location.hash = '/skills'; }}>查看技能</button>}
       {canUndo && <button type="button" className="review-tech-trigger !mt-0" disabled={Boolean(busyAction)} onClick={() => void followUp('undo-preview')}>撤销</button>}
       <button type="button" className="review-tech-trigger !mt-0" aria-expanded={showAll} onClick={() => setShowAll((value) => !value)}>{showAll ? '收起结果' : '查看结果'}</button>
     </div>
@@ -162,7 +178,7 @@ export function ReviewCard({ approval, phase = '', unknown = false, unresolved =
   </section>;
   return (
     <section className="task-batch-card" aria-label={review?.title || '修改方案'} data-testid="approval-card" data-approval-id={approval.approvalId} data-state={state}>
-      <div className="review-heading"><span className="review-symbol"><ClipboardList size={18} /></span><div><span className="review-kicker">{approval.reversesApprovalId ? '撤销预览' : '修改预览'}</span><h2 className="task-batch-title" tabIndex={-1}>{review?.title || '修改方案'}</h2></div></div>
+      <div className="review-heading"><span className="review-symbol"><ClipboardList size={18} /></span><div><span className="review-kicker">{approval.reversesApprovalId ? '撤销预览' : skillOnly ? '技能预览' : '修改预览'}</span><h2 className="task-batch-title" tabIndex={-1}>{review?.title || '修改方案'}</h2></div></div>
       <p className="task-batch-status" data-tone={state === 'rejected' || state === 'superseded' || state === 'capability_removed' ? 'neutral' : state === 'approving' || state === 'rejecting' ? 'pending' : state} role="status">
         <span>{reviewStatusCopy(state, approval, unresolved)}</span>
       </p>
@@ -172,11 +188,12 @@ export function ReviewCard({ approval, phase = '', unknown = false, unresolved =
         {state === 'capability_removed' && <p className="task-batch-summary">此能力已移出内置 AI</p>}
       </div>
       <p className="task-batch-summary" data-testid="approval-related">关联对象 {review?.relatedEntityCount ?? 0} 项{review?.reversibility === 'unsupported' ? `。不支持撤销${review.reversibilityReason ? `：${review.reversibilityReason}` : ''}` : review ? '。可以撤销，撤销前会再确认。' : ''}</p>
-      {entities.length === 1 && <div className="review-overview"><h3>{entities[0].titleAfter || entities[0].titleBefore || '未命名'}</h3>{entities[0].fields.filter((field) => ['topicId', 'scheduledStart', 'scheduledEnd', 'scheduledDate', 'scheduledTime', 'estimatedMinutes'].includes(field.key)).map((field) => <p key={field.key}><CalendarDays size={14} aria-hidden="true" /><span>{field.label}</span><strong>{field.afterText}</strong></p>)}</div>}
-      <Collapsible open={showAll} onOpenChange={setShowAll}>
+      {skillOnly && entities.map((entity) => <SkillProposalDetails key={entity.entityId} entity={entity} />)}
+      {!skillOnly && entities.length === 1 && <div className="review-overview"><h3>{entities[0].titleAfter || entities[0].titleBefore || '未命名'}</h3>{entities[0].fields.filter((field) => ['topicId', 'scheduledStart', 'scheduledEnd', 'scheduledDate', 'scheduledTime', 'estimatedMinutes'].includes(field.key)).map((field) => <p key={field.key}><CalendarDays size={14} aria-hidden="true" /><span>{field.label}</span><strong>{field.afterText}</strong></p>)}</div>}
+      {!skillOnly && <Collapsible open={showAll} onOpenChange={setShowAll}>
         <CollapsibleTrigger className="review-tech-trigger">{showAll ? '收起全部修改' : `全部修改（${entities.length} 项）`}</CollapsibleTrigger>
         <CollapsibleContent><ParentTrees entities={entities} /><div className="review-entities">{entities.map((entity) => <EntityBlock key={`${entity.entityType}:${entity.entityId}`} entity={entity} />)}</div></CollapsibleContent>
-      </Collapsible>
+      </Collapsible>}
       <Collapsible open={techOpen} onOpenChange={setTechOpen}>
         <CollapsibleTrigger className="review-tech-trigger">技术详情</CollapsibleTrigger>
         <CollapsibleContent>
@@ -192,7 +209,8 @@ export function ReviewCard({ approval, phase = '', unknown = false, unresolved =
         <div className="task-batch-actions">
           <button type="button" className="task-batch-secondary" disabled={decisionLocked} onClick={cancel}>取消</button>
           <button type="button" className="task-batch-secondary" disabled={decisionLocked} onClick={adjust}>调整方案</button>
-          <button type="button" className="task-batch-primary" disabled={decisionLocked} onClick={confirm}>确认修改</button>
+          {skillOnly && <button type="button" className="task-batch-secondary" disabled={decisionLocked || approval.proposalRevision == null} onClick={editSkill}>在编辑器中修改</button>}
+          <button type="button" className="task-batch-primary" disabled={decisionLocked} onClick={confirm}>{skillOnly ? '确认保存' : '确认修改'}</button>
         </div>
       )}
       {conflict && <div className="task-batch-actions"><button type="button" className="task-batch-primary" disabled={Boolean(busyAction)} onClick={() => void followUp('repreview')}>重新生成预览</button></div>}

@@ -146,8 +146,23 @@ function readTitle(data: unknown) {
   return '';
 }
 
+/** load_skill stays out of READ_ONLY_TOOLS so it shows as its own 「使用技能：名称 vN」 row. */
+export function skillUsagePreview(args: Record<string, unknown> = {}, result?: ToolResult | null, status?: ToolActivityStatus) {
+  if (status === 'running') return '正在读取技能';
+  if (status === 'error' || result?.success === false) {
+    if (result?.code === 'NOT_FOUND') return '没有找到这个技能，或它已停用';
+    if (result?.code === 'CAPABILITY_UNAVAILABLE') return '本次对话没有可用技能';
+    return clip(result?.error || '读取技能失败');
+  }
+  const data = result?.data && typeof result.data === 'object' ? result.data as { name?: unknown; revision?: unknown } : {};
+  const name = typeof data.name === 'string' && data.name ? data.name : typeof args.name === 'string' ? args.name : '';
+  if (!name) return status === 'done' || result ? '已读取' : '正在读取技能';
+  return clip(typeof data.revision === 'number' ? `${name} v${data.revision}` : name);
+}
+
 export function toolPreview(name: string, args: Record<string, unknown> = {}, result?: ToolResult | null, status?: ToolActivityStatus) {
   if (status === 'rejected') return '已拒绝';
+  if (name === 'load_skill') return skillUsagePreview(args, result, status);
   if (status === 'error' || result?.success === false) return clip(result?.error || '执行失败');
   if (name === 'propose_changes') return clip(typeof args.summary === 'string' && args.summary.trim() ? args.summary : '等待确认');
   if (name === 'prepare_external_prompt') return '已整理提示词';
@@ -541,6 +556,7 @@ export function reviewStatusCopy(state: ReviewCardState, approval: Approval, unr
     const count = approval.appOutcome?.status === 'executed' ? approval.appOutcome.appliedOperationCount : approval.appReview?.affectedEntityCount ?? 0;
     return `已修改 ${count} 个对象`;
   }
+  if (state === 'rejected' && approval.appOutcome?.status === 'rejected' && approval.appOutcome.code === 'SAVED_IN_EDITOR') return approval.appOutcome.message || '已在编辑器中修改并保存';
   if (state === 'rejected') return '已取消，未修改数据';
   if (state === 'failed' && approval.appOutcome?.status === 'failed' && approval.appOutcome.code === 'VERSION_CONFLICT') return '内容已变化，本次未修改';
   if (state === 'failed') return '本次未修改';

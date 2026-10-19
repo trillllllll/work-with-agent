@@ -137,3 +137,22 @@ export function skillSaveRequest(draft: SkillDraftInput, reason: string, fromApp
 export function openSkillEditor(detail: OpenSkillEditorDetail) {
   window.dispatchEvent(new CustomEvent('wwa-open-skill-editor', { detail }));
 }
+
+type ReviewEntityLike = { entityType: string; entityId: string; operation: string; revisionBefore: number | null; fields: Array<{ key: string; before: unknown; after: unknown }> };
+
+export function isSkillOnlyReview(entities: Array<{ entityType: string }>) {
+  return entities.length > 0 && entities.every((entity) => entity.entityType === 'skill');
+}
+
+/** Editor prefill for a pending skill.* card. An update only carries the changed fields; the host loads the rest. */
+export function skillProposalEditorDetail(entity: ReviewEntityLike, fromApproval: FromApproval): OpenSkillEditorDetail {
+  const after = Object.fromEntries(entity.fields.map((field) => [field.key, field.after]));
+  const draft: Partial<SkillDraftInput> = {};
+  if (typeof after.name === 'string') draft.name = after.name;
+  if (typeof after.description === 'string') draft.description = after.description;
+  if (typeof after.instructions === 'string') draft.instructions = after.instructions;
+  if (typeof after.enabled === 'boolean') draft.enabled = after.enabled;
+  if (entity.operation === 'create') return { draft: { enabled: true, ...draft }, fromApproval };
+  if (entity.revisionBefore != null) draft.expectedRevision = entity.revisionBefore;
+  return { skillId: entity.entityId, draft, fromApproval };
+}

@@ -61,7 +61,7 @@ export const toolLabels: Record<string, string> = {
   execute_shell: '执行命令', execute_file: '文件操作', execute_http: '访问地址',
   memory: '记忆', conversation_search: '查找过往对话', library: '项目资料', propose_task_changes: '整组任务修改',
   get_time: '当前时间', get_work_context: '工作上下文', query_tasks: '查询任务', query_topics: '查询清单', get_task_activity: '任务动态',
-  search_workspace: '搜索', library_read: '读取资料', memory_read: '读取记忆', get_change_schema: '修改说明', propose_changes: '修改方案', prepare_external_prompt: '外部提示词',
+  search_workspace: '搜索', library_read: '读取资料', memory_read: '读取记忆', get_change_schema: '修改说明', propose_changes: '修改方案', prepare_external_prompt: '外部提示词', load_skill: '使用技能',
 };
 export const API_URL = '';
 let csrfToken = '';

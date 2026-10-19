@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatSkillDiff, lineDiff, skillImportErrorText, skillSaveRequest } from './skill-format.js';
+import { formatSkillDiff, isSkillOnlyReview, lineDiff, skillImportErrorText, skillProposalEditorDetail, skillSaveRequest } from './skill-format.js';
 
 describe('skill formatting', () => {
   it('shows the missing SKILL.md fields from a 400', () => {
@@ -37,5 +37,23 @@ describe('skill formatting', () => {
       path: '/api/skills/sk1',
       body: { ...draft, enabled: true, expectedRevision: 3, reason: '补一步', fromApproval },
     });
+  });
+});
+
+describe('skill proposal editor detail', () => {
+  const fromApproval = { approvalId: 'ap1', expectedProposalRevision: 1, previewHash: 'h' };
+  it('prefills a create card and defaults to enabled', () => {
+    const entity = { entityType: 'skill', entityId: 'sk-new', operation: 'create', revisionBefore: null, fields: [
+      { key: 'name', before: null, after: '周报' }, { key: 'description', before: null, after: '周五' }, { key: 'instructions', before: null, after: '步骤' },
+    ] };
+    expect(skillProposalEditorDetail(entity, fromApproval)).toEqual({ draft: { enabled: true, name: '周报', description: '周五', instructions: '步骤' }, fromApproval });
+  });
+
+  it('overlays only the changed fields of an update on the loaded skill', () => {
+    const entity = { entityType: 'skill', entityId: 'sk1', operation: 'update', revisionBefore: 2, fields: [{ key: 'instructions', before: '旧', after: '新' }, { key: 'enabled', before: true, after: false }] };
+    expect(skillProposalEditorDetail(entity, fromApproval)).toEqual({ skillId: 'sk1', draft: { instructions: '新', enabled: false, expectedRevision: 2 }, fromApproval });
+    expect(isSkillOnlyReview([{ entityType: 'skill' }])).toBe(true);
+    expect(isSkillOnlyReview([{ entityType: 'skill' }, { entityType: 'task' }])).toBe(false);
+    expect(isSkillOnlyReview([])).toBe(false);
   });
 });
