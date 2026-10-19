@@ -1,9 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { groupTimedBlocks } from './plan-layout.js';
+import { groupTimedBlocks, stackFit } from './plan-layout.js';
 import { layoutTimed } from './schedule.js';
 import type { Task } from './api.js';
 
 const task = (id: string, start: string, end: string | null) => ({ id, scheduledStart: start, scheduledEnd: end, dueDate: start.slice(0, 10) }) as Task;
+
+describe('stack fit', () => {
+  it('shows up to three rows and keeps a more-line when the rest do not fit', () => {
+    expect(stackFit(112, 26, 18, 4)).toEqual({ shown: 3, moreLine: true });
+    expect(stackFit(112, 26, 18, 3)).toEqual({ shown: 3, moreLine: false });
+    expect(stackFit(70, 26, 18, 4)).toEqual({ shown: 2, moreLine: true });
+    expect(stackFit(26, 22, 18, 2)).toEqual({ shown: 1, moreLine: false });
+    expect(stackFit(0, 26, 18, 0)).toEqual({ shown: 0, moreLine: false });
+  });
+});
 
 describe('weekly overlap groups', () => {
   it('groups connected overlaps while keeping adjacent tasks separate', () => {

@@ -2488,13 +2488,25 @@ textarea.task-title.line-through {
 .plan-layout { display: grid; align-items: start; gap: 20px; }
 .plan-task-tray { background: var(--background); }
 .plan-task-tray[hidden] { display: none; }
-.plan-timed-task { background: color-mix(in srgb, var(--background) 93%, var(--primary)); border-color: var(--glass-divider); }
-.plan-task-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: normal; overflow-wrap: anywhere; }
-.plan-overlap { background: var(--background); border-color: var(--border); }
-.plan-overlap:hover { background: var(--muted); }
+.plan-timed-task, .plan-stack { background: color-mix(in srgb, var(--background) 93%, var(--primary)); border-color: var(--glass-divider); }
+.plan-task-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; overflow-wrap: anywhere; }
+.plan-timed-task-compact .plan-task-title,
+.plan-calendar-week .plan-task-title,
+.plan-stack .plan-task-title { -webkit-line-clamp: 1; white-space: nowrap; }
+.plan-stack { display: flex; flex-direction: column; overflow: hidden; border-radius: var(--radius-md); border-style: solid; border-width: 1px; }
+/* Row and more-line heights stay in step with stackRowPx, stackRowWeekPx and stackMorePx. */
+.plan-stack-row { display: flex; align-items: center; height: 26px; min-width: 0; padding: 0 6px; }
+.plan-calendar-week .plan-stack-row { height: 22px; }
+.plan-stack-row + .plan-stack-row { border-top: 1px solid var(--glass-divider); }
+.plan-stack-when { flex: none; color: var(--muted-foreground); font-size: 10px; font-variant-numeric: tabular-nums; }
+.plan-calendar-week .plan-stack-when { display: none; }
+.plan-stack-more { flex: none; background: transparent; color: var(--muted-foreground); font-size: 11px; text-align: left; }
+.plan-stack-more-line { height: 18px; padding: 0 8px; border-top: 1px solid var(--glass-divider); }
+.plan-month-task { background: color-mix(in srgb, var(--foreground) 6%, transparent); }
 .plan-calendar-week [data-testid="time-band-layer"] { opacity: .28; }
 .plan-calendar-week [data-testid="time-band-label"] { display: none; }
-.plan-calendar-week .plan-timed-task .task-checkbox { width: 13px; height: 13px; }
+.plan-calendar-week .plan-timed-task .task-checkbox,
+.plan-calendar-week .plan-stack .task-checkbox { width: 13px; height: 13px; }
 .plan-calendar-week .plan-task-title { font-size: 11px; }
 .plan-day-heading { border-bottom: 1px solid var(--glass-divider); }
 .plan-calendar [data-testid="timeline-scroll"] { max-height: min(65vh, max(220px, calc(100dvh - 390px))); }

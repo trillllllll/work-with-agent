@@ -38,35 +38,65 @@ test('默认七天等宽，周末能创建任务，待安排面板按需展开',
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
 });
 
-test('重叠任务合并后每项可打开、完成，并可恢复显示已完成', async ({ page }) => {
+test('重叠任务叠成行后每项可打开、完成，并可恢复显示已完成', async ({ page }) => {
   await e2eDatabase.task.createMany({ data: [
     { id: 'overlap-a', title: '接口开发', scheduledStart: '2026-10-17T14:00', scheduledEnd: '2026-10-17T15:00', dueDate: '2026-10-17' },
     { id: 'overlap-b', title: '需求评审', scheduledStart: '2026-10-17T14:30', scheduledEnd: '2026-10-17T15:30', dueDate: '2026-10-17' },
     { id: 'overlap-c', title: '测试用例', scheduledStart: '2026-10-17T14:45', scheduledEnd: '2026-10-17T16:00', dueDate: '2026-10-17' },
   ] });
   await page.goto('/#/plan');
-  const group = page.getByTestId('plan-overlap');
-  await expect(group).toHaveText('14:003 项重叠');
-  await group.scrollIntoViewIfNeeded();
-  await group.click();
-  const dialog = page.getByRole('dialog', { name: '重叠任务' });
-  await expect(dialog).toContainText('接口开发');
-  await expect(dialog).toContainText('需求评审');
-  await expect(dialog).toContainText('测试用例');
-  await page.keyboard.press('Escape');
-  await expect(group).toBeFocused();
-  await group.click();
-  await dialog.getByLabel('完成任务：接口开发', { exact: true }).click();
-  await expect(dialog.getByText('接口开发', { exact: true })).toHaveCount(0);
-  await page.keyboard.press('Escape');
-  await expect(group).toContainText('2 项重叠');
+  const day = page.locator('[data-testid="time-band-day"][data-date="2026-10-17"]');
+  const stack = day.getByTestId('plan-stack');
+  await stack.scrollIntoViewIfNeeded();
+  await expect(stack).toContainText('接口开发');
+  await expect(stack).toContainText('需求评审');
+  await expect(stack).toContainText('测试用例');
+  await expect(stack.getByTestId('plan-stack-more')).toHaveCount(0);
+  await stack.getByLabel('完成任务：接口开发', { exact: true }).click();
+  await expect(stack.getByText('接口开发', { exact: true })).toHaveCount(0);
   await page.getByLabel('显示已完成', { exact: true }).check();
-  await expect(group).toContainText('3 项重叠');
-  await group.click();
-  await expect(dialog.getByLabel('重开任务：接口开发')).toBeChecked();
-  await dialog.getByRole('button', { name: /需求评审/ }).click();
-  await expect(dialog).toBeHidden();
+  await expect(stack.getByLabel('重开任务：接口开发')).toBeChecked();
+  await stack.getByRole('button', { name: '打开任务：需求评审', exact: true }).click();
   await expect(page.getByRole('button', { name: '安排时间', exact: true })).toContainText('14:30');
+});
+
+test('日视图一个用整卡，两个并排，三个以上叠行', async ({ page }) => {
+  await e2eDatabase.task.createMany({ data: [
+    { id: 'solo', title: '独自整理', scheduledStart: '2026-10-16T10:00', scheduledEnd: '2026-10-16T11:00', dueDate: '2026-10-16' },
+    { id: 'pair-a', title: '并排甲', scheduledStart: '2026-10-16T11:00', scheduledEnd: '2026-10-16T12:00', dueDate: '2026-10-16' },
+    { id: 'pair-b', title: '并排乙', scheduledStart: '2026-10-16T11:00', scheduledEnd: '2026-10-16T12:00', dueDate: '2026-10-16' },
+    { id: 'pile-a', title: '叠行甲', scheduledStart: '2026-10-16T14:00', scheduledEnd: '2026-10-16T16:00', dueDate: '2026-10-16' },
+    { id: 'pile-b', title: '叠行乙', scheduledStart: '2026-10-16T14:00', scheduledEnd: '2026-10-16T16:00', dueDate: '2026-10-16' },
+    { id: 'pile-c', title: '叠行丙', scheduledStart: '2026-10-16T14:00', scheduledEnd: '2026-10-16T16:00', dueDate: '2026-10-16' },
+    { id: 'pile-d', title: '叠行丁', scheduledStart: '2026-10-16T14:10', scheduledEnd: '2026-10-16T16:00', dueDate: '2026-10-16' },
+  ] });
+  await page.goto('/#/plan');
+  await page.getByRole('button', { name: '日', exact: true }).click();
+  const day = page.locator('[data-testid="time-band-day"][data-date="2026-10-16"]');
+  const solo = day.locator('[data-task-id="solo"]');
+  const pair = day.locator('[data-task-id="pair-a"]');
+  const stack = day.getByTestId('plan-stack');
+  await expect(solo).toContainText('独自整理');
+  await expect(day.locator('[data-task-id="pair-b"]')).toContainText('并排乙');
+  await expect(stack).toContainText('叠行甲');
+  await expect(stack).toContainText('叠行丙');
+  await expect(stack.getByTestId('plan-stack-more')).toHaveText('还有 1 个');
+  await expect(stack).not.toContainText('叠行丁');
+  const borders = await pair.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return { left: style.borderLeftWidth, top: style.borderTopWidth, leftColor: style.borderLeftColor, topColor: style.borderTopColor };
+  });
+  expect(borders.left).toBe(borders.top);
+  expect(borders.leftColor).toBe(borders.topColor);
+  const soloBorders = await solo.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return style.borderLeftWidth === style.borderRightWidth && style.borderLeftColor === style.borderRightColor;
+  });
+  expect(soloBorders).toBe(true);
+  await stack.getByTestId('plan-stack-more').click();
+  const dialog = page.getByRole('dialog', { name: '重叠任务' });
+  await expect(dialog).toContainText('叠行丁');
+  await expect(dialog).not.toContainText('叠行甲');
 });
 
 test('相邻时间点与午夜合并卡片不遮挡后续任务或超出当天', async ({ page }) => {
@@ -78,15 +108,15 @@ test('相邻时间点与午夜合并卡片不遮挡后续任务或超出当天',
     { id: 'point-late-b', title: '午夜提醒乙', scheduledStart: '2026-10-18T23:59', dueDate: '2026-10-18' },
   ] });
   await page.goto('/#/plan');
-  await expect(page.getByTestId('plan-overlap')).toHaveCount(2);
+  await expect(page.getByTestId('plan-stack')).toHaveCount(2);
   const saturday = page.locator('[data-testid="time-band-day"][data-date="2026-10-17"]');
-  const group = saturday.getByTestId('plan-overlap');
+  const group = saturday.getByTestId('plan-stack');
   const next = saturday.locator('[data-task-id="point-next"]');
   const groupRect = await group.boundingBox();
   const nextRect = await next.boundingBox();
   expect(groupRect!.y + groupRect!.height).toBeLessThanOrEqual(nextRect!.y);
   const sunday = page.locator('[data-testid="time-band-day"][data-date="2026-10-18"]');
-  const lateRect = await sunday.getByTestId('plan-overlap').boundingBox();
+  const lateRect = await sunday.getByTestId('plan-stack').boundingBox();
   const dayRect = await sunday.boundingBox();
   expect(lateRect!.y + lateRect!.height).toBeLessThanOrEqual(dayRect!.y + dayRect!.height);
   await next.getByRole('button', { name: '打开任务：十点半提醒', exact: true }).click();
