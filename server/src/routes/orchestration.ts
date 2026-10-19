@@ -2,12 +2,14 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { NodeService, getNode, nodeMiddleware } from '../application/orchestration/nodes.js';
 import { ProjectService } from '../application/orchestration/projects.js';
 import { OrchestrationService } from '../application/orchestration/service.js';
+import { WorktreeService } from '../application/orchestration/worktrees.js';
 import { isServerMode, publicWorkspaceUrl } from '../application/desktop-paths.js';
 
 const route = (action: (req: Request) => Promise<unknown>) => async (req: Request, res: Response, next: NextFunction) => { try { res.json({ data: await action(req), error: null }); } catch (error) { next(error); } };
 const nodes = new NodeService();
 const projects = new ProjectService();
 const orchestrations = new OrchestrationService();
+const worktrees = new WorktreeService();
 
 function serverUrl(req: Request) {
   if (isServerMode() && publicWorkspaceUrl()) return publicWorkspaceUrl();
@@ -38,6 +40,13 @@ export function createOrchestrationRouter() {
   router.post('/orchestrations/:id/cancel', route((req) => orchestrations.cancel(String(req.params.id))));
   router.post('/orchestrations/:id/accept', route((req) => orchestrations.accept(String(req.params.id))));
   router.post('/orchestrations/:id/push', route((req) => orchestrations.push(String(req.params.id))));
+  router.post('/orchestrations/:id/pull-request', route((req) => orchestrations.pullRequest(String(req.params.id), req.body)));
+  router.get('/worktrees', route(() => worktrees.overview()));
+  router.post('/nodes/:id/inventory', route((req) => worktrees.refresh(String(req.params.id))));
+  router.post('/worktree-cleanups', route((req) => worktrees.previewCleanup(req.body, 'user')));
+  router.get('/worktree-cleanups/:id', route((req) => worktrees.getCleanup(String(req.params.id))));
+  router.post('/worktree-cleanups/:id/confirm', route((req) => worktrees.confirmCleanup(String(req.params.id))));
+  router.post('/worktree-cleanups/:id/cancel', route((req) => worktrees.cancelCleanup(String(req.params.id))));
   router.post('/orchestrations/:id/redispatch', route((req) => orchestrations.redispatch(String(req.params.id))));
   router.post('/orchestrations/:id/steps/:stepId/retry', route((req) => orchestrations.retryStep(String(req.params.id), String(req.params.stepId), req.body)));
   router.post('/orchestrations/:id/steps/:stepId/skip', route((req) => orchestrations.skipStep(String(req.params.id), String(req.params.stepId), req.body)));

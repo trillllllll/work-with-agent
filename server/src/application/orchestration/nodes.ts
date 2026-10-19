@@ -16,7 +16,7 @@ const newToken = () => randomBytes(32).toString('base64url');
 export const activeJobStatuses = ['queued', 'leased'];
 
 export function nodeDto(row: AgentNode) {
-  const { tokenHash: _hash, capabilitiesJson, ...value } = row;
+  const { tokenHash: _hash, capabilitiesJson, inventoryJson: _inventory, ...value } = row;
   return { ...value, capabilities: JSON.parse(capabilitiesJson), online: isOnline(row) };
 }
 export function isOnline(row: Pick<AgentNode, 'lastSeenAt' | 'status'>, at = Date.now()) {
@@ -34,7 +34,7 @@ export class NodeService {
     const token = newToken();
     const row = await prisma.agentNode.create({ data: { name: input.name, tokenHash: hash(token), createdAt: now(), updatedAt: now() } });
     // The plaintext token is only returned once.
-    return { node: nodeDto(row), token, command: `node server/dist/node-agent/index.js --server ${serverUrl} --token ${token} --roots <你的代码目录>` };
+    return { node: nodeDto(row), token, serverUrl, command: `node server/dist/node-agent/index.js --server ${serverUrl} --token ${token} --roots <你的代码目录>` };
   }
   async revoke(id: string) {
     const row = await prisma.agentNode.update({ where: { id }, data: { status: 'revoked', updatedAt: now() } }).catch(() => { throw new DomainError('NOT_FOUND', '执行端不存在', 404); });

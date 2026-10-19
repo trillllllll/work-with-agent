@@ -10,16 +10,19 @@ import { DomainError } from '../../domain/task.js';
 import { internalActor } from '../security.js';
 import { TaskService } from '../workspace-task.js';
 import { providerSchema, type RunResult } from '../../runner/contracts.js';
-import { prepareResultSchema, pushResultSchema, runResultSchema, type GitFacts, type RunPayload } from '../../node-agent/protocol.js';
+import { prepareResultSchema, pullRequestResultSchema, pushResultSchema, runResultSchema, type FetchSpec, type GitFacts, type RunPayload } from '../../node-agent/protocol.js';
 import { activeJobStatuses, enqueueJob, expireLeases, isOnline, jobDto, now } from './nodes.js';
 import { applyProbeResult, resolveProjectForTask } from './projects.js';
 import { appendOrchestrationEvent, publishOrchestration } from './events.js';
 import { generatePlan, planSchema, reviewDevelop, reviewFinal, validatePlan, type Plan } from './planner.js';
 import { checkDevelop, checkMerge, checkVerify, looksGitWriteDenied, looksRateLimited } from './checks.js';
 import { developPrompt, mergePrompt, verifyPrompt } from './prompts.js';
+import { applyWorktreeJob } from './worktrees.js';
 
 type Db = Prisma.TransactionClient;
-type Grant = { provider: 'codex' | 'claude'; maxParallel: number; allowShell: boolean };
+type Grant = { provider: 'codex' | 'claude'; maxParallel: number; allowShell: boolean; remote?: string };
+/** A machine taking part in a round: the primary one holds the integration worktree; extra ones only develop subtasks. */
+type Target = { locationId: string; nodeId: string; path: string };
 type Snapshot = { main: { id: string; title: string; description: string }; subtasks: Array<{ id: string; title: string; description: string; sortOrder: number; revision: number }> };
 const OPEN = ['draft', 'running', 'paused', 'awaiting_acceptance'];
 const MAX_CONTINUE = 2;
@@ -49,8 +52,8 @@ async function snapshotFor(taskId: string): Promise<Snapshot> {
 }
 
 function orchestrationDto(row: Orchestration & { steps?: OrchestrationStep[] }) {
-  const { grantJson, planJson, taskSnapshotJson, steps, ...value } = row;
-  return { ...value, grant: decode(grantJson), plan: decode(planJson), taskSnapshot: decode(taskSnapshotJson), ...(steps ? { steps: steps.map((step) => ({ ...step, dependsOn: decode(step.dependsOnJson) })) } : {}) };
+  const { grantJson, planJson, taskSnapshotJson, extraLocationsJson, steps, ...value } = row;
+  return { ...value, grant: decode(grantJson), plan: decode(planJson), taskSnapshot: decode(taskSnapshotJson), extraLocations: decode(extraLocationsJson), ...(steps ? { steps: steps.map((step) => ({ ...step, dependsOn: decode(step.dependsOnJson) })) } : {}) };
 }
 
 async function setStatus(tx: Db, row: Orchestration, status: string, extra: Partial<Orchestration> = {}) {
@@ -81,6 +84,30 @@ async function updateTaskStatus(taskId: string, status: 'doing' | 'done' | 'bloc
   }
 }
 
+const normalizeRemote = (url: string | null | undefined) => (url ?? '').trim().replace(/\.git$/, '').replace(/^git@([^:]+):/, 'https://$1/').replace(/^ssh:\/\/git@/, 'https://').replace(/\/+$/, '').toLowerCase();
+
+/** Cross-machine rounds: extra machines must hold the same project with the same `origin`, which carries the branches between them. */
+async function resolveExtraLocations(projectId: string, primary: { id: string; nodeId: string; fingerprintJson: string }, ids: string[]): Promise<Target[]> {
+  if (!ids.length) return [];
+  const primaryOrigin = normalizeRemote((JSON.parse(primary.fingerprintJson) as { originUrl?: string | null }).originUrl);
+  if (!primaryOrigin) throw new DomainError('ORIGIN_REQUIRED', '跨机运行需要主位置的仓库配置了 origin 远端（用来中转分支）', 400);
+  const seen = new Set([primary.nodeId]);
+  const result: Target[] = [];
+  for (const id of [...new Set(ids)]) {
+    if (id === primary.id) continue;
+    const location = await prisma.projectLocation.findUnique({ where: { id }, include: { node: true } });
+    if (!location || location.projectId !== projectId) throw new DomainError('LOCATION_REQUIRED', '附加位置不属于该项目', 400);
+    if (location.status !== 'verified') throw new DomainError('LOCATION_UNVERIFIED', `${location.node.name} 上的位置还没有通过验证`, 400);
+    if (location.node.status !== 'active') throw new DomainError('NODE_UNAVAILABLE', `${location.node.name} 已吊销`, 400);
+    if (((JSON.parse(location.node.capabilitiesJson) as { protocol?: number }).protocol ?? 0) < 2) throw new DomainError('NODE_OUTDATED', `${location.node.name} 的执行端版本太旧，不支持跨机运行`, 400);
+    if (seen.has(location.nodeId)) throw new DomainError('DUPLICATE_NODE', '每台执行端只能选一个位置', 400);
+    if (normalizeRemote((JSON.parse(location.fingerprintJson) as { originUrl?: string | null }).originUrl) !== primaryOrigin) throw new DomainError('ORIGIN_MISMATCH', `${location.node.name} 上仓库的 origin 和主位置不同`, 400);
+    seen.add(location.nodeId);
+    result.push({ locationId: location.id, nodeId: location.nodeId, path: location.path });
+  }
+  return result;
+}
+
 export class OrchestrationService {
   async list(taskId?: string) {
     const rows = await prisma.orchestration.findMany({ where: taskId ? { taskId } : {}, include: { steps: { orderBy: { position: 'asc' } } }, orderBy: [{ createdAt: 'desc' }] });
@@ -98,7 +125,10 @@ export class OrchestrationService {
       prisma.nodeJob.findMany({ where: { orchestrationId: id }, orderBy: { createdAt: 'asc' } }),
     ]);
     const node = row.nodeId ? await prisma.agentNode.findUnique({ where: { id: row.nodeId } }) : null;
-    return { ...orchestrationDto(row), node: node ? { id: node.id, name: node.name, online: isOnline(node) } : null, events: events.map((event) => ({ ...event, payload: decode(event.payload) })), jobs: jobs.map(jobDto) };
+    const extra = decode<Target[]>(row.extraLocationsJson);
+    const nodeRows = await prisma.agentNode.findMany({ where: { id: { in: [...new Set([row.nodeId, ...extra.map((item) => item.nodeId)].filter((id): id is string => !!id))] } } });
+    const nodes = nodeRows.map((item) => ({ id: item.id, name: item.name, online: isOnline(item), primary: item.id === row.nodeId, gh: !!(JSON.parse(item.capabilitiesJson) as { gh?: boolean }).gh }));
+    return { ...orchestrationDto(row), node: node ? { id: node.id, name: node.name, online: isOnline(node) } : null, nodes, events: events.map((event) => ({ ...event, payload: decode(event.payload) })), jobs: jobs.map(jobDto) };
   }
 
   /** Draft: resolve the project, ask the orchestrator model for a plan (or a sequential fallback). */
@@ -122,12 +152,12 @@ export class OrchestrationService {
       await appendOrchestrationEvent(tx, saved.id, 'plan_generated', 'model', null, { plan, raw: modelRaw });
       return saved;
     });
-    return { ...orchestrationDto(row), locations: ranked.map((location) => ({ id: location.id, nodeId: location.nodeId, nodeName: location.node.name, online: isOnline(location.node), path: location.path })) };
+    return { ...orchestrationDto(row), locations: ranked.map((location) => ({ id: location.id, nodeId: location.nodeId, nodeName: location.node.name, online: isOnline(location.node), path: location.path, originUrl: (JSON.parse(location.fingerprintJson) as { originUrl?: string | null }).originUrl ?? null, protocol: (JSON.parse(location.node.capabilitiesJson) as { protocol?: number }).protocol ?? 0 })) };
   }
 
   /** One-time authorization; after this nothing asks the user step by step. */
   async start(id: string, raw: unknown) {
-    const input = z.object({ expectedRevision: z.number().int().positive(), locationId: z.string().min(1), provider: providerSchema.optional(), maxParallel: z.number().int().min(1).max(4).default(2), allowShell: z.boolean().default(true), plan: planSchema.optional() }).strict().parse(raw);
+    const input = z.object({ expectedRevision: z.number().int().positive(), locationId: z.string().min(1), extraLocationIds: z.array(z.string().min(1)).max(3).default([]), provider: providerSchema.optional(), maxParallel: z.number().int().min(1).max(4).default(2), allowShell: z.boolean().default(true), plan: planSchema.optional() }).strict().parse(raw);
     const row = await prisma.orchestration.findUnique({ where: { id } });
     if (!row) throw new DomainError('NOT_FOUND', '编排不存在', 404);
     if (row.status !== 'draft') throw new DomainError('ORCHESTRATION_STARTED', '编排已经开始', 409);
@@ -142,9 +172,10 @@ export class OrchestrationService {
     if (location.status !== 'verified') throw new DomainError('LOCATION_UNVERIFIED', '该位置还没有通过执行端验证', 400);
     if (location.node.status !== 'active') throw new DomainError('NODE_UNAVAILABLE', '执行端已吊销', 400);
     const project = await prisma.project.findUniqueOrThrow({ where: { id: row.projectId } });
-    const grant: Grant = { provider: input.provider ?? providerSchema.parse(project.defaultProvider), maxParallel: input.maxParallel, allowShell: input.allowShell };
+    const extra = await resolveExtraLocations(row.projectId, location, input.extraLocationIds);
+    const grant: Grant = { provider: input.provider ?? providerSchema.parse(project.defaultProvider), maxParallel: input.maxParallel, allowShell: input.allowShell, ...(extra.length ? { remote: 'origin' } : {}) };
     const started = await prisma.$transaction(async (tx) => {
-      const changed = await tx.orchestration.updateMany({ where: { id, status: 'draft', revision: input.expectedRevision }, data: { status: 'running', locationId: location.id, nodeId: location.nodeId, repoPath: location.path, grantJson: JSON.stringify(grant), planJson: JSON.stringify(plan), startedAt: now(), updatedAt: now(), revision: { increment: 1 } } });
+      const changed = await tx.orchestration.updateMany({ where: { id, status: 'draft', revision: input.expectedRevision }, data: { status: 'running', locationId: location.id, nodeId: location.nodeId, repoPath: location.path, extraLocationsJson: JSON.stringify(extra), grantJson: JSON.stringify(grant), planJson: JSON.stringify(plan), startedAt: now(), updatedAt: now(), revision: { increment: 1 } } });
       if (!changed.count) throw new DomainError('PLAN_STALE', '编排已变化', 409);
       let position = 0;
       await tx.orchestrationStep.create({ data: { orchestrationId: id, kind: 'setup', position: position++, createdAt: now(), updatedAt: now() } });
@@ -155,7 +186,7 @@ export class OrchestrationService {
         await tx.orchestrationStep.create({ data: { orchestrationId: id, kind: 'merge', subtaskId, sourceStepId: develop.id, position: position++, createdAt: now(), updatedAt: now() } });
       }
       await tx.orchestrationStep.create({ data: { orchestrationId: id, kind: 'final', position: position++, createdAt: now(), updatedAt: now() } });
-      await appendOrchestrationEvent(tx, id, 'started', 'user', null, { grant, locationId: location.id, nodeId: location.nodeId });
+      await appendOrchestrationEvent(tx, id, 'started', 'user', null, { grant, locationId: location.id, nodeId: location.nodeId, extraLocations: extra });
       return tx.orchestration.findUniqueOrThrow({ where: { id } });
     });
     await updateTaskStatus(row.taskId, 'doing', id);
@@ -195,7 +226,10 @@ export class OrchestrationService {
     if (!step) throw new DomainError('NOT_FOUND', '步骤不存在', 404);
     if (!['needs_user', 'retry_wait'].includes(step.status)) throw new DomainError('STEP_NOT_RETRYABLE', '只有等待处理的步骤可以重试', 409);
     await prisma.$transaction(async (tx) => {
-      if (input.mode === 'reverify') {
+      if (step.kind === 'publish') {
+        // A failed transfer is retried by a fresh publish request on the next tick.
+        await tx.orchestrationStep.update({ where: { id: stepId }, data: { status: 'skipped', updatedAt: now() } });
+      } else if (input.mode === 'reverify') {
         if (step.kind !== 'merge' || !step.mergeCommit) throw new DomainError('STEP_NOT_RETRYABLE', '只有已提交的合入可以重新核对', 409);
         await tx.orchestrationStep.update({ where: { id: stepId }, data: { status: 'reverify', error: null, updatedAt: now() } });
       } else if (input.mode === 'continue' && step.kind === 'develop' && step.workPath) {
@@ -246,6 +280,30 @@ export class OrchestrationService {
     });
     return this.get(id);
   }
+  /** Optional, explicit user click after a successful push: the node runs `gh pr create` with the user's own login. */
+  async pullRequest(id: string, raw: unknown) {
+    const input = z.object({ title: z.string().trim().min(1).max(250).optional(), body: z.string().max(60_000).optional(), base: z.string().trim().min(1).max(250).optional() }).strict().parse(raw ?? {});
+    const row = await this.requireStatus(id, ['accepted', 'awaiting_acceptance']);
+    if (!row.nodeId || !row.integrationPath) throw new DomainError('NOT_READY', '集成分支尚未建立', 409);
+    if (!row.pushedAt) throw new DomainError('PUSH_REQUIRED', '先推送集成分支，再创建 PR', 409);
+    if (row.pullRequestUrl) return this.get(id);
+    const node = await prisma.agentNode.findUniqueOrThrow({ where: { id: row.nodeId } });
+    if (!(JSON.parse(node.capabilitiesJson) as { gh?: boolean }).gh) throw new DomainError('GH_UNAVAILABLE', '该执行端没有可用的 GitHub CLI（gh），请在那台电脑上安装并登录 gh', 409);
+    const snapshot = decode<Snapshot>(row.taskSnapshotJson);
+    const steps = await prisma.orchestrationStep.findMany({ where: { orchestrationId: id, kind: 'merge' }, orderBy: { position: 'asc' } });
+    const lines = steps.map((step) => `- [${step.status === 'succeeded' ? 'x' : ' '}] ${snapshot.subtasks.find((task) => task.id === step.subtaskId)?.title ?? step.subtaskId}${step.mergeCommit ? ` (${step.mergeCommit.slice(0, 10)})` : ''}`);
+    const body = input.body ?? `${snapshot.main.description ? `${snapshot.main.description.slice(0, 4000)}\n\n` : ''}## 子任务\n${lines.join('\n')}\n\n由 Work With Agent 主控编排生成；代码由本机 AI 编写、合入并独立核对。`;
+    const count = await prisma.orchestrationStep.count({ where: { orchestrationId: id, kind: 'pull_request' } });
+    await prisma.$transaction(async (tx) => {
+      const pending = await tx.orchestrationStep.findFirst({ where: { orchestrationId: id, kind: 'pull_request', status: 'dispatched' } });
+      if (pending) throw new DomainError('PR_RUNNING', 'PR 正在创建', 409);
+      const step = await tx.orchestrationStep.create({ data: { orchestrationId: id, kind: 'pull_request', position: 2000 + count, status: 'dispatched', branch: row.integrationBranch, createdAt: now(), updatedAt: now() } });
+      const { job } = await enqueueJob(tx, { nodeId: row.nodeId!, kind: 'pull_request', dispatchKey: `orch:${step.id}:pr`, payload: { worktree: row.integrationPath!, branch: row.integrationBranch, base: input.base ?? row.defaultBranch, title: input.title ?? snapshot.main.title.slice(0, 250), body, remote: 'origin' }, orchestrationId: id, stepId: step.id });
+      await tx.orchestrationStep.update({ where: { id: step.id }, data: { lastJobId: job.id } });
+      await appendOrchestrationEvent(tx, id, 'pull_request_requested', 'user', step.id, { base: input.base ?? row.defaultBranch });
+    });
+    return this.get(id);
+  }
   /** Old round is kept intact (rows, local worktrees, branches); a new draft round is planned from current task content. */
   async redispatch(id: string) {
     const row = await this.requireStatus(id, ['running', 'paused', 'awaiting_acceptance', 'accepted', 'cancelled']);
@@ -268,16 +326,17 @@ export class OrchestrationService {
 
 // ---------------------------------------------------------------- scheduler
 
-function runPayload(row: Orchestration, grant: Grant, input: { worktree: RunPayload['worktree']; prompt: string; gitWrite: boolean; expect?: RunPayload['expect']; profile?: 'read_only' | 'workspace_write' }): RunPayload {
-  return { repoPath: row.repoPath, provider: grant.provider, permissions: { profile: input.profile ?? 'workspace_write', allowShell: grant.allowShell }, gitWrite: input.gitWrite, worktree: input.worktree, prompt: input.prompt, expect: input.expect ?? { includes: [] } };
+function runPayload(row: Orchestration, grant: Grant, input: { worktree: RunPayload['worktree']; prompt: string; gitWrite: boolean; expect?: RunPayload['expect']; profile?: 'read_only' | 'workspace_write'; repoPath?: string; fetch?: FetchSpec[]; publish?: boolean }): RunPayload {
+  return { repoPath: input.repoPath ?? row.repoPath, provider: grant.provider, permissions: { profile: input.profile ?? 'workspace_write', allowShell: grant.allowShell }, gitWrite: input.gitWrite, worktree: input.worktree, prompt: input.prompt, expect: input.expect ?? { includes: [] }, fetch: input.fetch ?? [], ...(input.publish ? { publish: { remote: grant.remote ?? 'origin' } } : {}) };
 }
 
 async function dispatch(row: Orchestration, step: OrchestrationStep, phase: string, dispatchKey: string, payload: unknown, kind: 'prepare' | 'run', status: string, extra: Partial<OrchestrationStep> = {}) {
+  const nodeId = extra.nodeId ?? step.nodeId ?? row.nodeId!;
   return prisma.$transaction(async (tx) => {
-    const { job, replay } = await enqueueJob(tx, { nodeId: row.nodeId!, kind, phase, dispatchKey, payload, orchestrationId: row.id, stepId: step.id });
+    const { job, replay } = await enqueueJob(tx, { nodeId, kind, phase, dispatchKey, payload, orchestrationId: row.id, stepId: step.id });
     const changed = await tx.orchestrationStep.updateMany({ where: { id: step.id, status: step.status }, data: { status, lastJobId: job.id, ...extra, updatedAt: now() } });
     if (!changed.count) throw new Error('STEP_RACE');
-    if (!replay) await appendOrchestrationEvent(tx, row.id, 'dispatched', 'server', step.id, { jobId: job.id, kind, phase, dispatchKey });
+    if (!replay) await appendOrchestrationEvent(tx, row.id, 'dispatched', 'server', step.id, { jobId: job.id, kind, phase, dispatchKey, nodeId });
     return job;
   });
 }
@@ -359,6 +418,35 @@ async function handleJob(row: Orchestration, step: OrchestrationStep, job: NodeJ
     publishOrchestration({ orchestrationId: row.id, taskId: row.taskId, status: row.status });
     return;
   }
+  if (step.kind === 'publish') {
+    // Cross-machine transfer of the integration branch to the shared remote (mechanical push by the primary node).
+    const report = job.resultJson ? decode<{ ok: boolean; result?: unknown; error?: string }>(job.resultJson) : null;
+    const parsed = report?.ok ? pushResultSchema.safeParse(report.result) : null;
+    if (parsed?.success && parsed.data.head === step.baseCommit) {
+      if (!await stepUpdate(step, { status: 'succeeded', resultCommit: parsed.data.head })) return;
+      await prisma.orchestration.update({ where: { id: row.id }, data: { publishedHead: parsed.data.head, updatedAt: now() } });
+      await event(row, 'integration_published', 'node', step.id, { head: parsed.data.head });
+    } else {
+      const error = parsed?.success ? `推送后的 HEAD ${parsed.data.head} 与期望的 ${step.baseCommit} 不一致` : report?.error ?? job.error ?? '推送集成分支失败';
+      if (!await stepUpdate(step, { status: 'needs_user', error })) return;
+      await pause(row.id, 'transfer_failed', error);
+    }
+    return;
+  }
+  if (step.kind === 'pull_request') {
+    const report = job.resultJson ? decode<{ ok: boolean; result?: unknown; error?: string }>(job.resultJson) : null;
+    const parsed = report?.ok ? pullRequestResultSchema.safeParse(report.result) : null;
+    if (parsed?.success) {
+      if (!await stepUpdate(step, { status: 'succeeded' })) return;
+      await prisma.orchestration.update({ where: { id: row.id }, data: { pullRequestUrl: parsed.data.url, updatedAt: now() } });
+      await event(row, 'pull_request_created', 'node', step.id, parsed.data);
+    } else {
+      if (!await stepUpdate(step, { status: 'failed', error: report?.error ?? job.error ?? '创建 PR 失败' })) return;
+      await event(row, 'pull_request_failed', 'node', step.id, { error: report?.error ?? job.error });
+    }
+    publishOrchestration({ orchestrationId: row.id, taskId: row.taskId, status: row.status });
+    return;
+  }
   const { result, facts, error, stderr, run } = parseRun(job);
   const subtask = snapshot.subtasks.find((task) => task.id === step.subtaskId);
   if (step.kind === 'develop') {
@@ -367,6 +455,14 @@ async function handleJob(row: Orchestration, step: OrchestrationStep, job: NodeJ
     await event(row, 'develop_check', 'server', step.id, { jobId: job.id, ...check, head: facts?.head ?? null, ...(check.ok ? {} : { stderrTail: stderr.slice(-2000) }) });
     if (run?.worktree && run.worktree !== step.workPath) { await prisma.orchestrationStep.update({ where: { id: step.id }, data: { workPath: run.worktree } }); step.workPath = run.worktree; }
     if (!check.ok) return developFailure(row, step, job, check.problems, `${error ?? ''}\n${stderr}`, !!result);
+    if (isRemoteStep(row, step) && run?.published?.head !== facts!.head) {
+      // The commit is fine but did not reach the shared remote; the primary machine cannot merge it.
+      const problem = run?.publishError ? `子任务分支推送到 origin 失败：${run.publishError.slice(-1000)}` : '子任务分支没有推送到 origin 中转';
+      await event(row, 'transfer_check', 'server', step.id, { jobId: job.id, ok: false, problem });
+      if (!await stepUpdate(step, { status: 'needs_user', error: problem })) return;
+      await pause(row.id, 'transfer_failed', problem);
+      return;
+    }
     let review: { decision: 'accept' | 'continue' | 'fail'; comment: string } | null;
     const prior = await prisma.orchestrationEvent.findMany({ where: { orchestrationId: row.id, stepId: step.id, type: 'ai_review' } });
     const recorded = prior.map((item) => decode<{ jobId: string; value: typeof review }>(item.payload)).find((item) => item.jobId === job.id);
@@ -466,22 +562,35 @@ async function dispatchReady(row: Orchestration, steps: OrchestrationStep[]) {
   const mergeDone = new Map(steps.filter((step) => step.kind === 'merge').map((step) => [step.subtaskId, ['succeeded', 'skipped'].includes(step.status)]));
   let running = steps.filter((step) => step.kind === 'develop' && step.status === 'dispatched').length;
   const nowMs = Date.now();
+  const targets = await roundTargets(row);
+  const load = new Map(targets.map((target) => [target.nodeId, steps.filter((step) => step.kind === 'develop' && step.status === 'dispatched' && (step.nodeId ?? row.nodeId) === target.nodeId).length]));
+  const publishing = steps.some((step) => step.kind === 'publish' && step.status === 'dispatched');
   for (const step of steps.filter((item) => item.kind === 'develop')) {
     if (running >= grant.maxParallel) break;
     const ready = step.status === 'pending' || (step.status === 'retry_wait' && (!step.nextAttemptAt || Date.parse(step.nextAttemptAt) <= nowMs));
     if (!ready) continue;
     if (!decode<string[]>(step.dependsOnJson).every((dependency) => mergeDone.get(dependency))) continue;
+    const continuingHere = step.continueCount > 0 && !!step.workPath;
+    const target = pickTarget(row, targets, load, continuingHere ? step : null);
+    const remote = target.nodeId !== row.nodeId;
+    if (remote && !continuingHere && row.publishedHead !== row.integrationHead) {
+      // The other machine starts from the integration HEAD, so it must be on the shared remote first.
+      if (!publishing && await requestPublish(row, steps)) dispatched = true;
+      continue;
+    }
     const latest = await prisma.task.findUnique({ where: { id: step.subtaskId! } });
     const frozen = snapshot.subtasks.find((task) => task.id === step.subtaskId)!;
     const subtask = latest && !latest.deletedAt ? { id: latest.id, title: latest.title, description: latest.description } : frozen;
     const continuing = step.continueCount > 0 && !!step.workPath;
     const branch = continuing && step.branch ? step.branch : `${row.integrationBranch}-${slug(subtask.title, shortId(subtask.id))}-a${step.attempt}`;
     const base = continuing && step.baseCommit ? step.baseCommit : row.integrationHead;
-    const worktree: RunPayload['worktree'] = continuing ? { existing: step.workPath! } : { create: { branch, startPoint: base, worktreeName: `${row.id}/${shortId(subtask.id)}-a${step.attempt}` } };
+    const transfer = remote && !continuing ? { remote: grant.remote ?? 'origin', ref: row.integrationBranch, expect: base } : undefined;
+    const worktree: RunPayload['worktree'] = continuing ? { existing: step.workPath! } : { create: { branch, startPoint: base, worktreeName: `${row.id}/${shortId(subtask.id)}-a${step.attempt}`, ...(transfer ? { fetch: transfer } : {}) } };
     const key = `orch:${step.id}:a${step.attempt}:work:c${step.continueCount}:r${step.retryCount}`;
-    const payload = runPayload(row, grant, { worktree, prompt: developPrompt({ main: snapshot.main, subtask, acceptanceCriteria: step.acceptanceCriteria, branch, feedback: step.feedback, allowShell: grant.allowShell }), gitWrite: true, expect: { includes: [base], base, branch } });
+    const payload = runPayload(row, grant, { worktree, repoPath: target.path, publish: remote, prompt: developPrompt({ main: snapshot.main, subtask, acceptanceCriteria: step.acceptanceCriteria, branch, feedback: step.feedback, allowShell: grant.allowShell }), gitWrite: true, expect: { includes: [base], base, branch } });
     const revision = await updateTaskStatus(subtask.id, 'doing', row.id);
-    await dispatch(row, step, 'work', key, payload, 'run', 'dispatched', { branch, baseCommit: base, lastTaskRevision: revision ?? latest?.revision ?? null });
+    await dispatch(row, step, 'work', key, payload, 'run', 'dispatched', { branch, baseCommit: base, lastTaskRevision: revision ?? latest?.revision ?? null, nodeId: target.nodeId, locationId: target.locationId, repoPath: target.path });
+    load.set(target.nodeId, (load.get(target.nodeId) ?? 0) + 1);
     running++; dispatched = true;
   }
   // Merges strictly one at a time per orchestration, in queue order.
@@ -497,7 +606,13 @@ async function dispatchReady(row: Orchestration, steps: OrchestrationStep[]) {
     const next = steps.filter((step) => step.kind === 'merge' && step.status === 'queued').sort((a, b) => a.updatedAt.localeCompare(b.updatedAt) || a.position - b.position)[0];
     if (next) {
       const subtask = snapshot.subtasks.find((task) => task.id === next.subtaskId)!;
-      const payload = runPayload(row, grant, { worktree: { existing: row.integrationPath! }, prompt: mergePrompt({ integrationBranch: row.integrationBranch, subtaskBranch: next.branch!, resultCommit: next.resultCommit!, subtask, allowShell: grant.allowShell, feedback: next.feedback }), gitWrite: true, expect: { includes: [next.resultCommit!, row.integrationHead], branch: row.integrationBranch } });
+      const source = steps.find((step) => step.id === next.sourceStepId);
+      // A subtask developed on another machine is merged from the shared remote, verified to be exactly the reviewed commit.
+      const fromRemote = !!source && isRemoteStep(row, source);
+      const remoteName = grant.remote ?? 'origin';
+      const fetch: FetchSpec[] = fromRemote ? [{ remote: remoteName, ref: next.branch!, expect: next.resultCommit! }] : [];
+      const subtaskBranch = fromRemote ? `${remoteName}/${next.branch!}` : next.branch!;
+      const payload = runPayload(row, grant, { worktree: { existing: row.integrationPath! }, fetch, prompt: mergePrompt({ integrationBranch: row.integrationBranch, subtaskBranch, resultCommit: next.resultCommit!, subtask, allowShell: grant.allowShell, feedback: next.feedback }), gitWrite: true, expect: { includes: [next.resultCommit!, row.integrationHead], branch: row.integrationBranch } });
       await dispatch(row, next, 'work', `orch:${next.id}:a${next.attempt}:work`, payload, 'run', 'dispatched', { preMergeHead: row.integrationHead });
       dispatched = true;
     }
@@ -509,6 +624,41 @@ async function dispatchReady(row: Orchestration, steps: OrchestrationStep[]) {
     return true;
   }
   return dispatched;
+}
+
+function isRemoteStep(row: Orchestration, step: OrchestrationStep) { return !!step.nodeId && step.nodeId !== row.nodeId; }
+
+async function roundTargets(row: Orchestration): Promise<Array<Target & { online: boolean; active: boolean }>> {
+  const extra = decode<Target[]>(row.extraLocationsJson);
+  const all: Target[] = [{ locationId: row.locationId ?? '', nodeId: row.nodeId!, path: row.repoPath }, ...extra];
+  const nodes = await prisma.agentNode.findMany({ where: { id: { in: all.map((item) => item.nodeId) } } });
+  return all.map((item) => { const node = nodes.find((candidate) => candidate.id === item.nodeId); return { ...item, online: !!node && isOnline(node), active: node?.status === 'active' }; });
+}
+
+/** Continuing work stays on its machine; new work goes to the least-loaded online machine, the primary one on ties. */
+function pickTarget(row: Orchestration, targets: Array<Target & { online: boolean; active: boolean }>, load: Map<string, number>, continuing: OrchestrationStep | null): Target {
+  if (continuing) {
+    const nodeId = continuing.nodeId ?? row.nodeId!;
+    return { nodeId, locationId: continuing.locationId ?? row.locationId ?? '', path: continuing.repoPath ?? row.repoPath };
+  }
+  const usable = targets.filter((target) => target.active);
+  const online = usable.filter((target) => target.online);
+  const pool = online.length ? online : usable.slice(0, 1);
+  return [...pool].sort((a, b) => (load.get(a.nodeId) ?? 0) - (load.get(b.nodeId) ?? 0))[0] ?? targets[0];
+}
+
+/** Ask the primary node to push the integration branch (fast-forward only) so other machines can start from it. */
+async function requestPublish(row: Orchestration, steps: OrchestrationStep[]) {
+  const head = row.integrationHead!;
+  if (steps.some((step) => step.kind === 'publish' && step.baseCommit === head && ['dispatched', 'succeeded', 'needs_user'].includes(step.status))) return false;
+  const count = steps.filter((step) => step.kind === 'publish').length;
+  await prisma.$transaction(async (tx) => {
+    const step = await tx.orchestrationStep.create({ data: { orchestrationId: row.id, kind: 'publish', position: 500 + count, status: 'dispatched', branch: row.integrationBranch, baseCommit: head, createdAt: now(), updatedAt: now() } });
+    const { job } = await enqueueJob(tx, { nodeId: row.nodeId!, kind: 'push', phase: 'publish', dispatchKey: `orch:${row.id}:publish:${head}:${count}`, payload: { worktree: row.integrationPath!, branch: row.integrationBranch, remote: decode<Grant>(row.grantJson).remote ?? 'origin' }, orchestrationId: row.id, stepId: step.id });
+    await tx.orchestrationStep.update({ where: { id: step.id }, data: { lastJobId: job.id } });
+    await appendOrchestrationEvent(tx, row.id, 'dispatched', 'server', step.id, { jobId: job.id, kind: 'push', phase: 'publish', head });
+  });
+  return true;
 }
 
 async function runFinal(row: Orchestration, final: OrchestrationStep, steps: OrchestrationStep[], snapshot: Snapshot) {
@@ -551,6 +701,7 @@ export async function onJobFinished(jobId: string) {
   const job = await prisma.nodeJob.findUnique({ where: { id: jobId } });
   if (!job) return;
   if (job.kind === 'probe') { await applyProbeResult(job); return; }
+  if (job.kind === 'inventory' || job.kind === 'cleanup') { await applyWorktreeJob(job); return; }
   if (job.orchestrationId) void tickOrchestration(job.orchestrationId).catch((error) => console.error('编排推进失败：', error));
 }
 
@@ -558,7 +709,11 @@ export async function onJobFinished(jobId: string) {
 export async function tickAllOrchestrations() {
   const lost = await expireLeases();
   for (const job of lost) {
-    if (job.kind === 'probe') { await prisma.nodeJob.update({ where: { id: job.id }, data: { status: 'failed', error: '执行端离线', endedAt: now() } }); continue; }
+    if (['probe', 'inventory', 'cleanup'].includes(job.kind)) {
+      await prisma.nodeJob.update({ where: { id: job.id }, data: { status: 'failed', error: '执行端离线', endedAt: now() } });
+      if (job.kind === 'cleanup') await prisma.worktreeCleanup.updateMany({ where: { jobId: job.id }, data: { status: 'failed', resultJson: JSON.stringify({ error: '执行端离线，未确认是否已删除；请刷新列表核对' }), updatedAt: now() } });
+      continue;
+    }
     if (job.orchestrationId) await pause(job.orchestrationId, 'node_offline', { jobId: job.id });
   }
   const offline = await prisma.orchestration.findMany({ where: { status: 'paused', pauseReason: 'node_offline' } });
@@ -567,7 +722,8 @@ export async function tickAllOrchestrations() {
     await prisma.$transaction(async (tx) => { await setStatus(tx, row, 'running', { pauseReason: null }); await appendOrchestrationEvent(tx, row.id, 'resumed', 'server', null, { reason: 'node_back' }); });
     publishOrchestration({ orchestrationId: row.id, taskId: row.taskId, status: 'running' });
   }
-  const active = await prisma.orchestration.findMany({ where: { status: { in: ['running', 'paused'] } }, select: { id: true } });
+  // Accepted / awaiting rounds are included so push and PR results are still processed after a restart.
+  const active = await prisma.orchestration.findMany({ where: { OR: [{ status: { in: ['running', 'paused', 'awaiting_acceptance'] } }, { status: 'accepted', steps: { some: { status: 'dispatched' } } }] }, select: { id: true } });
   for (const row of active) await tickOrchestration(row.id).catch((error) => console.error('编排推进失败：', error));
 }
 
