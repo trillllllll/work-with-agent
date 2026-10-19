@@ -1,5 +1,7 @@
 # Work With Agent
 
+**简体中文** | [English](./README.en.md)
+
 ![CI](https://github.com/trillllllll/work-with-agent/actions/workflows/ci.yml/badge.svg)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)
 
@@ -9,7 +11,7 @@
 - **再交给 AI。** 在「AI 连接」里复制一条配置。宿主通过 MCP 读任务、材料和记忆。
 - **你点头才改。** 写入进「待确认」。可以撤销。数据在本机 SQLite，开发时 API 只听 `127.0.0.1`。
 
-[快速开始](#quick-start) · [下载安装](#下载安装) · [English](#english)
+[快速开始](#quick-start) · [下载安装](#下载安装)
 
 <img src="./docs/readme/task-list-light-zh.png" width="880" alt="浅色界面：清单「登录改造」，右侧打开任务「把登录改成一次性链接」，带两份资料和子任务">
 
@@ -23,6 +25,7 @@
 | 工作上下文、资料库 | 保存材料、有来源的记忆，以及整理后的候选 |
 | AI 执行 | 把任务连同目标、约束和验收说明交接出去，再收回进展和结果 |
 | 定期回顾 | 按日或按周生成一份报告和待确认建议；规则默认关闭 |
+| 设置 → 语言 | 界面可在简体中文和 English 之间切换。默认跟随浏览器语言，选择后保存在本机 |
 
 术语见 [CONTEXT.md](./CONTEXT.md)。接口与交接见 [接口与宿主接入](./docs/stages-2-5-api.md)。
 
@@ -180,7 +183,7 @@ docker compose logs -f
 
 | 路径 | 内容 |
 | --- | --- |
-| `client/` | React 19、Vite、TypeScript、Tailwind。开发服务器 `127.0.0.1:5176` |
+| `client/` | React 19、Vite、TypeScript、Tailwind。开发服务器 `127.0.0.1:5176`。语言包在 `client/src/i18n/locales/` |
 | `server/` | Node.js、Express 5、Prisma、SQLite。入口 `server/src/index.ts`，MCP 在 `server/src/mcp/` |
 | `desktop/` | Tauri 壳。配置在 `desktop/src-tauri/` |
 | `e2e/` | Playwright |
@@ -200,6 +203,7 @@ docker compose logs -f
 | `npm run prisma:generate` | 生成 Prisma Client |
 | `npm run db:migrate` | 迁移数据库 |
 | `npm test` | `scripts/test.mjs`：按需生成 Client、迁移，再跑 server 与 client 的 Vitest |
+| `npm run i18n:check` | 检查中英文语言包的键一致，且 `client/src` 里没有遗留的中文字面量 |
 | `npm run e2e` | Playwright |
 | `npm run test:all` | `npm test` 然后 `npm run e2e` |
 | `npm run e2e:real` | 真实模型冒烟。需要 `E2E_REAL_MODEL`、`E2E_MODEL_BASE_URL`、`E2E_MODEL_API_KEY`、`E2E_MODEL_NAME` |
@@ -212,7 +216,7 @@ docker compose logs -f
 | `npm run desktop:build:windows` | 组装并打 NSIS（`--bundles nsis`） |
 | `npm run desktop:smoke` | 检查已组装的桌面运行时 |
 
-CI（`.github/workflows/ci.yml`）在 Node.js 22 上执行 `npm ci`、`npm run prisma:generate`、`npm test` 和 `npm run build`。
+CI（`.github/workflows/ci.yml`）在 Node.js 22 上执行 `npm ci`、`npm run prisma:generate`、`npm run i18n:check`、`npm test` 和 `npm run build`。
 
 ## 数据与安全
 
@@ -226,41 +230,3 @@ CI（`.github/workflows/ci.yml`）在 Node.js 22 上执行 `npm ci`、`npm run p
 ## 许可与贡献
 
 [Apache License 2.0](./LICENSE)。欢迎 Issue 和 Pull Request。提交前请运行 `npm run test:all`，并在 PR 里写明行为变化和测试覆盖。
-
-<a id="english"></a>
-
-## English
-
-A local task list. Codex, Claude Code, and Grok read the same tasks and project memory. Writes wait for your approval.
-
-> The app's interface is currently Chinese only, so the screenshots are in the Chinese section above.
-
-- Capture first: Inbox, Today, lists, tags, subtasks, and manual order. Tasks do not need a model.
-- Hand it to an AI: copy a config from AI connections. The host reads tasks, materials, and memories over MCP.
-- You approve the write. Proposals land in the review queue. Data stays in local SQLite. The dev API listens on `127.0.0.1`.
-
-Prebuilt installers are on [GitHub Releases](https://github.com/trillllllll/work-with-agent/releases/latest): a macOS Apple Silicon `.dmg` and a Windows x64 NSIS `.exe`.
-
-```bash
-git clone https://github.com/trillllllll/work-with-agent.git
-cd work-with-agent
-npm install
-cp server/.env.example server/.env
-npm run prisma:generate
-npm run db:migrate
-npm run dev
-```
-
-Node.js 22 matches CI, `server/Dockerfile`, and the desktop assembler. Open the `Open workspace` link printed by the API (`#owner-token=` works once, within ten minutes). The web UI is <http://127.0.0.1:5176> and the API is <http://127.0.0.1:3016>.
-
-`npm run desktop:build` produces a macOS Apple Silicon app under `desktop/src-tauri/target/release/bundle/dmg/`. `npm run desktop:build:windows` produces a Windows x64 NSIS installer under `desktop/src-tauri/target/release/bundle/nsis/`. The app listens on `127.0.0.1:47316`. macOS data lives in `~/Library/Application Support/work-with-agent/`; Windows data lives in `%LOCALAPPDATA%\work-with-agent\`. Import an existing database with `node scripts/import-desktop-data.mjs` before the first launch (it refuses to overwrite). The macOS stdio command is `~/Library/Application Support/work-with-agent/bin/wwa-mcp`. Grok uses `http://127.0.0.1:47316/mcp`. The Windows package calls bundled `node.exe` with `server/dist/mcp/index.js`. Configurations that still point at port 3016 keep talking to the dev server. The macOS bundle is ad-hoc signed (`signingIdentity` is `-`) and is not notarized. The Windows build is unsigned and x64 only.
-
-Build `npm run build -w server` before connecting a host to the dev server. Create a connection in the app, then use the Codex, Claude Code, and Grok blocks in [接入 AI](#接入-ai): `server/dist/mcp/index.js` with `WWA_API_URL=http://127.0.0.1:3016` and `WWA_CONNECTION_TOKEN`. Grok uses `http://127.0.0.1:3016/mcp` with a bearer token. Ask the host to call `list_tasks`. Unapproved writes stay in the proposal queue.
-
-To share one dataset, set `WWA_OWNER_KEY` and `WWA_PUBLIC_URL`, then run `docker compose up -d --build`. The container publishes `127.0.0.1:12716` to port `3016`. Data is stored in `./data`. See [docs/deployment.md](./docs/deployment.md).
-
-[architecture.svg](./architecture.svg) is the work loop: capture, context, handoff, and the result coming back.
-
-Confirmed memories group into communities and can be shown as 3D terrain. The sample puts sign-in, lists, memory, and handoff on their own ground, with more important knowledge higher up.
-
-[Apache License 2.0](./LICENSE). Issues and pull requests are welcome. Run `npm run test:all` before submitting, and describe the behavior change and test coverage in the PR.
