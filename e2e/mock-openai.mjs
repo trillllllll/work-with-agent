@@ -1,6 +1,8 @@
 import http from 'node:http';
 
-const port = 4010;
+const port = Number(process.env.MOCK_OPENAI_PORT ?? 4010);
+// Requests that an interactive html block must never be able to make; the html e2e asserts this stays 0.
+let htmlLeaks = 0;
 const json = (res, status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
 const stream = (res, chunks) => {
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
@@ -9,6 +11,10 @@ const stream = (res, chunks) => {
 };
 const server = http.createServer(async (req, res) => {
   if (req.url === '/health') return json(res, 200, { ok: true });
+  if (req.url === '/html-leaks') return json(res, 200, { count: htmlLeaks });
+  if (req.url === '/cdn/probe@1.0.0/ok.js') { res.writeHead(200, { 'Content-Type': 'text/javascript' }); return res.end("document.getElementById('cdn-ok').textContent = 'loaded';"); }
+  if (req.url?.startsWith('/beacon') || req.url === '/cdn/probe@1.0.0/bad.js') { htmlLeaks++; res.writeHead(200, { 'Content-Type': 'text/javascript', 'Access-Control-Allow-Origin': '*' }); return res.end("document.getElementById('cdn-bad').textContent = 'loaded';"); }
+  if (req.url === '/nav-target') { res.writeHead(200, { 'Content-Type': 'text/html' }); return res.end('<p>navigated</p>'); }
   if (req.method !== 'POST' || req.url !== '/v1/chat/completions') return json(res, 404, { error: 'not found' });
   let raw = ''; for await (const chunk of req) raw += chunk;
   const body = JSON.parse(raw || '{}');
@@ -23,6 +29,43 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { model: body.model + '-actual', choices: [{ message: { role: 'assistant', content: JSON.stringify(output) }, finish_reason: 'stop' }], ...(body.model === 'mock-no-usage' ? {} : { usage: { prompt_tokens: 120, completion_tokens: 30, total_tokens: 150 } }) });
   }
   if (!body.stream) return json(res, 200, { choices: [{ message: { role: 'assistant', content: '连接成功' }, finish_reason: 'stop' }] });
+  if (latestUser.includes('html 选择题验收')) {
+    const origin = `http://127.0.0.1:${port}`;
+    const choice = `<p>选择一个方案</p><button onclick="wwa.fillInput('我选 A')">方案 A</button> <button onclick="wwa.fillInput('我选 B')">方案 B</button>
+<pre id="probe">running</pre><span id="cdn-ok">pending</span> <span id="cdn-bad">blocked</span>
+<script src="${origin}/cdn/probe@1.0.0/ok.js"></script>
+<script>
+wwa.fillInput('自动填入');
+const out = {};
+const attempt = async (key, run) => { try { out[key] = String(await run()); } catch (error) { out[key] = 'blocked:' + error.name; } };
+const request = (make) => new Promise((resolve, reject) => { const timer = setTimeout(() => reject(new Error('timeout')), 1500); make(() => { clearTimeout(timer); resolve('open'); }, () => { clearTimeout(timer); reject(new Error('error')); }); });
+(async () => {
+  await attempt('fetch', () => fetch('${origin}/beacon?fetch').then(() => 'open'));
+  await attempt('xhr', () => request((ok, fail) => { const x = new XMLHttpRequest(); x.onload = ok; x.onerror = fail; x.open('GET', '${origin}/beacon?xhr'); x.send(); }));
+  await attempt('websocket', () => request((ok, fail) => { const socket = new WebSocket('ws://127.0.0.1:${port}/beacon'); socket.onopen = ok; socket.onerror = fail; }));
+  await attempt('image', () => request((ok, fail) => { const image = new Image(); image.onload = ok; image.onerror = fail; image.src = '${origin}/beacon?image'; }));
+  await attempt('sendBeacon', () => navigator.sendBeacon('${origin}/beacon?send', 'x'));
+  await attempt('parent', () => parent.document.title);
+  await attempt('top', () => { top.location.href = '${origin}/beacon?top'; return 'navigated'; });
+  await attempt('storage', () => localStorage.length);
+  await attempt('cookie', () => document.cookie);
+  await attempt('open', () => window.open('${origin}/beacon?open'));
+  await attempt('rtc', () => typeof RTCPeerConnection);
+  await attempt('eval', () => eval('1 + 1'));
+  const injected = document.createElement('script'); injected.src = 'http://localhost:${port}/cdn/probe@1.0.0/bad.js'; document.body.append(injected);
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  out.done = 'yes';
+  document.getElementById('probe').textContent = JSON.stringify(out);
+})();
+</script>`;
+    const navigate = `<p>跳转测试</p><button onclick="location.href='${origin}/nav-target'">离开这里</button>`;
+    const blocks = [
+      { type: 'text', markdown: '请在下面选一个方案。' },
+      { type: 'html', title: '方案选择', alt: '方案 A 和方案 B 两个按钮，点选后填入输入框', height: 260, source: choice },
+      { type: 'html', title: '跳转测试', alt: '一个试图离开的按钮', source: navigate },
+    ];
+    return stream(res, [{ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'html-choice', function: { name: 'present_reply', arguments: JSON.stringify({ blocks }) } }] }, finish_reason: 'tool_calls' }] }]);
+  }
   if (latestUser.includes('可视化矩阵验收')) {
     const provenance = { kind: 'simulated', label: '矩阵验收数据' };
     const blocks = [
@@ -227,4 +270,5 @@ const server = http.createServer(async (req, res) => {
   }
   return stream(res, [{ choices: [{ delta: { content: messages.some((item) => item.role === 'tool') ? '当前任务已读取完成。' : 'Mock 模型回复。' }, finish_reason: 'stop' }] }]);
 });
+server.on('upgrade', (req, socket) => { if (req.url?.startsWith('/beacon')) htmlLeaks++; socket.destroy(); });
 server.listen(port, '127.0.0.1', () => console.log(`Mock OpenAI listening on ${port}`));
