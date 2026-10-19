@@ -12,6 +12,7 @@ import { ChatHistory, ChatReferencePicker } from './ChatPickers.js';
 import { Button } from '@/components/ui/button.js';
 import { MessageList } from './MessageList.js';
 import { ChatComposer } from './ChatComposer.js';
+import { AssistantInputProvider } from './assistant-input.js';
 
 type ChatPanelProps = {
   chat: ReturnType<typeof useChat>;
@@ -44,7 +45,7 @@ export function ChatPanel({ chat, onClose, mobile, presentation = 'side', onExpa
 
       {!settings.isLoading && !settings.error && !configured && <p className="px-4 py-2 text-xs text-muted-foreground">请在设置中配置模型连接后发送消息。</p>}
       {!messages.length && <div className="flex flex-wrap gap-2 px-3 pt-3">{suggestions(chat.context?.page ?? '').map((item) => <Button key={item} size="sm" variant="outline" className="h-auto whitespace-normal text-left" onClick={() => setInput(item)}>{item}</Button>)}</div>}
-      <MessageList messages={messages} approvals={approvals} approvalPending={approve.isPending || reject.isPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} unresolvedApprovalIds={unresolvedApprovalIds} phase={decisionPhase} onApprove={(id) => approve.mutate(id)} onReject={(id) => reject.mutate(id)} onChanged={refreshApprovals} onRepreviewed={showRepreview} />
+      <AssistantInputProvider setInput={setInput}><MessageList messages={messages} approvals={approvals} approvalPending={approve.isPending || reject.isPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} unresolvedApprovalIds={unresolvedApprovalIds} phase={decisionPhase} onApprove={(id) => approve.mutate(id)} onReject={(id) => reject.mutate(id)} onChanged={refreshApprovals} onRepreviewed={showRepreview} /></AssistantInputProvider>
       {pausedRun && ['new_user_message', 'interrupted', 'round_limit'].includes(pausedRun.reason) && (
         <div className="mx-3 mb-2 flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-xs">
           <span>{pausedRun.reason === 'new_user_message' ? '已暂停后续处理' : '这个请求已暂停。'}</span>
