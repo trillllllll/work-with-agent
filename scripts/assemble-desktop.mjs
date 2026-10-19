@@ -64,6 +64,7 @@ await ensureNode();
 const dependencies = Object.fromEntries(runtimePackages.map((name) => [name, installedVersion(name)]));
 const manifest = {
   name: 'work-with-agent-server',
+  version: JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')).version,
   private: true,
   type: 'module',
   dependencies,
