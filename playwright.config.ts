@@ -13,16 +13,18 @@ export default defineConfig({
   reporter: process.env.CI ? [['line'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: 'http://127.0.0.1:5175',
+    // The UI follows the browser language; the suite asserts the default Chinese UI.
+    locale: 'zh-CN',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     storageState: { cookies: [{ name: 'wwa_session', value: 'wwa-e2e-owner-session', domain: '127.0.0.1', path: '/', expires: -1, httpOnly: true, secure: false, sameSite: 'Strict' }], origins: [] },
     extraHTTPHeaders: { 'X-CSRF-Token': createHash('sha256').update('csrf:wwa-e2e-owner-session').digest('hex'), Origin: 'http://127.0.0.1:5175' },
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'mobile', use: { ...devices['Pixel 7'] } },
+    { name: 'chromium', use: { ...devices['Desktop Chrome'], locale: 'zh-CN' } },
+    { name: 'mobile', use: { ...devices['Pixel 7'], locale: 'zh-CN' } },
     // 限定编辑器相关用例的 WebKit 项目。
-    { name: 'webkit-editor', use: { ...devices['Desktop Safari'] }, testMatch: /task-editor-lightweight|task-detail-editor|task-detail-rich|task-materials/ },
+    { name: 'webkit-editor', use: { ...devices['Desktop Safari'], locale: 'zh-CN' }, testMatch: /task-editor-lightweight|task-detail-editor|task-detail-rich|task-materials/ },
   ],
   webServer: [
     {
