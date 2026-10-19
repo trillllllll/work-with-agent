@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import { permissionsSchema, providerSchema, resultSchema } from '../runner/contracts.js';
 
-export const NODE_PROTOCOL_VERSION = 1;
+export const NODE_PROTOCOL_VERSION = 2;
 /** A node that has not leased for this long is shown offline. */
 export const NODE_ONLINE_MS = 90_000;
 /** Leases renew on every heartbeat; an expired lease turns the job `lost`. */
@@ -11,6 +11,12 @@ export const JOB_LEASE_MS = 15 * 60_000;
 const relPath = z.string().min(1).max(4096);
 export const probePayloadSchema = z.object({ path: relPath }).strict();
 export const preparePayloadSchema = z.object({ repoPath: relPath, branch: z.string().min(1).max(250), startPoint: z.string().min(1).max(250), worktreeName: z.string().min(1).max(200) }).strict();
+const branchName = z.string().min(1).max(250);
+const remoteName = z.string().regex(/^[A-Za-z0-9._-]{1,100}$/).default('origin');
+const sha = z.string().regex(/^[0-9a-f]{7,64}$/);
+/** Cross-machine transfer: fetch a branch from the shared remote into refs/remotes/<remote>/<ref> and verify it is exactly `expect`. */
+export const fetchSpecSchema = z.object({ remote: remoteName, ref: branchName, expect: sha }).strict();
+export type FetchSpec = z.infer<typeof fetchSpecSchema>;
 export const runPayloadSchema = z.object({
   repoPath: relPath,
   provider: providerSchema,
@@ -20,19 +26,28 @@ export const runPayloadSchema = z.object({
   /** Either reuse an existing worktree path reported earlier by this node, or create one. */
   worktree: z.union([
     z.object({ existing: relPath }).strict(),
-    z.object({ create: z.object({ branch: z.string().min(1).max(250), startPoint: z.string().min(1).max(250), worktreeName: z.string().min(1).max(200) }).strict() }).strict(),
+    z.object({ create: z.object({ branch: z.string().min(1).max(250), startPoint: z.string().min(1).max(250), worktreeName: z.string().min(1).max(200), fetch: fetchSpecSchema.optional() }).strict() }).strict(),
   ]),
+  /** Mechanical fetches before the AI starts (e.g. a subtask branch developed on another machine). */
+  fetch: z.array(fetchSpecSchema).max(10).default([]),
+  /** Mechanically push the worktree branch after the run (never forced) so another machine can merge it. */
+  publish: z.object({ remote: remoteName }).strict().optional(),
   prompt: z.string().min(1).max(400_000),
   /** Facts the node computes after the run, independent of the AI's own claims. */
   expect: z.object({ includes: z.array(z.string().regex(/^[0-9a-f]{7,64}$/)).max(50).default([]), base: z.string().max(64).optional(), branch: z.string().max(250).optional() }).strict().default({}),
 }).strict();
 export const pushPayloadSchema = z.object({ worktree: relPath, branch: z.string().min(1).max(250), remote: z.string().min(1).max(100).default('origin') }).strict();
+export const inventoryPayloadSchema = z.object({}).strict();
+export const cleanupPayloadSchema = z.object({ worktrees: z.array(relPath).min(1).max(200), deleteBranches: z.boolean().default(false) }).strict();
+export const pullRequestPayloadSchema = z.object({ worktree: relPath, branch: branchName, base: branchName, title: z.string().min(1).max(250), body: z.string().max(60_000).default(''), remote: remoteName }).strict();
+export type CleanupPayload = z.infer<typeof cleanupPayloadSchema>;
+export type PullRequestPayload = z.infer<typeof pullRequestPayloadSchema>;
 export type ProbePayload = z.infer<typeof probePayloadSchema>;
 export type PreparePayload = z.infer<typeof preparePayloadSchema>;
 export type RunPayload = z.infer<typeof runPayloadSchema>;
 export type PushPayload = z.infer<typeof pushPayloadSchema>;
 
-export const jobKindSchema = z.enum(['probe', 'prepare', 'run', 'push']);
+export const jobKindSchema = z.enum(['probe', 'prepare', 'run', 'push', 'inventory', 'cleanup', 'pull_request']);
 export type JobKind = z.infer<typeof jobKindSchema>;
 
 /** Mechanically collected, read-only git facts about a worktree. */
@@ -53,8 +68,29 @@ export type GitFacts = z.infer<typeof gitFactsSchema>;
 
 export const probeResultSchema = z.object({ toplevel: z.string().max(4096), rootCommit: z.string().max(64).nullable(), originUrl: z.string().max(2000).nullable(), branches: z.array(z.string().max(250)).max(500), head: z.string().max(64).nullable(), dirtyCount: z.number().int().min(0) }).strict();
 export const prepareResultSchema = z.object({ worktree: z.string().max(4096), branch: z.string().max(250), head: z.string().max(64), replay: z.boolean().default(false), dirtyCount: z.number().int().min(0).default(0) }).strict();
-export const runResultSchema = z.object({ worktree: z.string().max(4096), sessionId: z.string().max(200).nullable().default(null), result: resultSchema.nullable(), error: z.string().max(20_000).nullable().default(null), stderrTail: z.string().max(20_000).default(''), facts: gitFactsSchema.nullable(), preHead: z.string().max(64).nullable().default(null) }).strict();
+export const runResultSchema = z.object({ worktree: z.string().max(4096), sessionId: z.string().max(200).nullable().default(null), result: resultSchema.nullable(), error: z.string().max(20_000).nullable().default(null), stderrTail: z.string().max(20_000).default(''), facts: gitFactsSchema.nullable(), preHead: z.string().max(64).nullable().default(null), published: z.object({ remote: z.string().max(100), branch: z.string().max(250), head: z.string().max(64) }).strict().nullable().default(null), publishError: z.string().max(20_000).nullable().default(null) }).strict();
 export const pushResultSchema = z.object({ output: z.string().max(20_000), head: z.string().max(64).nullable() }).strict();
+
+export const worktreeEntrySchema = z.object({
+  path: z.string().max(4096),
+  name: z.string().max(300),
+  branch: z.string().max(250).nullable(),
+  head: z.string().max(64).nullable(),
+  dirtyCount: z.number().int().min(0),
+  sizeBytes: z.number().nonnegative(),
+  sizeTruncated: z.boolean().default(false),
+  modifiedAt: z.string().max(40).nullable(),
+  broken: z.boolean().default(false),
+}).strict();
+export type WorktreeEntry = z.infer<typeof worktreeEntrySchema>;
+export const inventoryResultSchema = z.object({ worktrees: z.array(worktreeEntrySchema).max(2000), runs: z.object({ count: z.number().int().min(0), sizeBytes: z.number().nonnegative() }).strict(), freeBytes: z.number().nonnegative().nullable(), scannedAt: z.string().max(40) }).strict();
+export type InventoryResult = z.infer<typeof inventoryResultSchema>;
+export const cleanupResultSchema = z.object({
+  removed: z.array(z.object({ path: z.string().max(4096), branch: z.string().max(250).nullable(), branchDeleted: z.boolean(), branchNote: z.string().max(2000).nullable().default(null) }).strict()).max(200),
+  skipped: z.array(z.object({ path: z.string().max(4096), reason: z.string().max(2000) }).strict()).max(200),
+  inventory: inventoryResultSchema,
+}).strict();
+export const pullRequestResultSchema = z.object({ url: z.string().max(2000), existing: z.boolean(), output: z.string().max(20_000).default('') }).strict();
 
 export const capabilitiesSchema = z.object({
   protocol: z.number().int(),
@@ -64,6 +100,8 @@ export const capabilitiesSchema = z.object({
   maxConcurrent: z.number().int().min(1).max(4).default(2),
   allowedRoots: z.array(z.string().max(4096)).max(50).default([]),
   freeBytes: z.number().nonnegative().nullable().default(null),
+  /** GitHub CLI available locally (optional PR creation). */
+  gh: z.boolean().default(false),
 }).strict();
 export type NodeCapabilities = z.infer<typeof capabilitiesSchema>;
 

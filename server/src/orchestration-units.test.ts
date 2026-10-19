@@ -8,7 +8,7 @@ import { checkDevelop, checkMerge, checkVerify, looksGitWriteDenied, looksRateLi
 import { slug } from './application/orchestration/service.js';
 import { withGitWrite } from './node-agent/cli.js';
 import { buildArgs } from './runner/adapters.js';
-import { collectFacts, prepareWorktree, probe, worktreePath } from './node-agent/git.js';
+import { cleanupWorktrees, collectFacts, fetchRef, inventory, prepareWorktree, probe, worktreePath } from './node-agent/git.js';
 
 const subtasks = [{ id: 'a', title: 'A', description: '', sortOrder: 0 }, { id: 'b', title: 'B', description: '', sortOrder: 1 }, { id: 'c', title: 'C', description: '', sortOrder: 2 }];
 const step = (taskId: string, dependsOn: string[] = []) => ({ taskId, dependsOn, acceptanceCriteria: '', rationale: '' });
@@ -120,6 +120,44 @@ describe('node git steps', () => {
       expect(committed.conflictMarkers).toEqual(['a.txt']); // demo.md's pre-existing text is not reported
       expect(committed.status).toEqual([]);
       await expect(prepareWorktree(repo, data, { branch: 'orch/t-r1-a', startPoint: 'main', worktreeName: 'o1/b' })).rejects.toThrow('已存在');
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+});
+
+describe('node transfer and cleanup steps', () => {
+  it('fetches only the exact expected commit from the shared remote', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wwa-fetch-'));
+    const g = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@e', ...args], { cwd, encoding: 'utf8' }).trim();
+    try {
+      const remote = join(root, 'o.git'); const a = join(root, 'a');
+      g(root, 'init', '-q', '--bare', '-b', 'main', remote);
+      await mkdir(a); g(a, 'init', '-q', '-b', 'main'); await writeFile(join(a, 'f'), '1'); g(a, 'add', '-A'); g(a, 'commit', '-qm', '1'); g(a, 'remote', 'add', 'origin', remote);
+      g(a, 'checkout', '-qb', 'feature'); await writeFile(join(a, 'f'), '2'); g(a, 'commit', '-qam', '2'); g(a, 'push', '-q', 'origin', 'main', 'feature');
+      const tip = g(a, 'rev-parse', 'HEAD');
+      g(root, 'clone', '-q', remote, 'b'); const b = join(root, 'b');
+      expect(await fetchRef(b, { remote: 'origin', ref: 'feature', expect: tip })).toEqual({ ref: 'refs/remotes/origin/feature', head: tip });
+      await expect(fetchRef(b, { remote: 'origin', ref: 'feature', expect: 'deadbeefdeadbeef' })).rejects.toMatchObject({ code: 'FETCH_MISMATCH' });
+      await expect(fetchRef(b, { remote: 'origin', ref: 'missing', expect: 'deadbeefdeadbeef' })).rejects.toMatchObject({ code: 'FETCH_FAILED' });
+      await expect(fetchRef(b, { remote: 'bad remote', ref: 'feature', expect: tip })).rejects.toMatchObject({ code: 'INVALID_REMOTE' });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+  it('lists managed worktrees and removes only clean ones inside the node data directory', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wwa-clean-'));
+    const g = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@e', ...args], { cwd, encoding: 'utf8' }).trim();
+    try {
+      const repo = join(root, 'repo'); const data = join(root, 'data');
+      await mkdir(repo); g(repo, 'init', '-q', '-b', 'main'); await writeFile(join(repo, 'f'), '1'); g(repo, 'add', '-A'); g(repo, 'commit', '-qm', '1');
+      const clean = await prepareWorktree(repo, data, { branch: 'w/clean', startPoint: 'main', worktreeName: 'o1/clean' });
+      const dirty = await prepareWorktree(repo, data, { branch: 'w/dirty', startPoint: 'main', worktreeName: 'o1/dirty' });
+      await writeFile(join(dirty.worktree, 'scratch.txt'), 'x');
+      const listed = await inventory(data);
+      expect(listed.worktrees.map((item) => [item.name, item.branch, item.dirtyCount])).toEqual(expect.arrayContaining([['o1/clean', 'w/clean', 0], ['o1/dirty', 'w/dirty', 1]]));
+      const outcome = await cleanupWorktrees(data, [clean.worktree, dirty.worktree, repo, join(data, 'worktrees', 'o1')], true);
+      expect(outcome.removed).toEqual([{ path: clean.worktree, branch: 'w/clean', branchDeleted: true, branchNote: null }]);
+      expect(outcome.skipped.map((item) => item.reason.split(':')[0])).toEqual(['DIRTY', 'WORKTREE_NOT_MANAGED', 'WORKTREE_NOT_MANAGED']);
+      expect(g(repo, 'worktree', 'list')).not.toContain('o1/clean');
+      expect(g(repo, 'branch', '--list', 'w/clean')).toBe('');
+      expect(g(repo, 'branch', '--list', 'w/dirty')).toContain('w/dirty');
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

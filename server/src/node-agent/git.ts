@@ -2,9 +2,9 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
-import { mkdir, readdir, readFile, realpath, stat } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import type { GitFacts, PreparePayload } from './protocol.js';
+import { lstat, mkdir, readdir, readFile, realpath, rmdir, stat } from 'node:fs/promises';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import type { FetchSpec, GitFacts, InventoryResult, PreparePayload, WorktreeEntry } from './protocol.js';
 
 const exec = promisify(execFile);
 export class NodeError extends Error { constructor(public code: string, message: string) { super(message); } }
@@ -59,8 +59,9 @@ export async function assertManagedWorktree(dataDir: string, path: string) {
 async function exists(path: string) { try { await stat(path); return true; } catch { return false; } }
 
 /** Idempotent: an existing worktree on the same branch is a replay; a pre-existing branch is only reused if it still points at startPoint. */
-export async function prepareWorktree(repo: string, dataDir: string, input: Omit<PreparePayload, 'repoPath'>) {
+export async function prepareWorktree(repo: string, dataDir: string, input: Omit<PreparePayload, 'repoPath'> & { fetch?: FetchSpec }) {
   const path = worktreePath(dataDir, input.worktreeName);
+  if (input.fetch && !await exists(path)) await fetchRef(repo, input.fetch);
   if (await exists(path)) {
     const branch = await git(path, ['symbolic-ref', '--quiet', '--short', 'HEAD']).catch(() => '');
     if (branch !== input.branch) throw new NodeError('WORKTREE_CONFLICT', `目录已存在但分支是 ${branch || '（分离 HEAD）'}`);
@@ -132,4 +133,125 @@ export async function pushBranch(worktree: string, branch: string, remote: strin
   // Never force; the user's own credentials, no prompts.
   const result = await exec('git', ['-C', worktree, 'push', '-u', remote, `refs/heads/${branch}:refs/heads/${branch}`], { windowsHide: true, timeout: 120_000, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
   return { output: `${result.stdout}\n${result.stderr}`.trim().slice(-20_000), head: await git(worktree, ['rev-parse', 'HEAD']) };
+}
+
+/**
+ * Cross-machine transfer: fetch `refs/heads/<ref>` from the shared remote into `refs/remotes/<remote>/<ref>` (never forced)
+ * and verify the fetched commit is exactly the one the server expects. Returns the local ref name.
+ */
+export async function fetchRef(repo: string, spec: FetchSpec) {
+  if (!/^[A-Za-z0-9._-]+$/.test(spec.remote)) throw new NodeError('INVALID_REMOTE', '远端名不合法');
+  if (!await gitOk(repo, ['check-ref-format', '--branch', spec.ref])) throw new NodeError('INVALID_BRANCH', `分支名不合法：${spec.ref}`);
+  const local = `refs/remotes/${spec.remote}/${spec.ref}`;
+  const have = await git(repo, ['rev-parse', '--verify', '--quiet', `${spec.expect}^{commit}`]).catch(() => '');
+  if (!have) {
+    try { await git(repo, ['fetch', '--no-tags', spec.remote, `refs/heads/${spec.ref}:${local}`], { timeoutMs: 120_000 }); }
+    catch (error) { throw new NodeError('FETCH_FAILED', `无法从 ${spec.remote} 获取 ${spec.ref}：${(error as Error).message.slice(-2000)}`); }
+  } else {
+    // The commit is already here (same machine or an earlier fetch); still refresh the tracking ref when possible.
+    await git(repo, ['fetch', '--no-tags', spec.remote, `refs/heads/${spec.ref}:${local}`], { timeoutMs: 120_000 }).catch(() => undefined);
+  }
+  const fetched = await git(repo, ['rev-parse', '--verify', '--quiet', `${spec.expect}^{commit}`]).catch(() => '');
+  if (!fetched || !fetched.startsWith(spec.expect.slice(0, 7))) throw new NodeError('FETCH_MISMATCH', `${spec.remote}/${spec.ref} 上没有期望的提交 ${spec.expect}`);
+  const tip = await git(repo, ['rev-parse', '--verify', '--quiet', local]).catch(() => '');
+  if (tip && tip !== fetched && !await gitOk(repo, ['merge-base', '--is-ancestor', fetched, tip])) throw new NodeError('FETCH_MISMATCH', `${local} 不包含期望的提交 ${spec.expect}`);
+  return { ref: local, head: fetched };
+}
+
+async function dirSize(root: string, budget = { files: 200_000 }): Promise<{ bytes: number; truncated: boolean }> {
+  let bytes = 0; let truncated = false;
+  const stack = [root];
+  while (stack.length) {
+    const current = stack.pop()!;
+    const entries = await readdir(current, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (--budget.files < 0) return { bytes, truncated: true };
+      const full = join(current, entry.name);
+      if (entry.isDirectory()) stack.push(full);
+      else if (entry.isFile()) bytes += (await lstat(full).catch(() => null))?.size ?? 0;
+    }
+  }
+  return { bytes, truncated };
+}
+
+/** Read-only listing of the worktrees this node created (`<data>/worktrees/<group>/<name>`) and its runner records. */
+export async function inventory(dataDir: string, freeBytes: number | null = null): Promise<InventoryResult> {
+  const root = resolve(dataDir, 'worktrees');
+  const worktrees: WorktreeEntry[] = [];
+  for (const group of (await readdir(root, { withFileTypes: true }).catch(() => [])).filter((entry) => entry.isDirectory())) {
+    for (const item of (await readdir(join(root, group.name), { withFileTypes: true }).catch(() => [])).filter((entry) => entry.isDirectory())) {
+      const path = join(root, group.name, item.name);
+      const isWorktree = await exists(join(path, '.git'));
+      const branch = isWorktree ? (await git(path, ['symbolic-ref', '--quiet', '--short', 'HEAD']).catch(() => '')) || null : null;
+      const head = isWorktree ? (await git(path, ['rev-parse', 'HEAD']).catch(() => '')) || null : null;
+      const dirtyCount = isWorktree ? (await git(path, ['status', '--porcelain']).catch(() => '')).split('\n').filter(Boolean).length : 0;
+      const size = await dirSize(path);
+      const modifiedAt = (await stat(path).catch(() => null))?.mtime.toISOString() ?? null;
+      worktrees.push({ path, name: `${group.name}/${item.name}`, branch, head, dirtyCount, sizeBytes: size.bytes, sizeTruncated: size.truncated, modifiedAt, broken: !isWorktree || !head });
+    }
+  }
+  const runsRoot = resolve(dataDir, 'runner', 'runs');
+  const runIds = await readdir(runsRoot).catch(() => [] as string[]);
+  const runsSize = await dirSize(runsRoot);
+  return { worktrees: worktrees.slice(0, 2000), runs: { count: runIds.length, sizeBytes: runsSize.bytes }, freeBytes, scannedAt: new Date().toISOString() };
+}
+
+/**
+ * Remove worktrees this node created. Only clean ones (no uncommitted or untracked files) are removed, with
+ * `git worktree remove` without --force; branches are only deleted with `git branch -d` (refuses unmerged work).
+ */
+export async function cleanupWorktrees(dataDir: string, paths: string[], deleteBranches: boolean) {
+  const removed: Array<{ path: string; branch: string | null; branchDeleted: boolean; branchNote: string | null }> = [];
+  const skipped: Array<{ path: string; reason: string }> = [];
+  const root = resolve(dataDir, 'worktrees');
+  for (const path of [...new Set(paths)]) {
+    try {
+      const actual = await assertManagedWorktree(dataDir, path);
+      const rel = relative(await realpath(root), actual).split(sep);
+      if (rel.length !== 2) throw new NodeError('WORKTREE_NOT_MANAGED', '只能删除执行端创建的 worktree 目录');
+      if (!await exists(join(actual, '.git'))) {
+        // A leftover directory without git metadata: only remove it when empty.
+        await rmdir(actual).catch(() => { throw new NodeError('BROKEN_NOT_EMPTY', '目录不是 worktree 且不为空，请手动检查'); });
+        removed.push({ path, branch: null, branchDeleted: false, branchNote: '空目录' });
+        continue;
+      }
+      const status = (await git(actual, ['status', '--porcelain', '--untracked-files=normal'])).split('\n').filter(Boolean);
+      if (status.length) throw new NodeError('DIRTY', `有 ${status.length} 个未提交或未跟踪的文件，不删除`);
+      if (await gitOk(actual, ['rev-parse', '-q', '--verify', 'MERGE_HEAD'])) throw new NodeError('MERGE_IN_PROGRESS', '有进行中的合并，不删除');
+      const branch = (await git(actual, ['symbolic-ref', '--quiet', '--short', 'HEAD']).catch(() => '')) || null;
+      const { commonDir } = await gitDirs(actual);
+      await git(commonDir, ['--git-dir', commonDir, 'worktree', 'remove', actual]);
+      await rmdir(dirname(actual)).catch(() => undefined);
+      let branchDeleted = false; let branchNote: string | null = null;
+      if (deleteBranches && branch) {
+        try { await git(commonDir, ['--git-dir', commonDir, 'branch', '-d', branch]); branchDeleted = true; }
+        catch (error) { branchNote = `分支保留：${(error as Error).message.split('\n').filter(Boolean).slice(-1)[0] ?? '未合入'}`.slice(0, 2000); }
+      }
+      removed.push({ path, branch, branchDeleted, branchNote });
+    } catch (error) {
+      skipped.push({ path, reason: `${error instanceof NodeError ? `${error.code}: ` : ''}${(error as Error).message}`.slice(0, 2000) });
+    }
+  }
+  return { removed, skipped };
+}
+
+/** Optional PR creation with the user's local GitHub CLI login. Idempotent: an existing PR for the branch is returned. */
+export async function createPullRequest(worktree: string, input: { branch: string; base: string; title: string; body: string }) {
+  const current = await git(worktree, ['symbolic-ref', '--quiet', '--short', 'HEAD']).catch(() => '');
+  if (current !== input.branch) throw new NodeError('BRANCH_MISMATCH', `worktree 当前分支是 ${current || '（分离 HEAD）'}，不是 ${input.branch}`);
+  const gh = process.env.WWA_GH_BIN || 'gh';
+  const env = { ...process.env, GH_PROMPT_DISABLED: '1', GIT_TERMINAL_PROMPT: '0', NO_COLOR: '1' };
+  const options = { cwd: worktree, windowsHide: true, timeout: 120_000, maxBuffer: 4 * 1024 * 1024, env };
+  const existing = await exec(gh, ['pr', 'view', input.branch, '--json', 'url,state', '--jq', 'select(.state == "OPEN") | .url'], options).then((result) => result.stdout.trim(), () => '');
+  if (existing) return { url: existing, existing: true, output: '' };
+  let result: { stdout: string; stderr: string };
+  try { result = await exec(gh, ['pr', 'create', '--head', input.branch, '--base', input.base, '--title', input.title, '--body', input.body || ' '], options); }
+  catch (error) { throw new NodeError('PR_FAILED', `gh pr create 失败：${String((error as { stderr?: string }).stderr ?? (error as Error).message).slice(-4000)}`); }
+  const url = `${result.stdout}`.split('\n').map((line) => line.trim()).filter((line) => /^https?:\/\//.test(line)).pop();
+  if (!url) throw new NodeError('PR_FAILED', `gh 没有返回 PR 地址：${`${result.stdout}\n${result.stderr}`.slice(-2000)}`);
+  return { url, existing: false, output: `${result.stdout}\n${result.stderr}`.trim().slice(-20_000) };
+}
+
+export async function ghAvailable() {
+  try { await exec(process.env.WWA_GH_BIN || 'gh', ['--version'], { windowsHide: true, timeout: 10_000 }); return true; } catch { return false; }
 }

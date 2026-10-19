@@ -6,8 +6,8 @@
 import { mkdir, readFile, readdir, writeFile, statfs, access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import os from 'node:os';
-import { NODE_PROTOCOL_VERSION, preparePayloadSchema, probePayloadSchema, pushPayloadSchema, runPayloadSchema, type LeasedJob, type NodeCapabilities } from './protocol.js';
-import { assertAllowed, assertManagedWorktree, collectFacts, gitDirs, hooksFingerprint, git, NodeError, prepareWorktree, probe, pushBranch } from './git.js';
+import { NODE_PROTOCOL_VERSION, cleanupPayloadSchema, inventoryPayloadSchema, preparePayloadSchema, probePayloadSchema, pullRequestPayloadSchema, pushPayloadSchema, runPayloadSchema, type LeasedJob, type NodeCapabilities } from './protocol.js';
+import { assertAllowed, assertManagedWorktree, cleanupWorktrees, collectFacts, createPullRequest, fetchRef, ghAvailable, gitDirs, hooksFingerprint, git, inventory, NodeError, prepareWorktree, probe, pushBranch } from './git.js';
 import { createLocalLaunchSpec, localProviders } from './cli.js';
 
 export type NodeConfig = { server: string; token: string; roots: string[]; dataDir: string; maxConcurrent?: number; pollMs?: number; version?: string };
@@ -18,6 +18,7 @@ export class NodeAgent {
   private active = new Map<string, Promise<void>>();
   private stopped = false;
   private providers: NodeCapabilities['providers'] | null = null;
+  private gh: boolean | null = null;
   private runnerModule: Promise<typeof import('../runner/supervisor.js')> | null = null;
   constructor(private readonly config: NodeConfig, private readonly http: typeof fetch = fetch) {
     if (!config.roots.length) throw new Error('至少需要一个允许的目录（--roots）');
@@ -42,9 +43,11 @@ export class NodeAgent {
   }
   async capabilities(): Promise<NodeCapabilities> {
     this.providers ??= await localProviders();
-    let freeBytes: number | null = null;
-    try { await mkdir(this.config.dataDir, { recursive: true }); const stats = await statfs(this.config.dataDir); freeBytes = stats.bavail * stats.bsize; } catch { /* unknown */ }
-    return { protocol: NODE_PROTOCOL_VERSION, version: this.config.version ?? '', platform: `${os.platform()}-${os.arch()}`, providers: this.providers, maxConcurrent: this.config.maxConcurrent ?? 2, allowedRoots: this.config.roots, freeBytes };
+    this.gh ??= await ghAvailable();
+    return { protocol: NODE_PROTOCOL_VERSION, version: this.config.version ?? '', platform: `${os.platform()}-${os.arch()}`, providers: this.providers, maxConcurrent: this.config.maxConcurrent ?? 2, allowedRoots: this.config.roots, freeBytes: await this.freeBytes(), gh: this.gh };
+  }
+  private async freeBytes() {
+    try { await mkdir(this.config.dataDir, { recursive: true }); const stats = await statfs(this.config.dataDir); return stats.bavail * stats.bsize; } catch { return null; }
   }
 
   /** Resume jobs from the local journal after a restart: finish observing, then re-send the same report. */
@@ -110,6 +113,16 @@ export class NodeAgent {
       const payload = pushPayloadSchema.parse(job.payload);
       return pushBranch(await assertManagedWorktree(this.config.dataDir, payload.worktree), payload.branch, payload.remote);
     }
+    if (job.kind === 'inventory') { inventoryPayloadSchema.parse(job.payload); return inventory(this.config.dataDir, await this.freeBytes()); }
+    if (job.kind === 'cleanup') {
+      const payload = cleanupPayloadSchema.parse(job.payload);
+      const outcome = await cleanupWorktrees(this.config.dataDir, payload.worktrees, payload.deleteBranches);
+      return { ...outcome, inventory: await inventory(this.config.dataDir, await this.freeBytes()) };
+    }
+    if (job.kind === 'pull_request') {
+      const payload = pullRequestPayloadSchema.parse(job.payload);
+      return createPullRequest(await assertManagedWorktree(this.config.dataDir, payload.worktree), payload);
+    }
     if (job.kind === 'run') return this.performRun(entry);
     throw new NodeError('UNKNOWN_JOB', `未知任务类型：${job.kind}`);
   }
@@ -121,6 +134,7 @@ export class NodeAgent {
       const worktree = 'existing' in payload.worktree
         ? await assertManagedWorktree(this.config.dataDir, payload.worktree.existing)
         : (await prepareWorktree(repo, this.config.dataDir, payload.worktree.create)).worktree;
+      for (const spec of payload.fetch) await fetchRef(repo, spec);
       entry.pre = { worktree, preHead: (await git(worktree, ['rev-parse', 'HEAD']).catch(() => '')) || null, hooksBefore: await hooksFingerprint(worktree).catch(() => null) };
       await this.saveJournal(entry);
     }
@@ -139,7 +153,13 @@ export class NodeAgent {
     const stderrTail = (await readFile(resolve(controlDir, 'stderr.log'), 'utf8').catch(() => '')).slice(-8000);
     const facts = await collectFacts(worktree, { base: payload.expect.base ?? preHead, includes: payload.expect.includes, hooksBefore, preHead });
     const error = observation.error ?? output.error ?? (output.result ? null : `CLI 结束但没有有效结果（退出码 ${observation.exitCode ?? '未知'}）`);
-    return { worktree, sessionId: output.sessionId ?? null, result: output.result ?? null, error: error ? error.slice(0, 20_000) : null, stderrTail, facts, preHead };
+    // Mechanical transfer for cross-machine rounds: push the worktree branch (never forced) when it has commits and is clean.
+    let published: { remote: string; branch: string; head: string } | null = null; let publishError: string | null = null;
+    if (payload.publish && facts.branch && facts.head && facts.head !== facts.base && !facts.status.length) {
+      try { const pushed = await pushBranch(worktree, facts.branch, payload.publish.remote); published = { remote: payload.publish.remote, branch: facts.branch, head: pushed.head }; }
+      catch (failure) { publishError = (failure as Error).message.slice(-20_000); }
+    }
+    return { worktree, sessionId: output.sessionId ?? null, result: output.result ?? null, error: error ? error.slice(0, 20_000) : null, stderrTail, facts, preHead, published, publishError };
   }
 
   private async watch(runId: string): Promise<{ exitCode: number | null; error: string | null }> {
