@@ -1,5 +1,7 @@
 import { askAssistant } from '@/lib/assistant-context.js';
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from 'react';
+import { useTranslation } from 'react-i18next';
+import { t as translate } from '../../i18n/index.js';
 import { createPortal } from 'react-dom';
 import { Editor, type Extensions, type JSONContent } from '@tiptap/core';
 import { NodeSelection, type EditorState } from '@tiptap/pm/state';
@@ -176,6 +178,7 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
   onOpenLinkedTask?: (taskId: string) => void;
   ref?: Ref<DescriptionHandle>;
 }) {
+  const { i18n } = useTranslation('tasks');
   const [rawDialog, setRawDialog] = useState<{ pos: number; markdown: string } | null>(null);
   const modelRef = useRef<DescriptionModel | null>(null);
   const lastLocalRef = useRef(value);
@@ -215,7 +218,7 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
         HTMLAttributes: { rel: 'noreferrer', target: '_blank' },
       }),
       ListKit.configure({ taskItem: { nested: true } }),
-      Placeholder.configure({ placeholder: '添加详情', showOnlyWhenEditable: true }),
+      Placeholder.configure({ placeholder: () => translate('tasks:descriptionEditor.addDetails'), showOnlyWhenEditable: true }),
       UploadDecorations,
       AlignedTable.configure({ resizable: false }),
       TableRow,
@@ -234,7 +237,7 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
     editable: !readonly,
     enablePasteRules: true,
     editorProps: {
-      attributes: { 'aria-label': '详情', role: 'textbox', 'aria-multiline': 'true', class: 'task-prose', 'data-task-editor-prose': 'true' },
+      attributes: { 'aria-label': translate('tasks:descriptionEditor.detailsLabel'), role: 'textbox', 'aria-multiline': 'true', class: 'task-prose', 'data-task-editor-prose': 'true' },
       handleKeyDown: (_view, event) => {
         // 粘贴为纯文本：Mod+Shift+V。
         if (event.key.toLowerCase() === 'v' && event.shiftKey && (event.metaKey || event.ctrlKey)) plainPasteRef.current = true;
@@ -297,6 +300,12 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
 
   const onZoomRef = useRef(onZoom);
   onZoomRef.current = onZoom;
+
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    editor.view.dom.setAttribute('aria-label', translate('tasks:descriptionEditor.detailsLabel'));
+    editor.view.dispatch(editor.state.tr.setMeta('i18n', i18n.language));
+  }, [editor, i18n.language]);
 
   useEffect(() => {
     if (!editor) return;
@@ -441,16 +450,17 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
     editor.commands.focus();
   };
 
+  const { t } = useTranslation('tasks');
   return <div className={cn('task-description-editor', fill && 'task-description-grow')}>
     <EditorContent editor={editor} className="task-description-input w-full" />
     {editor && !readonly && <FormatToolbar editor={editor} composing={() => composingRef.current} taskId={taskId} />}
     {rawDialog && createPortal(<div className="task-raw-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setRawDialog(null); }}>
-      <div className="task-raw-dialog" role="dialog" aria-label="编辑原文片段">
-        <p className="task-raw-dialog-title">编辑原文片段</p>
-        <textarea className="task-raw-dialog-input" aria-label="原文内容" value={rawDialog.markdown} onChange={(event) => setRawDialog({ ...rawDialog, markdown: event.target.value })} rows={8} />
+      <div className="task-raw-dialog" role="dialog" aria-label={t('descriptionEditor.editRawTitle')}>
+        <p className="task-raw-dialog-title">{t('descriptionEditor.editRawTitle')}</p>
+        <textarea className="task-raw-dialog-input" aria-label={t('descriptionEditor.rawContent')} value={rawDialog.markdown} onChange={(event) => setRawDialog({ ...rawDialog, markdown: event.target.value })} rows={8} />
         <div className="mt-2 flex justify-end gap-2">
-          <Button variant="ghost" size="sm" onClick={() => setRawDialog(null)}>取消</Button>
-          <Button size="sm" onClick={applyRawEdit}>应用</Button>
+          <Button variant="ghost" size="sm" onClick={() => setRawDialog(null)}>{t('shared.cancel')}</Button>
+          <Button size="sm" onClick={applyRawEdit}>{t('descriptionEditor.apply')}</Button>
         </div>
       </div>
     </div>, document.body)}
@@ -496,6 +506,7 @@ function insertPlainDoc(view: EditorView, doc: JSONContent) {
 type ToolbarProps = { editor: Editor; composing: () => boolean; taskId: string };
 
 function FormatToolbar({ editor, composing, taskId }: ToolbarProps) {
+  const { t } = useTranslation('tasks');
   const [visible, setVisible] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -548,7 +559,7 @@ function FormatToolbar({ editor, composing, taskId }: ToolbarProps) {
   };
   const currentLink = editor.getAttributes('link').href as string | undefined;
 
-  const bar = <div className="task-format-toolbar" data-format-tools role="toolbar" aria-label="格式" style={{ top: 0, left: 0 }} ref={(node) => {
+  const bar = <div className="task-format-toolbar" data-format-tools role="toolbar" aria-label={t('descriptionEditor.format')} style={{ top: 0, left: 0 }} ref={(node) => {
     if (!node) return;
     const rect = node.getBoundingClientRect();
     const margin = 8;
@@ -559,32 +570,32 @@ function FormatToolbar({ editor, composing, taskId }: ToolbarProps) {
     node.style.top = `${top}px`;
     node.style.left = `${left}px`;
   }}>
-    <button type="button" className={buttonClass} aria-label="询问 AI" onMouseDown={(event) => event.preventDefault()} onClick={() => { const { from, to } = editor.state.selection; askAssistant({ kind: 'selection', title: '任务正文选中文字', text: editor.state.doc.textBetween(from, to, '\n'), taskId, unsaved: true }); }}>询问 AI</button>
+    <button type="button" className={buttonClass} aria-label={t('descriptionEditor.askAi')} onMouseDown={(event) => event.preventDefault()} onClick={() => { const { from, to } = editor.state.selection; askAssistant({ kind: 'selection', title: t('descriptionEditor.selectionTitle'), text: editor.state.doc.textBetween(from, to, '\n'), taskId, unsaved: true }); }}>{t('descriptionEditor.askAi')}</button>
     {touch ? <>
-      <ToolbarButton className={buttonClass} label="加粗" icon={Bold} pressed={editor.isActive('bold')} onClick={() => run(() => editor.chain().focus().toggleBold().run())} />
-      <ToolbarButton className={buttonClass} label="无序列表" icon={List} pressed={editor.isActive('bulletList')} onClick={() => run(() => editor.chain().focus().toggleBulletList().run())} />
-      <ToolbarButton className={buttonClass} label="勾选项" icon={ListTodo} pressed={editor.isActive('taskList')} onClick={() => run(() => editor.chain().focus().toggleTaskList().run())} />
+      <ToolbarButton className={buttonClass} label={t('descriptionEditor.bold')} icon={Bold} pressed={editor.isActive('bold')} onClick={() => run(() => editor.chain().focus().toggleBold().run())} />
+      <ToolbarButton className={buttonClass} label={t('descriptionEditor.bulletList')} icon={List} pressed={editor.isActive('bulletList')} onClick={() => run(() => editor.chain().focus().toggleBulletList().run())} />
+      <ToolbarButton className={buttonClass} label={t('descriptionEditor.checklist')} icon={ListTodo} pressed={editor.isActive('taskList')} onClick={() => run(() => editor.chain().focus().toggleTaskList().run())} />
       <Popover open={linkOpen} onOpenChange={setLinkOpen}>
         <PopoverTrigger asChild>
-          <button type="button" className={cn(buttonClass, 'task-format-more')} aria-label="更多格式" onMouseDown={(event) => event.preventDefault()}><MoreHorizontal className="size-4" aria-hidden /></button>
+          <button type="button" className={cn(buttonClass, 'task-format-more')} aria-label={t('descriptionEditor.moreFormats')} onMouseDown={(event) => event.preventDefault()}><MoreHorizontal className="size-4" aria-hidden /></button>
         </PopoverTrigger>
         <PopoverContent data-format-tools className="task-format-menu w-44" align="start">
           <MoreFormats editor={editor} onLink={() => { setLinkHref(currentLink ?? ''); setLinkOpen(true); }} />
         </PopoverContent>
       </Popover>
     </> : <>
-      <ToolbarButton className={buttonClass} label="加粗" icon={Bold} pressed={editor.isActive('bold')} onClick={() => run(() => editor.chain().focus().toggleBold().run())} />
-      <ToolbarButton className={buttonClass} label="斜体" icon={Italic} pressed={editor.isActive('italic')} onClick={() => run(() => editor.chain().focus().toggleItalic().run())} />
-      <ToolbarButton className={buttonClass} label="删除线" icon={Strikethrough} pressed={editor.isActive('strike')} onClick={() => run(() => editor.chain().focus().toggleStrike().run())} />
-      <ToolbarButton className={buttonClass} label="行内代码" icon={Code} pressed={editor.isActive('code')} onClick={() => run(() => editor.chain().focus().toggleCode().run())} />
-      <button type="button" className={cn(buttonClass, editor.isActive('link') && 'is-active')} aria-label="链接" aria-pressed={editor.isActive('link')} title="链接"
+      <ToolbarButton className={buttonClass} label={t('descriptionEditor.bold')} icon={Bold} pressed={editor.isActive('bold')} onClick={() => run(() => editor.chain().focus().toggleBold().run())} />
+      <ToolbarButton className={buttonClass} label={t('descriptionEditor.italic')} icon={Italic} pressed={editor.isActive('italic')} onClick={() => run(() => editor.chain().focus().toggleItalic().run())} />
+      <ToolbarButton className={buttonClass} label={t('descriptionEditor.strike')} icon={Strikethrough} pressed={editor.isActive('strike')} onClick={() => run(() => editor.chain().focus().toggleStrike().run())} />
+      <ToolbarButton className={buttonClass} label={t('descriptionEditor.inlineCode')} icon={Code} pressed={editor.isActive('code')} onClick={() => run(() => editor.chain().focus().toggleCode().run())} />
+      <button type="button" className={cn(buttonClass, editor.isActive('link') && 'is-active')} aria-label={t('descriptionEditor.link')} aria-pressed={editor.isActive('link')} title={t('descriptionEditor.link')}
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => { setLinkHref(currentLink ?? ''); setLinkOpen(true); }}>
         <Link2 className="size-4" aria-hidden />
       </button>
       <Popover open={linkOpen} onOpenChange={setLinkOpen}>
         <PopoverTrigger asChild>
-          <button type="button" className={cn(buttonClass, 'task-format-more')} aria-label="更多格式" onMouseDown={(event) => event.preventDefault()}><MoreHorizontal className="size-4" aria-hidden /></button>
+          <button type="button" className={cn(buttonClass, 'task-format-more')} aria-label={t('descriptionEditor.moreFormats')} onMouseDown={(event) => event.preventDefault()}><MoreHorizontal className="size-4" aria-hidden /></button>
         </PopoverTrigger>
         <PopoverContent data-format-tools className="task-format-menu w-44" align="start">
           <MoreFormats editor={editor} onLink={() => { setLinkHref(currentLink ?? ''); setLinkOpen(true); }} />
@@ -600,18 +611,19 @@ function FormatToolbar({ editor, composing, taskId }: ToolbarProps) {
 }
 
 function MoreFormats({ editor, onLink }: { editor: Editor; onLink: () => void }) {
+  const { t } = useTranslation('tasks');
   const item = (label: string, active: boolean, run: () => void) => <button type="button" className={cn('task-format-menu-item', active && 'is-active')} aria-pressed={active} onClick={() => { run(); editor.view.focus(); }}>{label}</button>;
   return <div className="task-format-menu-list">
-    {item('标题 1', editor.isActive('heading', { level: 1 }), () => editor.chain().focus().toggleHeading({ level: 1 }).run())}
-    {item('标题 2', editor.isActive('heading', { level: 2 }), () => editor.chain().focus().toggleHeading({ level: 2 }).run())}
-    {item('标题 3', editor.isActive('heading', { level: 3 }), () => editor.chain().focus().toggleHeading({ level: 3 }).run())}
-    {item('无序列表', editor.isActive('bulletList'), () => editor.chain().focus().toggleBulletList().run())}
-    {item('有序列表', editor.isActive('orderedList'), () => editor.chain().focus().toggleOrderedList().run())}
-    {item('勾选项', editor.isActive('taskList'), () => editor.chain().focus().toggleTaskList().run())}
-    {item('引用', editor.isActive('blockquote'), () => editor.chain().focus().toggleBlockquote().run())}
-    {item('代码块', editor.isActive('codeBlock'), () => editor.chain().focus().toggleCodeBlock().run())}
-    {item('表格', editor.isActive('table'), () => editor.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run())}
-    {item('链接', editor.isActive('link'), onLink)}
+    {item(t('descriptionEditor.heading1'), editor.isActive('heading', { level: 1 }), () => editor.chain().focus().toggleHeading({ level: 1 }).run())}
+    {item(t('descriptionEditor.heading2'), editor.isActive('heading', { level: 2 }), () => editor.chain().focus().toggleHeading({ level: 2 }).run())}
+    {item(t('descriptionEditor.heading3'), editor.isActive('heading', { level: 3 }), () => editor.chain().focus().toggleHeading({ level: 3 }).run())}
+    {item(t('descriptionEditor.bulletList'), editor.isActive('bulletList'), () => editor.chain().focus().toggleBulletList().run())}
+    {item(t('descriptionEditor.orderedList'), editor.isActive('orderedList'), () => editor.chain().focus().toggleOrderedList().run())}
+    {item(t('descriptionEditor.checklist'), editor.isActive('taskList'), () => editor.chain().focus().toggleTaskList().run())}
+    {item(t('descriptionEditor.quote'), editor.isActive('blockquote'), () => editor.chain().focus().toggleBlockquote().run())}
+    {item(t('descriptionEditor.codeBlock'), editor.isActive('codeBlock'), () => editor.chain().focus().toggleCodeBlock().run())}
+    {item(t('descriptionEditor.table'), editor.isActive('table'), () => editor.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run())}
+    {item(t('descriptionEditor.link'), editor.isActive('link'), onLink)}
   </div>;
 }
 
@@ -624,18 +636,19 @@ function ToolbarButton({ className, label, icon: Icon, pressed, onClick }: { cla
 }
 
 function LinkPopover({ editor, open, setOpen, href, setHref }: { editor: Editor; open: boolean; setOpen: (value: boolean) => void; href: string; setHref: (value: string) => void }) {
+  const { t } = useTranslation('tasks');
   if (!open) return null;
   const sanitized = /^https?:|mailto:/i.test(href) ? href : '';
-  return createPortal(<div className="task-link-popover" data-format-tools role="dialog" aria-label="链接">
-    <input className="task-link-input" aria-label="链接地址" placeholder="https:// 或 mailto:" value={href} onChange={(event) => setHref(event.target.value)} onKeyDown={(event) => {
+  return createPortal(<div className="task-link-popover" data-format-tools role="dialog" aria-label={t('descriptionEditor.link')}>
+    <input className="task-link-input" aria-label={t('descriptionEditor.linkAddress')} placeholder={t('descriptionEditor.linkPlaceholder')} value={href} onChange={(event) => setHref(event.target.value)} onKeyDown={(event) => {
       if (event.key === 'Enter') { event.preventDefault(); apply(); }
       if (event.key === 'Escape') setOpen(false);
     }} />
     <div className="task-link-actions">
-      {sanitized && <a className="task-link-action" href={sanitized} target="_blank" rel="noreferrer">打开</a>}
-      <button type="button" className="task-link-action" disabled={!sanitized} onClick={() => { editor.chain().focus().extendMarkRange('link').setLink({ href: sanitized }).run(); setOpen(false); }}>应用</button>
-      <button type="button" className="task-link-action" onClick={() => { editor.chain().focus().extendMarkRange('link').unsetLink().run(); setOpen(false); }}>移除链接</button>
-      <button type="button" className="task-link-action" onClick={() => setOpen(false)}>取消</button>
+      {sanitized && <a className="task-link-action" href={sanitized} target="_blank" rel="noreferrer">{t('descriptionEditor.open')}</a>}
+      <button type="button" className="task-link-action" disabled={!sanitized} onClick={() => { editor.chain().focus().extendMarkRange('link').setLink({ href: sanitized }).run(); setOpen(false); }}>{t('descriptionEditor.apply')}</button>
+      <button type="button" className="task-link-action" onClick={() => { editor.chain().focus().extendMarkRange('link').unsetLink().run(); setOpen(false); }}>{t('descriptionEditor.removeLink')}</button>
+      <button type="button" className="task-link-action" onClick={() => setOpen(false)}>{t('shared.cancel')}</button>
     </div>
   </div>, document.body);
   function apply() {

@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
+import { intlLocale, t as translate } from '../../i18n/index.js';
 import { ArrowDown, ArrowUp, FolderInput, MoreHorizontal, Trash2 } from 'lucide-react';
 import { api, availableTaskStatuses, statuses, type Tag, type Task, type TaskTopicHistory, type Topic } from '@/lib/api.js';
 import type { TaskDraft } from '@/lib/todo.js';
@@ -44,7 +46,7 @@ type MenuContext = TaskActionProps & {
 const MenuContext = createContext<MenuContext | null>(null);
 function useMenu() {
   const value = useContext(MenuContext);
-  if (!value) throw new Error('任务菜单尚未就绪');
+  if (!value) throw new Error(translate('tasks:taskActions.menuNotReady'));
   return value;
 }
 function stopDrag(event: { stopPropagation: () => void }) { event.stopPropagation(); }
@@ -74,37 +76,39 @@ function openDialog(setDialog: (kind: DialogKind) => void, kind: Exclude<DialogK
   window.setTimeout(() => setDialog(kind), 0);
 }
 function MenuItems({ parts }: { parts: Parts }) {
+  const { t } = useTranslation('tasks');
   const { Item, Separator, Sub, SubTrigger, SubContent } = parts;
   const { task, topics, group, index, parents, hasChildren, readonly, busy, onMove, onDelete, onSave, onReorder, setDialog } = useMenu();
   const save = (patch: Partial<TaskDraft>) => { void onSave(task, patch); };
   const show = (kind: Exclude<DialogKind, null>) => openDialog(setDialog, kind);
   return <div className="min-w-44 p-1">
-    {!readonly && <Sub><SubTrigger>状态</SubTrigger><SubContent>{statuses.filter((item) => availableTaskStatuses(task).includes(item.value)).map((item) => <Item key={item.value} disabled={busy || task.status === item.value} onSelect={() => save({ status: item.value })}>{item.label}</Item>)}</SubContent></Sub>}
-    {!readonly && <Item disabled={busy || Boolean(task.parentId)} onSelect={() => show('children')}>添加子任务</Item>}
-    {!readonly && <Sub><SubTrigger>设为子任务</SubTrigger><SubContent>
-      <Item disabled={busy || hasChildren || !task.parentId} onSelect={() => save({ parentId: null })}>无（根任务）</Item>
+    {!readonly && <Sub><SubTrigger>{t('taskActions.status')}</SubTrigger><SubContent>{statuses.filter((item) => availableTaskStatuses(task).includes(item.value)).map((item) => <Item key={item.value} disabled={busy || task.status === item.value} onSelect={() => save({ status: item.value })}>{item.label}</Item>)}</SubContent></Sub>}
+    {!readonly && <Item disabled={busy || Boolean(task.parentId)} onSelect={() => show('children')}>{t('taskActions.addSubtask')}</Item>}
+    {!readonly && <Sub><SubTrigger>{t('taskActions.makeSubtask')}</SubTrigger><SubContent>
+      <Item disabled={busy || hasChildren || !task.parentId} onSelect={() => save({ parentId: null })}>{t('taskActions.noParent')}</Item>
       {parents.map((parent) => <Item key={parent.id} disabled={busy || hasChildren || task.parentId === parent.id} onSelect={() => save({ parentId: parent.id })}>{parent.title}</Item>)}
-      {hasChildren && <Item disabled>已有子任务，不能再挂到其他任务下</Item>}
-      {!hasChildren && !parents.length && <Item disabled>没有可挂靠的任务</Item>}
+      {hasChildren && <Item disabled>{t('taskActions.hasChildren')}</Item>}
+      {!hasChildren && !parents.length && <Item disabled>{t('taskActions.noParents')}</Item>}
     </SubContent></Sub>}
-    {!readonly && <Sub><SubTrigger><FolderInput />移动到</SubTrigger><SubContent>
-      <Item disabled={busy || !task.topicId} onSelect={() => { void onMove(task, null); }}>收集箱</Item>
+    {!readonly && <Sub><SubTrigger><FolderInput />{t('taskActions.moveTo')}</SubTrigger><SubContent>
+      <Item disabled={busy || !task.topicId} onSelect={() => { void onMove(task, null); }}>{t('shared.inbox')}</Item>
       {topics.map((topic) => <Item key={topic.id} disabled={busy || task.topicId === topic.id} onSelect={() => { void onMove(task, topic.id); }}>{topic.name}</Item>)}
     </SubContent></Sub>}
-    <Item onSelect={() => show('result')}>结果摘要</Item>
-    <Item onSelect={() => show('history')}>归属历史</Item>
-    <Item onSelect={() => show('activity')}>任务动态</Item>
-    <Item onSelect={() => show('knowledge')}>关联资料</Item>
-    {!readonly && <Item disabled={busy} onSelect={() => show('handoff')}>交给 AI</Item>}
-    {!readonly && onReorder && <><Separator /><Item disabled={busy || index === 0} aria-label={`上移任务：${task.title}`} onSelect={() => { const next = reorderTaskGroup(group, task.id, group[index - 1]?.id ?? ''); if (next) void onReorder(next, task.parentId ?? null); }}><ArrowUp />上移</Item><Item disabled={busy || index === group.length - 1} aria-label={`下移任务：${task.title}`} onSelect={() => { const next = reorderTaskGroup(group, task.id, group[index + 1]?.id ?? ''); if (next) void onReorder(next, task.parentId ?? null); }}><ArrowDown />下移</Item></>}
-    {!readonly && <><Separator /><Item variant="destructive" aria-label={`删除任务：${task.title}`} onSelect={() => onDelete(task)}><Trash2 />移入回收站</Item></>}
+    <Item onSelect={() => show('result')}>{t('taskActions.result')}</Item>
+    <Item onSelect={() => show('history')}>{t('taskActions.history')}</Item>
+    <Item onSelect={() => show('activity')}>{t('taskActions.activity')}</Item>
+    <Item onSelect={() => show('knowledge')}>{t('taskActions.materials')}</Item>
+    {!readonly && <Item disabled={busy} onSelect={() => show('handoff')}>{t('taskActions.handoff')}</Item>}
+    {!readonly && onReorder && <><Separator /><Item disabled={busy || index === 0} aria-label={t('taskActions.moveUpAria', { title: task.title })} onSelect={() => { const next = reorderTaskGroup(group, task.id, group[index - 1]?.id ?? ''); if (next) void onReorder(next, task.parentId ?? null); }}><ArrowUp />{t('taskActions.moveUp')}</Item><Item disabled={busy || index === group.length - 1} aria-label={t('taskActions.moveDownAria', { title: task.title })} onSelect={() => { const next = reorderTaskGroup(group, task.id, group[index + 1]?.id ?? ''); if (next) void onReorder(next, task.parentId ?? null); }}><ArrowDown />{t('taskActions.moveDown')}</Item></>}
+    {!readonly && <><Separator /><Item variant="destructive" aria-label={t('shared.deleteTask', { title: task.title })} onSelect={() => onDelete(task)}><Trash2 />{t('taskActions.trash')}</Item></>}
   </div>;
 }
 
 export function TaskMenuButton() {
+  const { t } = useTranslation('tasks');
   const { task, busy, setMenuOpen } = useMenu();
   return <DropdownMenu modal={false} onOpenChange={setMenuOpen}>
-    <DropdownMenuTrigger asChild><Button variant="ghost" size="icon-xs" disabled={busy} aria-label={`任务操作：${task.title}`} onMouseDown={stopDrag} onTouchStart={stopDrag} onPointerDown={stopDrag}><MoreHorizontal /></Button></DropdownMenuTrigger>
+    <DropdownMenuTrigger asChild><Button variant="ghost" size="icon-xs" disabled={busy} aria-label={t('taskActions.actionsAria', { title: task.title })} onMouseDown={stopDrag} onTouchStart={stopDrag} onPointerDown={stopDrag}><MoreHorizontal /></Button></DropdownMenuTrigger>
     <DropdownMenuContent side="left" align="start" sideOffset={8} className="z-[80] w-auto p-0" onClick={containMenuEvent} onPointerDown={containMenuEvent}><MenuItems parts={dropdownParts} /></DropdownMenuContent>
   </DropdownMenu>;
 }
@@ -128,6 +132,7 @@ export function TaskActions({ task, group = [], index = 0, children, ...actions 
 }
 
 function TaskDialogs({ dialog, onOpenChange, tasks }: { dialog: DialogKind; onOpenChange: (kind: DialogKind) => void; tasks: Task[] }) {
+  const { t } = useTranslation('tasks');
   const menu = useMenu();
   const { task, topics, readonly, textDirty, onOpen, onToggle, onDelete, onSave, onCreate } = menu;
   const detail = useTask(dialog === 'children' || dialog === 'handoff' ? task.id : '');
@@ -137,11 +142,11 @@ function TaskDialogs({ dialog, onOpenChange, tasks }: { dialog: DialogKind; onOp
   const close = (open: boolean) => { if (!open) onOpenChange(null); };
   const children = detail.data?.children ?? tasks.filter((item) => item.parentId === task.id);
   return <>
-    <Dialog open={dialog === 'children'} onOpenChange={close}><DialogContent surface="glass" className="max-h-[85dvh] overflow-y-auto"><DialogHeader><DialogTitle>子任务</DialogTitle><DialogDescription>子任务和当前任务在同一个清单里。</DialogDescription></DialogHeader><div className="space-y-3">{children.map((child) => <div key={child.id} className="flex items-center gap-2"><input type="checkbox" className="task-checkbox size-[18px] accent-primary" checked={child.status === 'done'} disabled={readonly} aria-label={`${child.status === 'done' ? '重开' : '完成'}任务：${child.title}`} onChange={() => { void onToggle(child); }} /><button type="button" className="min-w-0 flex-1 text-left text-sm" onClick={() => { onOpenChange(null); onOpen(child.id); }}>{child.title}</button><Button type="button" variant="ghost" size="sm" disabled={readonly} aria-label={`删除任务：${child.title}`} onClick={() => onDelete(child)}>移入回收站</Button></div>)}{!children.length && <p className="text-sm text-muted-foreground">还没有子任务。</p>}{!readonly && <QuickCapture key={`${task.topicId}.${task.id}`} topicId={task.topicId ?? null} parentId={task.id} onCreate={onCreate} />}</div></DialogContent></Dialog>
-    <Dialog open={dialog === 'result'} onOpenChange={close}><DialogContent surface="glass"><DialogHeader><DialogTitle>结果摘要</DialogTitle><DialogDescription>记下这个任务做成了什么。</DialogDescription></DialogHeader>{readonly ? <p className="whitespace-pre-wrap text-sm">{task.resultSummary || '还没有结果摘要。'}</p> : <><Textarea aria-label="结果摘要" value={summary} onChange={(event) => setSummary(event.target.value)} /><Button disabled={summary === (task.resultSummary ?? '')} onClick={() => { void onSave(task, { resultSummary: summary }).then((result) => { if (result) onOpenChange(null); }); }}>保存结果</Button></>}</DialogContent></Dialog>
-    <Dialog open={dialog === 'history'} onOpenChange={close}><DialogContent surface="glass"><DialogHeader><DialogTitle>归属历史</DialogTitle><DialogDescription>任务在收集箱和清单之间的移动记录。</DialogDescription></DialogHeader><div className="max-h-80 space-y-2 overflow-y-auto text-sm text-muted-foreground">{history.isLoading && <p>正在加载…</p>}{(history.data ?? []).map((item) => <p key={item.id}>{item.fromTopic?.name ?? '收集箱'} → {item.toTopic?.name ?? '收集箱'} · {new Date(item.changedAt).toLocaleString()}</p>)}{history.data && !history.data.length && <p>还没有归属变化。</p>}</div></DialogContent></Dialog>
+    <Dialog open={dialog === 'children'} onOpenChange={close}><DialogContent surface="glass" className="max-h-[85dvh] overflow-y-auto"><DialogHeader><DialogTitle>{t('taskActions.subtasksTitle')}</DialogTitle><DialogDescription>{t('taskActions.subtasksDescription')}</DialogDescription></DialogHeader><div className="space-y-3">{children.map((child) => <div key={child.id} className="flex items-center gap-2"><input type="checkbox" className="task-checkbox size-[18px] accent-primary" checked={child.status === 'done'} disabled={readonly} aria-label={t(child.status === 'done' ? 'shared.reopenTask' : 'shared.completeTask', { title: child.title })} onChange={() => { void onToggle(child); }} /><button type="button" className="min-w-0 flex-1 text-left text-sm" onClick={() => { onOpenChange(null); onOpen(child.id); }}>{child.title}</button><Button type="button" variant="ghost" size="sm" disabled={readonly} aria-label={t('shared.deleteTask', { title: child.title })} onClick={() => onDelete(child)}>{t('taskActions.trash')}</Button></div>)}{!children.length && <p className="text-sm text-muted-foreground">{t('taskActions.noSubtasks')}</p>}{!readonly && <QuickCapture key={`${task.topicId}.${task.id}`} topicId={task.topicId ?? null} parentId={task.id} onCreate={onCreate} />}</div></DialogContent></Dialog>
+    <Dialog open={dialog === 'result'} onOpenChange={close}><DialogContent surface="glass"><DialogHeader><DialogTitle>{t('taskActions.result')}</DialogTitle><DialogDescription>{t('taskActions.resultDescription')}</DialogDescription></DialogHeader>{readonly ? <p className="whitespace-pre-wrap text-sm">{task.resultSummary || t('taskActions.noResult')}</p> : <><Textarea aria-label={t('taskActions.result')} value={summary} onChange={(event) => setSummary(event.target.value)} /><Button disabled={summary === (task.resultSummary ?? '')} onClick={() => { void onSave(task, { resultSummary: summary }).then((result) => { if (result) onOpenChange(null); }); }}>{t('taskActions.saveResult')}</Button></>}</DialogContent></Dialog>
+    <Dialog open={dialog === 'history'} onOpenChange={close}><DialogContent surface="glass"><DialogHeader><DialogTitle>{t('taskActions.history')}</DialogTitle><DialogDescription>{t('taskActions.historyDescription')}</DialogDescription></DialogHeader><div className="max-h-80 space-y-2 overflow-y-auto text-sm text-muted-foreground">{history.isLoading && <p>{t('shared.loading')}</p>}{(history.data ?? []).map((item) => <p key={item.id}>{t('taskActions.historyMove', { from: item.fromTopic?.name ?? t('shared.inbox'), to: item.toTopic?.name ?? t('shared.inbox'), time: new Date(item.changedAt).toLocaleString(intlLocale()) })}</p>)}{history.data && !history.data.length && <p>{t('taskActions.noHistory')}</p>}</div></DialogContent></Dialog>
     <TaskActivityDialog taskId={task.id} open={dialog === 'activity'} onOpenChange={close} />
-    <Dialog open={dialog === 'knowledge'} onOpenChange={close}><DialogContent surface="glass" className="max-h-[88dvh] max-w-[min(56rem,calc(100%-3rem))] overflow-y-auto"><DialogHeader><DialogTitle>关联资料</DialogTitle><DialogDescription>与这个任务相关的资料和项目记忆。</DialogDescription></DialogHeader><KnowledgePage key={`${task.id}:${task.topicId ?? ''}`} topics={topics} initialTopicId={task.topicId ?? ''} taskId={task.id} initialTab="materials" /></DialogContent></Dialog>
-    <Dialog open={dialog === 'handoff'} onOpenChange={close}><DialogContent surface="glass" className="max-h-[88dvh] max-w-[min(42rem,calc(100%-3rem))] overflow-y-auto"><DialogHeader><DialogTitle>交给 AI</DialogTitle><DialogDescription>准备交接，并在返回后验收结果。</DialogDescription></DialogHeader>{detail.data && <HandoffPanel task={detail.data} disabled={Boolean(textDirty)} />}</DialogContent></Dialog>
+    <Dialog open={dialog === 'knowledge'} onOpenChange={close}><DialogContent surface="glass" className="max-h-[88dvh] max-w-[min(56rem,calc(100%-3rem))] overflow-y-auto"><DialogHeader><DialogTitle>{t('taskActions.materials')}</DialogTitle><DialogDescription>{t('taskActions.materialsDescription')}</DialogDescription></DialogHeader><KnowledgePage key={`${task.id}:${task.topicId ?? ''}`} topics={topics} initialTopicId={task.topicId ?? ''} taskId={task.id} initialTab="materials" /></DialogContent></Dialog>
+    <Dialog open={dialog === 'handoff'} onOpenChange={close}><DialogContent surface="glass" className="max-h-[88dvh] max-w-[min(42rem,calc(100%-3rem))] overflow-y-auto"><DialogHeader><DialogTitle>{t('taskActions.handoff')}</DialogTitle><DialogDescription>{t('taskActions.handoffDescription')}</DialogDescription></DialogHeader>{detail.data && <HandoffPanel task={detail.data} disabled={Boolean(textDirty)} />}</DialogContent></Dialog>
   </>;
 }

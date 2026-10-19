@@ -1,29 +1,31 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { Approval } from '@/chat.js';
+import { t } from '../../i18n/index.js';
 
 type Preview = NonNullable<Approval['preview']>;
 type Snapshot = Preview['beforeTasks'][number];
 type Delta = Preview['changes'][number];
 
-const FIELD_LABELS: Record<string, string> = {
-  title: '标题', topicId: '清单', parentId: '父任务', status: '状态', priority: '优先级',
-  description: '说明', resultSummary: '结果摘要', dueDate: '日期', scheduledStart: '开始时间',
-  scheduledEnd: '结束时间', estimatedMinutes: '预计用时', tagIds: '标签',
-};
+const fieldKeys = new Set(['title', 'topicId', 'parentId', 'status', 'priority', 'description', 'resultSummary', 'dueDate', 'scheduledStart', 'scheduledEnd', 'estimatedMinutes', 'tagIds']);
 
 export function isTaskBatchApproval(approval?: Approval) {
   return Boolean(approval && (approval.resultState === 'batch' || approval.preview));
 }
 
+function fieldLabel(field: string) {
+  return fieldKeys.has(field) ? t(`chat:taskBatch.field.${field}`) : field;
+}
+
 function titleOf(id: unknown, tasks: Snapshot[]) {
-  if (typeof id !== 'string' || !id) return '顶级';
-  return tasks.find((task) => task.id === id)?.title ?? '未命名任务';
+  if (typeof id !== 'string' || !id) return t('chat:taskBatch.topLevel');
+  return tasks.find((task) => task.id === id)?.title ?? t('chat:taskBatch.untitledTask');
 }
 
 function fieldText(field: string, value: unknown, tasks: Snapshot[]) {
-  if (value == null || value === '') return '空';
+  if (value == null || value === '') return t('chat:taskBatch.empty');
   if (field === 'parentId') return titleOf(value, tasks);
-  if (Array.isArray(value)) return value.length ? value.map((item) => String(item)).join('、') : '空';
+  if (Array.isArray(value)) return value.length ? value.map((item) => String(item)).join(t('chat:taskBatch.listJoiner')) : t('chat:taskBatch.empty');
   return String(value);
 }
 
@@ -39,13 +41,14 @@ function treeOf(tasks: Snapshot[]) {
 }
 
 function NodeList({ parent, children, nested, labelFor, created, mark }: { parent: string | null; children: Map<string | null, Snapshot[]>; nested: boolean; labelFor: (task: Snapshot) => string; created: Set<string>; mark: boolean }) {
+  const { t: label } = useTranslation('chat');
   const items = children.get(parent) ?? [];
   if (!items.length) return null;
   return (
     <ul className={nested ? 'task-batch-children' : 'task-batch-nodes'}>
       {items.map((task) => (
         <li key={task.id} className="task-batch-node" data-task-id={task.id} {...(created.has(task.id) ? { 'data-created': 'true' } : {})}>
-          {mark && <span className="task-batch-kind">{created.has(task.id) ? '新建' : '保留原任务'}</span>}
+          {mark && <span className="task-batch-kind">{created.has(task.id) ? label('taskBatch.created') : label('taskBatch.kept')}</span>}
           <span className="task-batch-node-title">{labelFor(task)}</span>
           <NodeList parent={task.id} children={children} nested labelFor={labelFor} created={created} mark={mark} />
         </li>
@@ -75,13 +78,13 @@ export function batchCardState(approval: Approval, executing: boolean, unknown: 
 }
 
 function statusCopy(state: string) {
-  if (state === 'executing') return '正在执行…';
-  if (state === 'executed') return '已完成整组修改';
-  if (state === 'failed') return '本组未修改';
-  if (state === 'rejected') return '已拒绝，本组任务未修改。';
-  if (state === 'superseded') return '此提议已被新的整组修改替代。';
-  if (state === 'unknown') return '正在核对结果…';
-  return '等待确认';
+  if (state === 'executing') return t('chat:taskBatch.executing');
+  if (state === 'executed') return t('chat:taskBatch.executed');
+  if (state === 'failed') return t('chat:taskBatch.failed');
+  if (state === 'rejected') return t('chat:taskBatch.rejected');
+  if (state === 'superseded') return t('chat:taskBatch.superseded');
+  if (state === 'unknown') return t('chat:taskBatch.checking');
+  return t('chat:taskBatch.waiting');
 }
 
 function StatusIcon() {
@@ -94,6 +97,7 @@ function StatusIcon() {
 }
 
 export function TaskBatchCard({ approval, executing = false, unknown = false, onApprove, onReject }: { approval: Approval; executing?: boolean; unknown?: boolean; onApprove: (id: string) => void; onReject: (id: string) => void }) {
+  const { t: label } = useTranslation('chat');
   const [pressed, setPressed] = useState(false);
   const sawExecuting = useRef(false);
   useEffect(() => {
@@ -116,13 +120,18 @@ export function TaskBatchCard({ approval, executing = false, unknown = false, on
     if (renamed && typeof renamed.before === 'string') return `${renamed.before} → ${task.title}`;
     return task.title;
   };
-  const line = (change: Delta, field: Delta['fields'][number]) => {
+  const line = (change: Delta, field: Delta['fields'][number], relatedChange = false) => {
     const name = change.before?.title ?? change.after.title;
-    return `「${name}」${FIELD_LABELS[field.field] ?? field.field}：${fieldText(field.field, field.before, tasks)} → ${fieldText(field.field, field.after, tasks)}`;
+    return label(relatedChange ? 'taskBatch.relatedChange' : 'taskBatch.change', {
+      name,
+      label: fieldLabel(field.field),
+      before: fieldText(field.field, field.before, tasks),
+      after: fieldText(field.field, field.after, tasks),
+    });
   };
   return (
-    <section className="task-batch-card" aria-label="整组任务修改" data-testid="task-batch-card" data-approval-id={approval.approvalId} data-state={state}>
-      <h2 className="task-batch-title">确认整组任务修改</h2>
+    <section className="task-batch-card" aria-label={label('taskBatch.ariaLabel')} data-testid="task-batch-card" data-approval-id={approval.approvalId} data-state={state}>
+      <h2 className="task-batch-title">{label('taskBatch.title')}</h2>
       <p className="task-batch-status" data-testid="batch-status" data-tone={state} {...(state === 'executing' ? { role: 'status', 'aria-live': 'polite' as const } : {})}>
         <StatusIcon />
         <span>{statusCopy(state)}</span>
@@ -130,13 +139,13 @@ export function TaskBatchCard({ approval, executing = false, unknown = false, on
       {preview?.summary && <p className="task-batch-summary">{preview.summary}</p>}
       {preview && (
         <div className="task-batch-trees">
-          <Tree title="修改前" testId="batch-before" tasks={preview.beforeTasks} labelFor={(task) => task.title} created={new Set()} mark={false} />
-          <Tree title="修改后" testId="batch-after" tasks={preview.afterTasks} labelFor={afterLabel} created={created} mark />
+          <Tree title={label('taskBatch.before')} testId="batch-before" tasks={preview.beforeTasks} labelFor={(task) => task.title} created={new Set()} mark={false} />
+          <Tree title={label('taskBatch.after')} testId="batch-after" tasks={preview.afterTasks} labelFor={afterLabel} created={created} mark />
         </div>
       )}
       {explicit.length > 0 && (
         <div className="task-batch-changes">
-          <h3>修改内容</h3>
+          <h3>{label('taskBatch.changesTitle')}</h3>
           <ul>
             {explicit.flatMap((change) => change.fields.map((field) => <li key={`${change.taskId}:${field.field}`}>{line(change, field)}</li>))}
           </ul>
@@ -144,16 +153,16 @@ export function TaskBatchCard({ approval, executing = false, unknown = false, on
       )}
       {state === 'failed' && approval.outcome?.success === false && <p className="task-batch-alert" role="alert">{approval.outcome.error}</p>}
       <details className="task-batch-details">
-        <summary>查看详细影响</summary>
+        <summary>{label('taskBatch.viewImpact')}</summary>
         <ul>
-          {related.flatMap((change) => change.fields.map((field) => <li key={`related:${change.taskId}:${field.field}`}>关联：{line(change, field)}</li>))}
-          {(preview?.afterTasks ?? preview?.beforeTasks ?? []).map((task) => <li key={task.id}>{task.title} · {task.id} · 版本 {task.revision}</li>)}
+          {related.flatMap((change) => change.fields.map((field) => <li key={`related:${change.taskId}:${field.field}`}>{line(change, field, true)}</li>))}
+          {(preview?.afterTasks ?? preview?.beforeTasks ?? []).map((task) => <li key={task.id}>{label('taskBatch.versionLine', { title: task.title, id: task.id, revision: task.revision })}</li>)}
         </ul>
       </details>
       {showActions && (
         <div className="task-batch-actions">
-          <button type="button" className="task-batch-secondary" disabled={busy} onClick={() => { setPressed(true); onReject(approval.approvalId); }}>拒绝</button>
-          <button type="button" className="task-batch-primary" disabled={busy} onClick={() => { setPressed(true); onApprove(approval.approvalId); }}>{busy ? '正在执行…' : '确认整组修改'}</button>
+          <button type="button" className="task-batch-secondary" disabled={busy} onClick={() => { setPressed(true); onReject(approval.approvalId); }}>{label('actions.reject')}</button>
+          <button type="button" className="task-batch-primary" disabled={busy} onClick={() => { setPressed(true); onApprove(approval.approvalId); }}>{busy ? label('taskBatch.executing') : label('taskBatch.confirm')}</button>
         </div>
       )}
     </section>

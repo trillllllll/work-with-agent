@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog.js';
 import { Button } from '@/components/ui/button.js';
 
@@ -30,6 +31,7 @@ function clampOffset(offset: Point, view: Size, display: Size): Point {
 }
 
 function ZoomFrame({ src }: { src: string }) {
+  const { t } = useTranslation('tasks');
   const viewportRef = useRef<HTMLDivElement>(null);
   const [natural, setNatural] = useState<Size>({ width: 0, height: 0 });
   const [view, setView] = useState<Size>({ width: 0, height: 0 });
@@ -169,19 +171,20 @@ function ZoomFrame({ src }: { src: string }) {
       />
     </div>
     <div className="mt-3 flex flex-wrap items-center justify-center gap-1">
-      <Button type="button" variant="outline" size="sm" aria-label="缩小" disabled={scale <= minScale + 0.001} onClick={() => zoomBy(1 / 1.25)}>缩小</Button>
-      <Button type="button" variant="outline" size="sm" aria-label="放大" disabled={scale >= maxScale - 0.001} onClick={() => zoomBy(1.25)}>放大</Button>
-      <Button type="button" variant="outline" size="sm" aria-label="适应窗口" onClick={() => setMode('fit')}>适应窗口</Button>
-      <Button type="button" variant="outline" size="sm" aria-label="实际大小" onClick={showActual}>实际大小</Button>
+      <Button type="button" variant="outline" size="sm" aria-label={t('imageZoom.zoomOut')} disabled={scale <= minScale + 0.001} onClick={() => zoomBy(1 / 1.25)}>{t('imageZoom.zoomOut')}</Button>
+      <Button type="button" variant="outline" size="sm" aria-label={t('imageZoom.zoomIn')} disabled={scale >= maxScale - 0.001} onClick={() => zoomBy(1.25)}>{t('imageZoom.zoomIn')}</Button>
+      <Button type="button" variant="outline" size="sm" aria-label={t('imageZoom.fit')} onClick={() => setMode('fit')}>{t('imageZoom.fit')}</Button>
+      <Button type="button" variant="outline" size="sm" aria-label={t('imageZoom.actualSize')} onClick={showActual}>{t('imageZoom.actualSize')}</Button>
       {natural.width > 0 && <span className="min-w-12 text-center text-xs tabular-nums text-muted-foreground">{Math.round(scale * 100)}%</span>}
     </div>
   </div>;
 }
 
 export function ImageZoomDialog({ src, onClose }: { src: string | null; onClose: () => void }) {
+  const { t } = useTranslation('tasks');
   return <Dialog open={src != null} onOpenChange={(open) => { if (!open) onClose(); }}>
     <DialogContent surface="glass" className="max-h-[92dvh] max-w-[min(72rem,calc(100%-3rem))] overflow-y-auto">
-      <DialogTitle className="sr-only">图片预览</DialogTitle>
+      <DialogTitle className="sr-only">{t('imageZoom.title')}</DialogTitle>
       {src && <ZoomFrame key={src} src={src} />}
     </DialogContent>
   </Dialog>;

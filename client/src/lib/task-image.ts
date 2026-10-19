@@ -1,4 +1,5 @@
 import compressionLibUrl from 'browser-image-compression/dist/browser-image-compression.js?url';
+import { t } from '../i18n/index.js';
 
 const maxEdge = 2560;
 const limit = 3 * 1024 * 1024;
@@ -75,7 +76,7 @@ async function sizedSource(file: File) {
 
 function withTimeout<T>(work: Promise<T>, timeoutMs: number) {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('图片压缩超时')), timeoutMs);
+    const timer = setTimeout(() => reject(new Error(t('app:taskImage.timeout'))), timeoutMs);
     work.then(
       (value) => {
         clearTimeout(timer);
@@ -83,7 +84,7 @@ function withTimeout<T>(work: Promise<T>, timeoutMs: number) {
       },
       (error) => {
         clearTimeout(timer);
-        reject(error instanceof Error ? error : new Error('图片压缩失败'));
+        reject(error instanceof Error ? error : new Error(t('app:taskImage.compressFailed')));
       },
     );
   });
@@ -112,7 +113,7 @@ async function encode(file: File, fileType: 'image/webp' | 'image/jpeg') {
     bytes = await blobBytes(compressed, 4_000);
   }
   const mimeType = imageMime(bytes);
-  if (mimeType !== fileType) throw new Error(fileType === 'image/webp' ? '不是 WebP' : '不是 JPEG');
+  if (mimeType !== fileType) throw new Error(fileType === 'image/webp' ? t('app:taskImage.notWebp') : t('app:taskImage.notJpeg'));
   const stem = file.name.replace(/\.[^.]+$/, '') || 'image';
   const copy = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(copy).set(bytes);
@@ -121,7 +122,7 @@ async function encode(file: File, fileType: 'image/webp' | 'image/jpeg') {
 
 /** Shrink a pasted or chosen image before upload. Animated images become one still frame. */
 export async function compressTaskImage(file: File) {
-  if (!isRasterImage(file)) throw new Error('只支持图片');
+  if (!isRasterImage(file)) throw new Error(t('app:taskImage.imagesOnly'));
   const prepared = await sizedSource(file);
   let compressed: File;
   try { compressed = await encode(prepared, 'image/webp'); }
@@ -131,8 +132,8 @@ export async function compressTaskImage(file: File) {
     compressed = await encode(prepared, 'image/jpeg');
     mimeType = await mimeOf(compressed);
   }
-  if (!mimeType) throw new Error('图片没能转成 WebP 或 JPEG');
-  if (compressed.size > limit) throw new Error('图片压缩后仍超过 3 MiB');
+  if (!mimeType) throw new Error(t('app:taskImage.convertFailed'));
+  if (compressed.size > limit) throw new Error(t('app:taskImage.stillTooLarge'));
   return { file: compressed, mimeType } as const;
 }
 
@@ -144,7 +145,7 @@ export function fileToBase64(file: Blob) {
       const comma = value.indexOf(',');
       resolve(comma >= 0 ? value.slice(comma + 1) : value);
     };
-    reader.onerror = () => reject(reader.error ?? new Error('无法读取图片'));
+    reader.onerror = () => reject(reader.error ?? new Error(t('app:taskImage.unreadable')));
     reader.readAsDataURL(file);
   });
 }

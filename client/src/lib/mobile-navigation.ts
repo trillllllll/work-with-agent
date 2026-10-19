@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import type { View } from './api.js';
 
 export const MOBILE_NAVIGATION_VIEWS = [
@@ -34,26 +35,35 @@ export const DEFAULT_MOBILE_NAVIGATION: MobileNavigationSettings = {
 
 export const MAX_MOBILE_NAVIGATION_ITEMS = 4;
 
-export const MOBILE_NAVIGATION_LABELS: Record<MobileNavigationView, string> = {
-  inbox: '收集箱',
-  today: '今天',
-  quadrant: '四象限',
-  topics: '清单',
-  search: '搜索',
-  tags: '标签',
-  archived: '已归档',
-  trash: '回收站',
-  changes: '变更历史',
-  settings: '设置',
-  connections: 'AI 连接',
-  proposals: '待确认',
-  library: '资料库',
-  runs: 'AI 执行',
-  reviews: '定期回顾',
-  plan: '规划',
-  focus: '专注',
-  chat: '聊天',
-};
+function labels<K extends string>(keys: Record<K, string>): Record<K, string> {
+  const result = {} as Record<K, string>;
+  for (const id of Object.keys(keys) as K[]) {
+    const key = keys[id];
+    Object.defineProperty(result, id, { enumerable: true, get: () => t(key) });
+  }
+  return result;
+}
+
+export const MOBILE_NAVIGATION_LABELS: Record<MobileNavigationView, string> = labels({
+  inbox: 'app:nav.inbox',
+  today: 'app:nav.today',
+  quadrant: 'app:nav.quadrant',
+  topics: 'app:nav.topics',
+  search: 'app:nav.search',
+  tags: 'app:nav.tags',
+  archived: 'app:nav.archived',
+  trash: 'app:nav.trash',
+  changes: 'app:nav.changes',
+  settings: 'app:nav.settings',
+  connections: 'app:nav.connections',
+  proposals: 'app:nav.proposals',
+  library: 'app:nav.library',
+  runs: 'app:nav.runs',
+  reviews: 'app:nav.reviews',
+  plan: 'app:nav.plan',
+  focus: 'app:nav.focus',
+  chat: 'app:nav.chat',
+});
 
 const whitelist = new Set<string>(MOBILE_NAVIGATION_VIEWS);
 

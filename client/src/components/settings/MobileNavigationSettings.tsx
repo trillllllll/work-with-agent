@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DndContext, KeyboardSensor, MouseSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -30,6 +31,7 @@ function sanitizeViews(value: unknown): MobileNavigationView[] {
 }
 
 export function MobileNavigationSettings() {
+  const { t } = useTranslation('settings');
   const queryClient = useQueryClient();
   const navigationQuery = useQuery<MobileNavigationSettings>({
     queryKey: mobileNavigationKey,
@@ -126,11 +128,11 @@ export function MobileNavigationSettings() {
   if (loadFailed) {
     return (
       <section className="mnav-section" data-testid="mobile-navigation-settings">
-        <h2 className="mnav-title">功能模块</h2>
-        <p className="mnav-description">选择手机底栏入口，拖动调整顺序。更多固定在最右侧。</p>
+        <h2 className="mnav-title">{t('mobileNavigation.title')}</h2>
+        <p className="mnav-description">{t('mobileNavigation.description')}</p>
         <div className="mnav-load-error">
-          <span>功能模块加载失败</span>
-          <button type="button" className="mnav-retry-button" onClick={() => void navigationQuery.refetch()}>重新加载</button>
+          <span>{t('mobileNavigation.loadFailed')}</span>
+          <button type="button" className="mnav-retry-button" onClick={() => void navigationQuery.refetch()}>{t('mobileNavigation.reload')}</button>
         </div>
       </section>
     );
@@ -139,8 +141,8 @@ export function MobileNavigationSettings() {
   if (!loaded) {
     return (
       <section className="mnav-section" data-testid="mobile-navigation-settings">
-        <h2 className="mnav-title">功能模块</h2>
-        <p className="mnav-description">选择手机底栏入口，拖动调整顺序。更多固定在最右侧。</p>
+        <h2 className="mnav-title">{t('mobileNavigation.title')}</h2>
+        <p className="mnav-description">{t('mobileNavigation.description')}</p>
         <div className="mnav-skeleton" aria-hidden="true">
           <Skeleton className="h-[81px] w-full" />
           <Skeleton className="mt-5 h-4 w-14" />
@@ -157,11 +159,11 @@ export function MobileNavigationSettings() {
 
   return (
     <section className="mnav-section" data-testid="mobile-navigation-settings">
-      <h2 className="mnav-title">功能模块</h2>
-      <p className="mnav-description">选择手机底栏入口，拖动调整顺序。更多固定在最右侧。</p>
+      <h2 className="mnav-title">{t('mobileNavigation.title')}</h2>
+      <p className="mnav-description">{t('mobileNavigation.description')}</p>
 
       <div className="mnav-preview" data-testid="mobile-navigation-preview">
-        <p className="mnav-preview-title">底栏预览</p>
+        <p className="mnav-preview-title">{t('mobileNavigation.preview')}</p>
         <div className="mnav-preview-bar" style={{ gridTemplateColumns: `repeat(${previewItems.length}, minmax(0, 1fr))` }}>
           {previewItems.map(({ view, label, icon: Icon }) => (
             <span key={view} data-preview-view={view} className="mnav-preview-item">
@@ -172,7 +174,7 @@ export function MobileNavigationSettings() {
         </div>
       </div>
 
-      <h3 className="mnav-group-title">已显示</h3>
+      <h3 className="mnav-group-title">{t('mobileNavigation.shown')}</h3>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={draft} strategy={verticalListSortingStrategy}>
           <ul className="mnav-list">
@@ -183,7 +185,7 @@ export function MobileNavigationSettings() {
         </SortableContext>
       </DndContext>
 
-      <h3 className="mnav-group-title">未显示</h3>
+      <h3 className="mnav-group-title">{t('mobileNavigation.hidden')}</h3>
       <ul className="mnav-list">
         {hiddenRows.map((view) => (
           <li key={view} className="mnav-row" data-testid={`mobile-navigation-row-${view}`}>
@@ -198,20 +200,20 @@ export function MobileNavigationSettings() {
         <li className="mnav-row" data-testid="mobile-navigation-fixed-more">
           <moreItem.icon aria-hidden="true" className="size-5 shrink-0" strokeWidth={1.75} />
           <span className="mnav-name">{moreItem.label}</span>
-          <span className="mnav-note">固定显示在最右侧</span>
+          <span className="mnav-note">{t('mobileNavigation.pinned')}</span>
         </li>
       </ul>
 
-      {atCapacity && <p className="mnav-hint">最多显示 4 个入口，请先关闭一个再开启其他入口。</p>}
+      {atCapacity && <p className="mnav-hint">{t('mobileNavigation.atCapacity', { max: MAX_MOBILE_NAVIGATION_ITEMS })}</p>}
 
       {!saveFailed && (
-        <p className="mnav-status" data-testid="mobile-navigation-save-status">{pending ? '正在保存…' : '已同步到当前服务'}</p>
+        <p className="mnav-status" data-testid="mobile-navigation-save-status">{pending ? t('mobileNavigation.saving') : t('mobileNavigation.synced')}</p>
       )}
       {saveFailed && retryCandidate && (
         <div className="mnav-error" data-testid="mobile-navigation-save-error" role="alert">
-          <span>保存失败，已恢复上次设置。</span>
+          <span>{t('mobileNavigation.saveFailed')}</span>
           <button type="button" className="mnav-retry-button" disabled={pending} onClick={() => save(retryCandidate)}>
-            <RotateCcw aria-hidden="true" className="size-3.5" strokeWidth={1.75} />重试保存
+            <RotateCcw aria-hidden="true" className="size-3.5" strokeWidth={1.75} />{t('mobileNavigation.retrySave')}
           </button>
         </div>
       )}
@@ -225,12 +227,13 @@ function ModuleIcon({ view }: { view: MobileNavigationView }) {
 }
 
 function Switch({ view, checked, disabled, onToggle }: { view: MobileNavigationView; checked: boolean; disabled: boolean; onToggle: (view: MobileNavigationView, checked: boolean) => void }) {
+  const { t } = useTranslation('settings');
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
-      aria-label={`在底栏显示${MOBILE_NAVIGATION_LABELS[view]}`}
+      aria-label={t('mobileNavigation.showInBar', { label: MOBILE_NAVIGATION_LABELS[view] })}
       disabled={disabled}
       className="mnav-switch-hit"
       onClick={() => onToggle(view, !checked)}
@@ -243,6 +246,7 @@ function Switch({ view, checked, disabled, onToggle }: { view: MobileNavigationV
 }
 
 function SortableRow({ view, index, total, disabled, onMove, onToggle }: { view: MobileNavigationView; index: number; total: number; disabled: boolean; onMove: (oldIndex: number, newIndex: number) => void; onToggle: (view: MobileNavigationView, checked: boolean) => void }) {
+  const { t } = useTranslation('settings');
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: view, disabled });
   const label = MOBILE_NAVIGATION_LABELS[view];
   return (
@@ -257,7 +261,7 @@ function SortableRow({ view, index, total, disabled, onMove, onToggle }: { view:
         type="button"
         ref={setActivatorNodeRef}
         className="mnav-icon-button"
-        aria-label={`拖动${label}`}
+        aria-label={t('mobileNavigation.drag', { label })}
         disabled={disabled}
         style={handleTouchAction}
         {...attributes}
@@ -268,10 +272,10 @@ function SortableRow({ view, index, total, disabled, onMove, onToggle }: { view:
       <ModuleIcon view={view} />
       <span className="mnav-name">{label}</span>
       <div className="mnav-moves">
-        <button type="button" className="mnav-icon-button" aria-label={`上移${label}`} disabled={disabled || index === 0} onClick={() => onMove(index, index - 1)}>
+        <button type="button" className="mnav-icon-button" aria-label={t('mobileNavigation.moveUp', { label })} disabled={disabled || index === 0} onClick={() => onMove(index, index - 1)}>
           <ArrowUp aria-hidden="true" className="size-4" strokeWidth={1.75} />
         </button>
-        <button type="button" className="mnav-icon-button" aria-label={`下移${label}`} disabled={disabled || index === total - 1} onClick={() => onMove(index, index + 1)}>
+        <button type="button" className="mnav-icon-button" aria-label={t('mobileNavigation.moveDown', { label })} disabled={disabled || index === total - 1} onClick={() => onMove(index, index + 1)}>
           <ArrowDown aria-hidden="true" className="size-4" strokeWidth={1.75} />
         </button>
       </div>

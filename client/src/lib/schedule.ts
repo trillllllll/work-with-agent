@@ -1,4 +1,5 @@
 import type { Task } from './api.js';
+import { t } from '../i18n/index.js';
 import { localDate } from './todo.js';
 
 export function localDateTime(date = new Date()) {
@@ -45,7 +46,7 @@ export function isOverdue(task: Scheduled, today: string) {
   return Boolean(last && last < today);
 }
 export function scheduleLabel(task: Scheduled) {
-  if (!task.scheduledStart) return task.dueDate ? `${task.dueDate} 全天` : '未安排';
+  if (!task.scheduledStart) return task.dueDate ? t('plan:schedule.allDay', { date: task.dueDate }) : t('plan:schedule.unscheduled');
   const start = task.scheduledStart.replace('T', ' ');
   if (!task.scheduledEnd) return start;
   return `${start} — ${task.scheduledEnd.slice(0, 10) === task.scheduledStart.slice(0, 10) ? formatTime(task.scheduledEnd) : task.scheduledEnd.replace('T', ' ')}`;

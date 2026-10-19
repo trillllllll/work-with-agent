@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import { localDateTime } from './schedule.js';
 
 export type FocusPhase = 'idle' | 'focusing' | 'focusPaused' | 'breakReady' | 'breaking' | 'breakPaused';
@@ -139,10 +140,10 @@ export function formatClock(ms: number) {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 export function phaseLabel(phase: FocusPhase) {
-  if (phase === 'focusing') return '专注中';
-  if (phase === 'focusPaused' || phase === 'breakPaused') return '已暂停';
-  if (phase === 'breaking' || phase === 'breakReady') return '休息一下';
-  return '准备专注';
+  if (phase === 'focusing') return t('plan:focus.phaseFocusing');
+  if (phase === 'focusPaused' || phase === 'breakPaused') return t('plan:focus.phasePaused');
+  if (phase === 'breaking' || phase === 'breakReady') return t('plan:focus.phaseBreak');
+  return t('plan:focus.phaseReady');
 }
 export function loadFocusState(): FocusState {
   try {

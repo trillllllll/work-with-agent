@@ -1,4 +1,6 @@
+import { useTranslation } from 'react-i18next';
 import type { Topic } from '@/lib/api.js';
+import { intlLocale } from '@/i18n/index.js';
 import { Button } from '@/components/ui/button.js';
 
 type SummaryPanelProps = {
@@ -8,19 +10,20 @@ type SummaryPanelProps = {
 };
 
 export function SummaryPanel({ detail, busy = false, onConfirm }: SummaryPanelProps) {
+  const { t } = useTranslation('plan');
   if (!detail) return null;
   if (detail.draftSummary) {
     return (
       <section className="my-4 rounded-2xl border border-warning-border bg-warning-bg/75 p-4 text-sm shadow-[inset_0_1px_0_rgb(255_255_255/0.35)]">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            <strong className="text-warning">成果草稿</strong>
+            <strong className="text-warning">{t('summary.draft')}</strong>
             <p className="mt-2 leading-relaxed whitespace-pre-wrap">{detail.draftSummary}</p>
           </div>
           {onConfirm && (
             <div className="flex shrink-0 justify-end gap-2 max-md:grid max-md:w-full max-md:grid-cols-2">
-              <Button variant="outline" size="sm" disabled={busy} onClick={() => onConfirm('discard')}>放弃草稿</Button>
-              <Button size="sm" disabled={busy} onClick={() => onConfirm('confirm')}>确认成果</Button>
+              <Button variant="outline" size="sm" disabled={busy} onClick={() => onConfirm('discard')}>{t('summary.discardDraft')}</Button>
+              <Button size="sm" disabled={busy} onClick={() => onConfirm('confirm')}>{t('summary.confirm')}</Button>
             </div>
           )}
         </div>
@@ -30,9 +33,9 @@ export function SummaryPanel({ detail, busy = false, onConfirm }: SummaryPanelPr
   if (detail.finalSummary) {
     return (
       <section className="my-4 rounded-2xl border border-success-border bg-success-bg/75 p-4 text-sm shadow-[inset_0_1px_0_rgb(255_255_255/0.35)]">
-        <strong className="text-success">正式成果</strong>
+        <strong className="text-success">{t('summary.final')}</strong>
         <p className="mt-2 leading-relaxed whitespace-pre-wrap">{detail.finalSummary}</p>
-        {detail.summaryUpdatedAt && <small className="mt-2 block text-xs text-muted-foreground">已确认：{new Date(detail.summaryUpdatedAt).toLocaleString()}</small>}
+        {detail.summaryUpdatedAt && <small className="mt-2 block text-xs text-muted-foreground">{t('summary.confirmedAt', { time: new Date(detail.summaryUpdatedAt).toLocaleString(intlLocale()) })}</small>}
       </section>
     );
   }

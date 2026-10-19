@@ -1,5 +1,7 @@
 import { askAssistant, usePageContext } from '@/lib/assistant-context.js';
 import { createContext, forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type KeyboardEvent, type MutableRefObject, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
+import { intlLocale, t as translate } from '../../i18n/index.js';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, CalendarDays, Check, ChevronRight, Clock, Flag, FolderKanban, Hash, Timer, X } from 'lucide-react';
 import { ApiError, priorities, type Status, type Tag, type Task, type TaskPriority } from '@/lib/api.js';
@@ -30,7 +32,10 @@ const metaFields = ['status', 'priority', 'dueDate', 'estimatedMinutes', 'schedu
 type MetaDraft = Pick<TaskDraft, typeof metaFields[number]>;
 type Editing = { base: MetaDraft; draft: MetaDraft; conflicts: string[] };
 
-const fieldLabels: Record<string, string> = { title: '标题', description: '说明', status: '状态', priority: '优先级', dueDate: '安排日期', estimatedMinutes: '预计时长', scheduledStart: '开始时间', scheduledEnd: '结束时间', resultSummary: '结果摘要', topicId: '所属清单', parentId: '父任务', tagIds: '标签' };
+const fieldKeys = new Set(['title', 'description', 'status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'topicId', 'parentId', 'tagIds']);
+function fieldLabel(field: string) {
+  return fieldKeys.has(field) ? translate(`tasks:taskExpand.fields.${field}`) : field;
+}
 const flagTone: Record<TaskPriority, string> = { none: 'text-muted-foreground', low: 'text-primary', medium: 'text-warning', high: 'text-destructive' };
 
 function metaOf(task: Task): MetaDraft {
@@ -78,7 +83,7 @@ type EditContext = {
 const EditContext = createContext<EditContext | null>(null);
 export function useEdit() {
   const value = useContext(EditContext);
-  if (!value) throw new Error('任务编辑尚未展开');
+  if (!value) throw new Error(translate('tasks:taskExpand.notReady'));
   return value;
 }
 
@@ -97,6 +102,7 @@ type Props = {
 };
 
 export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpand({ id, fallback, tags, readonly = false, onSave, onClose, onDirtyChange, onToggleTask, onCreateTask, onOpenTask, children }, ref) {
+  useTranslation('tasks');
   const query = useTask(id);
   const coordinator = useEditorRuntime()?.coordinator ?? null;
   const [editing, setEditing] = useState<Editing | null>(null);
@@ -318,7 +324,7 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
       event.preventDefault();
       const title = event.currentTarget;
       openDescription.current();
-      requestAnimationFrame(() => { if (document.activeElement?.getAttribute('aria-label') !== '详情') title.blur(); });
+      requestAnimationFrame(() => { if (document.activeElement?.getAttribute('aria-label') !== translate('tasks:descriptionEditor.detailsLabel')) title.blur(); });
     },
     taskId: id,
     task: taskRef.current,
@@ -350,16 +356,17 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
   };
 
   const blocked = Boolean(editing?.conflicts.length && !acknowledgeConflict) || !fullDraft.title.trim();
-  const leaveDialog = leaveAction && <Dialog open onOpenChange={(open) => { if (!open) setLeaveAction(null); }}><DialogContent surface="glass"><DialogHeader><DialogTitle>保存未完成的编辑？</DialogTitle><DialogDescription>任务有未保存的更改。</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => setLeaveAction(null)}>继续编辑</Button><Button variant="outline" onClick={() => { const action = leaveAction; resetDraft(); setLeaveAction(null); action(); }}>舍弃更改</Button><Button disabled={saving || blocked} onClick={() => { void flushMeta().then(() => prepareLeave()).then((safe) => { if (!safe) return; const action = leaveAction; setLeaveAction(null); action?.(); }); }}>保存并继续</Button></div></DialogContent></Dialog>;
+  const leaveDialog = leaveAction && <Dialog open onOpenChange={(open) => { if (!open) setLeaveAction(null); }}><DialogContent surface="glass"><DialogHeader><DialogTitle>{translate('tasks:taskExpand.saveChangesTitle')}</DialogTitle><DialogDescription>{translate('tasks:taskExpand.saveChangesDescription')}</DialogDescription></DialogHeader><div className="flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => setLeaveAction(null)}>{translate('tasks:taskExpand.keepEditing')}</Button><Button variant="outline" onClick={() => { const action = leaveAction; resetDraft(); setLeaveAction(null); action(); }}>{translate('tasks:taskExpand.discard')}</Button><Button disabled={saving || blocked} onClick={() => { void flushMeta().then(() => prepareLeave()).then((safe) => { if (!safe) return; const action = leaveAction; setLeaveAction(null); action?.(); }); }}>{translate('tasks:taskExpand.saveAndContinue')}</Button></div></DialogContent></Dialog>;
 
   return <EditContext.Provider value={value}>{children}
     {staleBranches.length > 1 && <StaleBranchDialog taskId={id} branches={staleBranches} onResolved={() => setStaleBranches([])} />}
     {leaveDialog}
-    {saving && <p className="sr-only" role="status">正在保存…</p>}
+    {saving && <p className="sr-only" role="status">{translate('tasks:taskExpand.savingStatus')}</p>}
   </EditContext.Provider>;
 });
 
 function StaleBranchDialog({ taskId, branches, onResolved }: { taskId: string; branches: TaskTextDraftV1[]; onResolved: () => void }) {
+  const { t } = useTranslation('tasks');
   const coordinator = useEditorRuntime()?.coordinator ?? null;
   const [busy, setBusy] = useState(false);
   const restore = async (branchId: string) => {
@@ -368,10 +375,10 @@ function StaleBranchDialog({ taskId, branches, onResolved }: { taskId: string; b
     try { await coordinator.restoreBranch(taskId, branchId); onResolved(); }
     finally { setBusy(false); }
   };
-  return <Dialog open><DialogContent surface="glass"><DialogHeader><DialogTitle>发现多份未同步草稿</DialogTitle><DialogDescription>这个任务存在多份不同窗口留下的草稿，自动同步已暂停。选择要继续编辑的一份。</DialogDescription></DialogHeader><div className="max-h-72 space-y-2 overflow-y-auto">{branches.map((branch) => <button key={branch.branchId} type="button" disabled={busy} className="w-full rounded-xl border border-border p-3 text-left hover:bg-[var(--glass-hover)]" onClick={() => { void restore(branch.branchId); }}>
-    <p className="truncate text-sm font-medium">{branch.draft.title || '（无标题）'}</p>
+  return <Dialog open><DialogContent surface="glass"><DialogHeader><DialogTitle>{t('taskExpand.staleTitle')}</DialogTitle><DialogDescription>{t('taskExpand.staleDescription')}</DialogDescription></DialogHeader><div className="max-h-72 space-y-2 overflow-y-auto">{branches.map((branch) => <button key={branch.branchId} type="button" disabled={busy} className="w-full rounded-xl border border-border p-3 text-left hover:bg-[var(--glass-hover)]" onClick={() => { void restore(branch.branchId); }}>
+    <p className="truncate text-sm font-medium">{branch.draft.title || t('shared.untitled')}</p>
     <p className="mt-1 line-clamp-2 whitespace-pre-wrap text-xs text-muted-foreground">{branch.draft.description.slice(0, 160)}</p>
-    <p className="mt-1 text-xs text-muted-foreground">更新于 {new Date(branch.updatedAt).toLocaleString()}</p>
+    <p className="mt-1 text-xs text-muted-foreground">{t('taskExpand.updatedAt', { time: new Date(branch.updatedAt).toLocaleString(intlLocale()) })}</p>
   </button>)}</div></DialogContent></Dialog>;
 }
 
@@ -391,6 +398,7 @@ function fitTitle(node: HTMLTextAreaElement) {
 }
 
 export function TaskTitleField({ className }: { className?: string }) {
+  const { t } = useTranslation('tasks');
   const edit = useEdit();
   const ref = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
@@ -409,7 +417,7 @@ export function TaskTitleField({ className }: { className?: string }) {
     observer.observe(parent);
     return () => observer.disconnect();
   }, [edit.draft.title]);
-  return <textarea ref={ref} data-task-editor aria-label="任务标题" required rows={1} value={edit.draft.title} disabled={edit.readonly} onChange={(event) => edit.updateText({ title: flattenTitle(event.target.value) })} onPaste={(event) => {
+  return <textarea ref={ref} data-task-editor aria-label={t('taskExpand.titleLabel')} required rows={1} value={edit.draft.title} disabled={edit.readonly} onChange={(event) => edit.updateText({ title: flattenTitle(event.target.value) })} onPaste={(event) => {
     const text = event.clipboardData.getData('text');
     if (!/[\r\n]/.test(text)) return;
     event.preventDefault();
@@ -424,9 +432,10 @@ export function TaskTitleField({ className }: { className?: string }) {
 }
 
 function TaskStatusCheckbox() {
+  const { t } = useTranslation('tasks');
   const edit = useEdit();
   const done = edit.draft.status === 'done';
-  return <button type="button" role="checkbox" aria-checked={done} aria-label={`${done ? '重开' : '完成'}任务：${edit.draft.title}`} disabled={edit.readonly} className="task-check-round mt-[5px] shrink-0" onClick={() => edit.setStatus(done ? 'todo' : 'done')}>{done && <Check className="size-3" aria-hidden />}</button>;
+  return <button type="button" role="checkbox" aria-checked={done} aria-label={t(done ? 'shared.reopenTask' : 'shared.completeTask', { title: edit.draft.title })} disabled={edit.readonly} className="task-check-round mt-[5px] shrink-0" onClick={() => edit.setStatus(done ? 'todo' : 'done')}>{done && <Check className="size-3" aria-hidden />}</button>;
 }
 
 const InfoRow = forwardRef<HTMLButtonElement, { icon: typeof CalendarDays; label: string; value: string; hasValue: boolean; disabled?: boolean; 'aria-label': string }>(function InfoRow({ icon: Icon, label, value, hasValue, ...props }, ref) {
@@ -438,19 +447,20 @@ const InfoRow = forwardRef<HTMLButtonElement, { icon: typeof CalendarDays; label
 });
 
 export function TaskExpandBody({ fill = false }: { fill?: boolean }) {
+  const { t } = useTranslation('tasks');
   const edit = useEdit();
   const record = edit.textRecord;
   const textConflicts = Object.entries(record?.conflicts ?? {}) as Array<[TextField, NonNullable<TaskTextDraftV1['conflicts'][TextField]>]>;
   return <div data-task-editor className={cn('flex flex-col', fill && 'min-h-full')}>
     {textConflicts.length > 0 && <div role="alert" className="mb-3 rounded-xl border border-warning-border bg-warning-bg p-3 text-sm text-warning">
-      <p className="flex items-center gap-2"><AlertTriangle className="size-4 shrink-0" aria-hidden />正文或标题与后台更新冲突，本地与远端内容都已保留。</p>
+      <p className="flex items-center gap-2"><AlertTriangle className="size-4 shrink-0" aria-hidden />{t('taskExpand.conflictAlert')}</p>
       <div className="mt-2 flex flex-wrap gap-2">
-        <Button type="button" size="sm" onClick={edit.resolveKeepMine}>使用我的内容</Button>
-        <Button type="button" variant="ghost" size="sm" onClick={edit.resolveKeepRemote}>使用最新内容</Button>
+        <Button type="button" size="sm" onClick={edit.resolveKeepMine}>{t('taskExpand.keepMine')}</Button>
+        <Button type="button" variant="ghost" size="sm" onClick={edit.resolveKeepRemote}>{t('taskExpand.keepLatest')}</Button>
       </div>
-      <pre className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap rounded-lg bg-black/5 p-2 text-xs dark:bg-white/5">{textConflicts.map(([field, conflict]) => `${fieldLabels[field] ?? field}\n本地：${conflict.local.slice(0, 200) || '（空）'}\n远端：${conflict.remote.slice(0, 200) || '（空）'}`).join('\n\n')}</pre>
+      <pre className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap rounded-lg bg-black/5 p-2 text-xs dark:bg-white/5">{textConflicts.map(([field, conflict]) => t('taskExpand.conflictBlock', { field: fieldLabel(field), local: conflict.local.slice(0, 200) || t('taskExpand.emptyValue'), remote: conflict.remote.slice(0, 200) || t('taskExpand.emptyValue') })).join('\n\n')}</pre>
     </div>}
-    {record?.blockedReason === 'invalid-title' && <div role="alert" className="mb-3 rounded-xl border border-warning-border bg-warning-bg p-3 text-sm text-warning">标题不能为空，自动保存已暂停；补齐标题后继续。</div>}
+    {record?.blockedReason === 'invalid-title' && <div role="alert" className="mb-3 rounded-xl border border-warning-border bg-warning-bg p-3 text-sm text-warning">{t('taskExpand.emptyTitleBlocked')}</div>}
     <TaskDescription key={edit.taskId} taskId={edit.taskId} value={edit.draft.description} readonly={edit.readonly} fill={fill} openDescription={edit.openDescription} onEdit={(description) => edit.updateText({ description })} onComposeStart={edit.onComposeStart} onComposeEnd={edit.onComposeEnd} onOpenLinkedTask={(taskId) => { void edit.openLinkedTask(taskId); }} />
     <SaveStatusRow status={edit.textStatus} taskId={edit.taskId} />
     <TaskMaterials taskId={edit.taskId} topicId={edit.task?.topicId ?? null} description={edit.draft.description} readonly={edit.readonly} saveText={edit.saveText} onOpenLinkedTask={edit.openLinkedTask} />
@@ -467,27 +477,30 @@ export function TaskExpandBody({ fill = false }: { fill?: boolean }) {
 }
 
 function TopicRow() {
+  const { t } = useTranslation('tasks');
   const edit = useEdit();
-  const name = edit.task.topic?.name ?? '收集箱';
+  const name = edit.task.topic?.name ?? t('shared.inbox');
   return <div data-testid="task-topic-row" className="task-info-row">
     <FolderKanban className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-    <span className="w-20 shrink-0 text-left text-muted-foreground">所属清单</span>
+    <span className="w-20 shrink-0 text-left text-muted-foreground">{t('taskExpand.listLabel')}</span>
     <span className="min-w-0 flex-1 truncate text-right"><span className="task-place-chip">{name}</span></span>
   </div>;
 }
 
 function FlagRow() {
+  const { t } = useTranslation('tasks');
   const edit = useEdit();
   return <div className="task-info-row">
     <Flag className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-    <span className="w-20 shrink-0 text-left text-muted-foreground">旗标</span>
-    <div role="group" aria-label="旗标" className="flex min-w-0 flex-1 items-center justify-end gap-0.5">
-      {priorities.map((item) => <Button key={item.value} type="button" variant="ghost" size="icon-sm" disabled={edit.readonly} aria-pressed={edit.draft.priority === item.value} aria-label={`旗标：${item.label}`} title={item.label} onClick={() => edit.setPriority(item.value)}><Flag className={cn(flagTone[item.value], edit.draft.priority === item.value && 'fill-current')} /></Button>)}
+    <span className="w-20 shrink-0 text-left text-muted-foreground">{t('taskExpand.flag')}</span>
+    <div role="group" aria-label={t('taskExpand.flag')} className="flex min-w-0 flex-1 items-center justify-end gap-0.5">
+      {priorities.map((item) => <Button key={item.value} type="button" variant="ghost" size="icon-sm" disabled={edit.readonly} aria-pressed={edit.draft.priority === item.value} aria-label={t('taskExpand.flagOption', { label: item.label })} title={item.label} onClick={() => edit.setPriority(item.value)}><Flag className={cn(flagTone[item.value], edit.draft.priority === item.value && 'fill-current')} /></Button>)}
     </div>
   </div>;
 }
 
 function TagPicker() {
+  const { t } = useTranslation('tasks');
   const edit = useEdit();
   const actions = useTodoActions();
   const [name, setName] = useState('');
@@ -502,7 +515,7 @@ function TagPicker() {
       return;
     }
     try {
-      const created = await actions.write<Tag>('/api/tags', 'POST', { name: value }, ['tag-create'], '标签已创建');
+      const created = await actions.write<Tag>('/api/tags', 'POST', { name: value }, ['tag-create'], t('taskExpand.tagCreated'));
       if (created.data?.id) edit.toggleTag(created.data.id, true);
       setName('');
     } catch { /* The shared write already reports the failure and keeps the typed name. */ }
@@ -510,21 +523,21 @@ function TagPicker() {
   return <Popover>
     <div className={cn('task-info-row', edit.readonly && 'opacity-50')}>
       <PopoverTrigger asChild>
-        <button type="button" className="flex min-w-0 flex-1 items-center gap-[0.625rem] bg-transparent p-0 text-left" aria-label="标签" disabled={edit.readonly}>
+        <button type="button" className="flex min-w-0 flex-1 items-center gap-[0.625rem] bg-transparent p-0 text-left" aria-label={t('taskExpand.tags')} disabled={edit.readonly}>
           <Hash className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-          <span className="w-20 shrink-0 text-left text-muted-foreground">标签</span>
-          {selected.length === 0 && <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">设置</span>}
+          <span className="w-20 shrink-0 text-left text-muted-foreground">{t('taskExpand.tags')}</span>
+          {selected.length === 0 && <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">{t('taskExpand.set')}</span>}
         </button>
       </PopoverTrigger>
-      {selected.length > 0 && <div className="flex min-w-0 flex-wrap justify-end gap-1.5">{selected.map((tag) => <span key={tag.id} className="task-tag-chip inline-flex items-center gap-1" data-color={tag.color || 'violet'}>#{tag.name}{!edit.readonly && <button type="button" className="grid size-4 place-items-center rounded-full hover:bg-black/10 dark:hover:bg-white/10" aria-label={`从任务去掉标签：${tag.name}`} onClick={() => edit.toggleTag(tag.id, false)}><X className="size-3" /></button>}</span>)}</div>}
+      {selected.length > 0 && <div className="flex min-w-0 flex-wrap justify-end gap-1.5">{selected.map((tag) => <span key={tag.id} className="task-tag-chip inline-flex items-center gap-1" data-color={tag.color || 'violet'}>#{tag.name}{!edit.readonly && <button type="button" className="grid size-4 place-items-center rounded-full hover:bg-black/10 dark:hover:bg-white/10" aria-label={t('taskExpand.removeTag', { name: tag.name })} onClick={() => edit.toggleTag(tag.id, false)}><X className="size-3" /></button>}</span>)}</div>}
     </div>
     <PopoverContent data-task-editor className="space-y-2">
       <form className="space-y-1" onSubmit={(event) => { event.preventDefault(); void add(); }}>
-        <Input aria-label="新标签名称" value={name} disabled={edit.readonly} placeholder="新标签" onChange={(event) => setName(event.target.value)} className="h-8" />
-        <Button type="submit" size="sm" className="w-full" disabled={edit.readonly || actions.pending || !name.trim()}>添加标签</Button>
+        <Input aria-label={t('taskExpand.newTagName')} value={name} disabled={edit.readonly} placeholder={t('taskExpand.newTagPlaceholder')} onChange={(event) => setName(event.target.value)} className="h-8" />
+        <Button type="submit" size="sm" className="w-full" disabled={edit.readonly || actions.pending || !name.trim()}>{t('taskExpand.addTag')}</Button>
       </form>
       <div className="max-h-56 space-y-1 overflow-y-auto">
-        {!edit.tags.length && <p className="px-2 py-1.5 text-xs text-muted-foreground">输入名称即可新增标签。</p>}
+        {!edit.tags.length && <p className="px-2 py-1.5 text-xs text-muted-foreground">{t('taskExpand.tagHint')}</p>}
         {edit.tags.map((tag) => <label key={tag.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-[var(--glass-hover)]"><input type="checkbox" checked={edit.draft.tagIds?.includes(tag.id) ?? false} onChange={(event) => edit.toggleTag(tag.id, event.target.checked)} />{tag.name}</label>)}
       </div>
     </PopoverContent>
@@ -532,29 +545,31 @@ function TagPicker() {
 }
 
 function CloseDetailButton() {
+  const { t } = useTranslation('tasks');
   const edit = useEdit();
-  return <Button type="button" variant="ghost" size="icon-sm" aria-label="关闭任务详情" onClick={edit.requestClose}><X /></Button>;
+  return <Button type="button" variant="ghost" size="icon-sm" aria-label={t('taskExpand.close')} onClick={edit.requestClose}><X /></Button>;
 }
 
 function ActivityButton({ onOpen }: { onOpen: () => void }) {
+  const { t } = useTranslation('tasks');
   const edit = useEdit();
-  return <Button type="button" variant="outline" size="sm" className="shrink-0 rounded-lg" aria-label="任务动态" onClick={() => { void edit.saveText().then((saved) => { if (saved) onOpen(); }); }}>动态</Button>;
+  return <Button type="button" variant="outline" size="sm" className="shrink-0 rounded-lg" aria-label={t('taskExpand.activity')} onClick={() => { void edit.saveText().then((saved) => { if (saved) onOpen(); }); }}>{t('taskExpand.activityShort')}</Button>;
 }
 
-type EditorCaret = { label: '任务标题' | '详情'; start: number; end: number };
+type EditorCaret = { label: 'title' | 'details'; start: number; end: number };
 
 function editorCaret(node: Element | null): EditorCaret | null {
-  if (node instanceof HTMLTextAreaElement && node.getAttribute('aria-label') === '任务标题') return { label: '任务标题', start: node.selectionStart ?? 0, end: node.selectionEnd ?? 0 };
-  const content = node?.closest('[aria-label="详情"]');
+  if (node instanceof HTMLTextAreaElement && node.getAttribute('aria-label') === translate('tasks:taskExpand.titleLabel')) return { label: 'title', start: node.selectionStart ?? 0, end: node.selectionEnd ?? 0 };
+  const content = node?.closest(`[aria-label="${translate('tasks:descriptionEditor.detailsLabel')}"]`);
   if (content instanceof HTMLElement && content.closest('[data-task-editor]')) {
     const range = readDescriptionCaret(content);
-    if (range) return { label: '详情', ...range };
+    if (range) return { label: 'details', ...range };
   }
   return null;
 }
 
 function visibleEditor(label: EditorCaret['label']) {
-  const selector = label === '任务标题' ? 'textarea[aria-label="任务标题"]' : '[aria-label="详情"]';
+  const selector = label === 'title' ? `textarea[aria-label="${translate('tasks:taskExpand.titleLabel')}"]` : `[aria-label="${translate('tasks:descriptionEditor.detailsLabel')}"]`;
   for (const node of document.querySelectorAll(selector)) {
     if (!(node instanceof HTMLElement) || !node.closest('[data-task-editor]')) continue;
     if (node.getClientRects().length === 0) continue;
@@ -566,7 +581,7 @@ function visibleEditor(label: EditorCaret['label']) {
 function placeCaret(caret: EditorCaret) {
   const node = visibleEditor(caret.label);
   if (!node) return false;
-  if (caret.label === '详情') return placeDescriptionCaret(node, caret.start, caret.end);
+  if (caret.label === 'details') return placeDescriptionCaret(node, caret.start, caret.end);
   if (!(node instanceof HTMLTextAreaElement) || node.disabled) return false;
   node.focus();
   node.setSelectionRange(caret.start, caret.end);
@@ -574,13 +589,14 @@ function placeCaret(caret: EditorCaret) {
 }
 
 function ParentTaskLink() {
+  const { t } = useTranslation('tasks');
   const edit = useEdit();
   const parentId = edit.task.parentId ?? null;
   const query = useTask(parentId ?? '');
   if (parentId === null) return null;
 
-  const unavailable = <div data-testid="task-parent-row" className="task-parent-row">父任务不可用</div>;
-  const loading = <div data-testid="task-parent-row" className="task-parent-row" role="status">正在加载父任务…</div>;
+  const unavailable = <div data-testid="task-parent-row" className="task-parent-row">{t('taskExpand.parentUnavailable')}</div>;
+  const loading = <div data-testid="task-parent-row" className="task-parent-row" role="status">{t('taskExpand.parentLoading')}</div>;
   const notFound = query.error instanceof ApiError && query.error.status === 404;
   const parent = query.data;
   const matched = Boolean(parent && parent.id === parentId);
@@ -594,12 +610,12 @@ function ParentTaskLink() {
   if (parentId === edit.taskId || notFound) return unavailable;
   if (parent && parent.id === parentId) {
     if (parent.deletedAt) return unavailable;
-    return <div data-testid="task-parent-row" className="task-parent-row"><button type="button" data-testid="task-parent-link" className="task-parent-link" title={parent.title} aria-label={`打开父任务：${parent.title}`} onClick={openParent}><span data-testid="task-parent-title" className="task-parent-title">{parent.title}</span><ChevronRight aria-hidden="true" width={14} height={14} strokeWidth={1.5} className="task-parent-chevron" /></button></div>;
+    return <div data-testid="task-parent-row" className="task-parent-row"><button type="button" data-testid="task-parent-link" className="task-parent-link" title={parent.title} aria-label={t('taskExpand.openParent', { title: parent.title })} onClick={openParent}><span data-testid="task-parent-title" className="task-parent-title">{parent.title}</span><ChevronRight aria-hidden="true" width={14} height={14} strokeWidth={1.5} className="task-parent-chevron" /></button></div>;
   }
   if (parent && parent.id !== parentId) return unavailable;
   if (query.isFetching) return loading;
   if (query.isError) {
-    return <div data-testid="task-parent-row" className="task-parent-row"><button type="button" className="task-parent-link" aria-label="重新加载父任务" onClick={() => { void query.refetch(); }}>加载失败，重试</button></div>;
+    return <div data-testid="task-parent-row" className="task-parent-row"><button type="button" className="task-parent-link" aria-label={t('taskExpand.parentRetry')} onClick={() => { void query.refetch(); }}>{t('taskExpand.parentRetry')}</button></div>;
   }
   return loading;
 }
@@ -616,6 +632,7 @@ function rememberEditorCaret(pending: { current: EditorCaret | null }) {
 }
 
 function DetailFrame({ presentation, panelSlot, children }: { presentation: 'panel' | 'modal' | 'retained'; panelSlot: HTMLElement | null; children: ReactNode }) {
+  const { t } = useTranslation('tasks');
   const edit = useEdit();
   const [host] = useState(() => { const node = document.createElement('div'); node.className = 'flex h-full min-h-0 flex-col'; return node; });
   const [modalSlot, setModalSlot] = useState<HTMLDivElement | null>(null);
@@ -623,23 +640,24 @@ function DetailFrame({ presentation, panelSlot, children }: { presentation: 'pan
   const pendingFocus = useRef<EditorCaret | null>(null);
   presentationRef.current = presentation;
   rememberEditorCaret(pendingFocus);
-  usePageContext('task', { taskId: edit.taskId, taskRevision: edit.task.revision ?? null, label: `任务 · ${edit.task.title}`, scope: edit.task.topicId ? { kind: 'topic', topicId: edit.task.topicId } : { kind: 'inbox' }, selectedTaskIds: [edit.taskId] });
+  usePageContext('task', { taskId: edit.taskId, taskRevision: edit.task.revision ?? null, label: t('taskExpand.contextLabel', { title: edit.task.title }), scope: edit.task.topicId ? { kind: 'topic', topicId: edit.task.topicId } : { kind: 'inbox' }, selectedTaskIds: [edit.taskId] });
   useLayoutEffect(() => {
     const slot = presentation === 'panel' ? panelSlot : presentation === 'modal' ? modalSlot : null;
     if (slot) { slot.appendChild(host); if (pendingFocus.current && placeCaret(pendingFocus.current)) pendingFocus.current = null; }
     return () => { host.remove(); };
   }, [host, presentation, panelSlot, modalSlot]);
   return <>
-    {createPortal(<aside role={presentation === 'modal' ? undefined : 'dialog'} aria-modal={presentation === 'modal' ? undefined : false} aria-label={presentation === 'modal' ? undefined : '任务详情'} className="flex h-full min-h-0 flex-col">{children}</aside>, host)}
-    {presentation === 'modal' && <Dialog open onOpenChange={(open) => { if (!open && presentationRef.current === 'modal') edit.requestClose(); }}><DialogContent showCloseButton={false} surface="glass" motion="none" className="flex h-[min(92dvh,840px)] max-h-[92dvh] max-w-[min(42rem,calc(100%-3rem))] flex-col overflow-hidden p-0" onPointerDownOutside={(event) => { if (inEditor(event.detail.originalEvent.target)) event.preventDefault(); }} onOpenAutoFocus={(event) => { if (pendingFocus.current) event.preventDefault(); }} onCloseAutoFocus={(event) => { if (presentationRef.current !== 'modal') event.preventDefault(); }}><DialogTitle className="sr-only">任务详情</DialogTitle><DialogDescription className="sr-only">编辑任务详情、标签、旗标和日期。</DialogDescription><div ref={setModalSlot} className="h-full min-h-0" /></DialogContent></Dialog>}
+    {createPortal(<aside role={presentation === 'modal' ? undefined : 'dialog'} aria-modal={presentation === 'modal' ? undefined : false} aria-label={presentation === 'modal' ? undefined : t('taskExpand.detailLabel')} className="flex h-full min-h-0 flex-col">{children}</aside>, host)}
+    {presentation === 'modal' && <Dialog open onOpenChange={(open) => { if (!open && presentationRef.current === 'modal') edit.requestClose(); }}><DialogContent showCloseButton={false} surface="glass" motion="none" className="flex h-[min(92dvh,840px)] max-h-[92dvh] max-w-[min(42rem,calc(100%-3rem))] flex-col overflow-hidden p-0" onPointerDownOutside={(event) => { if (inEditor(event.detail.originalEvent.target)) event.preventDefault(); }} onOpenAutoFocus={(event) => { if (pendingFocus.current) event.preventDefault(); }} onCloseAutoFocus={(event) => { if (presentationRef.current !== 'modal') event.preventDefault(); }}><DialogTitle className="sr-only">{t('taskExpand.detailLabel')}</DialogTitle><DialogDescription className="sr-only">{t('taskExpand.detailDescription')}</DialogDescription><div ref={setModalSlot} className="h-full min-h-0" /></DialogContent></Dialog>}
   </>;
 }
 
 function TaskAssistantActions() {
+  const { t } = useTranslation('tasks');
   const edit = useEdit();
   return <div className="flex flex-wrap gap-2 pb-2">
-    <Button size="sm" variant="ghost" onClick={() => askAssistant()}>AI 助手</Button>
-    <Button size="sm" variant="ghost" onMouseDown={(event) => event.preventDefault()} onClick={() => askAssistant({ kind: 'draft', title: edit.draft.title || '当前任务草稿', text: `${edit.draft.title}\n\n${edit.draft.description}`, taskId: edit.taskId, unsaved: true })}>带上当前草稿</Button>
+    <Button size="sm" variant="ghost" onClick={() => askAssistant()}>{t('taskExpand.assistant')}</Button>
+    <Button size="sm" variant="ghost" onMouseDown={(event) => event.preventDefault()} onClick={() => askAssistant({ kind: 'draft', title: edit.draft.title || t('taskExpand.currentDraft'), text: `${edit.draft.title}\n\n${edit.draft.description}`, taskId: edit.taskId, unsaved: true })}>{t('taskExpand.withDraft')}</Button>
   </div>;
 }
 
@@ -662,6 +680,7 @@ export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children
 });
 
 function StartFocusButton() {
+  const { t } = useTranslation('tasks');
   const edit = useEdit();
   const { dispatch } = useFocus();
   const { navigate } = useHashRoute();
@@ -671,12 +690,13 @@ function StartFocusButton() {
     navigate('focus');
   }}>
     <Timer className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-    <span className="w-20 shrink-0 text-left text-muted-foreground">开始专注</span>
+    <span className="w-20 shrink-0 text-left text-muted-foreground">{t('taskExpand.startFocus')}</span>
     <span className="min-w-0 flex-1 truncate text-right" />
   </button>;
 }
 
 function ScheduleControl() {
+  const { t } = useTranslation('tasks');
   const edit = useEdit();
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState<ScheduleValue>({ dueDate: null, scheduledStart: null, scheduledEnd: null });
@@ -689,19 +709,20 @@ function ScheduleControl() {
     setOpen(next);
   };
   return <Popover open={open} onOpenChange={changeOpen}>
-    <PopoverTrigger asChild><InfoRow icon={CalendarDays} label="安排时间" value={scheduleLabel(edit.draft)} hasValue={Boolean(edit.draft.dueDate || edit.draft.scheduledStart)} disabled={edit.readonly} aria-label="安排时间" /></PopoverTrigger>
+    <PopoverTrigger asChild><InfoRow icon={CalendarDays} label={t('taskExpand.schedule')} value={scheduleLabel(edit.draft)} hasValue={Boolean(edit.draft.dueDate || edit.draft.scheduledStart)} disabled={edit.readonly} aria-label={t('taskExpand.schedule')} /></PopoverTrigger>
     <PopoverContent data-task-editor className="max-h-[75dvh] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto space-y-3">
       <ScheduleFields value={value} onChange={setValue} estimatedMinutes={edit.draft.estimatedMinutes} disabled={saving} />
-      <div className="flex justify-end gap-2"><Button type="button" variant="ghost" disabled={saving} onClick={() => changeOpen(false)}>取消</Button><Button type="button" disabled={saving || Boolean(scheduleError(value))} onClick={() => {
+      <div className="flex justify-end gap-2"><Button type="button" variant="ghost" disabled={saving} onClick={() => changeOpen(false)}>{t('shared.cancel')}</Button><Button type="button" disabled={saving || Boolean(scheduleError(value))} onClick={() => {
         if (lock.current) return;
         lock.current = true; setSaving(true);
         void edit.setSchedule(value, openedTask.current).then((saved) => { if (saved) setOpen(false); }).finally(() => { lock.current = false; setSaving(false); });
-      }}>{saving ? '保存中…' : '保存安排'}</Button></div>
+      }}>{saving ? t('shared.saving') : t('taskExpand.saveSchedule')}</Button></div>
     </PopoverContent>
   </Popover>;
 }
 
 function EstimateControl() {
+  const { t } = useTranslation('tasks');
   const edit = useEdit();
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState('');
@@ -710,12 +731,12 @@ function EstimateControl() {
   const openedTask = useRef(edit.task);
   const minutes = value === '' ? null : Number(value);
   return <Popover open={open} onOpenChange={(next) => { if (lock.current) return; if (next) { openedTask.current = edit.task; setValue(String(edit.draft.estimatedMinutes ?? '')); } setOpen(next); }}>
-    <PopoverTrigger asChild><InfoRow icon={Clock} label="预计时长" value={edit.draft.estimatedMinutes ? `${edit.draft.estimatedMinutes}分钟` : '设置'} hasValue={Boolean(edit.draft.estimatedMinutes)} disabled={edit.readonly} aria-label="预计时长" /></PopoverTrigger>
-    <PopoverContent data-task-editor className="w-64 space-y-3"><p className="text-xs text-muted-foreground">用于首次安排时间段，不改变已有安排。</p><Input type="number" min={1} max={10080} aria-label="预计时长分钟" value={value} disabled={saving} onChange={(event) => setValue(event.target.value)} /><div className="flex justify-end gap-2"><Button variant="ghost" disabled={saving} onClick={() => setOpen(false)}>取消</Button><Button disabled={saving || (minutes !== null && (!Number.isInteger(minutes) || minutes < 1 || minutes > 10080))} onClick={() => {
+    <PopoverTrigger asChild><InfoRow icon={Clock} label={t('taskExpand.estimate')} value={edit.draft.estimatedMinutes ? t('shared.minuteCount', { count: edit.draft.estimatedMinutes }) : t('taskExpand.set')} hasValue={Boolean(edit.draft.estimatedMinutes)} disabled={edit.readonly} aria-label={t('taskExpand.estimate')} /></PopoverTrigger>
+    <PopoverContent data-task-editor className="w-64 space-y-3"><p className="text-xs text-muted-foreground">{t('taskExpand.estimateHint')}</p><Input type="number" min={1} max={10080} aria-label={t('taskExpand.estimateMinutes')} value={value} disabled={saving} onChange={(event) => setValue(event.target.value)} /><div className="flex justify-end gap-2"><Button variant="ghost" disabled={saving} onClick={() => setOpen(false)}>{t('shared.cancel')}</Button><Button disabled={saving || (minutes !== null && (!Number.isInteger(minutes) || minutes < 1 || minutes > 10080))} onClick={() => {
       if (lock.current) return;
       lock.current = true; setSaving(true);
       void edit.setEstimate(minutes, openedTask.current).then((saved) => { if (saved) setOpen(false); }).finally(() => { lock.current = false; setSaving(false); });
-    }}>{saving ? '保存中…' : '保存'}</Button></div></PopoverContent>
+    }}>{saving ? t('shared.saving') : t('shared.save')}</Button></div></PopoverContent>
   </Popover>;
 }
 

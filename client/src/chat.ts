@@ -3,6 +3,12 @@ import type { ContentBlock } from './lib/message-blocks.js';
 import type { ChatContextV2, ChatContextV3 } from '../../server/src/agent/chat-context.js';
 import type { AssistantSource } from '../../server/src/agent/assistant-sources.js';
 import type { AppOutcome, AppReview, BatchOutcome, TaskBatchPreview } from '../../server/src/domain/task-batch-types.js';
+import { t } from './i18n/index.js';
+
+/** Server stores this exact error when the user rejects a tool call. */
+export const userRejectedError = '用户拒绝，数据未修改'; // i18n-ignore
+/** Server error text that means the follow-up reply stopped early. */
+export const replyIncompleteMarker = '后续回答未完成'; // i18n-ignore
 
 export type ExternalPromptPart = {
   schemaVersion: 1;
@@ -147,41 +153,41 @@ function readTitle(data: unknown) {
 }
 
 export function toolPreview(name: string, args: Record<string, unknown> = {}, result?: ToolResult | null, status?: ToolActivityStatus) {
-  if (status === 'rejected') return '已拒绝';
-  if (status === 'error' || result?.success === false) return clip(result?.error || '执行失败');
-  if (name === 'propose_changes') return clip(typeof args.summary === 'string' && args.summary.trim() ? args.summary : '等待确认');
-  if (name === 'prepare_external_prompt') return '已整理提示词';
+  if (status === 'rejected') return t('chat:toolPreview.rejected');
+  if (status === 'error' || result?.success === false) return clip(result?.error || t('chat:toolPreview.runFailed'));
+  if (name === 'propose_changes') return clip(typeof args.summary === 'string' && args.summary.trim() ? args.summary : t('chat:toolPreview.waitingConfirm'));
+  if (name === 'prepare_external_prompt') return t('chat:toolPreview.promptReady');
   if (name === 'get_time' || name === 'get_work_context' || name === 'query_tasks' || name === 'query_topics' || name === 'get_task_activity' || name === 'search_workspace' || name === 'library_read' || name === 'memory_read' || name === 'get_change_schema') {
-    return clip(textField(args, ['q', 'title', 'taskId']) || (status === 'running' ? '正在读取' : '已读取'));
+    return clip(textField(args, ['q', 'title', 'taskId']) || (status === 'running' ? t('chat:toolPreview.reading') : t('chat:toolPreview.read')));
   }
   if (name === 'conversation_search') {
     if (typeof args.q === 'string' && args.q.trim()) return clip(args.q);
-    if (typeof args.messageId === 'string' && args.messageId.trim()) return '前后文';
-    return '过往对话';
+    if (typeof args.messageId === 'string' && args.messageId.trim()) return t('chat:toolPreview.nearby');
+    return t('chat:toolPreview.earlier');
   }
   if (name === 'library') {
     const title = textField(args, ['title', 'name', 'question', 'q']) || readTitle(result?.data);
     if (title) return clip(title);
-    return clip(typeof args.action === 'string' && args.action ? args.action : '项目资料');
+    return clip(typeof args.action === 'string' && args.action ? args.action : t('chat:toolPreview.projectMaterials'));
   }
   if (name === 'memory') {
-    if (args.action === 'search') return clip(typeof args.q === 'string' && args.q.trim() ? args.q : '搜索记忆');
+    if (args.action === 'search') return clip(typeof args.q === 'string' && args.q.trim() ? args.q : t('chat:toolPreview.searchMemory'));
     const title = textField(args, ['title']) || readTitle(result?.data);
-    return clip(title || textField(args, ['memoryId']) || '记忆');
+    return clip(title || textField(args, ['memoryId']) || t('chat:toolPreview.memory'));
   }
-  if (status === 'pending') return targetPreview(name, args) || '等待审核';
+  if (status === 'pending') return targetPreview(name, args) || t('chat:toolPreview.waitingReview');
   if (name === 'list_tasks') {
     const list = Array.isArray(result?.data) ? result.data : [];
     const title = readTitle(list[0]);
-    return title ? `${list.length} 条任务 · ${clip(title, 40)}` : `${list.length} 条任务`;
+    return title ? t('chat:toolPreview.tasksWithTitle', { count: list.length, title: clip(title, 40) }) : t('chat:toolPreview.tasks', { count: list.length });
   }
   if (name === 'list_topics') {
     const list = Array.isArray(result?.data) ? result.data : [];
-    return `${list.length} 个清单`;
+    return t('chat:toolPreview.lists', { count: list.length });
   }
-  if (name === 'get_task' || name === 'get_topic' || name === 'get_topic_progress') return clip(readTitle(result?.data) || targetPreview(name, args) || '已读取');
+  if (name === 'get_task' || name === 'get_topic' || name === 'get_topic_progress') return clip(readTitle(result?.data) || targetPreview(name, args) || t('chat:toolPreview.read'));
   if (status === 'running') return targetPreview(name, args);
-  return targetPreview(name, args) || readTitle(result?.data) || (result ? '已执行' : '');
+  return targetPreview(name, args) || readTitle(result?.data) || (result ? t('chat:toolPreview.ran') : '');
 }
 
 export function groupToolActivities(tools: ToolActivity[]): ToolGroup[] {
@@ -255,9 +261,9 @@ function activityForCall(call: StoredCall, row: ChatMessage | undefined, approva
   const body = row ? parseToolBody(row.content) : undefined;
   const approval = findApproval(call.id, call.function.name, args, approvals, used);
   if (approval) used.add(approval.approvalId);
-  const rejected = body?.error === '用户拒绝，数据未修改';
+  const rejected = body?.error === userRejectedError;
   const status: ToolActivityStatus = rejected ? 'rejected' : body?.success === false ? 'error' : body ? 'done' : approval ? 'pending' : 'error';
-  const error = status === 'rejected' ? '用户拒绝，数据未修改' : status === 'error' ? (body?.error || '没有返回结果') : undefined;
+  const error = status === 'rejected' ? userRejectedError : status === 'error' ? (body?.error || t('chat:toolActivity.noResult')) : undefined;
   return {
     toolCallId: call.id,
     name: call.function.name,
@@ -360,7 +366,7 @@ export function parseSseFrame(frame: string): SseEvent | undefined {
   }
   if (!data.length) return undefined;
   try { return { type, ...JSON.parse(data.join('\n')) }; }
-  catch { return { type: 'error', message: '无法解析聊天事件' }; }
+  catch { return { type: 'error', message: t('chat:errors.parseEventFailed') }; }
 }
 
 function assistantIndex(messages: ChatMessage[], messageId?: string) {
@@ -411,7 +417,7 @@ export function applyMessageEvent(messages: ChatMessage[], event: SseEvent): Cha
         blocks[position] = { ...current, type: 'text', markdown: text + delta };
       } else if (event.type === 'block_error') {
         if (!current) return { ...message, needsSnapshot: true };
-        blocks[position] = { ...current, status: 'error', error: event.message || '内容未完成' };
+        blocks[position] = { ...current, status: 'error', error: event.message || t('chat:messageBlocks.incomplete') };
       }
       blocks.sort((a, b) => a.index - b.index);
       return { ...message, blocks, content: projectBlocks(blocks) };
@@ -445,7 +451,7 @@ export function applyMessageEvent(messages: ChatMessage[], event: SseEvent): Cha
       status,
       preview: toolPreview(name, args, event.result, status),
       ...(event.result?.data !== undefined ? { result: event.result.data } : {}),
-      ...(status === 'error' ? { error: event.result?.error || '执行失败' } : {}),
+      ...(status === 'error' ? { error: event.result?.error || t('chat:toolPreview.runFailed') } : {}),
     };
     return withTool(messages, event.messageId, event.toolCallId, created, (tool) => ({
       ...tool,
@@ -454,7 +460,7 @@ export function applyMessageEvent(messages: ChatMessage[], event: SseEvent): Cha
       status,
       preview: toolPreview(event.toolName || tool.name, event.arguments ?? tool.arguments, event.result, status),
       ...(event.result?.data !== undefined ? { result: event.result.data } : {}),
-      ...(status === 'error' ? { error: event.result?.error || '执行失败' } : {}),
+      ...(status === 'error' ? { error: event.result?.error || t('chat:toolPreview.runFailed') } : {}),
     }));
   }
   if (event.type === 'approval_required' && event.toolCallId && event.toolName) {
@@ -482,17 +488,20 @@ export function applyMessageEvent(messages: ChatMessage[], event: SseEvent): Cha
   }
   if (event.type === 'run_state' && event.pauseReason === 'new_user_message') {
     const settled = messages.map((item) => item.status === 'streaming' ? { ...item, status: 'completed' as const } : item);
-    if (settled.some((item) => item.content === '已暂停后续处理')) return settled;
-    return [...settled, { role: 'system' as const, content: '已暂停后续处理', status: 'completed' as const }];
+    const pausedText = t('chat:system.pausedFollowUp');
+    if (settled.some((item) => item.content === pausedText)) return settled;
+    return [...settled, { role: 'system' as const, content: pausedText, status: 'completed' as const }];
   }
   if (event.type === 'error') {
+    const failedText = t('chat:toolPreview.runFailed');
     const next = messages.map((item) => {
-      const tools = item.tools?.map((tool) => tool.status === 'running' ? { ...tool, status: 'error' as const, error: event.message || '执行失败', preview: toolPreview(tool.name, tool.arguments, { success: false, error: event.message || '执行失败' }, 'error') } : tool);
+      const tools = item.tools?.map((tool) => tool.status === 'running' ? { ...tool, status: 'error' as const, error: event.message || failedText, preview: toolPreview(tool.name, tool.arguments, { success: false, error: event.message || failedText }, 'error') } : tool);
       if (item.status === 'streaming') return { ...item, status: 'failed' as const, ...(tools ? { tools } : {}) };
       return tools ? { ...item, tools } : item;
     });
-    if (event.message?.includes('后续回答未完成') && !next.some((item) => item.content.includes('后续回答未完成'))) {
-      next.push({ role: 'system', content: '后续回答未完成', status: 'completed' });
+    const incompleteText = t('chat:system.replyIncomplete');
+    if (event.message?.includes(replyIncompleteMarker) && !next.some((item) => item.content.includes(replyIncompleteMarker) || item.content === incompleteText)) {
+      next.push({ role: 'system', content: incompleteText, status: 'completed' });
     }
     return next;
   }
@@ -533,20 +542,20 @@ export function reviewCardState(approval: Approval, phase: '' | 'approve' | 'rej
 }
 
 export function reviewStatusCopy(state: ReviewCardState, approval: Approval, unresolved = false) {
-  if (state === 'pending') return '等待确认';
-  if (state === 'approving') return '正在修改…';
-  if (state === 'rejecting') return '正在取消…';
-  if (state === 'unknown') return unresolved ? '结果待核对' : '正在核对执行结果…';
+  if (state === 'pending') return t('chat:reviewStatus.waitingConfirm');
+  if (state === 'approving') return t('chat:reviewStatus.applying');
+  if (state === 'rejecting') return t('chat:reviewStatus.cancelling');
+  if (state === 'unknown') return unresolved ? t('chat:reviewStatus.needsCheck') : t('chat:reviewStatus.checking');
   if (state === 'executed') {
     const count = approval.appOutcome?.status === 'executed' ? approval.appOutcome.appliedOperationCount : approval.appReview?.affectedEntityCount ?? 0;
-    return `已修改 ${count} 个对象`;
+    return t('chat:reviewStatus.updated', { count });
   }
-  if (state === 'rejected') return '已取消，未修改数据';
-  if (state === 'failed' && approval.appOutcome?.status === 'failed' && approval.appOutcome.code === 'VERSION_CONFLICT') return '内容已变化，本次未修改';
-  if (state === 'failed') return '本次未修改';
-  if (state === 'superseded') return '已由新方案替代';
-  if (state === 'unreadable') return '无法读取这份历史方案';
-  return '此能力已移出内置 AI';
+  if (state === 'rejected') return t('chat:reviewStatus.cancelled');
+  if (state === 'failed' && approval.appOutcome?.status === 'failed' && approval.appOutcome.code === 'VERSION_CONFLICT') return t('chat:reviewStatus.conflict');
+  if (state === 'failed') return t('chat:reviewStatus.notModified');
+  if (state === 'superseded') return t('chat:reviewStatus.superseded');
+  if (state === 'unreadable') return t('chat:reviewStatus.unreadable');
+  return t('chat:reviewStatus.capabilityRemoved');
 }
 
 export function applyApprovalEvent(approvals: Approval[], event: SseEvent): Approval[] {

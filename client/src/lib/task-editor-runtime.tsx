@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react';
+import { t } from '../i18n/index.js';
 import { ApiError, API_URL, api, apiMutation, authHeaders } from './api.js';
 import { enqueueWrite } from './todo.js';
 import { normalizeApiBaseUrl, TaskDraftStore } from './task-draft-store.js';
@@ -163,7 +164,7 @@ function notifyUploads() {
 
 export function enqueueTaskUpload(taskId: string, file: File) {
   const uploadId = crypto.randomUUID();
-  uploads.set(uploadId, { taskId, uploadId, fileName: file.name || '图片', file, state: 'compressing' });
+  uploads.set(uploadId, { taskId, uploadId, fileName: file.name || t('app:taskImage.fallbackName'), file, state: 'compressing' });
   notifyUploads();
   return uploadId;
 }
@@ -192,7 +193,7 @@ export async function runTaskUpload(taskId: string, uploadId: string, file: File
   const attachmentBase64 = await fileToBase64(compressed.file);
   const saved = await apiMutation<{ url: string }>(`/api/tasks/${taskId}/images`, { method: 'POST', body: JSON.stringify({ attachmentBase64, mimeType: compressed.mimeType }) });
   const url = saved.data?.url;
-  if (!url) throw new ApiError('图片上传失败');
+  if (!url) throw new ApiError(t('app:taskImage.uploadFailed'));
   markUpload(uploadId, { state: 'done', url });
   return url;
 }

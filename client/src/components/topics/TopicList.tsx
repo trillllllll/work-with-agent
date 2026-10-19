@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Pencil, Plus, Settings } from 'lucide-react';
 import type { Topic } from '@/lib/api.js';
 import { cn } from '@/lib/utils.js';
@@ -25,8 +26,9 @@ function classificationLabelClass(active: boolean) {
 }
 
 function SidebarTopicList({ topics, loading, selectedTopicId, onSelect, onEdit }: TopicListProps) {
+  const { t } = useTranslation('settings');
   if (loading) return <div className="flex flex-col gap-1">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-8 w-full rounded-lg" />)}</div>;
-  if (!topics.length) return <p className="px-2 py-2 text-xs leading-relaxed text-muted-foreground">还没有清单，先创建一个。</p>;
+  if (!topics.length) return <p className="px-2 py-2 text-xs leading-relaxed text-muted-foreground">{t('topicList.empty')}</p>;
   return (
     <div className="sidebar-nav">
       {topics.map((topic) => {
@@ -36,9 +38,9 @@ function SidebarTopicList({ topics, loading, selectedTopicId, onSelect, onEdit }
             <button type="button" onClick={() => onSelect(topic.id)} aria-current={active ? 'page' : undefined} className="sidebar-link">
               <span className="sidebar-list-mark" data-color={topic.color || 'slate'} aria-hidden="true" />
               <span className="min-w-0 flex-1 truncate">{topic.name}</span>
-              {topic.isExploration && <em className="sidebar-explore-tag">探索</em>}
+              {topic.isExploration && <em className="sidebar-explore-tag">{t('topicList.exploring')}</em>}
             </button>
-            <button type="button" aria-label={`编辑清单：${topic.name}`} onClick={() => onEdit(topic)} className="sidebar-edit">
+            <button type="button" aria-label={t('topicList.editNamed', { name: topic.name })} onClick={() => onEdit(topic)} className="sidebar-edit">
               <Pencil className="size-3.5" strokeWidth={1.75} />
             </button>
           </div>
@@ -54,9 +56,10 @@ export function TopicList({ variant = 'page', ...props }: TopicListProps) {
 }
 
 function PageTopicList({ topics, loading, selectedTopicId, onSelect, onEdit, onOpenInbox, inboxActive = false, className }: TopicListProps) {
+  const { t } = useTranslation('settings');
   return (
     <div className={cn('sidebar-topic-list flex flex-col gap-1', className)}>
-      {onOpenInbox && <div data-active={inboxActive || undefined} className={classificationClass(inboxActive)}><button type="button" onClick={onOpenInbox} aria-current={inboxActive ? 'page' : undefined} className={classificationLabelClass(inboxActive)}><span className={cn('size-1.5 shrink-0 rounded-full transition-[background-color,box-shadow,transform] duration-200', inboxActive ? 'scale-110 bg-primary shadow-[0_0_0_3px_var(--accent)]' : 'bg-muted-foreground/40')} /><span className="truncate">收集箱</span></button></div>}
+      {onOpenInbox && <div data-active={inboxActive || undefined} className={classificationClass(inboxActive)}><button type="button" onClick={onOpenInbox} aria-current={inboxActive ? 'page' : undefined} className={classificationLabelClass(inboxActive)}><span className={cn('size-1.5 shrink-0 rounded-full transition-[background-color,box-shadow,transform] duration-200', inboxActive ? 'scale-110 bg-primary shadow-[0_0_0_3px_var(--accent)]' : 'bg-muted-foreground/40')} /><span className="truncate">{t('topicList.inbox')}</span></button></div>}
       {loading ? Array.from({ length: 5 }, (_, index) => <Skeleton key={index} className="h-9 w-full" />) : topics.length ? topics.map((topic) => {
         const active = topic.id === selectedTopicId;
         return (
@@ -64,14 +67,14 @@ function PageTopicList({ topics, loading, selectedTopicId, onSelect, onEdit, onO
             <button type="button" onClick={() => onSelect(topic.id)} aria-current={active ? 'page' : undefined} className={classificationLabelClass(active)}>
               <span className="list-color-dot" data-color={topic.color || 'slate'} aria-hidden="true" />
               <span className="truncate">{topic.name}</span>
-              {topic.isExploration && <em className="sidebar-explore-tag ml-auto">探索</em>}
+              {topic.isExploration && <em className="sidebar-explore-tag ml-auto">{t('topicList.exploring')}</em>}
             </button>
-            <button type="button" title="编辑清单" aria-label={`编辑清单：${topic.name}`} onClick={() => onEdit(topic)} className="mr-1 grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground opacity-100 transition-[background-color,color,opacity,transform] duration-200 hover:scale-105 hover:bg-[var(--glass-hover)] hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100">
+            <button type="button" title={t('topicList.edit')} aria-label={t('topicList.editNamed', { name: topic.name })} onClick={() => onEdit(topic)} className="mr-1 grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground opacity-100 transition-[background-color,color,opacity,transform] duration-200 hover:scale-105 hover:bg-[var(--glass-hover)] hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100">
               <Pencil className="size-3.5" />
             </button>
           </div>
         );
-      }) : <p className="rounded-xl border border-dashed border-[var(--glass-border)] px-3 py-4 text-xs leading-relaxed text-muted-foreground">还没有清单，先创建一个。</p>}
+      }) : <p className="rounded-xl border border-dashed border-[var(--glass-border)] px-3 py-4 text-xs leading-relaxed text-muted-foreground">{t('topicList.empty')}</p>}
     </div>
   );
 }
@@ -88,20 +91,21 @@ type TopicListPageProps = {
 };
 
 export function TopicListPage({ topics, topicsLoading, selectedTopicId, onSelectTopic, onNewTopic, onEditTopic, onOpenSettings, onOpenInbox }: TopicListPageProps) {
+  const { t } = useTranslation('settings');
   return (
     <div className="flex h-full flex-col bg-background/80">
       <header className="flex items-center justify-between gap-2 border-b glass-divider px-4 py-3.5">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight">清单</h1>
-          <p className="mt-0.5 text-xs text-muted-foreground">把相关任务放在一起</p>
+          <h1 className="text-lg font-semibold tracking-tight">{t('topicList.title')}</h1>
+          <p className="mt-0.5 text-xs text-muted-foreground">{t('topicList.subtitle')}</p>
         </div>
         <div className="flex items-center gap-1">
           <ThemeToggle />
-          <Button variant="ghost" size="icon" title="设置" aria-label="设置" onClick={onOpenSettings}><Settings /></Button>
+          <Button variant="ghost" size="icon" title={t('topicList.settings')} aria-label={t('topicList.settings')} onClick={onOpenSettings}><Settings /></Button>
         </div>
       </header>
       <div className="glass-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
-        <Button className="mb-3 w-full" onClick={onNewTopic}><Plus />新建清单</Button>
+        <Button className="mb-3 w-full" onClick={onNewTopic}><Plus />{t('topicList.newList')}</Button>
         <TopicList topics={topics} loading={topicsLoading} selectedTopicId={selectedTopicId} onSelect={onSelectTopic} onEdit={onEditTopic} onOpenInbox={onOpenInbox} />
       </div>
     </div>

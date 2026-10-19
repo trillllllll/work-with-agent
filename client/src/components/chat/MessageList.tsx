@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ArrowDown, Sparkles } from 'lucide-react';
 import { unplacedApprovals, type Approval, type ChatMessage } from '@/chat.js';
 import { Button } from '@/components/ui/button.js';
@@ -22,6 +23,7 @@ type MessageListProps = {
 };
 
 export function MessageList({ messages, approvals, approvalPending, executingApprovalId, unknownApprovalIds, unresolvedApprovalIds, phase, onApprove, onReject, onChanged, onRepreviewed }: MessageListProps) {
+  const { t } = useTranslation('chat');
   const scrollRef = useRef<HTMLDivElement>(null);
   const nearBottomRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
@@ -73,7 +75,7 @@ export function MessageList({ messages, approvals, approvalPending, executingApp
               <Sparkles className="size-5" />
             </div>
             <p className="mt-4 max-w-xs text-[13px] leading-relaxed text-muted-foreground">
-              告诉 Agent 你想推进什么。只读操作会直接执行，修改任务前会请求审核。
+              {t('messageList.empty')}
             </p>
           </div>
         )}
@@ -84,7 +86,7 @@ export function MessageList({ messages, approvals, approvalPending, executingApp
       </div>
       {showJump && (
         <Button size="sm" variant="secondary" className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full shadow-card" onClick={jumpToBottom}>
-          <ArrowDown />回到底部
+          <ArrowDown />{t('messageList.jumpToBottom')}
         </Button>
       )}
     </div>
