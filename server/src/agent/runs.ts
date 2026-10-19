@@ -21,6 +21,7 @@ import { appendRunEvent } from './events.js';
 import { builtinToolMessageId } from './ids.js';
 import { waitRuns } from './wake.js';
 import { TextBatcher } from './text-batcher.js';
+import { currentLocale } from '../i18n/index.js';
 
 const LEASE_MS = 120_000;
 const MODEL_TIMEOUT_MS = 90_000;
@@ -471,6 +472,8 @@ export async function startChat(input: { conversationId?: string; message: strin
     conversationId = (await prisma.conversation.create({ data: { createdAt: timestamp, updatedAt: timestamp } })).id;
   }
   const stored = await validateScopeAndResolveIds(requestedContext);
+  // The request's UI language (X-WWA-Language / Accept-Language) decides the reply language.
+  if (currentLocale() === 'en') stored.language = 'en';
   if (stored.referencedApprovalId) {
     if (!input.conversationId) throw new DomainError('INVALID_REFERENCE', '这份方案不属于当前会话', 400);
     const referenced = await prisma.approval.findUnique({ where: { id: stored.referencedApprovalId }, select: { conversationId: true } });

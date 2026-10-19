@@ -67,6 +67,9 @@ async function fixedNotes(context: StoredChatContext) {
   return notes.manualNotes.trim() || '（没有固定说明）';
 }
 
+// The prompts stay in Chinese; this only switches the language of the reply to the user's UI language.
+export const replyLanguageInstruction = '【回复语言 / Reply language】\nThe user\'s interface language is English. Write every reply, question, plan summary and explanation to the user in English, even though these instructions are in Chinese. Keep tool names, IDs, field names and quoted user data unchanged.';
+
 export async function assembleRunMessages(input: {
   runId: string;
   conversationId: string;
@@ -127,6 +130,7 @@ export async function assembleRunMessages(input: {
   const system = [
     builtinSystemPrompt(),
     appKnowledgePrompt(input.context.page),
+    ...(input.context.language === 'en' ? [replyLanguageInstruction] : []),
     `【页面筛选与选中任务】\n${JSON.stringify({ taskFilter: input.context.taskFilter, selectedTaskIds: input.context.selectedTaskIds })}`,
     ...(input.context.schemaVersion === 3 ? [
       `【页面快照】\n${JSON.stringify({ label: input.context.label, section: input.context.section, pageState: input.context.pageState, materialRevision: input.context.materialRevision, selectedMaterialIds: input.context.selectedMaterialIds })}`,

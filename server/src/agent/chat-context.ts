@@ -59,7 +59,8 @@ export const chatContextV3 = chatContextV2.extend({
 }).strict();
 export type ChatContextV3 = z.infer<typeof chatContextV3>;
 export type ChatAttachment = z.infer<typeof chatAttachment>;
-export type StoredChatContext = (ChatContextV2 | ChatContextV3) & { timeZoneSource: 'context' | 'default' };
+// `language` is the user's UI language when it is not the zh-CN default; the assistant replies in it.
+export type StoredChatContext = (ChatContextV2 | ChatContextV3) & { timeZoneSource: 'context' | 'default'; language?: 'en' };
 
 export function scopeFromLegacy(page: string | null | undefined, topicId: string | null | undefined): ChatContextV2['scope'] {
   const name = page?.trim() || '';

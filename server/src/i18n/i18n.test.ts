@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { app } from '../app.js';
 import { localeFromAcceptLanguage, localeFromRequest, runWithLocale, currentLocale, translateMessage, translatePayload } from './index.js';
 import { en } from './locales/en.js';
+import { assembleRunMessages, replyLanguageInstruction } from '../agent/assemble.js';
+import { startChat } from '../agent/runs.js';
+import { ContextService } from '../application/conversation.js';
 
 describe('server i18n', () => {
   it('prefers X-WWA-Language, then Accept-Language, then zh-CN', () => {
@@ -44,5 +47,18 @@ describe('server i18n', () => {
     expect(english.body).toMatchObject({ error: en['请先登录本机工作区'], code: 'AUTH_REQUIRED' });
     const browser = await supertest(app).get('/api/tasks/missing').set('Accept-Language', 'en-US,en;q=0.9');
     expect(browser.body.error).toBe(en['请先登录本机工作区']);
+  });
+
+  it('tells the assistant to reply in the UI language without rewriting the prompt', async () => {
+    const english = await runWithLocale('en', () => startChat({ message: 'Plan my week', pageContext: { page: 'inbox' }, requestKey: `i18n-en-${Date.now()}` }));
+    const chinese = await startChat({ message: '安排这周', pageContext: { page: 'inbox' }, requestKey: `i18n-zh-${Date.now()}` });
+    expect(JSON.parse(english.contextJson).language).toBe('en');
+    expect(JSON.parse(chinese.contextJson).language).toBeUndefined();
+    const system = async (run: typeof english) => (await assembleRunMessages({ runId: run.id, conversationId: run.conversationId, sourceUserMessageId: run.sourceUserMessageId, context: JSON.parse(run.contextJson), userText: '', contextService: new ContextService() }))[0].content as string;
+    const [en, zh] = await Promise.all([system(english), system(chinese)]);
+    expect(en).toContain(replyLanguageInstruction);
+    expect(zh).not.toContain(replyLanguageInstruction);
+    // The Chinese prompt itself is unchanged; only the instruction is added.
+    expect(en.startsWith(zh.slice(0, 200))).toBe(true);
   });
 });
