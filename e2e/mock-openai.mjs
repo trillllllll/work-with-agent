@@ -23,6 +23,50 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { model: body.model + '-actual', choices: [{ message: { role: 'assistant', content: JSON.stringify(output) }, finish_reason: 'stop' }], ...(body.model === 'mock-no-usage' ? {} : { usage: { prompt_tokens: 120, completion_tokens: 30, total_tokens: 150 } }) });
   }
   if (!body.stream) return json(res, 200, { choices: [{ message: { role: 'assistant', content: '连接成功' }, finish_reason: 'stop' }] });
+  if (latestUser.includes('可视化矩阵验收')) {
+    const provenance = { kind: 'simulated', label: '矩阵验收数据' };
+    const blocks = [
+      { type: 'text', markdown: '矩阵开始。' },
+      ...[
+        ['流程图', 'flowchart LR; A[开始] --> B[完成]'],
+        ['时序图', 'sequenceDiagram\n用户->>助手: 提问\n助手-->>用户: 回答'],
+        ['状态图', 'stateDiagram-v2\n[*] --> Active\nActive --> Done'],
+        ['类图', 'classDiagram\nclass Task {\n+String title\n}'],
+      ].map(([title, source]) => ({ type: 'mermaid', title, source })),
+      ...['line', 'bar'].map((kind) => ({ type: 'chart', title: kind, spec: { kind, title: kind, categories: ['一', '二'], series: [{ name: '数量', values: [2, 4] }], provenance } })),
+      { type: 'chart', title: 'pie', spec: { kind: 'pie', title: 'pie', values: [{ name: 'A', value: 2 }, { name: 'B', value: 3 }], provenance } },
+      { type: 'chart', title: 'scatter', spec: { kind: 'scatter', title: 'scatter', series: [{ name: '观测', values: [[1, 2], [3, 4]] }], provenance } },
+      { type: 'svg', title: '标准 SVG', source: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 80"><text x="10" y="40" fill="#668899">中文箭头</text></svg>' },
+      ...['single', 'grid', 'carousel'].map((layout) => ({ type: 'image_search', title: layout, searchId: 'fixture-authorized-search', resultIds: ['fixture-image-1', 'fixture-image-2'], layout })),
+      { type: 'svg', title: '恶意 SVG', source: '<svg onload="window.__unsafeExecuted=true"><script>alert(1)</script></svg>' },
+      { type: 'text', markdown: '矩阵结束。' },
+    ];
+    return stream(res, [{ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'matrix', function: { name: 'present_reply', arguments: JSON.stringify({ blocks }) } }] }, finish_reason: 'tool_calls' }] }]);
+  }
+  if (latestUser.includes('富媒体验收')) {
+    const blocks = [
+      { type: 'text', markdown: '文字流式前缀😀，这是第一段。' },
+      { type: 'mermaid', source: 'flowchart LR; A[输入] --> B[分析] --> C[结果]', title: '处理流程' },
+      { type: 'text', markdown: '中间说明，图形已经出现。' },
+      { type: 'svg', source: '<svg viewBox="0 0 240 100"><rect x="10" y="10" width="220" height="80" rx="12" fill="#49697b"/><text x="120" y="58" text-anchor="middle" fill="white" font-size="18">中文图示</text></svg>', title: 'SVG 图示' },
+      { type: 'image_search', searchId: 'unauthorized-fixture', resultIds: ['invented'], title: '图片失败占位' },
+      { type: 'chart', title: '每周完成', spec: { kind: 'bar', title: '每周完成', categories: ['周一', '周二', '周三'], series: [{ name: '完成', values: [3, 5, 4] }], provenance: { kind: 'simulated', label: '浏览器验收数据' } } },
+      { type: 'text', markdown: '最后一段，局部失败不影响其他内容。' },
+    ];
+    const args = JSON.stringify({ blocks });
+    const firstEnd = args.indexOf('文字流式前缀😀') + '文字流式前缀😀'.length;
+    const secondEnd = args.indexOf('中间说明') + '中间说明'.length;
+    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+    const emit = (argumentsDelta, first = false, done = false) => res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, ...(first ? { id: 'rich-presentation' } : {}), function: { ...(first ? { name: 'present_reply' } : {}), arguments: argumentsDelta } }] }, finish_reason: done ? 'tool_calls' : null }] })}\n\n`);
+    emit(args.slice(0, firstEnd), true);
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    if (res.destroyed) return;
+    emit(args.slice(firstEnd, secondEnd));
+    await new Promise((resolve) => setTimeout(resolve, latestUser.includes('停止') ? 5000 : 800));
+    if (res.destroyed) return;
+    emit(args.slice(secondEnd), false, true);
+    res.end('data: [DONE]\n\n'); return;
+  }
   const systemText = messages.filter((item) => item.role === 'system').map((item) => String(item.content ?? '')).join('\n');
   if (latestUser.startsWith('AI验收')) {
     const userIndex = messages.findLastIndex((item) => item.role === 'user');

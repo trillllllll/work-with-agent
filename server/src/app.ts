@@ -1,3 +1,4 @@
+import { imageSearchSettings, saveImageSearchKey } from './application/image-search-settings.js';
 import { resolveAssistantSource } from './agent/assistant-sources.js';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
@@ -167,6 +168,9 @@ const settingsBody = z.object({ baseUrl: z.string().trim().min(1), model: z.stri
 app.patch('/api/settings', schema(settingsBody), async (req, res, next) => {
   try { send(res, { ...await settings.save(req.body, (config) => agent.testConnection(config)), cli: await cliSettings() }); } catch (error) { next(error); }
 });
+app.get('/api/settings/image-search', async (_req, res, next) => { try { send(res, await imageSearchSettings()); } catch (error) { next(error); } });
+app.patch('/api/settings/image-search', schema(z.object({ apiKey: z.string().trim().min(1).max(1000) }).strict()), async (req, res, next) => { try { send(res, await saveImageSearchKey(req.body.apiKey)); } catch (error) { next(error); } });
+app.delete('/api/settings/image-search', async (_req, res, next) => { try { send(res, await saveImageSearchKey('')); } catch (error) { next(error); } });
 app.delete('/api/settings/api-key', async (_req, res, next) => { try { send(res, { ...await settings.clearApiKey(), cli: await cliSettings() }); } catch (error) { next(error); } });
 
 // 手机底栏配置独立于模型设置：不触发连接测试，也不复用 /api/settings 的表单。
@@ -216,7 +220,9 @@ app.post('/api/chat', schema(chatBody), async (req, res) => {
 });
 
 app.get('/api/v1/assistant/sources/:kind/:id', async (req, res, next) => { try { send(res, await resolveAssistantSource(String(req.params.kind), String(req.params.id), req.query.revision === undefined ? undefined : Number(req.query.revision))); } catch (error) { next(error); } });
+app.get('/api/conversations', async (req, res, next) => { try { send(res, await agent.conversationList(typeof req.query.cursor === 'string' ? req.query.cursor : undefined)); } catch (error) { next(error); } });
 app.get('/api/conversations/:id/messages', async (req, res, next) => { try { send(res, await agent.messages(String(req.params.id))); } catch (error) { next(error); } });
+app.get('/api/conversations/:id/snapshot', async (req, res, next) => { try { send(res, await agent.snapshot(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/conversations/:id/active-run', async (req, res, next) => { try { send(res, await agent.activeRun(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/agent/approvals', async (req, res, next) => { try { send(res, await agent.approvalList(typeof req.query.status === 'string' ? req.query.status : undefined)); } catch (error) { next(error); } });
 app.get('/api/agent/approvals/:id', async (req, res, next) => { try { send(res, await agent.getApproval(String(req.params.id))); } catch (error) { next(error); } });
@@ -225,6 +231,7 @@ app.post('/api/agent/approvals/:id/preview', async (req, res, next) => { try { s
 app.post('/api/agent/approvals/:id/reject', async (req, res, next) => { try { send(res, await agent.reject(String(req.params.id), req.body ?? {})); } catch (error) { next(error); } });
 app.post('/api/agent/approvals/:id/repreview', async (req, res, next) => { try { send(res, await agent.repreview(String(req.params.id), req.body ?? {})); } catch (error) { next(error); } });
 app.post('/api/agent/approvals/:id/undo-preview', async (req, res, next) => { try { send(res, await agent.prepareUndo(String(req.params.id))); } catch (error) { next(error); } });
+app.get('/api/agent/requests/:requestKey', async (req, res, next) => { try { const key = z.string().min(1).max(200).parse(req.params.requestKey); send(res, await agent.requestByKey(key)); } catch (error) { next(error); } });
 app.get('/api/agent/runs/:id', async (req, res, next) => { try { send(res, await agent.getRun(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/agent/runs/:id/events', async (req, res, next) => { try { send(res, await agent.listRunEvents(String(req.params.id), Number(req.query.after ?? 0) || 0)); } catch (error) { next(error); } });
 app.post('/api/agent/runs/:id/resume', async (req, res, next) => { try { send(res, await agent.resume(String(req.params.id))); } catch (error) { next(error); } });

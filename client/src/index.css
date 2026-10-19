@@ -2522,3 +2522,29 @@ textarea.task-title.line-through {
   }
   [data-testid="ai-assistant"] textarea { font-size: 16px; }
 }
+
+/* The same chat surface moves between hosts; its state and scroll DOM stay mounted. */
+[data-testid="ai-assistant"] { background: var(--background); }
+[data-testid="ai-assistant"][data-presentation="expanded"] .assistant-thread,
+[data-testid="ai-assistant"][data-presentation="direct"] .assistant-thread { width: min(100%, 760px); margin-inline: auto; padding-block: 20px; }
+[data-testid="ai-assistant"] .assistant-composer,
+[data-testid="ai-assistant"] .assistant-composer-context { width: min(100%, 792px); margin-inline: auto; }
+[data-testid="ai-assistant"][data-presentation="side"] .assistant-thread { padding-block: 6px; }
+.assistant-input-box { box-shadow: 0 2px 8px rgb(0 0 0 / 3%); }
+.review-heading { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.review-symbol { display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid var(--batch-border); border-radius: 10px; background: var(--batch-panel); flex-shrink: 0; }
+.review-kicker { display: block; color: var(--batch-muted); font-size: 10px; margin-bottom: 2px; }
+.review-heading .task-batch-title { margin: 0; font-size: 14px; }
+.review-overview { margin-top: 14px; padding: 12px; background: var(--batch-panel); border: 1px solid var(--batch-border); border-radius: 10px; }
+.review-overview h3 { font-weight: 600; font-size: 16px; margin-bottom: 8px; }
+.review-overview p { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; color: var(--batch-muted); font-size: 12px; margin-top: 5px; }
+.review-overview strong { color: var(--batch-text); font-weight: 500; }
+[data-state="executed"].task-batch-card { border-color: color-mix(in srgb, var(--batch-success-text) 25%, var(--batch-border)); }
+[data-state="executed"] .review-symbol { color: var(--batch-success-text); background: var(--batch-success-bg); }
+@media (max-width: 640px) { .assistant-header { gap: 3px; padding-inline: 10px; } .assistant-composer { padding-inline: 10px; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .streaming-caret::after {
+    animation: none;
+  }
+}

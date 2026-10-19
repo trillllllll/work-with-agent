@@ -1,7 +1,10 @@
+import { ReplyStream } from './reply-stream.js';
+import { resolveImages } from './image-search.js';
+import { parseMessageBlocks, projectBlocks } from './content-blocks.js';
 import { sourceReadTools, sourcesFromTool } from './assistant-sources.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import type { ChatEvent, ModelMessage, PageContext } from '../agent.js';
+import type { ChatEvent, ModelMessage, PageContext, ModelDelta } from '../agent.js';
 import { appendAutoMemoryAssistant, beginAutoMemoryTurn, completeAutoMemoryTurn, failAutoMemoryTurn } from '../application/auto-memory-chat.js';
 import { canonical } from '../application/commands.js';
 import { ContextService } from '../application/conversation.js';
@@ -37,13 +40,14 @@ export const runCursorSchema = z.object({
 });
 export type RunCursor = z.infer<typeof runCursorSchema>;
 
-export type ModelStream = (messages: ModelMessage[], signal?: AbortSignal, includeTools?: boolean) => AsyncIterable<{ text?: string; toolCalls?: ToolCall[] }>;
+export type ModelStream = (messages: ModelMessage[], signal?: AbortSignal, includeTools?: boolean) => AsyncIterable<ModelDelta>;
 
 const initialCursor = (): RunCursor => ({ schemaVersion: 1, phase: 'model', round: 0, budgetEndRound: 16, assistantMessageId: null, nextToolIndex: 0 });
 
 let slots = 0;
 const pending: Array<{ runId: string; stream: ModelStream; contextService: ContextService }> = [];
 const runningIds = new Set<string>();
+const activeModelControllers = new Map<string, AbortController>();
 const deferred = new Map<string, (typeof pending)[number]>();
 let ticking = false;
 let schedulerStream: ModelStream | null = null;
@@ -99,6 +103,10 @@ async function recordEvent(runId: string, token: string, data: ChatEvent) {
     const run = await tx.agentRun.findUnique({ where: { id: runId } });
     if (!run || run.leaseToken !== token || run.state !== 'running' || !run.leaseExpiresAt || run.leaseExpiresAt <= nowIso()) {
       throw new DomainError('LEASE_LOST', '这次请求已经失去执行权', 409);
+    }
+    if (data.type === 'message_delta' && !data.compatibilityProjection && data.messageId && data.delta) {
+      const message = await tx.message.findUniqueOrThrow({ where: { id: data.messageId } });
+      await tx.message.update({ where: { id: data.messageId }, data: { content: message.content + data.delta } });
     }
     await appendRunEvent(tx, runId, data.type, { ...data, conversationId: run.conversationId, runId });
   });
@@ -254,6 +262,10 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
   await saveCursor(runId, token, nextCursor);
   await recordEvent(runId, token, { type: 'message_start', conversationId: run.conversationId, messageId: assistant.id });
   const controller = new AbortController();
+  activeModelControllers.set(runId, controller);
+  let reply: ReplyStream | undefined;
+  let presentationIndex: number | undefined;
+  const partialCalls = new Map<number, { name: string; arguments: string }>();
   let timedOut = false;
   const timer = setTimeout(() => { timedOut = true; controller.abort(); }, MODEL_TIMEOUT_MS);
   timer.unref?.();
@@ -265,28 +277,53 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
   );
   try {
     for await (const chunk of stream(messages, controller.signal, true)) {
+      if (controller.signal.aborted) throw new DomainError('LEASE_LOST', '请求已停止', 409);
+      if (chunk.toolDelta) {
+        const delta = chunk.toolDelta;
+        const prior = partialCalls.get(delta.index);
+        const current = { name: delta.name, arguments: (prior?.arguments ?? '') + delta.argumentsDelta };
+        partialCalls.set(delta.index, current);
+        if (presentationIndex === delta.index && current.name !== 'present_reply') throw new Error('展示工具名称发生冲突');
+        if (current.name === 'present_reply') {
+          if (presentationIndex !== undefined && presentationIndex !== delta.index) throw new Error('一次只能提交一个富媒体回答');
+          if (!reply) {
+            presentationIndex = delta.index;
+            await batcher.finish();
+            reply = new ReplyStream(runId, token, run.conversationId, assistant.id, (searchId, ids) => resolveImages(run.conversationId, searchId, ids), () => controller.abort(), text);
+            await reply.write(current.arguments);
+          } else await reply.write(delta.argumentsDelta);
+        }
+      }
       if (chunk.text) {
+        if (reply) throw new Error('富媒体回答之后不能再追加另一份正文');
         text += chunk.text;
         await batcher.add(chunk.text);
       }
       if (chunk.toolCalls) calls.push(...chunk.toolCalls);
     }
     await batcher.finish();
+    if (reply) {
+      if (calls.length !== 1 || calls[0].name !== 'present_reply') throw new Error('富媒体回答必须单独提交；业务修改继续走原有审批');
+      text = await reply.finish();
+      await recordEvent(runId, token, { type: 'message_delta', messageId: assistant.id, delta: text, compatibilityProjection: true });
+      calls.length = 0;
+    } else if (calls.some((call) => call.name === 'present_reply')) throw new Error('当前模型没有提供工具参数增量，无法完成实时富媒体回答');
   } catch (error) {
     clearTimeout(timer);
     let failure = error;
-    try { await batcher.finish(); } catch (writeError) { failure = writeError; }
+    try { if (reply) text = await reply.fail('回复未完成'); await batcher.finish(); } catch (writeError) { failure = writeError; }
     try { await applyExecutorSideEffect(runId, token, assistant.id, { content: text, status: 'failed' }); }
     catch (leaseError) { if (!isLeaseLoss(leaseError)) throw leaseError; }
     if (timedOut) throw Object.assign(new Error('模型请求超时'), { code: 'MODEL_TIMEOUT' });
     throw failure;
   } finally {
     clearTimeout(timer);
+    if (activeModelControllers.get(runId) === controller) activeModelControllers.delete(runId);
   }
   calls.forEach((call, index) => { call.id ??= `call_${cursor.round}_${index}`; });
   await applyExecutorSideEffect(runId, token, assistant.id, { content: text, status: 'completed', toolCalls: calls.length ? JSON.stringify(calls.map((call) => ({ id: call.id, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.arguments ?? {}) } }))) : null });
   await appendAutoMemoryAssistant(run.sourceUserMessageId, assistant.id);
-  await recordEvent(runId, token, { type: 'message_end', conversationId: run.conversationId, messageId: assistant.id });
+  await recordEvent(runId, token, { type: 'message_end', conversationId: run.conversationId, messageId: assistant.id, status: 'completed' });
   const assistantMessage: ModelMessage = {
     role: 'assistant',
     content: text || null,
@@ -349,7 +386,7 @@ async function toolTurn(runId: string, token: string, contextService: ContextSer
         await appendRunEvent(tx, runId, 'sources', { type: 'sources', runId, conversationId: run.conversationId, messageId: assistantMessageId, sources: parts.flatMap((part) => part.sources ?? []) });
       });
     }
-    const content = JSON.stringify({ toolName: call.function.name, toolCallId: call.id, assistantMessageId, ...publicResult(result) });
+    const content = JSON.stringify({ toolName: call.function.name, toolCallId: call.id, sourceMessageId: builtinToolMessageId(runId, assistantMessageId, call.id), assistantMessageId, ...publicResult(result) });
     await writeToolRow(runId, run.conversationId, assistantMessageId, call.id, content);
     messages.push({ role: 'tool', tool_call_id: call.id, content });
     await saveMessages(runId, token, messages);
@@ -520,21 +557,33 @@ export async function resumeRun(runId: string, stream: ModelStream, contextServi
 }
 
 export async function stopRun(runId: string) {
-  return prisma.$transaction(async (tx) => {
+  const stopped = await prisma.$transaction(async (tx) => {
     const run = await tx.agentRun.findUnique({ where: { id: runId } });
     if (!run) throw new DomainError('NOT_FOUND', '请求不存在', 404);
     if (run.state !== 'queued' && run.state !== 'running' && run.state !== 'waiting_approval') throw new DomainError('RUN_NOT_STOPPABLE', '这个请求已经结束', 409);
     const timestamp = nowIso();
+    const cursor = readCursor(run.cursorJson);
+    if (cursor.assistantMessageId) {
+      const message = await tx.message.findUnique({ where: { id: cursor.assistantMessageId } });
+      const blocks = parseMessageBlocks(message?.blocksJson).map((block) => block.status === 'pending' ? { ...block, status: 'error' as const, error: '已停止，内容未完成' } : block);
+      if (blocks.length) await tx.message.update({ where: { id: cursor.assistantMessageId }, data: { blocksJson: JSON.stringify({ schemaVersion: 1, blocks }), content: projectBlocks(blocks), status: 'failed' } });
+    }
     await completeOpenAssistant(tx, run.cursorJson);
     await tx.agentRun.update({ where: { id: run.id }, data: { state: 'paused', pauseReason: 'user_stopped', leaseToken: null, leaseExpiresAt: null, updatedAt: timestamp } });
     await appendRunEvent(tx, run.id, 'run_state', { type: 'run_state', runId: run.id, conversationId: run.conversationId, state: 'paused', pauseReason: 'user_stopped', message: '已暂停后续处理' });
     return run;
   });
+  activeModelControllers.get(runId)?.abort();
+  return stopped;
 }
 
 export async function applyExecutorSideEffect(runId: string, token: string, messageId: string, data: { content: string; status?: 'streaming' | 'completed' | 'failed'; toolCalls?: string | null }) {
-  await ownsLease(runId, token);
-  await prisma.message.update({ where: { id: messageId }, data });
+  await prisma.$transaction(async (tx) => {
+    const run = await tx.agentRun.findUnique({ where: { id: runId } });
+    const conversation = run ? await tx.conversation.findUnique({ where: { id: run.conversationId }, select: { activeRunId: true } }) : null;
+    if (!run || run.leaseToken !== token || run.state !== 'running' || !run.leaseExpiresAt || run.leaseExpiresAt <= nowIso() || conversation?.activeRunId !== runId) throw new DomainError('LEASE_LOST', '这次请求已经失去执行权', 409);
+    await tx.message.update({ where: { id: messageId }, data });
+  });
 }
 
 async function pauseExpiredRuns() {

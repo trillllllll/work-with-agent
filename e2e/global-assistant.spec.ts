@@ -35,12 +35,16 @@ test('all pages share one assistant; workspace modal, shortcuts, sources and his
   expect(second.conversationId).toBeTruthy();
   expect(second.context.pageState.dateFrom).toBeTruthy();
   expect(second.context.taskFilter.scheduledFrom).toBe(second.context.pageState.dateFrom);
-  await panel(page).getByRole('button', { name: '固定当前上下文', exact: true }).click();
+  await panel(page).getByTestId('assistant-context-trigger').click();
+  await page.getByRole('button', { name: '固定当前上下文', exact: true }).click();
+  await panel(page).getByTestId('assistant-context-trigger').click();
   await page.evaluate(() => { location.hash = '/settings'; });
   await expect(panel(page)).toBeVisible();
   const fixed = await ask(page, 'AI验收固定规划');
   expect(fixed.context.page).toBe('plan');
-  await panel(page).getByRole('button', { name: '跟随页面', exact: true }).click();
+  await panel(page).getByTestId('assistant-context-trigger').click();
+  await page.getByRole('button', { name: '跟随页面', exact: true }).click();
+  await panel(page).getByTestId('assistant-context-trigger').click();
   const settings = await ask(page, 'AI验收设置');
   expect(settings.context.page).toBe('settings');
   if (isMobile) { const box = await panel(page).boundingBox(); expect(box!.x).toBeGreaterThanOrEqual(0); expect(box!.y).toBeGreaterThanOrEqual(0); expect((await page.locator('.assistant-workspace-open').boundingBox())!.width).toBe(page.viewportSize()!.width); await page.screenshot({ path: '/tmp/wwa-ai-mobile-settings.png' }); }

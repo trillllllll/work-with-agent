@@ -1,10 +1,13 @@
+import { MessageBlocks } from './MessageBlocks.js';
 import { ContextSummary } from './ContextSummary.js';
 import { SourceLinks } from './SourceLinks.js';
 import { useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Copy } from 'lucide-react';
 import type { Approval, ChatMessage, ToolActivity } from '@/chat.js';
 import { approvalsOnMessage, groupToolActivities, isReadOnlyTool } from '@/chat.js';
 import { toolLabels } from '@/lib/api.js';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button.js';
 import { cn } from '@/lib/utils.js';
 import { ApprovalCard } from './ApprovalCard.js';
 import { ExternalPromptCard } from './ExternalPromptCard.js';
@@ -98,13 +101,13 @@ export function MessageItem({ message, approvals = [], approvalPending = false, 
   const content = message.content || (streaming ? '正在输出…' : '');
   const approvalFor = (activity: ToolActivity) => approvals.find((item) => item.approvalId === activity.approvalId || item.toolCallId === activity.toolCallId);
   const groups = groupToolActivities(message.tools ?? []);
-  if (role === 'assistant' && !content && !failed && groups.length === 0 && !message.parts?.length) return null;
+  if (role === 'assistant' && !content && !failed && groups.length === 0 && !message.parts?.length && !message.blocks?.length) return null;
 
   return (
     <div
       className={cn(
         'rounded-xl px-3 py-2.5',
-        role === 'user' && 'border-2 border-primary/60 bg-primary/[0.08]',
+        role === 'user' && 'ml-auto max-w-[90%] rounded-2xl bg-muted/70',
         failed && 'border-2 border-destructive/50 bg-destructive/10',
         role === 'system' && 'bg-transparent px-1 py-1.5'
       )}
@@ -114,7 +117,7 @@ export function MessageItem({ message, approvals = [], approvalPending = false, 
           {label}{failed ? '（输出失败）' : ''}
         </span>
       )}
-      {content && (role === 'system' && !streaming ? (
+      {message.blocks?.length ? <MessageBlocks blocks={message.blocks} /> : content && (role === 'system' && !streaming ? (
         looksLikeJson(content) ? (
           <pre className="glass-subtle overflow-x-auto rounded-lg p-2.5 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap">{content}</pre>
         ) : (
@@ -125,6 +128,7 @@ export function MessageItem({ message, approvals = [], approvalPending = false, 
       ) : (
         <MarkdownView content={content} />
       ))}
+      {message.role === 'assistant' && content && !streaming && <Button variant="ghost" size="icon-xs" className="mt-2 text-muted-foreground" aria-label="复制回复" onClick={() => void navigator.clipboard.writeText(message.content).then(() => toast.success('已复制回复'), () => toast.error('复制失败'))}><Copy /></Button>}
       {message.role === 'user' && <ContextSummary context={message.context} />}
       <SourceLinks sources={message.sources ?? []} />
       {groups.length > 0 && (

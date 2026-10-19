@@ -20,6 +20,7 @@ services:
       WWA_PUBLIC_HTTPS: 1
       CLIENT_ORIGIN: ${WWA_PUBLIC_URL}
       TZ: ${TZ:-Asia/Shanghai}
+      BRAVE_IMAGE_SEARCH_KEY: ${BRAVE_IMAGE_SEARCH_KEY:-}
     ports:
       # Only nginx (or your reverse proxy) on this host talks to the container.
       - "127.0.0.1:12716:3016"

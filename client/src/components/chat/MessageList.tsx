@@ -66,7 +66,7 @@ export function MessageList({ messages, approvals, approvalPending, executingApp
 
   return (
     <div className="relative min-h-0 flex-1">
-      <div ref={scrollRef} onScroll={handleScroll} className="glass-scrollbar h-full overflow-y-auto overscroll-contain px-3 py-3">
+      <div data-chat-scroll ref={scrollRef} onScroll={handleScroll} className="glass-scrollbar h-full overflow-y-auto overscroll-contain px-3 py-3">
         {!messages.length && !approvals.length && (
           <div className="flex flex-col items-center px-6 py-16 text-center">
             <div className="glass-subtle grid size-12 place-items-center rounded-2xl border-primary/15 text-primary">
@@ -77,7 +77,7 @@ export function MessageList({ messages, approvals, approvalPending, executingApp
             </p>
           </div>
         )}
-        <div className="flex flex-col gap-2.5">
+        <div className="assistant-thread flex flex-col gap-5">
           {messages.map((message, index) => <MessageItem key={`${message.id ?? index}-${index}`} message={message} approvals={approvals} approvalPending={approvalPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} unresolvedApprovalIds={unresolvedApprovalIds} phase={phase} onApprove={onApprove} onReject={onReject} onChanged={onChanged} onRepreviewed={onRepreviewed} />)}
           {unplacedApprovals(messages, approvals).filter((approval) => isTaskBatchApproval(approval) || isAppChangeApproval(approval) || !approval.status || approval.status === 'pending').map((approval) => isAppChangeApproval(approval) ? <ReviewCard key={approval.approvalId} approval={approval} phase={approval.approvalId === executingApprovalId ? phase : ''} unknown={unknownApprovalIds.includes(approval.approvalId)} unresolved={unresolvedApprovalIds.includes(approval.approvalId)} onApprove={onApprove} onReject={onReject} onChanged={onChanged} onRepreviewed={onRepreviewed} /> : isTaskBatchApproval(approval) ? <TaskBatchCard key={approval.approvalId} approval={approval} executing={approval.approvalId === executingApprovalId} unknown={unknownApprovalIds.includes(approval.approvalId)} onApprove={onApprove} onReject={onReject} /> : <ApprovalCard key={approval.approvalId} approval={approval} pending={approvalPending} onApprove={onApprove} onReject={onReject} />)}
         </div>

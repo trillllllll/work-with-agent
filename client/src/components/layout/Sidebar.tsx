@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { ChevronDown, Ellipsis, Inbox, Plus, type LucideIcon } from 'lucide-react';
 import type { Topic, View } from '@/lib/api.js';
-import { navigationItems } from '@/lib/navigation-items.js';
+import { chatItem, navigationItems } from '@/lib/navigation-items.js';
 import { TopicList } from '@/components/topics/TopicList.js';
 import { BrandMark } from '@/components/layout/BrandMark.js';
 import { ThemeToggle } from '@/components/layout/ThemeToggle.js';
@@ -46,7 +46,7 @@ export function Sidebar({ compact, route, page, topics, topicsLoading, selectedT
   const planning = page === 'plan';
   if (compact) return <aside className="app-sidebar assistant-compact-nav" style={{ gridColumn: 1, gridRow: '1 / 3' }}>
     <div className="flex justify-center py-3"><ThemeToggle /></div>
-    <nav aria-label="主导航" className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto">{navigationItems.map(({ view, label, icon: Icon }) => <button key={view} type="button" title={label} aria-label={label} aria-current={route === view ? 'page' : undefined} className="grid size-10 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => onNavigate(view)}><Icon className="size-4" /></button>)}</nav>
+    <nav aria-label="主导航" className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto">{[...navigationItems, { ...chatItem, label: 'AI 助手' }].map(({ view, label, icon: Icon }) => <button key={view} type="button" title={label} aria-label={label} aria-current={route === view ? 'page' : undefined} className="grid size-10 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => onNavigate(view)}><Icon className="size-4" /></button>)}</nav>
   </aside>;
   return (
     <aside className={`app-sidebar${planning ? ' planning-sidebar' : ''}`} style={{ gridColumn: 1, gridRow: "1 / 3" }}>
@@ -56,7 +56,7 @@ export function Sidebar({ compact, route, page, topics, topicsLoading, selectedT
       </div>
       <div className="sidebar-scroll glass-scrollbar">
         <nav aria-label="主导航" className="sidebar-nav">
-          {links(['today', 'plan', 'focus', 'search']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}
+          {[...links(['today', 'plan', 'focus', 'search']), { ...chatItem, label: 'AI 助手' }].map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}
         </nav>
         <SidebarSection label="清单" action={<button type="button" className="sidebar-add" aria-label="新建清单" onClick={onNewTopic}><Plus aria-hidden="true" className="size-3.5" strokeWidth={1.75} /></button>} />
         <nav aria-label="清单" className="sidebar-nav">

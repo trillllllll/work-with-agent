@@ -1,7 +1,8 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 
 
@@ -17,6 +18,15 @@ let remoteData;
 let child;
 let proxy;
 try {
+  // Exercise the assembled dependency graph, which may differ from the workspace's node_modules.
+  const sanitizerUrl = pathToFileURL(resolve(serverDir, 'dist/agent/svg-sanitize.js')).href;
+  execFileSync(nodeBinary, ['--input-type=module', '-e', `
+    import { sanitizeSvg } from ${JSON.stringify(sanitizerUrl)};
+    if (!sanitizeSvg('<svg><text>桌面 SVG</text></svg>').includes('桌面 SVG')) process.exit(1);
+    let rejected = false;
+    try { sanitizeSvg('<svg><g></svg>'); } catch { rejected = true; }
+    if (!rejected) throw new Error('打包 XML 依赖未严格拒绝格式错误的 SVG');
+  `], { cwd: serverDir, stdio: 'pipe' });
   child = start();
   const firstToken = await readyToken(child);
   const page = await fetch(`${origin}/`);
@@ -26,6 +36,17 @@ try {
   const mcp = await fetch(`${origin}/mcp`, { method: 'POST' });
   if (mcp.status !== 401) throw new Error(`未授权的 MCP 请求应被拒绝，实际是 ${mcp.status}`);
   const first = await login({ bootstrapToken: firstToken });
+  const imageSettings = await api(first, '/api/settings/image-search');
+  const imageConfig = (await imageSettings.json()).data;
+  if (!imageSettings.ok || imageConfig?.provider !== 'brave') throw new Error('桌面运行时没有提供 Brave 图片搜索设置');
+  if (imageConfig.managedBy !== 'environment') {
+    const testKey = 'desktop-smoke-brave-test-key-9876';
+    const savedImageKey = await api(first, '/api/settings/image-search', { method: 'PATCH', body: JSON.stringify({ apiKey: testKey }) });
+    const savedImageBody = await savedImageKey.text();
+    if (!savedImageKey.ok || savedImageBody.includes(testKey) || !JSON.parse(savedImageBody).data.configured) throw new Error('桌面运行时保存图片密钥失败或返回了明文');
+    const clearedImageKey = await api(first, '/api/settings/image-search', { method: 'DELETE' });
+    if (!clearedImageKey.ok || (await clearedImageKey.json()).data.configured) throw new Error('桌面运行时未能清除图片密钥');
+  }
   const created = await api(first, '/api/tasks', { method: 'POST', body: JSON.stringify({ title: '桌面冒烟任务' }) });
   if (!created.ok) throw new Error(`创建任务失败：${created.status} ${await created.text()}`);
   const connection = await api(first, '/api/v1/connections', { method: 'POST', body: JSON.stringify({ name: 'smoke', host: 'claude' }) });

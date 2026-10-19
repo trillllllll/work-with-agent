@@ -116,7 +116,7 @@ export async function streamChat(body: unknown, onEvent: (event: SseEvent) => vo
   const response = await fetch(`${API_URL}/api/chat`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', ...authHeaders() }, body: JSON.stringify(body) });
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
-    throw new Error(typeof payload?.error === 'string' ? payload.error : '聊天请求失败');
+    throw new ApiError(typeof payload?.error === 'string' ? payload.error : payload?.error?.message ?? '聊天请求失败', payload?.code ?? payload?.error?.code, response.status);
   }
   options?.onAccepted?.();
   if (!response.body) throw new Error('聊天连接没有响应体');

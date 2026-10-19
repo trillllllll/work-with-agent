@@ -1,3 +1,5 @@
+import { projectBlocks } from '../../server/src/agent/content-projection.js';
+import type { ContentBlock } from './lib/message-blocks.js';
 import type { ChatContextV2, ChatContextV3 } from '../../server/src/agent/chat-context.js';
 import type { AssistantSource } from '../../server/src/agent/assistant-sources.js';
 import type { AppOutcome, AppReview, BatchOutcome, TaskBatchPreview } from '../../server/src/domain/task-batch-types.js';
@@ -13,6 +15,9 @@ export type ExternalPromptPart = {
 };
 
 export type ChatMessage = {
+  blocks?: ContentBlock[];
+  blocksJson?: string | null;
+  needsSnapshot?: boolean;
   context?: ChatContextV2 | ChatContextV3 | null;
   sources?: AssistantSource[];
   id?: string;
@@ -65,6 +70,13 @@ export type Approval = {
 export type ToolResult = { success: boolean; data?: unknown; error?: string; code?: string };
 
 export type SseEvent = {
+  blockId?: string;
+  blockType?: ContentBlock['type'];
+  index?: number;
+  block?: ContentBlock;
+  offset?: number;
+  compatibilityProjection?: boolean;
+  status?: 'completed' | 'failed';
   context?: ChatContextV2 | ChatContextV3;
   sources?: AssistantSource[];
   type: string;
@@ -91,7 +103,7 @@ export type SseEvent = {
   supersedesApprovalId?: string;
 };
 
-const READ_ONLY_TOOLS = new Set(['read_app_knowledge', 'read_page_state', 'list_topics', 'get_topic', 'get_topic_progress', 'list_tasks', 'get_task', 'conversation_search', 'get_time', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'get_change_schema']);
+const READ_ONLY_TOOLS = new Set(['image_search', 'present_reply', 'read_app_knowledge', 'read_page_state', 'list_topics', 'get_topic', 'get_topic_progress', 'list_tasks', 'get_task', 'conversation_search', 'get_time', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'get_change_schema']);
 const PREVIEW_MAX = 80;
 
 const LIBRARY_READS = new Set(['list', 'search', 'read', 'content', 'linked_tasks', 'task_materials', 'folders', 'tags', 'ask']);
@@ -379,6 +391,32 @@ export function applyMessageEvent(messages: ChatMessage[], event: SseEvent): Cha
     const index = found >= 0 ? found : messages.reduce((last, item, index) => item.role === 'user' && !item.id ? index : last, -1);
     return messages.map((item, itemIndex) => itemIndex === index ? { ...item, id: event.messageId, context: event.context } : item);
   }
+  if (event.type.startsWith('block_') && event.messageId && event.blockId) {
+    return messages.map((message) => {
+      if (message.id !== event.messageId) return message;
+      const blocks = [...(message.blocks ?? [])];
+      const position = blocks.findIndex((block) => block.id === event.blockId);
+      const current = blocks[position];
+      if (event.type === 'block_start') {
+        if (current) return message;
+        blocks.push({ id: event.blockId!, index: event.index ?? blocks.length, type: event.blockType ?? 'pending', status: 'pending' });
+      } else if (event.type === 'block_commit' && event.block) {
+        if (position < 0) blocks.push(event.block); else blocks[position] = event.block;
+      } else if (event.type === 'block_delta') {
+        if (!current) return { ...message, needsSnapshot: true };
+        if (current.status !== 'pending') return message;
+        const text = current.markdown ?? ''; const offset = event.offset ?? -1; const delta = event.delta ?? '';
+        if (offset < text.length && text.slice(offset, offset + delta.length) === delta) return message;
+        if (offset !== text.length) return { ...message, needsSnapshot: true };
+        blocks[position] = { ...current, type: 'text', markdown: text + delta };
+      } else if (event.type === 'block_error') {
+        if (!current) return { ...message, needsSnapshot: true };
+        blocks[position] = { ...current, status: 'error', error: event.message || '内容未完成' };
+      }
+      blocks.sort((a, b) => a.index - b.index);
+      return { ...message, blocks, content: projectBlocks(blocks) };
+    });
+  }
   if (event.type === 'message_start') {
     const index = event.messageId ? messages.findIndex((item) => item.id === event.messageId) : -1;
     if (index >= 0) return messages;
@@ -388,9 +426,9 @@ export function applyMessageEvent(messages: ChatMessage[], event: SseEvent): Cha
     const index = event.messageId ? messages.findIndex((item) => item.id === event.messageId) : messages.length - 1;
     if (index < 0 || messages[index].role !== 'assistant') return messages;
     if (messages[index].status === 'completed' || messages[index].status === 'failed') return messages;
-    return messages.map((item, itemIndex) => itemIndex === index ? { ...item, content: item.content + (event.delta ?? ''), status: 'streaming' } : item);
+    return messages.map((item, itemIndex) => itemIndex === index ? { ...item, content: event.compatibilityProjection ? event.delta ?? '' : item.content + (event.delta ?? ''), status: 'streaming' } : item);
   }
-  if (event.type === 'message_end') return messages.map((item) => item.id === event.messageId ? { ...item, status: 'completed' } : item);
+  if (event.type === 'message_end') return messages.map((item) => item.id === event.messageId ? { ...item, status: event.status === 'failed' ? 'failed' : 'completed' } : item);
   if (event.type === 'tool_call' && event.toolCallId && event.toolName) {
     const args = event.arguments ?? {};
     const created: ToolActivity = { toolCallId: event.toolCallId, name: event.toolName, arguments: args, status: 'running', preview: toolPreview(event.toolName, args, undefined, 'running') };

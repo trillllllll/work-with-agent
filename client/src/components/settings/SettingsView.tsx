@@ -1,3 +1,4 @@
+import { ImageSearchSettings } from './ImageSearchSettings.js';
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -106,6 +107,7 @@ export function SettingsView({ onBack }: { onBack?: () => void }) {
 
       {!settingsQuery.isError && (
         <>
+          <ImageSearchSettings />
           <CliCommands settings={settingsQuery.data} />
 
           <BackupSection />

@@ -10,6 +10,11 @@ async function post(request: APIRequestContext, path: string, data: unknown) {
   return (await response.json()).data;
 }
 
+async function expandChanges(card: Locator) {
+  const toggle = card.getByRole('button', { name: /^全部修改/ });
+  if (await toggle.count()) await toggle.click();
+}
+
 async function openChat(page: Page) {
   if (!(await page.getByPlaceholder(composer).isVisible())) await page.getByRole('button', { name: '打开聊天', exact: true }).click();
 }
@@ -37,6 +42,7 @@ async function cardStyle(card: Locator) {
 }
 
 async function expectDiffLayout(card: Locator) {
+  await expandChanges(card);
   await expect.poll(async () => card.locator('.review-diff').first().evaluate((el) => {
     const host = el.closest('.task-batch-card');
     const spans = [...el.children] as HTMLElement[];
@@ -73,6 +79,7 @@ test('确认安排修改后留在原页面，刷新仍是已完成卡片', async
   const card = page.getByTestId('approval-card');
   await expect(card).toHaveCount(1);
   await expect(card).toHaveAttribute('data-state', 'pending');
+  await expandChanges(card);
   await expect(card.getByTestId('approval-impact')).toContainText('2026-10-16');
   await expect(card.getByTestId('approval-related')).toContainText('关联对象 0 项');
   await expect(card.getByRole('button', { name: '确认修改', exact: true })).toBeEnabled();
@@ -93,6 +100,7 @@ test('确认安排修改后留在原页面，刷新仍是已完成卡片', async
   await page.goto('/');
   await openChat(page);
   await expect(card).toHaveAttribute('data-state', 'pending');
+  await expandChanges(card);
 
   const urlBeforeApprove = page.url();
   await card.getByRole('button', { name: '确认修改', exact: true }).click();
@@ -126,6 +134,7 @@ test('深色审批卡使用约定颜色', async ({ page, isMobile, request }) =>
   await ask(page, '把安排改到2026-10-16');
   const card = page.getByTestId('approval-card');
   await expect(card).toHaveAttribute('data-state', 'pending');
+  await expandChanges(card);
   await expect(card.getByTestId('approval-impact')).toContainText('2026-10-16');
   const colors = await cardStyle(card);
   expect(colors.background).toBe('rgb(23, 23, 23)');
@@ -141,6 +150,7 @@ test('窄屏前后对比上下排列，主按钮独占一行', async ({ page, is
   await ask(page, '把安排改到2026-10-16');
   const card = page.getByTestId('approval-card');
   await expect(card).toHaveAttribute('data-state', 'pending');
+  await expandChanges(card);
   await expect(card.getByTestId('approval-impact')).toContainText('2026-10-16');
   const confirm = card.getByRole('button', { name: '确认修改', exact: true });
   await confirm.scrollIntoViewIfNeeded();
@@ -159,6 +169,7 @@ test('键盘从取消两次跳到确认修改', async ({ page, isMobile, request
   await ask(page, '把安排改到2026-10-16');
   const card = page.getByTestId('approval-card');
   await expect(card).toHaveAttribute('data-state', 'pending');
+  await expandChanges(card);
   await card.getByRole('button', { name: '取消', exact: true }).focus();
   await page.keyboard.press('Tab');
   await page.keyboard.press('Tab');
