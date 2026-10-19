@@ -109,6 +109,11 @@ export function SettingsView({ onBack }: { onBack?: () => void }) {
       {!settingsQuery.isError && (
         <>
           <ImageSearchSettings />
+          <section className="mt-10 border-t glass-divider pt-6">
+            <h2 className="text-lg font-semibold">技能</h2>
+            <p className="mt-1 text-sm text-muted-foreground">新建、导入和管理 AI 助手的技能。</p>
+            <Button variant="outline" className="mt-3" onClick={() => { window.location.hash = '/skills'; }}>管理技能 →</Button>
+          </section>
           <CliCommands settings={settingsQuery.data} />
           <OrchestrationSettings />
 

@@ -180,8 +180,12 @@ function autoActions(command: Command) {
 function canApply(actor: Actor, commands: Command[]) {
   return actor.kind === 'user' || actor.kind === 'connection' && commands.every((command) => !requireHandler(command).forceProposal && autoActions(command).length > 0 && autoActions(command).every((action) => actor.autoActions.includes(action)));
 }
+function assertSkillAvailable(actor: Actor, command: Command) {
+  if (actor.kind === 'connection' && command.kind.startsWith('skill.')) throw new DomainError('CAPABILITY_UNAVAILABLE', '内置 AI 不支持此操作。可以整理成提示词交给具备对应能力的工具。', 400);
+}
 export async function executeInTransaction(tx: Db, actor: Actor, command: Command, context: Partial<MutationContext> = {}) {
   const handler = requireHandler(command);
+  assertSkillAvailable(actor, command);
   if (handler.ownerOnly) assertOwner(actor);
   await handler.inspect(tx, actor, command);
   if (command.evidence?.length) {
@@ -354,6 +358,7 @@ async function executeBatch(tx: Db, actor: Actor, commands: Command[], proposalI
   const source = attribution?.source ?? (actor.kind === 'user' ? 'user' : 'agent');
   for (const command of commands) {
     const effective = await commandForBatch(tx, command, batch);
+    assertSkillAvailable(actor, effective);
     results.push(await requireHandler(effective).execute(tx, actor, effective, { ...audit, source, actor: recordedActor, approvedByActorId: attribution?.approvedByActorId, db: tx, proposalId, entityId: effective.entityId, auditRecords: changes }));
   }
   let changeId = changes[0]?.id;
@@ -387,6 +392,7 @@ async function inspectBatch(tx: Db, actor: Actor, commands: Command[], batch?: B
     for (const [index, command] of commands.entries()) {
       const effective = await commandForBatch(tx, command, batch);
       const handler = requireHandler(effective);
+      assertSkillAvailable(actor, effective);
       if (handler.ownerOnly) assertOwner(actor);
       const inspected = await handler.inspect(tx, actor, effective);
       const evidence = evidenceReadsets[index];
@@ -587,7 +593,7 @@ export class CommandService {
 const service = new CommandService();
 const send = (res: any, data: unknown) => res.json({ data, error: null });
 export const commandsRouter = Router();
-commandsRouter.get('/tools', (_req, res) => send(res, [...handlers].map(([kind, handler]) => ({ kind, ownerOnly: handler.ownerOnly ?? false, forceProposal: handler.forceProposal ?? false, ...commandDescriptor(kind), ...(handler.inputSchema ? { input: handler.inputSchema } : {}), ...(handler.description ? { description: handler.description } : {}) }))));
+commandsRouter.get('/tools', (_req, res) => send(res, [...handlers].filter(([kind]) => !kind.startsWith('skill.')).map(([kind, handler]) => ({ kind, ownerOnly: handler.ownerOnly ?? false, forceProposal: handler.forceProposal ?? false, ...commandDescriptor(kind), ...(handler.inputSchema ? { input: handler.inputSchema } : {}), ...(handler.description ? { description: handler.description } : {}) }))));
 commandsRouter.post('/commands', async (req, res, next) => { try { send(res, await service.submit(getActor(req), req.body)); } catch (error) { next(error); } });
 commandsRouter.post('/commands/preview', async (req, res, next) => { try { send(res, await service.preview(getActor(req), req.body)); } catch (error) { next(error); } });
 commandsRouter.get('/proposals', async (req, res, next) => { try { send(res, await service.list(getActor(req), typeof req.query.status === 'string' ? req.query.status : undefined)); } catch (error) { next(error); } });

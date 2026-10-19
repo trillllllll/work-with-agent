@@ -62,7 +62,7 @@ function serializeToolCalls(calls: ToolCall[]) {
 }
 export type ModelToolDelta = { index: number; id: string; name: string; argumentsDelta: string };
 export type ModelDelta = { text?: string; toolCalls?: ToolCall[]; toolDelta?: ModelToolDelta };
-type ModelToolDefinition = { type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } };
+export type ModelToolDefinition = { type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } };
 
 const modelError = (message: string, code = 'MODEL_ERROR') => Object.assign(new Error(message), { code });
 
@@ -71,12 +71,12 @@ export class ModelAdapter {
 
   private endpoint(config: ModelConfig) { return `${config.baseUrl.replace(/\/$/, '')}/chat/completions`; }
 
-  private async request(config: ModelConfig, messages: ModelMessage[], includeTools: boolean, stream: boolean, signal?: AbortSignal) {
+  private async request(config: ModelConfig, messages: ModelMessage[], includeTools: boolean, stream: boolean, signal?: AbortSignal, tools?: ModelToolDefinition[]) {
     const response = await fetch(this.endpoint(config), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
       signal,
-      body: JSON.stringify({ model: config.model, messages, ...(includeTools ? { tools: this.toolDefinitions(), tool_choice: 'auto' } : {}), stream }),
+      body: JSON.stringify({ model: config.model, messages, ...(includeTools ? { tools: tools ?? this.toolDefinitions(), tool_choice: 'auto' } : {}), stream }),
     });
     if (!response.ok) throw modelError(`模型服务错误：${response.status}`, 'MODEL_HTTP_ERROR');
     return response;
@@ -88,10 +88,10 @@ export class ModelAdapter {
     if (!payload?.choices?.[0]) throw modelError('模型服务返回了无效的连接测试结果', 'MODEL_INVALID_RESPONSE');
   }
 
-  async *stream(messages: ModelMessage[], signal?: AbortSignal, includeTools = true): AsyncGenerator<ModelDelta> {
+  async *stream(messages: ModelMessage[], signal?: AbortSignal, includeTools = true, tools?: ModelToolDefinition[]): AsyncGenerator<ModelDelta> {
     const config = await this.settings.credentials();
     if (!config) throw modelError('未配置模型服务，请先在设置页填写接口地址、API Key 和模型名称', 'MODEL_NOT_CONFIGURED');
-    const response = await this.request(config, messages, includeTools, true, signal);
+    const response = await this.request(config, messages, includeTools, true, signal, tools);
     if (!response.body) throw modelError('模型服务没有返回流', 'MODEL_EMPTY_STREAM');
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -155,10 +155,10 @@ export class ModelAdapter {
     if (calls.length) yield { toolCalls: calls };
   }
 
-  async complete(messages: ModelMessage[], signal?: AbortSignal, includeTools = false) {
+  async complete(messages: ModelMessage[], signal?: AbortSignal, includeTools = false, tools?: ModelToolDefinition[]) {
     let text = '';
     const toolCalls: ToolCall[] = [];
-    for await (const delta of this.stream(messages, signal, includeTools)) { text += delta.text ?? ''; if (delta.toolCalls) toolCalls.push(...delta.toolCalls); }
+    for await (const delta of this.stream(messages, signal, includeTools, tools)) { text += delta.text ?? ''; if (delta.toolCalls) toolCalls.push(...delta.toolCalls); }
     return { text, toolCalls };
   }
 }
@@ -175,18 +175,18 @@ export class AgentService {
 
   constructor(model: ModelAdapter | undefined = undefined, tools = new ToolService()) { this.tools = tools; this.model = model ?? new ModelAdapter(new SettingsService(), () => builtinToolDefinitions()); this.context = new ContextService(this.model); }
 
-  private streamModel(messages: ModelMessage[], signal?: AbortSignal) { return this.model.stream(messages, signal, true); }
+  private streamModel(messages: ModelMessage[], signal?: AbortSignal, includeTools = true, tools?: ModelToolDefinition[]) { return this.model.stream(messages, signal, includeTools, tools); }
 
   async boot() {
     this.stopRuns?.();
-    this.stopRuns = startRunScheduler((messages, signal) => this.streamModel(messages, signal), this.context);
+    this.stopRuns = startRunScheduler((messages, signal, includeTools, tools) => this.streamModel(messages, signal, includeTools ?? true, tools), this.context);
   }
 
   stopScheduler() { this.stopRuns?.(); this.stopRuns = null; }
 
   async *chatStream(input: { conversationId?: string; message: string; pageContext?: PageContext; context?: unknown; requestKey?: string; signal?: AbortSignal }): AsyncGenerator<ChatEvent> {
     const run = await startChat(input);
-    if (run.state === 'queued') scheduleRun(run.id, (messages, signal) => this.streamModel(messages, signal), this.context);
+    if (run.state === 'queued') scheduleRun(run.id, (messages, signal, includeTools, tools) => this.streamModel(messages, signal, includeTools ?? true, tools), this.context);
     yield* followRun(run.id);
     return;
   }
@@ -210,7 +210,7 @@ export class AgentService {
     const envelope = readEnvelope(approval.result);
     if (envelope) {
       const body = await approveAppChanges(approvalId, input);
-      if (body && typeof body === 'object' && (body as { resumed?: boolean }).resumed) scheduleRun(envelope.runId, (messages, signal) => this.streamModel(messages, signal), this.context);
+      if (body && typeof body === 'object' && (body as { resumed?: boolean }).resumed) scheduleRun(envelope.runId, (messages, signal, includeTools, tools) => this.streamModel(messages, signal, includeTools ?? true, tools), this.context);
       return { approval: await approvalView(approvalId), run: await runView(envelope.runId), ...(body as object) };
     }
     if (readStoredApproval(approval.result).resultState === 'batch') return approveTaskBatch(approvalId);
@@ -262,7 +262,7 @@ export class AgentService {
   async previewApproval(approvalId: string) { return this.approvals.preview(approvalId); }
   async getRun(runId: string) { const run = await runView(runId); if (!run) throw Object.assign(new Error('请求不存在'), { status: 404 }); return run; }
   async listRunEvents(runId: string, after = 0) { return runEvents(runId, after); }
-  async resume(runId: string) { const run = await resumeRun(runId, (messages, signal) => this.streamModel(messages, signal), this.context); return runView(run.id); }
+  async resume(runId: string) { const run = await resumeRun(runId, (messages, signal, includeTools, tools) => this.streamModel(messages, signal, includeTools ?? true, tools), this.context); return runView(run.id); }
   async stop(runId: string) { const run = await stopRun(runId); return runView(run.id); }
   async getApproval(approvalId: string) { const approval = await approvalView(approvalId); if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 }); return { approval, run: approval.runId ? await runView(approval.runId) : null }; }
   async repreview(approvalId: string, input: { requestKey?: string } = {}) { return repreviewApproval(approvalId, input); }

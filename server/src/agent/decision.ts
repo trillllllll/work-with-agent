@@ -27,7 +27,7 @@ type Envelope = {
   toolCallId: string;
   requestedOperations: unknown[];
   review: ApprovalReview;
-  outcome: null | { status: 'executed'; appliedOperationCount: number; changeId: string | null; affected: Array<{ type: string; id: string; title: string }>; completedAt: string } | { status: 'rejected' | 'failed'; appliedOperationCount: 0; code: string; message: string; completedAt: string };
+  outcome: null | { status: 'executed'; appliedOperationCount: number; changeId: string | null; affected: Array<{ type: string; id: string; title: string }>; completedAt: string } | { status: 'rejected' | 'failed'; appliedOperationCount: 0; code: string; message: string; completedAt: string; skillId?: string; revision?: number };
   supersededByApprovalId: string | null;
   reversesApprovalId: string | null;
 };
@@ -175,6 +175,39 @@ async function persistFailure(approvalId: string, requestId: string, requestHash
   });
 }
 
+export async function loadCloseableApproval(tx: Db, approvalId: string, input: DecisionInput) {
+  const approval = await tx.approval.findUnique({ where: { id: approvalId } });
+  if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 });
+  if (approval.toolName.startsWith('execute_')) throw new DomainError('CAPABILITY_REMOVED', REMOVED, 409);
+  const envelope = readEnvelope(approval.result);
+  if (!envelope) throw new DomainError('REVIEW_REQUIRED', '无法读取这份历史方案，请重新生成预览', 409);
+  if (envelope.review.previewHash !== input.previewHash || envelope.proposalRevision !== input.expectedProposalRevision) throw new DomainError('REVIEW_REQUIRED', '预览已变化，请重新确认', 409);
+  if (approval.status !== 'pending') throw new DomainError('APPROVAL_ALREADY_HANDLED', '该审核已处理', 409);
+  return { approval, envelope };
+}
+
+export async function closeAppChanges(tx: Db, approval: Approval, envelope: Envelope, spec: {
+  approvalStatus: 'rejected';
+  proposalStatus: string;
+  outcome: NonNullable<Envelope['outcome']>;
+  toolResult: unknown;
+  pauseReason: string;
+  timestamp: string;
+}) {
+  const marked = await tx.approval.updateMany({ where: { id: approval.id, status: 'pending' }, data: { status: spec.approvalStatus, result: JSON.stringify({ ...envelope, outcome: spec.outcome }), updatedAt: spec.timestamp } });
+  if (!marked.count) throw new DomainError('APPROVAL_ALREADY_HANDLED', '该审核已处理', 409);
+  await tx.proposal.updateMany({ where: { id: envelope.proposalId, status: 'pending' }, data: { status: spec.proposalStatus, updatedAt: spec.timestamp } });
+  await writeToolMessage(tx, approval, envelope, spec.toolResult);
+  if (envelope.runId && approval.conversationId) {
+    const run = await tx.agentRun.findUnique({ where: { id: envelope.runId } });
+    const conversation = await tx.conversation.findUnique({ where: { id: approval.conversationId } });
+    if (run && conversation?.activeRunId === run.id && run.state === 'waiting_approval') {
+      await tx.agentRun.update({ where: { id: run.id }, data: { state: 'paused', pauseReason: spec.pauseReason, leaseToken: null, leaseExpiresAt: null, updatedAt: spec.timestamp } });
+      await appendRunEvent(tx, run.id, 'run_state', { type: 'run_state', runId: run.id, state: 'paused', pauseReason: spec.pauseReason });
+    }
+  }
+}
+
 export async function rejectAppChanges(approvalId: string, input: DecisionInput) {
   if (input.expectedProposalRevision === undefined || !input.previewHash) throw new DomainError('REVIEW_REQUIRED', '请刷新页面后确认这份预览', 409);
   const requestId = receiptId(approvalId, input.expectedProposalRevision, 'reject');
@@ -185,27 +218,10 @@ export async function rejectAppChanges(approvalId: string, input: DecisionInput)
       if (receipt.requestHash !== requestHash) throw new DomainError('IDEMPOTENCY_CONFLICT', '相同请求标识不能提交不同内容');
       return JSON.parse(receipt.response);
     }
-    const approval = await tx.approval.findUnique({ where: { id: approvalId } });
-    if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 });
-    if (approval.toolName.startsWith('execute_')) throw new DomainError('CAPABILITY_REMOVED', REMOVED, 409);
-    const envelope = readEnvelope(approval.result);
-    if (!envelope) throw new DomainError('REVIEW_REQUIRED', '无法读取这份历史方案，请重新生成预览', 409);
-    if (envelope.review.previewHash !== input.previewHash || envelope.proposalRevision !== input.expectedProposalRevision) throw new DomainError('REVIEW_REQUIRED', '预览已变化，请重新确认', 409);
-    if (approval.status !== 'pending') throw new DomainError('APPROVAL_ALREADY_HANDLED', '该审核已处理', 409);
+    const { approval, envelope } = await loadCloseableApproval(tx, approvalId, input);
     const timestamp = now();
     const outcome = { status: 'rejected' as const, appliedOperationCount: 0 as const, code: 'REJECTED', message: '已取消，未修改数据', completedAt: timestamp };
-    const marked = await tx.approval.updateMany({ where: { id: approvalId, status: 'pending' }, data: { status: 'rejected', result: JSON.stringify({ ...envelope, outcome }), updatedAt: timestamp } });
-    if (!marked.count) throw new DomainError('APPROVAL_ALREADY_HANDLED', '该审核已处理', 409);
-    await tx.proposal.updateMany({ where: { id: envelope.proposalId, status: 'pending' }, data: { status: 'rejected', updatedAt: timestamp } });
-    await writeToolMessage(tx, approval, envelope, { success: false, code: 'REJECTED', error: outcome.message });
-    if (envelope.runId && approval.conversationId) {
-      const run = await tx.agentRun.findUnique({ where: { id: envelope.runId } });
-      const conversation = await tx.conversation.findUnique({ where: { id: approval.conversationId } });
-      if (run && conversation?.activeRunId === run.id && run.state === 'waiting_approval') {
-        await tx.agentRun.update({ where: { id: run.id }, data: { state: 'paused', pauseReason: 'rejected', leaseToken: null, leaseExpiresAt: null, updatedAt: timestamp } });
-        await appendRunEvent(tx, run.id, 'run_state', { type: 'run_state', runId: run.id, state: 'paused', pauseReason: 'rejected' });
-      }
-    }
+    await closeAppChanges(tx, approval, envelope, { approvalStatus: 'rejected', proposalStatus: 'rejected', outcome, toolResult: { success: false, code: 'REJECTED', error: outcome.message }, pauseReason: 'rejected', timestamp });
     const body = { approvalId, outcome, resumed: false };
     await tx.requestReceipt.create({ data: { actorId: ownerActor.id, requestId, requestHash, response: JSON.stringify(body), createdAt: timestamp } });
     return body;
@@ -238,6 +254,10 @@ async function refreshOperationRevisions(db: Db, operations: ChangeOperation[]) 
         const row = await db.memory.findUnique({ where: { id: args.memoryId }, select: { revision: true } });
         if (row) args.expectedRevision = row.revision;
       }
+    }
+    if (operation.family === 'skill' && operation.command.kind === 'skill.update') {
+      const row = await db.skill.findUnique({ where: { id: operation.command.targetId }, select: { revision: true, deletedAt: true } });
+      if (row && !row.deletedAt) operation.command.expectedRevision = row.revision;
     }
   }
 }

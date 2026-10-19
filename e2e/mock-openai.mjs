@@ -82,6 +82,10 @@ const server = http.createServer(async (req, res) => {
     res.end('data: [DONE]\n\n'); return;
   }
   const systemText = messages.filter((item) => item.role === 'system').map((item) => String(item.content ?? '')).join('\n');
+  if (systemText.includes('起草一条可复用技能')) {
+    const draft = { name: '会话起草技能', description: '整理这次对话里的做法时使用', instructions: '1. 先复述目标\n2. 再列出步骤' };
+    return stream(res, [{ choices: [{ delta: { content: JSON.stringify(draft) }, finish_reason: 'stop' }] }]);
+  }
   if (latestUser.startsWith('AI验收')) {
     const userIndex = messages.findLastIndex((item) => item.role === 'user');
     if (!messages.slice(userIndex + 1).some((item) => item.role === 'tool')) return stream(res, [
@@ -145,6 +149,21 @@ const server = http.createServer(async (req, res) => {
     { choices: [{ delta: { content: text }, finish_reason: null }] },
     { choices: [{ delta: { tool_calls: [{ index: 0, id, function: { name, arguments: JSON.stringify(args) } }] }, finish_reason: 'tool_calls' }] },
   ]);
+  if (latestUser.includes('技能加载验收')) {
+    const offered = systemText.includes('【可用技能】') && (body.tools ?? []).some((tool) => tool?.function?.name === 'load_skill');
+    if (!offered) return stream(res, [{ choices: [{ delta: { content: '没有可用技能。' }, finish_reason: 'stop' }] }]);
+    const loaded = sinceUser.filter((item) => item.role === 'tool' && String(item.content).includes('"toolName":"load_skill"')).map(toolData).find(Boolean);
+    if (!loaded) return callTool(`e2e_skill_load_${messages.length}`, 'load_skill', { name: systemText.match(/- (验收周报[^：:]*)[：:]/)?.[1] ?? '验收周报' }, '我先读取技能。');
+    return stream(res, [{ choices: [{ delta: { content: `已按技能 ${loaded.name} v${loaded.revision} 处理。` }, finish_reason: 'stop' }] }]);
+  }
+  if (latestUser.includes('起草技能验收')) {
+    if (toolSince('propose_changes')) return stream(res, [{ choices: [{ delta: { content: '技能草稿已放在确认卡里。' }, finish_reason: 'stop' }] }]);
+    const name = latestUser.match(/名称=(\S+)/)?.[1] ?? '验收起草';
+    return callTool(`e2e_skill_draft_${messages.length}`, 'propose_changes', {
+      summary: '起草技能',
+      operations: [{ family: 'skill', command: { kind: 'skill.create', input: { name, description: '每周五整理任务时使用', instructions: '第一步：列出本周完成\n第二步：写下下周计划', enabled: true, reason: '根据对话起草' } } }],
+    }, '我起草了一条技能。');
+  }
   if (latestUser.includes('看看现在状态')) return stream(res, [{ choices: [{ delta: { content: '整组提议仍在等待确认。' }, finish_reason: 'stop' }] }]);
   if (latestUser.includes('把安排改到2026-10-16')) {
     if (toolSince('propose_changes')) return stream(res, [{ choices: [{ delta: { content: '安排方案已放在确认卡里。' }, finish_reason: 'stop' }] }]);

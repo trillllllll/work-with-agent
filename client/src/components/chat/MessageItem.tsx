@@ -36,6 +36,7 @@ function statusText(activity: ToolActivity) {
 function ToolCallRow({ activity, approval, pending, executing, unknown, unresolved, phase, onApprove, onReject, onChanged }: { activity: ToolActivity; approval?: Approval; pending: boolean; executing: boolean; unknown: boolean; unresolved: boolean; phase: '' | 'approve' | 'reject'; onApprove: (id: string) => void; onReject: (id: string) => void; onChanged: () => void }) {
   if (isAppChangeApproval(approval) && approval) return null;
   if (isTaskBatchApproval(approval) && approval) return <TaskBatchCard approval={approval} executing={executing} unknown={unknown} onApprove={onApprove} onReject={onReject} />;
+  if (activity.name === 'load_skill') return <SkillUsageRow activity={activity} />;
   const [open, setOpen] = useState(false);
   const payload = payloadText(activity);
   const label = toolLabels[activity.name] ?? activity.name;
@@ -63,6 +64,28 @@ function ToolCallRow({ activity, approval, pending, executing, unknown, unresolv
           <ApprovalCard approval={approval} pending={pending} onApprove={onApprove} onReject={onReject} />
         </div>
       )}
+    </div>
+  );
+}
+
+type LoadedSkill = { skillId?: string; name?: string; revision?: number; description?: string; instructions?: string };
+
+/** 「使用技能：名称 vN」. The body comes from the stored tool result, so later edits never change an old conversation. */
+function SkillUsageRow({ activity }: { activity: ToolActivity }) {
+  const [open, setOpen] = useState(false);
+  const skill = activity.result && typeof activity.result === 'object' ? activity.result as LoadedSkill : null;
+  const body = activity.status === 'done' && typeof skill?.instructions === 'string' ? skill.instructions : '';
+  const failed = activity.status === 'error';
+  const header = <>
+    {body ? <ChevronRight className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')} /> : <span className="size-3.5 shrink-0" />}
+    <span className="shrink-0 font-medium">{failed ? '技能读取失败' : activity.status === 'running' ? '正在读取技能' : '使用技能'}</span>
+    <span className={cn('min-w-0 flex-1 truncate', failed ? 'text-destructive' : 'text-foreground')}>{activity.status === 'running' ? (typeof activity.arguments.name === 'string' ? activity.arguments.name : '') : activity.preview}</span>
+  </>;
+  return (
+    <div className="rounded-lg border border-border/80 bg-muted/40" data-testid="skill-usage" data-skill-revision={skill?.revision ?? ''}>
+      {body ? <button type="button" aria-expanded={open} aria-label={`使用技能：${activity.preview}`} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px]" onClick={() => setOpen((value) => !value)}>{header}</button>
+        : <div className="flex items-center gap-2 px-2.5 py-1.5 text-[12px]">{header}</div>}
+      {open && body && <div className="max-h-80 overflow-auto border-t border-border/70 px-3 py-2" data-testid="skill-usage-body">{skill?.description && <p className="mb-2 text-[11px] text-muted-foreground">{skill.description}</p>}<MarkdownView content={body} /></div>}
     </div>
   );
 }

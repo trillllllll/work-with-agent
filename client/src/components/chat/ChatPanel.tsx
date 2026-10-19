@@ -11,6 +11,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ChatHistory, ChatReferencePicker } from './ChatPickers.js';
 import { Button } from '@/components/ui/button.js';
 import { MessageList } from './MessageList.js';
+import { useState } from 'react';
+import { toast } from 'sonner';
+import { openSkillEditor } from '@/components/skills/skill-format.js';
 import { ChatComposer } from './ChatComposer.js';
 
 type ChatPanelProps = {
@@ -26,6 +29,20 @@ export function ChatPanel({ chat, onClose, mobile, presentation = 'side', onExpa
   const action = usePlatformAction();
   const settings = useQuery<Settings>({ queryKey: ['settings'], queryFn: () => api('/api/settings') });
   const configured = Boolean(settings.data?.model && settings.data?.baseUrl && settings.data?.apiKeyConfigured);
+  const [drafting, setDrafting] = useState(false);
+  const saveAsSkill = async () => {
+    if (!chat.conversationId || drafting) return;
+    setDrafting(true);
+    const pending = toast.loading('正在根据对话起草技能…');
+    try {
+      const draft = await api<{ name: string; description: string; instructions: string }>('/api/skills/draft', { method: 'POST', body: json({ conversationId: chat.conversationId }) });
+      toast.dismiss(pending);
+      openSkillEditor({ draft: { ...draft, enabled: true } });
+    } catch (error) {
+      toast.dismiss(pending);
+      toast.error(error instanceof Error ? error.message : '起草技能失败');
+    } finally { setDrafting(false); }
+  };
   const { messages, approvals, busy, interrupted, input, setInput, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference, showRepreview } = chat;
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="ai-assistant" data-presentation={presentation}>
@@ -36,6 +53,7 @@ export function ChatPanel({ chat, onClose, mobile, presentation = 'side', onExpa
         <Button variant="ghost" size="icon-sm" disabled={busy || Boolean(executingApprovalId)} onClick={startNew} aria-label="新对话" title="新对话"><SquarePen /></Button>
         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="更多会话操作" title="更多会话操作"><Ellipsis /></Button></DropdownMenuTrigger><DropdownMenuContent data-assistant-floating align="end">
           <DropdownMenuItem disabled={busy || action.busy || !chat.conversationId || !messages.length} onSelect={() => void action.run(() => api('/api/v1/knowledge/materials/from-conversation', { method: 'POST', body: json({ conversationId: chat.conversationId, topicId: chat.selectedTopicId || null, title: `会话记录 ${new Date().toLocaleString()}` }) }), '完整会话已保存到项目资料')}>保存完整会话为资料</DropdownMenuItem>
+          <DropdownMenuItem disabled={busy || drafting || !chat.conversationId || !messages.length} onSelect={() => void saveAsSkill()}>存为技能</DropdownMenuItem>
         </DropdownMenuContent></DropdownMenu>
         {presentation === 'side' && <Button variant="ghost" size="icon-sm" onClick={onExpand} aria-label="放大到独立页" title="放大到独立页"><Maximize2 /></Button>}
         {presentation === 'expanded' && <Button variant="ghost" size="icon-sm" onClick={onShrink} aria-label="缩小回原页面" title="缩小回原页面"><Minimize2 /></Button>}

@@ -2,7 +2,7 @@ import { useLayoutEffect, useSyncExternalStore } from 'react';
 import type { ChatContextV3, ChatAttachment } from '../../../server/src/agent/chat-context.js';
 export type { ChatContextV3, ChatAttachment };
 
-export const pageNames: Record<string, string> = { inbox: '收集箱', board: '清单', today: '今天', plan: '规划', search: '搜索', tags: '标签', library: '资料库', knowledge: '工作上下文', topics: '清单', quadrant: '四象限', archived: '已归档', trash: '回收站', focus: '专注', settings: '设置', connections: '连接', proposals: '提议', changes: '变更历史', runs: '运行', reviews: '定期回顾', more: '更多' };
+export const pageNames: Record<string, string> = { inbox: '收集箱', board: '清单', today: '今天', plan: '规划', search: '搜索', tags: '标签', library: '资料库', knowledge: '工作上下文', topics: '清单', quadrant: '四象限', archived: '已归档', trash: '回收站', focus: '专注', settings: '设置', connections: '连接', skills: '技能', proposals: '提议', changes: '变更历史', runs: '运行', reviews: '定期回顾', more: '更多' };
 type PublishedContext = { page: string; value: Partial<ChatContextV3> };
 const pages = new Map<string, PublishedContext>();
 const listeners = new Set<() => void>();

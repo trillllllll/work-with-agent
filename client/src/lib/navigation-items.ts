@@ -1,4 +1,4 @@
-import { Archive, Bot, GitBranch, CalendarClock, CalendarDays, CalendarRange, ClipboardCheck, FolderKanban, Grid2X2, History, Inbox, Library, Menu, MessageSquare, NotebookText, Plug, Search, Settings, Tags, Timer, Trash2, type LucideIcon } from 'lucide-react';
+import { Archive, Bot, CalendarClock, GitBranch, CalendarDays, CalendarRange, ClipboardCheck, FolderKanban, Grid2X2, History, Inbox, Library, Menu, MessageSquare, NotebookText, Plug, Search, Settings, Sparkles, Tags, Timer, Trash2, type LucideIcon } from 'lucide-react';
 import type { View } from './api.js';
 import type { MobileNavigationView } from './mobile-navigation.js';
 
@@ -20,6 +20,7 @@ export const navigationItems: NavigationItem[] = [
   { view: 'proposals', label: '待确认', icon: ClipboardCheck },
   { view: 'knowledge', label: '工作上下文', icon: NotebookText },
   { view: 'library', label: '资料库', icon: Library },
+  { view: 'skills', label: '技能', icon: Sparkles },
   { view: 'runs', label: 'AI 执行', icon: Bot },
   { view: 'worktrees', label: 'Worktree 管理', icon: GitBranch },
   { view: 'reviews', label: '定期回顾', icon: CalendarClock },

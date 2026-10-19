@@ -93,6 +93,16 @@ async function orderTaskParentMoves(commands: Command[], db: Db): Promise<Comman
 }
 
 export async function compileChangeOperations(operations: ChangeOperation[], context: { conversationId: string; topicId: string | null }, db: Db = prisma) {
+  if (operations.some((operation) => operation.family === 'skill')) {
+    if (operations.length !== 1 || operations[0]?.family !== 'skill') throw new DomainError('INVALID_BATCH', '技能修改必须单独提交，一份方案只能包含一条', 400);
+    const command = operations[0].command;
+    const input = command.input as Record<string, unknown>;
+    const normalized = normalizeCommands([command.kind === 'skill.update'
+      ? { kind: command.kind, targetId: command.targetId, expectedRevision: command.expectedRevision, input }
+      : { kind: command.kind, input }]);
+    const explicitIds = normalized.flatMap((item) => [item.targetId, item.entityId].filter((id): id is string => Boolean(id)));
+    return { commands: normalized, explicitIds, batch: undefined };
+  }
   const workspace = mergeWorkspace(operations).map((command) => validateWorkspace(command));
   const commands: Command[] = workspace.map((command) => ({ kind: command.kind, ...(command.targetId ? { targetId: command.targetId } : {}), ...(command.expectedRevision ? { expectedRevision: command.expectedRevision } : {}), ...(command.clientRef ? { clientRef: command.clientRef } : {}), input: command.input }));
   let excerpt = 0;

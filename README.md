@@ -27,6 +27,7 @@
 | AI 连接 | 为 Codex、Claude Code 或 Grok 发一张可撤销的凭据，并圈定它能看的清单 |
 | 待确认 | AI 的写入停在这里，接受或拒绝之后数据才变 |
 | 项目资料 | 保存材料、有来源的记忆，以及整理后的候选 |
+| 技能 | 把常用做法写成技能，内置 AI 用到时才读取正文；可导入 SKILL.md，有版本历史，助手起草的技能要你确认后才保存 |
 | AI 执行 | 把任务连同目标、约束和验收说明交接出去，再收回进展和结果 |
 | 定期回顾 | 按日或按周生成一份报告和待确认建议，默认关闭 |
 
@@ -160,6 +161,7 @@ A local task list. Codex, Claude Code, and Grok read the same tasks and project 
 - Capture first: Inbox, Today, lists, tags, subtasks, and manual order. No model required.
 - Hand it to an AI: copy a config from AI connections. The host reads tasks, materials, and memories over MCP.
 - You approve the write. Proposals land in the review queue. Data stays in local SQLite on `127.0.0.1`.
+- Skills: write a reusable procedure once. The built-in assistant sees only names and descriptions and loads the body when it needs it. Import SKILL.md, browse versions, and approve skills the assistant drafts.
 
 ```bash
 git clone https://github.com/trillllllll/work-with-agent.git

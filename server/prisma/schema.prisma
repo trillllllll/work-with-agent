@@ -1029,3 +1029,35 @@ model MemorySuggestionKey {
 
   @@index([scopeKey, proposalId])
 }
+
+model Skill {
+  id           String         @id @default(cuid())
+  name         String
+  description  String
+  instructions String
+  enabled      Boolean        @default(false)
+  revision     Int            @default(1)
+  origin       String         @default("manual")
+  deletedAt    String?
+  createdAt    String
+  updatedAt    String
+  versions     SkillVersion[]
+
+  @@index([deletedAt, enabled, name])
+}
+
+model SkillVersion {
+  id           String  @id @default(cuid())
+  skillId      String
+  revision     Int
+  name         String
+  description  String
+  instructions String
+  enabled      Boolean
+  reason       String
+  source       String
+  createdAt    String
+  skill        Skill   @relation(fields: [skillId], references: [id], onDelete: Restrict)
+
+  @@unique([skillId, revision])
+}
