@@ -50,6 +50,11 @@ export function useWorkspaceEvents() {
       try {
         const event = JSON.parse(message.data);
         const key = `${event.batchId}:${event.status}`;
+        if (event.kind === 'orchestration' && event.attention && !notified.has(`orch:${event.orchestrationId}:${event.status}:${event.pauseReason ?? ''}`)) {
+          notified.add(`orch:${event.orchestrationId}:${event.status}:${event.pauseReason ?? ''}`);
+          if (event.status === 'awaiting_acceptance') toast.success('主控编排完成，任务待验收');
+          else toast.warning('编排已暂停，需要你处理');
+        }
         if (event.kind === 'review' && !notified.has(key)) {
           notified.add(key);
           const message = event.status === 'ready' ? '新的回顾报告已就绪' : event.status === 'failed' ? '回顾生成失败，可查看原因并重试' : '基础回顾已保存，AI 整理需要处理';

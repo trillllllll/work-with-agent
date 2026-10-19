@@ -18,6 +18,7 @@ import { Textarea } from '@/components/ui/textarea.js';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { TaskActivityDialog } from './TaskActivityDialog.js';
+import { OrchestrationButton } from '@/components/orchestration/OrchestrationPanel.js';
 import { placeDescriptionCaret, readDescriptionCaret } from './DescriptionEditor.js';
 import { TaskMaterials } from '@/components/library/TaskMaterials.js';
 import { TaskDescription } from './TaskDescription.js';
@@ -640,6 +641,7 @@ function TaskAssistantActions() {
   return <div className="flex flex-wrap gap-2 pb-2">
     <Button size="sm" variant="ghost" onClick={() => askAssistant()}>AI 助手</Button>
     <Button size="sm" variant="ghost" onMouseDown={(event) => event.preventDefault()} onClick={() => askAssistant({ kind: 'draft', title: edit.draft.title || '当前任务草稿', text: `${edit.draft.title}\n\n${edit.draft.description}`, taskId: edit.taskId, unsaved: true })}>带上当前草稿</Button>
+    {!edit.task.parentId && <OrchestrationButton taskId={edit.taskId} disabled={edit.readonly} />}
   </div>;
 }
 
