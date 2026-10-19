@@ -28,6 +28,7 @@ import { listPlanTimeBands, replacePlanTimeBands } from './application/plan-time
 import { isValidVisibleViews, type MobileNavigationView } from './domain/mobile-navigation.js';
 import { readMobileNavigation, writeMobileNavigation } from './application/mobile-navigation.js';
 import { generateExternalReview } from './runner/review-generator.js';
+import { createNodeRouter, createOrchestrationRouter } from './routes/orchestration.js';
 
 export const app = express();
 app.use(cors(corsOptions));
@@ -36,6 +37,8 @@ registerKnowledgeCommands();
 registerGraphCommands();
 registerLibraryCommands();
 app.use('/api/v1', securityRouter);
+// Local executors (wwa-node) use their own token; they never get owner or MCP access.
+app.use('/api/v1/node', createNodeRouter());
 app.use('/api/v1', identityMiddleware);
 app.use('/api/v1/connections', connectionRouter);
 app.use('/api/v1/server', createServerRouter());
@@ -46,6 +49,7 @@ export const reviewService = new ReviewService(new OrganizationService(), genera
 app.use('/api/v1/reviews', createReviewsRouter(reviewService));
 // Existing browser endpoints remain available only to authenticated owner sessions.
 app.use('/api', identityMiddleware, ownerMiddleware, legacyMutationMiddleware);
+app.use('/api', createOrchestrationRouter());
 
 const topics = new TopicService();
 const tasks = new TaskService();
