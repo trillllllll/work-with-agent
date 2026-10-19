@@ -1,7 +1,19 @@
-import { useState } from 'react';
+import { Children, isValidElement, useMemo, useState, type ReactNode } from 'react';
 import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Check, Copy } from 'lucide-react';
+import { isMermaidFence, mermaidSource } from '@/lib/mermaid-fence.js';
+import { MermaidBlock } from './MermaidBlock.js';
+
+function fenceText(children: ReactNode): string {
+  if (typeof children === 'string' || typeof children === 'number') return String(children);
+  if (Array.isArray(children)) return children.map(fenceText).join('');
+  return '';
+}
+
+function hasMermaidFence(children: ReactNode) {
+  return Children.toArray(children).some((child) => isValidElement<{ className?: string }>(child) && isMermaidFence(child.props.className));
+}
 
 function PreBlock({ children }: { children?: React.ReactNode }) {
   const [copied, setCopied] = useState(false);
@@ -33,40 +45,44 @@ function extractText(node: React.ReactNode): string {
   return '';
 }
 
-const markdownComponents: Components = {
-  p: ({ children }) => <p className="my-1.5">{children}</p>,
-  ul: ({ children }) => <ul className="my-1.5 list-disc pl-5">{children}</ul>,
-  ol: ({ children }) => <ol className="my-1.5 list-decimal pl-5">{children}</ol>,
-  li: ({ children }) => <li className="my-0.5">{children}</li>,
-  h1: ({ children }) => <h1 className="mt-3 mb-1.5 text-base font-semibold">{children}</h1>,
-  h2: ({ children }) => <h2 className="mt-3 mb-1.5 text-[15px] font-semibold">{children}</h2>,
-  h3: ({ children }) => <h3 className="mt-2.5 mb-1 text-sm font-semibold">{children}</h3>,
-  a: ({ children, href }) => <a href={href} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">{children}</a>,
-  blockquote: ({ children }) => <blockquote className="my-2 rounded-xl border border-border px-3 py-2 text-muted-foreground">{children}</blockquote>,
-  code: ({ children, className }) => {
-    const isBlock = /language-/.test(className ?? '');
-    if (isBlock) return <code className="font-mono">{children}</code>;
-    return <code className="rounded-md bg-muted px-1 py-0.5 font-mono text-[0.85em]">{children}</code>;
-  },
-  pre: ({ children }) => <PreBlock>{children}</PreBlock>,
-  table: ({ children }) => (
-    <div className="my-2 overflow-x-auto">
-      <table className="w-full border-collapse text-xs">{children}</table>
-    </div>
-  ),
-  th: ({ children }) => <th className="border-b px-2 py-1.5 text-left font-semibold">{children}</th>,
-  td: ({ children }) => <td className="border-b px-2 py-1.5 align-top">{children}</td>,
-  hr: () => <hr className="my-3 border-border" />,
-  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-};
+function markdownComponents(diagrams: boolean): Components {
+  return {
+    p: ({ children }) => <p className="my-1.5">{children}</p>,
+    ul: ({ children }) => <ul className="my-1.5 list-disc pl-5">{children}</ul>,
+    ol: ({ children }) => <ol className="my-1.5 list-decimal pl-5">{children}</ol>,
+    li: ({ children }) => <li className="my-0.5">{children}</li>,
+    h1: ({ children }) => <h1 className="mt-3 mb-1.5 text-base font-semibold">{children}</h1>,
+    h2: ({ children }) => <h2 className="mt-3 mb-1.5 text-[15px] font-semibold">{children}</h2>,
+    h3: ({ children }) => <h3 className="mt-2.5 mb-1 text-sm font-semibold">{children}</h3>,
+    a: ({ children, href }) => <a href={href} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">{children}</a>,
+    blockquote: ({ children }) => <blockquote className="my-2 rounded-xl border border-border px-3 py-2 text-muted-foreground">{children}</blockquote>,
+    code: ({ children, className }) => {
+      if (diagrams && isMermaidFence(className)) return <MermaidBlock source={mermaidSource(fenceText(children))} />;
+      const isBlock = /language-/.test(className ?? '');
+      if (isBlock) return <code className="font-mono">{children}</code>;
+      return <code className="rounded-md bg-muted px-1 py-0.5 font-mono text-[0.85em]">{children}</code>;
+    },
+    pre: ({ children }) => diagrams && hasMermaidFence(children) ? <>{children}</> : <PreBlock>{children}</PreBlock>,
+    table: ({ children }) => (
+      <div className="my-2 overflow-x-auto">
+        <table className="w-full border-collapse text-xs">{children}</table>
+      </div>
+    ),
+    th: ({ children }) => <th className="border-b px-2 py-1.5 text-left font-semibold">{children}</th>,
+    td: ({ children }) => <td className="border-b px-2 py-1.5 align-top">{children}</td>,
+    hr: () => <hr className="my-3 border-border" />,
+    strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+  };
+}
 
-export function MarkdownView({ content, components, allowMaterialLinks = false }: { content: string; components?: Components; allowMaterialLinks?: boolean }) {
+export function MarkdownView({ content, components, allowMaterialLinks = false, diagrams = false }: { content: string; components?: Components; allowMaterialLinks?: boolean; diagrams?: boolean }) {
   const urlTransform = allowMaterialLinks
     ? (url: string) => url.startsWith('wwa-material:') ? url : defaultUrlTransform(url)
     : undefined;
+  const rendered = useMemo(() => markdownComponents(diagrams), [diagrams]);
   return (
     <div className="markdown-body text-[13.5px] leading-relaxed break-words">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ ...markdownComponents, ...components }} urlTransform={urlTransform}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ ...rendered, ...components }} urlTransform={urlTransform}>
         {content}
       </ReactMarkdown>
     </div>

@@ -288,6 +288,7 @@ export function formatSystemPrompt(pageContext: PageContextInput, tasks: Array<{
   return [
     '你是 Agent 工作室的协作助手。变更任务或主题必须使用工具，系统会要求用户审核。只读问题使用工具查询。',
     '查或改项目资料用 library；memory 只记稳定事实。上传文件不在工具里。',
+    '需要画图时用一个 mermaid 代码块。流程用 flowchart，交互用 sequenceDiagram，排期用 gantt。状态、类图、ER 和其它 mermaid 类型也可以。不要用 ASCII 图。',
     '任务标题或详情里已有的绝对路径和 file:// 可以直接引用。要看文件内容或这一层目录时用 execute_file 的 read 或 list。写文件、建目录和删除只能在受控工作区。',
     '',
     `当前页面：${pageLine(pageContext)}`,

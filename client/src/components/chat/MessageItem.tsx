@@ -123,7 +123,7 @@ export function MessageItem({ message, approvals = [], approvalPending = false, 
       ) : streaming ? (
         <p className="streaming-caret text-[13.5px] leading-relaxed break-words whitespace-pre-wrap">{content}</p>
       ) : (
-        <MarkdownView content={content} />
+        <MarkdownView content={content} diagrams={!failed && (role === 'user' || role === 'assistant')} />
       ))}
       {message.role === 'user' && <ContextSummary context={message.context} />}
       <SourceLinks sources={message.sources ?? []} />

@@ -105,6 +105,9 @@ describe('in-app library tool', () => {
     expect(tools.validate({ name: 'library', arguments: { action: 'replace' } })).toContain('action');
     expect(tools.validate({ name: 'library', arguments: { action: 'content', materialId: 'm1', revision: 1, limit: 41 } })).toContain('40');
     expect(formatSystemPrompt({}, [])).toContain('项目资料用 library');
+    expect(formatSystemPrompt({}, [])).toContain('flowchart');
+    expect(formatSystemPrompt({}, [])).toContain('sequenceDiagram');
+    expect(formatSystemPrompt({}, [])).toContain('gantt');
   });
 
   it('returns titles and versions without the stored body', async () => {

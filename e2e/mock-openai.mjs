@@ -175,6 +175,25 @@ const server = http.createServer(async (req, res) => {
     if (times >= 16) return stream(res, [{ choices: [{ delta: { content: '后续回答已经完成' }, finish_reason: 'stop' }] }]);
     return callTool(`e2e_more_${times}`, 'get_time', {}, '继续读取时间。');
   }
+  const fence = (body) => '```mermaid\n' + body.trim() + '\n```';
+  if (latestUser.includes('画出这些图')) {
+    const reply = [
+      '这些图如下。',
+      fence('flowchart TD\n  A[开始] --> B[结束]'),
+      fence('gantt\n    title 排期\n    dateFormat YYYY-MM-DD\n    section 做\n    排期任务 :a1, 2026-10-01, 2d'),
+      fence('sequenceDiagram\n  participant U as 用户\n  U->>U: 问好'),
+      fence('classDiagram\n  class Task'),
+      fence('stateDiagram-v2\n  [*] --> Ready'),
+      fence('erDiagram\n  USER ||--o{ TASK : owns'),
+      fence('pie title 占比\n  "完成" : 1'),
+      fence('mindmap\n  root((主题))'),
+      fence('timeline\n  title 历程\n  2026 : 上线'),
+      fence('gitGraph\n  commit id: "c1" tag: "提交"'),
+      '```ts\nconst keep = 1\n```',
+    ].join('\n\n');
+    return stream(res, [{ choices: [{ delta: { content: reply }, finish_reason: 'stop' }] }]);
+  }
+  if (latestUser.includes('画一张坏图')) return stream(res, [{ choices: [{ delta: { content: '```mermaid\nnot-a-diagram\n```' }, finish_reason: 'stop' }] }]);
   if (latestUser.includes('读取受控文件') && !messages.some((item) => item.role === 'tool')) {
     return stream(res, [
       { choices: [{ delta: { content: '我准备读取工作区文件。' }, finish_reason: null }] },
