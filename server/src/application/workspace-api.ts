@@ -8,6 +8,7 @@ import { getActor, assertTopicAccess, type Actor } from './security.js';
 import { CommandService, canonical, assertPayloadVisible, type Command } from './commands.js';
 import { taskDto, taskInclude } from './workspace-store.js';
 import { taskActivity } from './task-activity.js';
+import { readTaskImage } from './task-images.js';
 import { TaskService, TopicService, ChangeService } from './workspace.js';
 import { taskListSchema, parseInput } from './workspace-input.js';
 
@@ -92,6 +93,22 @@ workspaceQueryRouter.get('/tasks/:id', async (req, res, next) => {
     if (!row) throw new DomainError('NOT_FOUND', '任务不存在', 404);
     assertTopicAccess(getActor(req), row.topicId);
     res.json({ data: row, error: null });
+  } catch (error) { next(error); }
+});
+workspaceQueryRouter.get('/tasks/:id/images/:imageId', async (req, res, next) => {
+  try {
+    const taskId = String(req.params.id);
+    const task = await prisma.task.findUnique({ where: { id: taskId }, select: { topicId: true, deletedAt: true } });
+    if (!task || task.deletedAt) throw new DomainError('NOT_FOUND', '任务不存在', 404);
+    assertTopicAccess(getActor(req), task.topicId);
+    const image = await readTaskImage(taskId, String(req.params.imageId));
+    res.status(200).set({
+      'Content-Type': image.mimeType,
+      'Content-Length': String(image.bytes.byteLength),
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'private, no-store',
+      'Content-Disposition': 'inline',
+    }).end(image.bytes);
   } catch (error) { next(error); }
 });
 workspaceQueryRouter.get('/topics', async (req, res, next) => {

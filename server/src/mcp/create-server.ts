@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { shouldAttachTaskImage, taskDetailImageRefs, taskImageAttachPerImage, taskImageAttachTotal, type TaskImageRef } from './task-image-content.js';
 
 export const mcpCredential = new AsyncLocalStorage<string>();
 
@@ -18,19 +19,80 @@ function apiBase() {
 
 export function createMcpServer() {
   const server = new McpServer({ name: 'work-with-agent', version: '2.0.0' }, {
-    instructions: 'Read only the lists authorized for this connection. Read current revisions before editing. Writes require a stable requestId; reuse it only to retry identical content. pending_approval means data has NOT changed. Never claim a proposal was applied. Omit fields to preserve them, use null to clear nullable fields and [] to clear sets. Handoff results do not complete tasks; the owner reviews results. Preserve source IDs and revisions when proposing memories.',
+    instructions: 'Read only the lists authorized for this connection. Read current revisions before editing. Writes require a stable requestId; reuse it only to retry identical content. pending_approval means data has NOT changed. Never claim a proposal was applied. Omit fields to preserve them, use null to clear nullable fields and [] to clear sets. Handoff results do not complete tasks; the owner reviews results. Preserve source IDs and revisions when proposing memories. Description paths like /api/tasks/{taskId}/images/{imageId} are not fetchable URLs. get_task attaches those screenshots as image content. Call get_task_image for one screenshot that was omitted.',
   });
 
-  async function request(path: string, method = 'GET', body?: unknown) {
+  type ToolText = { type: 'text'; text: string };
+  type ToolImage = { type: 'image'; data: string; mimeType: string };
+  type ToolResult = { content: Array<ToolText | ToolImage>; structuredContent: Record<string, unknown>; isError?: boolean };
+  function toolResult(payload: Record<string, unknown>, status: number, content: Array<ToolText | ToolImage> = []): ToolResult {
+    const result = { ...payload, httpStatus: status, retryable: status === 429 || status >= 500 };
+    const text: ToolText = { type: 'text', text: JSON.stringify(result) };
+    return { content: [text, ...content], structuredContent: result, ...(status >= 200 && status < 300 ? {} : { isError: true }) };
+  }
+  function unavailable(error: unknown): ToolResult {
+    const result = { code: 'CONNECTION_UNAVAILABLE', message: error instanceof Error ? error.message : 'Local workspace is unavailable', retryable: true };
+    return { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: result, isError: true };
+  }
+  async function request(path: string, method = 'GET', body?: unknown): Promise<ToolResult> {
     try {
       const response = await fetch(new URL(path, apiBase()), { method, headers: { Authorization: `Bearer ${credential()}`, 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(30_000), redirect: 'error' });
       const payload = await response.json() as Record<string, unknown>;
-      const result = { ...payload, httpStatus: response.status, retryable: response.status === 429 || response.status >= 500 };
-      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], structuredContent: result, ...(response.ok ? {} : { isError: true }) };
+      return toolResult(payload, response.status);
     } catch (error) {
-      const result = { code: 'CONNECTION_UNAVAILABLE', message: error instanceof Error ? error.message : 'Local workspace is unavailable', retryable: true };
-      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], structuredContent: result, isError: true };
+      return unavailable(error);
     }
+  }
+  async function readTaskImage(taskId: string, imageId: string, byteLimit: number | null): Promise<{ ok: true; mimeType: string; byteSize: number; bytes?: Buffer } | { ok: false; status: number; payload: Record<string, unknown> } | { ok: false; unavailable: unknown }> {
+    try {
+      const response = await fetch(new URL(`/api/v1/tasks/${encodeURIComponent(taskId)}/images/${encodeURIComponent(imageId)}`, apiBase()), { headers: { Authorization: `Bearer ${credential()}` }, signal: AbortSignal.timeout(30_000), redirect: 'error' });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({ message: '图片不存在' })) as Record<string, unknown>;
+        return { ok: false, status: response.status, payload };
+      }
+      const mimeType = (response.headers.get('content-type') ?? '').split(';')[0].trim();
+      if (mimeType !== 'image/jpeg' && mimeType !== 'image/webp') {
+        await response.body?.cancel().catch(() => {});
+        return { ok: false, status: 415, payload: { code: 'INVALID_IMAGE', message: '只接受 WebP 或 JPEG 图片' } };
+      }
+      const declared = Number(response.headers.get('content-length'));
+      if (byteLimit !== null && Number.isFinite(declared) && declared > byteLimit) {
+        await response.body?.cancel().catch(() => {});
+        return { ok: true, mimeType, byteSize: declared };
+      }
+      const bytes = Buffer.from(await response.arrayBuffer());
+      if (byteLimit !== null && bytes.byteLength > byteLimit) return { ok: true, mimeType, byteSize: bytes.byteLength };
+      return { ok: true, mimeType, byteSize: bytes.byteLength, bytes };
+    } catch (error) {
+      return { ok: false, unavailable: error };
+    }
+  }
+  function imageNote(ref: TaskImageRef, fields: Record<string, unknown>) {
+    return { type: 'text' as const, text: JSON.stringify({ image: { taskId: ref.taskId, imageId: ref.imageId, ...(ref.alt ? { alt: ref.alt } : {}), ...fields } }) };
+  }
+  async function attachTaskImages(result: ToolResult): Promise<ToolResult> {
+    const data = result.structuredContent.data;
+    if (!data || typeof data !== 'object') return result;
+    const refs = taskDetailImageRefs(data as { id?: unknown; description?: unknown; children?: unknown });
+    if (!refs.length) return result;
+    const content = [...result.content];
+    let usedBytes = 0;
+    for (const [index, ref] of refs.entries()) {
+      const byteLimit = shouldAttachTaskImage(index, 1, usedBytes) ? Math.min(taskImageAttachPerImage, taskImageAttachTotal - usedBytes) : 0;
+      const image = await readTaskImage(ref.taskId, ref.imageId, byteLimit);
+      if (!image.ok) {
+        content.push(imageNote(ref, { included: false, unavailable: true, ...('status' in image ? { status: image.status } : {}) }));
+        continue;
+      }
+      if (!image.bytes || !shouldAttachTaskImage(index, image.byteSize, usedBytes)) {
+        content.push(imageNote(ref, { included: false, mimeType: image.mimeType, byteSize: image.byteSize, readWith: 'get_task_image' }));
+        continue;
+      }
+      usedBytes += image.byteSize;
+      content.push(imageNote(ref, { included: true, mimeType: image.mimeType, byteSize: image.byteSize }));
+      content.push({ type: 'image', data: image.bytes.toString('base64'), mimeType: image.mimeType });
+    }
+    return { ...result, content };
   }
   const pagination = { cursor: z.string().optional(), limit: z.number().int().min(1).max(100).optional() };
   function query(path: string, args: Record<string, unknown>) {
@@ -42,7 +104,17 @@ export function createMcpServer() {
   const command = z.object({ kind: id, targetId: id.optional(), expectedRevision: z.number().int().positive().optional(), input: z.record(z.unknown()).optional(), clientRef: id.optional(), evidence: z.array(z.object({ type: z.enum(['task', 'material', 'memory']), id, revision: z.number().int().positive(), hash: z.string().optional() })).optional() });
   const commands = z.object({ requestId: id, commands: z.array(command).min(1).max(50), previewToken: z.string().optional() });
   server.registerTool('list_tasks', { description: 'Query authorized tasks with pagination. dueFrom/To filter the start date; scheduledFrom/To filter calendar overlap including cross-day ranges, excluding the end boundary. Deleted and archived items are excluded by default.', inputSchema: { ...pagination, topicId: id.optional(), inbox: z.boolean().optional(), q: z.string().optional(), status: z.enum(['open', 'done', 'all', 'todo', 'doing', 'blocked']).optional(), dueFrom: z.string().optional(), dueTo: z.string().optional(), scheduledFrom: z.string().optional(), scheduledTo: z.string().optional(), tagIds: z.array(id).optional(), sort: z.enum(['manual', 'date', 'priority']).optional() } }, (args) => query('/api/v1/tasks', args));
-  server.registerTool('get_task', { description: 'Read task fields, revision and children before proposing an edit.', inputSchema: { taskId: id } }, ({ taskId }) => request(`/api/v1/tasks/${encodeURIComponent(taskId)}`));
+  server.registerTool('get_task', { description: 'Read task fields, revision and children before proposing an edit. Screenshots referenced in the description are attached as image content. Paths like /api/tasks/{taskId}/images/{imageId} are not fetchable. Call get_task_image for a single omitted screenshot.', inputSchema: { taskId: id } }, async ({ taskId }) => {
+    const result = await request(`/api/v1/tasks/${encodeURIComponent(taskId)}`);
+    return result.isError ? result : attachTaskImages(result);
+  });
+  server.registerTool('get_task_image', { description: 'Read one JPEG or WebP screenshot that belongs to an authorized task. Description image paths are not fetchable URLs.', inputSchema: { taskId: id, imageId: id } }, async ({ taskId, imageId }) => {
+    const image = await readTaskImage(taskId, imageId, null);
+    if (!image.ok) return 'unavailable' in image ? unavailable(image.unavailable) : toolResult(image.payload, image.status);
+    if (!image.bytes) return toolResult({ data: null, code: 'INVALID_IMAGE', error: '图片内容不可用' }, 502);
+    const meta = { data: { taskId, imageId, mimeType: image.mimeType, byteSize: image.byteSize }, error: null };
+    return toolResult(meta, 200, [{ type: 'image', data: image.bytes.toString('base64'), mimeType: image.mimeType }]);
+  });
   server.registerTool('list_tags', { description: 'List only tags associated with tasks in this connection scope.', inputSchema: pagination }, (args) => query('/api/v1/tags', args));
   server.registerTool('list_trash', { description: 'List deleted tasks in the authorized scope before proposing task.restore. Follow nextCursor for all members.', inputSchema: pagination }, (args) => query('/api/v1/trash/tasks', args));
   server.registerTool('get_task_history', { description: 'Read authorized task assignment history. Transitions outside this scope are omitted.', inputSchema: { taskId: id, ...pagination } }, ({ taskId, ...args }) => query(`/api/v1/tasks/${encodeURIComponent(taskId)}/history`, args));

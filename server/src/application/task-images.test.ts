@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
-import request from '../test-auth.js';
+import supertest from 'supertest';
+import request, { ownerSession } from '../test-auth.js';
 import { app } from '../app.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { CommandService } from './commands.js';
@@ -12,6 +13,7 @@ import { ownerActor } from './security.js';
 
 const commands = new CommandService();
 const knowledge = new KnowledgeService();
+const connectionIds: string[] = [];
 let previousRoot: string | undefined;
 
 function jpeg(payload: string) {
@@ -57,9 +59,10 @@ describe('task detail images', () => {
     process.env.KNOWLEDGE_STORAGE_ROOT = resolve(process.cwd(), 'data/task-image-test-blobs');
     await clean();
   });
-  afterEach(() => {
+  afterEach(async () => {
     if (previousRoot === undefined) delete process.env.KNOWLEDGE_STORAGE_ROOT;
     else process.env.KNOWLEDGE_STORAGE_ROOT = previousRoot;
+    if (connectionIds.length) await prisma.connection.deleteMany({ where: { id: { in: connectionIds.splice(0) } } });
   });
   afterAll(async () => {
     await clean();
@@ -153,5 +156,47 @@ describe('task detail images', () => {
     const attachment = await knowledge.attachment(ownerActor, material.results[0].id, 1);
     expect(attachment.bytes).toEqual(bytes);
     expect(await readFile(resolve(knowledgeStorageRoot(), knowledgeHash(bytes)))).toEqual(bytes);
+  });
+
+  it('lets an authorized connection read the image bytes and refuses every other route', async () => {
+    const visible = await request(app).post('/api/topics').send({ name: '可见清单' });
+    const hidden = await request(app).post('/api/topics').send({ name: '隐藏清单' });
+    expect(visible.status, JSON.stringify(visible.body)).toBe(200);
+    const item = await request(app).post('/api/tasks').send({ title: '有图', topicId: visible.body.data.id });
+    const secret = await request(app).post('/api/tasks').send({ title: '越权', topicId: hidden.body.data.id });
+    const bytes = jpeg('CONNECTION_IMAGE');
+    const uploaded = await request(app).post(`/api/tasks/${item.body.data.id}/images`).send({ attachmentBase64: bytes.toString('base64'), mimeType: 'image/jpeg' });
+    const secretUpload = await request(app).post(`/api/tasks/${secret.body.data.id}/images`).send({ attachmentBase64: jpeg('SECRET_IMAGE').toString('base64'), mimeType: 'image/jpeg' });
+    expect(uploaded.status, JSON.stringify(uploaded.body)).toBe(200);
+    const session = await ownerSession(app);
+    const link = await supertest(app).post('/api/v1/connections').set('Cookie', session.cookie).set('X-CSRF-Token', session.csrf).send({ name: '图片连接', host: 'codex', topicIds: [visible.body.data.id], autoActions: [], includeInbox: false });
+    expect(link.status, JSON.stringify(link.body)).toBe(200);
+    connectionIds.push(link.body.data.id);
+    const token = link.body.data.token as string;
+    const imageId = uploaded.body.data.id as string;
+
+    const anonymous = await supertest(app).get(`/api/v1/tasks/${item.body.data.id}/images/${imageId}`);
+    expect(anonymous.status).toBe(401);
+    const ok = await supertest(app).get(`/api/v1/tasks/${item.body.data.id}/images/${imageId}`).set('Authorization', `Bearer ${token}`);
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    expect(ok.headers['content-type']).toBe('image/jpeg');
+    expect(ok.headers['x-content-type-options']).toBe('nosniff');
+    expect(ok.headers['cache-control']).toBe('private, no-store');
+    expect(ok.headers['content-disposition']).toBe('inline');
+    expect(Buffer.from(ok.body)).toEqual(bytes);
+
+    const denied = await supertest(app).get(`/api/v1/tasks/${secret.body.data.id}/images/${secretUpload.body.data.id}`).set('Authorization', `Bearer ${token}`);
+    expect(denied.status).toBe(403);
+    expect(denied.body.code).toBe('SCOPE_DENIED');
+    const wrongTask = await supertest(app).get(`/api/v1/tasks/${item.body.data.id}/images/${secretUpload.body.data.id}`).set('Authorization', `Bearer ${token}`);
+    expect(wrongTask.status).toBe(404);
+    const missing = await supertest(app).get(`/api/v1/tasks/${item.body.data.id}/images/missing-image`).set('Authorization', `Bearer ${token}`);
+    expect(missing.status).toBe(404);
+    const legacy = await supertest(app).get(uploaded.body.data.url).set('Authorization', `Bearer ${token}`);
+    expect(legacy.status).toBe(403);
+
+    await request(app).delete(`/api/tasks/${item.body.data.id}`);
+    const trashed = await supertest(app).get(`/api/v1/tasks/${item.body.data.id}/images/${imageId}`).set('Authorization', `Bearer ${token}`);
+    expect(trashed.status).toBe(404);
   });
 });
