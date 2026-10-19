@@ -5,7 +5,7 @@ export const e2eDatabase = new PrismaClient({ datasourceUrl: 'file:../../e2e/.da
 
 export async function resetE2eDatabase() {
   await e2eDatabase.planTimeBand.deleteMany();
-  for (const name of ['memorySuggestionKey', 'autoMemoryJob', 'autoMemorySource', 'autoMemoryTurn', 'autoMemoryScope', 'librarySearchPosting', 'librarySearchNormMap', 'librarySearchDocument', 'materialChunk', 'materialExtraction', 'materialTag', 'materialTaskLink', 'libraryAnswer', 'libraryUpload', 'codeApplication', 'handoffReview', 'artifact', 'runEvent', 'run', 'handoff', 'reviewBatch', 'reviewRule', 'organizationRequest', 'workingBrief', 'graphLink', 'entity', 'memoryVersion', 'memory', 'materialVersion', 'material', 'requestReceipt', 'proposal', 'connection'] as const) await e2eDatabase[name].deleteMany();
+  for (const name of ['orchestrationEvent', 'nodeJob', 'orchestrationStep', 'orchestration', 'projectBinding', 'projectLocation', 'project', 'agentNode', 'memorySuggestionKey', 'autoMemoryJob', 'autoMemorySource', 'autoMemoryTurn', 'autoMemoryScope', 'librarySearchPosting', 'librarySearchNormMap', 'librarySearchDocument', 'materialChunk', 'materialExtraction', 'materialTag', 'materialTaskLink', 'libraryAnswer', 'libraryUpload', 'codeApplication', 'handoffReview', 'artifact', 'runEvent', 'run', 'handoff', 'reviewBatch', 'reviewRule', 'organizationRequest', 'workingBrief', 'graphLink', 'entity', 'memoryVersion', 'memory', 'materialVersion', 'material', 'requestReceipt', 'proposal', 'connection'] as const) await e2eDatabase[name].deleteMany();
   const folders = await e2eDatabase.libraryFolder.findMany({ select: { id: true, parentId: true } });
   const pending = new Map(folders.map((folder) => [folder.id, folder.parentId]));
   while (pending.size) {
