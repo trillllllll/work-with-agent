@@ -92,3 +92,25 @@ test('相邻时间点与午夜合并卡片不遮挡后续任务或超出当天',
   await next.getByRole('button', { name: '打开任务：十点半提醒', exact: true }).click();
   await expect(page.getByRole('button', { name: '安排时间', exact: true })).toContainText('10:30');
 });
+
+test('离开规划页后仍停在上次的日月周，日期回到今天', async ({ page }) => {
+  await page.goto('/#/plan');
+  await expect(page.locator('[data-plan-mode="week"]')).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: '月', exact: true }).click();
+  await page.goto('/#/inbox');
+  await page.goto('/#/plan');
+  await expect(page.locator('[data-plan-mode="month"]')).toHaveAttribute('aria-pressed', 'true');
+  await page.reload();
+  await expect(page.locator('[data-plan-mode="month"]')).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: '查看2026-10-18', exact: true }).click();
+  await expect(page.locator('[data-plan-mode="day"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('time-band-day')).toHaveAttribute('data-date', '2026-10-18');
+  await page.goto('/#/inbox');
+  await page.goto('/#/plan');
+  await expect(page.locator('[data-plan-mode="day"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('time-band-day')).toHaveAttribute('data-date', '2026-10-16');
+  await page.evaluate(() => localStorage.setItem('todo.plan.mode', 'year'));
+  await page.reload();
+  await expect(page.locator('[data-plan-mode="week"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('time-band-day')).toHaveCount(7);
+});
