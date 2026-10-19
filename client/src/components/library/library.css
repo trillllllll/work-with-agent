@@ -360,6 +360,12 @@
 
 .task-materials { margin-top: 20px; }
 .task-materials-head { display: flex; height: 32px; align-items: center; justify-content: space-between; gap: 8px; }
+.task-materials .library-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  appearance: none;
+}
 .task-material-row { display: flex; height: 44px; align-items: center; gap: 8px; }
 
 .library-dialog {
