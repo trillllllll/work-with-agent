@@ -1,5 +1,6 @@
 import { imageSearchKey } from '../application/image-search-settings.js';
 import { randomUUID } from 'node:crypto';
+import { fetch as proxyFetch, ProxyAgent } from 'undici';
 import { z } from 'zod';
 import { prisma } from '../infrastructure/prisma.js';
 import { assertSafeTarget } from '../infrastructure/controlled-execution.js';
@@ -8,12 +9,29 @@ const inputSchema = z.object({ query: z.string().trim().min(1).max(300), limit: 
 const httpsUrl = z.string().url().max(4096).refine((value) => { const url = new URL(value); return url.protocol === 'https:' && !url.username && !url.password; });
 const providerSchema = z.object({ results: z.array(z.object({ title: z.string().nullable().optional(), url: z.string().nullable().optional(), thumbnail: z.object({ src: z.string().nullable().optional() }).nullable().optional(), properties: z.object({ url: z.string().nullable().optional() }).nullable().optional() })).max(200) });
 const unavailable = (message: string, code = 'IMAGE_SEARCH_UNAVAILABLE') => Object.assign(new Error(message), { code });
+let proxyAddress = '';
+let proxyAgent: ProxyAgent | undefined;
+async function requestImages(url: string, key: string) {
+  const options = { headers: { Accept: 'application/json', 'X-Subscription-Token': key }, signal: AbortSignal.timeout(12000), redirect: 'error' as const };
+  const address = process.env.BRAVE_IMAGE_SEARCH_PROXY_URL?.trim();
+  if (!address) return fetch(url, options);
+  if (address !== proxyAddress || !proxyAgent) {
+    const proxy = new URL(address);
+    if (!['http:', 'https:'].includes(proxy.protocol)) throw new Error('图片搜索代理协议不支持');
+    const token = proxy.username || proxy.password ? `Basic ${Buffer.from(`${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`).toString('base64')}` : undefined;
+    const replacement = new ProxyAgent({ uri: proxy.origin, ...(token ? { token } : {}) });
+    if (proxyAgent) void proxyAgent.destroy().catch(() => {});
+    proxyAgent = replacement;
+    proxyAddress = address;
+  }
+  return proxyFetch(url, { ...options, dispatcher: proxyAgent });
+}
 export async function imageSearchAvailable() { return Boolean(await imageSearchKey()); }
 export async function searchImages(raw: unknown) {
   const { query, limit } = inputSchema.parse(raw);
   const key = await imageSearchKey();
   if (!key) throw unavailable('尚未配置图片搜索服务，无法搜索真实图片');
-  const response = await fetch(`https://api.search.brave.com/res/v1/images/search?q=${encodeURIComponent(query)}&count=${limit}&safesearch=strict`, { headers: { Accept: 'application/json', 'X-Subscription-Token': key }, signal: AbortSignal.timeout(12000), redirect: 'error' }).catch((error: unknown) => { throw unavailable(error instanceof Error && ['TimeoutError', 'AbortError'].includes(error.name) ? '图片搜索超时，请稍后重试' : '无法连接图片搜索服务，请检查网络或稍后重试', 'IMAGE_SEARCH_FAILED'); });
+  const response = await requestImages(`https://api.search.brave.com/res/v1/images/search?q=${encodeURIComponent(query)}&count=${limit}&safesearch=strict`, key).catch((error: unknown) => { throw unavailable(error instanceof Error && ['TimeoutError', 'AbortError'].includes(error.name) ? '图片搜索超时，请稍后重试' : '无法连接图片搜索服务，请检查网络或稍后重试', 'IMAGE_SEARCH_FAILED'); });
   if (!response.ok) throw unavailable(response.status === 429 ? '图片搜索服务已限流，请稍后重试' : `图片搜索服务返回 ${response.status}`, 'IMAGE_SEARCH_FAILED');
   const reader = response.body?.getReader();
   if (!reader) throw unavailable('图片搜索没有返回结果', 'IMAGE_SEARCH_FAILED');
