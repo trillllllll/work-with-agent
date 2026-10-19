@@ -201,16 +201,16 @@ describe('skill proposals', () => {
     expect(saved.body.data.versions).toEqual([expect.objectContaining({ revision: 1, source: 'editor-from-proposal', reason: '在编辑器中保存' })]);
     expect(await skillCount()).toBe(before + 1);
     const approval = await prisma.approval.findUniqueOrThrow({ where: { id: event.approvalId } });
-    expect(approval.status).toBe('SAVED_IN_EDITOR');
+    expect(approval.status).toBe('rejected');
     const outcome = JSON.parse(approval.result ?? '{}').outcome;
-    expect(outcome).toMatchObject({ status: 'SAVED_IN_EDITOR', code: 'SAVED_IN_EDITOR', skillId: saved.body.data.id, revision: 1, message: '用户已在编辑器修改并保存为 v1' });
+    expect(outcome).toMatchObject({ status: 'rejected', appliedOperationCount: 0, code: 'SAVED_IN_EDITOR', skillId: saved.body.data.id, revision: 1, message: '已在编辑器中修改并保存为 v1' });
     const proposal = await prisma.proposal.findFirstOrThrow({ where: { id: JSON.parse(approval.result ?? '{}').proposalId } });
-    expect(proposal.status).toBe('saved_in_editor');
+    expect(proposal.status).toBe('rejected');
     expect(proposal.commands).toContain('冻结正文');
     const run = await prisma.agentRun.findUniqueOrThrow({ where: { id: approval.runId ?? '' } });
     expect(run).toMatchObject({ state: 'paused', pauseReason: 'saved_in_editor' });
-    const tool = await prisma.message.findFirst({ where: { conversationId: chat.conversationId, role: 'tool', content: { contains: '用户已在编辑器修改并保存为 v1' } } });
-    expect(tool?.content).toContain(saved.body.data.id);
+    const tool = await prisma.message.findFirst({ where: { conversationId: chat.conversationId, role: 'tool', content: { contains: '已在编辑器中修改并保存为 v1' } } });
+    expect(JSON.parse(tool?.content ?? '{}')).toMatchObject({ success: true, code: 'SAVED_IN_EDITOR', data: { skillId: saved.body.data.id, name, revision: 1 }, message: '已在编辑器中修改并保存为 v1' });
     const again = await api.post('/api/skills').send({ name: `${name}-第二次`, description: '方案描述', instructions: '不该写入', fromApproval: { approvalId: event.approvalId, expectedProposalRevision: event.proposalRevision, previewHash: event.previewHash } });
     expect(again.status).toBe(409);
     expect(again.body.code).toBe('APPROVAL_ALREADY_HANDLED');
@@ -252,6 +252,6 @@ describe('skill proposals', () => {
       expect.objectContaining({ revision: 1, source: 'manual' }),
       expect.objectContaining({ revision: 2, source: 'editor-from-proposal', reason: '在编辑器中保存' }),
     ]);
-    expect((await prisma.approval.findUniqueOrThrow({ where: { id: event.approvalId } })).status).toBe('SAVED_IN_EDITOR');
+    expect((await prisma.approval.findUniqueOrThrow({ where: { id: event.approvalId } })).status).toBe('rejected');
   });
 });

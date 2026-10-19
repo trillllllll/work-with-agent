@@ -27,7 +27,7 @@ type Envelope = {
   toolCallId: string;
   requestedOperations: unknown[];
   review: ApprovalReview;
-  outcome: null | { status: 'executed'; appliedOperationCount: number; changeId: string | null; affected: Array<{ type: string; id: string; title: string }>; completedAt: string } | { status: 'rejected' | 'failed'; appliedOperationCount: 0; code: string; message: string; completedAt: string } | { status: 'SAVED_IN_EDITOR'; appliedOperationCount: 0; code: 'SAVED_IN_EDITOR'; message: string; skillId: string; revision: number; completedAt: string };
+  outcome: null | { status: 'executed'; appliedOperationCount: number; changeId: string | null; affected: Array<{ type: string; id: string; title: string }>; completedAt: string } | { status: 'rejected' | 'failed'; appliedOperationCount: 0; code: string; message: string; completedAt: string; skillId?: string; revision?: number };
   supersededByApprovalId: string | null;
   reversesApprovalId: string | null;
 };
@@ -187,7 +187,7 @@ export async function loadCloseableApproval(tx: Db, approvalId: string, input: D
 }
 
 export async function closeAppChanges(tx: Db, approval: Approval, envelope: Envelope, spec: {
-  approvalStatus: 'rejected' | 'SAVED_IN_EDITOR';
+  approvalStatus: 'rejected';
   proposalStatus: string;
   outcome: NonNullable<Envelope['outcome']>;
   toolResult: unknown;

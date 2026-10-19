@@ -440,12 +440,12 @@ async function saveFromApproval(mode: 'create' | 'update', input: { id?: string;
       : await persistSkill(tx, { id: command?.entityId, ...next, reason, source: 'editor-from-proposal', origin: 'assistant' });
     await recordChange(tx, 'skill', skill.id, existing ? 'update' : 'create', existing ? skillSnapshot(existing) : null, skillSnapshot(skill), { source: 'user', actor: ownerActor });
     const timestamp = skillNow();
-    const message = `用户已在编辑器修改并保存为 v${skill.revision}`;
+    const message = `已在编辑器中修改并保存为 v${skill.revision}`;
     await closeAppChanges(tx, approval, envelope, {
-      approvalStatus: 'SAVED_IN_EDITOR',
-      proposalStatus: 'saved_in_editor',
-      outcome: { status: 'SAVED_IN_EDITOR', appliedOperationCount: 0, code: 'SAVED_IN_EDITOR', message, skillId: skill.id, revision: skill.revision, completedAt: timestamp },
-      toolResult: { success: true, data: { message, skillId: skill.id, revision: skill.revision } },
+      approvalStatus: 'rejected',
+      proposalStatus: 'rejected',
+      outcome: { status: 'rejected', appliedOperationCount: 0, code: 'SAVED_IN_EDITOR', message, skillId: skill.id, revision: skill.revision, completedAt: timestamp },
+      toolResult: { success: true, code: 'SAVED_IN_EDITOR', data: { skillId: skill.id, name: skill.name, revision: skill.revision }, message },
       pauseReason: 'saved_in_editor',
       timestamp,
     });
