@@ -2,6 +2,7 @@ import { MessageBlocks } from './MessageBlocks.js';
 import { ContextSummary } from './ContextSummary.js';
 import { SourceLinks } from './SourceLinks.js';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChevronRight, Copy } from 'lucide-react';
 import type { Approval, ChatMessage, ToolActivity } from '@/chat.js';
 import { approvalsOnMessage, groupToolActivities, isReadOnlyTool } from '@/chat.js';
@@ -15,37 +16,37 @@ import { isAppChangeApproval, ReviewCard } from './ReviewCard.js';
 import { isTaskBatchApproval, TaskBatchCard } from './TaskBatchCard.js';
 import { MarkdownView } from './MarkdownView.js';
 
-const roleLabels: Record<string, string> = { user: '你', assistant: 'Agent', tool: 'Tool', system: '系统' };
-
-function payloadText(activity: ToolActivity) {
+function payloadText(activity: ToolActivity, argumentsLabel: string, resultLabel: string) {
   const parts: string[] = [];
-  if (Object.keys(activity.arguments).length) parts.push(`参数\n${JSON.stringify(activity.arguments, null, 2)}`);
-  if (activity.result !== undefined) parts.push(`结果\n${JSON.stringify(activity.result, null, 2)}`);
+  if (Object.keys(activity.arguments).length) parts.push(`${argumentsLabel}\n${JSON.stringify(activity.arguments, null, 2)}`);
+  if (activity.result !== undefined) parts.push(`${resultLabel}\n${JSON.stringify(activity.result, null, 2)}`);
   const text = parts.join('\n\n');
   if (!text) return '';
   return text.length > 1200 ? `${text.slice(0, 1200)}\n…` : text;
 }
 
-function statusText(activity: ToolActivity) {
-  if (activity.status === 'running') return '进行中';
-  if (activity.status === 'pending') return '等待审核';
-  if (activity.status === 'done' && !isReadOnlyTool(activity.name, activity.arguments)) return '已执行';
+function statusText(activity: ToolActivity, labels: { inProgress: string; waitingReview: string; executed: string }) {
+  if (activity.status === 'running') return labels.inProgress;
+  if (activity.status === 'pending') return labels.waitingReview;
+  if (activity.status === 'done' && !isReadOnlyTool(activity.name, activity.arguments)) return labels.executed;
   return '';
 }
 
 function ToolCallRow({ activity, approval, pending, executing, unknown, unresolved, phase, onApprove, onReject, onChanged }: { activity: ToolActivity; approval?: Approval; pending: boolean; executing: boolean; unknown: boolean; unresolved: boolean; phase: '' | 'approve' | 'reject'; onApprove: (id: string) => void; onReject: (id: string) => void; onChanged: () => void }) {
+  const { t } = useTranslation('chat');
+  const [open, setOpen] = useState(false);
   if (isAppChangeApproval(approval) && approval) return null;
   if (isTaskBatchApproval(approval) && approval) return <TaskBatchCard approval={approval} executing={executing} unknown={unknown} onApprove={onApprove} onReject={onReject} />;
-  const [open, setOpen] = useState(false);
-  const payload = payloadText(activity);
+  const payload = payloadText(activity, t('messageItem.arguments'), t('messageItem.result'));
   const label = toolLabels[activity.name] ?? activity.name;
   const failed = activity.status === 'error';
+  const state = statusText(activity, { inProgress: t('messageItem.inProgress'), waitingReview: t('messageItem.waitingReview'), executed: t('messageItem.executed') });
   const header = (
     <>
       {payload ? <ChevronRight className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')} /> : <span className="size-3.5 shrink-0" />}
       <span className="shrink-0 font-medium">{label}</span>
       <span className={cn('min-w-0 flex-1 truncate', failed ? 'text-destructive' : 'text-muted-foreground')}>{activity.preview}</span>
-      {statusText(activity) && <span className="shrink-0 text-[11px] text-muted-foreground">{statusText(activity)}</span>}
+      {state && <span className="shrink-0 text-[11px] text-muted-foreground">{state}</span>}
     </>
   );
   return (
@@ -68,12 +69,13 @@ function ToolCallRow({ activity, approval, pending, executing, unknown, unresolv
 }
 
 function ToolRun({ activities, approvalFor, pending, executingApprovalId, unknownApprovalIds, unresolvedApprovalIds, phase, onApprove, onReject, onChanged }: { activities: ToolActivity[]; approvalFor: (activity: ToolActivity) => Approval | undefined; pending: boolean; executingApprovalId: string; unknownApprovalIds: string[]; unresolvedApprovalIds: string[]; phase: '' | 'approve' | 'reject'; onApprove: (id: string) => void; onReject: (id: string) => void; onChanged: () => void }) {
+  const { t } = useTranslation('chat');
   const [open, setOpen] = useState(false);
   return (
     <div className="rounded-lg border border-border/80 bg-muted/40">
       <button type="button" aria-expanded={open} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px]" onClick={() => setOpen((value) => !value)}>
         <ChevronRight className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')} />
-        <span className="font-medium">查询了 {activities.length} 项</span>
+        <span className="font-medium">{t('messageItem.lookupCount', { count: activities.length })}</span>
       </button>
       {open && (
         <div className="flex flex-col gap-1 border-t border-border/70 p-1.5">
@@ -93,12 +95,14 @@ function looksLikeJson(content: string) {
 }
 
 export function MessageItem({ message, approvals = [], approvalPending = false, executingApprovalId = '', unknownApprovalIds = [], unresolvedApprovalIds = [], phase = '', onApprove = () => undefined, onReject = () => undefined, onChanged = () => undefined, onRepreviewed }: { message: ChatMessage; approvals?: Approval[]; approvalPending?: boolean; executingApprovalId?: string; unknownApprovalIds?: string[]; unresolvedApprovalIds?: string[]; phase?: '' | 'approve' | 'reject'; onApprove?: (id: string) => void; onReject?: (id: string) => void; onChanged?: () => void; onRepreviewed?: (body: { approvalId?: string; previewHash?: string; supersedesApprovalId?: string; approval?: { id: string; status: string; toolName: string; conversationId?: string | null; envelope?: unknown } }) => void }) {
+  const { t } = useTranslation('chat');
   const role = message.role;
   if (role === 'tool') return null;
+  const roleLabels: Record<string, string> = { user: t('messageItem.role.user'), assistant: t('messageItem.role.assistant'), tool: t('messageItem.role.tool'), system: t('messageItem.role.system') };
   const label = roleLabels[role] ?? role;
   const streaming = message.status === 'streaming';
   const failed = message.status === 'failed';
-  const content = message.content || (streaming ? '正在输出…' : '');
+  const content = message.content || (streaming ? t('messageItem.streaming') : '');
   const approvalFor = (activity: ToolActivity) => approvals.find((item) => item.approvalId === activity.approvalId || item.toolCallId === activity.toolCallId);
   const groups = groupToolActivities(message.tools ?? []);
   if (role === 'assistant' && !content && !failed && groups.length === 0 && !message.parts?.length && !message.blocks?.length) return null;
@@ -114,7 +118,7 @@ export function MessageItem({ message, approvals = [], approvalPending = false, 
     >
       {(content || role !== 'assistant') && (
         <span className={cn('mb-1 block text-[11px] font-bold tracking-wide', failed ? 'text-destructive' : 'text-muted-foreground')}>
-          {label}{failed ? '（输出失败）' : ''}
+          {label}{failed ? t('messageItem.outputFailed') : ''}
         </span>
       )}
       {message.blocks?.length ? <MessageBlocks blocks={message.blocks} /> : content && (role === 'system' && !streaming ? (
@@ -128,7 +132,7 @@ export function MessageItem({ message, approvals = [], approvalPending = false, 
       ) : (
         <MarkdownView content={content} />
       ))}
-      {message.role === 'assistant' && content && !streaming && <Button variant="ghost" size="icon-xs" className="mt-2 text-muted-foreground" aria-label="复制回复" onClick={() => void navigator.clipboard.writeText(message.content).then(() => toast.success('已复制回复'), () => toast.error('复制失败'))}><Copy /></Button>}
+      {message.role === 'assistant' && content && !streaming && <Button variant="ghost" size="icon-xs" className="mt-2 text-muted-foreground" aria-label={t('messageItem.copyReply')} onClick={() => void navigator.clipboard.writeText(message.content).then(() => toast.success(t('messageItem.replyCopied')), () => toast.error(t('clipboard.copyFailed')))}><Copy /></Button>}
       {message.role === 'user' && <ContextSummary context={message.context} />}
       <SourceLinks sources={message.sources ?? []} />
       {groups.length > 0 && (

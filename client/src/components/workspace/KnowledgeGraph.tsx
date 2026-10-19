@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from '@/lib/api.js';
@@ -6,17 +7,20 @@ import { json, submitCommands, usePlatformAction } from '@/lib/platform.js';
 import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { Textarea } from '@/components/ui/textarea.js';
+import { t as translate } from '../../i18n/index.js';
 import { BLOB_PAD, communityColors, communityOutline, communityRadius, fittedScale, layoutClusterCenters, memberRing, projectGround } from './graph-layout.js';
-import { entityKindNames, relationNames } from './memory-view.js';
+import { entityKindKeys, entityKindLabel, isEntityKind, relationLabel } from './memory-view.js';
 
 type GraphNode = { id: string; rawId: string; type: 'memory' | 'material' | 'task' | 'artifact' | 'entity'; title: string; kind?: string; status?: string; excerpt?: string; description?: string; importance?: number; labels?: string[]; origin?: string; revision?: number; memoryCount?: number; createdAt?: string };
 type GraphEdge = { id: string; from: string; to: string; relation: string; manual: boolean };
 type GraphData = { nodes: GraphNode[]; edges: GraphEdge[]; focusIds: string[]; truncated: boolean; mode: string; range: number };
 const colors: Record<string, string> = { entity: 'hsl(262 28% 64%)', memory: 'hsl(206 22% 64%)', material: 'hsl(150 16% 56%)', thread: 'hsl(28 22% 60%)', task: 'hsl(40 20% 60%)', artifact: 'hsl(345 16% 62%)', crystal: 'hsl(262 14% 74%)' };
 const colorOf = (node: GraphNode) => node.type === 'memory' && node.kind === 'crystal' ? colors.crystal : node.type === 'material' && node.kind === 'thread' ? colors.thread : colors[node.type] ?? '#94a3b8';
-const typeNames: Record<string, string> = { memory: '记忆', material: '资料', task: '任务', artifact: '产物', entity: '实体' };
+const nodeTypes = ['memory', 'material', 'task', 'artifact', 'entity'] as const;
+const typeLabel = (type: string) => (nodeTypes as readonly string[]).includes(type) ? translate(`knowledge:graph.types.${type}`) : type;
 
 export function KnowledgeGraph({ topicId }: { topicId: string | null }) {
+  const { t } = useTranslation('knowledge');
   const [draft, setDraft] = useState('');
   const [q, setQ] = useState('');
   const [mode, setMode] = useState<'fast' | 'smart'>('smart');
@@ -42,36 +46,36 @@ export function KnowledgeGraph({ topicId }: { topicId: string | null }) {
     if (!question.trim()) return;
     setAsking(true);
     try { setAnswer(await api('/api/v1/knowledge/graph/ask', { method: 'POST', body: json({ topicId, question, mode, range }) })); }
-    catch (error) { toast.error(error instanceof Error ? error.message : '提问失败'); }
+    catch (error) { toast.error(error instanceof Error ? error.message : t('graph.askFailed')); }
     finally { setAsking(false); }
   }
   return <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Input aria-label="搜索图谱" placeholder="搜索实体、主题或问题" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { setQ(draft.trim()); setFocus(null); } }} className="max-w-sm" />
-        <Button size="sm" variant={mode === 'smart' ? 'secondary' : 'ghost'} onClick={() => setMode('smart')}>智能</Button>
-        <Button size="sm" variant={mode === 'fast' ? 'secondary' : 'ghost'} onClick={() => setMode('fast')}>快速</Button>
-        <div className="flex items-center gap-1" role="group" aria-label="关系跳数">{[1, 2, 3, 4, 5].map((value) => <Button key={value} size="sm" variant={range === value ? 'secondary' : 'ghost'} aria-pressed={range === value} onClick={() => setRange(value)}>{value}</Button>)}</div>
+        <Input aria-label={t('graph.searchLabel')} placeholder={t('graph.searchPlaceholder')} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { setQ(draft.trim()); setFocus(null); } }} className="max-w-sm" />
+        <Button size="sm" variant={mode === 'smart' ? 'secondary' : 'ghost'} onClick={() => setMode('smart')}>{t('graph.smart')}</Button>
+        <Button size="sm" variant={mode === 'fast' ? 'secondary' : 'ghost'} onClick={() => setMode('fast')}>{t('graph.fast')}</Button>
+        <div className="flex items-center gap-1" role="group" aria-label={t('graph.hops')}>{[1, 2, 3, 4, 5].map((value) => <Button key={value} size="sm" variant={range === value ? 'secondary' : 'ghost'} aria-pressed={range === value} onClick={() => setRange(value)}>{value}</Button>)}</div>
         <Button size="sm" variant={spatial === '2d' ? 'secondary' : 'ghost'} aria-pressed={spatial === '2d'} onClick={() => setSpatial('2d')}>2D</Button>
         <Button size="sm" variant={spatial === '3d' ? 'secondary' : 'ghost'} aria-pressed={spatial === '3d'} onClick={() => setSpatial('3d')}>3D</Button>
-        <Button size="sm" variant="ghost" onClick={() => { setQ(''); setDraft(''); setFocus(null); setSelectedId(''); }}>看全图</Button>
+        <Button size="sm" variant="ghost" onClick={() => { setQ(''); setDraft(''); setFocus(null); setSelectedId(''); }}>{t('graph.fullGraph')}</Button>
       </div>
       {query.error && <p role="alert" className="text-sm text-destructive">{query.error.message}</p>}
-      {query.data?.truncated && <p className="text-xs text-muted-foreground">节点较多，当前只显示前 500 个。</p>}
+      {query.data?.truncated && <p className="text-xs text-muted-foreground">{t('graph.truncated')}</p>}
       <GraphCanvas nodes={nodes} edges={edges} selectedId={selectedId} spatial={spatial} onSelect={(node) => { setSelectedId(node.id); setFocus({ type: node.type, id: node.rawId }); }} />
-      <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">{Object.entries(typeNames).map(([type, label]) => <span key={type} className="inline-flex items-center gap-1"><i className="inline-block size-2 rounded-full" style={{ background: colors[type] }} />{label}</span>)}<span className="inline-flex items-center gap-1"><i className="inline-block size-2 rounded-full" style={{ background: colors.thread }} />对话</span><span className="inline-flex items-center gap-1"><i className="inline-block size-2 rounded-full" style={{ background: colors.crystal }} />结晶</span></div>
-      <div aria-label="图中节点" className="flex max-h-28 flex-wrap gap-2 overflow-y-auto">{nodes.map((node) => <Button key={node.id} size="sm" variant={selectedId === node.id ? 'secondary' : 'ghost'} onClick={() => { setSelectedId(node.id); setFocus({ type: node.type, id: node.rawId }); }}>{node.title}</Button>)}{!nodes.length && <p className="text-sm text-muted-foreground">这张图里还没有节点。</p>}</div>
-      <label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={history} onChange={(event) => setHistory(event.target.checked)} />包含历史记忆和归档材料</label>
+      <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">{nodeTypes.map((type) => <span key={type} className="inline-flex items-center gap-1"><i className="inline-block size-2 rounded-full" style={{ background: colors[type] }} />{t(`graph.types.${type}`)}</span>)}<span className="inline-flex items-center gap-1"><i className="inline-block size-2 rounded-full" style={{ background: colors.thread }} />{t('graph.types.thread')}</span><span className="inline-flex items-center gap-1"><i className="inline-block size-2 rounded-full" style={{ background: colors.crystal }} />{t('graph.types.crystal')}</span></div>
+      <div aria-label={t('graph.nodesLabel')} className="flex max-h-28 flex-wrap gap-2 overflow-y-auto">{nodes.map((node) => <Button key={node.id} size="sm" variant={selectedId === node.id ? 'secondary' : 'ghost'} onClick={() => { setSelectedId(node.id); setFocus({ type: node.type, id: node.rawId }); }}>{node.title}</Button>)}{!nodes.length && <p className="text-sm text-muted-foreground">{t('graph.noNodes')}</p>}</div>
+      <label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={history} onChange={(event) => setHistory(event.target.checked)} />{t('graph.includeHistory')}</label>
     </div>
     <aside className="glass-subtle space-y-3 rounded-xl p-4">
-      <div className="flex flex-wrap gap-1" role="tablist" aria-label="图谱侧栏">{[['read', '解读'], ['open', '查看'], ['ontology', '本体'], ['maintain', '图谱维护']].map(([id, label]) => <Button key={id} size="sm" variant={panel === id ? 'secondary' : 'ghost'} onClick={() => setPanel(id as typeof panel)}>{label}</Button>)}</div>
-      {panel === 'read' && <div className="space-y-3 text-sm">{selected ? <><h2 className="font-semibold">{selected.title}</h2><p className="text-xs text-muted-foreground">{typeNames[selected.type]}{selected.kind ? ` · ${entityKindNames[selected.kind as keyof typeof entityKindNames] ?? selected.kind}` : ''}</p><p className="whitespace-pre-wrap text-muted-foreground">{selected.excerpt || selected.description || '没有更多摘要。'}</p><h3 className="text-xs font-semibold">一度邻居</h3><ul className="space-y-2">{neighbors.map(({ edge, node }) => <li key={edge.id}><button type="button" className="text-left" onClick={() => node && setSelectedId(node.id)}>{node?.title}</button><span className="ml-2 text-xs text-muted-foreground">{relationNames[edge.relation] ?? edge.relation}</span></li>)}{!neighbors.length && <li className="text-xs text-muted-foreground">没有直接相连的节点。</li>}</ul></> : <p className="text-muted-foreground">点一个节点，查看它和相邻记录。</p>}</div>}
-      {panel === 'open' && <div className="space-y-2 text-sm">{!selected && <p className="text-muted-foreground">先在图里选择一条记录。</p>}{selected && <h2 className="font-semibold">{selected.title}</h2>}{detail.data?.content && <p className="whitespace-pre-wrap">{detail.data.content}</p>}{selected?.type === 'entity' && <p className="whitespace-pre-wrap">{selected.description || '这个实体还没有说明。'}</p>}{selected && !['memory', 'material', 'entity'].includes(selected.type) && <p className="whitespace-pre-wrap text-muted-foreground">{selected.excerpt}</p>}</div>}
+      <div className="flex flex-wrap gap-1" role="tablist" aria-label={t('graph.sidebar')}>{(['read', 'open', 'ontology', 'maintain'] as const).map((id) => <Button key={id} size="sm" variant={panel === id ? 'secondary' : 'ghost'} onClick={() => setPanel(id)}>{t(`graph.panels.${id}`)}</Button>)}</div>
+      {panel === 'read' && <div className="space-y-3 text-sm">{selected ? <><h2 className="font-semibold">{selected.title}</h2><p className="text-xs text-muted-foreground">{selected.kind ? t('graph.nodeMeta', { type: typeLabel(selected.type), kind: entityKindLabel(selected.kind) }) : typeLabel(selected.type)}</p><p className="whitespace-pre-wrap text-muted-foreground">{selected.excerpt || selected.description || t('graph.noExcerpt')}</p><h3 className="text-xs font-semibold">{t('graph.neighbors')}</h3><ul className="space-y-2">{neighbors.map(({ edge, node }) => <li key={edge.id}><button type="button" className="text-left" onClick={() => node && setSelectedId(node.id)}>{node?.title}</button><span className="ml-2 text-xs text-muted-foreground">{relationLabel(edge.relation)}</span></li>)}{!neighbors.length && <li className="text-xs text-muted-foreground">{t('graph.noNeighbors')}</li>}</ul></> : <p className="text-muted-foreground">{t('graph.selectNode')}</p>}</div>}
+      {panel === 'open' && <div className="space-y-2 text-sm">{!selected && <p className="text-muted-foreground">{t('graph.selectRecord')}</p>}{selected && <h2 className="font-semibold">{selected.title}</h2>}{detail.data?.content && <p className="whitespace-pre-wrap">{detail.data.content}</p>}{selected?.type === 'entity' && <p className="whitespace-pre-wrap">{selected.description || t('graph.noEntityDescription')}</p>}{selected && !['memory', 'material', 'entity'].includes(selected.type) && <p className="whitespace-pre-wrap text-muted-foreground">{selected.excerpt}</p>}</div>}
       {panel === 'ontology' && <Ontology topicId={topicId} nodes={nodes.filter((node) => node.type === 'entity')} busy={busy} run={run} />}
       {panel === 'maintain' && <Maintain topicId={topicId} nodes={nodes} selected={selected} edges={neighbors} busy={busy} run={run} />}
       <form className="space-y-2 border-t pt-3" onSubmit={(event) => { event.preventDefault(); void ask(); }}>
-        <Textarea aria-label="询问知识图谱" placeholder="问一下你的知识图谱" value={question} onChange={(event) => setQuestion(event.target.value)} rows={3} />
-        <Button size="sm" disabled={asking || !question.trim()}>{asking ? '正在检索' : '提问'}</Button>
+        <Textarea aria-label={t('graph.askLabel')} placeholder={t('graph.askPlaceholder')} value={question} onChange={(event) => setQuestion(event.target.value)} rows={3} />
+        <Button size="sm" disabled={asking || !question.trim()}>{asking ? t('graph.searching') : t('graph.ask')}</Button>
         {answer?.notice && <p className="text-xs text-muted-foreground">{answer.notice}</p>}
         {answer?.answer && <p className="whitespace-pre-wrap text-sm">{answer.answer}</p>}
         {answer?.mode === 'retrieval' && <ul className="space-y-2 text-sm">{answer.citations.map((node) => <li key={node.id}><strong>{node.title}</strong><p className="text-xs text-muted-foreground">{node.excerpt}</p></li>)}</ul>}
@@ -81,43 +85,46 @@ export function KnowledgeGraph({ topicId }: { topicId: string | null }) {
 }
 
 function Ontology({ topicId, nodes, busy, run }: { topicId: string | null; nodes: GraphNode[]; busy: boolean; run: ReturnType<typeof usePlatformAction>['run'] }) {
+  const { t } = useTranslation('knowledge');
   const [name, setName] = useState('');
   const [kind, setKind] = useState('concept');
   return <div className="space-y-3 text-sm">
-    <form className="space-y-2" onSubmit={(event) => { event.preventDefault(); void run(() => submitCommands([{ kind: 'entity.create', input: { topicId, name, kind } }]), '实体已建立').then(() => setName('')); }}>
-      <Input aria-label="新实体名称" placeholder="新实体" value={name} onChange={(event) => setName(event.target.value)} required />
+    <form className="space-y-2" onSubmit={(event) => { event.preventDefault(); void run(() => submitCommands([{ kind: 'entity.create', input: { topicId, name, kind } }]), t('graph.entityCreated')).then(() => setName('')); }}>
+      <Input aria-label={t('graph.newEntityName')} placeholder={t('graph.newEntityPlaceholder')} value={name} onChange={(event) => setName(event.target.value)} required />
       <KindSelect value={kind} onChange={setKind} />
-      <Button size="sm" disabled={busy || !name.trim()}>建立实体</Button>
+      <Button size="sm" disabled={busy || !name.trim()}>{t('graph.createEntity')}</Button>
     </form>
-    <ul className="space-y-2">{nodes.map((node) => <li key={node.id} className="flex items-center justify-between gap-2"><span>{node.title}</span><span className="text-xs text-muted-foreground">{entityKindNames[node.kind as keyof typeof entityKindNames] ?? node.kind} · 记忆 {node.memoryCount ?? 0}</span></li>)}{!nodes.length && <li className="text-xs text-muted-foreground">还没有实体。保存带标签的记忆后会自动出现。</li>}</ul>
+    <ul className="space-y-2">{nodes.map((node) => <li key={node.id} className="flex items-center justify-between gap-2"><span>{node.title}</span><span className="text-xs text-muted-foreground">{t('graph.entityMemoryCount', { kind: entityKindLabel(node.kind), count: node.memoryCount ?? 0 })}</span></li>)}{!nodes.length && <li className="text-xs text-muted-foreground">{t('graph.noEntities')}</li>}</ul>
   </div>;
 }
 
 function Maintain({ topicId, nodes, selected, edges, busy, run }: { topicId: string | null; nodes: GraphNode[]; selected: GraphNode | null; edges: Array<{ edge: GraphEdge; node?: GraphNode }>; busy: boolean; run: ReturnType<typeof usePlatformAction>['run'] }) {
+  const { t } = useTranslation('knowledge');
   const [name, setName] = useState(selected?.type === 'entity' ? selected.title : '');
   const [kind, setKind] = useState(selected?.kind ?? 'concept');
   const [description, setDescription] = useState(selected?.description ?? '');
   const [target, setTarget] = useState('');
   const [relation, setRelation] = useState('related');
-  useEffect(() => { setName(selected?.type === 'entity' ? selected.title : ''); setKind(selected?.kind && selected.kind in entityKindNames ? selected.kind : 'concept'); setDescription(selected?.description ?? ''); }, [selected?.id, selected?.title, selected?.kind, selected?.description, selected?.type]);
-  if (selected?.type !== 'entity') return <p className="text-sm text-muted-foreground">选择一个实体后，可以改名、连接其他节点，或在它有至少三条记忆时沉淀结晶。</p>;
-  return <form className="space-y-2 text-sm" onSubmit={(event) => { event.preventDefault(); void run(() => submitCommands([{ kind: 'entity.update', targetId: selected.rawId, expectedRevision: selected.revision, input: { name, kind, description } }]), '实体已更新'); }}>
-    <Input aria-label="实体名称" value={name} onChange={(event) => setName(event.target.value)} required />
+  useEffect(() => { setName(selected?.type === 'entity' ? selected.title : ''); setKind(selected?.kind && isEntityKind(selected.kind) ? selected.kind : 'concept'); setDescription(selected?.description ?? ''); }, [selected?.id, selected?.title, selected?.kind, selected?.description, selected?.type]);
+  if (selected?.type !== 'entity') return <p className="text-sm text-muted-foreground">{t('graph.maintainHint')}</p>;
+  return <form className="space-y-2 text-sm" onSubmit={(event) => { event.preventDefault(); void run(() => submitCommands([{ kind: 'entity.update', targetId: selected.rawId, expectedRevision: selected.revision, input: { name, kind, description } }]), t('graph.entityUpdated')); }}>
+    <Input aria-label={t('graph.entityName')} value={name} onChange={(event) => setName(event.target.value)} required />
     <KindSelect value={kind} onChange={setKind} />
-    <Textarea aria-label="实体说明" value={description} onChange={(event) => setDescription(event.target.value)} rows={3} />
-    <div className="flex flex-wrap gap-2"><Button size="sm" disabled={busy || !name.trim()}>保存实体</Button><Button type="button" size="sm" variant="ghost" disabled={busy || (selected.memoryCount ?? 0) > 0} onClick={() => void run(() => submitCommands([{ kind: 'entity.delete', targetId: selected.rawId, expectedRevision: selected.revision, input: {} }]), '实体已删除')}>删除实体</Button><Button type="button" size="sm" variant="outline" disabled={busy || (selected.memoryCount ?? 0) < 3} onClick={() => void run(() => submitCommands([{ kind: 'memory.crystallize', input: { topicId, entityId: selected.rawId } }]), '结晶记忆已保存')}>沉淀结晶</Button></div>
-    <p className="text-xs text-muted-foreground">当前有 {selected.memoryCount ?? 0} 条相连记忆。结晶需要至少三条。</p>
+    <Textarea aria-label={t('graph.entityDescription')} value={description} onChange={(event) => setDescription(event.target.value)} rows={3} />
+    <div className="flex flex-wrap gap-2"><Button size="sm" disabled={busy || !name.trim()}>{t('graph.saveEntity')}</Button><Button type="button" size="sm" variant="ghost" disabled={busy || (selected.memoryCount ?? 0) > 0} onClick={() => void run(() => submitCommands([{ kind: 'entity.delete', targetId: selected.rawId, expectedRevision: selected.revision, input: {} }]), t('graph.entityDeleted'))}>{t('graph.deleteEntity')}</Button><Button type="button" size="sm" variant="outline" disabled={busy || (selected.memoryCount ?? 0) < 3} onClick={() => void run(() => submitCommands([{ kind: 'memory.crystallize', input: { topicId, entityId: selected.rawId } }]), t('graph.crystalSaved'))}>{t('graph.crystallize')}</Button></div>
+    <p className="text-xs text-muted-foreground">{t('graph.connectedMemories', { count: selected.memoryCount ?? 0 })}</p>
     <div className="space-y-2 border-t pt-3">
-      <select aria-label="连接到" className="glass-control h-9 w-full rounded-lg px-3 text-sm" value={target} onChange={(event) => setTarget(event.target.value)}><option value="">选择另一个节点</option>{nodes.filter((node) => node.id !== selected.id).map((node) => <option key={node.id} value={`${node.type}:${node.rawId}`}>{typeNames[node.type]} · {node.title}</option>)}</select>
-      <select aria-label="关系类型" className="glass-control h-9 w-full rounded-lg px-3 text-sm" value={relation} onChange={(event) => setRelation(event.target.value)}><option value="related">相关</option><option value="about">关于</option><option value="contrasts">冲突</option></select>
-      <Button type="button" size="sm" variant="outline" disabled={busy || !target} onClick={() => { const [toType, ...rest] = target.split(':'); void run(() => submitCommands([{ kind: 'graph.link', input: { topicId, fromType: 'entity', fromId: selected.rawId, toType, toId: rest.join(':'), relation } }]), '关系已建立'); }}>建立关系</Button>
-      <ul className="space-y-1">{edges.filter(({ edge }) => edge.manual).map(({ edge, node }) => <li key={edge.id} className="flex items-center justify-between gap-2"><span>{relationNames[edge.relation]} · {node?.title}</span><Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => void run(() => submitCommands([{ kind: 'graph.unlink', targetId: edge.id, input: {} }]), '关系已移除')}>移除</Button></li>)}</ul>
+      <select aria-label={t('graph.connectTo')} className="glass-control h-9 w-full rounded-lg px-3 text-sm" value={target} onChange={(event) => setTarget(event.target.value)}><option value="">{t('graph.chooseNode')}</option>{nodes.filter((node) => node.id !== selected.id).map((node) => <option key={node.id} value={`${node.type}:${node.rawId}`}>{t('graph.nodeOption', { type: typeLabel(node.type), title: node.title })}</option>)}</select>
+      <select aria-label={t('graph.relationType')} className="glass-control h-9 w-full rounded-lg px-3 text-sm" value={relation} onChange={(event) => setRelation(event.target.value)}>{(['related', 'about', 'contrasts'] as const).map((id) => <option key={id} value={id}>{relationLabel(id)}</option>)}</select>
+      <Button type="button" size="sm" variant="outline" disabled={busy || !target} onClick={() => { const [toType, ...rest] = target.split(':'); void run(() => submitCommands([{ kind: 'graph.link', input: { topicId, fromType: 'entity', fromId: selected.rawId, toType, toId: rest.join(':'), relation } }]), t('graph.linkCreated')); }}>{t('graph.createLink')}</Button>
+      <ul className="space-y-1">{edges.filter(({ edge }) => edge.manual).map(({ edge, node }) => <li key={edge.id} className="flex items-center justify-between gap-2"><span>{t('graph.nodeOption', { type: relationLabel(edge.relation), title: node?.title ?? '' })}</span><Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => void run(() => submitCommands([{ kind: 'graph.unlink', targetId: edge.id, input: {} }]), t('graph.linkRemoved'))}>{t('graph.remove')}</Button></li>)}</ul>
     </div>
   </form>;
 }
 
 function KindSelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  return <select aria-label="实体类别" className="glass-control h-9 w-full rounded-lg px-3 text-sm" value={value} onChange={(event) => onChange(event.target.value)}>{Object.entries(entityKindNames).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>;
+  const { t } = useTranslation('knowledge');
+  return <select aria-label={t('graph.entityKind')} className="glass-control h-9 w-full rounded-lg px-3 text-sm" value={value} onChange={(event) => onChange(event.target.value)}>{entityKindKeys.map((id) => <option key={id} value={id}>{t(`memoryView.entityKinds.${id}`)}</option>)}</select>;
 }
 
 type Point = GraphNode & { x: number; y: number; h: number; vx: number; vy: number; cluster: string; homeX: number; homeY: number };
@@ -187,7 +194,7 @@ function clusterGroups(nodes: GraphNode[], edges: GraphEdge[]) {
     const best = pick(counts);
     if (best) membership.set(entity.id, best);
   }
-  const labels = [...sizes().entries()].flatMap(([id, count]) => id === otherCluster && count < 2 ? [] : [{ id, name: titles.get(id) ?? '其他' }]);
+  const labels = [...sizes().entries()].flatMap(([id, count]) => id === otherCluster && count < 2 ? [] : [{ id, name: titles.get(id) ?? translate('knowledge:graph.otherCluster') }]);
   return { membership, labels };
 }
 
@@ -207,12 +214,7 @@ function traceBlob(context: CanvasRenderingContext2D, points: Array<{ x: number;
 
 type Relief = 'influence' | 'structure' | 'form' | 'growth';
 type Surface = 'terrain' | 'star';
-const reliefCopy: Record<Relief, string> = {
-  influence: '影响力地形。高处代表更重要、连接更强的知识。',
-  structure: '结构地形。高处离连接最多的节点更近，孤立的点贴在地面。',
-  form: '形态地形。同一类节点抬成一层：记忆、实体、材料、任务、产物各占一条脊。',
-  growth: '增长地形。高处代表最近更新的知识。',
-};
+const reliefDescription = (relief: Relief) => translate(`knowledge:graph.reliefDescription.${relief}`);
 const formHeight: Record<GraphNode['type'], number> = { memory: 1, entity: 0.78, material: 0.56, task: 0.34, artifact: 0.16 };
 
 function nodeScores(items: Point[], edges: GraphEdge[], relief: Relief) {
@@ -311,7 +313,8 @@ function GraphCanvas({ nodes, edges, selectedId, spatial, onSelect }: { nodes: G
   const drag = useRef<{ x: number; y: number; moved: boolean; id?: string } | null>(null);
   const [surface, setSurface] = useState<Surface>('terrain');
   const [relief, setRelief] = useState<Relief>('influence');
-  const groups = useMemo(() => clusterGroups(nodes, edges), [nodes, edges]);
+  const { t, i18n } = useTranslation('knowledge');
+  const groups = useMemo(() => clusterGroups(nodes, edges), [nodes, edges, i18n.language]);
   useEffect(() => { fitted.current = false; }, [nodes, groups, spatial]);
   useEffect(() => {
     const ids = [...new Set(groups.membership.values())];
@@ -462,19 +465,19 @@ function GraphCanvas({ nodes, edges, selectedId, spatial, onSelect }: { nodes: G
   }, [nodes, edges, selectedId, spatial, surface, relief, groups]);
   return <div>
     <div className="relative">
-    <canvas ref={canvasRef} aria-label="知识关系图" className="h-[28rem] w-full rounded-xl bg-neutral-950 md:h-[36rem]" />
+    <canvas ref={canvasRef} aria-label={t('graph.canvasLabel')} className="h-[28rem] w-full rounded-xl bg-neutral-950 md:h-[36rem]" />
     {spatial === '3d' && <div className="absolute inset-x-3 bottom-3 max-w-md space-y-2 rounded-xl bg-neutral-950/88 p-3 text-neutral-100">
-      <div className="flex flex-wrap gap-2" role="group" aria-label="三维视图">
-        <Button size="sm" variant={surface === 'terrain' ? 'secondary' : 'ghost'} aria-pressed={surface === 'terrain'} onClick={() => setSurface('terrain')}>地形</Button>
-        <Button size="sm" variant={surface === 'star' ? 'secondary' : 'ghost'} aria-pressed={surface === 'star'} onClick={() => setSurface('star')}>知识星图</Button>
+      <div className="flex flex-wrap gap-2" role="group" aria-label={t('graph.view3d')}>
+        <Button size="sm" variant={surface === 'terrain' ? 'secondary' : 'ghost'} aria-pressed={surface === 'terrain'} onClick={() => setSurface('terrain')}>{t('graph.terrain')}</Button>
+        <Button size="sm" variant={surface === 'star' ? 'secondary' : 'ghost'} aria-pressed={surface === 'star'} onClick={() => setSurface('star')}>{t('graph.starMap')}</Button>
       </div>
       {surface === 'terrain' ? <>
-        <p className="text-xs text-neutral-300">高度代表什么？</p>
-        <div className="flex flex-wrap gap-1" role="group" aria-label="高度代表什么">{([['influence', '影响力'], ['structure', '结构'], ['form', '形态'], ['growth', '增长']] as const).map(([id, label]) => <Button key={id} size="sm" variant={relief === id ? 'secondary' : 'ghost'} aria-pressed={relief === id} onClick={() => setRelief(id)}>{label}</Button>)}</div>
-        <p className="text-xs text-neutral-300">{reliefCopy[relief]}</p>
-      </> : <p className="text-xs text-neutral-300">知识星图把节点和连线铺在透视平面上。</p>}
+        <p className="text-xs text-neutral-300">{t('graph.heightQuestion')}</p>
+        <div className="flex flex-wrap gap-1" role="group" aria-label={t('graph.heightQuestion')}>{(['influence', 'structure', 'form', 'growth'] as const).map((id) => <Button key={id} size="sm" variant={relief === id ? 'secondary' : 'ghost'} aria-pressed={relief === id} onClick={() => setRelief(id)}>{t(`graph.relief.${id}`)}</Button>)}</div>
+        <p className="text-xs text-neutral-300">{reliefDescription(relief)}</p>
+      </> : <p className="text-xs text-neutral-300">{t('graph.starMapHint')}</p>}
     </div>}
     </div>
-    {groups.labels.length > 0 && <div role="group" aria-label="聚类" className="mt-2 flex flex-wrap gap-x-3 text-xs text-muted-foreground">{groups.labels.map((label) => <span key={label.id}>{label.name}</span>)}</div>}
+    {groups.labels.length > 0 && <div role="group" aria-label={t('graph.clusters')} className="mt-2 flex flex-wrap gap-x-3 text-xs text-muted-foreground">{groups.labels.map((label) => <span key={label.id}>{label.name}</span>)}</div>}
   </div>;
 }

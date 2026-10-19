@@ -1,3 +1,4 @@
+// i18n-ignore-file: prompt sent to the model; tests and the server match this wording.
 export function organizationMcpPrompt(request: { id: string; purpose: string }) {
   return `请使用已连接的 work_with_agent MCP 完成这次记忆整理。不要直接修改任务或记忆，也不要确认提议。
 

@@ -1,8 +1,11 @@
 import { useLayoutEffect, useSyncExternalStore } from 'react';
 import type { ChatContextV3, ChatAttachment } from '../../../server/src/agent/chat-context.js';
+import { t } from '../i18n/index.js';
 export type { ChatContextV3, ChatAttachment };
 
-export const pageNames: Record<string, string> = { inbox: '收集箱', board: '清单', today: '今天', plan: '规划', search: '搜索', tags: '标签', library: '资料库', knowledge: '工作上下文', topics: '清单', quadrant: '四象限', archived: '已归档', trash: '回收站', focus: '专注', settings: '设置', connections: '连接', proposals: '提议', changes: '变更历史', runs: '运行', reviews: '定期回顾', more: '更多' };
+const pageNameIds = ['inbox', 'board', 'today', 'plan', 'search', 'tags', 'library', 'knowledge', 'topics', 'quadrant', 'archived', 'trash', 'focus', 'settings', 'connections', 'proposals', 'changes', 'runs', 'reviews', 'more'] as const;
+export const pageNames: Record<string, string> = {};
+for (const id of pageNameIds) Object.defineProperty(pageNames, id, { enumerable: true, get: () => t(`chat:pageNames.${id}`) });
 type PublishedContext = { page: string; value: Partial<ChatContextV3> };
 const pages = new Map<string, PublishedContext>();
 const listeners = new Set<() => void>();
@@ -25,17 +28,15 @@ export function contextLabel(label: string) {
   return /[\uD800-\uDBFF]$/.test(clipped) ? clipped.slice(0, -1) : clipped;
 }
 export function attachmentError(items: ChatAttachment[]) {
-  if (items.length > 20) return '每条消息最多添加 20 个附件';
-  if (items.some((item) => [...item.text].length > 20000)) return '单个附件最多 20,000 字符，请缩小选择范围';
-  if (items.reduce((sum, item) => sum + [...item.text].length, 0) > 40000) return '附件合计最多 40,000 字符，请移除部分附件';
+  if (items.length > 20) return t('chat:attachments.tooMany');
+  if (items.some((item) => [...item.text].length > 20000)) return t('chat:attachments.tooLong');
+  if (items.reduce((sum, item) => sum + [...item.text].length, 0) > 40000) return t('chat:attachments.totalTooLong');
   return '';
 }
 export function askAssistant(attachment?: Omit<ChatAttachment, 'id'>) {
   window.dispatchEvent(new CustomEvent('wwa-open-assistant', { detail: attachment ? { attachment: { ...attachment, id: crypto.randomUUID() } } : {} }));
 }
 export function suggestions(page: string): string[] {
-  if (page === 'plan') return ['帮我检查这段时间的安排', '哪些任务还没有安排时间？', '规划页面怎么用？'];
-  if (page === 'library') return ['总结当前资料的重点', '找找其他相关资料', '资料库可以做什么？'];
-  if (page === 'settings' || page === 'connections') return ['这个页面怎么用？', '应用支持哪些 AI 能力？', '如何配置模型连接？'];
-  return ['帮我梳理当前工作的重点', '找找相关任务和资料', '这个页面怎么用？'];
+  const group = page === 'plan' ? 'plan' : page === 'library' ? 'library' : page === 'settings' || page === 'connections' ? 'settings' : 'default';
+  return [1, 2, 3].map((index) => t(`chat:suggestions.${group}.${index}`));
 }

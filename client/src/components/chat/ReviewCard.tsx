@@ -1,5 +1,6 @@
 import { CalendarDays, Check, ClipboardList } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { Approval } from '@/chat.js';
 import { reviewCardState, reviewStatusCopy } from '@/chat.js';
 import type { AppReviewEntity } from '../../../../server/src/domain/task-batch-types.js';
@@ -15,6 +16,7 @@ function clipText(value: string) {
 }
 
 function FieldDiff({ label, before, after }: { label: string; before: string; after: string }) {
+  const { t } = useTranslation('chat');
   const [full, setFull] = useState(false);
   const left = clipText(before);
   const right = clipText(after);
@@ -27,7 +29,7 @@ function FieldDiff({ label, before, after }: { label: string; before: string; af
         <span aria-hidden="true">→</span>
         <span>{full ? after : right.text}</span>
       </div>
-      {clipped && <button type="button" className="task-batch-secondary review-inline" onClick={() => setFull((value) => !value)}>{full ? '收起差异' : '展开完整差异'}</button>}
+      {clipped && <button type="button" className="task-batch-secondary review-inline" onClick={() => setFull((value) => !value)}>{full ? t('review.collapseDiff') : t('review.expandDiff')}</button>}
     </div>
   );
 }
@@ -40,12 +42,12 @@ function parentIdOf(entity: AppReviewEntity, side: 'before' | 'after') {
   return typeof value === 'string' && value ? value : null;
 }
 
-function treeNodes(entities: AppReviewEntity[], side: 'before' | 'after'): TreeNode[] {
+function treeNodes(entities: AppReviewEntity[], side: 'before' | 'after', untitled: string): TreeNode[] {
   return entities.flatMap((entity) => {
     if (entity.entityType !== 'task') return [];
     if (side === 'before' && entity.operation === 'create') return [];
     if (side === 'after' && entity.operation === 'delete') return [];
-    const title = (side === 'before' ? entity.titleBefore : entity.titleAfter) || entity.titleAfter || entity.titleBefore || '未命名';
+    const title = (side === 'before' ? entity.titleBefore : entity.titleAfter) || entity.titleAfter || entity.titleBefore || untitled;
     return [{ id: entity.entityId, title, parentId: parentIdOf(entity, side), created: entity.operation === 'create' }];
   });
 }
@@ -62,13 +64,14 @@ function childrenOf(nodes: TreeNode[]) {
 }
 
 function NodeList({ parent, children, nested, mark }: { parent: string | null; children: Map<string | null, TreeNode[]>; nested: boolean; mark: boolean }) {
+  const { t } = useTranslation('chat');
   const items = children.get(parent) ?? [];
   if (!items.length) return null;
   return (
     <ul className={nested ? 'task-batch-children' : 'task-batch-nodes'}>
       {items.map((node) => (
         <li key={node.id} className="task-batch-node" data-task-id={node.id} {...(mark && node.created ? { 'data-created': 'true' } : {})}>
-          {mark && <span className="task-batch-kind">{node.created ? '新建' : '保留原任务'}</span>}
+          {mark && <span className="task-batch-kind">{node.created ? t('review.created') : t('review.kept')}</span>}
           <span className="task-batch-node-title">{node.title}</span>
           <NodeList parent={node.id} children={children} nested mark={mark} />
         </li>
@@ -78,19 +81,20 @@ function NodeList({ parent, children, nested, mark }: { parent: string | null; c
 }
 
 function ParentTrees({ entities }: { entities: AppReviewEntity[] }) {
+  const { t } = useTranslation('chat');
   const tasks = entities.filter((entity) => entity.entityType === 'task');
   const structural = tasks.some((entity) => entity.operation === 'create' || entity.operation === 'delete' || entity.fields.some((field) => field.key === 'parentId'));
   if (!structural) return null;
-  const before = treeNodes(entities, 'before');
-  const after = treeNodes(entities, 'after');
+  const before = treeNodes(entities, 'before', t('review.untitled'));
+  const after = treeNodes(entities, 'after', t('review.untitled'));
   return (
     <div className="task-batch-trees">
       <div className="task-batch-panel" data-testid="batch-before">
-        <h3>修改前</h3>
+        <h3>{t('review.before')}</h3>
         <NodeList parent={null} children={childrenOf(before)} nested={false} mark={false} />
       </div>
       <div className="task-batch-panel" data-testid="batch-after">
-        <h3>修改后</h3>
+        <h3>{t('review.after')}</h3>
         <NodeList parent={null} children={childrenOf(after)} nested={false} mark />
       </div>
     </div>
@@ -98,7 +102,8 @@ function ParentTrees({ entities }: { entities: AppReviewEntity[] }) {
 }
 
 function EntityBlock({ entity }: { entity: AppReviewEntity }) {
-  const title = entity.titleAfter || entity.titleBefore || '未命名';
+  const { t } = useTranslation('chat');
+  const title = entity.titleAfter || entity.titleBefore || t('review.untitled');
   return (
     <article className="review-entity">
       <h3>{title}</h3>
@@ -121,6 +126,7 @@ export function ReviewCard({ approval, phase = '', unknown = false, unresolved =
   onChanged?: () => void;
   onRepreviewed?: (body: { approvalId?: string; previewHash?: string; supersedesApprovalId?: string; approval?: { id: string; status: string; toolName: string; conversationId?: string | null; envelope?: unknown } }) => void;
 }) {
+  const { t } = useTranslation('chat');
   const [localPhase, setLocalPhase] = useState<'' | 'approve' | 'reject'>('');
   const [showAll, setShowAll] = useState(false);
   const [techOpen, setTechOpen] = useState(false);
@@ -144,60 +150,69 @@ export function ReviewCard({ approval, phase = '', unknown = false, unresolved =
       if (path === 'repreview') onRepreviewed?.(body);
       else onChanged?.();
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : '重新生成预览失败');
+      setLocalError(error instanceof Error ? error.message : t('review.repreviewFailed'));
     } finally { setBusyAction(''); }
   };
   const adjust = () => {
-    window.dispatchEvent(new CustomEvent('wwa-adjust-approval', { detail: { approvalId: approval.approvalId, conversationId: approval.conversationId, title: review?.title || review?.intent || '修改方案' } }));
+    window.dispatchEvent(new CustomEvent('wwa-adjust-approval', { detail: { approvalId: approval.approvalId, conversationId: approval.conversationId, title: review?.title || review?.intent || t('review.proposal') } }));
   };
-  if (state === 'executed') return <section className="task-batch-card review-receipt" aria-label={review?.title || '修改结果'} data-testid="approval-card" data-approval-id={approval.approvalId} data-state={state}>
+  const count = review?.relatedEntityCount ?? 0;
+  const relatedText = (executed: boolean) => {
+    if (executed) {
+      if (review?.reversibility === 'unsupported') return review.reversibilityReason ? t('review.relatedExecutedUnsupported', { count, reason: review.reversibilityReason }) : t('review.relatedExecutedUnsupportedDefault', { count });
+      return t('review.relatedExecutedUndo', { count });
+    }
+    if (review?.reversibility === 'unsupported') return review.reversibilityReason ? t('review.relatedPendingUnsupported', { count, reason: review.reversibilityReason }) : t('review.relatedPendingUnsupportedBare', { count });
+    return review ? t('review.relatedPendingUndo', { count }) : t('review.relatedCount', { count });
+  };
+  if (state === 'executed') return <section className="task-batch-card review-receipt" aria-label={review?.title || t('review.result')} data-testid="approval-card" data-approval-id={approval.approvalId} data-state={state}>
     <div className="flex flex-wrap items-center gap-2"><Check size={16} className="shrink-0 text-green-700 dark:text-green-300" /><h2 className="min-w-0 flex-1 text-sm font-medium" tabIndex={-1}>{entities.length === 1 ? entities[0].titleAfter || entities[0].titleBefore || review?.title : review?.title}</h2><span className="text-xs text-muted-foreground" role="status">{reviewStatusCopy(state, approval, unresolved)}</span></div>
     <div className="mt-2 flex flex-wrap gap-3">
-      {entities.length === 1 && entities[0].entityType === 'task' && entities[0].operation !== 'delete' && <button type="button" className="review-tech-trigger !mt-0" onClick={() => window.dispatchEvent(new CustomEvent('wwa-open-task', { detail: { taskId: entities[0].entityId } }))}>查看任务</button>}
-      {canUndo && <button type="button" className="review-tech-trigger !mt-0" disabled={Boolean(busyAction)} onClick={() => void followUp('undo-preview')}>撤销</button>}
-      <button type="button" className="review-tech-trigger !mt-0" aria-expanded={showAll} onClick={() => setShowAll((value) => !value)}>{showAll ? '收起结果' : '查看结果'}</button>
+      {entities.length === 1 && entities[0].entityType === 'task' && entities[0].operation !== 'delete' && <button type="button" className="review-tech-trigger !mt-0" onClick={() => window.dispatchEvent(new CustomEvent('wwa-open-task', { detail: { taskId: entities[0].entityId } }))}>{t('review.viewTask')}</button>}
+      {canUndo && <button type="button" className="review-tech-trigger !mt-0" disabled={Boolean(busyAction)} onClick={() => void followUp('undo-preview')}>{t('actions.undo')}</button>}
+      <button type="button" className="review-tech-trigger !mt-0" aria-expanded={showAll} onClick={() => setShowAll((value) => !value)}>{showAll ? t('review.collapseResult') : t('review.viewResult')}</button>
     </div>
-    {showAll && <div className="mt-3"><div data-testid="approval-impact">{(review?.consequences ?? []).map((line) => <p key={line} className="task-batch-summary">{line}</p>)}</div><p className="task-batch-summary" data-testid="approval-related">关联对象 {review?.relatedEntityCount ?? 0} 项{review?.reversibility === 'unsupported' ? `。不支持撤销：${review.reversibilityReason || '该操作不支持撤销'}` : '。撤销前会再次确认。'}</p><div className="review-entities">{entities.map((entity) => <EntityBlock key={`${entity.entityType}:${entity.entityId}`} entity={entity} />)}</div></div>}
+    {showAll && <div className="mt-3"><div data-testid="approval-impact">{(review?.consequences ?? []).map((line) => <p key={line} className="task-batch-summary">{line}</p>)}</div><p className="task-batch-summary" data-testid="approval-related">{relatedText(true)}</p><div className="review-entities">{entities.map((entity) => <EntityBlock key={`${entity.entityType}:${entity.entityId}`} entity={entity} />)}</div></div>}
     {localError && <p className="task-batch-alert" role="alert">{localError}</p>}
   </section>;
   return (
-    <section className="task-batch-card" aria-label={review?.title || '修改方案'} data-testid="approval-card" data-approval-id={approval.approvalId} data-state={state}>
-      <div className="review-heading"><span className="review-symbol"><ClipboardList size={18} /></span><div><span className="review-kicker">{approval.reversesApprovalId ? '撤销预览' : '修改预览'}</span><h2 className="task-batch-title" tabIndex={-1}>{review?.title || '修改方案'}</h2></div></div>
+    <section className="task-batch-card" aria-label={review?.title || t('review.proposal')} data-testid="approval-card" data-approval-id={approval.approvalId} data-state={state}>
+      <div className="review-heading"><span className="review-symbol"><ClipboardList size={18} /></span><div><span className="review-kicker">{approval.reversesApprovalId ? t('review.undoPreview') : t('review.changePreview')}</span><h2 className="task-batch-title" tabIndex={-1}>{review?.title || t('review.proposal')}</h2></div></div>
       <p className="task-batch-status" data-tone={state === 'rejected' || state === 'superseded' || state === 'capability_removed' ? 'neutral' : state === 'approving' || state === 'rejecting' ? 'pending' : state} role="status">
         <span>{reviewStatusCopy(state, approval, unresolved)}</span>
       </p>
       <div data-testid="approval-impact">
         {(review?.consequences ?? []).map((line) => <p key={line} className="task-batch-summary">{line}</p>)}
         {state === 'failed' && approval.appOutcome?.status === 'failed' && <p className="task-batch-alert" role="alert">{approval.appOutcome.message}</p>}
-        {state === 'capability_removed' && <p className="task-batch-summary">此能力已移出内置 AI</p>}
+        {state === 'capability_removed' && <p className="task-batch-summary">{t('reviewStatus.capabilityRemoved')}</p>}
       </div>
-      <p className="task-batch-summary" data-testid="approval-related">关联对象 {review?.relatedEntityCount ?? 0} 项{review?.reversibility === 'unsupported' ? `。不支持撤销${review.reversibilityReason ? `：${review.reversibilityReason}` : ''}` : review ? '。可以撤销，撤销前会再确认。' : ''}</p>
-      {entities.length === 1 && <div className="review-overview"><h3>{entities[0].titleAfter || entities[0].titleBefore || '未命名'}</h3>{entities[0].fields.filter((field) => ['topicId', 'scheduledStart', 'scheduledEnd', 'scheduledDate', 'scheduledTime', 'estimatedMinutes'].includes(field.key)).map((field) => <p key={field.key}><CalendarDays size={14} aria-hidden="true" /><span>{field.label}</span><strong>{field.afterText}</strong></p>)}</div>}
+      <p className="task-batch-summary" data-testid="approval-related">{relatedText(false)}</p>
+      {entities.length === 1 && <div className="review-overview"><h3>{entities[0].titleAfter || entities[0].titleBefore || t('review.untitled')}</h3>{entities[0].fields.filter((field) => ['topicId', 'scheduledStart', 'scheduledEnd', 'scheduledDate', 'scheduledTime', 'estimatedMinutes'].includes(field.key)).map((field) => <p key={field.key}><CalendarDays size={14} aria-hidden="true" /><span>{field.label}</span><strong>{field.afterText}</strong></p>)}</div>}
       <Collapsible open={showAll} onOpenChange={setShowAll}>
-        <CollapsibleTrigger className="review-tech-trigger">{showAll ? '收起全部修改' : `全部修改（${entities.length} 项）`}</CollapsibleTrigger>
+        <CollapsibleTrigger className="review-tech-trigger">{showAll ? t('review.collapseAll') : t('review.allChanges', { count: entities.length })}</CollapsibleTrigger>
         <CollapsibleContent><ParentTrees entities={entities} /><div className="review-entities">{entities.map((entity) => <EntityBlock key={`${entity.entityType}:${entity.entityId}`} entity={entity} />)}</div></CollapsibleContent>
       </Collapsible>
       <Collapsible open={techOpen} onOpenChange={setTechOpen}>
-        <CollapsibleTrigger className="review-tech-trigger">技术详情</CollapsibleTrigger>
+        <CollapsibleTrigger className="review-tech-trigger">{t('review.technicalDetails')}</CollapsibleTrigger>
         <CollapsibleContent>
           <ul className="task-batch-details">
-            <li>预览 {approval.previewHash || review?.previewHash}</li>
-            <li>版本 {approval.proposalRevision ?? '未记录'}</li>
-            {entities.map((entity) => <li key={`tech:${entity.entityId}`}>{entity.entityType} {entity.entityId} · 版本 {entity.revisionBefore ?? '未设置'} → {entity.revisionAfter ?? '未设置'}</li>)}
+            <li>{t('review.previewHash', { hash: String(approval.previewHash || review?.previewHash) })}</li>
+            <li>{t('review.revision', { revision: approval.proposalRevision ?? t('review.unrecorded') })}</li>
+            {entities.map((entity) => <li key={`tech:${entity.entityId}`}>{t('review.entityRevision', { type: entity.entityType, id: entity.entityId, before: entity.revisionBefore ?? t('review.unset'), after: entity.revisionAfter ?? t('review.unset') })}</li>)}
           </ul>
         </CollapsibleContent>
       </Collapsible>
       {localError && <p className="task-batch-alert" role="alert">{localError}</p>}
       {state === 'pending' && (
         <div className="task-batch-actions">
-          <button type="button" className="task-batch-secondary" disabled={decisionLocked} onClick={cancel}>取消</button>
-          <button type="button" className="task-batch-secondary" disabled={decisionLocked} onClick={adjust}>调整方案</button>
-          <button type="button" className="task-batch-primary" disabled={decisionLocked} onClick={confirm}>确认修改</button>
+          <button type="button" className="task-batch-secondary" disabled={decisionLocked} onClick={cancel}>{t('actions.cancel')}</button>
+          <button type="button" className="task-batch-secondary" disabled={decisionLocked} onClick={adjust}>{t('review.adjust')}</button>
+          <button type="button" className="task-batch-primary" disabled={decisionLocked} onClick={confirm}>{t('review.confirm')}</button>
         </div>
       )}
-      {conflict && <div className="task-batch-actions"><button type="button" className="task-batch-primary" disabled={Boolean(busyAction)} onClick={() => void followUp('repreview')}>重新生成预览</button></div>}
-      {canUndo && <div className="task-batch-actions"><button type="button" className="task-batch-secondary" disabled={Boolean(busyAction)} onClick={() => void followUp('undo-preview')}>撤销</button></div>}
-      {state === 'superseded' && approval.supersededByApprovalId && <div className="task-batch-actions"><button type="button" className="task-batch-secondary" onClick={() => window.dispatchEvent(new CustomEvent('wwa-locate-approval', { detail: { approvalId: approval.supersededByApprovalId } }))}>查看新方案</button></div>}
+      {conflict && <div className="task-batch-actions"><button type="button" className="task-batch-primary" disabled={Boolean(busyAction)} onClick={() => void followUp('repreview')}>{t('review.repreview')}</button></div>}
+      {canUndo && <div className="task-batch-actions"><button type="button" className="task-batch-secondary" disabled={Boolean(busyAction)} onClick={() => void followUp('undo-preview')}>{t('actions.undo')}</button></div>}
+      {state === 'superseded' && approval.supersededByApprovalId && <div className="task-batch-actions"><button type="button" className="task-batch-secondary" onClick={() => window.dispatchEvent(new CustomEvent('wwa-locate-approval', { detail: { approvalId: approval.supersededByApprovalId } }))}>{t('review.viewNewProposal')}</button></div>}
     </section>
   );
 }

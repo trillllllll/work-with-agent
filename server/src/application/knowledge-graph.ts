@@ -5,6 +5,7 @@ import { jsonSchema } from './command-catalog.js';
 import { registerUndoHandler, type UndoRecord } from './undo-registry.js';
 import { recordChange, type MutationContext } from './workspace-store.js';
 import { assertOwner, type Actor } from './security.js';
+import { currentLocale, localize } from '../i18n/index.js';
 import { checkKnowledgeScope, knowledgeFailure, knowledgeHash, knowledgeNow, mentionNames, memoryOrigin, persistMemory, readEvidence, readLabels, syncLabelEntities, type EvidenceRef, type KnowledgeDb } from './knowledge.js';
 
 const entityKinds = ['concept', 'person', 'tool', 'project', 'other'] as const;
@@ -19,7 +20,7 @@ const graphQuery = z.object({ q: z.string().max(500).default(''), mode: z.enum([
 const nodeKey = (type: string, id: string) => `${type}:${id}`;
 const normalize = (value: string) => value.normalize('NFKC').toLocaleLowerCase('en-US').replace(/\s+/g, ' ').trim();
 const dayKey = (iso: string) => iso.slice(0, 10);
-const dayLabel = (key: string) => { const [year, month, day] = key.split('-'); return `${year}年${Number(month)}月${Number(day)}日`; };
+const dayLabel = (key: string) => { const [year, month, day] = key.split('-'); return currentLocale() === 'en' ? `${new Date(Date.UTC(Number(year), Number(month) - 1, 1)).toLocaleString('en-US', { month: 'short', timeZone: 'UTC' })} ${Number(day)}, ${year}` : `${year}年${Number(month)}月${Number(day)}日`; };
 const excerpt = (value: string, size = 240) => value.replace(/\s+/g, ' ').trim().slice(0, size);
 
 export type GraphNode = { id: string; rawId: string; type: NodeType; title: string; kind?: string; status?: string; excerpt?: string; description?: string; importance?: number; labels?: string[]; origin?: string; revision?: number; memoryCount?: number; createdAt?: string };
@@ -85,16 +86,16 @@ export class KnowledgeGraph {
       ...materials.map((material) => ({ id: material.id, type: 'material' as const, title: material.title, excerpt: excerpt(versions.get(material.id)?.content ?? '', 160), kind: material.kind, revision: material.revision, createdAt: material.createdAt, updatedAt: material.updatedAt, branchIds: ['threads'] })),
       ...artifacts.map((artifact) => ({ id: artifact.id, type: 'artifact' as const, title: artifact.name, excerpt: excerpt(artifact.content ?? artifact.path ?? '', 160), kind: artifact.kind, createdAt: artifact.createdAt, branchIds: ['artifacts'] })),
     ];
-    const kindNames: Record<string, string> = { fact: '事实', decision: '决策', constraint: '约束', learning: '经验', question: '未决问题', crystal: '结晶' };
+    const kindNames: Record<string, string> = { fact: localize('事实'), decision: localize('决策'), constraint: localize('约束'), learning: localize('经验'), question: localize('未决问题'), crystal: localize('结晶') };
     const kindCounts = new Map<string, number>();
     const dayCounts = new Map<string, number>();
     for (const memory of memories) { kindCounts.set(memory.kind, (kindCounts.get(memory.kind) ?? 0) + 1); const day = dayKey(memory.createdAt); dayCounts.set(day, (dayCounts.get(day) ?? 0) + 1); }
     const branches = [
-      { id: 'memories', label: '记忆', count: memories.length, children: [...kindCounts.entries()].map(([kind, count]) => ({ id: `kind:${kind}`, label: kindNames[kind] ?? kind, count })) },
-      { id: 'occurred', label: '发生于', count: memories.length, children: [...dayCounts.entries()].sort(([left], [right]) => right.localeCompare(left)).map(([day, count]) => ({ id: `day:${day}`, label: dayLabel(day), count })) },
-      { id: 'brief', label: '当前进展', count: 1, children: [] },
-      { id: 'threads', label: '会话', count: materials.length, children: [] },
-      { id: 'artifacts', label: '产物', count: artifacts.length, children: [] },
+      { id: 'memories', label: localize('记忆'), count: memories.length, children: [...kindCounts.entries()].map(([kind, count]) => ({ id: `kind:${kind}`, label: kindNames[kind] ?? kind, count })) },
+      { id: 'occurred', label: localize('发生于'), count: memories.length, children: [...dayCounts.entries()].sort(([left], [right]) => right.localeCompare(left)).map(([day, count]) => ({ id: `day:${day}`, label: dayLabel(day), count })) },
+      { id: 'brief', label: localize('当前进展'), count: 1, children: [] },
+      { id: 'threads', label: localize('会话'), count: materials.length, children: [] },
+      { id: 'artifacts', label: localize('产物'), count: artifacts.length, children: [] },
     ];
     return { branches, entries };
   }

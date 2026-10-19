@@ -6,6 +6,7 @@ import { useLibrarySnapshot, patchLibrary } from './components/library/store.js'
 import type { AssistantSource } from '../../server/src/agent/assistant-sources.js';
 import { isOverdue, occursOn } from './lib/schedule.js';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError, statuses, type Status, type Tag, type Task, type TaskPriority, type Topic, type TrashTask, type View } from './lib/api.js';
 import { queryKeys, type TaskDraft } from './lib/todo.js';
@@ -51,13 +52,14 @@ import { FocusProvider } from './components/focus/FocusProvider.js';
 import { Button } from './components/ui/button.js';
 import { cn } from './lib/utils.js';
 import { toast } from 'sonner';
+import { t as translate } from './i18n/index.js';
 
 const emptyFilters: TaskFilters = { q: '', status: 'all', topic: 'all', dueFrom: '', dueTo: '', tag: '' };
 
 function classificationSections(tasks: Task[], topics: Topic[]) {
   const sections: { id: string; name: string; items: Task[] }[] = [];
   const inbox = tasks.filter((task) => !task.topicId);
-  if (inbox.length) sections.push({ id: 'inbox', name: '收集箱', items: inbox });
+  if (inbox.length) sections.push({ id: 'inbox', name: translate('app:nav.inbox'), items: inbox });
   const seen = new Set<string>();
   for (const topic of topics) {
     const items = tasks.filter((task) => task.topicId === topic.id);
@@ -68,7 +70,7 @@ function classificationSections(tasks: Task[], topics: Topic[]) {
   const leftovers = new Map<string, { id: string; name: string; items: Task[] }>();
   for (const task of tasks) {
     if (!task.topicId || seen.has(task.topicId)) continue;
-    const current = leftovers.get(task.topicId) ?? { id: task.topicId, name: task.topic?.name ?? '已归档', items: [] };
+    const current = leftovers.get(task.topicId) ?? { id: task.topicId, name: task.topic?.name ?? translate('app:nav.archived'), items: [] };
     current.items.push(task);
     leftovers.set(task.topicId, current);
   }
@@ -76,6 +78,7 @@ function classificationSections(tasks: Task[], topics: Topic[]) {
 }
 
 export function App() {
+  const { t } = useTranslation('app');
   useWorkspaceEvents();
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -174,7 +177,7 @@ export function App() {
   const taskContext = !workspaceView && taskId ? pageContexts.get('task')?.value : undefined;
   const baseContext = buildChatContext({ page: contextPage, topicId: contextTopicId, taskId: workspaceView ? '' : taskId, today });
   const pageContext: ChatContextV3 = {
-    ...baseContext, schemaVersion: 3, label: contextPage === 'board' ? selectedTopic?.name ?? '清单' : pageNames[contextPage] ?? contextPage,
+    ...baseContext, schemaVersion: 3, label: contextPage === 'board' ? selectedTopic?.name ?? t('nav.topics') : pageNames[contextPage] ?? contextPage,
     section: contextPage === 'knowledge' ? knowledgeSection ?? 'brief' : null, mode: 'follow',
     taskRevision: null, materialRevision: null,
     ...(contextPage === 'knowledge' ? { scope: contextTopicId ? { kind: 'topic' as const, topicId: contextTopicId } : { kind: 'inbox' as const } } : {}), selectedMaterialIds: [], pageState: {}, attachments: [],
@@ -191,7 +194,7 @@ export function App() {
     ...(sourceView ? { page: sourceView.kind === 'help' ? sourceView.id : sourceView.kind === 'memory' ? 'knowledge' : 'chat', label: sourceView.title, section: sourceView.kind, scope: sourceView.kind === 'memory' ? sourceView.topicId ? { kind: 'topic' as const, topicId: sourceView.topicId } : { kind: 'inbox' as const } : { kind: 'all' as const }, taskId: null, taskRevision: null, taskFilter: null, materialId: null, materialRevision: null, selectedMaterialIds: [], selectedTaskIds: [], pageState: { selectedId: sourceView.id, ...(sourceView.revision ? { selectedRevision: sourceView.revision } : {}) } } : {}),
   };
   const assistantContext: ChatContextV3 = isAssistantPage
-    ? assistantOrigin?.context ?? { ...buildChatContext({ page: 'chat', topicId: '', taskId: '', today }), schemaVersion: 3, label: 'AI 助手', section: null, mode: 'follow', taskRevision: null, materialRevision: null, selectedMaterialIds: [], pageState: {}, attachments: [] }
+    ? assistantOrigin?.context ?? { ...buildChatContext({ page: 'chat', topicId: '', taskId: '', today }), schemaVersion: 3, label: t('shell.assistant'), section: null, mode: 'follow', taskRevision: null, materialRevision: null, selectedMaterialIds: [], pageState: {}, attachments: [] }
     : pageContext;
   const chat = useChat({ pageContext: assistantContext, selectedTopicId: assistantContext.scope.kind === 'topic' ? assistantContext.scope.topicId : '', taskId, view: isAssistantPage ? 'chat' : page, onError: (message) => { if (message) toast.error(message); } });
   useLayoutEffect(() => {
@@ -269,7 +272,7 @@ export function App() {
         }
         if (!isDesktop) setChatOpen(false);
       });
-    }).catch((error) => toast.error(error instanceof Error ? error.message : '来源无法读取'));
+    }).catch((error) => toast.error(error instanceof Error ? error.message : t('shell.sourceUnreadable')));
   };
   useEffect(() => {
     const handler = (event: Event) => sourceHandler.current((event as CustomEvent<AssistantSource>).detail);
@@ -284,7 +287,7 @@ export function App() {
     try { return (await actions.patch(task.id, { ...changes, expectedRevision: task.revision }, keys)).data; }
     catch (error) {
       if (!(error instanceof ApiError) || error.code !== 'SUBTASKS_INCOMPLETE') throw error;
-      if (await confirm({ title: '一并完成子任务？', description: '该任务还有未完成的子任务。继续后将一并标记为完成。', confirm: '一并完成' })) return (await actions.patch(task.id, { ...changes, completeChildren: true, expectedRevision: task.revision }, keys)).data;
+      if (await confirm({ title: t('shell.completeSubtasksTitle'), description: t('shell.completeSubtasksDescription'), confirm: t('shell.completeSubtasks') })) return (await actions.patch(task.id, { ...changes, completeChildren: true, expectedRevision: task.revision }, keys)).data;
       return undefined;
     }
   };
@@ -302,7 +305,7 @@ export function App() {
       for (const [key, data] of details) queryClient.setQueryData(key, data);
     }
   };
-  const reorder = (group: Task[], parentId: string | null, message = '顺序已保存') => {
+  const reorder = (group: Task[], parentId: string | null, message = t('shell.orderSaved')) => {
     const epoch = ++reorderEpoch.current;
     const order = new Map(group.map((task, index) => [task.id, index]));
     const lists = queryClient.getQueriesData<Task[]>({ queryKey: queryKeys.tasks });
@@ -357,7 +360,7 @@ export function App() {
     };
     return (async () => {
       try {
-        const updated = (await actions.write<Task>(`/api/tasks/${task.id}`, 'PATCH', { parentId, expectedRevision: task.revision }, [task.id, parentId, task.parentId].filter((id): id is string => Boolean(id)), parentId ? '已变为子任务' : '已变为根任务')).data;
+        const updated = (await actions.write<Task>(`/api/tasks/${task.id}`, 'PATCH', { parentId, expectedRevision: task.revision }, [task.id, parentId, task.parentId].filter((id): id is string => Boolean(id)), parentId ? t('shell.nowSubtask') : t('shell.nowRoot'))).data;
         if (orderedIds[orderedIds.length - 1] === task.id) return;
         const byId = new Map(tasks.map((item) => [item.id, item]));
         const group = orderedIds.map((id) => id === task.id ? { ...updated, parentId, topicId: updated.topicId ?? topicId } : byId.get(id)).filter((item): item is Task => Boolean(item));
@@ -371,39 +374,39 @@ export function App() {
   const deleteTask = async (task: Task) => {
     const latest = await api<Task>(`/api/tasks/${task.id}`);
     const children = latest.children ?? [];
-    if (!await confirm({ title: '删除任务', description: `“${task.title}”${children.length ? `及以下 ${children.length} 个子任务` : ''}将移入回收站。${children.length ? '\n' + children.map((child) => `• ${child.title}`).join('\n') : ''}`, confirm: '移入回收站', destructive: true })) return;
-    await actions.write(`/api/tasks/${task.id}`, 'DELETE', undefined, [task.id, ...children.map((child) => child.id)], '任务已移入回收站');
+    if (!await confirm({ title: t('confirm.deleteTask'), description: children.length ? t('confirm.deleteTaskWithChildren', { title: task.title, count: children.length, list: children.map((child) => `• ${child.title}`).join('\n') }) : t('confirm.deleteTaskDescription', { title: task.title }), confirm: t('confirm.moveToTrash'), destructive: true })) return;
+    await actions.write(`/api/tasks/${task.id}`, 'DELETE', undefined, [task.id, ...children.map((child) => child.id)], t('shell.taskTrashed'));
     if (taskId === task.id) setTaskId('');
   };
   const archiveTopic = async (topic: Partial<Topic>) => {
-    if (!await confirm({ title: '归档清单', description: `归档“${topic.name}”后任务会保留归属，并从日常视图隐藏。可在已归档页面恢复。`, confirm: '归档清单' })) return;
-    await actions.write(`/api/topics/${topic.id}/archive`, 'POST', undefined, [topic.id!], '清单已归档');
+    if (!await confirm({ title: t('confirm.archiveList'), description: t('confirm.archiveListDescription', { name: topic.name }), confirm: t('confirm.archiveList') })) return;
+    await actions.write(`/api/topics/${topic.id}/archive`, 'POST', undefined, [topic.id!], t('shell.listArchived'));
     setTopicForm(null); navigate('inbox');
   };
   const saveTopic = async () => {
     if (!topicForm?.name?.trim() || topicSaveLock.current) return;
     topicSaveLock.current = true;
     try {
-      const response = await actions.write<Topic>(topicForm.id ? `/api/topics/${topicForm.id}` : '/api/topics', topicForm.id ? 'PATCH' : 'POST', { expectedRevision: topicForm.revision, name: topicForm.name.trim(), description: topicForm.description ?? '', color: topicForm.color ?? 'slate', isExploration: topicForm.isExploration ?? false, ...(topicForm.goal !== undefined ? { goal: topicForm.goal } : {}) }, [topicForm.id ?? 'topic-create'], topicForm.id ? '清单已更新' : '清单已创建');
+      const response = await actions.write<Topic>(topicForm.id ? `/api/topics/${topicForm.id}` : '/api/topics', topicForm.id ? 'PATCH' : 'POST', { expectedRevision: topicForm.revision, name: topicForm.name.trim(), description: topicForm.description ?? '', color: topicForm.color ?? 'slate', isExploration: topicForm.isExploration ?? false, ...(topicForm.goal !== undefined ? { goal: topicForm.goal } : {}) }, [topicForm.id ?? 'topic-create'], topicForm.id ? t('shell.listUpdated') : t('shell.listCreated'));
       setTopicForm(null); selectTopic(response.data.id);
     } catch { /* Keep the form available. */ } finally { topicSaveLock.current = false; }
   };
   const permanentDelete = async (task: TrashTask) => {
     const children = (trashQuery.data ?? []).filter((child) => child.parentId === task.id);
     const descendants = new Map([...(task.children ?? []), ...children].map((child) => [child.id, child]));
-    if (!await confirm({ title: '永久删除任务', description: `永久删除“${task.title}”${descendants.size ? `及 ${descendants.size} 个子任务` : ''}，之后无法恢复。${descendants.size ? '\n' + [...descendants.values()].map((child) => `• ${child.title}`).join('\n') : ''}`, confirm: '永久删除', destructive: true })) return;
-    await actions.write(`/api/trash/tasks/${task.id}/permanent`, 'DELETE', undefined, [task.id, ...descendants.keys()], '任务已永久删除');
+    if (!await confirm({ title: t('confirm.deleteForeverTitle'), description: descendants.size ? t('confirm.deleteForeverWithChildren', { title: task.title, count: descendants.size, list: [...descendants.values()].map((child) => `• ${child.title}`).join('\n') }) : t('confirm.deleteForever', { title: task.title }), confirm: t('confirm.deleteForeverAction'), destructive: true })) return;
+    await actions.write(`/api/trash/tasks/${task.id}/permanent`, 'DELETE', undefined, [task.id, ...descendants.keys()], t('shell.taskDeletedForever'));
   };
-  const run = (work: Promise<unknown>) => { void work.catch((error) => { if (!(error instanceof ApiError)) toast.error(error instanceof Error ? error.message : '操作失败'); }); };
+  const run = (work: Promise<unknown>) => { void work.catch((error) => { if (!(error instanceof ApiError)) toast.error(error instanceof Error ? error.message : t('action.failed')); }); };
   const listProps = { assistantSelectedIds, onAssistantSelect: (id: string) => setAssistantSelectedIds((ids) => ids.includes(id) ? ids.filter((item) => item !== id) : ids.length < 100 ? [...ids, id] : ids), topics, tags, onOpen: openTask, onToggle: toggleTask, onMove: moveTask, onDelete: (task: Task) => run(deleteTask(task)), onSave: patchTask, onCreate: createTask, readonly: archived, busy: actions.pending, selectedTaskId: taskId, textDirty: detailDirty };
   const planProps = { onCreate: createTask, topics, tags, onOpen: openTask, onToggle: toggleTask, onSave: patchTask, onDelete: (task: Task) => run(deleteTask(task)), busy: actions.pending };
 
-  const title = page === 'board' ? detail?.name ?? '选择一个清单' : navigationItems.find((item) => item.view === page)?.label ?? '工作区';
+  const title = page === 'board' ? detail?.name ?? t('shell.selectList') : navigationItems.find((item) => item.view === page)?.label ?? t('shell.workspace');
   const updateFilter = (patch: Partial<TaskFilters>) => setFilters((current) => ({ ...current, ...patch }));
-  const todayGroups = [{ name: '逾期', items: tasks.filter((task) => isOverdue(task, today)) }, { name: '今天', items: tasks.filter((task) => occursOn(task, today)) }].filter((group) => group.items.length);
+  const todayGroups = [{ name: t('shell.overdue'), items: tasks.filter((task) => isOverdue(task, today)) }, { name: t('nav.today'), items: tasks.filter((task) => occursOn(task, today)) }].filter((group) => group.items.length);
   const showDragHint = !hasFilters && !archived && sortMode === 'manual' && (!dragHintSeen || tasks.length === 0);
   const showHint = scoped && !quadrantView && (hasFilters || archived || sortMode !== 'manual' || showDragHint);
-  const hintText = hasFilters ? '筛选期间不能手动排序；清除筛选后可调整完整列表。' : archived ? '恢复清单后可编辑和排序。' : sortMode !== 'manual' ? '切换为手动排序后，可调整任务位置。' : '上下拖动调整顺序，向右拖成子任务，向左拖回根任务。';
+  const hintText = hasFilters ? t('shell.filterSortLocked') : archived ? t('shell.restoreToEdit') : sortMode !== 'manual' ? t('shell.manualSortHint') : t('shell.dragHint');
   const listLayout = page !== 'board' && page !== 'today' && page !== 'tags' && !quadrantView && !(scoped && layout === 'board');
   const filterSummary = page === 'board' ? describeTaskFilters(page, scoped, filters, topics, tags).summary : '';
   const briefNotes = (briefNotesQuery.data?.manualNotes ?? '').trim();
@@ -411,17 +414,17 @@ export function App() {
   const taskList = <TaskList {...listProps} tasks={tasks} foldDone={scoped && !hasFilters} hierarchical={scoped && !hasFilters && sortMode === 'manual'} onDragSettled={markDragHint} onReorder={scoped && !hasFilters && !archived && sortMode === 'manual' ? reorder : undefined} onNest={scoped && !hasFilters && !archived && sortMode === 'manual' ? nest : undefined} />;
   const taskContent = <div className="mx-auto max-w-5xl p-4 pb-10 sm:p-6">
     <ListPageHeader page={page} title={title} scoped={scoped} archived={archived} today={today} detail={detail} briefNotes={briefNotes} filterSummary={filterSummary} layout={layout} onLayout={setLayout} onOpenChat={openChat} onOpenKnowledge={() => navigateSafely('knowledge')} onEditTopic={() => { if (detail) setTopicForm(detail); }} onNewTask={() => captureRef.current?.focus()} filterBar={filterBar} />
-    {page === 'board' && detail && <SummaryPanel detail={detail} busy={actions.pending} onConfirm={archived ? undefined : (action) => run(actions.write(`/api/topics/${detail.id}/summary/${action}`, 'POST', undefined, [detail.id], action === 'confirm' ? '成果已确认' : '草稿已放弃'))} />}
-    {page === 'board' && !detail ? <Button onClick={newTopic}>新建清单</Button> : <>
+    {page === 'board' && detail && <SummaryPanel detail={detail} busy={actions.pending} onConfirm={archived ? undefined : (action) => run(actions.write(`/api/topics/${detail.id}/summary/${action}`, 'POST', undefined, [detail.id], action === 'confirm' ? t('shell.summaryConfirmed') : t('shell.draftDiscarded')))} />}
+    {page === 'board' && !detail ? <Button onClick={newTopic}>{t('shell.newList')}</Button> : <>
       {!listLayout && scoped && !archived && page !== 'board' && <QuickCapture ref={captureRef} key={`${page}.${selectedTopicId}`} topicId={page === 'inbox' ? null : selectedTopicId} inbox={page === 'inbox'} onCreate={createTask} />}
       {page === 'tags' && <TagManager tags={tags} selected={selectedTag} onSelect={setSelectedTag} confirm={confirm} />}
       {taskPage && page !== 'board' && filterBar}
       {!listLayout && showHint && <p className="mb-3 text-xs text-muted-foreground">{hintText}</p>}
       {page === 'board' && !archived && <QuickCapture ref={captureRef} key={`${page}.${selectedTopicId}`} variant="row" topicId={selectedTopicId} onCreate={createTask} />}
-      {listLayout ? <section className="list-surface rounded-2xl p-1.5 sm:p-2">{scoped && !archived && <QuickCapture ref={captureRef} key={`${page}.${selectedTopicId}`} topicId={page === 'inbox' ? null : selectedTopicId} inbox={page === 'inbox'} onCreate={createTask} />}{showHint && <p className="px-2 pb-1 pt-1 text-xs text-muted-foreground">{hintText}</p>}{tasksQuery.isLoading ? <p className="py-12 text-center text-muted-foreground">正在加载任务…</p> : tasksQuery.error ? <p role="alert" className="text-destructive">{tasksQuery.error.message}</p> : taskList}</section> : tasksQuery.isLoading ? <p className="py-12 text-center text-muted-foreground">正在加载任务…</p> : tasksQuery.error ? <p role="alert" className="text-destructive">{tasksQuery.error.message}</p> : page === 'today' ? (todayGroups.length ? <div className="space-y-6">{todayGroups.map((group) => <section key={group.name}><h2 className="mb-3 text-sm font-semibold">{group.name} · {group.items.length}</h2><TaskList {...listProps} tasks={group.items} /></section>)}</div> : <p className="py-12 text-center text-sm text-muted-foreground">暂无任务</p>) : quadrantView ? <QuadrantBoard tasks={tasks} showCompleted={showCompleted} onShowCompleted={setShowCompleted} onMoveQuadrant={moveQuadrant} topics={topics} tags={tags} selected={false} readonly={archived} busy={actions.pending} textDirty={detailDirty} onOpen={openTask} onToggle={toggleTask} onMove={moveTask} onDelete={(item) => run(deleteTask(item))} onSave={patchTask} onCreate={createTask} onUpdateStatus={(id, status: Status) => { const item = tasks.find((candidate) => candidate.id === id); if (item) run(patchTask(item, { status })); }} /> : scoped && layout === 'board' ? <div className="mt-5 flex gap-3 overflow-x-auto pb-4 snap-x snap-mandatory md:grid md:grid-cols-2 md:overflow-visible xl:grid-cols-4">{statuses.map(({ value, label }) => <BoardColumn key={value} label={label} count={tasks.filter((task) => task.status === value).length}>{tasks.filter((task) => task.status === value).map((task) => <TaskCard key={task.id} task={task} topics={topics} tags={tags} selected={taskId === task.id} readonly={archived} busy={actions.pending} textDirty={detailDirty} onOpen={openTask} onToggle={toggleTask} onMove={moveTask} onDelete={(item) => run(deleteTask(item))} onSave={patchTask} onCreate={createTask} onUpdateStatus={(id, status: Status) => { const item = tasks.find((candidate) => candidate.id === id); if (item) run(patchTask(item, { status })); }} />)}</BoardColumn>)}</div> : page === 'tags' ? (selectedTag ? <div className="space-y-6">{taggedSections.map((section) => <section key={section.id} aria-label={section.name}><h2 className="mb-3 text-sm font-semibold">{section.name} · {section.items.length}</h2><TaskList {...listProps} tasks={section.items} /></section>)}{!taggedSections.length && <p className="py-12 text-center text-sm text-muted-foreground">暂无任务</p>}</div> : <p className="py-12 text-center text-sm text-muted-foreground">选择一个标签后，按分类查看带有该标签的任务。</p>) : taskList}
+      {listLayout ? <section className="list-surface rounded-2xl p-1.5 sm:p-2">{scoped && !archived && <QuickCapture ref={captureRef} key={`${page}.${selectedTopicId}`} topicId={page === 'inbox' ? null : selectedTopicId} inbox={page === 'inbox'} onCreate={createTask} />}{showHint && <p className="px-2 pb-1 pt-1 text-xs text-muted-foreground">{hintText}</p>}{tasksQuery.isLoading ? <p className="py-12 text-center text-muted-foreground">{t('shell.loadingTasks')}</p> : tasksQuery.error ? <p role="alert" className="text-destructive">{tasksQuery.error.message}</p> : taskList}</section> : tasksQuery.isLoading ? <p className="py-12 text-center text-muted-foreground">{t('shell.loadingTasks')}</p> : tasksQuery.error ? <p role="alert" className="text-destructive">{tasksQuery.error.message}</p> : page === 'today' ? (todayGroups.length ? <div className="space-y-6">{todayGroups.map((group) => <section key={group.name}><h2 className="mb-3 text-sm font-semibold">{group.name} · {group.items.length}</h2><TaskList {...listProps} tasks={group.items} /></section>)}</div> : <p className="py-12 text-center text-sm text-muted-foreground">{t('shell.noTasks')}</p>) : quadrantView ? <QuadrantBoard tasks={tasks} showCompleted={showCompleted} onShowCompleted={setShowCompleted} onMoveQuadrant={moveQuadrant} topics={topics} tags={tags} selected={false} readonly={archived} busy={actions.pending} textDirty={detailDirty} onOpen={openTask} onToggle={toggleTask} onMove={moveTask} onDelete={(item) => run(deleteTask(item))} onSave={patchTask} onCreate={createTask} onUpdateStatus={(id, status: Status) => { const item = tasks.find((candidate) => candidate.id === id); if (item) run(patchTask(item, { status })); }} /> : scoped && layout === 'board' ? <div className="mt-5 flex gap-3 overflow-x-auto pb-4 snap-x snap-mandatory md:grid md:grid-cols-2 md:overflow-visible xl:grid-cols-4">{statuses.map(({ value, label }) => <BoardColumn key={value} label={label} count={tasks.filter((task) => task.status === value).length}>{tasks.filter((task) => task.status === value).map((task) => <TaskCard key={task.id} task={task} topics={topics} tags={tags} selected={taskId === task.id} readonly={archived} busy={actions.pending} textDirty={detailDirty} onOpen={openTask} onToggle={toggleTask} onMove={moveTask} onDelete={(item) => run(deleteTask(item))} onSave={patchTask} onCreate={createTask} onUpdateStatus={(id, status: Status) => { const item = tasks.find((candidate) => candidate.id === id); if (item) run(patchTask(item, { status })); }} />)}</BoardColumn>)}</div> : page === 'tags' ? (selectedTag ? <div className="space-y-6">{taggedSections.map((section) => <section key={section.id} aria-label={section.name}><h2 className="mb-3 text-sm font-semibold">{section.name} · {section.items.length}</h2><TaskList {...listProps} tasks={section.items} /></section>)}{!taggedSections.length && <p className="py-12 text-center text-sm text-muted-foreground">{t('shell.noTasks')}</p>}</div> : <p className="py-12 text-center text-sm text-muted-foreground">{t('shell.selectTagHint')}</p>) : taskList}
     </>}
   </div>;
-  const content = page === 'plan' ? <PlanPage {...planProps} /> : page === 'focus' ? <FocusPage /> : page === 'connections' ? <ConnectionsPage topics={topics} /> : page === 'proposals' ? <ProposalsPage /> : page === 'knowledge' ? <KnowledgePage topics={topics} archivedTopics={archivedQuery.data ?? []} topicId={knowledgeTopicExplicit ? (knowledgeTopicId ?? '') : selectedTopicId} topicExplicit={knowledgeTopicExplicit} topicsReady={topicsQuery.isSuccess && archivedQuery.isSuccess} section={knowledgeSection ?? 'brief'} onLocate={openKnowledge} onOpenSettings={() => navigate('settings')} /> : page === 'library' ? <LibraryPage topics={topics} selectedTopicId={selectedTopicId} onOpenTask={openLinkedTask} /> : page === 'runs' ? <RunsPage /> : page === 'reviews' ? <ReviewsPage topics={topics} /> : taskPage ? taskContent : page === 'topics' ? <TopicListPage topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onSelectTopic={selectTopic} onNewTopic={newTopic} onEditTopic={setTopicForm} onOpenSettings={() => navigateSafely('settings')} onOpenInbox={() => navigateSafely('inbox')} /> : page === 'archived' ? <div className="p-5 sm:p-7"><h1 className="mb-5 text-2xl font-semibold">已归档</h1><div className="space-y-3">{!(archivedQuery.data ?? []).length && <p className="text-sm text-muted-foreground">暂无归档清单</p>}{(archivedQuery.data ?? []).map((topic) => <article key={topic.id} className="glass-subtle flex flex-wrap items-center gap-3 rounded-xl p-4"><button className="flex-1 text-left font-medium" onClick={() => selectTopic(topic.id)}>{topic.name}</button><Button variant="outline" onClick={() => run(actions.write(`/api/topics/${topic.id}/restore`, 'POST', undefined, [topic.id], '清单已恢复'))}>恢复清单</Button><Button variant="outline" onClick={() => run((async () => { if (await confirm({ title: '移出归档清单的任务', description: `将“${topic.name}”的任务移到收集箱，保留父子关系。`, confirm: '移出任务' })) await actions.write(`/api/topics/${topic.id}/move-tasks-to-inbox`, 'POST', undefined, [topic.id], '任务已移入收集箱'); })())}>移出任务到收集箱</Button></article>)}</div></div> : <MorePage route={route} onNavigate={navigateSafely} />;
+  const content = page === 'plan' ? <PlanPage {...planProps} /> : page === 'focus' ? <FocusPage /> : page === 'connections' ? <ConnectionsPage topics={topics} /> : page === 'proposals' ? <ProposalsPage /> : page === 'knowledge' ? <KnowledgePage topics={topics} archivedTopics={archivedQuery.data ?? []} topicId={knowledgeTopicExplicit ? (knowledgeTopicId ?? '') : selectedTopicId} topicExplicit={knowledgeTopicExplicit} topicsReady={topicsQuery.isSuccess && archivedQuery.isSuccess} section={knowledgeSection ?? 'brief'} onLocate={openKnowledge} onOpenSettings={() => navigate('settings')} /> : page === 'library' ? <LibraryPage topics={topics} selectedTopicId={selectedTopicId} onOpenTask={openLinkedTask} /> : page === 'runs' ? <RunsPage /> : page === 'reviews' ? <ReviewsPage topics={topics} /> : taskPage ? taskContent : page === 'topics' ? <TopicListPage topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onSelectTopic={selectTopic} onNewTopic={newTopic} onEditTopic={setTopicForm} onOpenSettings={() => navigateSafely('settings')} onOpenInbox={() => navigateSafely('inbox')} /> : page === 'archived' ? <div className="p-5 sm:p-7"><h1 className="mb-5 text-2xl font-semibold">{t('nav.archived')}</h1><div className="space-y-3">{!(archivedQuery.data ?? []).length && <p className="text-sm text-muted-foreground">{t('shell.noArchivedLists')}</p>}{(archivedQuery.data ?? []).map((topic) => <article key={topic.id} className="glass-subtle flex flex-wrap items-center gap-3 rounded-xl p-4"><button className="flex-1 text-left font-medium" onClick={() => selectTopic(topic.id)}>{topic.name}</button><Button variant="outline" onClick={() => run(actions.write(`/api/topics/${topic.id}/restore`, 'POST', undefined, [topic.id], t('shell.listRestored')))}>{t('shell.restoreList')}</Button><Button variant="outline" onClick={() => run((async () => { if (await confirm({ title: t('confirm.moveTasksOut'), description: t('confirm.moveTasksDescription', { name: topic.name }), confirm: t('confirm.moveTasks') })) await actions.write(`/api/topics/${topic.id}/move-tasks-to-inbox`, 'POST', undefined, [topic.id], t('shell.tasksMovedToInbox')); })())}>{t('shell.moveTasksToInbox')}</Button></article>)}</div></div> : <MorePage route={route} onNavigate={navigateSafely} />;
   const chatPanel = <ChatPanel chat={chat} presentation={isAssistantPage ? assistantOrigin ? 'expanded' : 'direct' : 'side'} onExpand={expandAssistant} onShrink={shrinkAssistant} mobile={!isDesktop} onClose={() => setChatOpen(false)} />;
   const showChat = chatOpen || route === 'chat';
   const closeTask = () => { setDetailDirty(false); setTaskId(''); };
@@ -452,9 +455,9 @@ export function App() {
     <div data-assistant-open={showChat || undefined} className="app-backdrop h-dvh overflow-hidden bg-background p-0 xl:p-4">
       <div className={cn('app-frame h-full overflow-hidden', isDesktop ? 'grid' : 'flex flex-col')} style={isDesktop ? { gridTemplateColumns: hasAccessory ? `${navWidth} minmax(0, 1fr) 400px` : `${navWidth} minmax(0, 1fr)`, gridTemplateRows: '48px minmax(0, 1fr)' } : undefined}>
         {isDesktop ? <Sidebar compact={!wide && showChat && !isAssistantPage} key="sidebar" route={route} page={isAssistantPage ? 'chat' : page} topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onNavigate={navigateSafely} onSelectTopic={selectTopic} onEditTopic={setTopicForm} onNewTopic={newTopic} /> : <div key="sidebar" className="hidden" />}
-        <header className="flex h-12 shrink-0 items-center justify-end border-b px-4" style={isDesktop ? { gridColumn: '2 / -1', gridRow: 1 } : undefined}>{!isAssistantPage && <Button variant="ghost" size="sm" onClick={openChat} aria-label="打开 AI 助手"><Sparkles className="size-4" />AI 助手</Button>}</header>
+        <header className="flex h-12 shrink-0 items-center justify-end border-b px-4" style={isDesktop ? { gridColumn: '2 / -1', gridRow: 1 } : undefined}>{!isAssistantPage && <Button variant="ghost" size="sm" onClick={openChat} aria-label={t('shell.openAssistant')}><Sparkles className="size-4" />{t('shell.assistant')}</Button>}</header>
         <main key="main" className={cn('app-main glass-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto bg-[var(--glass-bg-strong)]', ((!isDesktop && showChat) || (isDesktop && showChat && taskId) || sourceView || isAssistantPage) && 'hidden')} style={isDesktop ? { gridColumn: 2, gridRow: 2 } : undefined}>{content}</main>
-        {sourceView && <section className={cn('min-h-0 overflow-auto p-5', (isAssistantPage || (!isDesktop && showChat)) && 'hidden')} style={isDesktop ? { gridColumn: 2, gridRow: 2 } : undefined} aria-label="来源原文"><Button variant="ghost" onClick={() => setSourceView(null)}>返回页面</Button><h2 className="my-3 text-lg font-semibold">{sourceView.title}</h2><pre className="whitespace-pre-wrap break-words text-sm">{sourceView.content}</pre></section>}
+        {sourceView && <section className={cn('min-h-0 overflow-auto p-5', (isAssistantPage || (!isDesktop && showChat)) && 'hidden')} style={isDesktop ? { gridColumn: 2, gridRow: 2 } : undefined} aria-label={t('shell.sourceText')}><Button variant="ghost" onClick={() => setSourceView(null)}>{t('shell.backToPage')}</Button><h2 className="my-3 text-lg font-semibold">{sourceView.title}</h2><pre className="whitespace-pre-wrap break-words text-sm">{sourceView.content}</pre></section>}
         <div ref={setDetailSlot} className={cn('min-h-0 min-w-0 overflow-hidden border-l', isDesktop && taskId && !sourceView && !isAssistantPage ? '' : 'hidden')} style={isDesktop ? { gridColumn: showChat ? 2 : 3, gridRow: 2 } : undefined} />
         <div key="accessory" ref={setAssistantSlot} className={cn('accessory-pane min-h-0 min-w-0 flex-1 overflow-hidden border-l', showChat && !workspaceView && !isAssistantPage ? '' : 'hidden')} style={isDesktop ? { gridColumn: 3, gridRow: 2 } : undefined} />
         <div ref={setAssistantPageSlot} data-testid="assistant-page" className={cn('min-h-0 min-w-0 flex-1 overflow-hidden', !isAssistantPage && 'hidden')} style={isDesktop ? { gridColumn: '2 / -1', gridRow: 2 } : undefined} />
@@ -463,14 +466,14 @@ export function App() {
           const visibleViews = mobileNavigation.data?.visibleViews ?? DEFAULT_MOBILE_NAVIGATION.visibleViews;
           const items = [...visibleViews.map(mobileNavigationItem), moreItem];
           const selected = mobileSelectedView(route, visibleViews);
-          return <nav aria-label="主导航" data-testid="mobile-bottom-navigation" className="mobile-tab-bar glass-surface grid shrink-0 rounded-none border-x-0 border-b-0 pb-[env(safe-area-inset-bottom)]" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>{items.map(({ view, label, icon: Icon }) => <button key={view} data-view={view} className={cn('mobile-tab-item flex min-w-0 flex-col items-center gap-1 py-3 text-[11px]', selected === view ? 'text-foreground' : 'text-muted-foreground')} onClick={() => navigateSafely(view)} aria-current={selected === view ? 'page' : undefined}><Icon className="size-5" />{label}</button>)}</nav>;
+          return <nav aria-label={t('shell.mainNav')} data-testid="mobile-bottom-navigation" className="mobile-tab-bar glass-surface grid shrink-0 rounded-none border-x-0 border-b-0 pb-[env(safe-area-inset-bottom)]" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>{items.map(({ view, label, icon: Icon }) => <button key={view} data-view={view} className={cn('mobile-tab-item flex min-w-0 flex-col items-center gap-1 py-3 text-[11px]', selected === view ? 'text-foreground' : 'text-muted-foreground')} onClick={() => navigateSafely(view)} aria-current={selected === view ? 'page' : undefined}><Icon className="size-5" />{label}</button>)}</nav>;
         })()}
       </div>
     </div>
     {createPortal(chatPanel, assistantHost)}
     <UploadQueue />
     <FocusChip />
-    {workspaceView && <WorkspaceModal suspended={isAssistantPage} assistantOpen={showChat} assistantSlot={setWorkspaceAssistantSlot} onOpenAssistant={openChat} view={workspaceView} onViewChange={navigateSafely} onClose={() => navigateSafely(previousMain.current)} settings={<SettingsView />} changes={<ChangesPage />} trash={<TrashPage tasks={trashQuery.data ?? []} loading={trashQuery.isLoading} onRestore={(task) => run(actions.write(`/api/trash/tasks/${task.id}/restore`, 'POST', undefined, [task.id, ...(task.parentId ? [task.parentId] : []), ...(task.children ?? (trashQuery.data ?? []).filter((child) => child.parentId === task.id)).map((child) => child.id)], '任务已恢复'))} onPermanentDelete={(task) => run(permanentDelete(task))} />} />}
+    {workspaceView && <WorkspaceModal suspended={isAssistantPage} assistantOpen={showChat} assistantSlot={setWorkspaceAssistantSlot} onOpenAssistant={openChat} view={workspaceView} onViewChange={navigateSafely} onClose={() => navigateSafely(previousMain.current)} settings={<SettingsView />} changes={<ChangesPage />} trash={<TrashPage tasks={trashQuery.data ?? []} loading={trashQuery.isLoading} onRestore={(task) => run(actions.write(`/api/trash/tasks/${task.id}/restore`, 'POST', undefined, [task.id, ...(task.parentId ? [task.parentId] : []), ...(task.children ?? (trashQuery.data ?? []).filter((child) => child.parentId === task.id)).map((child) => child.id)], t('shell.taskRestored')))} onPermanentDelete={(task) => run(permanentDelete(task))} />} />}
     {detailPane}
     {topicForm && <TopicModal form={topicForm} onChange={setTopicForm} onClose={() => { if (!actions.pending) setTopicForm(null); }} onSave={() => run(saveTopic())} onDelete={() => run(archiveTopic(topicForm))} busy={actions.pending} />}
     {prompt && <ActionDialog prompt={prompt} onResolve={(value) => { prompt.resolve(value); setPrompt(null); }} />}

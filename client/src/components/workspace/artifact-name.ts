@@ -1,3 +1,5 @@
+import { t } from '../../i18n/index.js';
+
 const extension = /\.[A-Za-z0-9]{1,8}$/;
 
 function clean(name: string) {
@@ -11,7 +13,7 @@ export function downloadFileName(name: string, reportedPath?: string | null) {
   if (wrapped?.[1]) return clean(wrapped[1]);
   const trimmed = name.trim();
   if (extension.test(trimmed)) return clean(trimmed);
-  return clean(trimmed) || '产物';
+  return clean(trimmed) || t('workspace:artifact.fallbackName');
 }
 
 export function isMarkdownFile(name: string) {

@@ -2,7 +2,8 @@ import { readMessageBlocks } from '@/lib/message-blocks.js';
 import { contextLabel, attachmentError, type ChatAttachment, type ChatContextV3 } from '@/lib/assistant-context.js';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { applyApprovalEvent, applyMessageEvent, pairToolMessages, parseExternalParts, toolPreview, type Approval, type ChatMessage, type SseEvent, type ToolActivityStatus, type ToolResult } from '../chat.js';
+import { useTranslation } from 'react-i18next';
+import { applyApprovalEvent, applyMessageEvent, pairToolMessages, parseExternalParts, replyIncompleteMarker, toolPreview, userRejectedError, type Approval, type ChatMessage, type SseEvent, type ToolActivityStatus, type ToolResult } from '../chat.js';
 
 type ApprovalLookup = {
   status?: string;
@@ -32,6 +33,9 @@ type UseChatOptions = {
 };
 
 export function useChat({ pageContext, selectedTopicId, taskId = '', view, filters, sort, includeArchived = false, today = '', onError }: UseChatOptions) {
+  const { t } = useTranslation('chat');
+  const tRef = useRef(t);
+  tRef.current = t;
   const queryClient = useQueryClient();
   const onErrorRef = useRef(onError);
   const newConversationRef = useRef('');
@@ -118,7 +122,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
       setApprovals(nextApprovals);
       if (!busyRef.current && active && ['queued', 'running'].includes(active.state)) {
         setBusy(true); busyRef.current = true;
-        void trackRun(active.id, snapshot.watermarks[active.id] ?? 0).catch((reason) => { setInterrupted(true); onErrorRef.current(reason instanceof Error ? reason.message : '恢复连接失败'); }).finally(() => { setBusy(false); });
+        void trackRun(active.id, snapshot.watermarks[active.id] ?? 0).catch((reason) => { setInterrupted(true); onErrorRef.current(reason instanceof Error ? reason.message : tRef.current('errors.restoreFailed')); }).finally(() => { setBusy(false); });
       }
       setUnknownApprovalIds((current) => current.filter((approvalId) => {
         const item = nextApprovals.find((approval) => approval.approvalId === approvalId);
@@ -133,7 +137,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
         setApprovals([]);
         return;
       }
-      onErrorRef.current(reason instanceof Error ? reason.message : '会话读取失败');
+      onErrorRef.current(reason instanceof Error ? reason.message : tRef.current('errors.loadConversationFailed'));
     }
   };
 
@@ -167,8 +171,8 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
     const onAdjust = (event: Event) => {
       const detail = (event as CustomEvent<{ approvalId?: string; conversationId?: string | null; title?: string }>).detail;
       if (!detail?.approvalId) return;
-      if (detail.conversationId && detail.conversationId !== conversationRef.current && (busyRef.current || mutatingRef.current || pendingRequestKey.current)) { onErrorRef.current('请先完成或恢复当前回复，再调整其他对话的方案'); return; }
-      setReferencedApproval({ id: detail.approvalId, title: detail.title || '修改方案' });
+      if (detail.conversationId && detail.conversationId !== conversationRef.current && (busyRef.current || mutatingRef.current || pendingRequestKey.current)) { onErrorRef.current(tRef.current('errors.finishBeforeAdjust')); return; }
+      setReferencedApproval({ id: detail.approvalId, title: detail.title || tRef.current('review.proposal') });
       if (detail.conversationId && detail.conversationId !== conversationRef.current) setConversationId(detail.conversationId);
     };
     window.addEventListener('wwa-adjust-approval', onAdjust);
@@ -180,8 +184,8 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
     status,
     preview: toolPreview(tool.name, tool.arguments, result, status),
     ...(result?.data !== undefined ? { result: result.data } : {}),
-    ...(status === 'error' ? { error: result?.error || '执行失败' } : {}),
-    ...(status === 'rejected' ? { error: '用户拒绝，数据未修改' } : {}),
+    ...(status === 'error' ? { error: result?.error || tRef.current('toolPreview.runFailed') } : {}),
+    ...(status === 'rejected' ? { error: userRejectedError } : {}),
   });
   const keptApproval = (approvalId: string, response?: ApprovalResponse) => {
     const current = approvalsRef.current.find((item) => item.approvalId === approvalId);
@@ -245,7 +249,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
           try {
             await trackRun(runId, 0);
           } catch (reason) {
-            onErrorRef.current(reason instanceof Error ? reason.message : '暂时不能继续这个请求');
+            onErrorRef.current(reason instanceof Error ? reason.message : tRef.current('errors.cannotContinue'));
           } finally {
             try { await reloadConversation(conversationRef.current, true); } catch { /* reloadConversation already reports a read failure. */ }
             busyRef.current = false;
@@ -285,7 +289,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
       }
       finishMutation(approvalId);
       setApprovals((current) => current.filter((item) => item.approvalId !== approvalId));
-      setMessages((current) => current.map((message) => ({ ...message, tools: message.tools?.map((tool) => tool.approvalId === approvalId ? settleTool(tool, 'rejected', { success: false, error: '用户拒绝，数据未修改' }) : tool) })));
+      setMessages((current) => current.map((message) => ({ ...message, tools: message.tools?.map((tool) => tool.approvalId === approvalId ? settleTool(tool, 'rejected', { success: false, error: userRejectedError }) : tool) })));
     },
     onError: (error: Error, approvalId) => {
       if (keptApproval(approvalId)) {
@@ -303,7 +307,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
     const message = input.trim();
     const reference = referencedApproval;
     if (!message || busyRef.current || mutatingRef.current) return;
-    if (pendingRequestKey.current) { setInterrupted(true); onErrorRef.current('上一条请求尚未确认，请先点击重试恢复，或新建对话后继续'); return; }
+    if (pendingRequestKey.current) { setInterrupted(true); onErrorRef.current(tRef.current('errors.pendingRequest')); return; }
     const requestKey = crypto.randomUUID();
     const requestContext = structuredClone(contextRef.current ?? buildChatContext({ page: view, topicId: selectedTopicId, taskId, materialId: view === 'library' ? library.preview?.materialId ?? null : null, filters, sort, includeArchived, today }));
     requestContext.referencedApprovalId = reference?.id ?? null;
@@ -315,7 +319,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
     } catch {
       // Do not start an untraceable request when the browser cannot save its recovery data.
       try { localStorage.removeItem('agent-studio.pendingRequestBody'); localStorage.removeItem('agent-studio.pendingRequestKey'); } catch { /* Storage may be unavailable entirely. */ }
-      onErrorRef.current('无法保存发送状态，消息尚未发出。请检查本机存储后重试。');
+      onErrorRef.current(tRef.current('errors.saveSendStateFailed'));
       return;
     }
     pendingRequestBody.current = storedBody; pendingRequestKey.current = requestKey;
@@ -375,7 +379,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
         });
       }
       setInterrupted(!rejected);
-      onErrorRef.current(reason instanceof Error ? reason.message : '聊天连接中断');
+      onErrorRef.current(reason instanceof Error ? reason.message : tRef.current('errors.chatInterrupted'));
     }
     finally { if (accepted) await reloadConversation(conversationRef.current, true); busyRef.current = false; setBusy(false); }
   };
@@ -391,7 +395,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
       await api(`/api/agent/runs/${runId}/resume`, { method: 'POST', body: '{}' });
       await trackRun(runId, after);
       await reloadConversation(conversationRef.current, true);
-    } catch (reason) { onErrorRef.current(reason instanceof Error ? reason.message : '暂时不能继续这个请求'); }
+    } catch (reason) { onErrorRef.current(reason instanceof Error ? reason.message : tRef.current('errors.cannotContinue')); }
     finally { setBusy(false); }
   };
   const applyLiveEvent = (event: SseEvent) => {
@@ -403,7 +407,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
       seenEvents.current.set(key, event);
     }
     if (event.type === 'run_state' && event.state === 'paused' && event.pauseReason === 'user_stopped') {
-      setMessages((current) => current.map((message) => ({ ...message, status: message.status === 'streaming' ? 'failed' : message.status, blocks: message.blocks?.map((block) => block.status === 'pending' ? { ...block, status: 'error', error: '已停止，内容未完成' } : block) })));
+      setMessages((current) => current.map((message) => ({ ...message, status: message.status === 'streaming' ? 'failed' : message.status, blocks: message.blocks?.map((block) => block.status === 'pending' ? { ...block, status: 'error', error: tRef.current('errors.stoppedIncomplete') } : block) })));
     }
     if (event.type === 'run_state' && event.state === 'paused' && event.runId && event.pauseReason) setPausedRun({ id: event.runId, reason: event.pauseReason });
     if (event.type === 'run_state' && (event.state === 'completed' || event.state === 'waiting_approval')) setPausedRun(null);
@@ -415,7 +419,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
     }
     setMessages((current) => applyMessageEvent(current, event));
     setApprovals((current) => applyApprovalEvent(current, event));
-    if (event.type === 'error' && !event.message?.includes('后续回答未完成')) onErrorRef.current(event.code ? `${event.message ?? '聊天失败'}（${event.code}）` : (event.message ?? '聊天失败'));
+    if (event.type === 'error' && !event.message?.includes(replyIncompleteMarker)) onErrorRef.current(event.code ? tRef.current('errors.chatFailedWithCode', { message: event.message ?? tRef.current('errors.chatFailed'), code: event.code }) : (event.message ?? tRef.current('errors.chatFailed')));
     if (event.type === 'done') invalidate();
     return true;
   };
@@ -448,7 +452,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
       await sleep(400);
     }
     setInterrupted(true);
-    throw new Error('请求仍在处理中，恢复连接超时，请点击重试继续跟踪原请求');
+    throw new Error(tRef.current('errors.trackTimeout'));
   };
   const showRepreview = (body: { approvalId?: string; previewHash?: string; supersedesApprovalId?: string; approval?: { id: string; status: string; toolName: string; conversationId?: string | null; envelope?: unknown } }) => {
     const view = body.approval;
@@ -485,17 +489,17 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
     setStopping(true);
     try {
       const id = activeRunId.current || (conversationRef.current ? (await api<{ id: string } | null>(`/api/conversations/${conversationRef.current}/active-run`))?.id : '');
-      if (!id) throw new Error('请求仍在建立连接，请稍后停止');
+      if (!id) throw new Error(tRef.current('errors.stopTooEarly'));
       await api(`/api/agent/runs/${id}/stop`, { method: 'POST', body: '{}' });
       setMessages((current) => current.map((item) => item.status === 'streaming' ? { ...item, status: 'completed' as const } : item));
       setPausedRun(null);
       await reloadConversation(conversationRef.current, true);
-    } catch (reason) { onErrorRef.current(reason instanceof Error ? reason.message : '停止失败'); }
+    } catch (reason) { onErrorRef.current(reason instanceof Error ? reason.message : tRef.current('errors.stopFailed')); }
     finally { setStopping(false); }
   };
   const selectConversation = (id: string) => {
     if (busyRef.current || mutatingRef.current || id === conversationRef.current) return;
-    if (pendingRequestKey.current) { onErrorRef.current('请先重试恢复当前请求，再切换对话'); return; }
+    if (pendingRequestKey.current) { onErrorRef.current(tRef.current('errors.retryBeforeSwitch')); return; }
     // Keep the current composer draft and explicit references when browsing history.
     activeRunId.current = '';
     loadGeneration.current++;
@@ -509,7 +513,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
     const current = contextRef.current;
     if (!current) return;
     const ids = current.selectedMaterialIds.includes(id) ? current.selectedMaterialIds.filter((item) => item !== id) : [...current.selectedMaterialIds, id];
-    if (ids.length > 100) { onErrorRef.current('最多引用 100 份资料'); return; }
+    if (ids.length > 100) { onErrorRef.current(tRef.current('errors.tooManyMaterials')); return; }
     setPinnedContext({ ...structuredClone(current), selectedMaterialIds: ids });
   };
   useEffect(() => { if (messages.some((message) => message.needsSnapshot)) void reloadConversation(conversationRef.current, true); }, [messages]);
@@ -523,14 +527,14 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
     }
     let body: Record<string, unknown>;
     try { body = JSON.parse(pendingRequestBody.current); }
-    catch { throw new Error('原请求未到达服务器，且本机缺少请求内容。请新建对话后重新发送。'); }
-    if (!body || body.requestKey !== key || typeof body.message !== 'string' || !body.context || typeof body.context !== 'object') throw new Error('本机原请求内容不完整，请新建对话后重新发送');
+    catch { throw new Error(tRef.current('errors.requestMissingLocally')); }
+    if (!body || body.requestKey !== key || typeof body.message !== 'string' || !body.context || typeof body.context !== 'object') throw new Error(tRef.current('errors.requestIncomplete'));
     // A POST may never have reached the server. Its unique request key makes this exact replay idempotent.
     let runId = ''; let rejection = '';
     try {
       await streamChat(body, (event) => {
         if (event.runId) runId = event.runId;
-        if (event.type === 'error') rejection = event.message || '聊天请求失败';
+        if (event.type === 'error') rejection = event.message || tRef.current('errors.chatRequestFailed');
         applyLiveEvent(event);
       });
     } catch (reason) {
@@ -540,7 +544,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
     if (!runId && rejection) { clearPendingRequest(); throw new Error(rejection); }
     const found = await api<{ id: string; conversationId: string; message: string; attachmentIds: string[] } | null>(`/api/agent/requests/${encodeURIComponent(key)}`);
     if (found) return found;
-    throw new Error('尚未收到原请求的确认，请恢复连接后重试');
+    throw new Error(tRef.current('errors.requestUnconfirmed'));
   };
   const adoptRequest = (found: { id: string; conversationId: string }) => {
     activeRunId.current = found.id;
@@ -555,14 +559,14 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
     if (pendingRequestKey.current) {
       setBusy(true); busyRef.current = true; setInterrupted(false);
       try { const found = await findRequest(pendingRequestKey.current); adoptRequest(found); await reloadConversation(found.conversationId, true); await trackRun(found.id, snapshotWatermarks.current[found.id] ?? 0); clearPendingRequest(); setInput((current) => current.trim() === found.message ? '' : current); setAttachments((current) => current.filter((item) => !found.attachmentIds.includes(item.id))); }
-      catch (reason) { setInterrupted(true); onErrorRef.current(reason instanceof Error ? reason.message : '恢复连接失败'); }
+      catch (reason) { setInterrupted(true); onErrorRef.current(reason instanceof Error ? reason.message : tRef.current('errors.restoreFailed')); }
       finally { busyRef.current = false; setBusy(false); }
       return;
     }
     if (activeRunId.current && interrupted) {
       const id = activeRunId.current; setBusy(true); busyRef.current = true; setInterrupted(false);
       try { await reloadConversation(conversationRef.current, true); await trackRun(id, snapshotWatermarks.current[id] ?? 0); }
-      catch (reason) { setInterrupted(true); onErrorRef.current(reason instanceof Error ? reason.message : '恢复连接失败'); }
+      catch (reason) { setInterrupted(true); onErrorRef.current(reason instanceof Error ? reason.message : tRef.current('errors.restoreFailed')); }
       finally { busyRef.current = false; setBusy(false); }
       return;
     }

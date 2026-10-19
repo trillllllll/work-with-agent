@@ -1,3 +1,4 @@
+import i18n, { t } from '../../i18n/index.js';
 import { Extension, Node, mergeAttributes } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import type { EditorView, NodeView } from '@tiptap/pm/view';
@@ -29,13 +30,17 @@ export function RawMarkdownNode(handlers: { editRaw: (pos: number, markdown: str
         host.className = 'task-raw-block';
         host.setAttribute('role', 'button');
         host.setAttribute('tabindex', '-1');
-        host.setAttribute('aria-label', '原文片段，回车修改');
         const text = document.createElement('pre');
         text.className = 'task-raw-text';
         text.textContent = String(props.node.attrs.markdown ?? '');
         const hint = document.createElement('span');
         hint.className = 'task-raw-hint';
-        hint.textContent = '原文片段';
+        const paintLabels = () => {
+          host.setAttribute('aria-label', t('tasks:descriptionExtensions.rawEdit'));
+          hint.textContent = t('tasks:descriptionExtensions.rawHint');
+        };
+        paintLabels();
+        i18n.on('languageChanged', paintLabels);
         host.append(hint, text);
         let lastClick = 0;
         host.addEventListener('mousedown', (event) => {
@@ -48,7 +53,7 @@ export function RawMarkdownNode(handlers: { editRaw: (pos: number, markdown: str
           if (now - lastClick < 480) handlers.editRaw(pos, String(props.node.attrs.markdown ?? ''));
           lastClick = now;
         });
-        const view: NodeView = { dom: host, ignoreMutation: () => true };
+        const view: NodeView = { dom: host, ignoreMutation: () => true, destroy: () => { i18n.off('languageChanged', paintLabels); } };
         return view;
       };
     },
@@ -77,13 +82,14 @@ export function MaterialReferenceNode(handlers: { openMaterial: (materialId: str
         const anchor = document.createElement('a');
         anchor.className = 'task-material-ref';
         anchor.setAttribute('data-wwa-material', 'true');
-        anchor.title = '资料引用';
         let current = props.node;
         const paint = () => {
+          anchor.title = t('tasks:descriptionExtensions.materialReference');
           anchor.textContent = String(current.attrs.label ?? '');
           anchor.dataset.testid = `material-reference-${String(current.attrs.materialId ?? '')}`;
         };
         paint();
+        i18n.on('languageChanged', paint);
         anchor.addEventListener('mousedown', (event) => {
           if (event.button !== 0) return;
           event.preventDefault();
@@ -92,6 +98,7 @@ export function MaterialReferenceNode(handlers: { openMaterial: (materialId: str
         const view: NodeView = {
           dom: anchor,
           ignoreMutation: () => true,
+          destroy: () => { i18n.off('languageChanged', paint); },
           update: (node) => {
             if (node.type.name !== 'materialReference') return false;
             current = node;
@@ -122,7 +129,7 @@ export function TaskImageNode(taskIdGetter: () => string, handlers: { zoom: (src
           if (!src || !isTaskImageSrc(taskIdGetter(), src)) {
             image.removeAttribute('src');
             figure.classList.add('task-image-blocked');
-            image.alt = '不可加载的图片地址';
+            image.alt = t('tasks:descriptionExtensions.blockedImage');
             return;
           }
           figure.classList.remove('task-image-blocked');
@@ -130,6 +137,7 @@ export function TaskImageNode(taskIdGetter: () => string, handlers: { zoom: (src
           image.alt = typeof current.attrs.alt === 'string' ? current.attrs.alt : '';
         };
         apply();
+        i18n.on('languageChanged', apply);
         figure.append(image);
         figure.addEventListener('contextmenu', (event) => {
           const src = typeof current.attrs.src === 'string' ? current.attrs.src : '';
@@ -139,6 +147,7 @@ export function TaskImageNode(taskIdGetter: () => string, handlers: { zoom: (src
         });
         const view: NodeView = {
           dom: figure,
+          destroy: () => { i18n.off('languageChanged', apply); },
           update(updated: PMNode) {
             if (updated.type.name !== 'image') return false;
             current = updated;
@@ -236,6 +245,7 @@ export const TaskItemPointerSync = Extension.create({
 
 /** 上传装饰：位置随事务映射；完成前可被用户取消。 */
 export const uploadKey = new PluginKey<{ decorations: DecorationSet }>('task-image-uploads');
+const uploadLabelCleanups = new Map<string, () => void>();
 
 export const UploadDecorations = Extension.create({
   name: 'taskImageUploads',
@@ -252,15 +262,24 @@ export const UploadDecorations = Extension.create({
               const widget = document.createElement('span');
               widget.className = 'task-upload-chip';
               widget.setAttribute('role', 'status');
-              widget.textContent = `${meta.fileName ?? '图片'} 上传中…`;
+              const label = document.createTextNode('');
               const cancel = document.createElement('button');
               cancel.type = 'button';
               cancel.className = 'task-upload-cancel';
-              cancel.setAttribute('aria-label', '取消上传');
               cancel.textContent = '×';
-              widget.append(cancel);
+              const paint = () => {
+                label.data = t('tasks:descriptionExtensions.uploading', { name: meta.fileName || t('tasks:descriptionExtensions.imageFallback') });
+                cancel.setAttribute('aria-label', t('tasks:descriptionExtensions.cancelUpload'));
+              };
+              paint();
+              i18n.on('languageChanged', paint);
+              uploadLabelCleanups.get(meta.uploadId)?.();
+              uploadLabelCleanups.set(meta.uploadId, () => { i18n.off('languageChanged', paint); });
+              widget.append(label, cancel);
               decorations = decorations.add(tr.doc, [Decoration.widget(meta.pos, widget, { id: meta.uploadId })]);
             } else if (meta?.type === 'remove') {
+              uploadLabelCleanups.get(meta.uploadId)?.();
+              uploadLabelCleanups.delete(meta.uploadId);
               decorations = DecorationSet.create(tr.doc, decorations.find().filter((deco) => (deco.spec as { id?: string } | undefined)?.id !== meta.uploadId));
             }
             return { decorations };

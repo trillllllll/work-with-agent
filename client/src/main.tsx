@@ -2,6 +2,7 @@ if (import.meta.env.DEV) {
   import('react-grab');
 }
 
+import './i18n/index.js';
 import { createRoot } from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './lib/query-client.js';

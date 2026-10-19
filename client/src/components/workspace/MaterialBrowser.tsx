@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, type Task } from '@/lib/api.js';
 import { materialKindNames, materialTypeLabel, startOfLocalWeek, titleFromFileName } from '@/lib/attachment-title.js';
 import { json, submitCommands, usePlatformAction } from '@/lib/platform.js';
+import { intlLocale, t as translate } from '../../i18n/index.js';
 import { cn } from '@/lib/utils.js';
 import { Button } from '@/components/ui/button.js';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog.js';
@@ -11,19 +13,23 @@ import { Textarea } from '@/components/ui/textarea.js';
 import { MaterialPreview } from './MaterialPreview.js';
 import { OrganizationPrompt } from './OrganizationPrompt.js';
 
+function FileSlot({ children }: { children?: ReactNode; i18nIsDynamicList?: boolean }) {
+  return <>{children}</>;
+}
+
 type PageResult<T> = { items: T[]; total: number; nextCursor: number | null };
 type MaterialRow = { id: string; title: string; kind: string; revision: number; updatedAt?: string; archivedAt?: string | null; taskId?: string | null; taskTitle?: string | null; fileName?: string | null; mimeType?: string | null };
 type MaterialDetail = MaterialRow & { uri?: string | null; content?: string; evidence?: Array<{ type: string; id: string; revision: number }>; versions?: Array<{ revision: number; content?: string; fileName?: string | null; hasAttachment?: boolean; reason?: string }> };
 type View = 'all' | 'week' | 'linked' | 'archived';
 type SortKey = 'title' | 'kind' | 'updatedAt';
 const attachmentLimit = 8 * 1024 * 1024;
-const views: Array<[View, string]> = [['all', '全部'], ['week', '本周新增'], ['linked', '已关联任务'], ['archived', '已归档']];
+const viewOrder: View[] = ['all', 'week', 'linked', 'archived'];
 
 function readAttachment(file: File) {
   return new Promise<{ attachmentBase64: string; fileName: string; mimeType: string }>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve({ attachmentBase64: String(reader.result).split(',')[1] ?? '', fileName: file.name, mimeType: file.type || 'application/octet-stream' });
-    reader.onerror = () => reject(new Error('读取失败'));
+    reader.onerror = () => reject(new Error(translate('workspace:materials.readFailed')));
     reader.readAsDataURL(file);
   });
 }
@@ -40,6 +46,7 @@ function filesFromDrop(data: DataTransfer) {
   return { files: files.length || directories ? files : [...data.files], directories };
 }
 function TaskLinkSelect({ resource, topicId, busy, run }: { resource: MaterialDetail; topicId: string | null; busy: boolean; run: ReturnType<typeof usePlatformAction>['run'] }) {
+  const { t } = useTranslation('workspace');
   const tasks = useQuery({ queryKey: ['material-tasks', topicId ?? 'inbox'], queryFn: () => api<Task[]>(topicId ? `/api/tasks?topicId=${encodeURIComponent(topicId)}` : '/api/tasks?inbox=true') });
   const [choice, setChoice] = useState(resource.taskId ?? '');
   useEffect(() => { setChoice(resource.taskId ?? ''); }, [resource.id, resource.revision, resource.taskId]);
@@ -48,10 +55,10 @@ function TaskLinkSelect({ resource, topicId, busy, run }: { resource: MaterialDe
     const next = event.target.value;
     const previous = resource.taskId ?? '';
     setChoice(next);
-    void run(() => submitCommands([{ kind: 'material.update', targetId: resource.id, expectedRevision: resource.revision, input: { taskId: next || null } }]), next ? '已关联任务' : '已取消关联').then((saved) => { if (!saved) setChoice(previous); });
+    void run(() => submitCommands([{ kind: 'material.update', targetId: resource.id, expectedRevision: resource.revision, input: { taskId: next || null } }]), next ? t('materials.linkedToast') : t('materials.unlinkedToast')).then((saved) => { if (!saved) setChoice(previous); });
   }}>
-    <option value="">不关联</option>
-    {resource.taskId && !known && <option value={resource.taskId}>{tasks.data ? resource.taskTitle || '当前任务' : '正在读取…'}</option>}
+    <option value="">{t('materials.noLink')}</option>
+    {resource.taskId && !known && <option value={resource.taskId}>{tasks.data ? resource.taskTitle || t('materials.currentTask') : t('materials.reading')}</option>}
     {tasks.data?.map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}
   </select>;
 }
@@ -61,10 +68,11 @@ function currentVersion(resource: MaterialDetail) {
 function formatWhen(value?: string) {
   if (!value) return '';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(intlLocale(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 export function MaterialBrowser({ topicId, taskId, onCreate, onEdit, children }: { topicId: string | null; taskId?: string; onCreate: () => void; onEdit: (resource: MaterialDetail) => void; children?: ReactNode }) {
+  const { t } = useTranslation('workspace');
   const [view, setView] = useState<View>('all');
   const [kind, setKind] = useState('');
   const [sort, setSort] = useState<SortKey>('updatedAt');
@@ -73,7 +81,7 @@ export function MaterialBrowser({ topicId, taskId, onCreate, onEdit, children }:
   const [opened, setOpened] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const [importError, setImportError] = useState('');
-  const [purpose, setPurpose] = useState('从这份材料整理下一步任务、决策和需要确认的问题');
+  const [purpose, setPurpose] = useState(() => t('materials.defaultPurpose'));
   const [provider, setProvider] = useState('external');
   const [organizeResult, setOrganizeResult] = useState<any>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -97,7 +105,7 @@ export function MaterialBrowser({ topicId, taskId, onCreate, onEdit, children }:
   }
   async function importFiles(files: File[], directories = 0) {
     if (importing.current) return;
-    if (!files.length) { if (directories) { setImportError('请拖入文件'); toast.error('请拖入文件'); } return; }
+    if (!files.length) { if (directories) { const message = t('materials.dropFiles'); setImportError(message); toast.error(message); } return; }
     importing.current = true;
     setImportError('');
     const errors: string[] = [];
@@ -105,20 +113,20 @@ export function MaterialBrowser({ topicId, taskId, onCreate, onEdit, children }:
     let changeId: string | undefined;
     try {
       for (const file of files) {
-        if (file.size > attachmentLimit) { errors.push(`${file.name} 超过 8 MiB`); continue; }
+        if (file.size > attachmentLimit) { errors.push(t('materials.fileTooLarge', { name: file.name })); continue; }
         const title = titleFromFileName(file.name);
-        if (!title) { errors.push(`${file.name || '未命名文件'} 没有可用的名称`); continue; }
+        if (!title) { errors.push(t('materials.noUsableName', { name: file.name || t('materials.unnamed') })); continue; }
         try {
           const attachment = await readAttachment(file);
           const result = await submitCommands([{ kind: 'material.create', input: { topicId, ...(taskId ? { taskId } : {}), kind: 'attachment', title, ...attachment } }]);
           saved += 1;
           changeId = result.changeId;
-        } catch (error) { errors.push(`${file.name}：${error instanceof Error ? error.message : '导入失败'}`); }
+        } catch (error) { errors.push(t('materials.importErrorItem', { name: file.name, message: error instanceof Error ? error.message : t('materials.importFailed') })); }
       }
     } finally { importing.current = false; if (saved) await client.invalidateQueries(); }
-    if (!saved) { const message = errors.join('；') || '没有导入文件'; setImportError(message); toast.error(message); return; }
-    if (errors.length) { const message = `已导入 ${saved} 份，另有 ${errors.length} 份未导入：${errors.join('；')}`; setImportError(message); toast.error(message); return; }
-    toast.success(saved === 1 ? '已导入材料' : `已导入 ${saved} 份材料`, saved === 1 && changeId ? { duration: 8000, action: { label: '撤销', onClick: () => { void api(`/api/changes/${changeId}/undo`, { method: 'POST', body: '{}', headers: { 'X-Request-ID': crypto.randomUUID() } }).then(() => { void client.invalidateQueries(); toast.success('已撤销'); }).catch((error) => toast.error(error instanceof Error ? error.message : '撤销失败')); } } } : undefined);
+    if (!saved) { const message = errors.join(t('clauseSeparator')) || t('materials.nothingImported'); setImportError(message); toast.error(message); return; }
+    if (errors.length) { const message = t('materials.partialImport', { saved, failed: errors.length, details: errors.join(t('clauseSeparator')) }); setImportError(message); toast.error(message); return; }
+    toast.success(saved === 1 ? t('materials.imported_one') : t('materials.imported_other', { saved }), saved === 1 && changeId ? { duration: 8000, action: { label: t('materials.undo'), onClick: () => { void api(`/api/changes/${changeId}/undo`, { method: 'POST', body: '{}', headers: { 'X-Request-ID': crypto.randomUUID() } }).then(() => { void client.invalidateQueries(); toast.success(t('materials.undone')); }).catch((error) => toast.error(error instanceof Error ? error.message : t('materials.undoFailed'))); } } } : undefined);
   }
   function onDrop(event: DragEvent) {
     event.preventDefault();
@@ -126,26 +134,30 @@ export function MaterialBrowser({ topicId, taskId, onCreate, onEdit, children }:
     const dropped = filesFromDrop(event.dataTransfer);
     void importFiles(dropped.files, dropped.directories);
   }
-  const columns: Array<[SortKey, string]> = [['title', '名称'], ['kind', '类型'], ['updatedAt', '更新时间']];
+  const columns: Array<[SortKey, string]> = [['title', t('materials.columns.title')], ['kind', t('materials.columns.kind')], ['updatedAt', t('materials.columns.updatedAt')]];
+  const openedResource = resource?.id === opened ? resource : undefined;
+  const summary = openedResource
+    ? t(openedResource.archivedAt && openedResource.id.startsWith('auto-chat:') ? 'materials.summaryArchivedExcerpt' : openedResource.archivedAt ? 'materials.summaryArchived' : openedResource.id.startsWith('auto-chat:') ? 'materials.summaryExcerpt' : 'materials.summary', { type: materialTypeLabel(openedResource.kind, currentVersion(openedResource)?.fileName ?? openedResource.fileName), revision: openedResource.revision })
+    : detail.error ? t('materials.readFailedDetail') : t('materials.reading');
   return <div className={cn('grid gap-4', !taskId && 'lg:grid-cols-[9.5rem_minmax(0,1fr)] lg:items-start')}>
-    <nav aria-label="材料视图" className={cn('flex gap-1 overflow-x-auto', !taskId && 'lg:flex-col')}>{views.filter(([value]) => value !== 'linked' || !taskId).map(([value, label]) => <Button key={value} type="button" size="sm" variant={view === value ? 'secondary' : 'ghost'} aria-pressed={view === value} onClick={() => setView(value)}>{label}</Button>)}</nav>
+    <nav aria-label={t('materials.navAria')} className={cn('flex gap-1 overflow-x-auto', !taskId && 'lg:flex-col')}>{viewOrder.filter((value) => value !== 'linked' || !taskId).map((value) => <Button key={value} type="button" size="sm" variant={view === value ? 'secondary' : 'ghost'} aria-pressed={view === value} onClick={() => setView(value)}>{t(`materials.views.${value}`)}</Button>)}</nav>
     <div className="min-w-0 space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <input ref={inputRef} className="sr-only" type="file" multiple aria-label="选择要导入的文件" onChange={(event) => { const files = [...(event.target.files ?? [])]; event.target.value = ''; void importFiles(files); }} />
-        <Button type="button" size="sm" onClick={() => inputRef.current?.click()}>导入文件</Button>
-        <Button type="button" size="sm" variant="outline" onClick={onCreate}>保存材料</Button>
-        <select aria-label="材料类型筛选" className="glass-control h-8 rounded-lg px-2 text-sm" value={kind} onChange={(event) => setKind(event.target.value)}><option value="">全部类型</option>{Object.entries(materialKindNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+        <input ref={inputRef} className="sr-only" type="file" multiple aria-label={t('materials.importAria')} onChange={(event) => { const files = [...(event.target.files ?? [])]; event.target.value = ''; void importFiles(files); }} />
+        <Button type="button" size="sm" onClick={() => inputRef.current?.click()}>{t('materials.import')}</Button>
+        <Button type="button" size="sm" variant="outline" onClick={onCreate}>{t('materials.save')}</Button>
+        <select aria-label={t('materials.kindFilterAria')} className="glass-control h-8 rounded-lg px-2 text-sm" value={kind} onChange={(event) => setKind(event.target.value)}><option value="">{t('materials.allKinds')}</option>{Object.entries(materialKindNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
       </div>
       {children}
       {importError && <p role="alert" className="text-sm text-destructive">{importError}</p>}
       {list.error && <p role="alert" className="text-sm text-destructive">{list.error.message}</p>}
       <div className={cn('glass-subtle overflow-x-auto rounded-xl', dragOver && 'ring-2 ring-primary')} onDragOver={(event) => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={onDrop}>
-        <table className="w-full text-sm" aria-label="材料">
-          <thead><tr>{columns.map(([key, label]) => <th key={key} aria-sort={sort === key ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'} className="px-3 py-2 text-left font-medium text-muted-foreground"><button type="button" className="hover:text-foreground" onClick={() => toggleSort(key)}>{label}{sort === key ? (dir === 'asc' ? ' ↑' : ' ↓') : ''}</button></th>)}{!taskId && <th className="px-3 py-2 text-left font-medium text-muted-foreground">关联任务</th>}</tr></thead>
+        <table className="w-full text-sm" aria-label={t('materials.tableAria')}>
+          <thead><tr>{columns.map(([key, label]) => <th key={key} aria-sort={sort === key ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'} className="px-3 py-2 text-left font-medium text-muted-foreground"><button type="button" className="hover:text-foreground" onClick={() => toggleSort(key)}>{label}{sort === key ? (dir === 'asc' ? ' ↑' : ' ↓') : ''}</button></th>)}{!taskId && <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t('materials.linkedColumn')}</th>}</tr></thead>
           <tbody>
-            {!list.isLoading && !list.data?.items.length && <tr><td colSpan={taskId ? 3 : 4} className="px-3 py-6 text-muted-foreground">暂无材料。可以导入文件，或保存一段文本。</td></tr>}
+            {!list.isLoading && !list.data?.items.length && <tr><td colSpan={taskId ? 3 : 4} className="px-3 py-6 text-muted-foreground">{t('materials.empty')}</td></tr>}
             {list.data?.items.map((item) => <tr key={item.id} className={cn('border-t', opened === item.id && 'bg-primary/10')} aria-selected={opened === item.id}>
-              <td className="px-3 py-2"><button type="button" className="text-left font-medium" aria-haspopup="dialog" aria-expanded={opened === item.id} onClick={() => { setOrganizeResult(null); setOpened(item.id); }}>{item.title}</button>{item.id.startsWith('auto-chat:') && <span className="ctx-badge">自动聊天摘录</span>}</td>
+              <td className="px-3 py-2"><button type="button" className="text-left font-medium" aria-haspopup="dialog" aria-expanded={opened === item.id} onClick={() => { setOrganizeResult(null); setOpened(item.id); }}>{item.title}</button>{item.id.startsWith('auto-chat:') && <span className="ctx-badge">{t('materials.autoExcerpt')}</span>}</td>
               <td className="px-3 py-2 text-muted-foreground">{materialTypeLabel(item.kind, item.fileName)}</td>
               <td className="px-3 py-2 text-muted-foreground">{formatWhen(item.updatedAt)}</td>
               {!taskId && <td className="px-3 py-2 text-muted-foreground">{item.taskTitle ?? ''}</td>}
@@ -156,41 +168,41 @@ export function MaterialBrowser({ topicId, taskId, onCreate, onEdit, children }:
       <Dialog open={Boolean(opened)} onOpenChange={(next) => { if (!next) setOpened(''); }}>
         <DialogContent surface="glass" overlayClassName="z-[60]" className="z-[60] flex h-[min(46rem,calc(100dvh-3rem))] w-[min(64rem,calc(100%-3rem))] max-w-none flex-col gap-3 overflow-hidden p-4">
           <div className="min-w-0 shrink-0 pr-10">
-            <DialogTitle className="truncate text-base" title={resource?.id === opened ? resource.title : undefined}>{resource?.id === opened ? resource.title : '材料预览'}</DialogTitle>
-            <DialogDescription className="truncate text-xs">{resource?.id === opened ? `${materialTypeLabel(resource.kind, currentVersion(resource)?.fileName ?? resource.fileName)} · 版本 ${resource.revision}${resource.archivedAt ? ' · 已归档' : ''}${resource.id.startsWith('auto-chat:') ? ' · 自动聊天摘录' : ''}` : detail.error ? '无法读取这份材料' : '正在读取…'}</DialogDescription>
+            <DialogTitle className="truncate text-base" title={openedResource ? openedResource.title : undefined}>{openedResource ? openedResource.title : t('materials.previewTitle')}</DialogTitle>
+            <DialogDescription className="truncate text-xs">{summary}</DialogDescription>
           </div>
           <div className="relative min-h-[8rem] min-w-0 flex-1">
             <div className="absolute inset-0 overflow-hidden">
               {detail.error && <p role="alert" className="text-sm text-destructive">{detail.error.message}</p>}
-              {resource?.id === opened ? <MaterialPreview materialId={resource.id} revision={resource.revision} kind={resource.kind} content={currentVersion(resource)?.content} fileName={currentVersion(resource)?.fileName ?? resource.fileName} hasAttachment={currentVersion(resource)?.hasAttachment} /> : !detail.error && <p className="text-sm text-muted-foreground">正在读取…</p>}
+              {openedResource ? <MaterialPreview materialId={openedResource.id} revision={openedResource.revision} kind={openedResource.kind} content={currentVersion(openedResource)?.content} fileName={currentVersion(openedResource)?.fileName ?? openedResource.fileName} hasAttachment={currentVersion(openedResource)?.hasAttachment} /> : !detail.error && <p className="text-sm text-muted-foreground">{t('materials.reading')}</p>}
             </div>
           </div>
-          {resource?.id === opened && <div className="flex min-h-0 max-h-[min(16rem,38dvh)] shrink flex-col gap-3 overflow-auto">
-            {resource.uri && <a className="break-all text-sm text-primary underline" href={resource.uri} target="_blank" rel="noreferrer">查看来源链接</a>}
-            {currentVersion(resource)?.hasAttachment && <p className="text-sm">原始文件名 {currentVersion(resource)?.fileName ?? '附件'} · <a className="text-primary underline" href={`/api/v1/knowledge/materials/${resource.id}/versions/${resource.revision}/attachment`}>下载附件</a></p>}
+          {openedResource && <div className="flex min-h-0 max-h-[min(16rem,38dvh)] shrink flex-col gap-3 overflow-auto">
+            {openedResource.uri && <a className="break-all text-sm text-primary underline" href={openedResource.uri} target="_blank" rel="noreferrer">{t('materials.sourceLink')}</a>}
+            {currentVersion(openedResource)?.hasAttachment && <p className="text-sm"><Trans t={t} i18nKey="materials.originalFile" components={{ fileName: <FileSlot i18nIsDynamicList>{currentVersion(openedResource)?.fileName ?? t('materials.attachmentFallback')}</FileSlot>, a: <a className="text-primary underline" href={`/api/v1/knowledge/materials/${openedResource.id}/versions/${openedResource.revision}/attachment`} /> }} /></p>}
             <div className="flex flex-wrap items-end gap-2">
-              <label className="grid min-w-[min(100%,12rem)] flex-1 gap-1 text-xs text-muted-foreground">关联任务<TaskLinkSelect resource={resource} topicId={topicId} busy={busy} run={run} /></label>
+              <label className="grid min-w-[min(100%,12rem)] flex-1 gap-1 text-xs text-muted-foreground">{t('materials.linkedTask')}<TaskLinkSelect resource={openedResource} topicId={topicId} busy={busy} run={run} /></label>
               <div className="flex flex-wrap gap-2">
-                {resource.kind === 'link' && <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void run(() => api(`/api/v1/knowledge/materials/${resource.id}/fetch`, { method: 'POST', body: json({ expectedVersion: resource.revision }) }), '网页快照已保存')}>抓取链接正文快照</Button>}
-                <Button type="button" size="sm" variant="outline" onClick={() => { setOpened(''); onEdit(resource); }}>编辑材料</Button>
-                <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => void run(() => submitCommands([{ kind: 'material.archive', targetId: resource.id, expectedRevision: resource.revision, input: { archived: !resource.archivedAt } }]), resource.archivedAt ? '材料已恢复' : '材料已归档')}>{resource.archivedAt ? '恢复材料' : '归档材料'}</Button>
+                {openedResource.kind === 'link' && <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void run(() => api(`/api/v1/knowledge/materials/${openedResource.id}/fetch`, { method: 'POST', body: json({ expectedVersion: openedResource.revision }) }), t('materials.snapshotToast'))}>{t('materials.fetchSnapshot')}</Button>}
+                <Button type="button" size="sm" variant="outline" onClick={() => { setOpened(''); onEdit(openedResource); }}>{t('materials.edit')}</Button>
+                <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => void run(() => submitCommands([{ kind: 'material.archive', targetId: openedResource.id, expectedRevision: openedResource.revision, input: { archived: !openedResource.archivedAt } }]), openedResource.archivedAt ? t('materials.restoredToast') : t('materials.archivedToast'))}>{openedResource.archivedAt ? t('materials.restore') : t('materials.archive')}</Button>
               </div>
             </div>
             <details className="disclosure shrink-0">
-              <summary className="cursor-pointer text-xs text-muted-foreground">整理这份材料</summary>
+              <summary className="cursor-pointer text-xs text-muted-foreground">{t('materials.organize')}</summary>
               <div className="mt-2 max-h-[min(12rem,30dvh)] space-y-2 overflow-auto">
-                <Textarea aria-label="整理目标" value={purpose} onChange={(event) => setPurpose(event.target.value)} rows={2} />
-                <select aria-label="整理方式" className="glass-control h-9 rounded-lg px-3 text-sm" value={provider} onChange={(event) => setProvider(event.target.value)}><option value="external">外部 AI 通过 MCP 整理</option><option value="builtin">使用已配置的内置模型</option></select>
-                <Button type="button" size="sm" disabled={busy || !purpose.trim()} onClick={() => void run(async () => { const request = await api<any>('/api/v1/knowledge/organizations', { method: 'POST', body: json({ topicId, purpose, provider, materialIds: [resource.id] }) }); const result = provider === 'builtin' ? await api(`/api/v1/knowledge/organizations/${request.id}/generate`, { method: 'POST', body: '{}' }) : request; setOrganizeResult(result); return result; }, provider === 'builtin' ? '整理建议已生成' : '整理请求已准备')}>整理这份材料</Button>
+                <Textarea aria-label={t('materials.purposeAria')} value={purpose} onChange={(event) => setPurpose(event.target.value)} rows={2} />
+                <select aria-label={t('materials.methodAria')} className="glass-control h-9 rounded-lg px-3 text-sm" value={provider} onChange={(event) => setProvider(event.target.value)}><option value="external">{t('materials.methodExternal')}</option><option value="builtin">{t('materials.methodBuiltin')}</option></select>
+                <Button type="button" size="sm" disabled={busy || !purpose.trim()} onClick={() => void run(async () => { const request = await api<any>('/api/v1/knowledge/organizations', { method: 'POST', body: json({ topicId, purpose, provider, materialIds: [openedResource.id] }) }); const result = provider === 'builtin' ? await api(`/api/v1/knowledge/organizations/${request.id}/generate`, { method: 'POST', body: '{}' }) : request; setOrganizeResult(result); return result; }, provider === 'builtin' ? t('materials.builtinToast') : t('materials.externalToast'))}>{t('materials.organize')}</Button>
                 {organizeResult?.provider === 'external' && !['proposed', 'completed'].includes(organizeResult.status) && <OrganizationPrompt id={organizeResult.id} purpose={organizeResult.purpose} />}
-                {organizeResult?.proposalIds?.length > 0 && <a className="block text-sm text-primary underline" href="#/proposals">检查待确认建议</a>}
+                {organizeResult?.proposalIds?.length > 0 && <a className="block text-sm text-primary underline" href="#/proposals">{t('materials.reviewSuggestions')}</a>}
               </div>
             </details>
-            <details className="disclosure shrink-0"><summary className="cursor-pointer text-xs text-muted-foreground">来源与修订历史</summary><div className="max-h-[min(12rem,30dvh)] overflow-auto">{resource.evidence?.map((ref) => <p key={`${ref.type}:${ref.id}`} className="my-2 break-all text-xs">{ref.type} · {ref.id} · 版本 {ref.revision}</p>)}{resource.versions?.map((version) => <div key={version.revision} className="mt-3 border-t pt-2 text-xs"><p>版本 {version.revision} · {version.reason ?? '保存原文'}</p><p className="mt-1 whitespace-pre-wrap">{version.content}</p></div>)}</div></details>
+            <details className="disclosure shrink-0"><summary className="cursor-pointer text-xs text-muted-foreground">{t('materials.historySummary')}</summary><div className="max-h-[min(12rem,30dvh)] overflow-auto">{openedResource.evidence?.map((ref) => <p key={`${ref.type}:${ref.id}`} className="my-2 break-all text-xs">{t('materials.evidenceLine', { type: ref.type, id: ref.id, revision: ref.revision })}</p>)}{openedResource.versions?.map((version) => <div key={version.revision} className="mt-3 border-t pt-2 text-xs"><p>{t('materials.versionLine', { revision: version.revision, reason: version.reason ?? t('materials.savedOriginal') })}</p><p className="mt-1 whitespace-pre-wrap">{version.content}</p></div>)}</div></details>
           </div>}
         </DialogContent>
       </Dialog>
-      <div className="flex gap-2"><Button type="button" variant="ghost" size="sm" disabled={!cursor} onClick={() => setCursor(Math.max(0, cursor - 40))}>上一页</Button><Button type="button" variant="ghost" size="sm" disabled={list.data?.nextCursor == null} onClick={() => setCursor(list.data?.nextCursor ?? 0)}>下一页</Button></div>
+      <div className="flex gap-2"><Button type="button" variant="ghost" size="sm" disabled={!cursor} onClick={() => setCursor(Math.max(0, cursor - 40))}>{t('materials.previousPage')}</Button><Button type="button" variant="ghost" size="sm" disabled={list.data?.nextCursor == null} onClick={() => setCursor(list.data?.nextCursor ?? 0)}>{t('materials.nextPage')}</Button></div>
     </div>
   </div>;
 }

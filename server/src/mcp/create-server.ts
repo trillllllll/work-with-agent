@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { requestLocale } from '../i18n/index.js';
 
 export const mcpCredential = new AsyncLocalStorage<string>();
 
@@ -16,6 +17,12 @@ function apiBase() {
   return base;
 }
 
+// HTTP MCP forwards the caller's Accept-Language; stdio MCP can set WWA_LANGUAGE. Otherwise the API answers in zh-CN.
+function forwardedLanguage(): Record<string, string> {
+  const language = requestLocale() ?? process.env.WWA_LANGUAGE;
+  return language ? { 'Accept-Language': language } : {};
+}
+
 export function createMcpServer() {
   const server = new McpServer({ name: 'work-with-agent', version: '2.0.0' }, {
     instructions: 'Read only the lists authorized for this connection. Read current revisions before editing. Writes require a stable requestId; reuse it only to retry identical content. pending_approval means data has NOT changed. Never claim a proposal was applied. Omit fields to preserve them, use null to clear nullable fields and [] to clear sets. Handoff results do not complete tasks; the owner reviews results. Preserve source IDs and revisions when proposing memories.',
@@ -23,7 +30,7 @@ export function createMcpServer() {
 
   async function request(path: string, method = 'GET', body?: unknown) {
     try {
-      const response = await fetch(new URL(path, apiBase()), { method, headers: { Authorization: `Bearer ${credential()}`, 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(30_000), redirect: 'error' });
+      const response = await fetch(new URL(path, apiBase()), { method, headers: { Authorization: `Bearer ${credential()}`, 'Content-Type': 'application/json', ...forwardedLanguage() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(30_000), redirect: 'error' });
       const payload = await response.json() as Record<string, unknown>;
       const result = { ...payload, httpStatus: response.status, retryable: response.status === 429 || response.status >= 500 };
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], structuredContent: result, ...(response.ok ? {} : { isError: true }) };

@@ -1,5 +1,21 @@
 import { readStoredApproval } from '../../../server/src/domain/task-batch-types.js';
 import { parseSseFrame, type Approval, type SseEvent, type ToolResult } from '../chat.js';
+import { currentLanguage, t } from '../i18n/index.js';
+
+function labels<K extends string>(keys: Record<K, string>): Record<K, string> {
+  const result = {} as Record<K, string>;
+  for (const id of Object.keys(keys) as K[]) {
+    const key = keys[id];
+    Object.defineProperty(result, id, { enumerable: true, get: () => t(key) });
+  }
+  return result;
+}
+function labeled<V extends string>(id: V, key: string): { id: V; label: string } {
+  return { id, get label() { return t(key); } };
+}
+function option<V extends string>(value: V, key: string): { value: V; label: string } {
+  return { value, get label() { return t(key); } };
+}
 
 export type Topic = { id: string; name: string; description: string; color: TagColor; isExploration: boolean; goal?: string; draftSummary?: string; finalSummary?: string; summaryStatus?: string; summaryUpdatedAt?: string | null; archivedAt?: string | null; revision?: number };
 export type Status = 'todo' | 'doing' | 'blocked' | 'done';
@@ -7,8 +23,8 @@ export type TaskPriority = 'none' | 'low' | 'medium' | 'high';
 export type Task = { id: string; topicId: string | null; title: string; description: string; status: Status; allowedTransitions: Status[]; priority: TaskPriority; dueDate: string | null; estimatedMinutes: number | null; scheduledStart: string | null; scheduledEnd: string | null; resultSummary: string; createdAt?: string; updatedAt?: string; deletedAt?: string | null; parentId?: string | null; sortOrder?: number; revision?: number; deleteBatchId?: string | null; tags?: Tag[]; tagIds?: string[]; children?: Task[]; topic?: { id: string; name: string; archivedAt?: string | null } | null };
 export type TagColor = 'violet' | 'blue' | 'teal' | 'green' | 'amber' | 'rose' | 'slate';
 export const tagColors: { id: TagColor; label: string }[] = [
-  { id: 'violet', label: '紫' }, { id: 'blue', label: '蓝' }, { id: 'teal', label: '青' }, { id: 'green', label: '绿' },
-  { id: 'amber', label: '琥珀' }, { id: 'rose', label: '玫红' }, { id: 'slate', label: '灰' },
+  labeled('violet', 'app:color.violet'), labeled('blue', 'app:color.blue'), labeled('teal', 'app:color.teal'), labeled('green', 'app:color.green'),
+  labeled('amber', 'app:color.amber'), labeled('rose', 'app:color.rose'), labeled('slate', 'app:color.slate'),
 ];
 export type Tag = { id: string; name: string; color?: TagColor; revision?: number };
 export type TrashTask = Task & { deletedAt: string; topic?: { id: string; name: string } };
@@ -51,22 +67,23 @@ export type FocusSession = {
 };
 export type ChangeRecord = { id: string; entityType: string; entityId: string; operation: string; reversible: boolean; beforeSnapshot?: string | null; afterSnapshot?: string | null; source: string; conversationId?: string | null; approvalId?: string | null; requestId?: string | null; reversalOf?: string | null; undoneAt?: string | null; createdAt: string };
 
-export const statuses: { value: Status; label: string }[] = [{ value: 'todo', label: '待办' }, { value: 'doing', label: '进行中' }, { value: 'blocked', label: '已阻塞' }, { value: 'done', label: '已完成' }];
+export const statuses: { value: Status; label: string }[] = [option('todo', 'app:status.todo'), option('doing', 'app:status.doing'), option('blocked', 'app:status.blocked'), option('done', 'app:status.done')];
 export function availableTaskStatuses(task: Pick<Task, 'status' | 'allowedTransitions'>): Status[] { const allowed = new Set([task.status, ...(task.allowedTransitions ?? [])]); return statuses.map((item) => item.value).filter((status) => allowed.has(status)); }
-export const priorities: { value: TaskPriority; label: string }[] = [{ value: 'none', label: '无优先级' }, { value: 'low', label: '低' }, { value: 'medium', label: '中' }, { value: 'high', label: '高' }];
-export const toolLabels: Record<string, string> = {
-  read_app_knowledge: '应用功能说明', read_page_state: '页面状态',
-  list_topics: '列出清单', get_topic: '读取清单', get_topic_progress: '读取进度', list_tasks: '查询任务', get_task: '读取任务',
-  create_task: '创建任务', update_task: '更新任务', delete_task: '删除任务', create_topic: '创建主题', update_topic: '更新主题', delete_topic: '归档清单', propose_topic_summary: '提出成果草稿',
-  execute_shell: '执行命令', execute_file: '文件操作', execute_http: '访问地址',
-  memory: '记忆', conversation_search: '查找过往对话', library: '项目资料', propose_task_changes: '整组任务修改',
-  get_time: '当前时间', get_work_context: '工作上下文', query_tasks: '查询任务', query_topics: '查询清单', get_task_activity: '任务动态',
-  search_workspace: '搜索', library_read: '读取资料', memory_read: '读取记忆', get_change_schema: '修改说明', propose_changes: '修改方案', prepare_external_prompt: '外部提示词',
-};
+export const priorities: { value: TaskPriority; label: string }[] = [option('none', 'app:priority.none'), option('low', 'app:priority.low'), option('medium', 'app:priority.medium'), option('high', 'app:priority.high')];
+export const toolLabels: Record<string, string> = labels({
+  read_app_knowledge: 'app:tool.readAppKnowledge', read_page_state: 'app:tool.readPageState',
+  list_topics: 'app:tool.listTopics', get_topic: 'app:tool.getTopic', get_topic_progress: 'app:tool.getTopicProgress', list_tasks: 'app:tool.listTasks', get_task: 'app:tool.getTask',
+  create_task: 'app:tool.createTask', update_task: 'app:tool.updateTask', delete_task: 'app:tool.deleteTask', create_topic: 'app:tool.createTopic', update_topic: 'app:tool.updateTopic', delete_topic: 'app:tool.deleteTopic', propose_topic_summary: 'app:tool.proposeTopicSummary',
+  execute_shell: 'app:tool.executeShell', execute_file: 'app:tool.executeFile', execute_http: 'app:tool.executeHttp',
+  memory: 'app:tool.memory', conversation_search: 'app:tool.conversationSearch', library: 'app:tool.library', propose_task_changes: 'app:tool.proposeTaskChanges',
+  get_time: 'app:tool.getTime', get_work_context: 'app:tool.getWorkContext', query_tasks: 'app:tool.queryTasks', query_topics: 'app:tool.queryTopics', get_task_activity: 'app:tool.getTaskActivity',
+  search_workspace: 'app:tool.searchWorkspace', library_read: 'app:tool.libraryRead', memory_read: 'app:tool.memoryRead', get_change_schema: 'app:tool.getChangeSchema', propose_changes: 'app:tool.proposeChanges', prepare_external_prompt: 'app:tool.prepareExternalPrompt',
+});
 export const API_URL = '';
 let csrfToken = '';
 export function setCsrfToken(value: string) { csrfToken = value; }
-export function authHeaders(): Record<string, string> { return csrfToken ? { 'X-CSRF-Token': csrfToken } : {}; }
+/** Every API call carries the CSRF token (when signed in) and the chosen UI language, so server messages match it. */
+export function authHeaders(): Record<string, string> { return { 'X-WWA-Language': currentLanguage(), ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}) }; }
 
 export type MutationMeta = { changeId?: string; affectedTaskIds?: string[]; warnings?: string[] };
 export type ApiEnvelope<T> = { data: T; error: null; meta?: MutationMeta };
@@ -77,10 +94,10 @@ export async function apiMutation<T = any>(path: string, init?: RequestInit): Pr
   const headers = new Headers({ 'Content-Type': 'application/json', ...authHeaders() });
   new Headers(init?.headers).forEach((value, key) => headers.set(key, value));
   const response = await fetch(`${API_URL}${path}`, { ...init, credentials: 'include', headers });
-  const body = await response.json().catch(() => ({ data: null, error: '响应格式错误' }));
+  const body = await response.json().catch(() => ({ data: null, error: t('app:api.invalidResponse') }));
   if (!response.ok) {
     if (response.status === 401 && typeof window !== 'undefined') window.dispatchEvent(new Event('workspace-session-expired'));
-    throw new ApiError(typeof body.error === 'string' ? body.error : body.error?.message ?? '请求失败', body.code ?? body.error?.code, response.status, body.details ?? body.error?.details);
+    throw new ApiError(typeof body.error === 'string' ? body.error : body.error?.message ?? t('app:api.requestFailed'), body.code ?? body.error?.code, response.status, body.details ?? body.error?.details);
   }
   return body;
 }
@@ -116,10 +133,10 @@ export async function streamChat(body: unknown, onEvent: (event: SseEvent) => vo
   const response = await fetch(`${API_URL}/api/chat`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', ...authHeaders() }, body: JSON.stringify(body) });
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
-    throw new ApiError(typeof payload?.error === 'string' ? payload.error : payload?.error?.message ?? '聊天请求失败', payload?.code ?? payload?.error?.code, response.status);
+    throw new ApiError(typeof payload?.error === 'string' ? payload.error : payload?.error?.message ?? t('app:api.chatRequestFailed'), payload?.code ?? payload?.error?.code, response.status);
   }
   options?.onAccepted?.();
-  if (!response.body) throw new Error('聊天连接没有响应体');
+  if (!response.body) throw new Error(t('app:api.chatEmptyBody'));
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';

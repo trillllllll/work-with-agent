@@ -1,5 +1,6 @@
 import { useLayoutEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { History, Settings, Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { cn } from '@/lib/utils.js';
@@ -19,19 +20,18 @@ type WorkspaceModalProps = {
   changes: ReactNode;
 };
 
-const tabs: { view: WorkspaceModalView; label: string; description: string; icon: typeof Settings }[] = [
-  { view: 'settings', label: '设置', description: '模型与接口配置', icon: Settings },
-  { view: 'trash', label: '回收站', description: '恢复或永久删除任务', icon: Trash2 },
-  { view: 'changes', label: '变更历史', description: '查看并撤销变更', icon: History },
-];
-
-const titles: Record<WorkspaceModalView, { eyebrow: string; title: string; description: string }> = {
-  settings: { eyebrow: '工作区偏好', title: '设置', description: '管理模型连接与工作区偏好' },
-  trash: { eyebrow: '工作区管理', title: '回收站', description: '恢复任务，或清理不再需要的内容' },
-  changes: { eyebrow: '审计记录', title: '变更历史', description: '查看工作区变更，并撤销仍然安全可逆的操作' },
-};
-
 export function WorkspaceModal({ suspended = false, assistantOpen, assistantSlot, onOpenAssistant, view, onViewChange, onClose, settings, trash, changes }: WorkspaceModalProps) {
+  const { t } = useTranslation('workspace');
+  const tabs: { view: WorkspaceModalView; label: string; description: string; icon: typeof Settings }[] = [
+    { view: 'settings', label: t('modal.settings'), description: t('modal.settingsTab'), icon: Settings },
+    { view: 'trash', label: t('modal.trash'), description: t('modal.trashTab'), icon: Trash2 },
+    { view: 'changes', label: t('modal.changes'), description: t('modal.changesTab'), icon: History },
+  ];
+  const titles: Record<WorkspaceModalView, { eyebrow: string; title: string; description: string }> = {
+    settings: { eyebrow: t('modal.settingsEyebrow'), title: t('modal.settings'), description: t('modal.settingsDescription') },
+    trash: { eyebrow: t('modal.trashEyebrow'), title: t('modal.trash'), description: t('modal.trashDescription') },
+    changes: { eyebrow: t('modal.changesEyebrow'), title: t('modal.changes'), description: t('modal.changesDescription') },
+  };
   const content = view === 'settings' ? settings : view === 'trash' ? trash : changes;
   const current = titles[view];
 
@@ -46,13 +46,13 @@ export function WorkspaceModal({ suspended = false, assistantOpen, assistantSlot
     <div hidden ref={setParkingSlot} />
     <Dialog open={!suspended} onOpenChange={(open) => { if (!open) onClose(); }}>
     {createPortal(<>        <DialogHeader className="relative shrink-0 border-b border-black/[0.06] px-6 pb-4 pt-5 pr-16 text-left dark:border-white/[0.08] sm:px-8 sm:pt-6 sm:pr-20">
-          <button type="button" className="mb-2 self-start text-sm text-primary" onClick={onOpenAssistant}>AI 助手</button>
+          <button type="button" className="mb-2 self-start text-sm text-primary" onClick={onOpenAssistant}>{t('modal.assistant')}</button>
           <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/80">{current.eyebrow}</span>
           <DialogTitle className="mt-1.5 text-[26px] font-semibold tracking-[-0.025em]">{current.title}</DialogTitle>
           <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-muted-foreground">{current.description}</p>
         </DialogHeader>
 
-        <nav className="relative shrink-0 overflow-x-auto border-b border-black/[0.06] px-5 py-3 [scrollbar-width:none] dark:border-white/[0.08] sm:px-8" aria-label="工作区设置导航">
+        <nav className="relative shrink-0 overflow-x-auto border-b border-black/[0.06] px-5 py-3 [scrollbar-width:none] dark:border-white/[0.08] sm:px-8" aria-label={t('modal.nav')}>
           <div className="flex min-w-max gap-1 rounded-full border border-black/[0.06] bg-black/[0.035] p-1 shadow-inner dark:border-white/[0.08] dark:bg-white/[0.06]">
             {tabs.map(({ view: tabView, label, description, icon: Icon }) => {
               const active = tabView === view;
