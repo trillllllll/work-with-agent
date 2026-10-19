@@ -6,7 +6,6 @@ import { ApiError, priorities, type Status, type Tag, type Task, type TaskPriori
 import { isCompositionKey, sameField, taskDraft, queryKeys, type TaskDraft } from '@/lib/todo.js';
 import { scheduleLabel } from '@/lib/schedule.js';
 import { ScheduleFields, scheduleError, type ScheduleValue } from './ScheduleFields.js';
-import { useHashRoute } from '@/hooks/useHashRoute.js';
 import { useTask, useTodoActions } from '@/hooks/useTodo.js';
 import { useFocus } from '@/components/focus/FocusProvider.js';
 import { useEditorRuntime } from '@/lib/task-editor-runtime.js';
@@ -664,11 +663,10 @@ export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children
 function StartFocusButton() {
   const edit = useEdit();
   const { dispatch } = useFocus();
-  const { navigate } = useHashRoute();
   return <button type="button" className="task-info-row" disabled={edit.readonly} onClick={() => {
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') void Notification.requestPermission();
     dispatch({ type: 'START', taskId: edit.taskId, taskTitle: edit.draft.title, now: Date.now() });
-    navigate('focus');
+    window.dispatchEvent(new CustomEvent('wwa-open-focus'));
   }}>
     <Timer className="size-4 shrink-0 text-muted-foreground" aria-hidden />
     <span className="w-20 shrink-0 text-left text-muted-foreground">开始专注</span>
