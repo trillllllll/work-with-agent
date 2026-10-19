@@ -93,7 +93,8 @@ test('相邻时间点与午夜合并卡片不遮挡后续任务或超出当天',
   await expect(page.getByRole('button', { name: '安排时间', exact: true })).toContainText('10:30');
 });
 
-test('离开规划页后仍停在上次的日月周，日期回到今天', async ({ page }) => {
+test('离开规划页后仍停在上次的日月周和日期', async ({ page }) => {
+  const dates = () => page.getByTestId('time-band-day').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-date')));
   await page.goto('/#/plan');
   await expect(page.locator('[data-plan-mode="week"]')).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: '月', exact: true }).click();
@@ -108,9 +109,22 @@ test('离开规划页后仍停在上次的日月周，日期回到今天', async
   await page.goto('/#/inbox');
   await page.goto('/#/plan');
   await expect(page.locator('[data-plan-mode="day"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('time-band-day')).toHaveAttribute('data-date', '2026-10-18');
+  await page.getByTestId('plan-page').getByRole('button', { name: '今天', exact: true }).click();
+  await expect(page.locator('[data-plan-mode="day"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('time-band-day')).toHaveAttribute('data-date', '2026-10-16');
-  await page.evaluate(() => localStorage.setItem('todo.plan.mode', 'year'));
+  await page.goto('/#/inbox');
+  await page.goto('/#/plan');
+  await expect(page.locator('[data-plan-mode="day"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('time-band-day')).toHaveAttribute('data-date', '2026-10-16');
+  await page.getByRole('button', { name: '周', exact: true }).click();
+  await page.getByRole('button', { name: '下一段', exact: true }).click();
+  await page.goto('/#/inbox');
+  await page.goto('/#/plan');
+  await expect(page.locator('[data-plan-mode="week"]')).toHaveAttribute('aria-pressed', 'true');
+  expect(await dates()).toEqual(['2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22', '2026-10-23', '2026-10-24', '2026-10-25']);
+  await page.evaluate(() => { localStorage.setItem('todo.plan.mode', 'year'); localStorage.setItem('todo.plan.anchor', '2026-02-31'); });
   await page.reload();
   await expect(page.locator('[data-plan-mode="week"]')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByTestId('time-band-day')).toHaveCount(7);
+  expect(await dates()).toEqual(['2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16', '2026-10-17', '2026-10-18']);
 });

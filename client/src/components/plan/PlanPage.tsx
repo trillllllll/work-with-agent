@@ -23,6 +23,13 @@ function readPlanMode(): Mode {
   const stored = localStorage.getItem('todo.plan.mode');
   return stored === 'day' || stored === 'week' || stored === 'month' ? stored : 'week';
 }
+function readPlanAnchor(today: string) {
+  const stored = localStorage.getItem('todo.plan.anchor');
+  if (!stored || !/^\d{4}-\d{2}-\d{2}$/.test(stored)) return today;
+  const [year, month, day] = stored.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day ? stored : today;
+}
 type Props = {
   topics: Topic[]; tags: Tag[];
   onOpen: (id: string) => void;
@@ -168,7 +175,8 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
   const timeBands = usePlanTimeBands();
   const [mode, setMode] = useState<Mode>(readPlanMode);
   const chooseMode = (next: Mode) => { setMode(next); localStorage.setItem('todo.plan.mode', next); };
-  const [anchor, setAnchor] = useState(today);
+  const [anchor, setAnchor] = useState(() => readPlanAnchor(today));
+  const chooseAnchor = (next: string) => { setAnchor(next); localStorage.setItem('todo.plan.anchor', next); };
   const [showCompleted, setShowCompleted] = useState(() => localStorage.getItem('todo.plan.showCompleted') === 'true');
   const [trayOpen, setTrayOpen] = useState(false);
   const [allDayOpen, setAllDayOpen] = useState<boolean | null>(() => {
@@ -243,7 +251,7 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
         <Button variant="outline" size="sm" aria-expanded={trayOpen} aria-controls="plan-task-tray" onClick={() => setTrayOpen(!trayOpen)}><PanelRight className="size-4" />待安排<span className="plan-tray-count">{(trayQuery.data ?? []).filter((task) => !scheduleDateKey(task)).length}</span></Button>
       </header>
       <div className="plan-toolbar">
-        <div className="flex flex-wrap items-center gap-2 text-sm"><span className="font-medium">{dateLabel(anchor, { year: 'numeric', month: 'long' })}</span><Button variant="ghost" size="icon-sm" aria-label="上一段" onClick={() => setAnchor(mode === 'month' ? shiftMonth(anchor, -1) : addDays(anchor, mode === 'week' ? -7 : -1))}><ChevronLeft /></Button><Button variant="ghost" size="icon-sm" aria-label="下一段" onClick={() => setAnchor(mode === 'month' ? shiftMonth(anchor, 1) : addDays(anchor, mode === 'week' ? 7 : 1))}><ChevronRight /></Button><Button variant="outline" size="sm" onClick={() => setAnchor(today)}>今天</Button></div>
+        <div className="flex flex-wrap items-center gap-2 text-sm"><span className="font-medium">{dateLabel(anchor, { year: 'numeric', month: 'long' })}</span><Button variant="ghost" size="icon-sm" aria-label="上一段" onClick={() => chooseAnchor(mode === 'month' ? shiftMonth(anchor, -1) : addDays(anchor, mode === 'week' ? -7 : -1))}><ChevronLeft /></Button><Button variant="ghost" size="icon-sm" aria-label="下一段" onClick={() => chooseAnchor(mode === 'month' ? shiftMonth(anchor, 1) : addDays(anchor, mode === 'week' ? 7 : 1))}><ChevronRight /></Button><Button variant="outline" size="sm" onClick={() => chooseAnchor(today)}>今天</Button></div>
         <div className="plan-mode-switch">{(['day', 'week', 'month'] as const).map((item) => <button key={item} type="button" data-plan-mode={item} aria-pressed={mode === item} className={cn('rounded-md px-3 py-1.5 text-xs', mode === item ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground')} onClick={() => { clearDrag(); chooseMode(item); }}>{item === 'day' ? '日' : item === 'week' ? '周' : '月'}</button>)}</div>
       </div>
       {error ? <p role="alert" className="text-destructive">{error.message}</p> : planned.isLoading || trayQuery.isLoading ? <p className="py-12 text-center text-muted-foreground">正在加载任务…</p> : <div className="plan-layout" data-tray-open={trayOpen || undefined}>
@@ -253,9 +261,9 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
             <div className="grid grid-cols-7">{days.map((day) => {
               const items = tasks.filter((task) => occursOn(task, day)).sort((a, b) => (a.scheduledStart ?? '').localeCompare(b.scheduledStart ?? '') || a.id.localeCompare(b.id));
               return <DropTarget key={day} id={`cell:${day}`} className={cn('min-h-28 min-w-0 border-t border-l border-[var(--glass-divider)] p-1 [&:nth-child(7n)]:border-r', day.slice(0, 7) !== anchor.slice(0, 7) && 'opacity-50')}>
-                <div className="mb-1 flex justify-between"><button type="button" aria-label={`查看${day}`} className={cn('rounded px-1 text-sm', day === today && 'bg-primary text-primary-foreground')} onClick={() => { setAnchor(day); chooseMode('day'); }}>{Number(day.slice(8))}</button><button type="button" aria-label={`在${day}添加全天任务`} disabled={disabled} onClick={() => setCreating({ dueDate: day, scheduledStart: null, scheduledEnd: null })}>＋</button></div>
+                <div className="mb-1 flex justify-between"><button type="button" aria-label={`查看${day}`} className={cn('rounded px-1 text-sm', day === today && 'bg-primary text-primary-foreground')} onClick={() => { chooseAnchor(day); chooseMode('day'); }}>{Number(day.slice(8))}</button><button type="button" aria-label={`在${day}添加全天任务`} disabled={disabled} onClick={() => setCreating({ dueDate: day, scheduledStart: null, scheduledEnd: null })}>＋</button></div>
                 {items.slice(0, 3).map((task) => <DragTask key={task.id} task={task} instance={`month:${day}`} offset={task.scheduledStart && day !== task.scheduledStart.slice(0, 10) ? minutesBetween(task.scheduledStart, `${day}T00:00`) : 0} busy={disabled}><button type="button" title={scheduleLabel(task)} className={cn('mb-1 block w-full truncate rounded px-1 text-left text-[11px]', task.status === 'done' && 'opacity-55 line-through')} style={{ borderLeft: `3px solid ${priorityColor(task.priority)}` }} onClick={() => onOpen(task.id)}>{scheduleDateKey(task) !== day ? '↳ ' : task.scheduledStart ? `${formatTime(task.scheduledStart)} ` : ''}{task.title}</button></DragTask>)}
-                {items.length > 3 && <button type="button" className="text-xs text-primary" onClick={() => { setAnchor(day); chooseMode('day'); }}>+{items.length - 3} 查看全部</button>}
+                {items.length > 3 && <button type="button" className="text-xs text-primary" onClick={() => { chooseAnchor(day); chooseMode('day'); }}>+{items.length - 3} 查看全部</button>}
               </DropTarget>;
             })}</div>
           </div></div>}
