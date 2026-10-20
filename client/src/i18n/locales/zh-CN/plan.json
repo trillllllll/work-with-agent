@@ -42,6 +42,9 @@
   },
   "focus": {
     "title": "专注",
+    "expand": "放大到独立页",
+    "shrink": "缩小回原页面",
+    "collapse": "收起专注",
     "free": "自由专注",
     "pause": "暂停",
     "resume": "继续",

@@ -43,6 +43,9 @@
   },
   "focus": {
     "title": "Focus",
+    "expand": "Expand to full page",
+    "shrink": "Shrink back to the page",
+    "collapse": "Hide focus",
     "free": "Free focus",
     "pause": "Pause",
     "resume": "Resume",

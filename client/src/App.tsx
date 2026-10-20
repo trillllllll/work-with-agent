@@ -5,6 +5,7 @@ import { pageNames, usePageContexts, type ChatContextV3 } from './lib/assistant-
 import { useLibrarySnapshot, patchLibrary } from './components/library/store.js';
 import type { AssistantSource } from '../../server/src/agent/assistant-sources.js';
 import { isOverdue, occursOn } from './lib/schedule.js';
+import { focusOriginFromNavigation, hashRouteHead } from './lib/focus-presentation.js';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -103,10 +104,15 @@ export function App() {
   const mobileNavigation = useMobileNavigation();
   const [selectedTopicId, setSelectedTopicId] = useState(() => localStorage.getItem('todo.selectedTopic') ?? '');
   const [chatOpen, setChatOpen] = useState(false);
+  const [focusOpen, setFocusOpen] = useState(false);
+  const [focusOrigin, setFocusOrigin] = useState<{ hash: string } | null>(null);
   const [assistantOrigin, setAssistantOrigin] = useState<{ route: View; hash: string; context: ChatContextV3; knowledgeSection: ReturnType<typeof useHashRoute>['knowledgeSection']; knowledgeTopicId: string | null; knowledgeTopicExplicit: boolean } | null>(null);
   const [assistantPageSlot, setAssistantPageSlot] = useState<HTMLDivElement | null>(null);
   const isAssistantPage = route === 'chat';
+  const isFocusPage = route === 'focus';
   useEffect(() => { if (!isAssistantPage) setAssistantOrigin(null); }, [isAssistantPage]);
+  useEffect(() => { if (!isFocusPage) setFocusOrigin(null); }, [isFocusPage]);
+  useEffect(() => { if (!isDesktop) setFocusOpen(false); }, [isDesktop]);
   const knowledgeSection = isAssistantPage && assistantOrigin ? assistantOrigin.knowledgeSection : liveKnowledgeSection;
   const knowledgeTopicId = isAssistantPage && assistantOrigin ? assistantOrigin.knowledgeTopicId : liveKnowledgeTopicId;
   const knowledgeTopicExplicit = isAssistantPage && assistantOrigin ? assistantOrigin.knowledgeTopicExplicit : liveKnowledgeTopicExplicit;
@@ -218,6 +224,11 @@ export function App() {
     transitionFromDetail(() => {
     setAssistantOrigin(null);
     if (view === 'chat') setChatOpen(false);
+    if (view === 'focus') {
+      const origin = focusOriginFromNavigation(window.location.hash);
+      if (origin) setFocusOrigin(origin);
+      setFocusOpen(false);
+    }
     setSourceView(null);
     setTaskId('');
     if (view === 'knowledge') { openKnowledge('brief', selectedTopicId); return; }
@@ -239,7 +250,8 @@ export function App() {
     setTaskId(id);
   };
   const openChat = () => {
-    if (window.location.hash.replace(/^#\/?/, '').split('?')[0] !== 'chat') setChatOpen(true);
+    setFocusOpen(false);
+    if (hashRouteHead(window.location.hash) !== 'chat') setChatOpen(true);
     requestAnimationFrame(() => window.dispatchEvent(new Event('wwa-focus-assistant')));
   };
   const expandAssistant = () => {
@@ -251,15 +263,39 @@ export function App() {
     window.location.hash = assistantOrigin.hash || `/${assistantOrigin.route}`;
     setChatOpen(true);
   };
+  const expandFocus = () => {
+    setFocusOrigin({ hash: window.location.hash || '#/inbox' });
+    setFocusOpen(false);
+    navigate('focus');
+  };
+  const shrinkFocus = () => {
+    if (!focusOrigin) return;
+    window.location.hash = focusOrigin.hash || '#/inbox';
+    if (isDesktop) setFocusOpen(true);
+  };
+  const openFocus = () => {
+    const hash = window.location.hash;
+    if (hashRouteHead(hash) === 'focus') return;
+    if (window.matchMedia('(min-width: 1024px)').matches) {
+      setChatOpen(false);
+      setFocusOpen(true);
+      return;
+    }
+    setFocusOrigin({ hash: hash || '#/inbox' });
+    setFocusOpen(false);
+    navigate('focus');
+  };
   useEffect(() => {
     const open = () => openChat();
+    const focus = () => openFocus();
     const shortcut = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'l') { event.preventDefault(); openChat(); }
     };
     window.addEventListener('wwa-adjust-approval', open);
     window.addEventListener('wwa-open-assistant', open);
+    window.addEventListener('wwa-open-focus', focus);
     window.addEventListener('keydown', shortcut);
-    return () => { window.removeEventListener('wwa-adjust-approval', open); window.removeEventListener('wwa-open-assistant', open); window.removeEventListener('keydown', shortcut); };
+    return () => { window.removeEventListener('wwa-adjust-approval', open); window.removeEventListener('wwa-open-assistant', open); window.removeEventListener('wwa-open-focus', focus); window.removeEventListener('keydown', shortcut); };
   }, []);
   const sourceHandler = useRef((source: AssistantSource) => {});
   sourceHandler.current = (source) => {
@@ -427,9 +463,14 @@ export function App() {
       {listLayout ? <section className="list-surface rounded-2xl p-1.5 sm:p-2">{scoped && !archived && <QuickCapture ref={captureRef} key={`${page}.${selectedTopicId}`} topicId={page === 'inbox' ? null : selectedTopicId} inbox={page === 'inbox'} onCreate={createTask} />}{showHint && <p className="px-2 pb-1 pt-1 text-xs text-muted-foreground">{hintText}</p>}{tasksQuery.isLoading ? <p className="py-12 text-center text-muted-foreground">{t('shell.loadingTasks')}</p> : tasksQuery.error ? <p role="alert" className="text-destructive">{tasksQuery.error.message}</p> : taskList}</section> : tasksQuery.isLoading ? <p className="py-12 text-center text-muted-foreground">{t('shell.loadingTasks')}</p> : tasksQuery.error ? <p role="alert" className="text-destructive">{tasksQuery.error.message}</p> : page === 'today' ? (todayGroups.length ? <div className="space-y-6">{todayGroups.map((group) => <section key={group.name}><h2 className="mb-3 text-sm font-semibold">{group.name} · {group.items.length}</h2><TaskList {...listProps} tasks={group.items} /></section>)}</div> : <p className="py-12 text-center text-sm text-muted-foreground">{t('shell.noTasks')}</p>) : quadrantView ? <QuadrantBoard tasks={tasks} showCompleted={showCompleted} onShowCompleted={setShowCompleted} onMoveQuadrant={moveQuadrant} topics={topics} tags={tags} selected={false} readonly={archived} busy={actions.pending} textDirty={detailDirty} onOpen={openTask} onToggle={toggleTask} onMove={moveTask} onDelete={(item) => run(deleteTask(item))} onSave={patchTask} onCreate={createTask} onUpdateStatus={(id, status: Status) => { const item = tasks.find((candidate) => candidate.id === id); if (item) run(patchTask(item, { status })); }} /> : scoped && layout === 'board' ? <div className="mt-5 flex gap-3 overflow-x-auto pb-4 snap-x snap-mandatory md:grid md:grid-cols-2 md:overflow-visible xl:grid-cols-4">{statuses.map(({ value, label }) => <BoardColumn key={value} label={label} count={tasks.filter((task) => task.status === value).length}>{tasks.filter((task) => task.status === value).map((task) => <TaskCard key={task.id} task={task} topics={topics} tags={tags} selected={taskId === task.id} readonly={archived} busy={actions.pending} textDirty={detailDirty} onOpen={openTask} onToggle={toggleTask} onMove={moveTask} onDelete={(item) => run(deleteTask(item))} onSave={patchTask} onCreate={createTask} onUpdateStatus={(id, status: Status) => { const item = tasks.find((candidate) => candidate.id === id); if (item) run(patchTask(item, { status })); }} />)}</BoardColumn>)}</div> : page === 'tags' ? (selectedTag ? <div className="space-y-6">{taggedSections.map((section) => <section key={section.id} aria-label={section.name}><h2 className="mb-3 text-sm font-semibold">{section.name} · {section.items.length}</h2><TaskList {...listProps} tasks={section.items} /></section>)}{!taggedSections.length && <p className="py-12 text-center text-sm text-muted-foreground">{t('shell.noTasks')}</p>}</div> : <p className="py-12 text-center text-sm text-muted-foreground">{t('shell.selectTagHint')}</p>) : taskList}
     </>}
   </div>;
-  const content = page === 'plan' ? <PlanPage {...planProps} /> : page === 'focus' ? <FocusPage /> : page === 'connections' ? <ConnectionsPage topics={topics} /> : page === 'proposals' ? <ProposalsPage /> : page === 'knowledge' ? <KnowledgePage topics={topics} archivedTopics={archivedQuery.data ?? []} topicId={knowledgeTopicExplicit ? (knowledgeTopicId ?? '') : selectedTopicId} topicExplicit={knowledgeTopicExplicit} topicsReady={topicsQuery.isSuccess && archivedQuery.isSuccess} section={knowledgeSection ?? 'brief'} onLocate={openKnowledge} onOpenSettings={() => navigate('settings')} /> : page === 'skills' ? <SkillsPage /> : page === 'library' ? <LibraryPage topics={topics} selectedTopicId={selectedTopicId} onOpenTask={openLinkedTask} /> : page === 'runs' ? <RunsPage /> : page === 'worktrees' ? <WorktreesPage /> : page === 'reviews' ? <ReviewsPage topics={topics} /> : taskPage ? taskContent : page === 'topics' ? <TopicListPage topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onSelectTopic={selectTopic} onNewTopic={newTopic} onEditTopic={setTopicForm} onOpenSettings={() => navigateSafely('settings')} onOpenInbox={() => navigateSafely('inbox')} /> : page === 'archived' ? <div className="p-5 sm:p-7"><h1 className="mb-5 text-2xl font-semibold">{t('nav.archived')}</h1><div className="space-y-3">{!(archivedQuery.data ?? []).length && <p className="text-sm text-muted-foreground">{t('shell.noArchivedLists')}</p>}{(archivedQuery.data ?? []).map((topic) => <article key={topic.id} className="glass-subtle flex flex-wrap items-center gap-3 rounded-xl p-4"><button className="flex-1 text-left font-medium" onClick={() => selectTopic(topic.id)}>{topic.name}</button><Button variant="outline" onClick={() => run(actions.write(`/api/topics/${topic.id}/restore`, 'POST', undefined, [topic.id], t('shell.listRestored')))}>{t('shell.restoreList')}</Button><Button variant="outline" onClick={() => run((async () => { if (await confirm({ title: t('confirm.moveTasksOut'), description: t('confirm.moveTasksDescription', { name: topic.name }), confirm: t('confirm.moveTasks') })) await actions.write(`/api/topics/${topic.id}/move-tasks-to-inbox`, 'POST', undefined, [topic.id], t('shell.tasksMovedToInbox')); })())}>{t('shell.moveTasksToInbox')}</Button></article>)}</div></div> : <MorePage route={route} onNavigate={navigateSafely} />;
+  const content = page === 'plan' ? <PlanPage {...planProps} /> : page === 'focus' ? <FocusPage presentation={focusOrigin ? 'expanded' : 'direct'} onExpand={expandFocus} onShrink={shrinkFocus} onClose={() => setFocusOpen(false)} /> : page === 'connections' ? <ConnectionsPage topics={topics} /> : page === 'proposals' ? <ProposalsPage /> : page === 'knowledge' ? <KnowledgePage topics={topics} archivedTopics={archivedQuery.data ?? []} topicId={knowledgeTopicExplicit ? (knowledgeTopicId ?? '') : selectedTopicId} topicExplicit={knowledgeTopicExplicit} topicsReady={topicsQuery.isSuccess && archivedQuery.isSuccess} section={knowledgeSection ?? 'brief'} onLocate={openKnowledge} onOpenSettings={() => navigate('settings')} /> : page === 'skills' ? <SkillsPage /> : page === 'library' ? <LibraryPage topics={topics} selectedTopicId={selectedTopicId} onOpenTask={openLinkedTask} /> : page === 'runs' ? <RunsPage /> : page === 'worktrees' ? <WorktreesPage /> : page === 'reviews' ? <ReviewsPage topics={topics} /> : taskPage ? taskContent : page === 'topics' ? <TopicListPage topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onSelectTopic={selectTopic} onNewTopic={newTopic} onEditTopic={setTopicForm} onOpenSettings={() => navigateSafely('settings')} onOpenInbox={() => navigateSafely('inbox')} /> : page === 'archived' ? <div className="p-5 sm:p-7"><h1 className="mb-5 text-2xl font-semibold">{t('nav.archived')}</h1><div className="space-y-3">{!(archivedQuery.data ?? []).length && <p className="text-sm text-muted-foreground">{t('shell.noArchivedLists')}</p>}{(archivedQuery.data ?? []).map((topic) => <article key={topic.id} className="glass-subtle flex flex-wrap items-center gap-3 rounded-xl p-4"><button className="flex-1 text-left font-medium" onClick={() => selectTopic(topic.id)}>{topic.name}</button><Button variant="outline" onClick={() => run(actions.write(`/api/topics/${topic.id}/restore`, 'POST', undefined, [topic.id], t('shell.listRestored')))}>{t('shell.restoreList')}</Button><Button variant="outline" onClick={() => run((async () => { if (await confirm({ title: t('confirm.moveTasksOut'), description: t('confirm.moveTasksDescription', { name: topic.name }), confirm: t('confirm.moveTasks') })) await actions.write(`/api/topics/${topic.id}/move-tasks-to-inbox`, 'POST', undefined, [topic.id], t('shell.tasksMovedToInbox')); })())}>{t('shell.moveTasksToInbox')}</Button></article>)}</div></div> : <MorePage route={route} onNavigate={navigateSafely} />;
   const chatPanel = <ChatPanel chat={chat} presentation={isAssistantPage ? assistantOrigin ? 'expanded' : 'direct' : 'side'} onExpand={expandAssistant} onShrink={shrinkAssistant} mobile={!isDesktop} onClose={() => setChatOpen(false)} />;
   const showChat = chatOpen || route === 'chat';
+  const focusSide = focusOpen && isDesktop && !isFocusPage && !isAssistantPage;
+  const sidePanel = (showChat && !isAssistantPage) || focusSide;
+  const chatAccessory = showChat && !workspaceView && !isAssistantPage;
+  const focusAccessory = focusSide && !workspaceView && !chatAccessory;
+  const focusPageVisible = isFocusPage && (isDesktop || !showChat);
   const closeTask = () => { setDetailDirty(false); setTaskId(''); };
   const taskIdRef = useRef(taskId);
   taskIdRef.current = taskId;
@@ -452,17 +493,18 @@ export function App() {
     return () => window.removeEventListener('wwa-open-task', handler);
   }, []);
   const detailPane = taskId ? <TaskDetailPane key={taskId} ref={detailRef} id={taskId} fallback={tasks.find((task) => task.id === taskId)} tags={tags} readonly={archived} presentation={isDesktop ? 'panel' : showChat ? 'retained' : 'modal'} panelSlot={detailSlot} onSave={patchTask} onClose={closeTask} onDirtyChange={setDetailDirty} onToggleTask={toggleTask} onCreateTask={createTask} onOpenTask={openTask} /> : null;
-  const hasAccessory = !isAssistantPage && (showChat || (isDesktop && Boolean(taskId)));
-  const navWidth = !wide && showChat && !isAssistantPage ? '56px' : !isAssistantPage && page === 'plan' ? '188px' : '232px';
+  const hasAccessory = !isAssistantPage && (showChat || focusSide || (isDesktop && Boolean(taskId)));
+  const navWidth = !wide && sidePanel ? '56px' : !isAssistantPage && page === 'plan' ? '188px' : '232px';
   return <FocusProvider>
     <div data-assistant-open={showChat || undefined} className="app-backdrop h-dvh overflow-hidden bg-background p-0 xl:p-4">
       <div className={cn('app-frame h-full overflow-hidden', isDesktop ? 'grid' : 'flex flex-col')} style={isDesktop ? { gridTemplateColumns: hasAccessory ? `${navWidth} minmax(0, 1fr) 400px` : `${navWidth} minmax(0, 1fr)`, gridTemplateRows: '48px minmax(0, 1fr)' } : undefined}>
-        {isDesktop ? <Sidebar compact={!wide && showChat && !isAssistantPage} key="sidebar" route={route} page={isAssistantPage ? 'chat' : page} topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onNavigate={navigateSafely} onSelectTopic={selectTopic} onEditTopic={setTopicForm} onNewTopic={newTopic} /> : <div key="sidebar" className="hidden" />}
+        {isDesktop ? <Sidebar compact={!wide && sidePanel} key="sidebar" route={route} page={isAssistantPage ? 'chat' : page} topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onNavigate={navigateSafely} onSelectTopic={selectTopic} onEditTopic={setTopicForm} onNewTopic={newTopic} /> : <div key="sidebar" className="hidden" />}
         <header className="flex h-12 shrink-0 items-center justify-end border-b px-4" style={isDesktop ? { gridColumn: '2 / -1', gridRow: 1 } : undefined}>{!isAssistantPage && <Button variant="ghost" size="sm" onClick={openChat} aria-label={t('shell.openAssistant')}><Sparkles className="size-4" />{t('shell.assistant')}</Button>}</header>
-        <main key="main" className={cn('app-main glass-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto bg-[var(--glass-bg-strong)]', ((!isDesktop && showChat) || (isDesktop && showChat && taskId) || sourceView || isAssistantPage) && 'hidden')} style={isDesktop ? { gridColumn: 2, gridRow: 2 } : undefined}>{content}</main>
+        <main key="main" className={cn('app-main glass-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto bg-[var(--glass-bg-strong)]', ((!isDesktop && showChat) || (isDesktop && sidePanel && taskId) || sourceView || isAssistantPage) && 'hidden')} style={isDesktop ? { gridColumn: 2, gridRow: 2 } : undefined}>{content}</main>
         {sourceView && <section className={cn('min-h-0 overflow-auto p-5', (isAssistantPage || (!isDesktop && showChat)) && 'hidden')} style={isDesktop ? { gridColumn: 2, gridRow: 2 } : undefined} aria-label={t('shell.sourceText')}><Button variant="ghost" onClick={() => setSourceView(null)}>{t('shell.backToPage')}</Button><h2 className="my-3 text-lg font-semibold">{sourceView.title}</h2><pre className="whitespace-pre-wrap break-words text-sm">{sourceView.content}</pre></section>}
-        <div ref={setDetailSlot} className={cn('min-h-0 min-w-0 overflow-hidden border-l', isDesktop && taskId && !sourceView && !isAssistantPage ? '' : 'hidden')} style={isDesktop ? { gridColumn: showChat ? 2 : 3, gridRow: 2 } : undefined} />
-        <div key="accessory" ref={setAssistantSlot} className={cn('accessory-pane min-h-0 min-w-0 flex-1 overflow-hidden border-l', showChat && !workspaceView && !isAssistantPage ? '' : 'hidden')} style={isDesktop ? { gridColumn: 3, gridRow: 2 } : undefined} />
+        <div ref={setDetailSlot} className={cn('min-h-0 min-w-0 overflow-hidden border-l', isDesktop && taskId && !sourceView && !isAssistantPage ? '' : 'hidden')} style={isDesktop ? { gridColumn: sidePanel ? 2 : 3, gridRow: 2 } : undefined} />
+        <div key="accessory" ref={setAssistantSlot} className={cn('accessory-pane min-h-0 min-w-0 flex-1 overflow-hidden border-l', chatAccessory ? '' : 'hidden')} style={isDesktop ? { gridColumn: 3, gridRow: 2 } : undefined} />
+        {focusAccessory && <div className="accessory-pane h-full min-h-0 min-w-0 overflow-hidden border-l" style={isDesktop ? { gridColumn: 3, gridRow: 2 } : undefined}><FocusPage presentation="side" onExpand={expandFocus} onShrink={shrinkFocus} onClose={() => setFocusOpen(false)} /></div>}
         <div ref={setAssistantPageSlot} data-testid="assistant-page" className={cn('min-h-0 min-w-0 flex-1 overflow-hidden', !isAssistantPage && 'hidden')} style={isDesktop ? { gridColumn: '2 / -1', gridRow: 2 } : undefined} />
         {!isDesktop && (!showChat || isAssistantPage) && (() => {
           // 服务端配置驱动手机底栏；初次加载失败时按默认四项显示，不回写服务器。
@@ -476,7 +518,7 @@ export function App() {
     {createPortal(chatPanel, assistantHost)}
     <UploadQueue />
     <SkillEditorHost />
-    <FocusChip />
+    {!(focusAccessory || focusPageVisible) && <FocusChip />}
     {workspaceView && <WorkspaceModal suspended={isAssistantPage} assistantOpen={showChat} assistantSlot={setWorkspaceAssistantSlot} onOpenAssistant={openChat} view={workspaceView} onViewChange={navigateSafely} onClose={() => navigateSafely(previousMain.current)} settings={<SettingsView />} changes={<ChangesPage />} trash={<TrashPage tasks={trashQuery.data ?? []} loading={trashQuery.isLoading} onRestore={(task) => run(actions.write(`/api/trash/tasks/${task.id}/restore`, 'POST', undefined, [task.id, ...(task.parentId ? [task.parentId] : []), ...(task.children ?? (trashQuery.data ?? []).filter((child) => child.parentId === task.id)).map((child) => child.id)], t('shell.taskRestored')))} onPermanentDelete={(task) => run(permanentDelete(task))} />} />}
     {detailPane}
     {topicForm && <TopicModal form={topicForm} onChange={setTopicForm} onClose={() => { if (!actions.pending) setTopicForm(null); }} onSave={() => run(saveTopic())} onDelete={() => run(archiveTopic(topicForm))} busy={actions.pending} />}
