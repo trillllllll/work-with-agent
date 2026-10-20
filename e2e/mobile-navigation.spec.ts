@@ -61,7 +61,7 @@ test('exact order, fixed more, persistence and empty selection', async ({
   await expect(nav).toHaveCount(0);
 });
 
-test('settings toggle and move controls update server', async ({
+test('settings toggle and drag controls update server', async ({
   page,
   request,
 }) => {
@@ -69,13 +69,25 @@ test('settings toggle and move controls update server', async ({
 
   await putConfig(request, ['plan', 'focus', 'inbox']);
 
-  await page.goto('/#/settings');
+  await page.goto('/#/settings/ui');
 
   const panel = page.getByTestId('mobile-navigation-settings');
   await expect(panel).toBeVisible();
 
-  await panel.getByRole('button', { name: '上移专注', exact: true })
-    .click();
+  // 每项只有一行：拖动手柄把专注拖到规划上方（上移/下移按钮已去掉）。
+  await expect(panel.getByRole('button', { name: /^上移|^下移/ })).toHaveCount(0);
+  const handle = panel.getByRole('button', { name: '拖动专注', exact: true });
+  const targetRow = panel.getByTestId('mobile-navigation-row-plan');
+  await handle.scrollIntoViewIfNeeded();
+  const from = await handle.boundingBox();
+  const target = await targetRow.boundingBox();
+  const startX = from!.x + from!.width / 2;
+  const startY = from!.y + from!.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX, startY - 12, { steps: 2 });
+  await page.mouse.move(startX, target!.y + target!.height * 0.2, { steps: 15 });
+  await page.mouse.up();
 
   await expect.poll(() => readConfig(request)).toEqual(['focus', 'plan', 'inbox']);
 
@@ -119,7 +131,7 @@ test('保存返回 500 时恢复请求前状态，重试发送同一份内容', 
     await route.fallback();
   });
 
-  await page.goto('/#/settings');
+  await page.goto('/#/settings/ui');
   const panel = page.getByTestId('mobile-navigation-settings');
   await expect(panel).toBeVisible();
 
@@ -161,7 +173,7 @@ test('延迟 PUT 期间编辑控件禁用，连续点击不产生第二个 PUT',
     await route.fallback();
   });
 
-  await page.goto('/#/settings');
+  await page.goto('/#/settings/ui');
   const panel = page.getByTestId('mobile-navigation-settings');
   await expect(panel).toBeVisible();
 
@@ -170,8 +182,6 @@ test('延迟 PUT 期间编辑控件禁用，连续点击不产生第二个 PUT',
   await expect(panel.getByTestId('mobile-navigation-save-status')).toHaveText('正在保存…');
   await expect(panel.getByRole('switch', { name: '在底栏显示收集箱', exact: true })).toBeDisabled();
   await expect(panel.getByRole('switch', { name: '在底栏显示今天', exact: true })).toBeDisabled();
-  await expect(panel.getByRole('button', { name: '上移规划', exact: true })).toBeDisabled();
-  await expect(panel.getByRole('button', { name: '下移规划', exact: true })).toBeDisabled();
   await expect(panel.getByRole('button', { name: '拖动规划', exact: true })).toBeDisabled();
 
   await panel.getByRole('switch', { name: '在底栏显示今天', exact: true }).click({ force: true }).catch(() => undefined);
@@ -192,7 +202,7 @@ test('保存期间较早完成的 GET 不能把预览或底栏改回旧值', asy
     await route.fallback();
   });
 
-  await page.goto('/#/settings');
+  await page.goto('/#/settings/ui');
   const panel = page.getByTestId('mobile-navigation-settings');
   await expect(panel).toBeVisible();
 
@@ -250,7 +260,7 @@ test('鼠标拖动：从第一项拖到第三项后服务端数组变化且只�
     await route.fallback();
   });
 
-  await page.goto('/#/settings');
+  await page.goto('/#/settings/ui');
   const panel = page.getByTestId('mobile-navigation-settings');
   const handle = panel.getByRole('button', { name: '拖动规划', exact: true });
   await expect(handle).toBeVisible();
@@ -289,7 +299,7 @@ test('触屏：真实 touch 长按并拖动完成排序', async ({ page, request
     await route.fallback();
   });
 
-  await page.goto('/#/settings');
+  await page.goto('/#/settings/ui');
   const panel = page.getByTestId('mobile-navigation-settings');
   const handle = panel.getByRole('button', { name: '拖动规划', exact: true });
   await expect(handle).toBeVisible();
@@ -326,7 +336,7 @@ test('键盘：手柄聚焦后 Space、方向键、Space 完成排序', async ({
   await page.setViewportSize({ width: 1280, height: 800 });
   await putConfig(request, ['plan', 'focus', 'inbox']);
 
-  await page.goto('/#/settings');
+  await page.goto('/#/settings/ui');
   const panel = page.getByTestId('mobile-navigation-settings');
   const handle = panel.getByRole('button', { name: '拖动规划', exact: true });
   await expect(handle).toBeVisible();
@@ -366,6 +376,8 @@ test('隐藏入口仍可从“更多”打开，底栏不重新添加', async ({
   await page.goto('/#/more');
 
   await page.getByRole('navigation', { name: '工作区导航' }).getByRole('button', { name: '设置', exact: true }).click();
+  // 手机上设置先显示分类列表，底栏设置在「界面」里。
+  await page.getByRole('dialog').getByRole('button', { name: '界面', exact: true }).click();
   await expect(page.getByTestId('mobile-navigation-settings')).toBeVisible();
   await expect(page.getByTestId('mobile-bottom-navigation').locator('[data-view="settings"]')).toHaveCount(0);
   await expect.poll(() => ids(page)).toEqual(['inbox', 'more']);
@@ -379,7 +391,7 @@ test('模型设置接口失败时功能模块仍可加载和保存', async ({ pa
     await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ data: null, error: '模型设置不可用' }) });
   });
 
-  await page.goto('/#/settings');
+  await page.goto('/#/settings/ui');
   const panel = page.getByTestId('mobile-navigation-settings');
   await expect(panel).toBeVisible();
   await expect(panel.getByTestId('mobile-navigation-save-status')).toHaveText('已同步到当前服务');
@@ -405,7 +417,7 @@ test('320px、390px、768px 下没有横向滚动，最后一项固定是 more',
 test('深浅主题的色值与开关尺寸符合规范', async ({ page, request }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await putConfig(request, ['inbox', 'today']);
-  await page.goto('/#/settings');
+  await page.goto('/#/settings/ui');
   const panel = page.getByTestId('mobile-navigation-settings');
   await expect(panel).toBeVisible();
   // 等设置弹窗的缩放动画结束，再量像素。
@@ -460,7 +472,7 @@ test('关闭设置弹窗后保存仍会完成', async ({ page, request }) => {
     await route.fallback();
   });
 
-  await page.goto('/#/settings');
+  await page.goto('/#/settings/ui');
   const panel = page.getByTestId('mobile-navigation-settings');
   await expect(panel).toBeVisible();
 
@@ -482,7 +494,7 @@ test('空配置：真实底栏和预览都只有“更多”', async ({ page, re
 
   await expect.poll(() => ids(page)).toEqual(['more']);
 
-  await page.goto('/#/settings');
+  await page.goto('/#/settings/ui');
   const panel = page.getByTestId('mobile-navigation-settings');
   await expect(panel).toBeVisible();
   await expect.poll(() => previewIds(page)).toEqual(['more']);
@@ -494,7 +506,7 @@ test('空配置：真实底栏和预览都只有“更多”', async ({ page, re
 test('截图检查：亮暗主题与窄宽视口', async ({ page, request }) => {
   await putConfig(request, ['inbox', 'today', 'quadrant', 'topics']);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/#/settings');
+  await page.goto('/#/settings/ui');
   const panel = page.getByTestId('mobile-navigation-settings');
   await expect(panel).toBeVisible();
   await page.screenshot({ path: 'test-results/mobile-navigation/390-light.png', fullPage: false });
@@ -508,7 +520,7 @@ test('截图检查：亮暗主题与窄宽视口', async ({ page, request }) => 
   await page.screenshot({ path: 'test-results/mobile-navigation/320.png' });
 
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/#/settings');
+  await page.goto('/#/settings/ui');
   await expect(page.getByTestId('mobile-navigation-settings')).toBeVisible();
   await page.screenshot({ path: 'test-results/mobile-navigation/desktop-settings.png' });
 });

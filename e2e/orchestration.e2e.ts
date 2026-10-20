@@ -74,7 +74,7 @@ async function captureNotifications(page: Page) {
 
 test('pairs a local executor, runs a round through it, notifies, accepts, pushes and opens a PR', async ({ page }) => {
   await captureNotifications(page);
-  await page.goto('/#/settings');
+  await page.goto('/#/settings/local');
   const settings = page.getByRole('region', { name: '主控编排设置' });
   await settings.getByPlaceholder('执行端名称，例如：我的笔记本').fill('E2E 笔记本');
   await settings.getByRole('button', { name: '新建执行端' }).click();

@@ -78,7 +78,7 @@ test('关闭交互页面后历史回复只显示说明和源码', async ({ page,
 });
 
 test('设置页可以关闭交互页面并修改允许的来源', async ({ page }) => {
-  await page.goto('/#/settings');
+  await page.goto('/#/settings/model');
   const section = page.getByRole('region', { name: '交互页面设置' });
   await expect(section.getByLabel('允许加载脚本和样式的来源')).toHaveValue([...defaults, mock].join('\n'));
   await section.getByLabel('允许加载脚本和样式的来源').fill('https://cdn.jsdelivr.net/npm');
