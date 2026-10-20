@@ -113,7 +113,8 @@ test('pairs a local executor, runs a round through it, notifies, accepts, pushes
   // System notification for "awaiting acceptance".
   await expect.poll(async () => page.evaluate(() => (window as unknown as { __notes: Array<{ title: string }> }).__notes.map((item) => item.title))).toContain('任务待验收');
 
-  await dialog.getByRole('button', { name: '验收通过' }).click();
+  await dialog.getByTestId('orchestration-accept').click();
+  await page.getByTestId('accept-dialog').getByTestId('accept-confirm').click();
   await expect(dialog.getByText('已验收', { exact: true })).toBeVisible();
   await dialog.getByRole('button', { name: '推送集成分支' }).click();
   await expect.poll(() => { try { return git(remote, 'rev-parse', `refs/heads/${row.integrationBranch}`); } catch { return ''; } }, { timeout: 30_000 }).toBe(row.integrationHead);

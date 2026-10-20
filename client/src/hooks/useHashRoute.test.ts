@@ -27,7 +27,13 @@ describe('parseHash settings routes', () => {
   });
 
   it('leaves knowledge routes alone', () => {
-    expect(parse('knowledge/materials', 'topicId=inbox')).toEqual({ view: 'knowledge', knowledgeSection: 'materials', knowledgeTopicId: '', knowledgeTopicExplicit: true, settingsCategory: null });
+    expect(parse('knowledge/materials', 'topicId=inbox')).toEqual({ view: 'knowledge', knowledgeSection: 'materials', knowledgeTopicId: '', knowledgeTopicExplicit: true, settingsCategory: null, query: { topicId: 'inbox' } });
+  });
+
+  it('keeps the runs view when the hash carries a tab query', () => {
+    expect(parse('runs', 'tab=handoffs')).toEqual({ view: 'runs', knowledgeSection: null, knowledgeTopicId: null, knowledgeTopicExplicit: false, settingsCategory: null, query: { tab: 'handoffs' } });
+    expect(parse('runs', 'tab=orchestrations')).toMatchObject({ view: 'runs', query: { tab: 'orchestrations' } });
+    expect(parse('runs')).toMatchObject({ view: 'runs', query: {} });
   });
 
   it('falls back to the inbox for unknown views', () => {

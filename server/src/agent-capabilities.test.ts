@@ -25,7 +25,7 @@ describe('builtin capability boundary', () => {
     const toolNames = builtinToolDefinitions().map((tool) => tool.function.name);
     expect(toolNames).toEqual([
       'present_reply', 'image_search', 'read_app_knowledge', 'read_page_state', 'get_time', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace',
-      'library_read', 'memory_read', 'conversation_search', 'get_change_schema', 'propose_changes', 'prepare_external_prompt', 'orchestration_read', 'propose_worktree_cleanup',
+      'library_read', 'memory_read', 'conversation_search', 'get_change_schema', 'propose_changes', 'prepare_external_prompt', 'orchestration_read', 'orchestration_stats', 'propose_worktree_cleanup',
     ]);
     expect(toolNames).not.toEqual(expect.arrayContaining(['execute_shell', 'execute_file', 'execute_http', 'delete_topic']));
     expect(toolNames).toContain('get_time');

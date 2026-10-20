@@ -108,7 +108,8 @@
       "list": "Orchestration rounds",
       "get": "Orchestration details",
       "nodes": "Executors",
-      "worktrees": "Worktree list"
+      "worktrees": "Worktree list",
+      "stats": "Dispatch stats"
     },
     "skillReading": "Reading skill",
     "skillNotFound": "This skill wasn't found, or it's turned off",

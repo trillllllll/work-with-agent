@@ -108,7 +108,8 @@
       "list": "编排轮次",
       "get": "编排详情",
       "nodes": "执行端",
-      "worktrees": "worktree 列表"
+      "worktrees": "worktree 列表",
+      "stats": "派发统计"
     },
     "skillReading": "正在读取技能",
     "skillNotFound": "没有找到这个技能，或它已停用",

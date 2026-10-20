@@ -785,6 +785,8 @@ export const en: Record<string, string> = {
   "该位置还没有通过执行端验证": "This location has not been verified by an executor",
   "编排已变化": "The orchestration has changed",
   "编排已取消": "The orchestration was cancelled",
+  "打回必须填写理由": "A rejection must include a reason",
+  "编排已打回": "The orchestration was rejected",
   "步骤不存在": "Step does not exist",
   "只有等待处理的步骤可以重试": "Only a step waiting to be handled can be retried",
   "只有已提交的合入可以重新核对": "Only a submitted merge can be checked again",
@@ -818,5 +820,10 @@ export const en: Record<string, string> = {
   "已取消": "Cancelled",
   "本机运行监督进程失联（心跳超过 60 秒）": "The local supervisor lost contact (no heartbeat for more than 60 seconds)",
   "本机没有找到 {0} CLI（可用 WWA_{1}_BIN 指定）": "No {0} CLI was found on this computer (set WWA_{1}_BIN to point at it)",
-  "Codex 参数中没有 default_permissions": "Codex settings have no default_permissions"
+  "Codex 参数中没有 default_permissions": "Codex settings have no default_permissions",
+  "统计的开始时间无效": "The stats range start time is invalid",
+  "统计的结束时间无效": "The stats range end time is invalid",
+  "统计区间的开始必须早于结束": "The stats range start must be earlier than the end",
+  "统计区间不能超过 366 天": "The stats range cannot be longer than 366 days",
+  "统计需要同时提供开始和结束时间": "Stats needs both a start and an end time"
 };

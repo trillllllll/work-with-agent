@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
 import { lstat, mkdir, readdir, readFile, realpath, rmdir, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import type { FetchSpec, GitFacts, InventoryResult, PreparePayload, WorktreeEntry } from './protocol.js';
+import { emptyDiff, type DiffStat, type FetchSpec, type GitFacts, type InventoryResult, type PreparePayload, type WorktreeEntry } from './protocol.js';
 
 const exec = promisify(execFile);
 export class NodeError extends Error { constructor(public code: string, message: string) { super(message); } }
@@ -99,6 +99,53 @@ export async function hooksFingerprint(worktree: string) {
 }
 
 const markers = /^(<{7}|>{7})( |$)/m;
+const DIFF_FILE_CAP = 200;
+/** `git diff --numstat -z`: `added\tdeleted\tpath\0`, renames as `added\tdeleted\t\0old\0new\0`. Binary rows are `-\t-`. */
+function parseNumstatZ(text: string): Array<{ path: string; added: number; deleted: number; binary: boolean }> {
+  if (!text) return [];
+  const parts = text.split('\0');
+  const files: Array<{ path: string; added: number; deleted: number; binary: boolean }> = [];
+  for (let i = 0; i < parts.length; i++) {
+    const header = parts[i];
+    if (!header) continue;
+    const match = /^(-|\d+)\t(-|\d+)\t([\s\S]*)$/.exec(header);
+    if (!match) continue;
+    const binary = match[1] === '-' || match[2] === '-';
+    const added = binary ? 0 : Number(match[1]);
+    const deleted = binary ? 0 : Number(match[2]);
+    if (!binary && (!Number.isSafeInteger(added) || !Number.isSafeInteger(deleted))) continue;
+    let path = match[3];
+    if (path === '') {
+      const oldPath = parts[++i] ?? '';
+      path = parts[++i] || oldPath;
+    }
+    if (!path) continue;
+    files.push({ path: path.slice(0, 4096), added, deleted, binary });
+  }
+  return files;
+}
+function parseShortstat(text: string): { files: number; added: number; deleted: number } | null {
+  const line = text.split('\n').map((item) => item.trim()).filter(Boolean).at(-1) ?? '';
+  const files = /(\d+) files? changed/.exec(line);
+  if (!files) return null;
+  const added = /(\d+) insertions?\(\+\)/.exec(line);
+  const deleted = /(\d+) deletions?\(-\)/.exec(line);
+  return { files: Number(files[1]), added: added ? Number(added[1]) : 0, deleted: deleted ? Number(deleted[1]) : 0 };
+}
+function diffFrom(numstat: string, shortstat: string): DiffStat {
+  const parsed = parseNumstatZ(numstat);
+  const totals = parseShortstat(shortstat);
+  const summed = parsed.reduce((acc, file) => ({ files: acc.files + 1, added: acc.added + file.added, deleted: acc.deleted + file.deleted }), { files: 0, added: 0, deleted: 0 });
+  return { files: parsed.slice(0, DIFF_FILE_CAP), filesChanged: totals?.files ?? summed.files, linesAdded: totals?.added ?? summed.added, linesDeleted: totals?.deleted ?? summed.deleted, truncated: parsed.length > DIFF_FILE_CAP };
+}
+async function diffStat(worktree: string, base: string | null, head: string | null): Promise<DiffStat> {
+  if (!base || !head || base === head) return emptyDiff();
+  try {
+    const numstat = await git(worktree, ['-c', 'diff.renames=true', 'diff', '--numstat', '-z', base, head]);
+    const shortstat = await git(worktree, ['-c', 'diff.renames=true', 'diff', '--shortstat', base, head], { env: { LC_ALL: 'C', LANG: 'C' } });
+    return diffFrom(numstat, shortstat);
+  } catch { return emptyDiff(); }
+}
 export async function collectFacts(worktree: string, input: { base?: string | null; includes?: string[]; hooksBefore?: string | null; preHead?: string | null }): Promise<GitFacts> {
   const branch = (await git(worktree, ['symbolic-ref', '--quiet', '--short', 'HEAD']).catch(() => '')) || null;
   const head = (await git(worktree, ['rev-parse', 'HEAD']).catch(() => '')) || null;
@@ -123,7 +170,8 @@ export async function collectFacts(worktree: string, input: { base?: string | nu
   }
   for (const file of unmerged) if (!conflictMarkers.includes(file)) conflictMarkers.push(file);
   const hooksChanged = input.hooksBefore ? (await hooksFingerprint(worktree).catch(() => '')) !== input.hooksBefore : false;
-  return { worktree, branch, head, base, commits, status, mergeInProgress, unmerged, includes, conflictMarkers: conflictMarkers.slice(0, 500), hooksChanged };
+  const diff = await diffStat(worktree, base, head);
+  return { worktree, branch, head, base, commits, status, mergeInProgress, unmerged, includes, conflictMarkers: conflictMarkers.slice(0, 500), hooksChanged, diff };
 }
 
 export async function pushBranch(worktree: string, branch: string, remote: string) {

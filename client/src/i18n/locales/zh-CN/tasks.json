@@ -260,6 +260,7 @@
     "detailLabel": "任务详情",
     "detailDescription": "编辑任务详情、标签、旗标和日期。",
     "assistant": "AI 助手",
+    "aiHistory": "AI 履历",
     "currentDraft": "当前任务草稿",
     "withDraft": "带上当前草稿",
     "startFocus": "开始专注",

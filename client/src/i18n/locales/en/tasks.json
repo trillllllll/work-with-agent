@@ -262,6 +262,7 @@
     "detailLabel": "Task details",
     "detailDescription": "Edit the details, tags, flag, and date.",
     "assistant": "AI assistant",
+    "aiHistory": "AI history",
     "currentDraft": "Current task draft",
     "withDraft": "Include current draft",
     "startFocus": "Start focus",

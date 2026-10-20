@@ -555,6 +555,17 @@ model Run {
   lastSequence Int @default(0)
   startedAt String?
   endedAt String?
+  exitCode Int?
+  cliVersion String?
+  model String?
+  inputTokens Int?
+  cachedInputTokens Int?
+  outputTokens Int?
+  costMicroUsd Int?
+  numTurns Int?
+  cliDurationMs Int?
+  runDurationMs Int?
+  usageJson String?
   createdAt String
   updatedAt String
   handoff Handoff @relation(fields: [handoffId], references: [id], onDelete: Restrict)
@@ -665,6 +676,9 @@ model Orchestration {
   startedAt         String?
   endedAt           String?
   acceptedAt        String?
+  acceptanceNote    String?
+  rejectionReason   String?
+  rejectedAt        String?
   pushedAt          String?
   extraLocationsJson String @default("[]")
   publishedHead     String?
@@ -673,6 +687,7 @@ model Orchestration {
   events            OrchestrationEvent[]
   @@unique([taskId, round])
   @@index([status])
+  @@index([projectId, startedAt])
 }
 model OrchestrationStep {
   id                 String  @id @default(cuid())
@@ -701,6 +716,7 @@ model OrchestrationStep {
   locationId         String?
   repoPath           String?
   error              String?
+  failureKind        String?
   createdAt          String
   updatedAt          String
   orchestration      Orchestration @relation(fields: [orchestrationId], references: [id], onDelete: Restrict)
@@ -722,11 +738,29 @@ model NodeJob {
   error           String?
   createdAt       String
   updatedAt       String
-  startedAt       String?
-  endedAt         String?
-  node            AgentNode @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  startedAt         String?
+  endedAt           String?
+  exitCode          Int?
+  provider          String?
+  cliVersion        String?
+  model             String?
+  inputTokens       Int?
+  cachedInputTokens Int?
+  outputTokens      Int?
+  costMicroUsd      Int?
+  numTurns          Int?
+  cliDurationMs     Int?
+  runDurationMs     Int?
+  usageJson         String?
+  filesChanged      Int?
+  linesAdded        Int?
+  linesDeleted      Int?
+  diffStatJson      String?
+  failureKind       String?
+  node              AgentNode @relation(fields: [nodeId], references: [id], onDelete: Restrict)
   @@index([nodeId, status])
   @@index([orchestrationId])
+  @@index([endedAt])
 }
 /// A pending destructive request shown as a confirmation card; nothing is sent to the node until the user confirms.
 model WorktreeCleanup {

@@ -14,6 +14,8 @@ type HashState = {
   knowledgeTopicExplicit: boolean;
   /** Second segment of `#/settings/<category>`; null for `#/settings` or an unknown category. */
   settingsCategory: SettingsCategory | null;
+  /** Query string of the hash, for example `tab` in `#/runs?tab=handoffs`. */
+  query: Record<string, string>;
 };
 
 function hashPath() {
@@ -40,15 +42,16 @@ export function knowledgeHash(section: KnowledgeSection, topicId: string) {
 
 export function parseHash(path: string, params: URLSearchParams): HashState {
   const topic = readTopic(params);
+  const query = Object.fromEntries(params.entries());
   const [head, ...rest] = path.split('/');
   const section = rest.join('/');
   if (head === 'knowledge') {
     const knowledgeSection = (knowledgeSections as readonly string[]).includes(section) ? section as KnowledgeSection : 'brief';
-    return { view: 'knowledge', knowledgeSection, knowledgeTopicId: topic.id, knowledgeTopicExplicit: topic.explicit, settingsCategory: null };
+    return { view: 'knowledge', knowledgeSection, knowledgeTopicId: topic.id, knowledgeTopicExplicit: topic.explicit, settingsCategory: null, query };
   }
-  if (head === 'settings') return { view: 'settings', knowledgeSection: null, knowledgeTopicId: null, knowledgeTopicExplicit: false, settingsCategory: parseSettingsCategory(rest[0]) };
-  if ((validViews as string[]).includes(head)) return { view: head as View, knowledgeSection: null, knowledgeTopicId: null, knowledgeTopicExplicit: false, settingsCategory: null };
-  return { view: 'inbox', knowledgeSection: null, knowledgeTopicId: null, knowledgeTopicExplicit: false, settingsCategory: null };
+  if (head === 'settings') return { view: 'settings', knowledgeSection: null, knowledgeTopicId: null, knowledgeTopicExplicit: false, settingsCategory: parseSettingsCategory(rest[0]), query };
+  if ((validViews as string[]).includes(head)) return { view: head as View, knowledgeSection: null, knowledgeTopicId: null, knowledgeTopicExplicit: false, settingsCategory: null, query };
+  return { view: 'inbox', knowledgeSection: null, knowledgeTopicId: null, knowledgeTopicExplicit: false, settingsCategory: null, query };
 }
 
 function applyHash(next: string, mode: 'push' | 'replace') {
@@ -79,8 +82,20 @@ export function useHashRoute() {
   const openSettings = useCallback((category: SettingsCategory | null, mode: 'push' | 'replace' = 'push') => {
     applyHash(settingsHash(category), mode);
   }, []);
+  const setQuery = useCallback((patch: Record<string, string | null>) => {
+    const params = hashQuery();
+    for (const [key, value] of Object.entries(patch)) {
+      if (value == null || value === '') params.delete(key);
+      else params.set(key, value);
+    }
+    const path = hashPath();
+    const qs = params.toString();
+    applyHash(qs ? `${path}?${qs}` : path, 'replace');
+  }, []);
   return {
     route: state.view,
+    query: state.query,
+    setQuery,
     settingsCategory: state.settingsCategory,
     openSettings,
     knowledgeSection: state.knowledgeSection,

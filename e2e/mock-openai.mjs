@@ -319,6 +319,15 @@ document.getElementById('probe-out').textContent=JSON.stringify({html:html,scrip
     const taskId = latestUser.match(/taskId=(\S+)/)?.[1] ?? '';
     return callTool('e2e_activity', 'get_task_activity', { taskId }, '我先读取任务动态。');
   }
+  if (latestUser.includes('统计这周 AI 派发')) {
+    if (toolSince('orchestration_stats')) {
+      const stats = sinceUser.map(toolData).find((data) => data && typeof data.roundCount === 'number');
+      const rounds = stats?.roundCount ?? '未知';
+      const unknown = (stats?.resources?.noCostJobs ?? 0) > 0 ? '有步骤费用未知。' : '';
+      return stream(res, [{ choices: [{ delta: { content: `本周派发 ${rounds} 轮。${unknown}` }, finish_reason: 'stop' }] }]);
+    }
+    return callTool('e2e_orch_stats', 'orchestration_stats', {}, '我先统计本周的派发。');
+  }
   if (latestUser.includes('清理已验收的 worktree')) {
     if (toolSince('propose_worktree_cleanup')) return stream(res, [{ choices: [{ delta: { content: '删除卡片已经生成，请在卡片上确认。' }, finish_reason: 'stop' }] }]);
     const listed = sinceUser.map(toolData).find((data) => Array.isArray(data?.items) && data.items.some((view) => Array.isArray(view?.worktrees)));

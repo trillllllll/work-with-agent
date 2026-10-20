@@ -7,6 +7,10 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { prisma } from '../infrastructure/prisma.js';
 import { DomainError } from '../domain/task.js';
+import { dispatchStats } from '../application/orchestration/stats.js';
+import { weekRange } from '../application/orchestration/week-range.js';
+import { redact } from '../infrastructure/controlled-execution.js';
+import type { Clock } from './time.js';
 
 const MAX_ROUNDS = 20;
 
@@ -16,6 +20,42 @@ export const orchestrationReadInput = z.object({
   orchestrationId: z.string().min(1).optional(),
   nodeId: z.string().min(1).optional(),
 }).strict();
+
+export const orchestrationStatsInput = z.object({
+  from: z.string().optional(),
+  to: z.string().optional(),
+  projectId: z.string().min(1).optional(),
+  timeZone: z.string().min(1).optional(),
+}).strict();
+
+const STATS_NOTE = '数字来自服务端聚合，回答时照实引用，不要改写；画图用 present_reply，数据取本结果；没有费用数据的步骤要说明费用未知。';
+
+/** Same zone order as get_time: argument, then a non-default request zone, else Asia/Shanghai. */
+export function resolveStatsTimeZone(args: { timeZone?: string }, context: { timeZone?: string; timeZoneSource?: 'context' | 'default' }) {
+  if (args.timeZone) return args.timeZone;
+  if (context.timeZone && context.timeZoneSource !== 'default') return context.timeZone;
+  return 'Asia/Shanghai';
+}
+
+export async function statsForAssistant(raw: Record<string, unknown>, context: { timeZone?: string; timeZoneSource?: 'context' | 'default' }, clock: Clock = { now: () => new Date() }) {
+  const args = orchestrationStatsInput.parse(raw);
+  const timeZone = resolveStatsTimeZone(args, context);
+  const range = weekRange(clock.now(), timeZone, 0);
+  let from = args.from;
+  let to = args.to;
+  if (!from && !to) { from = range.from; to = range.to; }
+  else if (!from || !to) throw new DomainError('INVALID_STATS_RANGE', '统计需要同时提供开始和结束时间', 400);
+  const stats = await dispatchStats({ from, to, projectId: args.projectId });
+  return { ...stats, timeZone, note: STATS_NOTE };
+}
+
+/** Aggregate token counts are the answer. The shared redactor treats any key containing "token" as a credential. */
+const statsCountKeys = new Set(['inputTokens', 'cachedInputTokens', 'outputTokens']);
+export function redactStats(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => redactStats(item));
+  if (!value || typeof value !== 'object') return redact(value);
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, statsCountKeys.has(key) ? item : redactStats(item)]));
+}
 
 export const worktreeCleanupInput = z.object({
   nodeId: z.string().min(1),

@@ -15,9 +15,12 @@ import { activeJobStatuses, enqueueJob, expireLeases, isOnline, jobDto, now } fr
 import { applyProbeResult, resolveProjectForTask } from './projects.js';
 import { appendOrchestrationEvent, publishOrchestration } from './events.js';
 import { generatePlan, planSchema, reviewDevelop, reviewFinal, validatePlan, type Plan } from './planner.js';
-import { checkDevelop, checkMerge, checkVerify, looksGitWriteDenied, looksRateLimited } from './checks.js';
+import { checkDevelop, checkMerge, checkVerify, classifyFailure, looksGitWriteDenied, looksRateLimited } from './checks.js';
 import { developPrompt, mergePrompt, verifyPrompt } from './prompts.js';
 import { applyWorktreeJob } from './worktrees.js';
+import { aiHistory, orchestrationFeed } from './history.js';
+import { loadPriorRounds, priorRoundDigest, type DigestRound } from './digest.js';
+import { LEARNING_PAUSE_REASONS, recordLearningSignal } from './learning.js';
 
 type Db = Prisma.TransactionClient;
 type Grant = { provider: 'codex' | 'claude'; maxParallel: number; allowShell: boolean; remote?: string };
@@ -60,7 +63,7 @@ async function setStatus(tx: Db, row: Orchestration, status: string, extra: Part
   const updated = await tx.orchestration.update({ where: { id: row.id }, data: { status, ...extra, revision: { increment: 1 }, updatedAt: now() } });
   return updated;
 }
-async function pause(id: string, reason: string, detail?: unknown) {
+export async function pauseOrchestration(id: string, reason: string, detail?: unknown) {
   const row = await prisma.orchestration.findUniqueOrThrow({ where: { id } });
   if (row.status !== 'running') return row;
   const updated = await prisma.$transaction(async (tx) => {
@@ -69,6 +72,7 @@ async function pause(id: string, reason: string, detail?: unknown) {
     return value;
   });
   publishOrchestration({ orchestrationId: id, taskId: row.taskId, status: 'paused', pauseReason: reason });
+  if (LEARNING_PAUSE_REASONS.has(reason)) await recordLearningSignal(id, { kind: 'pause', reason });
   return updated;
 }
 async function updateTaskStatus(taskId: string, status: 'doing' | 'done' | 'blocked', orchestrationId: string, extra: Record<string, unknown> = {}) {
@@ -117,6 +121,12 @@ export class OrchestrationService {
     const rows = await prisma.orchestration.findMany({ where: { status: { in: ['awaiting_acceptance', 'paused', 'running'] } }, select: { id: true, taskId: true, status: true, pauseReason: true } });
     return { items: rows.map((row) => ({ orchestrationId: row.id, taskId: row.taskId, status: row.status, pauseReason: row.pauseReason })) };
   }
+  async history(taskId: string) {
+    return aiHistory(taskId);
+  }
+  async feed(query: { status?: string; projectId?: string; cursor?: string; limit?: number }) {
+    return orchestrationFeed(query);
+  }
   async get(id: string) {
     const row = await prisma.orchestration.findUnique({ where: { id }, include: { steps: { orderBy: { position: 'asc' } } } });
     if (!row) throw new DomainError('NOT_FOUND', '编排不存在', 404);
@@ -124,11 +134,14 @@ export class OrchestrationService {
       prisma.orchestrationEvent.findMany({ where: { orchestrationId: id }, orderBy: { seq: 'asc' }, take: 500 }),
       prisma.nodeJob.findMany({ where: { orchestrationId: id }, orderBy: { createdAt: 'asc' } }),
     ]);
+    const planEvent = [...events].reverse().find((event) => event.type === 'plan_generated');
+    const planPayload = planEvent ? decode<{ priorSummary?: unknown }>(planEvent.payload) : null;
+    const priorSummary = typeof planPayload?.priorSummary === 'string' && planPayload.priorSummary ? planPayload.priorSummary : null;
     const node = row.nodeId ? await prisma.agentNode.findUnique({ where: { id: row.nodeId } }) : null;
     const extra = decode<Target[]>(row.extraLocationsJson);
     const nodeRows = await prisma.agentNode.findMany({ where: { id: { in: [...new Set([row.nodeId, ...extra.map((item) => item.nodeId)].filter((id): id is string => !!id))] } } });
     const nodes = nodeRows.map((item) => ({ id: item.id, name: item.name, online: isOnline(item), primary: item.id === row.nodeId, gh: !!(JSON.parse(item.capabilitiesJson) as { gh?: boolean }).gh }));
-    return { ...orchestrationDto(row), node: node ? { id: node.id, name: node.name, online: isOnline(node) } : null, nodes, events: events.map((event) => ({ ...event, payload: decode(event.payload) })), jobs: jobs.map(jobDto) };
+    return { ...orchestrationDto(row), priorSummary, node: node ? { id: node.id, name: node.name, online: isOnline(node) } : null, nodes, events: events.map((event) => ({ ...event, payload: decode(event.payload) })), jobs: jobs.map(jobDto) };
   }
 
   /** Draft: resolve the project, ask the orchestrator model for a plan (or a sequential fallback). */
@@ -139,7 +152,8 @@ export class OrchestrationService {
     const { project } = await resolveProjectForTask(input.taskId);
     const open = await prisma.orchestration.findFirst({ where: { taskId: input.taskId, status: { in: OPEN } } });
     if (open && open.status !== 'draft') throw new DomainError('ORCHESTRATION_OPEN', '该任务已有进行中的编排', 409);
-    const { plan, raw: modelRaw } = await generatePlan(snapshot.main, snapshot.subtasks);
+    const priorSummary = priorRoundDigest(await loadPriorRounds(input.taskId, open?.id)) || null;
+    const { plan, raw: modelRaw } = await generatePlan(snapshot.main, snapshot.subtasks, priorSummary ?? undefined);
     const locations = await prisma.projectLocation.findMany({ where: { projectId: project.id, status: 'verified' }, include: { node: true } });
     const ranked = locations.sort((a, b) => Number(isOnline(b.node)) - Number(isOnline(a.node)));
     const round = open?.round ?? ((await prisma.orchestration.aggregate({ where: { taskId: input.taskId }, _max: { round: true } }))._max.round ?? 0) + 1;
@@ -149,10 +163,10 @@ export class OrchestrationService {
       const saved = open
         ? await tx.orchestration.update({ where: { id: open.id }, data: { ...data, revision: { increment: 1 } } })
         : await tx.orchestration.create({ data: { ...data, taskId: input.taskId, round, createdAt: now() } });
-      await appendOrchestrationEvent(tx, saved.id, 'plan_generated', 'model', null, { plan, raw: modelRaw });
+      await appendOrchestrationEvent(tx, saved.id, 'plan_generated', 'model', null, { plan, raw: modelRaw, priorSummary });
       return saved;
     });
-    return { ...orchestrationDto(row), locations: ranked.map((location) => ({ id: location.id, nodeId: location.nodeId, nodeName: location.node.name, online: isOnline(location.node), path: location.path, originUrl: (JSON.parse(location.fingerprintJson) as { originUrl?: string | null }).originUrl ?? null, protocol: (JSON.parse(location.node.capabilitiesJson) as { protocol?: number }).protocol ?? 0 })) };
+    return { ...orchestrationDto(row), priorSummary, locations: ranked.map((location) => ({ id: location.id, nodeId: location.nodeId, nodeName: location.node.name, online: isOnline(location.node), path: location.path, originUrl: (JSON.parse(location.fingerprintJson) as { originUrl?: string | null }).originUrl ?? null, protocol: (JSON.parse(location.node.capabilitiesJson) as { protocol?: number }).protocol ?? 0 })) };
   }
 
   /** One-time authorization; after this nothing asks the user step by step. */
@@ -258,11 +272,27 @@ export class OrchestrationService {
     if (row.status === 'running') await tickOrchestration(id);
     return this.get(id);
   }
-  async accept(id: string) {
+  async accept(id: string, raw?: unknown) {
+    const input = z.object({ comment: z.string().trim().max(2000).optional() }).strict().parse(raw ?? {});
+    const comment = input.comment ? input.comment : null;
     const row = await this.requireStatus(id, ['awaiting_acceptance']);
-    await prisma.$transaction(async (tx) => { await setStatus(tx, row, 'accepted', { acceptedAt: now(), endedAt: now() }); await appendOrchestrationEvent(tx, id, 'accepted', 'user', null, {}); });
+    await prisma.$transaction(async (tx) => { await setStatus(tx, row, 'accepted', { acceptedAt: now(), endedAt: now(), acceptanceNote: comment }); await appendOrchestrationEvent(tx, id, 'accepted', 'user', null, { comment }); });
     await updateTaskStatus(row.taskId, 'done', id);
     publishOrchestration({ orchestrationId: id, taskId: row.taskId, status: 'accepted' });
+    return this.get(id);
+  }
+  async reject(id: string, raw?: unknown) {
+    const parsed = z.object({ reason: z.string().trim().min(1).max(2000) }).strict().safeParse(raw ?? {});
+    if (!parsed.success) throw new DomainError('REASON_REQUIRED', '打回必须填写理由', 400);
+    const reason = parsed.data.reason;
+    const row = await this.requireStatus(id, ['awaiting_acceptance']);
+    await prisma.$transaction(async (tx) => {
+      await tx.nodeJob.updateMany({ where: { orchestrationId: id, status: { in: [...activeJobStatuses, 'lost'] } }, data: { status: 'cancelled', error: '编排已打回', endedAt: now(), updatedAt: now() } });
+      await setStatus(tx, row, 'rejected', { rejectionReason: reason, rejectedAt: now(), endedAt: now() });
+      await appendOrchestrationEvent(tx, id, 'rejected', 'user', null, { reason });
+    });
+    publishOrchestration({ orchestrationId: id, taskId: row.taskId, status: 'rejected' });
+    await recordLearningSignal(id, { kind: 'reject', reason });
     return this.get(id);
   }
   /** Explicit user click only. The node pushes mechanically with the user's local credentials. */
@@ -306,8 +336,8 @@ export class OrchestrationService {
   }
   /** Old round is kept intact (rows, local worktrees, branches); a new draft round is planned from current task content. */
   async redispatch(id: string) {
-    const row = await this.requireStatus(id, ['running', 'paused', 'awaiting_acceptance', 'accepted', 'cancelled']);
-    if (row.status !== 'accepted' && row.status !== 'cancelled') {
+    const row = await this.requireStatus(id, ['running', 'paused', 'awaiting_acceptance', 'accepted', 'cancelled', 'rejected']);
+    if (row.status !== 'accepted' && row.status !== 'cancelled' && row.status !== 'rejected') {
       await prisma.$transaction(async (tx) => {
         await tx.nodeJob.updateMany({ where: { orchestrationId: id, status: { in: [...activeJobStatuses, 'lost'] } }, data: { status: 'cancelled', error: '已重新派发', endedAt: now(), updatedAt: now() } });
         await setStatus(tx, row, 'superseded', { endedAt: now() });
@@ -330,13 +360,13 @@ function runPayload(row: Orchestration, grant: Grant, input: { worktree: RunPayl
   return { repoPath: input.repoPath ?? row.repoPath, provider: grant.provider, permissions: { profile: input.profile ?? 'workspace_write', allowShell: grant.allowShell }, gitWrite: input.gitWrite, worktree: input.worktree, prompt: input.prompt, expect: input.expect ?? { includes: [] }, fetch: input.fetch ?? [], ...(input.publish ? { publish: { remote: grant.remote ?? 'origin' } } : {}) };
 }
 
-async function dispatch(row: Orchestration, step: OrchestrationStep, phase: string, dispatchKey: string, payload: unknown, kind: 'prepare' | 'run', status: string, extra: Partial<OrchestrationStep> = {}) {
+async function dispatch(row: Orchestration, step: OrchestrationStep, phase: string, dispatchKey: string, payload: unknown, kind: 'prepare' | 'run', status: string, extra: Partial<OrchestrationStep> = {}, eventExtra: Record<string, unknown> = {}) {
   const nodeId = extra.nodeId ?? step.nodeId ?? row.nodeId!;
   return prisma.$transaction(async (tx) => {
     const { job, replay } = await enqueueJob(tx, { nodeId, kind, phase, dispatchKey, payload, orchestrationId: row.id, stepId: step.id });
     const changed = await tx.orchestrationStep.updateMany({ where: { id: step.id, status: step.status }, data: { status, lastJobId: job.id, ...extra, updatedAt: now() } });
     if (!changed.count) throw new Error('STEP_RACE');
-    if (!replay) await appendOrchestrationEvent(tx, row.id, 'dispatched', 'server', step.id, { jobId: job.id, kind, phase, dispatchKey, nodeId });
+    if (!replay) await appendOrchestrationEvent(tx, row.id, 'dispatched', 'server', step.id, { jobId: job.id, kind, phase, dispatchKey, nodeId, ...eventExtra });
     return job;
   });
 }
@@ -355,6 +385,7 @@ export async function tickOrchestration(id: string) {
 
 async function tickOnce(id: string) {
   // Process finished jobs first (also after a restart), then dispatch whatever became ready.
+  const priorCache = new Map<string, DigestRound[]>();
   for (let guard = 0; guard < 20; guard++) {
     const row = await prisma.orchestration.findUnique({ where: { id }, include: { steps: { orderBy: { position: 'asc' } } } });
     if (!row) return;
@@ -362,7 +393,7 @@ async function tickOnce(id: string) {
     if (row.status !== 'running') { if (!progressed) return; continue; }
     const fresh = await prisma.orchestration.findUniqueOrThrow({ where: { id }, include: { steps: { orderBy: { position: 'asc' } } } });
     if (fresh.status !== 'running') continue;
-    const dispatched = await dispatchReady(fresh, fresh.steps);
+    const dispatched = await dispatchReady(fresh, fresh.steps, priorCache);
     if (!progressed && !dispatched) return;
   }
 }
@@ -373,7 +404,7 @@ async function processFinishedJobs(row: Orchestration, steps: OrchestrationStep[
     if (!['dispatched', 'verifying'].includes(step.status) || !step.lastJobId) continue;
     const job = await prisma.nodeJob.findUnique({ where: { id: step.lastJobId } });
     if (!job || !['done', 'failed'].includes(job.status)) continue;
-    if (row.status === 'cancelled' || row.status === 'superseded') continue;
+    if (row.status === 'cancelled' || row.status === 'superseded' || row.status === 'rejected') continue;
     await handleJob(row, step, job);
     progressed = true;
   }
@@ -383,6 +414,21 @@ async function processFinishedJobs(row: Orchestration, steps: OrchestrationStep[
 async function stepUpdate(step: OrchestrationStep, data: Prisma.OrchestrationStepUpdateManyMutationInput) {
   const changed = await prisma.orchestrationStep.updateMany({ where: { id: step.id, status: step.status, lastJobId: step.lastJobId }, data: { ...data, updatedAt: now() } });
   return changed.count > 0;
+}
+
+/** Persist failureKind on the step and the NodeJob that caused it. A lost race writes nothing. */
+async function applyFailure(step: OrchestrationStep, job: NodeJob | null, data: Prisma.OrchestrationStepUpdateManyMutationInput, input: Parameters<typeof classifyFailure>[0]) {
+  const kind = classifyFailure(input);
+  if (!await stepUpdate(step, kind ? { ...data, failureKind: kind } : data)) return false;
+  if (kind && job) await prisma.nodeJob.update({ where: { id: job.id }, data: { failureKind: kind, updatedAt: now() } });
+  return true;
+}
+
+async function stampFailure(stepId: string | null | undefined, jobId: string, input: Parameters<typeof classifyFailure>[0]) {
+  const kind = classifyFailure(input);
+  if (!kind) return;
+  if (stepId) await prisma.orchestrationStep.updateMany({ where: { id: stepId }, data: { failureKind: kind, updatedAt: now() } });
+  await prisma.nodeJob.update({ where: { id: jobId }, data: { failureKind: kind, updatedAt: now() } });
 }
 async function event(row: Orchestration, type: string, actorKind: 'model' | 'server' | 'node' | 'user', stepId: string | null, payload: unknown) {
   await prisma.$transaction((tx) => appendOrchestrationEvent(tx, row.id, type, actorKind, stepId, payload));
@@ -399,8 +445,8 @@ async function handleJob(row: Orchestration, step: OrchestrationStep, job: NodeJ
       await event(row, 'integration_ready', 'node', step.id, parsed.data);
     } else {
       const error = report?.error ?? job.error ?? '集成分支准备失败';
-      if (!await stepUpdate(step, { status: 'needs_user', error })) return;
-      await pause(row.id, 'setup_failed', error);
+      if (!await applyFailure(step, job, { status: 'needs_user', error }, { pauseReason: 'setup_failed', error })) return;
+      await pauseOrchestration(row.id, 'setup_failed', error);
     }
     return;
   }
@@ -428,8 +474,8 @@ async function handleJob(row: Orchestration, step: OrchestrationStep, job: NodeJ
       await event(row, 'integration_published', 'node', step.id, { head: parsed.data.head });
     } else {
       const error = parsed?.success ? `推送后的 HEAD ${parsed.data.head} 与期望的 ${step.baseCommit} 不一致` : report?.error ?? job.error ?? '推送集成分支失败';
-      if (!await stepUpdate(step, { status: 'needs_user', error })) return;
-      await pause(row.id, 'transfer_failed', error);
+      if (!await applyFailure(step, job, { status: 'needs_user', error }, { pauseReason: 'transfer_failed', error })) return;
+      await pauseOrchestration(row.id, 'transfer_failed', error);
     }
     return;
   }
@@ -459,8 +505,8 @@ async function handleJob(row: Orchestration, step: OrchestrationStep, job: NodeJ
       // The commit is fine but did not reach the shared remote; the primary machine cannot merge it.
       const problem = run?.publishError ? `子任务分支推送到 origin 失败：${run.publishError.slice(-1000)}` : '子任务分支没有推送到 origin 中转';
       await event(row, 'transfer_check', 'server', step.id, { jobId: job.id, ok: false, problem });
-      if (!await stepUpdate(step, { status: 'needs_user', error: problem })) return;
-      await pause(row.id, 'transfer_failed', problem);
+      if (!await applyFailure(step, job, { status: 'needs_user', error: problem }, { pauseReason: 'transfer_failed', error: problem })) return;
+      await pauseOrchestration(row.id, 'transfer_failed', problem);
       return;
     }
     let review: { decision: 'accept' | 'continue' | 'fail'; comment: string } | null;
@@ -474,8 +520,8 @@ async function handleJob(row: Orchestration, step: OrchestrationStep, job: NodeJ
         await event(row, 'ai_review', 'model', step.id, { jobId: job.id, value: review, raw: reply?.raw ?? null, rulesOnly: !reply });
       } catch (failure) {
         await event(row, 'ai_review_failed', 'model', step.id, { jobId: job.id, error: (failure as Error).message, raw: (failure as { raw?: string }).raw ?? null });
-        if (!await stepUpdate(step, { status: 'needs_user', error: '主控模型审阅失败' })) return;
-        await pause(row.id, 'invalid_model_output');
+        if (!await applyFailure(step, job, { status: 'needs_user', error: '主控模型审阅失败' }, { pauseReason: 'invalid_model_output', error: (failure as Error).message })) return;
+        await pauseOrchestration(row.id, 'invalid_model_output');
         return;
       }
     }
@@ -489,9 +535,9 @@ async function handleJob(row: Orchestration, step: OrchestrationStep, job: NodeJ
       await stepUpdate(step, { status: 'pending', continueCount: { increment: 1 }, feedback: review!.comment });
       return;
     }
-    if (!await stepUpdate(step, { status: 'needs_user', error: review?.comment ?? '主控判定未通过' })) return;
+    if (!await applyFailure(step, job, { status: 'needs_user', error: review?.comment ?? '主控判定未通过' }, { pauseReason: 'develop_failed', decision: review?.decision ?? null, error: review?.comment ?? null, hasResult: true, checks: result?.checks, exitCode: job.exitCode })) return;
     if (step.subtaskId) await updateTaskStatus(step.subtaskId, 'blocked', row.id);
-    await pause(row.id, 'develop_failed', review?.comment);
+    await pauseOrchestration(row.id, 'develop_failed', review?.comment);
     return;
   }
   if (step.kind === 'merge' && step.status === 'dispatched') {
@@ -499,8 +545,8 @@ async function handleJob(row: Orchestration, step: OrchestrationStep, job: NodeJ
     await event(row, 'merge_check', 'server', step.id, { jobId: job.id, ...check, head: facts?.head ?? null, ...(check.ok ? {} : { stderrTail: stderr.slice(-2000) }) });
     if (!check.ok) {
       const reason = looksGitWriteDenied(`${error ?? ''}\n${stderr}`) ? 'git_write_denied' : facts?.unmerged.length || facts?.conflictMarkers.length ? 'merge_conflict_unresolved' : (result?.checks ?? []).some((item) => !item.passed) ? 'merge_tests_failed' : 'merge_unverified';
-      if (!await stepUpdate(step, { status: 'needs_user', error: check.problems.join('；') })) return;
-      await pause(row.id, reason, check.problems);
+      if (!await applyFailure(step, job, { status: 'needs_user', error: check.problems.join('；') }, { pauseReason: reason, problems: check.problems, error, stderr, exitCode: job.exitCode, hasResult: !!result, checks: result?.checks, facts })) return;
+      await pauseOrchestration(row.id, reason, check.problems);
       return;
     }
     if (!await stepUpdate(step, { status: 'reverify', mergeCommit: facts!.head })) return;
@@ -510,8 +556,9 @@ async function handleJob(row: Orchestration, step: OrchestrationStep, job: NodeJ
     const check = checkVerify({ result, facts, expectedHead: step.mergeCommit ?? '', resultCommit: step.resultCommit ?? '', error });
     await event(row, 'verify_check', 'server', step.id, { jobId: job.id, ...check, head: facts?.head ?? null });
     if (!check.ok) {
-      if (!await stepUpdate(step, { status: 'needs_user', error: check.problems.join('；') })) return;
-      await pause(row.id, (result?.checks ?? []).some((item) => !item.passed) ? 'merge_tests_failed' : 'merge_unverified', check.problems);
+      const reason = (result?.checks ?? []).some((item) => !item.passed) ? 'merge_tests_failed' : 'merge_unverified';
+      if (!await applyFailure(step, job, { status: 'needs_user', error: check.problems.join('；') }, { pauseReason: reason, problems: check.problems, error, stderr, exitCode: job.exitCode, hasResult: !!result, checks: result?.checks, facts })) return;
+      await pauseOrchestration(row.id, reason, check.problems);
       return;
     }
     if (!await stepUpdate(step, { status: 'succeeded', error: null })) return;
@@ -521,16 +568,18 @@ async function handleJob(row: Orchestration, step: OrchestrationStep, job: NodeJ
       const current = await prisma.task.findUnique({ where: { id: step.subtaskId } });
       if (current && develop?.lastTaskRevision && current.revision !== develop.lastTaskRevision) {
         await event(row, 'task_revised', 'server', step.id, { taskId: step.subtaskId, expected: develop.lastTaskRevision, actual: current.revision });
-        await pause(row.id, 'task_revised', '子任务在派发后被修改，未自动标记完成');
+        await pauseOrchestration(row.id, 'task_revised', '子任务在派发后被修改，未自动标记完成');
       } else await updateTaskStatus(step.subtaskId, 'done', row.id);
     }
   }
 }
 
 async function developFailure(row: Orchestration, step: OrchestrationStep, job: NodeJob, problems: string[], output: string, hasResult: boolean) {
+  const parsed = parseRun(job);
+  const signals = { problems, error: parsed.error ?? output, stderr: parsed.stderr || output, exitCode: job.exitCode, hasResult, checks: parsed.result?.checks, facts: parsed.facts };
   if (looksGitWriteDenied(output)) {
-    if (!await stepUpdate(step, { status: 'needs_user', error: '本机 AI 无法写 git 元数据（index.lock / 只读文件系统）' })) return;
-    await pause(row.id, 'git_write_denied', problems);
+    if (!await applyFailure(step, job, { status: 'needs_user', error: '本机 AI 无法写 git 元数据（index.lock / 只读文件系统）' }, { ...signals, pauseReason: 'git_write_denied' })) return;
+    await pauseOrchestration(row.id, 'git_write_denied', problems);
     return;
   }
   if (!hasResult && looksRateLimited(output) && step.retryCount < MAX_RATE_RETRIES) {
@@ -542,13 +591,22 @@ async function developFailure(row: Orchestration, step: OrchestrationStep, job: 
     await stepUpdate(step, { status: 'pending', continueCount: { increment: 1 }, feedback: `执行端核对未通过：\n- ${problems.join('\n- ')}` });
     return;
   }
-  if (!await stepUpdate(step, { status: 'needs_user', error: problems.join('；') })) return;
+  const pauseReason = looksRateLimited(output) ? 'rate_limited' : 'develop_failed';
+  if (!await applyFailure(step, job, { status: 'needs_user', error: problems.join('；') }, { ...signals, pauseReason })) return;
   if (step.subtaskId) await updateTaskStatus(step.subtaskId, 'blocked', row.id);
-  await pause(row.id, looksRateLimited(output) ? 'rate_limited' : 'develop_failed', problems);
-  void job;
+  await pauseOrchestration(row.id, pauseReason, problems);
 }
 
-async function dispatchReady(row: Orchestration, steps: OrchestrationStep[]) {
+async function priorFor(row: Orchestration, subtaskTitle: string, priorCache: Map<string, DigestRound[]>) {
+  let rounds = priorCache.get(row.id);
+  if (!rounds) {
+    rounds = await loadPriorRounds(row.taskId, row.id);
+    priorCache.set(row.id, rounds);
+  }
+  return priorRoundDigest(rounds, { subtaskTitle });
+}
+
+async function dispatchReady(row: Orchestration, steps: OrchestrationStep[], priorCache: Map<string, DigestRound[]>) {
   if (!row.nodeId) return false;
   const grant = decode<Grant>(row.grantJson);
   const snapshot = decode<Snapshot>(row.taskSnapshotJson);
@@ -587,9 +645,10 @@ async function dispatchReady(row: Orchestration, steps: OrchestrationStep[]) {
     const transfer = remote && !continuing ? { remote: grant.remote ?? 'origin', ref: row.integrationBranch, expect: base } : undefined;
     const worktree: RunPayload['worktree'] = continuing ? { existing: step.workPath! } : { create: { branch, startPoint: base, worktreeName: `${row.id}/${shortId(subtask.id)}-a${step.attempt}`, ...(transfer ? { fetch: transfer } : {}) } };
     const key = `orch:${step.id}:a${step.attempt}:work:c${step.continueCount}:r${step.retryCount}`;
-    const payload = runPayload(row, grant, { worktree, repoPath: target.path, publish: remote, prompt: developPrompt({ main: snapshot.main, subtask, acceptanceCriteria: step.acceptanceCriteria, branch, feedback: step.feedback, allowShell: grant.allowShell }), gitWrite: true, expect: { includes: [base], base, branch } });
+    const priorSummary = await priorFor(row, subtask.title, priorCache);
+    const payload = runPayload(row, grant, { worktree, repoPath: target.path, publish: remote, prompt: developPrompt({ main: snapshot.main, subtask, acceptanceCriteria: step.acceptanceCriteria, branch, feedback: step.feedback, allowShell: grant.allowShell, priorSummary }), gitWrite: true, expect: { includes: [base], base, branch } });
     const revision = await updateTaskStatus(subtask.id, 'doing', row.id);
-    await dispatch(row, step, 'work', key, payload, 'run', 'dispatched', { branch, baseCommit: base, lastTaskRevision: revision ?? latest?.revision ?? null, nodeId: target.nodeId, locationId: target.locationId, repoPath: target.path });
+    await dispatch(row, step, 'work', key, payload, 'run', 'dispatched', { branch, baseCommit: base, lastTaskRevision: revision ?? latest?.revision ?? null, nodeId: target.nodeId, locationId: target.locationId, repoPath: target.path }, { priorSummaryLength: priorSummary.length });
     load.set(target.nodeId, (load.get(target.nodeId) ?? 0) + 1);
     running++; dispatched = true;
   }
@@ -612,8 +671,9 @@ async function dispatchReady(row: Orchestration, steps: OrchestrationStep[]) {
       const remoteName = grant.remote ?? 'origin';
       const fetch: FetchSpec[] = fromRemote ? [{ remote: remoteName, ref: next.branch!, expect: next.resultCommit! }] : [];
       const subtaskBranch = fromRemote ? `${remoteName}/${next.branch!}` : next.branch!;
-      const payload = runPayload(row, grant, { worktree: { existing: row.integrationPath! }, fetch, prompt: mergePrompt({ integrationBranch: row.integrationBranch, subtaskBranch, resultCommit: next.resultCommit!, subtask, allowShell: grant.allowShell, feedback: next.feedback }), gitWrite: true, expect: { includes: [next.resultCommit!, row.integrationHead], branch: row.integrationBranch } });
-      await dispatch(row, next, 'work', `orch:${next.id}:a${next.attempt}:work`, payload, 'run', 'dispatched', { preMergeHead: row.integrationHead });
+      const priorSummary = await priorFor(row, subtask.title, priorCache);
+      const payload = runPayload(row, grant, { worktree: { existing: row.integrationPath! }, fetch, prompt: mergePrompt({ integrationBranch: row.integrationBranch, subtaskBranch, resultCommit: next.resultCommit!, subtask, allowShell: grant.allowShell, feedback: next.feedback, priorSummary }), gitWrite: true, expect: { includes: [next.resultCommit!, row.integrationHead], branch: row.integrationBranch } });
+      await dispatch(row, next, 'work', `orch:${next.id}:a${next.attempt}:work`, payload, 'run', 'dispatched', { preMergeHead: row.integrationHead }, { priorSummaryLength: priorSummary.length });
       dispatched = true;
     }
   }
@@ -676,15 +736,15 @@ async function runFinal(row: Orchestration, final: OrchestrationStep, steps: Orc
     await event(row, 'final_review', 'model', final.id, { value: verdict, raw: reply?.raw ?? null, rulesOnly: !reply });
   } catch (failure) {
     await event(row, 'final_review_failed', 'model', final.id, { error: (failure as Error).message });
-    if (!await stepUpdate(final, { status: 'needs_user', error: '主控最终审阅失败' })) return;
-    await pause(row.id, 'invalid_model_output');
+    if (!await applyFailure(final, null, { status: 'needs_user', error: '主控最终审阅失败' }, { pauseReason: 'invalid_model_output', error: (failure as Error).message })) return;
+    await pauseOrchestration(row.id, 'invalid_model_output');
     return;
   }
   const satisfied = verdict?.satisfied ?? true;
   if (!satisfied) {
-    if (!await stepUpdate(final, { status: 'needs_user', error: verdict!.comment })) return;
+    if (!await applyFailure(final, null, { status: 'needs_user', error: verdict!.comment }, { pauseReason: 'final_unsatisfied', error: verdict!.comment, decision: 'fail' })) return;
     await prisma.orchestration.update({ where: { id: row.id }, data: { finalComment: verdict!.comment } });
-    await pause(row.id, 'final_unsatisfied', verdict!.comment);
+    await pauseOrchestration(row.id, 'final_unsatisfied', verdict!.comment);
     return;
   }
   if (!await stepUpdate(final, { status: 'succeeded' })) return;
@@ -714,7 +774,10 @@ export async function tickAllOrchestrations() {
       if (job.kind === 'cleanup') await prisma.worktreeCleanup.updateMany({ where: { jobId: job.id }, data: { status: 'failed', resultJson: JSON.stringify({ error: '执行端离线，未确认是否已删除；请刷新列表核对' }), updatedAt: now() } });
       continue;
     }
-    if (job.orchestrationId) await pause(job.orchestrationId, 'node_offline', { jobId: job.id });
+    if (job.orchestrationId) {
+      await stampFailure(job.stepId, job.id, { pauseReason: 'node_offline', error: job.error, exitCode: job.exitCode });
+      await pauseOrchestration(job.orchestrationId, 'node_offline', { jobId: job.id });
+    }
   }
   const offline = await prisma.orchestration.findMany({ where: { status: 'paused', pauseReason: 'node_offline' } });
   for (const row of offline) {

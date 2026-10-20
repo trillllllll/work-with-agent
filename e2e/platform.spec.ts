@@ -70,7 +70,7 @@ test('已有会话交接返回后由用户采纳并完成任务', async ({ page,
   expect((await connection(access.token, `/api/v1/runs/${run.id}/report`, report)).status).toBe(200);
   expect((await connection(access.token, `/api/v1/runs/${run.id}/report`, report)).status).toBe(200);
   expect((await e2eDatabase.task.findUniqueOrThrow({ where: { id: task.id } })).status).toBe('todo');
-  await page.goto('/#/runs');
+  await page.goto('/#/runs?tab=handoffs');
   await page.getByRole('button', { name: /提交有来源的研究摘要/ }).click();
   await expect(page.getByText('研究结论已经整理完成', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '采纳并完成任务', exact: true }).click();

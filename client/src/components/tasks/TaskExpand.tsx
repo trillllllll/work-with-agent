@@ -21,6 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { TaskActivityDialog } from './TaskActivityDialog.js';
 import { OrchestrationButton } from '@/components/orchestration/OrchestrationPanel.js';
+import { AiHistoryDialog } from '@/components/orchestration/AiHistoryDialog.js';
 import { placeDescriptionCaret, readDescriptionCaret } from './DescriptionEditor.js';
 import { TaskMaterials } from '@/components/library/TaskMaterials.js';
 import { TaskDescription } from './TaskDescription.js';
@@ -656,10 +657,13 @@ function DetailFrame({ presentation, panelSlot, children }: { presentation: 'pan
 function TaskAssistantActions() {
   const { t } = useTranslation('tasks');
   const edit = useEdit();
+  const [history, setHistory] = useState(false);
   return <div className="flex flex-wrap gap-2 pb-2">
     <Button size="sm" variant="ghost" onClick={() => askAssistant()}>{t('taskExpand.assistant')}</Button>
     <Button size="sm" variant="ghost" onMouseDown={(event) => event.preventDefault()} onClick={() => askAssistant({ kind: 'draft', title: edit.draft.title || t('taskExpand.currentDraft'), text: `${edit.draft.title}\n\n${edit.draft.description}`, taskId: edit.taskId, unsaved: true })}>{t('taskExpand.withDraft')}</Button>
+    <Button size="sm" variant="ghost" data-testid="task-ai-history" onClick={() => setHistory(true)}>{t('taskExpand.aiHistory')}</Button>
     {!edit.task.parentId && <OrchestrationButton taskId={edit.taskId} disabled={edit.readonly} />}
+    <AiHistoryDialog taskId={edit.taskId} open={history} onOpenChange={setHistory} />
   </div>;
 }
 

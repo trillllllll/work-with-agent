@@ -46,3 +46,5 @@ if (prompt.includes('## 独立核对任务')) {
   }
 }
 writeFileSync(output, JSON.stringify(result));
+// Codex reports a thread-cumulative total on the last turn.completed line. Cached input is already inside input_tokens.
+console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1200, cached_input_tokens: 200, output_tokens: 80, reasoning_output_tokens: 10 } }));

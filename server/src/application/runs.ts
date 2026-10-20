@@ -7,8 +7,9 @@ import { prisma } from '../infrastructure/prisma.js';
 import { DomainError } from '../domain/task.js';
 import { assertOwner, refreshActor, type Actor, ownerActor } from './security.js';
 import { activeRunStatuses, appendEvent, decode, handoffAccess, handoffAudit, now, requestSchema, runAccess, runDto, type Db } from './handoff-contracts.js';
-import { createLaunchSpec, readRunnerOutput, capabilities } from '../runner/adapters.js';
-import { isTerminal, permissionsSchema, providerSchema, resultSchema, type Permissions, type RunResult, type Workspace } from '../runner/contracts.js';
+import { createLaunchSpec, readRunnerOutput, capabilities, type ParsedStream } from '../runner/adapters.js';
+import { isTerminal, permissionsSchema, providerSchema, resultSchema, type Permissions, type RunResult, type RunnerReceipt, type Workspace } from '../runner/contracts.js';
+import { costMicroUsd, int32, int32Any, storedRunUsage, usageJsonFor, type UsageNumbers } from './run-usage.js';
 import { applyPatch, assertApplyTarget, captureOutputFiles, capturePatch, digest, inside, normalizeInputFiles, prepareWorkspace } from '../runner/workspaces.js';
 import { controlDirectory, launchSupervisor, readReceipt, requestCancel, runnerRoot } from '../runner/supervisor.js';
 import { OrganizationService } from './knowledge-organizations.js';
@@ -202,6 +203,7 @@ export class RunService {
           await tx.run.update({ where: { id }, data: { externalSessionId: parsed.sessionId } });
         }
         if (receipt?.state === 'ended') {
+          await recordEndedUsage(tx, run, parsed, receipt);
           if (receipt.cancelled || run.status === 'cancelling' || handoff.status === 'cancelled') {
             await tx.run.update({ where: { id }, data: { status: 'cancelled', endedAt: now(), updatedAt: now() } });
             await appendEvent(tx, id, 'cancelled', { receipt }, 'runner:ended');
@@ -329,6 +331,47 @@ export class RunService {
       }
     });
   }
+}
+
+/** Store CLI usage when a local run ends. Resume of the same session stores deltas; usageJson.cumulative keeps the CLI total. */
+async function recordEndedUsage(tx: Db, run: Run, parsed: ParsedStream, receipt: RunnerReceipt) {
+  const usage = parsed.usage;
+  const current: UsageNumbers = {
+    inputTokens: int32(usage?.inputTokens),
+    cachedInputTokens: int32(usage?.cachedInputTokens),
+    outputTokens: int32(usage?.outputTokens),
+    costMicroUsd: costMicroUsd(usage?.costUsd),
+  };
+  const sessionId = parsed.sessionId ?? run.externalSessionId;
+  let stored = current;
+  if (run.continuationOf && sessionId) {
+    const previous = await tx.run.findUnique({ where: { id: run.continuationOf } });
+    if (previous?.externalSessionId === sessionId) {
+      stored = storedRunUsage({
+        resume: true,
+        previousUsageJson: previous.usageJson,
+        previousColumns: { inputTokens: previous.inputTokens, cachedInputTokens: previous.cachedInputTokens, outputTokens: previous.outputTokens, costMicroUsd: previous.costMicroUsd },
+        current,
+      });
+    }
+  }
+  const started = Date.parse(receipt.createdAt);
+  const ended = Date.parse(receipt.heartbeatAt);
+  await tx.run.update({
+    where: { id: run.id },
+    data: {
+      exitCode: int32Any(receipt.exitCode),
+      model: usage?.model ?? null,
+      inputTokens: stored.inputTokens,
+      cachedInputTokens: stored.cachedInputTokens,
+      outputTokens: stored.outputTokens,
+      costMicroUsd: stored.costMicroUsd,
+      numTurns: int32(usage?.numTurns),
+      cliDurationMs: int32(usage?.cliDurationMs),
+      runDurationMs: Number.isFinite(started) && Number.isFinite(ended) ? int32(Math.max(0, ended - started)) : null,
+      usageJson: usageJsonFor({ model: usage?.model ?? null, numTurns: usage?.numTurns ?? null, cliDurationMs: usage?.cliDurationMs ?? null, raw: usage?.raw ?? null, cumulative: { ...current, costUsd: usage?.costUsd ?? null } }),
+    },
+  });
 }
 
 /** Called at API startup and periodically: observes persisted runs, never restarts them. */
