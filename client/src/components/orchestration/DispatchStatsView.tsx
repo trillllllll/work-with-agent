@@ -33,6 +33,7 @@ type DispatchStats = {
     cachedInputTokens: number;
     outputTokens: number;
     costMicroUsd: number;
+    costJobs: number;
     noCostJobs: number;
     filesChanged: number;
     linesAdded: number;
@@ -43,7 +44,7 @@ type DispatchStats = {
   byModel: UsageGroup[];
   top5ByDuration: RankDuration[];
   top5ByCost: RankCost[];
-  legacy: { count: number; inputTokens: number; outputTokens: number; cachedInputTokens: number; costMicroUsd: number; durationMs: number };
+  legacy: { count: number; inputTokens: number; outputTokens: number; cachedInputTokens: number; costMicroUsd: number; costJobs: number; durationMs: number };
 };
 type Project = { id: string; name: string };
 type Mode = 'this' | 'last' | 'custom';
@@ -141,7 +142,7 @@ export function DispatchStatsView() {
         </article>
         <article className="glass-subtle rounded-xl border p-4">
           <p className="text-xs text-muted-foreground">{t('runs.stats.cost')}</p>
-          <p className="text-2xl font-semibold">{formatCost(data.resources.costMicroUsd)}</p>
+          <p className="text-2xl font-semibold">{data.resources.costJobs > 0 ? formatCost(data.resources.costMicroUsd) : formatMissing()}</p>
           {data.resources.noCostJobs > 0 && <p className="text-xs text-muted-foreground">{t('runs.stats.noCost', { n: data.resources.noCostJobs })}</p>}
         </article>
         <article className="glass-subtle rounded-xl border p-4">
@@ -193,7 +194,7 @@ export function DispatchStatsView() {
         <p className="text-xs text-muted-foreground">{t('runs.stats.legacyLine', {
           count: data.legacy.count,
           tokens: formatTokens(data.legacy.inputTokens + data.legacy.outputTokens),
-          cost: formatCost(data.legacy.costMicroUsd),
+          cost: data.legacy.costJobs > 0 ? formatCost(data.legacy.costMicroUsd) : formatMissing(),
           duration: formatDuration(data.legacy.durationMs),
         })}</p>
       </section>
