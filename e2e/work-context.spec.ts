@@ -85,6 +85,11 @@ test('工作上下文默认显示当前进展，建议不会直接变成记忆',
   await expect(tabs.getByRole('tab', { name: '当前进展', exact: true })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByTestId('context-auto-status')).toBeVisible();
   await expect(page.getByText('资料、任务和本应用聊天发生变化后自动整理，建议确认后生效。', { exact: true })).toBeVisible();
+  const wideBrief = await page.getByTestId('context-brief').boundingBox();
+  const wideRail = await page.getByTestId('context-rail').boundingBox();
+  expect(wideBrief && wideRail).toBeTruthy();
+  expect(wideRail!.x).toBeGreaterThan(wideBrief!.x + 40);
+  expect(wideRail!.y).toBeLessThan(wideBrief!.y + wideBrief!.height);
   if (testInfo.project.name === 'chromium') {
     const work = page.getByRole('navigation', { name: '工作', exact: true });
     await expect(work.getByRole('button')).toHaveText(['AI 连接', '待确认', '工作上下文', '资料库', '技能', 'AI 执行', 'Worktree 管理', '定期回顾']);
@@ -105,6 +110,12 @@ test('工作上下文默认显示当前进展，建议不会直接变成记忆',
 
   await page.setViewportSize({ width: 390, height: 844 });
   const root = page.getByTestId('work-context');
+  expect(await root.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  await tabs.getByRole('tab', { name: '当前进展', exact: true }).click();
+  const narrowBrief = await page.getByTestId('context-brief').boundingBox();
+  const narrowRail = await page.getByTestId('context-rail').boundingBox();
+  expect(narrowBrief && narrowRail).toBeTruthy();
+  expect(narrowRail!.y + narrowRail!.height).toBeLessThanOrEqual(narrowBrief!.y + 2);
   expect(await root.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
   await setTheme(page, 'light');
   await shot(page, testInfo.project.name, '390-light-tabs');

@@ -57,33 +57,17 @@ export function shiftMonth(value: string, direction: number) {
   const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
   return localDate(new Date(target.getFullYear(), target.getMonth(), Math.min(day, lastDay)));
 }
-export type TimedBlock = { id: string; startMin: number; endMin: number; lane: number; laneCount: number; task: Task; point: boolean; startsHere: boolean; endsHere: boolean };
-/** Split ranges at midnight, then assign lanes using visible footprints (including point labels). */
+export type TimedBlock = { id: string; startMin: number; endMin: number; task: Task; point: boolean; startsHere: boolean; endsHere: boolean };
+/** Split ranges at midnight and mark point tasks. Lanes are assigned by layoutLanes. */
 export function layoutTimed(tasks: Task[], dateKey: string): TimedBlock[] {
   const from = `${dateKey}T00:00`;
   const until = `${addDays(dateKey, 1)}T00:00`;
-  const blocks: TimedBlock[] = tasks.filter((task) => task.scheduledStart && occursOn(task, dateKey)).map((task) => ({
+  return tasks.filter((task) => task.scheduledStart && occursOn(task, dateKey)).map((task) => ({
     id: `${task.id}:${dateKey}`, task, point: !task.scheduledEnd,
     startMin: task.scheduledStart! < from ? 0 : minutesOf(task.scheduledStart!),
     endMin: !task.scheduledEnd ? minutesOf(task.scheduledStart!) : task.scheduledEnd >= until ? 1440 : minutesOf(task.scheduledEnd),
     startsHere: task.scheduledStart! >= from, endsHere: Boolean(task.scheduledEnd && task.scheduledEnd <= until),
-    lane: 0, laneCount: 1,
-  })).sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin || a.id.localeCompare(b.id));
-  let cluster: TimedBlock[] = [];
-  let clusterEnd = -1;
-  let lanes: number[] = [];
-  const finish = () => { for (const block of cluster) block.laneCount = lanes.length; };
-  for (const block of blocks) {
-    if (block.startMin >= clusterEnd) { finish(); cluster = []; lanes = []; clusterEnd = -1; }
-    const footprintEnd = Math.max(block.endMin, block.startMin + 30);
-    const free = lanes.findIndex((end) => end <= block.startMin);
-    block.lane = free < 0 ? lanes.length : free;
-    lanes[block.lane] = footprintEnd;
-    cluster.push(block);
-    clusterEnd = Math.max(clusterEnd, footprintEnd);
-  }
-  finish();
-  return blocks;
+  })).sort((a, b) => a.startMin - b.startMin || a.id.localeCompare(b.id));
 }
 export function minutesBetween(start: string, end: string) {
   return Math.round((Date.parse(`${end}:00Z`) - Date.parse(`${start}:00Z`)) / 60000);
