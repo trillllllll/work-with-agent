@@ -14,11 +14,11 @@ describe('calendar behavior', () => {
     expect(isOverdue(range, '2026-10-12')).toBe(false);
     expect(isOverdue(midnight, '2026-10-12')).toBe(true);
   });
-  it('keeps points as markers and gives overlapping labels separate lanes', () => {
+  it('keeps points as markers and moves them without inventing an end', () => {
     const point = task({ id: 'point', dueDate: '2026-10-11', scheduledStart: '2026-10-11T23:00' });
     const blocks = layoutTimed([point, range], '2026-10-11');
-    expect(blocks.find((block) => block.point)).toMatchObject({ startMin: 1380, endMin: 1380, laneCount: 2 });
-    expect(new Set(blocks.map((block) => block.lane)).size).toBe(2);
+    expect(blocks.find((block) => block.point)).toMatchObject({ startMin: 1380, endMin: 1380, point: true });
+    expect(blocks.every((block) => !('lane' in block) && !('laneCount' in block))).toBe(true);
     expect(applyDrop(point, 'slot:2026-10-12:16:00')).toMatchObject({ dueDate: '2026-10-12', scheduledStart: '2026-10-12T16:00', scheduledEnd: null });
     expect(applyDrop(point, 'cell:2026-10-12')).toMatchObject({ scheduledStart: '2026-10-12T23:00', scheduledEnd: null });
   });
