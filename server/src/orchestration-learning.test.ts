@@ -1,7 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
 import { app } from './app.js';
 import { prisma } from './infrastructure/prisma.js';
+import { sha256 } from './application/auto-memory-types.js';
+import { CommandService } from './application/commands.js';
 import { OrchestrationService, pauseOrchestration } from './application/orchestration/service.js';
+import { internalActor, learningActor, ownerActor, type Actor } from './application/security.js';
 
 void app;
 
@@ -59,8 +63,8 @@ describe('orchestration learning suggestions', () => {
     await pauseOrchestration(made[2].row.id, 'merge_tests_failed', 'npm test failed third');
     const receipts = await prisma.requestReceipt.findMany({ where: { requestId: { contains: project.id } } });
     expect(receipts).toHaveLength(2);
-    const memoryReceipt = receipts.find((receipt) => receipt.actorId === 'builtin-agent' && receipt.requestId.startsWith('orch-learning:'));
-    const skillReceipt = receipts.find((receipt) => receipt.actorId === 'local-owner' && receipt.requestId.startsWith('orch-learning-skill:'));
+    const memoryReceipt = receipts.find((receipt) => receipt.actorId === 'orchestration-learning' && receipt.requestId.startsWith(`orch-learning:${project.id}:`));
+    const skillReceipt = receipts.find((receipt) => receipt.actorId === 'orchestration-learning' && receipt.requestId.startsWith(`orch-learning-skill:${project.id}:`));
     expect(memoryReceipt).toBeTruthy();
     expect(skillReceipt).toBeTruthy();
     expect(JSON.parse(skillReceipt!.response).result.status).toBe('pending_approval');
@@ -119,7 +123,7 @@ describe('orchestration learning suggestions', () => {
     }
     const receipts = await prisma.requestReceipt.findMany({ where: { requestId: { contains: project.id } } });
     expect(receipts).toHaveLength(2);
-    const memory = await prisma.proposal.findFirstOrThrow({ where: { actorId: 'builtin-agent', commands: { contains: made[2].task.id } } });
+    const memory = await prisma.proposal.findFirstOrThrow({ where: { actorId: 'orchestration-learning', commands: { contains: made[2].task.id } } });
     expect(JSON.parse(memory.commands)[0].input.evidence).toEqual([{ type: 'task', id: made[2].task.id, revision: 4 }]);
     expect(JSON.parse(memory.commands)[0].input.content).toContain('hello world');
     const again = await round(project.id, topic.id, '再打回', 'awaiting_acceptance');
@@ -142,5 +146,84 @@ describe('orchestration learning suggestions', () => {
     expect(JSON.parse(failed[0].payload).error).toContain('已归档');
     expect(await prisma.proposal.count({ where: { commands: { contains: made[2].task.id } } })).toBe(0);
     expect((await prisma.orchestration.findUniqueOrThrow({ where: { id: made[2].row.id } })).status).toBe('paused');
+  });
+
+  it('does not submit again when a receipt already exists under the previous actor id', async () => {
+    const { topic, project } = await fixture('旧收据');
+    const keyHash = sha256('pause:git_write_denied');
+    const createdAt = now();
+    await prisma.requestReceipt.create({ data: { actorId: internalActor.id, requestId: `orch-learning:${project.id}:${keyHash}`, requestHash: 'legacy-memory', response: JSON.stringify({ result: { proposalId: 'legacy-memory', status: 'pending_approval' } }), createdAt } });
+    await prisma.requestReceipt.create({ data: { actorId: ownerActor.id, requestId: `orch-learning-skill:${project.id}:${keyHash}`, requestHash: 'legacy-skill', response: JSON.stringify({ result: { proposalId: 'legacy-skill', status: 'pending_approval' } }), createdAt } });
+    const made = [];
+    for (const title of ['一', '二', '三']) made.push(await round(project.id, topic.id, title, 'running'));
+    await pauseOrchestration(made[0].row.id, 'git_write_denied', 'locked');
+    await pauseOrchestration(made[1].row.id, 'git_write_denied', 'locked');
+    await pauseOrchestration(made[2].row.id, 'git_write_denied', 'locked');
+    const receipts = await prisma.requestReceipt.findMany({ where: { requestId: { contains: project.id } } });
+    expect(receipts.map((receipt) => receipt.actorId).sort()).toEqual([internalActor.id, ownerActor.id].sort());
+    expect(await prisma.proposal.count({ where: { commands: { contains: made[2].task.id } } })).toBe(0);
+    expect(await prisma.orchestrationEvent.count({ where: { orchestrationId: { in: made.map((item) => item.row.id) }, type: { in: ['learning_suggested', 'learning_suggestion_failed'] } } })).toBe(0);
+  });
+
+  it('still submits the missing half when only the old memory receipt exists', async () => {
+    const { topic, project } = await fixture('只留旧记忆收据');
+    const keyHash = sha256('pause:final_unsatisfied');
+    await prisma.requestReceipt.create({ data: { actorId: internalActor.id, requestId: `orch-learning:${project.id}:${keyHash}`, requestHash: 'legacy-memory', response: JSON.stringify({ result: { proposalId: 'legacy-memory-only', status: 'pending_approval' } }), createdAt: now() } });
+    const made = [];
+    for (const title of ['一', '二', '三']) made.push(await round(project.id, topic.id, title, 'running'));
+    await pauseOrchestration(made[0].row.id, 'final_unsatisfied', 'missed');
+    await pauseOrchestration(made[1].row.id, 'final_unsatisfied', 'missed');
+    await pauseOrchestration(made[2].row.id, 'final_unsatisfied', 'missed');
+    const receipts = await prisma.requestReceipt.findMany({ where: { requestId: { contains: project.id } } });
+    expect(receipts).toHaveLength(2);
+    expect(receipts.find((receipt) => receipt.requestId.startsWith(`orch-learning:${project.id}:`))?.actorId).toBe(internalActor.id);
+    const skillReceipt = receipts.find((receipt) => receipt.requestId.startsWith(`orch-learning-skill:${project.id}:`));
+    expect(skillReceipt?.actorId).toBe(learningActor.id);
+    expect(JSON.parse(skillReceipt!.response).result.status).toBe('pending_approval');
+    expect(await prisma.proposal.count({ where: { actorId: learningActor.id, commands: { contains: made[2].task.id } } })).toBe(0);
+    expect(await prisma.orchestrationEvent.count({ where: { orchestrationId: made[2].row.id, type: 'learning_suggestion_failed' } })).toBe(0);
+  });
+
+  it('lets the owner approve a learning skill proposal and writes the skill', async () => {
+    const { topic, project } = await fixture('确认学习技能');
+    const made = [];
+    for (const title of ['一', '二', '三']) made.push(await round(project.id, topic.id, title, 'running'));
+    await pauseOrchestration(made[0].row.id, 'merge_conflict_unresolved', 'conflict');
+    await pauseOrchestration(made[1].row.id, 'merge_conflict_unresolved', 'conflict');
+    await pauseOrchestration(made[2].row.id, 'merge_conflict_unresolved', 'conflict');
+    const skillReceipt = await prisma.requestReceipt.findFirstOrThrow({ where: { actorId: learningActor.id, requestId: { startsWith: `orch-learning-skill:${project.id}:` } } });
+    const proposal = await prisma.proposal.findUniqueOrThrow({ where: { id: JSON.parse(skillReceipt.response).result.proposalId } });
+    expect(proposal.actorId).toBe('orchestration-learning');
+    expect(proposal.status).toBe('pending');
+    const skillName = JSON.parse(proposal.commands)[0].input.name as string;
+    let skillId = '';
+    try {
+      const approved = await new CommandService().approve(ownerActor, proposal.id, { requestId: `orch-learning-approve:${proposal.id}`, expectedRevision: proposal.revision });
+      expect(approved.status).toBe('applied');
+      const skill = await prisma.skill.findFirstOrThrow({ where: { name: skillName, deletedAt: null } });
+      skillId = skill.id;
+      expect(skill.enabled).toBe(true);
+      expect(skill.origin).toBe('assistant');
+      expect((await prisma.proposal.findUniqueOrThrow({ where: { id: proposal.id } })).status).toBe('executed');
+    } finally {
+      if (skillId) {
+        await prisma.changeRecord.deleteMany({ where: { entityType: 'skill', entityId: skillId } });
+        await prisma.skillVersion.deleteMany({ where: { skillId } });
+        await prisma.skill.deleteMany({ where: { id: skillId } });
+      }
+    }
+  });
+
+  it('forbids the learning actor from other owner-only commands and forbids a different internal actor from creating skills', async () => {
+    const commands = new CommandService();
+    const tagName = `学习不得建标签-${randomUUID()}`;
+    await expect(commands.submit(learningActor, { requestId: randomUUID(), commands: [{ kind: 'tag.create', input: { name: tagName } }] })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+    await expect(commands.submit(learningActor, { requestId: randomUUID(), commands: [{ kind: 'task.permanent_delete', targetId: 'missing-task', expectedRevision: 1, input: {} }] })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+    expect(await prisma.tag.count({ where: { name: tagName } })).toBe(0);
+    const imposter: Actor = { id: 'not-orchestration-learning', kind: 'internal', topicIds: 'all', includeInbox: true, autoActions: [], revision: 1 };
+    const skillName = `imposter-skill-${randomUUID()}`;
+    await expect(commands.submit(imposter, { requestId: randomUUID(), commands: [{ kind: 'skill.create', input: { name: skillName, description: '不应该写入', instructions: '不要执行这条技能' } }] })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+    expect(await prisma.skill.count({ where: { name: skillName } })).toBe(0);
+    expect(await prisma.proposal.count({ where: { actorId: imposter.id } })).toBe(0);
   });
 });

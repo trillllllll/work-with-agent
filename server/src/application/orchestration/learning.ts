@@ -7,7 +7,7 @@ import { DomainError } from '../../domain/task.js';
 import { CommandService, type Command } from '../commands.js';
 import { identityFromCommand, lookupSuggestion, memorySuggestionHooks, suggestionKey } from '../auto-memory-suggestions.js';
 import { scopeKey, sha256 } from '../auto-memory-types.js';
-import { internalActor, ownerActor } from '../security.js';
+import { internalActor, learningActor, ownerActor } from '../security.js';
 import { appendOrchestrationEvent } from './events.js';
 
 const WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
@@ -95,6 +95,12 @@ function skillText(label: string) {
   return { description, instructions };
 }
 
+async function existingReceipt(requestId: string, previousActorId: string) {
+  const current = await prisma.requestReceipt.findUnique({ where: { actorId_requestId: { actorId: learningActor.id, requestId } } });
+  if (current) return current;
+  return prisma.requestReceipt.findUnique({ where: { actorId_requestId: { actorId: previousActorId, requestId } } });
+}
+
 async function suggest(orchestrationId: string, signal: LearningSignal) {
   const key = signalKey(signal);
   if (!key) return;
@@ -140,7 +146,7 @@ async function suggest(orchestrationId: string, signal: LearningSignal) {
   let skillProposalId: string | null = null;
   let createdMemory = false;
   let createdSkill = false;
-  const memoryReceipt = await prisma.requestReceipt.findUnique({ where: { actorId_requestId: { actorId: internalActor.id, requestId: memoryRequestId } } });
+  const memoryReceipt = await existingReceipt(memoryRequestId, internalActor.id);
   if (memoryReceipt) memoryProposalId = proposalIdFrom(memoryReceipt.response);
   else {
     const identity = identityFromCommand(command, scopeKey(task.topicId));
@@ -148,20 +154,20 @@ async function suggest(orchestrationId: string, signal: LearningSignal) {
     if (existing) memoryProposalId = existing.proposalId;
     else {
       const hooks = memorySuggestionHooks(task.topicId, createdAt);
-      const response = await new CommandService().submit(internalActor, { requestId: memoryRequestId, commands: [command] }, { forceProposal: true, beforePersist: hooks.beforePersist, afterProposal: hooks.afterProposal });
+      const response = await new CommandService().submit(learningActor, { requestId: memoryRequestId, commands: [command] }, { forceProposal: true, beforePersist: hooks.beforePersist, afterProposal: hooks.afterProposal });
       memoryProposalId = typeof response.proposalId === 'string' ? response.proposalId : null;
       createdMemory = true;
     }
   }
   const skillName = `dispatch-checklist-${slugPart(signal.kind === 'pause' ? signal.reason : label)}-${keyHash.slice(0, 8)}`;
-  const skillReceipt = await prisma.requestReceipt.findUnique({ where: { actorId_requestId: { actorId: ownerActor.id, requestId: skillRequestId } } });
+  const skillReceipt = await existingReceipt(skillRequestId, ownerActor.id);
   if (skillReceipt) skillProposalId = proposalIdFrom(skillReceipt.response);
   else {
     const taken = await prisma.skill.findFirst({ where: { name: skillName, deletedAt: null }, select: { id: true } });
     if (!taken) {
       const text = skillText(label);
       const skill: Command = { kind: 'skill.create', input: { name: skillName, description: text.description, instructions: text.instructions, reason: memoryReason } };
-      const response = await new CommandService().submit(ownerActor, { requestId: skillRequestId, commands: [skill] }, { forceProposal: true });
+      const response = await new CommandService().submit(learningActor, { requestId: skillRequestId, commands: [skill] }, { forceProposal: true });
       skillProposalId = typeof response.proposalId === 'string' ? response.proposalId : null;
       createdSkill = true;
     }

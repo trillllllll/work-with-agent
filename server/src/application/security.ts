@@ -21,6 +21,7 @@ export type Actor = {
 };
 export const ownerActor: Actor = { id: 'local-owner', kind: 'user', topicIds: 'all', includeInbox: true, autoActions: [], revision: 1 };
 export const internalActor: Actor = { id: 'builtin-agent', kind: 'internal', topicIds: 'all', includeInbox: true, autoActions: [], revision: 1 };
+export const learningActor: Actor = { id: 'orchestration-learning', kind: 'internal', topicIds: 'all', includeInbox: true, autoActions: [], revision: 1 };
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const token = () => randomBytes(32).toString('base64url');
 const loopbackHosts = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
@@ -139,6 +140,10 @@ function clearLoginFailures(req: Request) {
 
 export function assertOwner(actor: Actor) {
   if (actor.kind !== 'user') throw new DomainError('FORBIDDEN', '此操作需要本机用户确认', 403);
+}
+export function assertOwnerOrLearningSkill(actor: Actor, kind: string) {
+  if (actor.kind === 'internal' && actor.id === learningActor.id && (kind === 'skill.create' || kind === 'skill.update')) return;
+  assertOwner(actor);
 }
 export function assertTopicAccess(actor: Actor, topicId: string | null) {
   if (topicId === null ? !actor.includeInbox : actor.topicIds !== 'all' && !actor.topicIds.includes(topicId)) throw new DomainError('SCOPE_DENIED', '对象不在此连接的授权范围内', 403);

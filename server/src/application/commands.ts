@@ -9,7 +9,7 @@ import { prisma } from '../infrastructure/prisma.js';
 import { TaskService, TopicService, TagService, ChangeService } from './workspace.js';
 import { taskCreateSchema, taskUpdateSchema, topicCreateSchema, topicUpdateSchema, tagCreateSchema, tagUpdateSchema, reorderSchema, parseInput } from './workspace-input.js';
 import { type Db, type MutationContext, type GroupSnapshot, isGroup, now } from './workspace-store.js';
-import { type Actor, getActor, assertOwner, assertTopicAccess, actorFromConnection } from './security.js';
+import { type Actor, getActor, assertOwner, assertOwnerOrLearningSkill, assertTopicAccess, actorFromConnection } from './security.js';
 import { commandDescriptor } from './command-catalog.js';
 import { discardPendingBlobs, flushUnreferencedBlobs } from './task-images.js';
 
@@ -186,7 +186,7 @@ function assertSkillAvailable(actor: Actor, command: Command) {
 export async function executeInTransaction(tx: Db, actor: Actor, command: Command, context: Partial<MutationContext> = {}) {
   const handler = requireHandler(command);
   assertSkillAvailable(actor, command);
-  if (handler.ownerOnly) assertOwner(actor);
+  if (handler.ownerOnly) assertOwnerOrLearningSkill(actor, command.kind);
   await handler.inspect(tx, actor, command);
   if (command.evidence?.length) {
     if (!evidenceValidator) throw new DomainError('EVIDENCE_UNAVAILABLE', '证据校验模块不可用', 503);
@@ -393,7 +393,7 @@ async function inspectBatch(tx: Db, actor: Actor, commands: Command[], batch?: B
       const effective = await commandForBatch(tx, command, batch);
       const handler = requireHandler(effective);
       assertSkillAvailable(actor, effective);
-      if (handler.ownerOnly) assertOwner(actor);
+      if (handler.ownerOnly) assertOwnerOrLearningSkill(actor, effective.kind);
       const inspected = await handler.inspect(tx, actor, effective);
       const evidence = evidenceReadsets[index];
       const recording = recordActor ?? actor;
@@ -516,6 +516,10 @@ export class CommandService {
     const mapped = status === 'applied' ? 'executed' : status;
     return Promise.all((await prisma.proposal.findMany({ where: { ...(actor.kind === 'user' ? {} : { actorId: actor.id }), ...(mapped ? { status: mapped } : {}) }, orderBy: { createdAt: 'desc' }, take: 100 })).map((row) => this.get(actor, row.id)));
   }
+  async count(actor: Actor) {
+    const pending = await prisma.proposal.count({ where: { status: 'pending', ...(actor.kind === 'user' ? {} : { actorId: actor.id }) } });
+    return { pending };
+  }
   async edit(actor: Actor, id: string, value: unknown) {
     assertOwner(actor);
     const input = z.object({ expectedRevision: z.number().int().min(1), commands: z.array(editedCommandSchema).min(1).max(50) }).parse(value);
@@ -573,7 +577,7 @@ export class CommandService {
   }
   async reject(actor: Actor, id: string, value: unknown) {
     assertOwner(actor);
-    const input = z.object({ expectedRevision: z.number().int().min(1) }).parse(value);
+    const input = z.object({ expectedRevision: z.number().int().min(1), reason: z.string().trim().max(1000).optional() }).parse(value);
     const existing = await prisma.proposal.findUnique({ where: { id } });
     const batch = existing ? batchPreconditions(existing.preconditions) : null;
     if (existing && batch) {
@@ -583,7 +587,7 @@ export class CommandService {
       if (response.result.success || response.result.code !== 'USER_REJECTED') throw new DomainError('VERSION_CONFLICT', '提议已处理或发生变化');
       return this.get(actor, id);
     }
-    const result = await prisma.proposal.updateMany({ where: { id, status: 'pending', revision: input.expectedRevision }, data: { status: 'rejected', revision: { increment: 1 }, updatedAt: now() } });
+    const result = await prisma.proposal.updateMany({ where: { id, status: 'pending', revision: input.expectedRevision }, data: { status: 'rejected', revision: { increment: 1 }, result: JSON.stringify({ status: 'rejected', reason: input.reason || null, rejectedAt: now() }), updatedAt: now() } });
     if (!result.count) throw new DomainError('VERSION_CONFLICT', '提议已处理或发生变化');
     publishWorkspaceChange({ kind: 'proposal', proposalId: id });
     return this.get(actor, id);
@@ -597,6 +601,7 @@ commandsRouter.get('/tools', (_req, res) => send(res, [...handlers].filter(([kin
 commandsRouter.post('/commands', async (req, res, next) => { try { send(res, await service.submit(getActor(req), req.body)); } catch (error) { next(error); } });
 commandsRouter.post('/commands/preview', async (req, res, next) => { try { send(res, await service.preview(getActor(req), req.body)); } catch (error) { next(error); } });
 commandsRouter.get('/proposals', async (req, res, next) => { try { send(res, await service.list(getActor(req), typeof req.query.status === 'string' ? req.query.status : undefined)); } catch (error) { next(error); } });
+commandsRouter.get('/proposals/count', async (req, res, next) => { try { send(res, await service.count(getActor(req))); } catch (error) { next(error); } });
 commandsRouter.get('/proposals/:id', async (req, res, next) => { try { send(res, await service.get(getActor(req), String(req.params.id))); } catch (error) { next(error); } });
 commandsRouter.patch('/proposals/:id', async (req, res, next) => { try { send(res, await service.edit(getActor(req), String(req.params.id), req.body)); } catch (error) { next(error); } });
 commandsRouter.post('/proposals/:id/approve', async (req, res, next) => { try { send(res, await service.approve(getActor(req), String(req.params.id), req.body)); } catch (error) { next(error); } });

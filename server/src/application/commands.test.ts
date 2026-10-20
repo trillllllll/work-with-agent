@@ -263,4 +263,60 @@ describe('identity, shared commands and atomic proposals', () => {
     expect(audit).toMatchObject({ actorId: 'builtin-agent', source: 'agent', proposalId: preview.body.data.proposalId });
     await prisma.approval.delete({ where: { id: legacy.id } });
   });
+
+  it('stores a trimmed rejection reason on the proposal result and keeps conflicts forbidden to connections', async () => {
+    const list = await topic(), item = await task(list.id), link = await connection([list.id]);
+    const pending = await service.submit(link.actor, submit([command(item.id, item.revision, { title: '带理由拒绝' })]));
+    const rejected = await service.reject(ownerActor, pending.proposalId, { expectedRevision: pending.proposalRevision, reason: '  不需要这条修改  ' });
+    expect(rejected.status).toBe('rejected');
+    expect(rejected.result).toMatchObject({ status: 'rejected', reason: '不需要这条修改' });
+    expect(rejected.result.rejectedAt).toEqual(expect.any(String));
+    const fetched = await service.get(ownerActor, pending.proposalId);
+    expect(fetched.result).toMatchObject({ status: 'rejected', reason: '不需要这条修改' });
+    const listed = await service.list(ownerActor, 'rejected');
+    expect(listed.find((row) => row.id === pending.proposalId)?.result).toMatchObject({ reason: '不需要这条修改' });
+    const httpGet = await owner('get', `/api/v1/proposals/${pending.proposalId}`);
+    expect(httpGet.status, JSON.stringify(httpGet.body)).toBe(200);
+    expect(httpGet.body.data.result.reason).toBe('不需要这条修改');
+
+    const blank = await service.submit(link.actor, submit([command(item.id, item.revision, { title: '空理由' })]));
+    expect((await service.reject(ownerActor, blank.proposalId, { expectedRevision: blank.proposalRevision, reason: '   ' })).result.reason).toBeNull();
+    const omitted = await service.submit(link.actor, submit([command(item.id, item.revision, { title: '不填理由' })]));
+    expect((await service.reject(ownerActor, omitted.proposalId, { expectedRevision: omitted.proposalRevision })).result.reason).toBeNull();
+
+    const limited = await service.submit(link.actor, submit([command(item.id, item.revision, { title: '长度边界' })]));
+    const accepted = await service.reject(ownerActor, limited.proposalId, { expectedRevision: limited.proposalRevision, reason: '界'.repeat(1000) });
+    expect(accepted.result.reason).toHaveLength(1000);
+    const tooLong = await service.submit(link.actor, submit([command(item.id, item.revision, { title: '超长理由' })]));
+    const http = await owner('post', `/api/v1/proposals/${tooLong.proposalId}/reject`, { expectedRevision: tooLong.proposalRevision, reason: '字'.repeat(1001) });
+    expect(http.status, JSON.stringify(http.body)).toBe(400);
+    expect(http.body.code).toBe('VALIDATION_ERROR');
+    expect((await prisma.proposal.findUniqueOrThrow({ where: { id: tooLong.proposalId } })).status).toBe('pending');
+    await expect(service.reject(ownerActor, tooLong.proposalId, { expectedRevision: tooLong.proposalRevision + 1 })).rejects.toMatchObject({ code: 'VERSION_CONFLICT' });
+    await expect(service.reject(link.actor, tooLong.proposalId, { expectedRevision: tooLong.proposalRevision })).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+    expect((await service.get(ownerActor, tooLong.proposalId)).result).toBeNull();
+  });
+
+  it('counts every pending proposal for the owner and only the caller for a connection', async () => {
+    const list = await topic(), item = await task(list.id), link = await connection([list.id]), other = await connection([list.id]);
+    const before = await owner('get', '/api/v1/proposals/count');
+    expect(before.status, JSON.stringify(before.body)).toBe(200);
+    expect(before.body).toEqual({ data: { pending: expect.any(Number) }, error: null });
+    const first = await service.submit(link.actor, submit([command(item.id, item.revision, { title: '连接甲的提议' })]));
+    await service.submit(other.actor, submit([command(item.id, item.revision, { title: '连接乙的提议' })]));
+    const after = await owner('get', '/api/v1/proposals/count');
+    expect(after.body.data.pending).toBe(before.body.data.pending + 2);
+    const mine = await request(app).get('/api/v1/proposals/count').set('Authorization', `Bearer ${link.token}`);
+    const theirs = await request(app).get('/api/v1/proposals/count').set('Authorization', `Bearer ${other.token}`);
+    expect(mine.status, JSON.stringify(mine.body)).toBe(200);
+    expect(mine.body).toEqual({ data: { pending: 1 }, error: null });
+    expect(theirs.body).toEqual({ data: { pending: 1 }, error: null });
+    expect(mine.body.data.id).toBeUndefined();
+    await service.reject(ownerActor, first.proposalId, { expectedRevision: first.proposalRevision });
+    expect((await request(app).get('/api/v1/proposals/count').set('Authorization', `Bearer ${link.token}`)).body.data.pending).toBe(0);
+    expect((await owner('get', '/api/v1/proposals/count')).body.data.pending).toBe(before.body.data.pending + 1);
+    expect((await service.count(ownerActor)).pending).toBe(before.body.data.pending + 1);
+    expect((await service.count(link.actor)).pending).toBe(0);
+    expect((await service.count(other.actor)).pending).toBe(1);
+  });
 });

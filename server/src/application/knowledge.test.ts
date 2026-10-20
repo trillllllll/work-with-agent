@@ -43,6 +43,9 @@ async function write(kind: string, input: Record<string, unknown>, targetId?: st
 const topic = async () => (await write('topic.create', { name: '中文项目' })).id as string;
 const material = (topicId: string | null, title = '来源文档', content = '项目采用 SQLite，保留中文决策。') => write('material.create', { topicId, title, content, kind: 'markdown' });
 const ref = (row: { id: string; revision: number; contentHash: string }) => ({ type: 'material', id: row.id, revision: row.revision, hash: row.contentHash });
+function evidenceSummaries(preview: { preview: unknown }) {
+  return (preview.preview as Array<{ detail: { evidenceSummaries: Array<Record<string, unknown>> } }>)[0].detail.evidenceSummaries;
+}
 const api = express();
 api.use(express.json());
 api.use((req, _res, next) => { (req as express.Request & { actor: Actor }).actor = ownerActor; next(); });
@@ -431,6 +434,76 @@ describe('knowledge evidence and review closed loops', () => {
     await commands.submit(ownerActor, { requestId: 'undo-rename', commands: [{ kind: 'change.undo', targetId: renamed.changeId, input: {} }] });
     expect((await prisma.entity.findUniqueOrThrow({ where: { id: entity.id } })).name).toBe('存储');
     expect(readLabels((await prisma.memory.findFirstOrThrow({ where: { title: '甲' } })).labels)).toEqual(['存储']);
+  });
+
+  it('puts scoped evidence summaries on the memory preview and keeps titles out of preconditions', async () => {
+    const project = (await write('topic.create', { name: '依据清单' })).id as string;
+    const hidden = (await write('topic.create', { name: '隐藏清单' })).id as string;
+    const task = await write('task.update', { status: 'doing' }, (await write('task.create', { topicId: project, title: '依据任务' })).id, 1);
+    const source = await material(project, '依据材料', '材料正文只出现在来源里');
+    const prior = await write('memory.create', { topicId: project, title: '依据记忆', content: '记忆正文只出现在来源里', evidence: [{ type: 'material', id: source.id, revision: source.revision }] });
+    const secret = await material(hidden, '越权标题不应出现', '越权正文不应出现');
+    const inbox = await write('task.create', { topicId: null, title: '收集箱依据' });
+    const preview = await commands.preview(ownerActor, { commands: [{ kind: 'memory.create', input: { topicId: project, title: '新记忆', content: '待确认正文', evidence: [
+      { type: 'task', id: task.id, revision: task.revision },
+      { type: 'material', id: source.id, revision: source.revision },
+      { type: 'memory', id: prior.id, revision: prior.revision },
+    ] } }] });
+    const summaries = evidenceSummaries(preview);
+    expect(summaries).toEqual([
+      { type: 'task', id: task.id, revision: task.revision, title: '依据任务', topicId: project, topicName: '依据清单', status: 'doing' },
+      { type: 'material', id: source.id, revision: source.revision, title: '依据材料', topicId: project, topicName: '依据清单' },
+      { type: 'memory', id: prior.id, revision: prior.revision, title: '依据记忆', topicId: project, topicName: '依据清单' },
+    ]);
+    for (const summary of summaries) expect(summary).not.toHaveProperty('content');
+    expect(JSON.stringify(summaries)).not.toContain('材料正文只出现在来源里');
+    expect(JSON.stringify(summaries)).not.toContain('记忆正文只出现在来源里');
+    const inboxPreview = await commands.preview(ownerActor, { commands: [{ kind: 'memory.create', input: { topicId: null, title: '收集箱记忆', content: '挂在收集箱', evidence: [{ type: 'task', id: inbox.id, revision: inbox.revision }] } }] });
+    expect(evidenceSummaries(inboxPreview)).toEqual([{ type: 'task', id: inbox.id, revision: inbox.revision, title: '收集箱依据', topicId: null, topicName: null, status: 'todo' }]);
+
+    const timestamp = new Date().toISOString();
+    const connection = await prisma.connection.create({ data: { name: '依据连接', host: 'codex', tokenHash: randomUUID(), topicIds: JSON.stringify([project]), includeInbox: true, autoActions: '[]', createdAt: timestamp, updatedAt: timestamp } });
+    const actor = actorFromConnection(connection);
+    await expect(commands.submit(actor, { requestId: randomUUID(), commands: [{ kind: 'memory.create', input: { topicId: project, title: '越权候选', content: '不应写入', evidence: [{ type: 'material', id: secret.id, revision: secret.revision }] } }] })).rejects.toMatchObject({ code: 'SCOPE_DENIED', message: expect.not.stringContaining('越权标题不应出现') });
+    expect(await prisma.proposal.count({ where: { commands: { contains: '越权候选' } } })).toBe(0);
+    expect(await prisma.memory.count({ where: { title: '越权候选' } })).toBe(0);
+    await expect(commands.submit(actor, { requestId: randomUUID(), commands: [{ kind: 'memory.create', input: { topicId: project, title: '过期依据', content: '版本不对', evidence: [{ type: 'material', id: source.id, revision: source.revision + 9 }] } }] })).rejects.toMatchObject({ code: 'SOURCE_STALE' });
+
+    const titled = await material(project, '批准前标题', '材料正文保持不变');
+    const pending = await commands.submit(actor, { requestId: randomUUID(), commands: [{ kind: 'memory.create', input: { topicId: project, title: '待确认记忆', content: '确认后写入', evidence: [{ type: 'material', id: titled.id, revision: titled.revision }] } }] });
+    const stored = await prisma.proposal.findUniqueOrThrow({ where: { id: pending.proposalId } });
+    expect(stored.preconditions).not.toContain('批准前标题');
+    expect(JSON.parse(stored.preview)[0].detail.evidenceSummaries).toEqual([{ type: 'material', id: titled.id, revision: titled.revision, title: '批准前标题', topicId: project, topicName: '依据清单' }]);
+    const visible = await commands.get(actor, pending.proposalId);
+    expect(visible.preview[0].detail.evidenceSummaries[0].title).toBe('批准前标题');
+    await prisma.material.update({ where: { id: titled.id }, data: { title: '批准后标题' } });
+    expect((await prisma.material.findUniqueOrThrow({ where: { id: titled.id } })).revision).toBe(titled.revision);
+    const approved = await commands.approve(ownerActor, pending.proposalId, { requestId: randomUUID(), expectedRevision: pending.proposalRevision });
+    expect(approved.status).toBe('applied');
+    expect(approved.results[0].title).toBe('待确认记忆');
+  });
+
+  it('degrades retire evidence that can no longer be read and does not leak a hidden title', async () => {
+    const project = (await write('topic.create', { name: '退役清单' })).id as string;
+    const hidden = (await write('topic.create', { name: '退役隐藏清单' })).id as string;
+    const source = await material(project, '仍可读的材料', '可见正文');
+    const secret = await material(hidden, '退役越权标题', '退役越权正文');
+    const memory = await write('memory.create', { topicId: project, title: '将退役', content: '仍在', evidence: [{ type: 'material', id: source.id, revision: source.revision }] });
+    const preview = await commands.preview(ownerActor, { commands: [{ kind: 'memory.retire', targetId: memory.id, expectedRevision: memory.revision, input: { evidence: [
+      { type: 'material', id: source.id, revision: source.revision },
+      { type: 'task', id: 'missing-evidence-task', revision: 4 },
+    ] } }] });
+    const summaries = evidenceSummaries(preview);
+    expect(summaries[0]).toMatchObject({ type: 'material', id: source.id, revision: source.revision, title: '仍可读的材料', topicId: project, topicName: '退役清单' });
+    expect(summaries[0]).not.toHaveProperty('content');
+    expect(summaries[0]).not.toHaveProperty('status');
+    expect(summaries[1]).toEqual({ type: 'task', id: 'missing-evidence-task', revision: 4, unavailable: true });
+    const timestamp = new Date().toISOString();
+    const connection = await prisma.connection.create({ data: { name: '退役连接', host: 'codex', tokenHash: randomUUID(), topicIds: JSON.stringify([project]), autoActions: '[]', createdAt: timestamp, updatedAt: timestamp } });
+    const hiddenPreview = await commands.preview(actorFromConnection(connection), { commands: [{ kind: 'memory.retire', targetId: memory.id, expectedRevision: memory.revision, input: { evidence: [{ type: 'material', id: secret.id, revision: secret.revision }] } }] });
+    expect(evidenceSummaries(hiddenPreview)).toEqual([{ type: 'material', id: secret.id, revision: secret.revision, unavailable: true }]);
+    expect(JSON.stringify(hiddenPreview.preview)).not.toContain('退役越权标题');
+    expect(JSON.stringify(hiddenPreview.preview)).not.toContain('退役越权正文');
   });
 });
 
