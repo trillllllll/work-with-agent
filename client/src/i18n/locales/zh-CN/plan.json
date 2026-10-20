@@ -106,6 +106,8 @@
     "resizeHint": "拖动调整时间；也可在任务详情中编辑",
     "more_other": "还有 {{count}} 个",
     "moreTasks_other": "查看{{date}}其余{{count}}个任务",
+    "laneMore": "+{{count}}",
+    "laneMoreLabel_other": "还有 {{count}} 个重叠任务，{{start}}–{{end}}，点击查看",
     "overlapTitle": "重叠任务",
     "overlapDescription": "{{day}} · 打开任务可调整安排时间。",
     "overlapEmpty": "这些任务已完成或已移出当前范围。",

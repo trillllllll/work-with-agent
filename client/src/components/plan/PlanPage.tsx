@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { usePageContext } from '@/lib/assistant-context.js';
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { DndContext, DragOverlay, PointerSensor, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent, type DragMoveEvent, type DragStartEvent, type DragOverEvent } from '@dnd-kit/core';
 import type { Tag, Task, Topic } from '@/lib/api.js';
 import { useLocalDate, useTasks } from '@/hooks/useTodo.js';
@@ -19,7 +19,7 @@ import { TimeBandLayer } from './TimeBandLayer.js';
 import { TimeBandControls } from './TimeBandDialog.js';
 import { usePlanTimeBands } from './usePlanTimeBands.js';
 import { ChevronLeft, ChevronRight, PanelRight, X } from 'lucide-react';
-import { groupTimedBlocks, stackFit } from '@/lib/plan-layout.js';
+import { laneCap, layoutLanes, type LaneMore } from '@/lib/plan-layout.js';
 
 type Mode = 'day' | 'week' | 'month';
 function readPlanMode(): Mode {
@@ -43,9 +43,6 @@ type Props = {
 };
 const hourHeight = 56;
 const timelineHeight = hourHeight * 24;
-const stackRowPx = 26;
-const stackRowWeekPx = 22;
-const stackMorePx = 18;
 const weekdayIds = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
 function dateLabel(value: string, options: Intl.DateTimeFormatOptions) {
   const [year, month, day] = value.split('-').map(Number);
@@ -58,9 +55,9 @@ function DropTarget({ id, className, style, children }: { id: string; className?
   const { setNodeRef, isOver } = useDroppable({ id });
   return <div ref={setNodeRef} data-drop-id={id} style={style} className={cn(className, isOver && 'bg-primary/10 outline-2 outline-primary/40')}>{children}</div>;
 }
-function DragTask({ task, instance, busy, offset = 0, className, style, children }: { task: Task; instance: string; busy: boolean; offset?: number; className?: string; style?: CSSProperties; children: ReactNode }) {
+function DragTask({ task, instance, busy, offset = 0, className, style, lane, laneCount, children }: { task: Task; instance: string; busy: boolean; offset?: number; className?: string; style?: CSSProperties; lane?: number; laneCount?: number; children: ReactNode }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `${task.id}:${instance}`, data: { task, offset }, disabled: busy });
-  return <div ref={setNodeRef} style={{ ...style, touchAction: 'manipulation' }} className={cn(className, isDragging && 'opacity-40')} {...listeners} {...attributes}>{children}</div>;
+  return <div ref={setNodeRef} style={{ ...style, touchAction: 'manipulation' }} className={cn(className, isDragging && 'opacity-40')} {...listeners} {...attributes} data-lane={lane} data-lane-count={laneCount}>{children}</div>;
 }
 function ResizeHandle({ task, edge, busy, onOpen }: { task: Task; onOpen: Props['onOpen']; edge: 'start' | 'end'; busy: boolean }) {
   const { t } = useTranslation('plan');
@@ -71,72 +68,59 @@ function Check({ task, busy, onToggle }: { task: Task; busy: boolean; onToggle: 
   const { t } = useTranslation('plan');
   return <input type="checkbox" className="task-checkbox size-4 shrink-0 accent-primary" checked={task.status === 'done'} disabled={busy} aria-label={t(task.status === 'done' ? 'plan.reopenTask' : 'plan.completeTask', { title: task.title })} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} onChange={() => { void Promise.resolve(onToggle(task)).catch(() => undefined); }} />;
 }
-function TimedTask({ block, dateKey, busy, compact = false, onOpen, onToggle }: { block: TimedBlock; dateKey: string; busy: boolean; compact?: boolean; onOpen: Props['onOpen']; onToggle: Props['onToggle'] }) {
+function clock(min: number) {
+  if (min >= 1440) return '24:00';
+  const value = Math.max(0, Math.floor(min));
+  return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
+}
+function timedRange(block: TimedBlock) {
+  return `${block.startsHere ? formatTime(block.task.scheduledStart!) : '00:00'}—${block.endsHere ? formatTime(block.task.scheduledEnd!) : '24:00'}`;
+}
+function TimedTask({ block, dateKey, busy, left, width, lane, laneCount, onOpen, onToggle }: { block: TimedBlock; dateKey: string; busy: boolean; left: number; width: number; lane: number; laneCount: number; onOpen: Props['onOpen']; onToggle: Props['onToggle'] }) {
   const { t } = useTranslation('plan');
   const task = block.task;
   const height = block.point ? 28 : Math.max(24, (block.endMin - block.startMin) / 60 * hourHeight - 2);
   const top = Math.min(block.startMin / 60 * hourHeight, timelineHeight - height);
   const offset = minutesBetween(task.scheduledStart!, addMinutes(`${dateKey}T00:00`, block.startMin));
-  return <DragTask task={task} instance={dateKey} offset={offset} busy={busy} className="pointer-events-auto absolute z-[2]" style={{ top, height, left: `calc(${block.lane / block.laneCount * 100}% + 2px)`, width: `calc(${100 / block.laneCount}% - 4px)` }}>
-    <article data-testid="task-block" data-task-id={task.id} data-date={dateKey} data-point={block.point} title={t('plan.blockTitle', { title: task.title, schedule: scheduleLabel(task) })} className={cn('plan-timed-task relative h-full overflow-hidden rounded-md border px-1.5 text-xs leading-tight', compact && 'plan-timed-task-compact', block.point ? 'flex items-center border-dashed' : 'pt-2 pb-1', task.status === 'done' && 'opacity-55 line-through')}>
+  const range = timedRange(block);
+  const showInline = !block.point && height < 44;
+  const title = <>{block.point && <span>● {formatTime(task.scheduledStart!)} </span>}{!block.startsHere && '↳ '}{task.title}</>;
+  return <DragTask task={task} instance={dateKey} offset={offset} busy={busy} lane={lane} laneCount={laneCount} className="plan-lane-card pointer-events-auto absolute z-[2]" style={{ top, height, left: `calc(${left * 100}% + 2px)`, width: `calc(${width * 100}% - 4px)` }}>
+    <article data-testid="task-block" data-task-id={task.id} data-date={dateKey} data-point={block.point} title={t('plan.blockTitle', { title: task.title, schedule: scheduleLabel(task) })} className={cn('plan-timed-task relative h-full overflow-hidden rounded-md border px-1.5 text-xs leading-tight', block.point ? 'flex items-center border-dashed' : 'pt-2 pb-1', task.status === 'done' && 'opacity-55 line-through')}>
       {!block.point && block.startsHere && <ResizeHandle task={task} edge="start" busy={busy} onOpen={onOpen} />}
       <div className="flex min-w-0 items-start gap-1">
         <Check task={task} busy={busy} onToggle={onToggle} />
         <button type="button" className="min-w-0 flex-1 text-left" aria-label={t('plan.openTask', { title: task.title })} onClick={() => onOpen(task.id)}>
-          <span className="plan-task-title block">{block.point && <span>● {formatTime(task.scheduledStart!)} </span>}{!block.startsHere && '↳ '}{task.title}</span>
-          {height >= 44 && <span className="block truncate text-[10px] text-muted-foreground tabular-nums">{block.startsHere ? formatTime(task.scheduledStart!) : '00:00'}—{block.endsHere ? formatTime(task.scheduledEnd!) : '24:00'}</span>}
+          {showInline ? <span className="flex w-full min-w-0 items-start gap-1"><span className="plan-task-title min-w-0 flex-1">{title}</span><span className="plan-timed-when-inline shrink-0 whitespace-nowrap text-[10px] text-muted-foreground tabular-nums">{range}</span></span> : <span className="plan-task-title block">{title}</span>}
+          {height >= 44 && <span className="plan-timed-when block truncate text-[10px] text-muted-foreground tabular-nums">{range}</span>}
         </button>
       </div>
       {!block.point && block.endsHere && <ResizeHandle task={task} edge="end" busy={busy} onOpen={onOpen} />}
     </article>
   </DragTask>;
 }
+function LaneMoreButton({ more, onOpen }: { more: LaneMore; onOpen: (button: HTMLButtonElement, taskIds: string[]) => void }) {
+  const { t } = useTranslation('plan');
+  const height = Math.max(24, (more.endMin - more.startMin) / 60 * hourHeight - 2);
+  const top = Math.min(more.startMin / 60 * hourHeight, timelineHeight - height);
+  const count = more.blocks.length;
+  return <button type="button" data-testid="plan-lane-more" aria-haspopup="dialog" className="plan-lane-more pointer-events-auto absolute z-[3]" style={{ top, height, left: `calc(${more.left * 100}% + 2px)`, width: `calc(${more.width * 100}% - 4px)` }} aria-label={t('plan.laneMoreLabel', { count, start: clock(more.startMin), end: clock(more.endMin) })} title={more.blocks.map((block) => `${clock(block.startMin)}—${clock(block.endMin)} ${block.task.title}`).join('\n')} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => onOpen(event.currentTarget, more.blocks.map((block) => block.task.id))}>{t('plan.laneMore', { count })}</button>;
+}
 function NowLine({ dateKey, today }: { dateKey: string; today: string }) {
   const [now, setNow] = useState(localDateTime);
   useEffect(() => { const timer = window.setInterval(() => setNow(localDateTime()), 30000); return () => window.clearInterval(timer); }, []);
   return dateKey === today ? <div className="pointer-events-none absolute inset-x-0 z-10 h-0.5 bg-destructive" style={{ top: minutesOf(now) / 60 * hourHeight }} /> : null;
 }
-function stackRange(block: TimedBlock) {
-  if (block.point) return formatTime(block.task.scheduledStart!);
-  return `${block.startsHere ? formatTime(block.task.scheduledStart!) : '00:00'}—${block.endsHere ? formatTime(block.task.scheduledEnd!) : '24:00'}`;
-}
-function TaskStack({ group, dateKey, week, busy, onOpen, onToggle, onMore }: { group: TimedBlock[]; dateKey: string; week: boolean; busy: boolean; onOpen: Props['onOpen']; onToggle: Props['onToggle']; onMore: (trigger: HTMLButtonElement, hidden: TimedBlock[]) => void }) {
-  const { t } = useTranslation('plan');
-  const start = group[0].startMin;
-  const end = Math.max(...group.map((block) => Math.max(block.endMin, block.startMin + 30)));
-  const height = Math.max(24, (end - start) / 60 * hourHeight - 2);
-  const top = Math.min(start / 60 * hourHeight, timelineHeight - height);
-  const fit = stackFit(height, week ? stackRowWeekPx : stackRowPx, stackMorePx, group.length);
-  const visible = group.slice(0, fit.shown);
-  const hidden = group.slice(fit.shown);
-  return <div data-testid="plan-stack" data-date={dateKey} className="plan-stack pointer-events-auto absolute inset-x-1 z-[3]" style={{ top, height }}>
-    {visible.map((block, index) => {
-      const task = block.task;
-      const inlineMore = !fit.moreLine && hidden.length > 0 && index === visible.length - 1;
-      const offset = minutesBetween(task.scheduledStart!, addMinutes(`${dateKey}T00:00`, block.startMin));
-      return <DragTask key={block.id} task={task} instance={dateKey} offset={offset} busy={busy} className="plan-stack-row">
-        <div data-testid="task-block" data-task-id={task.id} data-date={dateKey} data-point={block.point} title={t('plan.blockTitle', { title: task.title, schedule: scheduleLabel(task) })} className={cn('flex min-w-0 flex-1 items-center gap-1', task.status === 'done' && 'opacity-55 line-through')}>
-          <Check task={task} busy={busy} onToggle={onToggle} />
-          <button type="button" className="min-w-0 flex-1 text-left" aria-label={t('plan.openTask', { title: task.title })} onClick={() => onOpen(task.id)}>
-            <span className="plan-task-title block">{!block.startsHere && '↳ '}{task.title}</span>
-          </button>
-          <span className="plan-stack-when">{stackRange(block)}</span>
-          {inlineMore && <button type="button" data-testid="plan-stack-more" className="plan-stack-more shrink-0" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onMore(event.currentTarget, hidden); }}>{t('plan.more', { count: hidden.length })}</button>}
-        </div>
-      </DragTask>;
-    })}
-    {fit.moreLine && hidden.length > 0 && <button type="button" data-testid="plan-stack-more" className="plan-stack-more plan-stack-more-line" onClick={(event) => onMore(event.currentTarget, hidden)}>{t('plan.more', { count: hidden.length })}</button>}
-  </div>;
-}
 const allDayPreviewLimit = 2;
-function Timeline({ days, tasks, today, busy, bands, allDayOpen, onAllDayOpen, onOpen, onToggle, onCreate }: { days: string[]; tasks: Task[]; today: string; busy: boolean; bands: readonly PlanTimeBand[]; allDayOpen: boolean | null; onAllDayOpen: (open: boolean) => void; onOpen: Props['onOpen']; onToggle: Props['onToggle']; onCreate: (value: ScheduleValue) => void }) {
+function Timeline({ days, tasks, today, busy, bands, allDayOpen, onAllDayOpen, onOpen, onToggle, onCreate, activeTaskId }: { days: string[]; tasks: Task[]; today: string; busy: boolean; bands: readonly PlanTimeBand[]; allDayOpen: boolean | null; onAllDayOpen: (open: boolean) => void; onOpen: Props['onOpen']; onToggle: Props['onToggle']; onCreate: (value: ScheduleValue) => void; activeTaskId: string | null }) {
   const { t } = useTranslation('plan');
   const scroller = useRef<HTMLDivElement>(null);
   const calendar = useRef<HTMLDivElement>(null);
   const overlapOpener = useRef<HTMLButtonElement | null>(null);
   const openingTask = useRef(false);
   const [overlap, setOverlap] = useState<{ day: string; taskIds: string[] } | null>(null);
-  const overlapTasks = overlap ? tasks.filter((task) => overlap.taskIds.includes(task.id)) : [];
+  const [laneCaps, setLaneCaps] = useState<Record<string, number>>({});
+  const overlapTasks = overlap ? overlap.taskIds.flatMap((id) => { const task = tasks.find((item) => item.id === id); return task ? [task] : []; }) : [];
   const week = days.length === 7;
   const columns = `${planTimeline.hourGutter}px repeat(${days.length}, minmax(0, 1fr))`;
   const bandDays = new Set(days.filter((day) => resolveTimeBandSegments(bands, isoWeekday(day)).length > 0));
@@ -144,6 +128,22 @@ function Timeline({ days, tasks, today, busy, bands, allDayOpen, onAllDayOpen, o
   const hasAllDay = [...allDayByDay.values()].some((items) => items.length > 0);
   const allDayExpanded = allDayOpen ?? ![...allDayByDay.values()].some((items) => items.length > allDayPreviewLimit);
   useEffect(() => { if (scroller.current) scroller.current.scrollTop = Math.max(0, minutesOf(localDateTime()) / 60 * hourHeight - 120); }, [days[0], days.length]);
+  useLayoutEffect(() => {
+    const root = calendar.current;
+    if (!root) return;
+    const measure = () => {
+      const next: Record<string, number> = {};
+      for (const lane of root.querySelectorAll<HTMLElement>('[data-testid="plan-task-lane"]')) {
+        const day = lane.closest<HTMLElement>('[data-testid="time-band-day"]')?.dataset.date;
+        if (day) next[day] = laneCap(lane.clientWidth);
+      }
+      setLaneCaps((prev) => Object.keys(next).some((day) => (prev[day] ?? laneCap(0)) !== next[day]) ? next : prev);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    for (const lane of root.querySelectorAll<HTMLElement>('[data-testid="plan-task-lane"]')) observer.observe(lane);
+    return () => observer.disconnect();
+  }, [days[0], days.length]);
   return <><div ref={calendar} role="region" aria-label={t('plan.grid')} tabIndex={-1} data-testid="calendar-horizontal-scroll" data-plan-span={days.length > 1 ? 'week' : 'day'} className={cn('plan-calendar min-w-0 overflow-x-auto', days.length > 1 && 'plan-calendar-week')}><div style={{ minWidth: planTimelineMinWidth(days.length) }}>
     <div className="grid" style={{ gridTemplateColumns: columns }}>
       <div className="min-h-0 self-start p-1 text-center text-[10px] text-muted-foreground">{hasAllDay ? <button type="button" aria-expanded={allDayExpanded} aria-label={allDayExpanded ? t('plan.collapseAllDay') : t('plan.expandAllDay')} className="flex w-full flex-col items-center gap-0.5 rounded py-1 hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]" onClick={() => onAllDayOpen(!allDayExpanded)}><span className="disclosure-chevron" data-open={allDayExpanded || undefined} aria-hidden="true" />{t('plan.allDay')}</button> : t('plan.allDay')}</div>
@@ -165,6 +165,7 @@ function Timeline({ days, tasks, today, busy, bands, allDayOpen, onAllDayOpen, o
         <div>{Array.from({ length: 24 }, (_, hour) => <div key={hour} className="border-b border-[var(--glass-divider)] pr-1 text-right text-[10px] tabular-nums text-muted-foreground" style={{ height: hourHeight }}>{String(hour).padStart(2, '0')}:00</div>)}</div>
         {days.map((day) => {
           const banded = bandDays.has(day);
+          const { placed, mores } = layoutLanes(layoutTimed(tasks, day), laneCaps[day] ?? laneCap(0), { pinnedTaskId: activeTaskId ?? undefined });
           return <div key={day} data-testid="time-band-day" data-date={day} data-band-rail={banded ? 'true' : 'false'} className="relative isolate border-l border-[var(--glass-divider)]">
             <TimeBandLayer bands={bands} dateKey={day} />
             {banded && !week && <div data-testid="time-band-rail" className="pointer-events-none absolute inset-y-0 z-[1] border-r border-[var(--glass-divider)]" style={{ width: 'var(--plan-band-rail, 112px)' }} />}
@@ -175,7 +176,8 @@ function Timeline({ days, tasks, today, busy, bands, allDayOpen, onAllDayOpen, o
             })}
             {Array.from({ length: 24 }, (_, hour) => <div key={hour} className="pointer-events-none absolute inset-x-0 z-[1] border-b border-[var(--glass-divider)]" style={{ top: hour * hourHeight, height: hourHeight }} />)}
             <div data-testid="plan-task-lane" className="pointer-events-none absolute inset-y-0 right-0 z-[2]" style={{ left: banded && !week ? 'var(--plan-band-rail, 112px)' : 0 }}>
-              {groupTimedBlocks(layoutTimed(tasks, day)).map((group) => (week ? group.length > 1 : group.length > 2) ? <TaskStack key={group[0].id} group={group} dateKey={day} week={week} busy={busy} onOpen={onOpen} onToggle={onToggle} onMore={(trigger, hidden) => { overlapOpener.current = trigger; openingTask.current = false; setOverlap({ day, taskIds: hidden.map((block) => block.task.id) }); }} /> : group.map((block) => <TimedTask key={block.id} block={block} dateKey={day} compact={group.length > 1} busy={busy} onOpen={onOpen} onToggle={onToggle} />))}
+              {placed.map((item) => <TimedTask key={item.block.id} block={item.block} dateKey={day} left={item.left} width={item.width} lane={item.lane} laneCount={item.laneCount} busy={busy} onOpen={onOpen} onToggle={onToggle} />)}
+              {mores.map((more) => <LaneMoreButton key={more.id} more={more} onOpen={(button, taskIds) => { overlapOpener.current = button; openingTask.current = false; setOverlap({ day, taskIds }); }} />)}
             </div>
             <NowLine dateKey={day} today={today} />
           </div>;
@@ -221,6 +223,7 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
   const [trayFilter, setTrayFilter] = useState('unplanned');
   const [search, setSearch] = useState('');
   const [dragging, setDragging] = useState<Task | null>(null);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ task: Task; patch: SchedulePatch } | null>(null);
   const [creating, setCreating] = useState<ScheduleValue | null>(null);
   const previewRef = useRef(preview);
@@ -236,7 +239,7 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
   const tray = useMemo(() => (trayQuery.data ?? []).filter((task) => (trayFilter === 'all' || (trayFilter === 'unplanned' ? !scheduleDateKey(task) : Boolean(scheduleDateKey(task)))) && task.title.toLocaleLowerCase().includes(search.toLocaleLowerCase())).sort((a, b) => Number(isOverdue(b, today)) - Number(isOverdue(a, today)) || (scheduleDateKey(a) ?? '').localeCompare(scheduleDateKey(b) ?? '') || a.id.localeCompare(b.id)), [trayQuery.data, trayFilter, search, today]);
   const disabled = busy || saving;
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
-  const clearDrag = () => { setDragging(null); setPreview(null); previewRef.current = null; dragData.current = null; };
+  const clearDrag = () => { setDragging(null); setActiveTaskId(null); setPreview(null); previewRef.current = null; dragData.current = null; };
   const save = async (task: Task, patch: SchedulePatch) => {
     if (saveLock.current) return;
     saveLock.current = true; setSaving(true);
@@ -247,6 +250,7 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
     const data = event.active.data.current;
     dragData.current = data ? { task: data.task, edge: data.edge, offset: data.offset } : null;
     setDragging(data?.edge ? null : data?.task ?? null);
+    setActiveTaskId(data?.task?.id ?? null);
   };
   const onDragMove = (event: DragMoveEvent) => {
     const data = dragData.current;
@@ -292,7 +296,7 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
       </div>
       {error ? <p role="alert" className="text-destructive">{error.message}</p> : planned.isLoading || trayQuery.isLoading ? <p className="py-12 text-center text-muted-foreground">{t('shared.loadingTasks')}</p> : <div className="plan-layout" data-tray-open={trayOpen || undefined}>
         <div className="min-w-0">
-          {mode !== 'month' ? <Timeline days={days} tasks={tasks} today={today} busy={disabled} bands={timeBands.data?.bands ?? []} allDayOpen={allDayOpen} onAllDayOpen={(open) => { setAllDayOpen(open); localStorage.setItem('todo.plan.allDayOpen', String(open)); }} onOpen={onOpen} onToggle={onToggle} onCreate={setCreating} /> : <div className="overflow-x-auto"><div className="min-w-[560px]">
+          {mode !== 'month' ? <Timeline days={days} tasks={tasks} today={today} busy={disabled} bands={timeBands.data?.bands ?? []} allDayOpen={allDayOpen} onAllDayOpen={(open) => { setAllDayOpen(open); localStorage.setItem('todo.plan.allDayOpen', String(open)); }} onOpen={onOpen} onToggle={onToggle} onCreate={setCreating} activeTaskId={activeTaskId} /> : <div className="overflow-x-auto"><div className="min-w-[560px]">
             <div className="grid grid-cols-7 py-2 text-center text-xs text-muted-foreground">{weekdayIds.map((day) => <div key={day}>{t(`weekday.${day}.narrow`)}</div>)}</div>
             <div className="grid grid-cols-7">{days.map((day) => {
               const items = tasks.filter((task) => occursOn(task, day)).sort((a, b) => (a.scheduledStart ?? '').localeCompare(b.scheduledStart ?? '') || a.id.localeCompare(b.id));
