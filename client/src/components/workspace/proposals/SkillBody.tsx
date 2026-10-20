@@ -7,11 +7,9 @@ export function SkillBody({ item, editing, onChange }: { item: ProposalItem; edi
   const { t } = useTranslation('proposals');
   const input = item.command.input ?? {};
   const name = stringOf(input.name) || stringOf(item.detail.name) || item.title || t('head.untitled');
-  const enabledAfter = item.created && input.enabled !== false;
   return (
     <div className="space-y-3">
       <h3 className="text-sm font-medium">{name}</h3>
-      {enabledAfter ? <p className="text-sm text-muted-foreground">{t('skill.enabledAfter')}</p> : null}
       <CommandFields item={item} editing={editing} onChange={onChange} omitKeys={['name']} />
     </div>
   );

@@ -10,7 +10,7 @@ import { impactLine, previewText, topicChips, typeLine, type TopicRef } from './
 import type { Proposal } from './types.js';
 
 function MetaSep() {
-  return <span aria-hidden="true"> · </span>;
+  return <span aria-hidden="true" className="mx-1">·</span>;
 }
 
 export function ProposalOrigin({ actorId, connectionId, connections, createdAt }: { actorId: string; connectionId?: string | null; connections?: ConnectionName[]; createdAt: string }) {
@@ -53,7 +53,7 @@ export function ProposalFrame({ proposal, analysis, connections, topics, state, 
   const targetIds = [...new Set(analysis.items.map((item) => item.command.targetId).filter((id): id is string => Boolean(id)))];
   const rawPreview = previewText(proposal.preview);
   return (
-    <article data-testid="proposal-card" data-proposal-id={proposal.id} data-state={state} className="glass-subtle space-y-4 rounded-xl p-4">
+    <article data-testid="proposal-card" data-proposal-id={proposal.id} data-state={state} className="proposal-card glass-subtle space-y-4 rounded-xl p-4">
       <div className="flex items-start gap-3">
         {selectable ? <input className="mt-1 size-4 shrink-0 accent-primary" type="checkbox" checked={selected} disabled={selectionLocked} aria-label={t('bulk.selectOne', { title: analysis.title })} onChange={(event) => onSelected(event.target.checked)} /> : null}
         <div className="min-w-0 flex-1">

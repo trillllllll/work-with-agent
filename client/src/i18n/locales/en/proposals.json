@@ -113,7 +113,6 @@
     "basedOn": "Based on version {{revision}}. Only this task is affected"
   },
   "skill": {
-    "enabledAfter": "Enabled after you confirm",
     "instructions": "Instructions",
     "name": "Name",
     "description": "Description"

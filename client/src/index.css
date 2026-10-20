@@ -2617,3 +2617,22 @@ textarea.task-title.line-through {
   padding-top: 2rem;
   border-top: 1px solid var(--glass-divider);
 }
+
+/* Review queue (待确认) cards */
+.proposal-card { container: task-batch / inline-size; }
+.proposal-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  white-space: nowrap;
+}
+.proposal-chip[data-tone="warning"] { border-color: color-mix(in srgb, #d97706 45%, transparent); background: color-mix(in srgb, #d97706 12%, transparent); color: color-mix(in srgb, #b45309 85%, var(--foreground)); }
+.proposal-chip[data-tone="success"] { border-color: color-mix(in srgb, #16a34a 40%, transparent); background: color-mix(in srgb, #16a34a 12%, transparent); color: color-mix(in srgb, #15803d 85%, var(--foreground)); }
+.proposal-chip[data-tone="info"] { border-color: color-mix(in srgb, #4772FA 40%, transparent); background: color-mix(in srgb, #4772FA 12%, transparent); color: color-mix(in srgb, #3459d6 85%, var(--foreground)); }
+.proposal-chip[data-tone="danger"] { border-color: color-mix(in srgb, #dc2626 40%, transparent); background: color-mix(in srgb, #dc2626 12%, transparent); color: color-mix(in srgb, #b91c1c 85%, var(--foreground)); }

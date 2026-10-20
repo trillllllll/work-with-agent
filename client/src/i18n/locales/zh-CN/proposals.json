@@ -113,7 +113,6 @@
     "basedOn": "基于版本 {{revision}}，只影响这一个任务"
   },
   "skill": {
-    "enabledAfter": "确认后默认启用",
     "instructions": "技能说明",
     "name": "名称",
     "description": "说明"
