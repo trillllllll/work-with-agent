@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import type { ContentBlock } from '@/lib/message-blocks.js';
 import { buildCsp, buildSrcdoc, clampHeight, createNavigationGuard, createNonce, DEFAULT_HEIGHT, FILL_THROTTLE_MS, readBridgeMessage, themeCss, type SandboxTheme } from '@/lib/html-sandbox.js';
 import { save, VisualFrame } from './VisualizationBlock.js';
+import { lazyObserverOptions } from './html-block-visibility.js';
 import { useAssistantInput } from './assistant-input.js';
 
 export type HtmlBlockSettings = { enabled: boolean; cdn: string[]; defaults: string[] };
@@ -92,8 +93,9 @@ export default memo(function HtmlBlock({ block }: { block: ContentBlock }) {
   const title = block.title || t('html.defaultTitle');
   useEffect(() => {
     if (visible || !host.current) return;
-    const observer = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting)) { setVisible(true); observer.disconnect(); } }, { rootMargin: '300px' });
-    observer.observe(host.current);
+    const node = host.current;
+    const observer = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting)) { setVisible(true); observer.disconnect(); } }, lazyObserverOptions(node));
+    observer.observe(node);
     return () => observer.disconnect();
   }, [visible]);
   const cdn = settings.data?.cdn ?? [];
