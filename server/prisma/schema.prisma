@@ -676,6 +676,9 @@ model Orchestration {
   startedAt         String?
   endedAt           String?
   acceptedAt        String?
+  acceptanceNote    String?
+  rejectionReason   String?
+  rejectedAt        String?
   pushedAt          String?
   extraLocationsJson String @default("[]")
   publishedHead     String?

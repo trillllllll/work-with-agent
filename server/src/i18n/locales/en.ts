@@ -785,6 +785,8 @@ export const en: Record<string, string> = {
   "该位置还没有通过执行端验证": "This location has not been verified by an executor",
   "编排已变化": "The orchestration has changed",
   "编排已取消": "The orchestration was cancelled",
+  "打回必须填写理由": "A rejection must include a reason",
+  "编排已打回": "The orchestration was rejected",
   "步骤不存在": "Step does not exist",
   "只有等待处理的步骤可以重试": "Only a step waiting to be handled can be retried",
   "只有已提交的合入可以重新核对": "Only a submitted merge can be checked again",

@@ -45,7 +45,8 @@ export function createOrchestrationRouter() {
   router.post('/orchestrations/:id/pause', route((req) => orchestrations.pause(String(req.params.id))));
   router.post('/orchestrations/:id/resume', route((req) => orchestrations.resume(String(req.params.id))));
   router.post('/orchestrations/:id/cancel', route((req) => orchestrations.cancel(String(req.params.id))));
-  router.post('/orchestrations/:id/accept', route((req) => orchestrations.accept(String(req.params.id))));
+  router.post('/orchestrations/:id/accept', route((req) => orchestrations.accept(String(req.params.id), req.body)));
+  router.post('/orchestrations/:id/reject', route((req) => orchestrations.reject(String(req.params.id), req.body)));
   router.post('/orchestrations/:id/push', route((req) => orchestrations.push(String(req.params.id))));
   router.post('/orchestrations/:id/pull-request', route((req) => orchestrations.pullRequest(String(req.params.id), req.body)));
   router.get('/worktrees', route(() => worktrees.overview()));
