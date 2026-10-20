@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { parseModelJson, planSchema, sequentialPlan, validatePlan } from './application/orchestration/planner.js';
-import { checkDevelop, checkMerge, checkVerify, looksGitWriteDenied, looksRateLimited } from './application/orchestration/checks.js';
+import { checkDevelop, checkMerge, checkVerify, classifyFailure, failureKindFromStep, looksGitWriteDenied, looksRateLimited, noNewCommitProblem } from './application/orchestration/checks.js';
 import { columnsForRunReport } from './application/orchestration/nodes.js';
 import { slug } from './application/orchestration/service.js';
 import { NodeAgent } from './node-agent/agent.js';
@@ -71,6 +71,53 @@ describe('report comparisons', () => {
     expect(looksRateLimited('Error: 429 Too Many Requests')).toBe(true);
     expect(looksRateLimited('syntax error')).toBe(false);
     expect(looksGitWriteDenied("fatal: Unable to create '/r/.git/worktrees/x/index.lock': Read-only file system")).toBe(true);
+  });
+});
+
+describe('classifyFailure', () => {
+  const noCommit = checkDevelop({ result: result(), facts: facts({ head: 'aaaaaaa' }), base: 'aaaaaaa', branch: 'orch/x-r1-a-a1' }).problems.find((problem) => problem.includes(noNewCommitProblem))!;
+
+  it('returns null for user pauses and task revisions even when other signals are present', () => {
+    expect(classifyFailure({ pauseReason: 'user_paused', error: '429', exitCode: 1, hasResult: false })).toBeNull();
+    expect(classifyFailure({ pauseReason: 'task_revised', problems: [noCommit], checks: [{ passed: false }] })).toBeNull();
+  });
+
+  it('prefers rate_limit, then git_denied, then the exact no-commit problem', () => {
+    expect(classifyFailure({ pauseReason: 'rate_limited' })).toBe('rate_limit');
+    expect(classifyFailure({ error: 'HTTP 429', pauseReason: 'git_write_denied' })).toBe('rate_limit');
+    expect(classifyFailure({ stderr: 'usage limit reached' })).toBe('rate_limit');
+    expect(classifyFailure({ pauseReason: 'git_write_denied', problems: [noCommit] })).toBe('git_denied');
+    expect(classifyFailure({ error: "fatal: Unable to create 'index.lock': Read-only file system" })).toBe('git_denied');
+    expect(classifyFailure({ problems: [`前缀；${noCommit}`], checks: [{ passed: false }], facts: { unmerged: ['a.ts'] } })).toBe('no_commit');
+    expect(noCommit).toBe(noNewCommitProblem);
+  });
+
+  it('prefers merge conflicts over failed checks, then review reasons, then a missing CLI result', () => {
+    expect(classifyFailure({ pauseReason: 'merge_conflict_unresolved', checks: [{ passed: false }] })).toBe('merge_conflict');
+    expect(classifyFailure({ facts: { unmerged: ['a.ts'] }, checks: [{ passed: false }] })).toBe('merge_conflict');
+    expect(classifyFailure({ facts: { conflictMarkers: ['b.ts'] } })).toBe('merge_conflict');
+    expect(classifyFailure({ pauseReason: 'merge_tests_failed', decision: 'fail' })).toBe('tests_failed');
+    expect(classifyFailure({ checks: [{ passed: true }, { passed: false }] })).toBe('tests_failed');
+    expect(classifyFailure({ decision: 'fail', hasResult: false, exitCode: 2 })).toBe('review_failed');
+    expect(classifyFailure({ pauseReason: 'final_unsatisfied' })).toBe('review_failed');
+    expect(classifyFailure({ pauseReason: 'merge_unverified', hasResult: false })).toBe('review_failed');
+    expect(classifyFailure({ pauseReason: 'develop_failed', hasResult: true })).toBe('review_failed');
+    expect(classifyFailure({ pauseReason: 'develop_failed', hasResult: false })).toBe('cli_error');
+    expect(classifyFailure({ hasResult: false })).toBe('cli_error');
+    expect(classifyFailure({ exitCode: 2 })).toBe('cli_error');
+    expect(classifyFailure({ exitCode: 0 })).toBe('other');
+    expect(classifyFailure({ pauseReason: 'setup_failed' })).toBe('other');
+    expect(classifyFailure({ pauseReason: 'transfer_failed' })).toBe('other');
+    expect(classifyFailure({ pauseReason: 'invalid_model_output' })).toBe('other');
+    expect(classifyFailure({ pauseReason: 'node_offline' })).toBe('other');
+    expect(classifyFailure({})).toBe('other');
+  });
+
+  it('keeps a stored kind and otherwise classifies the step error the same way', () => {
+    expect(failureKindFromStep({ failureKind: 'cli_error', error: '429' }, 'rate_limited')).toBe('cli_error');
+    expect(failureKindFromStep({ failureKind: 'not-a-kind', error: `检查未通过：unit；${noNewCommitProblem}` }, 'develop_failed')).toBe('no_commit');
+    expect(failureKindFromStep({ failureKind: null, error: null }, 'user_paused')).toBe('other');
+    expect(failureKindFromStep({ error: '核对检查未通过：unit' }, 'merge_tests_failed')).toBe(classifyFailure({ pauseReason: 'merge_tests_failed', error: '核对检查未通过：unit', problems: ['核对检查未通过：unit'] }));
   });
 });
 

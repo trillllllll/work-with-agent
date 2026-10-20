@@ -166,6 +166,7 @@ export async function loadPriorRounds(taskId: string, excludeId?: string): Promi
         attempt: step.attempt,
         continueCount: step.continueCount,
         ...(paused && (step.status === 'needs_user' || step.status === 'failed') ? { pauseReason: paused } : {}),
+        ...(step.failureKind ? { failureKind: step.failureKind } : {}),
         error: step.error,
         review: review.get(step.id) ?? null,
         problems: problems.get(step.id) ?? [],

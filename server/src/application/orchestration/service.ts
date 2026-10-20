@@ -505,7 +505,7 @@ async function handleJob(row: Orchestration, step: OrchestrationStep, job: NodeJ
       // The commit is fine but did not reach the shared remote; the primary machine cannot merge it.
       const problem = run?.publishError ? `子任务分支推送到 origin 失败：${run.publishError.slice(-1000)}` : '子任务分支没有推送到 origin 中转';
       await event(row, 'transfer_check', 'server', step.id, { jobId: job.id, ok: false, problem });
-      if (!await applyFailure(step, job, { status: 'needs_user', error: problem }, { pauseReason: 'transfer_failed', error: problem, hasResult: !!result, exitCode: job.exitCode })) return;
+      if (!await applyFailure(step, job, { status: 'needs_user', error: problem }, { pauseReason: 'transfer_failed', error: problem })) return;
       await pauseOrchestration(row.id, 'transfer_failed', problem);
       return;
     }
@@ -520,7 +520,7 @@ async function handleJob(row: Orchestration, step: OrchestrationStep, job: NodeJ
         await event(row, 'ai_review', 'model', step.id, { jobId: job.id, value: review, raw: reply?.raw ?? null, rulesOnly: !reply });
       } catch (failure) {
         await event(row, 'ai_review_failed', 'model', step.id, { jobId: job.id, error: (failure as Error).message, raw: (failure as { raw?: string }).raw ?? null });
-        if (!await applyFailure(step, job, { status: 'needs_user', error: '主控模型审阅失败' }, { pauseReason: 'invalid_model_output', error: (failure as Error).message, hasResult: !!result, exitCode: job.exitCode })) return;
+        if (!await applyFailure(step, job, { status: 'needs_user', error: '主控模型审阅失败' }, { pauseReason: 'invalid_model_output', error: (failure as Error).message })) return;
         await pauseOrchestration(row.id, 'invalid_model_output');
         return;
       }

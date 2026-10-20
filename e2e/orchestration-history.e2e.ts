@@ -11,6 +11,7 @@ import { test, expect, type APIRequestContext, type Page } from '@playwright/tes
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
 const api = `http://127.0.0.1:${process.env.E2E_API_PORT ?? '3415'}`;
+const composer = '例如：创建任务：整理 API 文档';
 const mock = `http://127.0.0.1:${process.env.MOCK_OPENAI_PORT ?? '4410'}`;
 const repoRoot = process.cwd();
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { cwd, encoding: 'utf8' }).trim();
@@ -186,4 +187,28 @@ test('rejects with a required reason, redispatches with that summary, and accept
   await expect(history.getByTestId('ai-history-round')).toHaveCount(2);
   await expect(history.getByTestId('ai-history-verdict').filter({ hasText: reason })).toBeVisible();
   await expect(history.getByTestId('ai-history-verdict').filter({ hasText: note })).toBeVisible();
+});
+
+test('stats tab counts the rounds from this run, including the rejection', async ({ page }) => {
+  await page.goto('/#/runs?tab=stats');
+  await expect(page.getByTestId('runs-tab-stats')).toHaveAttribute('aria-selected', 'true');
+  await expect(page).toHaveURL(/tab=stats/);
+  const rounds = page.getByTestId('stats-card-rounds');
+  await expect(rounds).toBeVisible();
+  await expect.poll(async () => Number((await rounds.locator('.text-2xl').innerText()).replace(/[^\d]/g, ''))).toBeGreaterThanOrEqual(2);
+  await expect(page.getByTestId('stats-rejected')).toHaveText('1');
+  await expect(page.getByTestId('dispatch-stats')).toBeVisible();
+  await expect(page.getByTestId('stats-card-pass')).toBeVisible();
+  await expect(page.getByTestId('stats-failures')).toBeVisible();
+  await expect(page.getByTestId('stats-top-duration')).toBeVisible();
+});
+
+test('the assistant answers a dispatch-stats question from orchestration_stats', async ({ page }) => {
+  await page.goto('/');
+  if (!(await page.getByPlaceholder(composer).isVisible())) await page.getByRole('button', { name: '打开聊天', exact: true }).click();
+  await page.getByPlaceholder(composer).fill('统计这周 AI 派发');
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  await expect(page.getByText(/本周派发 \d+ 轮/)).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: '查询了 1 项' }).click();
+  await expect(page.getByText('派发统计', { exact: true })).toBeVisible();
 });
