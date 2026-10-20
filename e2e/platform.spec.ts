@@ -25,7 +25,7 @@ test('用户会话和连接权限覆盖旧 REST，提议经确认后才修改任
   expect((await e2eDatabase.task.findUniqueOrThrow({ where: { id: task.id } })).title).toBe('等待 AI 建议');
   await page.goto('/#/proposals');
   await expect(page.getByRole('heading', { name: '待确认', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '确认整组修改', exact: true }).click();
+  await page.getByTestId('proposal-card').getByRole('button', { name: '确认', exact: true }).click();
   await expect.poll(async () => (await e2eDatabase.task.findUniqueOrThrow({ where: { id: task.id } })).title).toBe('经用户确认的任务');
   await page.goto('/#/inbox');
   await expect(page.getByTestId(`task-row-${task.id}`)).toContainText('经用户确认的任务');
