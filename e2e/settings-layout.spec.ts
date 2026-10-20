@@ -10,8 +10,10 @@ test.beforeEach(async ({ page }) => {
 });
 test.afterAll(async () => { await e2eDatabase.$disconnect(); });
 
+/** Acceptance screenshots: desktop ones from the Desktop Chrome project, phone ones from the Pixel 7 project. */
 async function screenshot(page: Page, name: string) {
   if (!shots) return;
+  if (test.info().project.name !== (name.startsWith('desktop') ? 'chromium' : 'mobile')) return;
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${shots}/${name}-light.png` });
   await page.evaluate(() => document.documentElement.classList.add('dark'));
