@@ -141,7 +141,7 @@ Grok：
 grok mcp add work_with_agent --scope user --transport http http://127.0.0.1:3016/mcp --header "Authorization: Bearer 创建连接时显示的凭据"
 ```
 
-重新加载宿主的 MCP，让它调用 `list_tasks`。没有勾选「允许直接执行」的写入会进「待确认」，这时数据还没有改。
+重新加载宿主的 MCP，让它调用 `list_tasks`。没有勾选「允许直接执行」的写入会进「待确认」，这时数据还没有改。`get_task` 会附带任务说明里引用的截图，材料原件用 `get_material_attachment` 读取。
 
 ## 自托管与多端同步
 

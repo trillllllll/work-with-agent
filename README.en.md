@@ -145,7 +145,7 @@ Grok:
 grok mcp add work_with_agent --scope user --transport http http://127.0.0.1:3016/mcp --header "Authorization: Bearer credential-shown-when-you-create-the-connection"
 ```
 
-Reload MCP in the host and ask it to call `list_tasks`. Writes that aren't allowed to run directly go to the **Review queue**; at that point, no data has changed yet.
+Reload MCP in the host and ask it to call `list_tasks`. Writes that aren't allowed to run directly go to the **Review queue**; at that point, no data has changed yet. `get_task` includes screenshots referenced in the task description, and `get_material_attachment` reads a material file.
 
 ## Self-hosting and multi-device sync
 

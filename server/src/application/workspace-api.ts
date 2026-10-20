@@ -10,6 +10,7 @@ import { taskDto, taskInclude } from './workspace-store.js';
 import { taskActivity } from './task-activity.js';
 import { TaskService, TopicService, ChangeService } from './workspace.js';
 import { taskListSchema, parseInput } from './workspace-input.js';
+import { readTaskImage, taskImageResponseHeaders } from './task-images.js';
 
 const commands = new CommandService();
 function revision(req: Request) {
@@ -92,6 +93,16 @@ workspaceQueryRouter.get('/tasks/:id', async (req, res, next) => {
     if (!row) throw new DomainError('NOT_FOUND', '任务不存在', 404);
     assertTopicAccess(getActor(req), row.topicId);
     res.json({ data: row, error: null });
+  } catch (error) { next(error); }
+});
+// Connection tokens cannot use the owner-only /api/tasks image route. Visibility matches GET /tasks/:id.
+workspaceQueryRouter.get('/tasks/:id/images/:imageId', async (req, res, next) => {
+  try {
+    const row = await new TaskService().get(String(req.params.id));
+    if (!row) throw new DomainError('NOT_FOUND', '任务不存在', 404);
+    assertTopicAccess(getActor(req), row.topicId);
+    const image = await readTaskImage(String(req.params.id), String(req.params.imageId));
+    res.status(200).set(taskImageResponseHeaders(image)).end(image.bytes);
   } catch (error) { next(error); }
 });
 workspaceQueryRouter.get('/topics', async (req, res, next) => {
