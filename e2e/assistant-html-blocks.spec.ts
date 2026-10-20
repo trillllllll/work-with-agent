@@ -516,10 +516,26 @@ test('贴底：用户往上滚后不抢', async ({ page }, testInfo) => {
   if (mobile) await page.locator('[data-chat-scroll]').evaluate((el) => { (el as HTMLElement).scrollBy(0, -150); });
   else await wheelScroller(page, -150);
   await expect.poll(async () => before - await scrollTopOf(page), { timeout: 5_000 }).toBeGreaterThan(2);
+  // WebKit animates wheel scrolling, so wait for the user's own scroll to finish before taking the reference.
+  await expect.poll(async () => { const first = await scrollTopOf(page); await page.waitForTimeout(300); return first === await scrollTopOf(page); }, { timeout: 5_000 }).toBe(true);
   const top = await scrollTopOf(page);
+  const anchor = await growingBlockTop(page);
   expect(await distanceFromBottom(page)).toBeGreaterThan(2);
   const initial = await restingFrameHeight(page);
   await expect.poll(async () => frameHeight(page), { timeout: 15_000 }).toBeGreaterThan(initial + 100);
-  expect(Math.abs((await scrollTopOf(page)) - top)).toBeLessThanOrEqual(2);
-  expect(await distanceFromBottom(page)).toBeGreaterThan(2);
+  // Not pulled down: the growth (about 900px) all lands below the user's position.
+  expect(await distanceFromBottom(page)).toBeGreaterThan(600);
+  // What the user looks at stays put. A frame above that resizes itself may shift scrollTop through
+  // scroll anchoring (WebKit does this), which keeps the visible content still, so either measure may hold.
+  const scrollStill = Math.abs((await scrollTopOf(page)) - top) <= 2;
+  const viewStill = Math.abs((await growingBlockTop(page)) - anchor) <= 2;
+  expect(scrollStill || viewStill, `scrollTop ${top} -> ${await scrollTopOf(page)}, block top ${anchor} -> ${await growingBlockTop(page)}`).toBe(true);
 });
+
+/** Top of the growing block relative to the chat scroller's visible area. */
+async function growingBlockTop(page: Page) {
+  return page.locator('[data-testid="html-block"]').filter({ has: page.locator('h3', { hasText: /^贴底变高$/ }) }).evaluate((block) => {
+    const scroller = block.closest('[data-chat-scroll]');
+    return block.getBoundingClientRect().top - (scroller instanceof HTMLElement ? scroller.getBoundingClientRect().top : 0);
+  });
+}
