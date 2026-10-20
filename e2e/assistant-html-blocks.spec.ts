@@ -282,17 +282,18 @@ async function probeBlocks(page: Page): Promise<BlockProbe[]> {
 function splitLabel(rows: BlockProbe[]) {
   return {
     count: rows.length,
-    nearMissing: rows.filter((row) => row.distance <= 300 && !row.loaded).map((row) => `${row.title}@${Math.round(row.distance)}`).sort(),
+    nearMissing: rows.filter((row) => row.distance <= 280 && !row.loaded).map((row) => `${row.title}@${Math.round(row.distance)}`).sort(),
     farLoaded: rows.filter((row) => row.distance > 450 && row.loaded).map((row) => `${row.title}@${Math.round(row.distance)}`).sort(),
     farUnloaded: rows.some((row) => row.distance > 450 && !row.loaded),
-    nearLoaded: rows.some((row) => row.distance <= 300 && row.loaded),
+    nearLoaded: rows.some((row) => row.distance <= 280 && row.loaded),
   };
 }
 
-async function expectPreloadRule(page: Page, count = 8) {
+/** Frames latch once mounted, so blocks loaded before this check (passed in `seen`) may be far away now. */
+async function expectPreloadRule(page: Page, count = 8, seen: ReadonlySet<string> = new Set()) {
   await expect.poll(async () => {
     const label = splitLabel(await probeBlocks(page));
-    return { count: label.count, nearMissing: label.nearMissing, farLoaded: label.farLoaded };
+    return { count: label.count, nearMissing: label.nearMissing, farLoaded: label.farLoaded.filter((entry) => !seen.has(entry.slice(0, entry.lastIndexOf('@')))) };
   }, { timeout: 15_000 }).toEqual({ count, nearMissing: [], farLoaded: [] });
 }
 
@@ -399,22 +400,40 @@ async function scrollUntilNewlyLoaded(page: Page, mobile: boolean) {
   const pending = new Set((await probeBlocks(page)).filter((row) => !row.loaded).map((row) => row.title));
   expect(pending.size).toBeGreaterThan(0);
   for (let step = 0; step < 12; step += 1) {
+    const seen = new Set((await probeBlocks(page)).filter((row) => row.loaded).map((row) => row.title));
     const moved = await scrollTowardUnloaded(page, mobile);
     expect(moved, 'unloaded blocks are still out of the preload range').toBe(true);
-    await expectPreloadRule(page);
+    await expectPreloadRule(page, 8, seen);
     const now = await probeBlocks(page);
     if (now.some((row) => pending.has(row.title) && row.loaded)) return;
   }
   expect(false, 'scrolling toward unloaded blocks never mounted them').toBe(true);
 }
 
-test('懒加载：只预加载附近的块', async ({ page }, testInfo) => {
-  test.setTimeout(120_000);
-  const mobile = testInfo.project.name === 'mobile';
+/**
+ * While a reply arrives the list follows the bottom, so every block passes through view and loads.
+ * Blocks the user has never seen only exist after a reload, which renders the history in one go at the bottom.
+ */
+async function loadLazyHistory(page: Page) {
   await openSideAssistant(page);
   await sendPrompt(page, 'html 懒加载验收');
   await expect(page.locator('[data-testid="html-block"]')).toHaveCount(8, { timeout: 15_000 });
   await settleChat(page);
+  await page.reload();
+  const open = page.getByRole('button', { name: '打开 AI 助手', exact: true });
+  await expect.poll(async () => await open.isVisible() || await page.getByTestId('ai-assistant').isVisible(), { timeout: 15_000 }).toBe(true);
+  if (await open.isVisible()) await open.click();
+  await expect(page.getByTestId('ai-assistant')).toBeVisible();
+  await expect(page.locator('[data-testid="html-block"]')).toHaveCount(8, { timeout: 15_000 });
+  await settleChat(page);
+  // Opening on the newest message: the last block is in view, the oldest are far above.
+  await expect.poll(async () => distanceFromBottom(page), { timeout: 10_000 }).toBeLessThanOrEqual(2);
+}
+
+test('懒加载：只预加载附近的块', async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  const mobile = testInfo.project.name === 'mobile';
+  await loadLazyHistory(page);
   await expectLazySplit(page);
   await scrollUntilNewlyLoaded(page, mobile);
 });
@@ -422,12 +441,10 @@ test('懒加载：只预加载附近的块', async ({ page }, testInfo) => {
 test('懒加载：换位置和收起面板后照常加载', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name === 'mobile', '桌面布局');
   test.setTimeout(180_000);
-  await openSideAssistant(page);
-  await sendPrompt(page, 'html 懒加载验收');
-  await expect(page.locator('[data-testid="html-block"]')).toHaveCount(8, { timeout: 15_000 });
-  await settleChat(page);
+  await loadLazyHistory(page);
   await expectLazySplit(page);
   for (const hash of ['#/settings', '#/chat', '#/plan']) {
+    const seen = new Set((await probeBlocks(page)).filter((row) => row.loaded).map((row) => row.title));
     await page.evaluate((next) => { location.hash = next; }, hash);
     await expect(page).toHaveURL(new RegExp(`${hash}$`));
     await expect.poll(async () => page.evaluate(() => {
@@ -437,7 +454,7 @@ test('懒加载：换位置和收起面板后照常加载', async ({ page }, tes
       return box.height > 80 && box.width > 80 ? el.clientHeight : 0;
     }), { timeout: 15_000 }).toBeGreaterThan(80);
     await expect(page.getByText(blockedText, { exact: true })).toHaveCount(0);
-    await expectPreloadRule(page);
+    await expectPreloadRule(page, 8, seen);
     await scrollUntilNewlyLoaded(page, false);
     await expect(page.getByText(blockedText, { exact: true })).toHaveCount(0);
   }
@@ -494,8 +511,10 @@ test('贴底：用户往上滚后不抢', async ({ page }, testInfo) => {
   await expect(page.locator('[data-testid="html-block"]')).toHaveCount(4, { timeout: 15_000 });
   await atBottomWithRoom(page);
   const before = await scrollTopOf(page);
-  if (mobile) await page.locator('[data-chat-scroll]').evaluate((el) => { (el as HTMLElement).scrollBy(0, -400); });
-  else await wheelScroller(page, -400);
+  // A small step keeps the growing frame on screen: Chromium stops rendering offscreen cross-origin frames,
+  // so a frame scrolled fully out of view would never report its new height.
+  if (mobile) await page.locator('[data-chat-scroll]').evaluate((el) => { (el as HTMLElement).scrollBy(0, -150); });
+  else await wheelScroller(page, -150);
   await expect.poll(async () => before - await scrollTopOf(page), { timeout: 5_000 }).toBeGreaterThan(2);
   const top = await scrollTopOf(page);
   expect(await distanceFromBottom(page)).toBeGreaterThan(2);

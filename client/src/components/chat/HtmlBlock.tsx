@@ -91,20 +91,22 @@ export default memo(function HtmlBlock({ block }: { block: ContentBlock }) {
   const [visible, setVisible] = useState(typeof IntersectionObserver === 'undefined');
   const [large, setLarge] = useState(false);
   const title = block.title || t('html.defaultTitle');
+  const ready = Boolean(settings.data?.enabled);
+  // Arm only once the placeholder has its reserved height: while settings load the block is one line tall,
+  // so every block of a fresh reply would sit inside the preload margin and mount at once.
   useEffect(() => {
-    if (visible || !host.current) return;
+    if (visible || !ready || !host.current) return;
     const node = host.current;
     const observer = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting)) { setVisible(true); observer.disconnect(); } }, lazyObserverOptions(node));
     observer.observe(node);
     return () => observer.disconnect();
-  }, [visible]);
+  }, [visible, ready]);
   const cdn = settings.data?.cdn ?? [];
   const body = settings.isLoading ? <p role="status" className="p-4 text-xs text-muted-foreground">{t('html.preparing')}</p>
     : settings.isError ? <SourceFallback block={block} message={t('html.settingsUnreadable')} />
     : !settings.data?.enabled ? <SourceFallback block={block} message={t('html.disabled')} />
     : visible ? <HtmlFrame block={block} cdn={cdn} theme={theme} title={title} />
     : <div style={{ height: clampHeight(block.height ?? DEFAULT_HEIGHT) }} />;
-  const ready = Boolean(settings.data?.enabled);
   return <div ref={host} data-testid="html-block">
     <VisualFrame title={title} source={block.source ?? ''} caption={block.alt ? t('html.captionWithAlt', { alt: block.alt }) : t('html.caption')} actions={ready && <><Button size="icon-xs" variant="ghost" title={t('html.fullscreen')} aria-label={t('html.fullscreen')} onClick={() => setLarge(true)}><Maximize2 /></Button><Button size="icon-xs" variant="ghost" title={t('html.exportHtml')} aria-label={t('html.exportHtml')} onClick={() => { exportDocument(block, cdn, theme, title); toast.success(t('visualization.exported')); }}><Download /></Button></>}>
       {body}
