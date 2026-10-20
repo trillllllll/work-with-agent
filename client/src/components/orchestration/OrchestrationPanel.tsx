@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -7,29 +7,43 @@ import { intlLocale, t as translate } from '@/i18n/index.js';
 import { Button } from '@/components/ui/button.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { orchestrationStatusLabels, pauseReasonLabels, stepKindLabels, stepStatusLabels } from './labels.js';
+import { formatCost, formatDiff, formatDuration, formatMissing, formatTokens, jobDurationMs, readJobChecks } from './format.js';
 
 type Step = { id: string; kind: string; subtaskId: string | null; nodeId?: string | null; status: string; attempt: number; continueCount: number; branch: string | null; error: string | null; mergeCommit: string | null; resultCommit: string | null; dependsOn: string[] };
+type OrchestrationJob = { id: string; stepId: string | null; kind: string; phase: string; createdAt: string; startedAt: string | null; endedAt: string | null; model: string | null; inputTokens: number | null; outputTokens: number | null; costMicroUsd: number | null; filesChanged: number | null; linesAdded: number | null; linesDeleted: number | null; result?: unknown };
 type PlanStep = { taskId: string; dependsOn: string[]; acceptanceCriteria: string; rationale: string };
-type Orchestration = { id: string; taskId: string; round: number; status: string; revision: number; integrationBranch: string; integrationHead: string | null; pauseReason: string | null; finalComment: string | null; pushedAt: string | null; pullRequestUrl?: string | null; nodeId?: string | null; nodes?: Array<{ id: string; name: string; online: boolean; primary: boolean; gh: boolean }>; grant: { provider: string; maxParallel: number; allowShell: boolean }; plan: { goalCriteria: string; steps: PlanStep[]; fallback?: string }; taskSnapshot: { subtasks: Array<{ id: string; title: string }> }; steps?: Step[]; locations?: Array<{ id: string; nodeId: string; nodeName: string; online: boolean; path: string; originUrl?: string | null; protocol?: number }>; node?: { name: string; online: boolean } | null; events?: Array<{ seq: number; type: string; actorKind: string; createdAt: string; payload: any }> };
+type Orchestration = { id: string; taskId: string; round: number; status: string; revision: number; integrationBranch: string; integrationHead: string | null; pauseReason: string | null; finalComment: string | null; pushedAt: string | null; pullRequestUrl?: string | null; nodeId?: string | null; nodes?: Array<{ id: string; name: string; online: boolean; primary: boolean; gh: boolean }>; grant: { provider: string; maxParallel: number; allowShell: boolean }; plan: { goalCriteria: string; steps: PlanStep[]; fallback?: string }; taskSnapshot: { subtasks: Array<{ id: string; title: string }> }; steps?: Step[]; jobs?: OrchestrationJob[]; locations?: Array<{ id: string; nodeId: string; nodeName: string; online: boolean; path: string; originUrl?: string | null; protocol?: number }>; node?: { name: string; online: boolean } | null; events?: Array<{ seq: number; type: string; actorKind: string; createdAt: string; payload: any }> };
 type Project = { id: string; name: string };
 const OPEN = ['draft', 'running', 'paused', 'awaiting_acceptance'];
 
 export function OrchestrationButton({ taskId, disabled }: { taskId: string; disabled?: boolean }) {
   const { t } = useTranslation('orchestration');
   const [open, setOpen] = useState(false);
+  const [focusId, setFocusId] = useState<string | null>(null);
   const attention = useQuery({ queryKey: ['orchestrations', 'attention'], queryFn: () => api<{ items: Array<{ taskId: string; status: string }> }>('/api/orchestrations/attention'), staleTime: 5_000 });
   const mine = attention.data?.items.find((item) => item.taskId === taskId);
+  useEffect(() => {
+    const raw = sessionStorage.getItem('wwa-open-orchestration');
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as { taskId?: string; orchestrationId?: string };
+      if (parsed.taskId !== taskId) return;
+      sessionStorage.removeItem('wwa-open-orchestration');
+      setFocusId(parsed.orchestrationId ?? null);
+      setOpen(true);
+    } catch { sessionStorage.removeItem('wwa-open-orchestration'); }
+  }, [taskId]);
   return <>
     <Button size="sm" variant="ghost" disabled={disabled} onClick={() => setOpen(true)}>{mine ? t('panel.buttonMine', { status: orchestrationStatusLabels[mine.status] ?? mine.status }) : t('panel.buttonStart')}</Button>
-    {open && <OrchestrationDialog taskId={taskId} onClose={() => setOpen(false)} />}
+    {open && <OrchestrationDialog taskId={taskId} focusId={focusId} onClose={() => setOpen(false)} />}
   </>;
 }
 
-function OrchestrationDialog({ taskId, onClose }: { taskId: string; onClose: () => void }) {
+function OrchestrationDialog({ taskId, focusId, onClose }: { taskId: string; focusId?: string | null; onClose: () => void }) {
   const { t } = useTranslation('orchestration');
   const client = useQueryClient();
   const list = useQuery({ queryKey: ['orchestrations', taskId], queryFn: () => api<Orchestration[]>(`/api/orchestrations?taskId=${encodeURIComponent(taskId)}`), refetchInterval: 3000 });
-  const current = list.data?.find((row) => OPEN.includes(row.status)) ?? list.data?.[0];
+  const current = (focusId && list.data?.find((row) => row.id === focusId)) || list.data?.find((row) => OPEN.includes(row.status)) || list.data?.[0];
   const detail = useQuery({ queryKey: ['orchestration', current?.id], enabled: !!current && current.status !== 'draft', queryFn: () => api<Orchestration>(`/api/orchestrations/${current!.id}`), refetchInterval: 3000 });
   const [draft, setDraft] = useState<Orchestration | null>(null);
   const preview = useMutation({ mutationFn: () => api<Orchestration>('/api/orchestrations/preview', { method: 'POST', body: JSON.stringify({ taskId }) }), onSuccess: (data) => { setDraft(data); void client.invalidateQueries({ queryKey: ['orchestrations'] }); }, onError: (error) => toast.error(error.message) });
@@ -128,6 +142,7 @@ function Progress({ row, onRedispatch }: { row: Orchestration; onRedispatch: (dr
         {step.kind !== 'setup' && <Button size="sm" variant="ghost" onClick={() => act.mutate({ path: `steps/${step.id}/skip`, body: { reason: t('panel.skipReason') } })}>{t('panel.skip')}</Button>}
       </>}
       {step.error && <div className="w-full text-xs text-muted-foreground">{step.error}</div>}
+      <StepUsage step={step} jobs={row.jobs} />
     </li>)}</ul>
     <div className="flex flex-wrap gap-2">
       {row.status === 'running' && <Button size="sm" variant="outline" onClick={() => act.mutate({ path: 'pause' })}>{t('panel.pause')}</Button>}
@@ -143,6 +158,29 @@ function Progress({ row, onRedispatch }: { row: Orchestration; onRedispatch: (dr
   </div>;
 }
 
+function latestRun(jobs: OrchestrationJob[] | undefined, stepId: string, phase: 'work' | 'verify') {
+  const matches = (jobs ?? []).filter((job) => job.stepId === stepId && job.kind === 'run' && (phase === 'verify' ? job.phase === 'verify' : job.phase !== 'verify'));
+  const ordered = matches.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  return ordered.length ? ordered[ordered.length - 1] : null;
+}
+function StepFacts({ job, step, prefix }: { job: OrchestrationJob; step: Step; prefix?: string }) {
+  const { t } = useTranslation('orchestration');
+  const checks = readJobChecks(job);
+  const passed = checks.filter((item) => item.passed).length;
+  const shas = [step.resultCommit, step.mergeCommit].filter((sha): sha is string => !!sha).map((sha) => sha.slice(0, 7));
+  const parts = [prefix, formatDuration(jobDurationMs(job.startedAt, job.endedAt)), job.model || formatMissing(), t('history.tokens', { input: formatTokens(job.inputTokens), output: formatTokens(job.outputTokens) }), formatCost(job.costMicroUsd), shas.join('/') || formatMissing(), formatDiff(job.filesChanged, job.linesAdded, job.linesDeleted), checks.length ? t('history.checks', { passed, total: checks.length }) : formatMissing()].filter((part): part is string => !!part);
+  return <div className="w-full text-xs text-muted-foreground">{parts.join(' · ')}</div>;
+}
+function StepUsage({ step, jobs }: { step: Step; jobs?: OrchestrationJob[] }) {
+  const { t } = useTranslation('orchestration');
+  const work = latestRun(jobs, step.id, 'work');
+  const verify = latestRun(jobs, step.id, 'verify');
+  if (!work && !verify) return null;
+  return <>
+    {work && <StepFacts job={work} step={step} />}
+    {verify && <StepFacts job={verify} step={step} prefix={t('stepPhase.verify')} />}
+  </>;
+}
 function summarize(payload: any) {
   if (!payload || typeof payload !== 'object') return '';
   if (Array.isArray(payload.problems) && payload.problems.length) return translate('orchestration:panel.problems', { problems: payload.problems.join(translate('orchestration:panel.problemSep')) });

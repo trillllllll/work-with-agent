@@ -20,7 +20,7 @@ const web = `http://127.0.0.1:${webPort}`;
 
 export default defineConfig({
   testDir: './e2e',
-  testMatch: /orchestration\.e2e\.ts$/,
+  testMatch: /orchestration.*\.e2e\.ts$/,
   fullyParallel: false,
   workers: 1,
   timeout: 180_000,
@@ -36,7 +36,10 @@ export default defineConfig({
     storageState: { cookies: [{ name: 'wwa_session', value: 'wwa-e2e-owner-session', domain: '127.0.0.1', path: '/', expires: -1, httpOnly: true, secure: false, sameSite: 'Strict' }], origins: [] },
     extraHTTPHeaders: { 'X-CSRF-Token': createHash('sha256').update('csrf:wwa-e2e-owner-session').digest('hex'), Origin: web },
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], locale: 'zh-CN', launchOptions: { args: ['--disable-dev-shm-usage', '--renderer-process-limit=2'] } } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'], locale: 'zh-CN', launchOptions: { args: ['--disable-dev-shm-usage', '--renderer-process-limit=2'] } } },
+    { name: 'mobile', testMatch: /orchestration-history\.e2e\.ts$/, use: { ...devices['Pixel 7'], locale: 'zh-CN' } },
+  ],
   webServer: [
     { command: 'node e2e/mock-openai.mjs', url: `http://127.0.0.1:${mockPort}/health`, reuseExistingServer: false, timeout: 30_000, env: { MOCK_OPENAI_PORT: mockPort } },
     {

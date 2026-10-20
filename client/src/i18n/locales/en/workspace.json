@@ -194,6 +194,17 @@
     "retry": "Retry AI organization",
     "keptHint": "Organization results stay in the project materials. Candidates go to the review queue."
   },
+  "runs": {
+    "tabOrchestrations": "Orchestration rounds",
+    "tabHandoffs": "Handoffs",
+    "statusFilter": "Status",
+    "projectFilter": "Project",
+    "allProjects": "All projects",
+    "allStatuses": "All statuses",
+    "open": "Open",
+    "emptyOrchestrations": "No orchestration rounds yet.",
+    "loadMore": "Load more"
+  },
   "handoff": {
     "status": {
       "prepared": "Waiting to be claimed",

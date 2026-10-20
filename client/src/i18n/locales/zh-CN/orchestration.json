@@ -5,6 +5,7 @@
     "paused": "已暂停",
     "awaiting_acceptance": "待验收",
     "accepted": "已验收",
+    "rejected": "已打回",
     "cancelled": "已取消",
     "superseded": "已被新一轮取代"
   },
@@ -232,6 +233,48 @@
       "cancelled": "已取消，没有删除任何 worktree。",
       "expired": "卡片已过期，没有删除任何 worktree。",
       "failed": "执行端删除失败。"
+    }
+  },
+  "stepPhase": {
+    "verify": "独立核对"
+  },
+  "history": {
+    "title": "AI 履历",
+    "description": "主控编排的每一轮，以及本机每次运行的用量、差异和核对。",
+    "missing": "—",
+    "empty": "还没有 AI 履历。",
+    "loading": "正在加载…",
+    "loadError": "AI 履历加载失败。",
+    "roleMain": "主任务",
+    "roleSubtask": "子任务",
+    "roundTotal": "第 {{round}} 轮",
+    "duration": "耗时 {{value}}",
+    "cliDuration": "CLI {{value}}",
+    "tokens": "输入 {{input}} / 输出 {{output}}",
+    "cached": "缓存 {{cached}}",
+    "cost": "费用 {{value}}",
+    "costPartial": "费用不完整",
+    "diff": "+{{added}} −{{deleted}} · {{files}}",
+    "files": "{{n}} 个文件",
+    "checks": "{{passed}}/{{total}} 通过",
+    "commits": "提交",
+    "rework": "返工 {{n}}",
+    "rateRetries": "限流重试 {{n}}",
+    "exitCode": "退出码 {{code}}",
+    "review": "审阅 {{decision}}：{{comment}}",
+    "legacy": "更早的交接",
+    "legacyRun": "交接运行",
+    "node": "{{node}}@{{provider}} {{cli}}",
+    "model": "模型 {{model}}",
+    "started": "开始 {{time}}",
+    "attempt": "第 {{n}} 次",
+    "continued": "继续 {{n}}",
+    "checkPassed": "通过",
+    "checkFailed": "未通过",
+    "durationUnits": {
+      "h": "{{n}}小时",
+      "m": "{{n}}分",
+      "s": "{{n}}秒"
     }
   }
 }

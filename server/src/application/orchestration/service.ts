@@ -18,6 +18,7 @@ import { generatePlan, planSchema, reviewDevelop, reviewFinal, validatePlan, typ
 import { checkDevelop, checkMerge, checkVerify, looksGitWriteDenied, looksRateLimited } from './checks.js';
 import { developPrompt, mergePrompt, verifyPrompt } from './prompts.js';
 import { applyWorktreeJob } from './worktrees.js';
+import { aiHistory, orchestrationFeed } from './history.js';
 
 type Db = Prisma.TransactionClient;
 type Grant = { provider: 'codex' | 'claude'; maxParallel: number; allowShell: boolean; remote?: string };
@@ -116,6 +117,12 @@ export class OrchestrationService {
   async attention() {
     const rows = await prisma.orchestration.findMany({ where: { status: { in: ['awaiting_acceptance', 'paused', 'running'] } }, select: { id: true, taskId: true, status: true, pauseReason: true } });
     return { items: rows.map((row) => ({ orchestrationId: row.id, taskId: row.taskId, status: row.status, pauseReason: row.pauseReason })) };
+  }
+  async history(taskId: string) {
+    return aiHistory(taskId);
+  }
+  async feed(query: { status?: string; projectId?: string; cursor?: string; limit?: number }) {
+    return orchestrationFeed(query);
   }
   async get(id: string) {
     const row = await prisma.orchestration.findUnique({ where: { id }, include: { steps: { orderBy: { position: 'asc' } } } });

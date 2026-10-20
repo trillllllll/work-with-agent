@@ -5,6 +5,7 @@
     "paused": "Paused",
     "awaiting_acceptance": "Awaiting acceptance",
     "accepted": "Accepted",
+    "rejected": "Rejected",
     "cancelled": "Cancelled",
     "superseded": "Replaced by a new round"
   },
@@ -232,6 +233,48 @@
       "cancelled": "Cancelled. No worktrees were deleted.",
       "expired": "This card expired. No worktrees were deleted.",
       "failed": "The executor failed to delete them."
+    }
+  },
+  "stepPhase": {
+    "verify": "Independent check"
+  },
+  "history": {
+    "title": "AI history",
+    "description": "Rounds run by the orchestrator, with each local run's usage, diff, and checks.",
+    "missing": "—",
+    "empty": "No AI history yet.",
+    "loading": "Loading…",
+    "loadError": "Couldn't load AI history.",
+    "roleMain": "Main task",
+    "roleSubtask": "Subtask",
+    "roundTotal": "Round {{round}}",
+    "duration": "Duration {{value}}",
+    "cliDuration": "CLI {{value}}",
+    "tokens": "{{input}} in / {{output}} out",
+    "cached": "cached {{cached}}",
+    "cost": "Cost {{value}}",
+    "costPartial": "Partial cost",
+    "diff": "+{{added}} −{{deleted}} · {{files}}",
+    "files": "{{n}} files",
+    "checks": "{{passed}}/{{total}} passed",
+    "commits": "Commits",
+    "rework": "Rework {{n}}",
+    "rateRetries": "Rate-limit retries {{n}}",
+    "exitCode": "Exit {{code}}",
+    "review": "Review {{decision}}: {{comment}}",
+    "legacy": "Earlier handoffs",
+    "legacyRun": "Handoff run",
+    "node": "{{node}}@{{provider}} {{cli}}",
+    "model": "Model {{model}}",
+    "started": "Started {{time}}",
+    "attempt": "Attempt {{n}}",
+    "continued": "Continued {{n}}",
+    "checkPassed": "Passed",
+    "checkFailed": "Failed",
+    "durationUnits": {
+      "h": "{{n}}h",
+      "m": "{{n}}m",
+      "s": "{{n}}s"
     }
   }
 }

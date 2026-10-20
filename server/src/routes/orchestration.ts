@@ -33,7 +33,14 @@ export function createOrchestrationRouter() {
   router.post('/orchestrations/preview', route((req) => orchestrations.preview(req.body)));
   router.get('/orchestrations', route((req) => orchestrations.list(typeof req.query.taskId === 'string' ? req.query.taskId : undefined)));
   router.get('/orchestrations/attention', route(() => orchestrations.attention()));
+  router.get('/orchestrations/feed', route((req) => orchestrations.feed({
+    status: typeof req.query.status === 'string' ? req.query.status : undefined,
+    projectId: typeof req.query.projectId === 'string' ? req.query.projectId : undefined,
+    cursor: typeof req.query.cursor === 'string' ? req.query.cursor : undefined,
+    limit: typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined,
+  })));
   router.get('/orchestrations/:id', route((req) => orchestrations.get(String(req.params.id))));
+  router.get('/tasks/:id/ai-history', route((req) => orchestrations.history(String(req.params.id))));
   router.post('/orchestrations/:id/start', route((req) => orchestrations.start(String(req.params.id), req.body)));
   router.post('/orchestrations/:id/pause', route((req) => orchestrations.pause(String(req.params.id))));
   router.post('/orchestrations/:id/resume', route((req) => orchestrations.resume(String(req.params.id))));

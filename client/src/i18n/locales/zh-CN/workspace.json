@@ -193,6 +193,17 @@
     "retry": "重试 AI 整理",
     "keptHint": "整理结果保留在项目资料中，候选内容进入待确认。"
   },
+  "runs": {
+    "tabOrchestrations": "编排轮次",
+    "tabHandoffs": "接力",
+    "statusFilter": "状态",
+    "projectFilter": "项目",
+    "allProjects": "全部项目",
+    "allStatuses": "全部状态",
+    "open": "进行中",
+    "emptyOrchestrations": "还没有编排轮次。",
+    "loadMore": "加载更多"
+  },
   "handoff": {
     "status": {
       "prepared": "待接手",

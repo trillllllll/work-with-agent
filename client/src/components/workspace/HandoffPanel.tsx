@@ -12,6 +12,8 @@ import { MarkdownView } from '@/components/chat/MarkdownView.js';
 import { ContextPicker, type Evidence } from './ContextPicker.js';
 import { downloadFileName, isMarkdownFile } from './artifact-name.js';
 import { reviewPreview } from './review-text.js';
+import { useHashRoute } from '@/hooks/useHashRoute.js';
+import { OrchestrationRunsList } from '@/components/orchestration/OrchestrationRunsList.js';
 
 const acceptancePrefix = '\n\n验收标准与产物：\n'; // i18n-ignore
 const handoffStatusKeys: Record<string, string> = {
@@ -55,8 +57,23 @@ export function HandoffPanel({ task, disabled = false }: { task: Task; disabled?
 }
 export function RunsPage() {
   const { t } = useTranslation('workspace');
+  const { query, setQuery } = useHashRoute();
+  const tab = query.tab === 'handoffs' ? 'handoffs' : 'orchestrations';
+  const tabClass = (selected: boolean) => `shrink-0 rounded-full px-3 py-1 text-sm ${selected ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`;
+  return <section className="mx-auto max-w-5xl space-y-5 p-5 sm:p-7">
+    <h1 className="text-2xl font-semibold">{t('handoff.runsTitle')}</h1>
+    <p className="text-sm text-muted-foreground">{t('handoff.runsDescription')}</p>
+    <div role="tablist" className="flex gap-2 overflow-x-auto">
+      <button type="button" role="tab" aria-selected={tab === 'orchestrations'} data-testid="runs-tab-orchestrations" className={tabClass(tab === 'orchestrations')} onClick={() => setQuery({ tab: 'orchestrations' })}>{t('runs.tabOrchestrations')}</button>
+      <button type="button" role="tab" aria-selected={tab === 'handoffs'} data-testid="runs-tab-handoffs" className={tabClass(tab === 'handoffs')} onClick={() => setQuery({ tab: 'handoffs' })}>{t('runs.tabHandoffs')}</button>
+    </div>
+    {tab === 'orchestrations' ? <OrchestrationRunsList /> : <HandoffRunsList />}
+  </section>;
+}
+function HandoffRunsList() {
+  const { t } = useTranslation('workspace');
   const list = useQuery({ queryKey: ['handoffs'], queryFn: () => api<any[]>('/api/v1/handoffs'), refetchInterval: 5000 });
-  return <section className="mx-auto max-w-5xl space-y-5 p-5 sm:p-7"><h1 className="text-2xl font-semibold">{t('handoff.runsTitle')}</h1><p className="text-sm text-muted-foreground">{t('handoff.runsDescription')}</p>{list.error && <p role="alert">{list.error.message}</p>}{list.isLoading ? <p>{t('handoff.loading')}</p> : !list.data?.length ? <p className="py-8 text-sm text-muted-foreground">{t('handoff.empty')}</p> : list.data.map((handoff) => <HandoffCard key={handoff.id} handoff={handoff} />)}</section>;
+  return <>{list.error && <p role="alert">{list.error.message}</p>}{list.isLoading ? <p>{t('handoff.loading')}</p> : !list.data?.length ? <p className="py-8 text-sm text-muted-foreground">{t('handoff.empty')}</p> : list.data.map((handoff) => <HandoffCard key={handoff.id} handoff={handoff} />)}</>;
 }
 function HandoffCard({ handoff: initial, task }: { handoff: any; task?: Task }) {
   const { t } = useTranslation('workspace');
