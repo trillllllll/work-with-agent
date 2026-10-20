@@ -25,6 +25,8 @@ export default defineConfig({
     { name: 'mobile', use: { ...devices['Pixel 7'], locale: 'zh-CN' } },
     // 限定编辑器相关用例的 WebKit 项目。
     { name: 'webkit-editor', use: { ...devices['Desktop Safari'], locale: 'zh-CN' }, testMatch: /task-editor-lightweight|task-detail-editor|task-detail-rich|task-materials/ },
+    // 只跑助手 HTML 块用例的 WebKit 项目（Desktop Safari）。
+    { name: 'webkit-html', use: { ...devices['Desktop Safari'], locale: 'zh-CN' }, testMatch: /assistant-html-blocks/ },
   ],
   webServer: [
     {
