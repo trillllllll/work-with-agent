@@ -12,7 +12,7 @@ function normalizedQuery(query: string) {
 }
 
 /** Case-insensitive name search. Pass only non-archived topics; inbox and archived lists are not inputs. */
-export function filterTopics(topics: readonly AccessTopic[], query: string): AccessTopic[] {
+export function filterTopics<T extends AccessTopic>(topics: readonly T[], query: string): T[] {
   const needle = normalizedQuery(query);
   if (!needle) return [...topics];
   return topics.filter((topic) => topic.name.toLowerCase().includes(needle));
@@ -49,7 +49,7 @@ export function clearSelection(current: AccessSelection, topics: readonly Access
 }
 
 /** Edit mode: checked topics first. Relative order inside each group stays the same. */
-export function orderSelectedFirst(topics: readonly AccessTopic[], selectedIds: readonly string[]): AccessTopic[] {
+export function orderSelectedFirst<T extends AccessTopic>(topics: readonly T[], selectedIds: readonly string[]): T[] {
   const selected = new Set(selectedIds);
   return topics
     .map((topic, index) => ({ topic, index, rank: selected.has(topic.id) ? 0 : 1 }))
@@ -58,7 +58,7 @@ export function orderSelectedFirst(topics: readonly AccessTopic[], selectedIds: 
 }
 
 /** “已选” filter for the scroll area. Only selected non-archived topics remain, in their current order. */
-export function filterSelected(topics: readonly AccessTopic[], selectedIds: readonly string[]): AccessTopic[] {
+export function filterSelected<T extends AccessTopic>(topics: readonly T[], selectedIds: readonly string[]): T[] {
   const selected = new Set(selectedIds);
   return topics.filter((topic) => selected.has(topic.id));
 }

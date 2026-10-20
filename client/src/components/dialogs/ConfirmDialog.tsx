@@ -7,11 +7,13 @@ type ConfirmDialogProps = {
   itemName: string;
   description: string;
   busy?: boolean;
+  /** Replaces the default confirm label. Omitted callers keep "确认". */
+  confirmLabel?: string;
   onCancel: () => void;
   onConfirm: () => void;
 };
 
-export function ConfirmDialog({ title, itemName, description, busy = false, onCancel, onConfirm }: ConfirmDialogProps) {
+export function ConfirmDialog({ title, itemName, description, busy = false, confirmLabel, onCancel, onConfirm }: ConfirmDialogProps) {
   const { t } = useTranslation('settings');
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !busy) onCancel(); }}>
@@ -23,7 +25,7 @@ export function ConfirmDialog({ title, itemName, description, busy = false, onCa
         <p className="text-base font-semibold break-all text-foreground">{itemName}</p>
         <DialogFooter>
           <Button variant="outline" disabled={busy} onClick={onCancel}>{t('actions.cancel')}</Button>
-          <Button variant="destructive" disabled={busy} onClick={onConfirm}>{busy ? t('confirmDialog.processing') : t('actions.confirm')}</Button>
+          <Button variant="destructive" disabled={busy} onClick={onConfirm}>{busy ? t('confirmDialog.processing') : (confirmLabel ?? t('actions.confirm'))}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
