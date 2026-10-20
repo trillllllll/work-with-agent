@@ -503,6 +503,7 @@ model ReviewRule {
   coverageThrough String?
   createdAt String
   updatedAt String
+  deletedAt String?
   batches ReviewBatch[]
 }
 model ReviewBatch {

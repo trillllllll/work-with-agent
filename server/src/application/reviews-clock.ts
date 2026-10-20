@@ -50,3 +50,11 @@ export function latestOccurrence(schedule: Schedule, at = new Date()) {
   }
   return { key: `${schedule.frequency}:${date}`, scheduledAt: instant.toISOString(), localDate: date };
 }
+
+/** The next wall-clock slot after `localDate`: one day later, or seven days for a weekly rule. */
+export function followingOccurrence(schedule: Schedule, localDate: string) {
+  validateSchedule(schedule);
+  const date = shiftDate(localDate, schedule.frequency === 'daily' ? 1 : 7);
+  const instant = scheduledInstant(date, schedule.timeOfDay, schedule.timeZone);
+  return { key: `${schedule.frequency}:${date}`, scheduledAt: instant.toISOString(), localDate: date };
+}

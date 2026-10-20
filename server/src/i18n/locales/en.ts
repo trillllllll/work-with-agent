@@ -493,6 +493,7 @@ export const en: Record<string, string> = {
   "SOURCE_STALE: 回顾来源已变化，请建立新的回顾批次。": "SOURCE_STALE: Review source has changed, please create a new review batch.",
   "回顾来源已变化，请建立新的回顾批次。": "Review source has changed, please create a new review batch.",
   "回顾规则无效": "Review rule is invalid",
+  "未配置模型服务，请先配置模型再启用内置模型回顾": "The model service is not configured. Configure a model before enabling a built-in model review",
   "本次运行的结果已经固定，不能覆盖": "This run's result is already finalized and cannot be overwritten",
   "运行状态已变化": "Run status has changed",
   "产物不存在": "Artifact does not exist",
