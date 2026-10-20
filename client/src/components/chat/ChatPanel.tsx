@@ -51,7 +51,7 @@ export function ChatPanel({ chat, onClose, mobile, presentation = 'side', onExpa
   const { messages, approvals, busy, interrupted, input, setInput, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference, showRepreview } = chat;
   const materialCount = chat.context?.selectedMaterialIds.length ?? 0;
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="ai-assistant" data-presentation={presentation}>
+    <div className="flex h-full min-h-0 min-w-0 flex-col" data-testid="ai-assistant" data-presentation={presentation}>
       <header className="assistant-header flex shrink-0 items-center gap-2 border-b px-4 py-3">
         <Sparkles className="size-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1"><h2 className="text-sm font-semibold">{t('chatPanel.title')}</h2><span className="text-[10px] text-muted-foreground" role="status">{busy ? t('status.working') : interrupted ? t('status.interrupted') : settings.isLoading ? t('status.checking') : settings.error ? t('status.unknown') : configured ? t('status.available') : t('status.noModel')}</span></div>

@@ -32,7 +32,7 @@ function PreBlock({ children }: { children?: React.ReactNode }) {
       <button type="button" onClick={copy} aria-label={t('clipboard.copyCode')} className="absolute top-2 right-2 grid size-7 place-items-center rounded-md bg-white/10 text-zinc-300 opacity-0 transition-opacity group-hover/pre:opacity-100 hover:bg-white/20">
         {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
       </button>
-      <pre className="overflow-x-auto rounded-lg bg-[#0d1117] p-3 text-xs leading-relaxed text-zinc-100">{children}</pre>
+      <pre className="max-w-full overflow-x-auto rounded-lg bg-[#0d1117] p-3 text-xs leading-relaxed text-zinc-100">{children}</pre>
     </div>
   );
 }
@@ -66,12 +66,12 @@ function markdownComponents(diagrams: boolean): Components {
     },
     pre: ({ children }) => diagrams && hasMermaidFence(children) ? <>{children}</> : <PreBlock>{children}</PreBlock>,
     table: ({ children }) => (
-      <div className="my-2 overflow-x-auto">
+      <div className="my-2 min-w-0 max-w-full overflow-x-auto">
         <table className="w-full border-collapse text-xs">{children}</table>
       </div>
     ),
-    th: ({ children }) => <th className="border-b px-2 py-1.5 text-left font-semibold">{children}</th>,
-    td: ({ children }) => <td className="border-b px-2 py-1.5 align-top">{children}</td>,
+    th: ({ children }) => <th className="border-b px-2 py-1.5 text-left font-semibold [overflow-wrap:anywhere]">{children}</th>,
+    td: ({ children }) => <td className="border-b px-2 py-1.5 align-top [overflow-wrap:anywhere]">{children}</td>,
     hr: () => <hr className="my-3 border-border" />,
     strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
   };
@@ -83,7 +83,7 @@ export function MarkdownView({ content, components, allowMaterialLinks = false, 
     : undefined;
   const rendered = useMemo(() => markdownComponents(diagrams), [diagrams]);
   return (
-    <div className="markdown-body text-[13.5px] leading-relaxed break-words">
+    <div className="markdown-body min-w-0 max-w-full text-[13.5px] leading-relaxed break-words">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ ...rendered, ...components }} urlTransform={urlTransform}>
         {content}
       </ReactMarkdown>
