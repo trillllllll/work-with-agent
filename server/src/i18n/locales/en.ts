@@ -144,7 +144,7 @@ export const en: Record<string, string> = {
   "需要 SVG 根节点": "An SVG root element is required",
   "SVG 包含不允许的图元或超出规模": "The SVG contains a disallowed element or exceeds the size limit",
   "SVG 命名空间无效": "The SVG namespace is invalid",
-  "SVG 包含不允许的属性": "The SVG contains a disallowed attribute",
+  "SVG 包含不允许的属性：{0}": "The SVG contains a disallowed attribute: {0}",
   "SVG id 无效": "The SVG id is invalid",
   "SVG 只能引用内部标记": "SVG can only reference internal markers",
   "SVG 尺寸无效": "The SVG size is invalid",
