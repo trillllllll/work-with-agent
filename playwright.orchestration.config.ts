@@ -29,12 +29,14 @@ export default defineConfig({
   reporter: process.env.CI ? [['line']] : 'list',
   use: {
     baseURL: web,
+    // The UI follows the browser language; the suite asserts the default Chinese UI.
+    locale: 'zh-CN',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     storageState: { cookies: [{ name: 'wwa_session', value: 'wwa-e2e-owner-session', domain: '127.0.0.1', path: '/', expires: -1, httpOnly: true, secure: false, sameSite: 'Strict' }], origins: [] },
     extraHTTPHeaders: { 'X-CSRF-Token': createHash('sha256').update('csrf:wwa-e2e-owner-session').digest('hex'), Origin: web },
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], launchOptions: { args: ['--disable-dev-shm-usage', '--renderer-process-limit=2'] } } }],
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], locale: 'zh-CN', launchOptions: { args: ['--disable-dev-shm-usage', '--renderer-process-limit=2'] } } }],
   webServer: [
     { command: 'node e2e/mock-openai.mjs', url: `http://127.0.0.1:${mockPort}/health`, reuseExistingServer: false, timeout: 30_000, env: { MOCK_OPENAI_PORT: mockPort } },
     {
