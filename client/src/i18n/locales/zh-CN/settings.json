@@ -119,6 +119,20 @@
     "saved": "图片搜索密钥已保存，实际搜索时会验证服务",
     "cleared": "图片搜索密钥已清除"
   },
+  "htmlBlocks": {
+    "region": "交互页面设置",
+    "title": "交互页面",
+    "description": "允许助手在回复里放可以点选的小页面。页面在隔离环境中运行，不能联网、不能读取应用数据，只能把内容填进输入框，由你决定是否发送。",
+    "loadFailed": "配置读取失败。",
+    "allow": "允许助手使用交互页面",
+    "cdnLabel": "允许加载脚本和样式的来源",
+    "cdnHint": "每行一个 https 来源，例如 https://cdn.jsdelivr.net。只能加载固定版本的文件；其他网络请求一律禁止。",
+    "saveCdn": "保存来源",
+    "restoreDefaults": "恢复默认",
+    "cdnSaved": "允许的脚本来源已保存",
+    "enabled": "交互页面已开启",
+    "disabled": "交互页面已关闭"
+  },
   "skillsCard": {
     "title": "技能",
     "description": "新建、导入和管理 AI 助手的技能。",

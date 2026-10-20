@@ -281,6 +281,7 @@
     "unavailable": "This part can't be displayed.",
     "unavailableWithAlt": "This part can't be displayed. {{alt}}",
     "loadingVisualization": "Loading visualization…",
+    "loadingHtml": "Loading interactive page…",
     "generating": "Generating content…",
     "unsupported": "This version can't display this content. You can read the text reply.",
     "partIncomplete": "This part didn't finish",
@@ -438,5 +439,20 @@
       "imageSearch": "Image search",
       "fallback": "Visualization"
     }
+  },
+  "html": {
+    "fillEmpty": "The page tried to fill in an empty value",
+    "fillTooLong": "The page tried to fill in more than {{limit}} characters, so it was ignored",
+    "onlyInAssistant": "Only a page inside the assistant panel can fill the input",
+    "navigatedAway": "This page tried to leave its content, so it was stopped.",
+    "defaultTitle": "Interactive page",
+    "preparing": "Preparing interactive page…",
+    "settingsUnreadable": "Couldn't read interactive page settings. Showing the source only.",
+    "disabled": "Interactive pages are turned off in Settings. Showing the source only.",
+    "caption": "Sandboxed: no network, and it can only fill the input",
+    "captionWithAlt": "{{alt}} · Sandboxed: no network, and it can only fill the input",
+    "fullscreen": "View fullscreen",
+    "exportHtml": "Export HTML",
+    "fullscreenDescription": "Runs the interactive page fullscreen. Its state is separate from the page in the conversation"
   }
 }

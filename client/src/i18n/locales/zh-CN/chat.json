@@ -271,6 +271,7 @@
     "unavailable": "这部分内容无法显示。",
     "unavailableWithAlt": "这部分内容无法显示。{{alt}}",
     "loadingVisualization": "正在加载可视化…",
+    "loadingHtml": "正在加载交互页面…",
     "generating": "正在生成内容…",
     "unsupported": "当前版本暂不支持显示这类内容，可查看文字回复。",
     "partIncomplete": "这部分内容未完成",
@@ -419,5 +420,20 @@
       "imageSearch": "图片搜索",
       "fallback": "可视化"
     }
+  },
+  "html": {
+    "fillEmpty": "小页面填入的内容为空",
+    "fillTooLong": "小页面填入的内容超过 {{limit}} 字，已忽略",
+    "onlyInAssistant": "只有助手面板里的小页面可以填入输入框",
+    "navigatedAway": "这个小页面试图离开当前内容，已停止运行。",
+    "defaultTitle": "交互页面",
+    "preparing": "正在准备交互页面…",
+    "settingsUnreadable": "无法读取交互页面设置，只显示源码。",
+    "disabled": "交互页面已在设置中关闭，只显示源码。",
+    "caption": "隔离运行，不能联网，只能把内容填进输入框",
+    "captionWithAlt": "{{alt}} · 隔离运行，不能联网，只能把内容填进输入框",
+    "fullscreen": "全屏查看",
+    "exportHtml": "导出 HTML",
+    "fullscreenDescription": "全屏运行交互页面，状态与对话里的页面互不影响"
   }
 }

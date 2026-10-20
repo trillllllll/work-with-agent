@@ -723,5 +723,17 @@ export const en: Record<string, string> = {
   "这份方案不能保存为当前技能": "This proposal cannot be saved as the current skill",
   "已在编辑器中修改并保存为 v{0}": "Edited in the editor and saved as v{0}",
   "缺少可验证的技能版本": "A verifiable skill version is missing",
-  "技能已有后续修改": "The skill has later changes"
+  "技能已有后续修改": "The skill has later changes",
+  "html 块当前不可用": "HTML blocks are currently unavailable",
+  "{0} 只能使用白名单 CDN 的完整地址": "{0} must use a full URL from an allowed CDN",
+  "{0} 来自未允许的地址：{1}": "{0} comes from an origin that is not allowed: {1}",
+  "{0} 必须写死版本号：{1}": "{0} must pin an exact version: {1}",
+  "html 块已在设置中关闭": "HTML blocks are turned off in Settings",
+  "html 内容为空": "HTML content is empty",
+  "html 内容超过大小限制": "HTML content exceeds the size limit",
+  "html 不能使用 <base>": "HTML cannot use <base>",
+  "html 不能使用自动跳转": "HTML cannot use automatic redirects",
+  "html 不能预取外部地址": "HTML cannot prefetch external addresses",
+  "CDN 地址无效：{0}。只能填写 https://域名，不带路径": "Invalid CDN address: {0}. Enter only https://hostname, with no path",
+  "CDN 白名单最多 20 项": "The CDN allowlist can have at most 20 entries"
 };

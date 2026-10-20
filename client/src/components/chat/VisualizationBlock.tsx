@@ -11,7 +11,7 @@ import type { ChartSpec, ImageResult } from '../../../../server/src/agent/conten
 import type { EChartsCoreOption, EChartsType } from 'echarts/core';
 import { t } from '../../i18n/index.js';
 
-function save(blob: Blob, name: string) {
+export function save(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 async function savePng(svg: string, name: string) {
@@ -84,7 +84,7 @@ function ImageGallery({ items, layout = 'grid' }: { items: ImageResult[]; layout
     <Dialog open={Boolean(preview)} onOpenChange={(open) => { if (!open) setPreview(null); }}><DialogContent data-assistant-floating className="max-w-[min(900px,calc(100vw-2rem))]"><DialogHeader><DialogTitle>{preview?.title}</DialogTitle></DialogHeader>{preview && <><img src={preview.url} alt={preview.title} referrerPolicy="no-referrer" className="max-h-[65dvh] w-full object-contain" onError={() => toast.error(t('visualization.fullImageFailed'))} /><a className="text-sm underline" href={preview.sourceUrl} target="_blank" rel="noopener noreferrer">{t('visualization.viewImageSource')}</a></>}</DialogContent></Dialog>
   </>;
 }
-function VisualFrame({ title, children, actions, source, caption }: { title: string; children: ReactNode; actions: ReactNode; source: string; caption?: string }) {
+export function VisualFrame({ title, children, actions, source, caption }: { title: string; children: ReactNode; actions?: ReactNode; source: string; caption?: string }) {
   const { t } = useTranslation('chat');
   const [showSource, setShowSource] = useState(false);
   return <section className="overflow-hidden rounded-xl border bg-muted/10"><header className="flex min-w-0 flex-wrap items-center gap-1 border-b px-3 py-2"><h3 className="min-w-20 flex-1 text-xs font-medium">{title}</h3><Button size="icon-xs" variant="ghost" title={t('clipboard.viewSource')} aria-label={t('clipboard.viewSource')} aria-pressed={showSource} onClick={() => setShowSource((value) => !value)}><Code /></Button><Button size="icon-xs" variant="ghost" title={t('clipboard.copySource')} aria-label={t('clipboard.copySource')} onClick={() => void navigator.clipboard.writeText(source).then(() => toast.success(t('clipboard.sourceCopied')), () => toast.error(t('clipboard.copyFailed')))}><Copy /></Button>{actions}</header>{showSource ? <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words p-4 text-xs">{source}</pre> : children}{caption && <p className="border-t px-3 py-2 text-[10px] text-muted-foreground">{caption}</p>}</section>;

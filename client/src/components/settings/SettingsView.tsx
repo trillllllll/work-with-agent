@@ -1,4 +1,5 @@
 import { ImageSearchSettings } from './ImageSearchSettings.js';
+import { HtmlBlockSettings } from './HtmlBlockSettings.js';
 import { useEffect, useRef, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { LanguageSettings } from './LanguageSettings.js';
@@ -113,6 +114,7 @@ export function SettingsView({ onBack }: { onBack?: () => void }) {
       {!settingsQuery.isError && (
         <>
           <ImageSearchSettings />
+          <HtmlBlockSettings />
           <section className="mt-10 border-t glass-divider pt-6">
             <h2 className="text-lg font-semibold">{t('skillsCard.title')}</h2>
             <p className="mt-1 text-sm text-muted-foreground">{t('skillsCard.description')}</p>

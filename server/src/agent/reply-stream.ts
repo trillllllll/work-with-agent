@@ -5,6 +5,8 @@ import type { ChatEvent } from '../agent.js';
 import { appendRunEvent } from './events.js';
 import { ReplyParser } from './reply-parser.js';
 import { TextBatcher } from './text-batcher.js';
+import { htmlBlockPolicy } from '../application/html-block-settings.js';
+import type { HtmlBlockPolicy } from './html-block.js';
 import { projectBlocks, validateReplyBlock, type BlockEvent, type ContentBlock, type ImageResult } from './content-blocks.js';
 
 /** One presentation call, one ordered set of blocks, one serialized persistence lane. */
@@ -15,6 +17,7 @@ export class ReplyStream {
   private receivedText = new Map<number, string>();
   private lane: Promise<void> = Promise.resolve();
   private prefixCount = 0;
+  private htmlPolicy?: Promise<HtmlBlockPolicy>;
   constructor(private runId: string, private token: string, private conversationId: string, private messageId: string,
     private images: (searchId: string, ids: string[]) => Promise<ImageResult[]>, private abort: () => void, prefix: string) {
     if (prefix) { this.prefixCount = 1; this.blocks.push({ id: `${messageId}:0`, index: 0, type: 'text', status: 'ready', markdown: prefix }); }
@@ -62,13 +65,15 @@ export class ReplyStream {
       } else {
         await this.batchers.get(index)?.finish();
         try {
-          const validated = await validateReplyBlock(event.value, this.images, (spec) => verifyChartSource(this.conversationId, spec));
+          const raw = event.value && typeof event.value === 'object' ? event.value as Record<string, unknown> : {};
+          if (raw.type === 'html') this.htmlPolicy ??= htmlBlockPolicy();
+          const validated = await validateReplyBlock(event.value, this.images, (spec) => verifyChartSource(this.conversationId, spec), raw.type === 'html' ? await this.htmlPolicy : undefined);
           const block: ContentBlock = { ...validated, id, index, status: 'ready' };
           await this.persist({ type: 'block_commit', blockId: id, block }, () => { this.blocks[index] = block; });
         } catch (error) {
           if (error instanceof DomainError && error.code === 'LEASE_LOST') throw error;
           const raw = event.value && typeof event.value === 'object' ? event.value as Record<string, unknown> : {};
-          const retained = ['mermaid', 'svg'].includes(String(raw.type)) && typeof raw.source === 'string' ? { type: raw.type as 'mermaid' | 'svg', source: raw.source.slice(0, 65536), ...(typeof raw.title === 'string' ? { title: raw.title.slice(0, 300) } : {}) } : {};
+          const retained = ['mermaid', 'svg', 'html'].includes(String(raw.type)) && typeof raw.source === 'string' ? { type: raw.type as 'mermaid' | 'svg' | 'html', source: raw.source.slice(0, 65536), ...(typeof raw.title === 'string' ? { title: raw.title.slice(0, 300) } : {}), ...(raw.type === 'html' && typeof raw.alt === 'string' ? { alt: raw.alt.slice(0, 2000) } : {}) } : {};
           await this.blockError(index, error instanceof Error ? error.message.slice(0, 300) : '内容无法显示', retained);
         }
       }

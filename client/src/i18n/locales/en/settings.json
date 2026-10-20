@@ -120,6 +120,20 @@
     "saved": "Image search key saved. The service is checked on the next search.",
     "cleared": "Image search key cleared"
   },
+  "htmlBlocks": {
+    "region": "Interactive page settings",
+    "title": "Interactive pages",
+    "description": "Let the assistant put small pages you can click in a reply. A page runs in isolation: it cannot use the network or read app data, and it can only fill the input. You decide whether to send.",
+    "loadFailed": "Couldn't load this configuration.",
+    "allow": "Allow the assistant to use interactive pages",
+    "cdnLabel": "Origins allowed to load scripts and styles",
+    "cdnHint": "One https origin per line, for example https://cdn.jsdelivr.net. Only pinned versions can be loaded. Every other network request is blocked.",
+    "saveCdn": "Save origins",
+    "restoreDefaults": "Restore defaults",
+    "cdnSaved": "Allowed script origins saved",
+    "enabled": "Interactive pages are on",
+    "disabled": "Interactive pages are off"
+  },
   "skillsCard": {
     "title": "Skills",
     "description": "Create, import, and manage skills for the AI assistant.",

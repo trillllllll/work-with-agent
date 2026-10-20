@@ -49,7 +49,7 @@ export type BuiltinTool = {
 const paging = { cursor: { type: 'string' }, limit: { type: 'integer' } };
 
 export const builtinTools: BuiltinTool[] = [
-  { name: 'present_reply', description: '最终富媒体回答：按 blocks 数组顺序混排 text、mermaid、chart、svg 和真实图片搜索引用。文字优先 type 后 markdown。只展示，不执行业务修改；同轮只能调用一次且不得与其他工具混用，调用后结束回答。图片先用 image_search 获得 resultIds。图表数据若无可核实来源必须标记 simulated 或 unverified。', parameters: presentReplyParameters, writesBusinessData: false },
+  { name: 'present_reply', description: '最终富媒体回答：按 blocks 数组顺序混排 text、mermaid、chart、svg、html（需要用户操作的交互小页面，规则见【交互页面】）和真实图片搜索引用。文字优先 type 后 markdown。只展示，不执行业务修改；同轮只能调用一次且不得与其他工具混用，调用后结束回答。图片先用 image_search 获得 resultIds。图表数据若无可核实来源必须标记 simulated 或 unverified。', parameters: presentReplyParameters, writesBusinessData: false },
   { name: 'image_search', description: '通过已配置的真实图片搜索服务查找图片，获得 searchId、resultIds 和来源。未配置时明确不可用；不能编造图片 URL。', parameters: { type: 'object', additionalProperties: false, required: ['query'], properties: { query: { type: 'string', minLength: 1, maxLength: 300 }, limit: { type: 'integer', minimum: 1, maximum: 8 } } }, writesBusinessData: false },
   { name: 'read_app_knowledge', description: '读取当前版本的应用功能说明，按页面或关键词搜索。', parameters: { type: 'object', additionalProperties: false, properties: { page: { type: 'string' }, q: { type: 'string' } } }, writesBusinessData: false },
   { name: 'read_page_state', description: '读取本次请求冻结的页面筛选、日期范围、多选对象，以及服务端当前时间段或安全状态。', parameters: { type: 'object', additionalProperties: false, properties: {} }, writesBusinessData: false },
@@ -148,7 +148,7 @@ AI发起者和批准者要区分。
 执行结果已在卡片中显示时，不重复输出大段数据库字段。
 
 【富媒体表达】
-普通回答仍用 Markdown 流式文字。需要图形或图表时，用 present_reply 一次提交有序内容块，文字可在图前图后交替。该调用必须单独提交，不与业务工具并行，也不能重复输出同一回答。图片只用 image_search 实际返回的 searchId 和 resultIds，不能自造 URL。未配置图片服务时说明不可用。图表仅用声明式协议。真实工具数据用 provenance.kind=tool，messageId 取工具返回的 sourceMessageId，toolCallId 取对应调用，dataPath 指向结果 data 内的数据行数组，categoryField 与 valueFields 指定字段；分类和数值必须逐项等于来源，服务端会核验。模拟或未核实数据须如实标明，不能运行 JavaScript。
+普通回答仍用 Markdown 流式文字。需要图形或图表时，用 present_reply 一次提交有序内容块，文字可在图前图后交替。该调用必须单独提交，不与业务工具并行，也不能重复输出同一回答。图片只用 image_search 实际返回的 searchId 和 resultIds，不能自造 URL。未配置图片服务时说明不可用。图表仅用声明式协议。真实工具数据用 provenance.kind=tool，messageId 取工具返回的 sourceMessageId，toolCallId 取对应调用，dataPath 指向结果 data 内的数据行数组，categoryField 与 valueFields 指定字段；分类和数值必须逐项等于来源，服务端会核验。模拟或未核实数据须如实标明，图表里不能运行 JavaScript。需要交互时按【交互页面】使用 html 块。
 
 【能力边界】
 除已配置的图片搜索 image_search 外，你不能联网搜索、读取网页、运行命令、直接读写磁盘文件、
