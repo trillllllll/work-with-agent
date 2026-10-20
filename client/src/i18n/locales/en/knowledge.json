@@ -284,6 +284,8 @@
       "suggestion": "Suggestion",
       "heading": "{{action}} {{title}}",
       "reasonLine": "Reason: {{reason}}",
+      "queue": "To review",
+      "empty": "No suggestions to review.",
       "evidence": "Evidence",
       "noEvidence": "No evidence attached",
       "confirm": "Confirm",
@@ -326,6 +328,8 @@
       "addMaterials": "Add materials",
       "noMatch": "No matching memory.",
       "clearSearch": "Clear search",
+      "pick": "Select a memory.",
+      "reading": "Reading…",
       "noActive": "No active memory.",
       "viewHistory": "View history",
       "viewSource": "View source link",
@@ -394,6 +398,7 @@
       }
     },
     "brief": {
+      "kicker": "Current brief",
       "preparing": "Preparing the current brief…",
       "pinnedNotes": "Pinned notes",
       "pinnedNotesLabel": "Brief pinned notes",

@@ -19,7 +19,7 @@ type EditorState = { draft: SkillDraftInput; fromApproval?: FromApproval; title:
 export function DiffLines({ lines, label }: { lines: SkillDiffLine[]; label?: string }) {
   const { t } = useTranslation('skills');
   return (
-    <div className="max-h-72 overflow-auto rounded-lg border bg-muted/30 font-mono text-[12px] leading-relaxed" aria-label={label ?? t('editor.diffLabel')} data-testid="skill-line-diff">
+    <div className="max-h-72 min-w-0 max-w-full overflow-auto rounded-lg border bg-muted/30 font-mono text-[12px] leading-relaxed" aria-label={label ?? t('editor.diffLabel')} data-testid="skill-line-diff">
       {lines.map((line, index) => (
         <div key={index} data-type={line.type} className={cn('whitespace-pre-wrap break-words px-2', line.type === 'add' && 'bg-green-500/15 text-green-800 dark:text-green-300', line.type === 'remove' && 'bg-red-500/15 text-red-800 line-through dark:text-red-300')}>
           <span aria-hidden="true" className="mr-2 select-none text-muted-foreground">{line.type === 'add' ? '+' : line.type === 'remove' ? '-' : ' '}</span>{line.text || ' '}
