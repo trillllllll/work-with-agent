@@ -21,7 +21,9 @@
 | 8 | `feat/mcp-task-attachments` | `15c54bc` |
 | 9 | `fix/hide-subtasks-on-subtask` | `3fa17b1` |
 
-合并后补充提交：`d3ad419`：编排 E2E 配置固定 `zh-CN` 语言（i18n 合入后浏览器默认英文，用例断言的是中文界面）。
+合并后补充了两个提交：
+- `d3ad419`：编排 E2E 配置固定为 `zh-CN`。i18n 合入后，Desktop Chrome 默认的英文环境会显示英文界面，而用例断言的是中文。
+- `a725542`：`work-context.spec.ts` 的「工作」导航分组加上新入口「技能」和「Worktree 管理」，与 `more-page.spec.ts` 保持一致。
 
 ### 冲突处理原则
 
@@ -311,9 +313,16 @@
 
 ## 9. 本次集成验证（Node 22.13.0）
 
-（见下方，合并完成后实际运行的结果）
-
-RESULTS_PLACEHOLDER
+- `prisma generate`、`prisma validate` 通过。迁移链按时间排列：`…20261019020000_topic_color` → `20261019030000_skills` → `20261019040000_html_blocks` → `20261020000000_orchestration` → `20261021000000_orchestration_phase2`。`prisma migrate diff` 对比全部迁移和 schema，结果与合并前 `origin/main` 的基线完全相同，只有原有的索引重定义，新迁移没有引入新的漂移。
+- `npm test`：服务端 71 个文件、520 个测试全部通过；客户端 33 个文件、185 个测试全部通过。
+- `npm run build` 通过。
+- `npm run i18n:check` 通过：11 个命名空间，150 个源文件干净，服务端 817 条消息有英文翻译。
+- `npm run e2e:orchestration`：3 个用例全部通过。
+- Desktop Chrome E2E（`playwright test --project=chromium`）：241 个通过、3 个跳过、13 个失败。
+  - 其中 12 个是 main 上原本就失败的用例（见第 10 节）。
+  - 另 1 个是 `work-context:76`，原因是新增了导航入口，已经修正；修正后重跑 `work-context` 和 `more-page`，12 个全部通过。
+  - 手机和 WebKit 项目没有跑。
+- `cargo test`（`desktop/src-tauri`，stable Rust）：13 个测试通过。由于 `../resources/` 是打包产物，测试时用 `TAURI_CONFIG='{"bundle":{"resources":null}}'` 跳过了资源检查。
 
 ## 10. 已知缺口与后续事项
 
