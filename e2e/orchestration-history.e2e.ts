@@ -209,6 +209,8 @@ test('the assistant answers a dispatch-stats question from orchestration_stats',
   await page.getByPlaceholder(composer).fill('统计这周 AI 派发');
   await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect(page.getByText(/本周派发 \d+ 轮/)).toBeVisible({ timeout: 30_000 });
-  await page.getByRole('button', { name: '查询了 1 项' }).click();
-  await expect(page.getByText('派发统计', { exact: true })).toBeVisible();
+  const lookup = page.getByRole('button', { name: '查询了 1 项' });
+  await lookup.click();
+  await expect(lookup).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByRole('button', { name: /派发统计/ })).toBeVisible();
 });

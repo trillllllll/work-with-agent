@@ -80,7 +80,7 @@ describe('dispatch stats aggregation', () => {
     ];
     const stats = aggregate({ rounds, steps, projectId: 'project-p' });
     expect(stats.roundCount).toBe(3);
-    expect(stats.stepCount).toBe(7);
+    expect(stats.stepCount).toBe(8);
     expect(stats.firstPass).toEqual({ passed: 2, total: 4, rate: 0.5 });
     expect(stats.rework).toBe(9);
     expect(stats.rateRetries).toBe(4);
@@ -196,9 +196,10 @@ describe('dispatch stats loader', () => {
     created.alpha = (await prisma.task.create({ data: { title: 'Alpha', createdAt: now, updatedAt: now } })).id;
     created.beta = (await prisma.task.create({ data: { title: 'Beta', createdAt: now, updatedAt: now } })).id;
     created.gamma = (await prisma.task.create({ data: { title: 'Gamma', createdAt: now, updatedAt: now } })).id;
+    const draftTask = (await prisma.task.create({ data: { title: 'Draft', createdAt: now, updatedAt: now } })).id;
     ids.nodes.push(created.node, created.blank);
     ids.projects.push(created.project, created.other);
-    ids.tasks.push(created.alpha, created.beta, created.gamma);
+    ids.tasks.push(created.alpha, created.beta, created.gamma, draftTask);
 
     const makeRound = async (taskId: string, roundNo: number, projectId: string, status: string, startedAt: string | null, rejectionReason: string | null = null) => {
       const row = await prisma.orchestration.create({ data: { taskId, round: roundNo, projectId, status, integrationBranch: `${stamp}-r${roundNo}-${taskId.slice(-4)}`, grantJson: '{}', taskSnapshotJson: '{}', startedAt, rejectionReason, createdAt: now, updatedAt: now } });
@@ -209,9 +210,9 @@ describe('dispatch stats loader', () => {
     const rejected = await makeRound(created.beta, 1, created.project, 'rejected', '2099-06-03T00:00:00.000Z', '范围不对');
     await makeRound(created.alpha, 2, created.project, 'accepted', '2099-06-04T00:00:00.000Z', '');
     const other = await makeRound(created.gamma, 1, created.other, 'accepted', '2099-06-05T00:00:00.000Z');
-    await makeRound(created.alpha, 3, created.project, 'draft', '2099-06-05T01:00:00.000Z');
-    const old = await makeRound(created.alpha, 4, created.project, 'running', '2099-06-01T12:00:00.000Z');
-    await makeRound(created.alpha, 5, created.project, 'running', TO);
+    await makeRound(draftTask, 1, created.project, 'draft', '2099-06-05T01:00:00.000Z');
+    const old = await makeRound(created.alpha, 4, created.project, 'accepted', '2099-06-01T12:00:00.000Z');
+    await makeRound(created.alpha, 5, created.project, 'superseded', TO);
     await prisma.orchestrationEvent.create({ data: { orchestrationId: rejected.id, seq: 1, type: 'paused', actorKind: 'user', payload: JSON.stringify({ reason: 'user_paused' }), createdAt: now } });
     await prisma.orchestrationEvent.create({ data: { orchestrationId: rejected.id, seq: 2, type: 'paused', actorKind: 'server', payload: JSON.stringify({ reason: 'merge_conflict_unresolved' }), createdAt: now } });
 
@@ -258,7 +259,7 @@ describe('dispatch stats loader', () => {
       to: TO,
       projectId: created.project,
       roundCount: 3,
-      stepCount: 7,
+      stepCount: 8,
       firstPass: { passed: 2, total: 4, rate: 0.5 },
       rework: 9,
       rateRetries: 4,

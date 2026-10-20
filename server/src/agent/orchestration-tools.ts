@@ -9,6 +9,7 @@ import { prisma } from '../infrastructure/prisma.js';
 import { DomainError } from '../domain/task.js';
 import { dispatchStats } from '../application/orchestration/stats.js';
 import { weekRange } from '../application/orchestration/week-range.js';
+import { redact } from '../infrastructure/controlled-execution.js';
 import type { Clock } from './time.js';
 
 const MAX_ROUNDS = 20;
@@ -46,6 +47,14 @@ export async function statsForAssistant(raw: Record<string, unknown>, context: {
   else if (!from || !to) throw new DomainError('INVALID_STATS_RANGE', '统计需要同时提供开始和结束时间', 400);
   const stats = await dispatchStats({ from, to, projectId: args.projectId });
   return { ...stats, timeZone, note: STATS_NOTE };
+}
+
+/** Aggregate token counts are the answer. The shared redactor treats any key containing "token" as a credential. */
+const statsCountKeys = new Set(['inputTokens', 'cachedInputTokens', 'outputTokens']);
+export function redactStats(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => redactStats(item));
+  if (!value || typeof value !== 'object') return redact(value);
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, statsCountKeys.has(key) ? item : redactStats(item)]));
 }
 
 export const worktreeCleanupInput = z.object({

@@ -20,7 +20,7 @@ import { externalPromptInput, externalPromptPart, renderExternalPrompt } from '.
 import { prepareChanges } from './propose.js';
 import { getCurrentTime, type Clock } from './time.js';
 import { searchWorkspace } from './workspace-search.js';
-import { proposeWorktreeCleanup, readOrchestration, statsForAssistant } from './orchestration-tools.js';
+import { proposeWorktreeCleanup, readOrchestration, redactStats, statsForAssistant } from './orchestration-tools.js';
 
 const tasks = new TaskService();
 const topics = new TopicService();
@@ -293,7 +293,7 @@ export async function executeBuiltinTool(input: {
       return { success: true, data: { status: 'ready', partId: part.id, title: part.title, limitation: part.limitation }, part };
     }
     if (input.name === 'orchestration_read') return { success: true, data: redact(await readOrchestration(args)) };
-    if (input.name === 'orchestration_stats') return { success: true, data: redact(await statsForAssistant(args, input.context, input.clock)) };
+    if (input.name === 'orchestration_stats') return { success: true, data: redactStats(await statsForAssistant(args, input.context, input.clock)) };
     if (input.name === 'propose_worktree_cleanup') {
       const proposed = await proposeWorktreeCleanup(args, input.run.assistantMessageId, input.toolCallId);
       return { success: true, data: proposed.data, part: proposed.part };
