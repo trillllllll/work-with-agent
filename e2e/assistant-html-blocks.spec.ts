@@ -111,7 +111,7 @@ function htmlBlock(page: Page, title: string) {
   return page.locator('[data-testid="html-block"]').filter({ has: page.locator('h3', { hasText: new RegExp(`^${title}$`) }) });
 }
 
-/** Frames stay on the lazy placeholder until they intersect the viewport. */
+/** Frames load once the block is within 300px of the chat scroller's visible area. */
 async function reveal(page: Page, title: string) {
   const block = htmlBlock(page, title);
   await block.scrollIntoViewIfNeeded();
@@ -258,4 +258,249 @@ test('随机码读不到', async ({ page }) => {
   expect(data.html).not.toContain(nonce);
   expect(data.scripts).not.toContain(nonce);
   await expect(composer).toHaveValue('');
+});
+
+type BlockProbe = { title: string; distance: number; loaded: boolean };
+
+async function probeBlocks(page: Page): Promise<BlockProbe[]> {
+  return page.evaluate(() => {
+    return [...document.querySelectorAll('[data-testid="html-block"]')].map((block) => {
+      const scroller = block.closest('[data-chat-scroll]');
+      const title = block.querySelector('h3')?.textContent?.trim() ?? '';
+      const loaded = Boolean(block.querySelector('iframe[data-testid="html-block-frame"]'));
+      if (!(scroller instanceof HTMLElement)) return { title, distance: Number.POSITIVE_INFINITY, loaded };
+      const blockRect = block.getBoundingClientRect();
+      const rootRect = scroller.getBoundingClientRect();
+      let distance = 0;
+      if (blockRect.bottom <= rootRect.top) distance = rootRect.top - blockRect.bottom;
+      else if (blockRect.top >= rootRect.bottom) distance = blockRect.top - rootRect.bottom;
+      return { title, distance, loaded };
+    });
+  });
+}
+
+function splitLabel(rows: BlockProbe[]) {
+  return {
+    count: rows.length,
+    nearMissing: rows.filter((row) => row.distance <= 300 && !row.loaded).map((row) => `${row.title}@${Math.round(row.distance)}`).sort(),
+    farLoaded: rows.filter((row) => row.distance > 450 && row.loaded).map((row) => `${row.title}@${Math.round(row.distance)}`).sort(),
+    farUnloaded: rows.some((row) => row.distance > 450 && !row.loaded),
+    nearLoaded: rows.some((row) => row.distance <= 300 && row.loaded),
+  };
+}
+
+async function expectPreloadRule(page: Page, count = 8) {
+  await expect.poll(async () => {
+    const label = splitLabel(await probeBlocks(page));
+    return { count: label.count, nearMissing: label.nearMissing, farLoaded: label.farLoaded };
+  }, { timeout: 15_000 }).toEqual({ count, nearMissing: [], farLoaded: [] });
+}
+
+async function expectLazySplit(page: Page, count = 8) {
+  await expectPreloadRule(page, count);
+  const label = splitLabel(await probeBlocks(page));
+  expect(label.nearLoaded, 'a block inside the preload margin should have a frame').toBe(true);
+  expect(label.farUnloaded, 'a block beyond 450px should still be a placeholder').toBe(true);
+}
+
+async function scrollTopOf(page: Page) {
+  return page.evaluate(() => {
+    const el = document.querySelector('[data-chat-scroll]');
+    return el instanceof HTMLElement ? el.scrollTop : -1;
+  });
+}
+
+async function distanceFromBottom(page: Page) {
+  return page.evaluate(() => {
+    const el = document.querySelector('[data-chat-scroll]');
+    if (!(el instanceof HTMLElement) || el.clientHeight === 0) return Number.POSITIVE_INFINITY;
+    return el.scrollHeight - el.scrollTop - el.clientHeight;
+  });
+}
+
+async function settleChat(page: Page) {
+  await expect(page.getByTestId('ai-assistant').locator('header').getByRole('status')).toHaveText('可用', { timeout: 15_000 });
+  await expect.poll(async () => page.evaluate(() => {
+    const el = document.querySelector('[data-chat-scroll]');
+    if (!(el instanceof HTMLElement) || el.clientHeight === 0) return '';
+    const mark = `${el.scrollHeight}|${Math.round(el.scrollTop)}|${el.clientHeight}`;
+    const stable = (window as unknown as { __lazyStable?: string }).__lazyStable === mark;
+    (window as unknown as { __lazyStable?: string }).__lazyStable = mark;
+    return stable ? mark : '';
+  }), { timeout: 15_000, intervals: [200] }).not.toBe('');
+}
+
+async function openSideAssistant(page: Page) {
+  await page.goto('/#/plan');
+  await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
+  await expect(page.getByTestId('ai-assistant')).toBeVisible();
+}
+
+async function sendPrompt(page: Page, text: string) {
+  await page.getByLabel('向 AI 提问').fill(text);
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+}
+
+async function wheelScroller(page: Page, deltaY: number) {
+  const point = await page.evaluate(() => {
+    const scroller = document.querySelector('[data-chat-scroll]');
+    if (!(scroller instanceof HTMLElement)) return null;
+    const rect = scroller.getBoundingClientRect();
+    const usable = (x: number, y: number) => {
+      const hit = document.elementFromPoint(x, y);
+      return Boolean(hit && scroller.contains(hit) && !hit.closest('iframe'));
+    };
+    for (let y = rect.top + 6; y < rect.bottom - 6; y += 10) {
+      if (usable(rect.left + 8, y)) return { x: rect.left + 8, y };
+      if (usable(rect.left + rect.width / 2, y)) return { x: rect.left + rect.width / 2, y };
+    }
+    return { x: rect.left + Math.min(8, rect.width / 2), y: rect.top + Math.min(12, rect.height / 2) };
+  });
+  expect(point, 'chat scroller is on screen').toBeTruthy();
+  const before = await scrollTopOf(page);
+  await page.mouse.move(point!.x, point!.y);
+  await page.mouse.wheel(0, deltaY);
+  await expect.poll(async () => scrollTopOf(page), { timeout: 5_000 }).not.toBe(before);
+}
+
+async function scrollTowardUnloaded(page: Page, mobile: boolean) {
+  const delta = await page.evaluate(() => {
+    const scroller = document.querySelector('[data-chat-scroll]');
+    if (!(scroller instanceof HTMLElement)) return 0;
+    const root = scroller.getBoundingClientRect();
+    let best = 0;
+    for (const block of scroller.querySelectorAll('[data-testid="html-block"]')) {
+      if (block.querySelector('iframe[data-testid="html-block-frame"]')) continue;
+      const rect = block.getBoundingClientRect();
+      if (rect.bottom > root.top && rect.top < root.bottom) continue;
+      const above = rect.bottom <= root.top ? root.top - rect.bottom : 0;
+      const below = rect.top >= root.bottom ? rect.top - root.bottom : 0;
+      const distance = above || below;
+      if (!distance) continue;
+      const signed = (above ? -1 : 1) * distance;
+      if (!best || distance < Math.abs(best)) best = signed;
+    }
+    if (!best) return 0;
+    const amount = Math.min(420, Math.max(180, Math.abs(best) - 60));
+    return Math.sign(best) * amount;
+  });
+  if (!delta) return false;
+  if (mobile) {
+    const before = await scrollTopOf(page);
+    await page.locator('[data-chat-scroll]').evaluate((el, dy) => { (el as HTMLElement).scrollTop += dy; }, delta);
+    await expect.poll(async () => scrollTopOf(page), { timeout: 5_000 }).not.toBe(before);
+  } else {
+    await wheelScroller(page, delta);
+  }
+  return true;
+}
+
+async function scrollUntilNewlyLoaded(page: Page, mobile: boolean) {
+  const pending = new Set((await probeBlocks(page)).filter((row) => !row.loaded).map((row) => row.title));
+  expect(pending.size).toBeGreaterThan(0);
+  for (let step = 0; step < 12; step += 1) {
+    const moved = await scrollTowardUnloaded(page, mobile);
+    expect(moved, 'unloaded blocks are still out of the preload range').toBe(true);
+    await expectPreloadRule(page);
+    const now = await probeBlocks(page);
+    if (now.some((row) => pending.has(row.title) && row.loaded)) return;
+  }
+  expect(false, 'scrolling toward unloaded blocks never mounted them').toBe(true);
+}
+
+test('懒加载：只预加载附近的块', async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  const mobile = testInfo.project.name === 'mobile';
+  await openSideAssistant(page);
+  await sendPrompt(page, 'html 懒加载验收');
+  await expect(page.locator('[data-testid="html-block"]')).toHaveCount(8, { timeout: 15_000 });
+  await settleChat(page);
+  await expectLazySplit(page);
+  await scrollUntilNewlyLoaded(page, mobile);
+});
+
+test('懒加载：换位置和收起面板后照常加载', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === 'mobile', '桌面布局');
+  test.setTimeout(180_000);
+  await openSideAssistant(page);
+  await sendPrompt(page, 'html 懒加载验收');
+  await expect(page.locator('[data-testid="html-block"]')).toHaveCount(8, { timeout: 15_000 });
+  await settleChat(page);
+  await expectLazySplit(page);
+  for (const hash of ['#/settings', '#/chat', '#/plan']) {
+    await page.evaluate((next) => { location.hash = next; }, hash);
+    await expect(page).toHaveURL(new RegExp(`${hash}$`));
+    await expect.poll(async () => page.evaluate(() => {
+      const el = document.querySelector('[data-chat-scroll]');
+      if (!(el instanceof HTMLElement)) return 0;
+      const box = el.getBoundingClientRect();
+      return box.height > 80 && box.width > 80 ? el.clientHeight : 0;
+    }), { timeout: 15_000 }).toBeGreaterThan(80);
+    await expect(page.getByText(blockedText, { exact: true })).toHaveCount(0);
+    await expectPreloadRule(page);
+    await scrollUntilNewlyLoaded(page, false);
+    await expect(page.getByText(blockedText, { exact: true })).toHaveCount(0);
+  }
+  await page.locator('button[title="收起助手"]').click();
+  await page.reload();
+  await expect(page.locator('[data-testid="html-block"]')).toHaveCount(8, { timeout: 15_000 });
+  await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
+  await expect(page.getByTestId('ai-assistant')).toBeVisible();
+  await expect(page.getByText(blockedText, { exact: true })).toHaveCount(0);
+  await expectLazySplit(page);
+});
+
+async function frameHeight(page: Page) {
+  const frame = page.locator('iframe[title="贴底变高"]');
+  if (await frame.count() === 0) return 0;
+  return frame.evaluate((el: HTMLIFrameElement) => el.getBoundingClientRect().height);
+}
+
+async function restingFrameHeight(page: Page) {
+  await expect.poll(async () => frameHeight(page), { timeout: 15_000 }).toBeGreaterThan(200);
+  const height = await frameHeight(page);
+  expect(height, 'growth should still be pending when the frame first settles').toBeLessThan(500);
+  return height;
+}
+
+async function atBottomWithRoom(page: Page) {
+  await expect.poll(async () => {
+    const gap = await distanceFromBottom(page);
+    const room = await page.evaluate(() => {
+      const el = document.querySelector('[data-chat-scroll]');
+      return el instanceof HTMLElement ? el.scrollHeight - el.clientHeight : 0;
+    });
+    return gap <= 2 && room > 500;
+  }, { timeout: 15_000 }).toBe(true);
+}
+
+test('贴底：内容变高时停在底部', async ({ page }) => {
+  test.setTimeout(90_000);
+  await openSideAssistant(page);
+  await sendPrompt(page, 'html 贴底验收');
+  await expect(page.locator('[data-testid="html-block"]')).toHaveCount(4, { timeout: 15_000 });
+  const initial = await restingFrameHeight(page);
+  await settleChat(page);
+  await expect.poll(async () => distanceFromBottom(page), { timeout: 10_000 }).toBeLessThanOrEqual(2);
+  await expect.poll(async () => frameHeight(page), { timeout: 15_000 }).toBeGreaterThan(initial + 100);
+  expect(await distanceFromBottom(page)).toBeLessThanOrEqual(2);
+});
+
+test('贴底：用户往上滚后不抢', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  const mobile = testInfo.project.name === 'mobile';
+  await openSideAssistant(page);
+  await sendPrompt(page, 'html 贴底验收');
+  await expect(page.locator('[data-testid="html-block"]')).toHaveCount(4, { timeout: 15_000 });
+  await atBottomWithRoom(page);
+  const before = await scrollTopOf(page);
+  if (mobile) await page.locator('[data-chat-scroll]').evaluate((el) => { (el as HTMLElement).scrollBy(0, -400); });
+  else await wheelScroller(page, -400);
+  await expect.poll(async () => before - await scrollTopOf(page), { timeout: 5_000 }).toBeGreaterThan(2);
+  const top = await scrollTopOf(page);
+  expect(await distanceFromBottom(page)).toBeGreaterThan(2);
+  const initial = await restingFrameHeight(page);
+  await expect.poll(async () => frameHeight(page), { timeout: 15_000 }).toBeGreaterThan(initial + 100);
+  expect(Math.abs((await scrollTopOf(page)) - top)).toBeLessThanOrEqual(2);
+  expect(await distanceFromBottom(page)).toBeGreaterThan(2);
 });

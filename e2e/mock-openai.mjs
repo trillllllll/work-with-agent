@@ -10,6 +10,13 @@ const stream = (res, chunks) => {
   for (const chunk of chunks) res.write(`data: ${JSON.stringify(chunk)}\n\n`);
   res.end('data: [DONE]\n\n');
 };
+// ~40 words of filler so html blocks sit far enough apart to tell a 300px preload from a 450px gap.
+const lazyFiller = '这段填充只负责把相邻的交互页面隔开，让对话长到必须滚动。离聊天可见区域三百像素以内的页面可以提前加载，更远的页面保持占位，直到滚到它们附近才挂上框架。';
+// Fixed 300px body matches the block height, so mounting the frame does not shrink the thread.
+const fixedHtml = (title) => `<div style="height:300px">${title}</div>`;
+// The sandbox bridge (buildSrcdoc) observes documentElement and body and posts wwa:resize with scrollHeight.
+// Appending a 900px div after load changes that height, which grows the parent iframe.
+const growingHtml = `<div id="grow" style="height:300px"></div><script>setTimeout(function(){var extra=document.createElement("div");extra.style.height="900px";document.body.appendChild(extra);},1500);</script>`;
 const server = http.createServer(async (req, res) => {
   if (req.url === '/health') return json(res, 200, { ok: true });
   if (req.url === '/html-leaks') return json(res, 200, { count: htmlLeaks });
@@ -140,6 +147,23 @@ document.getElementById('probe-out').textContent=JSON.stringify({html:html,scrip
       { type: 'html', title: '探针', alt: '尝试读取隔离信息并填入输入框', source: probe },
     ];
     return stream(res, [{ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'html-move', function: { name: 'present_reply', arguments: JSON.stringify({ blocks }) } }] }, finish_reason: 'tool_calls' }] }]);
+  }
+  if (latestUser.includes('html 懒加载验收')) {
+    const blocks = [{ type: 'text', markdown: '下面隔开排列了八个小页面。' }];
+    for (let index = 1; index <= 8; index += 1) {
+      blocks.push({ type: 'html', title: `懒加载 ${index}`, alt: `懒加载验收页面 ${index}`, height: 300, source: fixedHtml(`懒加载 ${index}`) });
+      blocks.push({ type: 'text', markdown: lazyFiller });
+    }
+    return stream(res, [{ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'html-lazy', function: { name: 'present_reply', arguments: JSON.stringify({ blocks }) } }] }, finish_reason: 'tool_calls' }] }]);
+  }
+  if (latestUser.includes('html 贴底验收')) {
+    const blocks = [{ type: 'text', markdown: '贴底验收从这里开始。' }];
+    for (let index = 1; index <= 3; index += 1) {
+      blocks.push({ type: 'html', title: `贴底 ${index}`, alt: `贴底验收页面 ${index}`, height: 300, source: fixedHtml(`贴底 ${index}`) });
+      blocks.push({ type: 'text', markdown: lazyFiller });
+    }
+    blocks.push({ type: 'html', title: '贴底变高', alt: '加载后会把自己变高的页面', height: 300, source: growingHtml });
+    return stream(res, [{ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'html-pin', function: { name: 'present_reply', arguments: JSON.stringify({ blocks }) } }] }, finish_reason: 'tool_calls' }] }]);
   }
   if (latestUser.includes('可视化矩阵验收')) {
     const provenance = { kind: 'simulated', label: '矩阵验收数据' };
