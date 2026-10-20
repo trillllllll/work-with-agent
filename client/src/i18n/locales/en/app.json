@@ -126,7 +126,9 @@
     "updateMaterial": "Revise material",
     "archiveMaterial": "Archive material",
     "invalidateMemory": "Invalidate memory",
-    "supersedeMemory": "Replace memory"
+    "supersedeMemory": "Replace memory",
+    "skillCreate": "Create skill",
+    "skillUpdate": "Update skill"
   },
   "api": {
     "invalidResponse": "Invalid response",

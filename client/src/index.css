@@ -892,6 +892,26 @@
     color: color-mix(in srgb, var(--foreground) 70%, transparent);
   }
 
+  .nav-count {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.125rem;
+    height: 1.125rem;
+    padding: 0 0.3rem;
+    border-radius: 999px;
+    background: var(--foreground);
+    color: var(--background);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .nav-count::before {
+    content: attr(data-count);
+  }
+
   .sidebar-link:hover {
     background: color-mix(in srgb, var(--foreground) 5%, transparent);
   }

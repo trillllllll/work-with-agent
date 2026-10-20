@@ -18,7 +18,7 @@ function clipText(value: string) {
   return { text: `${chars.slice(0, CLIP).join('')}…`, clipped: true };
 }
 
-function FieldDiff({ label, before, after }: { label: string; before: string; after: string }) {
+export function FieldDiff({ label, before, after }: { label: string; before: string; after: string }) {
   const { t } = useTranslation('chat');
   const [full, setFull] = useState(false);
   const left = clipText(before);

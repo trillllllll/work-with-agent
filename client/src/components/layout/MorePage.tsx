@@ -2,6 +2,8 @@ import { useTranslation } from 'react-i18next';
 import { ChevronRight, MessageSquare } from 'lucide-react';
 import type { View } from '@/lib/api.js';
 import { navigationItems } from '@/lib/navigation-items.js';
+import { usePendingProposalCount } from '@/lib/use-pending-proposal-count.js';
+import { NavCount } from '@/components/layout/NavCount.js';
 import { ThemeToggle } from '@/components/layout/ThemeToggle.js';
 import { cn } from '@/lib/utils.js';
 
@@ -19,6 +21,7 @@ type MorePageProps = {
 
 export function MorePage({ route, onNavigate }: MorePageProps) {
   const { t } = useTranslation('settings');
+  const pendingProposals = usePendingProposalCount().data?.pending;
   return (
     <div className="mx-auto w-full max-w-2xl p-4 pb-10 sm:p-6 lg:max-w-4xl">
       <header className="mb-5 flex items-center justify-between gap-3">
@@ -62,6 +65,7 @@ export function MorePage({ route, onNavigate }: MorePageProps) {
                   >
                     <Icon aria-hidden="true" className="size-5 shrink-0" strokeWidth={1.75} />
                     <span className="flex-1 text-[15px]">{item.label}</span>
+                    {view === 'proposals' ? <NavCount count={pendingProposals} /> : null}
                     <ChevronRight aria-hidden="true" className="size-4 text-muted-foreground" />
                   </button>
                 );
