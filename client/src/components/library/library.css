@@ -114,6 +114,32 @@
   line-height: 20px;
 }
 
+/* <button> 会自己把内容垂直居中，<label>（包着隐藏的文件输入）不会；统一成 flex 才能一样高、一样居中。 */
+.library-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.library-btn:disabled {
+  cursor: default;
+}
+
+label.library-btn {
+  position: relative;
+  user-select: none;
+}
+
+.library-btn:has(input:focus-visible) {
+  outline: 2px solid var(--lib-focus);
+  outline-offset: 2px;
+}
+
 .library-btn-primary {
   background: var(--lib-primary);
   color: var(--lib-primary-text);
@@ -359,7 +385,10 @@
 .material-reference .library-icon { width: 14px; height: 14px; }
 
 .task-materials { margin-top: 20px; }
-.task-materials-head { display: flex; height: 32px; align-items: center; justify-content: space-between; gap: 8px; }
+.task-materials-head { display: flex; min-height: 36px; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.task-materials-head > .library-name { white-space: nowrap; }
+/* 面板太窄时整组按钮换到下一行靠右，不把按钮文字挤成两行。 */
+.task-materials-actions { display: flex; margin-left: auto; align-items: center; gap: 8px; }
 .task-material-row { display: flex; height: 44px; align-items: center; gap: 8px; }
 
 .library-dialog {
