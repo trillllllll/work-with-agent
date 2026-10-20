@@ -155,8 +155,7 @@
     "retrySave": "Retry save",
     "showInBar": "Show {{label}} in the tab bar",
     "drag": "Drag {{label}}",
-    "moveUp": "Move {{label}} up",
-    "moveDown": "Move {{label}} down"
+    "reorderHint": "Drag a handle to reorder. Or focus a handle, press Space to pick it up, move it with the arrow keys, and press Space to drop it."
   },
   "modelSettings": {
     "eyebrow": "System configuration",
@@ -278,6 +277,69 @@
     "options": {
       "zh-CN": "简体中文",
       "en": "English"
+    }
+  },
+  "layout": {
+    "categories": {
+      "model": {
+        "title": "Models & AI",
+        "lead": "The model service, image search, and interactive pages the assistant uses."
+      },
+      "local": {
+        "title": "Local execution",
+        "lead": "Local AI commands, plus orchestration executors, notifications, and projects."
+      },
+      "skills": {
+        "title": "Skills",
+        "lead": "Skills the assistant can use."
+      },
+      "ui": {
+        "title": "Interface",
+        "lead": "Interface language and the phone tab bar."
+      },
+      "data": {
+        "title": "Data",
+        "lead": "Download a snapshot, or restore the workspace from one."
+      },
+      "about": {
+        "title": "About",
+        "lead": "Workspace mode and service version."
+      }
+    },
+    "groups": {
+      "ai": "AI",
+      "workspace": "Workspace",
+      "dataAdmin": "Data management"
+    },
+    "nav": {
+      "label": "Settings categories",
+      "back": "Back to settings"
+    },
+    "hints": {
+      "noModel": "No model configured",
+      "imageSearchOn": "Image search on",
+      "imageSearchOff": "Image search off",
+      "cli": "Codex {{codex}} · Claude {{claude}}",
+      "nodesOnline_one": "{{count}} executor online",
+      "nodesOnline_other": "{{count}} executors online",
+      "skills_one": "{{count}} skill · {{enabled}} enabled",
+      "skills_other": "{{count}} skills · {{enabled}} enabled",
+      "bar": "Tab bar: {{items}}",
+      "latestSnapshot": "Latest snapshot {{time}}",
+      "noSnapshot": "No snapshots yet",
+      "separator": " · ",
+      "listSeparator": ", ",
+      "loading": "…"
+    },
+    "worktreesEntry": {
+      "title": "Worktrees",
+      "description": "View and clean up worktrees on your executors.",
+      "manage": "Manage worktrees →"
+    },
+    "skillsSummary": {
+      "stats_one": "{{count}} skill, {{enabled}} enabled.",
+      "stats_other": "{{count}} skills, {{enabled}} enabled.",
+      "loadFailed": "Could not load skill stats"
     }
   }
 }

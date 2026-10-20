@@ -49,7 +49,8 @@
     "trashEyebrow": "Workspace management",
     "trashDescription": "Restore tasks, or clear items you no longer need",
     "changesEyebrow": "Audit log",
-    "changesDescription": "View workspace changes and undo actions that are still safe to reverse"
+    "changesDescription": "View workspace changes and undo actions that are still safe to reverse",
+    "close": "Close"
   },
   "materialPreview": {
     "loading": "Reading the original file…",

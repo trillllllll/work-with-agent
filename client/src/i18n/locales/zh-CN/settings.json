@@ -154,8 +154,7 @@
     "retrySave": "重试保存",
     "showInBar": "在底栏显示{{label}}",
     "drag": "拖动{{label}}",
-    "moveUp": "上移{{label}}",
-    "moveDown": "下移{{label}}"
+    "reorderHint": "拖动手柄调整顺序。也可以聚焦手柄后按空格拿起，用上下方向键移动，再按空格放下。"
   },
   "modelSettings": {
     "eyebrow": "系统配置",
@@ -277,6 +276,66 @@
     "options": {
       "zh-CN": "简体中文",
       "en": "English"
+    }
+  },
+  "layout": {
+    "categories": {
+      "model": {
+        "title": "模型与 AI",
+        "lead": "助手使用的模型服务、图片搜索和交互页面。"
+      },
+      "local": {
+        "title": "本机执行",
+        "lead": "本机 AI 命令、主控编排的执行端、通知和项目。"
+      },
+      "skills": {
+        "title": "技能",
+        "lead": "助手可以使用的技能。"
+      },
+      "ui": {
+        "title": "界面",
+        "lead": "界面语言和手机底栏。"
+      },
+      "data": {
+        "title": "数据",
+        "lead": "下载快照，或从快照恢复工作区。"
+      },
+      "about": {
+        "title": "关于",
+        "lead": "当前工作区的模式和服务版本。"
+      }
+    },
+    "groups": {
+      "ai": "AI",
+      "workspace": "工作区",
+      "dataAdmin": "数据管理"
+    },
+    "nav": {
+      "label": "设置分类",
+      "back": "返回设置"
+    },
+    "hints": {
+      "noModel": "未配置模型",
+      "imageSearchOn": "图片搜索已配置",
+      "imageSearchOff": "图片搜索未配置",
+      "cli": "Codex {{codex}} · Claude {{claude}}",
+      "nodesOnline": "{{count}} 个执行端在线",
+      "skills": "{{count}} 个技能 · {{enabled}} 个已启用",
+      "bar": "底栏：{{items}}",
+      "latestSnapshot": "最近快照 {{time}}",
+      "noSnapshot": "还没有快照",
+      "separator": " · ",
+      "listSeparator": "、",
+      "loading": "…"
+    },
+    "worktreesEntry": {
+      "title": "Worktree",
+      "description": "查看和清理执行端上的 worktree。",
+      "manage": "管理 worktree →"
+    },
+    "skillsSummary": {
+      "stats": "共 {{count}} 个技能，{{enabled}} 个已启用。",
+      "loadFailed": "技能统计加载失败"
     }
   }
 }

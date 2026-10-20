@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { View } from '../lib/api.js';
+import { parseSettingsCategory, settingsHash, type SettingsCategory } from '../components/settings/settings-categories.js';
 
 const validViews: View[] = ['board', 'quadrant', 'chat', 'topics', 'inbox', 'settings', 'trash', 'changes', 'today', 'search', 'tags', 'archived', 'more', 'connections', 'proposals', 'knowledge', 'library', 'skills', 'runs', 'worktrees', 'reviews', 'plan', 'focus'];
 const knowledgeSections = ['materials', 'memories', 'brief', 'search', 'tree', 'graph', 'extractions'] as const;
@@ -11,6 +12,8 @@ type HashState = {
   /** Empty string is the inbox. Null means the query did not name a scope. */
   knowledgeTopicId: string | null;
   knowledgeTopicExplicit: boolean;
+  /** Second segment of `#/settings/<category>`; null for `#/settings` or an unknown category. */
+  settingsCategory: SettingsCategory | null;
 };
 
 function hashPath() {
@@ -35,16 +38,17 @@ export function knowledgeHash(section: KnowledgeSection, topicId: string) {
   return `/knowledge/${section}?topicId=${encodeURIComponent(topic)}`;
 }
 
-function parseHash(path: string, params: URLSearchParams): HashState {
+export function parseHash(path: string, params: URLSearchParams): HashState {
   const topic = readTopic(params);
   const [head, ...rest] = path.split('/');
   const section = rest.join('/');
   if (head === 'knowledge') {
     const knowledgeSection = (knowledgeSections as readonly string[]).includes(section) ? section as KnowledgeSection : 'brief';
-    return { view: 'knowledge', knowledgeSection, knowledgeTopicId: topic.id, knowledgeTopicExplicit: topic.explicit };
+    return { view: 'knowledge', knowledgeSection, knowledgeTopicId: topic.id, knowledgeTopicExplicit: topic.explicit, settingsCategory: null };
   }
-  if ((validViews as string[]).includes(head)) return { view: head as View, knowledgeSection: null, knowledgeTopicId: null, knowledgeTopicExplicit: false };
-  return { view: 'inbox', knowledgeSection: null, knowledgeTopicId: null, knowledgeTopicExplicit: false };
+  if (head === 'settings') return { view: 'settings', knowledgeSection: null, knowledgeTopicId: null, knowledgeTopicExplicit: false, settingsCategory: parseSettingsCategory(rest[0]) };
+  if ((validViews as string[]).includes(head)) return { view: head as View, knowledgeSection: null, knowledgeTopicId: null, knowledgeTopicExplicit: false, settingsCategory: null };
+  return { view: 'inbox', knowledgeSection: null, knowledgeTopicId: null, knowledgeTopicExplicit: false, settingsCategory: null };
 }
 
 function applyHash(next: string, mode: 'push' | 'replace') {
@@ -72,8 +76,13 @@ export function useHashRoute() {
   const openKnowledge = useCallback((section: KnowledgeSection, topicId: string, mode: 'push' | 'replace' = 'push') => {
     applyHash(knowledgeHash(section, topicId), mode);
   }, []);
+  const openSettings = useCallback((category: SettingsCategory | null, mode: 'push' | 'replace' = 'push') => {
+    applyHash(settingsHash(category), mode);
+  }, []);
   return {
     route: state.view,
+    settingsCategory: state.settingsCategory,
+    openSettings,
     knowledgeSection: state.knowledgeSection,
     knowledgeTopicId: state.knowledgeTopicId,
     knowledgeTopicExplicit: state.knowledgeTopicExplicit,

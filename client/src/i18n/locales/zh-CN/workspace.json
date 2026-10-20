@@ -48,7 +48,8 @@
     "trashEyebrow": "工作区管理",
     "trashDescription": "恢复任务，或清理不再需要的内容",
     "changesEyebrow": "审计记录",
-    "changesDescription": "查看工作区变更，并撤销仍然安全可逆的操作"
+    "changesDescription": "查看工作区变更，并撤销仍然安全可逆的操作",
+    "close": "关闭"
   },
   "materialPreview": {
     "loading": "正在读取原件…",
