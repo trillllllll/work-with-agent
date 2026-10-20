@@ -61,7 +61,7 @@ export function ConnectionCard({ connection, topics, archivedTopics, revoked = f
   const actionIds = [...connectionOperationIds.filter((id) => actions.includes(id)), ...actions.filter((id) => !(connectionOperationIds as readonly string[]).includes(id))];
   const command = connection.lastCommandAt ? t('connections.lastCommand', { time: formatStamp(connection.lastCommandAt) }) : '';
   const write = connection.lastWriteAt ? t('connections.lastWrite', { time: formatStamp(connection.lastWriteAt), operation: operationLabel(connection.lastWriteOperation ?? '') }) : '';
-  const activity = [command, write].filter(Boolean).join(' ') || t('connections.noActivity');
+  const activity = [command, write].filter(Boolean).join(' · ') || t('connections.noActivity');
   const edit = onEdit ?? (() => {});
   return (
     <article className="glass-subtle space-y-3 rounded-xl p-4">

@@ -49,7 +49,7 @@ export function AccessPicker({ topics, archivedTopics, missingIds, includeInbox,
       </div>
       <div className="mt-2 rounded-xl border border-border">
         <div className="relative border-b border-border p-2">
-          <Search aria-hidden="true" className="pointer-events-none absolute top-1/2 left-5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Search aria-hidden="true" className="pointer-events-none absolute top-1/2 left-5 z-10 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input aria-label={t('connections.searchAria')} placeholder={t('connections.searchLists', { count: topics.length })} value={query} className="pl-9" onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') event.preventDefault(); }} />
         </div>
         <div className="border-b border-border p-1">
