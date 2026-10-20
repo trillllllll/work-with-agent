@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import supertest from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from './app.js';
-import { createOwnerBootstrapToken, resetLoginRateLimiter, resetOwnerKeyCache, resolveOwnerKeyHash } from './application/security.js';
+import { createOwnerBootstrapToken, mcpLoopbackHeaders, resetLoginRateLimiter, resetOwnerKeyCache, resolveOwnerKeyHash } from './application/security.js';
 
 const previous = {
   serverMode: process.env.WWA_SERVER_MODE,
@@ -85,6 +85,23 @@ describe('server mode origin checks', () => {
     const response = await supertest(app).get('/api/v1/auth/session');
     expect(response.status).toBe(403);
     expect(response.body.code).toBe('HOST_DENIED');
+  });
+
+  it('accepts the MCP process calling the loopback API', async () => {
+    enableServerMode();
+    const response = await supertest(app).get('/api/v1/tasks').set(mcpLoopbackHeaders());
+    expect(response.status).toBe(401);
+    expect(response.body.code).toBe('AUTH_REQUIRED');
+  });
+
+  it('rejects a forged loopback header and a loopback header aimed at another host', async () => {
+    enableServerMode();
+    const forged = await supertest(app).get('/api/v1/tasks').set('x-wwa-loopback', 'a'.repeat(43));
+    expect(forged.status).toBe(403);
+    expect(forged.body.code).toBe('HOST_DENIED');
+    const otherHost = await supertest(app).get('/api/v1/tasks').set('Host', 'evil.example.com').set(mcpLoopbackHeaders());
+    expect(otherHost.status).toBe(403);
+    expect(otherHost.body.code).toBe('HOST_DENIED');
   });
 
   it('still rejects non-local hosts in local mode', async () => {

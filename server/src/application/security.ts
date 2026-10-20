@@ -23,6 +23,20 @@ export const ownerActor: Actor = { id: 'local-owner', kind: 'user', topicIds: 'a
 export const internalActor: Actor = { id: 'builtin-agent', kind: 'internal', topicIds: 'all', includeInbox: true, autoActions: [], revision: 1 };
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const token = () => randomBytes(32).toString('base64url');
+const loopbackHosts = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+/** Process-local proof for the MCP client's fetch to 127.0.0.1. A public request cannot invent it. */
+const mcpLoopbackToken = randomBytes(32).toString('base64url');
+export function mcpLoopbackHeaders() {
+  return { 'x-wwa-loopback': mcpLoopbackToken };
+}
+function trustedMcpLoopback(req: Request) {
+  const given = req.headers['x-wwa-loopback'];
+  if (typeof given !== 'string' || given.length !== mcpLoopbackToken.length) return false;
+  if (!timingSafeEqual(Buffer.from(given), Buffer.from(mcpLoopbackToken))) return false;
+  const peer = req.socket?.remoteAddress ?? '';
+  const loopbackPeer = peer === '127.0.0.1' || peer === '::1' || peer === '::ffff:127.0.0.1';
+  return loopbackPeer && loopbackHosts.has(req.hostname);
+}
 const cookieName = 'wwa_session';
 const bootstrapTokens = new Map<string, number>();
 /** Prefer the repository root's version; packaged runtimes may only ship server/package.json. */
@@ -161,12 +175,13 @@ export function checkLocalOrigin(req: Request) {
   const origin = req.headers.origin;
   if (origin && !allowedOrigin(origin)) throw new DomainError('ORIGIN_DENIED', '请求来源不受信任', 403);
   if (isServerMode()) {
+    if (trustedMcpLoopback(req)) return;
     const hosts = configuredOrigins().map((value) => new URL(value).hostname);
     if (!hosts.length || !hosts.includes(req.hostname)) throw new DomainError('HOST_DENIED', '只允许已配置的工作区地址', 403);
     return;
   }
   const hostname = req.hostname;
-  if (!['localhost', '127.0.0.1', '::1', '[::1]'].includes(hostname)) throw new DomainError('HOST_DENIED', '只允许本机工作区地址', 403);
+  if (!loopbackHosts.has(hostname)) throw new DomainError('HOST_DENIED', '只允许本机工作区地址', 403);
 }
 export const corsOptions = { credentials: true, origin: (origin: string | undefined, callback: (error: Error | null, allowed?: boolean) => void) => callback(null, !origin || allowedOrigin(origin)) };
 

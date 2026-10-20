@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { mcpLoopbackHeaders } from '../application/security.js';
 import { requestLocale } from '../i18n/index.js';
 import {
   MAX_ATTACHMENT_BYTES,
@@ -50,7 +51,7 @@ export function createMcpServer() {
 
   async function request(path: string, method = 'GET', body?: unknown) {
     try {
-      const response = await fetch(new URL(path, apiBase()), { method, headers: { Authorization: `Bearer ${credential()}`, 'Content-Type': 'application/json', ...forwardedLanguage() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(30_000), redirect: 'error' });
+      const response = await fetch(new URL(path, apiBase()), { method, headers: { Authorization: `Bearer ${credential()}`, 'Content-Type': 'application/json', ...forwardedLanguage(), ...mcpLoopbackHeaders() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(30_000), redirect: 'error' });
       const payload = await response.json() as Record<string, unknown>;
       const result = { ...payload, httpStatus: response.status, retryable: response.status === 429 || response.status >= 500 };
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], structuredContent: result, ...(response.ok ? {} : { isError: true }) };
@@ -105,7 +106,7 @@ export function createMcpServer() {
   }
   async function requestBinary(path: string) {
     try {
-      const response = await fetch(new URL(path, apiBase()), { method: 'GET', headers: { Authorization: `Bearer ${credential()}`, ...forwardedLanguage() }, signal: AbortSignal.timeout(30_000), redirect: 'error' });
+      const response = await fetch(new URL(path, apiBase()), { method: 'GET', headers: { Authorization: `Bearer ${credential()}`, ...forwardedLanguage(), ...mcpLoopbackHeaders() }, signal: AbortSignal.timeout(30_000), redirect: 'error' });
       const body = await readCapped(response, MAX_ATTACHMENT_BYTES);
       if (!body.ok) return { ok: false as const, status: 413, message: body.message, code: body.code, retryable: false };
       if (!response.ok) {

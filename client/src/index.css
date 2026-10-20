@@ -1456,10 +1456,24 @@
 .task-prose h3 { font-size: 16px; line-height: 24px; margin-top: 12px; }
 .task-prose h4, .task-prose h5, .task-prose h6 { font-size: 14px; line-height: 24px; margin-top: 12px; }
 
+/* Tailwind preflight 把 ol/ul 收成 list-style: none。这里加回来，序号和圆点才画得出。 */
 .task-prose ul, .task-prose ol {
   margin: 0 0 8px;
   padding-left: 24px;
 }
+
+.task-prose ul {
+  list-style: disc;
+}
+
+.task-prose ol {
+  list-style: decimal;
+}
+
+.task-prose ol[type="a"] { list-style-type: lower-alpha; }
+.task-prose ol[type="A"] { list-style-type: upper-alpha; }
+.task-prose ol[type="i"] { list-style-type: lower-roman; }
+.task-prose ol[type="I"] { list-style-type: upper-roman; }
 
 .task-prose ul ul, .task-prose ol ol, .task-prose ul ol, .task-prose ol ul {
   margin-bottom: 0;
