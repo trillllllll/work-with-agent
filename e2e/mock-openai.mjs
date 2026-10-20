@@ -80,6 +80,67 @@ const request = (make) => new Promise((resolve, reject) => { const timer = setTi
     ];
     return stream(res, [{ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'html-choice', function: { name: 'present_reply', arguments: JSON.stringify({ blocks }) } }] }, finish_reason: 'tool_calls' }] }]);
   }
+  if (latestUser.includes('html 搬家验收')) {
+    const origin = `http://127.0.0.1:${port}`;
+    // User page repro/gantt-user.html, plus #state so the filter click is observable after a reload.
+    const gantt = `<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><style>
+body{margin:0;padding:14px;font-size:13px}
+button{font:inherit;padding:4px 11px;border-radius:999px;cursor:pointer}
+.row{display:flex;margin-bottom:6px;height:26px}
+.track{position:relative;flex:1}
+.bar{position:absolute;top:2px;height:18px;background:#2e9e6a}
+</style></head>
+<body>
+<div class="btns" id="btns">
+<button data-f="all" aria-pressed="true">全部</button>
+<button data-f="done" aria-pressed="false">仅实际</button>
+<button data-f="plan" aria-pressed="false">仅计划</button>
+</div>
+<p id="state">初始</p>
+<div id="chart"></div>
+<script>
+(function(){
+var D=[{n:"a",s:26,e:53,k:"done"},{n:"b",s:60,e:120,k:"plan"}];
+var chart=document.getElementById("chart");
+D.forEach(function(it){var row=document.createElement("div");row.className="row";row.setAttribute("data-k",it.k);
+var tr=document.createElement("div");tr.className="track";var b=document.createElement("div");b.className="bar";
+b.style.left=(it.s/540*100)+"%";b.style.width=((it.e-it.s)/540*100)+"%";tr.appendChild(b);row.appendChild(tr);chart.appendChild(row);});
+document.getElementById("btns").addEventListener("click",function(e){var btn=e.target.closest("button");if(!btn)return;
+var f=btn.getAttribute("data-f");if(f==="done")document.getElementById("state").textContent="仅实际";Array.prototype.forEach.call(document.querySelectorAll(".row"),function(r){var k=r.getAttribute("data-k");
+r.style.display=(f==="all")||(f==="done"?k==="done":k!=="done")?"":"none";});});
+})();
+</script>
+</body></html>`;
+    const anchor = `<p id="log"></p><a href="#" onclick="document.getElementById('log').textContent+='井号'">井号</a> <a href="#sec" onclick="document.getElementById('log').textContent+='去小节'">去小节</a> <a href="" onclick="document.getElementById('log').textContent+='空链接'">空链接</a> <button type="button" onclick="location.hash='h';document.getElementById('log').textContent+='改hash'">改 hash</button><div style="height:2400px"></div><h2 id="sec">小节</h2>`;
+    const external = `<a href="${origin}/nav-target">外链</a>`;
+    const early = `<script>location.href='${origin}/nav-target'</script>`;
+    const reload = `<p id="mark">原样</p><button type="button" onclick="document.getElementById('mark').textContent='改过';setTimeout(function(){location.reload()},50)">重新加载</button>`;
+    // Function scope: a global `var frameElement` would alias the read-only window accessor and stay null.
+    const probe = `<pre id="probe-out"></pre><script>
+(function(){
+var captured=[];
+window.parent={postMessage:function(m){captured.push(JSON.stringify(m))}};
+var html=document.documentElement.outerHTML+document.documentElement.innerHTML;
+var scripts=Array.from(document.scripts).map(function(s){return s.text}).join();
+var frameElement=String(window.frameElement);
+window.wwa.fillInput('探针');
+window.addEventListener('load',function(){setTimeout(function(){
+document.getElementById('probe-out').textContent=JSON.stringify({html:html,scripts:scripts,frameElement:frameElement,captured:captured});
+},300)});
+})();
+</script>`;
+    const blocks = [
+      { type: 'text', markdown: '搬家验收。' },
+      { type: 'html', title: '甘特图', alt: '三条任务条，可按全部、仅实际、仅计划筛选', source: gantt },
+      { type: 'html', title: '锚点', alt: '页内井号链接、小节锚点和空链接', source: anchor },
+      { type: 'html', title: '外链', alt: '一个指向外部地址的链接', source: external },
+      { type: 'html', title: '提前跳走', alt: '页面在加载完成前就跳走', source: early },
+      { type: 'html', title: '重新加载', alt: '按钮会重新加载这个小页面', source: reload },
+      { type: 'html', title: '探针', alt: '尝试读取隔离信息并填入输入框', source: probe },
+    ];
+    return stream(res, [{ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'html-move', function: { name: 'present_reply', arguments: JSON.stringify({ blocks }) } }] }, finish_reason: 'tool_calls' }] }]);
+  }
   if (latestUser.includes('可视化矩阵验收')) {
     const provenance = { kind: 'simulated', label: '矩阵验收数据' };
     const blocks = [

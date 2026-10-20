@@ -6,7 +6,7 @@ import { useLibrarySnapshot, patchLibrary } from './components/library/store.js'
 import type { AssistantSource } from '../../server/src/agent/assistant-sources.js';
 import { isOverdue, occursOn } from './lib/schedule.js';
 import { focusOriginFromNavigation, hashRouteHead } from './lib/focus-presentation.js';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError, statuses, type Status, type Tag, type Task, type TaskPriority, type Topic, type TrashTask, type View } from './lib/api.js';
@@ -60,6 +60,31 @@ import { toast } from 'sonner';
 import { t as translate } from './i18n/index.js';
 
 const emptyFilters: TaskFilters = { q: '', status: 'all', topic: 'all', dueFrom: '', dueTo: '', tag: '' };
+
+// This TypeScript lib.dom has no moveBefore. Keep the augmentation local.
+type MoveBeforeParent = ParentNode & { moveBefore?(node: Node, child: Node | null): void };
+
+/** Move the assistant host only when it is not already in the slot. Returns whether a move happened. */
+function moveHost(slot: HTMLElement, host: HTMLElement): boolean {
+  if (host.parentNode === slot) return false;
+  const move = (slot as MoveBeforeParent).moveBefore;
+  if (typeof move === 'function' && host.isConnected && slot.isConnected && host.ownerDocument === slot.ownerDocument) {
+    try { move.call(slot, host, null); return true; }
+    catch (error) { if (!(error instanceof DOMException)) throw error; }
+  }
+  slot.appendChild(host);
+  return true;
+}
+
+/** moveHost plus keeping the chat scroll position and focus, which a plain appendChild resets. */
+function relocateHost(slot: HTMLElement, host: HTMLElement) {
+  const scroller = host.querySelector<HTMLElement>('[data-chat-scroll]');
+  const top = scroller?.scrollTop;
+  const focused = host.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
+  if (!moveHost(slot, host)) return;
+  if (scroller && top !== undefined) scroller.scrollTop = top;
+  focused?.focus({ preventScroll: true });
+}
 
 function classificationSections(tasks: Task[], topics: Topic[]) {
   const sections: { id: string; name: string; items: Task[] }[] = [];
@@ -208,15 +233,22 @@ export function App() {
     ? assistantOrigin?.context ?? { ...buildChatContext({ page: 'chat', topicId: '', taskId: '', today }), schemaVersion: 3, label: t('shell.assistant'), section: null, mode: 'follow', taskRevision: null, materialRevision: null, selectedMaterialIds: [], pageState: {}, attachments: [] }
     : pageContext;
   const chat = useChat({ pageContext: assistantContext, selectedTopicId: assistantContext.scope.kind === 'topic' ? assistantContext.scope.topicId : '', taskId, view: isAssistantPage ? 'chat' : page, onError: (message) => { if (message) toast.error(message); } });
+  // Updated every render so the slot ref's cleanup (which runs after this render) sees the fallback that belongs to it.
+  const assistantHostFallback = useRef<HTMLDivElement | null>(null);
+  assistantHostFallback.current = isAssistantPage ? assistantPageSlot : assistantSlot;
+  const workspaceAssistantSlotRef = useCallback((node: HTMLDivElement | null) => {
+    if (!node) { setWorkspaceAssistantSlot(null); return; }
+    setWorkspaceAssistantSlot(node);
+    return () => {
+      const target = assistantHostFallback.current;
+      if (assistantHost.parentNode === node && target && target.isConnected && !node.contains(target)) relocateHost(target, assistantHost);
+      setWorkspaceAssistantSlot(null);
+    };
+  }, [assistantHost]);
   useLayoutEffect(() => {
     const slot = isAssistantPage ? assistantPageSlot : workspaceView ? workspaceAssistantSlot : assistantSlot;
-    if (!slot) return;
-    const scroller = assistantHost.querySelector<HTMLElement>('[data-chat-scroll]');
-    const top = scroller?.scrollTop;
-    const focused = assistantHost.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
-    slot.appendChild(assistantHost);
-    if (scroller && top !== undefined) scroller.scrollTop = top;
-    focused?.focus({ preventScroll: true });
+    if (!slot || !slot.isConnected) return;
+    relocateHost(slot, assistantHost);
   }, [assistantSlot, workspaceAssistantSlot, workspaceView, assistantHost, isAssistantPage, assistantPageSlot]);
   const transitionFromDetail = (action: () => void) => {
     if (taskId && detailRef.current) detailRef.current.requestTransition(action);
@@ -521,7 +553,7 @@ export function App() {
     <UploadQueue />
     <SkillEditorHost />
     {!(focusAccessory || focusPageVisible) && <FocusChip />}
-    {workspaceView && <WorkspaceModal suspended={isAssistantPage} assistantOpen={showChat} assistantSlot={setWorkspaceAssistantSlot} onOpenAssistant={openChat} view={workspaceView} mobile={!isDesktop} detailTitle={settingsCategory ? t(`settings:layout.categories.${settingsCategory}.title`) : null} onBack={() => openSettings(null)} onViewChange={navigateSafely} onClose={() => navigateSafely(previousMain.current)} settings={<SettingsView category={settingsCategory} mobile={!isDesktop} onCategoryChange={(category) => openSettings(category)} onNavigate={navigateSafely} />} changes={<ChangesPage />} trash={<TrashPage tasks={trashQuery.data ?? []} loading={trashQuery.isLoading} onRestore={(task) => run(actions.write(`/api/trash/tasks/${task.id}/restore`, 'POST', undefined, [task.id, ...(task.parentId ? [task.parentId] : []), ...(task.children ?? (trashQuery.data ?? []).filter((child) => child.parentId === task.id)).map((child) => child.id)], t('shell.taskRestored')))} onPermanentDelete={(task) => run(permanentDelete(task))} />} />}
+    {workspaceView && <WorkspaceModal suspended={isAssistantPage} assistantOpen={showChat} assistantSlot={workspaceAssistantSlotRef} onOpenAssistant={openChat} view={workspaceView} mobile={!isDesktop} detailTitle={settingsCategory ? t(`settings:layout.categories.${settingsCategory}.title`) : null} onBack={() => openSettings(null)} onViewChange={navigateSafely} onClose={() => navigateSafely(previousMain.current)} settings={<SettingsView category={settingsCategory} mobile={!isDesktop} onCategoryChange={(category) => openSettings(category)} onNavigate={navigateSafely} />} changes={<ChangesPage />} trash={<TrashPage tasks={trashQuery.data ?? []} loading={trashQuery.isLoading} onRestore={(task) => run(actions.write(`/api/trash/tasks/${task.id}/restore`, 'POST', undefined, [task.id, ...(task.parentId ? [task.parentId] : []), ...(task.children ?? (trashQuery.data ?? []).filter((child) => child.parentId === task.id)).map((child) => child.id)], t('shell.taskRestored')))} onPermanentDelete={(task) => run(permanentDelete(task))} />} />}
     {detailPane}
     {topicForm && <TopicModal form={topicForm} onChange={setTopicForm} onClose={() => { if (!actions.pending) setTopicForm(null); }} onSave={() => run(saveTopic())} onDelete={() => run(archiveTopic(topicForm))} busy={actions.pending} />}
     {prompt && <ActionDialog prompt={prompt} onResolve={(value) => { prompt.resolve(value); setPrompt(null); }} />}

@@ -9,7 +9,9 @@ export function AssistantInputProvider({ setInput, children }: { setInput: (upda
   const lastFilled = useRef(new Map<string, string>());
   const value = useMemo<AssistantInput>(() => ({
     fill: (text, blockId) => {
-      setInput((current) => mergeFill(current, text, lastFilled.current.get(blockId) ?? null));
+      // Read before setInput: React may run the updater later, after lastFilled has moved on.
+      const previous = lastFilled.current.get(blockId) ?? null;
+      setInput((current) => mergeFill(current, text, previous));
       lastFilled.current.set(blockId, text);
       requestAnimationFrame(() => window.dispatchEvent(new Event('wwa-focus-assistant')));
     },
