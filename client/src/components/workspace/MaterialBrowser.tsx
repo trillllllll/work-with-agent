@@ -3,7 +3,7 @@ import { Trans, useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, type Task } from '@/lib/api.js';
-import { materialKindNames, materialTypeLabel, startOfLocalWeek, titleFromFileName } from '@/lib/attachment-title.js';
+import { attachmentPreviewKind, materialKindNames, materialTypeLabel, startOfLocalWeek, titleFromFileName } from '@/lib/attachment-title.js';
 import { json, submitCommands, usePlatformAction } from '@/lib/platform.js';
 import { intlLocale, t as translate } from '../../i18n/index.js';
 import { cn } from '@/lib/utils.js';
@@ -136,46 +136,47 @@ export function MaterialBrowser({ topicId, taskId, onCreate, onEdit, children }:
   }
   const columns: Array<[SortKey, string]> = [['title', t('materials.columns.title')], ['kind', t('materials.columns.kind')], ['updatedAt', t('materials.columns.updatedAt')]];
   const openedResource = resource?.id === opened ? resource : undefined;
+  const openedFile = openedResource ? currentVersion(openedResource)?.fileName ?? openedResource.fileName : undefined;
+  const framedPreview = Boolean(openedResource && currentVersion(openedResource)?.hasAttachment && ['pdf', 'html', 'docx', 'image'].includes(attachmentPreviewKind(openedFile)));
   const summary = openedResource
     ? t(openedResource.archivedAt && openedResource.id.startsWith('auto-chat:') ? 'materials.summaryArchivedExcerpt' : openedResource.archivedAt ? 'materials.summaryArchived' : openedResource.id.startsWith('auto-chat:') ? 'materials.summaryExcerpt' : 'materials.summary', { type: materialTypeLabel(openedResource.kind, currentVersion(openedResource)?.fileName ?? openedResource.fileName), revision: openedResource.revision })
     : detail.error ? t('materials.readFailedDetail') : t('materials.reading');
-  return <div className={cn('grid gap-4', !taskId && 'lg:grid-cols-[9.5rem_minmax(0,1fr)] lg:items-start')}>
-    <nav aria-label={t('materials.navAria')} className={cn('flex gap-1 overflow-x-auto', !taskId && 'lg:flex-col')}>{viewOrder.filter((value) => value !== 'linked' || !taskId).map((value) => <Button key={value} type="button" size="sm" variant={view === value ? 'secondary' : 'ghost'} aria-pressed={view === value} onClick={() => setView(value)}>{t(`materials.views.${value}`)}</Button>)}</nav>
-    <div className="min-w-0 space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
+  return <div className="min-w-0 space-y-3">
+    <div className="ctx-sheet-bar">
+      <div role="group" aria-label={t('materials.navAria')} className="ctx-actions">{viewOrder.filter((value) => value !== 'linked' || !taskId).map((value) => <Button key={value} type="button" className="ctx-btn" aria-pressed={view === value} onClick={() => setView(value)}>{t(`materials.views.${value}`)}</Button>)}</div>
+      <select aria-label={t('materials.kindFilterAria')} className="ctx-select" value={kind} onChange={(event) => setKind(event.target.value)}><option value="">{t('materials.allKinds')}</option>{Object.entries(materialKindNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+      <div className="ctx-sheet-end">
         <input ref={inputRef} className="sr-only" type="file" multiple aria-label={t('materials.importAria')} onChange={(event) => { const files = [...(event.target.files ?? [])]; event.target.value = ''; void importFiles(files); }} />
-        <Button type="button" size="sm" onClick={() => inputRef.current?.click()}>{t('materials.import')}</Button>
-        <Button type="button" size="sm" variant="outline" onClick={onCreate}>{t('materials.save')}</Button>
-        <select aria-label={t('materials.kindFilterAria')} className="glass-control h-8 rounded-lg px-2 text-sm" value={kind} onChange={(event) => setKind(event.target.value)}><option value="">{t('materials.allKinds')}</option>{Object.entries(materialKindNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+        <Button type="button" className="ctx-btn" onClick={onCreate}>{t('materials.save')}</Button>
+        <Button type="button" className="ctx-btn ctx-btn-primary" onClick={() => inputRef.current?.click()}>{t('materials.import')}</Button>
       </div>
-      {children}
-      {importError && <p role="alert" className="text-sm text-destructive">{importError}</p>}
-      {list.error && <p role="alert" className="text-sm text-destructive">{list.error.message}</p>}
-      <div className={cn('glass-subtle overflow-x-auto rounded-xl', dragOver && 'ring-2 ring-primary')} onDragOver={(event) => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={onDrop}>
-        <table className="w-full text-sm" aria-label={t('materials.tableAria')}>
-          <thead><tr>{columns.map(([key, label]) => <th key={key} aria-sort={sort === key ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'} className="px-3 py-2 text-left font-medium text-muted-foreground"><button type="button" className="hover:text-foreground" onClick={() => toggleSort(key)}>{label}{sort === key ? (dir === 'asc' ? ' ↑' : ' ↓') : ''}</button></th>)}{!taskId && <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t('materials.linkedColumn')}</th>}</tr></thead>
-          <tbody>
-            {!list.isLoading && !list.data?.items.length && <tr><td colSpan={taskId ? 3 : 4} className="px-3 py-6 text-muted-foreground">{t('materials.empty')}</td></tr>}
-            {list.data?.items.map((item) => <tr key={item.id} className={cn('border-t', opened === item.id && 'bg-primary/10')} aria-selected={opened === item.id}>
-              <td className="px-3 py-2"><button type="button" className="text-left font-medium" aria-haspopup="dialog" aria-expanded={opened === item.id} onClick={() => { setOrganizeResult(null); setOpened(item.id); }}>{item.title}</button>{item.id.startsWith('auto-chat:') && <span className="ctx-badge">{t('materials.autoExcerpt')}</span>}</td>
-              <td className="px-3 py-2 text-muted-foreground">{materialTypeLabel(item.kind, item.fileName)}</td>
-              <td className="px-3 py-2 text-muted-foreground">{formatWhen(item.updatedAt)}</td>
-              {!taskId && <td className="px-3 py-2 text-muted-foreground">{item.taskTitle ?? ''}</td>}
-            </tr>)}
-          </tbody>
-        </table>
-      </div>
+    </div>
+    {children}
+    {importError && <p role="alert" className="ctx-error">{importError}</p>}
+    {list.error && <p role="alert" className="ctx-error">{list.error.message}</p>}
+    <div className={cn('ctx-table-wrap', dragOver && 'ring-2 ring-primary')} onDragOver={(event) => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={onDrop}>
+      <table className="ctx-table" aria-label={t('materials.tableAria')}>
+        <thead><tr>{columns.map(([key, label]) => <th key={key} aria-sort={sort === key ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}><button type="button" className="ctx-btn" onClick={() => toggleSort(key)}>{label}{sort === key ? (dir === 'asc' ? ' ↑' : ' ↓') : ''}</button></th>)}{!taskId && <th>{t('materials.linkedColumn')}</th>}</tr></thead>
+        <tbody>
+          {!list.isLoading && !list.data?.items.length && <tr><td colSpan={taskId ? 3 : 4}>{t('materials.empty')}</td></tr>}
+          {list.data?.items.map((item) => <tr key={item.id} aria-selected={opened === item.id}>
+            <td><button type="button" className="ctx-name-link" aria-haspopup="dialog" aria-expanded={opened === item.id} onClick={() => { setOrganizeResult(null); setOpened(item.id); }}>{item.title}</button>{item.id.startsWith('auto-chat:') && <span className="ctx-badge">{t('materials.autoExcerpt')}</span>}</td>
+            <td>{materialTypeLabel(item.kind, item.fileName)}</td>
+            <td>{formatWhen(item.updatedAt)}</td>
+            {!taskId && <td>{item.taskTitle ?? ''}</td>}
+          </tr>)}
+        </tbody>
+      </table>
+    </div>
       <Dialog open={Boolean(opened)} onOpenChange={(next) => { if (!next) setOpened(''); }}>
-        <DialogContent surface="glass" overlayClassName="z-[60]" className="z-[60] flex h-[min(46rem,calc(100dvh-3rem))] w-[min(64rem,calc(100%-3rem))] max-w-none flex-col gap-3 overflow-hidden p-4">
+        <DialogContent surface="glass" overlayClassName="z-[60]" className="z-[60] flex h-auto max-h-[min(46rem,calc(100dvh-3rem))] w-[min(64rem,calc(100%-3rem))] max-w-none flex-col gap-3 overflow-y-auto p-4">
           <div className="min-w-0 shrink-0 pr-10">
             <DialogTitle className="truncate text-base" title={openedResource ? openedResource.title : undefined}>{openedResource ? openedResource.title : t('materials.previewTitle')}</DialogTitle>
             <DialogDescription className="truncate text-xs">{summary}</DialogDescription>
           </div>
-          <div className="relative min-h-[8rem] min-w-0 flex-1">
-            <div className="absolute inset-0 overflow-hidden">
-              {detail.error && <p role="alert" className="text-sm text-destructive">{detail.error.message}</p>}
-              {openedResource ? <MaterialPreview materialId={openedResource.id} revision={openedResource.revision} kind={openedResource.kind} content={currentVersion(openedResource)?.content} fileName={currentVersion(openedResource)?.fileName ?? openedResource.fileName} hasAttachment={currentVersion(openedResource)?.hasAttachment} /> : !detail.error && <p className="text-sm text-muted-foreground">{t('materials.reading')}</p>}
-            </div>
+          <div className={framedPreview ? 'ctx-preview-frame' : 'ctx-preview-body'}>
+            {detail.error && <p role="alert" className="ctx-error">{detail.error.message}</p>}
+            {openedResource ? <MaterialPreview materialId={openedResource.id} revision={openedResource.revision} kind={openedResource.kind} content={currentVersion(openedResource)?.content} fileName={openedFile} hasAttachment={currentVersion(openedResource)?.hasAttachment} /> : !detail.error && <p className="text-sm text-muted-foreground">{t('materials.reading')}</p>}
           </div>
           {openedResource && <div className="flex min-h-0 max-h-[min(16rem,38dvh)] shrink flex-col gap-3 overflow-auto">
             {openedResource.uri && <a className="break-all text-sm text-primary underline" href={openedResource.uri} target="_blank" rel="noreferrer">{t('materials.sourceLink')}</a>}
@@ -202,7 +203,6 @@ export function MaterialBrowser({ topicId, taskId, onCreate, onEdit, children }:
           </div>}
         </DialogContent>
       </Dialog>
-      <div className="flex gap-2"><Button type="button" variant="ghost" size="sm" disabled={!cursor} onClick={() => setCursor(Math.max(0, cursor - 40))}>{t('materials.previousPage')}</Button><Button type="button" variant="ghost" size="sm" disabled={list.data?.nextCursor == null} onClick={() => setCursor(list.data?.nextCursor ?? 0)}>{t('materials.nextPage')}</Button></div>
-    </div>
+    <div className="ctx-actions"><Button type="button" className="ctx-btn" disabled={!cursor} onClick={() => setCursor(Math.max(0, cursor - 40))}>{t('materials.previousPage')}</Button><Button type="button" className="ctx-btn" disabled={list.data?.nextCursor == null} onClick={() => setCursor(list.data?.nextCursor ?? 0)}>{t('materials.nextPage')}</Button></div>
   </div>;
 }

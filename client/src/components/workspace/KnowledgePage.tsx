@@ -166,14 +166,26 @@ export function KnowledgePage({
   };
   const brief = <BriefPanel key={topicId} topicId={topicId || null} draft={briefDrafts[topicId] ?? null} updateDraft={updateBriefDraft} />;
   const materials = <MaterialBrowser topicId={topicId || null} taskId={taskId} onCreate={() => openEditor()} onEdit={(item) => openEditor(item as Resource)}>{activeEditor && <ResourceEditor key={activeEditor.id} type="materials" resource={activeEditor.resource} topicId={topicId || null} taskId={taskId} onClose={() => setEditing((current) => current?.id === activeEditor.id ? null : current)} />}</MaterialBrowser>;
-  const memories = <MemoryBrowser embedded={embedded} topicId={topicId} scope={scope} cursor={cursor} setCursor={setCursor} status={memoryStatus} setStatus={(value) => { setMemoryStatus(value); setCursor(0); }} input={memoryInput} setInput={setMemoryInput} submitted={memoryQuery.submitted} onCompositionStart={memoryQuery.onCompositionStart} onCompositionEnd={memoryQuery.onCompositionEnd} opened={opened} setOpened={setOpened} activeEditor={activeEditor} openEditor={openEditor} closeEditor={() => setEditing((current) => current?.id === activeEditor?.id ? null : current)} auto={auto.data} onShowProposals={() => locate('brief')} onShowMaterials={() => locate('materials')} />;
+  const memories = <MemoryBrowser embedded={embedded} topicId={topicId} scope={scope} cursor={cursor} setCursor={setCursor} status={memoryStatus} setStatus={(value) => { setMemoryStatus(value); setCursor(0); }} input={memoryInput} setInput={setMemoryInput} submitted={memoryQuery.submitted} onCompositionStart={memoryQuery.onCompositionStart} onCompositionEnd={memoryQuery.onCompositionEnd} opened={opened} setOpened={setOpened} activeEditor={activeEditor} openEditor={openEditor} closeEditor={() => setEditing((current) => current?.id === activeEditor?.id ? null : current)} auto={auto.data} onShowProposals={() => locate('brief')} onShowMaterials={() => locate('materials')} onShowRecords={embedded ? undefined : () => locate('extractions')} />;
   const search = <ContextSearch topicId={topicId} scope={scope} cursor={cursor} setCursor={setCursor} input={searchInput} setInput={setSearchInput} submitted={searchQuery.submitted} history={searchHistory} setHistory={(value) => { setSearchHistory(value); setCursor(0); }} onCompositionStart={searchQuery.onCompositionStart} onCompositionEnd={searchQuery.onCompositionEnd} />;
-  const body = missing ? <p role="alert" className="ctx-error">{t('page.missingList')}</p> : section === 'extractions' ? <MemoryExtractionJobs topicId={topicId} /> : section === 'tree' ? <KnowledgeTree topicId={topicId || null} brief={brief} /> : section === 'graph' ? <KnowledgeGraph topicId={topicId || null} /> : section === 'search' ? search : section === 'materials' ? materials : section === 'memories' ? memories : <>
-    {!embedded && <AutoStatus topicId={topicId} state={auto.data} error={auto.error} onRetry={() => void auto.refetch()} onOpenSettings={onOpenSettings} onShowRecords={() => locate('extractions')} />}
-    {!embedded && <MemoryProposals topicId={topicId} scope={scope} count={auto.data?.pendingProposalCount ?? 0} />}
-    {brief}
-    {!embedded && <OrganizationPanel topicId={topicId || null} />}
-  </>;
+  const listName = topicId ? knownTopics.find((topic) => topic.id === topicId)?.name ?? t('page.unknownList') : t('page.inbox');
+  const pendingCount = auto.data?.pendingProposalCount ?? 0;
+  const progress = embedded ? brief : <div className="ctx-desk">
+    <div className="ctx-brief-col" data-testid="context-brief">
+      <p className="ctx-kicker">{t('page.brief.kicker')} <span className="ctx-muted">· {listName}</span></p>
+      {brief}
+      <OrganizationPanel topicId={topicId || null} />
+    </div>
+    <aside className="ctx-rail" data-testid="context-rail" aria-label={t('page.proposal.queue')}>
+      <AutoStatus topicId={topicId} state={auto.data} error={auto.error} onRetry={() => void auto.refetch()} onOpenSettings={onOpenSettings} onShowRecords={() => locate('extractions')} />
+      <div className="ctx-rail-list">
+        <p className="ctx-kicker ctx-kicker-spread">{t('page.proposal.queue')} <span className="ctx-count">{pendingCount}</span></p>
+        {auto.isSuccess && pendingCount === 0 && <p className="ctx-muted ctx-proposal-empty">{t('page.proposal.empty')}</p>}
+        <MemoryProposals topicId={topicId} scope={scope} count={pendingCount} />
+      </div>
+    </aside>
+  </div>;
+  const body = missing ? <p role="alert" className="ctx-error">{t('page.missingList')}</p> : section === 'extractions' ? <MemoryExtractionJobs topicId={topicId} /> : section === 'tree' ? <KnowledgeTree topicId={topicId || null} brief={brief} /> : section === 'graph' ? <KnowledgeGraph topicId={topicId || null} /> : section === 'search' ? search : section === 'materials' ? materials : section === 'memories' ? memories : progress;
   if (embedded) {
     return <section className="work-context work-context-embed space-y-4">
       <div role="tablist" aria-label={t('page.embeddedTabs')} className="ctx-tabs" onKeyDown={onTabKey}>
@@ -188,10 +200,8 @@ export function KnowledgePage({
     <div className="work-context-frame">
       <div className="work-context-main">
         <header className="ctx-header">
-          <div>
+          <div className="ctx-header-row">
             <h1 className="ctx-title">{t('page.title')}</h1>
-            <p className="ctx-subtitle">{t('page.subtitle')}</p>
-          </div>
           <div data-testid="context-toolbar" className="ctx-tools">
             <label className="ctx-muted">{t('page.list')}
               <select aria-label={t('page.list')} className="ctx-select" value={topicId} onChange={(event) => locate(section === 'search' || section === 'tree' || section === 'graph' || section === 'extractions' ? section : (primaryTabs.some(([value]) => value === section) ? section : 'brief'), event.target.value)}>
@@ -216,6 +226,8 @@ export function KnowledgePage({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+          </div>
+          <p className="ctx-subtitle">{t('page.subtitle')}</p>
         </header>
         <div role="tablist" aria-label={t('page.tabsLabel')} data-testid="context-tabs" className="ctx-tabs" onKeyDown={onTabKey}>
           {primaryTabs.map(([value, label]) => {
@@ -226,7 +238,6 @@ export function KnowledgePage({
         </div>
         {section !== 'tree' && section !== 'graph' && section !== 'search' && section !== 'extractions' && <p className="ctx-tab-note">{tabNote}</p>}
         {section === 'memories' && <p className="ctx-tab-note">{t('page.memoriesExtraNote')}</p>}
-        {section === 'memories' && <div className="ctx-tools"><Button variant="outline" onClick={() => locate('extractions')}>{t('page.extractionHistory')}</Button></div>}
         {section === 'extractions' && <div className="ctx-tools"><Button variant="ghost" onClick={() => locate('memories', topicId === 'all' ? '' : topicId)}>{t('page.backToMemory')}</Button></div>}
         {body}
       </div>
@@ -298,9 +309,9 @@ function AutoStatus({ topicId, state, error, onRetry, onOpenSettings, onShowReco
         ? t('page.auto.linePending', { label, count: pendingCount })
         : label;
   const failed = state?.state === 'failed' || failedCount > 0;
-  return <section data-testid="context-auto-status" className="ctx-card ctx-status" aria-label={t('page.auto.label')}>
+  return <section data-testid="context-auto-status" className="ctx-status" aria-label={t('page.auto.label')}>
     <div className="ctx-status-copy">
-      <p className="ctx-status-label">{statusText}</p>
+      <p className={failed ? 'ctx-status-label ctx-warning' : 'ctx-status-label'}>{statusText}</p>
       <p className="ctx-muted">{t('page.auto.description')}</p>
       {state?.state === 'unconfigured' && <p className="ctx-warning">{t('page.auto.unconfiguredWarning')}</p>}
       {error && <p role="alert" className="ctx-error">{error.message}</p>}
@@ -344,6 +355,7 @@ function ProposalCard({ topicId, proposal }: { topicId: string; proposal: Propos
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [open, setOpen] = useState(false);
   const [title, setTitle] = useState(String(input.title ?? ''));
   const [content, setContent] = useState(String(input.content ?? ''));
   const [reason, setReason] = useState(String(input.reason ?? ''));
@@ -393,21 +405,25 @@ function ProposalCard({ topicId, proposal }: { topicId: string; proposal: Propos
   };
   const actionKind = proposalActionKinds.find((kind) => kind === command?.kind);
   const action = actionKind ? t(`page.proposal.actions.${actionKind}`) : t('page.proposal.suggestion');
-  return <article data-testid={`context-proposal-${proposal.id}`} className="ctx-card ctx-stack">
-    <p className="ctx-status-label">{t('page.proposal.heading', { action, title: String(input.title ?? '') })}</p>
-    <p className="ctx-body whitespace-pre-wrap">{String(input.content ?? '')}</p>
-    <p className="ctx-muted">{t('page.proposal.reasonLine', { reason: String(input.reason ?? '') })}</p>
-    <details>
-      <summary>{t('page.proposal.evidence')}</summary>
-      {evidence.map((ref) => <p key={`${ref.type}:${ref.id}:${ref.revision}`} className="ctx-muted">{t('page.evidence', { type: ref.type, id: ref.id, revision: ref.revision })}</p>)}
-      {!evidence.length && <p className="ctx-muted">{t('page.proposal.noEvidence')}</p>}
-    </details>
-    {error && <p role="alert" className="ctx-error">{error}</p>}
-    <div className="ctx-actions">
+  const titleText = String(input.title ?? '');
+  const bodyText = String(input.content ?? '').replace(/\s+/g, ' ').trim();
+  return <article data-testid={`context-proposal-${proposal.id}`} className="ctx-proposal">
+    <p className="ctx-proposal-kind">{action}</p>
+    <p className="ctx-proposal-title">{titleText}</p>
+    {bodyText && <p className="ctx-proposal-snip">{bodyText}</p>}
+    <div className="ctx-actions mt-2">
+      <Button type="button" className="ctx-btn" aria-expanded={open} onClick={() => setOpen((value) => !value)}>{t('page.proposal.evidence')}</Button>
       <Button type="button" className="ctx-btn ctx-btn-primary" disabled={busy} onClick={() => void confirm()}>{t('page.proposal.confirm')}</Button>
       <Button type="button" className="ctx-btn" disabled={busy} onClick={() => void reject()}>{t('page.proposal.reject')}</Button>
       <Button ref={editButton} type="button" className="ctx-btn" disabled={busy} onClick={() => setEditing(true)}>{t('page.proposal.editConfirm')}</Button>
     </div>
+    {open && <div className="ctx-proposal-more">
+      {bodyText && <p className="ctx-body whitespace-pre-wrap">{String(input.content ?? '')}</p>}
+      <p className="ctx-muted">{t('page.proposal.reasonLine', { reason: String(input.reason ?? '') })}</p>
+      {evidence.map((ref) => <p key={`${ref.type}:${ref.id}:${ref.revision}`} className="ctx-muted">{t('page.evidence', { type: ref.type, id: ref.id, revision: ref.revision })}</p>)}
+      {!evidence.length && <p className="ctx-muted">{t('page.proposal.noEvidence')}</p>}
+    </div>}
+    {error && <p role="alert" className="ctx-error">{error}</p>}
     <Dialog open={editing} onOpenChange={setEditing}>
       <DialogContent className="flex max-h-[calc(100dvh-48px)] w-[min(640px,calc(100vw-32px))] max-w-none flex-col overflow-y-auto" aria-describedby={undefined} onCloseAutoFocus={(event) => { event.preventDefault(); editButton.current?.focus(); }}>
         <DialogHeader><DialogTitle>{t('page.proposal.editConfirm')}</DialogTitle></DialogHeader>
@@ -430,7 +446,27 @@ function Pager({ testId, cursor, nextCursor, onPrevious, onNext }: { testId: str
   </div>;
 }
 
-function MemoryBrowser({ embedded, topicId, scope, cursor, setCursor, status, setStatus, input, setInput, submitted, onCompositionStart, onCompositionEnd, opened, setOpened, activeEditor, openEditor, closeEditor, auto, onShowProposals, onShowMaterials }: {
+function MemoryReading({ item, resource, openEditor }: { item: Resource; resource: Resource; openEditor: (resource?: Resource) => void }) {
+  const { t } = useTranslation('knowledge');
+  return <>
+    <p className="ctx-body whitespace-pre-wrap">{resource.content}</p>
+    {resource.uri && <a className="ctx-body underline" href={resource.uri} target="_blank" rel="noreferrer">{t('page.memory.viewSource')}</a>}
+    <div className="ctx-actions mt-3">
+      <Button type="button" className="ctx-btn" onClick={() => openEditor(resource)}>{t('page.memory.edit')}</Button>
+      {item.status === 'active' && <RetireButton item={item} />}
+    </div>
+    <details>
+      <summary>{t('page.memory.historyDetails')}</summary>
+      {resource.evidence?.map((ref) => <p key={`${ref.type}:${ref.id}`} className="ctx-muted">{t('page.evidence', { type: ref.type, id: ref.id, revision: ref.revision })}</p>)}
+      {resource.versions?.map((version) => {
+        const reason = version.reason ?? t('page.memory.savedOriginal');
+        return <div key={version.revision} className="mt-3 border-t pt-2"><p className="ctx-muted">{version.importance ? t('page.memory.versionWithImportance', { revision: version.revision, reason, importance: version.importance }) : t('page.memory.version', { revision: version.revision, reason })}</p><p className="ctx-body whitespace-pre-wrap">{version.content}</p></div>;
+      })}
+    </details>
+  </>;
+}
+
+function MemoryBrowser({ embedded, topicId, scope, cursor, setCursor, status, setStatus, input, setInput, submitted, onCompositionStart, onCompositionEnd, opened, setOpened, activeEditor, openEditor, closeEditor, auto, onShowProposals, onShowMaterials, onShowRecords }: {
   embedded: boolean;
   topicId: string;
   scope: string;
@@ -451,6 +487,7 @@ function MemoryBrowser({ embedded, topicId, scope, cursor, setCursor, status, se
   auto?: AutoMemoryState;
   onShowProposals: () => void;
   onShowMaterials: () => void;
+  onShowRecords?: () => void;
 }) {
   const { t } = useTranslation('knowledge');
   const list = useQuery({
@@ -469,17 +506,21 @@ function MemoryBrowser({ embedded, topicId, scope, cursor, setCursor, status, se
   const searchMiss = !failed && Boolean(submitted) && list.isSuccess && (list.data?.total ?? 0) === 0;
   const filteredEmpty = !failed && !submitted && status === 'active' && list.isSuccess && (list.data?.total ?? 0) === 0 && (probe.data?.total ?? 0) > 0;
   const resource = detail.data;
+  const items = list.data?.items ?? [];
+  const selected = items.find((item) => item.id === opened);
+  const showList = !failed && !trueEmpty && !searchMiss && !filteredEmpty && items.length > 0;
+  const records = !embedded && onShowRecords ? <Button type="button" className="ctx-btn" onClick={onShowRecords}>{t('page.extractionHistory')}</Button> : null;
   const emptyAction = (auto?.pendingProposalCount ?? 0) > 0
     ? <Button type="button" className="ctx-btn" onClick={onShowProposals}>{t('page.memory.viewProposals')}</Button>
     : (auto?.pendingSourceCount ?? 0) > 0
       ? null
       : <Button type="button" className="ctx-btn" onClick={onShowMaterials}>{t('page.memory.addMaterials')}</Button>;
   return <div className="ctx-stack">
-    {!trueEmpty && <div className="ctx-actions">
+    {!trueEmpty && <div className="ctx-sheet-bar">
       <Input aria-label={t('page.memory.searchLabel')} className="ctx-field max-w-sm" placeholder={t('page.memory.searchPlaceholder')} value={input} onChange={(event) => setInput(event.target.value)} onCompositionStart={onCompositionStart} onCompositionEnd={onCompositionEnd} />
       <div role="group" aria-label={t('page.memory.statusLabel')} className="ctx-actions">{([['active', t('page.memory.active')], ['history', t('page.memory.history')], ['all', t('page.memory.all')]] as const).map(([value, label]) => <Button key={value} type="button" className="ctx-btn" aria-pressed={status === value} onClick={() => setStatus(value)}>{label}</Button>)}</div>
       {(list.data?.total ?? 0) > 0 && <span className="ctx-muted">{t('page.memory.results', { count: list.data?.total ?? 0 })}</span>}
-      <Button type="button" className="ctx-btn ctx-btn-primary" onClick={() => openEditor()}>{t('page.memory.addManual')}</Button>
+      <div className="ctx-sheet-end">{records}<Button type="button" className="ctx-btn ctx-btn-primary" onClick={() => openEditor()}>{t('page.memory.addManual')}</Button></div>
     </div>}
     {activeEditor && <ResourceEditor key={activeEditor.id} type="memories" resource={activeEditor.resource} topicId={topicId || null} onClose={closeEditor} />}
     {failed && <div role="alert" className="ctx-error"><p>{(list.error ?? probe.error)?.message}</p><Button type="button" className="ctx-btn" onClick={() => { void list.refetch(); void probe.refetch(); }}>{t('page.memory.retry')}</Button></div>}
@@ -489,12 +530,20 @@ function MemoryBrowser({ embedded, topicId, scope, cursor, setCursor, status, se
       <div className="ctx-actions">
         {!embedded && emptyAction}
         {!embedded && (auto?.pendingProposalCount ?? 0) === 0 && (auto?.pendingSourceCount ?? 0) > 0 && <RunNow topicId={topicId} />}
+        {records}
         <Button type="button" className="ctx-btn ctx-btn-primary" onClick={() => openEditor()}>{t('page.memory.addManual')}</Button>
       </div>
     </div>}
     {searchMiss && <div className="ctx-card"><p>{t('page.memory.noMatch')}</p><Button type="button" className="ctx-btn" onClick={() => setInput('')}>{t('page.memory.clearSearch')}</Button></div>}
     {filteredEmpty && <div className="ctx-card"><p>{t('page.memory.noActive')}</p><Button type="button" className="ctx-btn" onClick={() => setStatus('history')}>{t('page.memory.viewHistory')}</Button></div>}
-    {!failed && !trueEmpty && <div className="ctx-stack">{list.data?.items.map((item) => <article key={item.id} className="ctx-card"><MemorySummary memory={item} selected={opened === item.id} onSelect={() => setOpened(opened === item.id ? '' : item.id)} />{opened === item.id && resource?.id === item.id && <><p className="ctx-body mt-3 whitespace-pre-wrap">{resource.content}</p>{resource.uri && <a className="ctx-body underline" href={resource.uri} target="_blank" rel="noreferrer">{t('page.memory.viewSource')}</a>}<div className="ctx-actions mt-3"><Button type="button" className="ctx-btn" onClick={() => openEditor(resource)}>{t('page.memory.edit')}</Button>{item.status === 'active' && <RetireButton item={item} />}</div><details><summary className="ctx-muted">{t('page.memory.historyDetails')}</summary>{resource.evidence?.map((ref) => <p key={`${ref.type}:${ref.id}`} className="ctx-muted">{t('page.evidence', { type: ref.type, id: ref.id, revision: ref.revision })}</p>)}{resource.versions?.map((version) => { const reason = version.reason ?? t('page.memory.savedOriginal'); return <div key={version.revision} className="mt-3 border-t pt-2"><p className="ctx-muted">{version.importance ? t('page.memory.versionWithImportance', { revision: version.revision, reason, importance: version.importance }) : t('page.memory.version', { revision: version.revision, reason })}</p><p className="ctx-body whitespace-pre-wrap">{version.content}</p></div>; })}</details></>}</article>)}</div>}
+    {showList && <div className="ctx-memory-split">
+      <div className="ctx-mem-list">
+        {items.map((item) => <div key={item.id} className="ctx-mem-row"><MemorySummary memory={item} selected={opened === item.id} onSelect={() => setOpened(opened === item.id ? '' : item.id)} /></div>)}
+      </div>
+      <article className="ctx-mem-detail">
+        {selected && resource?.id === selected.id ? <MemoryReading item={selected} resource={resource} openEditor={openEditor} /> : <p className={detail.error ? 'ctx-error' : 'ctx-muted'} role={detail.error ? 'alert' : undefined}>{detail.error ? detail.error.message : opened ? t('page.memory.reading') : t('page.memory.pick')}</p>}
+      </article>
+    </div>}
     {!failed && !trueEmpty && <Pager testId="context-pagination" cursor={cursor} nextCursor={list.data?.nextCursor ?? null} onPrevious={() => setCursor(Math.max(0, cursor - PAGE_SIZE))} onNext={setCursor} />}
   </div>;
 }

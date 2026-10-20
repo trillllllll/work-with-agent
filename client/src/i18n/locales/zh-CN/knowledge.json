@@ -274,6 +274,8 @@
       "suggestion": "建议",
       "heading": "{{action}} {{title}}",
       "reasonLine": "理由：{{reason}}",
+      "queue": "待确认",
+      "empty": "没有待确认的建议。",
       "evidence": "证据",
       "noEvidence": "没有附带证据",
       "confirm": "确认",
@@ -315,6 +317,8 @@
       "addMaterials": "添加参考资料",
       "noMatch": "没有找到匹配的记忆。",
       "clearSearch": "清除搜索",
+      "pick": "选择一条记忆。",
+      "reading": "正在读取…",
       "noActive": "当前没有活跃记忆。",
       "viewHistory": "查看历史",
       "viewSource": "查看来源链接",
@@ -383,6 +387,7 @@
       }
     },
     "brief": {
+      "kicker": "当前简报",
       "preparing": "正在准备当前简报…",
       "pinnedNotes": "固定说明",
       "pinnedNotesLabel": "简报固定说明",
