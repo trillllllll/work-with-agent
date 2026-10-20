@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DndContext, KeyboardSensor, MouseSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { ArrowDown, ArrowUp, GripVertical, RotateCcw } from 'lucide-react';
+import { GripVertical, RotateCcw } from 'lucide-react';
 import { api } from '@/lib/api.js';
 import {
   DEFAULT_MOBILE_NAVIGATION,
@@ -128,7 +128,7 @@ export function MobileNavigationSettings() {
   if (loadFailed) {
     return (
       <section className="mnav-section" data-testid="mobile-navigation-settings">
-        <h2 className="mnav-title">{t('mobileNavigation.title')}</h2>
+        <h3 className="mnav-title">{t('mobileNavigation.title')}</h3>
         <p className="mnav-description">{t('mobileNavigation.description')}</p>
         <div className="mnav-load-error">
           <span>{t('mobileNavigation.loadFailed')}</span>
@@ -141,7 +141,7 @@ export function MobileNavigationSettings() {
   if (!loaded) {
     return (
       <section className="mnav-section" data-testid="mobile-navigation-settings">
-        <h2 className="mnav-title">{t('mobileNavigation.title')}</h2>
+        <h3 className="mnav-title">{t('mobileNavigation.title')}</h3>
         <p className="mnav-description">{t('mobileNavigation.description')}</p>
         <div className="mnav-skeleton" aria-hidden="true">
           <Skeleton className="h-[81px] w-full" />
@@ -159,7 +159,7 @@ export function MobileNavigationSettings() {
 
   return (
     <section className="mnav-section" data-testid="mobile-navigation-settings">
-      <h2 className="mnav-title">{t('mobileNavigation.title')}</h2>
+      <h3 className="mnav-title">{t('mobileNavigation.title')}</h3>
       <p className="mnav-description">{t('mobileNavigation.description')}</p>
 
       <div className="mnav-preview" data-testid="mobile-navigation-preview">
@@ -174,18 +174,18 @@ export function MobileNavigationSettings() {
         </div>
       </div>
 
-      <h3 className="mnav-group-title">{t('mobileNavigation.shown')}</h3>
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+      <h4 className="mnav-group-title" id="mnav-shown-title">{t('mobileNavigation.shown')}</h4>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd} accessibility={{ screenReaderInstructions: { draggable: t('mobileNavigation.reorderHint') } }}>
         <SortableContext items={draft} strategy={verticalListSortingStrategy}>
-          <ul className="mnav-list">
-            {draft.map((view, index) => (
-              <SortableRow key={view} view={view} index={index} total={draft.length} disabled={pending} onMove={move} onToggle={toggle} />
+          <ul className="mnav-list" aria-labelledby="mnav-shown-title">
+            {draft.map((view) => (
+              <SortableRow key={view} view={view} disabled={pending} onToggle={toggle} />
             ))}
           </ul>
         </SortableContext>
       </DndContext>
 
-      <h3 className="mnav-group-title">{t('mobileNavigation.hidden')}</h3>
+      <h4 className="mnav-group-title">{t('mobileNavigation.hidden')}</h4>
       <ul className="mnav-list">
         {hiddenRows.map((view) => (
           <li key={view} className="mnav-row" data-testid={`mobile-navigation-row-${view}`}>
@@ -245,7 +245,7 @@ function Switch({ view, checked, disabled, onToggle }: { view: MobileNavigationV
   );
 }
 
-function SortableRow({ view, index, total, disabled, onMove, onToggle }: { view: MobileNavigationView; index: number; total: number; disabled: boolean; onMove: (oldIndex: number, newIndex: number) => void; onToggle: (view: MobileNavigationView, checked: boolean) => void }) {
+function SortableRow({ view, disabled, onToggle }: { view: MobileNavigationView; disabled: boolean; onToggle: (view: MobileNavigationView, checked: boolean) => void }) {
   const { t } = useTranslation('settings');
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: view, disabled });
   const label = MOBILE_NAVIGATION_LABELS[view];
@@ -271,14 +271,6 @@ function SortableRow({ view, index, total, disabled, onMove, onToggle }: { view:
       </button>
       <ModuleIcon view={view} />
       <span className="mnav-name">{label}</span>
-      <div className="mnav-moves">
-        <button type="button" className="mnav-icon-button" aria-label={t('mobileNavigation.moveUp', { label })} disabled={disabled || index === 0} onClick={() => onMove(index, index - 1)}>
-          <ArrowUp aria-hidden="true" className="size-4" strokeWidth={1.75} />
-        </button>
-        <button type="button" className="mnav-icon-button" aria-label={t('mobileNavigation.moveDown', { label })} disabled={disabled || index === total - 1} onClick={() => onMove(index, index + 1)}>
-          <ArrowDown aria-hidden="true" className="size-4" strokeWidth={1.75} />
-        </button>
-      </div>
       <Switch view={view} checked disabled={disabled} onToggle={onToggle} />
     </li>
   );

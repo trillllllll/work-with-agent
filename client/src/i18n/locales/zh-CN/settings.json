@@ -157,9 +157,7 @@
     "reorderHint": "拖动手柄调整顺序。也可以聚焦手柄后按空格拿起，用上下方向键移动，再按空格放下。"
   },
   "modelSettings": {
-    "eyebrow": "系统配置",
     "title": "模型设置",
-    "back": "返回",
     "description": "配置 OpenAI Chat Completions 兼容服务，保存前会测试连接。",
     "loadFailed": "设置加载失败",
     "baseUrl": "接口地址",

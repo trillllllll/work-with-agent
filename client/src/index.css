@@ -1078,7 +1078,6 @@
     --mnav-error-text: #B42318;
     --mnav-error-bg: #FEF3F2;
     width: 100%;
-    margin-top: 24px;
   }
 
   .dark .mnav-section {
@@ -1096,7 +1095,7 @@
   }
 
   .mnav-title {
-    font-size: 20px;
+    font-size: 18px;
     line-height: 28px;
     font-weight: 600;
     color: var(--mnav-text);
@@ -1164,7 +1163,7 @@
 
   .mnav-row {
     display: flex;
-    min-height: 64px;
+    min-height: 56px;
     align-items: center;
     gap: 8px;
     padding: 10px 12px;
@@ -1195,23 +1194,6 @@
     font-size: 12px;
     line-height: 18px;
     color: var(--mnav-text-secondary);
-  }
-
-  .mnav-moves {
-    display: flex;
-    align-items: center;
-  }
-
-  @media (max-width: 479px) {
-    .mnav-row--sortable {
-      flex-wrap: wrap;
-    }
-
-    .mnav-row--sortable .mnav-moves {
-      order: 10;
-      flex-basis: 100%;
-      justify-content: flex-end;
-    }
   }
 
   .mnav-icon-button {
@@ -2570,4 +2552,14 @@ textarea.task-title.line-through {
   .streaming-caret::after {
     animation: none;
   }
+}
+
+/* Settings: blocks inside one category share a divider and spacing. */
+.settings-block {
+  margin-top: 2rem;
+}
+
+.settings-block + .settings-block {
+  padding-top: 2rem;
+  border-top: 1px solid var(--glass-divider);
 }

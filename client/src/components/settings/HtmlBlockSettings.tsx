@@ -26,7 +26,7 @@ export function HtmlBlockSettings() {
     onError: (error) => { setPendingEnabled(null); toast.error(error.message); },
   });
   const data = settings.data;
-  return <section className="mt-8 border-t pt-8" aria-label={t('htmlBlocks.region')}><h2 className="text-lg font-semibold">{t('htmlBlocks.title')}</h2>
+  return <section aria-label={t('htmlBlocks.region')}><h3 className="text-lg font-semibold">{t('htmlBlocks.title')}</h3>
     <p className="mt-1 text-sm text-muted-foreground">{t('htmlBlocks.description')}</p>
     {settings.isError ? <p role="alert" className="mt-3 text-sm">{t('htmlBlocks.loadFailed')}<Button variant="ghost" size="sm" onClick={() => void settings.refetch()}>{t('actions.retry')}</Button></p> : <div className="mt-4 space-y-4">
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="size-4" checked={pendingEnabled ?? data?.enabled ?? false} disabled={!data} onChange={(event) => { setPendingEnabled(event.target.checked); save.mutate({ enabled: event.target.checked }); }} />{t('htmlBlocks.allow')}</label>

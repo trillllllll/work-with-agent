@@ -7,8 +7,8 @@ export function LanguageSettings() {
   const active = currentLanguage();
   const choose = (language: Language) => { if (language !== active) void setLanguage(language); };
   return (
-    <section className="mt-6" data-testid="language-settings" lang={i18n.language}>
-      <h2 className="text-lg font-semibold">{t('language.title')}</h2>
+    <section data-testid="language-settings" lang={i18n.language}>
+      <h3 className="text-lg font-semibold">{t('language.title')}</h3>
       <p className="mt-1 text-sm text-muted-foreground">{t('language.description')}</p>
       <div className="mt-4 inline-flex gap-1 rounded-lg border p-1" role="group" aria-label={t('language.title')}>
         {supportedLanguages.map((language) => (

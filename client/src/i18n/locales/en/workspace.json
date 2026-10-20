@@ -39,17 +39,10 @@
     "assistant": "AI assistant",
     "nav": "Workspace settings",
     "settings": "Settings",
-    "settingsTab": "Models and connections",
     "trash": "Trash",
     "trashTab": "Restore or permanently delete tasks",
     "changes": "Change history",
     "changesTab": "View and undo changes",
-    "settingsEyebrow": "Workspace preferences",
-    "settingsDescription": "Manage model connections and workspace preferences",
-    "trashEyebrow": "Workspace management",
-    "trashDescription": "Restore tasks, or clear items you no longer need",
-    "changesEyebrow": "Audit log",
-    "changesDescription": "View workspace changes and undo actions that are still safe to reverse",
     "close": "Close"
   },
   "materialPreview": {

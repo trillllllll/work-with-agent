@@ -158,9 +158,7 @@
     "reorderHint": "Drag a handle to reorder. Or focus a handle, press Space to pick it up, move it with the arrow keys, and press Space to drop it."
   },
   "modelSettings": {
-    "eyebrow": "System configuration",
     "title": "Model settings",
-    "back": "Back",
     "description": "Configure an OpenAI Chat Completions compatible service. The connection is tested before saving.",
     "loadFailed": "Couldn't load settings",
     "baseUrl": "API base URL",
