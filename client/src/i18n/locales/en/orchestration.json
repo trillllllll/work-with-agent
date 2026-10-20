@@ -250,6 +250,16 @@
   "stepPhase": {
     "verify": "Independent check"
   },
+  "failureKind": {
+    "rate_limit": "Rate limited",
+    "git_denied": "Git write denied",
+    "no_commit": "No commit",
+    "tests_failed": "Tests failed",
+    "merge_conflict": "Merge conflict",
+    "review_failed": "Review failed",
+    "cli_error": "CLI error",
+    "other": "Other"
+  },
   "history": {
     "title": "AI history",
     "description": "Rounds run by the orchestrator, with each local run's usage, diff, and checks.",

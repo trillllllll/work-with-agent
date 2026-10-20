@@ -77,7 +77,7 @@ export const toolLabels: Record<string, string> = labels({
   execute_shell: 'app:tool.executeShell', execute_file: 'app:tool.executeFile', execute_http: 'app:tool.executeHttp',
   memory: 'app:tool.memory', conversation_search: 'app:tool.conversationSearch', library: 'app:tool.library', propose_task_changes: 'app:tool.proposeTaskChanges',
   get_time: 'app:tool.getTime', get_work_context: 'app:tool.getWorkContext', query_tasks: 'app:tool.queryTasks', query_topics: 'app:tool.queryTopics', get_task_activity: 'app:tool.getTaskActivity',
-  search_workspace: 'app:tool.searchWorkspace', library_read: 'app:tool.libraryRead', memory_read: 'app:tool.memoryRead', get_change_schema: 'app:tool.getChangeSchema', propose_changes: 'app:tool.proposeChanges', prepare_external_prompt: 'app:tool.prepareExternalPrompt', load_skill: 'app:tool.loadSkill', orchestration_read: 'app:tool.orchestrationRead', propose_worktree_cleanup: 'app:tool.proposeWorktreeCleanup',
+  search_workspace: 'app:tool.searchWorkspace', library_read: 'app:tool.libraryRead', memory_read: 'app:tool.memoryRead', get_change_schema: 'app:tool.getChangeSchema', propose_changes: 'app:tool.proposeChanges', prepare_external_prompt: 'app:tool.prepareExternalPrompt', load_skill: 'app:tool.loadSkill', orchestration_read: 'app:tool.orchestrationRead', orchestration_stats: 'app:tool.orchestrationStats', propose_worktree_cleanup: 'app:tool.proposeWorktreeCleanup',
 });
 export const API_URL = '';
 let csrfToken = '';

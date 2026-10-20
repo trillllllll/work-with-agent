@@ -15,7 +15,7 @@ import { activeJobStatuses, enqueueJob, expireLeases, isOnline, jobDto, now } fr
 import { applyProbeResult, resolveProjectForTask } from './projects.js';
 import { appendOrchestrationEvent, publishOrchestration } from './events.js';
 import { generatePlan, planSchema, reviewDevelop, reviewFinal, validatePlan, type Plan } from './planner.js';
-import { checkDevelop, checkMerge, checkVerify, looksGitWriteDenied, looksRateLimited } from './checks.js';
+import { checkDevelop, checkMerge, checkVerify, classifyFailure, looksGitWriteDenied, looksRateLimited } from './checks.js';
 import { developPrompt, mergePrompt, verifyPrompt } from './prompts.js';
 import { applyWorktreeJob } from './worktrees.js';
 import { aiHistory, orchestrationFeed } from './history.js';
@@ -415,6 +415,21 @@ async function stepUpdate(step: OrchestrationStep, data: Prisma.OrchestrationSte
   const changed = await prisma.orchestrationStep.updateMany({ where: { id: step.id, status: step.status, lastJobId: step.lastJobId }, data: { ...data, updatedAt: now() } });
   return changed.count > 0;
 }
+
+/** Persist failureKind on the step and the NodeJob that caused it. A lost race writes nothing. */
+async function applyFailure(step: OrchestrationStep, job: NodeJob | null, data: Prisma.OrchestrationStepUpdateManyMutationInput, input: Parameters<typeof classifyFailure>[0]) {
+  const kind = classifyFailure(input);
+  if (!await stepUpdate(step, kind ? { ...data, failureKind: kind } : data)) return false;
+  if (kind && job) await prisma.nodeJob.update({ where: { id: job.id }, data: { failureKind: kind, updatedAt: now() } });
+  return true;
+}
+
+async function stampFailure(stepId: string | null | undefined, jobId: string, input: Parameters<typeof classifyFailure>[0]) {
+  const kind = classifyFailure(input);
+  if (!kind) return;
+  if (stepId) await prisma.orchestrationStep.updateMany({ where: { id: stepId }, data: { failureKind: kind, updatedAt: now() } });
+  await prisma.nodeJob.update({ where: { id: jobId }, data: { failureKind: kind, updatedAt: now() } });
+}
 async function event(row: Orchestration, type: string, actorKind: 'model' | 'server' | 'node' | 'user', stepId: string | null, payload: unknown) {
   await prisma.$transaction((tx) => appendOrchestrationEvent(tx, row.id, type, actorKind, stepId, payload));
 }
@@ -430,7 +445,7 @@ async function handleJob(row: Orchestration, step: OrchestrationStep, job: NodeJ
       await event(row, 'integration_ready', 'node', step.id, parsed.data);
     } else {
       const error = report?.error ?? job.error ?? '集成分支准备失败';
-      if (!await stepUpdate(step, { status: 'needs_user', error })) return;
+      if (!await applyFailure(step, job, { status: 'needs_user', error }, { pauseReason: 'setup_failed', error })) return;
       await pauseOrchestration(row.id, 'setup_failed', error);
     }
     return;
@@ -459,7 +474,7 @@ async function handleJob(row: Orchestration, step: OrchestrationStep, job: NodeJ
       await event(row, 'integration_published', 'node', step.id, { head: parsed.data.head });
     } else {
       const error = parsed?.success ? `推送后的 HEAD ${parsed.data.head} 与期望的 ${step.baseCommit} 不一致` : report?.error ?? job.error ?? '推送集成分支失败';
-      if (!await stepUpdate(step, { status: 'needs_user', error })) return;
+      if (!await applyFailure(step, job, { status: 'needs_user', error }, { pauseReason: 'transfer_failed', error })) return;
       await pauseOrchestration(row.id, 'transfer_failed', error);
     }
     return;
@@ -490,7 +505,7 @@ async function handleJob(row: Orchestration, step: OrchestrationStep, job: NodeJ
       // The commit is fine but did not reach the shared remote; the primary machine cannot merge it.
       const problem = run?.publishError ? `子任务分支推送到 origin 失败：${run.publishError.slice(-1000)}` : '子任务分支没有推送到 origin 中转';
       await event(row, 'transfer_check', 'server', step.id, { jobId: job.id, ok: false, problem });
-      if (!await stepUpdate(step, { status: 'needs_user', error: problem })) return;
+      if (!await applyFailure(step, job, { status: 'needs_user', error: problem }, { pauseReason: 'transfer_failed', error: problem, hasResult: !!result, exitCode: job.exitCode })) return;
       await pauseOrchestration(row.id, 'transfer_failed', problem);
       return;
     }
@@ -505,7 +520,7 @@ async function handleJob(row: Orchestration, step: OrchestrationStep, job: NodeJ
         await event(row, 'ai_review', 'model', step.id, { jobId: job.id, value: review, raw: reply?.raw ?? null, rulesOnly: !reply });
       } catch (failure) {
         await event(row, 'ai_review_failed', 'model', step.id, { jobId: job.id, error: (failure as Error).message, raw: (failure as { raw?: string }).raw ?? null });
-        if (!await stepUpdate(step, { status: 'needs_user', error: '主控模型审阅失败' })) return;
+        if (!await applyFailure(step, job, { status: 'needs_user', error: '主控模型审阅失败' }, { pauseReason: 'invalid_model_output', error: (failure as Error).message, hasResult: !!result, exitCode: job.exitCode })) return;
         await pauseOrchestration(row.id, 'invalid_model_output');
         return;
       }
@@ -520,7 +535,7 @@ async function handleJob(row: Orchestration, step: OrchestrationStep, job: NodeJ
       await stepUpdate(step, { status: 'pending', continueCount: { increment: 1 }, feedback: review!.comment });
       return;
     }
-    if (!await stepUpdate(step, { status: 'needs_user', error: review?.comment ?? '主控判定未通过' })) return;
+    if (!await applyFailure(step, job, { status: 'needs_user', error: review?.comment ?? '主控判定未通过' }, { pauseReason: 'develop_failed', decision: review?.decision ?? null, error: review?.comment ?? null, hasResult: true, checks: result?.checks, exitCode: job.exitCode })) return;
     if (step.subtaskId) await updateTaskStatus(step.subtaskId, 'blocked', row.id);
     await pauseOrchestration(row.id, 'develop_failed', review?.comment);
     return;
@@ -530,7 +545,7 @@ async function handleJob(row: Orchestration, step: OrchestrationStep, job: NodeJ
     await event(row, 'merge_check', 'server', step.id, { jobId: job.id, ...check, head: facts?.head ?? null, ...(check.ok ? {} : { stderrTail: stderr.slice(-2000) }) });
     if (!check.ok) {
       const reason = looksGitWriteDenied(`${error ?? ''}\n${stderr}`) ? 'git_write_denied' : facts?.unmerged.length || facts?.conflictMarkers.length ? 'merge_conflict_unresolved' : (result?.checks ?? []).some((item) => !item.passed) ? 'merge_tests_failed' : 'merge_unverified';
-      if (!await stepUpdate(step, { status: 'needs_user', error: check.problems.join('；') })) return;
+      if (!await applyFailure(step, job, { status: 'needs_user', error: check.problems.join('；') }, { pauseReason: reason, problems: check.problems, error, stderr, exitCode: job.exitCode, hasResult: !!result, checks: result?.checks, facts })) return;
       await pauseOrchestration(row.id, reason, check.problems);
       return;
     }
@@ -541,8 +556,9 @@ async function handleJob(row: Orchestration, step: OrchestrationStep, job: NodeJ
     const check = checkVerify({ result, facts, expectedHead: step.mergeCommit ?? '', resultCommit: step.resultCommit ?? '', error });
     await event(row, 'verify_check', 'server', step.id, { jobId: job.id, ...check, head: facts?.head ?? null });
     if (!check.ok) {
-      if (!await stepUpdate(step, { status: 'needs_user', error: check.problems.join('；') })) return;
-      await pauseOrchestration(row.id, (result?.checks ?? []).some((item) => !item.passed) ? 'merge_tests_failed' : 'merge_unverified', check.problems);
+      const reason = (result?.checks ?? []).some((item) => !item.passed) ? 'merge_tests_failed' : 'merge_unverified';
+      if (!await applyFailure(step, job, { status: 'needs_user', error: check.problems.join('；') }, { pauseReason: reason, problems: check.problems, error, stderr, exitCode: job.exitCode, hasResult: !!result, checks: result?.checks, facts })) return;
+      await pauseOrchestration(row.id, reason, check.problems);
       return;
     }
     if (!await stepUpdate(step, { status: 'succeeded', error: null })) return;
@@ -559,8 +575,10 @@ async function handleJob(row: Orchestration, step: OrchestrationStep, job: NodeJ
 }
 
 async function developFailure(row: Orchestration, step: OrchestrationStep, job: NodeJob, problems: string[], output: string, hasResult: boolean) {
+  const parsed = parseRun(job);
+  const signals = { problems, error: parsed.error ?? output, stderr: parsed.stderr || output, exitCode: job.exitCode, hasResult, checks: parsed.result?.checks, facts: parsed.facts };
   if (looksGitWriteDenied(output)) {
-    if (!await stepUpdate(step, { status: 'needs_user', error: '本机 AI 无法写 git 元数据（index.lock / 只读文件系统）' })) return;
+    if (!await applyFailure(step, job, { status: 'needs_user', error: '本机 AI 无法写 git 元数据（index.lock / 只读文件系统）' }, { ...signals, pauseReason: 'git_write_denied' })) return;
     await pauseOrchestration(row.id, 'git_write_denied', problems);
     return;
   }
@@ -573,10 +591,10 @@ async function developFailure(row: Orchestration, step: OrchestrationStep, job: 
     await stepUpdate(step, { status: 'pending', continueCount: { increment: 1 }, feedback: `执行端核对未通过：\n- ${problems.join('\n- ')}` });
     return;
   }
-  if (!await stepUpdate(step, { status: 'needs_user', error: problems.join('；') })) return;
+  const pauseReason = looksRateLimited(output) ? 'rate_limited' : 'develop_failed';
+  if (!await applyFailure(step, job, { status: 'needs_user', error: problems.join('；') }, { ...signals, pauseReason })) return;
   if (step.subtaskId) await updateTaskStatus(step.subtaskId, 'blocked', row.id);
-  await pauseOrchestration(row.id, looksRateLimited(output) ? 'rate_limited' : 'develop_failed', problems);
-  void job;
+  await pauseOrchestration(row.id, pauseReason, problems);
 }
 
 async function priorFor(row: Orchestration, subtaskTitle: string, priorCache: Map<string, DigestRound[]>) {
@@ -718,13 +736,13 @@ async function runFinal(row: Orchestration, final: OrchestrationStep, steps: Orc
     await event(row, 'final_review', 'model', final.id, { value: verdict, raw: reply?.raw ?? null, rulesOnly: !reply });
   } catch (failure) {
     await event(row, 'final_review_failed', 'model', final.id, { error: (failure as Error).message });
-    if (!await stepUpdate(final, { status: 'needs_user', error: '主控最终审阅失败' })) return;
+    if (!await applyFailure(final, null, { status: 'needs_user', error: '主控最终审阅失败' }, { pauseReason: 'invalid_model_output', error: (failure as Error).message })) return;
     await pauseOrchestration(row.id, 'invalid_model_output');
     return;
   }
   const satisfied = verdict?.satisfied ?? true;
   if (!satisfied) {
-    if (!await stepUpdate(final, { status: 'needs_user', error: verdict!.comment })) return;
+    if (!await applyFailure(final, null, { status: 'needs_user', error: verdict!.comment }, { pauseReason: 'final_unsatisfied', error: verdict!.comment, decision: 'fail' })) return;
     await prisma.orchestration.update({ where: { id: row.id }, data: { finalComment: verdict!.comment } });
     await pauseOrchestration(row.id, 'final_unsatisfied', verdict!.comment);
     return;
@@ -756,7 +774,10 @@ export async function tickAllOrchestrations() {
       if (job.kind === 'cleanup') await prisma.worktreeCleanup.updateMany({ where: { jobId: job.id }, data: { status: 'failed', resultJson: JSON.stringify({ error: '执行端离线，未确认是否已删除；请刷新列表核对' }), updatedAt: now() } });
       continue;
     }
-    if (job.orchestrationId) await pauseOrchestration(job.orchestrationId, 'node_offline', { jobId: job.id });
+    if (job.orchestrationId) {
+      await stampFailure(job.stepId, job.id, { pauseReason: 'node_offline', error: job.error, exitCode: job.exitCode });
+      await pauseOrchestration(job.orchestrationId, 'node_offline', { jobId: job.id });
+    }
   }
   const offline = await prisma.orchestration.findMany({ where: { status: 'paused', pauseReason: 'node_offline' } });
   for (const row of offline) {

@@ -86,6 +86,7 @@
     "prepareExternalPrompt": "External prompt",
     "loadSkill": "Use skill",
     "orchestrationRead": "View orchestration",
+    "orchestrationStats": "Dispatch stats",
     "proposeWorktreeCleanup": "Delete worktree"
   },
   "operation": {

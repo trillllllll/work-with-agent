@@ -687,6 +687,7 @@ model Orchestration {
   events            OrchestrationEvent[]
   @@unique([taskId, round])
   @@index([status])
+  @@index([projectId, startedAt])
 }
 model OrchestrationStep {
   id                 String  @id @default(cuid())
@@ -715,6 +716,7 @@ model OrchestrationStep {
   locationId         String?
   repoPath           String?
   error              String?
+  failureKind        String?
   createdAt          String
   updatedAt          String
   orchestration      Orchestration @relation(fields: [orchestrationId], references: [id], onDelete: Restrict)
@@ -754,9 +756,11 @@ model NodeJob {
   linesAdded        Int?
   linesDeleted      Int?
   diffStatJson      String?
+  failureKind       String?
   node              AgentNode @relation(fields: [nodeId], references: [id], onDelete: Restrict)
   @@index([nodeId, status])
   @@index([orchestrationId])
+  @@index([endedAt])
 }
 /// A pending destructive request shown as a confirmation card; nothing is sent to the node until the user confirms.
 model WorktreeCleanup {

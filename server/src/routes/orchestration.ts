@@ -2,6 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { NodeService, getNode, nodeMiddleware } from '../application/orchestration/nodes.js';
 import { ProjectService } from '../application/orchestration/projects.js';
 import { OrchestrationService } from '../application/orchestration/service.js';
+import { dispatchStats, parseStatsQuery } from '../application/orchestration/stats.js';
 import { WorktreeService } from '../application/orchestration/worktrees.js';
 import { isServerMode, publicWorkspaceUrl } from '../application/desktop-paths.js';
 
@@ -39,6 +40,11 @@ export function createOrchestrationRouter() {
     cursor: typeof req.query.cursor === 'string' ? req.query.cursor : undefined,
     limit: typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined,
   })));
+  router.get('/orchestrations/stats', route((req) => dispatchStats(parseStatsQuery({
+    from: typeof req.query.from === 'string' ? req.query.from : undefined,
+    to: typeof req.query.to === 'string' ? req.query.to : undefined,
+    projectId: typeof req.query.projectId === 'string' ? req.query.projectId : undefined,
+  }))));
   router.get('/orchestrations/:id', route((req) => orchestrations.get(String(req.params.id))));
   router.get('/tasks/:id/ai-history', route((req) => orchestrations.history(String(req.params.id))));
   router.post('/orchestrations/:id/start', route((req) => orchestrations.start(String(req.params.id), req.body)));

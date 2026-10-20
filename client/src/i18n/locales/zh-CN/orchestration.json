@@ -250,6 +250,16 @@
   "stepPhase": {
     "verify": "独立核对"
   },
+  "failureKind": {
+    "rate_limit": "限流",
+    "git_denied": "git 写入被拒",
+    "no_commit": "没有提交",
+    "tests_failed": "测试失败",
+    "merge_conflict": "合并冲突",
+    "review_failed": "审核未通过",
+    "cli_error": "CLI 出错",
+    "other": "其他"
+  },
   "history": {
     "title": "AI 履历",
     "description": "主控编排的每一轮，以及本机每次运行的用量、差异和核对。",

@@ -14,6 +14,7 @@ import { downloadFileName, isMarkdownFile } from './artifact-name.js';
 import { reviewPreview } from './review-text.js';
 import { useHashRoute } from '@/hooks/useHashRoute.js';
 import { OrchestrationRunsList } from '@/components/orchestration/OrchestrationRunsList.js';
+import { DispatchStatsView } from '@/components/orchestration/DispatchStatsView.js';
 
 const acceptancePrefix = '\n\n验收标准与产物：\n'; // i18n-ignore
 const handoffStatusKeys: Record<string, string> = {
@@ -58,7 +59,7 @@ export function HandoffPanel({ task, disabled = false }: { task: Task; disabled?
 export function RunsPage() {
   const { t } = useTranslation('workspace');
   const { query, setQuery } = useHashRoute();
-  const tab = query.tab === 'handoffs' ? 'handoffs' : 'orchestrations';
+  const tab = query.tab === 'handoffs' ? 'handoffs' : query.tab === 'stats' ? 'stats' : 'orchestrations';
   const tabClass = (selected: boolean) => `shrink-0 rounded-full px-3 py-1 text-sm ${selected ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`;
   return <section className="mx-auto max-w-5xl space-y-5 p-5 sm:p-7">
     <h1 className="text-2xl font-semibold">{t('handoff.runsTitle')}</h1>
@@ -66,8 +67,9 @@ export function RunsPage() {
     <div role="tablist" className="flex gap-2 overflow-x-auto">
       <button type="button" role="tab" aria-selected={tab === 'orchestrations'} data-testid="runs-tab-orchestrations" className={tabClass(tab === 'orchestrations')} onClick={() => setQuery({ tab: 'orchestrations' })}>{t('runs.tabOrchestrations')}</button>
       <button type="button" role="tab" aria-selected={tab === 'handoffs'} data-testid="runs-tab-handoffs" className={tabClass(tab === 'handoffs')} onClick={() => setQuery({ tab: 'handoffs' })}>{t('runs.tabHandoffs')}</button>
+      <button type="button" role="tab" aria-selected={tab === 'stats'} data-testid="runs-tab-stats" className={tabClass(tab === 'stats')} onClick={() => setQuery({ tab: 'stats' })}>{t('runs.tabStats')}</button>
     </div>
-    {tab === 'orchestrations' ? <OrchestrationRunsList /> : <HandoffRunsList />}
+    {tab === 'orchestrations' ? <OrchestrationRunsList /> : tab === 'stats' ? <DispatchStatsView /> : <HandoffRunsList />}
   </section>;
 }
 function HandoffRunsList() {
