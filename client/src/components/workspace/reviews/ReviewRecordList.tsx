@@ -86,28 +86,28 @@ export function ReviewRecordList({ rules, batches, ruleId, selectedId, runningRu
           const range = coverage(batch, locale, (from, through) => t('reviews.coverage', { from, through }));
           const counts = batch.counts;
           return (
-            <button key={batch.id} type="button" className={cn('flex w-full flex-col gap-1 border-t border-border px-4 py-3 text-left first:border-t-0 hover:bg-muted/60', selectedId === batch.id && 'bg-muted/60')} onClick={() => onOpen(batch.id)}>
-              <span className="flex min-w-0 flex-wrap items-center gap-2">
-                <Badge variant="outline" className={statusClass[batch.status]}>{t(statusKey[batch.status])}</Badge>
-                <span className="min-w-0 font-medium break-words">{batch.ruleName || t('reviews.fallbackName')}</span>
-                {batch.ruleDeleted && <span className="text-xs text-muted-foreground">{t('reviews.ruleDeletedTag')}</span>}
-                <span className="text-xs text-muted-foreground">{stamp(batch.createdAt, locale)}</span>
-                {range && <span className="text-xs text-muted-foreground">{range}</span>}
-              </span>
-              {(counts || batch.pendingProposalCount > 0) && (
-                <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                  {counts && (
-                    <>
-                      <span>{t('reviews.statAdded')} <b className="text-foreground">{counts.added}</b></span>
-                      <span>{t('reviews.statCompleted')} <b className="text-foreground">{counts.completed}</b></span>
-                      <span>{t('reviews.statOverdue')} <b className="text-foreground">{counts.overdue}</b></span>
-                      <span>{t('reviews.statBlocked')} <b className="text-foreground">{counts.blocked}</b></span>
-                    </>
-                  )}
-                  {batch.pendingProposalCount > 0 && <span>{t('reviews.goConfirm', { count: batch.pendingProposalCount })}</span>}
+            <div key={batch.id} className={cn('border-t border-border first:border-t-0', selectedId === batch.id && 'bg-muted/60')}>
+              <button type="button" className={cn('flex w-full flex-col gap-1 px-4 pt-3 text-left hover:bg-muted/60', batch.pendingProposalCount > 0 ? 'pb-1' : 'pb-3')} onClick={() => onOpen(batch.id)}>
+                <span className="flex min-w-0 flex-wrap items-center gap-2">
+                  <Badge variant="outline" className={statusClass[batch.status]}>{t(statusKey[batch.status])}</Badge>
+                  <span className="min-w-0 font-medium break-words">{batch.ruleName || t('reviews.fallbackName')}</span>
+                  {batch.ruleDeleted && <span className="text-xs text-muted-foreground">{t('reviews.ruleDeletedTag')}</span>}
+                  <span className="text-xs text-muted-foreground">{stamp(batch.createdAt, locale)}</span>
+                  {range && <span className="text-xs text-muted-foreground">{range}</span>}
                 </span>
+                {counts && (
+                  <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <span>{t('reviews.statAdded')} <b className="text-foreground">{counts.added}</b></span>
+                    <span>{t('reviews.statCompleted')} <b className="text-foreground">{counts.completed}</b></span>
+                    <span>{t('reviews.statOverdue')} <b className="text-foreground">{counts.overdue}</b></span>
+                    <span>{t('reviews.statBlocked')} <b className="text-foreground">{counts.blocked}</b></span>
+                  </span>
+                )}
+              </button>
+              {batch.pendingProposalCount > 0 && (
+                <a className="inline-block px-4 pb-3 text-xs underline underline-offset-4" href="#/proposals">{t('reviews.goConfirm', { count: batch.pendingProposalCount })}</a>
               )}
-            </button>
+            </div>
           );
         })}
         {empty && <p className="px-4 py-8 text-sm text-muted-foreground">{attention || activeRule ? t('reviews.filteredEmpty') : t('reviews.empty')}</p>}
