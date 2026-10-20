@@ -318,10 +318,15 @@ connectionRouter.use(ownerMiddleware);
 connectionRouter.get('/', async (_req, res, next) => {
   try {
     const rows = await prisma.connection.findMany({ orderBy: { createdAt: 'desc' } });
+    const topicIdsByConnection = new Map(rows.map((row) => [row.id, JSON.parse(row.topicIds) as string[]]));
+    const allTopicIds = [...new Set([...topicIdsByConnection.values()].flat())];
+    // Archived topics still have a row, so they are not missing. Same rule as GET /:id/check.
+    const existingIds = new Set(allTopicIds.length === 0 ? [] : (await prisma.topic.findMany({ where: { id: { in: allTopicIds } }, select: { id: true } })).map((topic) => topic.id));
     const data = await Promise.all(rows.map(async (row) => {
       const lastWrite = await prisma.changeRecord.findFirst({ where: { connectionId: row.id }, orderBy: { createdAt: 'desc' }, select: { createdAt: true, operation: true } });
       const lastRequest = await prisma.requestReceipt.findFirst({ where: { actorId: `connection:${row.id}` }, orderBy: { createdAt: 'desc' }, select: { createdAt: true } });
-      return { ...publicConnection(row), lastWriteAt: lastWrite?.createdAt ?? null, lastWriteOperation: lastWrite?.operation ?? null, lastCommandAt: lastRequest?.createdAt ?? null };
+      const missingTopicIds = (topicIdsByConnection.get(row.id) ?? []).filter((id) => !existingIds.has(id));
+      return { ...publicConnection(row), lastWriteAt: lastWrite?.createdAt ?? null, lastWriteOperation: lastWrite?.operation ?? null, lastCommandAt: lastRequest?.createdAt ?? null, missingTopicIds, healthy: row.status === 'active' && missingTopicIds.length === 0 };
     }));
     res.json({ data, error: null });
   } catch (error) { next(error); }
