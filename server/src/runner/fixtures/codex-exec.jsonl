@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"thread_doc_sample"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"{\"outcome\":\"ready_for_review\",\"summary\":\"Updated the workspace.\",\"questions\":[],\"artifacts\":[],\"checks\":[{\"name\":\"unit\",\"passed\":true,\"detail\":\"ok\"}],\"unfinished\":[],\"proposedCommandsJson\":\"[]\"}"}}
+{"type":"turn.completed","usage":{"input_tokens":24789,"cached_input_tokens":5120,"cache_write_input_tokens":640,"output_tokens":890,"reasoning_output_tokens":210}}

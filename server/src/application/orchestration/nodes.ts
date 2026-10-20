@@ -8,7 +8,8 @@ import { DomainError } from '../../domain/task.js';
 import { localize } from '../../i18n/index.js';
 import { checkLocalOrigin } from '../security.js';
 import { canonical } from '../commands.js';
-import { JOB_LEASE_MS, NODE_ONLINE_MS, leaseRequestSchema, progressRequestSchema, reportRequestSchema, type JobKind, type LeasedJob } from '../../node-agent/protocol.js';
+import { JOB_LEASE_MS, NODE_ONLINE_MS, NODE_RESULT_FEATURES, leaseRequestSchema, progressRequestSchema, reportRequestSchema, runResultSchema, type JobKind, type LeasedJob } from '../../node-agent/protocol.js';
+import { boundedJson, costMicroUsd, int32, int32Any } from '../run-usage.js';
 
 type Db = Prisma.TransactionClient;
 export const now = () => new Date().toISOString();
@@ -27,6 +28,49 @@ export function jobDto(row: NodeJob) {
   const { leaseToken: _token, payloadJson, resultJson, ...value } = row;
   return { ...value, payload: JSON.parse(payloadJson), result: resultJson ? JSON.parse(resultJson) : null };
 }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+function payloadProvider(payloadJson: string): string | null {
+  try {
+    const payload = JSON.parse(payloadJson) as { provider?: unknown };
+    return typeof payload.provider === 'string' && payload.provider.length > 0 && payload.provider.length <= 200 ? payload.provider : null;
+  } catch { return null; }
+}
+/** Column patch for a run report. Old nodes omit the new keys; those columns stay unset (null). Parse failures write nothing. */
+export function columnsForRunReport(job: { kind: string; payloadJson: string }, input: { ok: boolean; result?: unknown }): Prisma.NodeJobUpdateManyMutationInput {
+  if (job.kind !== 'run') return {};
+  const provider = payloadProvider(job.payloadJson);
+  if (!input.ok) return provider ? { provider } : {};
+  const parsed = runResultSchema.safeParse(input.result);
+  if (!parsed.success) return {};
+  const data: Prisma.NodeJobUpdateManyMutationInput = {};
+  if (provider) data.provider = provider;
+  if (!isRecord(input.result)) return data;
+  if ('exitCode' in input.result) data.exitCode = int32Any(parsed.data.exitCode);
+  if ('usage' in input.result && parsed.data.usage) {
+    const usage = parsed.data.usage;
+    data.cliVersion = usage.cliVersion;
+    data.model = usage.model;
+    data.inputTokens = int32(usage.inputTokens);
+    data.cachedInputTokens = int32(usage.cachedInputTokens);
+    data.outputTokens = int32(usage.outputTokens);
+    data.costMicroUsd = costMicroUsd(usage.costUsd);
+    data.numTurns = int32(usage.numTurns);
+    data.cliDurationMs = int32(usage.cliDurationMs);
+    data.runDurationMs = int32(usage.runDurationMs);
+    data.usageJson = boundedJson(usage);
+  }
+  const facts = input.result.facts;
+  if (isRecord(facts) && 'diff' in facts && parsed.data.facts?.diff) {
+    const diff = parsed.data.facts.diff;
+    data.filesChanged = int32(diff.filesChanged);
+    data.linesAdded = int32(diff.linesAdded);
+    data.linesDeleted = int32(diff.linesDeleted);
+    data.diffStatJson = JSON.stringify(diff);
+  }
+  return data;
+}
 
 export class NodeService {
   async list() { return (await prisma.agentNode.findMany({ orderBy: { createdAt: 'desc' } })).map(nodeDto); }
@@ -43,7 +87,7 @@ export class NodeService {
     return nodeDto(row);
   }
   /** Heartbeat + capability report + lease. Also renews the leases of jobs the node still runs. */
-  async lease(node: AgentNode, raw: unknown): Promise<{ jobs: LeasedJob[]; cancel: string[] }> {
+  async lease(node: AgentNode, raw: unknown): Promise<{ jobs: LeasedJob[]; cancel: string[]; accepts: string[] }> {
     const input = leaseRequestSchema.parse(raw);
     const at = now();
     const expires = new Date(Date.now() + JOB_LEASE_MS).toISOString();
@@ -64,7 +108,7 @@ export class NodeService {
           if (changed.count) jobs.push({ id: job.id, kind: job.kind as JobKind, phase: job.phase, leaseToken, payload: JSON.parse(job.payloadJson) });
         }
       }
-      return { jobs, cancel };
+      return { jobs, cancel, accepts: [...NODE_RESULT_FEATURES] };
     });
   }
   async progress(node: AgentNode, id: string, raw: unknown) {
@@ -87,7 +131,8 @@ export class NodeService {
       return { replay: true };
     }
     if (job.status === 'cancelled') return { ignored: true };
-    const changed = await prisma.nodeJob.updateMany({ where: { id, resultJson: null, status: { in: ['leased', 'lost'] } }, data: { status: input.ok ? 'done' : 'failed', resultJson: serialized, error: input.ok ? null : input.error ?? '执行失败', endedAt: now(), updatedAt: now() } });
+    const usageColumns = columnsForRunReport(job, input);
+    const changed = await prisma.nodeJob.updateMany({ where: { id, resultJson: null, status: { in: ['leased', 'lost'] } }, data: { status: input.ok ? 'done' : 'failed', resultJson: serialized, error: input.ok ? null : input.error ?? '执行失败', endedAt: now(), updatedAt: now(), ...usageColumns } });
     if (!changed.count) throw new DomainError('JOB_CONFLICT', '任务状态已变化');
     const { onJobFinished } = await import('./service.js');
     await onJobFinished(id).catch((error) => console.error('编排处理任务结果失败：', error));

@@ -6,7 +6,7 @@
 import { mkdir, readFile, readdir, writeFile, statfs, access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import os from 'node:os';
-import { NODE_PROTOCOL_VERSION, cleanupPayloadSchema, inventoryPayloadSchema, preparePayloadSchema, probePayloadSchema, pullRequestPayloadSchema, pushPayloadSchema, runPayloadSchema, type LeasedJob, type NodeCapabilities } from './protocol.js';
+import { NODE_PROTOCOL_VERSION, NODE_RESULT_FEATURES, cleanupPayloadSchema, inventoryPayloadSchema, preparePayloadSchema, probePayloadSchema, pullRequestPayloadSchema, pushPayloadSchema, runPayloadSchema, type LeasedJob, type NodeCapabilities } from './protocol.js';
 import { assertAllowed, assertManagedWorktree, cleanupWorktrees, collectFacts, createPullRequest, fetchRef, ghAvailable, gitDirs, hooksFingerprint, git, inventory, NodeError, prepareWorktree, probe, pushBranch } from './git.js';
 import { createLocalLaunchSpec, localProviders } from './cli.js';
 
@@ -14,10 +14,21 @@ export type NodeConfig = { server: string; token: string; roots: string[]; dataD
 type Journal = { job: LeasedJob; state: 'running' | 'pending_report' | 'reported'; report?: { ok: boolean; result?: unknown; error?: string }; pre?: { worktree: string; preHead: string | null; hooksBefore: string | null } };
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
+const USAGE_FEATURE: string = NODE_RESULT_FEATURES[0];
+function durationMs(createdAt: string | null, endedAt: string | null): number | null {
+  if (!createdAt || !endedAt) return null;
+  const start = Date.parse(createdAt);
+  const end = Date.parse(endedAt);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  const ms = Math.max(0, Math.round(end - start));
+  return ms <= 2_147_483_647 ? ms : null;
+}
 export class NodeAgent {
   private active = new Map<string, Promise<void>>();
   private stopped = false;
   private providers: NodeCapabilities['providers'] | null = null;
+  /** Feature ids from the latest lease response. Missing `accepts` means an old server: report the old result shape. */
+  private serverAccepts = new Set<string>();
   private gh: boolean | null = null;
   private runnerModule: Promise<typeof import('../runner/supervisor.js')> | null = null;
   constructor(private readonly config: NodeConfig, private readonly http: typeof fetch = fetch) {
@@ -61,7 +72,8 @@ export class NodeAgent {
     const pending = (await this.journals()).filter((entry) => entry.state !== 'reported').map((entry) => entry.job.id);
     const activeJobIds = [...new Set([...this.active.keys(), ...pending])];
     const max = Math.max(0, (this.config.maxConcurrent ?? 2) - activeJobIds.length);
-    const lease = await this.api('/lease', { capabilities: await this.capabilities(), activeJobIds, max }) as { jobs: LeasedJob[]; cancel: string[] };
+    const lease = await this.api('/lease', { capabilities: await this.capabilities(), activeJobIds, max }) as { jobs: LeasedJob[]; cancel: string[]; accepts?: unknown };
+    this.serverAccepts = new Set(Array.isArray(lease.accepts) ? lease.accepts.filter((item): item is string => typeof item === 'string') : []);
     for (const id of lease.cancel) { await (await this.runner()).requestCancel(id).catch(() => undefined); }
     for (const job of lease.jobs) {
       const entry: Journal = { job, state: 'running' };
@@ -72,6 +84,8 @@ export class NodeAgent {
   }
   async idle() { while (this.active.size) await Promise.allSettled([...this.active.values()]); }
   async run() {
+    // Lease once first so resumed jobs know which result fields this server accepts (usage_v1).
+    try { await this.pollOnce(); } catch (error) { console.error(`[wwa-node] 拉取失败：${(error as Error).message}`); }
     await this.resume();
     while (!this.stopped) {
       try { await this.pollOnce(); } catch (error) { console.error(`[wwa-node] 拉取失败：${(error as Error).message}`); }
@@ -159,17 +173,41 @@ export class NodeAgent {
       try { const pushed = await pushBranch(worktree, facts.branch, payload.publish.remote); published = { remote: payload.publish.remote, branch: facts.branch, head: pushed.head }; }
       catch (failure) { publishError = (failure as Error).message.slice(-20_000); }
     }
-    return { worktree, sessionId: output.sessionId ?? null, result: output.result ?? null, error: error ? error.slice(0, 20_000) : null, stderrTail, facts, preHead, published, publishError };
+    const acceptsUsage = this.serverAccepts.has(USAGE_FEATURE);
+    // Old servers reject unknown keys. Strip usage fields unless this lease advertised usage_v1.
+    const { diff: _diff, ...factsWithoutDiff } = facts;
+    const reportedFacts = acceptsUsage ? facts : factsWithoutDiff;
+    const base = { worktree, sessionId: output.sessionId ?? null, result: output.result ?? null, error: error ? error.slice(0, 20_000) : null, stderrTail, facts: reportedFacts, preHead, published, publishError };
+    if (!acceptsUsage) return base;
+    const providers = (await this.capabilities()).providers;
+    const version = providers.find((item) => item.provider === payload.provider)?.version?.trim() ?? '';
+    const parsed = output.usage;
+    return {
+      ...base,
+      exitCode: observation.exitCode,
+      usage: {
+        model: parsed?.model ?? null,
+        inputTokens: parsed?.inputTokens ?? null,
+        cachedInputTokens: parsed?.cachedInputTokens ?? null,
+        outputTokens: parsed?.outputTokens ?? null,
+        costUsd: parsed?.costUsd ?? null,
+        numTurns: parsed?.numTurns ?? null,
+        cliDurationMs: parsed?.cliDurationMs ?? null,
+        runDurationMs: durationMs(observation.createdAt, observation.endedAt),
+        cliVersion: version ? version.slice(0, 200) : null,
+        ...(parsed ? { raw: parsed.raw } : {}),
+      },
+    };
   }
 
-  private async watch(runId: string): Promise<{ exitCode: number | null; error: string | null }> {
+  private async watch(runId: string): Promise<{ exitCode: number | null; error: string | null; createdAt: string | null; endedAt: string | null }> {
     const runner = await this.runner();
     const startedAt = Date.now();
     while (true) {
       const receipt = await runner.readReceipt(runId);
-      if (receipt?.state === 'ended') return { exitCode: receipt.exitCode ?? null, error: receipt.cancelled ? '已取消' : receipt.error ?? null };
+      if (receipt?.state === 'ended') return { exitCode: receipt.exitCode ?? null, error: receipt.cancelled ? '已取消' : receipt.error ?? null, createdAt: receipt.createdAt ?? null, endedAt: new Date().toISOString() };
       const beat = receipt ? Date.parse(receipt.heartbeatAt) : startedAt;
-      if (Date.now() - beat > 60_000) return { exitCode: null, error: '本机运行监督进程失联（心跳超过 60 秒）' };
+      if (Date.now() - beat > 60_000) return { exitCode: null, error: '本机运行监督进程失联（心跳超过 60 秒）', createdAt: receipt?.createdAt ?? null, endedAt: null };
       await sleep(1000);
     }
   }

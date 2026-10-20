@@ -5,14 +5,17 @@ import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { parseModelJson, planSchema, sequentialPlan, validatePlan } from './application/orchestration/planner.js';
 import { checkDevelop, checkMerge, checkVerify, looksGitWriteDenied, looksRateLimited } from './application/orchestration/checks.js';
+import { columnsForRunReport } from './application/orchestration/nodes.js';
 import { slug } from './application/orchestration/service.js';
+import { NodeAgent } from './node-agent/agent.js';
 import { withGitWrite } from './node-agent/cli.js';
+import { emptyDiff, runResultSchema, type GitFacts } from './node-agent/protocol.js';
 import { buildArgs } from './runner/adapters.js';
 import { cleanupWorktrees, collectFacts, fetchRef, inventory, prepareWorktree, probe, worktreePath } from './node-agent/git.js';
 
 const subtasks = [{ id: 'a', title: 'A', description: '', sortOrder: 0 }, { id: 'b', title: 'B', description: '', sortOrder: 1 }, { id: 'c', title: 'C', description: '', sortOrder: 2 }];
 const step = (taskId: string, dependsOn: string[] = []) => ({ taskId, dependsOn, acceptanceCriteria: '', rationale: '' });
-const facts = (extra: Record<string, unknown> = {}) => ({ worktree: '/w', branch: 'orch/x-r1-a-a1', head: 'bbbbbbb', base: 'aaaaaaa', commits: [{ sha: 'bbbbbbb', subject: 'x' }], status: [], mergeInProgress: false, unmerged: [], includes: { ccccccc: true, ddddddd: true }, conflictMarkers: [], hooksChanged: false, ...extra });
+const facts = (extra: Partial<GitFacts> = {}): GitFacts => ({ worktree: '/w', branch: 'orch/x-r1-a-a1', head: 'bbbbbbb', base: 'aaaaaaa', commits: [{ sha: 'bbbbbbb', subject: 'x' }], status: [], mergeInProgress: false, unmerged: [], includes: { ccccccc: true, ddddddd: true }, conflictMarkers: [], hooksChanged: false, diff: emptyDiff(), ...extra });
 const result = (extra: Record<string, unknown> = {}) => ({ outcome: 'ready_for_review' as const, summary: 's', questions: [], artifacts: [], checks: [{ name: 't', passed: true, detail: '' }], unfinished: [], proposedCommands: [], ...extra });
 
 describe('plan validation', () => {
@@ -122,6 +125,59 @@ describe('node git steps', () => {
       await expect(prepareWorktree(repo, data, { branch: 'orch/t-r1-a', startPoint: 'main', worktreeName: 'o1/b' })).rejects.toThrow('已存在');
     } finally { await rm(root, { recursive: true, force: true }); }
   });
+
+  it('counts numstat for add, modify, delete, binary and rename, and reports zero when base is missing or equal to head', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wwa-numstat-'));
+    const run = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@e', ...args], { cwd, encoding: 'utf8' }).trim();
+    try {
+      const repo = join(root, 'repo');
+      await mkdir(repo, { recursive: true });
+      run(repo, 'init', '-b', 'main');
+      run(repo, 'config', 'diff.renames', 'true');
+      await writeFile(join(repo, 'keep.txt'), 'same\n');
+      await writeFile(join(repo, 'mod.txt'), 'old\n');
+      await writeFile(join(repo, 'del.txt'), 'gone\n');
+      await writeFile(join(repo, 'ren.txt'), 'line\n'.repeat(20));
+      run(repo, 'add', '-A');
+      run(repo, 'commit', '-m', 'init');
+      const base = run(repo, 'rev-parse', 'HEAD');
+      await writeFile(join(repo, 'mod.txt'), 'old\nnew\n');
+      run(repo, 'rm', 'del.txt');
+      run(repo, 'mv', 'ren.txt', 'moved.txt');
+      await writeFile(join(repo, 'moved.txt'), `${'line\n'.repeat(20)}extra\n`);
+      await writeFile(join(repo, 'bin.dat'), Buffer.from([0x78, 0x00, 0x79]));
+      await writeFile(join(repo, 'new.txt'), 'fresh\n');
+      run(repo, 'add', '-A');
+      run(repo, 'commit', '-m', 'edit');
+      const changed = await collectFacts(repo, { base });
+      expect(changed.diff.truncated).toBe(false);
+      expect(changed.diff.filesChanged).toBe(5);
+      expect(changed.diff.linesAdded).toBe(3);
+      expect(changed.diff.linesDeleted).toBe(1);
+      expect(changed.diff.files).toHaveLength(5);
+      const byPath = Object.fromEntries(changed.diff.files.map((file) => [file.path, file]));
+      expect(Object.keys(byPath).sort()).toEqual(['bin.dat', 'del.txt', 'mod.txt', 'moved.txt', 'new.txt']);
+      expect(byPath['mod.txt']).toEqual({ path: 'mod.txt', added: 1, deleted: 0, binary: false });
+      expect(byPath['del.txt']).toEqual({ path: 'del.txt', added: 0, deleted: 1, binary: false });
+      expect(byPath['moved.txt']).toEqual({ path: 'moved.txt', added: 1, deleted: 0, binary: false });
+      expect(byPath['bin.dat']).toEqual({ path: 'bin.dat', added: 0, deleted: 0, binary: true });
+      expect(byPath['new.txt']).toEqual({ path: 'new.txt', added: 1, deleted: 0, binary: false });
+      const head = run(repo, 'rev-parse', 'HEAD');
+      expect((await collectFacts(repo, { base: head })).diff).toEqual(emptyDiff());
+      expect((await collectFacts(repo, {})).diff).toEqual(emptyDiff());
+
+      const mid = head;
+      for (let i = 0; i < 201; i++) await writeFile(join(repo, `n${String(i).padStart(3, '0')}.txt`), 'x\n');
+      run(repo, 'add', '-A');
+      run(repo, 'commit', '-m', 'many');
+      const many = await collectFacts(repo, { base: mid });
+      expect(many.diff.files).toHaveLength(200);
+      expect(many.diff.truncated).toBe(true);
+      expect(many.diff.filesChanged).toBe(201);
+      expect(many.diff.linesAdded).toBe(201);
+      expect(many.diff.linesDeleted).toBe(0);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
 });
 
 describe('node transfer and cleanup steps', () => {
@@ -160,4 +216,104 @@ describe('node transfer and cleanup steps', () => {
       expect(g(repo, 'branch', '--list', 'w/dirty')).toContain('w/dirty');
     } finally { await rm(root, { recursive: true, force: true }); }
   });
+});
+
+describe('usage result negotiation', () => {
+  const bare = { worktree: '/w', result: null, facts: null };
+  it('parses old run results and fills columns only for keys the node actually sent', () => {
+    const parsed = runResultSchema.parse(bare);
+    expect(parsed.exitCode).toBeNull();
+    expect(parsed.usage).toBeNull();
+    expect(parsed.sessionId).toBeNull();
+    const withFacts = runResultSchema.parse({ ...bare, facts: { worktree: '/w', branch: null, head: null } });
+    expect(withFacts.facts?.diff).toEqual(emptyDiff());
+    expect(runResultSchema.parse({ ...bare, exitCode: -1 }).exitCode).toBe(-1);
+    expect(runResultSchema.safeParse({ ...bare, extra: true }).success).toBe(false);
+
+    const job = { kind: 'run', payloadJson: JSON.stringify({ provider: 'codex' }) };
+    expect(columnsForRunReport(job, { ok: true, result: bare })).toEqual({ provider: 'codex' });
+    expect(columnsForRunReport(job, { ok: true, result: { ...bare, exitCode: 7, usage: null } })).toEqual({ provider: 'codex', exitCode: 7 });
+    expect(columnsForRunReport(job, { ok: true, result: { ...bare, exitCode: -1 } }).exitCode).toBe(-1);
+    expect(columnsForRunReport({ kind: 'run', payloadJson: JSON.stringify({ provider: 'claude' }) }, { ok: false, result: { usage: { inputTokens: 1 } } })).toEqual({ provider: 'claude' });
+    expect(columnsForRunReport(job, { ok: false })).toEqual({ provider: 'codex' });
+    expect(columnsForRunReport(job, { ok: true, result: { nope: true } })).toEqual({});
+    expect(columnsForRunReport({ kind: 'probe', payloadJson: job.payloadJson }, { ok: true, result: { ...bare, exitCode: 0 } })).toEqual({});
+    expect(columnsForRunReport({ kind: 'run', payloadJson: '{}' }, { ok: false })).toEqual({});
+    expect(columnsForRunReport({ kind: 'run', payloadJson: JSON.stringify({ provider: 'p'.repeat(201) }) }, { ok: false })).toEqual({});
+
+    const usage = { model: 'gpt', inputTokens: 1200, cachedInputTokens: 200, outputTokens: 80, costUsd: 0.25, numTurns: 2, cliDurationMs: 40, runDurationMs: 50, cliVersion: 'stub-codex 0.0.0', raw: 'x'.repeat(9000) };
+    const diff = { files: [{ path: 'a.txt', added: 3, deleted: 1, binary: false }], filesChanged: 4, linesAdded: 3, linesDeleted: 1, truncated: true };
+    const full = columnsForRunReport(job, { ok: true, result: { ...bare, exitCode: 0, usage, facts: { worktree: '/w', branch: 'main', head: 'abc', base: 'def', diff } } });
+    expect(full).toMatchObject({ provider: 'codex', exitCode: 0, model: 'gpt', inputTokens: 1200, cachedInputTokens: 200, outputTokens: 80, costMicroUsd: 250000, numTurns: 2, cliDurationMs: 40, runDurationMs: 50, cliVersion: 'stub-codex 0.0.0', filesChanged: 4, linesAdded: 3, linesDeleted: 1 });
+    expect(String(full.usageJson).length).toBeLessThanOrEqual(8000);
+    expect(JSON.parse(String(full.usageJson))).toMatchObject({ inputTokens: 1200, raw: null, rawTruncated: true });
+    expect(JSON.parse(String(full.diffStatJson)).truncated).toBe(true);
+    expect(columnsForRunReport(job, { ok: true, result: { ...bare, usage: { inputTokens: 3_000_000_000 } } }).inputTokens).toBeNull();
+  });
+
+  it('strips exitCode, usage and diff unless the lease accepts usage_v1', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wwa-accepts-'));
+    const previous = { runner: process.env.WWA_RUNNER_DIR, codex: process.env.WWA_CODEX_BIN };
+    const reports: Array<{ ok?: boolean; result?: Record<string, unknown>; error?: string }> = [];
+    const run = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@e', ...args], { cwd, encoding: 'utf8' }).trim();
+    try {
+      const repo = join(root, 'repo');
+      await mkdir(repo, { recursive: true });
+      run(repo, 'init', '-b', 'main');
+      await writeFile(join(repo, 'README.md'), 'hi\n');
+      run(repo, 'add', '-A');
+      run(repo, 'commit', '-m', 'init');
+      const cli = join(root, 'fake-codex.mjs');
+      await writeFile(cli, [
+        "import { readFileSync, writeFileSync } from 'node:fs';",
+        "const args = process.argv.slice(2);",
+        "if (args.includes('--version')) { console.log('fake-codex 9.9.9'); process.exit(0); }",
+        "readFileSync(0);",
+        "const output = args[args.indexOf('--output-last-message') + 1];",
+        "writeFileSync(output, JSON.stringify({ outcome: 'ready_for_review', summary: 'ok', questions: [], artifacts: [], checks: [], unfinished: [], proposedCommandsJson: '[]' }));",
+        "console.log(JSON.stringify({ type: 'thread.started', thread_id: 'thread-fake' }));",
+        "console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1200, cached_input_tokens: 200, output_tokens: 80, reasoning_output_tokens: 10 } }));",
+      ].join('\n'));
+      process.env.WWA_CODEX_BIN = cli;
+      const queue = [
+        { id: 'job-old', branch: 'feature-old', name: 'g1/old', accepts: undefined as string[] | undefined },
+        { id: 'job-new', branch: 'feature-new', name: 'g1/new', accepts: ['usage_v1'] },
+      ];
+      const http: typeof fetch = async (input, init) => {
+        const url = String(input);
+        if (url.endsWith('/lease')) {
+          const next = queue.shift();
+          const data: { jobs: unknown[]; cancel: string[]; accepts?: string[] } = { jobs: [], cancel: [] };
+          if (next) {
+            data.jobs = [{ id: next.id, kind: 'run', phase: 'work', leaseToken: '0123456789abcdef', payload: { repoPath: repo, provider: 'codex', permissions: { profile: 'read_only', allowShell: false }, worktree: { create: { branch: next.branch, startPoint: 'main', worktreeName: next.name } }, prompt: 'hello', expect: {} } }];
+            if (next.accepts) data.accepts = next.accepts;
+          }
+          return Response.json({ data });
+        }
+        if (url.endsWith('/progress')) return Response.json({ data: { ok: true } });
+        if (url.endsWith('/result')) { reports.push(JSON.parse(String(init?.body))); return Response.json({ data: { ok: true } }); }
+        return Response.json({ code: 'NOPE' }, { status: 500 });
+      };
+      const agent = new NodeAgent({ server: 'http://127.0.0.1:9', token: 'token', roots: [root], dataDir: join(root, 'node-data'), maxConcurrent: 1, pollMs: 50 }, http);
+      await agent.pollOnce();
+      await agent.idle();
+      await agent.pollOnce();
+      await agent.idle();
+      expect(reports).toHaveLength(2);
+      for (const report of reports) if (!report.ok) throw new Error(JSON.stringify(report));
+      const [oldReport, nextReport] = reports;
+      expect(oldReport.result).not.toHaveProperty('exitCode');
+      expect(oldReport.result).not.toHaveProperty('usage');
+      expect(oldReport.result?.facts).not.toHaveProperty('diff');
+      expect(oldReport.result?.error).toBeNull();
+      expect(nextReport.result?.exitCode).toBe(0);
+      expect(nextReport.result?.usage).toMatchObject({ inputTokens: 1200, cachedInputTokens: 200, outputTokens: 80, costUsd: null, cliVersion: 'fake-codex 9.9.9' });
+      expect((nextReport.result?.usage as { runDurationMs: number }).runDurationMs).toBeGreaterThanOrEqual(0);
+      expect((nextReport.result?.facts as { diff: unknown }).diff).toEqual(emptyDiff());
+    } finally {
+      if (previous.runner === undefined) delete process.env.WWA_RUNNER_DIR; else process.env.WWA_RUNNER_DIR = previous.runner;
+      if (previous.codex === undefined) delete process.env.WWA_CODEX_BIN; else process.env.WWA_CODEX_BIN = previous.codex;
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 90_000);
 });

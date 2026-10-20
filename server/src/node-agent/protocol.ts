@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { permissionsSchema, providerSchema, resultSchema } from '../runner/contracts.js';
 
 export const NODE_PROTOCOL_VERSION = 2;
+/** Lease `accepts` values. A node sends the matching result fields only when the server lists them. */
+export const NODE_RESULT_FEATURES = ['usage_v1'] as const;
 /** A node that has not leased for this long is shown offline. */
 export const NODE_ONLINE_MS = 90_000;
 /** Leases renew on every heartbeat; an expired lease turns the job `lost`. */
@@ -50,6 +52,38 @@ export type PushPayload = z.infer<typeof pushPayloadSchema>;
 export const jobKindSchema = z.enum(['probe', 'prepare', 'run', 'push', 'inventory', 'cleanup', 'pull_request']);
 export type JobKind = z.infer<typeof jobKindSchema>;
 
+const nullableInt = z.number().int().nonnegative().nullable().default(null);
+/** CLI usage frozen on a run result. `raw` stays open so later CLI fields are not rejected. */
+export const usageSchema = z.object({
+  model: z.string().max(200).nullable().default(null),
+  inputTokens: nullableInt,
+  cachedInputTokens: nullableInt,
+  outputTokens: nullableInt,
+  numTurns: nullableInt,
+  cliDurationMs: nullableInt,
+  runDurationMs: nullableInt,
+  costUsd: z.number().nonnegative().nullable().default(null),
+  cliVersion: z.string().max(200).nullable().default(null),
+  raw: z.unknown().optional(),
+}).strict();
+export type UsageReport = z.infer<typeof usageSchema>;
+export function emptyDiff() {
+  return { files: [] as Array<{ path: string; added: number; deleted: number; binary: boolean }>, filesChanged: 0, linesAdded: 0, linesDeleted: 0, truncated: false };
+}
+export const diffStatSchema = z.object({
+  files: z.array(z.object({
+    path: z.string().max(4096),
+    added: z.number().int().nonnegative(),
+    deleted: z.number().int().nonnegative(),
+    binary: z.boolean(),
+  }).strict()).max(200),
+  filesChanged: z.number().int().nonnegative().default(0),
+  linesAdded: z.number().int().nonnegative().default(0),
+  linesDeleted: z.number().int().nonnegative().default(0),
+  truncated: z.boolean().default(false),
+}).strict().default(emptyDiff);
+export type DiffStat = z.infer<typeof diffStatSchema>;
+
 /** Mechanically collected, read-only git facts about a worktree. */
 export const gitFactsSchema = z.object({
   worktree: z.string().max(4096),
@@ -63,12 +97,25 @@ export const gitFactsSchema = z.object({
   includes: z.record(z.boolean()).default({}),
   conflictMarkers: z.array(z.string().max(4096)).max(500).default([]),
   hooksChanged: z.boolean().default(false),
+  diff: diffStatSchema,
 }).strict();
 export type GitFacts = z.infer<typeof gitFactsSchema>;
 
 export const probeResultSchema = z.object({ toplevel: z.string().max(4096), rootCommit: z.string().max(64).nullable(), originUrl: z.string().max(2000).nullable(), branches: z.array(z.string().max(250)).max(500), head: z.string().max(64).nullable(), dirtyCount: z.number().int().min(0) }).strict();
 export const prepareResultSchema = z.object({ worktree: z.string().max(4096), branch: z.string().max(250), head: z.string().max(64), replay: z.boolean().default(false), dirtyCount: z.number().int().min(0).default(0) }).strict();
-export const runResultSchema = z.object({ worktree: z.string().max(4096), sessionId: z.string().max(200).nullable().default(null), result: resultSchema.nullable(), error: z.string().max(20_000).nullable().default(null), stderrTail: z.string().max(20_000).default(''), facts: gitFactsSchema.nullable(), preHead: z.string().max(64).nullable().default(null), published: z.object({ remote: z.string().max(100), branch: z.string().max(250), head: z.string().max(64) }).strict().nullable().default(null), publishError: z.string().max(20_000).nullable().default(null) }).strict();
+export const runResultSchema = z.object({
+  worktree: z.string().max(4096),
+  sessionId: z.string().max(200).nullable().default(null),
+  result: resultSchema.nullable(),
+  error: z.string().max(20_000).nullable().default(null),
+  stderrTail: z.string().max(20_000).default(''),
+  facts: gitFactsSchema.nullable(),
+  preHead: z.string().max(64).nullable().default(null),
+  published: z.object({ remote: z.string().max(100), branch: z.string().max(250), head: z.string().max(64) }).strict().nullable().default(null),
+  publishError: z.string().max(20_000).nullable().default(null),
+  exitCode: z.number().int().nullable().default(null),
+  usage: usageSchema.nullable().default(null),
+}).strict();
 export const pushResultSchema = z.object({ output: z.string().max(20_000), head: z.string().max(64).nullable() }).strict();
 
 export const worktreeEntrySchema = z.object({

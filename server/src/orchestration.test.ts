@@ -147,6 +147,11 @@ describe('orchestration through a local executor', () => {
     expect(finished.integrationHead).toBe(git(integration, 'rev-parse', 'HEAD'));
     const subtasks = await prisma.task.findMany({ where: { parentId: main.id } });
     expect(subtasks.every((task) => task.status === 'done')).toBe(true);
+    const developIds = (await prisma.orchestrationStep.findMany({ where: { orchestrationId: draft.id, kind: 'develop' } })).map((step) => step.id);
+    const developJobs = await prisma.nodeJob.findMany({ where: { stepId: { in: developIds }, kind: 'run', status: 'done' } });
+    expect(developJobs.length).toBeGreaterThan(0);
+    expect(developJobs.every((job) => job.inputTokens === 1200 && job.cachedInputTokens === 200 && job.outputTokens === 80 && job.exitCode === 0 && job.costMicroUsd === null && job.provider === 'codex' && job.model === null && job.cliVersion === 'stub-codex 0.0.0')).toBe(true);
+    expect(developJobs.some((job) => (job.filesChanged ?? 0) > 0)).toBe(true);
     // The server never ran git: the main checkout is untouched and on main.
     expect(git(repo, 'symbolic-ref', '--short', 'HEAD')).toBe('main');
     expect(git(repo, 'status', '--porcelain')).toBe('');
@@ -211,7 +216,9 @@ describe('node protocol', () => {
     const caps = { protocol: 1, providers: [], maxConcurrent: 2, allowedRoots: [root], freeBytes: null };
     const otherLease = await supertest(app).post('/api/v1/node/lease').set('Authorization', `Node ${other.token}`).send({ capabilities: caps, activeJobIds: [], max: 2 });
     expect(otherLease.body.data.jobs).toHaveLength(0);
+    expect(otherLease.body.data.accepts).toEqual(['usage_v1']);
     const lease = await supertest(app).post('/api/v1/node/lease').set('Authorization', `Node ${node.token}`).send({ capabilities: caps, activeJobIds: [], max: 2 });
+    expect(lease.body.data.accepts).toEqual(['usage_v1']);
     const leased = lease.body.data.jobs[0];
     expect(leased.id).toBe(job.id);
     expect((await supertest(app).post('/api/v1/node/lease').set('Authorization', `Node ${node.token}`).send({ capabilities: caps, activeJobIds: [job.id], max: 2 })).body.data.jobs).toHaveLength(0);
@@ -235,5 +242,86 @@ describe('node protocol', () => {
     expect((await supertest(app).post('/api/v1/node/lease').set('Authorization', `Node ${other.token}`).send({ capabilities: caps })).status).toBe(401);
     expect((await supertest(app).get('/api/orchestrations').set('Authorization', `Node ${node.token}`)).status).toBeGreaterThanOrEqual(400);
     void tickOrchestration; void resolve;
+  });
+
+  it('stores run usage columns from reports and leaves them null when the node omits the new keys', async () => {
+    const node = await makeNode('usage-cols', [root]);
+    const { enqueueJob } = await import('./application/orchestration/nodes.js');
+    const supertest = (await import('supertest')).default;
+    const caps = { protocol: 2, providers: [], maxConcurrent: 2, allowedRoots: [root], freeBytes: null };
+    const enqueue = (key: string) => prisma.$transaction(async (tx) => (await enqueueJob(tx, { nodeId: node.id, kind: 'run', dispatchKey: `${key}:${node.id}`, payload: { provider: 'codex' } })).job);
+    const [oldJob, failJob, badJob, fullJob] = [await enqueue('usage-old'), await enqueue('usage-fail'), await enqueue('usage-bad'), await enqueue('usage-full')];
+    const leaseNext = async () => {
+      const response = await supertest(app).post('/api/v1/node/lease').set('Authorization', `Node ${node.token}`).send({ capabilities: caps, activeJobIds: [], max: 1 });
+      expect(response.status).toBe(200);
+      expect(response.body.data.accepts).toEqual(['usage_v1']);
+      return response.body.data.jobs[0] as { id: string; leaseToken: string };
+    };
+    const report = (id: string, body: Record<string, unknown>) => supertest(app).post(`/api/v1/node/jobs/${id}/result`).set('Authorization', `Node ${node.token}`).send(body);
+    const oldResult = { worktree: '/w', result: null, facts: null };
+    const leased = await leaseNext();
+    expect(leased.id).toBe(oldJob.id);
+    const oldBody = { leaseToken: leased.leaseToken, ok: true, result: oldResult };
+    expect((await report(oldJob.id, oldBody)).status).toBe(200);
+    expect((await report(oldJob.id, oldBody)).body.data.replay).toBe(true);
+    expect((await report(oldJob.id, { ...oldBody, result: { ...oldResult, error: 'changed' } })).status).toBe(409);
+    const oldRow = await prisma.nodeJob.findUniqueOrThrow({ where: { id: oldJob.id } });
+    expect(oldRow.status).toBe('done');
+    expect(oldRow.provider).toBe('codex');
+    expect(oldRow.exitCode).toBeNull();
+    expect(oldRow.inputTokens).toBeNull();
+    expect(oldRow.cachedInputTokens).toBeNull();
+    expect(oldRow.outputTokens).toBeNull();
+    expect(oldRow.costMicroUsd).toBeNull();
+    expect(oldRow.usageJson).toBeNull();
+    expect(oldRow.filesChanged).toBeNull();
+    expect(oldRow.linesAdded).toBeNull();
+    expect(oldRow.linesDeleted).toBeNull();
+    expect(oldRow.diffStatJson).toBeNull();
+    expect(oldRow.cliVersion).toBeNull();
+    expect(oldRow.model).toBeNull();
+
+    const failed = await leaseNext();
+    expect(failed.id).toBe(failJob.id);
+    expect((await report(failJob.id, { leaseToken: failed.leaseToken, ok: false, error: 'nope' })).status).toBe(200);
+    const failRow = await prisma.nodeJob.findUniqueOrThrow({ where: { id: failJob.id } });
+    expect(failRow.status).toBe('failed');
+    expect(failRow.provider).toBe('codex');
+    expect(failRow.exitCode).toBeNull();
+    expect(failRow.inputTokens).toBeNull();
+    expect(failRow.usageJson).toBeNull();
+    expect(failRow.filesChanged).toBeNull();
+
+    const bad = await leaseNext();
+    expect(bad.id).toBe(badJob.id);
+    expect((await report(badJob.id, { leaseToken: bad.leaseToken, ok: true, result: { garbage: true } })).status).toBe(200);
+    const badRow = await prisma.nodeJob.findUniqueOrThrow({ where: { id: badJob.id } });
+    expect(badRow.status).toBe('done');
+    expect(badRow.provider).toBeNull();
+    expect(badRow.exitCode).toBeNull();
+    expect(badRow.inputTokens).toBeNull();
+    expect(badRow.filesChanged).toBeNull();
+    expect(badRow.usageJson).toBeNull();
+
+    const usage = { model: 'gpt', inputTokens: 1200, cachedInputTokens: 200, outputTokens: 80, costUsd: 0.25, numTurns: 2, cliDurationMs: 40, runDurationMs: 50, cliVersion: 'stub-codex 0.0.0' };
+    const diff = { files: [{ path: 'a.txt', added: 3, deleted: 1, binary: false }], filesChanged: 4, linesAdded: 3, linesDeleted: 1, truncated: true };
+    const full = await leaseNext();
+    expect(full.id).toBe(fullJob.id);
+    expect((await report(fullJob.id, { leaseToken: full.leaseToken, ok: true, result: { worktree: '/w', result: null, facts: { worktree: '/w', branch: 'main', head: 'abc1234', base: 'abc0000', diff }, exitCode: 0, usage } })).status).toBe(200);
+    const fullRow = await prisma.nodeJob.findUniqueOrThrow({ where: { id: fullJob.id } });
+    expect(fullRow.provider).toBe('codex');
+    expect(fullRow.exitCode).toBe(0);
+    expect(fullRow.model).toBe('gpt');
+    expect(fullRow.inputTokens).toBe(1200);
+    expect(fullRow.cachedInputTokens).toBe(200);
+    expect(fullRow.outputTokens).toBe(80);
+    expect(fullRow.costMicroUsd).toBe(250000);
+    expect(fullRow.cliVersion).toBe('stub-codex 0.0.0');
+    expect(fullRow.filesChanged).toBe(4);
+    expect(fullRow.linesAdded).toBe(3);
+    expect(fullRow.linesDeleted).toBe(1);
+    expect(JSON.parse(fullRow.diffStatJson!).files[0].path).toBe('a.txt');
+    expect((fullRow.usageJson ?? '').length).toBeLessThanOrEqual(8000);
+    expect((await report(fullJob.id, { leaseToken: full.leaseToken, ok: true, result: { worktree: '/w', result: null, facts: null } })).status).toBe(409);
   });
 });
