@@ -65,7 +65,7 @@ var api={fillInput:function(text){if(typeof text!=='string')return false;send({t
 theme:document.documentElement.getAttribute('data-wwa-theme')||'light',
 onThemeChange:function(fn){if(typeof fn==='function')listeners.push(fn)}};
 Object.defineProperty(window,'wwa',{value:Object.freeze(api),writable:false,configurable:false});
-window.addEventListener('message',function(e){if(e.source!==P)return;var d=e.data;if(!d||d.type!=='wwa:theme'||(d.theme!=='light'&&d.theme!=='dark'))return;
+window.addEventListener('message',function(e){if(e.source!==P)return;var d=e.data;if(d&&d.type==='wwa:ping'&&typeof d.id==='number'){send({type:'wwa:alive',id:d.id});return;}if(!d||d.type!=='wwa:theme'||(d.theme!=='light'&&d.theme!=='dark'))return;
 document.documentElement.setAttribute('data-wwa-theme',d.theme);var s=document.getElementById('wwa-theme');if(s&&typeof d.css==='string')s.textContent=d.css;
 listeners.forEach(function(fn){try{fn(d.theme)}catch(err){}})});
 var last=0,queued=false;var report=function(){queued=false;var h=Math.ceil(Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0));if(h&&h!==last){last=h;send({type:'wwa:resize',height:h})}};
@@ -109,6 +109,7 @@ export function buildSrcdoc(source: string, options: { cdn: readonly string[]; t
 
 export type BridgeMessage =
   | { type: 'ready'; nonce: string }
+  | { type: 'alive'; id: number; nonce: string }
   | { type: 'resize'; height: number; nonce: string }
   | { type: 'fill'; text: string; nonce: string }
   | { type: 'invalid'; reason: string; nonce: string };
@@ -121,6 +122,10 @@ export function readBridgeMessage(data: unknown): BridgeMessage | null {
   if (record.type === 'wwa:ready') {
     if (keys !== 'nonce,type' || typeof nonce !== 'string') return null;
     return { type: 'ready', nonce };
+  }
+  if (record.type === 'wwa:alive') {
+    if (keys !== 'id,nonce,type' || typeof nonce !== 'string' || typeof record.id !== 'number' || !Number.isInteger(record.id)) return null;
+    return { type: 'alive', id: record.id, nonce };
   }
   if (record.type === 'wwa:resize') {
     if (keys !== 'height,nonce,type' || typeof nonce !== 'string' || typeof record.height !== 'number' || !Number.isFinite(record.height)) return null;
@@ -150,7 +155,12 @@ export function createNonce() {
   return hex;
 }
 
-export type NavigationGuard = { load: () => void; ready: () => void; dispose: () => void };
+/**
+ * `load` returns the load's id and whether it is still unconfirmed. `alive(id)` confirms that load when the
+ * frame's current document answered a ping for it: WebKit fires a load for a same-document fragment change
+ * (`location.hash = ...`) without a new document, so no second ready ever comes.
+ */
+export type NavigationGuard = { load: () => { id: number; pending: boolean }; ready: () => void; alive: (id: number) => void; dispose: () => void };
 /**
  * Pairs iframe load events with bridge ready messages.
  * One ready cannot cover a later load. A ready that arrives before its load still counts.
@@ -168,40 +178,54 @@ export function createNavigationGuard<Timer>(options: {
   const graceMs = options.graceMs ?? 1000;
   const hideMs = options.hideMs ?? 500;
   let loads = 0;
+  // Ready messages are counted on their own; a ping answer only marks the load it answered. Keeping them apart
+  // stops a reload (which sends both) from banking a spare confirmation for a later navigation.
   let readies = 0;
+  let aliveThrough = 0;
   let hidden = false;
   let hideHandle: Timer | undefined;
   let blockHandle: Timer | undefined;
+  const confirmed = () => readies >= loads || aliveThrough >= loads;
   const clearTimers = () => {
     if (hideHandle !== undefined) options.clearTimer(hideHandle);
     if (blockHandle !== undefined) options.clearTimer(blockHandle);
     hideHandle = undefined;
     blockHandle = undefined;
   };
+  const settle = () => {
+    if (!confirmed()) return;
+    clearTimers();
+    if (!hidden) return;
+    hidden = false;
+    options.onShow();
+  };
   return {
     load() {
       loads += 1;
-      if (readies >= loads) return;
+      if (confirmed()) return { id: loads, pending: false };
       clearTimers();
       hideHandle = options.setTimer(() => {
         hideHandle = undefined;
-        if (readies >= loads) return;
+        if (confirmed()) return;
         hidden = true;
         options.onHide();
       }, hideMs);
       blockHandle = options.setTimer(() => {
         blockHandle = undefined;
-        if (readies >= loads) return;
+        if (confirmed()) return;
         options.onBlock();
       }, graceMs);
+      return { id: loads, pending: true };
     },
     ready() {
       readies += 1;
-      if (readies < loads) return;
-      clearTimers();
-      if (!hidden) return;
-      hidden = false;
-      options.onShow();
+      settle();
+    },
+    alive(id) {
+      // Only an answer for the latest load counts, so a late answer cannot cover a later navigation.
+      if (id !== loads) return;
+      aliveThrough = id;
+      settle();
     },
     dispose() { clearTimers(); },
   };

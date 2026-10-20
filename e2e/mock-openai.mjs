@@ -112,7 +112,7 @@ r.style.display=(f==="all")||(f==="done"?k==="done":k!=="done")?"":"none";});});
 })();
 </script>
 </body></html>`;
-    const anchor = `<p id="log"></p><a href="#" onclick="document.getElementById('log').textContent+='井号'">井号</a> <a href="#sec" onclick="document.getElementById('log').textContent+='去小节'">去小节</a> <a href="" onclick="document.getElementById('log').textContent+='空链接'">空链接</a><div style="height:2400px"></div><h2 id="sec">小节</h2>`;
+    const anchor = `<p id="log"></p><a href="#" onclick="document.getElementById('log').textContent+='井号'">井号</a> <a href="#sec" onclick="document.getElementById('log').textContent+='去小节'">去小节</a> <a href="" onclick="document.getElementById('log').textContent+='空链接'">空链接</a> <button type="button" onclick="location.hash='h';document.getElementById('log').textContent+='改hash'">改 hash</button><div style="height:2400px"></div><h2 id="sec">小节</h2>`;
     const external = `<a href="${origin}/nav-target">外链</a>`;
     const early = `<script>location.href='${origin}/nav-target'</script>`;
     const reload = `<p id="mark">原样</p><button type="button" onclick="document.getElementById('mark').textContent='改过';setTimeout(function(){location.reload()},50)">重新加载</button>`;

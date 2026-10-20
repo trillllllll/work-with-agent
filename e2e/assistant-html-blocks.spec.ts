@@ -212,6 +212,9 @@ test('锚点不拦截', async ({ page }) => {
   await anchor.frame.getByRole('link', { name: '去小节', exact: true }).click();
   expect(await anchor.frame.locator('#sec').evaluate(() => window.scrollY)).toBeGreaterThan(0);
   await anchor.frame.getByRole('link', { name: '空链接', exact: true }).click();
+  // WebKit fires an iframe load for a same-document hash change; the ping answer keeps it from being blocked.
+  await anchor.frame.getByRole('button', { name: '改 hash', exact: true }).click();
+  await expect(anchor.frame.locator('#log')).toContainText('改hash');
   await expect(anchor.frame.locator('#log')).toContainText('井号');
   await expect(anchor.frame.locator('#log')).toContainText('去小节');
   await expect(anchor.frame.locator('#log')).toContainText('空链接');

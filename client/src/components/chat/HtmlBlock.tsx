@@ -54,6 +54,7 @@ function HtmlFrame({ block, cdn, theme, maxHeight, title }: { block: ContentBloc
       const message = readBridgeMessage(event.data);
       if (!message || message.nonce !== nonce) return;
       if (message.type === 'ready') { guard.ready(); return; }
+      if (message.type === 'alive') { guard.alive(message.id); return; }
       if (message.type === 'resize') { setHeight(clampHeight(message.height, maxHeight)); return; }
       // Filling needs a user who has interacted with this page, and is throttled.
       if (document.activeElement !== frame.current) return;
@@ -72,7 +73,8 @@ function HtmlFrame({ block, cdn, theme, maxHeight, title }: { block: ContentBloc
   if (blocked) return <SourceFallback block={block} message={t('html.navigatedAway')} />;
   return <iframe ref={frame} title={title} data-testid="html-block-frame" sandbox="allow-scripts" srcDoc={srcDoc} referrerPolicy="no-referrer" allow="" {...{ csp: buildCsp(cdn) }}
     className="block w-full border-0 bg-transparent" style={{ height, visibility: hidden ? 'hidden' : undefined }}
-    onLoad={() => guard.load()} />;
+    // An unconfirmed load pings whatever document is in the frame now; only our bridge can answer with the nonce.
+    onLoad={() => { const load = guard.load(); if (load.pending) frame.current?.contentWindow?.postMessage({ type: 'wwa:ping', id: load.id }, '*'); }} />;
 }
 
 function exportDocument(block: ContentBlock, cdn: string[], theme: SandboxTheme, title: string) {

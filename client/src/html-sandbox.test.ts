@@ -348,3 +348,46 @@ describe('createNonce', () => {
     }
   });
 });
+
+describe('navigation guard ping answers', () => {
+  it('confirms a load that brought no new document when the current page answers the ping (WebKit hash change)', () => {
+    const { clock, events, guard } = guardHarness();
+    guard.load(); guard.ready();
+    const second = guard.load();
+    expect(second).toEqual({ id: 2, pending: true });
+    guard.alive(2);
+    clock.advance(2000);
+    expect(events).toEqual([]);
+  });
+  it('ignores an answer for an older load, so it cannot cover a later navigation', () => {
+    const { clock, events, guard } = guardHarness();
+    guard.load(); guard.ready();
+    guard.load();
+    guard.load();
+    guard.alive(2);
+    clock.advance(1000);
+    expect(events).toEqual(['hide', 'block']);
+  });
+  it('does not bank a spare confirmation when a reload sends both a ready and a ping answer', () => {
+    const { clock, events, guard } = guardHarness();
+    guard.load(); guard.ready();
+    guard.load(); guard.alive(2); guard.ready();
+    clock.advance(2000);
+    expect(events).toEqual([]);
+    expect(guard.load()).toEqual({ id: 3, pending: true });
+    clock.advance(1000);
+    expect(events).toEqual(['hide', 'block']);
+  });
+  it('reads ping answers only with an integer id and the nonce', () => {
+    expect(readBridgeMessage({ type: 'wwa:alive', id: 3, nonce: 'n' })).toEqual({ type: 'alive', id: 3, nonce: 'n' });
+    for (const data of [{ type: 'wwa:alive', id: 3 }, { type: 'wwa:alive', id: 1.5, nonce: 'n' }, { type: 'wwa:alive', id: '3', nonce: 'n' }, { type: 'wwa:alive', id: 3, nonce: 'n', extra: 1 }]) expect(readBridgeMessage(data)).toBeNull();
+  });
+  it('the bridge answers a ping from the captured parent only', () => {
+    const bridge = installBridge('nonce-p');
+    const before = bridge.posted.length;
+    bridge.dispatch(bridge.windowListeners, 'message', { source: {}, data: { type: 'wwa:ping', id: 2 } });
+    expect(bridge.posted.length).toBe(before);
+    bridge.dispatch(bridge.windowListeners, 'message', { source: bridge.parent, data: { type: 'wwa:ping', id: 2 } });
+    expect(bridge.posted[bridge.posted.length - 1]).toEqual({ type: 'wwa:alive', id: 2, nonce: 'nonce-p' });
+  });
+});
