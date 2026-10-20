@@ -69,7 +69,7 @@ export function useWorkspaceEvents() {
         if (event.kind === 'review' && !notified.has(key)) {
           notified.add(key);
           const message = event.status === 'ready' ? tRef.current('review.ready') : event.status === 'failed' ? tRef.current('review.failed') : tRef.current('review.partial');
-          toast.info(message, { action: { label: tRef.current('review.view'), onClick: () => { window.location.hash = '/reviews'; } } });
+          toast.info(message, { action: { label: tRef.current('review.view'), onClick: () => { window.location.hash = event.batchId ? `/reviews?batch=${encodeURIComponent(event.batchId)}` : '/reviews'; } } });
         }
       } catch { /* Other invalidation events carry no user notification. */ }
     };
