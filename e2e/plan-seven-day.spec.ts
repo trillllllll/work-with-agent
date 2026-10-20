@@ -38,29 +38,32 @@ test('默认七天等宽，周末能创建任务，待安排面板按需展开',
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
 });
 
-test('重叠任务叠成行后每项可打开、完成，并可恢复显示已完成', async ({ page }) => {
+test('重叠任务在周视图并排成泳道，每项可打开、完成，并可恢复显示已完成', async ({ page }) => {
   await e2eDatabase.task.createMany({ data: [
     { id: 'overlap-a', title: '接口开发', scheduledStart: '2026-10-17T14:00', scheduledEnd: '2026-10-17T15:00', dueDate: '2026-10-17' },
     { id: 'overlap-b', title: '需求评审', scheduledStart: '2026-10-17T14:30', scheduledEnd: '2026-10-17T15:30', dueDate: '2026-10-17' },
-    { id: 'overlap-c', title: '测试用例', scheduledStart: '2026-10-17T14:45', scheduledEnd: '2026-10-17T16:00', dueDate: '2026-10-17' },
   ] });
   await page.goto('/#/plan');
   const day = page.locator('[data-testid="time-band-day"][data-date="2026-10-17"]');
-  const stack = day.getByTestId('plan-stack');
-  await stack.scrollIntoViewIfNeeded();
-  await expect(stack).toContainText('接口开发');
-  await expect(stack).toContainText('需求评审');
-  await expect(stack).toContainText('测试用例');
-  await expect(stack.getByTestId('plan-stack-more')).toHaveCount(0);
-  await stack.getByLabel('完成任务：接口开发', { exact: true }).click();
-  await expect(stack.getByText('接口开发', { exact: true })).toHaveCount(0);
+  const first = day.locator('[data-task-id="overlap-a"]');
+  const second = day.locator('[data-task-id="overlap-b"]');
+  await first.scrollIntoViewIfNeeded();
+  await expect(page.getByTestId('plan-stack')).toHaveCount(0);
+  await expect(first.locator('xpath=..')).toHaveAttribute('data-lane', '0');
+  await expect(second.locator('xpath=..')).toHaveAttribute('data-lane', '1');
+  await expect(second.locator('xpath=..')).toHaveAttribute('data-lane-count', '2');
+  await first.getByLabel('完成任务：接口开发', { exact: true }).click();
+  await expect(day.getByText('接口开发', { exact: true })).toHaveCount(0);
+  await expect(second.locator('xpath=..')).toHaveAttribute('data-lane-count', '1');
   await page.getByLabel('显示已完成', { exact: true }).check();
-  await expect(stack.getByLabel('重开任务：接口开发')).toBeChecked();
-  await stack.getByRole('button', { name: '打开任务：需求评审', exact: true }).click();
+  await expect(first.getByLabel('重开任务：接口开发')).toBeChecked();
+  // The completed task moves to the free lane on the right.
+  await expect(first.locator('xpath=..')).toHaveAttribute('data-lane', '1');
+  await second.getByRole('button', { name: '打开任务：需求评审', exact: true }).click();
   await expect(page.getByRole('button', { name: '安排时间', exact: true })).toContainText('14:30');
 });
 
-test('日视图一个用整卡，两个并排，三个以上叠行', async ({ page }) => {
+test('日视图一个用整卡，重叠的按泳道并排，列太窄时多出的收进 +N', async ({ page }) => {
   await e2eDatabase.task.createMany({ data: [
     { id: 'solo', title: '独自整理', scheduledStart: '2026-10-16T10:00', scheduledEnd: '2026-10-16T11:00', dueDate: '2026-10-16' },
     { id: 'pair-a', title: '并排甲', scheduledStart: '2026-10-16T11:00', scheduledEnd: '2026-10-16T12:00', dueDate: '2026-10-16' },
@@ -75,13 +78,12 @@ test('日视图一个用整卡，两个并排，三个以上叠行', async ({ pa
   const day = page.locator('[data-testid="time-band-day"][data-date="2026-10-16"]');
   const solo = day.locator('[data-task-id="solo"]');
   const pair = day.locator('[data-task-id="pair-a"]');
-  const stack = day.getByTestId('plan-stack');
   await expect(solo).toContainText('独自整理');
+  await expect(solo.locator('xpath=..')).toHaveAttribute('data-lane-count', '1');
   await expect(day.locator('[data-task-id="pair-b"]')).toContainText('并排乙');
-  await expect(stack).toContainText('叠行甲');
-  await expect(stack).toContainText('叠行丙');
-  await expect(stack.getByTestId('plan-stack-more')).toHaveText('还有 1 个');
-  await expect(stack).not.toContainText('叠行丁');
+  await expect(pair.locator('xpath=..')).toHaveAttribute('data-lane-count', '2');
+  for (const id of ['pile-a', 'pile-b', 'pile-c', 'pile-d']) await expect(day.locator(`[data-task-id="${id}"]`).locator('xpath=..')).toHaveAttribute('data-lane-count', '4');
+  await expect(day.getByTestId('plan-lane-more')).toHaveCount(0);
   const borders = await pair.evaluate((node) => {
     const style = getComputedStyle(node);
     return { left: style.borderLeftWidth, top: style.borderTopWidth, leftColor: style.borderLeftColor, topColor: style.borderTopColor };
@@ -93,13 +95,18 @@ test('日视图一个用整卡，两个并排，三个以上叠行', async ({ pa
     return style.borderLeftWidth === style.borderRightWidth && style.borderLeftColor === style.borderRightColor;
   });
   expect(soloBorders).toBe(true);
-  await stack.getByTestId('plan-stack-more').click();
+  await page.getByRole('button', { name: '周', exact: true }).click();
+  const week = page.locator('[data-testid="time-band-day"][data-date="2026-10-16"]');
+  const more = week.getByTestId('plan-lane-more');
+  await more.scrollIntoViewIfNeeded();
+  await expect(more).toHaveText('+3');
+  await more.click();
   const dialog = page.getByRole('dialog', { name: '重叠任务' });
   await expect(dialog).toContainText('叠行丁');
   await expect(dialog).not.toContainText('叠行甲');
 });
 
-test('相邻时间点与午夜合并卡片不遮挡后续任务或超出当天', async ({ page }) => {
+test('相邻时间点与午夜任务不遮挡后续任务或超出当天', async ({ page }) => {
   await e2eDatabase.task.createMany({ data: [
     { id: 'point-a', title: '十点提醒甲', scheduledStart: '2026-10-17T10:00', dueDate: '2026-10-17' },
     { id: 'point-b', title: '十点提醒乙', scheduledStart: '2026-10-17T10:00', dueDate: '2026-10-17' },
@@ -108,17 +115,21 @@ test('相邻时间点与午夜合并卡片不遮挡后续任务或超出当天',
     { id: 'point-late-b', title: '午夜提醒乙', scheduledStart: '2026-10-18T23:59', dueDate: '2026-10-18' },
   ] });
   await page.goto('/#/plan');
-  await expect(page.getByTestId('plan-stack')).toHaveCount(2);
+  await expect(page.getByTestId('plan-stack')).toHaveCount(0);
   const saturday = page.locator('[data-testid="time-band-day"][data-date="2026-10-17"]');
-  const group = saturday.getByTestId('plan-stack');
   const next = saturday.locator('[data-task-id="point-next"]');
-  const groupRect = await group.boundingBox();
   const nextRect = await next.boundingBox();
-  expect(groupRect!.y + groupRect!.height).toBeLessThanOrEqual(nextRect!.y);
+  for (const id of ['point-a', 'point-b']) {
+    const rect = await saturday.locator(`[data-task-id="${id}"]`).boundingBox();
+    expect(rect!.y + rect!.height).toBeLessThanOrEqual(nextRect!.y);
+  }
+  await expect(saturday.locator('[data-task-id="point-b"]').locator('xpath=..')).toHaveAttribute('data-lane-count', '2');
   const sunday = page.locator('[data-testid="time-band-day"][data-date="2026-10-18"]');
-  const lateRect = await sunday.getByTestId('plan-stack').boundingBox();
   const dayRect = await sunday.boundingBox();
-  expect(lateRect!.y + lateRect!.height).toBeLessThanOrEqual(dayRect!.y + dayRect!.height);
+  for (const id of ['point-late-a', 'point-late-b']) {
+    const rect = await sunday.locator(`[data-task-id="${id}"]`).boundingBox();
+    expect(rect!.y + rect!.height).toBeLessThanOrEqual(dayRect!.y + dayRect!.height);
+  }
   await next.getByRole('button', { name: '打开任务：十点半提醒', exact: true }).click();
   await expect(page.getByRole('button', { name: '安排时间', exact: true })).toContainText('10:30');
 });
