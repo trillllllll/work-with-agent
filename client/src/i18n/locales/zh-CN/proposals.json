@@ -1,0 +1,202 @@
+{
+  "title": "待确认",
+  "description": "AI 想改的东西先停在这里。确认后才会写入；有依赖的几项会作为一组一起确认。",
+  "statusAria": "提议状态",
+  "loading": "正在加载…",
+  "capped": "仅显示最近 100 条",
+  "listSeparator": "、",
+  "inbox": "收集箱",
+  "status": {
+    "pending": "待确认",
+    "applied": "已执行",
+    "rejected": "已拒绝"
+  },
+  "filter": {
+    "type": "按类型",
+    "source": "按来源",
+    "all": "全部",
+    "empty": "没有符合筛选的提议。",
+    "sources": "来源"
+  },
+  "type": {
+    "task": "任务",
+    "memory": "记忆",
+    "skill": "技能",
+    "other": "其他"
+  },
+  "source": {
+    "connection": "连接",
+    "deletedConnection": "已删除的连接",
+    "autoMemory": "自动记忆",
+    "autoMemoryArchive": "自动记忆归档",
+    "organization": "知识整理",
+    "learning": "派发学习",
+    "assistant": "AI 助手",
+    "owner": "本机用户"
+  },
+  "head": {
+    "memorySave": "保存记忆",
+    "memoryUpdate": "修订记忆「{{title}}」",
+    "memoryRetire": "保留为历史记忆「{{title}}」",
+    "memoryCrystallize": "沉淀结晶记忆「{{title}}」",
+    "memoryGroup": "一组 {{count}} 项记忆修改",
+    "taskCreate": "新建任务「{{title}}」",
+    "taskUpdate": "修改任务「{{title}}」",
+    "taskDelete": "删除任务「{{title}}」",
+    "taskRestore": "恢复任务「{{title}}」",
+    "taskReorder": "调整任务顺序",
+    "taskGroup": "一组 {{count}} 项任务修改",
+    "skillCreate": "新建技能「{{title}}」",
+    "skillUpdate": "修订技能「{{title}}」",
+    "skillGroup": "一组 {{count}} 项技能修改",
+    "otherGroup": "一组 {{count}} 项修改",
+    "named": "{{operation}}「{{title}}」",
+    "untitled": "未命名"
+  },
+  "badge": {
+    "memoryCreate": "新记忆",
+    "memoryUpdate": "修订记忆",
+    "memoryRetire": "退役记忆",
+    "taskCreate": "新建任务",
+    "taskUpdate": "修改任务",
+    "taskDelete": "删除任务",
+    "skillCreate": "新技能",
+    "skillUpdate": "修订技能",
+    "createdCount": "新建 {{count}}",
+    "updatedCount": "修改 {{count}}",
+    "deletedCount": "删除 {{count}}"
+  },
+  "memory": {
+    "importance": "重要度",
+    "importanceLevel": {
+      "low": "较低",
+      "mid": "中",
+      "high": "较高"
+    },
+    "labels": "标签",
+    "why": "为什么提：{{reason}}"
+  },
+  "evidence": {
+    "title": "依据",
+    "count": "依据 {{count}} 条",
+    "version": "版本 {{revision}}",
+    "unavailable": "来源不可用",
+    "legacy": "{{type}} · 版本 {{revision}}",
+    "legacyHint": "重新预览后显示详情",
+    "type": {
+      "task": "任务",
+      "material": "材料",
+      "memory": "记忆"
+    }
+  },
+  "impact": {
+    "tasks": "影响范围：{{tasks}}",
+    "taskCount": "影响范围：{{count}} 个任务",
+    "taskCreate": "确认后新建这个任务",
+    "memory": "确认后挂到「{{topic}}」清单，不改任何任务",
+    "memoryInbox": "确认后挂到收集箱，不改任何任务",
+    "skillCreate": "确认后新建技能，默认启用",
+    "skillUpdate": "确认后修订技能",
+    "none": "确认后写入这些修改"
+  },
+  "group": {
+    "explain": "这 {{count}} 项是 {{source}} 一次提交的，{{detail}}所以只能整组确认或整组拒绝。",
+    "explainChildren": "第 {{children}} 项是第 {{parent}} 项的子任务，要等它建好才能挂上去，",
+    "explainDepends": "第 {{items}} 项要等同组里先建好的对象，",
+    "created": "新建",
+    "updated": "修改",
+    "deleted": "删除",
+    "childOf": "子任务 · 依赖 {{mark}}",
+    "dependsOn": "依赖 {{mark}}"
+  },
+  "task": {
+    "basedOn": "基于版本 {{revision}}，只影响这一个任务"
+  },
+  "skill": {
+    "instructions": "技能说明",
+    "name": "名称",
+    "description": "说明"
+  },
+  "edit": {
+    "banner": "正在编辑。只有可改字段变成输入框，其余内容保持不变。保存后会按新内容重新校验，再由你确认。",
+    "start": "编辑",
+    "cancel": "取消",
+    "save": "保存并重新预览"
+  },
+  "reject": {
+    "start": "拒绝",
+    "placeholder": "可以写给提议来源的话",
+    "optional": "拒绝理由（可选）",
+    "quick": {
+      "inaccurate": "不准确",
+      "unneeded": "不需要",
+      "duplicate": "重复了",
+      "weakEvidence": "依据不足"
+    },
+    "confirm": "确认拒绝",
+    "reason": "拒绝理由：{{reason}}"
+  },
+  "confirm": {
+    "single": "确认",
+    "group": "确认这一组（{{count}} 项）"
+  },
+  "bulk": {
+    "selected": "已选 {{groups}} 组（{{items}} 项修改）",
+    "selectedShort": "已选 {{groups}} 组 · {{items}} 项",
+    "clear": "取消选择",
+    "approve": "确认所选",
+    "reject": "拒绝所选",
+    "result": "成功 {{ok}} · 失败 {{fail}}",
+    "running": "正在逐条处理…",
+    "selectOne": "选择「{{title}}」"
+  },
+  "error": {
+    "conflict": "提议已处理或发生变化",
+    "refresh": "刷新",
+    "generic": "操作没有完成"
+  },
+  "tech": {
+    "title": "技术详情",
+    "actorId": "actorId",
+    "proposalId": "proposalId",
+    "revision": "revision",
+    "targetId": "targetId",
+    "preview": "preview"
+  },
+  "empty": {
+    "title": "都处理完了",
+    "pending": "没有等你确认的修改。下面这些来源提出修改时会出现在这里：",
+    "other": "暂无此状态的提议。",
+    "sources": {
+      "connection": "AI 连接",
+      "connectionHint": "未授权直接执行的修改",
+      "autoMemory": "自动记忆",
+      "autoMemoryHint": "提炼出的记忆候选",
+      "organization": "知识整理",
+      "organizationHint": "记忆、实体与关系",
+      "learning": "派发学习",
+      "learningHint": "记忆和技能提案",
+      "assistant": "AI 助手",
+      "assistantHint": "助手提出的修改"
+    }
+  },
+  "fields": {
+    "title": "标题",
+    "name": "名称",
+    "description": "说明",
+    "content": "内容",
+    "dueDate": "安排日期",
+    "priority": "优先级",
+    "status": "状态",
+    "resultSummary": "结果摘要",
+    "reason": "理由",
+    "instructions": "指令"
+  },
+  "value": {
+    "yes": "是",
+    "no": "否",
+    "active": "有效",
+    "retired": "已退役",
+    "superseded": "已替代"
+  }
+}

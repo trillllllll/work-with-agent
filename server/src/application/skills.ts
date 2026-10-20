@@ -6,7 +6,7 @@ import { prisma } from '../infrastructure/prisma.js';
 import { codePoints } from '../agent/text.js';
 import { jsonSchema } from './command-catalog.js';
 import { registerCommandHandler, runSerializedCommand, type Command, type Inspection } from './commands.js';
-import { assertOwner, ownerActor, type Actor } from './security.js';
+import { assertOwner, assertOwnerOrLearningSkill, ownerActor, type Actor } from './security.js';
 import { registerUndoHandler, type UndoRecord } from './undo-registry.js';
 import { recordChange, type Db, type MutationContext } from './workspace-store.js';
 
@@ -473,7 +473,7 @@ async function inspectSkill(tx: Db, _actor: Actor, command: Command): Promise<In
 }
 
 async function executeSkill(tx: Db, actor: Actor, command: Command, context: MutationContext) {
-  assertOwner(actor);
+  assertOwnerOrLearningSkill(actor, command.kind);
   if (command.kind === 'skill.create') {
     const input = skillCreateInput.parse(command.input ?? {});
     const enabled = input.enabled ?? true;

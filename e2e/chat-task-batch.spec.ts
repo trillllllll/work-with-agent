@@ -193,7 +193,7 @@ test('待确认页使用同一张卡片批准', async ({ page, request }) => {
   await page.goto('/#/proposals');
   const card = page.getByRole('main').getByTestId('approval-card');
   await expect(card).toHaveCount(1);
-  await expect(card.getByRole('button', { name: '保存调整并重新预览' })).toHaveCount(0);
+  await expect(card.getByRole('button', { name: '保存并重新预览' })).toHaveCount(0);
   await card.getByRole('button', { name: '确认修改', exact: true }).click();
   await expect.poll(async () => (await e2eDatabase.task.findUniqueOrThrow({ where: { id: seeded.parent.id } })).title).toBe('执行修改');
   await expect(card).toHaveAttribute('data-state', 'executed');

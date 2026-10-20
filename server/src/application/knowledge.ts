@@ -137,7 +137,7 @@ function publicVersion<T extends { attachmentPath: string | null }>(row: T) {
   return { ...rest, hasAttachment: Boolean(attachmentPath) };
 }
 
-export async function knowledgeSource(tx: KnowledgeDb, actor: Actor, ref: Pick<EvidenceRef, 'type' | 'id'>): Promise<KnowledgeSource & { topicId: string | null; unavailable?: boolean }> {
+export async function knowledgeSource(tx: KnowledgeDb, actor: Actor, ref: Pick<EvidenceRef, 'type' | 'id'>): Promise<KnowledgeSource & { topicId: string | null; unavailable?: boolean; status?: string }> {
   if (ref.type === 'material') {
     const material = await tx.material.findUnique({ where: { id: ref.id } });
     if (!material) throw knowledgeFailure('NOT_FOUND', '来源材料不存在', 404);
@@ -155,7 +155,30 @@ export async function knowledgeSource(tx: KnowledgeDb, actor: Actor, ref: Pick<E
   if (!task) throw knowledgeFailure('NOT_FOUND', '来源任务不存在', 404);
   await checkKnowledgeScope(tx, actor, task.topicId);
   const content = JSON.stringify({ title: task.title, description: task.description, status: task.status, dueDate: task.dueDate, resultSummary: task.resultSummary });
-  return { type: 'task', id: task.id, topicId: task.topicId, revision: task.revision, hash: knowledgeHash(content), title: task.title, content, unavailable: Boolean(task.deletedAt) };
+  return { type: 'task', id: task.id, topicId: task.topicId, revision: task.revision, hash: knowledgeHash(content), title: task.title, content, status: task.status, unavailable: Boolean(task.deletedAt) };
+}
+
+type EvidenceSummary = { type: EvidenceRef['type']; id: string; revision: number; title?: string; topicId?: string | null; topicName?: string | null; status?: string; unavailable?: boolean };
+async function summarizeKnowledgeEvidence(tx: KnowledgeDb, actor: Actor, refs: EvidenceRef[], tolerant: boolean): Promise<EvidenceSummary[]> {
+  const summaries: EvidenceSummary[] = [];
+  for (const ref of refs) {
+    try {
+      const source = await knowledgeSource(tx, actor, ref);
+      const summary: EvidenceSummary = { type: source.type, id: source.id, revision: source.revision, title: source.title, topicId: source.topicId, topicName: null };
+      if (source.type === 'task' && source.status) summary.status = source.status;
+      if (source.unavailable) summary.unavailable = true;
+      summaries.push(summary);
+    } catch (error) {
+      if (!tolerant) throw error;
+      summaries.push({ type: ref.type, id: ref.id, revision: ref.revision, unavailable: true });
+    }
+  }
+  const topicIds = [...new Set(summaries.flatMap((summary) => summary.topicId ? [summary.topicId] : []))];
+  if (!topicIds.length) return summaries;
+  const topics = await tx.topic.findMany({ where: { id: { in: topicIds } }, select: { id: true, name: true } });
+  const names = new Map(topics.map((topic) => [topic.id, topic.name]));
+  for (const summary of summaries) if (summary.topicId) summary.topicName = names.get(summary.topicId) ?? null;
+  return summaries;
 }
 
 /** Called both at proposal creation and inside the final confirmation transaction. */
@@ -272,7 +295,8 @@ async function inspectKnowledgeCommand(tx: KnowledgeDb, actor: Actor, command: C
   if (evidence.some((ref) => ref.type === 'memory' && ref.id === existing?.id)) throw knowledgeFailure('CYCLIC_EVIDENCE', '记忆不能引用自身作为依据', 400);
   // A retirement preserves its historical references even if a source is no longer available.
   const evidenceState = command.kind === 'memory.retire' ? [] : await validateKnowledgeEvidence(tx, actor, evidence, topicId);
-  return { preconditions: { memoryId: existing?.id ?? null, revision: existing?.revision ?? null, topicRevision: topic?.revision ?? null, evidence: evidenceState }, preview: { kind: command.kind, title: data.title ?? existing?.title, content: data.content ?? existing?.content, evidence, reason: data.reason } };
+  const evidenceSummaries = await summarizeKnowledgeEvidence(tx, actor, evidence, command.kind === 'memory.retire');
+  return { preconditions: { memoryId: existing?.id ?? null, revision: existing?.revision ?? null, topicRevision: topic?.revision ?? null, evidence: evidenceState }, preview: { kind: command.kind, title: data.title ?? existing?.title, content: data.content ?? existing?.content, evidence, reason: data.reason, evidenceSummaries } };
 }
 
 async function executeKnowledgeCommand(tx: KnowledgeDb, actor: Actor, command: Command, context: MutationContext) {

@@ -126,7 +126,9 @@
     "updateMaterial": "修订资料",
     "archiveMaterial": "归档资料",
     "invalidateMemory": "使记忆失效",
-    "supersedeMemory": "替代记忆"
+    "supersedeMemory": "替代记忆",
+    "skillCreate": "新建技能",
+    "skillUpdate": "修订技能"
   },
   "api": {
     "invalidResponse": "响应格式错误",

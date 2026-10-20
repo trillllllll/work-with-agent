@@ -53,6 +53,7 @@ export const operationNames: Record<string, string> = labels({
   'libraryTag.create': 'app:operation.libraryTagCreate', 'libraryTag.update': 'app:operation.libraryTagUpdate', 'libraryTag.delete': 'app:operation.libraryTagDelete',
   'task.reference_materials': 'app:operation.taskReferenceMaterials',
   'memory.create': 'app:operation.memoryCreate', 'memory.update': 'app:operation.memoryUpdate', 'memory.retire': 'app:operation.memoryRetire', 'memory.crystallize': 'app:operation.memoryCrystallize',
+  'skill.create': 'app:operation.skillCreate', 'skill.update': 'app:operation.skillUpdate',
   'entity.create': 'app:operation.entityCreate', 'entity.update': 'app:operation.entityUpdate', 'entity.delete': 'app:operation.entityDelete', 'graph.link': 'app:operation.graphLink', 'graph.unlink': 'app:operation.graphUnlink',
   create_task: 'app:operation.taskCreate', update_task: 'app:operation.taskUpdate', delete_task: 'app:operation.taskDelete', restore_task: 'app:operation.taskRestore', reorder_tasks: 'app:operation.taskReorder',
   create_topic: 'app:operation.topicCreate', update_topic: 'app:operation.topicUpdate', archive_topic: 'app:operation.topicArchive', restore_topic: 'app:operation.topicRestore',

@@ -3,8 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { ChevronDown, Ellipsis, Inbox, Plus, type LucideIcon } from 'lucide-react';
 import type { Topic, View } from '@/lib/api.js';
 import { chatItem, navigationItems } from '@/lib/navigation-items.js';
+import { usePendingProposalCount } from '@/lib/use-pending-proposal-count.js';
 import { TopicList } from '@/components/topics/TopicList.js';
 import { BrandMark } from '@/components/layout/BrandMark.js';
+import { NavCount } from '@/components/layout/NavCount.js';
 import { ThemeToggle } from '@/components/layout/ThemeToggle.js';
 
 type SidebarProps = {
@@ -24,11 +26,12 @@ function links(views: View[]) {
   return navigationItems.filter((item) => views.includes(item.view));
 }
 
-function SidebarLink({ active, label, icon: Icon, onClick }: { active: boolean; label: string; icon: LucideIcon; onClick: () => void }) {
+function SidebarLink({ active, label, icon: Icon, onClick, count }: { active: boolean; label: string; icon: LucideIcon; onClick: () => void; count?: number }) {
   return (
     <button type="button" onClick={onClick} title={label} aria-label={label} data-active={active || undefined} aria-current={active ? 'page' : undefined} className="sidebar-link">
       <Icon aria-hidden="true" className="size-4" strokeWidth={1.75} />
       <span className="min-w-0 flex-1 truncate">{label}</span>
+      <NavCount count={count} />
     </button>
   );
 }
@@ -44,6 +47,7 @@ function SidebarSection({ label, action }: { label: string; action?: ReactNode }
 
 export function Sidebar({ compact, route, page, topics, topicsLoading, selectedTopicId, onNavigate, onSelectTopic, onEditTopic, onNewTopic }: SidebarProps) {
   const { t } = useTranslation('settings');
+  const pendingProposals = usePendingProposalCount().data?.pending;
   const current = (view: View) => route === view;
   const planning = page === 'plan';
   const assistant = { ...chatItem, label: t('sidebar.aiAssistant') };
@@ -69,9 +73,9 @@ export function Sidebar({ compact, route, page, topics, topicsLoading, selectedT
         {!planning && <nav aria-label={t('sidebar.organize')} className="sidebar-nav sidebar-nav-follow">
           {links(['tags', 'archived']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}
         </nav>}
-        {planning ? <details className="mt-5"><summary className="sidebar-link text-muted-foreground"><span className="flex-1">{t('sidebar.work')}</span><ChevronDown className="size-3.5" /></summary><nav aria-label={t('sidebar.work')} className="sidebar-nav">{links(['connections', 'proposals', 'knowledge', 'library', 'skills', 'runs', 'worktrees', 'reviews']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}</nav></details> : <><SidebarSection label={t('sidebar.work')} />
+        {planning ? <details className="mt-5"><summary className="sidebar-link text-muted-foreground"><span className="flex-1">{t('sidebar.work')}</span><ChevronDown className="size-3.5" /></summary><nav aria-label={t('sidebar.work')} className="sidebar-nav">{links(['connections', 'proposals', 'knowledge', 'library', 'skills', 'runs', 'worktrees', 'reviews']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} count={item.view === 'proposals' ? pendingProposals : undefined} />)}</nav></details> : <><SidebarSection label={t('sidebar.work')} />
         <nav aria-label={t('sidebar.work')} className="sidebar-nav">
-          {links(['connections', 'proposals', 'knowledge', 'library', 'skills', 'runs', 'worktrees', 'reviews']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}
+          {links(['connections', 'proposals', 'knowledge', 'library', 'skills', 'runs', 'worktrees', 'reviews']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} count={item.view === 'proposals' ? pendingProposals : undefined} />)}
         </nav></>}
       </div>
       <div className="sidebar-footer">

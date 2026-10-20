@@ -1,0 +1,202 @@
+{
+  "title": "Review queue",
+  "description": "Changes an AI wants to make wait here. Nothing is written until you confirm. Items that depend on each other are confirmed as one group.",
+  "statusAria": "Proposal status",
+  "loading": "Loading…",
+  "capped": "Showing the latest 100 only",
+  "listSeparator": ", ",
+  "inbox": "Inbox",
+  "status": {
+    "pending": "Pending",
+    "applied": "Applied",
+    "rejected": "Rejected"
+  },
+  "filter": {
+    "type": "Type",
+    "source": "Source",
+    "all": "All",
+    "empty": "No proposals match these filters.",
+    "sources": "Source"
+  },
+  "type": {
+    "task": "Tasks",
+    "memory": "Memory",
+    "skill": "Skills",
+    "other": "Other"
+  },
+  "source": {
+    "connection": "Connection",
+    "deletedConnection": "Deleted connection",
+    "autoMemory": "Auto memory",
+    "autoMemoryArchive": "Auto memory archive",
+    "organization": "Knowledge organization",
+    "learning": "Dispatch learning",
+    "assistant": "AI assistant",
+    "owner": "Local user"
+  },
+  "head": {
+    "memorySave": "Save memory",
+    "memoryUpdate": "Revise memory \"{{title}}\"",
+    "memoryRetire": "Keep memory \"{{title}}\" as history",
+    "memoryCrystallize": "Crystallize memory \"{{title}}\"",
+    "memoryGroup": "A group of {{count}} memory changes",
+    "taskCreate": "Create task \"{{title}}\"",
+    "taskUpdate": "Edit task \"{{title}}\"",
+    "taskDelete": "Delete task \"{{title}}\"",
+    "taskRestore": "Restore task \"{{title}}\"",
+    "taskReorder": "Reorder tasks",
+    "taskGroup": "A group of {{count}} task changes",
+    "skillCreate": "Create skill \"{{title}}\"",
+    "skillUpdate": "Update skill \"{{title}}\"",
+    "skillGroup": "A group of {{count}} skill changes",
+    "otherGroup": "A group of {{count}} changes",
+    "named": "{{operation}} \"{{title}}\"",
+    "untitled": "Untitled"
+  },
+  "badge": {
+    "memoryCreate": "New memory",
+    "memoryUpdate": "Revise memory",
+    "memoryRetire": "Retire memory",
+    "taskCreate": "New task",
+    "taskUpdate": "Edit task",
+    "taskDelete": "Delete task",
+    "skillCreate": "New skill",
+    "skillUpdate": "Update skill",
+    "createdCount": "{{count}} new",
+    "updatedCount": "{{count}} edited",
+    "deletedCount": "{{count}} deleted"
+  },
+  "memory": {
+    "importance": "Importance",
+    "importanceLevel": {
+      "low": "Low",
+      "mid": "Medium",
+      "high": "High"
+    },
+    "labels": "Labels",
+    "why": "Why this was proposed: {{reason}}"
+  },
+  "evidence": {
+    "title": "Evidence",
+    "count": "{{count}} sources",
+    "version": "Version {{revision}}",
+    "unavailable": "Source unavailable",
+    "legacy": "{{type}} · version {{revision}}",
+    "legacyHint": "Preview again to see details",
+    "type": {
+      "task": "Task",
+      "material": "Material",
+      "memory": "Memory"
+    }
+  },
+  "impact": {
+    "tasks": "Scope: {{tasks}}",
+    "taskCount": "Scope: {{count}} tasks",
+    "taskCreate": "Confirming creates this task",
+    "memory": "After you confirm, this memory is filed under \"{{topic}}\" and no task is changed",
+    "memoryInbox": "After you confirm, this memory is filed in Inbox and no task is changed",
+    "skillCreate": "Confirming creates the skill and enables it",
+    "skillUpdate": "Confirming updates the skill",
+    "none": "Confirming writes these changes"
+  },
+  "group": {
+    "explain": "These {{count}} items were submitted together by {{source}}. {{detail}}You can only confirm or reject the whole group.",
+    "explainChildren": "Items {{children}} are subtasks of item {{parent}} and can be attached only after it exists. ",
+    "explainDepends": "Items {{items}} wait for something else in this group to be created first. ",
+    "created": "New",
+    "updated": "Edit",
+    "deleted": "Delete",
+    "childOf": "Subtask · depends on {{mark}}",
+    "dependsOn": "Depends on {{mark}}"
+  },
+  "task": {
+    "basedOn": "Based on version {{revision}}. Only this task is affected"
+  },
+  "skill": {
+    "instructions": "Instructions",
+    "name": "Name",
+    "description": "Description"
+  },
+  "edit": {
+    "banner": "Editing. Only the fields you can change become inputs. Saving checks the new content, then you confirm.",
+    "start": "Edit",
+    "cancel": "Cancel",
+    "save": "Save and preview again"
+  },
+  "reject": {
+    "start": "Reject",
+    "placeholder": "A note for whoever proposed this",
+    "optional": "Reason for rejecting (optional)",
+    "quick": {
+      "inaccurate": "Inaccurate",
+      "unneeded": "Not needed",
+      "duplicate": "Duplicate",
+      "weakEvidence": "Weak evidence"
+    },
+    "confirm": "Confirm rejection",
+    "reason": "Rejection reason: {{reason}}"
+  },
+  "confirm": {
+    "single": "Confirm",
+    "group": "Confirm this group ({{count}} items)"
+  },
+  "bulk": {
+    "selected": "{{groups}} groups selected ({{items}} changes)",
+    "selectedShort": "{{groups}} groups · {{items}} items",
+    "clear": "Clear selection",
+    "approve": "Confirm selected",
+    "reject": "Reject selected",
+    "result": "{{ok}} succeeded · {{fail}} failed",
+    "running": "Working through them one by one…",
+    "selectOne": "Select \"{{title}}\""
+  },
+  "error": {
+    "conflict": "This proposal was already handled or has changed",
+    "refresh": "Refresh",
+    "generic": "That did not finish"
+  },
+  "tech": {
+    "title": "Technical details",
+    "actorId": "actorId",
+    "proposalId": "proposalId",
+    "revision": "revision",
+    "targetId": "targetId",
+    "preview": "preview"
+  },
+  "empty": {
+    "title": "Nothing waiting",
+    "pending": "No changes are waiting for you. Proposals show up here when they come from:",
+    "other": "No proposals with this status.",
+    "sources": {
+      "connection": "AI connections",
+      "connectionHint": "Changes that are not allowed to run directly",
+      "autoMemory": "Auto memory",
+      "autoMemoryHint": "Memory candidates extracted from recent work",
+      "organization": "Knowledge organization",
+      "organizationHint": "Memories, entities, and links",
+      "learning": "Dispatch learning",
+      "learningHint": "Memory and skill proposals",
+      "assistant": "AI assistant",
+      "assistantHint": "Changes the assistant proposes"
+    }
+  },
+  "fields": {
+    "title": "Title",
+    "name": "Name",
+    "description": "Description",
+    "content": "Content",
+    "dueDate": "Due date",
+    "priority": "Priority",
+    "status": "Status",
+    "resultSummary": "Result summary",
+    "reason": "Reason",
+    "instructions": "Instructions"
+  },
+  "value": {
+    "yes": "Yes",
+    "no": "No",
+    "active": "Active",
+    "retired": "Retired",
+    "superseded": "Superseded"
+  }
+}
