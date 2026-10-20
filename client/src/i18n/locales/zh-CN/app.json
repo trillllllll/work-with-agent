@@ -84,7 +84,9 @@
     "getChangeSchema": "修改说明",
     "proposeChanges": "修改方案",
     "prepareExternalPrompt": "外部提示词",
-    "loadSkill": "使用技能"
+    "loadSkill": "使用技能",
+    "orchestrationRead": "查看编排",
+    "proposeWorktreeCleanup": "删除 worktree"
   },
   "operation": {
     "taskCreate": "创建任务",

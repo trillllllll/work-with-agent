@@ -774,6 +774,8 @@ export const en: Record<string, string> = {
   "每台执行端只能选一个位置": "Each executor can have only one location selected",
   "{0} 上仓库的 origin 和主位置不同": "The repository origin on {0} differs from the primary location",
   "编排不存在": "Orchestration does not exist",
+  "list 需要 taskId": "list requires a taskId",
+  "get 需要 orchestrationId": "get requires an orchestrationId",
   "主任务还没有子任务，先拆分子任务再开始运行": "The main task has no subtasks yet. Split it into subtasks before starting",
   "该任务已有进行中的编排": "This task already has an orchestration in progress",
   "编排已经开始": "The orchestration has already started",

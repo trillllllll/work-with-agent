@@ -117,3 +117,32 @@ export function CleanupCardView({ card }: { card: CleanupCard }) {
     <div className="mt-2 flex gap-2"><Button size="sm" variant="destructive" disabled={!card.removableCount || confirm.isPending} onClick={() => confirm.mutate()}>{tr('worktrees.confirm')}</Button><Button size="sm" variant="ghost" onClick={() => cancel.mutate()}>{tr('worktrees.cancel')}</Button></div>
   </div>;
 }
+
+const chatStatusKeys = { cancelled: 'worktrees.chatStatus.cancelled', expired: 'worktrees.chatStatus.expired', failed: 'worktrees.chatStatus.failed' } as const;
+
+/** The assistant's cleanup proposal inside the chat. It reads the card's live state; only the buttons here (or on #/worktrees) can confirm it. */
+export function WorktreeCleanupChatCard({ cleanupId }: { cleanupId: string }) {
+  const { t: tr } = useTranslation('orchestration');
+  const query = useQuery({
+    queryKey: ['worktrees', 'cleanup', cleanupId],
+    queryFn: ({ signal }) => api<CleanupCard>(`/api/worktree-cleanups/${cleanupId}`, { signal }),
+    refetchInterval: (current) => current.state.data?.status === 'confirmed' ? 3000 : false,
+  });
+  const card = query.data;
+  if (query.error) return <p role="alert" className="mt-3 text-xs text-destructive">{tr('worktrees.chatLoadFailed', { message: query.error.message })}</p>;
+  if (!card) return <p className="mt-3 text-xs text-muted-foreground">{tr('worktrees.chatLoading')}</p>;
+  const expired = card.status === 'pending' && Date.parse(card.expiresAt) < Date.now();
+  if ((card.status === 'pending' && !expired) || card.status === 'confirmed') return <CleanupCardView card={card} />;
+  if (card.status === 'done') {
+    const removed = card.result?.removed ?? [];
+    const skipped = card.result?.skipped ?? [];
+    return <div role="status" aria-label={tr('worktrees.chatResultAria')} className="mt-3 rounded border p-3 text-xs">
+      <div className="font-medium">{tr('worktrees.chatRemoved', { name: card.nodeName, count: removed.length })}</div>
+      {removed.map((item) => <div key={item.path} className="text-muted-foreground">{item.path}{item.branch ? ` · ${item.branch}${item.branchDeleted ? tr('worktrees.branchDeleted') : item.branchNote ? tr('worktrees.branchNote', { note: item.branchNote }) : ''}` : ''}</div>)}
+      {skipped.map((item) => <div key={item.path} className="text-amber-600">{tr('worktrees.chatKept', { path: item.path, reason: item.reason })}</div>)}
+    </div>;
+  }
+  const statusKey = expired ? 'expired' : card.status;
+  const statusText = statusKey in chatStatusKeys ? tr(chatStatusKeys[statusKey as keyof typeof chatStatusKeys]) : card.status;
+  return <p role="status" className="mt-3 rounded bg-muted p-2 text-xs">{statusText}{card.result?.error ? ` ${card.result.error}` : ''}</p>;
+}

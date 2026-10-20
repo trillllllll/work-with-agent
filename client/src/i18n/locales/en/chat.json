@@ -102,6 +102,14 @@
     "runFailed": "Run failed",
     "waitingConfirm": "Waiting for confirmation",
     "promptReady": "Prompt ready",
+    "waitingCleanup": "Waiting for you to confirm deletion",
+    "orchestration": {
+      "attention": "Orchestrations that need attention",
+      "list": "Orchestration rounds",
+      "get": "Orchestration details",
+      "nodes": "Executors",
+      "worktrees": "Worktree list"
+    },
     "skillReading": "Reading skill",
     "skillNotFound": "This skill wasn't found, or it's turned off",
     "skillUnavailable": "No skills are available in this conversation",

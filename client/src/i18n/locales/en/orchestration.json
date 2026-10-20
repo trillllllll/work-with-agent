@@ -216,6 +216,19 @@
     "pushed": " (pushed)",
     "notPushed": " (not pushed)",
     "unlinked": "Not linked to an orchestration",
-    "usage": "{{role}} · {{status}}{{pushed}}"
+    "usage": "{{role}} · {{status}}{{pushed}}",
+    "chatLoadFailed": "Couldn't read the deletion card: {{message}}",
+    "chatLoading": "Reading the deletion card…",
+    "chatResultAria": "Worktree deletion result",
+    "chatRemoved_one": "Executor \"{{name}}\" deleted {{count}} worktree",
+    "chatRemoved_other": "Executor \"{{name}}\" deleted {{count}} worktrees",
+    "branchDeleted": " (branch deleted)",
+    "branchNote": " ({{note}})",
+    "chatKept": "Kept {{path}}: {{reason}}",
+    "chatStatus": {
+      "cancelled": "Cancelled. No worktrees were deleted.",
+      "expired": "This card expired. No worktrees were deleted.",
+      "failed": "The executor failed to delete them."
+    }
   }
 }

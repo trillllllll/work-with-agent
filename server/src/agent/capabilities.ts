@@ -65,6 +65,8 @@ export const builtinTools: BuiltinTool[] = [
   { name: 'get_change_schema', description: '按需读取某一类修改的参数说明。', parameters: { type: 'object', additionalProperties: false, required: ['family'], properties: { family: { enum: ['workspace', 'library', 'memory', 'skill'] }, kind: { type: 'string' } } }, writesBusinessData: false },
   { name: 'propose_changes', description: '编译并生成一份待确认修改方案。不会直接修改业务数据。', parameters: proposeChangesParameters, writesBusinessData: true },
   { name: 'prepare_external_prompt', description: '把超出内置能力的需求整理成可复制的提示词。不会发送、保存为资料或创建任务。', parameters: { type: 'object', additionalProperties: false, required: ['capability', 'limitation', 'goal', 'background', 'constraints', 'expectedOutput'], properties: { capability: { enum: ['web_research', 'local_execution', 'external_application', 'other'] }, limitation: { type: 'string' }, goal: { type: 'string' }, background: { type: 'array', items: { type: 'string' } }, constraints: { type: 'array', items: { type: 'string' } }, expectedOutput: { type: 'array', items: { type: 'string' } } } }, writesBusinessData: false },
+  { name: 'orchestration_read', description: '只读查看主控编排：attention 列出运行中、暂停、待验收的编排；list 按 taskId 列出轮次；get 读取一轮的步骤和状态；nodes 列出本机执行端；worktrees 读取执行端最近一次上报的 worktree 列表（含占用和能否删除）。不会派发任何任务。', parameters: { type: 'object', additionalProperties: false, required: ['action'], properties: { action: { enum: ['attention', 'list', 'get', 'nodes', 'worktrees'] }, taskId: { type: 'string' }, orchestrationId: { type: 'string' }, nodeId: { type: 'string' } } }, writesBusinessData: false },
+  { name: 'propose_worktree_cleanup', description: '为某台执行端上的 worktree 生成删除确认卡片。路径必须取自 orchestration_read 的 worktrees 结果。只生成卡片，不会删除；用户确认后才由执行端在本机删除，不用 --force，脏的和被未结束编排占用的会被保留。', parameters: { type: 'object', additionalProperties: false, required: ['nodeId', 'paths'], properties: { nodeId: { type: 'string' }, paths: { type: 'array', minItems: 1, maxItems: 50, items: { type: 'string' } }, deleteBranches: { type: 'boolean', description: '同时用 git branch -d 删除已合入的本地分支，默认 false' }, reason: { type: 'string', maxLength: 500 } } }, writesBusinessData: false },
 ];
 
 const loadSkillTool: BuiltinTool = {
@@ -139,6 +141,12 @@ export const BUILTIN_BEHAVIOR_PROMPT = `你是 Work With Agent 的内置工作�
 补出的创建时间记录不能证明操作者。
 未记录操作原因时，只说记录中没有原因，不编造动机。
 AI发起者和批准者要区分。
+
+【主控编排与 worktree】
+编排的实际工作由用户电脑上的执行端完成，你不能运行命令或直接操作 git。
+查看编排、执行端和 worktree 用 orchestration_read。
+删除 worktree 只能用 propose_worktree_cleanup 生成确认卡片，并告诉用户需要在卡片上确认；不得说已经删除。
+worktree 列表是执行端最近一次上报的结果，要注明上报时间。
 
 【确认后续办】
 用户批准后，可以继续原请求的剩余读取、分析和整理。

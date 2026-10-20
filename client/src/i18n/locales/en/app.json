@@ -84,7 +84,9 @@
     "getChangeSchema": "Change notes",
     "proposeChanges": "Change proposal",
     "prepareExternalPrompt": "External prompt",
-    "loadSkill": "Use skill"
+    "loadSkill": "Use skill",
+    "orchestrationRead": "View orchestration",
+    "proposeWorktreeCleanup": "Delete worktree"
   },
   "operation": {
     "taskCreate": "Create task",

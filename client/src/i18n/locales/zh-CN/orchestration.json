@@ -216,6 +216,19 @@
     "pushed": "（已推送）",
     "notPushed": "（未推送）",
     "unlinked": "未关联编排",
-    "usage": "{{role}} · {{status}}{{pushed}}"
+    "usage": "{{role}} · {{status}}{{pushed}}",
+    "chatLoadFailed": "删除卡片读取失败：{{message}}",
+    "chatLoading": "正在读取删除卡片…",
+    "chatResultAria": "worktree 删除结果",
+    "chatRemoved_one": "执行端「{{name}}」已删除 {{count}} 个 worktree",
+    "chatRemoved_other": "执行端「{{name}}」已删除 {{count}} 个 worktree",
+    "branchDeleted": "（分支已删除）",
+    "branchNote": "（{{note}}）",
+    "chatKept": "保留 {{path}}：{{reason}}",
+    "chatStatus": {
+      "cancelled": "已取消，没有删除任何 worktree。",
+      "expired": "卡片已过期，没有删除任何 worktree。",
+      "failed": "执行端删除失败。"
+    }
   }
 }

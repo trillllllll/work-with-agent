@@ -12,6 +12,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
 const api = `http://127.0.0.1:${process.env.E2E_API_PORT ?? '3415'}`;
+const composer = '例如：创建任务：整理 API 文档';
 const mock = `http://127.0.0.1:${process.env.MOCK_OPENAI_PORT ?? '4410'}`;
 const repoRoot = process.cwd();
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { cwd, encoding: 'utf8' }).trim();
@@ -152,6 +153,29 @@ test('worktree page lists the node worktrees and deletes only after the confirma
   await expect.poll(async () => (await e2eDatabase.worktreeCleanup.findFirstOrThrow({ where: { status: { not: 'cancelled' } } })).status).toBe('done');
   // Subtask worktrees are still listed; nothing else was removed.
   await expect(section.getByRole('row')).not.toHaveCount(1);
+});
+
+test('the assistant can only propose a worktree deletion; the user confirms it in the chat card', async ({ page }) => {
+  const before = git(repo, 'worktree', 'list');
+  const cleanupsBefore = await e2eDatabase.worktreeCleanup.count();
+  await page.goto('/');
+  if (!(await page.getByPlaceholder(composer).isVisible())) await page.getByRole('button', { name: '打开聊天', exact: true }).click();
+  await page.getByPlaceholder(composer).fill('帮我清理已验收的 worktree');
+  await page.getByRole('button', { name: '发送', exact: true }).click();
+  const card = page.getByRole('group', { name: '待确认的删除' });
+  await expect(card).toBeVisible({ timeout: 30_000 });
+  await expect(card).toContainText('由 AI 助手发起');
+  await expect(page.getByText('删除卡片已经生成，请在卡片上确认。')).toBeVisible();
+  const row = await e2eDatabase.worktreeCleanup.findFirstOrThrow({ where: { source: 'assistant' } });
+  expect(row.status).toBe('pending');
+  expect(await e2eDatabase.worktreeCleanup.count()).toBe(cleanupsBefore + 1);
+  // Nothing reached the node before the user's click.
+  expect(await e2eDatabase.nodeJob.count({ where: { kind: 'cleanup', dispatchKey: `cleanup:${row.id}` } })).toBe(0);
+  expect(git(repo, 'worktree', 'list')).toBe(before);
+  const target = (JSON.parse(row.itemsJson) as Array<{ path: string; action: string }>).find((item) => item.action === 'remove')!.path;
+  await card.getByRole('button', { name: '确认删除' }).click();
+  await expect.poll(() => git(repo, 'worktree', 'list'), { timeout: 30_000 }).not.toContain(target);
+  await expect(page.getByRole('status', { name: 'worktree 删除结果' })).toContainText('已删除 1 个 worktree', { timeout: 20_000 });
 });
 
 test.afterEach(async ({}, info) => {
