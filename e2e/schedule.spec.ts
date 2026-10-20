@@ -5,6 +5,13 @@ import type { Locator } from '@playwright/test';
 const api = 'http://127.0.0.1:3015';
 const today = () => { const date = new Date(); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; };
 const dayShift = (day: string, count: number) => new Date(Date.parse(`${day}T12:00:00Z`) + count * 86400000).toISOString().slice(0, 10);
+const showDate = (day: string) => day.replace(/-/g, '/');
+const rgbSum = (color: string) => color.match(/\d+/g)!.slice(0, 3).map(Number).reduce((sum, part) => sum + part, 0);
+const gearDegrees = (transform: string) => {
+  const match = /rotate\(([-\d.]+)deg\)/.exec(transform);
+  if (!match) throw new Error(transform);
+  return Number(match[1]);
+};
 async function drag(page: Page, from: Locator, to: Locator) {
   await to.scrollIntoViewIfNeeded();
   await from.scrollIntoViewIfNeeded();
@@ -113,7 +120,7 @@ test('详情安排显式保存，取消不写入，时长按钮改变结束时�
   expect((await read()).scheduledEnd).toBe(`${day}T15:00`);
   await page.getByRole('button', { name: '取消', exact: true }).click();
   await page.getByRole('button', { name: '安排时间', exact: true }).click();
-  await expect(page.getByLabel('结束时间', { exact: true })).toHaveValue(`${day}T15:00`);
+  await expect(page.getByLabel('结束时间', { exact: true })).toContainText('15:00');
   await page.getByRole('button', { name: '2小时', exact: true }).click();
   await page.getByRole('button', { name: '保存安排', exact: true }).click();
   await expect.poll(async () => (await read()).scheduledEnd).toBe(`${day}T16:00`);
@@ -126,6 +133,158 @@ test('详情安排显式保存，取消不写入，时长按钮改变结束时�
   await page.getByLabel('安排方式', { exact: true }).selectOption('point');
   await page.getByRole('button', { name: '保存安排', exact: true }).click();
   await expect.poll(async () => (await read()).scheduledEnd).toBeNull();
+});
+
+test('点开时间下拉改时钟，未保存不写入', async ({ page, request }) => {
+  const day = today();
+  const item = (await (await request.post(`${api}/api/tasks`, { data: { title: '齿轮安排', scheduledStart: `${day}T14:00`, scheduledEnd: `${day}T15:00` } })).json()).data;
+  const read = async () => (await (await request.get(`${api}/api/tasks/${item.id}`)).json()).data;
+  await page.goto('/#/plan');
+  await page.getByRole('button', { name: '日', exact: true }).click();
+  await openDetails(page, '齿轮安排');
+  await page.getByLabel('安排日期', { exact: true }).click();
+  const calendar = page.getByRole('dialog', { name: '选择日期', exact: true });
+  const selectedDay = calendar.getByRole('button', { name: day, exact: true });
+  const lightDay = await selectedDay.evaluate((node) => getComputedStyle(node));
+  expect(rgbSum(lightDay.backgroundColor)).toBeLessThan(120);
+  expect(rgbSum(lightDay.color)).toBeGreaterThan(700);
+  await page.evaluate(() => document.documentElement.classList.add('dark'));
+  const darkDay = await selectedDay.evaluate((node) => getComputedStyle(node));
+  expect(rgbSum(darkDay.backgroundColor)).toBeGreaterThan(700);
+  expect(rgbSum(darkDay.color)).toBeLessThan(120);
+  await page.evaluate(() => document.documentElement.classList.remove('dark'));
+  await calendar.getByRole('button', { name: '完成', exact: true }).click();
+
+  await page.getByLabel('开始时间', { exact: true }).click();
+  const picker = page.getByRole('dialog', { name: '选择时间', exact: true });
+  await expect(picker).toBeVisible();
+  const viewport = page.viewportSize();
+  const box = await picker.boundingBox();
+  if (!viewport || !box) throw new Error('时间下拉没有布局');
+  expect(box.x).toBeGreaterThanOrEqual(-1);
+  expect(box.y).toBeGreaterThanOrEqual(-1);
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1);
+  const minuteBox = await picker.getByRole('button', { name: '00分', exact: true }).boundingBox();
+  if (!minuteBox) throw new Error('分钟滚轮没有布局');
+  expect(minuteBox.x + minuteBox.width).toBeLessThanOrEqual(box.x + box.width + 1);
+  const hour = picker.getByRole('button', { name: '14时', exact: true });
+  expect(rgbSum(await hour.evaluate((node) => getComputedStyle(node).color))).toBeLessThan(120);
+  await page.evaluate(() => document.documentElement.classList.add('dark'));
+  expect(rgbSum(await hour.evaluate((node) => getComputedStyle(node).color))).toBeGreaterThan(600);
+  await page.evaluate(() => document.documentElement.classList.remove('dark'));
+
+  const main = picker.locator('svg').nth(0);
+  const pinion = picker.locator('svg').nth(1);
+  await expect.poll(async () => gearDegrees(await main.evaluate((node) => node.style.transform))).toBe(420);
+  await picker.getByRole('button', { name: '00时', exact: true }).locator('xpath=..').evaluate((node) => { node.scrollTop += 36; });
+  await expect.poll(async () => gearDegrees(await main.evaluate((node) => node.style.transform))).toBe(450);
+  expect(gearDegrees(await pinion.evaluate((node) => node.style.transform))).toBe(-675);
+  await expect(page.getByLabel('开始时间', { exact: true })).toHaveText('15:00');
+  await picker.getByRole('button', { name: '18时', exact: true }).click();
+  await expect(page.getByLabel('开始时间', { exact: true })).toHaveText('18:00');
+  await expect(page.getByLabel('结束时间', { exact: true })).toHaveText('19:00');
+  await page.getByLabel('安排方式', { exact: true }).selectOption('point');
+  await expect(page.getByLabel('结束时间', { exact: true })).toHaveCount(0);
+  await page.getByLabel('时间', { exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '选择时间', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '保存安排', exact: true })).toBeVisible();
+  expect((await read()).scheduledStart).toBe(`${day}T14:00`);
+  expect((await read()).scheduledEnd).toBe(`${day}T15:00`);
+});
+
+test('时间段结束可单独改，跨天和改到次日不写库', async ({ page, request }) => {
+  const day = today();
+  const next = dayShift(day, 1);
+  const item = (await (await request.post(`${api}/api/tasks`, { data: { title: '跨天安排', scheduledStart: `${day}T14:00`, scheduledEnd: `${day}T15:00` } })).json()).data;
+  const read = async () => (await (await request.get(`${api}/api/tasks/${item.id}`)).json()).data;
+  await page.goto('/#/plan');
+  await page.getByRole('button', { name: '日', exact: true }).click();
+  await openDetails(page, '跨天安排');
+  await page.getByLabel('结束时间', { exact: true }).click();
+  const picker = page.getByRole('dialog', { name: '选择时间', exact: true });
+  const viewport = page.viewportSize();
+  const box = await picker.boundingBox();
+  if (!viewport || !box) throw new Error('结束时间下拉没有布局');
+  expect(box.x).toBeGreaterThanOrEqual(-1);
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
+  await picker.getByRole('button', { name: '16时', exact: true }).click();
+  await expect(page.getByLabel('开始时间', { exact: true })).toHaveText('14:00');
+  await expect(page.getByLabel('结束时间', { exact: true })).toHaveText('16:00');
+  await picker.getByRole('button', { name: '完成', exact: true }).click();
+  const pickDay = async (iso: string) => {
+    await page.getByLabel('结束日期', { exact: true }).click();
+    const calendar = page.getByRole('dialog', { name: '选择日期', exact: true });
+    await expect(calendar).toBeVisible();
+    await calendar.getByRole('button', { name: iso, exact: true }).dispatchEvent('click');
+    await expect(calendar).toBeHidden();
+  };
+  await pickDay(next);
+  await expect(page.getByLabel('安排日期', { exact: true })).toContainText(showDate(day));
+  await expect(page.getByLabel('结束日期', { exact: true })).toContainText(showDate(next));
+  await expect(page.getByLabel('开始时间', { exact: true })).toHaveText('14:00');
+  await pickDay(day);
+  await page.getByLabel('结束时间', { exact: true }).click();
+  const endClock = page.getByRole('dialog', { name: '选择时间', exact: true });
+  await endClock.getByRole('button', { name: '13时', exact: true }).click();
+  await endClock.getByRole('button', { name: '完成', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('结束时间必须晚于开始时间');
+  await expect(page.getByRole('button', { name: '保存安排', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: '改到次日', exact: true }).click();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByLabel('结束日期', { exact: true })).toContainText(showDate(next));
+  await expect(page.getByLabel('结束时间', { exact: true })).toHaveText('13:00');
+  await expect(page.getByLabel('开始时间', { exact: true })).toHaveText('14:00');
+  await expect(page.getByRole('button', { name: '保存安排', exact: true })).toBeEnabled();
+  expect(await read()).toMatchObject({ scheduledStart: `${day}T14:00`, scheduledEnd: `${day}T15:00` });
+});
+
+test('月历翻到闰日再保存', async ({ page, request }) => {
+  const day = today();
+  const item = (await (await request.post(`${api}/api/tasks`, { data: { title: '闰日安排', dueDate: day } })).json()).data;
+  await page.goto('/#/plan');
+  await page.getByRole('button', { name: '日', exact: true }).click();
+  await page.getByRole('button', { name: '闰日安排', exact: true }).click();
+  await page.getByRole('button', { name: '安排时间', exact: true }).click();
+  await page.getByLabel('安排日期', { exact: true }).click();
+  const calendar = page.getByRole('dialog', { name: '选择日期', exact: true });
+  for (let step = 0; step < 24; step += 1) {
+    if ((await calendar.getByText(/\d+年\d+月/).textContent()) === '2028年2月') break;
+    await calendar.getByRole('button', { name: '下个月', exact: true }).click();
+  }
+  await expect(calendar.getByText('2028年2月', { exact: true })).toBeVisible();
+  await calendar.getByRole('button', { name: '2028-02-29', exact: true }).dispatchEvent('click');
+  await expect(page.getByLabel('安排日期', { exact: true })).toContainText('2028/02/29');
+  await page.getByRole('button', { name: '保存安排', exact: true }).click();
+  await expect.poll(async () => (await (await request.get(`${api}/api/tasks/${item.id}`)).json()).data.dueDate).toBe('2028-02-29');
+});
+
+test('创建任务时打开时刻和月历，对话框保持打开', async ({ page, request }) => {
+  const day = today();
+  const next = dayShift(day, 1);
+  await page.goto('/#/plan');
+  await page.getByRole('button', { name: '日', exact: true }).click();
+  await page.getByRole('button', { name: `在${day} 15:00添加任务`, exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '创建任务', exact: true });
+  await dialog.getByLabel('开始时间', { exact: true }).click();
+  const picker = page.getByRole('dialog', { name: '选择时间', exact: true });
+  await expect(picker).toBeVisible();
+  await expect(dialog).toBeVisible();
+  await picker.getByRole('button', { name: '18时', exact: true }).click();
+  await expect(dialog.getByLabel('开始时间', { exact: true })).toHaveText('18:00');
+  await expect(dialog.getByLabel('结束时间', { exact: true })).toHaveText('19:00');
+  await picker.getByRole('button', { name: '完成', exact: true }).click();
+  await expect(picker).toBeHidden();
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel('安排日期', { exact: true }).click();
+  const calendar = page.getByRole('dialog', { name: '选择日期', exact: true });
+  await calendar.getByRole('button', { name: next, exact: true }).click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel('安排日期', { exact: true })).toContainText(showDate(next));
+  await expect(dialog.getByLabel('结束日期', { exact: true })).toContainText(showDate(next));
+  await expect(dialog.getByLabel('开始时间', { exact: true })).toHaveText('18:00');
+  await dialog.getByRole('button', { name: '取消', exact: true }).click();
+  expect((await (await request.get(`${api}/api/tasks`)).json()).data).toHaveLength(0);
 });
 
 test('空白处创建支持输入法和取消，完成后保留且隐藏选择可恢复', async ({ page, request }) => {

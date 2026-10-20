@@ -6,6 +6,7 @@ import { ApiError, priorities, type Status, type Tag, type Task, type TaskPriori
 import { isCompositionKey, sameField, taskDraft, queryKeys, type TaskDraft } from '@/lib/todo.js';
 import { scheduleLabel } from '@/lib/schedule.js';
 import { ScheduleFields, scheduleError, type ScheduleValue } from './ScheduleFields.js';
+import { keepSchedulePickerOpen } from './SchedulePickers.js';
 import { useHashRoute } from '@/hooks/useHashRoute.js';
 import { useTask, useTodoActions } from '@/hooks/useTodo.js';
 import { useFocus } from '@/components/focus/FocusProvider.js';
@@ -631,7 +632,7 @@ function DetailFrame({ presentation, panelSlot, children }: { presentation: 'pan
   }, [host, presentation, panelSlot, modalSlot]);
   return <>
     {createPortal(<aside role={presentation === 'modal' ? undefined : 'dialog'} aria-modal={presentation === 'modal' ? undefined : false} aria-label={presentation === 'modal' ? undefined : '任务详情'} className="flex h-full min-h-0 flex-col">{children}</aside>, host)}
-    {presentation === 'modal' && <Dialog open onOpenChange={(open) => { if (!open && presentationRef.current === 'modal') edit.requestClose(); }}><DialogContent showCloseButton={false} surface="glass" motion="none" className="flex h-[min(92dvh,840px)] max-h-[92dvh] max-w-[min(42rem,calc(100%-3rem))] flex-col overflow-hidden p-0" onPointerDownOutside={(event) => { if (inEditor(event.detail.originalEvent.target)) event.preventDefault(); }} onOpenAutoFocus={(event) => { if (pendingFocus.current) event.preventDefault(); }} onCloseAutoFocus={(event) => { if (presentationRef.current !== 'modal') event.preventDefault(); }}><DialogTitle className="sr-only">任务详情</DialogTitle><DialogDescription className="sr-only">编辑任务详情、标签、旗标和日期。</DialogDescription><div ref={setModalSlot} className="h-full min-h-0" /></DialogContent></Dialog>}
+    {presentation === 'modal' && <Dialog open onOpenChange={(open) => { if (!open && presentationRef.current === 'modal') edit.requestClose(); }}><DialogContent showCloseButton={false} surface="glass" motion="none" className="flex h-[min(92dvh,840px)] max-h-[92dvh] max-w-[min(42rem,calc(100%-3rem))] flex-col overflow-hidden p-0" onPointerDownOutside={(event) => { const target = event.detail.originalEvent.target; if (inEditor(target) || (target instanceof Element && target.closest('[data-radix-popper-content-wrapper]'))) event.preventDefault(); }} onInteractOutside={(event) => { const target = event.target; if (target instanceof Element && (target.closest('[data-task-editor]') || target.closest('[data-radix-popper-content-wrapper]'))) event.preventDefault(); }} onOpenAutoFocus={(event) => { if (pendingFocus.current) event.preventDefault(); }} onCloseAutoFocus={(event) => { if (presentationRef.current !== 'modal') event.preventDefault(); }}><DialogTitle className="sr-only">任务详情</DialogTitle><DialogDescription className="sr-only">编辑任务详情、标签、旗标和日期。</DialogDescription><div ref={setModalSlot} className="h-full min-h-0" /></DialogContent></Dialog>}
   </>;
 }
 
@@ -690,7 +691,7 @@ function ScheduleControl() {
   };
   return <Popover open={open} onOpenChange={changeOpen}>
     <PopoverTrigger asChild><InfoRow icon={CalendarDays} label="安排时间" value={scheduleLabel(edit.draft)} hasValue={Boolean(edit.draft.dueDate || edit.draft.scheduledStart)} disabled={edit.readonly} aria-label="安排时间" /></PopoverTrigger>
-    <PopoverContent data-task-editor className="max-h-[75dvh] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto space-y-3">
+    <PopoverContent data-task-editor className="z-[80] max-h-[75dvh] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto space-y-3" onPointerDown={(event) => event.stopPropagation()} onPointerDownOutside={keepSchedulePickerOpen} onInteractOutside={keepSchedulePickerOpen} onFocusOutside={keepSchedulePickerOpen}>
       <ScheduleFields value={value} onChange={setValue} estimatedMinutes={edit.draft.estimatedMinutes} disabled={saving} />
       <div className="flex justify-end gap-2"><Button type="button" variant="ghost" disabled={saving} onClick={() => changeOpen(false)}>取消</Button><Button type="button" disabled={saving || Boolean(scheduleError(value))} onClick={() => {
         if (lock.current) return;

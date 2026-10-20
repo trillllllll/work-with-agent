@@ -88,7 +88,13 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await expect.poll(async () => (await task(request, created.id)).description).toBe('保留我的说明');
     await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('button', { name: '安排时间', exact: true }).click();
     await page.getByLabel('安排方式', { exact: true }).selectOption('allday');
-    await page.getByLabel('安排日期', { exact: true }).fill('2028-02-29');
+    await page.getByLabel('安排日期', { exact: true }).click();
+    const calendar = page.getByRole('dialog', { name: '选择日期', exact: true });
+    for (let step = 0; step < 24; step += 1) {
+      if ((await calendar.getByText(/\d+年\d+月/).textContent()) === '2028年2月') break;
+      await calendar.getByRole('button', { name: '下个月', exact: true }).click();
+    }
+    await calendar.getByRole('button', { name: '2028-02-29', exact: true }).click();
     await page.getByRole('button', { name: '保存安排', exact: true }).click();
     await expect.poll(async () => (await task(request, created.id)).dueDate).toBe('2028-02-29');
     await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('button', { name: '旗标：高', exact: true }).click();

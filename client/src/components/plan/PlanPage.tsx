@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { ScheduleFields, scheduleError, type ScheduleValue } from '@/components/tasks/ScheduleFields.js';
+import { keepSchedulePickerOpen } from '@/components/tasks/SchedulePickers.js';
 import { isCompositionKey } from '@/lib/todo.js';
 import type { PlanTimeBand } from '@/lib/api.js';
 import { isoWeekday, planTimeline, planTimelineMinWidth, resolveTimeBandSegments } from '@/lib/plan-time-bands.js';
@@ -160,7 +161,7 @@ function CreateScheduledTask({ initial, topics, onClose, onCreate }: { initial: 
   const [saving, setSaving] = useState(false);
   const lock = useRef(false);
   const composing = useRef(false);
-  return <Dialog open onOpenChange={(open) => { if (!open && !lock.current) onClose(); }}><DialogContent surface="glass" className="max-h-[90dvh] overflow-y-auto"><DialogHeader><DialogTitle>创建任务</DialogTitle><DialogDescription>填写标题并确认安排时间。</DialogDescription></DialogHeader>
+  return <Dialog open onOpenChange={(open) => { if (!open && !lock.current) onClose(); }}><DialogContent surface="glass" className="max-h-[90dvh] overflow-y-auto" onPointerDownOutside={keepSchedulePickerOpen} onInteractOutside={keepSchedulePickerOpen} onFocusOutside={keepSchedulePickerOpen}><DialogHeader><DialogTitle>创建任务</DialogTitle><DialogDescription>填写标题并确认安排时间。</DialogDescription></DialogHeader>
     <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); if (lock.current || composing.current || !title.trim() || scheduleError(value)) return; lock.current = true; setSaving(true); void onCreate({ title: title.trim(), topicId: topicId || null, parentId: null, ...value }).then(onClose).catch(() => undefined).finally(() => { lock.current = false; setSaving(false); }); }}>
       <Input aria-label="任务标题" autoFocus value={title} disabled={saving} onChange={(event) => setTitle(event.target.value)} onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }} onKeyDown={(event) => { if (event.key === 'Enter' && (composing.current || isCompositionKey(event.nativeEvent))) event.preventDefault(); }} />
       <label className="block text-sm">所属清单<select aria-label="所属清单" className="glass-control mt-1 h-9 w-full rounded px-2" value={topicId} disabled={saving} onChange={(event) => setTopicId(event.target.value)}><option value="">收集箱</option>{topics.filter((topic) => !topic.archivedAt).map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}</select></label>
