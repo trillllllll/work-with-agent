@@ -8,6 +8,17 @@
 - 应用里同一个宿主已经有连接时，更新那条连接。不要再创建一条同名连接。
 - 发现刚多出来的新连接或新的 MCP 条目，删掉新的，留下原来那条。
 
+## 发版前先更新应用功能知识
+
+内置助手的版本使用手册是 `server/src/agent/app-knowledge.ts` 里的 `appKnowledge`。助手用 `read_app_knowledge` 按页面读取，提示词带上 `package.json` 的版本。
+
+每次打包或部署之前，先按这次要发出的界面和工具改这份目录，并提交。手册没跟上这次发版，就停在这里，不要打包，也不要部署。
+
+- 对照这次发版实际有的页面、入口和助手工具。新的写进去，行为变了就改原文，拿掉的删掉。
+- 版本号沿用 `applicationVersion`，不要写死在条文里。
+- 只写已经能用的行为。计划文档里还没做的功能不要抄进来。
+- 密钥、令牌、连接凭据不要写进说明。
+
 ## 本机打包
 
 macOS Apple Silicon。标识 `app.workwithagent.desktop`，版本看 `package.json` 和 `desktop/src-tauri/tauri.conf.json`。`npm run desktop:build` 等于 `node scripts/assemble-desktop.mjs && node scripts/tauri.mjs build`。组装脚本要求 Node ≥ 22，并往包里放 Node 22.13.0。本机 Volta 默认是 16，不能直接用。
