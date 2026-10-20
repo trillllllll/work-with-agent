@@ -31,6 +31,7 @@ import { readMobileNavigation, writeMobileNavigation } from './application/mobil
 import { generateExternalReview } from './runner/review-generator.js';
 import { localeMiddleware, translateMessage, translatePayload } from './i18n/index.js';
 import { createSkill, deleteSkill, diffSkill, draftSkill, getSkill, getSkillVersion, importSkill, listSkills, registerSkillCommands, restoreSkill, rollbackSkill, updateSkill } from './application/skills.js';
+import { createNodeRouter, createOrchestrationRouter } from './routes/orchestration.js';
 
 export const app = express();
 app.use(cors(corsOptions));
@@ -42,6 +43,8 @@ registerGraphCommands();
 registerLibraryCommands();
 registerSkillCommands();
 app.use('/api/v1', securityRouter);
+// Local executors (wwa-node) use their own token; they never get owner or MCP access.
+app.use('/api/v1/node', createNodeRouter());
 app.use('/api/v1', identityMiddleware);
 app.use('/api/v1/connections', connectionRouter);
 app.use('/api/v1/server', createServerRouter());
@@ -52,6 +55,7 @@ export const reviewService = new ReviewService(new OrganizationService(), genera
 app.use('/api/v1/reviews', createReviewsRouter(reviewService));
 // Existing browser endpoints remain available only to authenticated owner sessions.
 app.use('/api', identityMiddleware, ownerMiddleware, legacyMutationMiddleware);
+app.use('/api', createOrchestrationRouter());
 
 const queryText = (value: unknown) => typeof value === 'string' ? value : undefined;
 const queryFlag = (value: unknown) => value === 'true' ? true : value === 'false' ? false : undefined;

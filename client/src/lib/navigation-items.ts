@@ -1,4 +1,4 @@
-import { Archive, Bot, CalendarClock, CalendarDays, CalendarRange, ClipboardCheck, FolderKanban, Grid2X2, History, Inbox, Library, Menu, MessageSquare, NotebookText, Plug, Search, Settings, Sparkles, Tags, Timer, Trash2, type LucideIcon } from 'lucide-react';
+import { Archive, Bot, CalendarClock, CalendarDays, CalendarRange, ClipboardCheck, FolderKanban, GitBranch, Grid2X2, History, Inbox, Library, Menu, MessageSquare, NotebookText, Plug, Search, Settings, Sparkles, Tags, Timer, Trash2, type LucideIcon } from 'lucide-react';
 import { t } from '../i18n/index.js';
 import type { View } from './api.js';
 import type { MobileNavigationView } from './mobile-navigation.js';
@@ -27,6 +27,7 @@ export const navigationItems: NavigationItem[] = [
   navItem('library', 'app:nav.library', Library),
   navItem('skills', 'app:nav.skills', Sparkles),
   navItem('runs', 'app:nav.runs', Bot),
+  navItem('worktrees', 'app:nav.worktrees', GitBranch),
   navItem('reviews', 'app:nav.reviews', CalendarClock),
   navItem('plan', 'app:nav.plan', CalendarRange),
   navItem('focus', 'app:nav.focus', Timer),

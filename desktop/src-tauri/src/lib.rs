@@ -18,6 +18,7 @@ use std::os::windows::process::CommandExt;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, LogicalSize, Manager, RunEvent, Url, WindowEvent};
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_window_state::StateFlags;
 
 const DESKTOP_PORT: u16 = 47316;
@@ -26,6 +27,10 @@ const DESKTOP_PORT: u16 = 47316;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 struct ServerProcess(Mutex<Option<Child>>);
+/// The local executor (wwa-node) this app runs in the background once the user paired it.
+struct NodeProcess(Mutex<Option<Child>>);
+/// Cleared on exit or unpair so the watcher does not restart the executor.
+static NODE_WANTED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -69,11 +74,29 @@ pub fn run() {
                         open_launcher(webview.app_handle());
                         return false;
                     }
+                    // Sentinels used by the workspace (local or remote origin); none of them reaches a server.
+                    if path == "/wwa-notify" {
+                        let title = query_value(url, "title").unwrap_or_default();
+                        let body = query_value(url, "body").unwrap_or_default();
+                        notify(webview.app_handle(), &title, &body);
+                        return false;
+                    }
+                    if path == "/wwa-node-pair" {
+                        let server = query_value(url, "server").unwrap_or_default();
+                        let token = query_value(url, "token").unwrap_or_default();
+                        pair_node(webview.app_handle(), server, token);
+                        return false;
+                    }
+                    if path == "/wwa-node-unpair" {
+                        unpair_node(webview.app_handle());
+                        return false;
+                    }
                     true
                 })
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(
             // Omit VISIBLE. Exit persists is_visible(), so a hidden window would reopen hidden.
             tauri_plugin_window_state::Builder::default()
@@ -87,7 +110,8 @@ pub fn run() {
                 .build(),
         )
         .manage(ServerProcess(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![launcher_config_get, launcher_config_set, launcher_retry])
+        .manage(NodeProcess(Mutex::new(None)))
+        .invoke_handler(tauri::generate_handler![launcher_config_get, launcher_config_set, launcher_retry, desktop_notify])
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_min_size(Some(LogicalSize::new(578.0, 640.0)));
@@ -106,13 +130,18 @@ pub fn run() {
                 if let Err(message) = launch(&handle) {
                     show_message(&handle, message);
                 }
+                // Independent of the workspace mode: a paired executor always comes up with the app.
+                start_node_agent(&handle);
             });
             Ok(())
         })
         .build(tauri::generate_context!())
         .unwrap_or_else(|error| panic!("{}: {error}", tr!("启动 Work With Agent 失败", "Failed to start Work With Agent")))
         .run(|app, event| match event {
-            RunEvent::Exit => stop_server(app),
+            RunEvent::Exit => {
+                stop_node_agent(app);
+                stop_server(app);
+            }
             #[cfg(target_os = "macos")]
             RunEvent::Reopen { .. } => {
                 if let Some(window) = app.get_webview_window("main") {
@@ -484,6 +513,176 @@ fn port_busy_message_in(lang: i18n::Lang, user: PortUser, port: u16) -> Option<S
     }
 }
 
+#[tauri::command]
+fn desktop_notify(app: AppHandle, title: String, body: String) -> Result<(), String> {
+    notify(&app, &title, &body);
+    Ok(())
+}
+
+fn query_value(url: &Url, key: &str) -> Option<String> {
+    url.query_pairs().find(|(name, _)| name == key).map(|(_, value)| value.into_owned())
+}
+
+fn clip(value: &str, max: usize) -> String {
+    value.chars().take(max).collect()
+}
+
+/// System notification for things that need the user (a round waits for acceptance, or paused).
+fn notify(app: &AppHandle, title: &str, body: &str) {
+    let title = clip(title.trim(), 120);
+    if title.is_empty() { return; }
+    let _ = app.notification().builder().title(title).body(clip(body.trim(), 400)).show();
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NodeAgentConfig {
+    server: String,
+    token: String,
+    roots: Vec<String>,
+    max_concurrent: u8,
+}
+
+fn node_dir(data: &Path) -> PathBuf {
+    data.join("node")
+}
+
+/// Only http(s) servers and base64url tokens; the folder picker is the user's confirmation of what the executor may touch.
+fn validate_pairing(server: &str, token: &str) -> Result<String, String> {
+    let server = server.trim().trim_end_matches('/').to_string();
+    let parsed = server.parse::<Url>().map_err(|_| "服务器地址无效".to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        return Err("服务器地址必须以 http:// 或 https:// 开头".to_string());
+    }
+    if token.len() < 20 || token.len() > 200 || !token.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err("执行端令牌格式无效".to_string());
+    }
+    Ok(server)
+}
+
+fn write_node_config(data: &Path, config: &NodeAgentConfig) -> Result<(), String> {
+    let dir = node_dir(data);
+    fs::create_dir_all(&dir).map_err(|error| format!("无法创建执行端目录：{error}"))?;
+    let path = dir.join("config.json");
+    let text = serde_json::to_string_pretty(config).map_err(|error| error.to_string())?;
+    fs::write(&path, text).map_err(|error| format!("无法保存执行端配置：{error}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
+}
+
+fn pair_node(app: &AppHandle, server: String, token: String) {
+    let server = match validate_pairing(&server, &token) {
+        Ok(server) => server,
+        Err(message) => { show_launch_error(app, message.clone()); notify(app, "本机执行端未启动", &message); return; }
+    };
+    let handle = app.clone();
+    app.dialog().file().set_title("选择允许本机执行端访问的代码目录").pick_folder(move |folder| {
+        let Some(folder) = folder.and_then(|item| item.into_path().ok()) else { return };
+        let result = data_dir().and_then(|data| write_node_config(&data, &NodeAgentConfig { server, token, roots: vec![folder.display().to_string()], max_concurrent: 2 }));
+        match result {
+            Ok(()) => {
+                stop_node_agent(&handle);
+                start_node_agent(&handle);
+                notify(&handle, "本机执行端已启动", &format!("允许目录：{}", folder.display()));
+            }
+            Err(message) => notify(&handle, "本机执行端未启动", &message),
+        }
+    });
+}
+
+fn unpair_node(app: &AppHandle) {
+    stop_node_agent(app);
+    if let Ok(data) = data_dir() {
+        let _ = fs::remove_file(node_dir(&data).join("config.json"));
+    }
+    notify(app, "本机执行端已停止", "已移除这台电脑上的执行端配置。服务端的令牌请在设置里吊销。");
+}
+
+/// Starts the paired executor (if any) with the bundled Node and keeps it running; restarts after crashes.
+fn start_node_agent(app: &AppHandle) {
+    let Ok(data) = data_dir() else { return };
+    let dir = node_dir(&data);
+    if !dir.join("config.json").exists() { return; }
+    let Ok((node, server, _client)) = bundled_paths(app) else { return };
+    let entry = server.join("dist/node-agent/index.js");
+    if !entry.exists() { return; }
+    let _ = fs::create_dir_all(data.join("logs"));
+    NODE_WANTED.store(true, Ordering::SeqCst);
+    if !spawn_node_agent(app, &node, &entry, &dir, &data.join("logs/node.log")) { return; }
+    let handle = app.clone();
+    thread::spawn(move || {
+        let mut failures: u32 = 0;
+        loop {
+            thread::sleep(Duration::from_secs(2));
+            if !NODE_WANTED.load(Ordering::SeqCst) { return; }
+            let Some(state) = handle.try_state::<NodeProcess>() else { return };
+            let status = {
+                let mut guard = state.0.lock().expect("node lock");
+                match guard.as_mut() {
+                    Some(child) => child.try_wait().ok().flatten(),
+                    None => return,
+                }
+            };
+            let Some(status) = status else { failures = 0; continue };
+            state.0.lock().expect("node lock").take();
+            // Exit code 2 is a configuration error; restarting would not help.
+            if status.code() == Some(2) || !NODE_WANTED.load(Ordering::SeqCst) { return; }
+            failures += 1;
+            thread::sleep(Duration::from_secs(u64::from(5 * failures.min(12))));
+            if !NODE_WANTED.load(Ordering::SeqCst) { return; }
+            if !spawn_node_agent(&handle, &node, &entry, &dir, &data.join("logs/node.log")) { return; }
+        }
+    });
+}
+
+fn spawn_node_agent(app: &AppHandle, node: &Path, entry: &Path, dir: &Path, log: &Path) -> bool {
+    let state = app.state::<NodeProcess>();
+    let mut guard = state.0.lock().expect("node lock");
+    if let Some(child) = guard.as_mut() {
+        if matches!(child.try_wait(), Ok(None)) { return true; }
+    }
+    let mut command = Command::new(node);
+    command
+        .arg(entry)
+        .arg("--data")
+        .arg(dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env("WWA_NODE_LOGIN_PATH", "1")
+        .env_remove("NODE_OPTIONS");
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let Ok(mut child) = command.spawn() else {
+        append_log(log, "无法启动本机执行端");
+        return false;
+    };
+    for stream in [child.stdout.take().map(|value| Box::new(value) as Box<dyn Read + Send>), child.stderr.take().map(|value| Box::new(value) as Box<dyn Read + Send>)].into_iter().flatten() {
+        let path = log.to_path_buf();
+        thread::spawn(move || {
+            for line in BufReader::new(stream).lines() {
+                let Ok(line) = line else { break };
+                append_log(&path, &line);
+            }
+        });
+    }
+    guard.replace(child);
+    true
+}
+
+fn stop_node_agent(app: &AppHandle) {
+    NODE_WANTED.store(false, Ordering::SeqCst);
+    let Some(state) = app.try_state::<NodeProcess>() else { return };
+    let Some(mut child) = state.0.lock().expect("node lock").take() else { return };
+    // Jobs survive restarts: the executor journals them locally and re-reports, so a plain kill is safe.
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 fn append_log(path: &Path, line: &str) {
     if line.contains("owner-token") { return; }
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
@@ -549,6 +748,27 @@ mod tests {
         });
         assert!(matches!(probe_port(port), PortUser::Foreign));
         responder.join().expect("responder");
+    }
+
+    #[test]
+    fn pairing_accepts_only_http_servers_and_base64url_tokens() {
+        let token = "abcdefghijklmnopqrstuvwxyz_-0123456789";
+        assert_eq!(validate_pairing("https://wwa.example.com/", token).expect("valid"), "https://wwa.example.com");
+        assert!(validate_pairing("file:///etc", token).is_err());
+        assert!(validate_pairing("javascript:alert(1)", token).is_err());
+        assert!(validate_pairing("https://wwa.example.com", "short").is_err());
+        assert!(validate_pairing("https://wwa.example.com", "bad token with spaces and more chars").is_err());
+    }
+
+    #[test]
+    fn node_config_is_written_for_the_bundled_executor() {
+        let directory = std::env::temp_dir().join(format!("wwa-node-config-{}", std::process::id()));
+        write_node_config(&directory, &NodeAgentConfig { server: "https://wwa.example.com".to_string(), token: "t".repeat(32), roots: vec!["/code".to_string()], max_concurrent: 2 }).expect("write");
+        let text = fs::read_to_string(node_dir(&directory).join("config.json")).expect("read");
+        let value: serde_json::Value = serde_json::from_str(&text).expect("json");
+        assert_eq!(value["roots"][0], "/code");
+        assert_eq!(value["maxConcurrent"], 2);
+        let _ = fs::remove_dir_all(&directory);
     }
 
     #[test]

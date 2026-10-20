@@ -1,5 +1,6 @@
 import { ImageSearchSettings } from './ImageSearchSettings.js';
 import { HtmlBlockSettings } from './HtmlBlockSettings.js';
+import { OrchestrationSettings } from '@/components/orchestration/OrchestrationSettings.js';
 import { useEffect, useRef, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { LanguageSettings } from './LanguageSettings.js';
@@ -121,6 +122,7 @@ export function SettingsView({ onBack }: { onBack?: () => void }) {
             <Button variant="outline" className="mt-3" onClick={() => { window.location.hash = '/skills'; }}>{t('skillsCard.manage')}</Button>
           </section>
           <CliCommands settings={settingsQuery.data} />
+          <OrchestrationSettings />
 
           <BackupSection />
 

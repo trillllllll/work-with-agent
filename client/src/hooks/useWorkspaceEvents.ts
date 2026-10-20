@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+import { systemNotify } from '@/lib/desktop-shell.js';
+import { pauseReasonLabels } from '@/components/orchestration/labels.js';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -55,6 +57,15 @@ export function useWorkspaceEvents() {
       try {
         const event = JSON.parse(message.data);
         const key = `${event.batchId}:${event.status}`;
+        if (event.kind === 'orchestration' && event.attention && !notified.has(`orch:${event.orchestrationId}:${event.status}:${event.pauseReason ?? ''}`)) {
+          notified.add(`orch:${event.orchestrationId}:${event.status}:${event.pauseReason ?? ''}`);
+          const translate = tRef.current;
+          const accepting = event.status === 'awaiting_acceptance';
+          if (accepting) toast.success(translate('orchestration:notify.doneToast'));
+          else toast.warning(translate('orchestration:notify.pausedToast'));
+          const reason = pauseReasonLabels[event.pauseReason ?? ''] ?? event.pauseReason ?? '';
+          void systemNotify(accepting ? translate('orchestration:notify.acceptTitle') : translate('orchestration:notify.pausedTitle'), accepting ? translate('orchestration:notify.acceptBody') : translate('orchestration:notify.pausedBody', { reason }), `orch:${event.orchestrationId}`);
+        }
         if (event.kind === 'review' && !notified.has(key)) {
           notified.add(key);
           const message = event.status === 'ready' ? tRef.current('review.ready') : event.status === 'failed' ? tRef.current('review.failed') : tRef.current('review.partial');

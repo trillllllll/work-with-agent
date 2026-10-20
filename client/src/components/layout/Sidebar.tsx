@@ -69,9 +69,9 @@ export function Sidebar({ compact, route, page, topics, topicsLoading, selectedT
         {!planning && <nav aria-label={t('sidebar.organize')} className="sidebar-nav sidebar-nav-follow">
           {links(['tags', 'archived']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}
         </nav>}
-        {planning ? <details className="mt-5"><summary className="sidebar-link text-muted-foreground"><span className="flex-1">{t('sidebar.work')}</span><ChevronDown className="size-3.5" /></summary><nav aria-label={t('sidebar.work')} className="sidebar-nav">{links(['connections', 'proposals', 'knowledge', 'library', 'skills', 'runs', 'reviews']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}</nav></details> : <><SidebarSection label={t('sidebar.work')} />
+        {planning ? <details className="mt-5"><summary className="sidebar-link text-muted-foreground"><span className="flex-1">{t('sidebar.work')}</span><ChevronDown className="size-3.5" /></summary><nav aria-label={t('sidebar.work')} className="sidebar-nav">{links(['connections', 'proposals', 'knowledge', 'library', 'skills', 'runs', 'worktrees', 'reviews']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}</nav></details> : <><SidebarSection label={t('sidebar.work')} />
         <nav aria-label={t('sidebar.work')} className="sidebar-nav">
-          {links(['connections', 'proposals', 'knowledge', 'library', 'skills', 'runs', 'reviews']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}
+          {links(['connections', 'proposals', 'knowledge', 'library', 'skills', 'runs', 'worktrees', 'reviews']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}
         </nav></>}
       </div>
       <div className="sidebar-footer">

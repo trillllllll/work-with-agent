@@ -587,6 +587,174 @@ model Artifact {
   run Run @relation(fields: [runId], references: [id], onDelete: Restrict)
   @@index([runId])
 }
+
+// ---- Orchestration: the server only plans and checks; local executors (wwa-node) do the work.
+model AgentNode {
+  id               String  @id @default(cuid())
+  name             String
+  tokenHash        String  @unique
+  status           String  @default("active")
+  platform         String  @default("")
+  version          String  @default("")
+  capabilitiesJson String  @default("{}")
+  inventoryJson    String  @default("null")
+  inventoryAt      String?
+  lastSeenAt       String?
+  createdAt        String
+  updatedAt        String
+  locations        ProjectLocation[]
+  jobs             NodeJob[]
+}
+model Project {
+  id              String  @id @default(cuid())
+  name            String
+  defaultBranch   String  @default("main")
+  defaultProvider String  @default("codex")
+  archivedAt      String?
+  revision        Int     @default(1)
+  createdAt       String
+  updatedAt       String
+  locations       ProjectLocation[]
+  bindings        ProjectBinding[]
+}
+model ProjectLocation {
+  id              String  @id @default(cuid())
+  projectId       String
+  nodeId          String
+  path            String
+  status          String  @default("pending")
+  fingerprintJson String  @default("{}")
+  error           String?
+  verifiedAt      String?
+  createdAt       String
+  updatedAt       String
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  node            AgentNode @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  @@unique([projectId, nodeId])
+}
+model ProjectBinding {
+  scopeType String
+  scopeId   String
+  projectId String
+  updatedAt String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  @@id([scopeType, scopeId])
+}
+model Orchestration {
+  id                String  @id @default(cuid())
+  taskId            String
+  round             Int
+  status            String  @default("draft")
+  projectId         String
+  locationId        String?
+  nodeId            String?
+  repoPath          String  @default("")
+  defaultBranch     String  @default("main")
+  integrationBranch String
+  integrationPath   String?
+  baseCommit        String?
+  integrationHead   String?
+  grantJson         String  @default("{}")
+  planJson          String  @default("{}")
+  taskSnapshotJson  String  @default("{}")
+  pauseReason       String?
+  finalComment      String?
+  revision          Int     @default(1)
+  createdAt         String
+  updatedAt         String
+  startedAt         String?
+  endedAt           String?
+  acceptedAt        String?
+  pushedAt          String?
+  extraLocationsJson String @default("[]")
+  publishedHead     String?
+  pullRequestUrl    String?
+  steps             OrchestrationStep[]
+  events            OrchestrationEvent[]
+  @@unique([taskId, round])
+  @@index([status])
+}
+model OrchestrationStep {
+  id                 String  @id @default(cuid())
+  orchestrationId    String
+  kind               String
+  subtaskId          String?
+  sourceStepId       String?
+  dependsOnJson      String  @default("[]")
+  position           Int
+  status             String  @default("pending")
+  attempt            Int     @default(1)
+  continueCount      Int     @default(0)
+  retryCount         Int     @default(0)
+  nextAttemptAt      String?
+  branch             String?
+  workPath           String?
+  baseCommit         String?
+  resultCommit       String?
+  preMergeHead       String?
+  mergeCommit        String?
+  acceptanceCriteria String  @default("")
+  lastTaskRevision   Int?
+  feedback           String?
+  lastJobId          String?
+  nodeId             String?
+  locationId         String?
+  repoPath           String?
+  error              String?
+  createdAt          String
+  updatedAt          String
+  orchestration      Orchestration @relation(fields: [orchestrationId], references: [id], onDelete: Restrict)
+  @@index([orchestrationId, status])
+}
+model NodeJob {
+  id              String  @id @default(cuid())
+  nodeId          String
+  orchestrationId String?
+  stepId          String?
+  kind            String
+  phase           String  @default("work")
+  dispatchKey     String  @unique
+  status          String  @default("queued")
+  payloadJson     String
+  leaseToken      String?
+  leaseExpiresAt  String?
+  resultJson      String?
+  error           String?
+  createdAt       String
+  updatedAt       String
+  startedAt       String?
+  endedAt         String?
+  node            AgentNode @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  @@index([nodeId, status])
+  @@index([orchestrationId])
+}
+/// A pending destructive request shown as a confirmation card; nothing is sent to the node until the user confirms.
+model WorktreeCleanup {
+  id          String  @id @default(cuid())
+  nodeId      String
+  itemsJson   String
+  deleteBranches Boolean @default(false)
+  status      String  @default("pending")
+  source      String  @default("user")
+  jobId       String?
+  resultJson  String?
+  expiresAt   String
+  createdAt   String
+  updatedAt   String
+  @@index([nodeId, status])
+}
+model OrchestrationEvent {
+  id              String @id @default(cuid())
+  orchestrationId String
+  seq             Int
+  type            String
+  actorKind       String
+  stepId          String?
+  payload         String
+  createdAt       String
+  orchestration   Orchestration @relation(fields: [orchestrationId], references: [id], onDelete: Restrict)
+  @@unique([orchestrationId, seq])
+}
 model HandoffReview {
   id String @id @default(cuid())
   handoffId String

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { markDesktopShell } from '@/lib/desktop-shell.js';
 import { api, setCsrfToken } from '@/lib/api.js';
 import { EditorRuntime, markEditorSessionExpired, TaskEditorRuntimeProvider, useBeforeunloadGuard } from '@/lib/task-editor-runtime.js';
 import { UnsyncedTasksButton } from '@/components/tasks/task-save-status.js';
@@ -46,6 +47,7 @@ export function SessionGate({ children }: { children: ReactNode }) {
     // The desktop shell navigates here with ?launcher=1 and watches for the sentinel
     // redirect below; it cancels the navigation and marks the launch confirmed.
     if (new URLSearchParams(window.location.search).get('launcher') === '1') {
+      markDesktopShell();
       window.history.replaceState(null, '', `${window.location.pathname}#/inbox`);
       window.location.assign('/wwa-launcher-done');
     }
