@@ -6,13 +6,19 @@ import { api } from '@/lib/api.js';
 import { intlLocale, t as translate } from '@/i18n/index.js';
 import { Button } from '@/components/ui/button.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
+import { Textarea } from '@/components/ui/textarea.js';
 import { orchestrationStatusLabels, pauseReasonLabels, stepKindLabels, stepStatusLabels } from './labels.js';
 import { formatCost, formatDiff, formatDuration, formatMissing, formatTokens, jobDurationMs, readJobChecks } from './format.js';
 
 type Step = { id: string; kind: string; subtaskId: string | null; nodeId?: string | null; status: string; attempt: number; continueCount: number; branch: string | null; error: string | null; mergeCommit: string | null; resultCommit: string | null; dependsOn: string[] };
 type OrchestrationJob = { id: string; stepId: string | null; kind: string; phase: string; createdAt: string; startedAt: string | null; endedAt: string | null; model: string | null; inputTokens: number | null; outputTokens: number | null; costMicroUsd: number | null; filesChanged: number | null; linesAdded: number | null; linesDeleted: number | null; result?: unknown };
 type PlanStep = { taskId: string; dependsOn: string[]; acceptanceCriteria: string; rationale: string };
-type Orchestration = { id: string; taskId: string; round: number; status: string; revision: number; integrationBranch: string; integrationHead: string | null; pauseReason: string | null; finalComment: string | null; pushedAt: string | null; pullRequestUrl?: string | null; nodeId?: string | null; nodes?: Array<{ id: string; name: string; online: boolean; primary: boolean; gh: boolean }>; grant: { provider: string; maxParallel: number; allowShell: boolean }; plan: { goalCriteria: string; steps: PlanStep[]; fallback?: string }; taskSnapshot: { subtasks: Array<{ id: string; title: string }> }; steps?: Step[]; jobs?: OrchestrationJob[]; locations?: Array<{ id: string; nodeId: string; nodeName: string; online: boolean; path: string; originUrl?: string | null; protocol?: number }>; node?: { name: string; online: boolean } | null; events?: Array<{ seq: number; type: string; actorKind: string; createdAt: string; payload: any }> };
+type Orchestration = { id: string; taskId: string; round: number; status: string; revision: number; integrationBranch: string; integrationHead: string | null; pauseReason: string | null; finalComment: string | null; acceptanceNote?: string | null; rejectionReason?: string | null; rejectedAt?: string | null; priorSummary?: string | null; pushedAt: string | null; pullRequestUrl?: string | null; nodeId?: string | null; nodes?: Array<{ id: string; name: string; online: boolean; primary: boolean; gh: boolean }>; grant: { provider: string; maxParallel: number; allowShell: boolean }; plan: { goalCriteria: string; steps: PlanStep[]; fallback?: string }; taskSnapshot: { subtasks: Array<{ id: string; title: string }> }; steps?: Step[]; jobs?: OrchestrationJob[]; locations?: Array<{ id: string; nodeId: string; nodeName: string; online: boolean; path: string; originUrl?: string | null; protocol?: number }>; node?: { name: string; online: boolean } | null; events?: Array<{ seq: number; type: string; actorKind: string; createdAt: string; payload: any }> };
+
+function insideVerdictDialog(event: { target: EventTarget | null; detail?: { originalEvent?: Event } }) {
+  const target = event.target instanceof Element ? event.target : event.detail?.originalEvent?.target;
+  return target instanceof Element && !!target.closest('[data-testid="accept-dialog"], [data-testid="reject-dialog"]');
+}
 type Project = { id: string; name: string };
 const OPEN = ['draft', 'running', 'paused', 'awaiting_acceptance'];
 
@@ -49,7 +55,7 @@ function OrchestrationDialog({ taskId, focusId, onClose }: { taskId: string; foc
   const preview = useMutation({ mutationFn: () => api<Orchestration>('/api/orchestrations/preview', { method: 'POST', body: JSON.stringify({ taskId }) }), onSuccess: (data) => { setDraft(data); void client.invalidateQueries({ queryKey: ['orchestrations'] }); }, onError: (error) => toast.error(error.message) });
   const showDraft = draft;
   return <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-    <DialogContent className="max-h-[90dvh] max-w-[min(48rem,calc(100%-2rem))] overflow-y-auto">
+    <DialogContent className="max-h-[90dvh] max-w-[min(48rem,calc(100%-2rem))] overflow-y-auto" onPointerDownOutside={(event) => { if (insideVerdictDialog(event)) event.preventDefault(); }} onInteractOutside={(event) => { if (insideVerdictDialog(event)) event.preventDefault(); }} onFocusOutside={(event) => { if (insideVerdictDialog(event)) event.preventDefault(); }}>
       <DialogHeader><DialogTitle>{t('panel.title')}</DialogTitle><DialogDescription>{t('panel.description')}</DialogDescription></DialogHeader>
       {showDraft ? <LaunchForm draft={showDraft} taskId={taskId} onStarted={() => { setDraft(null); void client.invalidateQueries({ queryKey: ['orchestrations'] }); }} />
         : current && current.status !== 'draft' ? <Progress row={detail.data ?? current} onRedispatch={(next) => setDraft(next)} />
@@ -95,6 +101,7 @@ function LaunchForm({ draft, taskId, onStarted }: { draft: Orchestration; taskId
       <ol className="mt-2 space-y-2">{draft.plan.steps.map((step) => <li key={step.taskId} className="rounded border p-2"><div className="font-medium">{titles.get(step.taskId) ?? step.taskId}</div>
         <div className="text-xs text-muted-foreground">{step.dependsOn.length ? t('panel.waitFor', { names: step.dependsOn.map((id) => titles.get(id) ?? id).join(t('panel.sep')) }) : t('panel.parallel')}{step.rationale ? t('panel.rationale', { rationale: step.rationale }) : ''}</div>
         {step.acceptanceCriteria && <div className="mt-1 text-xs">{t('panel.acceptance', { criteria: step.acceptanceCriteria })}</div>}</li>)}</ol>
+      {draft.priorSummary && <details className="disclosure" data-testid="prior-summary"><summary className="cursor-pointer text-sm">{t('panel.priorSummary')}</summary><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs">{draft.priorSummary}</pre></details>}
     </section>
     <section className="space-y-2"><h3 className="font-medium">{t('panel.grantTitle')}</h3>
       <label className="flex items-center gap-2"><span className="w-24 text-muted-foreground">{t('panel.location')}</span><select className="flex-1 rounded border bg-background px-2 py-1" value={locationId} onChange={(event) => setLocationId(event.target.value)}>
@@ -116,8 +123,12 @@ function LaunchForm({ draft, taskId, onStarted }: { draft: Orchestration; taskId
 function Progress({ row, onRedispatch }: { row: Orchestration; onRedispatch: (draft: Orchestration) => void }) {
   const { t } = useTranslation('orchestration');
   const client = useQueryClient();
+  const [acceptOpen, setAcceptOpen] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [note, setNote] = useState('');
+  const [reason, setReason] = useState('');
   const titles = new Map(row.taskSnapshot.subtasks.map((task) => [task.id, task.title]));
-  const act = useMutation({ mutationFn: ({ path, body }: { path: string; body?: unknown }) => api<any>(`/api/orchestrations/${row.id}/${path}`, { method: 'POST', body: JSON.stringify(body ?? {}) }), onSuccess: (data, variables) => { void client.invalidateQueries({ queryKey: ['orchestrations'] }); void client.invalidateQueries({ queryKey: ['orchestration'] }); if (variables.path === 'redispatch') onRedispatch(data); }, onError: (error) => toast.error(error.message) });
+  const act = useMutation({ mutationFn: ({ path, body }: { path: string; body?: unknown }) => api<any>(`/api/orchestrations/${row.id}/${path}`, { method: 'POST', body: JSON.stringify(body ?? {}) }), onSuccess: (data, variables) => { void client.invalidateQueries({ queryKey: ['orchestrations'] }); void client.invalidateQueries({ queryKey: ['orchestration'] }); if (variables.path === 'accept') setAcceptOpen(false); if (variables.path === 'reject') setRejectOpen(false); if (variables.path === 'redispatch') onRedispatch(data); }, onError: (error) => toast.error(error.message) });
   const steps = (row.steps ?? []).filter((step) => !['push', 'publish', 'pull_request'].includes(step.kind) || step.status !== 'succeeded');
   const nodeNames = new Map((row.nodes ?? []).map((node) => [node.id, node.name]));
   const multi = (row.nodes ?? []).length > 1;
@@ -128,6 +139,8 @@ function Progress({ row, onRedispatch }: { row: Orchestration; onRedispatch: (dr
     <div className="flex flex-wrap items-center gap-2"><span className="rounded bg-muted px-2 py-0.5 font-medium">{orchestrationStatusLabels[row.status] ?? row.status}</span><span>{t('panel.round', { round: row.round })}</span><code className="text-xs">{row.integrationBranch}</code>{row.integrationHead && <code className="text-xs">{row.integrationHead.slice(0, 10)}</code>}{multi ? <span className="text-xs text-muted-foreground">{t('panel.nodes', { list: nodeList })}</span> : row.node && <span className="text-xs text-muted-foreground">{t('panel.nodeOne', { name: row.node.name, state: row.node.online ? t('panel.onlineMark') : t('panel.offlineMark') })}</span>}</div>
     {row.pullRequestUrl && <p className="text-xs">{t('panel.pr')}<a className="underline" href={row.pullRequestUrl} target="_blank" rel="noreferrer">{row.pullRequestUrl}</a></p>}
     {row.pauseReason && <p role="alert" className="rounded bg-amber-500/10 p-2">{pauseReasonLabels[row.pauseReason] ?? row.pauseReason}</p>}
+    {row.rejectionReason && <p role="alert" className="rounded bg-destructive/10 p-2">{t('panel.rejected', { reason: row.rejectionReason })}</p>}
+    {row.acceptanceNote && <p className="rounded bg-muted p-2">{t('history.acceptanceNote', { note: row.acceptanceNote })}</p>}
     {row.finalComment && <p className="rounded bg-muted p-2">{t('panel.finalComment', { comment: row.finalComment })}</p>}
     <ul className="space-y-1">{steps.map((step) => <li key={step.id} className="flex flex-wrap items-center gap-2 rounded border px-2 py-1">
       <span className="w-16 text-muted-foreground">{stepKindLabels[step.kind] ?? step.kind}</span>
@@ -147,12 +160,34 @@ function Progress({ row, onRedispatch }: { row: Orchestration; onRedispatch: (dr
     <div className="flex flex-wrap gap-2">
       {row.status === 'running' && <Button size="sm" variant="outline" onClick={() => act.mutate({ path: 'pause' })}>{t('panel.pause')}</Button>}
       {row.status === 'paused' && <Button size="sm" variant="outline" onClick={() => act.mutate({ path: 'resume' })}>{t('panel.resume')}</Button>}
-      {row.status === 'awaiting_acceptance' && <Button size="sm" onClick={() => act.mutate({ path: 'accept' })}>{t('panel.accept')}</Button>}
+      {row.status === 'awaiting_acceptance' && <Button size="sm" data-testid="orchestration-accept" onClick={() => { setNote(''); setAcceptOpen(true); }}>{t('panel.acceptWithNote')}</Button>}
+      {row.status === 'awaiting_acceptance' && <Button size="sm" variant="outline" data-testid="orchestration-reject" onClick={() => { setReason(''); setRejectOpen(true); }}>{t('panel.reject')}</Button>}
       {['accepted', 'awaiting_acceptance'].includes(row.status) && <Button size="sm" variant="outline" onClick={() => act.mutate({ path: 'push' })}>{row.pushedAt ? t('panel.pushAgain') : t('panel.push')}</Button>}
       {['accepted', 'awaiting_acceptance'].includes(row.status) && row.pushedAt && !row.pullRequestUrl && primaryNode?.gh && <Button size="sm" variant="outline" disabled={steps.some((step) => step.kind === 'pull_request' && step.status === 'dispatched')} onClick={() => act.mutate({ path: 'pull-request' })}>{t('panel.createPr')}</Button>}
-      {['running', 'paused', 'awaiting_acceptance', 'accepted', 'cancelled'].includes(row.status) && <Button size="sm" variant="ghost" onClick={() => act.mutate({ path: 'redispatch' })}>{t('panel.redispatch')}</Button>}
+      {['running', 'paused', 'awaiting_acceptance', 'accepted', 'cancelled', 'rejected'].includes(row.status) && <Button size="sm" variant="ghost" onClick={() => act.mutate({ path: 'redispatch' })}>{t('panel.redispatch')}</Button>}
       {['running', 'paused', 'awaiting_acceptance'].includes(row.status) && <Button size="sm" variant="ghost" className="text-destructive" onClick={() => act.mutate({ path: 'cancel' })}>{t('panel.cancel')}</Button>}
     </div>
+    <Dialog open={acceptOpen} onOpenChange={setAcceptOpen}>
+      <DialogContent data-testid="accept-dialog">
+        <DialogHeader>
+          <DialogTitle>{t('panel.acceptWithNote')}</DialogTitle>
+          <DialogDescription>{t('panel.acceptNote')}</DialogDescription>
+        </DialogHeader>
+        <Textarea value={note} maxLength={2000} placeholder={t('panel.acceptNotePlaceholder')} onChange={(event) => setNote(event.target.value)} />
+        <Button data-testid="accept-confirm" disabled={act.isPending} onClick={() => act.mutate({ path: 'accept', body: { comment: note } })}>{t('panel.acceptConfirm')}</Button>
+      </DialogContent>
+    </Dialog>
+    <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
+      <DialogContent data-testid="reject-dialog">
+        <DialogHeader>
+          <DialogTitle>{t('panel.rejectTitle')}</DialogTitle>
+          <DialogDescription>{t('panel.rejectReason')}</DialogDescription>
+        </DialogHeader>
+        <Textarea data-testid="reject-reason" value={reason} maxLength={2000} placeholder={t('panel.rejectPlaceholder')} onChange={(event) => setReason(event.target.value)} />
+        <p className="text-xs text-muted-foreground">{t('panel.rejectRequired')}</p>
+        <Button data-testid="reject-confirm" disabled={!reason.trim() || act.isPending} onClick={() => act.mutate({ path: 'reject', body: { reason } })}>{t('panel.rejectConfirm')}</Button>
+      </DialogContent>
+    </Dialog>
     {events.length > 0 && <details><summary className="cursor-pointer text-muted-foreground">{t('panel.events', { count: events.length })}</summary>
       <ul className="mt-2 space-y-1 text-xs">{events.map((event) => <li key={event.seq}><span className="text-muted-foreground">{new Date(event.createdAt).toLocaleTimeString(intlLocale())} · {event.actorKind} · {event.type}</span> {summarize(event.payload)}</li>)}</ul></details>}
   </div>;

@@ -25,6 +25,7 @@ type HistoryStep = {
 };
 type HistoryRound = {
   id: string; taskId: string; taskTitle: string | null; role: 'main' | 'subtask'; round: number; status: string; pauseReason: string | null; finalComment: string | null;
+  acceptanceNote?: string | null; rejectionReason?: string | null; rejectedAt?: string | null;
   startedAt: string | null; endedAt: string | null; provider: string | null; integrationBranch: string | null;
   totals: { durationMs: number | null; inputTokens: number | null; outputTokens: number | null; cachedInputTokens: number | null; costMicroUsd: number | null; costJobs: number; jobs: number; rework: number; rateRetries: number };
   steps: HistoryStep[];
@@ -81,6 +82,11 @@ function RoundCard({ round }: { round: HistoryRound }) {
       {totals.rateRetries > 0 && <span>{t('history.rateRetries', { n: totals.rateRetries })}</span>}
     </p>
     {round.finalComment && <p className="text-sm">{round.finalComment}</p>}
+    {(round.rejectionReason || round.acceptanceNote) && <p data-testid="ai-history-verdict" className="text-sm">
+      {round.rejectionReason && <span>{t('history.rejection', { reason: round.rejectionReason })}</span>}
+      {round.rejectionReason && round.acceptanceNote ? ' ' : null}
+      {round.acceptanceNote && <span>{t('history.acceptanceNote', { note: round.acceptanceNote })}</span>}
+    </p>}
     <div className="space-y-2">
       {round.steps.map((step) => <section key={step.id} data-testid="ai-history-step" className="space-y-1 rounded-lg border px-3 py-2">
         <div className="flex flex-wrap items-center gap-2 text-sm">

@@ -21,7 +21,7 @@ let agent: ChildProcess | null = null;
 let agentLog = '';
 const state: { mainId: string; subA: string; subB: string } = { mainId: '', subA: '', subB: '' };
 
-test.describe.configure({ timeout: 240_000 });
+test.describe.configure({ timeout: 420_000 });
 
 async function bodyOf(response: Awaited<ReturnType<APIRequestContext['get']>>) {
   const text = await response.text();
@@ -145,4 +145,45 @@ test('shows AI history for the main task and a subtask, and opens the round from
   await expect(card).toBeVisible();
   await card.click();
   await expect(page.getByRole('dialog', { name: '主控编排' })).toBeVisible();
+});
+
+test('rejects with a required reason, redispatches with that summary, and accepts the next round with a note', async ({ page }) => {
+  test.setTimeout(240_000);
+  const reason = '合入范围不对';
+  const note = '可以合并';
+  await page.goto('/#/inbox');
+  const detail = await openTask(page, state.mainId, 'E2E 履历');
+  await detail.getByRole('button', { name: '编排 · 待验收' }).click();
+  const dialog = page.getByRole('dialog', { name: '主控编排' });
+  await dialog.getByTestId('orchestration-reject').click();
+  const reject = page.getByTestId('reject-dialog');
+  await expect(reject.getByText('打回必须写理由')).toBeVisible();
+  await expect(reject.getByTestId('reject-confirm')).toBeDisabled();
+  await reject.getByTestId('reject-reason').fill('   ');
+  await expect(reject.getByTestId('reject-confirm')).toBeDisabled();
+  await reject.getByTestId('reject-reason').fill(reason);
+  await expect(reject.getByTestId('reject-confirm')).toBeEnabled();
+  await reject.getByTestId('reject-confirm').click();
+  await expect(dialog.getByText('已打回', { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('alert')).toContainText(reason);
+  await dialog.getByRole('button', { name: '改完任务后重新派发' }).click();
+  const summary = dialog.getByTestId('prior-summary');
+  await summary.locator('summary').click();
+  await expect(summary).toContainText(reason);
+  await dialog.getByRole('button', { name: '确认并开始运行' }).click();
+  await waitFor('second awaiting_acceptance', async () => !!(await e2eDatabase.orchestration.findFirst({ where: { taskId: state.mainId, status: 'awaiting_acceptance' } })));
+  await expect(dialog.getByText('待验收', { exact: true })).toBeVisible({ timeout: 20_000 });
+  await dialog.getByTestId('orchestration-accept').click();
+  const accept = page.getByTestId('accept-dialog');
+  await accept.getByPlaceholder('可选，写下验收意见').fill(note);
+  await accept.getByTestId('accept-confirm').click();
+  await expect(dialog.getByText('已验收', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('accept-dialog')).toBeHidden();
+  await dialog.getByRole('button', { name: 'Close' }).click();
+  await expect(dialog).toBeHidden();
+  await detail.getByTestId('task-ai-history').click();
+  const history = page.getByTestId('ai-history-dialog');
+  await expect(history.getByTestId('ai-history-round')).toHaveCount(2);
+  await expect(history.getByTestId('ai-history-verdict').filter({ hasText: reason })).toBeVisible();
+  await expect(history.getByTestId('ai-history-verdict').filter({ hasText: note })).toBeVisible();
 });

@@ -272,11 +272,27 @@ export class OrchestrationService {
     if (row.status === 'running') await tickOrchestration(id);
     return this.get(id);
   }
-  async accept(id: string) {
+  async accept(id: string, raw?: unknown) {
+    const input = z.object({ comment: z.string().trim().max(2000).optional() }).strict().parse(raw ?? {});
+    const comment = input.comment ? input.comment : null;
     const row = await this.requireStatus(id, ['awaiting_acceptance']);
-    await prisma.$transaction(async (tx) => { await setStatus(tx, row, 'accepted', { acceptedAt: now(), endedAt: now() }); await appendOrchestrationEvent(tx, id, 'accepted', 'user', null, {}); });
+    await prisma.$transaction(async (tx) => { await setStatus(tx, row, 'accepted', { acceptedAt: now(), endedAt: now(), acceptanceNote: comment }); await appendOrchestrationEvent(tx, id, 'accepted', 'user', null, { comment }); });
     await updateTaskStatus(row.taskId, 'done', id);
     publishOrchestration({ orchestrationId: id, taskId: row.taskId, status: 'accepted' });
+    return this.get(id);
+  }
+  async reject(id: string, raw?: unknown) {
+    const parsed = z.object({ reason: z.string().trim().min(1).max(2000) }).strict().safeParse(raw ?? {});
+    if (!parsed.success) throw new DomainError('REASON_REQUIRED', '打回必须填写理由', 400);
+    const reason = parsed.data.reason;
+    const row = await this.requireStatus(id, ['awaiting_acceptance']);
+    await prisma.$transaction(async (tx) => {
+      await tx.nodeJob.updateMany({ where: { orchestrationId: id, status: { in: [...activeJobStatuses, 'lost'] } }, data: { status: 'cancelled', error: '编排已打回', endedAt: now(), updatedAt: now() } });
+      await setStatus(tx, row, 'rejected', { rejectionReason: reason, rejectedAt: now(), endedAt: now() });
+      await appendOrchestrationEvent(tx, id, 'rejected', 'user', null, { reason });
+    });
+    publishOrchestration({ orchestrationId: id, taskId: row.taskId, status: 'rejected' });
+    await recordLearningSignal(id, { kind: 'reject', reason });
     return this.get(id);
   }
   /** Explicit user click only. The node pushes mechanically with the user's local credentials. */
@@ -320,8 +336,8 @@ export class OrchestrationService {
   }
   /** Old round is kept intact (rows, local worktrees, branches); a new draft round is planned from current task content. */
   async redispatch(id: string) {
-    const row = await this.requireStatus(id, ['running', 'paused', 'awaiting_acceptance', 'accepted', 'cancelled']);
-    if (row.status !== 'accepted' && row.status !== 'cancelled') {
+    const row = await this.requireStatus(id, ['running', 'paused', 'awaiting_acceptance', 'accepted', 'cancelled', 'rejected']);
+    if (row.status !== 'accepted' && row.status !== 'cancelled' && row.status !== 'rejected') {
       await prisma.$transaction(async (tx) => {
         await tx.nodeJob.updateMany({ where: { orchestrationId: id, status: { in: [...activeJobStatuses, 'lost'] } }, data: { status: 'cancelled', error: '已重新派发', endedAt: now(), updatedAt: now() } });
         await setStatus(tx, row, 'superseded', { endedAt: now() });
@@ -344,13 +360,13 @@ function runPayload(row: Orchestration, grant: Grant, input: { worktree: RunPayl
   return { repoPath: input.repoPath ?? row.repoPath, provider: grant.provider, permissions: { profile: input.profile ?? 'workspace_write', allowShell: grant.allowShell }, gitWrite: input.gitWrite, worktree: input.worktree, prompt: input.prompt, expect: input.expect ?? { includes: [] }, fetch: input.fetch ?? [], ...(input.publish ? { publish: { remote: grant.remote ?? 'origin' } } : {}) };
 }
 
-async function dispatch(row: Orchestration, step: OrchestrationStep, phase: string, dispatchKey: string, payload: unknown, kind: 'prepare' | 'run', status: string, extra: Partial<OrchestrationStep> = {}) {
+async function dispatch(row: Orchestration, step: OrchestrationStep, phase: string, dispatchKey: string, payload: unknown, kind: 'prepare' | 'run', status: string, extra: Partial<OrchestrationStep> = {}, eventExtra: Record<string, unknown> = {}) {
   const nodeId = extra.nodeId ?? step.nodeId ?? row.nodeId!;
   return prisma.$transaction(async (tx) => {
     const { job, replay } = await enqueueJob(tx, { nodeId, kind, phase, dispatchKey, payload, orchestrationId: row.id, stepId: step.id });
     const changed = await tx.orchestrationStep.updateMany({ where: { id: step.id, status: step.status }, data: { status, lastJobId: job.id, ...extra, updatedAt: now() } });
     if (!changed.count) throw new Error('STEP_RACE');
-    if (!replay) await appendOrchestrationEvent(tx, row.id, 'dispatched', 'server', step.id, { jobId: job.id, kind, phase, dispatchKey, nodeId });
+    if (!replay) await appendOrchestrationEvent(tx, row.id, 'dispatched', 'server', step.id, { jobId: job.id, kind, phase, dispatchKey, nodeId, ...eventExtra });
     return job;
   });
 }
@@ -369,6 +385,7 @@ export async function tickOrchestration(id: string) {
 
 async function tickOnce(id: string) {
   // Process finished jobs first (also after a restart), then dispatch whatever became ready.
+  const priorCache = new Map<string, DigestRound[]>();
   for (let guard = 0; guard < 20; guard++) {
     const row = await prisma.orchestration.findUnique({ where: { id }, include: { steps: { orderBy: { position: 'asc' } } } });
     if (!row) return;
@@ -376,7 +393,7 @@ async function tickOnce(id: string) {
     if (row.status !== 'running') { if (!progressed) return; continue; }
     const fresh = await prisma.orchestration.findUniqueOrThrow({ where: { id }, include: { steps: { orderBy: { position: 'asc' } } } });
     if (fresh.status !== 'running') continue;
-    const dispatched = await dispatchReady(fresh, fresh.steps);
+    const dispatched = await dispatchReady(fresh, fresh.steps, priorCache);
     if (!progressed && !dispatched) return;
   }
 }
@@ -387,7 +404,7 @@ async function processFinishedJobs(row: Orchestration, steps: OrchestrationStep[
     if (!['dispatched', 'verifying'].includes(step.status) || !step.lastJobId) continue;
     const job = await prisma.nodeJob.findUnique({ where: { id: step.lastJobId } });
     if (!job || !['done', 'failed'].includes(job.status)) continue;
-    if (row.status === 'cancelled' || row.status === 'superseded') continue;
+    if (row.status === 'cancelled' || row.status === 'superseded' || row.status === 'rejected') continue;
     await handleJob(row, step, job);
     progressed = true;
   }
@@ -562,7 +579,16 @@ async function developFailure(row: Orchestration, step: OrchestrationStep, job: 
   void job;
 }
 
-async function dispatchReady(row: Orchestration, steps: OrchestrationStep[]) {
+async function priorFor(row: Orchestration, subtaskTitle: string, priorCache: Map<string, DigestRound[]>) {
+  let rounds = priorCache.get(row.id);
+  if (!rounds) {
+    rounds = await loadPriorRounds(row.taskId, row.id);
+    priorCache.set(row.id, rounds);
+  }
+  return priorRoundDigest(rounds, { subtaskTitle });
+}
+
+async function dispatchReady(row: Orchestration, steps: OrchestrationStep[], priorCache: Map<string, DigestRound[]>) {
   if (!row.nodeId) return false;
   const grant = decode<Grant>(row.grantJson);
   const snapshot = decode<Snapshot>(row.taskSnapshotJson);
@@ -601,9 +627,10 @@ async function dispatchReady(row: Orchestration, steps: OrchestrationStep[]) {
     const transfer = remote && !continuing ? { remote: grant.remote ?? 'origin', ref: row.integrationBranch, expect: base } : undefined;
     const worktree: RunPayload['worktree'] = continuing ? { existing: step.workPath! } : { create: { branch, startPoint: base, worktreeName: `${row.id}/${shortId(subtask.id)}-a${step.attempt}`, ...(transfer ? { fetch: transfer } : {}) } };
     const key = `orch:${step.id}:a${step.attempt}:work:c${step.continueCount}:r${step.retryCount}`;
-    const payload = runPayload(row, grant, { worktree, repoPath: target.path, publish: remote, prompt: developPrompt({ main: snapshot.main, subtask, acceptanceCriteria: step.acceptanceCriteria, branch, feedback: step.feedback, allowShell: grant.allowShell }), gitWrite: true, expect: { includes: [base], base, branch } });
+    const priorSummary = await priorFor(row, subtask.title, priorCache);
+    const payload = runPayload(row, grant, { worktree, repoPath: target.path, publish: remote, prompt: developPrompt({ main: snapshot.main, subtask, acceptanceCriteria: step.acceptanceCriteria, branch, feedback: step.feedback, allowShell: grant.allowShell, priorSummary }), gitWrite: true, expect: { includes: [base], base, branch } });
     const revision = await updateTaskStatus(subtask.id, 'doing', row.id);
-    await dispatch(row, step, 'work', key, payload, 'run', 'dispatched', { branch, baseCommit: base, lastTaskRevision: revision ?? latest?.revision ?? null, nodeId: target.nodeId, locationId: target.locationId, repoPath: target.path });
+    await dispatch(row, step, 'work', key, payload, 'run', 'dispatched', { branch, baseCommit: base, lastTaskRevision: revision ?? latest?.revision ?? null, nodeId: target.nodeId, locationId: target.locationId, repoPath: target.path }, { priorSummaryLength: priorSummary.length });
     load.set(target.nodeId, (load.get(target.nodeId) ?? 0) + 1);
     running++; dispatched = true;
   }
@@ -626,8 +653,9 @@ async function dispatchReady(row: Orchestration, steps: OrchestrationStep[]) {
       const remoteName = grant.remote ?? 'origin';
       const fetch: FetchSpec[] = fromRemote ? [{ remote: remoteName, ref: next.branch!, expect: next.resultCommit! }] : [];
       const subtaskBranch = fromRemote ? `${remoteName}/${next.branch!}` : next.branch!;
-      const payload = runPayload(row, grant, { worktree: { existing: row.integrationPath! }, fetch, prompt: mergePrompt({ integrationBranch: row.integrationBranch, subtaskBranch, resultCommit: next.resultCommit!, subtask, allowShell: grant.allowShell, feedback: next.feedback }), gitWrite: true, expect: { includes: [next.resultCommit!, row.integrationHead], branch: row.integrationBranch } });
-      await dispatch(row, next, 'work', `orch:${next.id}:a${next.attempt}:work`, payload, 'run', 'dispatched', { preMergeHead: row.integrationHead });
+      const priorSummary = await priorFor(row, subtask.title, priorCache);
+      const payload = runPayload(row, grant, { worktree: { existing: row.integrationPath! }, fetch, prompt: mergePrompt({ integrationBranch: row.integrationBranch, subtaskBranch, resultCommit: next.resultCommit!, subtask, allowShell: grant.allowShell, feedback: next.feedback, priorSummary }), gitWrite: true, expect: { includes: [next.resultCommit!, row.integrationHead], branch: row.integrationBranch } });
+      await dispatch(row, next, 'work', `orch:${next.id}:a${next.attempt}:work`, payload, 'run', 'dispatched', { preMergeHead: row.integrationHead }, { priorSummaryLength: priorSummary.length });
       dispatched = true;
     }
   }
