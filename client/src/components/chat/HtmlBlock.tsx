@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from 'next-themes';
@@ -8,7 +8,7 @@ import { api } from '@/lib/api.js';
 import { Button } from '@/components/ui/button.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import type { ContentBlock } from '@/lib/message-blocks.js';
-import { buildCsp, buildSrcdoc, clampHeight, DEFAULT_HEIGHT, FILL_THROTTLE_MS, readBridgeMessage, themeCss, type SandboxTheme } from '@/lib/html-sandbox.js';
+import { buildCsp, buildSrcdoc, clampHeight, createNavigationGuard, createNonce, DEFAULT_HEIGHT, FILL_THROTTLE_MS, readBridgeMessage, themeCss, type SandboxTheme } from '@/lib/html-sandbox.js';
 import { save, VisualFrame } from './VisualizationBlock.js';
 import { useAssistantInput } from './assistant-input.js';
 
@@ -32,16 +32,28 @@ function HtmlFrame({ block, cdn, theme, maxHeight, title }: { block: ContentBloc
   const input = useAssistantInput();
   const [height, setHeight] = useState(() => clampHeight(block.height ?? DEFAULT_HEIGHT, maxHeight));
   const [blocked, setBlocked] = useState(false);
+  const [hidden, setHidden] = useState(false);
   const lastFill = useRef(0);
   // The document is built once per mount: theme changes are pushed by message so the page keeps its state.
-  const [srcDoc] = useState(() => buildSrcdoc(block.source ?? '', { cdn, theme }));
-  const loads = useRef(0);
-  useEffect(() => {
+  const [{ nonce, srcDoc }] = useState(() => {
+    const created = createNonce();
+    return { nonce: created, srcDoc: buildSrcdoc(block.source ?? '', { cdn, theme, nonce: created }) };
+  });
+  const [guard] = useState(() => createNavigationGuard({
+    setTimer: (callback, delayMs) => window.setTimeout(callback, delayMs),
+    clearTimer: (handle) => window.clearTimeout(handle),
+    onHide: () => setHidden(true),
+    onShow: () => setHidden(false),
+    onBlock: () => setBlocked(true),
+  }));
+  // Layout, not passive effect: the listener must be in place before the iframe load message arrives.
+  useLayoutEffect(() => {
     const onMessage = (event: MessageEvent) => {
       const own = frame.current?.contentWindow;
-      if (!own || event.source !== own) return;
+      if (!own || event.source !== own || event.origin !== 'null') return;
       const message = readBridgeMessage(event.data);
-      if (!message) return;
+      if (!message || message.nonce !== nonce) return;
+      if (message.type === 'ready') { guard.ready(); return; }
       if (message.type === 'resize') { setHeight(clampHeight(message.height, maxHeight)); return; }
       // Filling needs a user who has interacted with this page, and is throttled.
       if (document.activeElement !== frame.current) return;
@@ -54,13 +66,13 @@ function HtmlFrame({ block, cdn, theme, maxHeight, title }: { block: ContentBloc
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [block.id, input, maxHeight, t]);
+  }, [block.id, guard, input, maxHeight, nonce, t]);
+  useLayoutEffect(() => () => guard.dispose(), [guard]);
   useEffect(() => { frame.current?.contentWindow?.postMessage({ type: 'wwa:theme', theme, css: themeCss(theme) }, '*'); }, [theme]);
   if (blocked) return <SourceFallback block={block} message={t('html.navigatedAway')} />;
   return <iframe ref={frame} title={title} data-testid="html-block-frame" sandbox="allow-scripts" srcDoc={srcDoc} referrerPolicy="no-referrer" allow="" {...{ csp: buildCsp(cdn) }}
-    className="block w-full border-0 bg-transparent" style={{ height }}
-    // Chromium also enforces the csp attribute on anything the frame navigates to; a second load means the page navigated itself, so stop it.
-    onLoad={() => { loads.current += 1; if (loads.current > 1) setBlocked(true); }} />;
+    className="block w-full border-0 bg-transparent" style={{ height, visibility: hidden ? 'hidden' : undefined }}
+    onLoad={() => guard.load()} />;
 }
 
 function exportDocument(block: ContentBlock, cdn: string[], theme: SandboxTheme, title: string) {

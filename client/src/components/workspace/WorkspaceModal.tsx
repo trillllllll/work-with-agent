@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode, type RefCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, History, Settings, Sparkles, Trash2, X } from 'lucide-react';
@@ -11,7 +11,7 @@ export type WorkspaceModalView = 'settings' | 'trash' | 'changes';
 type WorkspaceModalProps = {
   suspended?: boolean;
   assistantOpen?: boolean;
-  assistantSlot?: (node: HTMLDivElement | null) => void;
+  assistantSlot?: RefCallback<HTMLDivElement>;
   onOpenAssistant?: () => void;
   view: WorkspaceModalView;
   /** Below 1024px the modal is full screen: a settings list, detail pages, and a floating assistant button. */
