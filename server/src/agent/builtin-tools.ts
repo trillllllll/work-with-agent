@@ -222,8 +222,17 @@ export async function executeBuiltinTool(input: {
   run: { id: string; leaseToken: string; conversationId: string; assistantMessageId: string; sourceUserMessageId: string };
   toolCallId: string;
   clock?: Clock;
+  loadSkill?: boolean;
 }): Promise<BuiltinResult> {
   try {
+    if (input.name === 'load_skill') {
+      if (!input.loadSkill) return CAPABILITY_UNAVAILABLE;
+      const name = typeof input.args.name === 'string' ? input.args.name.trim() : '';
+      if (!name) return { success: false, code: 'NOT_FOUND' };
+      const skill = await prisma.skill.findFirst({ where: { name, enabled: true, deletedAt: null } });
+      if (!skill) return { success: false, code: 'NOT_FOUND' };
+      return { success: true, data: { skillId: skill.id, name: skill.name, revision: skill.revision, description: skill.description, instructions: skill.instructions } };
+    }
     if (!isBuiltinTool(input.name)) return CAPABILITY_UNAVAILABLE;
     const args = input.args;
     if (input.name === 'image_search') return { success: true, data: await searchImages(args) };
@@ -269,7 +278,7 @@ export async function executeBuiltinTool(input: {
     }
     if (input.name === 'get_change_schema') {
       const family = args.family;
-      if (family !== 'workspace' && family !== 'library' && family !== 'memory') throw new DomainError('INVALID_TOOL_ARGUMENTS', 'family 无效', 400);
+      if (family !== 'workspace' && family !== 'library' && family !== 'memory' && family !== 'skill') throw new DomainError('INVALID_TOOL_ARGUMENTS', 'family 无效', 400);
       return { success: true, data: changeSchemaDocument(family, typeof args.kind === 'string' ? args.kind : undefined) };
     }
     if (input.name === 'prepare_external_prompt') {

@@ -14,6 +14,7 @@
     "proposals": "Review queue",
     "knowledge": "Work context",
     "library": "Library",
+    "skills": "Skills",
     "runs": "AI runs",
     "reviews": "Reviews",
     "plan": "Plan",
@@ -81,7 +82,8 @@
     "memoryRead": "Read memory",
     "getChangeSchema": "Change notes",
     "proposeChanges": "Change proposal",
-    "prepareExternalPrompt": "External prompt"
+    "prepareExternalPrompt": "External prompt",
+    "loadSkill": "Use skill"
   },
   "operation": {
     "taskCreate": "Create task",

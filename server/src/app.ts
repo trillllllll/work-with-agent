@@ -29,6 +29,7 @@ import { isValidVisibleViews, type MobileNavigationView } from './domain/mobile-
 import { readMobileNavigation, writeMobileNavigation } from './application/mobile-navigation.js';
 import { generateExternalReview } from './runner/review-generator.js';
 import { localeMiddleware, translateMessage, translatePayload } from './i18n/index.js';
+import { createSkill, deleteSkill, diffSkill, draftSkill, getSkill, getSkillVersion, importSkill, listSkills, registerSkillCommands, restoreSkill, rollbackSkill, updateSkill } from './application/skills.js';
 
 export const app = express();
 app.use(cors(corsOptions));
@@ -38,6 +39,7 @@ app.use(localeMiddleware);
 registerKnowledgeCommands();
 registerGraphCommands();
 registerLibraryCommands();
+registerSkillCommands();
 app.use('/api/v1', securityRouter);
 app.use('/api/v1', identityMiddleware);
 app.use('/api/v1/connections', connectionRouter);
@@ -49,6 +51,51 @@ export const reviewService = new ReviewService(new OrganizationService(), genera
 app.use('/api/v1/reviews', createReviewsRouter(reviewService));
 // Existing browser endpoints remain available only to authenticated owner sessions.
 app.use('/api', identityMiddleware, ownerMiddleware, legacyMutationMiddleware);
+
+const queryText = (value: unknown) => typeof value === 'string' ? value : undefined;
+const queryFlag = (value: unknown) => value === 'true' ? true : value === 'false' ? false : undefined;
+const queryInt = (value: unknown) => typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : Number.NaN;
+app.get('/api/skills', async (req, res, next) => {
+  try {
+    send(res, await listSkills({ q: queryText(req.query.q), enabled: queryFlag(req.query.enabled), origin: queryText(req.query.origin), deleted: req.query.deleted === 'true' }));
+  } catch (error) { next(error); }
+});
+app.post('/api/skills/import', async (req, res, next) => {
+  try {
+    const body = req.body ?? {};
+    const skill = await importSkill({ markdown: body.markdown, resolution: body.resolution, expectedRevision: body.expectedRevision, name: body.name });
+    res.status(skill.revision === 1 ? 201 : 200).json({ data: await getSkill(skill.id), error: null });
+  } catch (error) { next(error); }
+});
+app.post('/api/skills/draft', async (req, res, next) => {
+  try { send(res, await draftSkill(String(req.body?.conversationId ?? ''))); } catch (error) { next(error); }
+});
+app.post('/api/skills', async (req, res, next) => {
+  try {
+    const body = req.body ?? {};
+    const skill = await createSkill({ name: body.name, description: body.description, instructions: body.instructions, enabled: body.enabled, reason: body.reason, fromApproval: body.fromApproval });
+    res.status(201).json({ data: await getSkill(skill.id), error: null });
+  } catch (error) { next(error); }
+});
+app.get('/api/skills/:id/versions/:rev', async (req, res, next) => { try { send(res, await getSkillVersion(String(req.params.id), queryInt(req.params.rev))); } catch (error) { next(error); } });
+app.get('/api/skills/:id/diff', async (req, res, next) => { try { send(res, await diffSkill(String(req.params.id), queryInt(req.query.from), queryInt(req.query.to))); } catch (error) { next(error); } });
+app.get('/api/skills/:id', async (req, res, next) => { try { send(res, await getSkill(String(req.params.id))); } catch (error) { next(error); } });
+app.patch('/api/skills/:id', async (req, res, next) => {
+  try {
+    const body = req.body ?? {};
+    const skill = await updateSkill(String(req.params.id), { expectedRevision: body.expectedRevision, name: body.name, description: body.description, instructions: body.instructions, enabled: body.enabled, reason: body.reason, fromApproval: body.fromApproval });
+    send(res, await getSkill(skill.id));
+  } catch (error) { next(error); }
+});
+app.post('/api/skills/:id/rollback', async (req, res, next) => {
+  try {
+    const body = req.body ?? {};
+    const skill = await rollbackSkill(String(req.params.id), { expectedRevision: body.expectedRevision, targetRevision: body.targetRevision, reason: body.reason });
+    send(res, await getSkill(skill.id));
+  } catch (error) { next(error); }
+});
+app.delete('/api/skills/:id', async (req, res, next) => { try { send(res, await deleteSkill(String(req.params.id), queryInt(req.query.expectedRevision))); } catch (error) { next(error); } });
+app.post('/api/skills/:id/restore', async (req, res, next) => { try { send(res, await getSkill((await restoreSkill(String(req.params.id))).id)); } catch (error) { next(error); } });
 
 const topics = new TopicService();
 const tasks = new TaskService();

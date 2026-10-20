@@ -119,6 +119,11 @@
     "saved": "图片搜索密钥已保存，实际搜索时会验证服务",
     "cleared": "图片搜索密钥已清除"
   },
+  "skillsCard": {
+    "title": "技能",
+    "description": "新建、导入和管理 AI 助手的技能。",
+    "manage": "管理技能 →"
+  },
   "mobileNavigation": {
     "title": "功能模块",
     "description": "选择手机底栏入口，拖动调整顺序。更多固定在最右侧。",

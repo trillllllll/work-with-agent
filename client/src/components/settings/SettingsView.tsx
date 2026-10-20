@@ -113,6 +113,11 @@ export function SettingsView({ onBack }: { onBack?: () => void }) {
       {!settingsQuery.isError && (
         <>
           <ImageSearchSettings />
+          <section className="mt-10 border-t glass-divider pt-6">
+            <h2 className="text-lg font-semibold">{t('skillsCard.title')}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{t('skillsCard.description')}</p>
+            <Button variant="outline" className="mt-3" onClick={() => { window.location.hash = '/skills'; }}>{t('skillsCard.manage')}</Button>
+          </section>
           <CliCommands settings={settingsQuery.data} />
 
           <BackupSection />

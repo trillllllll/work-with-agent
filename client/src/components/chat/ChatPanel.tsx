@@ -13,6 +13,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ChatHistory, ChatReferencePicker } from './ChatPickers.js';
 import { Button } from '@/components/ui/button.js';
 import { MessageList } from './MessageList.js';
+import { useState } from 'react';
+import { toast } from 'sonner';
+import { openSkillEditor } from '@/components/skills/skill-format.js';
 import { ChatComposer } from './ChatComposer.js';
 
 type ChatPanelProps = {
@@ -29,6 +32,20 @@ export function ChatPanel({ chat, onClose, mobile, presentation = 'side', onExpa
   const action = usePlatformAction();
   const settings = useQuery<Settings>({ queryKey: ['settings'], queryFn: () => api('/api/settings') });
   const configured = Boolean(settings.data?.model && settings.data?.baseUrl && settings.data?.apiKeyConfigured);
+  const [drafting, setDrafting] = useState(false);
+  const saveAsSkill = async () => {
+    if (!chat.conversationId || drafting) return;
+    setDrafting(true);
+    const pending = toast.loading(t('chatPanel.draftingSkill'));
+    try {
+      const draft = await api<{ name: string; description: string; instructions: string }>('/api/skills/draft', { method: 'POST', body: json({ conversationId: chat.conversationId }) });
+      toast.dismiss(pending);
+      openSkillEditor({ draft: { ...draft, enabled: true } });
+    } catch (error) {
+      toast.dismiss(pending);
+      toast.error(error instanceof Error ? error.message : t('chatPanel.draftSkillFailed'));
+    } finally { setDrafting(false); }
+  };
   const { messages, approvals, busy, interrupted, input, setInput, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference, showRepreview } = chat;
   const materialCount = chat.context?.selectedMaterialIds.length ?? 0;
   return (
@@ -40,6 +57,7 @@ export function ChatPanel({ chat, onClose, mobile, presentation = 'side', onExpa
         <Button variant="ghost" size="icon-sm" disabled={busy || Boolean(executingApprovalId)} onClick={startNew} aria-label={t('chatPanel.newConversation')} title={t('chatPanel.newConversation')}><SquarePen /></Button>
         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={t('chatPanel.moreActions')} title={t('chatPanel.moreActions')}><Ellipsis /></Button></DropdownMenuTrigger><DropdownMenuContent data-assistant-floating align="end">
           <DropdownMenuItem disabled={busy || action.busy || !chat.conversationId || !messages.length} onSelect={() => void action.run(() => api('/api/v1/knowledge/materials/from-conversation', { method: 'POST', body: json({ conversationId: chat.conversationId, topicId: chat.selectedTopicId || null, title: t('chatPanel.sessionMaterialTitle', { time: new Date().toLocaleString(intlLocale()) }) }) }), t('chatPanel.sessionSaved'))}>{t('chatPanel.saveSession')}</DropdownMenuItem>
+          <DropdownMenuItem disabled={busy || drafting || !chat.conversationId || !messages.length} onSelect={() => void saveAsSkill()}>{t('chatPanel.saveAsSkill')}</DropdownMenuItem>
         </DropdownMenuContent></DropdownMenu>
         {presentation === 'side' && <Button variant="ghost" size="icon-sm" onClick={onExpand} aria-label={t('chatPanel.expand')} title={t('chatPanel.expand')}><Maximize2 /></Button>}
         {presentation === 'expanded' && <Button variant="ghost" size="icon-sm" onClick={onShrink} aria-label={t('chatPanel.shrink')} title={t('chatPanel.shrink')}><Minimize2 /></Button>}

@@ -12,7 +12,7 @@ export const cjk = /[\u3400-\u9fff\uf900-\ufaff\u3000-\u303f\uff00-\uffef]/;
 
 // callee name -> index of its message argument
 const messageCallees = new Map(Object.entries({
-  DomainError: 1, Error: 0, knowledgeFailure: 1, libraryError: 1, failure: 1, fail: 1,
+  DomainError: 1, Error: 0, knowledgeFailure: 1, libraryError: 1, skillFailure: 1, failure: 1, fail: 1,
   badRequest: 0, notFound: 0, conflict: 0, modelError: 0, pathError: 0, invalid: 0, unavailable: 0, pauseOwned: 3,
   assertExpected: 2, requireResource: 1, failJob: 2, localize: 0,
   // zod validation messages, which reach the client in VALIDATION_ERROR / INVALID_* responses

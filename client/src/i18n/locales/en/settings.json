@@ -120,6 +120,11 @@
     "saved": "Image search key saved. The service is checked on the next search.",
     "cleared": "Image search key cleared"
   },
+  "skillsCard": {
+    "title": "Skills",
+    "description": "Create, import, and manage skills for the AI assistant.",
+    "manage": "Manage skills →"
+  },
   "mobileNavigation": {
     "title": "Features",
     "description": "Choose shortcuts for the phone tab bar and drag to reorder. More stays pinned on the right.",

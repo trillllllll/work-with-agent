@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyApprovalEvent, applyMessageEvent, approvalsOnMessage, groupToolActivities, isReadOnlyTool, pairToolMessages, parseSseFrame, toolPreview, unplacedApprovals, type ToolActivity } from './chat.js';
+import { applyApprovalEvent, reviewStatusCopy, applyMessageEvent, approvalsOnMessage, groupToolActivities, isReadOnlyTool, pairToolMessages, parseSseFrame, toolPreview, unplacedApprovals, type ToolActivity } from './chat.js';
 
 describe('chat SSE state', () => {
   it('parses a framed SSE delta and incrementally completes an assistant message', () => {
@@ -120,5 +120,23 @@ describe('chat SSE state', () => {
     expect(approvalsOnMessage(message, [oldApproval, nextApproval, orphan]).map((item) => item.approvalId)).toEqual(['old', 'new']);
     expect(unplacedApprovals([message], [oldApproval, nextApproval, orphan]).map((item) => item.approvalId)).toEqual(['orphan']);
     expect(unplacedApprovals([message], [oldApproval, nextApproval, orphan, orphan])).toHaveLength(1);
+  });
+});
+
+describe('load_skill rows', () => {
+  it('keeps a finished load_skill out of the 查询了 N 项 group and names the version', () => {
+    const read: ToolActivity = { toolCallId: 'q', name: 'query_tasks', arguments: {}, status: 'done', preview: '已读取' };
+    const skill: ToolActivity = { toolCallId: 's', name: 'load_skill', arguments: { name: '周报' }, status: 'done', preview: toolPreview('load_skill', { name: '周报' }, { success: true, data: { name: '周报', revision: 2, instructions: '步骤' } }, 'done') };
+    expect(skill.preview).toBe('周报 v2');
+    expect(isReadOnlyTool('load_skill', {})).toBe(false);
+    const groups = groupToolActivities([read, skill, read]);
+    expect(groups.map((group) => group.kind)).toEqual(['run', 'call', 'run']);
+    expect(toolPreview('load_skill', { name: '周报' }, { success: false, code: 'NOT_FOUND' }, 'error')).toBe('没有找到这个技能，或它已停用');
+    expect(toolPreview('load_skill', { name: '周报' }, null, 'running')).toBe('正在读取技能');
+  });
+
+  it('shows an editor save as saved, not as cancelled', () => {
+    const approval = { approvalId: 'a', toolName: 'propose_changes', arguments: {}, status: 'rejected', appOutcome: { status: 'rejected' as const, appliedOperationCount: 0 as const, code: 'SAVED_IN_EDITOR', message: '已在编辑器中修改并保存为 v1', completedAt: '' } };
+    expect(reviewStatusCopy('rejected', approval)).toBe('已在编辑器中修改并保存为 v1');
   });
 });

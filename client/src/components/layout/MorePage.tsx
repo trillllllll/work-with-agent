@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils.js';
 const groups: { id: 'views' | 'organize' | 'work' | 'system'; views: View[] }[] = [
   { id: 'views', views: ['inbox', 'today', 'plan', 'focus', 'quadrant', 'topics'] },
   { id: 'organize', views: ['search', 'tags', 'archived'] },
-  { id: 'work', views: ['connections', 'proposals', 'knowledge', 'library', 'runs', 'reviews'] },
+  { id: 'work', views: ['connections', 'proposals', 'knowledge', 'library', 'skills', 'runs', 'reviews'] },
   { id: 'system', views: ['settings', 'trash', 'changes'] },
 ];
 

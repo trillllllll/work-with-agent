@@ -6,6 +6,9 @@ import { reviewCardState, reviewStatusCopy } from '@/chat.js';
 import type { AppReviewEntity } from '../../../../server/src/domain/task-batch-types.js';
 import { api } from '@/lib/api.js';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible.js';
+import { SkillProposalDetails } from '@/components/skills/SkillProposalCard.js';
+import { SKILL_SAVED_EVENT, type SkillSavedDetail } from '@/components/skills/SkillEditor.js';
+import { isSkillOnlyReview, openSkillEditor, skillProposalEditorDetail } from '@/components/skills/skill-format.js';
 
 const CLIP = 240;
 
@@ -137,6 +140,18 @@ export function ReviewCard({ approval, phase = '', unknown = false, unresolved =
   const state = reviewCardState(approval, phase || localPhase, unknown);
   const review = approval.appReview;
   const entities = review?.entities ?? [];
+  const skillOnly = isSkillOnlyReview(entities);
+  useEffect(() => {
+    if (!skillOnly) return;
+    const saved = (event: Event) => { if ((event as CustomEvent<SkillSavedDetail>).detail?.approvalId === approval.approvalId) onChanged?.(); };
+    window.addEventListener(SKILL_SAVED_EVENT, saved);
+    return () => window.removeEventListener(SKILL_SAVED_EVENT, saved);
+  }, [skillOnly, approval.approvalId, onChanged]);
+  const editSkill = () => {
+    const previewHash = approval.previewHash || review?.previewHash;
+    if (!entities[0] || !previewHash || approval.proposalRevision == null) return;
+    openSkillEditor(skillProposalEditorDetail(entities[0], { approvalId: approval.approvalId, expectedProposalRevision: approval.proposalRevision, previewHash }));
+  };
   const conflict = state === 'failed' && approval.appOutcome?.status === 'failed' && approval.appOutcome.code === 'VERSION_CONFLICT';
   const canUndo = state === 'executed' && approval.appOutcome?.status === 'executed' && Boolean(approval.appOutcome.changeId) && review?.reversibility === 'supported';
   const decisionLocked = state === 'approving' || state === 'rejecting' || Boolean(busyAction);
@@ -169,6 +184,7 @@ export function ReviewCard({ approval, phase = '', unknown = false, unresolved =
     <div className="flex flex-wrap items-center gap-2"><Check size={16} className="shrink-0 text-green-700 dark:text-green-300" /><h2 className="min-w-0 flex-1 text-sm font-medium" tabIndex={-1}>{entities.length === 1 ? entities[0].titleAfter || entities[0].titleBefore || review?.title : review?.title}</h2><span className="text-xs text-muted-foreground" role="status">{reviewStatusCopy(state, approval, unresolved)}</span></div>
     <div className="mt-2 flex flex-wrap gap-3">
       {entities.length === 1 && entities[0].entityType === 'task' && entities[0].operation !== 'delete' && <button type="button" className="review-tech-trigger !mt-0" onClick={() => window.dispatchEvent(new CustomEvent('wwa-open-task', { detail: { taskId: entities[0].entityId } }))}>{t('review.viewTask')}</button>}
+      {skillOnly && <button type="button" className="review-tech-trigger !mt-0" onClick={() => { window.location.hash = '/skills'; }}>{t('review.viewSkill')}</button>}
       {canUndo && <button type="button" className="review-tech-trigger !mt-0" disabled={Boolean(busyAction)} onClick={() => void followUp('undo-preview')}>{t('actions.undo')}</button>}
       <button type="button" className="review-tech-trigger !mt-0" aria-expanded={showAll} onClick={() => setShowAll((value) => !value)}>{showAll ? t('review.collapseResult') : t('review.viewResult')}</button>
     </div>
@@ -177,7 +193,7 @@ export function ReviewCard({ approval, phase = '', unknown = false, unresolved =
   </section>;
   return (
     <section className="task-batch-card" aria-label={review?.title || t('review.proposal')} data-testid="approval-card" data-approval-id={approval.approvalId} data-state={state}>
-      <div className="review-heading"><span className="review-symbol"><ClipboardList size={18} /></span><div><span className="review-kicker">{approval.reversesApprovalId ? t('review.undoPreview') : t('review.changePreview')}</span><h2 className="task-batch-title" tabIndex={-1}>{review?.title || t('review.proposal')}</h2></div></div>
+      <div className="review-heading"><span className="review-symbol"><ClipboardList size={18} /></span><div><span className="review-kicker">{approval.reversesApprovalId ? t('review.undoPreview') : skillOnly ? t('review.skillPreview') : t('review.changePreview')}</span><h2 className="task-batch-title" tabIndex={-1}>{review?.title || t('review.proposal')}</h2></div></div>
       <p className="task-batch-status" data-tone={state === 'rejected' || state === 'superseded' || state === 'capability_removed' ? 'neutral' : state === 'approving' || state === 'rejecting' ? 'pending' : state} role="status">
         <span>{reviewStatusCopy(state, approval, unresolved)}</span>
       </p>
@@ -187,11 +203,12 @@ export function ReviewCard({ approval, phase = '', unknown = false, unresolved =
         {state === 'capability_removed' && <p className="task-batch-summary">{t('reviewStatus.capabilityRemoved')}</p>}
       </div>
       <p className="task-batch-summary" data-testid="approval-related">{relatedText(false)}</p>
-      {entities.length === 1 && <div className="review-overview"><h3>{entities[0].titleAfter || entities[0].titleBefore || t('review.untitled')}</h3>{entities[0].fields.filter((field) => ['topicId', 'scheduledStart', 'scheduledEnd', 'scheduledDate', 'scheduledTime', 'estimatedMinutes'].includes(field.key)).map((field) => <p key={field.key}><CalendarDays size={14} aria-hidden="true" /><span>{field.label}</span><strong>{field.afterText}</strong></p>)}</div>}
-      <Collapsible open={showAll} onOpenChange={setShowAll}>
+      {skillOnly && entities.map((entity) => <SkillProposalDetails key={entity.entityId} entity={entity} />)}
+      {!skillOnly && entities.length === 1 && <div className="review-overview"><h3>{entities[0].titleAfter || entities[0].titleBefore || t('review.untitled')}</h3>{entities[0].fields.filter((field) => ['topicId', 'scheduledStart', 'scheduledEnd', 'scheduledDate', 'scheduledTime', 'estimatedMinutes'].includes(field.key)).map((field) => <p key={field.key}><CalendarDays size={14} aria-hidden="true" /><span>{field.label}</span><strong>{field.afterText}</strong></p>)}</div>}
+      {!skillOnly && <Collapsible open={showAll} onOpenChange={setShowAll}>
         <CollapsibleTrigger className="review-tech-trigger">{showAll ? t('review.collapseAll') : t('review.allChanges', { count: entities.length })}</CollapsibleTrigger>
         <CollapsibleContent><ParentTrees entities={entities} /><div className="review-entities">{entities.map((entity) => <EntityBlock key={`${entity.entityType}:${entity.entityId}`} entity={entity} />)}</div></CollapsibleContent>
-      </Collapsible>
+      </Collapsible>}
       <Collapsible open={techOpen} onOpenChange={setTechOpen}>
         <CollapsibleTrigger className="review-tech-trigger">{t('review.technicalDetails')}</CollapsibleTrigger>
         <CollapsibleContent>
@@ -207,7 +224,8 @@ export function ReviewCard({ approval, phase = '', unknown = false, unresolved =
         <div className="task-batch-actions">
           <button type="button" className="task-batch-secondary" disabled={decisionLocked} onClick={cancel}>{t('actions.cancel')}</button>
           <button type="button" className="task-batch-secondary" disabled={decisionLocked} onClick={adjust}>{t('review.adjust')}</button>
-          <button type="button" className="task-batch-primary" disabled={decisionLocked} onClick={confirm}>{t('review.confirm')}</button>
+          {skillOnly && <button type="button" className="task-batch-secondary" disabled={decisionLocked || approval.proposalRevision == null} onClick={editSkill}>{t('review.editInEditor')}</button>}
+          <button type="button" className="task-batch-primary" disabled={decisionLocked} onClick={confirm}>{skillOnly ? t('review.confirmSave') : t('review.confirm')}</button>
         </div>
       )}
       {conflict && <div className="task-batch-actions"><button type="button" className="task-batch-primary" disabled={Boolean(busyAction)} onClick={() => void followUp('repreview')}>{t('review.repreview')}</button></div>}

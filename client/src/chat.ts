@@ -152,8 +152,23 @@ function readTitle(data: unknown) {
   return '';
 }
 
+/** load_skill stays out of READ_ONLY_TOOLS so it shows as its own skill-usage row. */
+export function skillUsagePreview(args: Record<string, unknown> = {}, result?: ToolResult | null, status?: ToolActivityStatus) {
+  if (status === 'running') return t('chat:toolPreview.skillReading');
+  if (status === 'error' || result?.success === false) {
+    if (result?.code === 'NOT_FOUND') return t('chat:toolPreview.skillNotFound');
+    if (result?.code === 'CAPABILITY_UNAVAILABLE') return t('chat:toolPreview.skillUnavailable');
+    return clip(result?.error || t('chat:toolPreview.skillReadFailed'));
+  }
+  const data = result?.data && typeof result.data === 'object' ? result.data as { name?: unknown; revision?: unknown } : {};
+  const name = typeof data.name === 'string' && data.name ? data.name : typeof args.name === 'string' ? args.name : '';
+  if (!name) return status === 'done' || result ? t('chat:toolPreview.read') : t('chat:toolPreview.skillReading');
+  return clip(typeof data.revision === 'number' ? `${name} v${data.revision}` : name);
+}
+
 export function toolPreview(name: string, args: Record<string, unknown> = {}, result?: ToolResult | null, status?: ToolActivityStatus) {
   if (status === 'rejected') return t('chat:toolPreview.rejected');
+  if (name === 'load_skill') return skillUsagePreview(args, result, status);
   if (status === 'error' || result?.success === false) return clip(result?.error || t('chat:toolPreview.runFailed'));
   if (name === 'propose_changes') return clip(typeof args.summary === 'string' && args.summary.trim() ? args.summary : t('chat:toolPreview.waitingConfirm'));
   if (name === 'prepare_external_prompt') return t('chat:toolPreview.promptReady');
@@ -550,6 +565,7 @@ export function reviewStatusCopy(state: ReviewCardState, approval: Approval, unr
     const count = approval.appOutcome?.status === 'executed' ? approval.appOutcome.appliedOperationCount : approval.appReview?.affectedEntityCount ?? 0;
     return t('chat:reviewStatus.updated', { count });
   }
+  if (state === 'rejected' && approval.appOutcome?.status === 'rejected' && approval.appOutcome.code === 'SAVED_IN_EDITOR') return approval.appOutcome.message || t('chat:reviewStatus.savedInEditor');
   if (state === 'rejected') return t('chat:reviewStatus.cancelled');
   if (state === 'failed' && approval.appOutcome?.status === 'failed' && approval.appOutcome.code === 'VERSION_CONFLICT') return t('chat:reviewStatus.conflict');
   if (state === 'failed') return t('chat:reviewStatus.notModified');

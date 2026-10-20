@@ -23,6 +23,7 @@ A personal task list that runs on your own machine. Codex, Claude Code, and Grok
 | AI connections | Issue a revocable credential to Codex, Claude Code, or Grok, and limit which lists it can see |
 | Review queue | AI writes stop here; data changes only after you accept them |
 | Work context, Library | Keep materials, sourced memories, and organized candidates |
+| Skills | Write a reusable procedure once. The built-in assistant sees only names and descriptions and loads the body when it needs it. Import SKILL.md, browse versions, and approve skills the assistant drafts. |
 | AI runs | Hand off a task with its goal, constraints, and acceptance criteria, then collect progress and results |
 | Reviews | Generate a daily or weekly report plus suggestions for the Review queue; rules are off by default |
 | Settings → Language | Switch the interface between 简体中文 and English. It follows your browser language by default, and your choice is saved on this device |

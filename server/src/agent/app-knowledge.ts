@@ -13,6 +13,7 @@ export const appKnowledge = [
   { id: 'tags', title: '标签', content: '标签页面管理任务标签，并按清单展示带指定标签的任务。资料库标签是独立体系，不与任务标签混用。' },
   { id: 'quadrant', title: '四象限', content: '四象限按优先级组织任务，支持显示或隐藏已完成任务。调整象限会改变任务优先级。' },
   { id: 'library', title: '资料库', content: '资料库独立管理文本、文件和链接，支持文件夹、标签、搜索、关联任务、版本预览。原件与提取文字分开显示；提取失败或未完成时无法用未提取内容回答。保存链接不等于读取网页。AI 用 library_read 先读元信息，再按版本分页读取正文，引用对应版本。' },
+  { id: 'skills', title: '技能', content: '技能页集中管理可复用做法。已启用的技能只把名称和描述放进助手目录；匹配时先用 load_skill 读取当前版本正文，再按正文执行。正文比资料和记忆更可信，但不能绕过确认。用户要求把做法整理成技能时，用 propose_changes 的 skill.create / skill.update 起草，确认后才写入。' },
   { id: 'knowledge', title: '工作上下文、简报与记忆', content: '工作上下文按清单或收集箱组织固定说明、当前简报、记忆和建议。固定说明是工作约定；简报是当前工作摘要；已确认记忆保存稳定事实；对话摘要只帮助延续聊天。自动提炼的建议需要确认才成为正式记忆。资料库是独立入口。' },
   { id: 'settings', title: '设置与模型连接', content: '在设置中配置模型接口地址、模型名称和 API Key，可测试模型连接；也可配置移动导航和相关工作区偏好。没有可用模型时聊天无法生成回答。AI 的状态工具仅返回模型名称等白名单字段，不读取密钥或连接令牌。' },
   { id: 'connections', title: '外部连接', content: '连接页面管理外部 AI 宿主的连接及授权范围。已有同宿主连接时更新原连接，不重复创建。内置助手与外部连接的能力不同；不能假定内置助手能执行命令、浏览网页或操纵外部应用。' },
@@ -45,6 +46,7 @@ export async function readPageState(context: StoredChatContext) {
   if (context.page === 'settings') return { ...base, settings: await prisma.appSetting.findFirst({ select: { openaiModel: true, mobileNavigationJson: true } }) };
   if (context.page === 'connections') return { ...base, connections: await prisma.connection.findMany({ select: { id: true, name: true, host: true, status: true }, take: 100 }) };
   if (context.page === 'runs') return { ...base, handoffs: await prisma.handoff.findMany({ select: { id: true, taskId: true, status: true, provider: true, mode: true, createdAt: true, updatedAt: true }, orderBy: { createdAt: 'desc' }, take: 30 }), coverage: '最近 30 条' };
+  if (context.page === 'skills') return { ...base, skills: await prisma.skill.findMany({ where: { deletedAt: state.status === 'deleted' ? { not: null } : null }, select: { id: true, name: true, description: true, enabled: true, revision: true, origin: true }, orderBy: { updatedAt: 'desc' }, take: 50 }), coverage: '最近更新的 50 条，不含正文' };
   if (context.page === 'proposals') return { ...base, proposals: await prisma.proposal.findMany({ where: state.status && state.status !== 'all' ? { status: state.status } : {}, select: { id: true, status: true, revision: true, createdAt: true }, orderBy: { createdAt: 'desc' }, take: 30 }), coverage: '最近 30 条' };
   if (context.page === 'reviews') return { ...base, rules: await prisma.reviewRule.findMany({ select: { id: true, name: true, enabled: true, frequency: true, timeOfDay: true, timeZone: true } }), batches: await prisma.reviewBatch.findMany({ select: { id: true, ruleId: true, status: true, createdAt: true }, take: 30, orderBy: { createdAt: 'desc' } }), coverage: '最近 30 份回顾' };
   return base;

@@ -3,7 +3,7 @@ import type { ChatContextV3, ChatAttachment } from '../../../server/src/agent/ch
 import { t } from '../i18n/index.js';
 export type { ChatContextV3, ChatAttachment };
 
-const pageNameIds = ['inbox', 'board', 'today', 'plan', 'search', 'tags', 'library', 'knowledge', 'topics', 'quadrant', 'archived', 'trash', 'focus', 'settings', 'connections', 'proposals', 'changes', 'runs', 'reviews', 'more'] as const;
+const pageNameIds = ['inbox', 'board', 'today', 'plan', 'search', 'tags', 'library', 'knowledge', 'topics', 'quadrant', 'archived', 'trash', 'focus', 'settings', 'connections', 'skills', 'proposals', 'changes', 'runs', 'reviews', 'more'] as const;
 export const pageNames: Record<string, string> = {};
 for (const id of pageNameIds) Object.defineProperty(pageNames, id, { enumerable: true, get: () => t(`chat:pageNames.${id}`) });
 type PublishedContext = { page: string; value: Partial<ChatContextV3> };

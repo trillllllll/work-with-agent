@@ -43,7 +43,7 @@ export type TaskActivityEvent = { id: string; at: string; actor: { kind: 'user' 
 export type CliCommandSetting = { command: string; source: 'manual' | 'auto' | 'none'; version: string; checkedAt: string; manualCommand: string; autoCommand: string; discoveredCommand: string; discoveredVersion: string; applied: boolean; message: string };
 export type Settings = { baseUrl: string; model: string; apiKeyConfigured: boolean; apiKeyMasked: string | null; cli?: { codex: CliCommandSetting; claude: CliCommandSetting }; discovered?: Record<string, CliCommandSetting> };
 export type ApprovalResponse = { result?: ToolResult; assistantMessage?: string; assistantMessageId?: string; summaryError?: string; approval?: unknown; resumed?: boolean; run?: { id?: string; state?: string } | null };
-export type View = 'board' | 'quadrant' | 'chat' | 'topics' | 'inbox' | 'settings' | 'trash' | 'changes' | 'today' | 'search' | 'tags' | 'archived' | 'more' | 'connections' | 'proposals' | 'knowledge' | 'library' | 'runs' | 'reviews' | 'plan' | 'focus';
+export type View = 'board' | 'quadrant' | 'chat' | 'topics' | 'inbox' | 'settings' | 'trash' | 'changes' | 'today' | 'search' | 'tags' | 'archived' | 'more' | 'connections' | 'proposals' | 'knowledge' | 'library' | 'skills' | 'runs' | 'reviews' | 'plan' | 'focus';
 export type TimeBandColor = 'blue' | 'green' | 'orange' | 'purple' | 'pink' | 'gray';
 export type PlanTimeBand = {
   id: string;
@@ -77,7 +77,7 @@ export const toolLabels: Record<string, string> = labels({
   execute_shell: 'app:tool.executeShell', execute_file: 'app:tool.executeFile', execute_http: 'app:tool.executeHttp',
   memory: 'app:tool.memory', conversation_search: 'app:tool.conversationSearch', library: 'app:tool.library', propose_task_changes: 'app:tool.proposeTaskChanges',
   get_time: 'app:tool.getTime', get_work_context: 'app:tool.getWorkContext', query_tasks: 'app:tool.queryTasks', query_topics: 'app:tool.queryTopics', get_task_activity: 'app:tool.getTaskActivity',
-  search_workspace: 'app:tool.searchWorkspace', library_read: 'app:tool.libraryRead', memory_read: 'app:tool.memoryRead', get_change_schema: 'app:tool.getChangeSchema', propose_changes: 'app:tool.proposeChanges', prepare_external_prompt: 'app:tool.prepareExternalPrompt',
+  search_workspace: 'app:tool.searchWorkspace', library_read: 'app:tool.libraryRead', memory_read: 'app:tool.memoryRead', get_change_schema: 'app:tool.getChangeSchema', propose_changes: 'app:tool.proposeChanges', prepare_external_prompt: 'app:tool.prepareExternalPrompt', load_skill: 'app:tool.loadSkill',
 });
 export const API_URL = '';
 let csrfToken = '';
