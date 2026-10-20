@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY server/package.json server/
 COPY client/package.json client/
-RUN npm ci
+RUN npm ci && mkdir -p server/node_modules
 COPY server/prisma server/prisma
 RUN npx prisma generate --schema server/prisma/schema.prisma
 COPY server server
@@ -23,6 +23,7 @@ COPY --from=build /app/server/dist server/dist
 COPY --from=build /app/server/prisma server/prisma
 COPY --from=build /app/client/dist client-dist
 COPY --from=build /app/node_modules node_modules
+COPY --from=build /app/server/node_modules server/node_modules
 RUN npm prune --omit=dev \
   && npm install --no-save "prisma@$(node -p "require('./server/package.json').devDependencies.prisma")" \
   && npx prisma generate --schema server/prisma/schema.prisma

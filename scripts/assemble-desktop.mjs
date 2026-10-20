@@ -10,7 +10,7 @@ const nodeVersion = '22.13.0';
 const root = resolve(import.meta.dirname, '..');
 const resources = resolve(root, 'desktop/resources');
 const serverDir = resolve(resources, 'server');
-const runtimePackages = ['@modelcontextprotocol/sdk', '@napi-rs/canvas', '@prisma/client', 'cors', 'dotenv', 'exceljs', 'express', 'jszip', 'mdast-util-from-markdown', 'pdfjs-dist', 'prisma', 'sharp', 'zod'];
+const runtimePackages = ['@modelcontextprotocol/sdk', '@napi-rs/canvas', '@prisma/client', '@streamparser/json', '@xmldom/xmldom', 'cors', 'dotenv', 'exceljs', 'express', 'jszip', 'mdast-util-from-markdown', 'pdfjs-dist', 'prisma', 'sharp', 'undici', 'zod', 'zod-to-json-schema'];
 const platform = process.platform;
 const arch = process.arch;
 const target = platform === 'darwin' && arch === 'arm64'
@@ -40,7 +40,7 @@ if (Number(process.versions.node.split('.')[0]) < 22) {
 }
 
 function installedVersion(name) {
-  for (const base of [resolve(root, 'node_modules', name), resolve(root, 'server/node_modules', name)]) {
+  for (const base of [resolve(root, 'server/node_modules', name), resolve(root, 'node_modules', name)]) {
     try { return JSON.parse(readFileSync(resolve(base, 'package.json'), 'utf8')).version; }
     catch { /* Look in the other install location. */ }
   }
@@ -64,6 +64,7 @@ await ensureNode();
 const dependencies = Object.fromEntries(runtimePackages.map((name) => [name, installedVersion(name)]));
 const manifest = {
   name: 'work-with-agent-server',
+  version: JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')).version,
   private: true,
   type: 'module',
   dependencies,

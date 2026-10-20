@@ -1,4 +1,6 @@
 import type { FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
+import { tagColors } from '@/lib/api.js';
 import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
@@ -15,28 +17,33 @@ type TopicModalProps = {
 };
 
 export function TopicModal({ form, onChange, onClose, onSave, onDelete, busy = false }: TopicModalProps) {
+  const { t } = useTranslation('settings');
   const submit = (event: FormEvent) => { event.preventDefault(); onSave(); };
   return (
-    <FormDialog title={form.id ? '编辑清单' : '新建清单'} description="输入名称就可以开始记录任务。" onClose={onClose}>
+    <FormDialog title={form.id ? t('topicModal.editTitle') : t('topicModal.createTitle')} description={t('topicModal.description')} onClose={onClose}>
       <form onSubmit={submit}>
         <div className="mb-4">
-          <Label htmlFor="topic-name">清单名称</Label>
-          <Input id="topic-name" required value={form.name} onChange={(event) => onChange({ ...form, name: event.target.value })} placeholder="例如：Agent 工作室" />
+          <Label htmlFor="topic-name">{t('topicModal.name')}</Label>
+          <Input id="topic-name" required value={form.name} onChange={(event) => onChange({ ...form, name: event.target.value })} placeholder={t('topicModal.namePlaceholder')} />
         </div>
-        <details className="disclosure mb-4"><summary className="mb-3 cursor-pointer text-sm text-muted-foreground">探索属性与目标</summary><div className="mb-4">
-          <Label htmlFor="topic-description">描述</Label>
-          <Textarea id="topic-description" value={form.description ?? ''} onChange={(event) => onChange({ ...form, description: event.target.value })} placeholder="这个清单最终想形成什么结果？" />
+        <div className="mb-4">
+          <Label>{t('topicModal.color')}</Label>
+          <div className="flex items-center gap-1.5" role="group" aria-label={t('topicModal.colorGroup')}>{tagColors.map((color) => <button key={color.id} type="button" className="tag-color-swatch" data-color={color.id} aria-label={color.label} aria-pressed={(form.color || 'slate') === color.id} onClick={() => onChange({ ...form, color: color.id })} />)}</div>
         </div>
-        <div className="mb-4"><Label htmlFor="topic-goal">目标</Label><Input id="topic-goal" value={form.goal ?? ''} onChange={(event) => onChange({ ...form, goal: event.target.value })} /></div>
+        <details className="disclosure mb-4"><summary className="mb-3 cursor-pointer text-sm text-muted-foreground">{t('topicModal.exploration')}</summary><div className="mb-4">
+          <Label htmlFor="topic-description">{t('topicModal.descriptionLabel')}</Label>
+          <Textarea id="topic-description" value={form.description ?? ''} onChange={(event) => onChange({ ...form, description: event.target.value })} placeholder={t('topicModal.descriptionPlaceholder')} />
+        </div>
+        <div className="mb-4"><Label htmlFor="topic-goal">{t('topicModal.goal')}</Label><Input id="topic-goal" value={form.goal ?? ''} onChange={(event) => onChange({ ...form, goal: event.target.value })} /></div>
         <Label htmlFor="topic-exploration" className="mb-5 flex items-center gap-2 font-normal">
           <input id="topic-exploration" type="checkbox" className="size-3.5 accent-primary" checked={form.isExploration} onChange={(event) => onChange({ ...form, isExploration: event.target.checked })} />
-          当前仍在探索
+          {t('topicModal.stillExploring')}
         </Label></details>
         <div className="flex items-center justify-between gap-2 border-t pt-4">
-          {form.id && onDelete ? <Button type="button" variant="outline" disabled={busy} onClick={onDelete}>归档清单</Button> : <span />}
+          {form.id && onDelete ? <Button type="button" variant="outline" disabled={busy} onClick={onDelete}>{t('topicModal.archive')}</Button> : <span />}
           <div className="flex gap-2">
-          <Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button>
-          <Button disabled={busy}>{busy ? '正在保存…' : '保存清单'}</Button>
+          <Button type="button" variant="outline" disabled={busy} onClick={onClose}>{t('actions.cancel')}</Button>
+          <Button disabled={busy}>{busy ? t('topicModal.saving') : t('topicModal.save')}</Button>
           </div>
         </div>
       </form>

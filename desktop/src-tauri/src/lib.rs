@@ -1,3 +1,6 @@
+#[macro_use]
+mod i18n;
+
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
@@ -15,6 +18,7 @@ use std::os::windows::process::CommandExt;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, LogicalSize, Manager, RunEvent, Url, WindowEvent};
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_window_state::StateFlags;
 
 const DESKTOP_PORT: u16 = 47316;
@@ -23,6 +27,10 @@ const DESKTOP_PORT: u16 = 47316;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 struct ServerProcess(Mutex<Option<Child>>);
+/// The local executor (wwa-node) this app runs in the background once the user paired it.
+struct NodeProcess(Mutex<Option<Child>>);
+/// Cleared on exit or unpair so the watcher does not restart the executor.
+static NODE_WANTED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -66,11 +74,29 @@ pub fn run() {
                         open_launcher(webview.app_handle());
                         return false;
                     }
+                    // Sentinels used by the workspace (local or remote origin); none of them reaches a server.
+                    if path == "/wwa-notify" {
+                        let title = query_value(url, "title").unwrap_or_default();
+                        let body = query_value(url, "body").unwrap_or_default();
+                        notify(webview.app_handle(), &title, &body);
+                        return false;
+                    }
+                    if path == "/wwa-node-pair" {
+                        let server = query_value(url, "server").unwrap_or_default();
+                        let token = query_value(url, "token").unwrap_or_default();
+                        pair_node(webview.app_handle(), server, token);
+                        return false;
+                    }
+                    if path == "/wwa-node-unpair" {
+                        unpair_node(webview.app_handle());
+                        return false;
+                    }
                     true
                 })
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(
             // Omit VISIBLE. Exit persists is_visible(), so a hidden window would reopen hidden.
             tauri_plugin_window_state::Builder::default()
@@ -84,7 +110,8 @@ pub fn run() {
                 .build(),
         )
         .manage(ServerProcess(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![launcher_config_get, launcher_config_set, launcher_retry])
+        .manage(NodeProcess(Mutex::new(None)))
+        .invoke_handler(tauri::generate_handler![launcher_config_get, launcher_config_set, launcher_retry, desktop_notify])
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_min_size(Some(LogicalSize::new(578.0, 640.0)));
@@ -103,13 +130,18 @@ pub fn run() {
                 if let Err(message) = launch(&handle) {
                     show_message(&handle, message);
                 }
+                // Independent of the workspace mode: a paired executor always comes up with the app.
+                start_node_agent(&handle);
             });
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("启动 Work With Agent 失败")
+        .unwrap_or_else(|error| panic!("{}: {error}", tr!("启动 Work With Agent 失败", "Failed to start Work With Agent")))
         .run(|app, event| match event {
-            RunEvent::Exit => stop_server(app),
+            RunEvent::Exit => {
+                stop_node_agent(app);
+                stop_server(app);
+            }
             #[cfg(target_os = "macos")]
             RunEvent::Reopen { .. } => {
                 if let Some(window) = app.get_webview_window("main") {
@@ -138,7 +170,7 @@ fn launch_local(app: &AppHandle, data: &Path) -> Result<(), String> {
     }
     let (node, server, client) = bundled_paths(app)?;
     for directory in ["knowledge-blobs", "runner", "workspace", "logs", "bin"] {
-        fs::create_dir_all(data.join(directory)).map_err(|error| format!("无法创建数据目录：{error}"))?;
+        fs::create_dir_all(data.join(directory)).map_err(|error| tr!("无法创建数据目录：{error}", "Could not create the data folder: {error}"))?;
     }
     #[cfg(unix)]
     write_mcp_launcher(data, &node, &server.join("dist/mcp/index.js"))?;
@@ -162,9 +194,9 @@ fn launch_local(app: &AppHandle, data: &Path) -> Result<(), String> {
         .env_remove("NODE_OPTIONS");
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
-    let mut child = command.spawn().map_err(|error| format!("无法启动本机服务：{error}"))?;
-    let stdout = child.stdout.take().ok_or("无法读取服务输出")?;
-    let stderr = child.stderr.take().ok_or("无法读取服务错误输出")?;
+    let mut child = command.spawn().map_err(|error| tr!("无法启动本机服务：{error}", "Could not start the local service: {error}"))?;
+    let stdout = child.stdout.take().ok_or_else(|| tr!("无法读取服务输出", "Could not read the service output"))?;
+    let stderr = child.stderr.take().ok_or_else(|| tr!("无法读取服务错误输出", "Could not read the service error output"))?;
     app.state::<ServerProcess>().0.lock().expect("server lock").replace(child);
     watch_restart_codes(app);
     let recent = Arc::new(Mutex::new(String::new()));
@@ -193,8 +225,8 @@ fn launch_local(app: &AppHandle, data: &Path) -> Result<(), String> {
         let detail = recent.lock().expect("stderr lock").clone();
         let status = app.state::<ServerProcess>().0.lock().expect("server lock").as_mut().and_then(|child| child.try_wait().ok().flatten());
         match status {
-            Some(status) => format!("本机服务已退出（{status}）。{detail}"),
-            None => format!("本机服务没有在 60 秒内完成启动。{detail}"),
+            Some(status) => tr!("本机服务已退出（{status}）。{detail}", "The local service exited ({status}). {detail}"),
+            None => tr!("本机服务没有在 60 秒内完成启动。{detail}", "The local service did not finish starting within 60 seconds. {detail}"),
         }
     })?;
     println!("{line}");
@@ -219,22 +251,22 @@ fn launch_remote(app: &AppHandle, remote_url: &str) -> Result<(), String> {
             thread::sleep(Duration::from_secs(1));
         }
         if LAUNCH_CONFIRMED.load(Ordering::SeqCst) { return; }
-        show_launch_error(&handle, format!("{address} 没有在 30 秒内打开 Work With Agent 工作区。请核对这是否为正确的服务器地址。"));
+        show_launch_error(&handle, tr!("{address} 没有在 30 秒内打开 Work With Agent 工作区。请核对这是否为正确的服务器地址。", "{address} did not open a Work With Agent workspace within 30 seconds. Check that this is the right server address."));
     });
     Ok(())
 }
 
 /// Checks the remote workspace is reachable at the TCP level before navigating.
 fn probe_remote(remote_url: &str) -> Result<(), String> {
-    let parsed = remote_url.parse::<Url>().map_err(|_| format!("远程服务器地址无效：{remote_url}"))?;
+    let parsed = remote_url.parse::<Url>().map_err(|_| tr!("远程服务器地址无效：{remote_url}", "Invalid remote server address: {remote_url}"))?;
     if !matches!(parsed.scheme(), "http" | "https") {
-        return Err(format!("远程服务器地址必须以 http:// 或 https:// 开头：{remote_url}"));
+        return Err(tr!("远程服务器地址必须以 http:// 或 https:// 开头：{remote_url}", "The remote server address must start with http:// or https://: {remote_url}"));
     }
-    let port = parsed.port_or_known_default().ok_or("无法确定远程服务器端口")?;
-    let address = format!("{}:{}", parsed.host_str().ok_or("远程服务器地址缺少主机名")?, port);
-    let socket = address.to_socket_addrs().map_err(|error| format!("无法解析远程服务器地址 {address}：{error}"))?
-        .next().ok_or(format!("无法解析远程服务器地址 {address}"))?;
-    TcpStream::connect_timeout(&socket, Duration::from_secs(8)).map_err(|error| format!("无法连接远程服务器 {address}：{error}"))?;
+    let port = parsed.port_or_known_default().ok_or_else(|| tr!("无法确定远程服务器端口", "Could not determine the remote server port"))?;
+    let address = format!("{}:{}", parsed.host_str().ok_or_else(|| tr!("远程服务器地址缺少主机名", "The remote server address has no host name"))?, port);
+    let socket = address.to_socket_addrs().map_err(|error| tr!("无法解析远程服务器地址 {address}：{error}", "Could not resolve the remote server address {address}: {error}"))?
+        .next().ok_or_else(|| tr!("无法解析远程服务器地址 {address}", "Could not resolve the remote server address {address}"))?;
+    TcpStream::connect_timeout(&socket, Duration::from_secs(8)).map_err(|error| tr!("无法连接远程服务器 {address}：{error}", "Could not connect to the remote server {address}: {error}"))?;
     Ok(())
 }
 
@@ -249,9 +281,9 @@ fn read_launcher_config(data: &Path) -> Option<LauncherConfig> {
 }
 
 fn write_launcher_config(data: &Path, config: &LauncherConfig) -> Result<(), String> {
-    fs::create_dir_all(data).map_err(|error| format!("无法创建数据目录：{error}"))?;
+    fs::create_dir_all(data).map_err(|error| tr!("无法创建数据目录：{error}", "Could not create the data folder: {error}"))?;
     let text = serde_json::to_string_pretty(config).map_err(|error| error.to_string())?;
-    fs::write(launcher_config_path(data), text).map_err(|error| format!("无法保存启动配置：{error}"))
+    fs::write(launcher_config_path(data), text).map_err(|error| tr!("无法保存启动配置：{error}", "Could not save the launcher settings: {error}"))
 }
 
 #[tauri::command]
@@ -261,7 +293,7 @@ fn launcher_config_get() -> Result<Option<LauncherConfig>, String> {
 
 #[tauri::command]
 fn launcher_config_set(mode: String, remote_url: String) -> Result<(), String> {
-    if mode != "local" && mode != "remote" { return Err("未知启动模式".to_string()); }
+    if mode != "local" && mode != "remote" { return Err(tr!("未知启动模式", "Unknown launch mode")); }
     let remote_url = remote_url.trim().trim_end_matches('/').to_string();
     if mode == "remote" { probe_remote(&remote_url)?; }
     let config = if mode == "remote" { LauncherConfig { mode, remote_url } } else { LauncherConfig::local() };
@@ -320,11 +352,11 @@ fn watch_restart_codes(app: &AppHandle) {
 
 fn bundled_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf, PathBuf), String> {
     let root = app.path().resource_dir().map_err(|error| error.to_string())?;
-    let node = existing(&root, &["node.exe", "resources/node.exe", "node", "resources/node"]).ok_or_else(|| format!("安装包里没有 Node。查找目录：{}", root.display()))?;
-    let server_entry = existing(&root, &["server/dist/index.js", "resources/server/dist/index.js"]).ok_or_else(|| format!("安装包里没有服务。查找目录：{}", root.display()))?;
-    let client_entry = existing(&root, &["client/index.html", "resources/client/index.html"]).ok_or_else(|| format!("安装包里没有界面。查找目录：{}", root.display()))?;
-    let server = server_entry.parent().and_then(Path::parent).ok_or("无法定位服务目录")?.to_path_buf();
-    let client = client_entry.parent().ok_or("无法定位界面目录")?.to_path_buf();
+    let node = existing(&root, &["node.exe", "resources/node.exe", "node", "resources/node"]).ok_or_else(|| tr!("安装包里没有 Node。查找目录：{}", "Node is missing from the installation. Searched: {}", root.display()))?;
+    let server_entry = existing(&root, &["server/dist/index.js", "resources/server/dist/index.js"]).ok_or_else(|| tr!("安装包里没有服务。查找目录：{}", "The service is missing from the installation. Searched: {}", root.display()))?;
+    let client_entry = existing(&root, &["client/index.html", "resources/client/index.html"]).ok_or_else(|| tr!("安装包里没有界面。查找目录：{}", "The interface is missing from the installation. Searched: {}", root.display()))?;
+    let server = server_entry.parent().and_then(Path::parent).ok_or_else(|| tr!("无法定位服务目录", "Could not locate the service folder"))?.to_path_buf();
+    let client = client_entry.parent().ok_or_else(|| tr!("无法定位界面目录", "Could not locate the interface folder"))?.to_path_buf();
     Ok((node, server, client))
 }
 
@@ -344,13 +376,13 @@ fn data_dir() -> Result<PathBuf, String> {
         let base = std::env::var_os("LOCALAPPDATA")
             .or_else(|| std::env::var_os("APPDATA"))
             .or_else(|| std::env::var_os("USERPROFILE"))
-            .ok_or("找不到用户数据目录")?;
+            .ok_or_else(|| tr!("找不到用户数据目录", "Could not find the user data folder"))?;
         return Ok(PathBuf::from(base).join("work-with-agent"));
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        let home = std::env::var("HOME").map_err(|_| "找不到用户主目录")?;
+        let home = std::env::var("HOME").map_err(|_| tr!("找不到用户主目录", "Could not find the home folder"))?;
         return Ok(PathBuf::from(home).join("Library/Application Support/work-with-agent"));
     }
 }
@@ -359,7 +391,7 @@ fn data_dir() -> Result<PathBuf, String> {
 fn write_mcp_launcher(data: &Path, node: &Path, entry: &Path) -> Result<(), String> {
     let script = data.join("bin/wwa-mcp");
     let body = format!("#!/bin/bash\nexec {} {} \"$@\"\n", shell_quote(node), shell_quote(entry));
-    fs::write(&script, body).map_err(|error| format!("无法写入 MCP 启动脚本：{error}"))?;
+    fs::write(&script, body).map_err(|error| tr!("无法写入 MCP 启动脚本：{error}", "Could not write the MCP launcher script: {error}"))?;
     let mut permissions = fs::metadata(&script).map_err(|error| error.to_string())?.permissions();
     use std::os::unix::fs::PermissionsExt;
     permissions.set_mode(0o755);
@@ -388,7 +420,7 @@ fn show_message(app: &AppHandle, message: String) {
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         if let Some(window) = handle.get_webview_window("main") {
-            let text = serde_json::to_string(&message).unwrap_or_else(|_| "\"启动失败\"".to_string());
+            let text = serde_json::to_string(&message).unwrap_or_else(|_| format!("{:?}", tr!("启动失败", "Launch failed")));
             let _ = window.eval(&format!("const status = document.getElementById('status'); if (status) status.textContent = {text};"));
         }
         handle.dialog().message(&message).title("Work With Agent").blocking_show();
@@ -400,7 +432,7 @@ fn show_launch_error(app: &AppHandle, message: String) {
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         if let Some(window) = handle.get_webview_window("main") {
-            let text = serde_json::to_string(&message).unwrap_or_else(|_| "\"启动失败\"".to_string());
+            let text = serde_json::to_string(&message).unwrap_or_else(|_| format!("{:?}", tr!("启动失败", "Launch failed")));
             let _ = window.eval(&format!("window.wwaLaunchError && window.wwaLaunchError({text});"));
         }
     });
@@ -464,15 +496,191 @@ fn probe_port(port: u16) -> PortUser {
 }
 
 fn port_busy_message(user: PortUser, port: u16) -> Option<String> {
+    port_busy_message_in(i18n::lang(), user, port)
+}
+
+fn port_busy_message_in(lang: i18n::Lang, user: PortUser, port: u16) -> Option<String> {
     match user {
         PortUser::Free => None,
-        PortUser::Wwa => Some(format!(
-            "端口 {port} 已被本机另一个 Work With Agent 服务占用。请先退出已打开的 Work With Agent；若找不到已打开的窗口，可能是上次异常退出残留的服务，重启电脑后再试。"
+        PortUser::Wwa => Some(tr!(lang;
+            "端口 {port} 已被本机另一个 Work With Agent 服务占用。请先退出已打开的 Work With Agent；若找不到已打开的窗口，可能是上次异常退出残留的服务，重启电脑后再试。",
+            "Port {port} is already used by another Work With Agent service on this computer. Quit the open Work With Agent first; if you cannot find its window, a service may be left over from a crash, so restart the computer and try again."
         )),
-        PortUser::Foreign => Some(format!(
-            "端口 {port} 被其他程序占用，Work With Agent 无法启动。请找到占用该端口的程序并关闭后重试。"
+        PortUser::Foreign => Some(tr!(lang;
+            "端口 {port} 被其他程序占用，Work With Agent 无法启动。请找到占用该端口的程序并关闭后重试。",
+            "Port {port} is used by another program, so Work With Agent cannot start. Close the program using this port and try again."
         )),
     }
+}
+
+#[tauri::command]
+fn desktop_notify(app: AppHandle, title: String, body: String) -> Result<(), String> {
+    notify(&app, &title, &body);
+    Ok(())
+}
+
+fn query_value(url: &Url, key: &str) -> Option<String> {
+    url.query_pairs().find(|(name, _)| name == key).map(|(_, value)| value.into_owned())
+}
+
+fn clip(value: &str, max: usize) -> String {
+    value.chars().take(max).collect()
+}
+
+/// System notification for things that need the user (a round waits for acceptance, or paused).
+fn notify(app: &AppHandle, title: &str, body: &str) {
+    let title = clip(title.trim(), 120);
+    if title.is_empty() { return; }
+    let _ = app.notification().builder().title(title).body(clip(body.trim(), 400)).show();
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NodeAgentConfig {
+    server: String,
+    token: String,
+    roots: Vec<String>,
+    max_concurrent: u8,
+}
+
+fn node_dir(data: &Path) -> PathBuf {
+    data.join("node")
+}
+
+/// Only http(s) servers and base64url tokens; the folder picker is the user's confirmation of what the executor may touch.
+fn validate_pairing(server: &str, token: &str) -> Result<String, String> {
+    let server = server.trim().trim_end_matches('/').to_string();
+    let parsed = server.parse::<Url>().map_err(|_| "服务器地址无效".to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        return Err("服务器地址必须以 http:// 或 https:// 开头".to_string());
+    }
+    if token.len() < 20 || token.len() > 200 || !token.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err("执行端令牌格式无效".to_string());
+    }
+    Ok(server)
+}
+
+fn write_node_config(data: &Path, config: &NodeAgentConfig) -> Result<(), String> {
+    let dir = node_dir(data);
+    fs::create_dir_all(&dir).map_err(|error| format!("无法创建执行端目录：{error}"))?;
+    let path = dir.join("config.json");
+    let text = serde_json::to_string_pretty(config).map_err(|error| error.to_string())?;
+    fs::write(&path, text).map_err(|error| format!("无法保存执行端配置：{error}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
+}
+
+fn pair_node(app: &AppHandle, server: String, token: String) {
+    let server = match validate_pairing(&server, &token) {
+        Ok(server) => server,
+        Err(message) => { show_launch_error(app, message.clone()); notify(app, "本机执行端未启动", &message); return; }
+    };
+    let handle = app.clone();
+    app.dialog().file().set_title("选择允许本机执行端访问的代码目录").pick_folder(move |folder| {
+        let Some(folder) = folder.and_then(|item| item.into_path().ok()) else { return };
+        let result = data_dir().and_then(|data| write_node_config(&data, &NodeAgentConfig { server, token, roots: vec![folder.display().to_string()], max_concurrent: 2 }));
+        match result {
+            Ok(()) => {
+                stop_node_agent(&handle);
+                start_node_agent(&handle);
+                notify(&handle, "本机执行端已启动", &format!("允许目录：{}", folder.display()));
+            }
+            Err(message) => notify(&handle, "本机执行端未启动", &message),
+        }
+    });
+}
+
+fn unpair_node(app: &AppHandle) {
+    stop_node_agent(app);
+    if let Ok(data) = data_dir() {
+        let _ = fs::remove_file(node_dir(&data).join("config.json"));
+    }
+    notify(app, "本机执行端已停止", "已移除这台电脑上的执行端配置。服务端的令牌请在设置里吊销。");
+}
+
+/// Starts the paired executor (if any) with the bundled Node and keeps it running; restarts after crashes.
+fn start_node_agent(app: &AppHandle) {
+    let Ok(data) = data_dir() else { return };
+    let dir = node_dir(&data);
+    if !dir.join("config.json").exists() { return; }
+    let Ok((node, server, _client)) = bundled_paths(app) else { return };
+    let entry = server.join("dist/node-agent/index.js");
+    if !entry.exists() { return; }
+    let _ = fs::create_dir_all(data.join("logs"));
+    NODE_WANTED.store(true, Ordering::SeqCst);
+    if !spawn_node_agent(app, &node, &entry, &dir, &data.join("logs/node.log")) { return; }
+    let handle = app.clone();
+    thread::spawn(move || {
+        let mut failures: u32 = 0;
+        loop {
+            thread::sleep(Duration::from_secs(2));
+            if !NODE_WANTED.load(Ordering::SeqCst) { return; }
+            let Some(state) = handle.try_state::<NodeProcess>() else { return };
+            let status = {
+                let mut guard = state.0.lock().expect("node lock");
+                match guard.as_mut() {
+                    Some(child) => child.try_wait().ok().flatten(),
+                    None => return,
+                }
+            };
+            let Some(status) = status else { failures = 0; continue };
+            state.0.lock().expect("node lock").take();
+            // Exit code 2 is a configuration error; restarting would not help.
+            if status.code() == Some(2) || !NODE_WANTED.load(Ordering::SeqCst) { return; }
+            failures += 1;
+            thread::sleep(Duration::from_secs(u64::from(5 * failures.min(12))));
+            if !NODE_WANTED.load(Ordering::SeqCst) { return; }
+            if !spawn_node_agent(&handle, &node, &entry, &dir, &data.join("logs/node.log")) { return; }
+        }
+    });
+}
+
+fn spawn_node_agent(app: &AppHandle, node: &Path, entry: &Path, dir: &Path, log: &Path) -> bool {
+    let state = app.state::<NodeProcess>();
+    let mut guard = state.0.lock().expect("node lock");
+    if let Some(child) = guard.as_mut() {
+        if matches!(child.try_wait(), Ok(None)) { return true; }
+    }
+    let mut command = Command::new(node);
+    command
+        .arg(entry)
+        .arg("--data")
+        .arg(dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env("WWA_NODE_LOGIN_PATH", "1")
+        .env_remove("NODE_OPTIONS");
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let Ok(mut child) = command.spawn() else {
+        append_log(log, "无法启动本机执行端");
+        return false;
+    };
+    for stream in [child.stdout.take().map(|value| Box::new(value) as Box<dyn Read + Send>), child.stderr.take().map(|value| Box::new(value) as Box<dyn Read + Send>)].into_iter().flatten() {
+        let path = log.to_path_buf();
+        thread::spawn(move || {
+            for line in BufReader::new(stream).lines() {
+                let Ok(line) = line else { break };
+                append_log(&path, &line);
+            }
+        });
+    }
+    guard.replace(child);
+    true
+}
+
+fn stop_node_agent(app: &AppHandle) {
+    NODE_WANTED.store(false, Ordering::SeqCst);
+    let Some(state) = app.try_state::<NodeProcess>() else { return };
+    let Some(mut child) = state.0.lock().expect("node lock").take() else { return };
+    // Jobs survive restarts: the executor journals them locally and re-reports, so a plain kill is safe.
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 fn append_log(path: &Path, line: &str) {
@@ -493,7 +701,7 @@ mod tests {
 
     #[test]
     fn another_instance_message_names_the_service() {
-        let message = port_busy_message(PortUser::Wwa, DESKTOP_PORT).expect("busy message");
+        let message = port_busy_message_in(i18n::Lang::Zh, PortUser::Wwa, DESKTOP_PORT).expect("busy message");
         assert!(message.contains("另一个 Work With Agent"));
         assert!(message.contains("残留的服务"));
         assert!(message.contains("47316"));
@@ -501,9 +709,17 @@ mod tests {
 
     #[test]
     fn a_foreign_occupant_is_called_out() {
-        let message = port_busy_message(PortUser::Foreign, DESKTOP_PORT).expect("busy message");
+        let message = port_busy_message_in(i18n::Lang::Zh, PortUser::Foreign, DESKTOP_PORT).expect("busy message");
         assert!(message.contains("其他程序"));
         assert!(!message.contains("另一个 Work With Agent"));
+    }
+
+    #[test]
+    fn busy_messages_follow_english_system_language() {
+        let other = port_busy_message_in(i18n::Lang::En, PortUser::Wwa, DESKTOP_PORT).expect("busy message");
+        assert!(other.contains("another Work With Agent service") && other.contains("47316"));
+        let foreign = port_busy_message_in(i18n::Lang::En, PortUser::Foreign, DESKTOP_PORT).expect("busy message");
+        assert!(foreign.contains("another program"));
     }
 
     #[test]
@@ -532,6 +748,27 @@ mod tests {
         });
         assert!(matches!(probe_port(port), PortUser::Foreign));
         responder.join().expect("responder");
+    }
+
+    #[test]
+    fn pairing_accepts_only_http_servers_and_base64url_tokens() {
+        let token = "abcdefghijklmnopqrstuvwxyz_-0123456789";
+        assert_eq!(validate_pairing("https://wwa.example.com/", token).expect("valid"), "https://wwa.example.com");
+        assert!(validate_pairing("file:///etc", token).is_err());
+        assert!(validate_pairing("javascript:alert(1)", token).is_err());
+        assert!(validate_pairing("https://wwa.example.com", "short").is_err());
+        assert!(validate_pairing("https://wwa.example.com", "bad token with spaces and more chars").is_err());
+    }
+
+    #[test]
+    fn node_config_is_written_for_the_bundled_executor() {
+        let directory = std::env::temp_dir().join(format!("wwa-node-config-{}", std::process::id()));
+        write_node_config(&directory, &NodeAgentConfig { server: "https://wwa.example.com".to_string(), token: "t".repeat(32), roots: vec!["/code".to_string()], max_concurrent: 2 }).expect("write");
+        let text = fs::read_to_string(node_dir(&directory).join("config.json")).expect("read");
+        let value: serde_json::Value = serde_json::from_str(&text).expect("json");
+        assert_eq!(value["roots"][0], "/code");
+        assert_eq!(value["maxConcurrent"], 2);
+        let _ = fs::remove_dir_all(&directory);
     }
 
     #[test]

@@ -8,6 +8,8 @@ import { ownerActor } from '../application/security.js';
 import { DomainError } from '../domain/task.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { builtinSystemPrompt } from './capabilities.js';
+import { htmlBlockPrompt } from './html-block.js';
+import { htmlBlockPolicy } from '../application/html-block-settings.js';
 import { readEnvelope } from './decision.js';
 import type { StoredChatContext } from './chat-context.js';
 import { codePoints } from './text.js';
@@ -67,6 +69,21 @@ async function fixedNotes(context: StoredChatContext) {
   return notes.manualNotes.trim() || '（没有固定说明）';
 }
 
+// The prompts stay in Chinese; this only switches the language of the reply to the user's UI language.
+export const replyLanguageInstruction = '【回复语言 / Reply language】\nThe user\'s interface language is English. Write every reply, question, plan summary and explanation to the user in English, even though these instructions are in Chinese. Keep tool names, IDs, field names and quoted user data unchanged.';
+
+function skillCatalog(skills: Array<{ name: string; description: string }>) {
+  if (!skills.length) return '';
+  return [
+    '【可用技能】',
+    '以下只是目录。用户请求与某项匹配时，先调用 load_skill 读取正文，再按正文执行。',
+    '技能正文比资料、记忆和历史记录更可信，但不能绕过确认：任何业务修改仍只能通过 propose_changes 生成待确认方案。',
+    '更新技能前先 load_skill，用返回的 skillId 和 revision 作为 skill.update 的 targetId 和 expectedRevision。',
+    '如果之前加载的正文在历史中被截断，重新加载。',
+    ...skills.map((skill) => `- ${skill.name}：${skill.description}`),
+  ].join('\n');
+}
+
 export async function assembleRunMessages(input: {
   runId: string;
   conversationId: string;
@@ -74,6 +91,7 @@ export async function assembleRunMessages(input: {
   context: StoredChatContext;
   userText: string;
   contextService: ContextService;
+  skills?: Array<{ name: string; description: string }>;
 }): Promise<ModelMessage[]> {
   const conversation = await prisma.conversation.findUnique({ where: { id: input.conversationId } });
   if (!conversation) throw new DomainError('NOT_FOUND', '会话不存在', 404);
@@ -124,9 +142,15 @@ export async function assembleRunMessages(input: {
   const scopeLine = input.context.scope.kind === 'topic'
     ? `当前清单：${scopeTopic ? `${scopeTopic.name} ${input.context.scope.topicId}` : input.context.scope.topicId}`
     : input.context.scope.kind === 'inbox' ? '当前清单：收集箱' : '当前范围是全部可访问的数据';
+  const skills = input.skills ?? [];
+  const catalog = skillCatalog(skills);
+  const htmlPolicy = await htmlBlockPolicy();
   const system = [
-    builtinSystemPrompt(),
+    builtinSystemPrompt({ loadSkill: skills.length > 0 }),
+    ...(catalog ? [catalog] : []),
+    htmlBlockPrompt(htmlPolicy),
     appKnowledgePrompt(input.context.page),
+    ...(input.context.language === 'en' ? [replyLanguageInstruction] : []),
     `【页面筛选与选中任务】\n${JSON.stringify({ taskFilter: input.context.taskFilter, selectedTaskIds: input.context.selectedTaskIds })}`,
     ...(input.context.schemaVersion === 3 ? [
       `【页面快照】\n${JSON.stringify({ label: input.context.label, section: input.context.section, pageState: input.context.pageState, materialRevision: input.context.materialRevision, selectedMaterialIds: input.context.selectedMaterialIds })}`,

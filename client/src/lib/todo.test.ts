@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { captureDraftKey, createWriteQueue, draftPatch, isCompositionKey, keepNewestTask, localDate, mergeTaskDraft, taskDraft } from './todo.js';
+import { canHaveSubtasks, captureDraftKey, createWriteQueue, draftPatch, isCompositionKey, keepNewestTask, localDate, mergeTaskDraft, taskDraft } from './todo.js';
 import type { Task } from './api.js';
 
 const task: Task = { id: 'a', topicId: null, title: '原任务', description: '', status: 'todo', allowedTransitions: ['doing', 'done'], priority: 'none', dueDate: null, estimatedMinutes: null, scheduledStart: null, scheduledEnd: null, resultSummary: '', revision: 1, tagIds: ['a', 'b'] };
@@ -40,6 +40,14 @@ describe('task write queue', () => {
     await expect(first).rejects.toThrow('failed');
     await expect(second).resolves.toBe(2);
     expect(order).toEqual(['first', 'other', 'second']);
+  });
+});
+
+describe('canHaveSubtasks', () => {
+  it('allows a root and refuses a task that already has a parent', () => {
+    expect(canHaveSubtasks({ parentId: null })).toBe(true);
+    expect(canHaveSubtasks({})).toBe(true);
+    expect(canHaveSubtasks({ parentId: 'parent' })).toBe(false);
   });
 });
 

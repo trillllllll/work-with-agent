@@ -1,13 +1,15 @@
 import { askAssistant, usePageContext } from '@/lib/assistant-context.js';
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, ApiError, authHeaders } from '@/lib/api.js';
+import { t } from '../../i18n/index.js';
 import { submitCommands } from '@/lib/platform.js';
 import { libraryPageSize } from './store.js';
 import { TaskLinkPicker } from './TaskLinkPicker.js';
 import { enqueueUploads } from './upload.js';
-import { extractionCopy, formatLocator, formatUpdated, kindLabels, type LibraryFolder, type LibraryTag, type LibraryPreviewTarget, type LinkedTask, type MaterialChunk, type MaterialDetail, type MaterialSource, type Page } from './types.js';
+import { extractionLabel, formatLocator, formatUpdated, kindLabel, type LibraryFolder, type LibraryTag, type LibraryPreviewTarget, type LinkedTask, type MaterialChunk, type MaterialDetail, type MaterialSource, type Page } from './types.js';
 
 function canLayout(mime: string | null, kind: string) {
   if (mime?.startsWith('image/') || mime === 'application/pdf' || mime?.startsWith('text/')) return true;
@@ -17,7 +19,7 @@ function canLayout(mime: string | null, kind: string) {
 export async function loadMaterialSource(id: string, revision: number, signal?: AbortSignal): Promise<MaterialSource> {
   const response = await fetch(`/api/v1/library/materials/${encodeURIComponent(id)}/versions/${revision}/source`, { credentials: 'include', headers: authHeaders(), signal });
   if (!response.ok) {
-    let message = '原件没有读取';
+    let message = t('library:libraryPreview.sourceUnread');
     try {
       const body = await response.json() as { error?: string | { message?: string } };
       message = typeof body.error === 'string' ? body.error : body.error?.message ?? message;
@@ -48,6 +50,7 @@ function saveBlob(blob: Blob, name: string) {
 }
 
 export function LibraryPreview({ target, onTargetChange, onClose, onOpenTask }: { target: LibraryPreviewTarget; onTargetChange: (target: LibraryPreviewTarget) => void; onClose: () => void; onOpenTask?: (taskId: string) => void }) {
+  const { t } = useTranslation('library');
   const client = useQueryClient();
   const id = target.materialId;
   const detail = useQuery({ queryKey: ['library', 'material', id], queryFn: ({ signal }) => api<MaterialDetail>(`/api/v1/library/materials/${id}`, { signal }) });
@@ -96,11 +99,11 @@ export function LibraryPreview({ target, onTargetChange, onClose, onOpenTask }: 
     try {
       await submitCommands([{ kind, targetId, expectedRevision, input }]);
       await refresh();
-    } catch (error) { toast.error(error instanceof ApiError ? error.message : '操作失败'); }
+    } catch (error) { toast.error(error instanceof ApiError ? error.message : t('shared.actionFailed')); }
   };
   const version = material?.versions.find((item) => item.revision === viewed);
   const mime = source.data?.kind === 'attachment' ? source.data.mimeType : source.data?.kind === 'text' ? (source.data.mimeType || 'text/plain') : (version?.mimeType ?? material?.mimeType ?? null);
-  const fileName = source.data?.fileName || version?.fileName || material?.fileName || material?.title || '资料';
+  const fileName = source.data?.fileName || version?.fileName || material?.fileName || material?.title || t('shared.material');
   const layout = material ? canLayout(mime, material.kind) : false;
   const preferred: 'original' | 'text' = target.chunkId || (source.data?.kind === 'attachment' && !layout) ? 'text' : 'original';
   const tab = tabChoice ?? preferred;
@@ -111,59 +114,59 @@ export function LibraryPreview({ target, onTargetChange, onClose, onOpenTask }: 
     try {
       const loaded = source.data ?? await loadMaterialSource(id, viewed);
       if (loaded.kind === 'text') {
-        saveBlob(new Blob([loaded.text], { type: 'text/plain;charset=utf-8' }), loaded.fileName || `${material?.title ?? '资料'}.txt`);
+        saveBlob(new Blob([loaded.text], { type: 'text/plain;charset=utf-8' }), loaded.fileName || `${material?.title ?? t('shared.material')}.txt`);
         return;
       }
       const response = await fetch(loaded.href, { credentials: 'include', headers: authHeaders() });
-      if (!response.ok) throw new Error('下载失败');
+      if (!response.ok) throw new Error(t('libraryPreview.downloadFailed'));
       const blob = await response.blob();
       saveBlob(new Blob([blob], { type: loaded.mimeType || blob.type }), loaded.fileName || fileName);
-    } catch (error) { toast.error(error instanceof Error ? error.message : '下载失败'); }
+    } catch (error) { toast.error(error instanceof Error ? error.message : t('libraryPreview.downloadFailed')); }
   };
 
-  usePageContext('library', { label: material ? `资料 · ${material.title}` : '资料库', materialId: id, materialRevision: viewed || null, materialVersionMode: target.revision == null ? 'latest' : 'historical' });
-  if (!material || !extraction) return <aside className="library-panel library-preview" data-testid="library-preview" aria-label="资料预览"><p className="library-meta p-3">{detail.error instanceof Error ? detail.error.message : '正在读取资料'}</p></aside>;
+  usePageContext('library', { label: material ? t('libraryPreview.contextLabel', { title: material.title }) : t('shared.library'), materialId: id, materialRevision: viewed || null, materialVersionMode: target.revision == null ? 'latest' : 'historical' });
+  if (!material || !extraction) return <aside className="library-panel library-preview" data-testid="library-preview" aria-label={t('libraryPreview.previewLabel')}><p className="library-meta p-3">{detail.error instanceof Error ? detail.error.message : t('libraryPreview.loading')}</p></aside>;
   const status = extraction.status;
-  return <aside className="library-panel library-preview library-sheet" data-testid="library-preview" aria-label="资料预览">
+  return <aside className="library-panel library-preview library-sheet" data-testid="library-preview" aria-label={t('libraryPreview.previewLabel')}>
     <div className="library-preview-head">
       <div className="min-w-0">
         <h2 className="library-name truncate" title={material.title}>{material.title}</h2>
-        {viewed > 0 && <p className="library-meta" data-testid="library-preview-version">版本 {viewed}</p>}
+        {viewed > 0 && <p className="library-meta" data-testid="library-preview-version">{t('libraryPreview.version', { revision: viewed })}</p>}
       </div>
-      <button type="button" className="library-btn" onClick={() => askAssistant()}>AI 助手</button>
-      <button type="button" className="library-btn" onMouseDown={(event) => event.preventDefault()} onClick={() => { const selection = window.getSelection(); const node = selection?.anchorNode?.parentElement; if (selection && !selection.isCollapsed && node?.closest('[data-testid="library-preview"]')) askAssistant({ kind: 'selection', title: material.title, text: selection.toString(), materialId: id, unsaved: false }); else toast.error('请先选中资料正文'); }}>询问选中文字</button>
-      <button type="button" className="library-btn" onClick={onClose}>关闭</button>
+      <button type="button" className="library-btn" onClick={() => askAssistant()}>{t('shared.aiAssistant')}</button>
+      <button type="button" className="library-btn" onMouseDown={(event) => event.preventDefault()} onClick={() => { const selection = window.getSelection(); const node = selection?.anchorNode?.parentElement; if (selection && !selection.isCollapsed && node?.closest('[data-testid="library-preview"]')) askAssistant({ kind: 'selection', title: material.title, text: selection.toString(), materialId: id, unsaved: false }); else toast.error(t('libraryPreview.selectTextFirst')); }}>{t('libraryPreview.askSelection')}</button>
+      <button type="button" className="library-btn" onClick={onClose}>{t('shared.close')}</button>
     </div>
-    <div className="library-preview-tabs" role="tablist" aria-label="预览内容">
-      <button type="button" className="library-btn library-tab" role="tab" aria-selected={tab === 'original'} onClick={() => setTabChoice('original')}>原件</button>
-      <button type="button" className="library-btn library-tab" role="tab" aria-selected={tab === 'text'} onClick={() => setTabChoice('text')}>提取文字</button>
-      {target.revision != null && <button type="button" className="library-btn" onClick={() => onTargetChange({ materialId: id, revision: null, chunkId: null })}>查看最新版</button>}
+    <div className="library-preview-tabs" role="tablist" aria-label={t('libraryPreview.previewTabs')}>
+      <button type="button" className="library-btn library-tab" role="tab" aria-selected={tab === 'original'} onClick={() => setTabChoice('original')}>{t('libraryPreview.original')}</button>
+      <button type="button" className="library-btn library-tab" role="tab" aria-selected={tab === 'text'} onClick={() => setTabChoice('text')}>{t('libraryPreview.extractedText')}</button>
+      {target.revision != null && <button type="button" className="library-btn" onClick={() => onTargetChange({ materialId: id, revision: null, chunkId: null })}>{t('libraryPreview.viewLatest')}</button>}
     </div>
     <div className="library-preview-block min-h-0 flex-1 overflow-auto">
-      {verified && chunk.data && <p className="library-meta">版本 {chunk.data.revision} · {formatLocator(chunk.data.locator)}</p>}
-      {tab === 'original' && source.isLoading && <p className="library-meta">正在读取原件</p>}
+      {verified && chunk.data && <p className="library-meta">{t('libraryPreview.versionDetail', { revision: chunk.data.revision, detail: formatLocator(chunk.data.locator) })}</p>}
+      {tab === 'original' && source.isLoading && <p className="library-meta">{t('libraryPreview.loadingOriginal')}</p>}
       {tab === 'original' && source.data?.kind === 'text' && <pre className="whitespace-pre-wrap break-words text-sm">{source.data.text}</pre>}
       {tab === 'original' && source.data?.kind === 'attachment' && layout && <OriginalView url={source.data.href} mime={source.data.mimeType} name={source.data.fileName || fileName} />}
-      {tab === 'original' && source.isError && <p className="library-meta">{source.error instanceof Error ? source.error.message : '原件没有读取'}</p>}
-      {tab === 'original' && mime === 'image/gif' && <p className="library-meta">动图只识别第一帧，原件保持不变。</p>}
-      {tab === 'original' && source.data?.kind === 'attachment' && !layout && <p className="library-meta">这个原件不能在页面里排版，下面是提取文字。</p>}
+      {tab === 'original' && source.isError && <p className="library-meta">{source.error instanceof Error ? source.error.message : t('libraryPreview.sourceUnread')}</p>}
+      {tab === 'original' && mime === 'image/gif' && <p className="library-meta">{t('libraryPreview.gifFrame')}</p>}
+      {tab === 'original' && source.data?.kind === 'attachment' && !layout && <p className="library-meta">{t('libraryPreview.cannotLayout')}</p>}
       {tab === 'text' && <ChunkBrowser materialId={id} revision={viewed} highlightId={verified ? target.chunkId : null} />}
     </div>
-    <p className="library-preview-block library-meta" style={{ color: status === 'failed' || status === 'blocked' ? 'var(--lib-danger)' : status === 'partial' ? 'var(--lib-warning)' : 'var(--lib-success)' }}>{extractionCopy[status]}{extraction.errorCode ? ` · ${extraction.errorCode}` : ''}</p>
+    <p className="library-preview-block library-meta" style={{ color: status === 'failed' || status === 'blocked' ? 'var(--lib-danger)' : status === 'partial' ? 'var(--lib-warning)' : 'var(--lib-success)' }}>{extraction.errorCode ? t('libraryPreview.extractionWithCode', { status: extractionLabel(status), code: extraction.errorCode }) : extractionLabel(status)}</p>
     {(extraction.errors ?? []).map((error, index) => {
       const place = formatLocator(error.locator);
-      return <p key={`${error.code}-${index}`} className="library-preview-block library-meta" style={{ color: 'var(--lib-danger)' }}>{place ? `${place} · ${error.message}` : error.message}</p>;
+      return <p key={`${error.code}-${index}`} className="library-preview-block library-meta" style={{ color: 'var(--lib-danger)' }}>{place ? t('libraryPreview.locatedError', { place, message: error.message }) : error.message}</p>;
     })}
-    {(status === 'failed' || status === 'blocked' || status === 'partial') && <div className="library-preview-block"><button type="button" className="library-btn" onClick={() => { void command('material.reextract', {}); }}>重试解析</button></div>}
+    {(status === 'failed' || status === 'blocked' || status === 'partial') && <div className="library-preview-block"><button type="button" className="library-btn" onClick={() => { void command('material.reextract', {}); }}>{t('libraryPreview.retryExtract')}</button></div>}
     <div className="library-preview-block">
-      <h3 className="library-name">关联任务</h3>
+      <h3 className="library-name">{t('libraryPreview.linkedTasks')}</h3>
       {tasks.data && <div className="library-linked-pages" data-testid="library-linked-tasks-pagination">
-        <span>共 {tasks.data.total} 个任务</span>
-        <button type="button" className="library-btn" disabled={taskCursor <= 0 || tasks.isPlaceholderData} onClick={() => setTaskPage({ id, cursor: Math.max(0, taskCursor - libraryPageSize) })}>上一页</button>
-        <span>第 {Math.floor(taskCursor / libraryPageSize) + 1} 页</span>
-        <button type="button" className="library-btn" disabled={tasks.data.nextCursor == null || tasks.isPlaceholderData} onClick={() => { if (tasks.data?.nextCursor != null) setTaskPage({ id, cursor: tasks.data.nextCursor }); }}>下一页</button>
+        <span>{t('libraryPreview.taskTotal', { count: tasks.data.total })}</span>
+        <button type="button" className="library-btn" disabled={taskCursor <= 0 || tasks.isPlaceholderData} onClick={() => setTaskPage({ id, cursor: Math.max(0, taskCursor - libraryPageSize) })}>{t('shared.previousPage')}</button>
+        <span>{t('shared.pageNumber', { page: Math.floor(taskCursor / libraryPageSize) + 1 })}</span>
+        <button type="button" className="library-btn" disabled={tasks.data.nextCursor == null || tasks.isPlaceholderData} onClick={() => { if (tasks.data?.nextCursor != null) setTaskPage({ id, cursor: tasks.data.nextCursor }); }}>{t('shared.nextPage')}</button>
       </div>}
-      <ul className="library-linked-tasks">{tasks.data?.items.map((task) => <li key={task.id} className="mt-1 flex items-center justify-between gap-2" data-testid={`library-linked-task-${task.id}`}><button type="button" className="library-btn" onClick={() => onOpenTask?.(task.id)}>{task.title}</button><button type="button" className="library-btn library-btn-danger" onClick={() => { void command('material.links', { expectedOrganizationRevision: material.organizationRevision, addTaskIds: [], removeTaskIds: [task.id], removeInlineReferences: false, expectedTaskRevisions: {} }); }}>解除关联</button></li>)}</ul>
+      <ul className="library-linked-tasks">{tasks.data?.items.map((task) => <li key={task.id} className="mt-1 flex items-center justify-between gap-2" data-testid={`library-linked-task-${task.id}`}><button type="button" className="library-btn" onClick={() => onOpenTask?.(task.id)}>{task.title}</button><button type="button" className="library-btn library-btn-danger" onClick={() => { void command('material.links', { expectedOrganizationRevision: material.organizationRevision, addTaskIds: [], removeTaskIds: [task.id], removeInlineReferences: false, expectedTaskRevisions: {} }); }}>{t('shared.unlink')}</button></li>)}</ul>
       <TaskLinkPicker selectedIds={selectedTaskIds} onChange={setSelectedTaskIds} />
       <button type="button" className="library-btn mt-2" disabled={selectedTaskIds.length === 0} onClick={() => {
         const chosen = selectedTaskIds;
@@ -172,38 +175,39 @@ export function LibraryPreview({ target, onTargetChange, onClose, onOpenTask }: 
             await submitCommands([{ kind: 'material.links', targetId: id, expectedRevision: material.revision, input: { expectedOrganizationRevision: material.organizationRevision, addTaskIds: chosen, removeTaskIds: [], removeInlineReferences: false, expectedTaskRevisions: {} } }]);
             setSelectedTaskIds([]);
             await refresh();
-          } catch (error) { toast.error(error instanceof ApiError ? error.message : '操作失败'); }
+          } catch (error) { toast.error(error instanceof ApiError ? error.message : t('shared.actionFailed')); }
         })();
-      }}>关联</button>
+      }}>{t('libraryPreview.linkSelected')}</button>
     </div>
     <div className="library-preview-block">
-      <h3 className="library-name">文件夹与标签</h3>
-      <select aria-label="资料文件夹" className="library-select mt-2 w-full" value={folderId} onChange={(event) => setFolderId(event.target.value)}>
-        <option value="">未整理</option>
+      <h3 className="library-name">{t('libraryPreview.folderAndTags')}</h3>
+      <select aria-label={t('libraryPreview.folderLabel')} className="library-select mt-2 w-full" value={folderId} onChange={(event) => setFolderId(event.target.value)}>
+        <option value="">{t('shared.unfiled')}</option>
         {(folders.data?.items ?? []).map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
       </select>
       <div className="mt-2 flex flex-wrap gap-2">{(tags.data?.items ?? []).map((tag) => <label key={tag.id} className="library-meta flex items-center gap-1"><input type="checkbox" checked={tagIds.includes(tag.id)} onChange={(event) => setTagIds((current) => event.target.checked ? [...current, tag.id] : current.filter((item) => item !== tag.id))} />{tag.name}</label>)}</div>
-      <button type="button" className="library-btn mt-2" onClick={() => { void command('material.organize', { expectedOrganizationRevision: material.organizationRevision, folderId: folderId || null, tagIds }); }}>保存整理</button>
+      <button type="button" className="library-btn mt-2" onClick={() => { void command('material.organize', { expectedOrganizationRevision: material.organizationRevision, folderId: folderId || null, tagIds }); }}>{t('libraryPreview.saveOrganization')}</button>
     </div>
     <div className="library-preview-actions">
-      <button type="button" className="library-btn" onClick={() => { void download(); }}>下载</button>
-      <label className="library-btn">更新版本<input className="sr-only" type="file" aria-label="更新版本" onChange={(event) => {
+      <button type="button" className="library-btn" onClick={() => { void download(); }}>{t('libraryPreview.download')}</button>
+      <label className="library-btn">{t('libraryPreview.updateVersion')}<input className="sr-only" type="file" aria-label={t('libraryPreview.updateVersion')} onChange={(event) => {
         const files = [...(event.target.files ?? [])];
         event.target.value = '';
         const file = files[0];
         if (!file) return;
-        void enqueueUploads([{ file, relativePath: file.name }], { topicId: material.topicId, folderId: material.folderId, taskIds: [], replaceMaterialId: material.id, expectedRevision: material.revision, silent: true }).then(() => refresh()).catch((error) => toast.error(error instanceof Error ? error.message : '更新失败'));
+        void enqueueUploads([{ file, relativePath: file.name }], { topicId: material.topicId, folderId: material.folderId, taskIds: [], replaceMaterialId: material.id, expectedRevision: material.revision, silent: true }).then(() => refresh()).catch((error) => toast.error(error instanceof Error ? error.message : t('libraryPreview.updateFailed')));
       }} /></label>
-      <button type="button" className="library-btn" onClick={() => { void command('material.archive', { archived: !material.archivedAt }); }}>{material.archivedAt ? '恢复' : '归档'}</button>
+      <button type="button" className="library-btn" onClick={() => { void command('material.archive', { archived: !material.archivedAt }); }}>{material.archivedAt ? t('libraryPreview.restore') : t('shared.archive')}</button>
     </div>
     <div className="library-preview-block">
-      <p className="library-meta">{kindLabels[material.kind]} · 更新于 {formatUpdated(material.updatedAt)}</p>
-      <ul className="mt-1">{material.versions.map((item) => <li key={item.revision}><button type="button" className="library-meta" onClick={() => onTargetChange({ materialId: id, revision: item.revision, chunkId: null })}>版本 {item.revision} · {extractionCopy[item.extraction.status]}</button></li>)}</ul>
+      <p className="library-meta">{t('libraryPreview.kindUpdated', { kind: kindLabel(material.kind), updated: formatUpdated(material.updatedAt) })}</p>
+      <ul className="mt-1">{material.versions.map((item) => <li key={item.revision}><button type="button" className="library-meta" onClick={() => onTargetChange({ materialId: id, revision: item.revision, chunkId: null })}>{t('libraryPreview.versionDetail', { revision: item.revision, detail: extractionLabel(item.extraction.status) })}</button></li>)}</ul>
     </div>
   </aside>;
 }
 
 function ChunkBrowser({ materialId, revision, highlightId }: { materialId: string; revision: number; highlightId: string | null }) {
+  const { t } = useTranslation('library');
   const [items, setItems] = useState<MaterialChunk[]>([]);
   const [next, setNext] = useState<number | null>(null);
   const [ready, setReady] = useState(false);
@@ -254,16 +258,17 @@ function ChunkBrowser({ materialId, revision, highlightId }: { materialId: strin
   return <div>
     <div className="library-chunks">
       {items.map((item) => <article key={item.id} className="library-chunk" data-testid={`library-chunk-${item.id}`} data-highlighted={item.id === highlightId ? 'true' : 'false'}>
-        <p className="library-meta">{formatLocator(item.locator)} · {item.method === 'ocr' ? '识字' : '原文'}</p>
+        <p className="library-meta">{t('libraryPreview.chunkMeta', { place: formatLocator(item.locator), method: item.method === 'ocr' ? t('libraryPreview.methodOcr') : t('libraryPreview.methodNative') })}</p>
         <p className="whitespace-pre-wrap break-words text-sm">{item.text}</p>
       </article>)}
-      {!items.length && ready && <p className="library-meta">还没有可显示的提取文字。</p>}
+      {!items.length && ready && <p className="library-meta">{t('libraryPreview.noExtractedText')}</p>}
     </div>
-    {ready && next != null && <button type="button" className="library-btn mt-3" onClick={() => { void loadMore(); }}>继续加载</button>}
+    {ready && next != null && <button type="button" className="library-btn mt-3" onClick={() => { void loadMore(); }}>{t('libraryPreview.loadMore')}</button>}
   </div>;
 }
 
 function OriginalView({ url, mime, name }: { url: string; mime: string | null; name: string }) {
+  const { t } = useTranslation('library');
   const [objectUrl, setObjectUrl] = useState('');
   const [text, setText] = useState('');
   useEffect(() => {
@@ -286,5 +291,5 @@ function OriginalView({ url, mime, name }: { url: string; mime: string | null; n
   if (mime?.startsWith('image/') && objectUrl) return <img src={objectUrl} alt={name} className="max-w-full" />;
   if (mime === 'application/pdf' && objectUrl) return <iframe title={name} src={objectUrl} className="h-80 w-full" />;
   if (text) return <pre className="whitespace-pre-wrap break-words text-sm">{text}</pre>;
-  return <p className="library-meta">正在读取原件</p>;
+  return <p className="library-meta">{t('libraryPreview.loadingOriginal')}</p>;
 }

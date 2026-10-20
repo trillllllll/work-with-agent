@@ -78,7 +78,7 @@ describe('stdio MCP authenticated HTTP contract', () => {
     expect(result.structuredContent).toMatchObject({ code: 'VERSION_CONFLICT', httpStatus: 409, retryable: false });
     expect(calls.slice(start).map((call) => call.url)).toEqual(['/api/v1/tasks/missing']);
   });
-  it('attaches description screenshots and leaves oversized ones for get_task_image', async () => {
+  it('reads this task screenshots and skips bytes that are not images', async () => {
     const start = calls.length;
     const result = await client.callTool({ name: 'get_task', arguments: { taskId: 'task-image' } });
     const fresh = calls.slice(start).map((call) => call.url);
@@ -86,24 +86,21 @@ describe('stdio MCP authenticated HTTP contract', () => {
       '/api/v1/tasks/task-image',
       '/api/v1/tasks/task-image/images/image-a',
       '/api/v1/tasks/task-image/images/image-big',
-      '/api/v1/tasks/child-1/images/image-c',
     ]);
     expect(result.isError).toBeUndefined();
     expect(result.structuredContent).toMatchObject({ data: { description: expect.stringContaining('/api/tasks/task-image/images/image-a') }, httpStatus: 200 });
     expect(JSON.stringify(result.structuredContent)).not.toContain(Buffer.from('jpeg-bytes').toString('base64'));
-    const blocks = result.content as Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
-    const images = blocks.filter((block) => block.type === 'image');
-    expect(images.map((block) => block.mimeType)).toEqual(['image/jpeg', 'image/webp']);
-    expect(images[0].data).toBe(Buffer.from('jpeg-bytes').toString('base64'));
-    expect(images[1].data).toBe(Buffer.from('webp-bytes').toString('base64'));
-    const notes = blocks.filter((block) => block.type === 'text').slice(1).map((block) => block.text ?? '');
-    expect(notes.some((note) => note.includes('"imageId":"image-a"') && note.includes('"alt":"示意图"') && note.includes('"included":true'))).toBe(true);
-    expect(notes.some((note) => note.includes('"imageId":"image-big"') && note.includes('"included":false') && note.includes('get_task_image'))).toBe(true);
+    const blocks = result.content as Array<{ type: string; text?: string }>;
+    expect(blocks.filter((block) => block.type === 'image')).toHaveLength(0);
+    const summary = blocks.at(-1)?.text ?? '';
+    expect(summary).toContain('imageId=image-a');
+    expect(summary).toContain('imageId=image-big');
+    expect(summary).toContain('get_task_image');
+    expect(summary).not.toContain('image-c');
+    expect(summary).not.toContain('image-x');
     const one = await client.callTool({ name: 'get_task_image', arguments: { taskId: 'task-image', imageId: 'image-a' } });
-    expect(one.isError).toBeUndefined();
-    expect(one.structuredContent).toMatchObject({ data: { taskId: 'task-image', imageId: 'image-a', mimeType: 'image/jpeg', byteSize: Buffer.from('jpeg-bytes').length }, error: null, httpStatus: 200 });
-    expect(JSON.stringify(one.structuredContent)).not.toContain(Buffer.from('jpeg-bytes').toString('base64'));
-    expect((one.content as Array<{ type: string; data?: string }>).some((block) => block.type === 'image' && block.data === Buffer.from('jpeg-bytes').toString('base64'))).toBe(true);
+    expect(one.isError).toBe(true);
+    expect(one.structuredContent).toMatchObject({ code: 'IMAGE_UNAVAILABLE', retryable: false });
     const missing = await client.callTool({ name: 'get_task_image', arguments: { taskId: 'task-image', imageId: 'missing' } });
     expect(missing.isError).toBe(true);
     expect(missing.structuredContent).toMatchObject({ code: 'NOT_FOUND', httpStatus: 404, retryable: false });
@@ -169,5 +166,161 @@ describe('MCP is served by the workspace process', () => {
     expect(tools.map((tool) => tool.name)).toContain('list_tasks');
     await client.callTool({ name: 'list_tasks', arguments: { limit: 1 } });
     expect(calls.at(-1)?.authorization).toBe('Bearer isolated-test-connection');
+  });
+});
+
+describe('MCP task images and material attachments', () => {
+  let http: Server;
+  let client: Client;
+  const calls: Array<{ url: string; authorization: string | undefined }> = [];
+  let png: Buffer;
+  beforeAll(async () => {
+    const sharp = (await import('sharp')).default;
+    png = await sharp({ create: { width: 4, height: 4, channels: 3, background: { r: 20, g: 40, b: 60 } } }).png().toBuffer();
+    const served = new Set(['img-1', 'img-2', 'img-3', 'img-4', 'img-5']);
+    http = createServer(async (req, res) => {
+      const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+      calls.push({ url: `${url.pathname}${url.search}`, authorization: req.headers.authorization });
+      const imageMatch = url.pathname.match(/^\/api\/v1\/tasks\/([^/]+)\/images\/([^/]+)$/);
+      if (imageMatch) {
+        const imageId = decodeURIComponent(imageMatch[2]);
+        if (!served.has(imageId)) {
+          res.statusCode = 404;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ data: null, error: '图片不存在', code: 'NOT_FOUND' }));
+          return;
+        }
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Content-Length', String(png.byteLength));
+        res.end(png);
+        return;
+      }
+      const attachment = url.pathname.match(/^\/api\/v1\/knowledge\/materials\/([^/]+)\/versions\/([^/]+)\/attachment$/);
+      if (attachment) {
+        const materialId = decodeURIComponent(attachment[1]);
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        if (materialId === 'mat-text') {
+          const body = Buffer.from('# hello notes');
+          res.setHeader('X-WWA-Mime-Type', 'text/markdown');
+          res.setHeader('Content-Disposition', `attachment; filename="attachment"; filename*=UTF-8''${encodeURIComponent('notes.md')}`);
+          res.end(body);
+          return;
+        }
+        res.setHeader('X-WWA-Mime-Type', 'image/png');
+        res.setHeader('Content-Disposition', `attachment; filename="attachment"; filename*=UTF-8''${encodeURIComponent('shot.png')}`);
+        res.end(png);
+        return;
+      }
+      if (url.pathname === '/api/v1/tasks/task-1') {
+        const description = [
+          '![a](/api/tasks/task-1/images/img-1)',
+          '![b](http://127.0.0.1:3016/api/tasks/task-1/images/img-2)',
+          '![c](/api/tasks/task-1/images/img-3)',
+          '![d](/api/tasks/task-1/images/img-4)',
+          '![e](/api/tasks/task-1/images/img-5)',
+          '![missing](/api/tasks/task-1/images/img-missing)',
+          '![extra](/api/tasks/task-1/images/img-7)',
+          '![other](/api/tasks/other-task/images/img-secret)',
+          '![dup](/api/tasks/task-1/images/img-1)',
+        ].join('\n');
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ data: { id: 'task-1', description, revision: 3 }, error: null }));
+        return;
+      }
+      res.statusCode = 404;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ data: null, error: 'not found', code: 'NOT_FOUND' }));
+    });
+    await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve));
+    const address = http.address() as { port: number };
+    client = new Client({ name: 'media-contract', version: '1.0.0' });
+    await client.connect(new StdioClientTransport({ command: process.execPath, args: ['--import', 'tsx', fileURLToPath(new URL('./mcp/index.ts', import.meta.url))], env: { ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)), WWA_API_URL: `http://127.0.0.1:${address.port}`, WWA_CONNECTION_TOKEN: 'isolated-test-connection' }, stderr: 'pipe' }));
+  }, 30_000);
+  afterAll(async () => { await client?.close(); if (http) await new Promise<void>((resolve) => http.close(() => resolve())); });
+
+  it('returns the original JSON first, then image blocks, and summarizes skips past the cap', async () => {
+    const { tools } = await client.listTools();
+    expect(tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(['get_task_image', 'get_material_attachment']));
+    expect(JSON.stringify(tools.find((tool) => tool.name === 'get_task')?.inputSchema)).toContain('includeImages');
+    const before = calls.length;
+    const result = await client.callTool({ name: 'get_task', arguments: { taskId: 'task-1' } });
+    const content = result.content as Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+    expect(result.isError).not.toBe(true);
+    expect(content[0]?.type).toBe('text');
+    const payload = JSON.parse(content[0].text ?? '');
+    expect(payload).toMatchObject({ data: { id: 'task-1', revision: 3 }, httpStatus: 200 });
+    expect(result.structuredContent).toEqual(payload);
+    expect(JSON.stringify(result.structuredContent)).not.toContain(png.toString('base64'));
+    const images = content.filter((block) => block.type === 'image');
+    expect(images).toHaveLength(5);
+    expect(images.every((block) => block.mimeType === 'image/png' && block.data === png.toString('base64'))).toBe(true);
+    for (let index = 0; index < 5; index += 1) {
+      const caption = content[1 + index * 2];
+      expect(caption?.type).toBe('text');
+      expect(caption?.text).toContain(`Image ${index + 1}/5`);
+      expect(caption?.text).toContain(`imageId=img-${index + 1}`);
+      expect(caption?.text).toContain(`/api/tasks/task-1/images/img-${index + 1}`);
+      expect(content[2 + index * 2]?.type).toBe('image');
+    }
+    const summary = content.at(-1);
+    expect(summary?.type).toBe('text');
+    expect(summary?.text).toContain('imageId=img-missing');
+    expect(summary?.text).toContain('HTTP 404');
+    expect(summary?.text).toContain('imageId=img-7');
+    expect(summary?.text).toContain('count cap');
+    expect(summary?.text).toContain('get_task_image');
+    expect(summary?.text).not.toContain('img-secret');
+    const imageCalls = calls.slice(before).map((call) => call.url);
+    expect(imageCalls.some((url) => url.includes('/images/img-1'))).toBe(true);
+    expect(imageCalls.some((url) => url.includes('/images/img-7'))).toBe(false);
+    expect(imageCalls.some((url) => url.includes('img-secret'))).toBe(false);
+    expect(calls.slice(before).every((call) => call.authorization === 'Bearer isolated-test-connection')).toBe(true);
+  });
+
+  it('returns only the original content when includeImages is false', async () => {
+    const before = calls.length;
+    const result = await client.callTool({ name: 'get_task', arguments: { taskId: 'task-1', includeImages: false } });
+    const content = result.content as Array<{ type: string; text?: string }>;
+    expect(content).toHaveLength(1);
+    expect(content[0]?.type).toBe('text');
+    expect(JSON.parse(content[0].text ?? '')).toMatchObject({ data: { id: 'task-1' }, httpStatus: 200 });
+    expect(result.structuredContent).toEqual(JSON.parse(content[0].text ?? ''));
+    expect(calls.slice(before).some((call) => call.url.includes('/images/'))).toBe(false);
+  });
+
+  it('reports get_task_image failures as a JSON error block', async () => {
+    const result = await client.callTool({ name: 'get_task_image', arguments: { taskId: 'task-1', imageId: 'missing' } });
+    expect(result.isError).toBe(true);
+    const errorText = (result.content as Array<{ text: string }>)[0]?.text ?? '';
+    const body = JSON.parse(errorText);
+    expect(body).toMatchObject({ code: 'NOT_FOUND', message: '图片不存在', httpStatus: 404, retryable: false });
+    expect(result.structuredContent).toMatchObject({ code: 'NOT_FOUND', httpStatus: 404, retryable: false });
+  });
+
+  it('returns text and image material attachments', async () => {
+    const textResult = await client.callTool({ name: 'get_material_attachment', arguments: { materialId: 'mat-text', revision: 1 } });
+    expect(textResult.isError).not.toBe(true);
+    const textBlocks = textResult.content as Array<{ type: string; text?: string; resource?: { uri: string; mimeType: string; text?: string } }>;
+    expect(textBlocks[0]).toMatchObject({ type: 'text' });
+    expect(textBlocks[0].text).toContain('materialId=mat-text');
+    expect(textBlocks[0].text).toContain('revision=1');
+    expect(textBlocks[0].text).toContain('fileName=notes.md');
+    expect(textBlocks[0].text).toContain('mimeType=text/markdown');
+    expect(textBlocks[1]).toMatchObject({ type: 'resource', resource: { uri: 'wwa://materials/mat-text/versions/1/attachment', mimeType: 'text/markdown', text: '# hello notes' } });
+    expect(calls.at(-1)?.url).toBe('/api/v1/knowledge/materials/mat-text/versions/1/attachment');
+
+    const imageResult = await client.callTool({ name: 'get_material_attachment', arguments: { materialId: 'mat-image', revision: 2 } });
+    const imageBlocks = imageResult.content as Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+    expect(imageResult.isError).not.toBe(true);
+    expect(imageBlocks[0].text).toContain('materialId=mat-image');
+    expect(imageBlocks[0].text).toContain('revision=2');
+    expect(imageBlocks[0].text).toContain('fileName=shot.png');
+    expect(imageBlocks[0].text).toContain('mimeType=image/png');
+    expect(imageBlocks[0].text).toContain(`byteSize=${png.byteLength}`);
+    expect(imageBlocks[1]).toMatchObject({ type: 'image', mimeType: 'image/png', data: png.toString('base64') });
+    expect(calls.at(-1)?.url).toBe('/api/v1/knowledge/materials/mat-image/versions/2/attachment');
   });
 });

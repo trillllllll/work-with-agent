@@ -62,6 +62,19 @@ describe('REST task workflow', () => {
     await request(app).delete(`/api/trash/tasks/${stateTaskId}/permanent`);
   });
 
+  it('stores a list color and rejects an unknown one', async () => {
+    const created = await request(app).post('/api/topics').send({ name: `颜色清单-${Date.now()}` });
+    expect(created.status).toBe(200);
+    expect(created.body.data.color).toBe('slate');
+    const id = created.body.data.id as string;
+    const updated = await request(app).patch(`/api/topics/${id}`).send({ color: 'blue' });
+    expect(updated.status).toBe(200);
+    expect(updated.body.data.color).toBe('blue');
+    const rejected = await request(app).patch(`/api/topics/${id}`).send({ color: 'purple' });
+    expect(rejected.status).toBe(400);
+    await prisma.topic.delete({ where: { id } });
+  });
+
   it('returns stable boolean fields and 404s for missing resources', async () => {
     const topics = await request(app).get('/api/topics');
     expect(typeof topics.body.data[0].isExploration).toBe('boolean');

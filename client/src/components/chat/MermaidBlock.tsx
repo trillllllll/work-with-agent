@@ -1,9 +1,12 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from 'next-themes';
+import '@/i18n/index.js';
 import { Button } from '@/components/ui/button.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 
 export function MermaidBlock({ source }: { source: string }) {
+  const { t } = useTranslation('chat');
   const { resolvedTheme } = useTheme();
   const reactId = useId().replace(/:/g, '');
   const attempt = useRef(0);
@@ -63,24 +66,24 @@ export function MermaidBlock({ source }: { source: string }) {
   return (
     <div data-mermaid-block className="my-2 rounded-lg border border-border bg-muted/30 p-2">
       <div className="mb-2 flex gap-2">
-        {!failed && <Button type="button" variant="outline" size="xs" aria-pressed={showSource} onClick={() => setShowSource((value) => !value)}>{showSource ? '图' : '源码'}</Button>}
-        <Button type="button" variant="outline" size="xs" disabled={!svg || failed} onClick={() => setOpen(true)}>放大</Button>
+        {!failed && <Button type="button" variant="outline" size="xs" aria-pressed={showSource} onClick={() => setShowSource((value) => !value)}>{showSource ? t('mermaidBlock.showDiagram') : t('mermaidBlock.showSource')}</Button>}
+        <Button type="button" variant="outline" size="xs" disabled={!svg || failed} onClick={() => setOpen(true)}>{t('mermaidBlock.enlarge')}</Button>
       </div>
       {failed ? (
         <>
-          <p role="status" className="mb-2 text-xs text-destructive">这张图画不出来</p>
+          <p role="status" className="mb-2 text-xs text-destructive">{t('mermaidBlock.failed')}</p>
           <pre className="overflow-x-auto rounded-lg bg-[#0d1117] p-3 text-xs leading-relaxed text-zinc-100">{source}</pre>
         </>
       ) : showSource ? (
         <pre className="overflow-x-auto rounded-lg bg-[#0d1117] p-3 text-xs leading-relaxed text-zinc-100">{source}</pre>
       ) : svg && !open ? frame(svg, false) : (
-        <p className="text-xs text-muted-foreground">正在画图…</p>
+        <p className="text-xs text-muted-foreground">{t('mermaidBlock.drawing')}</p>
       )}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[min(85dvh,calc(100%-3rem))] max-w-[min(56rem,calc(100%-3rem))] overflow-auto">
           <DialogHeader>
-            <DialogTitle>图</DialogTitle>
-            <DialogDescription className="sr-only">放大后的图</DialogDescription>
+            <DialogTitle>{t('mermaidBlock.title')}</DialogTitle>
+            <DialogDescription className="sr-only">{t('mermaidBlock.enlarged')}</DialogDescription>
           </DialogHeader>
           {svg && frame(svg, true)}
         </DialogContent>

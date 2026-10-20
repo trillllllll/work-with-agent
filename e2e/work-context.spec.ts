@@ -87,7 +87,7 @@ test('工作上下文默认显示当前进展，建议不会直接变成记忆',
   await expect(page.getByText('资料、任务和本应用聊天发生变化后自动整理，建议确认后生效。', { exact: true })).toBeVisible();
   if (testInfo.project.name === 'chromium') {
     const work = page.getByRole('navigation', { name: '工作', exact: true });
-    await expect(work.getByRole('button')).toHaveText(['AI 连接', '待确认', '工作上下文', '资料库', 'AI 执行', '定期回顾']);
+    await expect(work.getByRole('button')).toHaveText(['AI 连接', '待确认', '工作上下文', '资料库', '技能', 'AI 执行', 'Worktree 管理', '定期回顾']);
   }
   await setTheme(page, 'light');
   await shot(page, testInfo.project.name, '1440-light-brief');

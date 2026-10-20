@@ -4,6 +4,7 @@ import { redact } from '../infrastructure/controlled-execution.js';
 import { DomainError } from '../domain/task.js';
 import { assertTopicAccess, type Actor } from './security.js';
 import { notFound } from './workspace-store.js';
+import { localize } from '../i18n/index.js';
 
 const statuses = new Set(['todo', 'doing', 'blocked', 'done']);
 const priorities = new Set(['none', 'low', 'medium', 'high']);
@@ -155,15 +156,15 @@ function diff(before: Snap | null, after: Snap | null, operation: string): { act
 }
 
 function topicName(actor: Actor, topicId: string | null, names: Map<string, string>) {
-  if (!canReadTopic(actor, topicId)) return { id: null, name: '范围外清单' };
-  if (topicId === null) return { id: null, name: '收集箱' };
-  return { id: topicId, name: names.get(topicId) ?? '已删除的清单' };
+  if (!canReadTopic(actor, topicId)) return { id: null, name: localize('范围外清单') };
+  if (topicId === null) return { id: null, name: localize('收集箱') };
+  return { id: topicId, name: names.get(topicId) ?? localize('已删除的清单') };
 }
 
 function parentName(actor: Actor, parentId: string | null, parents: Map<string, { title: string; topicId: string | null }>) {
-  if (!parentId) return { id: null, title: '无' };
+  if (!parentId) return { id: null, title: localize('无') };
   const parent = parents.get(parentId);
-  if (!parent || !canReadTopic(actor, parent.topicId)) return { id: null, title: parent ? '范围外任务' : '已删除的任务' };
+  if (!parent || !canReadTopic(actor, parent.topicId)) return { id: null, title: parent ? localize('范围外任务') : localize('已删除的任务') };
   return { id: parentId, title: parent.title };
 }
 
@@ -245,21 +246,21 @@ function normalizeActivityTime(value: string | null | undefined) {
 
 function presentEvent(event: RawEvent, present: (change: RawChange) => TaskActivityEvent['changes'][number], connectionMap: Map<string, string>): TaskActivityEvent {
   const actor = event.synthetic
-    ? { kind: 'unknown' as const, name: '未记录' }
+    ? { kind: 'unknown' as const, name: localize('未记录') }
     : event.source === 'user' || event.actorId === 'local-owner'
-      ? { kind: 'user' as const, name: '你' }
+      ? { kind: 'user' as const, name: localize('你') }
       : event.source === 'agent' || event.actorId === 'builtin-agent'
         ? { kind: 'agent' as const, name: 'AI' }
         : event.connectionId && connectionMap.get(event.connectionId)
           ? { kind: 'agent' as const, name: connectionMap.get(event.connectionId)! }
-          : { kind: 'unknown' as const, name: '未记录' };
+          : { kind: 'unknown' as const, name: localize('未记录') };
   return {
     id: event.id,
     at: event.at,
     evidence: event.synthetic ? 'task_created_at' : 'change_record',
     action: event.action,
     actor,
-    approvedBy: event.approvedByActorId ? { kind: 'user', name: '你' } : null,
+    approvedBy: event.approvedByActorId ? { kind: 'user', name: localize('你') } : null,
     nameResolution: 'current',
     changes: redact(event.changes.map(present)) as TaskActivityEvent['changes'],
   };

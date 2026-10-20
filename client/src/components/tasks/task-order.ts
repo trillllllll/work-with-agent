@@ -33,10 +33,12 @@ export function projectTaskDrop(rows: OrderRow[], activeId: string, overId: stri
   const active = rows.find((row) => row.id === activeId);
   const overIsVisible = rows.some((row) => row.id === overId);
   if (!active || !overIsVisible || rows.some((row) => row.id === overId && row.parentId === activeId)) return null;
+  // A task that already has children stays at its current level. Only one level is supported.
   if (active.hasChildren) {
-    const roots = rows.filter((row) => row.parentId === null);
-    const next = reorderTaskGroup(roots, activeId, overId);
-    return next ? { parentId: null, orderedIds: next.map((row) => row.id) } : null;
+    const parentId = active.parentId;
+    const siblings = rows.filter((row) => row.parentId === parentId);
+    const next = reorderTaskGroup(siblings, activeId, overId);
+    return next ? { parentId, orderedIds: next.map((row) => row.id) } : null;
   }
   const ids = rows.map((row) => row.id);
   const from = ids.indexOf(activeId);

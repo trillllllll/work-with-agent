@@ -7,9 +7,9 @@ test.beforeEach(async ({ page }) => {
 });
 test.afterAll(async () => { await e2eDatabase.$disconnect(); });
 
-const labels = ['收集箱', '今天', '规划', '专注', '四象限', '清单', '搜索', '标签', '已归档', '回收站', '变更历史', '设置', 'AI 连接', '待确认', '工作上下文', '资料库', 'AI 执行', '定期回顾'];
+const labels = ['收集箱', '今天', '规划', '专注', '四象限', '清单', '搜索', '标签', '已归档', '回收站', '变更历史', '设置', 'AI 连接', '待确认', '工作上下文', '资料库', '技能', 'AI 执行', 'Worktree 管理', '定期回顾'];
 
-test('更多页展示 4 个分组、18 个入口与聊天卡片', async ({ page }) => {
+test('更多页展示 4 个分组、20 个入口与聊天卡片', async ({ page }) => {
   await page.goto('/#/more');
   const nav = page.getByRole('navigation', { name: '工作区导航' });
   await expect(nav).toBeVisible();

@@ -1,11 +1,12 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { localDate } from '@/lib/todo.js';
 import { shiftMonth } from '@/lib/schedule.js';
 import { Button } from '@/components/ui/button.js';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.js';
 
 const ROW = 36;
-const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
+const WEEK_IDS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 
 export function keepSchedulePickerOpen(event: { target: EventTarget | null; preventDefault(): void; detail?: { originalEvent?: Event } }) {
   const candidate = event.detail?.originalEvent?.target ?? event.target;
@@ -65,6 +66,7 @@ function GearPair({ rotation }: { rotation: number }) {
 }
 
 function Wheel({ kind, selected, onSelect }: { kind: 'hour' | 'minute'; selected: string; onSelect: (value: string) => void }) {
+  const { t } = useTranslation('tasks');
   const ref = useRef<HTMLDivElement>(null);
   const selectedRef = useRef(selected);
   const onSelectRef = useRef(onSelect);
@@ -99,7 +101,7 @@ function Wheel({ kind, selected, onSelect }: { kind: 'hour' | 'minute'; selected
         {Array.from({ length: count }, (_, index) => {
           const value = pad(index);
           const on = index === hot;
-          return <button key={value} type="button" aria-label={`${value}${kind === 'hour' ? '时' : '分'}`} aria-selected={value === selected} className={`block h-[36px] w-full snap-center bg-transparent text-center tabular-nums ${on ? 'text-xl font-semibold text-foreground' : index % 5 === 0 || kind === 'hour' ? 'text-foreground/75' : 'text-muted-foreground'}`} onClick={() => onSelect(value)}>{value}</button>;
+          return <button key={value} type="button" aria-label={t(kind === 'hour' ? 'schedule.hourOption' : 'schedule.minuteOption', { value })} aria-selected={value === selected} className={`block h-[36px] w-full snap-center bg-transparent text-center tabular-nums ${on ? 'text-xl font-semibold text-foreground' : index % 5 === 0 || kind === 'hour' ? 'text-foreground/75' : 'text-muted-foreground'}`} onClick={() => onSelect(value)}>{value}</button>;
         })}
       </div>
       <span className="pointer-events-none absolute inset-y-2.5 left-0 w-1.5 text-foreground/40 bg-[repeating-linear-gradient(180deg,transparent_0_4px,currentColor_4px_5px,transparent_5px_10px)]" />
@@ -110,35 +112,39 @@ function Wheel({ kind, selected, onSelect }: { kind: 'hour' | 'minute'; selected
 }
 
 export function ScheduleDatePicker({ label, value, open, onOpenChange, onChange, disabled = false, className = '' }: { label: string; value: string; open: boolean; onOpenChange: (open: boolean) => void; onChange: (date: string) => void; disabled?: boolean; className?: string }) {
+  const { t } = useTranslation('tasks');
+  const { t: plan } = useTranslation('plan');
   const [viewMonth, setViewMonth] = useState(value.slice(0, 7));
   useEffect(() => { if (open && value) setViewMonth(value.slice(0, 7)); }, [open, value]);
   useEffect(() => { if (disabled && open) onOpenChange(false); }, [disabled, open, onOpenChange]);
   const [year, month] = viewMonth.split('-');
   const today = localDate();
   return <Popover open={open} onOpenChange={onOpenChange}>
-    <PopoverTrigger asChild><button type="button" aria-label={label} disabled={disabled} className={`glass-control flex h-10 items-center justify-between rounded-md px-3 text-left ${className}`}>{value ? showDate(value) : '选择日期'}<span className="text-muted-foreground">日历</span></button></PopoverTrigger>
-    <PopoverContent data-task-editor data-schedule-picker aria-label="选择日期" align="start" collisionPadding={12} className="z-[80] w-64 p-3" onPointerDown={(event) => event.stopPropagation()} onOpenAutoFocus={(event) => event.preventDefault()}>
-      <div className="mb-2 flex items-center justify-between gap-2"><p className="text-sm font-medium">{year}年{Number(month)}月</p><span className="flex gap-1"><Button type="button" variant="outline" size="sm" aria-label="上个月" disabled={disabled} onClick={() => setViewMonth(shiftMonth(`${viewMonth}-01`, -1).slice(0, 7))}>‹</Button><Button type="button" variant="outline" size="sm" aria-label="下个月" disabled={disabled} onClick={() => setViewMonth(shiftMonth(`${viewMonth}-01`, 1).slice(0, 7))}>›</Button><Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)}>完成</Button></span></div>
-      <div className="grid grid-cols-7 gap-0.5 text-center text-xs">{WEEK.map((day) => <span key={day} className="grid h-8 place-items-center text-muted-foreground">{day}</span>)}{monthCells(viewMonth).map((cell) => <button key={cell.iso} type="button" disabled={disabled} aria-label={cell.iso} aria-selected={cell.iso === value} className={`grid h-8 place-items-center rounded-full ${cell.iso === value ? 'bg-primary font-semibold text-primary-foreground' : cell.iso === today ? 'text-foreground ring-1 ring-muted-foreground' : cell.outside ? 'text-muted-foreground/50' : 'text-foreground'}`} onClick={() => { onChange(cell.iso); onOpenChange(false); }}>{cell.day}</button>)}</div>
+    <PopoverTrigger asChild><button type="button" aria-label={label} disabled={disabled} className={`glass-control flex h-10 items-center justify-between rounded-md px-3 text-left ${className}`}>{value ? showDate(value) : t('schedule.pickDate')}<span className="text-muted-foreground">{t('schedule.calendar')}</span></button></PopoverTrigger>
+    <PopoverContent data-task-editor data-schedule-picker aria-label={t('schedule.pickDate')} align="start" collisionPadding={12} className="z-[80] w-64 p-3" onPointerDown={(event) => event.stopPropagation()} onOpenAutoFocus={(event) => event.preventDefault()}>
+      <div className="mb-2 flex items-center justify-between gap-2"><p className="text-sm font-medium">{t('schedule.monthLabel', { year, month: Number(month) })}</p><span className="flex gap-1"><Button type="button" variant="outline" size="sm" aria-label={t('schedule.prevMonth')} disabled={disabled} onClick={() => setViewMonth(shiftMonth(`${viewMonth}-01`, -1).slice(0, 7))}>‹</Button><Button type="button" variant="outline" size="sm" aria-label={t('schedule.nextMonth')} disabled={disabled} onClick={() => setViewMonth(shiftMonth(`${viewMonth}-01`, 1).slice(0, 7))}>›</Button><Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)}>{t('schedule.done')}</Button></span></div>
+      <div className="grid grid-cols-7 gap-0.5 text-center text-xs">{WEEK_IDS.map((day) => <span key={day} className="grid h-8 place-items-center text-muted-foreground">{plan(`weekday.${day}.narrow`)}</span>)}{monthCells(viewMonth).map((cell) => <button key={cell.iso} type="button" disabled={disabled} aria-label={cell.iso} aria-selected={cell.iso === value} className={`grid h-8 place-items-center rounded-full ${cell.iso === value ? 'bg-primary font-semibold text-primary-foreground' : cell.iso === today ? 'text-foreground ring-1 ring-muted-foreground' : cell.outside ? 'text-muted-foreground/50' : 'text-foreground'}`} onClick={() => { onChange(cell.iso); onOpenChange(false); }}>{cell.day}</button>)}</div>
     </PopoverContent>
   </Popover>;
 }
 
 export function ScheduleTimePicker({ label, value, open, onOpenChange, onChange, disabled = false, align = 'start', className = '' }: { label: string; value: string; open: boolean; onOpenChange: (open: boolean) => void; onChange: (hm: string) => void; disabled?: boolean; align?: 'start' | 'end'; className?: string }) {
+  const { t } = useTranslation('tasks');
   const [part, setPart] = useState<'hour' | 'minute'>('minute');
   useEffect(() => { if (disabled && open) onOpenChange(false); }, [disabled, open, onOpenChange]);
   const [hour, minute] = value.split(':');
   const choose = (nextHour: string, nextMinute: string) => onChange(`${nextHour}:${nextMinute}`);
+  const presets = [{ key: 'now', label: t('schedule.now'), next: 'now' }, { key: '09:00', label: '09:00', next: '09:00' }, { key: '14:00', label: '14:00', next: '14:00' }, { key: '18:00', label: '18:00', next: '18:00' }];
   return <Popover open={open} onOpenChange={onOpenChange}>
     <PopoverTrigger asChild><button type="button" aria-label={label} disabled={disabled} className={`glass-control flex h-10 items-center rounded-md px-3 text-left tabular-nums ${className}`} onClick={(event) => { const node = event.target instanceof Element ? event.target.closest('[data-part]') : null; if (node instanceof HTMLElement && (node.dataset.part === 'hour' || node.dataset.part === 'minute')) setPart(node.dataset.part); }}><span data-part="hour" className={`rounded px-0.5 ${open && part === 'hour' ? 'bg-foreground/15' : ''}`}>{hour}</span><span className="text-muted-foreground">:</span><span data-part="minute" className={`rounded px-0.5 ${open && part === 'minute' ? 'bg-foreground/15' : ''}`}>{minute}</span></button></PopoverTrigger>
-    <PopoverContent data-task-editor data-schedule-picker aria-label="选择时间" align={align} collisionPadding={12} className="z-[80] w-auto max-w-[calc(100vw-1.5rem)] p-3" style={{ width: align === 'end' ? 'min(20.5rem, calc(100vw - 1.5rem))' : 'min(20.5rem, var(--radix-popover-trigger-width), calc(100vw - 1.5rem))' }} onPointerDown={(event) => event.stopPropagation()} onOpenAutoFocus={(event) => event.preventDefault()}>
-      <div className="mb-2 flex items-center justify-between"><p className="text-sm text-muted-foreground">时间</p><Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)}>完成</Button></div>
-      <div className="mb-2 flex flex-wrap gap-1">{[['现在', 'now'], ['09:00', '09:00'], ['14:00', '14:00'], ['18:00', '18:00']].map(([text, next]) => <Button key={text} type="button" variant="outline" size="sm" disabled={disabled} onClick={() => { if (next === 'now') { const date = new Date(); choose(pad(date.getHours()), pad(date.getMinutes())); } else choose(next.slice(0, 2), next.slice(3)); }}>{text}</Button>)}</div>
+    <PopoverContent data-task-editor data-schedule-picker aria-label={t('schedule.pickTime')} align={align} collisionPadding={12} className="z-[80] w-auto max-w-[calc(100vw-1.5rem)] p-3" style={{ width: align === 'end' ? 'min(20.5rem, calc(100vw - 1.5rem))' : 'min(20.5rem, var(--radix-popover-trigger-width), calc(100vw - 1.5rem))' }} onPointerDown={(event) => event.stopPropagation()} onOpenAutoFocus={(event) => event.preventDefault()}>
+      <div className="mb-2 flex items-center justify-between"><p className="text-sm text-muted-foreground">{t('schedule.time')}</p><Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)}>{t('schedule.done')}</Button></div>
+      <div className="mb-2 flex flex-wrap gap-1">{presets.map((preset) => <Button key={preset.key} type="button" variant="outline" size="sm" disabled={disabled} onClick={() => { if (preset.next === 'now') { const date = new Date(); choose(pad(date.getHours()), pad(date.getMinutes())); } else choose(preset.next.slice(0, 2), preset.next.slice(3)); }}>{preset.label}</Button>)}</div>
       <div className="grid min-w-0 grid-cols-2 gap-2">
         <Wheel kind="hour" selected={hour} onSelect={(next) => { if (disabled) return; setPart('hour'); choose(next, minute); }} />
         <Wheel kind="minute" selected={minute} onSelect={(next) => { if (disabled) return; setPart('minute'); choose(hour, next); }} />
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">拨动滚轮，齿轮对转，一格一齿。</p>
+      <p className="mt-2 text-xs text-muted-foreground">{t('schedule.gearHint')}</p>
     </PopoverContent>
   </Popover>;
 }

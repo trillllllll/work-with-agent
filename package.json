@@ -1,6 +1,6 @@
 {
   "name": "agent-studio",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "private": true,
   "workspaces": [
     "client",
@@ -14,6 +14,7 @@
     "test:all": "npm test && npm run e2e",
     "db:migrate": "npm run db:migrate -w server",
     "e2e": "playwright test",
+    "e2e:orchestration": "playwright test -c playwright.orchestration.config.ts",
     "test:library:migration": "tsx scripts/library-migration.ts",
     "test:library:performance": "tsx scripts/library-performance.ts",
     "e2e:real": "node e2e/run-real.mjs",
@@ -22,7 +23,8 @@
     "desktop:dev": "node scripts/assemble-desktop.mjs && node scripts/tauri.mjs dev",
     "desktop:build": "node scripts/assemble-desktop.mjs && node scripts/tauri.mjs build",
     "desktop:build:windows": "node scripts/assemble-desktop.mjs && node scripts/tauri.mjs build --bundles nsis",
-    "desktop:smoke": "node scripts/desktop-smoke.mjs"
+    "desktop:smoke": "node scripts/desktop-smoke.mjs",
+    "i18n:check": "node scripts/i18n-check.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

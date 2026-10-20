@@ -1,7 +1,27 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { shouldAttachTaskImage, taskDetailImageRefs, taskImageAttachPerImage, taskImageAttachTotal, type TaskImageRef } from './task-image-content.js';
+import { requestLocale } from '../i18n/index.js';
+import {
+  MAX_ATTACHMENT_BYTES,
+  MAX_IMAGE_BYTES,
+  MAX_IMAGES_PER_TASK,
+  MAX_TEXT_ATTACHMENT_CHARS,
+  MAX_TOTAL_IMAGE_BYTES,
+  attachmentFileName,
+  canonicalInlineImageMime,
+  countCapReason,
+  extractTaskImageRefs,
+  isInlineImageMime,
+  isTextLikeAttachment,
+  materialMetadata,
+  prepareImage,
+  resolveAttachmentMime,
+  taskImageCaption,
+  taskImageSummary,
+  totalSizeCapReason,
+  truncateUtf8,
+} from './media.js';
 
 export const mcpCredential = new AsyncLocalStorage<string>();
 
@@ -17,82 +37,133 @@ function apiBase() {
   return base;
 }
 
+// HTTP MCP forwards the caller's Accept-Language; stdio MCP can set WWA_LANGUAGE. Otherwise the API answers in zh-CN.
+function forwardedLanguage(): Record<string, string> {
+  const language = requestLocale() ?? process.env.WWA_LANGUAGE;
+  return language ? { 'Accept-Language': language } : {};
+}
+
 export function createMcpServer() {
   const server = new McpServer({ name: 'work-with-agent', version: '2.0.0' }, {
-    instructions: 'Read only the lists authorized for this connection. Read current revisions before editing. Writes require a stable requestId; reuse it only to retry identical content. pending_approval means data has NOT changed. Never claim a proposal was applied. Omit fields to preserve them, use null to clear nullable fields and [] to clear sets. Handoff results do not complete tasks; the owner reviews results. Preserve source IDs and revisions when proposing memories. Description paths like /api/tasks/{taskId}/images/{imageId} are not fetchable URLs. get_task attaches those screenshots as image content. Call get_task_image for one screenshot that was omitted.',
+    instructions: 'Read only the lists authorized for this connection. Read current revisions before editing. Writes require a stable requestId; reuse it only to retry identical content. pending_approval means data has NOT changed. Never claim a proposal was applied. Omit fields to preserve them, use null to clear nullable fields and [] to clear sets. Handoff results do not complete tasks; the owner reviews results. Preserve source IDs and revisions when proposing memories. get_task returns referenced description images as image content (6 images, 1.5 MiB, 2000px, 6 MiB total; includeImages:false skips them). Use get_task_image for one image and get_material_attachment for a material file.',
   });
 
-  type ToolText = { type: 'text'; text: string };
-  type ToolImage = { type: 'image'; data: string; mimeType: string };
-  type ToolResult = { content: Array<ToolText | ToolImage>; structuredContent: Record<string, unknown>; isError?: boolean };
-  function toolResult(payload: Record<string, unknown>, status: number, content: Array<ToolText | ToolImage> = []): ToolResult {
-    const result = { ...payload, httpStatus: status, retryable: status === 429 || status >= 500 };
-    const text: ToolText = { type: 'text', text: JSON.stringify(result) };
-    return { content: [text, ...content], structuredContent: result, ...(status >= 200 && status < 300 ? {} : { isError: true }) };
-  }
-  function unavailable(error: unknown): ToolResult {
-    const result = { code: 'CONNECTION_UNAVAILABLE', message: error instanceof Error ? error.message : 'Local workspace is unavailable', retryable: true };
-    return { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: result, isError: true };
-  }
-  async function request(path: string, method = 'GET', body?: unknown): Promise<ToolResult> {
+  async function request(path: string, method = 'GET', body?: unknown) {
     try {
-      const response = await fetch(new URL(path, apiBase()), { method, headers: { Authorization: `Bearer ${credential()}`, 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(30_000), redirect: 'error' });
+      const response = await fetch(new URL(path, apiBase()), { method, headers: { Authorization: `Bearer ${credential()}`, 'Content-Type': 'application/json', ...forwardedLanguage() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(30_000), redirect: 'error' });
       const payload = await response.json() as Record<string, unknown>;
-      return toolResult(payload, response.status);
+      const result = { ...payload, httpStatus: response.status, retryable: response.status === 429 || response.status >= 500 };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], structuredContent: result, ...(response.ok ? {} : { isError: true }) };
     } catch (error) {
-      return unavailable(error);
+      const result = { code: 'CONNECTION_UNAVAILABLE', message: error instanceof Error ? error.message : 'Local workspace is unavailable', retryable: true };
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], structuredContent: result, isError: true };
     }
   }
-  async function readTaskImage(taskId: string, imageId: string, byteLimit: number | null): Promise<{ ok: true; mimeType: string; byteSize: number; bytes?: Buffer } | { ok: false; status: number; payload: Record<string, unknown> } | { ok: false; unavailable: unknown }> {
+  function toolError(code: string, message: string, httpStatus: number | null, retryable: boolean) {
+    const result = { code, message, httpStatus, retryable };
+    return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], structuredContent: result, isError: true as const };
+  }
+  function errorBody(text: string, status: number) {
+    const fallback = text.trim().slice(0, 500) || `HTTP ${status}`;
     try {
-      const response = await fetch(new URL(`/api/v1/tasks/${encodeURIComponent(taskId)}/images/${encodeURIComponent(imageId)}`, apiBase()), { headers: { Authorization: `Bearer ${credential()}` }, signal: AbortSignal.timeout(30_000), redirect: 'error' });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({ message: '图片不存在' })) as Record<string, unknown>;
-        return { ok: false, status: response.status, payload };
-      }
-      const mimeType = (response.headers.get('content-type') ?? '').split(';')[0].trim();
-      if (mimeType !== 'image/jpeg' && mimeType !== 'image/webp') {
-        await response.body?.cancel().catch(() => {});
-        return { ok: false, status: 415, payload: { code: 'INVALID_IMAGE', message: '只接受 WebP 或 JPEG 图片' } };
-      }
-      const declared = Number(response.headers.get('content-length'));
-      if (byteLimit !== null && Number.isFinite(declared) && declared > byteLimit) {
-        await response.body?.cancel().catch(() => {});
-        return { ok: true, mimeType, byteSize: declared };
-      }
+      const payload = JSON.parse(text) as Record<string, unknown>;
+      const code = typeof payload.code === 'string' && payload.code ? payload.code : 'REQUEST_FAILED';
+      let message = fallback;
+      if (typeof payload.message === 'string' && payload.message) message = payload.message;
+      else if (typeof payload.error === 'string' && payload.error) message = payload.error;
+      else if (payload.error && typeof payload.error === 'object') message = JSON.stringify(payload.error).slice(0, 500);
+      return { code, message };
+    } catch {
+      return { code: 'REQUEST_FAILED', message: fallback };
+    }
+  }
+  async function readCapped(response: Response, limit: number) {
+    const declared = Number(response.headers.get('content-length'));
+    if (Number.isFinite(declared) && declared > limit) {
+      await response.body?.cancel().catch(() => {});
+      return { ok: false as const, code: 'ATTACHMENT_TOO_LARGE', message: `response exceeds fetch cap of ${limit} bytes` };
+    }
+    if (!response.body) {
       const bytes = Buffer.from(await response.arrayBuffer());
-      if (byteLimit !== null && bytes.byteLength > byteLimit) return { ok: true, mimeType, byteSize: bytes.byteLength };
-      return { ok: true, mimeType, byteSize: bytes.byteLength, bytes };
+      if (bytes.byteLength > limit) return { ok: false as const, code: 'ATTACHMENT_TOO_LARGE', message: `response exceeds fetch cap of ${limit} bytes` };
+      return { ok: true as const, bytes };
+    }
+    const reader = response.body.getReader();
+    const chunks: Buffer[] = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > limit) {
+        await reader.cancel().catch(() => {});
+        return { ok: false as const, code: 'ATTACHMENT_TOO_LARGE', message: `response exceeds fetch cap of ${limit} bytes` };
+      }
+      chunks.push(Buffer.from(value));
+    }
+    return { ok: true as const, bytes: Buffer.concat(chunks) };
+  }
+  async function requestBinary(path: string) {
+    try {
+      const response = await fetch(new URL(path, apiBase()), { method: 'GET', headers: { Authorization: `Bearer ${credential()}`, ...forwardedLanguage() }, signal: AbortSignal.timeout(30_000), redirect: 'error' });
+      const body = await readCapped(response, MAX_ATTACHMENT_BYTES);
+      if (!body.ok) return { ok: false as const, status: 413, message: body.message, code: body.code, retryable: false };
+      if (!response.ok) {
+        const parsed = errorBody(body.bytes.toString('utf8'), response.status);
+        return { ok: false as const, status: response.status, message: parsed.message, code: parsed.code, retryable: response.status === 429 || response.status >= 500 };
+      }
+      return { ok: true as const, status: response.status, bytes: body.bytes, headers: response.headers };
     } catch (error) {
-      return { ok: false, unavailable: error };
+      return { ok: false as const, status: null, code: 'CONNECTION_UNAVAILABLE', message: error instanceof Error ? error.message : 'Local workspace is unavailable', retryable: true };
     }
   }
-  function imageNote(ref: TaskImageRef, fields: Record<string, unknown>) {
-    return { type: 'text' as const, text: JSON.stringify({ image: { taskId: ref.taskId, imageId: ref.imageId, ...(ref.alt ? { alt: ref.alt } : {}), ...fields } }) };
+  function taskDescription(payload: unknown) {
+    if (!payload || typeof payload !== 'object' || !('data' in payload)) return '';
+    const data = (payload as { data?: unknown }).data;
+    if (!data || typeof data !== 'object' || !('description' in data)) return '';
+    const description = (data as { description?: unknown }).description;
+    return typeof description === 'string' ? description : '';
   }
-  async function attachTaskImages(result: ToolResult): Promise<ToolResult> {
-    const data = result.structuredContent.data;
-    if (!data || typeof data !== 'object') return result;
-    const refs = taskDetailImageRefs(data as { id?: unknown; description?: unknown; children?: unknown });
-    if (!refs.length) return result;
-    const content = [...result.content];
-    let usedBytes = 0;
-    for (const [index, ref] of refs.entries()) {
-      const byteLimit = shouldAttachTaskImage(index, 1, usedBytes) ? Math.min(taskImageAttachPerImage, taskImageAttachTotal - usedBytes) : 0;
-      const image = await readTaskImage(ref.taskId, ref.imageId, byteLimit);
-      if (!image.ok) {
-        content.push(imageNote(ref, { included: false, unavailable: true, ...('status' in image ? { status: image.status } : {}) }));
+  async function taskImageBlocks(taskId: string, description: string) {
+    const refs = extractTaskImageRefs(taskId, description);
+    if (!refs.length) return [];
+    const skipped: Array<{ imageId: string; reason: string }> = [];
+    const attached: Array<{ imageId: string; data: string; mimeType: string }> = [];
+    let used = 0;
+    for (const [index, imageId] of refs.entries()) {
+      if (index >= MAX_IMAGES_PER_TASK) {
+        skipped.push({ imageId, reason: countCapReason() });
         continue;
       }
-      if (!image.bytes || !shouldAttachTaskImage(index, image.byteSize, usedBytes)) {
-        content.push(imageNote(ref, { included: false, mimeType: image.mimeType, byteSize: image.byteSize, readWith: 'get_task_image' }));
-        continue;
+      try {
+        const fetched = await requestBinary(`/api/v1/tasks/${encodeURIComponent(taskId)}/images/${encodeURIComponent(imageId)}`);
+        if (!fetched.ok) {
+          skipped.push({ imageId, reason: `fetch error (HTTP ${fetched.status ?? 'none'}): ${fetched.message}` });
+          continue;
+        }
+        const mimeType = canonicalInlineImageMime(fetched.headers.get('content-type') ?? 'application/octet-stream');
+        const prepared = await prepareImage(fetched.bytes, mimeType);
+        if (!prepared.ok) {
+          skipped.push({ imageId, reason: prepared.reason });
+          continue;
+        }
+        if (used + prepared.byteSize > MAX_TOTAL_IMAGE_BYTES) {
+          skipped.push({ imageId, reason: totalSizeCapReason() });
+          continue;
+        }
+        used += prepared.byteSize;
+        attached.push({ imageId, data: prepared.data, mimeType: prepared.mimeType });
+      } catch (error) {
+        skipped.push({ imageId, reason: `fetch error: ${error instanceof Error ? error.message : 'image request failed'}` });
       }
-      usedBytes += image.byteSize;
-      content.push(imageNote(ref, { included: true, mimeType: image.mimeType, byteSize: image.byteSize }));
-      content.push({ type: 'image', data: image.bytes.toString('base64'), mimeType: image.mimeType });
     }
-    return { ...result, content };
+    const blocks: Array<{ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }> = [];
+    attached.forEach((image, index) => {
+      blocks.push({ type: 'text', text: taskImageCaption(index + 1, attached.length, taskId, image.imageId) });
+      blocks.push({ type: 'image', data: image.data, mimeType: image.mimeType });
+    });
+    blocks.push({ type: 'text', text: taskImageSummary(skipped) });
+    return blocks;
   }
   const pagination = { cursor: z.string().optional(), limit: z.number().int().min(1).max(100).optional() };
   function query(path: string, args: Record<string, unknown>) {
@@ -104,16 +175,25 @@ export function createMcpServer() {
   const command = z.object({ kind: id, targetId: id.optional(), expectedRevision: z.number().int().positive().optional(), input: z.record(z.unknown()).optional(), clientRef: id.optional(), evidence: z.array(z.object({ type: z.enum(['task', 'material', 'memory']), id, revision: z.number().int().positive(), hash: z.string().optional() })).optional() });
   const commands = z.object({ requestId: id, commands: z.array(command).min(1).max(50), previewToken: z.string().optional() });
   server.registerTool('list_tasks', { description: 'Query authorized tasks with pagination. dueFrom/To filter the start date; scheduledFrom/To filter calendar overlap including cross-day ranges, excluding the end boundary. Deleted and archived items are excluded by default.', inputSchema: { ...pagination, topicId: id.optional(), inbox: z.boolean().optional(), q: z.string().optional(), status: z.enum(['open', 'done', 'all', 'todo', 'doing', 'blocked']).optional(), dueFrom: z.string().optional(), dueTo: z.string().optional(), scheduledFrom: z.string().optional(), scheduledTo: z.string().optional(), tagIds: z.array(id).optional(), sort: z.enum(['manual', 'date', 'priority']).optional() } }, (args) => query('/api/v1/tasks', args));
-  server.registerTool('get_task', { description: 'Read task fields, revision and children before proposing an edit. Screenshots referenced in the description are attached as image content. Paths like /api/tasks/{taskId}/images/{imageId} are not fetchable. Call get_task_image for a single omitted screenshot.', inputSchema: { taskId: id } }, async ({ taskId }) => {
+  server.registerTool('get_task', { description: 'Read task fields, revision and children before proposing an edit. Description images referenced as /api/tasks/{taskId}/images/{imageId} are returned as image content after the JSON (at most 6 images, each at most 1.5 MiB and 2000px, 6 MiB total). Pass includeImages:false to skip them. Use get_task_image for one image.', inputSchema: { taskId: id, includeImages: z.boolean().optional() } }, async ({ taskId, includeImages }) => {
     const result = await request(`/api/v1/tasks/${encodeURIComponent(taskId)}`);
-    return result.isError ? result : attachTaskImages(result);
+    if (result.isError || includeImages === false) return result;
+    try {
+      const extra = await taskImageBlocks(taskId, taskDescription(result.structuredContent));
+      if (!extra.length) return result;
+      return { ...result, content: [...result.content, ...extra] };
+    } catch (error) {
+      const text = `Skipped images:\n- description images: fetch error (${error instanceof Error ? error.message : 'image request failed'})\nUse get_task_image to fetch a specific image.`;
+      return { ...result, content: [...result.content, { type: 'text' as const, text }] };
+    }
   });
-  server.registerTool('get_task_image', { description: 'Read one JPEG or WebP screenshot that belongs to an authorized task. Description image paths are not fetchable URLs.', inputSchema: { taskId: id, imageId: id } }, async ({ taskId, imageId }) => {
-    const image = await readTaskImage(taskId, imageId, null);
-    if (!image.ok) return 'unavailable' in image ? unavailable(image.unavailable) : toolResult(image.payload, image.status);
-    if (!image.bytes) return toolResult({ data: null, code: 'INVALID_IMAGE', error: '图片内容不可用' }, 502);
-    const meta = { data: { taskId, imageId, mimeType: image.mimeType, byteSize: image.byteSize }, error: null };
-    return toolResult(meta, 200, [{ type: 'image', data: image.bytes.toString('base64'), mimeType: image.mimeType }]);
+  server.registerTool('get_task_image', { description: 'Fetch one task description image by taskId and imageId. Returns the image bytes, resized to at most 2000px and 1.5 MiB when needed.', inputSchema: { taskId: id, imageId: id } }, async ({ taskId, imageId }) => {
+    const fetched = await requestBinary(`/api/v1/tasks/${encodeURIComponent(taskId)}/images/${encodeURIComponent(imageId)}`);
+    if (!fetched.ok) return toolError(fetched.code, fetched.message, fetched.status, fetched.retryable);
+    const originalMimeType = canonicalInlineImageMime(fetched.headers.get('content-type') ?? 'application/octet-stream');
+    const prepared = await prepareImage(fetched.bytes, originalMimeType);
+    if (!prepared.ok) return toolError('IMAGE_UNAVAILABLE', prepared.reason, fetched.status, false);
+    return { content: [{ type: 'text' as const, text: `imageId=${imageId} originalMimeType=${originalMimeType} originalByteSize=${fetched.bytes.byteLength} resized=${prepared.resized}` }, { type: 'image' as const, data: prepared.data, mimeType: prepared.mimeType }] };
   });
   server.registerTool('list_tags', { description: 'List only tags associated with tasks in this connection scope.', inputSchema: pagination }, (args) => query('/api/v1/tags', args));
   server.registerTool('list_trash', { description: 'List deleted tasks in the authorized scope before proposing task.restore. Follow nextCursor for all members.', inputSchema: pagination }, (args) => query('/api/v1/trash/tasks', args));
@@ -127,12 +207,36 @@ export function createMcpServer() {
   server.registerTool('get_proposal', { description: 'Read the state of a previously submitted proposal. Only the owner can approve.', inputSchema: { proposalId: id } }, ({ proposalId }) => request(`/api/v1/proposals/${encodeURIComponent(proposalId)}`));
   server.registerTool('search_knowledge', { description: 'Search authorized task, material and memory sources; preserve evidence versions. scope=library searches material filename, title, tags and extracted body.', inputSchema: { ...pagination, q: id, topicId: id.optional(), scope: z.literal('library').optional(), types: z.array(z.enum(['material', 'task', 'memory'])).optional(), folderId: z.string().optional(), tagIds: z.array(id).optional(), taskId: id.optional(), archived: z.enum(['exclude', 'only', 'include']).optional(), taskTopicId: z.string().optional(), kind: z.enum(['text', 'markdown', 'link', 'thread', 'attachment']).optional() } }, (args) => args.scope === 'library' ? query('/api/v1/library/search', { q: args.q, cursor: args.cursor, limit: args.limit, folderId: args.folderId, tagIds: args.tagIds, taskId: args.taskId, archived: args.archived, taskTopicId: args.taskTopicId, kind: args.kind }) : query('/api/v1/knowledge/search', { q: args.q, topicId: args.topicId, cursor: args.cursor, limit: args.limit }));
   server.registerTool('list_materials', { description: 'List authorized saved materials. scope=library lists the global library inside this connection grant.', inputSchema: { ...pagination, topicId: id.optional(), taskId: id.optional(), scope: z.literal('library').optional(), folderId: z.string().optional(), tagIds: z.array(id).optional(), archived: z.enum(['exclude', 'only', 'include']).optional(), taskTopicId: z.string().optional(), kind: z.enum(['text', 'markdown', 'link', 'thread', 'attachment']).optional() } }, (args) => args.scope === 'library' ? query('/api/v1/library/materials', { cursor: args.cursor, limit: args.limit, folderId: args.folderId, tagIds: args.tagIds, taskId: args.taskId, archived: args.archived, taskTopicId: args.taskTopicId, kind: args.kind }) : query('/api/v1/knowledge/materials', { topicId: args.topicId, taskId: args.taskId, cursor: args.cursor, limit: args.limit }));
-  server.registerTool('get_material', { description: 'Read saved material and its immutable source versions.', inputSchema: { materialId: id } }, ({ materialId }) => request(`/api/v1/knowledge/materials/${encodeURIComponent(materialId)}`));
+  server.registerTool('get_material', { description: 'Read saved material and its immutable source versions. Use get_material_attachment to read a file attachment.', inputSchema: { materialId: id } }, ({ materialId }) => request(`/api/v1/knowledge/materials/${encodeURIComponent(materialId)}`));
+  server.registerTool('get_material_attachment', { description: 'Read a material version file. Images (png, jpeg, webp, gif) are returned as image content with the same size limits as get_task. Text-like files are returned as a UTF-8 resource truncated at 100000 characters. PDF and other binary files up to 3 MiB are returned as a base64 resource; larger files are not inlined. Use get_material_content for extracted text. Downloads are capped at 20 MiB.', inputSchema: { materialId: id, revision: z.number().int().positive() } }, async ({ materialId, revision }) => {
+    const fetched = await requestBinary(`/api/v1/knowledge/materials/${encodeURIComponent(materialId)}/versions/${encodeURIComponent(String(revision))}/attachment`);
+    if (!fetched.ok) return toolError(fetched.code, fetched.message, fetched.status, fetched.retryable);
+    const fileName = attachmentFileName(fetched.headers.get('content-disposition'));
+    const mimeType = resolveAttachmentMime(fetched.headers.get('x-wwa-mime-type'), fileName);
+    const byteSize = fetched.bytes.byteLength;
+    const metadata = { type: 'text' as const, text: materialMetadata({ materialId, revision, fileName, mimeType, byteSize }) };
+    const uri = `wwa://materials/${materialId}/versions/${revision}/attachment`;
+    if (isInlineImageMime(mimeType)) {
+      const prepared = await prepareImage(fetched.bytes, canonicalInlineImageMime(mimeType));
+      if (!prepared.ok) return { content: [metadata, { type: 'text' as const, text: prepared.reason }] };
+      return { content: [metadata, { type: 'image' as const, data: prepared.data, mimeType: prepared.mimeType }] };
+    }
+    if (isTextLikeAttachment(mimeType, fileName)) {
+      const decoded = truncateUtf8(fetched.bytes, MAX_TEXT_ATTACHMENT_CHARS);
+      const note = decoded.truncated ? { type: 'text' as const, text: `Truncated to ${MAX_TEXT_ATTACHMENT_CHARS} characters.` } : null;
+      const resource = { type: 'resource' as const, resource: { uri, mimeType, text: decoded.text } };
+      return { content: note ? [metadata, note, resource] : [metadata, resource] };
+    }
+    const inlineLimit = MAX_IMAGE_BYTES * 2;
+    const recommend = { type: 'text' as const, text: byteSize <= inlineLimit ? 'Use get_material_content for extracted text.' : `Attachment is ${byteSize} bytes and exceeds the ${inlineLimit} byte inline limit. Use get_material_content for extracted text.` };
+    if (byteSize > inlineLimit) return { content: [metadata, recommend] };
+    return { content: [metadata, recommend, { type: 'resource' as const, resource: { uri, mimeType, blob: fetched.bytes.toString('base64') } }] };
+  });
   server.registerTool('get_material_content', { description: 'Read extracted text chunks for one material revision. Citations use the returned chunk id and locator.', inputSchema: { materialId: id, revision: z.number().int().positive(), cursor: z.string().optional(), limit: z.number().int().min(1).max(100).optional() } }, ({ materialId, ...args }) => query(`/api/v1/library/materials/${encodeURIComponent(materialId)}/content`, args));
   server.registerTool('list_library_folders', { description: 'List library folders. Folder changes still go through submit_commands and stay pending until the owner approves.', inputSchema: {} }, () => request('/api/v1/library/folders'));
   server.registerTool('list_library_tags', { description: 'List library tags. Tag changes still go through submit_commands and stay pending until the owner approves.', inputSchema: {} }, () => request('/api/v1/library/tags'));
   server.registerTool('list_material_tasks', { description: 'List tasks linked to a material that this connection can read.', inputSchema: { materialId: id, ...pagination } }, ({ materialId, ...args }) => query(`/api/v1/library/materials/${encodeURIComponent(materialId)}/tasks`, args));
-  server.registerTool('list_task_materials', { description: 'List materials linked to a task that this connection can read.', inputSchema: { taskId: id, ...pagination } }, ({ taskId, ...args }) => query(`/api/v1/library/tasks/${encodeURIComponent(taskId)}/materials`, args));
+  server.registerTool('list_task_materials', { description: 'List materials linked to a task that this connection can read. Use get_material_attachment to read a file attachment.', inputSchema: { taskId: id, ...pagination } }, ({ taskId, ...args }) => query(`/api/v1/library/tasks/${encodeURIComponent(taskId)}/materials`, args));
   server.registerTool('list_memories', { description: 'Read scoped project memories with importance, labels, origin, source health and lifecycle state. status=active is the default; history includes retired and superseded; all returns every state.', inputSchema: { ...pagination, topicId: id.optional(), history: z.boolean().optional(), status: z.enum(['active', 'history', 'all']).optional(), q: z.string().optional() } }, (args) => query('/api/v1/knowledge/memories', args));
   server.registerTool('get_knowledge_graph', { description: 'Read the scoped evidence graph. range 1-5 expands from a literal fast match or a smart content match. Nodes are memories, materials, tasks, artifacts and entities.', inputSchema: { topicId: id.optional(), q: z.string().optional(), mode: z.enum(['fast', 'smart']).optional(), range: z.number().int().min(1).max(5).optional(), focusType: z.enum(['memory', 'material', 'task', 'artifact', 'entity']).optional(), focusId: id.optional(), includeHistory: z.boolean().optional() } }, (args) => query('/api/v1/knowledge/graph', { ...args, includeHistory: args.includeHistory ? 'true' : undefined }));
   server.registerTool('get_memory', { description: 'Read a memory and immutable revision history with source references.', inputSchema: { memoryId: id } }, ({ memoryId }) => request(`/api/v1/knowledge/memories/${encodeURIComponent(memoryId)}`));

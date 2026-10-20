@@ -315,6 +315,7 @@ test.describe('已完成子任务保持缩进并混排', () => {
       expect(await task(request, id)).toMatchObject({ parentId: P.id, status, topicId: null });
     }
     await page.reload();
+    await expect(page.getByTestId(`task-row-${A.id}`)).toBeVisible();
     expect(await visibleOrder(page, [A.id, B.id, C.id])).toEqual([B.id, A.id, C.id]);
 
     await restoreChildren(page, request, P.id, [A.id, B.id, C.id], moves);
@@ -329,6 +330,7 @@ test.describe('已完成子任务保持缩进并混排', () => {
       expect(await task(request, id)).toMatchObject({ parentId: P.id, status, topicId: null });
     }
     await page.reload();
+    await expect(page.getByTestId(`task-row-${A.id}`)).toBeVisible();
     expect(await visibleOrder(page, [A.id, B.id, C.id])).toEqual([A.id, C.id, B.id]);
   });
 
@@ -352,6 +354,7 @@ test.describe('已完成子任务保持缩进并混排', () => {
     await expect.poll(async () => childIds(request, P.id)).toEqual([A.id, C.id, B.id]);
     expectSiblingReorder(moves.reorders.at(-1)!, P.id, [A.id, C.id, B.id], beforeDown);
     await page.reload();
+    await expect(page.getByTestId(`task-row-${A.id}`)).toBeVisible();
     expect(await visibleOrder(page, [A.id, B.id, C.id])).toEqual([A.id, C.id, B.id]);
   });
 
@@ -419,6 +422,7 @@ test.describe('已完成子任务保持缩进并混排', () => {
     await expect.poll(async () => visibleOrder(page, [A.id, B.id, C.id])).toEqual([A.id, B.id, C.id]);
     expect(await childIds(request, P.id)).toEqual([A.id, B.id, C.id]);
     await page.reload();
+    await expect(page.getByTestId(`task-row-${C.id}`)).toBeVisible();
     expect(await visibleOrder(page, [A.id, B.id, C.id])).toEqual([A.id, B.id, C.id]);
     expect(await childIds(request, P.id)).toEqual([A.id, B.id, C.id]);
   });

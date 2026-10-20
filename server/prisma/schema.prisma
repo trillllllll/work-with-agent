@@ -8,6 +8,7 @@ datasource db {
 }
 
 model AppSetting {
+  braveImageApiKey String @default("") @map("brave_image_api_key")
   id            String   @id
   openaiBaseUrl String   @default("") @map("openai_base_url")
   openaiApiKey  String   @default("") @map("openai_api_key")
@@ -23,6 +24,8 @@ model AppSetting {
   claudeManualVersion String @default("") @map("claude_manual_version")
   claudeCheckedAt String @default("") @map("claude_checked_at")
   mobileNavigationJson String @default("[\"inbox\",\"today\",\"quadrant\",\"topics\"]") @map("mobile_navigation_json")
+  htmlBlocksEnabled Boolean @default(true) @map("html_blocks_enabled")
+  htmlCdnAllowlist String @default("[\"https://cdn.jsdelivr.net\",\"https://cdnjs.cloudflare.com\",\"https://unpkg.com\"]") @map("html_cdn_allowlist")
   createdAt     String   @default("") @map("created_at")
   updatedAt     String   @default("") @map("updated_at")
 
@@ -47,6 +50,7 @@ model Topic {
   id            String   @id @default(cuid()) @map("id")
   name          String
   description   String   @default("")
+  color         String   @default("slate")
   isExploration Boolean  @default(false) @map("is_exploration")
   goal          String     @default("")
   draftSummary  String     @default("") @map("draft_summary")
@@ -240,6 +244,7 @@ model Message {
   toolCalls      String?      @map("tool_calls")
   toolCallId     String?      @map("tool_call_id")
   compactedAt    String?       @map("compacted_at")
+  blocksJson     String?      @map("blocks_json")
   partsJson      String       @default("[]") @map("parts_json")
   createdAt      String       @default("") @map("created_at")
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -582,6 +587,174 @@ model Artifact {
   run Run @relation(fields: [runId], references: [id], onDelete: Restrict)
   @@index([runId])
 }
+
+// ---- Orchestration: the server only plans and checks; local executors (wwa-node) do the work.
+model AgentNode {
+  id               String  @id @default(cuid())
+  name             String
+  tokenHash        String  @unique
+  status           String  @default("active")
+  platform         String  @default("")
+  version          String  @default("")
+  capabilitiesJson String  @default("{}")
+  inventoryJson    String  @default("null")
+  inventoryAt      String?
+  lastSeenAt       String?
+  createdAt        String
+  updatedAt        String
+  locations        ProjectLocation[]
+  jobs             NodeJob[]
+}
+model Project {
+  id              String  @id @default(cuid())
+  name            String
+  defaultBranch   String  @default("main")
+  defaultProvider String  @default("codex")
+  archivedAt      String?
+  revision        Int     @default(1)
+  createdAt       String
+  updatedAt       String
+  locations       ProjectLocation[]
+  bindings        ProjectBinding[]
+}
+model ProjectLocation {
+  id              String  @id @default(cuid())
+  projectId       String
+  nodeId          String
+  path            String
+  status          String  @default("pending")
+  fingerprintJson String  @default("{}")
+  error           String?
+  verifiedAt      String?
+  createdAt       String
+  updatedAt       String
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  node            AgentNode @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  @@unique([projectId, nodeId])
+}
+model ProjectBinding {
+  scopeType String
+  scopeId   String
+  projectId String
+  updatedAt String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  @@id([scopeType, scopeId])
+}
+model Orchestration {
+  id                String  @id @default(cuid())
+  taskId            String
+  round             Int
+  status            String  @default("draft")
+  projectId         String
+  locationId        String?
+  nodeId            String?
+  repoPath          String  @default("")
+  defaultBranch     String  @default("main")
+  integrationBranch String
+  integrationPath   String?
+  baseCommit        String?
+  integrationHead   String?
+  grantJson         String  @default("{}")
+  planJson          String  @default("{}")
+  taskSnapshotJson  String  @default("{}")
+  pauseReason       String?
+  finalComment      String?
+  revision          Int     @default(1)
+  createdAt         String
+  updatedAt         String
+  startedAt         String?
+  endedAt           String?
+  acceptedAt        String?
+  pushedAt          String?
+  extraLocationsJson String @default("[]")
+  publishedHead     String?
+  pullRequestUrl    String?
+  steps             OrchestrationStep[]
+  events            OrchestrationEvent[]
+  @@unique([taskId, round])
+  @@index([status])
+}
+model OrchestrationStep {
+  id                 String  @id @default(cuid())
+  orchestrationId    String
+  kind               String
+  subtaskId          String?
+  sourceStepId       String?
+  dependsOnJson      String  @default("[]")
+  position           Int
+  status             String  @default("pending")
+  attempt            Int     @default(1)
+  continueCount      Int     @default(0)
+  retryCount         Int     @default(0)
+  nextAttemptAt      String?
+  branch             String?
+  workPath           String?
+  baseCommit         String?
+  resultCommit       String?
+  preMergeHead       String?
+  mergeCommit        String?
+  acceptanceCriteria String  @default("")
+  lastTaskRevision   Int?
+  feedback           String?
+  lastJobId          String?
+  nodeId             String?
+  locationId         String?
+  repoPath           String?
+  error              String?
+  createdAt          String
+  updatedAt          String
+  orchestration      Orchestration @relation(fields: [orchestrationId], references: [id], onDelete: Restrict)
+  @@index([orchestrationId, status])
+}
+model NodeJob {
+  id              String  @id @default(cuid())
+  nodeId          String
+  orchestrationId String?
+  stepId          String?
+  kind            String
+  phase           String  @default("work")
+  dispatchKey     String  @unique
+  status          String  @default("queued")
+  payloadJson     String
+  leaseToken      String?
+  leaseExpiresAt  String?
+  resultJson      String?
+  error           String?
+  createdAt       String
+  updatedAt       String
+  startedAt       String?
+  endedAt         String?
+  node            AgentNode @relation(fields: [nodeId], references: [id], onDelete: Restrict)
+  @@index([nodeId, status])
+  @@index([orchestrationId])
+}
+/// A pending destructive request shown as a confirmation card; nothing is sent to the node until the user confirms.
+model WorktreeCleanup {
+  id          String  @id @default(cuid())
+  nodeId      String
+  itemsJson   String
+  deleteBranches Boolean @default(false)
+  status      String  @default("pending")
+  source      String  @default("user")
+  jobId       String?
+  resultJson  String?
+  expiresAt   String
+  createdAt   String
+  updatedAt   String
+  @@index([nodeId, status])
+}
+model OrchestrationEvent {
+  id              String @id @default(cuid())
+  orchestrationId String
+  seq             Int
+  type            String
+  actorKind       String
+  stepId          String?
+  payload         String
+  createdAt       String
+  orchestration   Orchestration @relation(fields: [orchestrationId], references: [id], onDelete: Restrict)
+  @@unique([orchestrationId, seq])
+}
 model HandoffReview {
   id String @id @default(cuid())
   handoffId String
@@ -857,4 +1030,36 @@ model MemorySuggestionKey {
   createdAt  String
 
   @@index([scopeKey, proposalId])
+}
+
+model Skill {
+  id           String         @id @default(cuid())
+  name         String
+  description  String
+  instructions String
+  enabled      Boolean        @default(false)
+  revision     Int            @default(1)
+  origin       String         @default("manual")
+  deletedAt    String?
+  createdAt    String
+  updatedAt    String
+  versions     SkillVersion[]
+
+  @@index([deletedAt, enabled, name])
+}
+
+model SkillVersion {
+  id           String  @id @default(cuid())
+  skillId      String
+  revision     Int
+  name         String
+  description  String
+  instructions String
+  enabled      Boolean
+  reason       String
+  source       String
+  createdAt    String
+  skill        Skill   @relation(fields: [skillId], references: [id], onDelete: Restrict)
+
+  @@unique([skillId, revision])
 }

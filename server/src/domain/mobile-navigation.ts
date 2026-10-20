@@ -12,6 +12,7 @@ export const MOBILE_NAVIGATION_VIEWS = [
   'connections',
   'proposals',
   'library',
+  'skills',
   'runs',
   'reviews',
   'plan',

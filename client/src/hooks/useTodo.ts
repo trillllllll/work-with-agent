@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { api, apiMutation, ApiError, type ApiEnvelope, type FocusSession, type Task } from '@/lib/api.js';
 import { enqueueWrite, localDate, queryKeys, keepNewestTask } from '@/lib/todo.js';
@@ -43,6 +44,7 @@ export function useLocalDate() {
   return today;
 }
 export function useTodoActions() {
+  const { t } = useTranslation('app');
   const client = useQueryClient();
   const confirmPreview = useCommandPreview();
   const [pending, setPending] = useState(0);
@@ -80,7 +82,7 @@ export function useTodoActions() {
           if (!commands) throw error;
           // Preserve the user's original object version while freezing every cascade member.
           const preview = await api<CommandPreview>('/api/v1/commands/preview', { method: 'POST', body: JSON.stringify({ requestId, commands }) });
-          if (preview.requiresConfirmation && !await confirmPreview(preview)) throw new ApiError('已取消操作', 'USER_CANCELLED');
+          if (preview.requiresConfirmation && !await confirmPreview(preview)) throw new ApiError(t('action.cancelled'), 'USER_CANCELLED');
           result = await apiMutation<T>(path, { method, headers: { 'X-Request-ID': requestId }, body: JSON.stringify({ ...requestBody, previewToken: preview.previewToken }) });
         }
         const task = result.data as Task | null;
@@ -102,13 +104,13 @@ export function useTodoActions() {
       const canUndo = response.meta?.changeId && !/\/(undo|permanent)$/.test(path);
       if (message) toast.success(message, canUndo ? {
         duration: 8000,
-        action: { label: '撤销', onClick: () => { void write(`/api/changes/${response.meta!.changeId}/undo`, 'POST', undefined, response.meta?.affectedTaskIds ?? keys, '已撤销').catch(() => undefined); } },
+        action: { label: t('action.undo'), onClick: () => { void write(`/api/changes/${response.meta!.changeId}/undo`, 'POST', undefined, response.meta?.affectedTaskIds ?? keys, t('action.undone')).catch(() => undefined); } },
       } : undefined);
       return response;
     } catch (error) {
       // Completion confirmation is handled by the caller and must not also show an error toast.
       if (error instanceof Error && 'code' in error && ['VERSION_CONFLICT', 'CONFLICT', 'PRECONDITION_FAILED'].includes(String(error.code))) await invalidateTodo(client);
-      if (!(error instanceof Error && 'code' in error && ['SUBTASKS_INCOMPLETE', 'USER_CANCELLED'].includes(String(error.code)))) toast.error(error instanceof Error ? error.message : '操作失败');
+      if (!(error instanceof Error && 'code' in error && ['SUBTASKS_INCOMPLETE', 'USER_CANCELLED'].includes(String(error.code)))) toast.error(error instanceof Error ? error.message : t('action.failed'));
       throw error;
     } finally {
       if (id) {
@@ -119,8 +121,8 @@ export function useTodoActions() {
       setPending((value) => value - 1);
     }
   }
-  const patch = (id: string, changes: unknown, relatedIds: string[] = []) => write<Task>(`/api/tasks/${id}`, 'PATCH', changes, [id, ...relatedIds], '任务已更新');
-  const create = (input: unknown, parentId?: string | null) => write<Task>('/api/tasks', 'POST', input, parentId ? [parentId] : [], '任务已创建');
+  const patch = (id: string, changes: unknown, relatedIds: string[] = []) => write<Task>(`/api/tasks/${id}`, 'PATCH', changes, [id, ...relatedIds], t('todo.taskUpdated'));
+  const create = (input: unknown, parentId?: string | null) => write<Task>('/api/tasks', 'POST', input, parentId ? [parentId] : [], t('todo.taskCreated'));
   return { write, patch, create, pending: pending > 0 };
 }
 

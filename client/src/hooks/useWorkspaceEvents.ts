@@ -1,5 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import { systemNotify } from '@/lib/desktop-shell.js';
+import { pauseReasonLabels } from '@/components/orchestration/labels.js';
 import { useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 /** 任务文字保存等高频变更只刷新任务相关查询；未挂载的 query 失效只标脏、不发请求。 */
@@ -16,6 +19,10 @@ function scopeOf(message: MessageEvent): readonly string[] | 'all' {
 }
 
 export function useWorkspaceEvents() {
+  const { t } = useTranslation('app');
+  // Translate when the event arrives, without reopening the stream if the language changes.
+  const tRef = useRef(t);
+  tRef.current = t;
   const client = useQueryClient();
   useEffect(() => {
     const refresh = () => { if (document.visibilityState === 'visible') void client.invalidateQueries(); };
@@ -50,10 +57,19 @@ export function useWorkspaceEvents() {
       try {
         const event = JSON.parse(message.data);
         const key = `${event.batchId}:${event.status}`;
+        if (event.kind === 'orchestration' && event.attention && !notified.has(`orch:${event.orchestrationId}:${event.status}:${event.pauseReason ?? ''}`)) {
+          notified.add(`orch:${event.orchestrationId}:${event.status}:${event.pauseReason ?? ''}`);
+          const translate = tRef.current;
+          const accepting = event.status === 'awaiting_acceptance';
+          if (accepting) toast.success(translate('orchestration:notify.doneToast'));
+          else toast.warning(translate('orchestration:notify.pausedToast'));
+          const reason = pauseReasonLabels[event.pauseReason ?? ''] ?? event.pauseReason ?? '';
+          void systemNotify(accepting ? translate('orchestration:notify.acceptTitle') : translate('orchestration:notify.pausedTitle'), accepting ? translate('orchestration:notify.acceptBody') : translate('orchestration:notify.pausedBody', { reason }), `orch:${event.orchestrationId}`);
+        }
         if (event.kind === 'review' && !notified.has(key)) {
           notified.add(key);
-          const message = event.status === 'ready' ? '新的回顾报告已就绪' : event.status === 'failed' ? '回顾生成失败，可查看原因并重试' : '基础回顾已保存，AI 整理需要处理';
-          toast.info(message, { action: { label: '查看回顾', onClick: () => { window.location.hash = '/reviews'; } } });
+          const message = event.status === 'ready' ? tRef.current('review.ready') : event.status === 'failed' ? tRef.current('review.failed') : tRef.current('review.partial');
+          toast.info(message, { action: { label: tRef.current('review.view'), onClick: () => { window.location.hash = '/reviews'; } } });
         }
       } catch { /* Other invalidation events carry no user notification. */ }
     };

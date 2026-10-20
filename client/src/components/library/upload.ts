@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import { ApiError, api, authHeaders } from '@/lib/api.js';
 import { submitCommands, type Command } from '@/lib/platform.js';
+import { t } from '../../i18n/index.js';
 import type { MaterialSummary } from './types.js';
 
 export type UploadStatus = 'queued' | 'uploading' | 'duplicate' | 'creating' | 'done' | 'failed' | 'skipped' | 'cancelled';
@@ -91,10 +92,10 @@ function notifyChanged() {
 }
 
 export function assertRelativePath(path: string) {
-  if (!path || path.includes('\0')) throw new Error('路径无效');
-  if (path.startsWith('/') || path.startsWith('\\') || /^[A-Za-z]:[\\/]/.test(path)) throw new Error('路径无效');
+  if (!path || path.includes('\0')) throw new Error(t('library:upload.invalidPath'));
+  if (path.startsWith('/') || path.startsWith('\\') || /^[A-Za-z]:[\\/]/.test(path)) throw new Error(t('library:upload.invalidPath'));
   const parts = path.split(/[\\/]/);
-  if (parts.some((part) => part === '' || part === '.' || part === '..')) throw new Error('路径无效');
+  if (parts.some((part) => part === '' || part === '.' || part === '..')) throw new Error(t('library:upload.invalidPath'));
   return parts.join('/');
 }
 
@@ -150,14 +151,14 @@ function putBytes(id: string, file: File, localId: string, onProgress: (value: n
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
     for (const [key, value] of Object.entries(authHeaders())) xhr.setRequestHeader(key, value);
     xhr.upload.onprogress = (event) => onProgress(event.lengthComputable && event.total > 0 ? event.loaded / event.total : null);
-    xhr.onabort = () => { xhrs.delete(localId); reject(new DOMException('已取消', 'AbortError')); };
-    xhr.onerror = () => { xhrs.delete(localId); reject(new Error('上传失败')); };
+    xhr.onabort = () => { xhrs.delete(localId); reject(new DOMException(t('library:upload.cancelled'), 'AbortError')); };
+    xhr.onerror = () => { xhrs.delete(localId); reject(new Error(t('library:upload.failed'))); };
     xhr.onload = () => {
       xhrs.delete(localId);
       let body: { data?: ReadyUpload; error?: string | { message?: string } } = {};
       try { body = JSON.parse(xhr.responseText) as typeof body; } catch { /* The status still decides success. */ }
       if (xhr.status >= 200 && xhr.status < 300 && body.data) resolve(body.data);
-      else reject(new Error(typeof body.error === 'string' ? body.error : body.error?.message || '上传失败'));
+      else reject(new Error(typeof body.error === 'string' ? body.error : body.error?.message || t('library:upload.failed')));
     };
     xhr.send(file);
   });
@@ -172,7 +173,7 @@ async function deleteUpload(id: string) {
 function folderLabel(value: string) {
   const name = value.normalize('NFKC').trim().replace(/[\s\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/gu, ' ');
   const length = Array.from(name).length;
-  if (length < 1 || length > 80) throw new Error('文件夹名称需要 1 到 80 个字符');
+  if (length < 1 || length > 80) throw new Error(t('library:upload.folderNameLength'));
   return name;
 }
 
@@ -198,7 +199,7 @@ async function ensureFolder(parentId: string | null, rawName: string) {
   if (cached) return cached;
   const created = await submitCommands([{ kind: 'libraryFolder.create', input: { parentId, name } }], crypto.randomUUID());
   const id = created.results?.[0]?.id as string | undefined;
-  if (!id) throw new Error('文件夹没有创建');
+  if (!id) throw new Error(t('library:upload.folderNotCreated'));
   folderIds.set(key, id);
   return id;
 }
@@ -261,7 +262,7 @@ function finishItem(record: UploadRecord, status: 'done' | 'failed' | 'skipped' 
   if (status === 'failed') batch.failed += 1;
   if (batch.pending === 0 && !batch.toasted) {
     batch.toasted = true;
-    if (!batch.silent) toast.success(`已添加 ${batch.added} 份资料，${batch.failed} 份失败`);
+    if (!batch.silent) toast.success(t('library:upload.added', { count: batch.added, failed: batch.failed }));
     if (batch.added) notifyChanged();
     batch.resolve();
   }
@@ -361,11 +362,11 @@ async function watchUpload(localId: string, uploadId: string) {
       }
       update(localId, { status: 'uploading', error: undefined });
     } catch (error) {
-      finishItem(current(localId) ?? record, 'failed', error instanceof Error ? error.message : '上传状态未确认');
+      finishItem(current(localId) ?? record, 'failed', error instanceof Error ? error.message : t('library:upload.statusUnconfirmed'));
       return;
     }
   }
-  if (!settled.has(localId)) finishItem(current(localId) ?? record, 'failed', '上传状态未确认');
+  if (!settled.has(localId)) finishItem(current(localId) ?? record, 'failed', t('library:upload.statusUnconfirmed'));
 }
 
 async function runUpload(localId: string) {
@@ -430,7 +431,7 @@ async function runUpload(localId: string) {
       finishItem(current(localId) ?? record, 'cancelled');
       return;
     }
-    const message = error instanceof ApiError || error instanceof Error ? error.message : '上传失败';
+    const message = error instanceof ApiError || error instanceof Error ? error.message : t('library:upload.failed');
     finishItem(current(localId) ?? record, 'failed', message);
   }
 }
@@ -479,10 +480,10 @@ export async function enqueueUploads(files: Array<{ file: File; relativePath: st
     };
     try {
       assertRelativePath(item.relativePath);
-      if (!record.name) throw new Error('文件名无效');
+      if (!record.name) throw new Error(t('library:upload.invalidFileName'));
       accepted.push(record);
     } catch (error) {
-      rejected.push({ ...record, status: 'failed', error: error instanceof Error ? error.message : '路径无效' });
+      rejected.push({ ...record, status: 'failed', error: error instanceof Error ? error.message : t('library:upload.invalidPath') });
     }
   }
   const pending = accepted.length + rejected.length;
@@ -563,7 +564,7 @@ export async function resolveDuplicate(localId: string, action: 'reuse' | 'creat
     const next = current(localId) ?? record;
     await commitWithRecovery({ ...next, folderId, action: action === 'reuse' ? 'reuse' : 'create', reuseMaterialId: action === 'reuse' ? reuseMaterialId : undefined });
   } catch (error) {
-    finishItem(current(localId) ?? record, 'failed', error instanceof Error ? error.message : '保存失败');
+    finishItem(current(localId) ?? record, 'failed', error instanceof Error ? error.message : t('library:upload.saveFailed'));
   }
 }
 

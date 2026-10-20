@@ -98,7 +98,7 @@ Claude Code 的 MCP JSON 配置（参见 [官方 MCP 文档](https://code.claude
 `/api/v1/knowledge` 下提供 materials、memories、brief、search、organizations、export。材料及记忆写入共同命令 `material.create/update/archive` 和 `memory.create/update/retire`，详情包含历史版本。
 
 - 材料类型：text、markdown、link、thread、attachment。thread 的 metadata 记录宿主、会话标识、full/excerpt/summary 完整性。
-- 附件下载：`GET materials/:id/versions/:revision/attachment`。原件按 hash 管理；首期不解析 Office、PDF 或图片。
+- 附件下载：`GET materials/:id/versions/:revision/attachment`。原件按 hash 管理；首期不解析 Office、PDF 或图片。响应 `Content-Type` 保持 `application/octet-stream`，真实类型在 `X-WWA-Mime-Type`。
 - 主动链接抓取：`POST materials/:id/fetch {expectedVersion}`。保存新快照，旧正文保持不变。
 - 主动保存内置会话：`POST materials/from-conversation {conversationId,topicId,title,messageIds?}`。省略 messageIds 表示完整记录。
 - 记忆来源为 `{type,id,revision,hash?}` 数组；旧来源变化标记待复核，保留历史，不自动判错。
@@ -107,6 +107,14 @@ Claude Code 的 MCP JSON 配置（参见 [官方 MCP 文档](https://code.claude
 - JSON 导出：`GET export?topicId=...`；附件原件可通过各版本下载入口取得；JSON 导出也包含附件 base64，总附件量上限 64 MiB。
 
 任务移动不会移动或公开材料所属范围。搜索按中文关键词扫描原数据，不依赖外部索引服务。待复核记忆单独标识，不作为确认事实进入后续上下文。
+
+### MCP 图片与附件
+
+`get_task` 在原有 JSON 文本之后，附带任务说明里引用的图片。引用写成 `/api/tasks/{taskId}/images/{imageId}`，前面可以有 `http://` 或 `https://` 来源。只认当前任务的图片。默认最多返回 6 张；单张原始大小不超过 1.5 MiB 且长边不超过 2000 像素时原样返回，否则缩到长边 2000 像素并转成 JPEG（质量 80）。仍然超过 1.5 MiB 时再试质量 60、长边 1280。一次调用里实际返回的图片字节合计不超过 6 MiB。放不下、缩小后仍过大、或拉取失败（带 HTTP 状态）的图片集中写在一条摘要里。需要单独取一张时用 `get_task_image`。传入 `includeImages:false` 则只返回原来的 JSON。图片拉取失败不会把整个 `get_task` 变成错误。
+
+`get_material_attachment` 读取上面的附件路由。图片（png、jpeg、webp、gif）按同样的尺寸限制返回图像内容。文本（`text/*`、json、xml、markdown、csv、yaml，以及 `.md`、`.txt`、`.csv`、`.json`、`.log`、`.yaml`、`.yml`、`.xml`、`.ts`、`.js` 等扩展名）按 UTF-8 解码，超过 100000 字符会截断并注明。`application/pdf` 和其他不超过 3 MiB 的二进制以 base64 资源返回，并建议用 `get_material_content` 读取抽取后的文本；更大的文件只返回说明。单次拉取上限 20 MiB。
+
+`list_task_materials` 和 `get_material` 仍只给元数据，文件内容用 `get_material_attachment`。这些地址都要求连接凭据，并检查清单授权，不提供未登录的图片或附件 URL。图片字节走 `GET /api/v1/tasks/:id/images/:imageId`，可见性与 `GET /api/v1/tasks/:id` 相同。
 
 ## 交接、执行、采纳
 

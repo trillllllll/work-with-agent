@@ -1,10 +1,21 @@
-export const materialKindNames: Record<string, string> = {
-  text: '文本',
-  markdown: 'Markdown',
-  link: '链接',
-  thread: '会话',
-  attachment: '附件',
-};
+import { t } from '../i18n/index.js';
+
+function labels<K extends string>(keys: Record<K, string>): Record<K, string> {
+  const result = {} as Record<K, string>;
+  for (const id of Object.keys(keys) as K[]) {
+    const key = keys[id];
+    Object.defineProperty(result, id, { enumerable: true, get: () => t(key) });
+  }
+  return result;
+}
+
+export const materialKindNames: Record<string, string> = labels({
+  text: 'app:materialKind.text',
+  markdown: 'app:materialKind.markdown',
+  link: 'app:materialKind.link',
+  thread: 'app:materialKind.thread',
+  attachment: 'app:materialKind.attachment',
+});
 
 /** Display name for an imported file. The stored original name stays on the version. */
 export function titleFromFileName(fileName: string) {

@@ -171,8 +171,12 @@ test('375px 周视图可横滑，专注芯片在底栏上方', async ({ page }) 
   expect(scroll.pageWidth).toBeLessThanOrEqual(375);
   await page.goto('/#/focus');
   await page.getByRole('button', { name: '开始专注', exact: true }).click();
-  const chip = await page.getByTestId('focus-chip').boundingBox();
+  await expect(page.getByTestId('focus-chip')).toHaveCount(0);
+  await tabs.getByRole('button', { name: '收集箱', exact: true }).click();
+  const chip = page.getByTestId('focus-chip');
+  await expect(chip).toBeVisible();
+  const chipBox = await chip.boundingBox();
   const tab = await tabs.boundingBox();
-  if (!chip || !tab) throw new Error('芯片或底栏没有布局');
-  expect(chip.y + chip.height).toBeLessThanOrEqual(tab.y + 1);
+  if (!chipBox || !tab) throw new Error('芯片或底栏没有布局');
+  expect(chipBox.y + chipBox.height).toBeLessThanOrEqual(tab.y + 1);
 });

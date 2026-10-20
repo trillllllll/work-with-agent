@@ -1,3 +1,5 @@
+import { imageSearchSettings, saveImageSearchKey } from './application/image-search-settings.js';
+import { htmlBlockSettings, saveHtmlBlockSettings } from './application/html-block-settings.js';
 import { resolveAssistantSource } from './agent/assistant-sources.js';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
@@ -11,7 +13,7 @@ import { mountMcp } from './mcp/http.js';
 import { commandsRouter } from './application/commands.js';
 import { legacyMutationMiddleware, workspaceQueryRouter } from './application/workspace-api.js';
 import { taskActivity } from './application/task-activity.js';
-import { addTaskImage, readTaskImage } from './application/task-images.js';
+import { addTaskImage, readTaskImage, taskImageResponseHeaders } from './application/task-images.js';
 import { handoffRouter } from './routes/handoffs.js';
 import { createServerRouter } from './routes/server.js';
 import { createKnowledgeRouter } from './routes/knowledge.js';
@@ -27,14 +29,22 @@ import { listPlanTimeBands, replacePlanTimeBands } from './application/plan-time
 import { isValidVisibleViews, type MobileNavigationView } from './domain/mobile-navigation.js';
 import { readMobileNavigation, writeMobileNavigation } from './application/mobile-navigation.js';
 import { generateExternalReview } from './runner/review-generator.js';
+import { localeMiddleware, translateMessage, translatePayload } from './i18n/index.js';
+import { createSkill, deleteSkill, diffSkill, draftSkill, getSkill, getSkillVersion, importSkill, listSkills, registerSkillCommands, restoreSkill, rollbackSkill, updateSkill } from './application/skills.js';
+import { createNodeRouter, createOrchestrationRouter } from './routes/orchestration.js';
 
 export const app = express();
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '12mb' }));
+// After the body parser: its stream callbacks would otherwise drop the request's locale context.
+app.use(localeMiddleware);
 registerKnowledgeCommands();
 registerGraphCommands();
 registerLibraryCommands();
+registerSkillCommands();
 app.use('/api/v1', securityRouter);
+// Local executors (wwa-node) use their own token; they never get owner or MCP access.
+app.use('/api/v1/node', createNodeRouter());
 app.use('/api/v1', identityMiddleware);
 app.use('/api/v1/connections', connectionRouter);
 app.use('/api/v1/server', createServerRouter());
@@ -45,6 +55,52 @@ export const reviewService = new ReviewService(new OrganizationService(), genera
 app.use('/api/v1/reviews', createReviewsRouter(reviewService));
 // Existing browser endpoints remain available only to authenticated owner sessions.
 app.use('/api', identityMiddleware, ownerMiddleware, legacyMutationMiddleware);
+app.use('/api', createOrchestrationRouter());
+
+const queryText = (value: unknown) => typeof value === 'string' ? value : undefined;
+const queryFlag = (value: unknown) => value === 'true' ? true : value === 'false' ? false : undefined;
+const queryInt = (value: unknown) => typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : Number.NaN;
+app.get('/api/skills', async (req, res, next) => {
+  try {
+    send(res, await listSkills({ q: queryText(req.query.q), enabled: queryFlag(req.query.enabled), origin: queryText(req.query.origin), deleted: req.query.deleted === 'true' }));
+  } catch (error) { next(error); }
+});
+app.post('/api/skills/import', async (req, res, next) => {
+  try {
+    const body = req.body ?? {};
+    const skill = await importSkill({ markdown: body.markdown, resolution: body.resolution, expectedRevision: body.expectedRevision, name: body.name });
+    res.status(skill.revision === 1 ? 201 : 200).json({ data: await getSkill(skill.id), error: null });
+  } catch (error) { next(error); }
+});
+app.post('/api/skills/draft', async (req, res, next) => {
+  try { send(res, await draftSkill(String(req.body?.conversationId ?? ''))); } catch (error) { next(error); }
+});
+app.post('/api/skills', async (req, res, next) => {
+  try {
+    const body = req.body ?? {};
+    const skill = await createSkill({ name: body.name, description: body.description, instructions: body.instructions, enabled: body.enabled, reason: body.reason, fromApproval: body.fromApproval });
+    res.status(201).json({ data: await getSkill(skill.id), error: null });
+  } catch (error) { next(error); }
+});
+app.get('/api/skills/:id/versions/:rev', async (req, res, next) => { try { send(res, await getSkillVersion(String(req.params.id), queryInt(req.params.rev))); } catch (error) { next(error); } });
+app.get('/api/skills/:id/diff', async (req, res, next) => { try { send(res, await diffSkill(String(req.params.id), queryInt(req.query.from), queryInt(req.query.to))); } catch (error) { next(error); } });
+app.get('/api/skills/:id', async (req, res, next) => { try { send(res, await getSkill(String(req.params.id))); } catch (error) { next(error); } });
+app.patch('/api/skills/:id', async (req, res, next) => {
+  try {
+    const body = req.body ?? {};
+    const skill = await updateSkill(String(req.params.id), { expectedRevision: body.expectedRevision, name: body.name, description: body.description, instructions: body.instructions, enabled: body.enabled, reason: body.reason, fromApproval: body.fromApproval });
+    send(res, await getSkill(skill.id));
+  } catch (error) { next(error); }
+});
+app.post('/api/skills/:id/rollback', async (req, res, next) => {
+  try {
+    const body = req.body ?? {};
+    const skill = await rollbackSkill(String(req.params.id), { expectedRevision: body.expectedRevision, targetRevision: body.targetRevision, reason: body.reason });
+    send(res, await getSkill(skill.id));
+  } catch (error) { next(error); }
+});
+app.delete('/api/skills/:id', async (req, res, next) => { try { send(res, await deleteSkill(String(req.params.id), queryInt(req.query.expectedRevision))); } catch (error) { next(error); } });
+app.post('/api/skills/:id/restore', async (req, res, next) => { try { send(res, await getSkill((await restoreSkill(String(req.params.id))).id)); } catch (error) { next(error); } });
 
 const topics = new TopicService();
 const tasks = new TaskService();
@@ -63,7 +119,7 @@ const send = (res: Response, result: unknown) => {
 };
 const schema = (value: z.ZodTypeAny) => (req: Request, res: Response, next: NextFunction) => {
   const parsed = value.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ data: null, error: parsed.error.flatten() });
+  if (!parsed.success) return res.status(400).json({ data: null, error: parsed.error.flatten((issue) => translateMessage(issue.message, res.locals.locale)) });
   req.body = parsed.data;
   return next();
 };
@@ -119,7 +175,7 @@ app.post('/api/tasks/:id/images', schema(taskImageBody), async (req, res, next) 
 app.get('/api/tasks/:id/images/:imageId', async (req, res, next) => {
   try {
     const image = await readTaskImage(String(req.params.id), String(req.params.imageId));
-    res.status(200).set({ 'Content-Type': image.mimeType, 'Content-Length': String(image.bytes.byteLength), 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store', 'Content-Disposition': 'inline' }).end(image.bytes);
+    res.status(200).set(taskImageResponseHeaders(image)).end(image.bytes);
   } catch (error) { next(error); }
 });
 app.get('/api/tasks/:id', async (req, res, next) => { try { const task = await tasks.get(String(req.params.id)); if (!task) return res.status(404).json({ data: null, error: '任务不存在' }); send(res, task); } catch (error) { next(error); } });
@@ -167,6 +223,11 @@ const settingsBody = z.object({ baseUrl: z.string().trim().min(1), model: z.stri
 app.patch('/api/settings', schema(settingsBody), async (req, res, next) => {
   try { send(res, { ...await settings.save(req.body, (config) => agent.testConnection(config)), cli: await cliSettings() }); } catch (error) { next(error); }
 });
+app.get('/api/settings/image-search', async (_req, res, next) => { try { send(res, await imageSearchSettings()); } catch (error) { next(error); } });
+app.patch('/api/settings/image-search', schema(z.object({ apiKey: z.string().trim().min(1).max(1000) }).strict()), async (req, res, next) => { try { send(res, await saveImageSearchKey(req.body.apiKey)); } catch (error) { next(error); } });
+app.delete('/api/settings/image-search', async (_req, res, next) => { try { send(res, await saveImageSearchKey('')); } catch (error) { next(error); } });
+app.get('/api/settings/html-blocks', async (_req, res, next) => { try { send(res, await htmlBlockSettings()); } catch (error) { next(error); } });
+app.patch('/api/settings/html-blocks', schema(z.object({ enabled: z.boolean().optional(), cdn: z.array(z.string().max(300)).max(50).optional() }).strict()), async (req, res, next) => { try { send(res, await saveHtmlBlockSettings(req.body)); } catch (error) { next(error); } });
 app.delete('/api/settings/api-key', async (_req, res, next) => { try { send(res, { ...await settings.clearApiKey(), cli: await cliSettings() }); } catch (error) { next(error); } });
 
 // 手机底栏配置独立于模型设置：不触发连接测试，也不复用 /api/settings 的表单。
@@ -190,7 +251,7 @@ const chatBody = z.object({
   context: z.unknown().optional(),
 });
 const sse = (res: Response, event: string, data: unknown) => {
-  if (!res.destroyed && !res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  if (!res.destroyed && !res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(translatePayload(data, res.locals.locale))}\n\n`);
 };
 app.post('/api/chat', schema(chatBody), async (req, res) => {
   res.status(200).set({ 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
@@ -216,7 +277,9 @@ app.post('/api/chat', schema(chatBody), async (req, res) => {
 });
 
 app.get('/api/v1/assistant/sources/:kind/:id', async (req, res, next) => { try { send(res, await resolveAssistantSource(String(req.params.kind), String(req.params.id), req.query.revision === undefined ? undefined : Number(req.query.revision))); } catch (error) { next(error); } });
+app.get('/api/conversations', async (req, res, next) => { try { send(res, await agent.conversationList(typeof req.query.cursor === 'string' ? req.query.cursor : undefined)); } catch (error) { next(error); } });
 app.get('/api/conversations/:id/messages', async (req, res, next) => { try { send(res, await agent.messages(String(req.params.id))); } catch (error) { next(error); } });
+app.get('/api/conversations/:id/snapshot', async (req, res, next) => { try { send(res, await agent.snapshot(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/conversations/:id/active-run', async (req, res, next) => { try { send(res, await agent.activeRun(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/agent/approvals', async (req, res, next) => { try { send(res, await agent.approvalList(typeof req.query.status === 'string' ? req.query.status : undefined)); } catch (error) { next(error); } });
 app.get('/api/agent/approvals/:id', async (req, res, next) => { try { send(res, await agent.getApproval(String(req.params.id))); } catch (error) { next(error); } });
@@ -225,6 +288,7 @@ app.post('/api/agent/approvals/:id/preview', async (req, res, next) => { try { s
 app.post('/api/agent/approvals/:id/reject', async (req, res, next) => { try { send(res, await agent.reject(String(req.params.id), req.body ?? {})); } catch (error) { next(error); } });
 app.post('/api/agent/approvals/:id/repreview', async (req, res, next) => { try { send(res, await agent.repreview(String(req.params.id), req.body ?? {})); } catch (error) { next(error); } });
 app.post('/api/agent/approvals/:id/undo-preview', async (req, res, next) => { try { send(res, await agent.prepareUndo(String(req.params.id))); } catch (error) { next(error); } });
+app.get('/api/agent/requests/:requestKey', async (req, res, next) => { try { const key = z.string().min(1).max(200).parse(req.params.requestKey); send(res, await agent.requestByKey(key)); } catch (error) { next(error); } });
 app.get('/api/agent/runs/:id', async (req, res, next) => { try { send(res, await agent.getRun(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/agent/runs/:id/events', async (req, res, next) => { try { send(res, await agent.listRunEvents(String(req.params.id), Number(req.query.after ?? 0) || 0)); } catch (error) { next(error); } });
 app.post('/api/agent/runs/:id/resume', async (req, res, next) => { try { send(res, await agent.resume(String(req.params.id))); } catch (error) { next(error); } });
@@ -236,7 +300,7 @@ mountMcp(app);
 
 app.use((error: any, _req: Request, res: Response, _next: NextFunction) => {
   if (res.headersSent) return;
-  if (error instanceof z.ZodError) return res.status(400).json({ data: null, error: error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; '), code: 'VALIDATION_ERROR' });
+  if (error instanceof z.ZodError) return res.status(400).json({ data: null, error: error.issues.map((issue) => `${issue.path.join('.')}: ${translateMessage(issue.message, res.locals.locale)}`).join('; '), code: 'VALIDATION_ERROR' });
   const status = Number(error?.status) || 500;
   res.status(status).json({ data: null, error: error?.message ?? '服务器错误', ...(error?.code ? { code: error.code } : {}), ...(error?.details ? { details: error.details } : {}) });
 });

@@ -19,6 +19,11 @@ async function seed(request: APIRequestContext, title = oldTitle) {
   return { topic, parent, child };
 }
 
+async function expandChanges(card: Locator) {
+  const toggle = card.getByRole('button', { name: /^全部修改/ });
+  if (await toggle.count()) await toggle.click();
+}
+
 async function openChat(page: Page) {
   if (!(await page.getByPlaceholder(composer).isVisible())) await page.getByRole('button', { name: '打开聊天', exact: true }).click();
 }
@@ -42,6 +47,7 @@ async function contentWidth(card: Locator) {
 }
 
 async function expectColumns(card: Locator) {
+  await expandChanges(card);
   await expect.poll(async () => card.evaluate((el) => {
     const before = el.querySelector('[data-testid="batch-before"]')?.getBoundingClientRect();
     const after = el.querySelector('[data-testid="batch-after"]')?.getBoundingClientRect();
@@ -76,6 +82,7 @@ test('聊天里一次确认整组任务修改，刷新后仍是同一张已完�
   const card = page.getByTestId('approval-card');
   await expect(card).toHaveCount(1);
   await expect(card).toHaveAttribute('data-state', 'pending');
+  await expandChanges(card);
   await expect(card.getByTestId('batch-before')).toContainText('按大威的意见，修改k8s入门文档');
   await expect(card.getByTestId('batch-after')).toContainText('执行修改');
   await expect(card.getByTestId('batch-after')).toContainText('核对，第9节，我们怎么使用k8s');
@@ -109,6 +116,7 @@ test('暗色卡片使用约定的背景和正文颜色', async ({ page, request 
   await ask(page, '整组确认k8s文档：请提出整组修改');
   const card = page.getByTestId('approval-card');
   await expect(card).toHaveAttribute('data-state', 'pending');
+  await expandChanges(card);
   const colors = await card.evaluate((el) => ({ background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color }));
   expect(colors).toEqual({ background: 'rgb(23, 23, 23)', color: 'rgb(245, 245, 245)' });
 });
@@ -119,6 +127,7 @@ test('取消整组修改不改任务', async ({ page, request }) => {
   await ask(page, '整组确认k8s文档：请提出整组修改');
   const card = page.getByTestId('approval-card');
   await expect(card).toHaveAttribute('data-state', 'pending');
+  await expandChanges(card);
   await card.getByRole('button', { name: '取消', exact: true }).click();
   await expect(card).toHaveAttribute('data-state', 'rejected');
   await expect(card.getByRole('status')).toContainText('已取消，未修改数据');
@@ -131,6 +140,7 @@ test('外部改动后批准失败并保留原任务', async ({ page, request }) 
   await ask(page, '整组确认k8s文档：请提出整组修改');
   const card = page.getByTestId('approval-card');
   await expect(card).toHaveAttribute('data-state', 'pending');
+  await expandChanges(card);
   const changed = await request.patch(`${api}/api/tasks/${seeded.child.id}`, { data: { description: '用户审批前改动' } });
   expect(changed.ok(), await changed.text()).toBe(true);
   await card.getByRole('button', { name: '确认修改', exact: true }).click();
@@ -160,6 +170,7 @@ test('提交响应丢失后刷新仍显示已完成', async ({ page, request }) 
   await ask(page, '整组确认k8s文档：请提出整组修改');
   const card = page.getByTestId('approval-card');
   await expect(card).toHaveAttribute('data-state', 'pending');
+  await expandChanges(card);
   await page.route('**/api/agent/approvals/*/approve', async (route) => {
     await route.fetch();
     await route.fulfill({ status: 500, contentType: 'text/plain', body: 'lost' });
@@ -195,6 +206,7 @@ test('键盘确认修改并显示焦点轮廓', async ({ page, request }) => {
   await ask(page, '整组确认k8s文档：请提出整组修改');
   const card = page.getByTestId('approval-card');
   await expect(card).toHaveAttribute('data-state', 'pending');
+  await expandChanges(card);
   await card.getByRole('button', { name: '取消', exact: true }).focus();
   await page.keyboard.press('Tab');
   await page.keyboard.press('Tab');
@@ -211,6 +223,7 @@ test('窄屏和宽屏都不横向溢出，列数跟随卡片内容宽度', async
   await ask(page, '整组确认k8s文档：请提出整组修改');
   const card = page.getByTestId('approval-card');
   await expect(card).toHaveAttribute('data-state', 'pending');
+  await expandChanges(card);
   for (const width of [320, 390, 1280]) {
     await page.setViewportSize({ width, height: 800 });
     await openChat(page);
@@ -240,6 +253,7 @@ test('超长标题在修改后完整换行', async ({ page, request }) => {
   await ask(page, '整组确认k8s文档：请提出整组修改');
   const card = page.getByTestId('approval-card');
   await expect(card).toHaveAttribute('data-state', 'pending');
+  await expandChanges(card);
   const node = card.getByTestId('batch-after').locator('[data-created="true"]');
   await expect(node).toContainText(title);
   expect(await card.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
@@ -252,8 +266,10 @@ test('只查询状态不会取消待确认', async ({ page, request }) => {
   await ask(page, '整组确认k8s文档：请提出整组修改');
   const card = page.getByTestId('approval-card');
   await expect(card).toHaveAttribute('data-state', 'pending');
+  await expandChanges(card);
   await ask(page, '看看现在状态');
   await expect(page.getByText('整组提议仍在等待确认。')).toBeVisible();
   await expect(card).toHaveAttribute('data-state', 'pending');
+  await expandChanges(card);
   expect((await e2eDatabase.task.findUniqueOrThrow({ where: { id: seeded.parent.id } })).title).toBe(oldTitle);
 });

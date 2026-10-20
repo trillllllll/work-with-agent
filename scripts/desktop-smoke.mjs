@@ -1,7 +1,8 @@
-import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { execFileSync, spawn } from 'node:child_process';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 
 
@@ -9,6 +10,7 @@ const root = resolve(import.meta.dirname, '..');
 const resources = resolve(root, 'desktop/resources');
 const nodeBinary = resolve(resources, 'node.exe');
 const serverDir = resolve(resources, 'server');
+const expectedVersion = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8')).version;
 const dataDir = await mkdtemp(resolve(tmpdir(), 'wwa-desktop-smoke-'));
 const port = await freePort();
 const origin = `http://127.0.0.1:${port}`;
@@ -17,6 +19,15 @@ let remoteData;
 let child;
 let proxy;
 try {
+  // Exercise the assembled dependency graph, which may differ from the workspace's node_modules.
+  const sanitizerUrl = pathToFileURL(resolve(serverDir, 'dist/agent/svg-sanitize.js')).href;
+  execFileSync(nodeBinary, ['--input-type=module', '-e', `
+    import { sanitizeSvg } from ${JSON.stringify(sanitizerUrl)};
+    if (!sanitizeSvg('<svg><text>桌面 SVG</text></svg>').includes('桌面 SVG')) process.exit(1);
+    let rejected = false;
+    try { sanitizeSvg('<svg><g></svg>'); } catch { rejected = true; }
+    if (!rejected) throw new Error('打包 XML 依赖未严格拒绝格式错误的 SVG');
+  `], { cwd: serverDir, stdio: 'pipe' });
   child = start();
   const firstToken = await readyToken(child);
   const page = await fetch(`${origin}/`);
@@ -25,7 +36,20 @@ try {
   if (!anonymous.ok) throw new Error(`会话接口不可用（${anonymous.status}）`);
   const mcp = await fetch(`${origin}/mcp`, { method: 'POST' });
   if (mcp.status !== 401) throw new Error(`未授权的 MCP 请求应被拒绝，实际是 ${mcp.status}`);
+  const localInfo = await (await fetch(`${origin}/api/v1/server/info`)).json();
+  if (localInfo.data?.version !== expectedVersion) throw new Error(`桌面运行时版本不一致：${localInfo.data?.version}，期望 ${expectedVersion}`);
   const first = await login({ bootstrapToken: firstToken });
+  const imageSettings = await api(first, '/api/settings/image-search');
+  const imageConfig = (await imageSettings.json()).data;
+  if (!imageSettings.ok || imageConfig?.provider !== 'brave') throw new Error('桌面运行时没有提供 Brave 图片搜索设置');
+  if (imageConfig.managedBy !== 'environment') {
+    const testKey = 'desktop-smoke-brave-test-key-9876';
+    const savedImageKey = await api(first, '/api/settings/image-search', { method: 'PATCH', body: JSON.stringify({ apiKey: testKey }) });
+    const savedImageBody = await savedImageKey.text();
+    if (!savedImageKey.ok || savedImageBody.includes(testKey) || !JSON.parse(savedImageBody).data.configured) throw new Error('桌面运行时保存图片密钥失败或返回了明文');
+    const clearedImageKey = await api(first, '/api/settings/image-search', { method: 'DELETE' });
+    if (!clearedImageKey.ok || (await clearedImageKey.json()).data.configured) throw new Error('桌面运行时未能清除图片密钥');
+  }
   const created = await api(first, '/api/tasks', { method: 'POST', body: JSON.stringify({ title: '桌面冒烟任务' }) });
   if (!created.ok) throw new Error(`创建任务失败：${created.status} ${await created.text()}`);
   const connection = await api(first, '/api/v1/connections', { method: 'POST', body: JSON.stringify({ name: 'smoke', host: 'claude' }) });
@@ -81,7 +105,7 @@ try {
   const banner = await waitLine(child, 'API listening');
   if (/owner-token=/.test(banner)) throw new Error('服务器模式不应在日志里打印一次性启动凭据');
   const info = await (await fetch(`${remoteOrigin}/api/v1/server/info`)).json();
-  if (info.data?.mode !== 'server' || !info.data?.version) throw new Error(`服务器模式探测失败：${JSON.stringify(info)}`);
+  if (info.data?.mode !== 'server' || info.data?.version !== expectedVersion) throw new Error(`服务器模式探测失败：${JSON.stringify(info)}`);
   const bootstrap = await login({ bootstrapToken: 'anything' }, remoteOrigin).then(() => 'ok', (error) => error.message);
   if (bootstrap === 'ok') throw new Error('服务器模式下一次性启动凭据应被禁用');
   const rejected = await fetch(`${remoteOrigin}/api/v1/auth/session`, {

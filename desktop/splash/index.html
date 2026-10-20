@@ -93,34 +93,64 @@
 <body>
   <main class="card">
     <h1>Work With Agent</h1>
-    <p id="status">正在启动本机服务…</p>
+    <p id="status" data-i18n="startingLocal">正在启动本机服务…</p>
 
     <form id="picker" class="hidden">
-      <p class="sub" id="picker-title">选择工作区数据存放的位置。</p>
+      <p class="sub" id="picker-title" data-i18n="pickerTitle">选择工作区数据存放的位置。</p>
       <div class="modes">
         <label class="mode">
           <input type="radio" name="mode" value="local" checked>
-          <span><strong>本机模式</strong><span>数据保存在这台电脑，不上传。</span></span>
+          <span><strong data-i18n="localTitle">本机模式</strong><span data-i18n="localBody">数据保存在这台电脑，不上传。</span></span>
         </label>
         <label class="mode">
           <input type="radio" name="mode" value="remote">
-          <span><strong>连接服务器</strong><span>多台设备共用一份云端数据（自托管服务器）。</span></span>
+          <span><strong data-i18n="remoteTitle">连接服务器</strong><span data-i18n="remoteBody">多台设备共用一份云端数据（自托管服务器）。</span></span>
         </label>
       </div>
       <input id="remote-url" type="url" class="hidden" placeholder="https://wwa.example.com" spellcheck="false" autocomplete="off">
-      <button id="picker-apply" type="submit">启动</button>
-      <p class="notice hidden" id="picker-note">连接后此电脑不再使用本机数据；可随时通过应用内的「服务器」入口切回。</p>
+      <button id="picker-apply" type="submit" data-i18n="apply">启动</button>
+      <p class="notice hidden" id="picker-note" data-i18n="remoteNote">连接后此电脑不再使用本机数据；可随时通过应用内的「服务器」入口切回。</p>
     </form>
 
     <div id="error-card" class="hidden">
       <p id="error"></p>
-      <button id="retry" type="button">重试</button>
-      <button id="switch" class="secondary" type="button">打开启动器</button>
+      <button id="retry" type="button" data-i18n="retry">重试</button>
+      <button id="switch" class="secondary" type="button" data-i18n="openLauncher">打开启动器</button>
     </div>
   </main>
 
   <script>
     const Tauri = window.__TAURI__;
+    // The launcher follows the system language: English for en-*, Chinese otherwise.
+    const english = (navigator.language || '').toLowerCase().startsWith('en');
+    const messages = {
+      startingLocal: 'Starting the local service…',
+      pickerTitle: 'Choose where your workspace data lives.',
+      localTitle: 'Local mode',
+      localBody: 'Data stays on this computer and is never uploaded.',
+      remoteTitle: 'Connect to a server',
+      remoteBody: 'Share one copy of your data across devices (self-hosted server).',
+      apply: 'Start',
+      remoteNote: 'Once connected, this computer stops using its local data. Switch back any time from Server in the app.',
+      retry: 'Retry',
+      openLauncher: 'Open launcher',
+      firstRun: 'First launch: please choose a mode.',
+      switching: 'Switch workspace mode.',
+      connecting: (url) => `Connecting to ${url}…`,
+      retrying: 'Retrying…',
+    };
+    const zh = {
+      firstRun: '首次使用，请先做一次选择。',
+      switching: '切换工作区模式。',
+      connecting: (url) => `正在连接 ${url}…`,
+      retrying: '正在重试…',
+      startingLocal: '正在启动本机服务…',
+    };
+    const text = (key, ...args) => { const value = english ? messages[key] : zh[key]; return typeof value === 'function' ? value(...args) : value; };
+    if (english) {
+      document.documentElement.lang = 'en';
+      document.querySelectorAll('[data-i18n]').forEach((node) => { node.textContent = messages[node.dataset.i18n]; });
+    }
     const $status = document.getElementById('status');
     const $picker = document.getElementById('picker');
     const $error = document.getElementById('error-card');
@@ -143,10 +173,10 @@
       try { config = await Tauri.core.invoke('launcher_config_get'); } catch { return; }
       const switching = new URLSearchParams(location.search).get('switch') === '1';
       if (!config) {
-        $status.textContent = '首次使用，请先做一次选择。';
+        $status.textContent = text('firstRun');
         showPicker(null);
       } else if (switching) {
-        $status.textContent = '切换工作区模式。';
+        $status.textContent = text('switching');
         showPicker(config);
       }
     }
@@ -171,7 +201,7 @@
         else await Tauri.core.invoke('launcher_config_set', { mode: 'local', remoteUrl: '' });
         await Tauri.core.invoke('launcher_retry');
         $picker.classList.add('hidden');
-        $status.textContent = remote ? `正在连接 ${url}…` : '正在启动本机服务…';
+        $status.textContent = remote ? text('connecting', url) : text('startingLocal');
       } catch (error) {
         $errorText.textContent = String(error);
         $error.classList.remove('hidden');
@@ -183,7 +213,7 @@
     document.getElementById('retry').addEventListener('click', async () => {
       if (!Tauri) return;
       $error.classList.add('hidden');
-      $status.textContent = '正在重试…';
+      $status.textContent = text('retrying');
       try { await Tauri.core.invoke('launcher_retry'); }
       catch (error) { $errorText.textContent = String(error); $error.classList.remove('hidden'); }
     });

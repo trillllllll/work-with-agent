@@ -10,6 +10,7 @@ import { prisma } from './services.js';
 
 describe('Agent tool gate', () => {
   let topicId = '';
+  let topicName = '';
   let taskId = '';
   const originalFetch = globalThis.fetch;
 
@@ -26,7 +27,7 @@ describe('Agent tool gate', () => {
       const body = JSON.parse(String(init?.body ?? '{}'));
       const user = [...(body.messages ?? [])].reverse().find((message: any) => message.role === 'user' && !String(message.content ?? '').startsWith('[更早对话的背景'));
       const listedTopic = (body.messages ?? []).find((message: any) => message.role === 'system')?.content.match(/当前清单：([^\n]+)/)?.[1];
-      const topic = listedTopic && listedTopic !== '收集箱' ? listedTopic : undefined;
+      const topic = listedTopic && listedTopic !== '收集箱' ? listedTopic.trim().split(/\s+/).at(-1) : undefined;
       if (!body.tools) return sseResponse([{ choices: [{ delta: { content: '变更已完成。' }, finish_reason: null }] }]);
       if (String(user?.content ?? '').includes('请记住暗号青鸟')) return sseResponse([{ choices: [{ delta: { content: '已记住青鸟。' }, finish_reason: 'stop' }] }]);
       if (String(user?.content ?? '').includes('暗号是什么')) return sseResponse([{ choices: [{ delta: { content: '暗号是青鸟。' }, finish_reason: 'stop' }] }]);
@@ -110,6 +111,7 @@ describe('Agent tool gate', () => {
   it('requires approval before creating a task', async () => {
     const topic = await request(app).post('/api/topics').send({ name: `Agent 测试-${Date.now()}`, isExploration: true });
     topicId = topic.body.data.id;
+    topicName = topic.body.data.name;
     const response = await request(app).post('/api/chat').send({ message: '创建任务：通过审核后创建', pageContext: { topicId, page: 'board' } });
     expect(response.status).toBe(200);
     expect(response.headers['content-type']).toContain('text/event-stream');
@@ -120,7 +122,7 @@ describe('Agent tool gate', () => {
     });
     const modelRequest = vi.mocked(globalThis.fetch).mock.calls[0]?.[1];
     expect(JSON.parse(String(modelRequest?.body)).tools.map((tool: { function: { name: string } }) => tool.function.name)).toEqual([
-      'read_app_knowledge', 'read_page_state', 'get_time', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'conversation_search', 'get_change_schema', 'propose_changes', 'prepare_external_prompt',
+      'present_reply', 'image_search', 'read_app_knowledge', 'read_page_state', 'get_time', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'conversation_search', 'get_change_schema', 'propose_changes', 'prepare_external_prompt', 'orchestration_read', 'propose_worktree_cleanup',
     ]);
     expect(events.some((event) => event.event === 'message_delta' && event.delta?.includes('我准备创建'))).toBe(true);
     expect(events.some((event) => event.event === 'approval_required')).toBe(true);
@@ -259,7 +261,7 @@ describe('Agent tool gate', () => {
     expect(conversationId).toBeTruthy();
     await request(app).post('/api/chat').send({ conversationId, message: '暗号是什么', pageContext: { topicId, page: 'board', taskId } });
     const body = modelRequestFor('暗号是什么');
-    expect(body.messages[0].content).toContain(`当前清单：${topicId}`);
+    expect(body.messages[0].content).toContain(`当前清单：${topicName} ${topicId}`);
     expect(body.messages[0].content).toContain(taskId);
     expect(body.messages[0].content).not.toContain('recentMessages');
     expect(body.messages).toEqual(expect.arrayContaining([

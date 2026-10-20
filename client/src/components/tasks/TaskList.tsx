@@ -1,4 +1,5 @@
 import { forwardRef, useRef, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { DndContext, DragOverlay, MouseSensor, TouchSensor, closestCenter, pointerWithin, useSensor, useSensors, type CollisionDetection, type DragEndEvent, type DragMoveEvent, type DragOverEvent, type DragStartEvent, type DraggableSyntheticListeners } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -40,6 +41,7 @@ const sortTasks = (tasks: Task[]) => [...tasks].sort((a, b) => (a.sortOrder ?? 0
 function stopDrag(event: { stopPropagation: () => void }) { event.stopPropagation(); }
 
 export function TaskList({ assistantSelectedIds, onAssistantSelect, tasks, topics, tags, onOpen, onToggle, onMove, onDelete, onSave, onCreate, onReorder, onNest, onDragSettled, hierarchical = false, foldDone = false, readonly = false, busy, selectedTaskId, textDirty }: Props) {
+  const { t } = useTranslation('tasks');
   const sensors = useSensors(useSensor(MouseSensor, { activationConstraint: { distance: 6 } }), useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }));
   const skipClick = useRef(false);
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -55,7 +57,7 @@ export function TaskList({ assistantSelectedIds, onAssistantSelect, tasks, topic
     const children = childrenOf(root.id);
     const hasChildren = children.length > 0;
     if (collapsedSet.has(root.id)) return [{ id: root.id, parentId: null, hasChildren }];
-    return [{ id: root.id, parentId: null, hasChildren }, ...children.map((child): OrderRow => ({ id: child.id, parentId: root.id, hasChildren: false }))];
+    return [{ id: root.id, parentId: null, hasChildren }, ...children.map((child): OrderRow => ({ id: child.id, parentId: root.id, hasChildren: childrenOf(child.id).length > 0 }))];
   });
   const projection = drag && drag.sortScope === 'tree' && hierarchical && onNest ? projectTaskDrop(rows, drag.id, drag.overId, drag.x) : null;
   const activeRow = drag ? rows.find((row) => row.id === drag.id) : undefined;
@@ -135,7 +137,7 @@ export function TaskList({ assistantSelectedIds, onAssistantSelect, tasks, topic
     const children = childrenOf(parent.id);
     if (!children.length) return null;
     const rowsForChildren = canSort
-      ? <SortableContext id={`${scope}:${parent.id}`} items={children.map((task) => task.id)} strategy={verticalListSortingStrategy}>{children.map((child, index) => <SortableTask key={child.id} task={child} group={children} index={index} groupId={parent.id} sortScope={scope} nested actions={actions} />)}</SortableContext>
+      ? <SortableContext id={`${scope}:${parent.id}`} items={children.map((task) => task.id)} strategy={verticalListSortingStrategy}>{children.map((child, index) => <SortableTask key={child.id} task={child} group={children} index={index} groupId={parent.id} sortScope={scope} nested hasChildren={childrenOf(child.id).length > 0} actions={actions} />)}</SortableContext>
       : children.map((child, index) => <StaticTask key={child.id} task={child} group={children} index={index} nested actions={resting} />);
     return <div className="task-rows task-children border-t border-[var(--glass-divider)]">{rowsForChildren}</div>;
   };
@@ -145,12 +147,12 @@ export function TaskList({ assistantSelectedIds, onAssistantSelect, tasks, topic
   })}</SortableContext>;
   const activeTask = drag ? ordered.find((task) => task.id === drag.id) : undefined;
   const activeChildren = activeTask && drag?.sortScope !== 'siblings' && activeRow && !activeRow.parentId && !collapsedSet.has(activeTask.id) ? childrenOf(activeTask.id) : [];
-  const folded = foldedRoots.length > 0 && <details className="disclosure mt-1 border-t border-[var(--glass-divider)] pt-1"><summary className="task-fold">已完成 · {foldedRoots.length}</summary><div className="task-rows">{foldedRoots.map((task, index) => {
+  const folded = foldedRoots.length > 0 && <details className="disclosure mt-1 border-t border-[var(--glass-divider)] pt-1"><summary className="task-fold">{t('taskList.completedCount', { count: foldedRoots.length })}</summary><div className="task-rows">{foldedRoots.map((task, index) => {
     const children = childrenOf(task.id);
     return <StaticTask key={task.id} task={task} group={foldedRoots} index={index} nested={false} hasChildren={children.length > 0} childrenCollapsed={collapsedSet.has(task.id)} actions={resting}>{renderChildren(task, 'siblings')}</StaticTask>;
   })}</div></details>;
   const quiet = { ...actions, onReorder: undefined, onNest: undefined };
-  const body = !visibleRoots.length && !foldedRoots.length ? <p className="py-12 text-center text-sm text-muted-foreground">暂无任务</p> : <>{visibleRoots.length > 0 && (canSort ? list(visibleRoots, hierarchical ? 'root' : 'flat') : visibleRoots.map((task, index) => <StaticTask key={task.id} task={task} group={visibleRoots} index={index} nested={false} hasChildren={childrenOf(task.id).length > 0} childrenCollapsed={collapsedSet.has(task.id)} actions={quiet}>{renderChildren(task, 'tree')}</StaticTask>))}{folded}</>;
+  const body = !visibleRoots.length && !foldedRoots.length ? <p className="py-12 text-center text-sm text-muted-foreground">{t('taskList.empty')}</p> : <>{visibleRoots.length > 0 && (canSort ? list(visibleRoots, hierarchical ? 'root' : 'flat') : visibleRoots.map((task, index) => <StaticTask key={task.id} task={task} group={visibleRoots} index={index} nested={false} hasChildren={childrenOf(task.id).length > 0} childrenCollapsed={collapsedSet.has(task.id)} actions={quiet}>{renderChildren(task, 'tree')}</StaticTask>))}{folded}</>;
   if (!canSort) return <div className="task-rows" data-testid="task-list">{body}</div>;
   return <DndContext sensors={sensors} collisionDetection={levelCollision} autoScroll={{ threshold: { x: 0, y: 0.15 } }} onDragStart={(event: DragStartEvent) => { skipClick.current = true; const data = event.active.data.current as Partial<TaskDragData> | undefined; setDrag({ id: String(event.active.id), width: event.active.rect.current.initial?.width ?? 320, overId: String(event.active.id), x: 0, sortScope: data?.sortScope === 'siblings' ? 'siblings' : 'tree' }); }} onDragMove={(event: DragMoveEvent) => setDrag((current) => current ? { ...current, x: event.delta.x } : current)} onDragOver={(event: DragOverEvent) => { const overId = event.over ? String(event.over.id) : ''; if (overId) setDrag((current) => current ? { ...current, overId } : current); }} onDragCancel={() => { setDrag(null); window.setTimeout(() => { skipClick.current = false; }, 400); }} onDragEnd={finishDrag}>
     <div className="task-rows" data-testid="task-list">{body}</div>
@@ -169,18 +171,19 @@ function StaticTask({ task, group, index, nested, hasChildren = false, childrenC
 }
 
 const TaskArticle = forwardRef<HTMLElement, { task: Task; group?: Task[]; index?: number; nested?: boolean; hasChildren?: boolean; childrenCollapsed?: boolean; actions: Actions & { skipClick: { current: boolean } }; listeners?: DraggableSyntheticListeners; preview?: boolean }>(function TaskArticle({ task, group = [], index = 0, nested = false, hasChildren = false, childrenCollapsed = false, actions, listeners, preview }, ref) {
+  const { t } = useTranslation('tasks');
   const { topics, tags, onOpen, onToggle, onMove, onDelete, onSave, onCreate, onReorder, hierarchical, readonly, busy, selectedTaskId, textDirty, skipClick } = actions;
   const selected = !preview && selectedTaskId === task.id;
   const showHandle = Boolean(onReorder) || preview;
   const open = () => { if (!skipClick.current) onOpen(task.id); };
   const article = <article ref={ref} {...(preview ? {} : listeners)} data-testid={preview ? undefined : `task-row-${task.id}`} data-selected={selected || undefined} data-drop-parent={!preview && actions.dropParentId === task.id || undefined} onClick={(event) => { if (preview || skipClick.current) return; const target = event.target; if (!(target instanceof Element) || target.closest('button, a, select, label, input, [role="menu"], [role="menuitem"], [role="listbox"], [role="option"]')) return; open(); }} className={cn('task-row group flex min-h-11 items-center gap-2 border border-transparent px-2.5 py-1.5', !preview && onReorder && 'cursor-grab', selected ? 'border-[var(--glass-border-soft)] bg-[var(--glass-hover)]' : 'hover:bg-[var(--glass-subtle)]')}>
-    {!preview && actions.onAssistantSelect && <button type="button" className={cn('shrink-0 rounded px-1 py-1 text-[10px] text-muted-foreground hover:bg-muted', actions.assistantSelectedIds?.includes(task.id) && 'bg-primary/10 text-primary')} aria-label={`选入 AI 上下文：${task.title}`} aria-pressed={actions.assistantSelectedIds?.includes(task.id) ?? false} onMouseDown={stopDrag} onTouchStart={stopDrag} onPointerDown={stopDrag} onClick={(event) => { event.stopPropagation(); actions.onAssistantSelect?.(task.id); }}>AI</button>}
-    {showHandle && <span className="task-drag-handle cursor-grab text-muted-foreground/60" title="拖动排序"><GripVertical className="size-4" /></span>}
+    {!preview && actions.onAssistantSelect && <button type="button" className={cn('shrink-0 rounded px-1 py-1 text-[10px] text-muted-foreground hover:bg-muted', actions.assistantSelectedIds?.includes(task.id) && 'bg-primary/10 text-primary')} aria-label={t('taskList.selectAi', { title: task.title })} aria-pressed={actions.assistantSelectedIds?.includes(task.id) ?? false} onMouseDown={stopDrag} onTouchStart={stopDrag} onPointerDown={stopDrag} onClick={(event) => { event.stopPropagation(); actions.onAssistantSelect?.(task.id); }}>AI</button>}
+    {showHandle && <span className="task-drag-handle cursor-grab text-muted-foreground/60" title={t('taskList.drag')}><GripVertical className="size-4" /></span>}
     {hierarchical && !nested && (hasChildren && !preview
-      ? <button type="button" className="task-expand" aria-label={`${childrenCollapsed ? '展开' : '收起'}子任务：${task.title}`} aria-expanded={!childrenCollapsed} onClick={(event) => { event.stopPropagation(); actions.onToggleChildren?.(task.id); }} onMouseDown={stopDrag} onTouchStart={stopDrag} onPointerDown={stopDrag}><span className="disclosure-chevron" data-open={!childrenCollapsed || undefined} aria-hidden="true" /></button>
+      ? <button type="button" className="task-expand" aria-label={t(childrenCollapsed ? 'taskList.expandSubtasks' : 'taskList.collapseSubtasks', { title: task.title })} aria-expanded={!childrenCollapsed} onClick={(event) => { event.stopPropagation(); actions.onToggleChildren?.(task.id); }} onMouseDown={stopDrag} onTouchStart={stopDrag} onPointerDown={stopDrag}><span className="disclosure-chevron" data-open={!childrenCollapsed || undefined} aria-hidden="true" /></button>
       : <span className="w-5 shrink-0" aria-hidden="true" />)}
-    <input type="checkbox" className="task-checkbox size-[18px] shrink-0 accent-primary" checked={task.status === 'done'} disabled={preview || readonly || busy} aria-label={`${task.status === 'done' ? '重开' : '完成'}任务：${task.title}`} onMouseDown={stopDrag} onTouchStart={stopDrag} onPointerDown={stopDrag} onChange={() => { void onToggle(task).catch(() => undefined); }} />
-    <button type="button" aria-label={task.title} className="min-w-0 flex-1 py-0.5 text-left" disabled={preview} onClick={(event) => { event.stopPropagation(); open(); }}><span className={cn('block break-words text-sm font-medium', task.status === 'done' && 'text-muted-foreground line-through')}>{task.title}</span><span aria-hidden="true" className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">{task.priority !== 'none' && <span className="task-meta-pill">{priorities.find((value) => value.value === task.priority)?.label}</span>}{task.status !== 'todo' && task.status !== 'done' && <span className="task-meta-pill">{statuses.find((value) => value.value === task.status)?.label}</span>}{!hierarchical && <span className="task-place-chip">{task.topic?.name ?? '收集箱'}</span>}{task.tags?.map((tag) => <span key={tag.id} className="task-tag-chip" data-color={tag.color || 'violet'}>#{tag.name}</span>)}{!hierarchical && task.parentId && <span className="task-meta-pill">子任务</span>}</span></button>
+    <input type="checkbox" className="task-checkbox size-[18px] shrink-0 accent-primary" checked={task.status === 'done'} disabled={preview || readonly || busy} aria-label={t(task.status === 'done' ? 'shared.reopenTask' : 'shared.completeTask', { title: task.title })} onMouseDown={stopDrag} onTouchStart={stopDrag} onPointerDown={stopDrag} onChange={() => { void onToggle(task).catch(() => undefined); }} />
+    <button type="button" aria-label={task.title} className="min-w-0 flex-1 py-0.5 text-left" disabled={preview} onClick={(event) => { event.stopPropagation(); open(); }}><span className={cn('block break-words text-sm font-medium', task.status === 'done' && 'text-muted-foreground line-through')}>{task.title}</span><span aria-hidden="true" className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">{task.priority !== 'none' && <span className="task-meta-pill">{priorities.find((value) => value.value === task.priority)?.label}</span>}{task.status !== 'todo' && task.status !== 'done' && <span className="task-meta-pill">{statuses.find((value) => value.value === task.status)?.label}</span>}{!hierarchical && <span className="task-place-chip">{task.topic?.name ?? t('shared.inbox')}</span>}{task.tags?.map((tag) => <span key={tag.id} className="task-tag-chip" data-color={tag.color || 'violet'}>#{tag.name}</span>)}{!hierarchical && task.parentId && <span className="task-meta-pill">{t('shared.subtask')}</span>}</span></button>
     {task.scheduledStart && <span className="hidden max-w-[45%] shrink-0 items-center gap-1 text-xs text-muted-foreground min-[578px]:flex"><Clock className="size-3.5" strokeWidth={1.75} /><time className="truncate" dateTime={task.scheduledStart} title={scheduleLabel(task)}>{scheduleLabel(task)}</time></span>}
     {task.dueDate && !task.scheduledStart && <time dateTime={task.dueDate} className="hidden shrink-0 items-center gap-1 text-xs text-muted-foreground min-[578px]:flex"><CalendarDays className="size-3.5" />{task.dueDate}</time>}
     {!preview && <TaskMenuButton />}

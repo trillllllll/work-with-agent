@@ -1,3 +1,5 @@
+import { intlLocale, t } from '../../i18n/index.js';
+
 export type MaterialKind = 'text' | 'markdown' | 'link' | 'thread' | 'attachment';
 export type ExtractionStatus = 'queued' | 'running' | 'ready' | 'partial' | 'blocked' | 'failed' | 'unsupported';
 export type LibraryViewName = 'all' | 'recent' | 'unfiled' | 'archived';
@@ -108,38 +110,36 @@ export type LibraryFilters = {
   view?: LibraryViewName;
 };
 
-export const extractionCopy: Record<ExtractionStatus, string> = {
-  queued: '等待解析',
-  running: '正在解析',
-  ready: '可搜索正文',
-  partial: '部分内容可搜索',
-  blocked: '需要配置识字模型',
-  failed: '解析失败',
-  unsupported: '暂不支持正文解析',
-};
+export const materialKinds: MaterialKind[] = ['text', 'markdown', 'link', 'thread', 'attachment'];
 
-export const kindLabels: Record<MaterialKind, string> = {
-  text: '文本',
-  markdown: 'Markdown',
-  link: '链接',
-  thread: '会话',
-  attachment: '附件',
-};
+export function extractionLabel(status: ExtractionStatus) {
+  return t(`library:extraction.${status}`);
+}
+
+export function kindLabel(kind: MaterialKind) {
+  return t(`library:kind.${kind}`);
+}
 
 export function formatLocator(locator: Locator | null | undefined) {
   if (!locator) return '';
-  if (locator.kind === 'line') return `第 ${locator.startLine}–${locator.endLine} 行`;
-  if (locator.kind === 'paragraph') return `第 ${locator.paragraph} 段`;
-  if (locator.kind === 'page') return `第 ${locator.page} 页`;
+  if (locator.kind === 'line') return t('library:format.line', { start: locator.startLine, end: locator.endLine });
+  if (locator.kind === 'paragraph') return t('library:format.paragraph', { paragraph: locator.paragraph });
+  if (locator.kind === 'page') return t('library:format.page', { page: locator.page });
   if (locator.kind === 'sheet') return `${locator.sheet} ${locator.startCell}:${locator.endCell}`;
-  if (locator.kind === 'slide') return `第 ${locator.slide} 页`;
-  return '图片';
+  if (locator.kind === 'slide') return t('library:format.slide', { slide: locator.slide });
+  return t('library:format.image');
 }
 
 export function formatUpdated(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  const time = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  return t('library:format.updated', {
+    month: date.getMonth() + 1,
+    day: date.getDate(),
+    time,
+    monthDay: new Intl.DateTimeFormat(intlLocale(), { month: 'short', day: 'numeric' }).format(date),
+  });
 }
 
 const kinds = new Set<MaterialKind>(['text', 'markdown', 'link', 'thread', 'attachment']);

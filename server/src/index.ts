@@ -7,6 +7,7 @@ import { sharedAutoMemoryService, startAutoMemoryScheduler } from './application
 import { recoverInterruptedUploads } from './application/library/uploads.js';
 import { startLibraryWorker } from './application/library/worker.js';
 import { mountDesktopStatic } from './desktop-static.js';
+import { startOrchestrationScheduler } from './application/orchestration/service.js';
 
 async function start() {
   if (isDesktopPackage() || isServerMode()) {
@@ -56,13 +57,14 @@ async function start() {
   }
   const timer = setInterval(() => { void reconcileLocalRuns(); }, 2_000);
   timer.unref();
+  const stopOrchestrations = startOrchestrationScheduler();
   const stopReviews = startReviewScheduler(reviewService);
   const stopAutoMemory = startAutoMemoryScheduler(autoMemory);
   void recoverInterruptedUploads();
   const stopLibrary = startLibraryWorker();
   const { startSnapshotScheduler } = await import('./application/snapshots.js');
   const stopSnapshots = startSnapshotScheduler();
-  server.on('close', () => { clearInterval(timer); stopReviews(); stopAutoMemory(); stopLibrary(); stopSnapshots(); agent.stopScheduler(); });
+  server.on('close', () => { clearInterval(timer); stopOrchestrations(); stopReviews(); stopAutoMemory(); stopLibrary(); stopSnapshots(); agent.stopScheduler(); });
 }
 
 start().catch((error) => {

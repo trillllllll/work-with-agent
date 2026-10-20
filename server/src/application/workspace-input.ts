@@ -37,15 +37,16 @@ export const taskFields = z.object({
 });
 export const taskCreateSchema = taskFields;
 export const taskUpdateSchema = taskFields.partial().extend({ completeChildren: z.boolean().optional() });
+export const tagColors = ['violet', 'blue', 'teal', 'green', 'amber', 'rose', 'slate'] as const;
+const tagColor = z.enum(tagColors);
 export const topicCreateSchema = z.object({
   name: z.string().trim().min(1, '清单名称不能为空'),
   description: z.string().optional(),
+  color: tagColor.optional(),
   isExploration: z.boolean().optional(),
   goal: z.string().optional(),
 });
 export const topicUpdateSchema = topicCreateSchema.partial().extend({ draftSummary: z.string().optional() });
-export const tagColors = ['violet', 'blue', 'teal', 'green', 'amber', 'rose', 'slate'] as const;
-const tagColor = z.enum(tagColors);
 export const tagCreateSchema = z.object({
   name: z.string().trim().min(1, '标签名称不能为空'),
   color: tagColor.optional(),

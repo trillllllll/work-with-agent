@@ -1,4 +1,5 @@
 import { Children, isValidElement, useMemo, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Check, Copy } from 'lucide-react';
@@ -16,6 +17,7 @@ function hasMermaidFence(children: ReactNode) {
 }
 
 function PreBlock({ children }: { children?: React.ReactNode }) {
+  const { t } = useTranslation('chat');
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     const raw = extractText(children);
@@ -27,7 +29,7 @@ function PreBlock({ children }: { children?: React.ReactNode }) {
   };
   return (
     <div className="group/pre relative my-2">
-      <button type="button" onClick={copy} aria-label="复制代码" className="absolute top-2 right-2 grid size-7 place-items-center rounded-md bg-white/10 text-zinc-300 opacity-0 transition-opacity group-hover/pre:opacity-100 hover:bg-white/20">
+      <button type="button" onClick={copy} aria-label={t('clipboard.copyCode')} className="absolute top-2 right-2 grid size-7 place-items-center rounded-md bg-white/10 text-zinc-300 opacity-0 transition-opacity group-hover/pre:opacity-100 hover:bg-white/20">
         {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
       </button>
       <pre className="overflow-x-auto rounded-lg bg-[#0d1117] p-3 text-xs leading-relaxed text-zinc-100">{children}</pre>

@@ -1,14 +1,15 @@
+import { useTranslation } from 'react-i18next';
 import { ChevronRight, MessageSquare } from 'lucide-react';
 import type { View } from '@/lib/api.js';
 import { navigationItems } from '@/lib/navigation-items.js';
 import { ThemeToggle } from '@/components/layout/ThemeToggle.js';
 import { cn } from '@/lib/utils.js';
 
-const groups: { label: string; views: View[] }[] = [
-  { label: '视图', views: ['inbox', 'today', 'plan', 'focus', 'quadrant', 'topics'] },
-  { label: '整理', views: ['search', 'tags', 'archived'] },
-  { label: '工作', views: ['connections', 'proposals', 'knowledge', 'library', 'runs', 'reviews'] },
-  { label: '系统', views: ['settings', 'trash', 'changes'] },
+const groups: { id: 'views' | 'organize' | 'work' | 'system'; views: View[] }[] = [
+  { id: 'views', views: ['inbox', 'today', 'plan', 'focus', 'quadrant', 'topics'] },
+  { id: 'organize', views: ['search', 'tags', 'archived'] },
+  { id: 'work', views: ['connections', 'proposals', 'knowledge', 'library', 'skills', 'runs', 'worktrees', 'reviews'] },
+  { id: 'system', views: ['settings', 'trash', 'changes'] },
 ];
 
 type MorePageProps = {
@@ -17,12 +18,13 @@ type MorePageProps = {
 };
 
 export function MorePage({ route, onNavigate }: MorePageProps) {
+  const { t } = useTranslation('settings');
   return (
     <div className="mx-auto w-full max-w-2xl p-4 pb-10 sm:p-6 lg:max-w-4xl">
       <header className="mb-5 flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">工作区</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">浏览全部视图与工具</p>
+          <h1 className="text-2xl font-semibold">{t('morePage.title')}</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">{t('morePage.subtitle')}</p>
         </div>
         <ThemeToggle />
       </header>
@@ -34,13 +36,13 @@ export function MorePage({ route, onNavigate }: MorePageProps) {
         <span className="glass-control flex size-9 shrink-0 items-center justify-center rounded-xl">
           <MessageSquare aria-hidden="true" className="size-5" strokeWidth={1.75} />
         </span>
-        <span className="flex-1 text-[15px] font-medium">打开聊天</span>
+        <span className="flex-1 text-[15px] font-medium">{t('morePage.openChat')}</span>
         <ChevronRight aria-hidden="true" className="size-4 text-muted-foreground" />
       </button>
-      <nav aria-label="工作区导航" className="grid gap-6 lg:grid-cols-2">
+      <nav aria-label={t('morePage.nav')} className="grid gap-6 lg:grid-cols-2">
         {groups.map((group) => (
-          <section key={group.label} aria-label={group.label}>
-            <h2 className="mb-1.5 px-3 text-xs font-medium text-muted-foreground">{group.label}</h2>
+          <section key={group.id} aria-label={t(`morePage.groups.${group.id}`)}>
+            <h2 className="mb-1.5 px-3 text-xs font-medium text-muted-foreground">{t(`morePage.groups.${group.id}`)}</h2>
             <div className="glass-subtle overflow-hidden rounded-2xl">
               {group.views.map((view, index) => {
                 const item = navigationItems.find((entry) => entry.view === view)!;
