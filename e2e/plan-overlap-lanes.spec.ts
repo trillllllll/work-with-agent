@@ -63,7 +63,9 @@ test('截图场景：三条分成两条泳道，已完成的统计qps在右侧�
   expect(await lanes(col, 'alipay')).toEqual({ lane: 0, count: 2 });
   expect(await lanes(col, 'qps')).toEqual({ lane: 1, count: 2 });
   expect(await lanes(col, 'bugfix')).toEqual({ lane: 1, count: 2 });
-  expect(await lanes(col, 'bug-8925')).toEqual({ lane: 0, count: 2 });
+  // Same start and length: ids break the tie, so bug-10799 sorts first.
+  expect(await lanes(col, 'bug-10799')).toEqual({ lane: 0, count: 2 });
+  expect(await lanes(col, 'bug-8925')).toEqual({ lane: 1, count: 2 });
   await expect(col.getByTestId('plan-lane-more')).toHaveCount(0);
   await expectNoCollisions(col);
   const left = (await card(col, 'alipay').boundingBox())!;
@@ -174,8 +176,13 @@ test('拖动泳道里的任务只改时间，拖进拥挤时段不会中断，�
   await drag('pair-b', '12:00');
   await expect.poll(async () => (await (await page.request.get(`${apiUrl}/api/tasks/pair-b`)).json()).data.scheduledStart).toBe(`${day}T12:00`);
   await expect.poll(() => lanes(col, 'pair-a')).toEqual({ lane: 0, count: 1 });
-  await drag('pair-a', '14:00');
-  await expect.poll(async () => (await (await page.request.get(`${apiUrl}/api/tasks/pair-a`)).json()).data.scheduledStart).toBe(`${day}T14:00`);
+  // Wait for the save to finish; cards cannot be dragged while it is in flight.
+  await expect(col.locator('[data-task-id="pair-a"]').getByRole('checkbox')).toBeEnabled();
+  // The refetch after the first save can re-render the card mid-press; retry the gesture until it lands.
+  await expect(async () => {
+    await drag('pair-a', '14:00');
+    await expect.poll(async () => (await (await page.request.get(`${apiUrl}/api/tasks/pair-a`)).json()).data.scheduledStart, { timeout: 2000 }).toBe(`${day}T14:00`);
+  }).toPass({ timeout: 15_000 });
   await expect(col.getByTestId('plan-lane-more')).toBeVisible();
   await expectNoCollisions(col);
 });

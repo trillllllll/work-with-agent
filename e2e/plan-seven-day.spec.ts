@@ -40,11 +40,11 @@ test('默认七天等宽，周末能创建任务，待安排面板按需展开',
 
 test('重叠任务在周视图并排成泳道，每项可打开、完成，并可恢复显示已完成', async ({ page }) => {
   await e2eDatabase.task.createMany({ data: [
-    { id: 'overlap-a', title: '接口开发', scheduledStart: '2026-10-17T14:00', scheduledEnd: '2026-10-17T15:00', dueDate: '2026-10-17' },
-    { id: 'overlap-b', title: '需求评审', scheduledStart: '2026-10-17T14:30', scheduledEnd: '2026-10-17T15:30', dueDate: '2026-10-17' },
+    { id: 'overlap-a', title: '接口开发', scheduledStart: '2026-10-16T14:00', scheduledEnd: '2026-10-16T15:00', dueDate: '2026-10-16' },
+    { id: 'overlap-b', title: '需求评审', scheduledStart: '2026-10-16T14:30', scheduledEnd: '2026-10-16T15:30', dueDate: '2026-10-16' },
   ] });
   await page.goto('/#/plan');
-  const day = page.locator('[data-testid="time-band-day"][data-date="2026-10-17"]');
+  const day = page.locator('[data-testid="time-band-day"][data-date="2026-10-16"]');
   const first = day.locator('[data-task-id="overlap-a"]');
   const second = day.locator('[data-task-id="overlap-b"]');
   await first.scrollIntoViewIfNeeded();
@@ -52,6 +52,9 @@ test('重叠任务在周视图并排成泳道，每项可打开、完成，并�
   await expect(first.locator('xpath=..')).toHaveAttribute('data-lane', '0');
   await expect(second.locator('xpath=..')).toHaveAttribute('data-lane', '1');
   await expect(second.locator('xpath=..')).toHaveAttribute('data-lane-count', '2');
+  // Narrow week lanes may hide the checkbox; complete from the wider day view.
+  await page.getByRole('button', { name: '日', exact: true }).click();
+  await first.scrollIntoViewIfNeeded();
   await first.getByLabel('完成任务：接口开发', { exact: true }).click();
   await expect(day.getByText('接口开发', { exact: true })).toHaveCount(0);
   await expect(second.locator('xpath=..')).toHaveAttribute('data-lane-count', '1');
