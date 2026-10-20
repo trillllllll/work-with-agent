@@ -193,7 +193,8 @@
     "contextReferenceWithMaterials_other": "参考 · {{label}} · {{count}} 份资料",
     "unsavedAttachment": "{{title}} · 未保存草稿",
     "selectedAttachment": "{{title}} · 选中文字",
-    "removeAttachment": "移除 {{title}}"
+    "removeAttachment": "移除 {{title}}",
+    "configureModelAction": "去配置"
   },
   "chatPickers": {
     "history": "历史对话",

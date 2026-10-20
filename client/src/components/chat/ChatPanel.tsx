@@ -1,3 +1,4 @@
+import { settingsHash } from '@/components/settings/settings-categories.js';
 import { ContextSummary } from './ContextSummary.js';
 import { suggestions } from '@/lib/assistant-context.js';
 import { ChevronDown, Ellipsis, Maximize2, Minimize2, RotateCcw, Sparkles, SquarePen, X } from 'lucide-react';
@@ -65,7 +66,7 @@ export function ChatPanel({ chat, onClose, mobile, presentation = 'side', onExpa
         {presentation === 'side' && <Button variant="ghost" size="icon-sm" title={t('chatPanel.hideAssistant')} aria-label={mobile ? t('chatPanel.backToPage') : t('chatPanel.closeChat')} onClick={onClose}><X /></Button>}
       </header>
 
-      {!settings.isLoading && !settings.error && !configured && <p className="px-4 py-2 text-xs text-muted-foreground">{t('chatPanel.configureModel')}</p>}
+      {!settings.isLoading && !settings.error && !configured && <p className="px-4 py-2 text-xs text-muted-foreground">{t('chatPanel.configureModel')} <a className="font-medium text-primary underline-offset-4 hover:underline" href={`#${settingsHash('model')}`}>{t('chatPanel.configureModelAction')}</a></p>}
       {!messages.length && <div className="flex flex-wrap gap-2 px-3 pt-3">{suggestions(chat.context?.page ?? '').map((item) => <Button key={item} size="sm" variant="outline" className="h-auto whitespace-normal text-left" onClick={() => setInput(item)}>{item}</Button>)}</div>}
       <AssistantInputProvider setInput={setInput}><MessageList messages={messages} approvals={approvals} approvalPending={approve.isPending || reject.isPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} unresolvedApprovalIds={unresolvedApprovalIds} phase={decisionPhase} onApprove={(id) => approve.mutate(id)} onReject={(id) => reject.mutate(id)} onChanged={refreshApprovals} onRepreviewed={showRepreview} /></AssistantInputProvider>
       {pausedRun && ['new_user_message', 'interrupted', 'round_limit'].includes(pausedRun.reason) && (

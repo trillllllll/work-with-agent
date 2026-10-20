@@ -16,7 +16,7 @@ export function ImageSearchSettings() {
     onError: (error) => toast.error(error.message),
   });
   const environment = settings.data?.managedBy === 'environment';
-  return <section className="mt-8 border-t pt-8" aria-label={t('imageSearch.region')}><h2 className="text-lg font-semibold">{t('imageSearch.title')}</h2><p className="mt-1 text-sm text-muted-foreground">{t('imageSearch.description')}</p>
+  return <section aria-label={t('imageSearch.region')}><h3 className="text-lg font-semibold">{t('imageSearch.title')}</h3><p className="mt-1 text-sm text-muted-foreground">{t('imageSearch.description')}</p>
     {settings.isError ? <p role="alert" className="mt-3 text-sm">{t('imageSearch.loadFailed')}<Button variant="ghost" size="sm" onClick={() => void settings.refetch()}>{t('actions.retry')}</Button></p> : <form className="mt-4 space-y-3" onSubmit={(event) => { event.preventDefault(); save.mutate(false); }}>
       <Label htmlFor="brave-image-key">{t('imageSearch.apiKey')}</Label><Input id="brave-image-key" type="password" autoComplete="new-password" value={key} disabled={environment || save.isPending || settings.isLoading} onChange={(event) => setKey(event.target.value)} placeholder={settings.data?.configured ? t('imageSearch.configuredPlaceholder', { masked: settings.data.keyMasked }) : t('imageSearch.enterKey')} />
       <p className="text-xs text-muted-foreground">{environment ? t('imageSearch.managedByEnvironment') : settings.data?.configured ? t('imageSearch.currentKey', { masked: settings.data.keyMasked }) : t('imageSearch.unavailable')}</p>

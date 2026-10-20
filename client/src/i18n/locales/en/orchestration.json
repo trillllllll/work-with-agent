@@ -162,7 +162,10 @@
     "pathPlaceholder": "Absolute repository path on that executor",
     "addLocation": "Add location",
     "verifying": "Sent to the executor to verify the path",
-    "none": "(none)"
+    "none": "(none)",
+    "defaultProvider": "Default AI",
+    "locationNode": "Executor",
+    "topicProject": "Default project for {{topic}}"
   },
   "worktrees": {
     "aria": "Worktree management",

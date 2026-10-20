@@ -162,7 +162,10 @@
     "pathPlaceholder": "该执行端上的仓库绝对路径",
     "addLocation": "添加位置",
     "verifying": "已交给执行端验证路径",
-    "none": "（无）"
+    "none": "（无）",
+    "defaultProvider": "默认 AI",
+    "locationNode": "执行端",
+    "topicProject": "{{topic}} 的默认项目"
   },
   "worktrees": {
     "aria": "Worktree 管理",

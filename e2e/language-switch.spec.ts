@@ -8,7 +8,7 @@ test.beforeEach(async ({ page }) => {
 test.afterAll(async () => { await e2eDatabase.$disconnect(); });
 
 test('设置里切换到英文后界面变为英文，刷新后保持，切回中文也保持', async ({ page }) => {
-  await page.goto('/#/settings');
+  await page.goto('/#/settings/ui');
   const section = page.getByTestId('language-settings');
   await expect(section.getByRole('heading', { name: '语言' })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
@@ -29,7 +29,7 @@ test('设置里切换到英文后界面变为英文，刷新后保持，切回�
   await expect(nav.getByRole('button', { name: 'Settings', exact: true })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
 
-  await page.goto('/#/settings');
+  await page.goto('/#/settings/ui');
   await page.getByTestId('language-settings').getByRole('button', { name: '简体中文' }).click();
   await expect(page.getByTestId('language-settings').getByRole('heading', { name: '语言' })).toBeVisible();
   await page.reload();

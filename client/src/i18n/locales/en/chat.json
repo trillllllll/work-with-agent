@@ -200,7 +200,8 @@
     "contextReferenceWithMaterials_other": "Reference · {{label}} · {{count}} materials",
     "unsavedAttachment": "{{title}} · Unsaved draft",
     "selectedAttachment": "{{title}} · Selected text",
-    "removeAttachment": "Remove {{title}}"
+    "removeAttachment": "Remove {{title}}",
+    "configureModelAction": "Configure"
   },
   "chatPickers": {
     "history": "Conversation history",

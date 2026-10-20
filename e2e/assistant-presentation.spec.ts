@@ -36,7 +36,7 @@ test('同一助手放大缩小保留输入、手动附件及页面，直接进�
 });
 
 test('工作区弹层在放大后恢复原来的设置表单', async ({ page }) => {
-  await page.goto('/#/settings');
+  await page.goto('/#/settings/model');
   const settings = page.getByRole('dialog');
   const field = settings.locator('input:not([type=hidden])').first();
   await expect(field).toBeVisible();
@@ -45,7 +45,7 @@ test('工作区弹层在放大后恢复原来的设置表单', async ({ page }) 
   await page.getByRole('button', { name: '放大到独立页' }).click();
   await expect(page.getByTestId('assistant-page')).toBeVisible();
   await page.getByRole('button', { name: '缩小回原页面' }).click();
-  await expect(page).toHaveURL(/#\/settings$/);
+  await expect(page).toHaveURL(/#\/settings\/model$/);
   await expect(field).toHaveValue('https://example.invalid/preserve-draft');
 });
 
@@ -98,7 +98,7 @@ test('规划日期、模式和时间网格滚动在放大缩小后保持', async
 });
 
 test('Brave 设置保存后只回显遮罩，可刷新并清除', async ({ page }) => {
-  await page.goto('/#/settings');
+  await page.goto('/#/settings/model');
   const section = page.getByRole('region', { name: '图片搜索设置' });
   const field = section.getByLabel('Brave 图片搜索 API Key');
   await field.fill('e2e-brave-credential-9876');

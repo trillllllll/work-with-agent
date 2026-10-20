@@ -38,17 +38,11 @@
     "assistant": "AI 助手",
     "nav": "工作区设置导航",
     "settings": "设置",
-    "settingsTab": "模型与接口配置",
     "trash": "回收站",
     "trashTab": "恢复或永久删除任务",
     "changes": "变更历史",
     "changesTab": "查看并撤销变更",
-    "settingsEyebrow": "工作区偏好",
-    "settingsDescription": "管理模型连接与工作区偏好",
-    "trashEyebrow": "工作区管理",
-    "trashDescription": "恢复任务，或清理不再需要的内容",
-    "changesEyebrow": "审计记录",
-    "changesDescription": "查看工作区变更，并撤销仍然安全可逆的操作"
+    "close": "关闭"
   },
   "materialPreview": {
     "loading": "正在读取原件…",
