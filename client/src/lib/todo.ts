@@ -32,6 +32,10 @@ export function localDate(date = new Date()) {
 export function captureDraftKey(topicId: string | null, parentId: string | null) {
   return `todo.capture.${topicId ?? 'inbox'}.${parentId ?? 'root'}`;
 }
+// Only one level of subtasks is supported. Mirrors server INVALID_PARENT.
+export function canHaveSubtasks(task: Pick<Task, 'parentId'>): boolean {
+  return !task.parentId;
+}
 export function isCompositionKey(event: { isComposing?: boolean; keyCode?: number; repeat?: boolean }) {
   return Boolean(event.isComposing || event.keyCode === 229 || event.repeat);
 }

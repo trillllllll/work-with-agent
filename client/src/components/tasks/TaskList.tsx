@@ -57,7 +57,7 @@ export function TaskList({ assistantSelectedIds, onAssistantSelect, tasks, topic
     const children = childrenOf(root.id);
     const hasChildren = children.length > 0;
     if (collapsedSet.has(root.id)) return [{ id: root.id, parentId: null, hasChildren }];
-    return [{ id: root.id, parentId: null, hasChildren }, ...children.map((child): OrderRow => ({ id: child.id, parentId: root.id, hasChildren: false }))];
+    return [{ id: root.id, parentId: null, hasChildren }, ...children.map((child): OrderRow => ({ id: child.id, parentId: root.id, hasChildren: childrenOf(child.id).length > 0 }))];
   });
   const projection = drag && drag.sortScope === 'tree' && hierarchical && onNest ? projectTaskDrop(rows, drag.id, drag.overId, drag.x) : null;
   const activeRow = drag ? rows.find((row) => row.id === drag.id) : undefined;
@@ -137,7 +137,7 @@ export function TaskList({ assistantSelectedIds, onAssistantSelect, tasks, topic
     const children = childrenOf(parent.id);
     if (!children.length) return null;
     const rowsForChildren = canSort
-      ? <SortableContext id={`${scope}:${parent.id}`} items={children.map((task) => task.id)} strategy={verticalListSortingStrategy}>{children.map((child, index) => <SortableTask key={child.id} task={child} group={children} index={index} groupId={parent.id} sortScope={scope} nested actions={actions} />)}</SortableContext>
+      ? <SortableContext id={`${scope}:${parent.id}`} items={children.map((task) => task.id)} strategy={verticalListSortingStrategy}>{children.map((child, index) => <SortableTask key={child.id} task={child} group={children} index={index} groupId={parent.id} sortScope={scope} nested hasChildren={childrenOf(child.id).length > 0} actions={actions} />)}</SortableContext>
       : children.map((child, index) => <StaticTask key={child.id} task={child} group={children} index={index} nested actions={resting} />);
     return <div className="task-rows task-children border-t border-[var(--glass-divider)]">{rowsForChildren}</div>;
   };

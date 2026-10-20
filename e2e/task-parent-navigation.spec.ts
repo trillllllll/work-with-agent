@@ -466,3 +466,31 @@ test('浅色和深色主题使用现有文字颜色', async ({ page, request }) 
   await link.hover();
   await expect(link).toHaveCSS('color', await resolvedColor(page, '--foreground'));
 });
+
+test('子任务详情不能再添加子任务', async ({ page, request }) => {
+  await page.setViewportSize({ width: 1200, height: 850 });
+  const parent = await createTask(request, '父任务');
+  const child = await createTask(request, '子任务', parent.id);
+  await page.goto('/#/inbox');
+
+  await page.getByTestId(`task-row-${parent.id}`)
+    .getByRole('button', { name: '父任务', exact: true })
+    .click();
+  await expect(detail(page).getByLabel('任务标题', { exact: true })).toHaveValue('父任务');
+  const section = detail(page).locator('section[aria-label="子任务"]');
+  await expect(section).toHaveCount(1);
+  await expect(section.getByRole('textbox', { name: '子任务名称', exact: true })).toBeVisible();
+
+  await page.getByTestId(`task-row-${child.id}`)
+    .getByRole('button', { name: '子任务', exact: true })
+    .click();
+  await expect(detail(page).getByLabel('任务标题', { exact: true })).toHaveValue('子任务');
+  await expect(detail(page).locator('section[aria-label="子任务"]')).toHaveCount(0);
+  await expect(detail(page).getByRole('textbox', { name: '子任务名称', exact: true })).toHaveCount(0);
+
+  await page.getByTestId(`task-row-${child.id}`)
+    .getByRole('button', { name: '任务操作：子任务', exact: true })
+    .click();
+  await expect(page.getByRole('menuitem', { name: '设为子任务', exact: true })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: '添加子任务', exact: true })).toHaveCount(0);
+});

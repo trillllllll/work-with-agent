@@ -75,6 +75,18 @@ describe('projectTaskDrop', () => {
     expect(projectTaskDrop(tree, 'a2', 'a1', 8)).toEqual({ parentId: 'A', orderedIds: ['a2', 'a1'] });
   });
 
+  it('does not nest a task that already has children, even a legacy subtask', () => {
+    const rows: OrderRow[] = [
+      { id: 'A', parentId: null, hasChildren: true },
+      { id: 'a1', parentId: 'A', hasChildren: true },
+      { id: 'a2', parentId: 'A', hasChildren: false },
+      { id: 'B', parentId: null, hasChildren: false },
+    ];
+    expect(projectTaskDrop(rows, 'a1', 'B', 40)).toBeNull();
+    expect(projectTaskDrop(rows, 'a1', 'a2', 40)).toEqual({ parentId: 'A', orderedIds: ['a2', 'a1'] });
+    expect(projectTaskDrop(rows, 'B', 'a1', 40)).toEqual({ parentId: 'A', orderedIds: ['B', 'a1', 'a2'] });
+  });
+
   it('reorders a completed child among its mixed siblings', () => {
     const rows: OrderRow[] = [
       { id: 'P', parentId: null, hasChildren: true },
