@@ -64,7 +64,9 @@ async function start() {
   const stopLibrary = startLibraryWorker();
   const { startSnapshotScheduler } = await import('./application/snapshots.js');
   const stopSnapshots = startSnapshotScheduler();
-  server.on('close', () => { clearInterval(timer); stopOrchestrations(); stopReviews(); stopAutoMemory(); stopLibrary(); stopSnapshots(); agent.stopScheduler(); });
+  const { startReplicaSync } = await import('./application/sync-replica.js');
+  const stopSync = startReplicaSync();
+  server.on('close', () => { clearInterval(timer); stopOrchestrations(); stopReviews(); stopAutoMemory(); stopLibrary(); stopSnapshots(); stopSync(); agent.stopScheduler(); });
 }
 
 start().catch((error) => {

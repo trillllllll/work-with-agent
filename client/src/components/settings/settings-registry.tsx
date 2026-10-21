@@ -17,6 +17,7 @@ import { SkillsSummary, skillCounts, skillsQueryOptions } from './SkillsSummary.
 import { LanguageSettings } from './LanguageSettings.js';
 import { MobileNavigationSettings } from './MobileNavigationSettings.js';
 import { BackupSettings, snapshotsQueryOptions } from './BackupSettings.js';
+import { SyncConflicts, syncConflictsQueryOptions } from './SyncConflicts.js';
 import { ServerSettings, serverInfoQueryOptions } from './ServerSettings.js';
 
 export type SettingsSectionProps = { onNavigate: (view: View) => void };
@@ -33,6 +34,7 @@ export const SETTINGS_SECTION_COMPONENTS: Record<SettingsSectionId, ComponentTyp
   language: LanguageSettings,
   'mobile-navigation': MobileNavigationSettings,
   backup: BackupSettings,
+  sync: SyncConflicts,
   server: ServerSettings,
 };
 
@@ -57,6 +59,7 @@ export function useSettingsCategoryHints(): Record<SettingsCategory, string> {
   const skills = useQuery(skillsQueryOptions);
   const navigation = useQuery<MobileNavigationPayload>({ queryKey: mobileNavigationKey, queryFn: ({ signal }) => api<MobileNavigationPayload>('/api/settings/mobile-navigation', { signal }) });
   const snapshots = useQuery(snapshotsQueryOptions);
+  const conflicts = useQuery(syncConflictsQueryOptions);
   const server = useQuery(serverInfoQueryOptions);
   const sep = t('layout.hints.separator');
   const loading = t('layout.hints.loading');
@@ -83,7 +86,7 @@ export function useSettingsCategoryHints(): Record<SettingsCategory, string> {
       t(`language.options.${currentLanguage()}`),
       navigation.data && t('layout.hints.bar', { items: navigation.data.visibleViews.map((view) => MOBILE_NAVIGATION_LABELS[view]).filter(Boolean).join(t('layout.hints.listSeparator')) }),
     ]),
-    data: snapshots.data ? (time ? t('layout.hints.latestSnapshot', { time }) : t('layout.hints.noSnapshot')) : loading,
+    data: snapshots.data ? [time ? t('layout.hints.latestSnapshot', { time }) : t('layout.hints.noSnapshot'), conflicts.data?.length ? t('layout.hints.syncConflicts', { count: conflicts.data.length }) : null].filter(Boolean).join(sep) : loading,
     about: join([
       server.data && (server.data.mode === 'server' ? t('server.serverValue') : t('server.localValue')),
       server.data?.version,

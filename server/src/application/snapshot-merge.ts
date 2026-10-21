@@ -12,7 +12,7 @@ import { DatabaseSync } from 'node:sqlite';
 const livePath = process.argv[2];
 const incomingPath = process.argv[3];
 const db = new DatabaseSync(livePath);
-const skip = new Set(['_prisma_migrations', 'LocalSession', 'local_sessions', 'app_settings', 'LibraryUpload', 'RequestReceipt', 'app_data_migrations']);
+const skip = new Set(['_prisma_migrations', 'LocalSession', 'local_sessions', 'app_settings', 'LibraryUpload', 'RequestReceipt', 'app_data_migrations', 'sync_ops', 'sync_devices', 'sync_conflicts', 'sync_outbox', 'sync_state']);
 const derived = new Set(['MaterialExtraction', 'MaterialChunk', 'LibrarySearchDocument', 'LibrarySearchNormMap', 'LibrarySearchPosting']);
 
 function q(name) {
