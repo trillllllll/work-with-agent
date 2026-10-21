@@ -143,7 +143,7 @@ test('删除正文中的图片后，图片记录仍可访问直到任务永久�
   await expect(detail.locator('.task-image img')).toBeVisible();
   // 全选删除正文（含图片引用），保存。
   await body.click();
-  await page.keyboard.press('Meta+a');
+  await page.keyboard.press('ControlOrMeta+a');
   await page.keyboard.press('Backspace');
   await expect.poll(async () => {
     const response = await request.get(`${apiUrl}/api/tasks/${task.id}`);

@@ -64,7 +64,7 @@ test('任务详情直接显示资料区，引用可多选且与关联同时出�
   const description = page.getByLabel('详情', { exact: true });
   const descriptionBox = await description.boundingBox();
   await description.click({ position: { x: Math.max(24, (descriptionBox?.width ?? 240) - 12), y: 18 } });
-  await page.keyboard.press('Meta+A');
+  await page.keyboard.press('ControlOrMeta+A');
   await page.keyboard.insertText('引用已经从正文删除');
   await page.getByLabel('任务标题', { exact: true }).click();
   await expect(page.getByTestId(`material-reference-${first.id}`)).toHaveCount(0);
