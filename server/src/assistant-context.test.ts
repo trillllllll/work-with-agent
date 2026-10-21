@@ -76,7 +76,7 @@ describe('global assistant context', () => {
   });
   it('documents the five work-context layers and their injection boundaries', () => {
     const help = appKnowledge.find((row) => row.id === 'knowledge')?.content ?? '';
-    expect(help).toContain('| 层级 | 来源与用途 | 是否自动注入本次请求 | 是否可写 | 额度与截断 |');
+    expect(help).toContain('| 层级 | 来源 | 用途边界 | 是否自动注入本次请求 | 是否可写 | 额度与截断 |');
     for (const layer of ['固定说明', '当前简报', '已确认记忆', '对话摘要', '资料库']) expect(help).toContain(`| ${layer} |`);
     expect(help).toContain('正文须用 library_read 明确读取');
     expect(help).toContain('全文用 memory_read 读取');
