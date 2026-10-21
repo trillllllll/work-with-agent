@@ -59,6 +59,7 @@ export function MemoryExtractionJobs({ topicId }: { topicId: string }) {
     queryKey: ['auto-memory-jobs', filterQuery, cursor],
     queryFn: ({ signal }) => api<JobsPage>('/api/v1/knowledge/auto-memory/jobs?' + filterQuery + '&cursor=' + cursor, { signal }),
     enabled: !invalidRange,
+    retry: false,
     refetchInterval: () => document.visibilityState === 'visible' ? 15000 : false,
   });
   const change = (set: (value: string) => void, value: string) => { set(value); setCursor(0); };
