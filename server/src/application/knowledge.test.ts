@@ -12,8 +12,9 @@ import { KnowledgeService, knowledgeStorageRoot, readLabels, registerKnowledgeCo
 import { KnowledgeGraph, registerGraphCommands } from './knowledge-graph.js';
 import { OrganizationService, type OrganizationModel } from './knowledge-organizations.js';
 import { ReviewService } from './reviews.js';
-import { latestOccurrence, scheduledInstant } from './reviews-clock.js';
+import { followingOccurrence, latestOccurrence, scheduledInstant } from './reviews-clock.js';
 import { createKnowledgeRouter } from '../routes/knowledge.js';
+import { createReviewsRouter } from '../routes/reviews.js';
 import { clearAutoMemory } from './auto-memory.js';
 import { clearLibraryData, clearLibraryTaxonomy } from './library/cleanup.js';
 
@@ -50,6 +51,7 @@ const api = express();
 api.use(express.json());
 api.use((req, _res, next) => { (req as express.Request & { actor: Actor }).actor = ownerActor; next(); });
 api.use(createKnowledgeRouter());
+api.use('/api/v1/reviews', createReviewsRouter());
 api.use((error: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (error instanceof ZodError) return res.status(400).json({ data: null, error: error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; '), code: 'VALIDATION_ERROR' });
   res.status(error.status ?? 500).json({ error: error.message, code: error.code });
@@ -375,6 +377,108 @@ describe('knowledge evidence and review closed loops', () => {
     } finally { workspaceEvents.off('change', listener); }
   });
 
+  it('soft-deletes a rule, keeps its batches, and rejects later runs', async () => {
+    const project = await topic();
+    const reviews = new ReviewService();
+    const rule = await reviews.createRule(ownerActor, { name: '可删除', topicIds: [project], provider: 'none', enabled: true });
+    const batch = await reviews.run(ownerActor, rule.id);
+    expect(batch?.status).toBe('ready');
+    const events: unknown[] = [];
+    const listener = (event: unknown) => events.push(event);
+    workspaceEvents.on('change', listener);
+    const removed = await reviews.deleteRule(ownerActor, rule.id, { expectedVersion: rule.revision }).finally(() => workspaceEvents.off('change', listener));
+    expect(removed).toMatchObject({ id: rule.id });
+    expect(removed.deletedAt).toEqual(expect.any(String));
+    expect(events).toEqual([{ kind: 'review-rule', ruleId: rule.id }]);
+    expect(await reviews.rules(ownerActor)).toEqual([]);
+    const batches = await reviews.batches(ownerActor);
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toMatchObject({ id: batch!.id, ruleName: '可删除', ruleDeleted: true });
+    const before = await prisma.reviewBatch.count();
+    await reviews.tick(new Date('2026-06-01T15:00:00.000Z'));
+    await expect(reviews.run(ownerActor, rule.id)).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+    await expect(reviews.updateRule(ownerActor, rule.id, { expectedVersion: rule.revision + 1, name: '改名' })).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+    await expect(reviews.retry(ownerActor, batch!.id)).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+    await expect(reviews.deleteRule(ownerActor, rule.id, { expectedVersion: rule.revision })).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+    expect(await prisma.reviewBatch.count()).toBe(before);
+    const other = await reviews.createRule(ownerActor, { name: '仍在', topicIds: [project], provider: 'none' });
+    await expect(reviews.deleteRule(ownerActor, other.id, { expectedVersion: other.revision + 5 })).rejects.toMatchObject({ code: 'VERSION_CONFLICT' });
+    expect((await prisma.reviewRule.findUniqueOrThrow({ where: { id: other.id } })).deletedAt).toBeNull();
+    expect((await reviews.rules(ownerActor)).map((item) => item.id)).toEqual([other.id]);
+  });
+
+  it('deletes a rule through DELETE /api/v1/reviews/rules/:id', async () => {
+    const project = await topic();
+    const created = await request(api).post('/api/v1/reviews/rules').send({ name: '路由删除', topicIds: [project], provider: 'none' });
+    expect(created.status).toBe(200);
+    const id = created.body.data.id as string;
+    const removed = await request(api).delete(`/api/v1/reviews/rules/${id}`).send({ expectedVersion: created.body.data.revision });
+    expect(removed.status).toBe(200);
+    expect(removed.body).toMatchObject({ data: { id }, error: null });
+    expect(removed.body.data.deletedAt).toEqual(expect.any(String));
+    const listed = await request(api).get('/api/v1/reviews/rules');
+    expect(listed.status).toBe(200);
+    expect(listed.body.data).toEqual([]);
+    const missing = await request(api).delete(`/api/v1/reviews/rules/${id}`).send({ expectedVersion: created.body.data.revision });
+    expect(missing.status).toBe(404);
+    expect(missing.body.code).toBe('NOT_FOUND');
+  });
+
+  it('stores counts that match the report and hides them when an old snapshot has none', async () => {
+    const project = await topic();
+    const archived = await write('topic.create', { name: '归档清单' });
+    await write('task.create', { topicId: project, title: '逾期', dueDate: '2020-01-01' });
+    const blockedTask = await write('task.create', { topicId: project, title: '阻塞' });
+    const doing = await write('task.update', { status: 'doing' }, blockedTask.id, blockedTask.revision);
+    await write('task.update', { status: 'blocked' }, blockedTask.id, doing.revision);
+    const doneTask = await write('task.create', { topicId: project, title: '完成' });
+    await write('task.update', { status: 'done' }, doneTask.id, doneTask.revision);
+    await write('task.create', { topicId: archived.id, title: '归档逾期', dueDate: '2020-01-01' });
+    const reviews = new ReviewService();
+    const rule = await reviews.createRule(ownerActor, { name: '计数', topicIds: [project, archived.id], provider: 'none' });
+    await prisma.topic.update({ where: { id: archived.id }, data: { archivedAt: new Date().toISOString() } });
+    const batch = await reviews.run(ownerActor, rule.id);
+    const numbers = (label: string) => [...batch!.content.matchAll(new RegExp(`^- ${label}：(\\d+)$`, 'gm'))].reduce((sum, match) => sum + Number(match[1]), 0);
+    expect(batch?.counts).toEqual({ added: 3, completed: 1, overdue: 1, blocked: 1 });
+    expect(batch?.counts).toEqual({ added: numbers('新增'), completed: numbers('完成'), overdue: numbers('逾期未完成'), blocked: numbers('阻塞') });
+    expect(batch?.content).toContain('已跳过归档清单：归档清单');
+    expect(batch?.snapshot).toMatchObject({ counts: batch?.counts, timeZone: 'Asia/Hong_Kong' });
+    await prisma.reviewBatch.update({ where: { id: batch!.id }, data: { snapshot: JSON.stringify({ from: '2026-01-01T00:00:00.000Z', through: '2026-01-02T00:00:00.000Z', ruleRevision: 1, sources: [], skipped: [] }) } });
+    expect((await reviews.batch(ownerActor, batch!.id)).counts).toBeNull();
+    expect((await reviews.batches(ownerActor, rule.id))[0].counts).toBeNull();
+  });
+
+  it('counts pending proposals recorded on the organization request', async () => {
+    const project = await topic();
+    const task = await write('task.create', { topicId: project, title: '原始任务' });
+    const withProposal = new ReviewService(new OrganizationService(), async () => ({ summary: '建议', commands: [{ kind: 'task.update', targetId: task.id, expectedRevision: task.revision, input: { title: '提议标题' } }] }));
+    const rule = await withProposal.createRule(ownerActor, { name: '带建议', topicIds: [project], provider: 'claude' });
+    const batch = await withProposal.run(ownerActor, rule.id);
+    expect(batch?.pendingProposalCount).toBe(1);
+    const proposalId = JSON.parse((await prisma.organizationRequest.findUniqueOrThrow({ where: { id: batch!.organizationIds[0] } })).proposalIds)[0] as string;
+    await commands.approve(ownerActor, proposalId, { requestId: 'review-proposal', expectedRevision: 1 });
+    expect((await withProposal.batch(ownerActor, batch!.id)).pendingProposalCount).toBe(0);
+    const empty = new ReviewService(new OrganizationService(), async () => ({ summary: '无', commands: [] }));
+    const quiet = await empty.createRule(ownerActor, { name: '无建议', topicIds: [project], provider: 'codex' });
+    expect((await empty.run(ownerActor, quiet.id))?.pendingProposalCount).toBe(0);
+  });
+
+  it('blocks a newly enabled built-in review until a model is configured', async () => {
+    const project = await topic();
+    const unconfigured = new ReviewService(new OrganizationService(), undefined, async () => false);
+    await expect(unconfigured.createRule(ownerActor, { name: '未配置', topicIds: [project], provider: 'builtin', enabled: true })).rejects.toMatchObject({ code: 'MODEL_NOT_CONFIGURED', status: 400, message: '未配置模型服务，请先配置模型再启用内置模型回顾' });
+    const paused = await unconfigured.createRule(ownerActor, { name: '暂停内置', topicIds: [project], provider: 'builtin', enabled: false });
+    expect(paused.enabled).toBe(false);
+    await expect(unconfigured.updateRule(ownerActor, paused.id, { expectedVersion: paused.revision, enabled: true })).rejects.toMatchObject({ code: 'MODEL_NOT_CONFIGURED', status: 400 });
+    const plain = await unconfigured.createRule(ownerActor, { name: '基础', topicIds: [project], provider: 'none', enabled: true });
+    expect(plain).toMatchObject({ enabled: true, provider: 'none' });
+    const configured = new ReviewService(new OrganizationService(), undefined, async () => true);
+    const enabled = await configured.createRule(ownerActor, { name: '已配置', topicIds: [project], provider: 'builtin', enabled: true });
+    expect(enabled).toMatchObject({ enabled: true, provider: 'builtin' });
+    const renamed = await unconfigured.updateRule(ownerActor, enabled.id, { expectedVersion: enabled.revision, name: '只改名' });
+    expect(renamed).toMatchObject({ name: '只改名', enabled: true, provider: 'builtin' });
+  });
+
   it('stores importance, labels and caller origin, and sorts active memories above history', async () => {
     const project = await topic();
     const quiet = await write('memory.create', { topicId: project, title: '普通记录', content: '默认重要度', labels: ['本机环境'] });
@@ -508,6 +612,9 @@ describe('knowledge evidence and review closed loops', () => {
 });
 
 describe('review local wall-clock scheduling', () => {
+  beforeEach(clean);
+  afterAll(clean);
+
   it('chooses the first repeated time and advances skipped DST times', () => {
     expect(scheduledInstant('2026-03-08', '02:30', 'America/New_York').toISOString()).toBe('2026-03-08T07:00:00.000Z');
     expect(scheduledInstant('2026-11-01', '01:30', 'America/New_York').toISOString()).toBe('2026-11-01T05:30:00.000Z');
@@ -515,5 +622,37 @@ describe('review local wall-clock scheduling', () => {
   });
   it('uses the selected weekday in the rule timezone', () => {
     expect(latestOccurrence({ frequency: 'weekly', timeOfDay: '20:00', timeZone: 'Asia/Hong_Kong', weekDay: 0 }, new Date('2026-09-21T04:00:00Z'))).toMatchObject({ key: 'weekly:2026-09-20', scheduledAt: '2026-09-20T12:00:00.000Z' });
+  });
+
+  it('steps one day or one week ahead at the same local time', () => {
+    expect(followingOccurrence({ frequency: 'daily', timeOfDay: '21:00', timeZone: 'Asia/Hong_Kong', weekDay: 0 }, '2026-01-10')).toEqual({ key: 'daily:2026-01-11', scheduledAt: '2026-01-11T13:00:00.000Z', localDate: '2026-01-11' });
+    expect(followingOccurrence({ frequency: 'weekly', timeOfDay: '20:00', timeZone: 'Asia/Hong_Kong', weekDay: 0 }, '2026-09-20')).toEqual({ key: 'weekly:2026-09-27', scheduledAt: '2026-09-27T12:00:00.000Z', localDate: '2026-09-27' });
+  });
+
+  it('returns the next Hong Kong run, or null when paused or the schedule is invalid', async () => {
+    const project = await topic();
+    const reviews = new ReviewService();
+    const at = new Date('2026-01-10T15:00:00.000Z');
+    const schedule = { topicIds: [project], enabled: true, frequency: 'daily' as const, timeOfDay: '21:00', timeZone: 'Asia/Hong_Kong' };
+    const rule = await reviews.createRule(ownerActor, { name: '补跑最近一次', ...schedule });
+    await prisma.reviewRule.update({ where: { id: rule.id }, data: { updatedAt: '2026-01-01T00:00:00.000Z' } });
+    const nextOf = async (id: string, moment = at) => (await reviews.rules(ownerActor, moment)).find((item) => item.id === id)?.nextRunAt;
+    expect(await nextOf(rule.id)).toBe('2026-01-10T13:00:00.000Z');
+    await prisma.reviewBatch.create({ data: { ruleId: rule.id, occurrenceKey: 'daily:2026-01-10', createdAt: '2026-01-10T13:00:00.000Z', updatedAt: '2026-01-10T13:00:00.000Z' } });
+    expect(await nextOf(rule.id)).toBe('2026-01-11T13:00:00.000Z');
+    const edited = await reviews.createRule(ownerActor, { name: '改过的规则', ...schedule });
+    await prisma.reviewRule.update({ where: { id: edited.id }, data: { updatedAt: '2026-01-10T14:00:00.000Z' } });
+    expect(await nextOf(edited.id)).toBe('2026-01-11T13:00:00.000Z');
+    const weekly = await reviews.createRule(ownerActor, { name: '每周', topicIds: [project], enabled: true, frequency: 'weekly', timeOfDay: '20:00', timeZone: 'Asia/Hong_Kong', weekDay: 0 });
+    await prisma.reviewRule.update({ where: { id: weekly.id }, data: { updatedAt: '2026-09-01T00:00:00.000Z' } });
+    const weekAt = new Date('2026-09-21T04:00:00.000Z');
+    expect(await nextOf(weekly.id, weekAt)).toBe('2026-09-20T12:00:00.000Z');
+    await prisma.reviewBatch.create({ data: { ruleId: weekly.id, occurrenceKey: 'weekly:2026-09-20', createdAt: '2026-09-20T12:00:00.000Z', updatedAt: '2026-09-20T12:00:00.000Z' } });
+    expect(await nextOf(weekly.id, weekAt)).toBe('2026-09-27T12:00:00.000Z');
+    const paused = await reviews.createRule(ownerActor, { name: '暂停', ...schedule, enabled: false });
+    expect(await nextOf(paused.id)).toBeNull();
+    await prisma.reviewRule.update({ where: { id: rule.id }, data: { timeZone: 'Not/AZone' } });
+    expect(await nextOf(rule.id)).toBeNull();
+    expect((await reviews.rules(ownerActor, at)).some((item) => item.id === edited.id && item.nextRunAt === '2026-01-11T13:00:00.000Z')).toBe(true);
   });
 });

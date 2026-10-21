@@ -74,6 +74,40 @@ export type ChangeListItem = {
   canUndo: boolean; undoBlockedReason: UndoBlockedReason | null; undoneAt: string | null; createdAt: string;
 };
 export type ChangePage = { items: ChangeListItem[]; nextCursor: string | null; total: number; connections?: { id: string; name: string | null }[] };
+export type ReviewRule = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  frequency: 'daily' | 'weekly';
+  timeOfDay: string;
+  timeZone: string;
+  weekDay: number;
+  topicIds: string[];
+  includeInbox: boolean;
+  provider: 'none' | 'builtin' | 'external' | 'codex' | 'claude';
+  revision: number;
+  coverageThrough: string | null;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  nextRunAt: string | null;
+};
+export type ReviewBatch = {
+  id: string;
+  ruleId: string;
+  occurrenceKey: string;
+  status: 'generating' | 'partial' | 'ready' | 'failed';
+  snapshot: Record<string, unknown>;
+  content: string;
+  organizationIds: string[];
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+  ruleName: string;
+  ruleDeleted: boolean;
+  counts: { added: number; completed: number; overdue: number; blocked: number } | null;
+  pendingProposalCount: number;
+};
 
 export const statuses: { value: Status; label: string }[] = [option('todo', 'app:status.todo'), option('doing', 'app:status.doing'), option('blocked', 'app:status.blocked'), option('done', 'app:status.done')];
 export function availableTaskStatuses(task: Pick<Task, 'status' | 'allowedTransitions'>): Status[] { const allowed = new Set([task.status, ...(task.allowedTransitions ?? [])]); return statuses.map((item) => item.value).filter((status) => allowed.has(status)); }

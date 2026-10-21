@@ -213,6 +213,16 @@ async function authenticate(req: Request): Promise<{ actor: Actor; csrfToken?: s
   if (hash(csrfToken) !== session.csrfHash) return null;
   return { actor: ownerActor, csrfToken };
 }
+export async function requireOwner(req: Request) {
+  const identity = await authenticate(req);
+  if (!identity || identity.actor.kind !== 'user') throw new DomainError('AUTH_REQUIRED', '请先登录本机工作区', 401);
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    const given = req.headers['x-csrf-token'];
+    const expected = identity.csrfToken!;
+    if (typeof given !== 'string' || given.length !== expected.length || !timingSafeEqual(Buffer.from(given), Buffer.from(expected))) throw new DomainError('CSRF_REQUIRED', '用户会话校验失败，请重新打开工作区', 403);
+  }
+  return identity;
+}
 export async function identityMiddleware(req: Request, _res: Response, next: NextFunction) {
   try {
     const identity = await authenticate(req);

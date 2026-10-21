@@ -6,7 +6,7 @@ import type { Topic } from '@/lib/api.js';
 import { parseStored } from '@/lib/platform.js';
 import { hostLabel, type Connection } from '@/lib/connection-status.js';
 import { setupSnippet, type ConnectionConfiguration } from '@/lib/connection-snippet.js';
-import { topicIdsForSave } from '@/lib/connection-access.js';
+import { topicIdsForSave } from '@/lib/scope-selection.js';
 import { Button } from '@/components/ui/button.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { Input } from '@/components/ui/input.js';

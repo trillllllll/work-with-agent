@@ -77,15 +77,24 @@ test('已有会话交接返回后由用户采纳并完成任务', async ({ page,
   await expect.poll(async () => (await e2eDatabase.task.findUniqueOrThrow({ where: { id: task.id } })).status).toBe('done');
 });
 
-test('基础回顾无需模型，规则默认暂停且保留每次主动生成的历史', async ({ page }) => {
+test('基础回顾无需模型，新建规则默认启用且保留每次主动生成的历史', async ({ page }) => {
+  await page.addInitScript(() => { (window as unknown as { __REACT_GRAB_DISABLED__?: boolean }).__REACT_GRAB_DISABLED__ = true; });
   await page.goto('/#/reviews');
-  await page.getByLabel('回顾名称', { exact: true }).fill('每日收集箱回顾');
-  await page.getByRole('button', { name: '保存规则', exact: true }).click();
+  await page.getByRole('button', { name: '新建回顾', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('回顾名称', { exact: true }).fill('每日收集箱回顾');
+  await dialog.getByRole('button', { name: '下一步', exact: true }).click();
+  await expect(dialog.getByRole('radio', { name: '基础回顾（无需模型）', exact: true })).toBeChecked();
+  await expect(dialog.getByRole('switch', { name: '保存后立即启用', exact: true })).toBeChecked();
+  await dialog.getByRole('button', { name: '保存', exact: true }).click();
   await expect.poll(() => e2eDatabase.reviewRule.count()).toBe(1);
-  expect((await e2eDatabase.reviewRule.findFirstOrThrow()).enabled).toBe(false);
-  await page.getByRole('button', { name: '立即生成回顾', exact: true }).click();
+  expect((await e2eDatabase.reviewRule.findFirstOrThrow()).enabled).toBe(true);
+  const card = page.getByRole('article').filter({ has: page.getByRole('heading', { name: '每日收集箱回顾', exact: true }) });
+  const run = card.getByRole('button', { name: '立即生成', exact: true });
+  await run.click();
   await expect.poll(() => e2eDatabase.reviewBatch.count()).toBe(1);
-  await page.getByRole('button', { name: '立即生成回顾', exact: true }).click();
+  await expect(run).toBeEnabled();
+  await run.click();
   await expect.poll(() => e2eDatabase.reviewBatch.count()).toBe(2);
   expect(await e2eDatabase.appSetting.count()).toBe(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);

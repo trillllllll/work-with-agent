@@ -3,6 +3,13 @@
 // Keep this object JSON-compatible: `npm run i18n:check` parses it and checks it against the sources.
 export const en: Record<string, string> = {
   "只支持 page 和 q": "Only page and q are supported",
+  "同步协议版本不一致，请先升级到同一版本": "Sync protocol versions differ. Upgrade both sides to the same version first",
+  "同步地址只接受 https 或本机 http": "Sync address must be https, or http on this computer",
+  "同步设备凭据无效": "Sync device credential is invalid",
+  "同步操作无效": "Sync operation is invalid",
+  "同步绑定无效": "Sync binding is invalid",
+  "服务器不需要绑定到另一台服务器": "The server does not bind to another server",
+  "冲突不存在或已处理": "Conflict does not exist or is already resolved",
   "会话不存在": "Session does not exist",
   "原用户消息不存在": "Original user message does not exist",
   "无法组装上下文": "Unable to assemble the context",
@@ -493,6 +500,7 @@ export const en: Record<string, string> = {
   "SOURCE_STALE: 回顾来源已变化，请建立新的回顾批次。": "SOURCE_STALE: Review source has changed, please create a new review batch.",
   "回顾来源已变化，请建立新的回顾批次。": "Review source has changed, please create a new review batch.",
   "回顾规则无效": "Review rule is invalid",
+  "未配置模型服务，请先配置模型再启用内置模型回顾": "The model service is not configured. Configure a model before enabling a built-in model review",
   "本次运行的结果已经固定，不能覆盖": "This run's result is already finalized and cannot be overwritten",
   "运行状态已变化": "Run status has changed",
   "产物不存在": "Artifact does not exist",

@@ -8,7 +8,7 @@ import {
   selectAll,
   topicIdsForSave,
   type AccessTopic,
-} from './connection-access.js';
+} from './scope-selection.js';
 
 const alpha: AccessTopic = { id: 'a', name: 'Alpha' };
 const beta: AccessTopic = { id: 'b', name: 'beta notes' };

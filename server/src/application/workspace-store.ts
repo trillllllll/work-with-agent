@@ -132,6 +132,10 @@ export async function recordChange(tx: Db, entityType: string, entityId: string,
   const record = await tx.changeRecord.create({ data: { entityType, entityId, entityName, operation, beforeSnapshot: before ? JSON.stringify(before) : null, afterSnapshot: after ? JSON.stringify(after) : null, source: context.source, conversationId: context.conversationId, approvalId: context.approvalId, requestId: context.requestId, actorId: context.actor?.id, connectionId: context.actor?.connectionId, proposalId: context.proposalId, reversalOf, approvedByActorId: context.approvedByActorId ?? null, createdAt: now() } });
   await syncEntityName(tx, entityType, entityId, operation, entityName);
   context.auditRecords?.push(record);
+  if (!context.preview && isGroup(before) && isGroup(after)) {
+    const { recordCommittedGroup } = await import('./sync-replica.js');
+    await recordCommittedGroup(tx, record.id, before, after);
+  }
   return record;
 }
 

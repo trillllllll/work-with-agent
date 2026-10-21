@@ -13,6 +13,7 @@ import { changeDisplayName } from './change-list.js';
 import { type Actor, getActor, assertOwner, assertOwnerOrLearningSkill, assertTopicAccess, actorFromConnection } from './security.js';
 import { commandDescriptor } from './command-catalog.js';
 import { discardPendingBlobs, flushUnreferencedBlobs } from './task-images.js';
+import { currentSyncSeq } from './sync-log.js';
 
 export type Evidence = { type: 'material' | 'memory' | 'task'; id: string; revision: number; hash?: string };
 export type Command = { kind: string; targetId?: string; expectedRevision?: number; input: Record<string, unknown>; clientRef?: string; entityId?: string; evidence?: Evidence[] };
@@ -491,7 +492,7 @@ export class CommandService {
       await tx.requestReceipt.create({ data: { actorId: current.id, requestId: input.requestId, requestHash, response: JSON.stringify({ result, scopeRevision: current.revision }), createdAt: now() } });
       return result;
     });
-    publishWorkspaceChange({ kind: response.status, proposalId: response.proposalId, ...response.meta });
+    publishWorkspaceChange({ kind: response.status, proposalId: response.proposalId, ...response.meta, syncSeq: await currentSyncSeq() });
     return response;
   }
   async get(actor: Actor, id: string) {
@@ -578,7 +579,7 @@ export class CommandService {
       await tx.requestReceipt.create({ data: { actorId: actor.id, requestId: input.requestId, requestHash, response: JSON.stringify({ result, scopeRevision: actor.revision }), createdAt: now() } });
       return result;
     });
-    publishWorkspaceChange({ kind: 'applied', proposalId: id, ...result.meta });
+    publishWorkspaceChange({ kind: 'applied', proposalId: id, ...result.meta, syncSeq: await currentSyncSeq() });
     return result;
   }
   async reject(actor: Actor, id: string, value: unknown) {

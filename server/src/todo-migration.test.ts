@@ -21,6 +21,7 @@ describe('basic Todo explicit SQLite migration', () => {
       expect(db.prepare('PRAGMA table_info(tasks)').all().map((row) => row.name)).toEqual(expect.arrayContaining(['parent_id', 'sort_order', 'revision', 'delete_batch_id']));
       expect(db.prepare('PRAGMA table_info(change_records)').all().map((row) => row.name)).toEqual(expect.arrayContaining(['entity_name']));
       expect(db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all().map((row) => row.name)).toEqual(expect.arrayContaining(['change_records_created_at_id_idx', 'change_records_entity_id_idx']));
+      expect(db.prepare('PRAGMA table_info("ReviewRule")').all().map((row) => row.name)).toEqual(expect.arrayContaining(['deletedAt']));
     } finally { db.close(); }
   });
 
