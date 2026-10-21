@@ -67,8 +67,8 @@ export function ChangesFilters({ filters, connections, loaded, total, onSearch, 
         ? <DesktopFilters filters={filters} connections={connections} onList={onList} onRange={onRange} />
         : <MobileFilters filters={filters} connections={connections} onReplace={onReplace} />}
     </div>
-    {(chips.length > 0 || countLabel) && <div className="mt-2 flex items-center gap-2">
-      <div className={cn('flex min-w-0 flex-1 items-center gap-1.5', desktop ? 'flex-wrap' : 'overflow-x-auto [scrollbar-width:none]')}>
+    {(chips.length > 0 || countLabel) && <div className="mt-2 flex flex-col gap-1.5 lg:flex-row lg:items-center lg:gap-2">
+      <div className={cn('flex min-w-0 items-center gap-1.5', desktop ? 'flex-1 flex-wrap' : 'overflow-x-auto [scrollbar-width:none]')}>
         {chips.map((chip) => {
           const label = chipText(chip, t);
           return <span key={chip.id} className="inline-flex h-[26px] shrink-0 items-center gap-1 rounded-full bg-muted pr-1 pl-2.5 text-xs whitespace-nowrap">
@@ -78,7 +78,7 @@ export function ChangesFilters({ filters, connections, loaded, total, onSearch, 
         })}
         {chips.length > 0 && <button type="button" className="shrink-0 px-1 text-xs underline underline-offset-2" onClick={() => onReplace(EMPTY_CHANGE_FILTERS)}>{t('changes.clearFilters')}</button>}
       </div>
-      {countLabel && <span className="shrink-0 text-xs whitespace-nowrap text-muted-foreground">{countLabel}</span>}
+      {countLabel && <span className="shrink-0 self-end text-xs whitespace-nowrap text-muted-foreground lg:self-auto">{countLabel}</span>}
     </div>}
   </div>;
 }

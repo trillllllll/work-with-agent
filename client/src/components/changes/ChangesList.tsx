@@ -168,9 +168,9 @@ function SummaryLine({ summary, t, appT }: { summary: ChangeSummary | null; t: T
   if ('kind' in summary) return <p className="mt-1.5 text-[13px]">{t(summary.success ? 'changes.toolSuccess' : 'changes.toolFailure', { toolName: summary.toolName })}</p>;
   return <p className="mt-1.5 flex min-w-0 items-baseline gap-x-1.5 text-[13px] max-lg:flex-nowrap max-lg:overflow-hidden">
     <span className="shrink-0 text-muted-foreground">{fieldLabel(summary.field, t)}</span>
-    <span className="text-muted-foreground line-through">{valueLabel(summary.field, summary.before, appT)}</span>
+    <span className="max-w-[46%] shrink-0 truncate text-muted-foreground line-through">{valueLabel(summary.field, summary.before, appT)}</span>
     <span aria-hidden="true" className="shrink-0">→</span>
-    <span className="min-w-0 break-all max-lg:truncate">{valueLabel(summary.field, summary.after, appT)}</span>
+    <span className="min-w-0 max-lg:truncate lg:break-all">{valueLabel(summary.field, summary.after, appT)}</span>
   </p>;
 }
 
