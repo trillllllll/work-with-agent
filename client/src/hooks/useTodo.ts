@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type InfiniteData, type QueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { api, apiMutation, ApiError, type ApiEnvelope, type FocusSession, type Task } from '@/lib/api.js';
+import { api, apiMutation, ApiError, type ApiEnvelope, type ChangePage, type FocusSession, type Task } from '@/lib/api.js';
+import { markChangeUndone } from '@/lib/change-list-cache.js';
 import { enqueueWrite, localDate, queryKeys, keepNewestTask } from '@/lib/todo.js';
 import { useCommandPreview, type CommandPreview } from '@/components/dialogs/CommandPreviewProvider.js';
 
@@ -11,8 +12,10 @@ export function invalidateTodo(client: QueryClient) {
 }
 const TASK_SCOPE = ['tasks', 'task', 'changes'] as const;
 const FULL_SCOPE = ['tasks', 'task', 'topics', 'topic', 'tags', 'trash', 'changes', 'task-topic-history'] as const;
+const UNDO_SCOPE = [...FULL_SCOPE, 'library', 'knowledge', 'knowledge-tree', 'knowledge-graph', 'auto-memory', 'skills', 'skill', 'proposals', 'task-activity'] as const;
 /** 写入成功后的失效范围：常规任务编辑只刷任务相关查询，结构性变更再带上对应实体。 */
 function invalidationScope(path: string, body: Record<string, unknown>): readonly string[] {
+  if (/^\/api\/changes\/[^/]+\/undo$/.test(path)) return UNDO_SCOPE;
   const structural = body.topicId !== undefined || body.parentId !== undefined;
   if (path.startsWith('/api/tasks/reorder')) return TASK_SCOPE;
   if (/^\/api\/tasks\/[^/]+$/.test(path)) {
@@ -97,6 +100,8 @@ export function useTodoActions() {
           client.setQueryData<Task>(queryKeys.task(task.id), merge);
           client.setQueriesData<Task[]>({ queryKey: queryKeys.tasks }, (old) => Array.isArray(old) ? old.map((item) => item.id === task.id ? merge(item) : item) : old);
         }
+        const undoId = path.match(/^\/api\/changes\/([^/]+)\/undo$/)?.[1];
+        if (undoId) client.setQueriesData<InfiniteData<ChangePage>>({ queryKey: ['changes', 'page'] }, (current) => markChangeUndone(current, undoId, new Date().toISOString()));
         await Promise.all(invalidationScope(path, record).map((key) => client.invalidateQueries({ queryKey: [key] })));
         return result;
       });

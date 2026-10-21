@@ -42,7 +42,99 @@
       "topic": "清单",
       "task": "任务",
       "tag": "标签",
-      "execution": "受控执行"
+      "execution": "受控执行",
+      "memory": "记忆",
+      "material": "资料",
+      "skill": "技能",
+      "workspace": "批量修改",
+      "proposal": "提议",
+      "entity": "实体",
+      "graphLink": "关系",
+      "libraryFolder": "文件夹",
+      "libraryTag": "资料标签",
+      "handoff": "交接",
+      "run": "运行",
+      "code_application": "代码应用"
+    },
+    "searchPlaceholder": "搜索名称，或粘贴完整 ID",
+    "filters": {
+      "object": "对象",
+      "op": "操作",
+      "source": "来源",
+      "status": "状态",
+      "range": "时间"
+    },
+    "filterButton": "筛选",
+    "selectedCount": "{{count}} 项",
+    "clearFilters": "清除筛选",
+    "removeChip": "移除 {{label}}",
+    "chip": "{{name}}：{{value}}",
+    "loadedCount": "已加载 {{loaded}} 条 / 共 {{total}} 条",
+    "end": "已经到底 · 共 {{total}} 条",
+    "loadMore": "加载更多",
+    "loadingMore": "正在加载更多…",
+    "loadFailed": "下一页没有加载成功",
+    "retry": "重试",
+    "loadFailedFirst": "变更历史加载失败",
+    "emptyTitle": "还没有变更记录",
+    "emptyHint": "创建、修改或删除任务、清单、标签等之后，记录会出现在这里。",
+    "noMatchTitle": "没有符合筛选的记录",
+    "noMatchHint": "当前条件：{{filters}}",
+    "viewResults": "查看 {{count}} 条结果",
+    "days": {
+      "today": "今天",
+      "yesterday": "昨天",
+      "earlier": "更早"
+    },
+    "opGroups": {
+      "create": "创建",
+      "update": "更新",
+      "delete": "删除或归档",
+      "restore": "恢复",
+      "summary": "成果",
+      "execute": "受控执行",
+      "undo": "撤销记录",
+      "other": "其他"
+    },
+    "sources": {
+      "user": "用户",
+      "assistant": "AI 助手",
+      "deletedConnection": "已删除的连接"
+    },
+    "statuses": {
+      "reversible": "可撤销",
+      "undone": "已撤销",
+      "blocked": "不可撤销"
+    },
+    "ranges": {
+      "all": "全部时间",
+      "today": "今天",
+      "7d": "最近 7 天",
+      "30d": "最近 30 天"
+    },
+    "undoneBadge": "已撤销",
+    "blocked": {
+      "alreadyUndoneAt": "已于 {{time}} 撤销",
+      "undoRecord": "这是一条撤销记录，不能再撤销",
+      "execution": "受控执行记录不可撤销",
+      "permanentDelete": "此类操作不支持撤销（永久删除）",
+      "unsupported": "该变更不可撤销",
+      "missingSnapshot": "缺少变更前后的快照，无法撤销"
+    },
+    "fields": {
+      "title": "标题",
+      "status": "状态",
+      "priority": "优先级",
+      "dueDate": "截止日期",
+      "schedule": "安排",
+      "list": "清单",
+      "parent": "父任务",
+      "name": "名称",
+      "color": "颜色",
+      "description": "说明",
+      "goal": "目标",
+      "enabled": "启用",
+      "tags": "标签"
     }
   },
   "confirmDialog": {

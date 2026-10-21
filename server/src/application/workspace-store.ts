@@ -3,6 +3,7 @@ import { Prisma, type Task, type Topic, type Tag, type ChangeRecord } from '@pri
 import { prisma } from '../infrastructure/prisma.js';
 import { DomainError, allowedTaskTransitions } from '../domain/task.js';
 import type { Actor } from './security.js';
+import { changeDisplayName, syncEntityName } from './change-list.js';
 
 export type UndoOwnership = { taskIdsRestoredByGroup: ReadonlySet<string> };
 export type MutationContext = { source: 'user' | 'agent'; conversationId?: string; approvalId?: string; requestId?: string; actor?: Actor; proposalId?: string; db?: Db; entityId?: string; preview?: boolean; auditRecords?: ChangeRecord[]; undoOwnership?: UndoOwnership; approvedByActorId?: string | null };
@@ -156,7 +157,9 @@ export class ChangeGroup {
 }
 
 export async function recordChange(tx: Db, entityType: string, entityId: string, operation: string, before: unknown, after: unknown, context: MutationContext, reversalOf?: string) {
-  const record = await tx.changeRecord.create({ data: { entityType, entityId, operation, beforeSnapshot: before ? JSON.stringify(before) : null, afterSnapshot: after ? JSON.stringify(after) : null, source: context.source, conversationId: context.conversationId, approvalId: context.approvalId, requestId: context.requestId, actorId: context.actor?.id, connectionId: context.actor?.connectionId, proposalId: context.proposalId, reversalOf, approvedByActorId: context.approvedByActorId ?? null, createdAt: now() } });
+  const entityName = changeDisplayName(entityType, entityId, before, after, operation);
+  const record = await tx.changeRecord.create({ data: { entityType, entityId, entityName, operation, beforeSnapshot: before ? JSON.stringify(before) : null, afterSnapshot: after ? JSON.stringify(after) : null, source: context.source, conversationId: context.conversationId, approvalId: context.approvalId, requestId: context.requestId, actorId: context.actor?.id, connectionId: context.actor?.connectionId, proposalId: context.proposalId, reversalOf, approvedByActorId: context.approvedByActorId ?? null, createdAt: now() } });
+  await syncEntityName(tx, entityType, entityId, operation, entityName);
   context.auditRecords?.push(record);
   if (!context.preview && isGroup(before) && isGroup(after)) {
     const { recordCommittedGroup } = await import('./sync-replica.js');

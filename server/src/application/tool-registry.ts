@@ -9,6 +9,7 @@ import { runAgentMemoryTool, validateConversationSearchArguments, validateMemory
 import { isLibraryReadAction, LIBRARY_TOOL_DESCRIPTION, libraryToolParameters, runAgentLibraryTool, validateLibraryArguments } from './agent-library.js';
 import { PROPOSE_TASK_CHANGES_DESCRIPTION, proposeTaskChangesParameters } from '../domain/task-batch.js';
 import { taskFileGrants } from './task-file-grants.js';
+import { changeDisplayName, syncEntityName } from './change-list.js';
 
 type ToolRunContext = MutationContext & { topicId?: string | null; taskId?: string | null };
 
@@ -181,6 +182,13 @@ export class ToolService {
     if (execution.success) return null;
     return { success: false, error: execution.error, code: execution.errorCode, data: execution };
   }
-  private async recordExecution(call: ToolCall, result: ExecutionResult, context: MutationContext) { await prisma.changeRecord.create({ data: { entityType: 'execution', entityId: context.approvalId!, operation: 'execute', beforeSnapshot: null, afterSnapshot: JSON.stringify({ toolName: call.name, input: redact(call.arguments), result: redact(result) }), source: context.source, conversationId: context.conversationId, approvalId: context.approvalId, requestId: context.requestId ?? context.approvalId, createdAt: now() } }); }
+  private async recordExecution(call: ToolCall, result: ExecutionResult, context: MutationContext) {
+    await prisma.$transaction(async (tx) => {
+      const after = { toolName: call.name, input: redact(call.arguments), result: redact(result) };
+      const entityName = changeDisplayName('execution', context.approvalId!, null, after, 'execute');
+      await tx.changeRecord.create({ data: { entityType: 'execution', entityId: context.approvalId!, entityName, operation: 'execute', beforeSnapshot: null, afterSnapshot: JSON.stringify(after), source: context.source, conversationId: context.conversationId, approvalId: context.approvalId, requestId: context.requestId ?? context.approvalId, actorId: context.actor?.id ?? null, connectionId: context.actor?.connectionId ?? null, createdAt: now() } });
+      await syncEntityName(tx, 'execution', context.approvalId!, 'execute', entityName);
+    });
+  }
   private isExecutionValidationFailure(result: ExecutionResult) { return Boolean(result.errorCode && /(?:_DENIED|_INVALID_|_INVALID$|_INVALID_PATH$)/.test(result.errorCode)); }
 }

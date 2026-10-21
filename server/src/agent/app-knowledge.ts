@@ -1,4 +1,5 @@
 import { serverVersion } from '../application/security.js';
+import { changeListWhere, filterFromPageState } from '../application/change-list.js';
 import { prisma } from '../infrastructure/prisma.js';
 import type { StoredChatContext } from './chat-context.js';
 import { DomainError } from '../domain/task.js';
@@ -42,7 +43,11 @@ export function appKnowledgePrompt(page: string) {
 export async function readPageState(context: StoredChatContext) {
   const base = { page: context.page, scope: context.scope, taskFilter: context.taskFilter, selectedTaskIds: context.selectedTaskIds, ...(context.schemaVersion === 3 ? { section: context.section, pageState: context.pageState, materialRevision: context.materialRevision } : {}) };
   const state = context.schemaVersion === 3 ? context.pageState : {};
-  if (context.page === 'changes') return { ...base, changes: await prisma.changeRecord.findMany({ where: { ...(state.kind ? { entityType: state.kind } : {}), ...(state.selectedId ? { entityId: state.selectedId } : {}) }, select: { id: true, entityType: true, entityId: true, operation: true, source: true, createdAt: true, undoneAt: true }, orderBy: { createdAt: 'desc' }, take: 30 }), coverage: '当前筛选下最近 30 条变更' };
+  if (context.page === 'changes') {
+    const filter = filterFromPageState(state);
+    const changes = await prisma.changeRecord.findMany({ where: changeListWhere(filter), orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 30, select: { id: true, entityType: true, entityId: true, operation: true, entityName: true, source: true, createdAt: true, undoneAt: true } });
+    return { ...base, changes, coverage: '当前筛选下最近 30 条' };
+  }
   if (context.page === 'plan') return { ...base, timeBands: await prisma.planTimeBand.findMany({ orderBy: { position: 'asc' } }) };
   if (context.page === 'settings') return { ...base, settings: await prisma.appSetting.findFirst({ select: { openaiModel: true, mobileNavigationJson: true } }) };
   if (context.page === 'connections') return { ...base, connections: await prisma.connection.findMany({ select: { id: true, name: true, host: true, status: true }, take: 100 }) };

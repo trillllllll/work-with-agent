@@ -41,6 +41,38 @@ describe('task write queue', () => {
     await expect(second).resolves.toBe(2);
     expect(order).toEqual(['first', 'other', 'second']);
   });
+
+  it('lets * wait for every in-flight write and holds later writes behind it', async () => {
+    const queue = createWriteQueue();
+    const order: string[] = [];
+    let releaseA!: () => void;
+    let releaseB!: () => void;
+    let releaseBarrier!: () => void;
+    let barrierStarted!: () => void;
+    const gateA = new Promise<void>((resolve) => { releaseA = resolve; });
+    const gateB = new Promise<void>((resolve) => { releaseB = resolve; });
+    const gateBarrier = new Promise<void>((resolve) => { releaseBarrier = resolve; });
+    const started = new Promise<void>((resolve) => { barrierStarted = resolve; });
+    const first = queue(['a'], async () => { order.push('a'); await gateA; });
+    const second = queue(['b'], async () => { order.push('b'); await gateB; });
+    const barrier = queue(['*', 'entity'], async () => { order.push('barrier'); barrierStarted(); await gateBarrier; });
+    let afterStarted = false;
+    const after = queue(['other'], async () => { afterStarted = true; order.push('after'); });
+    await Promise.resolve();
+    expect(order).toEqual(['a', 'b']);
+    expect(afterStarted).toBe(false);
+    releaseA();
+    releaseB();
+    await first;
+    await second;
+    await started;
+    expect(order).toEqual(['a', 'b', 'barrier']);
+    expect(afterStarted).toBe(false);
+    releaseBarrier();
+    await barrier;
+    await after;
+    expect(order).toEqual(['a', 'b', 'barrier', 'after']);
+  });
 });
 
 describe('canHaveSubtasks', () => {

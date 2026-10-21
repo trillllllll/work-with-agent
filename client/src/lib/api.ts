@@ -65,7 +65,15 @@ export type FocusSession = {
   startedAt: string; endedAt: string; durationMinutes: number;
   plannedMinutes: number; completed: boolean; createdAt: string;
 };
-export type ChangeRecord = { id: string; entityType: string; entityId: string; operation: string; reversible: boolean; beforeSnapshot?: string | null; afterSnapshot?: string | null; source: string; conversationId?: string | null; approvalId?: string | null; requestId?: string | null; reversalOf?: string | null; undoneAt?: string | null; createdAt: string };
+export type ChangeSummary = { field: string; before: string; after: string } | { kind: 'tool'; toolName: string; success: boolean };
+export type UndoBlockedReason = { code: 'CHANGE_ALREADY_UNDONE' | 'CHANGE_NOT_REVERSIBLE' | 'MISSING_SNAPSHOT'; reason: 'already_undone' | 'undo_record' | 'execution' | 'permanent_delete' | 'unsupported' | 'missing_snapshot' };
+export type ChangeListItem = {
+  id: string; entityType: string; entityId: string; operation: string; entityName: string; groupCount: number;
+  changeSummary: ChangeSummary | null; source: string; actorKind: 'user' | 'assistant' | 'connection';
+  connectionId: string | null; connectionName: string | null; approvalId: string | null;
+  canUndo: boolean; undoBlockedReason: UndoBlockedReason | null; undoneAt: string | null; createdAt: string;
+};
+export type ChangePage = { items: ChangeListItem[]; nextCursor: string | null; total: number; connections?: { id: string; name: string | null }[] };
 export type ReviewRule = {
   id: string;
   name: string;

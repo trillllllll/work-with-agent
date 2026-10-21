@@ -119,7 +119,7 @@ export function WorkspaceModal({ suspended = false, assistantOpen, assistantSlot
     {createPortal(<>
         {header}
         <section className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-white/15 dark:bg-black/10">
-          <div ref={scroller} data-testid="workspace-modal-scroller" className="glass-scrollbar h-full min-h-0 overflow-y-auto overscroll-contain">{content}</div>
+          <div ref={scroller} data-testid="workspace-modal-scroller" data-page-scroll className="glass-scrollbar h-full min-h-0 overflow-y-auto overscroll-contain">{content}</div>
           {mobile && !assistantOpen && (
             <Button
               type="button"

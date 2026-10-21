@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { SettingsService } from './application/settings.js';
 import { clearManual, cliSettings, discoverCli, discoverClis, isCliProvider, saveManual } from './runner/cli-commands.js';
 import { TopicService, TaskService, TagService, ChangeService } from './application/workspace.js';
+import { listPage } from './application/change-list.js';
 import { AgentService } from './agent.js';
 import { securityRouter, connectionRouter, identityMiddleware, ownerMiddleware, getActor, corsOptions } from './application/security.js';
 import { mountMcp } from './mcp/http.js';
@@ -305,7 +306,7 @@ app.get('/api/agent/runs/:id', async (req, res, next) => { try { send(res, await
 app.get('/api/agent/runs/:id/events', async (req, res, next) => { try { send(res, await agent.listRunEvents(String(req.params.id), Number(req.query.after ?? 0) || 0)); } catch (error) { next(error); } });
 app.post('/api/agent/runs/:id/resume', async (req, res, next) => { try { send(res, await agent.resume(String(req.params.id))); } catch (error) { next(error); } });
 app.post('/api/agent/runs/:id/stop', async (req, res, next) => { try { send(res, await agent.stop(String(req.params.id))); } catch (error) { next(error); } });
-app.get('/api/changes', async (req, res, next) => { try { send(res, await changes.list(typeof req.query.entityType === 'string' ? req.query.entityType : undefined, typeof req.query.entityId === 'string' ? req.query.entityId : undefined)); } catch (error) { next(error); } });
+app.get('/api/changes', async (req, res, next) => { try { send(res, await listPage(req.query as Record<string, unknown>)); } catch (error) { next(error); } });
 app.post('/api/changes/:id/undo', async (req, res, next) => { try { send(res, await changes.undo(String(req.params.id), userContext(req))); } catch (error) { next(error); } });
 
 mountMcp(app);

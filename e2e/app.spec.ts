@@ -107,14 +107,16 @@ test.describe('Agent 工作室 MVP', () => {
     const task = await responseData<{ id: string }>(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: topic.id, title: '可撤销任务' } }));
     await request.patch(`${apiUrl}/api/tasks/${task.id}`, { data: { status: 'doing' } });
     await page.goto('/#/changes');
-    const updateRecord = page.getByText('更新', { exact: true }).first().locator('xpath=ancestor::article');
-    await expect(updateRecord).toContainText('可撤销任务');
+    const updateRecord = page.getByTestId('change-row').filter({ hasText: '可撤销任务' }).filter({ has: page.getByText('更新', { exact: true }) });
+    await expect(updateRecord).toBeVisible();
     await updateRecord.getByRole('button', { name: '撤销' }).click();
     await expect(page.getByText('变更已撤销')).toBeVisible();
     await expect.poll(async () => {
       const response = await request.get(`${apiUrl}/api/tasks/${task.id}`);
       return (await response.json()).data.status;
     }).toBe('todo');
+    await expect(updateRecord.getByText('已撤销', { exact: true }).filter({ visible: true })).toHaveCount(1);
+    await expect(updateRecord.getByRole('button', { name: '撤销' })).toBeDisabled();
   });
 
   test('受控执行生成脱敏且不可撤销的审计记录', async ({ page, isMobile, request }) => {
@@ -127,16 +129,23 @@ test.describe('Agent 工作室 MVP', () => {
     await page.getByRole('button', { name: '批准执行' }).click();
 
     await page.goto('/#/changes');
-    await page.getByRole('combobox', { name: '筛选对象类型' }).click();
-    await page.getByRole('option', { name: '受控执行' }).click();
+    await page.getByRole('button', { name: '筛选对象类型' }).click();
+    await page.getByRole('menuitemcheckbox', { name: '受控执行', exact: true }).click();
+    await page.keyboard.press('Escape');
     await expect(page.getByText('execute_file · 成功')).toBeVisible();
-    await expect(page.getByText('不可撤销')).toBeVisible();
     await expect(page.getByText(/受控执行 ·/)).toBeVisible();
-    const records = await responseData<Array<{ source: string; conversationId: string; approvalId: string; requestId: string; afterSnapshot: string }>>(await request.get(`${apiUrl}/api/changes?entityType=execution`));
+    const executionRecord = page.getByTestId('change-row').filter({ hasText: 'execute_file' });
+    const undo = executionRecord.getByRole('button', { name: '撤销' });
+    await expect(undo).toBeDisabled();
+    await executionRecord.locator('span[tabindex="0"]').focus();
+    await expect(page.getByRole('tooltip', { name: '受控执行记录不可撤销' })).toBeVisible();
+    const response = await request.get(`${apiUrl}/api/changes?entityType=execution`);
+    const body = await response.json();
+    expect(response.ok(), JSON.stringify(body)).toBe(true);
+    expect(JSON.stringify(body)).not.toContain('e2e-key');
+    const records = body.data.items as Array<{ source: string }>;
     expect(records).toHaveLength(1);
-    expect(records[0]).toMatchObject({ source: 'agent', requestId: records[0].approvalId });
-    expect(records[0].conversationId).toBeTruthy();
-    expect(records[0].afterSnapshot).not.toContain('e2e-key');
+    expect(records[0]).toMatchObject({ source: 'agent' });
   });
 
   test('Mock 服务明确报告上游错误和无效响应', async ({ page, isMobile }) => {

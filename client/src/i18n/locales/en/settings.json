@@ -43,7 +43,99 @@
       "topic": "List",
       "task": "Task",
       "tag": "Tag",
-      "execution": "Controlled run"
+      "execution": "Controlled run",
+      "memory": "Memory",
+      "material": "Material",
+      "skill": "Skill",
+      "workspace": "Batch edit",
+      "proposal": "Proposal",
+      "entity": "Entity",
+      "graphLink": "Relationship",
+      "libraryFolder": "Folder",
+      "libraryTag": "Library tag",
+      "handoff": "Handoff",
+      "run": "Run",
+      "code_application": "Code apply"
+    },
+    "searchPlaceholder": "Search by name, or paste a full ID",
+    "filters": {
+      "object": "Object",
+      "op": "Action",
+      "source": "Source",
+      "status": "Status",
+      "range": "Time"
+    },
+    "filterButton": "Filter",
+    "selectedCount": "{{count}} selected",
+    "clearFilters": "Clear filters",
+    "removeChip": "Remove {{label}}",
+    "chip": "{{name}}: {{value}}",
+    "loadedCount": "{{loaded}} of {{total}} loaded",
+    "end": "End of list · {{total}} total",
+    "loadMore": "Load more",
+    "loadingMore": "Loading more…",
+    "loadFailed": "Couldn't load the next page",
+    "retry": "Retry",
+    "loadFailedFirst": "Couldn't load change history",
+    "emptyTitle": "No changes yet",
+    "emptyHint": "Changes appear here after you create, edit, or delete tasks, lists, tags, and more.",
+    "noMatchTitle": "No matching changes",
+    "noMatchHint": "Current filters: {{filters}}",
+    "viewResults": "Show {{count}} results",
+    "days": {
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "earlier": "Earlier"
+    },
+    "opGroups": {
+      "create": "Create",
+      "update": "Update",
+      "delete": "Delete or archive",
+      "restore": "Restore",
+      "summary": "Outcome",
+      "execute": "Controlled run",
+      "undo": "Undo entry",
+      "other": "Other"
+    },
+    "sources": {
+      "user": "You",
+      "assistant": "AI assistant",
+      "deletedConnection": "Deleted connection"
+    },
+    "statuses": {
+      "reversible": "Can undo",
+      "undone": "Undone",
+      "blocked": "Can't undo"
+    },
+    "ranges": {
+      "all": "All time",
+      "today": "Today",
+      "7d": "Last 7 days",
+      "30d": "Last 30 days"
+    },
+    "undoneBadge": "Undone",
+    "blocked": {
+      "alreadyUndoneAt": "Undone {{time}}",
+      "undoRecord": "This is an undo entry and can't be undone again",
+      "execution": "Controlled run records can't be undone",
+      "permanentDelete": "This action can't be undone (permanent delete)",
+      "unsupported": "This change can't be undone",
+      "missingSnapshot": "Can't undo: the before and after snapshots are missing"
+    },
+    "fields": {
+      "title": "Title",
+      "status": "Status",
+      "priority": "Priority",
+      "dueDate": "Due date",
+      "schedule": "Schedule",
+      "list": "List",
+      "parent": "Parent task",
+      "name": "Name",
+      "color": "Color",
+      "description": "Description",
+      "goal": "Goal",
+      "enabled": "Enabled",
+      "tags": "Tags"
     }
   },
   "confirmDialog": {
