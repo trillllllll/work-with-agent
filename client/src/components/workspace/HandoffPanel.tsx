@@ -69,7 +69,7 @@ export function RunsPage() {
       <button type="button" role="tab" aria-selected={tab === 'handoffs'} data-testid="runs-tab-handoffs" className={tabClass(tab === 'handoffs')} onClick={() => setQuery({ tab: 'handoffs' })}>{t('runs.tabHandoffs')}</button>
       <button type="button" role="tab" aria-selected={tab === 'stats'} data-testid="runs-tab-stats" className={tabClass(tab === 'stats')} onClick={() => setQuery({ tab: 'stats' })}>{t('runs.tabStats')}</button>
     </div>
-    {tab === 'orchestrations' ? <OrchestrationRunsList /> : tab === 'stats' ? <DispatchStatsView /> : <HandoffRunsList />}
+    {tab === 'orchestrations' ? <OrchestrationRunsList /> : tab === 'stats' ? <DispatchStatsView rangeFrom={query.from} rangeTo={query.to} /> : <HandoffRunsList />}
   </section>;
 }
 function HandoffRunsList() {

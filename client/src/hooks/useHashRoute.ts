@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { View } from '../lib/api.js';
 import { parseSettingsCategory, settingsHash, type SettingsCategory } from '../components/settings/settings-categories.js';
 
-const validViews: View[] = ['board', 'quadrant', 'chat', 'topics', 'inbox', 'settings', 'trash', 'changes', 'today', 'search', 'tags', 'archived', 'more', 'connections', 'proposals', 'knowledge', 'library', 'skills', 'runs', 'worktrees', 'reviews', 'plan', 'focus'];
+const validViews: View[] = ['board', 'quadrant', 'chat', 'topics', 'inbox', 'settings', 'trash', 'changes', 'today', 'search', 'tags', 'archived', 'more', 'connections', 'proposals', 'knowledge', 'library', 'skills', 'runs', 'worktrees', 'reviews', 'plan', 'focus', 'stats'];
 const knowledgeSections = ['materials', 'memories', 'brief', 'search', 'tree', 'graph', 'extractions'] as const;
 export type KnowledgeSection = (typeof knowledgeSections)[number];
 

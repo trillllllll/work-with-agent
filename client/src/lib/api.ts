@@ -43,7 +43,7 @@ export type TaskActivityEvent = { id: string; at: string; actor: { kind: 'user' 
 export type CliCommandSetting = { command: string; source: 'manual' | 'auto' | 'none'; version: string; checkedAt: string; manualCommand: string; autoCommand: string; discoveredCommand: string; discoveredVersion: string; applied: boolean; message: string };
 export type Settings = { baseUrl: string; model: string; apiKeyConfigured: boolean; apiKeyMasked: string | null; cli?: { codex: CliCommandSetting; claude: CliCommandSetting }; discovered?: Record<string, CliCommandSetting> };
 export type ApprovalResponse = { result?: ToolResult; assistantMessage?: string; assistantMessageId?: string; summaryError?: string; approval?: unknown; resumed?: boolean; run?: { id?: string; state?: string } | null };
-export type View = 'board' | 'quadrant' | 'chat' | 'topics' | 'inbox' | 'settings' | 'trash' | 'changes' | 'today' | 'search' | 'tags' | 'archived' | 'more' | 'connections' | 'proposals' | 'knowledge' | 'library' | 'skills' | 'runs' | 'worktrees' | 'reviews' | 'plan' | 'focus';
+export type View = 'board' | 'quadrant' | 'chat' | 'topics' | 'inbox' | 'settings' | 'trash' | 'changes' | 'today' | 'search' | 'tags' | 'archived' | 'more' | 'connections' | 'proposals' | 'knowledge' | 'library' | 'skills' | 'runs' | 'worktrees' | 'reviews' | 'plan' | 'focus' | 'stats';
 export type TimeBandColor = 'blue' | 'green' | 'orange' | 'purple' | 'pink' | 'gray';
 export type PlanTimeBand = {
   id: string;
@@ -185,3 +185,67 @@ export async function streamChat(body: unknown, onEvent: (event: SseEvent) => vo
   }
   if (buffer.trim()) consume(buffer);
 }
+
+export type StatsPair = { value: number; previous: number };
+export type StatsRate = { value: number | null; previous: number | null };
+export type StatsSectionError = { error: { code: string; message: string } };
+export type StatsRangeInfo = { from: string; to: string; tz: string; days: number; previous: { from: string; to: string }; today: string };
+export type StatsProposalSource = 'connection' | 'auto-memory' | 'local-owner' | 'builtin-agent' | 'orchestration-learning' | 'other';
+export type StatsTasksSection = {
+  completedByDay: Array<{ date: string; count: number; estimated: number }>;
+  createdByDay: Array<{ date: string; count: number }>;
+  created: StatsPair;
+  completed: StatsPair;
+  overdue: number;
+  overdueTop: Array<{ id: string; title: string; topicId: string | null; topicName: string | null; topicColor: string | null; days: number }>;
+  overdueOldestDays: number;
+  byTopic: Array<{ topicId: string | null; name: string | null; color: string | null; count: number }>;
+  byTag: Array<{ tagId: string; name: string; color: string; count: number }>;
+  estimatedCount: StatsPair;
+};
+export type StatsFocusSection = {
+  minutesByDay: Array<{ date: string; minutes: number }>;
+  sessionsByDay: Array<{ date: string; count: number }>;
+  minutes: StatsPair;
+  sessions: StatsPair;
+  completedSessions: StatsPair;
+  avgSession: StatsRate;
+  completionRate: StatsRate;
+  byTask: Array<{ taskId: string | null; title: string | null; minutes: number; sessions: number }>;
+};
+export type StatsPlanSection = {
+  byDay: Array<{ date: string; plannedTasks: number; plannedMinutes: number; doneOnPlan: number; doneLate: number; notDone: number; focusMinutes: number }>;
+  onPlanRate: StatsRate;
+  plannedTasks: StatsPair;
+  doneOnPlanTasks: StatsPair;
+  plannedMinutesTotal: StatsPair;
+  focusMinutesTotal: StatsPair;
+  byBand: Array<{ id: string | null; name: string | null; color: string | null; startMinute: number | null; endMinute: number | null; weekdays: number[] | null; plannedMinutes: number; focusMinutes: number }>;
+};
+export type StatsAiSection = {
+  proposals: {
+    created: StatsPair;
+    executed: StatsPair;
+    rejected: StatsPair;
+    failed: StatsPair;
+    pending: number;
+    adoptionRate: StatsRate;
+    bySource: Array<{ source: StatsProposalSource; count: number }>;
+  };
+  memories: { created: StatsPair; retired: StatsPair; byOrigin: { manual: number; ai: number }; activeTotal: number };
+  autoMemory: { jobs: StatsPair; failed: StatsPair; adoption: StatsRate };
+  dispatch: {
+    rounds: StatsPair;
+    firstPassRate: StatsRate;
+    costMicroUsd: StatsPair;
+    byDay: Array<{ date: string; rounds: number; firstPassPassed: number; firstPassTotal: number; costMicroUsd: number }>;
+  };
+  connections: Array<{ id: string; name: string; status: string; host: string; writes: number; proposals: number; lastActiveAt: string | null; byDay: Array<{ date: string; count: number }> }>;
+};
+export type StatsOverview = {
+  range: StatsRangeInfo;
+  tasks: StatsTasksSection | StatsSectionError;
+  focus: StatsFocusSection | StatsSectionError;
+  plan: StatsPlanSection | StatsSectionError;
+  ai: StatsAiSection | StatsSectionError;
+};

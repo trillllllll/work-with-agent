@@ -20,6 +20,7 @@ export const MOBILE_NAVIGATION_VIEWS = [
   'reviews',
   'plan',
   'focus',
+  'stats',
   'chat',
 ] as const;
 
@@ -64,6 +65,7 @@ export const MOBILE_NAVIGATION_LABELS: Record<MobileNavigationView, string> = la
   reviews: 'app:nav.reviews',
   plan: 'app:nav.plan',
   focus: 'app:nav.focus',
+  stats: 'app:nav.stats',
   chat: 'app:nav.chat',
 });
 

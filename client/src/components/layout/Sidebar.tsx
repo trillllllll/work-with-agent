@@ -63,7 +63,7 @@ export function Sidebar({ compact, route, page, topics, topicsLoading, selectedT
       </div>
       <div className="sidebar-scroll glass-scrollbar">
         <nav aria-label={t('sidebar.mainNav')} className="sidebar-nav">
-          {[...links(['today', 'plan', 'focus', 'search']), assistant].map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}
+          {[...links(['today', 'plan', 'focus', 'stats', 'search']), assistant].map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}
         </nav>
         <SidebarSection label={t('sidebar.lists')} action={<button type="button" className="sidebar-add" aria-label={t('sidebar.newList')} onClick={onNewTopic}><Plus aria-hidden="true" className="size-3.5" strokeWidth={1.75} /></button>} />
         <nav aria-label={t('sidebar.lists')} className="sidebar-nav">

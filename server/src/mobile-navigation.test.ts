@@ -177,7 +177,7 @@ describe('mobile navigation', () => {
     expect((await prisma.appSetting.findUniqueOrThrow({ where: { id: 'default' } })).mobileNavigationJson).toBe(saved);
   });
 
-  it('19 个白名单 ID 分别单独保存都成功', async () => {
+  it('20 个白名单 ID 分别单独保存都成功', async () => {
     for (const view of MOBILE_NAVIGATION_VIEWS) {
       const response = await request(app).put(path).send({ visibleViews: [view] });
       expect(response.status, view).toBe(200);

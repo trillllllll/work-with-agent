@@ -58,14 +58,25 @@ function openTask(taskId: string) {
   window.dispatchEvent(new CustomEvent('wwa-open-task', { detail: { taskId } }));
 }
 
-export function DispatchStatsView() {
+function seededDispatchRange(rangeFrom?: string, rangeTo?: string) {
+  const week = weekRange(new Date(), 0);
+  const fallback = {
+    mode: 'this' as const,
+    fromDate: dateInputValue(week.from),
+    toDate: dateInputValue(new Date(week.to.getFullYear(), week.to.getMonth(), week.to.getDate() - 1)),
+  };
+  if (!rangeFrom || !rangeTo || !/^\d{4}-\d{2}-\d{2}$/.test(rangeFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(rangeTo) || !customRange(rangeFrom, rangeTo)) return fallback;
+  return { mode: 'custom' as const, fromDate: rangeFrom, toDate: rangeTo };
+}
+
+export function DispatchStatsView({ rangeFrom, rangeTo }: { rangeFrom?: string; rangeTo?: string } = {}) {
   const { t } = useTranslation('workspace');
   const { t: orchestration } = useTranslation('orchestration');
-  const [mode, setMode] = useState<Mode>('this');
+  const [seed] = useState(() => seededDispatchRange(rangeFrom, rangeTo));
+  const [mode, setMode] = useState<Mode>(seed.mode);
   const [projectId, setProjectId] = useState('all');
-  const initial = weekRange(new Date(), 0);
-  const [fromDate, setFromDate] = useState(dateInputValue(initial.from));
-  const [toDate, setToDate] = useState(dateInputValue(new Date(initial.to.getFullYear(), initial.to.getMonth(), initial.to.getDate() - 1)));
+  const [fromDate, setFromDate] = useState(seed.fromDate);
+  const [toDate, setToDate] = useState(seed.toDate);
   const projects = useQuery({ queryKey: ['projects'], queryFn: () => api<Project[]>('/api/projects') });
   const range = useMemo(() => {
     if (mode === 'this') return weekRange(new Date(), 0);

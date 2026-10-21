@@ -1,7 +1,7 @@
 import type { View } from './api.js';
 import type { TaskFilters } from '../components/tasks/TaskFilterBar.js';
 
-const allPages = new Set(['today', 'plan', 'search', 'tags', 'library', 'topics', 'quadrant', 'archived', 'trash', 'focus']);
+const allPages = new Set(['today', 'plan', 'search', 'tags', 'library', 'topics', 'quadrant', 'archived', 'trash', 'focus', 'stats']);
 
 export function chatScope(page: string, topicId: string): { kind: 'inbox' } | { kind: 'topic'; topicId: string } | { kind: 'all' } {
   if (page === 'inbox') return { kind: 'inbox' };

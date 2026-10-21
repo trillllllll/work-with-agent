@@ -8,7 +8,7 @@ import { ThemeToggle } from '@/components/layout/ThemeToggle.js';
 import { cn } from '@/lib/utils.js';
 
 const groups: { id: 'views' | 'organize' | 'work' | 'system'; views: View[] }[] = [
-  { id: 'views', views: ['inbox', 'today', 'plan', 'focus', 'quadrant', 'topics'] },
+  { id: 'views', views: ['inbox', 'today', 'plan', 'focus', 'stats', 'quadrant', 'topics'] },
   { id: 'organize', views: ['search', 'tags', 'archived'] },
   { id: 'work', views: ['connections', 'proposals', 'knowledge', 'library', 'skills', 'runs', 'worktrees', 'reviews'] },
   { id: 'system', views: ['settings', 'trash', 'changes'] },

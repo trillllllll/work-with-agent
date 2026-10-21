@@ -17,6 +17,7 @@ export const MOBILE_NAVIGATION_VIEWS = [
   'reviews',
   'plan',
   'focus',
+  'stats',
   'chat',
 ] as const;
 
