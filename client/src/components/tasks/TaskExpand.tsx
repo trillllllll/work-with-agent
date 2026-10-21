@@ -27,12 +27,11 @@ import { TaskMaterials } from '@/components/library/TaskMaterials.js';
 import { TaskDescription } from './TaskDescription.js';
 import { SubtasksSection } from './TaskSubtasks.js';
 import { saveStatusLabel, SaveStatusRow } from './task-save-status.js';
+import { decideQueuedLeave, editingAfterSuccessfulSave, isMetaDirty, metaFields, type MetaDraft, type MetaEditing } from './task-leave.js';
 import { cn } from '@/lib/utils.js';
 
 // 非文字字段仍走本地草稿；title/description 由应用级协调器负责。
-const metaFields = ['status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'topicId', 'parentId', 'tagIds'] as const;
-type MetaDraft = Pick<TaskDraft, typeof metaFields[number]>;
-type Editing = { base: MetaDraft; draft: MetaDraft; conflicts: string[] };
+type Editing = MetaEditing;
 
 const fieldKeys = new Set(['title', 'description', 'status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'topicId', 'parentId', 'tagIds']);
 function fieldLabel(field: string) {
@@ -120,9 +119,9 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
   const saveWaiters = useRef<Array<() => void>>([]);
   const savedVersions = useRef(new Map<number, number>());
   const pending = useRef<(() => void) | null>(null);
+  const leaveSaveFailed = useRef(false);
   const editingRef = useRef(editing);
   const taskRef = useRef(query.data ?? fallback);
-  const dirtyRef = useRef(false);
   const onSaveRef = useRef(onSave);
   const onCloseRef = useRef(onClose);
   const textRecordRef = useRef<TaskTextDraftV1 | null>(null);
@@ -189,22 +188,15 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
     coordinator?.externalUpdate(id, { revision: query.data.revision ?? 1, title: query.data.title, description: query.data.description ?? '' });
   }, [query.data, coordinator, id]);
 
-  const metaDirty = Boolean(editing && (metaFields.some((field) => !sameField(editing.base[field], editing.draft[field])) || editing.conflicts.length > 0));
+  const metaDirty = isMetaDirty(editing);
   const dirty = metaDirty || textDirtyRef.current;
-  dirtyRef.current = dirty;
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
 
-  const finishPending = () => {
-    const next = pending.current;
-    if (!next || savingCount.current) return;
-    pending.current = null;
-    if (dirtyRef.current) setLeaveAction(() => next);
-    else next();
-  };
   const runSave = async (patch: Partial<TaskDraft>, current = taskRef.current) => {
     if (!current || !Object.keys(patch).length) return undefined;
     savingCount.current += 1;
     setSaving(true);
+    let failed = false;
     try {
       // An open popover keeps its original version. Advance only through writes
       // completed by this editor; an external refresh never supplies a version.
@@ -214,9 +206,12 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
       if (result) {
         if (revision !== undefined && result.revision !== undefined && result.revision > revision) savedVersions.current.set(revision, result.revision);
         const incoming = metaOf(result);
-        setEditing((currentEdit) => currentEdit ? { ...currentEdit, base: incoming, conflicts: [] } : currentEdit);
-      }
+        setEditing((currentEdit) => editingAfterSuccessfulSave(currentEdit, incoming));
+      } else failed = true;
       return result;
+    } catch (error) {
+      failed = true;
+      throw error;
     } finally {
       savingCount.current -= 1;
       if (!savingCount.current) {
@@ -225,7 +220,9 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
         saveWaiters.current = [];
         waiters.forEach((resolve) => resolve());
       }
-      finishPending();
+      // 没有排队的离开时不要把失败留到下一次。还有别的保存时先记住，等最后一次提交后再判断。
+      if (!pending.current) leaveSaveFailed.current = false;
+      else if (failed) leaveSaveFailed.current = true;
     }
   };
   const idle = () => {
@@ -254,6 +251,25 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
     if (!coordinator) return true;
     return coordinator.prepareLeave(id);
   };
+  const finishPending = () => {
+    // 必须等 setEditing 提交后再看元数据。finally 里读的是渲染前的草稿，会把已经保存成功的标签当成未保存，
+    // 弹窗也不会在下一帧 meta 变干净后关掉。正文沿用 prepareLeave：revision 被标签保存抬高后，落盘前的
+    // local-pending 不是未保存的编辑。
+    const decision = decideQueuedLeave({
+      hasPending: pending.current !== null,
+      savingCount: savingCount.current,
+      dirty: isMetaDirty(editingRef.current),
+      saveFailed: leaveSaveFailed.current,
+    });
+    if (decision === 'wait') return;
+    const next = pending.current;
+    pending.current = null;
+    leaveSaveFailed.current = false;
+    if (!next) return;
+    if (decision === 'confirm') setLeaveAction(() => next);
+    else void prepareLeave().then((safe) => { if (safe) next(); else setLeaveAction(() => next); });
+  };
+  useLayoutEffect(() => { finishPending(); }, [editing, dirty, saving]);
   const requestTransition = (action: () => void) => {
     if (savingCount.current) { pending.current = action; return; }
     if (metaDirty) { setLeaveAction(() => action); return; }

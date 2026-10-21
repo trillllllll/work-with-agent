@@ -17,9 +17,22 @@ function gate() {
   const promise = new Promise<void>((resolve) => { release = resolve; });
   return { promise, release };
 }
-// 服务端已写入时，详情里的 metaDirty 要等「正在保存…」卸下的那一帧才变 false。
-async function waitForDetailSaveIdle(page: Page) {
-  await expect(page.getByRole('status').filter({ hasText: /正在保存|保存中…/ })).toHaveCount(0);
+// 拦住下一次 tagIds PATCH 约 800ms。返回的 promise 在请求已经发出、响应尚未返回时解开。
+// 不能直接 return started.promise：async 会把它展平，调用方会在触发保存之前就卡住。
+async function delayNextTagPatch(page: Page, taskId: string) {
+  const started = gate();
+  let armed = true;
+  await page.route(`**/api/tasks/${taskId}`, async (route) => {
+    if (route.request().method() !== 'PATCH') return route.continue();
+    let body: { tagIds?: unknown } | null = null;
+    try { body = route.request().postDataJSON(); } catch { body = null; }
+    if (!armed || !body || !('tagIds' in body)) return route.continue();
+    armed = false;
+    started.release();
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    await route.continue();
+  });
+  return started;
 }
 
 test.beforeEach(resetE2eDatabase);
@@ -448,10 +461,14 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await expect.poll(async () => (await task(request, item.id)).tagIds).toEqual([label.id]);
     await tag.uncheck();
     await expect.poll(async () => (await task(request, item.id)).tagIds).toEqual([]);
+    const tagSaveStarted = await delayNextTagPatch(page, item.id);
     await tag.check();
-    await expect.poll(async () => (await task(request, item.id)).tagIds).toEqual([label.id]);
-    await waitForDetailSaveIdle(page);
+    await tagSaveStarted.promise;
     await page.goto('/#/tags');
+    await expect(page.getByRole('button', { name: '删除标签：重要事项', exact: true })).toBeVisible();
+    await expect.poll(async () => (await task(request, item.id)).tagIds).toEqual([label.id]);
+    await expect(page.getByRole('status').filter({ hasText: /正在保存|保存中…/ })).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: '保存未完成的编辑？', exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: '删除标签：重要事项', exact: true }).click();
     await page.getByRole('dialog', { name: '删除标签', exact: true }).getByRole('button', { name: '删除标签', exact: true }).click();
     await page.getByRole('button', { name: '确认影响并执行', exact: true }).click();
@@ -496,13 +513,16 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
 
     await detail.getByRole('button', { name: '标签', exact: true }).click();
     await page.getByLabel('新标签名称', { exact: true }).fill('已有标签');
-    await page.getByRole('button', { name: '添加标签', exact: true }).click();
-    await expect.poll(async () => (await task(request, item.id)).tagIds).toHaveLength(2);
     expect((await data(await request.get(`${apiUrl}/api/tags`))).map((tag: { name: string }) => tag.name).sort()).toEqual(['已有标签', '详情新标签']);
-    await waitForDetailSaveIdle(page);
+    const tagSaveStarted = await delayNextTagPatch(page, item.id);
+    await page.getByRole('button', { name: '添加标签', exact: true }).click();
+    await tagSaveStarted.promise;
     await page.goto('/#/tags');
     await expect(page.getByRole('button', { name: '#已有标签', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: '#详情新标签', exact: true })).toBeVisible();
+    await expect.poll(async () => (await task(request, item.id)).tagIds).toHaveLength(2);
+    await expect(page.getByRole('status').filter({ hasText: /正在保存|保存中…/ })).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: '保存未完成的编辑？', exact: true })).toHaveCount(0);
   });
 
   test('完成父任务先确认，取消保持未完成，重开子任务连带重开父任务', async ({ page, request }) => {
