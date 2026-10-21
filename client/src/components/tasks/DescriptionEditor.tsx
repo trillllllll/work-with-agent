@@ -420,11 +420,12 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
     };
     dom.addEventListener('compositionstart', onCompositionStart);
     dom.addEventListener('compositionend', onCompositionEnd);
-    openDescription.current = () => editor.commands.focus();
+    const focus = () => editor.commands.focus();
+    openDescription.current = focus;
     return () => {
       dom.removeEventListener('compositionstart', onCompositionStart);
       dom.removeEventListener('compositionend', onCompositionEnd);
-      if (openDescription.current === (() => editor.commands.focus())) openDescription.current = () => {};
+      if (openDescription.current === focus) openDescription.current = () => {};
     };
   }, [editor, openDescription, onComposeStart, onComposeEnd]);
 
