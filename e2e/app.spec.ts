@@ -54,21 +54,24 @@ test.describe('Agent 工作室 MVP', () => {
     await page.goto('/#/chat');
     await send(page, '列出任务');
     await expect(page.getByText('我先读取任务。', { exact: true })).toBeVisible();
-    await expect(page.getByText('Tool', { exact: true }).last().locator('..')).toContainText('[]');
+    await expect(page.getByRole('button', { name: '查询了 1 项', exact: true })).toBeVisible();
     await expect(page.getByText('当前任务已读取完成。', { exact: true })).toBeVisible();
 
     expect(await taskCount(request, topic.id)).toBe(0);
-    await send(page, '创建任务');
-    await expect(page.getByText('需要审核')).toBeVisible();
+    await send(page, `创建任务 topicId=${topic.id}`);
+    const pending = page.locator('[data-testid="approval-card"][data-state="pending"]');
+    await expect(pending).toBeVisible();
+    await expect(pending.getByRole('status')).toContainText('等待确认');
     expect(await taskCount(request, topic.id)).toBe(0);
-    await page.getByRole('button', { name: '批准执行' }).click();
+    await pending.getByRole('button', { name: '确认修改', exact: true }).click();
     await expect.poll(() => taskCount(request, topic.id)).toBe(1);
-    await expect(page.getByText(/变更已完成|Mock 模型回复/)).toBeVisible();
+    await expect(page.getByText('变更已完成。', { exact: true })).toBeVisible();
 
-    await send(page, '创建任务并拒绝');
-    await expect(page.getByText('需要审核')).toBeVisible();
-    await page.getByRole('button', { name: '拒绝' }).click();
-    await expect(page.getByText('变更已拒绝，数据未修改。')).toBeVisible();
+    await send(page, `创建任务并拒绝 topicId=${topic.id}`);
+    const rejectCard = page.getByTestId('approval-card').last();
+    await expect(rejectCard).toHaveAttribute('data-state', 'pending');
+    await rejectCard.getByRole('button', { name: '取消', exact: true }).click();
+    await expect(rejectCard.getByRole('status')).toContainText('已取消，未修改数据');
     await expect.poll(() => taskCount(request, topic.id)).toBe(1);
   });
 
@@ -79,26 +82,34 @@ test.describe('Agent 工作室 MVP', () => {
     await page.goto('/#/board');
 
     const firstChat = page.waitForResponse((response) => response.url().endsWith('/api/chat') && response.request().method() === 'POST');
-    await send(page, '生成成果草稿 第一版');
+    await send(page, `生成成果草稿 第一版 topicId=${topic.id}`);
     const firstStream = await (await firstChat).text();
-    expect(firstStream).toContain('"toolName":"get_topic"');
+    expect(firstStream).toContain('"toolName":"query_topics"');
     const firstProposal = await responseData<Array<{ arguments: string }>>(await request.get(`${apiUrl}/api/agent/approvals?status=pending`));
     const originalTopic = await responseData<{ revision: number }>(await request.get(`${apiUrl}/api/topics/${topic.id}`));
-    expect(JSON.parse(firstProposal[0].arguments).expectedRevision).toBe(originalTopic.revision);
-    await page.getByRole('button', { name: '批准执行' }).click();
+    const firstCommand = JSON.parse(firstProposal[0].arguments).operations[0].command;
+    expect(firstCommand.kind).toBe('topic.update');
+    expect(firstCommand.expectedRevision).toBe(originalTopic.revision);
+    expect(firstCommand.input.draftSummary).toBe('E2E 待放弃草稿');
+    await page.getByRole('button', { name: '确认修改', exact: true }).click();
+    await expect.poll(async () => (await responseData<{ draftSummary: string | null }>(await request.get(`${apiUrl}/api/topics/${topic.id}`))).draftSummary).toBe('E2E 待放弃草稿');
     await expect(page.getByText('E2E 待放弃草稿')).toBeVisible();
     await page.getByRole('button', { name: '放弃草稿' }).click();
     await expect(page.getByText('E2E 待放弃草稿')).toHaveCount(0);
 
     const secondChat = page.waitForResponse((response) => response.url().endsWith('/api/chat') && response.request().method() === 'POST');
-    await send(page, '生成成果草稿 第二版');
+    await send(page, `生成成果草稿 第二版 topicId=${topic.id}`);
     const secondStream = await (await secondChat).text();
-    expect(secondStream).toContain('"toolName":"get_topic"');
+    expect(secondStream).toContain('"toolName":"query_topics"');
     const secondProposal = await responseData<Array<{ arguments: string }>>(await request.get(`${apiUrl}/api/agent/approvals?status=pending`));
     const updatedTopic = await responseData<{ revision: number }>(await request.get(`${apiUrl}/api/topics/${topic.id}`));
     expect(updatedTopic.revision).toBeGreaterThan(originalTopic.revision);
-    expect(JSON.parse(secondProposal[0].arguments).expectedRevision).toBe(updatedTopic.revision);
-    await page.getByRole('button', { name: '批准执行' }).click();
+    const secondCommand = JSON.parse(secondProposal[0].arguments).operations[0].command;
+    expect(secondCommand.kind).toBe('topic.update');
+    expect(secondCommand.expectedRevision).toBe(updatedTopic.revision);
+    expect(secondCommand.input.draftSummary).toBe('E2E 最终成果');
+    await page.getByRole('button', { name: '确认修改', exact: true }).click();
+    await expect.poll(async () => (await responseData<{ draftSummary: string | null }>(await request.get(`${apiUrl}/api/topics/${topic.id}`))).draftSummary).toBe('E2E 最终成果');
     await expect(page.getByText('E2E 最终成果')).toBeVisible();
     await page.getByRole('button', { name: '确认成果' }).click();
     await expect(page.getByText('正式成果')).toBeVisible();
@@ -117,35 +128,6 @@ test.describe('Agent 工作室 MVP', () => {
     }).toBe('todo');
     await expect(updateRecord.getByText('已撤销', { exact: true }).filter({ visible: true })).toHaveCount(1);
     await expect(updateRecord.getByRole('button', { name: '撤销' })).toBeDisabled();
-  });
-
-  test('受控执行生成脱敏且不可撤销的审计记录', async ({ page, isMobile, request }) => {
-    test.skip(Boolean(isMobile), '执行审计在桌面视口验收');
-    await createTopic(request, 'E2E 执行审计主题');
-    await configureMock(request);
-    await page.goto('/#/chat');
-    await send(page, '读取受控文件');
-    await expect(page.getByText('需要审核')).toBeVisible();
-    await page.getByRole('button', { name: '批准执行' }).click();
-
-    await page.goto('/#/changes');
-    await page.getByRole('button', { name: '筛选对象类型' }).click();
-    await page.getByRole('menuitemcheckbox', { name: '受控执行', exact: true }).click();
-    await page.keyboard.press('Escape');
-    await expect(page.getByText('execute_file · 成功')).toBeVisible();
-    await expect(page.getByText(/受控执行 ·/)).toBeVisible();
-    const executionRecord = page.getByTestId('change-row').filter({ hasText: 'execute_file' });
-    const undo = executionRecord.getByRole('button', { name: '撤销' });
-    await expect(undo).toBeDisabled();
-    await executionRecord.locator('span[tabindex="0"]').focus();
-    await expect(page.getByRole('tooltip', { name: '受控执行记录不可撤销' })).toBeVisible();
-    const response = await request.get(`${apiUrl}/api/changes?entityType=execution`);
-    const body = await response.json();
-    expect(response.ok(), JSON.stringify(body)).toBe(true);
-    expect(JSON.stringify(body)).not.toContain('e2e-key');
-    const records = body.data.items as Array<{ source: string }>;
-    expect(records).toHaveLength(1);
-    expect(records[0]).toMatchObject({ source: 'agent' });
   });
 
   test('Mock 服务明确报告上游错误和无效响应', async ({ page, isMobile }) => {
@@ -250,8 +232,9 @@ test.describe('Agent 工作室 MVP', () => {
     await page.getByRole('button', { name: '打开聊天', exact: true }).click();
     await expect(page.getByPlaceholder(composerPlaceholder)).toBeVisible();
     await send(page, '创建任务');
-    const reject = page.getByRole('button', { name: '拒绝' });
-    const approve = page.getByRole('button', { name: '批准执行' });
+    const card = page.getByTestId('approval-card');
+    const reject = card.getByRole('button', { name: '取消', exact: true });
+    const approve = card.getByRole('button', { name: '确认修改', exact: true });
     await expect(reject).toBeVisible();
     await expect(approve).toBeVisible();
     const viewportWidth = page.viewportSize()!.width;

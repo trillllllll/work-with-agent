@@ -237,36 +237,6 @@ document.getElementById('probe-out').textContent=JSON.stringify({html:html,scrip
     res.end('data: {invalid-json}\n\ndata: [DONE]\n\n');
     return;
   }
-  if (latestUser.includes('列出任务') && !messages.some((item) => item.role === 'tool')) {
-    return stream(res, [
-      { choices: [{ delta: { content: '我先读取任务。' }, finish_reason: null }] },
-      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'e2e_list_tasks', function: { name: 'list_tasks', arguments: '{}' } }] }, finish_reason: 'tool_calls' }] },
-    ]);
-  }
-  if (latestUser.includes('创建任务') && !messages.some((item) => item.role === 'tool')) {
-    const topicId = messages.find((item) => item.role === 'system')?.content.match(/"topicId":"([^"]+)"/)?.[1] ?? '';
-    return stream(res, [
-      { choices: [{ delta: { content: '我准备创建这个任务。' }, finish_reason: null }] },
-      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'e2e_create_task', function: { name: 'create_task', arguments: JSON.stringify({ topicId, title: 'E2E Agent 任务' }) } }] }, finish_reason: 'tool_calls' }] },
-    ]);
-  }
-  if (latestUser.includes('生成成果草稿')) {
-    const topicId = messages.find((item) => item.role === 'system')?.content.match(/"topicId":"([^"]+)"/)?.[1] ?? '';
-    const topic = [...messages].reverse().filter((item) => item.role === 'tool').map((item) => {
-      try { const result = JSON.parse(item.content); return result.success ? result.data : null; } catch { return null; }
-    }).find((value) => value?.id === topicId && Number.isInteger(value.revision) && value.revision > 0);
-    if (!topic) {
-      return stream(res, [
-        { choices: [{ delta: { content: '我先读取当前清单及其版本。' }, finish_reason: null }] },
-        { choices: [{ delta: { tool_calls: [{ index: 0, id: 'e2e_summary_read_topic', function: { name: 'get_topic', arguments: JSON.stringify({ topicId }) } }] }, finish_reason: 'tool_calls' }] },
-      ]);
-    }
-    const summary = latestUser.includes('第二版') ? 'E2E 最终成果' : 'E2E 待放弃草稿';
-    return stream(res, [
-      { choices: [{ delta: { content: '我准备生成成果草稿。' }, finish_reason: null }] },
-      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'e2e_summary', function: { name: 'propose_topic_summary', arguments: JSON.stringify({ topicId, summary, expectedRevision: topic.revision }) } }] }, finish_reason: 'tool_calls' }] },
-    ]);
-  }
   const toolData = (message) => {
     try { const value = JSON.parse(message.content); return value?.success ? value.data : null; } catch { return null; }
   };
@@ -277,6 +247,29 @@ document.getElementById('probe-out').textContent=JSON.stringify({html:html,scrip
     { choices: [{ delta: { content: text }, finish_reason: null }] },
     { choices: [{ delta: { tool_calls: [{ index: 0, id, function: { name, arguments: JSON.stringify(args) } }] }, finish_reason: 'tool_calls' }] },
   ]);
+  if (latestUser.includes('列出任务')) {
+    if (toolSince('query_tasks')) return stream(res, [{ choices: [{ delta: { content: '当前任务已读取完成。' }, finish_reason: 'stop' }] }]);
+    return callTool(`e2e_list_${messages.length}`, 'query_tasks', { action: 'list', scope: 'current', usePageFilter: true, limit: 20 }, '我先读取任务。');
+  }
+  if (latestUser.includes('创建任务')) {
+    if (toolSince('propose_changes')) return stream(res, [{ choices: [{ delta: { content: '变更已完成。' }, finish_reason: 'stop' }] }]);
+    const topicId = latestUser.match(/topicId=(\S+)/)?.[1];
+    return callTool(`e2e_create_${messages.length}`, 'propose_changes', {
+      summary: '创建任务',
+      operations: [{ family: 'workspace', command: { kind: 'task.create', input: { title: 'E2E Agent 任务', ...(topicId ? { topicId } : {}) } } }],
+    }, '我准备创建这个任务。');
+  }
+  if (latestUser.includes('生成成果草稿')) {
+    const topicId = latestUser.match(/topicId=(\S+)/)?.[1] ?? '';
+    const topic = [...sinceUser].reverse().map(toolData).find((v) => v?.id === topicId && Number.isInteger(v.revision) && v.revision > 0);
+    if (!topic) return callTool(`e2e_summary_read_${messages.length}`, 'query_topics', { action: 'get', topicId }, '我先读取当前清单及其版本。');
+    if (toolSince('propose_changes')) return stream(res, [{ choices: [{ delta: { content: '成果草稿已放在确认卡里。' }, finish_reason: 'stop' }] }]);
+    const summary = latestUser.includes('第二版') ? 'E2E 最终成果' : 'E2E 待放弃草稿';
+    return callTool(`e2e_summary_${messages.length}`, 'propose_changes', {
+      summary: '生成成果草稿',
+      operations: [{ family: 'workspace', command: { kind: 'topic.update', targetId: topicId, expectedRevision: topic.revision, input: { draftSummary: summary } } }],
+    }, '我准备生成成果草稿。');
+  }
   if (latestUser.includes('技能加载验收')) {
     const offered = systemText.includes('【可用技能】') && (body.tools ?? []).some((tool) => tool?.function?.name === 'load_skill');
     if (!offered) return stream(res, [{ choices: [{ delta: { content: '没有可用技能。' }, finish_reason: 'stop' }] }]);
@@ -417,12 +410,6 @@ document.getElementById('probe-out').textContent=JSON.stringify({html:html,scrip
     return stream(res, [{ choices: [{ delta: { content: reply }, finish_reason: 'stop' }] }]);
   }
   if (latestUser.includes('画一张坏图')) return stream(res, [{ choices: [{ delta: { content: '```mermaid\nnot-a-diagram\n```' }, finish_reason: 'stop' }] }]);
-  if (latestUser.includes('读取受控文件') && !messages.some((item) => item.role === 'tool')) {
-    return stream(res, [
-      { choices: [{ delta: { content: '我准备读取工作区文件。' }, finish_reason: null }] },
-      { choices: [{ delta: { tool_calls: [{ index: 0, id: 'e2e_file', function: { name: 'execute_file', arguments: JSON.stringify({ operation: 'read', path: 'package.json' }) } }] }, finish_reason: 'tool_calls' }] },
-    ]);
-  }
   return stream(res, [{ choices: [{ delta: { content: messages.some((item) => item.role === 'tool') ? '当前任务已读取完成。' : 'Mock 模型回复。' }, finish_reason: 'stop' }] }]);
 });
 server.on('upgrade', (req, socket) => { if (req.url?.startsWith('/beacon')) htmlLeaks++; socket.destroy(); });
