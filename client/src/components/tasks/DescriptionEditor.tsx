@@ -509,7 +509,7 @@ type ToolbarProps = { editor: Editor; composing: () => boolean; taskId: string }
 function FormatToolbar({ editor, composing, taskId }: ToolbarProps) {
   const { t } = useTranslation('tasks');
   const [visible, setVisible] = useState(false);
-  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+  const [coords, setCoords] = useState<{ top: number; bottom: number; left: number } | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkHref, setLinkHref] = useState('');
   const touch = useTouchInput();
@@ -527,8 +527,9 @@ function FormatToolbar({ editor, composing, taskId }: ToolbarProps) {
         const start = editor.view.coordsAtPos(from);
         const end = editor.view.coordsAtPos(to);
         const top = Math.min(start.top, end.top);
+        const bottom = Math.max(start.bottom, end.bottom);
         const left = (start.left + end.left) / 2;
-        setCoords({ top, left });
+        setCoords({ top, bottom, left });
         setVisible(true);
       } catch {
         setVisible(false);
@@ -564,13 +565,11 @@ function FormatToolbar({ editor, composing, taskId }: ToolbarProps) {
     if (!node) return;
     const rect = node.getBoundingClientRect();
     const margin = 8;
-    let top = coords.top - rect.height - 8;
-    if (top < margin) top = coords.top + 24;
+    // 选区上方放不下（顶到视口或压住标题）时放到选区下方，不遮挡标题，也不盖住选中的文字。
     const titleInput = node.ownerDocument.querySelector<HTMLElement>('[data-testid="task-detail-title-row"] textarea');
-    if (titleInput) {
-      const floor = titleInput.getBoundingClientRect().bottom;
-      if (top < floor) top = floor;
-    }
+    const floor = Math.max(margin, titleInput ? titleInput.getBoundingClientRect().bottom : margin);
+    let top = coords.top - rect.height - 8;
+    if (top < floor) top = coords.bottom + 8;
     let left = coords.left - rect.width / 2;
     left = Math.max(margin, Math.min(left, window.innerWidth - rect.width - margin));
     node.style.top = `${top}px`;
