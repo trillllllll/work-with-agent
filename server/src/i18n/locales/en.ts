@@ -839,6 +839,8 @@ export const en: Record<string, string> = {
   "电脑回报格式无效": "The computer report has an invalid format",
   "至少需要一个允许的目录（--roots）": "At least one allowed directory is required (--roots)",
   "服务端返回 {0} {1}": "The server returned {0} {1}",
+  "服务端返回 401 {0}": "The server returned 401 {0}",
+  "config.json 不是对象": "config.json is not an object",
   "已取消": "Cancelled",
   "本机运行监督进程失联（心跳超过 60 秒）": "The local supervisor lost contact (no heartbeat for more than 60 seconds)",
   "本机没有找到 {0} CLI（可用 WWA_{1}_BIN 指定）": "No {0} CLI was found on this computer (set WWA_{1}_BIN to point at it)",

@@ -8,6 +8,10 @@ import { commandFromPath, pathFromProcessPath } from '../runner/cli-commands.js'
 import { resultJsonSchema, type LaunchSpec, type Permissions, type Provider } from '../runner/contracts.js';
 
 const exec = promisify(execFile);
+/** Path `resolveLocalCli` actually selected: the script for a JS shim, otherwise the executable. */
+function cliPath(cli: { command: string; prefix: string[] }) {
+  return (cli.prefix[0] ?? cli.command).slice(0, 4096);
+}
 export async function resolveLocalCli(provider: Provider) {
   const configured = process.env[provider === 'codex' ? 'WWA_CODEX_BIN' : 'WWA_CLAUDE_BIN'];
   if (configured) {
@@ -21,8 +25,15 @@ export async function resolveLocalCli(provider: Provider) {
 }
 export async function localProviders() {
   return Promise.all((['codex', 'claude'] as const).map(async (provider) => {
-    try { const cli = await resolveLocalCli(provider); const { stdout } = await exec(cli.command, [...cli.prefix, '--version'], { timeout: 15_000, windowsHide: true }); return { provider, available: true, version: stdout.trim().slice(0, 200) }; }
-    catch { return { provider, available: false, version: '' }; }
+    const unavailable = { provider, available: false, version: '', path: '' };
+    try {
+      const cli = await resolveLocalCli(provider);
+      const path = cliPath(cli);
+      try {
+        const { stdout } = await exec(cli.command, [...cli.prefix, '--version'], { timeout: 15_000, windowsHide: true });
+        return { provider, available: true, version: stdout.trim().slice(0, 200), path };
+      } catch { return { ...unavailable, path }; }
+    } catch { return unavailable; }
   }));
 }
 

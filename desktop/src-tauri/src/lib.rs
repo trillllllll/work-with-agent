@@ -81,14 +81,21 @@ pub fn run() {
                         notify(webview.app_handle(), &title, &body);
                         return false;
                     }
+                    if path == "/wwa-node-status" {
+                        let script = desktop_event_script(&node_status_detail(webview.app_handle()));
+                        let _ = webview.eval(script);
+                        return false;
+                    }
                     if path == "/wwa-node-pair" {
                         let server = query_value(url, "server").unwrap_or_default();
                         let token = query_value(url, "token").unwrap_or_default();
-                        pair_node(webview.app_handle(), server, token);
+                        let node = query_value(url, "node").unwrap_or_default();
+                        pair_node(webview.app_handle(), server, token, node);
                         return false;
                     }
                     if path == "/wwa-node-unpair" {
-                        unpair_node(webview.app_handle());
+                        let node = query_value(url, "node").unwrap_or_default();
+                        unpair_node(webview.app_handle(), node);
                         return false;
                     }
                     true
@@ -534,7 +541,7 @@ fn notify(app: &AppHandle, title: &str, body: &str) {
     let _ = app.notification().builder().title(title).body(clip(body.trim(), 400)).show();
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct NodeAgentConfig {
     server: String,
@@ -545,6 +552,194 @@ struct NodeAgentConfig {
 
 fn node_dir(data: &Path) -> PathBuf {
     data.join("node")
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NodeState {
+    node_id: String,
+    server: String,
+    #[serde(default)]
+    updated_at: String,
+}
+
+fn state_path(data: &Path) -> PathBuf {
+    node_dir(data).join("state.json")
+}
+
+fn read_node_config(data: &Path) -> Result<NodeAgentConfig, String> {
+    let text = fs::read_to_string(node_dir(data).join("config.json")).map_err(|error| error.to_string())?;
+    serde_json::from_str(&text).map_err(|error| error.to_string())
+}
+
+fn read_node_state(data: &Path) -> Option<NodeState> {
+    let text = fs::read_to_string(state_path(data)).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+fn write_node_state(data: &Path, node_id: &str, server: &str) -> Result<(), String> {
+    let dir = node_dir(data);
+    fs::create_dir_all(&dir).map_err(|error| format!("无法创建执行端目录：{error}"))?;
+    let state = NodeState { node_id: node_id.to_string(), server: server.trim_end_matches('/').to_string(), updated_at: iso_now() };
+    let path = state_path(data);
+    let text = serde_json::to_string_pretty(&state).map_err(|error| error.to_string())?;
+    fs::write(&path, text).map_err(|error| format!("无法保存执行端状态：{error}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
+}
+
+/// Days since the Unix epoch, using Howard Hinnant's civil_from_days.
+fn iso_from_unix(secs: u64) -> String {
+    let days = (secs / 86_400) as i64;
+    let tod = secs % 86_400;
+    let hour = tod / 3_600;
+    let minute = (tod % 3_600) / 60;
+    let second = tod % 60;
+    let z = days + 719_468;
+    let era = (if z >= 0 { z } else { z - 146_096 }) / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = if month <= 2 { y + 1 } else { y };
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
+}
+
+fn iso_now() -> String {
+    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_secs()).unwrap_or(0);
+    iso_from_unix(secs)
+}
+
+/// Serialize `detail` and embed it as a JavaScript value. serde_json keeps quotes inside strings, and U+2028/U+2029 cannot break the script.
+fn desktop_event_script(detail: &serde_json::Value) -> String {
+    let json = serde_json::to_string(detail).unwrap_or_else(|_| "{}".to_string());
+    let json = json.replace('\u{2028}', "\\u2028").replace('\u{2029}', "\\u2029");
+    format!("window.dispatchEvent(new CustomEvent('wwa-desktop', {{detail: {json}}}))")
+}
+
+fn emit_desktop(app: &AppHandle, detail: &serde_json::Value) {
+    let script = desktop_event_script(detail);
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        // WebviewWindow::eval forwards to the webview. `get_webview` is behind Tauri's unstable feature.
+        if let Some(window) = handle.get_webview_window("main") {
+            let _ = window.eval(script);
+        }
+    });
+}
+
+fn node_process_running(app: &AppHandle) -> bool {
+    let Some(state) = app.try_state::<NodeProcess>() else { return false };
+    let mut guard = state.0.lock().expect("node lock");
+    match guard.as_mut() {
+        Some(child) => matches!(child.try_wait(), Ok(None)),
+        None => false,
+    }
+}
+
+fn node_status_detail(app: &AppHandle) -> serde_json::Value {
+    let data = data_dir().ok();
+    let configured = data.as_ref().is_some_and(|dir| node_dir(dir).join("config.json").exists());
+    let state = data.as_ref().and_then(|dir| read_node_state(dir));
+    let log_path = data.as_ref().map(|dir| dir.join("logs/node.log").display().to_string());
+    serde_json::json!({
+        "type": "node-status",
+        "nodeId": state.as_ref().map(|item| item.node_id.clone()),
+        "server": state.as_ref().map(|item| item.server.clone()),
+        "running": node_process_running(app),
+        "configured": configured,
+        "logPath": log_path,
+    })
+}
+
+fn pair_detail(ok: bool, message: &str) -> serde_json::Value {
+    serde_json::json!({ "type": "node-pair", "ok": ok, "message": message })
+}
+
+fn unpair_detail(ok: bool, stopped: bool, config_removed: bool, cancelled: usize, message: &str) -> serde_json::Value {
+    serde_json::json!({
+        "type": "node-unpair",
+        "ok": ok,
+        "stopped": stopped,
+        "configRemoved": config_removed,
+        "cancelled": cancelled,
+        "message": message,
+    })
+}
+
+/// Unpair may touch this machine only when `node` equals the id in state.json.
+fn unpair_targets_local(node: &str, state_node_id: Option<&str>) -> bool {
+    matches!(state_node_id, Some(current) if !node.is_empty() && current == node)
+}
+
+/// Exit 2 is a bad configuration and exit 3 means the computer was revoked.
+fn should_restart(code: Option<i32>) -> bool {
+    !matches!(code, Some(2) | Some(3))
+}
+
+fn receipt_ended(path: &Path) -> bool {
+    let Ok(text) = fs::read_to_string(path) else { return false };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else { return false };
+    value.get("state").and_then(|item| item.as_str()) == Some("ended")
+}
+
+/// Write `cancel.request` for every run whose receipt.json is missing or not ended.
+fn write_cancel_requests(runs_dir: &Path) -> usize {
+    let Ok(entries) = fs::read_dir(runs_dir) else { return 0 };
+    let mut count = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() { continue; }
+        if receipt_ended(&path.join("receipt.json")) { continue; }
+        let body = serde_json::json!({ "requestedAt": iso_now() }).to_string();
+        if fs::write(path.join("cancel.request"), body).is_ok() { count += 1; }
+    }
+    count
+}
+
+fn take_node_child(app: &AppHandle) -> Option<Child> {
+    let state = app.try_state::<NodeProcess>()?;
+    let child = state.0.lock().expect("node lock").take();
+    child
+}
+
+#[cfg(unix)]
+fn terminate_child(child: &Child) {
+    let pid = child.id();
+    if pid == 0 { return; }
+    unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM); }
+}
+
+fn wait_for_exit(child: &mut Child, timeout: Duration) -> bool {
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return true,
+            Ok(None) if started.elapsed() >= timeout => return false,
+            Ok(None) => thread::sleep(Duration::from_millis(50)),
+            Err(_) => return false,
+        }
+    }
+}
+
+/// Unix asks the executor to shut down (it cancels CLI children). Windows, and a timed-out Unix process, are killed.
+fn stop_child_for_unpair(mut child: Child) -> bool {
+    #[cfg(unix)]
+    {
+        terminate_child(&child);
+        if wait_for_exit(&mut child, Duration::from_secs(8)) { return true; }
+    }
+    match child.kill() {
+        Ok(()) => child.wait().is_ok(),
+        Err(_) => matches!(child.try_wait(), Ok(Some(_))),
+    }
 }
 
 /// Only http(s) servers and base64url tokens; the folder picker is the user's confirmation of what the executor may touch.
@@ -574,32 +769,79 @@ fn write_node_config(data: &Path, config: &NodeAgentConfig) -> Result<(), String
     Ok(())
 }
 
-fn pair_node(app: &AppHandle, server: String, token: String) {
+fn pair_node(app: &AppHandle, server: String, token: String, node: String) {
     let server = match validate_pairing(&server, &token) {
         Ok(server) => server,
-        Err(message) => { show_launch_error(app, message.clone()); notify(app, "本机执行端未启动", &message); return; }
+        Err(message) => {
+            show_launch_error(app, message.clone());
+            notify(app, "本机执行端未启动", &message);
+            emit_desktop(app, &pair_detail(false, &message));
+            return;
+        }
     };
     let handle = app.clone();
     app.dialog().file().set_title("选择允许本机执行端访问的代码目录").pick_folder(move |folder| {
-        let Some(folder) = folder.and_then(|item| item.into_path().ok()) else { return };
-        let result = data_dir().and_then(|data| write_node_config(&data, &NodeAgentConfig { server, token, roots: vec![folder.display().to_string()], max_concurrent: 2 }));
+        let Some(folder) = folder.and_then(|item| item.into_path().ok()) else {
+            emit_desktop(&handle, &pair_detail(false, &tr!("未选择允许目录", "No allowed folder was selected")));
+            return;
+        };
+        // state.json is written before the process starts, so the page can recognize this computer before the first heartbeat.
+        let result = data_dir().and_then(|data| {
+            if !node.is_empty() { write_node_state(&data, &node, &server)?; }
+            write_node_config(&data, &NodeAgentConfig { server: server.clone(), token: token.clone(), roots: vec![folder.display().to_string()], max_concurrent: 2 })?;
+            Ok(())
+        });
         match result {
             Ok(()) => {
                 stop_node_agent(&handle);
                 start_node_agent(&handle);
                 notify(&handle, "本机执行端已启动", &format!("允许目录：{}", folder.display()));
+                emit_desktop(&handle, &pair_detail(true, &tr!("本机执行端已启动", "The local executor has started")));
             }
-            Err(message) => notify(&handle, "本机执行端未启动", &message),
+            Err(message) => {
+                notify(&handle, "本机执行端未启动", &message);
+                emit_desktop(&handle, &pair_detail(false, &message));
+            }
         }
     });
 }
 
-fn unpair_node(app: &AppHandle) {
-    stop_node_agent(app);
-    if let Ok(data) = data_dir() {
-        let _ = fs::remove_file(node_dir(&data).join("config.json"));
+fn unpair_node(app: &AppHandle, node: String) {
+    let handle = app.clone();
+    thread::spawn(move || {
+        let detail = perform_unpair(&handle, &node);
+        emit_desktop(&handle, &detail);
+    });
+}
+
+fn perform_unpair(app: &AppHandle, node: &str) -> serde_json::Value {
+    let data = data_dir().ok();
+    let state = data.as_ref().and_then(|dir| read_node_state(dir));
+    if !unpair_targets_local(node, state.as_ref().map(|item| item.node_id.as_str())) {
+        return unpair_detail(false, false, false, 0, &tr!("电脑标识与这台电脑不一致，未改动本机", "The computer id does not match this computer, so nothing was changed"));
     }
-    notify(app, "本机执行端已停止", "已移除这台电脑上的执行端配置。服务端的令牌请在设置里吊销。");
+    NODE_WANTED.store(false, Ordering::SeqCst);
+    let stopped = match take_node_child(app) {
+        Some(child) => stop_child_for_unpair(child),
+        None => true,
+    };
+    let cancelled = data.as_ref().map(|dir| write_cancel_requests(&node_dir(dir).join("runner/runs"))).unwrap_or(0);
+    let config_removed = if let Some(dir) = &data {
+        let config = node_dir(dir).join("config.json");
+        let _ = fs::remove_file(&config);
+        let _ = fs::remove_file(state_path(dir));
+        !config.exists()
+    } else {
+        false
+    };
+    let message = if !stopped {
+        tr!("本机进程未确认停止", "The local process was not confirmed stopped")
+    } else if !config_removed {
+        tr!("执行端已停止，但配置文件未能删除", "The executor stopped, but the configuration file could not be deleted")
+    } else {
+        tr!("已停止本机执行端并移除配置", "The local executor was stopped and its configuration was removed")
+    };
+    unpair_detail(true, stopped, config_removed, cancelled, &message)
 }
 
 /// Starts the paired executor (if any) with the bundled Node and keeps it running; restarts after crashes.
@@ -629,8 +871,11 @@ fn start_node_agent(app: &AppHandle) {
             };
             let Some(status) = status else { failures = 0; continue };
             state.0.lock().expect("node lock").take();
-            // Exit code 2 is a configuration error; restarting would not help.
-            if status.code() == Some(2) || !NODE_WANTED.load(Ordering::SeqCst) { return; }
+            let code = status.code();
+            if code == Some(3) {
+                notify(&handle, &tr!("这台电脑已在 WWA 中被吊销", "This computer was revoked in WWA"), &tr!("执行端已退出，不会自动重启。", "The executor has exited and will not restart."));
+            }
+            if !should_restart(code) || !NODE_WANTED.load(Ordering::SeqCst) { return; }
             failures += 1;
             thread::sleep(Duration::from_secs(u64::from(5 * failures.min(12))));
             if !NODE_WANTED.load(Ordering::SeqCst) { return; }
@@ -654,6 +899,9 @@ fn spawn_node_agent(app: &AppHandle, node: &Path, entry: &Path, dir: &Path, log:
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .env("WWA_NODE_LOGIN_PATH", "1")
+        .env("WWA_NODE_MANAGED", "desktop")
+        .env("WWA_NODE_LOG", log)
+        .env("WWA_NODE_VERSION", app.package_info().version.to_string())
         .env_remove("NODE_OPTIONS");
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
@@ -800,5 +1048,93 @@ mod tests {
     fn remote_probe_rejects_bad_urls() {
         assert!(probe_remote("not a url").is_err());
         assert!(probe_remote("ftp://example.com").is_err());
+    }
+
+    #[test]
+    fn old_config_without_node_id_reads_and_state_round_trips() {
+        let directory = std::env::temp_dir().join(format!("wwa-node-state-{}-{}", std::process::id(), iso_now().replace(':', "-")));
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(node_dir(&directory)).expect("dir");
+        fs::write(node_dir(&directory).join("config.json"), r#"{"server":"https://wwa.example.com","token":"abcdefghijklmnopqrstuvwxyz012345","roots":["/code"],"maxConcurrent":2,"revokedAt":"2026-10-21T00:00:00Z"}"#).expect("write");
+        let config = read_node_config(&directory).expect("old config has no nodeId");
+        assert_eq!(config.server, "https://wwa.example.com");
+        assert_eq!(config.roots, vec!["/code".to_string()]);
+        assert_eq!(config.max_concurrent, 2);
+        assert!(read_node_state(&directory).is_none());
+        write_node_state(&directory, "node-7", "https://wwa.example.com/").expect("state");
+        let state = read_node_state(&directory).expect("state");
+        assert_eq!(state.node_id, "node-7");
+        assert_eq!(state.server, "https://wwa.example.com");
+        assert!(!state.updated_at.is_empty());
+        let config_text = fs::read_to_string(node_dir(&directory).join("config.json")).expect("config");
+        assert!(!config_text.contains("nodeId"));
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn restart_skips_configuration_errors_and_revocation() {
+        assert!(!should_restart(Some(2)));
+        assert!(!should_restart(Some(3)));
+        assert!(should_restart(Some(0)));
+        assert!(should_restart(Some(1)));
+        assert!(should_restart(None));
+    }
+
+    #[test]
+    fn cancel_requests_skip_ended_receipts() {
+        let directory = std::env::temp_dir().join(format!("wwa-cancel-{}-{}", std::process::id(), iso_from_unix(1_700_000_000).replace(':', "-")));
+        let _ = fs::remove_dir_all(&directory);
+        let ended = directory.join("run-ended");
+        let open = directory.join("run-open");
+        let missing = directory.join("run-missing");
+        fs::create_dir_all(&ended).expect("ended");
+        fs::create_dir_all(&open).expect("open");
+        fs::create_dir_all(&missing).expect("missing");
+        fs::write(ended.join("receipt.json"), r#"{"state":"ended","exitCode":0}"#).expect("receipt");
+        fs::write(open.join("receipt.json"), r#"{"state":"running"}"#).expect("receipt");
+        fs::write(directory.join("notes.txt"), "not a run").expect("file");
+        assert_eq!(write_cancel_requests(&directory), 2);
+        assert!(!ended.join("cancel.request").exists());
+        for run in [&open, &missing] {
+            let text = fs::read_to_string(run.join("cancel.request")).expect("cancel");
+            let value: serde_json::Value = serde_json::from_str(&text).expect("json");
+            let at = value["requestedAt"].as_str().expect("timestamp");
+            assert!(at.contains('T') && at.ends_with('Z'));
+        }
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn unpair_requires_the_stored_node_id() {
+        assert!(!unpair_targets_local("node-a", None));
+        assert!(!unpair_targets_local("node-a", Some("node-b")));
+        assert!(!unpair_targets_local("", Some("node-a")));
+        assert!(unpair_targets_local("node-a", Some("node-a")));
+    }
+
+    #[test]
+    fn iso_from_unix_formats_known_instants() {
+        assert_eq!(iso_from_unix(0), "1970-01-01T00:00:00Z");
+        assert_eq!(iso_from_unix(1_700_000_000), "2023-11-14T22:13:20Z");
+    }
+
+    #[test]
+    fn desktop_events_embed_serialized_json() {
+        let detail = serde_json::json!({
+            "type": "node-status",
+            "nodeId": "n'1",
+            "server": "https://wwa.example.com",
+            "running": true,
+            "configured": false,
+            "logPath": "</script>",
+            "note": "line\u{2028}break",
+        });
+        let script = desktop_event_script(&detail);
+        assert!(script.starts_with("window.dispatchEvent(new CustomEvent('wwa-desktop', {detail: "));
+        assert!(script.ends_with("}))"));
+        assert!(!script.contains('\u{2028}'));
+        let json = serde_json::to_string(&detail).unwrap().replace('\u{2028}', "\\u2028").replace('\u{2029}', "\\u2029");
+        assert!(script.contains(&json));
+        assert!(!script.contains("'); alert"));
     }
 }
