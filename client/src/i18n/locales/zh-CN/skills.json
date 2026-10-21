@@ -71,6 +71,7 @@
     "enableNamed": "启用 {{name}}",
     "selectHint": "选择一个技能查看正文和版本历史。",
     "detailLabel": "技能：{{name}}",
+    "detailTabs": "技能详情",
     "backToList": "返回列表",
     "meta": "v{{revision}} · {{origin}} · {{status}} · 更新于 {{time}}",
     "restored": "技能已恢复",

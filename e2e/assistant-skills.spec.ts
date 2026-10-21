@@ -71,6 +71,7 @@ test('skill loading: catalog, 使用技能 row, and old conversations keep the v
   await editor.getByRole('button', { name: '保存', exact: true }).click();
   await expect(editor).toHaveCount(0);
   await expect(page.getByTestId('skill-detail')).toContainText('v2');
+  await page.getByTestId('skill-detail').getByRole('tab', { name: '版本历史' }).click();
   await expect(page.getByTestId('skill-version')).toHaveCount(2);
   await expect(page.getByTestId('skill-version').first()).toContainText('改成第二版');
   await page.getByLabel('对比 v1').check();
@@ -152,8 +153,8 @@ test('skills page: toggle, delete and restore, import SKILL.md, and the More pag
   await selectSkill(page, '页面技能');
   await page.getByTestId('skill-detail').getByRole('button', { name: '恢复', exact: true }).click();
   await expect(page.getByText('技能已恢复')).toBeVisible();
-  await page.getByLabel('技能状态').selectOption('all');
   if (isMobile && await page.getByRole('button', { name: '返回列表' }).isVisible()) await page.getByRole('button', { name: '返回列表' }).click();
+  await page.getByLabel('技能状态').selectOption('all');
   await expect(page.getByTestId('skill-row').filter({ hasText: '页面技能' })).toBeVisible();
 
   const input = page.getByTestId('skill-import-input');
@@ -165,6 +166,7 @@ test('skills page: toggle, delete and restore, import SKILL.md, and the More pag
   await conflict.getByRole('button', { name: '覆盖为新版本' }).click();
   await expect(conflict).toHaveCount(0);
   await expect(page.getByTestId('skill-detail')).toContainText('导入的正文');
+  await page.getByTestId('skill-detail').getByRole('tab', { name: '版本历史' }).click();
   await expect(page.getByTestId('skill-version').first()).toContainText('导入 SKILL.md 覆盖');
   await input.setInputFiles({ name: 'SKILL.md', mimeType: 'text/markdown', buffer: Buffer.from('---\nname: 导入新技能\ndescription: "带引号的描述"\n---\n全新正文') });
   await expect(page.getByTestId('skill-detail').getByRole('heading', { name: '导入新技能' })).toBeVisible();

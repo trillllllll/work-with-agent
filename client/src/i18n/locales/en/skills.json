@@ -71,6 +71,7 @@
     "enableNamed": "Enable {{name}}",
     "selectHint": "Select a skill to see its body and version history.",
     "detailLabel": "Skill: {{name}}",
+    "detailTabs": "Skill detail",
     "backToList": "Back to list",
     "meta": "v{{revision}} · {{origin}} · {{status}} · Updated {{time}}",
     "restored": "Skill restored",
