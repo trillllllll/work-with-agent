@@ -41,6 +41,9 @@ async function drag(page: Page, from: Locator, to: Locator) {
   await session.detach();
 }
 
+test.afterAll(async () => { await e2eDatabase.$disconnect(); });
+
+test.describe('规划页', () => {
 test.beforeEach(async ({ page }) => {
   await resetE2eDatabase();
   await page.clock.setFixedTime(new Date(`${localKey()}T12:00:00`));
@@ -50,7 +53,6 @@ test.beforeEach(async ({ page }) => {
     if (typeof Notification !== 'undefined') Object.defineProperty(Notification, 'permission', { configurable: true, get: () => 'denied' });
   });
 });
-test.afterAll(async () => { await e2eDatabase.$disconnect(); });
 
 test('规划页保持路由，并按公式摆放 14:00 时间块', async ({ page, request }) => {
   const today = localKey();
@@ -107,39 +109,6 @@ test('月视图拖到另一天保留时分', async ({ page, request }) => {
   await expect.poll(async () => await jsonData(await request.get(`${apiUrl}/api/tasks/${created.id}`)) as { dueDate: string; scheduledStart: string; scheduledEnd: string }).toMatchObject({ dueDate: next, scheduledStart: `${next}T14:00`, scheduledEnd: `${next}T15:30` });
 });
 
-test('一分钟专注完成后留下记录，刷新则暂停且不归零', async ({ page, request }) => {
-  test.setTimeout(150_000);
-  await page.goto('/#/focus');
-  await page.evaluate(() => {
-    localStorage.setItem('todo.focusTimer', JSON.stringify({ phase: 'idle', taskId: null, taskTitle: null, accumulatedMs: 0, segmentStartedAt: null, sessionStartedAt: null, plannedMinutes: 1, breakMinutes: 5, cycle: 0, autoStartBreak: false }));
-  });
-  await page.reload();
-  await expect(page.getByTestId('focus-page')).toBeVisible();
-  await expect(page.getByTestId('focus-remaining')).toHaveText('01:00');
-  await page.getByRole('button', { name: '开始专注', exact: true }).click();
-  await page.goto('/#/inbox');
-  const chip = page.getByTestId('focus-chip');
-  await expect(chip).toBeVisible();
-  const clock = chip.locator('.tabular-nums');
-  await expect(clock).not.toHaveText('01:00');
-  const before = clockSeconds((await clock.textContent()) ?? '00:00');
-  expect(before).toBeGreaterThan(0);
-  await page.reload();
-  await expect(chip).toBeVisible();
-  await expect(chip.getByRole('button', { name: '继续' })).toBeVisible();
-  const after = clockSeconds((await clock.textContent()) ?? '00:00');
-  expect(after).toBeGreaterThan(0);
-  expect(after).toBeLessThanOrEqual(before);
-  expect(after).toBeLessThan(60);
-  await chip.getByRole('button', { name: '继续' }).click();
-  await expect(page.getByText('专注完成，休息一下').first()).toBeVisible({ timeout: 70_000 });
-  await expect(chip).toContainText('休息一下');
-  await expect.poll(async () => {
-    const rows = await jsonData(await request.get(`${apiUrl}/api/focus-sessions`)) as { durationMinutes: number; completed: boolean; kind: string; startedAt: string }[];
-    return rows.some((row) => row.kind === 'focus' && row.durationMinutes === 1 && row.completed && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(row.startedAt));
-  }).toBe(true);
-});
-
 test('暗色模式下规划页和专注页使用主题色', async ({ page }, testInfo) => {
   await page.goto(testInfo.project.name === 'mobile' ? '/#/more' : '/#/plan');
   await page.getByRole('button', { name: '切换主题' }).click();
@@ -179,4 +148,49 @@ test('375px 周视图可横滑，专注芯片在底栏上方', async ({ page }) 
   const tab = await tabs.boundingBox();
   if (!chipBox || !tab) throw new Error('芯片或底栏没有布局');
   expect(chipBox.y + chipBox.height).toBeLessThanOrEqual(tab.y + 1);
+});
+});
+
+test.describe('专注计时', () => {
+test.beforeEach(async ({ page }) => {
+  await resetE2eDatabase();
+  await page.addInitScript(() => { if (localStorage.getItem('todo.plan.showCompleted') === null) localStorage.setItem('todo.plan.showCompleted', 'true'); });
+  await page.addInitScript(() => {
+    (window as unknown as { __REACT_GRAB_DISABLED__?: boolean }).__REACT_GRAB_DISABLED__ = true;
+    if (typeof Notification !== 'undefined') Object.defineProperty(Notification, 'permission', { configurable: true, get: () => 'denied' });
+  });
+});
+
+test('一分钟专注完成后留下记录，刷新则暂停且不归零', async ({ page, request }) => {
+  test.setTimeout(150_000);
+  await page.goto('/#/focus');
+  await page.evaluate(() => {
+    localStorage.setItem('todo.focusTimer', JSON.stringify({ phase: 'idle', taskId: null, taskTitle: null, accumulatedMs: 0, segmentStartedAt: null, sessionStartedAt: null, plannedMinutes: 1, breakMinutes: 5, cycle: 0, autoStartBreak: false }));
+  });
+  await page.reload();
+  await expect(page.getByTestId('focus-page')).toBeVisible();
+  await expect(page.getByTestId('focus-remaining')).toHaveText('01:00');
+  await page.getByRole('button', { name: '开始专注', exact: true }).click();
+  await page.goto('/#/inbox');
+  const chip = page.getByTestId('focus-chip');
+  await expect(chip).toBeVisible();
+  const clock = chip.locator('.tabular-nums');
+  await expect(clock).not.toHaveText('01:00');
+  const before = clockSeconds((await clock.textContent()) ?? '00:00');
+  expect(before).toBeGreaterThan(0);
+  await page.reload();
+  await expect(chip).toBeVisible();
+  await expect(chip.getByRole('button', { name: '继续' })).toBeVisible();
+  const after = clockSeconds((await clock.textContent()) ?? '00:00');
+  expect(after).toBeGreaterThan(0);
+  expect(after).toBeLessThanOrEqual(before);
+  expect(after).toBeLessThan(60);
+  await chip.getByRole('button', { name: '继续' }).click();
+  await expect(page.getByText('专注完成，休息一下').first()).toBeVisible({ timeout: 70_000 });
+  await expect(chip).toContainText('休息一下');
+  await expect.poll(async () => {
+    const rows = await jsonData(await request.get(`${apiUrl}/api/focus-sessions`)) as { durationMinutes: number; completed: boolean; kind: string; startedAt: string }[];
+    return rows.some((row) => row.kind === 'focus' && row.durationMinutes === 1 && row.completed && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(row.startedAt));
+  }).toBe(true);
+});
 });
