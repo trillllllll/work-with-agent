@@ -45,7 +45,7 @@ test.describe('Agent 工作室 MVP', () => {
     await page.goto('/#/settings');
     await page.getByLabel('接口地址').fill('http://127.0.0.1:4010/v1');
     await page.getByLabel('模型名称').fill('mock-model');
-    await page.getByLabel('API Key').fill('e2e-key');
+    await page.getByLabel('API Key', { exact: true }).fill('e2e-key');
     await page.getByRole('button', { name: '测试连接并保存' }).click();
     await expect(page.getByText('设置已保存，连接测试通过。')).toBeVisible();
 
@@ -152,7 +152,7 @@ test.describe('Agent 工作室 MVP', () => {
     test.skip(Boolean(isMobile), '模型错误协议在桌面视口验收');
     await page.goto('/#/settings');
     await page.getByLabel('接口地址').fill('http://127.0.0.1:4010/v1');
-    await page.getByLabel('API Key').fill('e2e-key');
+    await page.getByLabel('API Key', { exact: true }).fill('e2e-key');
     await page.getByLabel('模型名称').fill('mock-upstream');
     await page.getByRole('button', { name: '测试连接并保存' }).click();
     await expect(page.getByText('模型服务错误：502')).toBeVisible();
@@ -218,18 +218,19 @@ test.describe('Agent 工作室 MVP', () => {
 
     const chatHeading = page.getByRole('heading', { name: 'AI 助手' });
     await expect(chatHeading).toBeVisible();
-    await expect(page.getByRole('button', { name: '返回当前页面' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '返回当前页面' })).toHaveCount(0);
 
-    await page.getByRole('button', { name: '返回当前页面' }).click();
-    await expect(page).toHaveURL(/#\/(?:inbox)?$/);
+    await page.getByTestId('mobile-bottom-navigation').getByRole('button', { name: '收集箱', exact: true }).click();
+    await expect(page).toHaveURL(/#\/inbox$/);
     await expect(chatHeading).toBeHidden();
     await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
-    await expect(page.getByRole('button', { name: '收集箱', exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByTestId('mobile-bottom-navigation').getByRole('button', { name: '收集箱', exact: true })).toHaveAttribute('aria-current', 'page');
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
 
     await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
-    await expect(page).toHaveURL(/#\/(?:inbox)?$/);
     await expect(chatHeading).toBeVisible();
+    // 打开 AI 助手只拉开侧栏，不会 navigate 到 #/chat，因此地址仍是收集箱，并出现「返回当前页面」。
+    await expect(page).toHaveURL(/#\/inbox$/);
     await expect(page.getByRole('button', { name: '返回当前页面' })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
   });

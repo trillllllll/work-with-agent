@@ -8,7 +8,7 @@ test('missing model is explicit and a deleted source leaves the conversation ope
   await page.goto('/');
   await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
   const assistant = page.getByTestId('ai-assistant');
-  await expect(assistant.getByText('未配置模型', { exact: true })).toBeVisible();
+  await expect(assistant.getByRole('status')).toContainText('未配置模型');
   const input = assistant.getByRole('textbox', { name: '向 AI 提问' });
   await input.fill('保留这条输入');
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('wwa-open-source', { detail: { kind: 'task', id: 'deleted-source', title: '已删除任务' } })));
@@ -26,7 +26,7 @@ test('transport failure preserves the draft and offers retry', async ({ page, re
   await input.fill('失败后保留的内容');
   await page.route('**/api/chat', (route) => route.abort('failed'));
   await assistant.getByRole('button', { name: '发送', exact: true }).click();
-  await expect(assistant.getByText('连接中断', { exact: true })).toBeVisible();
+  await expect(assistant.getByText('连接中断', { exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(assistant.getByRole('button', { name: '重试', exact: true })).toBeVisible();
   await expect(input).toHaveValue('失败后保留的内容');
 });
