@@ -52,7 +52,9 @@ test('无需模型保存资料、修订原文、记录记忆和维护当前简�
   await page.getByRole('tab', { name: '当前进展', exact: true }).click();
   await expect(page.getByText(/先采用可解释的关键词检索/)).toBeVisible();
   await page.getByLabel('简报固定说明', { exact: true }).fill('优先保持 Todo 可用。');
+  const saved = page.waitForResponse((response) => response.url().includes('/api/v1/knowledge/brief') && response.request().method() === 'PUT' && response.ok());
   await page.getByRole('button', { name: '保存固定说明', exact: true }).click();
+  await saved;
   await page.reload();
   await page.getByRole('tab', { name: '当前进展', exact: true }).click();
   await expect(page.getByLabel('简报固定说明', { exact: true })).toHaveValue('优先保持 Todo 可用。');
