@@ -32,6 +32,7 @@ import { generateExternalReview } from './runner/review-generator.js';
 import { localeMiddleware, translateMessage, translatePayload } from './i18n/index.js';
 import { createSkill, deleteSkill, diffSkill, draftSkill, getSkill, getSkillVersion, importSkill, listSkills, registerSkillCommands, restoreSkill, rollbackSkill, updateSkill } from './application/skills.js';
 import { createNodeRouter, createOrchestrationRouter } from './routes/orchestration.js';
+import { createSyncRouter } from './routes/sync.js';
 
 export const app = express();
 app.use(cors(corsOptions));
@@ -45,6 +46,7 @@ registerSkillCommands();
 app.use('/api/v1', securityRouter);
 // Local executors (wwa-node) use their own token; they never get owner or MCP access.
 app.use('/api/v1/node', createNodeRouter());
+app.use('/api/v1/sync', createSyncRouter());
 app.use('/api/v1', identityMiddleware);
 app.use('/api/v1/connections', connectionRouter);
 app.use('/api/v1/server', createServerRouter());

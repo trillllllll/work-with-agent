@@ -13,7 +13,7 @@ const COALESCE_MS = 300;
 function scopeOf(message: MessageEvent): readonly string[] | 'all' {
   try {
     const event = JSON.parse(message.data);
-    if (Array.isArray(event?.affectedTaskIds) && event.affectedTaskIds.length > 0) return TASK_SCOPES;
+    if (Array.isArray(event?.affectedTaskIds) && event.affectedTaskIds.length > 0) return typeof event?.syncSeq === 'number' ? [...TASK_SCOPES, 'sync-conflicts'] : TASK_SCOPES;
   } catch { /* 无载荷或无法解析的事件按全量处理。 */ }
   return 'all';
 }

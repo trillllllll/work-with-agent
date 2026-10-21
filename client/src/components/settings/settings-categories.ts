@@ -6,7 +6,7 @@
 export const SETTINGS_CATEGORIES = ['model', 'local', 'skills', 'ui', 'data', 'about'] as const;
 export type SettingsCategory = (typeof SETTINGS_CATEGORIES)[number];
 
-export const SETTINGS_SECTIONS = ['model', 'image-search', 'html-blocks', 'cli', 'orchestration', 'worktrees', 'skills', 'language', 'mobile-navigation', 'backup', 'server'] as const;
+export const SETTINGS_SECTIONS = ['model', 'image-search', 'html-blocks', 'cli', 'orchestration', 'worktrees', 'skills', 'language', 'mobile-navigation', 'backup', 'sync', 'server'] as const;
 export type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number];
 
 export type SettingsGroup = 'ai' | 'workspace';
@@ -23,7 +23,7 @@ export const SETTINGS_CATEGORY_DEFS: readonly SettingsCategoryDef[] = [
   { id: 'local', group: 'ai', sections: ['cli', 'orchestration', 'worktrees'] },
   { id: 'skills', group: 'ai', sections: ['skills'] },
   { id: 'ui', group: 'workspace', sections: ['language', 'mobile-navigation'] },
-  { id: 'data', group: 'workspace', sections: ['backup'] },
+  { id: 'data', group: 'workspace', sections: ['backup', 'sync'] },
   { id: 'about', group: 'workspace', sections: ['server'] },
 ];
 

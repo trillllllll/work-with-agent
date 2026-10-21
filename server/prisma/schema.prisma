@@ -1098,3 +1098,72 @@ model SkillVersion {
 
   @@unique([skillId, revision])
 }
+
+/// Ordered hub log for task, topic, and tag alignment. Seq is assigned only on the server.
+model SyncOp {
+  seq        Int     @id @default(autoincrement())
+  opId       String  @unique @map("op_id")
+  deviceId   String  @default("server") @map("device_id")
+  entityType String  @map("entity_type")
+  entityId   String  @map("entity_id")
+  beforeJson String? @map("before_json")
+  afterJson  String? @map("after_json")
+  revision   Int     @default(0)
+  createdAt  String  @default("") @map("created_at")
+
+  @@index([entityType, entityId])
+  @@map("sync_ops")
+}
+
+model SyncDevice {
+  id         String @id
+  name       String @default("")
+  tokenHash  String @unique @map("token_hash")
+  lastSeenAt String @default("") @map("last_seen_at")
+  createdAt  String @default("") @map("created_at")
+
+  @@map("sync_devices")
+}
+
+model SyncConflict {
+  id           String  @id @default(cuid())
+  opId         String  @map("op_id")
+  deviceId     String  @map("device_id")
+  entityType   String  @map("entity_type")
+  entityId     String  @map("entity_id")
+  field        String
+  baseJson     String  @map("base_json")
+  liveJson     String  @map("live_json")
+  incomingJson String  @map("incoming_json")
+  state        String  @default("pending")
+  createdAt    String  @default("") @map("created_at")
+  resolvedAt   String? @map("resolved_at")
+
+  @@index([state, createdAt])
+  @@map("sync_conflicts")
+}
+
+/// Replica-only queue. The hub never reads this table. Acked rows stay for idempotent opIds.
+model SyncOutbox {
+  seq        Int     @id @default(autoincrement())
+  opId       String  @unique @map("op_id")
+  entityType String  @map("entity_type")
+  entityId   String  @map("entity_id")
+  beforeJson String? @map("before_json")
+  afterJson  String? @map("after_json")
+  state      String  @default("pending")
+  createdAt  String  @default("") @map("created_at")
+
+  @@index([state, seq])
+  @@map("sync_outbox")
+}
+
+/// One row, id = local. Incremental sync stays off until the first id alignment finishes.
+model SyncState {
+  id             String  @id
+  appliedHubSeq  Int     @default(0) @map("applied_hub_seq")
+  baselineReady  Boolean @default(false) @map("baseline_ready")
+  updatedAt      String  @default("") @map("updated_at")
+
+  @@map("sync_state")
+}
