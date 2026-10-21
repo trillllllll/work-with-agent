@@ -4,7 +4,9 @@ import { axisLabelIndexes, chartLayout, formatAxisTick, niceCeiling, valuesByDat
 describe('chart scale', () => {
   it('rounds the axis ceiling up to a readable step', () => {
     expect(niceCeiling(0)).toBe(4);
-    expect(niceCeiling(1)).toBe(1);
+    expect(niceCeiling(1)).toBe(4);
+    expect(niceCeiling(10)).toBe(10);
+    expect(niceCeiling(800, 4, 60)).toBe(1200);
     expect(niceCeiling(3)).toBe(4);
     expect(niceCeiling(6)).toBe(8);
     expect(niceCeiling(13)).toBe(20);

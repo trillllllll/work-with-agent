@@ -1,12 +1,16 @@
 /** Tick ceiling, date-axis thinning, and chart geometry. Presentation only; no DOM. */
 
-export function niceCeiling(max: number, steps = 4): number {
-  if (!Number.isFinite(max) || max <= 0 || steps <= 0) return Math.max(steps, 1);
-  const rough = max / steps;
+/**
+ * Axis ceiling in data units. `unit` is the display unit (60 for minutes shown as hours);
+ * the step is nice in that unit. Counts and minutes are integers, so a step never drops below 1.
+ */
+export function niceCeiling(max: number, steps = 4, unit = 1): number {
+  if (!Number.isFinite(max) || max <= 0 || steps <= 0) return Math.max(steps, 1) * (unit === 1 ? 1 : unit / 2);
+  const rough = Math.max(max / unit / steps, unit === 1 ? 1 : 0.5);
   const magnitude = 10 ** Math.floor(Math.log10(rough));
   const residual = rough / magnitude;
   const nice = residual <= 1 ? 1 : residual <= 2 ? 2 : residual <= 2.5 ? 2.5 : residual <= 5 ? 5 : 10;
-  return Number((nice * magnitude * steps).toPrecision(12));
+  return Number((nice * magnitude * steps * unit).toPrecision(12));
 }
 
 /** Integer ticks stay integers. Fractional ticks keep one decimal. */

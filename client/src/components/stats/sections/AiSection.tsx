@@ -116,17 +116,15 @@ export function AiSection({ data, range, nav, onRetry }: { data: StatsAiSection 
           <button type="button" className="text-sm text-muted-foreground underline-offset-4 hover:underline" onClick={() => nav.go('#/connections')}>{t('app:nav.connections')}</button>
         </div>
         {data.connections.length === 0 ? <p className="text-sm text-muted-foreground">{t('ai.noConnections')}</p> : (
-          <ul className="space-y-4">
+          <ul className="space-y-3">
             {data.connections.map((connection) => (
-              <li key={connection.id} className="min-w-0 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <button type="button" className="min-w-0 truncate text-left text-sm" onClick={() => nav.go('#/connections')}>
-                    {[connection.name, connection.host].filter(Boolean).join(t('chart.join'))}
-                  </button>
-                  <span className="shrink-0 text-xs text-muted-foreground">{relativeTime(connection.lastActiveAt ?? undefined)}</span>
-                </div>
+              <li key={connection.id} className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
+                <button type="button" className="min-w-0 flex-1 basis-40 truncate text-left text-sm" onClick={() => nav.go('#/connections')}>
+                  {[connection.name, connection.host].filter(Boolean).join(t('chart.join'))}
+                </button>
                 <HeatCells days={connection.byDay} label={t('ai.heatLabel', { name: connection.name })} />
-                <p className="text-xs text-muted-foreground">{[t('ai.writes', { count: connection.writes }), t('ai.proposalsCount', { count: connection.proposals })].join(t('chart.join'))}</p>
+                <span className="shrink-0 text-xs sm:w-32 sm:text-right text-muted-foreground tabular-nums">{[t('ai.writes', { count: connection.writes }), t('ai.proposalsCount', { count: connection.proposals })].join(t('chart.join'))}</span>
+                <span className="ml-auto shrink-0 text-right text-xs text-muted-foreground sm:ml-0 sm:w-16">{relativeTime(connection.lastActiveAt ?? undefined)}</span>
               </li>
             ))}
           </ul>

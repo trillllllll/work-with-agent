@@ -33,6 +33,7 @@ export function FocusSection({ data, range, nav, onRetry }: { data: StatsFocusSe
               ariaLabel={t('focus.chartLabel', { duration: durationText(data.minutes.value, t) })}
               series={[{ id: 'minutes', values: minutes, color: 'var(--success)' }]}
               tick={(value) => formatAxisTick(asHours ? value / 60 : value)}
+                tickUnit={asHours ? 60 : 1}
               tooltip={(index) => t('chart.point', { date: shortMonthDay(dates[index] ?? ''), value: durationText(minutes[index] ?? 0, t) })}
             />
           ) : <ChartPlaceholder state={state} />}

@@ -57,10 +57,12 @@ describe('stats range', () => {
   it('hides a trend until there are enough active days', () => {
     expect(isSparse([1, 0, 0, 0])).toBe(true);
     expect(isSparse([1, 1, 0, 0, 0])).toBe(true);
-    expect(isSparse([1, 1, 1, 0, 0])).toBe(false);
+    expect(isSparse([1, 1, 1, 0, 0])).toBe(true);
+    expect(isSparse([1, 1, 3, 0, 0])).toBe(false);
+    expect(isSparse([2, 2, 2])).toBe(false);
     expect(chartState([0, 0, 0, 0, 0])).toBe('empty');
     expect(chartState([1, 0, 0, 0, 0])).toBe('sparse');
-    expect(chartState([1, 1, 1, 0, 0])).toBe('ready');
+    expect(chartState([1, 1, 3, 0, 0])).toBe('ready');
   });
 
   it('formats cost and recognizes a section error', () => {

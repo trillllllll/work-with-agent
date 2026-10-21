@@ -89,6 +89,7 @@ export function PlanSection({ data, range, nav, onRetry }: { data: StatsPlanSect
                 today={range.today}
                 ariaLabel={t('plan.pairLabel')}
                 tick={(value) => formatAxisTick(asHours ? value / 60 : value)}
+                tickUnit={asHours ? 60 : 1}
                 series={[
                   { id: 'planned', values: planned, color: 'var(--tag-blue-fg)' },
                   { id: 'focus', values: focused, color: 'var(--success)' },

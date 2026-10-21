@@ -21,9 +21,11 @@ export type ColumnChartProps = {
   ariaLabel: string;
   tooltip: (index: number) => string;
   tick: (value: number) => string;
+  /** Display unit of the axis in data units (60 when minutes are labelled as hours). */
+  tickUnit?: number;
 };
 
-export function ColumnChart({ dates, today, series, mode, line, ariaLabel, tooltip, tick }: ColumnChartProps) {
+export function ColumnChart({ dates, today, series, mode, line, ariaLabel, tooltip, tick, tickUnit = 1 }: ColumnChartProps) {
   const { t } = useTranslation('stats');
   const patternId = `hatch${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
   const layout = chartLayout(dates.length);
@@ -34,7 +36,7 @@ export function ColumnChart({ dates, today, series, mode, line, ariaLabel, toolt
     if (mode === 'group') return Math.max(lineValue, ...series.map((item) => Math.max(0, item.values[index] ?? 0)));
     return Math.max(lineValue, series.reduce((sum, item) => sum + Math.max(0, item.values[index] ?? 0), 0));
   };
-  const ceiling = niceCeiling(dates.reduce((peak, _, index) => Math.max(peak, peakAt(index)), 0) || 1);
+  const ceiling = niceCeiling(dates.reduce((peak, _, index) => Math.max(peak, peakAt(index)), 0) || 1, 4, tickUnit);
   const yAt = (value: number) => padT + plotH * (1 - value / ceiling);
   const gap = 2;
   const barW = mode === 'group'

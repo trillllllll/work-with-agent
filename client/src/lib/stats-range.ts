@@ -119,10 +119,10 @@ export function activeCount(values: readonly number[]): number {
   return values.reduce((count, value) => count + (value > 0 ? 1 : 0), 0);
 }
 
-/** A trend needs 5 points and at least 3 days that are not zero. */
+/** A trend needs at least 3 active days and 5 records in total; fewer would draw a misleading line. */
 export function isSparse(values: readonly number[]): boolean {
-  if (values.length < 5) return true;
-  return activeCount(values) < 3;
+  if (activeCount(values) < 3) return true;
+  return values.reduce((sum, value) => sum + Math.max(0, value), 0) < 5;
 }
 
 export type ChartState = 'empty' | 'sparse' | 'ready';
