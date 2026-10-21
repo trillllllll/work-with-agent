@@ -61,31 +61,32 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await page.goto('/#/inbox');
     const row = page.getByTestId(`task-row-${created.id}`);
     await row.getByRole('button', { name: '待整理任务', exact: true }).click();
-    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('任务标题', { exact: true }).fill('修改后的任务');
-    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('详情', { exact: true }).fill('保留我的说明');
+    const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
+    await detail.getByLabel('任务标题', { exact: true }).fill('修改后的任务');
     await expect.poll(async () => (await task(request, created.id)).title).toBe('修改后的任务');
     expect((await task(request, created.id)).description).toBe('');
     let failDescription = true;
+    let markDescriptionFailed: () => void = () => {};
+    const descriptionFailed = new Promise<void>((resolve) => { markDescriptionFailed = resolve; });
     await page.route(`**/api/tasks/${created.id}`, async (route) => {
+      if (route.request().method() !== 'PATCH') return route.continue();
       const body = route.request().postDataJSON();
-      if (route.request().method() === 'PATCH' && failDescription && body?.description === '保留我的说明') {
+      if (failDescription && body?.description === '保留我的说明') {
         failDescription = false;
         await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ data: null, error: '详情保存失败' }) });
-      } else await route.continue();
+        markDescriptionFailed();
+        return;
+      }
+      await route.continue();
     });
-    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('任务标题', { exact: true }).click();
-    await expect(page.getByText('详情保存失败', { exact: true }).first()).toBeVisible();
+    await detail.getByLabel('详情', { exact: true }).fill('保留我的说明');
+    await descriptionFailed;
     expect((await task(request, created.id)).description).toBe('');
-    await expect(page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('详情', { exact: true })).toHaveAttribute('data-value', '保留我的说明');
-    await expect(page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('任务标题', { exact: true })).toHaveValue('修改后的任务');
-    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('button', { name: '关闭任务详情', exact: true }).click();
-    const leave = page.getByRole('dialog', { name: '保存未完成的编辑？', exact: true });
-    await expect(leave).toBeVisible();
-    await leave.getByRole('button', { name: '继续编辑', exact: true }).click();
-    await expect(page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('详情', { exact: true })).toHaveAttribute('data-value', '保留我的说明');
-    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('详情', { exact: true }).click();
-    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('任务标题', { exact: true }).click();
-    await expect.poll(async () => (await task(request, created.id)).description).toBe('保留我的说明');
+    await expect(detail.getByLabel('详情', { exact: true })).toHaveAttribute('data-value', '保留我的说明');
+    await expect(detail.getByLabel('任务标题', { exact: true })).toHaveValue('修改后的任务');
+    // 5xx 由协调器按 RETRY_DELAYS_MS 重试，响应里的 error 不会显示成「详情保存失败」。
+    await expect(detail.getByText('保存中…', { exact: true })).toBeVisible();
+    await expect.poll(async () => (await task(request, created.id)).description, { timeout: 15_000 }).toBe('保留我的说明');
     await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('button', { name: '安排时间', exact: true }).click();
     await page.getByLabel('安排方式', { exact: true }).selectOption('allday');
     await page.getByLabel('安排日期', { exact: true }).click();
@@ -668,13 +669,13 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await page.goto('/#/inbox');
     const row = page.getByTestId(`task-row-${item.id}`);
     await row.getByRole('button', { name: '原始标题', exact: true }).click();
-    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('任务标题', { exact: true }).fill('尚未提交的本地标题');
+    const dialog = page.getByRole('dialog', { name: '任务详情', exact: true });
+    await dialog.getByLabel('任务标题', { exact: true }).fill('尚未提交的本地标题');
     await data(await request.patch(`${apiUrl}/api/tasks/${item.id}`, { data: { title: '后台已更新的标题' } }));
-    await expect(page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('alert')).toContainText('后台已更新标题');
-    await expect(page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('任务标题', { exact: true })).toHaveValue('尚未提交的本地标题');
+    await expect(dialog.getByRole('alert')).toContainText('正文或标题与后台更新冲突');
+    await expect(dialog.getByLabel('任务标题', { exact: true })).toHaveValue('尚未提交的本地标题');
     expect((await task(request, item.id)).title).toBe('后台已更新的标题');
-    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('checkbox', { name: '保存时使用我的编辑', exact: true }).check();
-    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('详情', { exact: true }).click();
+    await dialog.getByRole('button', { name: '使用我的内容', exact: true }).click();
     await expect.poll(async () => (await task(request, item.id)).title).toBe('尚未提交的本地标题');
   });
 
