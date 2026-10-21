@@ -331,7 +331,7 @@ document.getElementById('probe-out').textContent=JSON.stringify({html:html,scrip
   if (latestUser.includes('清理已验收的 worktree')) {
     if (toolSince('propose_worktree_cleanup')) return stream(res, [{ choices: [{ delta: { content: '删除卡片已经生成，请在卡片上确认。' }, finish_reason: 'stop' }] }]);
     const listed = sinceUser.map(toolData).find((data) => Array.isArray(data?.items) && data.items.some((view) => Array.isArray(view?.worktrees)));
-    if (!listed) return callTool('e2e_orch_read', 'orchestration_read', { action: 'worktrees' }, '我先看看执行端上报的 worktree。');
+    if (!listed) return callTool('e2e_orch_read', 'orchestration_read', { action: 'worktrees' }, '我先看看电脑上报的 worktree。');
     const view = listed.items.find((item) => item.worktrees.some((entry) => entry.action === 'remove'));
     const entry = view?.worktrees.find((item) => item.action === 'remove');
     if (!view || !entry) return stream(res, [{ choices: [{ delta: { content: '没有可以删除的 worktree。' }, finish_reason: 'stop' }] }]);

@@ -15,6 +15,9 @@ console.log(JSON.stringify({ type: 'thread.started', thread_id: `stub-${process.
 console.log(JSON.stringify({ type: 'turn.started' }));
 const delay = Number(process.env.STUB_DELAY_MS ?? 400);
 const until = Date.now() + delay; while (Date.now() < until) { /* overlap window for the parallel assertion */ }
+// Async hold keeps the event loop free so a revoke can SIGTERM this process. A busy loop would swallow that signal.
+const holdMs = Number(process.env.STUB_HOLD_MS ?? 0);
+if (holdMs > 0) await new Promise((resolve) => setTimeout(resolve, holdMs));
 const result = { outcome: 'ready_for_review', summary: '', questions: [], artifacts: [], checks: [], unfinished: [], proposedCommandsJson: '[]' };
 const log = (line) => { if (process.env.STUB_LOG) writeFileSync(process.env.STUB_LOG, `${line}\n`, { flag: 'a' }); };
 

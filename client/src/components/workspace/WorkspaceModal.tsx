@@ -8,6 +8,13 @@ import { cn } from '@/lib/utils.js';
 
 export type WorkspaceModalView = 'settings' | 'trash' | 'changes';
 
+/** Portaled popovers and the assistant sit outside the dialog node. A click there is still part of this window. */
+function keepWorkspaceInteraction(event: { target: EventTarget | null; preventDefault(): void }) {
+  const candidate = event.target;
+  const element = candidate instanceof Element ? candidate : candidate instanceof Node ? candidate.parentElement : null;
+  if (element?.closest('[data-assistant-floating], [data-slot="popover-content"], [data-radix-popper-content-wrapper]')) event.preventDefault();
+}
+
 type WorkspaceModalProps = {
   suspended?: boolean;
   assistantOpen?: boolean;
@@ -134,9 +141,7 @@ export function WorkspaceModal({ suspended = false, assistantOpen, assistantSlot
         </section>
 </>, businessHost)}
       <DialogContent
-        onInteractOutside={(event) => {
-          if (event.target instanceof Element && event.target.closest('[data-assistant-floating]')) event.preventDefault();
-        }}
+        onInteractOutside={keepWorkspaceInteraction}
         showCloseButton={false}
         aria-describedby={undefined}
         overlayClassName="bg-slate-950/20 backdrop-blur-md backdrop-saturate-150 dark:bg-black/35"

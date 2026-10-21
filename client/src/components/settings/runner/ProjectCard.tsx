@@ -205,7 +205,10 @@ export function ArchivedProjectCard({ project }: { project: ProjectRow }) {
   const client = useQueryClient();
   const restore = useMutation({
     mutationFn: () => api(`/api/projects/${encodeURIComponent(project.id)}`, { method: 'PATCH', body: JSON.stringify({ archived: false, expectedRevision: project.revision }) }),
-    onSuccess: async () => { await client.invalidateQueries({ queryKey: ['projects'] }); },
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ['projects'] });
+      await client.invalidateQueries({ queryKey: ['project-bindings'] });
+    },
     onError: (error: Error) => toast.error(error.message),
   });
   return (
