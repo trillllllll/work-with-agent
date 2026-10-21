@@ -1,7 +1,7 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { DomainError } from '../domain/task.js';
 import { prisma } from '../infrastructure/prisma.js';
-import { hasUndoHandler, undoHandlerTypes } from './undo-registry.js';
+import { hasUndoHandler, undoHandlerTypes } from './undo-handler-names.js';
 
 const TASK_OPS = ['create', 'update', 'delete', 'restore', 'reorder'];
 const TOPIC_OPS = ['create', 'update', 'delete', 'archive', 'archive_preserve', 'restore', 'move_tasks_to_inbox', 'confirm_summary', 'discard_summary'];
