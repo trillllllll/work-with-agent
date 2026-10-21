@@ -17,8 +17,13 @@ export function createWriteQueue() {
   const pending = new Map<string, Promise<unknown>>();
   return function enqueue<T>(keys: string[], write: () => Promise<T>): Promise<T> {
     const unique = [...new Set(keys)];
-    const before = unique.map((key) => pending.get(key)).filter(Boolean);
-    const result = Promise.all(before.map((item) => item!.catch(() => undefined))).then(write);
+    const waited = new Set<Promise<unknown>>();
+    // '*' waits for every in-flight write. While '*' itself is in flight, every new write waits for it.
+    if (unique.includes('*')) for (const item of pending.values()) waited.add(item);
+    else for (const key of unique) { const item = pending.get(key); if (item) waited.add(item); }
+    const barrier = pending.get('*');
+    if (barrier) waited.add(barrier);
+    const result = Promise.all([...waited].map((item) => item.catch(() => undefined))).then(write);
     unique.forEach((key) => pending.set(key, result));
     const clean = () => unique.forEach((key) => { if (pending.get(key) === result) pending.delete(key); });
     result.then(clean, clean);
