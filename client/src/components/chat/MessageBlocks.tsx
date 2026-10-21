@@ -3,7 +3,7 @@ import { Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import type { ContentBlock } from '@/lib/message-blocks.js';
-import { MarkdownView } from './MarkdownView.js';
+import { MarkdownView } from '@/components/shared/MarkdownView.js';
 const VisualizationBlock = lazy(() => import('./VisualizationBlock.js'));
 const HtmlBlock = lazy(() => import('./HtmlBlock.js'));
 function BlockFallback({ alt }: { alt?: string }) {

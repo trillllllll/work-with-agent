@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge.js';
 import { Button } from '@/components/ui/button.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { Skeleton } from '@/components/ui/skeleton.js';
-import { MarkdownView } from '@/components/chat/MarkdownView.js';
+import { BodyText } from '@/components/shared/BodyText.js';
 
 const drawerClass = 'top-0! right-0! bottom-0! left-auto! flex h-dvh max-h-none w-full max-w-[520px] translate-x-0! translate-y-0! flex-col gap-0 overflow-hidden rounded-none p-0 max-md:inset-0! max-md:h-dvh! max-md:max-h-none! max-md:w-full! max-md:max-w-none! max-md:translate-x-0! max-md:translate-y-0! max-md:rounded-none!';
 
@@ -85,7 +85,7 @@ export function ReviewReportDrawer({ open, batch, loading, missing, retrying, on
                 </div>
               )}
               {batch.error && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm break-words text-destructive">{batch.error}</p>}
-              {localized.trim() ? <MarkdownView content={localized} /> : <p className="text-sm text-muted-foreground">{t('reviews.noReport')}</p>}
+              {localized.trim() ? <BodyText text={localized} format="markdown" /> : <p className="text-sm text-muted-foreground">{t('reviews.noReport')}</p>}
             </>
           )}
         </div>

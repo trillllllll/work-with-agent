@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.js';
 import { Textarea } from '@/components/ui/textarea.js';
 import { engineLabel, parallelCapForNodes, unavailableEngine, type ProviderReport } from '@/components/settings/runner/logic.js';
+import { BodyText } from '@/components/shared/BodyText.js';
 import { orchestrationStatusLabels, pauseReasonLabels, stepKindLabels, stepStatusLabels } from './labels.js';
 import { formatCost, formatDiff, formatDuration, formatMissing, formatTokens, jobDurationMs, readJobChecks } from './format.js';
 
@@ -108,7 +109,7 @@ function LaunchForm({ draft, taskId, onStarted }: { draft: Orchestration; taskId
       <ol className="mt-2 space-y-2">{draft.plan.steps.map((step) => <li key={step.taskId} className="rounded border p-2"><div className="font-medium">{titles.get(step.taskId) ?? step.taskId}</div>
         <div className="text-xs text-muted-foreground">{step.dependsOn.length ? t('panel.waitFor', { names: step.dependsOn.map((id) => titles.get(id) ?? id).join(t('panel.sep')) }) : t('panel.parallel')}{step.rationale ? t('panel.rationale', { rationale: step.rationale }) : ''}</div>
         {step.acceptanceCriteria && <div className="mt-1 text-xs">{t('panel.acceptance', { criteria: step.acceptanceCriteria })}</div>}</li>)}</ol>
-      {draft.priorSummary && <details className="disclosure" data-testid="prior-summary"><summary className="cursor-pointer text-sm">{t('panel.priorSummary')}</summary><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs">{draft.priorSummary}</pre></details>}
+      {draft.priorSummary && <details className="disclosure" data-testid="prior-summary"><summary className="cursor-pointer text-sm">{t('panel.priorSummary')}</summary><BodyText text={draft.priorSummary} size="xs" className="mt-2 max-h-48 overflow-auto" /></details>}
     </section>
     <section className="space-y-2"><h3 className="font-medium">{t('panel.grantTitle')}</h3>
       <label className="flex items-center gap-2"><span className="w-24 text-muted-foreground">{t('panel.location')}</span><select className="flex-1 rounded border bg-background px-2 py-1" value={locationId} onChange={(event) => setLocationId(event.target.value)}>

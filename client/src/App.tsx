@@ -33,6 +33,7 @@ import { TopicListPage } from './components/topics/TopicList.js';
 import { TopicModal } from './components/topics/TopicModal.js';
 import { TaskDetailPane, type TaskDetailHandle } from './components/tasks/TaskExpand.js';
 import { SummaryPanel } from './components/board/SummaryPanel.js';
+import { BodyText } from './components/shared/BodyText.js';
 import { BoardColumn, TaskCard } from './components/board/BoardColumn.js';
 import { QuadrantBoard } from './components/board/QuadrantBoard.js';
 import { ChatPanel } from './components/chat/ChatPanel.js';
@@ -536,7 +537,7 @@ export function App() {
         {isDesktop ? <Sidebar compact={!wide && sidePanel} key="sidebar" route={route} page={isAssistantPage ? 'chat' : page} topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onNavigate={navigateSafely} onSelectTopic={selectTopic} onEditTopic={setTopicForm} onNewTopic={newTopic} /> : <div key="sidebar" className="hidden" />}
         <header className="flex h-12 shrink-0 items-center justify-end border-b px-4" style={isDesktop ? { gridColumn: '2 / -1', gridRow: 1 } : undefined}>{!isAssistantPage && <Button variant="ghost" size="sm" onClick={openChat} aria-label={t('shell.openAssistant')}><Sparkles className="size-4" />{t('shell.assistant')}</Button>}</header>
         <main key="main" className={cn('app-main glass-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto bg-[var(--glass-bg-strong)]', ((!isDesktop && showChat) || (isDesktop && sidePanel && taskId) || sourceView || isAssistantPage) && 'hidden')} style={isDesktop ? { gridColumn: 2, gridRow: 2 } : undefined}>{content}</main>
-        {sourceView && <section className={cn('min-h-0 overflow-auto p-5', (isAssistantPage || (!isDesktop && showChat)) && 'hidden')} style={isDesktop ? { gridColumn: 2, gridRow: 2 } : undefined} aria-label={t('shell.sourceText')}><Button variant="ghost" onClick={() => setSourceView(null)}>{t('shell.backToPage')}</Button><h2 className="my-3 text-lg font-semibold">{sourceView.title}</h2><pre className="whitespace-pre-wrap break-words text-sm">{sourceView.content}</pre></section>}
+        {sourceView && <section className={cn('min-h-0 overflow-auto p-5', (isAssistantPage || (!isDesktop && showChat)) && 'hidden')} style={isDesktop ? { gridColumn: 2, gridRow: 2 } : undefined} aria-label={t('shell.sourceText')}><Button variant="ghost" onClick={() => setSourceView(null)}>{t('shell.backToPage')}</Button><h2 className="my-3 text-lg font-semibold">{sourceView.title}</h2><BodyText text={sourceView.content} /></section>}
         <div ref={setDetailSlot} className={cn('min-h-0 min-w-0 overflow-hidden border-l', isDesktop && taskId && !sourceView && !isAssistantPage ? '' : 'hidden')} style={isDesktop ? { gridColumn: sidePanel ? 2 : 3, gridRow: 2 } : undefined} />
         <div key="accessory" ref={setAssistantSlot} className={cn('accessory-pane min-h-0 min-w-0 flex-1 overflow-hidden border-l', chatAccessory ? '' : 'hidden')} style={isDesktop ? { gridColumn: 3, gridRow: 2 } : undefined} />
         {focusAccessory && <div className="accessory-pane h-full min-h-0 min-w-0 overflow-hidden border-l" style={isDesktop ? { gridColumn: 3, gridRow: 2 } : undefined}><FocusPage presentation="side" onExpand={expandFocus} onShrink={shrinkFocus} onClose={() => setFocusOpen(false)} /></div>}

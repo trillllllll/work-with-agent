@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AppReviewEntity } from '../../../../server/src/domain/task-batch-types.js';
-import { MarkdownView } from '@/components/chat/MarkdownView.js';
+import { BodyText } from '@/components/shared/BodyText.js';
 import { DiffLines } from './SkillEditor.js';
 import { lineDiff } from './skill-format.js';
 
@@ -40,7 +40,7 @@ export function SkillProposalDetails({ entity }: { entity: AppReviewEntity }) {
       {description && <MetaRow label={t('proposal.description')} value={creating ? text(description.after) : t('proposal.transition', { before: text(description.before), after: text(description.after) })} />}
       {enabled && <MetaRow label={t('proposal.enabled')} value={creating ? enabledText(enabled.after) : t('proposal.transition', { before: enabledText(enabled.before), after: enabledText(enabled.after) })} />}
       {instructions && (creating
-        ? <div className={full ? 'min-w-0 max-w-full' : 'max-h-56 min-w-0 max-w-full overflow-hidden'} data-testid="skill-proposal-body"><div className="min-w-0 max-w-full rounded-lg border p-3"><MarkdownView content={text(instructions.after)} /></div></div>
+        ? <div className={full ? 'min-w-0 max-w-full' : 'max-h-56 min-w-0 max-w-full overflow-hidden'} data-testid="skill-proposal-body"><div className="min-w-0 max-w-full rounded-lg border p-3"><BodyText text={text(instructions.after)} format="markdown" /></div></div>
         : <DiffLines label={t('proposal.bodyChanged')} lines={lineDiff(text(instructions.before), text(instructions.after))} />)}
       {instructions && creating && <button type="button" className="review-tech-trigger !mt-0 justify-self-start" onClick={() => setFull((value) => !value)}>{full ? t('proposal.collapseBody') : t('proposal.expandBody')}</button>}
       {!instructions && !creating && <div className="text-sm text-muted-foreground">{t('proposal.bodyUnchanged')}</div>}

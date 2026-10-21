@@ -6,6 +6,7 @@ server/dist
 client/dist
 server/data
 server/data.db
+data
 server/.env
 server/runtime
 desktop

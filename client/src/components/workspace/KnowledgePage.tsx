@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input.js';
 import { Textarea } from '@/components/ui/textarea.js';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu.js';
-import { MarkdownView } from '@/components/chat/MarkdownView.js';
+import { BodyText } from '@/components/shared/BodyText.js';
 import type { KnowledgeSection } from '@/hooks/useHashRoute.js';
 import { ContextPicker, type Evidence } from './ContextPicker.js';
 import { KnowledgeGraph } from './KnowledgeGraph.js';
@@ -418,7 +418,7 @@ function ProposalCard({ topicId, proposal }: { topicId: string; proposal: Propos
       <Button ref={editButton} type="button" className="ctx-btn" disabled={busy} onClick={() => setEditing(true)}>{t('page.proposal.editConfirm')}</Button>
     </div>
     {open && <div className="ctx-proposal-more">
-      {bodyText && <p className="ctx-body whitespace-pre-wrap">{String(input.content ?? '')}</p>}
+      {bodyText && <BodyText text={String(input.content ?? '')} className="ctx-body" />}
       <p className="ctx-muted">{t('page.proposal.reasonLine', { reason: String(input.reason ?? '') })}</p>
       {evidence.map((ref) => <p key={`${ref.type}:${ref.id}:${ref.revision}`} className="ctx-muted">{t('page.evidence', { type: ref.type, id: ref.id, revision: ref.revision })}</p>)}
       {!evidence.length && <p className="ctx-muted">{t('page.proposal.noEvidence')}</p>}
@@ -449,7 +449,7 @@ function Pager({ testId, cursor, nextCursor, onPrevious, onNext }: { testId: str
 function MemoryReading({ item, resource, openEditor }: { item: Resource; resource: Resource; openEditor: (resource?: Resource) => void }) {
   const { t } = useTranslation('knowledge');
   return <>
-    <p className="ctx-body whitespace-pre-wrap">{resource.content}</p>
+    <BodyText text={resource.content ?? ''} className="ctx-body" />
     {resource.uri && <a className="ctx-body underline" href={resource.uri} target="_blank" rel="noreferrer">{t('page.memory.viewSource')}</a>}
     <div className="ctx-actions mt-3">
       <Button type="button" className="ctx-btn" onClick={() => openEditor(resource)}>{t('page.memory.edit')}</Button>
@@ -460,7 +460,7 @@ function MemoryReading({ item, resource, openEditor }: { item: Resource; resourc
       {resource.evidence?.map((ref) => <p key={`${ref.type}:${ref.id}`} className="ctx-muted">{t('page.evidence', { type: ref.type, id: ref.id, revision: ref.revision })}</p>)}
       {resource.versions?.map((version) => {
         const reason = version.reason ?? t('page.memory.savedOriginal');
-        return <div key={version.revision} className="mt-3 border-t pt-2"><p className="ctx-muted">{version.importance ? t('page.memory.versionWithImportance', { revision: version.revision, reason, importance: version.importance }) : t('page.memory.version', { revision: version.revision, reason })}</p><p className="ctx-body whitespace-pre-wrap">{version.content}</p></div>;
+        return <div key={version.revision} className="mt-3 border-t pt-2"><p className="ctx-muted">{version.importance ? t('page.memory.versionWithImportance', { revision: version.revision, reason, importance: version.importance }) : t('page.memory.version', { revision: version.revision, reason })}</p><BodyText text={version.content} className="ctx-body" /></div>;
       })}
     </details>
   </>;
@@ -600,7 +600,7 @@ function ContextSearch({ topicId, scope, cursor, setCursor, input, setInput, sub
     </div>
     {hits.error && <p role="alert" className="ctx-error">{hits.error.message}<Button type="button" className="ctx-btn" onClick={() => void hits.refetch()}>{t('page.search.retry')}</Button></p>}
     {submitted && hits.isSuccess && hits.data.total === 0 && <p>{t('page.search.noMatch')}</p>}
-    <div className="ctx-stack">{hits.data?.items.map((hit) => <article key={`${hit.type}:${hit.id}:${hit.revision}`} className="ctx-card"><h2 className="ctx-section-title">{hit.title}</h2><p className="ctx-body whitespace-pre-wrap">{hit.snippet}</p><p className="ctx-muted">{t(`page.search.hit.${hit.type === 'material' ? 'material' : hit.type === 'memory' ? 'memory' : 'task'}`, { revision: hit.revision, status: hit.status })}</p></article>)}</div>
+    <div className="ctx-stack">{hits.data?.items.map((hit) => <article key={`${hit.type}:${hit.id}:${hit.revision}`} className="ctx-card"><h2 className="ctx-section-title">{hit.title}</h2><BodyText text={hit.snippet} className="ctx-body" /><p className="ctx-muted">{t(`page.search.hit.${hit.type === 'material' ? 'material' : hit.type === 'memory' ? 'memory' : 'task'}`, { revision: hit.revision, status: hit.status })}</p></article>)}</div>
     <Pager testId="context-pagination" cursor={cursor} nextCursor={hits.data?.nextCursor ?? null} onPrevious={() => setCursor(Math.max(0, cursor - 40))} onNext={setCursor} />
   </div>;
 }
@@ -684,7 +684,7 @@ function BriefPanel({ topicId, draft, updateDraft }: { topicId: string | null; d
       return result;
     });
   }
-  return <div className="ctx-stack">{query.error && <p role="alert" className="ctx-error">{query.error.message}</p>}<div className="ctx-card ctx-brief">{query.data?.content ? <MarkdownView content={query.data.content} components={{ h1: ({ children }) => nodeText(children).trim() === '当前简报' ? null : <h2 className="ctx-section-title">{children}</h2> }} /> : <p className="ctx-muted">{t('page.brief.preparing')}</p>}</div><label className="ctx-body">{t('page.brief.pinnedNotes')}<Textarea className="ctx-field mt-2" aria-label={t('page.brief.pinnedNotesLabel')} disabled={!query.data} value={draft?.notes ?? query.data?.manualNotes ?? ''} onChange={(event) => { const notes = event.target.value; updateDraft((current) => ({ notes, revision: current?.revision ?? query.data.revision })); }} /></label><Button className="ctx-btn ctx-btn-primary" disabled={busy || draft === null} onClick={() => void save()}>{t('page.brief.savePinnedNotes')}</Button></div>; // i18n-ignore
+  return <div className="ctx-stack">{query.error && <p role="alert" className="ctx-error">{query.error.message}</p>}<div className="ctx-card ctx-brief">{query.data?.content ? <BodyText text={query.data.content} format="markdown" components={{ h1: ({ children }) => nodeText(children).trim() === '当前简报' ? null : <h2 className="ctx-section-title">{children}</h2> }} /> : <p className="ctx-muted">{t('page.brief.preparing')}</p>}</div><label className="ctx-body">{t('page.brief.pinnedNotes')}<Textarea className="ctx-field mt-2" aria-label={t('page.brief.pinnedNotesLabel')} disabled={!query.data} value={draft?.notes ?? query.data?.manualNotes ?? ''} onChange={(event) => { const notes = event.target.value; updateDraft((current) => ({ notes, revision: current?.revision ?? query.data.revision })); }} /></label><Button className="ctx-btn ctx-btn-primary" disabled={busy || draft === null} onClick={() => void save()}>{t('page.brief.savePinnedNotes')}</Button></div>; // i18n-ignore
 }
 
 function OrganizationPanel({ topicId }: { topicId: string | null }) {
@@ -693,5 +693,5 @@ function OrganizationPanel({ topicId }: { topicId: string | null }) {
   const [purpose, setPurpose] = useState(() => t('organization.defaultPurpose'));
   const [provider, setProvider] = useState('external');
   const { run, busy } = usePlatformAction();
-  return <details className="ctx-card"><summary className="cursor-pointer text-sm font-semibold">{t('page.organize.summary')}</summary><div className="ctx-stack mt-4"><Textarea aria-label={t('page.organize.goal')} className="ctx-field" value={purpose} onChange={(event) => setPurpose(event.target.value)} /><select aria-label={t('page.organize.method')} className="ctx-select" value={provider} onChange={(event) => setProvider(event.target.value)}><option value="external">{t('page.organize.external')}</option><option value="builtin">{t('page.organize.builtin')}</option></select><Button className="ctx-btn" disabled={busy || !purpose.trim()} onClick={() => void run(async () => { const request = await api<any>('/api/v1/knowledge/organizations', { method: 'POST', body: json({ topicId, purpose, provider }) }); return provider === 'builtin' ? api(`/api/v1/knowledge/organizations/${request.id}/generate`, { method: 'POST', body: '{}' }) : request; }, provider === 'builtin' ? t('page.organize.generated') : t('page.organize.prepared'))}>{t('page.organize.prepare')}</Button>{query.data?.map((request) => <article className="space-y-2 border-t pt-3" key={request.id}><p className="ctx-body">{request.purpose}</p><p className="ctx-muted">{request.status} · {new Date(request.createdAt).toLocaleString(intlLocale())}</p>{request.error && <p role="alert" className="ctx-error">{request.error}</p>}{request.result?.summary && <p className="ctx-body whitespace-pre-wrap">{request.result.summary}</p>}{request.provider === 'external' && !['proposed', 'completed'].includes(request.status) && <OrganizationPrompt id={request.id} purpose={request.purpose} />}{request.proposalIds?.length > 0 && <a className="ctx-body underline" href="#/proposals">{t('page.organize.reviewProposals')}</a>}</article>)}</div></details>;
+  return <details className="ctx-card"><summary className="cursor-pointer text-sm font-semibold">{t('page.organize.summary')}</summary><div className="ctx-stack mt-4"><Textarea aria-label={t('page.organize.goal')} className="ctx-field" value={purpose} onChange={(event) => setPurpose(event.target.value)} /><select aria-label={t('page.organize.method')} className="ctx-select" value={provider} onChange={(event) => setProvider(event.target.value)}><option value="external">{t('page.organize.external')}</option><option value="builtin">{t('page.organize.builtin')}</option></select><Button className="ctx-btn" disabled={busy || !purpose.trim()} onClick={() => void run(async () => { const request = await api<any>('/api/v1/knowledge/organizations', { method: 'POST', body: json({ topicId, purpose, provider }) }); return provider === 'builtin' ? api(`/api/v1/knowledge/organizations/${request.id}/generate`, { method: 'POST', body: '{}' }) : request; }, provider === 'builtin' ? t('page.organize.generated') : t('page.organize.prepared'))}>{t('page.organize.prepare')}</Button>{query.data?.map((request) => <article className="space-y-2 border-t pt-3" key={request.id}><p className="ctx-body">{request.purpose}</p><p className="ctx-muted">{request.status} · {new Date(request.createdAt).toLocaleString(intlLocale())}</p>{request.error && <p role="alert" className="ctx-error">{request.error}</p>}{request.result?.summary && <BodyText text={request.result.summary} className="ctx-body" />}{request.provider === 'external' && !['proposed', 'completed'].includes(request.status) && <OrganizationPrompt id={request.id} purpose={request.purpose} />}{request.proposalIds?.length > 0 && <a className="ctx-body underline" href="#/proposals">{t('page.organize.reviewProposals')}</a>}</article>)}</div></details>;
 }

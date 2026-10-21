@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { api, ApiError, type Topic } from '@/lib/api.js';
 import { intlLocale, t as translate } from '../../i18n/index.js';
 import { submitCommands, type Command } from '@/lib/platform.js';
+import { BodyText } from '@/components/shared/BodyText.js';
 import { Highlighted } from './highlight.js';
 import { LibraryPreview } from './LibraryPreview.js';
 import { TaskLinkPicker } from './TaskLinkPicker.js';
@@ -484,7 +485,7 @@ function BatchDialog({ mode, ids, topics, folders, tags, onClose, applyBatch }: 
         <button type="button" className="library-btn library-btn-primary mt-2" onClick={() => { void ask().catch((error) => toast.error(error instanceof ApiError ? error.message : t('libraryPage.askFailed'))); }}>{t('libraryPage.ask')}</button>
         {answer?.status === 'model_unavailable' && <p className="library-meta mt-3">{t('libraryPage.modelRequired')}</p>}
         {answer?.status === 'insufficient' && <p className="library-meta mt-3">{t('libraryPage.insufficient')}</p>}
-        {answer?.paragraphs.map((paragraph, index) => <p key={index} className="mt-3 whitespace-pre-wrap text-sm">{paragraph.text} {paragraph.citationIds.join(' ')}</p>)}
+        {answer?.paragraphs.map((paragraph, index) => <BodyText key={index} text={`${paragraph.text} ${paragraph.citationIds.join(' ')}`} className="mt-3" />)}
         {answer?.citations.map((citation) => <button key={citation.id} type="button" className="library-quote mt-2 block w-full p-2 text-left" aria-label={`${citation.id} · ${citation.titleSnapshot}`} onClick={() => { patchLibrary({ preview: { materialId: citation.materialId, revision: typeof citation.revision === 'number' ? citation.revision : null, chunkId: citation.chunkId || null } }); onClose(); }}><span className="library-meta">{citation.id} · {citation.titleSnapshot}</span><span className="mt-1 block whitespace-pre-wrap text-sm">{citation.quote}</span></button>)}
       </>}
       {notice && <p className="library-meta mt-3">{notice}</p>}

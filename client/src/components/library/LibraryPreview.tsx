@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, ApiError, authHeaders } from '@/lib/api.js';
+import { BodyText, textFormatForMaterial } from '@/components/shared/BodyText.js';
 import { t } from '../../i18n/index.js';
 import { submitCommands } from '@/lib/platform.js';
 import { libraryPageSize } from './store.js';
@@ -145,7 +146,7 @@ export function LibraryPreview({ target, onTargetChange, onClose, onOpenTask }: 
     <div className="library-preview-block min-h-0 flex-1 overflow-auto">
       {verified && chunk.data && <p className="library-meta">{t('libraryPreview.versionDetail', { revision: chunk.data.revision, detail: formatLocator(chunk.data.locator) })}</p>}
       {tab === 'original' && source.isLoading && <p className="library-meta">{t('libraryPreview.loadingOriginal')}</p>}
-      {tab === 'original' && source.data?.kind === 'text' && <pre className="whitespace-pre-wrap break-words text-sm">{source.data.text}</pre>}
+      {tab === 'original' && source.data?.kind === 'text' && <BodyText text={source.data.text} format={textFormatForMaterial(material.kind, mime)} />}
       {tab === 'original' && source.data?.kind === 'attachment' && layout && <OriginalView url={source.data.href} mime={source.data.mimeType} name={source.data.fileName || fileName} />}
       {tab === 'original' && source.isError && <p className="library-meta">{source.error instanceof Error ? source.error.message : t('libraryPreview.sourceUnread')}</p>}
       {tab === 'original' && mime === 'image/gif' && <p className="library-meta">{t('libraryPreview.gifFrame')}</p>}
@@ -259,7 +260,7 @@ function ChunkBrowser({ materialId, revision, highlightId }: { materialId: strin
     <div className="library-chunks">
       {items.map((item) => <article key={item.id} className="library-chunk" data-testid={`library-chunk-${item.id}`} data-highlighted={item.id === highlightId ? 'true' : 'false'}>
         <p className="library-meta">{t('libraryPreview.chunkMeta', { place: formatLocator(item.locator), method: item.method === 'ocr' ? t('libraryPreview.methodOcr') : t('libraryPreview.methodNative') })}</p>
-        <p className="whitespace-pre-wrap break-words text-sm">{item.text}</p>
+        <BodyText text={item.text} format="plain" />
       </article>)}
       {!items.length && ready && <p className="library-meta">{t('libraryPreview.noExtractedText')}</p>}
     </div>
@@ -290,6 +291,6 @@ function OriginalView({ url, mime, name }: { url: string; mime: string | null; n
   }, [url, mime, name]);
   if (mime?.startsWith('image/') && objectUrl) return <img src={objectUrl} alt={name} className="max-w-full" />;
   if (mime === 'application/pdf' && objectUrl) return <iframe title={name} src={objectUrl} className="h-80 w-full" />;
-  if (text) return <pre className="whitespace-pre-wrap break-words text-sm">{text}</pre>;
+  if (text) return <BodyText text={text} format="plain" mono={mime === 'text/csv' || mime === 'application/json' || /\.(csv|json|log)$/i.test(name)} />;
   return <p className="library-meta">{t('libraryPreview.loadingOriginal')}</p>;
 }

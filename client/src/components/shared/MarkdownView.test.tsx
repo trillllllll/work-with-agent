@@ -26,3 +26,17 @@ describe('chat markdown diagrams', () => {
     expect(without).toContain('const keep = 1');
   });
 });
+
+describe('markdown typography override', () => {
+  it('replaces the default typography classes when a className is given, keeping structural ones', () => {
+    const overridden = renderToStaticMarkup(
+      <ThemeProvider attribute="class" defaultTheme="light">
+        <MarkdownView content="hi" className="text-sm" />
+      </ThemeProvider>,
+    );
+    expect(overridden).toContain('markdown-body');
+    expect(overridden).toContain('text-sm');
+    expect(overridden).not.toContain('text-[13.5px]');
+    expect(html(false)).toContain('text-[13.5px]');
+  });
+});

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Check, Copy } from 'lucide-react';
+import { cn } from '@/lib/utils.js';
 import { isMermaidFence, mermaidSource } from '@/lib/mermaid-fence.js';
 import { MermaidBlock } from './MermaidBlock.js';
 
@@ -77,13 +78,13 @@ function markdownComponents(diagrams: boolean): Components {
   };
 }
 
-export function MarkdownView({ content, components, allowMaterialLinks = false, diagrams = false }: { content: string; components?: Components; allowMaterialLinks?: boolean; diagrams?: boolean }) {
+export function MarkdownView({ content, components, allowMaterialLinks = false, diagrams = false, className }: { content: string; components?: Components; allowMaterialLinks?: boolean; diagrams?: boolean; className?: string }) {
   const urlTransform = allowMaterialLinks
     ? (url: string) => url.startsWith('wwa-material:') ? url : defaultUrlTransform(url)
     : undefined;
   const rendered = useMemo(() => markdownComponents(diagrams), [diagrams]);
   return (
-    <div className="markdown-body min-w-0 max-w-full text-[13.5px] leading-relaxed break-words">
+    <div className={cn('markdown-body min-w-0 max-w-full break-words', className ?? 'text-[13.5px] leading-relaxed')}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ ...rendered, ...components }} urlTransform={urlTransform}>
         {content}
       </ReactMarkdown>
