@@ -190,9 +190,29 @@ export function checkLocalOrigin(req: Request) {
 }
 export const corsOptions = { credentials: true, origin: (origin: string | undefined, callback: (error: Error | null, allowed?: boolean) => void) => callback(null, !origin || allowedOrigin(origin)) };
 
+const lastUsedThrottleMs = 5 * 60 * 1000;
+
+/**
+ * Record that a connection credential was accepted. At most once every five minutes.
+ * Does not change `revision` or `updatedAt` (a revision bump would fail later proposal
+ * checks with SCOPE_CHANGED) and never throws. Not used for owner-cookie sessions.
+ */
+export async function touchConnectionLastUsed(id: string) {
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - lastUsedThrottleMs).toISOString();
+  try {
+    await prisma.connection.updateMany({
+      where: { id, OR: [{ lastUsedAt: null }, { lastUsedAt: { lt: cutoff } }] },
+      data: { lastUsedAt: now.toISOString() },
+    });
+  } catch { /* a usage timestamp must not fail the request */ }
+}
+
 export async function connectionTokenActive(credential: string) {
   const connection = await prisma.connection.findUnique({ where: { tokenHash: hash(credential) } });
-  return connection?.status === 'active';
+  if (connection?.status !== 'active') return false;
+  await touchConnectionLastUsed(connection.id);
+  return true;
 }
 
 async function authenticate(req: Request): Promise<{ actor: Actor; csrfToken?: string } | null> {
@@ -204,6 +224,8 @@ async function authenticate(req: Request): Promise<{ actor: Actor; csrfToken?: s
     if (!authorization.startsWith('Bearer ')) throw new DomainError('AUTH_REQUIRED', '连接凭据无效', 401);
     const connection = await prisma.connection.findUnique({ where: { tokenHash: hash(authorization.slice(7)) } });
     if (!connection || connection.status !== 'active') throw new DomainError('AUTH_REQUIRED', '连接凭据无效或已撤销', 401);
+    try { await touchConnectionLastUsed(connection.id); }
+    catch { /* touchConnectionLastUsed already ignores failures */ }
     return { actor: actorFromConnection(connection) };
   }
   if (!sessionToken) return null;
