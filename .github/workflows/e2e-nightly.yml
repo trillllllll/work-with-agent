@@ -1,0 +1,65 @@
+name: e2e nightly
+
+on:
+  schedule:
+    - cron: '0 18 * * *' # UTC 18:00
+  workflow_dispatch:
+
+jobs:
+  e2e-mobile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:generate
+      - name: 缓存 Playwright 浏览器
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test --project=mobile
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-mobile-${{ github.run_id }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  e2e-orchestration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:generate
+      - name: 缓存 Playwright 浏览器
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npx playwright install --with-deps chromium
+      - name: git 身份（编排用例会在临时仓库里提交）
+        run: |
+          git config --global user.name "wwa-e2e"
+          git config --global user.email "wwa-e2e@example.invalid"
+      - run: npm run e2e:orchestration
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-orchestration-${{ github.run_id }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

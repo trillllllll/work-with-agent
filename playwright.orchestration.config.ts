@@ -25,7 +25,7 @@ export default defineConfig({
   workers: 1,
   timeout: 180_000,
   expect: { timeout: 10_000 },
-  retries: process.env.CI ? 1 : 0,
+  retries: 0,
   reporter: process.env.CI ? [['line']] : 'list',
   use: {
     baseURL: web,
@@ -41,14 +41,14 @@ export default defineConfig({
     { name: 'mobile', testMatch: /orchestration-history\.e2e\.ts$/, use: { ...devices['Pixel 7'], locale: 'zh-CN' } },
   ],
   webServer: [
-    { command: 'node e2e/mock-openai.mjs', url: `http://127.0.0.1:${mockPort}/health`, reuseExistingServer: false, timeout: 30_000, env: { MOCK_OPENAI_PORT: mockPort } },
+    { command: 'node e2e/mock-openai.mjs', url: `http://127.0.0.1:${mockPort}/health`, reuseExistingServer: false, timeout: 120_000, env: { MOCK_OPENAI_PORT: mockPort } },
     {
       command: 'node e2e/prepare-db.mjs && node --import tsx server/src/index.ts',
       url: `http://127.0.0.1:${apiPort}/api/v1/auth/session`,
       reuseExistingServer: false,
-      timeout: 60_000,
+      timeout: 120_000,
       env: { E2E_DATABASE_FILE: databaseFile, PORT: apiPort, CLIENT_ORIGIN: web, DATABASE_URL: `file:../../e2e/.data/${databaseFile}`, AGENT_WORKSPACE_ROOT: root, NODE_OPTIONS: '--max-old-space-size=512' },
     },
-    { command: `npm run dev -w client -- --port ${webPort} --strictPort`, url: web, reuseExistingServer: false, timeout: 60_000, env: { VITE_API_URL: `http://127.0.0.1:${apiPort}` } },
+    { command: `npm run dev -w client -- --port ${webPort} --strictPort`, url: web, reuseExistingServer: false, timeout: 120_000, env: { VITE_API_URL: `http://127.0.0.1:${apiPort}` } },
   ],
 });

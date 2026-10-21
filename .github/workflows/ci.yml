@@ -19,3 +19,33 @@ jobs:
       - run: npm run i18n:check
       - run: npm test
       - run: npm run build
+
+  # 端到端门禁：PR 和 main 上跑 chromium 全量（单 worker，约 20 分钟）。
+  # 观察期内不是必需检查；稳定后在仓库分支保护里把 e2e-chromium 设为必需。
+  e2e-chromium:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:generate
+      - name: 缓存 Playwright 浏览器
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test --project=chromium
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-chromium-${{ github.run_id }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
