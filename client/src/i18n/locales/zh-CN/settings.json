@@ -405,8 +405,8 @@
         "lead": "助手使用的模型服务、图片搜索和交互页面。"
       },
       "local": {
-        "title": "本机执行",
-        "lead": "本机 AI 命令、主控编排的执行端、通知和项目。"
+        "title": "主控与电脑",
+        "lead": "主控、已连接的电脑、Worktree 和这台设备上的通知。"
       },
       "skills": {
         "title": "技能",
@@ -423,6 +423,10 @@
       "about": {
         "title": "关于",
         "lead": "当前工作区的模式和服务版本。"
+      },
+      "projects": {
+        "title": "项目",
+        "lead": "仓库、项目位置和编排的默认做法。"
       }
     },
     "groups": {
@@ -438,8 +442,6 @@
       "noModel": "未配置模型",
       "imageSearchOn": "图片搜索已配置",
       "imageSearchOff": "图片搜索未配置",
-      "cli": "Codex {{codex}} · Claude {{claude}}",
-      "nodesOnline": "{{count}} 个执行端在线",
       "skills": "{{count}} 个技能 · {{enabled}} 个已启用",
       "bar": "底栏：{{items}}",
       "latestSnapshot": "最近快照 {{time}}",
@@ -447,16 +449,250 @@
       "syncConflicts": "{{count}} 个同步冲突",
       "separator": " · ",
       "listSeparator": "、",
-      "loading": "…"
+      "loading": "…",
+      "online_one": "{{count}} 台在线",
+      "online_other": "{{count}} 台在线",
+      "offline_one": "{{count}} 台离线",
+      "offline_other": "{{count}} 台离线",
+      "projectCount_one": "{{count}} 个项目",
+      "projectCount_other": "{{count}} 个项目",
+      "pendingLocations_one": "{{count}} 个项目位置待验证",
+      "pendingLocations_other": "{{count}} 个项目位置待验证"
     },
     "worktreesEntry": {
       "title": "Worktree",
-      "description": "查看和清理执行端上的 worktree。",
+      "description": "查看和清理电脑上的 worktree。",
       "manage": "管理 worktree →"
     },
     "skillsSummary": {
       "stats": "共 {{count}} 个技能，{{enabled}} 个已启用。",
       "loadFailed": "技能统计加载失败"
+    }
+  },
+  "computers": {
+    "aria": "主控与电脑设置",
+    "lead": "主控负责派任务、读报告和验收；电脑在本机运行 Codex / Claude。服务端看不到你的文件。",
+    "loadFailed": "电脑列表加载失败",
+    "list": {
+      "add": "添加电脑",
+      "empty": "还没有电脑。添加一台后，它会连到这里领取任务。",
+      "title_one": "电脑 {{count}}",
+      "title_other": "电脑 {{count}}"
+    },
+    "controller": {
+      "title": "主控",
+      "address": "地址",
+      "mode": "模式",
+      "modeLocal": "本机工作区",
+      "modeServer": "服务器",
+      "version": "版本",
+      "model": "规划模型",
+      "modelMissing": "未配置",
+      "modelLink": "在『模型与 AI』修改",
+      "commands": "主控上的 AI 命令",
+      "commandsNote": "只用于定期回顾和交接",
+      "serverPaths": "以下路径在服务器上"
+    },
+    "card": {
+      "thisComputer": "这台电脑",
+      "online": "在线",
+      "offline": "离线 · {{time}}",
+      "never": "尚未连接",
+      "snapshot": "以下是上次上报的快照。",
+      "snapshotMark": "上次上报",
+      "notReported": "尚未上报",
+      "platform": "平台",
+      "nodeVersion": "版本",
+      "unknown": "未知",
+      "managedDesktop": "桌面应用托管",
+      "managedCli": "命令行运行",
+      "managedUnknown": "托管方式未知",
+      "providers": "AI 命令",
+      "reported": "这台电脑上报",
+      "noProvider": "没有可用的引擎",
+      "roots": "允许目录",
+      "noRoots": "没有允许目录",
+      "rootSep": "，",
+      "concurrency": "并发",
+      "concurrencyHint": "最多同时跑 {{max}} 个；每轮编排可以再调低",
+      "concurrencyUnknown": "还没有上报并发",
+      "disk": "磁盘",
+      "diskLow": "剩余空间低于 2 GB 时会暂停领取任务。",
+      "diskUnknown": "未知",
+      "gh": "gh",
+      "ghYes": "可用",
+      "ghNo": "不可用",
+      "locations": "项目位置",
+      "noLocations": "还没有项目位置",
+      "locationOffline": "电脑离线，上线后自动验证",
+      "log": "日志",
+      "noLog": "没有日志路径",
+      "copy": "复制",
+      "copied": "已复制",
+      "copyFailed": "复制失败",
+      "lastError": "最近错误",
+      "noError": "没有错误",
+      "token": "令牌",
+      "tokenCreated": "创建于 {{time}}",
+      "rename": "重命名",
+      "regenerate": "重新生成连接命令",
+      "disconnect": "断开这台电脑",
+      "modify": "在这台电脑上修改…",
+      "revoke": "吊销",
+      "remoteNote": "允许目录和并发要在那台电脑的 config.json 或命令行参数里修改。",
+      "oldVersion": "这台电脑没有上报版本。断开后需要在那台电脑上手动停止进程。",
+      "jobs_one": "{{count}} 个任务进行中",
+      "jobs_other": "{{count}} 个任务进行中"
+    },
+    "rename": {
+      "title": "重命名电脑",
+      "name": "名称",
+      "save": "保存",
+      "saved": "已重命名"
+    },
+    "add": {
+      "title": "添加电脑",
+      "regenerateTitle": "连接命令",
+      "name": "名称",
+      "namePlaceholder": "例如：我的笔记本",
+      "create": "生成连接命令",
+      "once": "令牌只显示这一次。关掉之后可以重新生成连接命令。",
+      "commandHint": "在那台电脑上运行下面的命令。允许访问的目录只能在本机改。",
+      "copy": "复制命令",
+      "copied": "已复制",
+      "start": "在这台电脑上启动",
+      "pairOk": "已在这台电脑上启动",
+      "pairFailed": "启动失败：{{message}}",
+      "pairTimeout": "还没有收到这台电脑的启动结果"
+    },
+    "reissue": {
+      "title": "重新签发令牌",
+      "regenerate": "旧令牌会立刻失效，正在运行的进程会退出，进行中的任务会被取消。新命令只显示这一次。",
+      "modify": "将重新签发令牌。旧令牌立刻失效，进行中的任务会被取消，旧进程会退出。并发仍是 2。接着在这台电脑上重新选择允许目录并启动。",
+      "confirm": "重新签发"
+    },
+    "disconnect": {
+      "titleLocal": "断开这台电脑",
+      "titleRemote": "吊销这台电脑",
+      "confirmLocal": "断开这台电脑",
+      "confirmRemote": "吊销",
+      "localIntro": "将停止这台电脑上的进程，删除本机配置（服务器地址、令牌、允许目录），并吊销令牌。",
+      "remoteIntro": "远端电脑不能从这里停进程。吊销后，它下次连上会收到通知并自动退出。旧版本需要在那台电脑上手动停止。",
+      "pauseNote": "正在运行且用到这台电脑的编排会暂停。要继续需要重新派发并另选电脑。",
+      "worktrees": "Worktree 不会在这里清理。",
+      "worktreesLink": "打开 Worktree 管理",
+      "resultTitle": "断开结果",
+      "notStopped": "令牌已吊销，本机进程未确认停止",
+      "retry": "再试一次",
+      "stopped": "本机进程已停止。",
+      "configRemoved": "本机配置已删除。",
+      "remoteDone": "已吊销。这台电脑下次连上会退出。",
+      "shellMessage": "{{message}}",
+      "close": "关闭",
+      "jobs_one": "将取消 {{count}} 个进行中的任务",
+      "jobs_other": "将取消 {{count}} 个进行中的任务",
+      "locations_one": "{{count}} 个项目位置会失效",
+      "locations_other": "{{count}} 个项目位置会失效",
+      "cancelled_one": "已取消 {{count}} 个任务",
+      "cancelled_other": "已取消 {{count}} 个任务",
+      "paused_one": "已暂停 {{count}} 个编排",
+      "paused_other": "已暂停 {{count}} 个编排",
+      "shellCancelled_one": "本机还取消了 {{count}} 个任务",
+      "shellCancelled_other": "本机还取消了 {{count}} 个任务"
+    },
+    "revoked": {
+      "when": "断开于 {{time}}",
+      "delete": "删除记录",
+      "deleteTitle": "删除这台电脑的记录",
+      "deleteDescription": "只删除这条已断开的记录。历史里的名字还会保留。",
+      "deleteLocations": "这台电脑还有项目位置。确认后会一并移除这些项目位置。",
+      "confirm": "删除记录",
+      "deleted": "已删除记录",
+      "title_one": "已断开的电脑 {{count}}",
+      "title_other": "已断开的电脑 {{count}}"
+    }
+  },
+  "notifications": {
+    "title": "系统通知",
+    "toggle": "编排待验收或暂停时发系统通知",
+    "device": "只对这台设备生效。",
+    "supportDesktop": "由桌面应用显示系统通知",
+    "supportGranted": "浏览器已允许通知（页面不在前台时显示）",
+    "supportDenied": "浏览器拒绝了通知权限，请在浏览器设置里允许",
+    "supportUnsupported": "当前浏览器不支持系统通知",
+    "supportDefault": "需要浏览器授权",
+    "allow": "允许通知"
+  },
+  "projects": {
+    "aria": "项目设置",
+    "lead": "一个项目是一个代码仓库，加上它在各台电脑上的项目位置，以及编排时的默认做法。",
+    "loadFailed": "项目加载失败",
+    "empty": "还没有项目。",
+    "create": {
+      "form": "新建项目",
+      "name": "名称",
+      "namePlaceholder": "项目名称",
+      "submit": "新建项目"
+    },
+    "fields": {
+      "branch": "默认分支",
+      "engine": "默认引擎",
+      "parallel": "默认并行"
+    },
+    "archived": {
+      "restore": "取消归档",
+      "title_one": "已归档的项目 {{count}}",
+      "title_other": "已归档的项目 {{count}}"
+    },
+    "card": {
+      "name": "名称",
+      "archive": "归档",
+      "archiveTitle": "归档项目",
+      "archiveDescription": "归档后，这个项目不再用于新的编排。可以之后取消归档。",
+      "archiveConfirm": "归档",
+      "save": "保存",
+      "saved": "已保存",
+      "branchInvalid": "分支名不合法",
+      "parallelReason": "不能超过电脑「{{name}}」的并发上限 {{max}}",
+      "parallelReasonPlain": "不能超过并发上限 {{max}}",
+      "parallelOptionOver": "{{count}}（超过并发上限 {{max}}）"
+    },
+    "location": {
+      "title": "项目位置",
+      "computer": "电脑",
+      "path": "路径",
+      "pathPlaceholder": "这台电脑上的仓库绝对路径",
+      "disconnected": "电脑已断开",
+      "offline": "电脑离线，上线后自动验证",
+      "verify": "重新验证",
+      "remove": "移除",
+      "removeTitle": "移除项目位置",
+      "removeDescription": "移除后，用到这个项目位置的编排将不能继续。",
+      "add": "添加项目位置",
+      "verifying": "已交给这台电脑验证路径",
+      "noComputers": "先在「主控与电脑」里添加一台电脑。",
+      "replaceTitle": "替换项目位置",
+      "replaceDescription": "这台电脑上已有项目位置 {{path}}。确认后会改成新路径并重新验证。",
+      "replaceConfirm": "替换并验证",
+      "error": "{{status}}：{{error}}"
+    },
+    "topics": {
+      "title": "用于这些清单",
+      "pick": "选择清单",
+      "empty": "还没有清单",
+      "hint": "选中的清单用这个项目作为默认项目。",
+      "remove": "移除 {{name}}"
+    },
+    "unbound": {
+      "title": "清单与项目",
+      "lead": "这些清单还没有可用的项目。里面的任务不能开始编排。任务也可以单独指定项目。",
+      "empty": "每个清单都已指定项目。"
+    },
+    "bound": {
+      "title": "这些清单已属于别的项目",
+      "description": "确认后会改到当前项目。任务上单独指定的项目不会变。",
+      "confirm": "改为这个项目",
+      "item": "{{topic}} 当前属于 {{project}}"
     }
   }
 }

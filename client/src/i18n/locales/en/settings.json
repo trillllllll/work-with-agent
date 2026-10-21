@@ -406,8 +406,8 @@
         "lead": "The model service, image search, and interactive pages the assistant uses."
       },
       "local": {
-        "title": "Local execution",
-        "lead": "Local AI commands, plus orchestration executors, notifications, and projects."
+        "title": "Controller & computers",
+        "lead": "The controller, connected computers, worktrees, and notifications on this device."
       },
       "skills": {
         "title": "Skills",
@@ -424,6 +424,10 @@
       "about": {
         "title": "About",
         "lead": "Workspace mode and service version."
+      },
+      "projects": {
+        "title": "Projects",
+        "lead": "Repositories, project locations, and orchestration defaults."
       }
     },
     "groups": {
@@ -439,9 +443,6 @@
       "noModel": "No model configured",
       "imageSearchOn": "Image search on",
       "imageSearchOff": "Image search off",
-      "cli": "Codex {{codex}} · Claude {{claude}}",
-      "nodesOnline_one": "{{count}} executor online",
-      "nodesOnline_other": "{{count}} executors online",
       "skills_one": "{{count}} skill · {{enabled}} enabled",
       "skills_other": "{{count}} skills · {{enabled}} enabled",
       "bar": "Tab bar: {{items}}",
@@ -450,17 +451,251 @@
       "syncConflicts": "{{count}} sync conflicts",
       "separator": " · ",
       "listSeparator": ", ",
-      "loading": "…"
+      "loading": "…",
+      "online_one": "{{count}} computer online",
+      "online_other": "{{count}} computers online",
+      "offline_one": "{{count}} computer offline",
+      "offline_other": "{{count}} computers offline",
+      "projectCount_one": "{{count}} project",
+      "projectCount_other": "{{count}} projects",
+      "pendingLocations_one": "{{count}} project location to verify",
+      "pendingLocations_other": "{{count}} project locations to verify"
     },
     "worktreesEntry": {
       "title": "Worktrees",
-      "description": "View and clean up worktrees on your executors.",
+      "description": "View and clean up worktrees on your computers.",
       "manage": "Manage worktrees →"
     },
     "skillsSummary": {
       "stats_one": "{{count}} skill, {{enabled}} enabled.",
       "stats_other": "{{count}} skills, {{enabled}} enabled.",
       "loadFailed": "Could not load skill stats"
+    }
+  },
+  "computers": {
+    "aria": "Controller and computers settings",
+    "lead": "The controller assigns work, reads reports, and accepts results. Computers run Codex / Claude locally. The server never sees your files.",
+    "loadFailed": "Could not load computers",
+    "list": {
+      "add": "Add computer",
+      "empty": "No computers yet. Add one and it will connect here to pick up work.",
+      "title_one": "{{count}} computer",
+      "title_other": "{{count}} computers"
+    },
+    "controller": {
+      "title": "Controller",
+      "address": "Address",
+      "mode": "Mode",
+      "modeLocal": "Local workspace",
+      "modeServer": "Server",
+      "version": "Version",
+      "model": "Planning model",
+      "modelMissing": "Not configured",
+      "modelLink": "Change in Models & AI",
+      "commands": "AI commands on the controller",
+      "commandsNote": "Used only for recurring reviews and handoffs",
+      "serverPaths": "The paths below are on the server"
+    },
+    "card": {
+      "thisComputer": "This computer",
+      "online": "Online",
+      "offline": "Offline · {{time}}",
+      "never": "Not connected yet",
+      "snapshot": "This is a snapshot from the last report.",
+      "snapshotMark": "Last report",
+      "notReported": "Not reported yet",
+      "platform": "Platform",
+      "nodeVersion": "Version",
+      "unknown": "Unknown",
+      "managedDesktop": "Hosted by the desktop app",
+      "managedCli": "Started from the command line",
+      "managedUnknown": "Host unknown",
+      "providers": "AI commands",
+      "reported": "Reported by this computer",
+      "noProvider": "No engine available",
+      "roots": "Allowed directories",
+      "noRoots": "No allowed directories",
+      "rootSep": ", ",
+      "concurrency": "Concurrency",
+      "concurrencyHint": "Up to {{max}} at once. A round can use fewer.",
+      "concurrencyUnknown": "Concurrency has not been reported",
+      "disk": "Disk",
+      "diskLow": "Leasing pauses when free space is under 2 GB.",
+      "diskUnknown": "Unknown",
+      "gh": "gh",
+      "ghYes": "Available",
+      "ghNo": "Unavailable",
+      "locations": "Project locations",
+      "noLocations": "No project locations",
+      "locationOffline": "The computer is offline. Verification runs when it is back.",
+      "log": "Log",
+      "noLog": "No log path",
+      "copy": "Copy",
+      "copied": "Copied",
+      "copyFailed": "Could not copy",
+      "lastError": "Latest error",
+      "noError": "No error",
+      "token": "Token",
+      "tokenCreated": "Created {{time}}",
+      "rename": "Rename",
+      "regenerate": "Regenerate connection command",
+      "disconnect": "Disconnect this computer",
+      "modify": "Change on this computer…",
+      "revoke": "Revoke",
+      "remoteNote": "Allowed directories and concurrency are changed in that computer's config.json or command-line arguments.",
+      "oldVersion": "This computer did not report a version. After you disconnect it, stop the process on that computer yourself.",
+      "jobs_one": "{{count}} task running",
+      "jobs_other": "{{count}} tasks running"
+    },
+    "rename": {
+      "title": "Rename computer",
+      "name": "Name",
+      "save": "Save",
+      "saved": "Renamed"
+    },
+    "add": {
+      "title": "Add computer",
+      "regenerateTitle": "Connection command",
+      "name": "Name",
+      "namePlaceholder": "For example: My laptop",
+      "create": "Create connection command",
+      "once": "The token is shown only once. After you close this, you can regenerate the command.",
+      "commandHint": "Run the command below on that computer. Allowed directories can be changed only there.",
+      "copy": "Copy command",
+      "copied": "Copied",
+      "start": "Start on this computer",
+      "pairOk": "Started on this computer",
+      "pairFailed": "Could not start: {{message}}",
+      "pairTimeout": "This computer has not reported a start result yet"
+    },
+    "reissue": {
+      "title": "Issue a new token",
+      "regenerate": "The old token stops working immediately, the running process exits, and in-progress tasks are cancelled. The new command is shown only once.",
+      "modify": "A new token will be issued. The old token stops working immediately, in-progress tasks are cancelled, and the old process exits. Concurrency stays at 2. This computer then asks for allowed directories and starts again.",
+      "confirm": "Issue new token"
+    },
+    "disconnect": {
+      "titleLocal": "Disconnect this computer",
+      "titleRemote": "Revoke this computer",
+      "confirmLocal": "Disconnect this computer",
+      "confirmRemote": "Revoke",
+      "localIntro": "This stops the process on this computer, deletes the local configuration (server, token, and allowed directories), and revokes the token.",
+      "remoteIntro": "A remote computer cannot be stopped from here. After you revoke it, the next time it connects it is told to exit. An old version has to be stopped on that computer.",
+      "pauseNote": "Running orchestrations that use this computer pause. To continue, dispatch again and choose another computer.",
+      "worktrees": "Worktrees are not cleaned up here.",
+      "worktreesLink": "Open worktree management",
+      "resultTitle": "Disconnect result",
+      "notStopped": "The token is revoked. This computer has not confirmed that the process stopped.",
+      "retry": "Try again",
+      "stopped": "The local process has stopped.",
+      "configRemoved": "The local configuration was removed.",
+      "remoteDone": "Revoked. This computer exits the next time it connects.",
+      "shellMessage": "{{message}}",
+      "close": "Close",
+      "jobs_one": "{{count}} in-progress task will be cancelled",
+      "jobs_other": "{{count}} in-progress tasks will be cancelled",
+      "locations_one": "{{count}} project location will stop working",
+      "locations_other": "{{count}} project locations will stop working",
+      "cancelled_one": "{{count}} task cancelled",
+      "cancelled_other": "{{count}} tasks cancelled",
+      "paused_one": "{{count}} orchestration paused",
+      "paused_other": "{{count}} orchestrations paused",
+      "shellCancelled_one": "This computer also cancelled {{count}} task",
+      "shellCancelled_other": "This computer also cancelled {{count}} tasks"
+    },
+    "revoked": {
+      "when": "Disconnected {{time}}",
+      "delete": "Delete record",
+      "deleteTitle": "Delete this computer record",
+      "deleteDescription": "This deletes the disconnected record only. The name stays in history.",
+      "deleteLocations": "This computer still has project locations. Confirming removes those locations too.",
+      "confirm": "Delete record",
+      "deleted": "Record deleted",
+      "title_one": "{{count}} disconnected computer",
+      "title_other": "{{count}} disconnected computers"
+    }
+  },
+  "notifications": {
+    "title": "System notifications",
+    "toggle": "Notify when an orchestration is awaiting acceptance or paused",
+    "device": "Applies only on this device.",
+    "supportDesktop": "The desktop app shows system notifications",
+    "supportGranted": "The browser allows notifications (shown when this page is in the background)",
+    "supportDenied": "The browser denied notification permission. Allow it in the browser settings.",
+    "supportUnsupported": "This browser does not support system notifications",
+    "supportDefault": "Needs browser permission",
+    "allow": "Allow notifications"
+  },
+  "projects": {
+    "aria": "Project settings",
+    "lead": "A project is one repository, its locations on each computer, and the defaults used when orchestrating.",
+    "loadFailed": "Could not load projects",
+    "empty": "No projects yet.",
+    "create": {
+      "form": "New project",
+      "name": "Name",
+      "namePlaceholder": "Project name",
+      "submit": "Create project"
+    },
+    "fields": {
+      "branch": "Default branch",
+      "engine": "Default engine",
+      "parallel": "Default parallelism"
+    },
+    "archived": {
+      "restore": "Unarchive",
+      "title_one": "{{count}} archived project",
+      "title_other": "{{count}} archived projects"
+    },
+    "card": {
+      "name": "Name",
+      "archive": "Archive",
+      "archiveTitle": "Archive project",
+      "archiveDescription": "After archiving, this project is not used for new orchestrations. You can unarchive it later.",
+      "archiveConfirm": "Archive",
+      "save": "Save",
+      "saved": "Saved",
+      "branchInvalid": "That branch name is not valid",
+      "parallelReason": "Cannot exceed the concurrency limit of {{max}} on computer \"{{name}}\"",
+      "parallelReasonPlain": "Cannot exceed the concurrency limit of {{max}}",
+      "parallelOptionOver": "{{count}} (over the limit of {{max}})"
+    },
+    "location": {
+      "title": "Project locations",
+      "computer": "Computer",
+      "path": "Path",
+      "pathPlaceholder": "Absolute repository path on this computer",
+      "disconnected": "Computer disconnected",
+      "offline": "The computer is offline. Verification runs when it is back.",
+      "verify": "Verify again",
+      "remove": "Remove",
+      "removeTitle": "Remove project location",
+      "removeDescription": "After removal, an orchestration that uses this location cannot continue.",
+      "add": "Add project location",
+      "verifying": "Sent to this computer to verify the path",
+      "noComputers": "Add a computer under Controller & computers first.",
+      "replaceTitle": "Replace project location",
+      "replaceDescription": "This computer already has project location {{path}}. Confirming changes it to the new path and verifies again.",
+      "replaceConfirm": "Replace and verify",
+      "error": "{{status}}: {{error}}"
+    },
+    "topics": {
+      "title": "Used by these lists",
+      "pick": "Choose lists",
+      "empty": "No lists yet",
+      "hint": "Selected lists use this project as their default.",
+      "remove": "Remove {{name}}"
+    },
+    "unbound": {
+      "title": "Lists and projects",
+      "lead": "These lists do not have a usable project. Tasks in them cannot start an orchestration. A task can also name a project on its own.",
+      "empty": "Every list has a project."
+    },
+    "bound": {
+      "title": "These lists already belong to another project",
+      "description": "Confirming moves them to this project. A project set on a task is left as it is.",
+      "confirm": "Use this project",
+      "item": "{{topic}} currently belongs to {{project}}"
     }
   }
 }

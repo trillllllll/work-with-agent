@@ -50,8 +50,8 @@ export async function systemNotify(title: string, body: string, tag?: string) {
 }
 
 /** Desktop only: hand a freshly issued node token to the shell, which asks for the code folder and starts wwa-node. */
-export function pairNodeOnThisComputer(server: string, token: string) {
-  const params = new URLSearchParams({ server, token });
+export function pairNodeOnThisComputer(server: string, token: string, nodeId: string) {
+  const params = new URLSearchParams({ server, token, node: nodeId });
   window.location.assign(`/wwa-node-pair?${params.toString()}`);
 }
 export function stopNodeOnThisComputer() { window.location.assign('/wwa-node-unpair'); }

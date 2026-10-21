@@ -28,6 +28,14 @@ describe('settings categories', () => {
     expect(parseSettingsCategory('nope')).toBeNull();
   });
 
+  it('keeps the local category and lists projects first in the workspace group', () => {
+    expect(SETTINGS_CATEGORY_DEFS.find((item) => item.id === 'local')?.sections).toEqual(['computers', 'worktrees', 'notifications']);
+    expect(SETTINGS_CATEGORY_DEFS.find((item) => item.id === 'projects')?.sections).toEqual(['projects']);
+    expect(SETTINGS_CATEGORY_DEFS.filter((item) => item.group === 'workspace').map((item) => item.id)[0]).toBe('projects');
+    expect(SETTINGS_SECTIONS).not.toContain('cli');
+    expect(SETTINGS_SECTIONS).not.toContain('orchestration');
+  });
+
   it('has a title and lead in both languages for every category', () => {
     for (const language of ['zh-CN', 'en']) {
       const messages = locale(language);

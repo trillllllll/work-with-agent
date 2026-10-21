@@ -6,14 +6,16 @@ import { api } from '@/lib/api.js';
 import { intlLocale, t as translate } from '@/i18n/index.js';
 import { Button } from '@/components/ui/button.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.js';
 import { Textarea } from '@/components/ui/textarea.js';
+import { engineLabel, parallelCapForNodes, unavailableEngine, type ProviderReport } from '@/components/settings/runner/logic.js';
 import { orchestrationStatusLabels, pauseReasonLabels, stepKindLabels, stepStatusLabels } from './labels.js';
 import { formatCost, formatDiff, formatDuration, formatMissing, formatTokens, jobDurationMs, readJobChecks } from './format.js';
 
 type Step = { id: string; kind: string; subtaskId: string | null; nodeId?: string | null; status: string; attempt: number; continueCount: number; branch: string | null; error: string | null; mergeCommit: string | null; resultCommit: string | null; dependsOn: string[] };
 type OrchestrationJob = { id: string; stepId: string | null; kind: string; phase: string; createdAt: string; startedAt: string | null; endedAt: string | null; model: string | null; inputTokens: number | null; outputTokens: number | null; costMicroUsd: number | null; filesChanged: number | null; linesAdded: number | null; linesDeleted: number | null; result?: unknown };
 type PlanStep = { taskId: string; dependsOn: string[]; acceptanceCriteria: string; rationale: string };
-type Orchestration = { id: string; taskId: string; round: number; status: string; revision: number; integrationBranch: string; integrationHead: string | null; pauseReason: string | null; finalComment: string | null; acceptanceNote?: string | null; rejectionReason?: string | null; rejectedAt?: string | null; priorSummary?: string | null; pushedAt: string | null; pullRequestUrl?: string | null; nodeId?: string | null; nodes?: Array<{ id: string; name: string; online: boolean; primary: boolean; gh: boolean }>; grant: { provider: string; maxParallel: number; allowShell: boolean }; plan: { goalCriteria: string; steps: PlanStep[]; fallback?: string }; taskSnapshot: { subtasks: Array<{ id: string; title: string }> }; steps?: Step[]; jobs?: OrchestrationJob[]; locations?: Array<{ id: string; nodeId: string; nodeName: string; online: boolean; path: string; originUrl?: string | null; protocol?: number }>; node?: { name: string; online: boolean } | null; events?: Array<{ seq: number; type: string; actorKind: string; createdAt: string; payload: any }> };
+type Orchestration = { id: string; taskId: string; round: number; status: string; revision: number; integrationBranch: string; integrationHead: string | null; pauseReason: string | null; finalComment: string | null; acceptanceNote?: string | null; rejectionReason?: string | null; rejectedAt?: string | null; priorSummary?: string | null; pushedAt: string | null; pullRequestUrl?: string | null; nodeId?: string | null; nodes?: Array<{ id: string; name: string; online: boolean; primary: boolean; gh: boolean }>; grant: { provider: string; maxParallel: number; allowShell: boolean }; plan: { goalCriteria: string; steps: PlanStep[]; fallback?: string }; taskSnapshot: { subtasks: Array<{ id: string; title: string }> }; steps?: Step[]; jobs?: OrchestrationJob[]; locations?: Array<{ id: string; nodeId: string; nodeName: string; online: boolean; path: string; originUrl?: string | null; protocol?: number; providers?: ProviderReport[] }>; node?: { name: string; online: boolean } | null; events?: Array<{ seq: number; type: string; actorKind: string; createdAt: string; payload: any }> };
 
 function insideVerdictDialog(event: { target: EventTarget | null; detail?: { originalEvent?: Event } }) {
   const target = event.target instanceof Element ? event.target : event.detail?.originalEvent?.target;
@@ -90,9 +92,14 @@ function LaunchForm({ draft, taskId, onStarted }: { draft: Orchestration; taskId
   const [maxParallel, setMaxParallel] = useState(draft.grant.maxParallel);
   const [allowShell, setAllowShell] = useState(draft.grant.allowShell);
   const [extra, setExtra] = useState<string[]>([]);
+  const nodes = useQuery({ queryKey: ['nodes'], queryFn: () => api<Array<{ id: string; capabilities?: { maxConcurrent?: number | null } | null }>>('/api/nodes') });
   const primary = draft.locations?.find((location) => location.id === locationId);
   const others = (draft.locations ?? []).filter((location) => location.id !== locationId);
   const extraIds = extra.filter((id) => others.some((location) => location.id === id));
+  const chosen = [primary, ...others.filter((location) => extraIds.includes(location.id))].filter((location): location is NonNullable<typeof primary> => !!location);
+  const cap = parallelCapForNodes(chosen.map((location) => location.nodeId), nodes.data);
+  useEffect(() => { if (cap >= 1 && maxParallel > cap) setMaxParallel(cap); }, [cap, maxParallel]);
+  const blocked = unavailableEngine(chosen.map((location) => ({ name: location.nodeName, providers: location.providers })), provider);
   const start = useMutation({ mutationFn: () => api(`/api/orchestrations/${draft.id}/start`, { method: 'POST', body: JSON.stringify({ expectedRevision: draft.revision, locationId, extraLocationIds: extraIds, provider, maxParallel, allowShell }) }), onSuccess: () => { toast.success(t('panel.started')); onStarted(); }, onError: (error) => toast.error(error.message) });
   void taskId;
   return <div className="space-y-4 text-sm">
@@ -111,12 +118,18 @@ function LaunchForm({ draft, taskId, onStarted }: { draft: Orchestration; taskId
         {others.map((location) => { const usable = (location.protocol ?? 0) >= 2 && !!location.originUrl && !!primary?.originUrl; return <label key={location.id} className="flex items-center gap-2 text-xs"><input type="checkbox" disabled={!usable} checked={extraIds.includes(location.id)} onChange={(event) => setExtra(event.target.checked ? [...extraIds, location.id] : extraIds.filter((id) => id !== location.id))} /><span>{location.nodeName}{location.online ? '' : t('panel.offlineMark')} · {location.path}</span>{!usable && <span className="text-muted-foreground">{(location.protocol ?? 0) < 2 ? t('panel.nodeOutdated') : t('panel.noOrigin')}</span>}</label>; })}
         <p className="text-xs text-muted-foreground">{t('panel.crossHint')}</p>
       </fieldset>}
-      <label className="flex items-center gap-2"><span className="w-24 text-muted-foreground">{t('panel.localAi')}</span><select className="rounded border bg-background px-2 py-1" value={provider} onChange={(event) => setProvider(event.target.value)}><option value="codex">Codex</option><option value="claude">Claude</option></select></label>
-      <label className="flex items-center gap-2"><span className="w-24 text-muted-foreground">{t('panel.maxParallel')}</span><input type="number" min={1} max={4} className="w-20 rounded border bg-background px-2 py-1" value={maxParallel} onChange={(event) => setMaxParallel(Math.max(1, Math.min(4, Number(event.target.value) || 1)))} /></label>
+      <div className="flex flex-wrap items-center gap-2"><span className="w-24 text-muted-foreground">{t('panel.localAi')}</span>
+        <Select value={provider} onValueChange={setProvider}><SelectTrigger aria-label={t('panel.localAi')}><SelectValue /></SelectTrigger><SelectContent>{(['codex', 'claude'] as const).map((engine) => { const missing = unavailableEngine(chosen.map((location) => ({ name: location.nodeName, providers: location.providers })), engine); return <SelectItem key={engine} value={engine} disabled={!!missing}>{missing ? t('panel.providerUnavailable', { name: missing, provider: engineLabel(engine) }) : engineLabel(engine)}</SelectItem>; })}</SelectContent></Select>
+      </div>
+      {blocked && <p className="text-xs text-muted-foreground">{t('panel.providerUnavailable', { name: blocked, provider: engineLabel(provider) })}</p>}
+      <div className="flex flex-wrap items-center gap-2"><span className="w-24 text-muted-foreground">{t('panel.maxParallel')}</span>
+        <Select value={String(maxParallel)} onValueChange={(value) => setMaxParallel(Number(value))}><SelectTrigger aria-label={t('panel.maxParallel')}><SelectValue /></SelectTrigger><SelectContent>{[1, 2, 3, 4].map((value) => <SelectItem key={value} value={String(value)} disabled={value > cap}>{value > cap ? `${value}${t('panel.parallelOver', { max: cap })}` : String(value)}</SelectItem>)}</SelectContent></Select>
+      </div>
+      {cap < 4 && <p className="text-xs text-muted-foreground">{t('panel.parallelOver', { max: cap })}</p>}
       <label className="flex items-center gap-2"><input type="checkbox" checked={allowShell} onChange={(event) => setAllowShell(event.target.checked)} /><span>{t('panel.allowShell')}</span></label>
       <p className="text-xs text-muted-foreground">{t('panel.grantHint', { branch: draft.integrationBranch })}</p>
     </section>
-    <Button disabled={!locationId || start.isPending} onClick={() => start.mutate()}>{start.isPending ? t('panel.starting') : t('panel.confirmStart')}</Button>
+    <Button disabled={!locationId || start.isPending || !!blocked || cap < 1 || maxParallel > cap} onClick={() => start.mutate()}>{start.isPending ? t('panel.starting') : t('panel.confirmStart')}</Button>
   </div>;
 }
 
@@ -159,7 +172,7 @@ function Progress({ row, onRedispatch }: { row: Orchestration; onRedispatch: (dr
     </li>)}</ul>
     <div className="flex flex-wrap gap-2">
       {row.status === 'running' && <Button size="sm" variant="outline" onClick={() => act.mutate({ path: 'pause' })}>{t('panel.pause')}</Button>}
-      {row.status === 'paused' && <Button size="sm" variant="outline" onClick={() => act.mutate({ path: 'resume' })}>{t('panel.resume')}</Button>}
+      {row.status === 'paused' && row.pauseReason !== 'computer_offline' && <Button size="sm" variant="outline" onClick={() => act.mutate({ path: 'resume' })}>{t('panel.resume')}</Button>}
       {row.status === 'awaiting_acceptance' && <Button size="sm" data-testid="orchestration-accept" onClick={() => { setNote(''); setAcceptOpen(true); }}>{t('panel.acceptWithNote')}</Button>}
       {row.status === 'awaiting_acceptance' && <Button size="sm" variant="outline" data-testid="orchestration-reject" onClick={() => { setReason(''); setRejectOpen(true); }}>{t('panel.reject')}</Button>}
       {['accepted', 'awaiting_acceptance'].includes(row.status) && <Button size="sm" variant="outline" onClick={() => act.mutate({ path: 'push' })}>{row.pushedAt ? t('panel.pushAgain') : t('panel.push')}</Button>}

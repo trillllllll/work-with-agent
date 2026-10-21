@@ -1,18 +1,19 @@
 import type { ComponentType } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { Database, Info, MonitorSmartphone, Sparkles, SquareTerminal, Zap, type LucideIcon } from 'lucide-react';
+import { Database, FolderKanban, Info, MonitorSmartphone, Server, Sparkles, Zap, type LucideIcon } from 'lucide-react';
 import { api, type Settings, type View } from '@/lib/api.js';
 import { MOBILE_NAVIGATION_LABELS, type MobileNavigationSettings as MobileNavigationPayload } from '@/lib/mobile-navigation.js';
 import { mobileNavigationKey } from '@/hooks/useMobileNavigation.js';
 import { currentLanguage, intlLocale } from '@/i18n/index.js';
-import { OrchestrationSettings } from '@/components/orchestration/OrchestrationSettings.js';
 import type { SettingsCategory, SettingsSectionId } from './settings-categories.js';
 import { ModelSettings, useSettingsQuery } from './ModelSettings.js';
 import { ImageSearchSettings } from './ImageSearchSettings.js';
 import { HtmlBlockSettings } from './HtmlBlockSettings.js';
-import { CliCommands } from './CliCommands.js';
 import { WorktreesEntry } from './WorktreesEntry.js';
+import { ComputersSettings } from './runner/ComputersSettings.js';
+import { NotificationsSection } from './runner/NotificationsSection.js';
+import { ProjectsSettings } from './runner/ProjectsSettings.js';
 import { SkillsSummary, skillCounts, skillsQueryOptions } from './SkillsSummary.js';
 import { LanguageSettings } from './LanguageSettings.js';
 import { MobileNavigationSettings } from './MobileNavigationSettings.js';
@@ -27,10 +28,11 @@ export const SETTINGS_SECTION_COMPONENTS: Record<SettingsSectionId, ComponentTyp
   model: ModelSettings,
   'image-search': ImageSearchSettings,
   'html-blocks': HtmlBlockSettings,
-  cli: CliCommands,
-  orchestration: OrchestrationSettings,
+  computers: ComputersSettings,
   worktrees: ({ onNavigate }) => <WorktreesEntry onOpenWorktrees={() => onNavigate('worktrees')} />,
+  notifications: NotificationsSection,
   skills: ({ onNavigate }) => <SkillsSummary onOpenSkills={() => onNavigate('skills')} />,
+  projects: ProjectsSettings,
   language: LanguageSettings,
   'mobile-navigation': MobileNavigationSettings,
   backup: BackupSettings,
@@ -40,8 +42,9 @@ export const SETTINGS_SECTION_COMPONENTS: Record<SettingsSectionId, ComponentTyp
 
 export const SETTINGS_CATEGORY_ICONS: Record<SettingsCategory, LucideIcon> = {
   model: Sparkles,
-  local: SquareTerminal,
+  local: Server,
   skills: Zap,
+  projects: FolderKanban,
   ui: MonitorSmartphone,
   data: Database,
   about: Info,
@@ -49,6 +52,7 @@ export const SETTINGS_CATEGORY_ICONS: Record<SettingsCategory, LucideIcon> = {
 
 type ImageSearchState = { configured: boolean };
 type NodeRow = { status: string; online: boolean };
+type ProjectHint = { locations?: Array<{ status: string }> };
 
 /** One-line status shown under each category name. Reuses the query keys of the sections themselves. */
 export function useSettingsCategoryHints(): Record<SettingsCategory, string> {
@@ -56,6 +60,7 @@ export function useSettingsCategoryHints(): Record<SettingsCategory, string> {
   const settings = useSettingsQuery();
   const imageSearch = useQuery({ queryKey: ['image-search-settings'], queryFn: () => api<ImageSearchState>('/api/settings/image-search') });
   const nodes = useQuery({ queryKey: ['nodes'], queryFn: () => api<NodeRow[]>('/api/nodes') });
+  const projects = useQuery({ queryKey: ['projects'], queryFn: () => api<ProjectHint[]>('/api/projects') });
   const skills = useQuery(skillsQueryOptions);
   const navigation = useQuery<MobileNavigationPayload>({ queryKey: mobileNavigationKey, queryFn: ({ signal }) => api<MobileNavigationPayload>('/api/settings/mobile-navigation', { signal }) });
   const snapshots = useQuery(snapshotsQueryOptions);
@@ -67,8 +72,10 @@ export function useSettingsCategoryHints(): Record<SettingsCategory, string> {
 
   const data: Settings | undefined = settings.data;
   const configured = Boolean(data?.model && data?.baseUrl && data?.apiKeyConfigured);
-  const source = (item?: { source?: string }) => item?.source === 'manual' ? t('cli.sourceManual') : item?.source === 'auto' ? t('cli.sourceAuto') : t('cli.sourceNone');
-  const online = (nodes.data ?? []).filter((node) => node.status === 'active' && node.online).length;
+  const activeNodes = (nodes.data ?? []).filter((node) => node.status === 'active');
+  const online = activeNodes.filter((node) => node.online).length;
+  const offline = activeNodes.length - online;
+  const pendingLocations = (projects.data ?? []).reduce((sum, project) => sum + (project.locations ?? []).filter((location) => location.status === 'pending').length, 0);
   const latest = (snapshots.data ?? []).map((item) => item.createdAt).sort().pop();
   const time = latest ? new Intl.DateTimeFormat(intlLocale(), { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(latest)) : null;
 
@@ -77,11 +84,9 @@ export function useSettingsCategoryHints(): Record<SettingsCategory, string> {
       data ? (configured ? data.model : t('layout.hints.noModel')) : null,
       imageSearch.data ? (imageSearch.data.configured ? t('layout.hints.imageSearchOn') : t('layout.hints.imageSearchOff')) : null,
     ]),
-    local: join([
-      data ? t('layout.hints.cli', { codex: source(data.cli?.codex), claude: source(data.cli?.claude) }) : null,
-      online > 0 && t('layout.hints.nodesOnline', { count: online }),
-    ]),
+    local: nodes.data ? join([t('layout.hints.online', { count: online }), t('layout.hints.offline', { count: offline })]) : loading,
     skills: skills.data ? t('layout.hints.skills', skillCounts(skills.data)) : loading,
+    projects: projects.data ? join([t('layout.hints.projectCount', { count: projects.data.length }), t('layout.hints.pendingLocations', { count: pendingLocations })]) : loading,
     ui: join([
       t(`language.options.${currentLanguage()}`),
       navigation.data && t('layout.hints.bar', { items: navigation.data.visibleViews.map((view) => MOBILE_NAVIGATION_LABELS[view]).filter(Boolean).join(t('layout.hints.listSeparator')) }),

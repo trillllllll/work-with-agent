@@ -65,7 +65,7 @@ test('手机宽度从更多页点设置后看到分类列表', async ({ page }) 
   const dialog = page.getByRole('dialog', { name: '设置' });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByTestId('settings-category-list')).toBeVisible();
-  for (const name of ['模型与 AI', '本机执行', '技能', '界面', '数据', '关于', '回收站', '变更历史']) {
+  for (const name of ['模型与 AI', '主控与电脑', '技能', '项目', '界面', '数据', '关于', '回收站', '变更历史']) {
     await expect(dialog.getByRole('button', { name, exact: true })).toBeVisible();
   }
   await expect(page).toHaveURL(/#\/settings$/);

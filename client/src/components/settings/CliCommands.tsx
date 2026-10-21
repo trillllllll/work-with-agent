@@ -10,15 +10,16 @@ import { SettingsLoadError, useSettingsQuery } from './ModelSettings.js';
 
 export const cliNames = { codex: 'Codex', claude: 'Claude Code' } as const;
 
-export function CliCommands() {
+export function CliCommands({ embedded = false }: { embedded?: boolean }) {
   const settingsQuery = useSettingsQuery();
   const { t } = useTranslation('settings');
-  if (settingsQuery.isLoading) return <section aria-labelledby="settings-cli-title" aria-busy="true"><h3 id="settings-cli-title" className="text-lg font-semibold">{t('cli.title')}</h3><Skeleton className="mt-4 h-24 w-full" /></section>;
-  if (settingsQuery.isError) return <section aria-labelledby="settings-cli-title"><h3 id="settings-cli-title" className="text-lg font-semibold">{t('cli.title')}</h3><SettingsLoadError error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} /></section>;
-  return <CliCommandForms settings={settingsQuery.data} />;
+  const labelled = embedded ? { 'aria-label': t('cli.title') } : { 'aria-labelledby': 'settings-cli-title' };
+  if (settingsQuery.isLoading) return <section {...labelled} aria-busy="true">{!embedded && <h3 id="settings-cli-title" className="text-lg font-semibold">{t('cli.title')}</h3>}<Skeleton className="mt-4 h-24 w-full" /></section>;
+  if (settingsQuery.isError) return <section {...labelled}>{!embedded && <h3 id="settings-cli-title" className="text-lg font-semibold">{t('cli.title')}</h3>}<SettingsLoadError error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} /></section>;
+  return <CliCommandForms settings={settingsQuery.data} embedded={embedded} />;
 }
 
-function CliCommandForms({ settings }: { settings?: Settings }) {
+function CliCommandForms({ settings, embedded = false }: { settings?: Settings; embedded?: boolean }) {
   const { t } = useTranslation('settings');
   const queryClient = useQueryClient();
   const [drafts, setDrafts] = useState({ codex: '', claude: '' });
@@ -45,9 +46,11 @@ function CliCommandForms({ settings }: { settings?: Settings }) {
     onError: (error: Error) => setNotice(error.message),
   });
   return (
-    <section aria-labelledby="settings-cli-title">
-      <h3 id="settings-cli-title" className="text-lg font-semibold">{t('cli.title')}</h3>
-      <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{t('cli.description')}</p>
+    <section aria-label={embedded ? t('cli.title') : undefined} aria-labelledby={embedded ? undefined : 'settings-cli-title'}>
+      {!embedded && <>
+        <h3 id="settings-cli-title" className="text-lg font-semibold">{t('cli.title')}</h3>
+        <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{t('cli.description')}</p>
+      </>}
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Button type="button" variant="outline" disabled={discover.isPending} onClick={() => discover.mutate()}>{discover.isPending ? t('cli.checking') : t('cli.autoCheck')}</Button>
         {notice && <p className="text-xs text-muted-foreground">{notice}</p>}

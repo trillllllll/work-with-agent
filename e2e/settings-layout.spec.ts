@@ -60,7 +60,7 @@ test.describe('桌面', () => {
   test('头部只有一行：标签、AI 助手和关闭', async ({ page }) => {
     await page.goto('/#/settings/local');
     const dialog = page.getByRole('dialog', { name: '设置' });
-    await expect(dialog.getByRole('region', { name: '主控编排设置' })).toBeVisible();
+    await expect(dialog.getByRole('region', { name: '主控与电脑设置' })).toBeVisible();
     const tabs = dialog.getByRole('navigation', { name: '工作区设置导航' });
     const assistant = dialog.getByRole('button', { name: 'AI 助手', exact: true });
     const close = dialog.getByRole('button', { name: '关闭', exact: true });
@@ -71,7 +71,7 @@ test.describe('桌面', () => {
     const header = await dialog.locator('header').first().boundingBox();
     expect(header!.height).toBeLessThan(72);
     await screenshot(page, 'desktop-local');
-    await dialog.getByRole('region', { name: '主控编排设置' }).scrollIntoViewIfNeeded();
+    await dialog.getByRole('region', { name: '主控与电脑设置' }).scrollIntoViewIfNeeded();
     await screenshot(page, 'desktop-local-orchestration');
 
     await tabs.getByRole('button', { name: '回收站', exact: true }).click();
@@ -83,13 +83,16 @@ test.describe('桌面', () => {
 
   test('编排设置使用 WWA 的下拉和开关组件', async ({ page }) => {
     await page.goto('/#/settings/local');
-    const section = page.getByRole('region', { name: '主控编排设置' });
+    const dialog = page.getByRole('dialog', { name: '设置' });
+    const section = dialog.getByRole('region', { name: '主控与电脑设置' });
     await expect(section).toBeVisible();
     // Radix 只留一个 aria-hidden 的原生 select 给表单用，页面上没有可见的原生控件。
     await expect(section.locator('select:not([aria-hidden="true"]), input[type=checkbox]:not([aria-hidden="true"])')).toHaveCount(0);
-    const notify = section.getByRole('switch', { name: '编排待验收或暂停时发系统通知' });
+    const notify = dialog.getByRole('switch', { name: '编排待验收或暂停时发系统通知' });
     await expect(notify).toBeVisible();
-    const provider = section.getByRole('combobox', { name: '默认 AI' });
+    await page.goto('/#/settings/projects');
+    const form = page.getByRole('dialog', { name: '设置' }).getByRole('region', { name: '项目设置' }).getByRole('form', { name: '新建项目' });
+    const provider = form.getByRole('combobox', { name: '默认引擎' });
     await expect(provider).toHaveText(/Codex/);
     await provider.click();
     await page.getByRole('option', { name: 'Claude' }).click();

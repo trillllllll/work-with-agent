@@ -3,10 +3,10 @@
  * settings block: append its section id to the right category here and map the id to a component
  * in `settings-registry.tsx`. Keep it free of React so the routing helpers stay unit-testable.
  */
-export const SETTINGS_CATEGORIES = ['model', 'local', 'skills', 'ui', 'data', 'about'] as const;
+export const SETTINGS_CATEGORIES = ['model', 'local', 'skills', 'projects', 'ui', 'data', 'about'] as const;
 export type SettingsCategory = (typeof SETTINGS_CATEGORIES)[number];
 
-export const SETTINGS_SECTIONS = ['model', 'image-search', 'html-blocks', 'cli', 'orchestration', 'worktrees', 'skills', 'language', 'mobile-navigation', 'backup', 'sync', 'server'] as const;
+export const SETTINGS_SECTIONS = ['model', 'image-search', 'html-blocks', 'computers', 'worktrees', 'notifications', 'skills', 'projects', 'language', 'mobile-navigation', 'backup', 'sync', 'server'] as const;
 export type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number];
 
 export type SettingsGroup = 'ai' | 'workspace';
@@ -20,8 +20,9 @@ export type SettingsCategoryDef = {
 
 export const SETTINGS_CATEGORY_DEFS: readonly SettingsCategoryDef[] = [
   { id: 'model', group: 'ai', sections: ['model', 'image-search', 'html-blocks'] },
-  { id: 'local', group: 'ai', sections: ['cli', 'orchestration', 'worktrees'] },
+  { id: 'local', group: 'ai', sections: ['computers', 'worktrees', 'notifications'] },
   { id: 'skills', group: 'ai', sections: ['skills'] },
+  { id: 'projects', group: 'workspace', sections: ['projects'] },
   { id: 'ui', group: 'workspace', sections: ['language', 'mobile-navigation'] },
   { id: 'data', group: 'workspace', sections: ['backup', 'sync'] },
   { id: 'about', group: 'workspace', sections: ['server'] },

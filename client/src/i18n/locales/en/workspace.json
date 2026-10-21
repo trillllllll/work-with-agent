@@ -380,7 +380,7 @@
       "noCost": "{{n}} more steps did not report a cost",
       "diff": "Changes",
       "failures": "Failure reasons",
-      "byNode": "By executor",
+      "byNode": "By computer",
       "byProvider": "By CLI",
       "byModel": "By model",
       "column": "Name",

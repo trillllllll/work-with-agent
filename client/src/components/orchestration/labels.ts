@@ -10,7 +10,7 @@ export const orchestrationStatusLabels = labels('status', ['draft', 'running', '
 export const stepStatusLabels = labels('stepStatus', ['pending', 'queued', 'dispatched', 'reverify', 'verifying', 'retry_wait', 'needs_user', 'succeeded', 'skipped', 'failed']);
 export const stepKindLabels = labels('stepKind', ['setup', 'develop', 'merge', 'final', 'push', 'publish', 'pull_request']);
 export const pauseReasonLabels = labels('pauseReason', [
-  'user_paused', 'node_offline', 'setup_failed', 'develop_failed', 'rate_limited', 'git_write_denied',
+  'user_paused', 'node_offline', 'computer_offline', 'setup_failed', 'develop_failed', 'rate_limited', 'git_write_denied',
   'merge_conflict_unresolved', 'merge_tests_failed', 'merge_unverified', 'invalid_model_output',
   'final_unsatisfied', 'task_revised', 'transfer_failed',
 ]);

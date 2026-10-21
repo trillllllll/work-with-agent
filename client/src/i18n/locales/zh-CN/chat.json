@@ -108,7 +108,7 @@
       "attention": "需要关注的编排",
       "list": "编排轮次",
       "get": "编排详情",
-      "nodes": "执行端",
+      "nodes": "电脑",
       "worktrees": "worktree 列表",
       "stats": "派发统计"
     },

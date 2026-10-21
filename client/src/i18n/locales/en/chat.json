@@ -108,7 +108,7 @@
       "attention": "Orchestrations that need attention",
       "list": "Orchestration rounds",
       "get": "Orchestration details",
-      "nodes": "Executors",
+      "nodes": "Computers",
       "worktrees": "Worktree list",
       "stats": "Dispatch stats"
     },

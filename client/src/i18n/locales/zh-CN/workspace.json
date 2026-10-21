@@ -379,7 +379,7 @@
       "noCost": "另有 {{n}} 个步骤未报告费用",
       "diff": "改动",
       "failures": "失败原因",
-      "byNode": "按执行端",
+      "byNode": "按电脑",
       "byProvider": "按 CLI",
       "byModel": "按模型",
       "column": "名称",
