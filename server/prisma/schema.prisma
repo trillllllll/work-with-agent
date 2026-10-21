@@ -87,6 +87,8 @@ model Task {
   deletedAt String? @map("deleted_at")
   createdAt     String     @default("") @map("created_at")
   updatedAt     String     @default("") @map("updated_at")
+  completedAt   String?    @map("completed_at")
+  completedAtEstimated Boolean @default(false) @map("completed_at_estimated")
   topic         Topic?     @relation(fields: [topicId], references: [id], onDelete: Restrict)
   parent        Task?      @relation("TaskChildren", fields: [parentId], references: [id], onDelete: Restrict)
   children      Task[]     @relation("TaskChildren")
@@ -101,6 +103,7 @@ model Task {
   @@index([topicId, parentId, deletedAt, sortOrder])
   @@index([parentId])
   @@index([deleteBatchId])
+  @@index([completedAt])
   @@map("tasks")
 }
 
@@ -232,6 +235,7 @@ model ChangeRecord {
   approvedByActorId String? @map("approved_by_actor_id")
   createdAt String @default("") @map("created_at")
   @@index([entityType, entityId, createdAt])
+  @@index([connectionId, createdAt])
   @@map("change_records")
 }
 
@@ -334,6 +338,7 @@ model Connection {
   revision Int @default(1)
   createdAt String
   updatedAt String
+  lastUsedAt String? @map("last_used_at")
   @@index([status, createdAt])
 }
 

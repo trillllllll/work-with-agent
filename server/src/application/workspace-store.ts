@@ -65,6 +65,20 @@ type ScopeSnapshot = { scope: Scope; members: string[] };
 export type GroupSnapshot = { version: 2; entities: EntityMaps; scopes: ScopeSnapshot[] };
 export function isGroup(value: any): value is GroupSnapshot { return value?.version === 2 && Boolean(value.entities && value.scopes); }
 
+/** Old change snapshots predate completedAt. Drop both keys so undo can still match the row. */
+export function withoutLegacyTaskKeys<T extends Record<string, unknown>>(row: T): T {
+  const copy = { ...row };
+  delete copy.completedAt;
+  delete copy.completedAtEstimated;
+  return copy;
+}
+
+/** When the expected snapshot has no completedAt key, compare without the two new columns. */
+export function legacyTaskSnapshot(expected: object | null, current: Record<string, unknown> | null) {
+  if (!current || !expected || Object.prototype.hasOwnProperty.call(expected, 'completedAt')) return current;
+  return withoutLegacyTaskKeys(current);
+}
+
 async function readEntity(tx: Db, kind: keyof EntityMaps, id: string): Promise<any> {
   if (kind === 'topics') return tx.topic.findUnique({ where: { id } });
   if (kind === 'tags') return tx.tag.findUnique({ where: { id } });
@@ -84,6 +98,8 @@ async function scopeMembers(tx: Db, scope: Scope) {
 export class ChangeGroup {
   private before: GroupSnapshot = { version: 2, entities: { tasks: {}, topics: {}, tags: {} }, scopes: [] };
   private timestamps = new Map<string, string>();
+  /** Status after earlier writes in this transaction. The original snapshot is not enough when one id is written twice. */
+  private latestStatus = new Map<string, string>();
   constructor(readonly tx: Db, readonly context: MutationContext) {}
   async capture(kind: keyof EntityMaps, id: string) {
     if (!(id in this.before.entities[kind])) (this.before.entities[kind] as Record<string, unknown>)[id] = await readEntity(this.tx, kind, id);
@@ -94,7 +110,20 @@ export class ChangeGroup {
   async task(id: string, data: Prisma.TaskUncheckedUpdateInput = {}) {
     await this.capture('tasks', id);
     const updatedAt = updatedAfter(this.timestamps.get(`task:${id}`) ?? this.before.entities.tasks[id]?.updatedAt);
-    const result = await this.tx.task.update({ where: { id }, data: { ...data, revision: { increment: 1 }, updatedAt } });
+    const prior = this.latestStatus.get(id) ?? this.before.entities.tasks[id]?.status;
+    const status = typeof data.status === 'string' ? data.status : undefined;
+    const completion: { completedAt?: string | null; completedAtEstimated?: boolean } = {};
+    if (status && status !== prior) {
+      if (status === 'done') {
+        completion.completedAt = updatedAt;
+        completion.completedAtEstimated = false;
+      } else if (prior === 'done') {
+        completion.completedAt = null;
+        completion.completedAtEstimated = false;
+      }
+    }
+    if (status) this.latestStatus.set(id, status);
+    const result = await this.tx.task.update({ where: { id }, data: { ...data, ...completion, revision: { increment: 1 }, updatedAt } });
     this.timestamps.set(`task:${id}`, updatedAt);
     return result;
   }
@@ -140,7 +169,8 @@ export async function restoreGroup(tx: Db, before: GroupSnapshot, after: GroupSn
   for (const kind of ['tasks', 'topics', 'tags'] as const) {
     for (const [id, expected] of Object.entries(after.entities[kind])) {
       const current = await readEntity(tx, kind, id);
-      if (expected === null ? current !== null : !current || current.revision !== expected.revision || JSON.stringify(current) !== JSON.stringify(expected)) throw conflict('对象已发生后续变更，无法撤销');
+      const comparable = kind === 'tasks' ? legacyTaskSnapshot(expected, current) : current;
+      if (expected === null ? current !== null : !current || current.revision !== expected.revision || JSON.stringify(comparable) !== JSON.stringify(expected)) throw conflict('对象已发生后续变更，无法撤销');
     }
   }
   for (const { scope, members } of after.scopes) if (JSON.stringify(await scopeMembers(tx, scope)) !== JSON.stringify(members)) throw conflict('关联或排序范围已发生后续变更，无法撤销');
@@ -190,7 +220,16 @@ export async function restoreGroup(tx: Db, before: GroupSnapshot, after: GroupSn
     const { tagIds, parentId, ...fields } = row;
     Object.assign(fields, normalizeLegacySchedule(row));
     const current = after.entities.tasks[id];
-    const data = { ...fields, parentId: null, revision: (current?.revision ?? row.revision) + 1, updatedAt: updatedAfter(current?.updatedAt ?? row.updatedAt) };
+    // A snapshot from before completedAt cannot restore that column. Reopening clears it; staying done keeps the live value.
+    let preserved: { completedAt: string | null; completedAtEstimated: boolean } | undefined;
+    if (!Object.prototype.hasOwnProperty.call(row, 'completedAt')) {
+      if (row.status !== 'done') preserved = { completedAt: null, completedAtEstimated: false };
+      else {
+        const live = await tx.task.findUnique({ where: { id }, select: { completedAt: true, completedAtEstimated: true } });
+        if (live) preserved = { completedAt: live.completedAt, completedAtEstimated: live.completedAtEstimated };
+      }
+    }
+    const data = { ...fields, ...preserved, parentId: null, revision: (current?.revision ?? row.revision) + 1, updatedAt: updatedAfter(current?.updatedAt ?? row.updatedAt) };
     await tx.task.upsert({ where: { id }, create: data, update: data });
     await setTags(tx, id, tagIds);
     if ((current?.topicId ?? null) !== row.topicId) await tx.taskTopicAssignment.create({ data: assignmentData(id, current?.topicId ?? null, row.topicId, 'undo', context) });

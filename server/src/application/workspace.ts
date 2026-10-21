@@ -153,6 +153,8 @@ const legacyTaskSchema = taskFieldObject.extend({
   tagIds: z.array(z.string().min(1)).default([]),
   createdAt: z.string().default(''),
   updatedAt: z.string().default(''),
+  completedAt: z.string().nullable().default(null),
+  completedAtEstimated: z.boolean().default(false),
 });
 const legacyTopicSchema = topicCreateSchema.extend({
   id: z.string().min(1),

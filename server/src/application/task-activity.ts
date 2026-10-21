@@ -7,6 +7,7 @@ import { notFound } from './workspace-store.js';
 import { localize } from '../i18n/index.js';
 
 const statuses = new Set(['todo', 'doing', 'blocked', 'done']);
+const snapshotDepthLimit = 8;
 const priorities = new Set(['none', 'low', 'medium', 'high']);
 
 type Snap = {
@@ -102,7 +103,7 @@ function readTaskState(raw: string | null, taskId: string) {
 }
 
 function visit(value: unknown, taskId: string, found: { present: boolean; task: Snap | null }, depth: number) {
-  if (found.present || depth > 8 || !value || typeof value !== 'object') return;
+  if (found.present || depth > snapshotDepthLimit || !value || typeof value !== 'object') return;
   if (Array.isArray(value)) {
     for (const item of value) visit(item, taskId, found, depth + 1);
     return;
@@ -124,6 +125,44 @@ function visit(value: unknown, taskId: string, found: { present: boolean; task: 
   } else if (record.snapshot && typeof record.snapshot === 'object') visit(record.snapshot, taskId, found, depth + 1);
   if (Array.isArray(record.changes)) visit(record.changes, taskId, found, depth + 1);
   if (Array.isArray(record.tasks)) visit(record.tasks, taskId, found, depth + 1);
+}
+
+/** Every task state in one snapshot. Unlike visit(), this does not stop at the first match.
+ * v2 groups, v3 batches (changes[].snapshot may be a nested JSON string), and legacy {id,title|status} rows are all read.
+ * Unreadable JSON is skipped and counted. */
+export function collectTaskStates(raw: string | null, stats?: { badSnapshots: number }): Map<string, Snap> {
+  const found = new Map<string, Snap>();
+  const local = stats ?? { badSnapshots: 0 };
+  if (!raw) return found;
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { local.badSnapshots += 1; return found; }
+  collectVisit(parsed, found, 0, local);
+  return found;
+}
+
+function collectVisit(value: unknown, found: Map<string, Snap>, depth: number, stats: { badSnapshots: number }) {
+  if (depth > snapshotDepthLimit || !value || typeof value !== 'object') return;
+  if (Array.isArray(value)) {
+    for (const item of value) collectVisit(item, found, depth + 1, stats);
+    return;
+  }
+  const record = value as Record<string, unknown>;
+  const tasks = (record.entities as { tasks?: Record<string, unknown> } | undefined)?.tasks;
+  if (tasks && typeof tasks === 'object' && !Array.isArray(tasks)) {
+    for (const [id, task] of Object.entries(tasks)) {
+      if (task == null) { found.delete(id); continue; }
+      const snapped = snap(task);
+      if (snapped && statuses.has(snapped.status)) found.set(id, snapped);
+    }
+  } else if (typeof record.id === 'string' && ('title' in record || 'status' in record)) {
+    const snapped = snap(record);
+    if (snapped && statuses.has(snapped.status)) found.set(record.id, snapped);
+  }
+  if (typeof record.snapshot === 'string') {
+    try { collectVisit(JSON.parse(record.snapshot), found, depth + 1, stats); } catch { stats.badSnapshots += 1; }
+  } else if (record.snapshot && typeof record.snapshot === 'object') collectVisit(record.snapshot, found, depth + 1, stats);
+  if (Array.isArray(record.changes)) collectVisit(record.changes, found, depth + 1, stats);
+  if (Array.isArray(record.tasks)) collectVisit(record.tasks, found, depth + 1, stats);
 }
 
 function sameTags(left: string[], right: string[]) {

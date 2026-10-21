@@ -19,6 +19,9 @@ describe('basic Todo explicit SQLite migration', () => {
       const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name);
       expect(tables).toEqual(expect.arrayContaining(['tasks', 'topics', 'tags', 'task_tags', 'task_topic_assignments', 'change_records', 'approvals', 'Connection', 'RequestReceipt', 'Proposal', 'Material', 'MaterialVersion', 'Memory', 'MemoryVersion', 'Handoff', 'Run', 'Artifact', 'ReviewRule', 'ReviewBatch']));
       expect(db.prepare('PRAGMA table_info(tasks)').all().map((row) => row.name)).toEqual(expect.arrayContaining(['parent_id', 'sort_order', 'revision', 'delete_batch_id']));
+      expect(db.prepare('PRAGMA table_info(tasks)').all().map((row) => row.name)).toEqual(expect.arrayContaining(['completed_at', 'completed_at_estimated']));
+      expect(db.prepare('PRAGMA table_info("Connection")').all().map((row) => row.name)).toEqual(expect.arrayContaining(['last_used_at']));
+      expect(db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all().map((row) => row.name)).toEqual(expect.arrayContaining(['tasks_completed_at_idx', 'change_records_connection_id_created_at_idx']));
       expect(db.prepare('PRAGMA table_info("ReviewRule")').all().map((row) => row.name)).toEqual(expect.arrayContaining(['deletedAt']));
     } finally { db.close(); }
   });

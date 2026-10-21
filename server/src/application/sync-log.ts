@@ -211,9 +211,16 @@ export async function writeLive(tx: Tx, entityType: SyncEntityType, entityId: st
     sortOrder: typeof row.sortOrder === 'number' ? row.sortOrder : 0,
   };
   const existing = await tx.task.findUnique({ where: { id: entityId } });
+  // completedAt is not a sync field. Derive it here because writeLive bypasses ChangeGroup.
+  // done → done leaves the previous completion time alone.
+  const completion = scalars.status === 'done' && existing?.status === 'done'
+    ? {}
+    : scalars.status === 'done'
+      ? { completedAt: timestamp, completedAtEstimated: false }
+      : { completedAt: null, completedAtEstimated: false };
   const saved = existing
-    ? await tx.task.update({ where: { id: entityId }, data: { ...scalars, revision: { increment: 1 }, updatedAt: timestamp } })
-    : await tx.task.create({ data: { id: entityId, ...scalars, revision: 1, createdAt: timestamp, updatedAt: timestamp } });
+    ? await tx.task.update({ where: { id: entityId }, data: { ...scalars, ...completion, revision: { increment: 1 }, updatedAt: timestamp } })
+    : await tx.task.create({ data: { id: entityId, ...scalars, ...completion, revision: 1, createdAt: timestamp, updatedAt: timestamp } });
   const tagIds = Array.isArray(row.tagIds) ? row.tagIds.map(String) : [];
   await tx.taskTag.deleteMany({ where: { taskId: entityId } });
   if (tagIds.length) await tx.taskTag.createMany({ data: tagIds.map((tagId) => ({ taskId: entityId, tagId })) });
