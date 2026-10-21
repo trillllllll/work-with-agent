@@ -97,7 +97,8 @@ test('选中文本浮出格式条，加粗后立即保持格式', async ({ page,
   // 加粗后无需失焦，排版结果立即可见。
   await expect(body.locator('strong')).toContainText('hello world');
   await expect(body).toHaveAttribute('data-value', '**hello world**');
-  await detail.getByLabel('任务标题', { exact: true }).click();
+  // 格式条可能盖住标题，点详情里的空白收起选区，不点标题。
+  await detail.locator('section[aria-label="子任务"]').click({ position: { x: 8, y: 8 } });
   await expect(detail.locator('strong')).toContainText('hello world');
 });
 

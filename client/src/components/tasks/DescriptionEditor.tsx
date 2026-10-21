@@ -565,12 +565,17 @@ function FormatToolbar({ editor, composing, taskId }: ToolbarProps) {
     const margin = 8;
     let top = coords.top - rect.height - 8;
     if (top < margin) top = coords.top + 24;
+    const titleInput = node.ownerDocument.querySelector<HTMLElement>('[data-testid="task-detail-title-row"] textarea');
+    if (titleInput) {
+      const floor = titleInput.getBoundingClientRect().bottom;
+      if (top < floor) top = floor;
+    }
     let left = coords.left - rect.width / 2;
     left = Math.max(margin, Math.min(left, window.innerWidth - rect.width - margin));
     node.style.top = `${top}px`;
     node.style.left = `${left}px`;
   }}>
-    <button type="button" className={buttonClass} aria-label={t('descriptionEditor.askAi')} onMouseDown={(event) => event.preventDefault()} onClick={() => { const { from, to } = editor.state.selection; askAssistant({ kind: 'selection', title: t('descriptionEditor.selectionTitle'), text: editor.state.doc.textBetween(from, to, '\n'), taskId, unsaved: true }); }}>{t('descriptionEditor.askAi')}</button>
+    <button type="button" className={cn(buttonClass, 'task-format-ask')} aria-label={t('descriptionEditor.askAi')} onMouseDown={(event) => event.preventDefault()} onClick={() => { const { from, to } = editor.state.selection; askAssistant({ kind: 'selection', title: t('descriptionEditor.selectionTitle'), text: editor.state.doc.textBetween(from, to, '\n'), taskId, unsaved: true }); }}>{t('descriptionEditor.askAi')}</button>
     {touch ? <>
       <ToolbarButton className={buttonClass} label={t('descriptionEditor.bold')} icon={Bold} pressed={editor.isActive('bold')} onClick={() => run(() => editor.chain().focus().toggleBold().run())} />
       <ToolbarButton className={buttonClass} label={t('descriptionEditor.bulletList')} icon={List} pressed={editor.isActive('bulletList')} onClick={() => run(() => editor.chain().focus().toggleBulletList().run())} />

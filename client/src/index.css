@@ -1781,6 +1781,18 @@
   gap: 4px;
 }
 
+.task-format-ask {
+  width: auto;
+  padding: 0 10px;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.task-format-ask.touch {
+  width: auto;
+  padding: 0 12px;
+}
+
 .task-format-button:hover {
   background: rgb(238 238 238 / 0.9);
 }
