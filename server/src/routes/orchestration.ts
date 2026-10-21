@@ -3,6 +3,7 @@ import { NodeService, getNode, nodeMiddleware } from '../application/orchestrati
 import { ProjectService } from '../application/orchestration/projects.js';
 import { OrchestrationService } from '../application/orchestration/service.js';
 import { dispatchStats, parseStatsQuery } from '../application/orchestration/stats.js';
+import { assertTimeZone } from '../application/reviews-clock.js';
 import { WorktreeService } from '../application/orchestration/worktrees.js';
 import { isServerMode, publicWorkspaceUrl } from '../application/desktop-paths.js';
 
@@ -40,11 +41,16 @@ export function createOrchestrationRouter() {
     cursor: typeof req.query.cursor === 'string' ? req.query.cursor : undefined,
     limit: typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined,
   })));
-  router.get('/orchestrations/stats', route((req) => dispatchStats(parseStatsQuery({
-    from: typeof req.query.from === 'string' ? req.query.from : undefined,
-    to: typeof req.query.to === 'string' ? req.query.to : undefined,
-    projectId: typeof req.query.projectId === 'string' ? req.query.projectId : undefined,
-  }))));
+  router.get('/orchestrations/stats', route((req) => {
+    const parsed = parseStatsQuery({
+      from: typeof req.query.from === 'string' ? req.query.from : undefined,
+      to: typeof req.query.to === 'string' ? req.query.to : undefined,
+      projectId: typeof req.query.projectId === 'string' ? req.query.projectId : undefined,
+    });
+    const tz = typeof req.query.tz === 'string' ? req.query.tz.trim() : '';
+    if (tz) assertTimeZone(tz);
+    return dispatchStats({ from: parsed.from, to: parsed.to, projectId: parsed.projectId, tz: tz || undefined });
+  }));
   router.get('/orchestrations/:id', route((req) => orchestrations.get(String(req.params.id))));
   router.get('/tasks/:id/ai-history', route((req) => orchestrations.history(String(req.params.id))));
   router.post('/orchestrations/:id/start', route((req) => orchestrations.start(String(req.params.id), req.body)));

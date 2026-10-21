@@ -5,6 +5,7 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../infrastructure/prisma.js';
 import { DomainError } from '../../domain/task.js';
+import { assertTimeZone, calendarFormatter, eachLocalDay, localCalendarDate } from '../reviews-clock.js';
 import { failureKindFromStep, type FailureKind } from './checks.js';
 
 const MAX_RANGE_MS = 366 * 24 * 60 * 60 * 1000;
@@ -115,6 +116,8 @@ export type DispatchStats = {
   byModel: UsageGroup[];
   top5ByDuration: Array<{ taskId: string; title: string; durationMs: number; jobs: number }>;
   top5ByCost: Array<{ taskId: string; title: string; costMicroUsd: number; jobs: number }>;
+  /** One row per local day in `[from, to)`. Omitted `tz` buckets by UTC date. */
+  byDay: Array<{ date: string; rounds: number; firstPassPassed: number; firstPassTotal: number; costMicroUsd: number }>;
   legacy: {
     count: number;
     inputTokens: number;
@@ -179,6 +182,8 @@ export function aggregateDispatchStats(input: {
   from: string;
   to: string;
   projectId?: string | null;
+  /** IANA zone for `byDay`. Absent means UTC. Totals ignore this. */
+  tz?: string | null;
   rounds: StatsRound[];
   steps: StatsStep[];
   jobs: StatsJob[];
@@ -291,6 +296,31 @@ export function aggregateDispatchStats(input: {
     }
   }
 
+  const zone = input.tz?.trim() || 'UTC';
+  if (input.tz?.trim()) assertTimeZone(zone);
+  const format = calendarFormatter(zone);
+  const byDay = new Map(eachLocalDay(parsed.fromMs, parsed.toMs, zone).map((date) => [date, { date, rounds: 0, firstPassPassed: 0, firstPassTotal: 0, costMicroUsd: 0 }]));
+  const bucketFor = (iso: string | null | undefined) => {
+    if (!iso) return undefined;
+    const ms = Date.parse(iso);
+    if (!Number.isFinite(ms)) return undefined;
+    return byDay.get(localCalendarDate(new Date(ms), zone, format));
+  };
+  const roundDay = new Map(rounds.map((round) => [round.id, bucketFor(round.startedAt)]));
+  for (const round of rounds) roundDay.get(round.id)!.rounds += 1;
+  for (const step of steps) {
+    if (step.kind !== 'develop' || !ENDED.has(step.status)) continue;
+    const bucket = roundDay.get(step.orchestrationId);
+    if (!bucket) continue;
+    bucket.firstPassTotal += 1;
+    if (step.status === 'succeeded' && step.attempt === 1 && step.continueCount === 0) bucket.firstPassPassed += 1;
+  }
+  for (const job of jobs) {
+    if (job.costMicroUsd == null) continue;
+    const bucket = bucketFor(job.endedAt);
+    if (bucket) bucket.costMicroUsd += job.costMicroUsd;
+  }
+
   return {
     from: parsed.from,
     to: parsed.to,
@@ -312,6 +342,7 @@ export function aggregateDispatchStats(input: {
     top5ByDuration,
     top5ByCost,
     legacy,
+    byDay: [...byDay.values()],
   };
 }
 
@@ -324,8 +355,10 @@ function pauseReasonOf(payload: string) {
   }
 }
 
-export async function dispatchStats(query: { from: string; to: string; projectId?: string | null }) {
+export async function dispatchStats(query: { from: string; to: string; projectId?: string | null; tz?: string | null }) {
   const parsed = parseStatsQuery(query);
+  const tz = typeof query.tz === 'string' ? query.tz.trim() : '';
+  if (tz) assertTimeZone(tz);
   const projectId = parsed.projectId;
   const roundWhere: Prisma.OrchestrationWhereInput = { status: { not: 'draft' }, startedAt: { gte: parsed.from, lt: parsed.to }, ...(projectId ? { projectId } : {}) };
   const rounds = await prisma.orchestration.findMany({ where: roundWhere, include: { steps: true } });
@@ -366,6 +399,7 @@ export async function dispatchStats(query: { from: string; to: string; projectId
     from: parsed.from,
     to: parsed.to,
     projectId,
+    tz: tz || undefined,
     projects,
     tasks,
     nodes,

@@ -168,6 +168,37 @@ describe('dispatch stats aggregation', () => {
     expect(all.resources.inputTokens).toBe(stats.resources.inputTokens + 1000);
     expect(all.roundCount).toBe(0);
   });
+
+  it('fills every UTC day and splits a Shanghai midnight across byDay', () => {
+    const rounds: StatsRound[] = [
+      round({ id: 'round-1559', startedAt: '2099-06-02T15:59:00.000Z' }),
+      round({ id: 'round-1630', startedAt: '2099-06-02T16:30:00.000Z' }),
+    ];
+    const steps: StatsStep[] = [
+      step({ id: 'pass-1559', kind: 'develop', status: 'succeeded', orchestrationId: 'round-1559' }),
+      step({ id: 'fail-1630', kind: 'develop', status: 'failed', orchestrationId: 'round-1630' }),
+    ];
+    const jobs: StatsJob[] = [
+      job({ id: 'cost-1559', endedAt: '2099-06-02T15:59:00.000Z', costMicroUsd: 10, orchestrationId: 'round-1559' }),
+      job({ id: 'cost-1630', endedAt: '2099-06-02T16:30:00.000Z', costMicroUsd: 25, orchestrationId: 'round-1630' }),
+    ];
+    const utc = aggregate({ rounds, steps, jobs });
+    expect(utc.byDay.map((day) => day.date)).toEqual(['2099-06-02', '2099-06-03', '2099-06-04', '2099-06-05', '2099-06-06', '2099-06-07', '2099-06-08']);
+    expect(utc.byDay[0]).toMatchObject({ rounds: 2, firstPassPassed: 1, firstPassTotal: 2, costMicroUsd: 35 });
+    expect(utc.byDay.slice(1).every((day) => day.rounds === 0 && day.costMicroUsd === 0)).toBe(true);
+    expect(utc.byDay.reduce((sum, day) => sum + day.rounds, 0)).toBe(utc.roundCount);
+    expect(utc.byDay.reduce((sum, day) => sum + day.costMicroUsd, 0)).toBe(utc.resources.costMicroUsd);
+    expect(aggregate({ rounds, steps, jobs, tz: 'UTC' }).byDay).toEqual(utc.byDay);
+
+    const shanghai = aggregate({ rounds, steps, jobs, tz: 'Asia/Shanghai' });
+    expect(shanghai.byDay.map((day) => day.date)).toEqual(['2099-06-02', '2099-06-03', '2099-06-04', '2099-06-05', '2099-06-06', '2099-06-07', '2099-06-08', '2099-06-09']);
+    expect(shanghai.byDay.find((day) => day.date === '2099-06-02')).toMatchObject({ rounds: 1, firstPassPassed: 1, firstPassTotal: 1, costMicroUsd: 10 });
+    expect(shanghai.byDay.find((day) => day.date === '2099-06-03')).toMatchObject({ rounds: 1, firstPassPassed: 0, firstPassTotal: 1, costMicroUsd: 25 });
+    expect(shanghai.byDay.reduce((sum, day) => sum + day.rounds, 0)).toBe(shanghai.roundCount);
+    expect(shanghai.byDay.reduce((sum, day) => sum + day.firstPassPassed, 0)).toBe(shanghai.firstPass.passed);
+    expect(shanghai.byDay.reduce((sum, day) => sum + day.firstPassTotal, 0)).toBe(shanghai.firstPass.total);
+    expect(shanghai.byDay.reduce((sum, day) => sum + day.costMicroUsd, 0)).toBe(shanghai.resources.costMicroUsd);
+  });
 });
 
 describe('dispatch stats loader', () => {
@@ -329,5 +360,28 @@ describe('dispatch stats loader', () => {
     expect(ok.status).toBe(200);
     expect(ok.body.data.roundCount).toBe(3);
     expect(ok.body.data.from).toBe(FROM);
+    expect(ok.body.data.byDay.reduce((sum: number, day: { rounds: number }) => sum + day.rounds, 0)).toBe(ok.body.data.roundCount);
+    expect(ok.body.data.byDay.reduce((sum: number, day: { costMicroUsd: number }) => sum + day.costMicroUsd, 0)).toBe(ok.body.data.resources.costMicroUsd);
+
+    const badZone = await owner().get('/api/orchestrations/stats').query({ from: FROM, to: TO, tz: 'Not/AZone' });
+    expect(badZone.status).toBe(400);
+    expect(badZone.body).toMatchObject({ code: 'INVALID_TIME_ZONE', error: '请选择有效的 IANA 时区' });
+
+    const early = await makeRound(created.alpha, 80, created.project, 'accepted', '2099-06-02T15:59:00.000Z');
+    const late = await makeRound(created.alpha, 81, created.project, 'accepted', '2099-06-02T16:30:00.000Z');
+    const earlyStep = await makeStep(early.id, 'develop', 1, 'succeeded');
+    const lateStep = await makeStep(late.id, 'develop', 1, 'failed');
+    await makeJob({ dispatchKey: `${stamp}-byday-early`, orchestrationId: early.id, stepId: earlyStep.id, startedAt: '2099-06-02T15:00:00.000Z', endedAt: '2099-06-02T15:59:00.000Z', costMicroUsd: 10 });
+    await makeJob({ dispatchKey: `${stamp}-byday-late`, orchestrationId: late.id, stepId: lateStep.id, startedAt: '2099-06-02T16:00:00.000Z', endedAt: '2099-06-02T16:30:00.000Z', costMicroUsd: 25 });
+    const narrow = { from: '2099-06-02T15:00:00.000Z', to: '2099-06-02T17:00:00.000Z', projectId: created.project };
+    const utcStats = await dispatchStats(narrow);
+    const shanghaiStats = await dispatchStats({ ...narrow, tz: 'Asia/Shanghai' });
+    expect(utcStats.byDay.map((day) => day.date)).toEqual(['2099-06-02']);
+    expect(utcStats.byDay[0]).toMatchObject({ rounds: 2, costMicroUsd: 35 });
+    expect(shanghaiStats.byDay.map((day) => day.date)).toEqual(['2099-06-02', '2099-06-03']);
+    expect(shanghaiStats.byDay[0]).toMatchObject({ rounds: 1, firstPassPassed: 1, firstPassTotal: 1, costMicroUsd: 10 });
+    expect(shanghaiStats.byDay[1]).toMatchObject({ rounds: 1, firstPassPassed: 0, firstPassTotal: 1, costMicroUsd: 25 });
+    expect(shanghaiStats.byDay.reduce((sum, day) => sum + day.rounds, 0)).toBe(shanghaiStats.roundCount);
+    expect(shanghaiStats.byDay.reduce((sum, day) => sum + day.costMicroUsd, 0)).toBe(shanghaiStats.resources.costMicroUsd);
   });
 });
