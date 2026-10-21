@@ -25,6 +25,13 @@ async function jsonData(response: { ok: () => boolean; text: () => Promise<strin
 async function drag(page: Page, from: Locator, to: Locator) {
   await from.scrollIntoViewIfNeeded();
   await to.scrollIntoViewIfNeeded();
+  await to.evaluate((node) => {
+    const main = node.closest('.app-main');
+    if (!main) return;
+    const cell = node.getBoundingClientRect();
+    const box = main.getBoundingClientRect();
+    main.scrollTop += cell.top + cell.height / 2 - box.top - box.height / 2;
+  });
   await to.evaluate((node) => { const scroller = node.closest('[data-testid="timeline-scroll"]'); if (scroller) { const target = node.getBoundingClientRect(); const box = scroller.getBoundingClientRect(); scroller.scrollTop += target.top + target.height / 2 - box.top - box.height / 2; } });
   const source = await from.boundingBox();
   const target = await to.boundingBox();
