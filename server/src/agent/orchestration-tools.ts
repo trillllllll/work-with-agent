@@ -110,7 +110,7 @@ export async function readOrchestration(raw: Record<string, unknown>) {
   }
   if (input.action === 'nodes') {
     const { isOnline } = await import('../application/orchestration/nodes.js');
-    const rows = await prisma.agentNode.findMany({ where: { status: 'active' }, orderBy: { createdAt: 'asc' } });
+    const rows = await prisma.agentNode.findMany({ where: { status: 'active', deletedAt: null }, orderBy: { createdAt: 'asc' } });
     return { items: rows.map((node) => ({ id: node.id, name: node.name, online: isOnline(node), platform: node.platform, version: node.version, capabilities: parse<Record<string, unknown>>(node.capabilitiesJson, {}), inventoryAt: node.inventoryAt })) };
   }
   const { WorktreeService } = await import('../application/orchestration/worktrees.js');

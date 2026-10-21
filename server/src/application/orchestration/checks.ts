@@ -15,7 +15,7 @@ export function checkDevelop(input: { result: RunResult | null; facts: GitFacts 
   else if (result.outcome !== 'ready_for_review') problems.push(`AI 结果为 ${result.outcome}`);
   const failed = failedChecks(result);
   if (failed.length) problems.push(`检查未通过：${failed.join('、')}`);
-  if (!facts) problems.push('执行端没有采集到 git 事实');
+  if (!facts) problems.push('电脑没有采集到 git 事实');
   else {
     if (facts.branch !== input.branch) problems.push(`分支不符：期望 ${input.branch}，实际 ${facts.branch ?? '（分离 HEAD）'}`);
     if (!facts.head || facts.head === input.base) problems.push(noNewCommitProblem);
@@ -34,7 +34,7 @@ export function checkMerge(input: { result: RunResult | null; facts: GitFacts | 
   else if (result.outcome !== 'ready_for_review') problems.push(`AI 结果为 ${result.outcome}`);
   const failed = failedChecks(result);
   if (failed.length) problems.push(`检查未通过：${failed.join('、')}`);
-  if (!facts) problems.push('执行端没有采集到 git 事实');
+  if (!facts) problems.push('电脑没有采集到 git 事实');
   else {
     if (facts.branch !== input.integrationBranch) problems.push(`集成分支不符：实际 ${facts.branch ?? '（分离 HEAD）'}`);
     if (facts.mergeInProgress) problems.push('合并仍在进行中（MERGE_HEAD 存在）');
@@ -57,7 +57,7 @@ export function checkVerify(input: { result: RunResult | null; facts: GitFacts |
   else if (result.outcome !== 'ready_for_review') problems.push(`核对结果为 ${result.outcome}`);
   const failed = failedChecks(result);
   if (failed.length) problems.push(`核对检查未通过：${failed.join('、')}`);
-  if (!facts) problems.push('执行端没有采集到 git 事实');
+  if (!facts) problems.push('电脑没有采集到 git 事实');
   else {
     if (facts.head !== input.expectedHead) problems.push(`HEAD 不一致：合入报告 ${input.expectedHead.slice(0, 12)}，核对时 ${facts.head?.slice(0, 12) ?? '无'}`);
     if (facts.includes[input.resultCommit] !== true) problems.push('核对时子任务提交不在集成分支中');
@@ -68,7 +68,7 @@ export function checkVerify(input: { result: RunResult | null; facts: GitFacts |
   if (report?.content) {
     try {
       const parsed = JSON.parse(report.content) as { head?: string };
-      if (parsed.head && !input.expectedHead.startsWith(parsed.head) && !parsed.head.startsWith(input.expectedHead)) problems.push('核对 AI 报告的 HEAD 与执行端事实不一致');
+      if (parsed.head && !input.expectedHead.startsWith(parsed.head) && !parsed.head.startsWith(input.expectedHead)) problems.push('核对 AI 报告的 HEAD 与电脑事实不一致');
     } catch { problems.push('wwa-report.json 不是有效 JSON'); }
   }
   return { ok: !problems.length, problems };
@@ -94,10 +94,10 @@ export type FailureSignals = {
   decision?: string | null;
 };
 
-const notAFailure = new Set(['user_paused', 'task_revised']);
+const notAFailure = new Set(['user_paused', 'task_revised', 'computer_offline']);
 
 /**
- * First match wins. `user_paused` and `task_revised` are not failures.
+ * First match wins. `user_paused`, `task_revised`, and `computer_offline` are not failures.
  * Historical rows without a stored kind are classified with the same function.
  */
 export function classifyFailure(input: FailureSignals): FailureKind | null {

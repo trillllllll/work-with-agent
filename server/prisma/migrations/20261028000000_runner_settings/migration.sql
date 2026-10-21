@@ -1,0 +1,2 @@
+ALTER TABLE "AgentNode" ADD COLUMN "deletedAt" TEXT;
+ALTER TABLE "Project" ADD COLUMN "defaultParallel" INTEGER NOT NULL DEFAULT 2;

@@ -50,7 +50,7 @@ function cardDto(row: WorktreeCleanup, nodeName: string) {
 
 export class WorktreeService {
   async overview() {
-    const nodes = await prisma.agentNode.findMany({ where: { status: 'active' }, orderBy: { createdAt: 'asc' } });
+    const nodes = await prisma.agentNode.findMany({ where: { status: 'active', deletedAt: null }, orderBy: { createdAt: 'asc' } });
     const usage = await usageByPath();
     const [pendingJobs, cards] = await Promise.all([
       prisma.nodeJob.findMany({ where: { kind: { in: ['inventory', 'cleanup'] }, status: { in: activeJobStatuses } }, select: { nodeId: true, kind: true } }),
@@ -73,7 +73,7 @@ export class WorktreeService {
 
   async refresh(nodeId: string) {
     const node = await prisma.agentNode.findUnique({ where: { id: nodeId } });
-    if (!node || node.status !== 'active') throw new DomainError('NOT_FOUND', '执行端不存在或已吊销', 404);
+    if (!node || node.status !== 'active' || node.deletedAt) throw new DomainError('NOT_FOUND', '电脑不存在或已断开', 404);
     const active = await prisma.nodeJob.findFirst({ where: { nodeId, kind: 'inventory', status: { in: activeJobStatuses } } });
     if (active) return { jobId: active.id, replay: true };
     const { job } = await prisma.$transaction((tx) => enqueueJob(tx, { nodeId, kind: 'inventory', dispatchKey: `inventory:${nodeId}:${Date.now()}`, payload: {} }));
@@ -84,14 +84,14 @@ export class WorktreeService {
   async previewCleanup(raw: unknown, source: 'user' | 'assistant' = 'user') {
     const input = z.object({ nodeId: z.string().min(1), paths: z.array(z.string().min(1).max(4096)).min(1).max(200), deleteBranches: z.boolean().default(false) }).strict().parse(raw);
     const node = await prisma.agentNode.findUnique({ where: { id: input.nodeId } });
-    if (!node || node.status !== 'active') throw new DomainError('NOT_FOUND', '执行端不存在或已吊销', 404);
+    if (!node || node.status !== 'active' || node.deletedAt) throw new DomainError('NOT_FOUND', '电脑不存在或已断开', 404);
     const inventory = JSON.parse(node.inventoryJson) as InventoryResult | null;
-    if (!inventory) throw new DomainError('INVENTORY_REQUIRED', '先刷新该执行端的 worktree 列表', 409);
+    if (!inventory) throw new DomainError('INVENTORY_REQUIRED', '先刷新该电脑的 worktree 列表', 409);
     const usage = await usageByPath(input.nodeId);
     const byPath = new Map(inventory.worktrees.map((entry) => [entry.path, entry]));
     const items: CleanupItem[] = [...new Set(input.paths)].map((path) => {
       const entry = byPath.get(path);
-      if (!entry) return { path, name: path, branch: null, dirtyCount: 0, sizeBytes: 0, usage: null, action: 'blocked', reason: '不在执行端最近一次上报的列表里，请先刷新', warning: null };
+      if (!entry) return { path, name: path, branch: null, dirtyCount: 0, sizeBytes: 0, usage: null, action: 'blocked', reason: '不在这台电脑最近一次上报的列表里，请先刷新', warning: null };
       const used = usage.get(path) ?? null;
       return { path, name: entry.name, branch: entry.branch, dirtyCount: entry.dirtyCount, sizeBytes: entry.sizeBytes, usage: used, ...classify(entry, used) };
     });
@@ -153,7 +153,7 @@ export async function applyWorktreeJob(job: NodeJob) {
     const parsed = report?.ok ? cleanupResultSchema.safeParse(report.result) : null;
     if (parsed?.success) await prisma.agentNode.update({ where: { id: job.nodeId }, data: { inventoryJson: JSON.stringify(parsed.data.inventory), inventoryAt: now() } });
     const { inventory: _inventory, ...summary } = parsed?.success ? parsed.data : { inventory: null };
-    await prisma.worktreeCleanup.updateMany({ where: { jobId: job.id }, data: { status: parsed?.success ? 'done' : 'failed', resultJson: JSON.stringify(parsed?.success ? summary : { error: report?.error ?? job.error ?? '执行端回报格式无效' }), updatedAt: now() } });
+    await prisma.worktreeCleanup.updateMany({ where: { jobId: job.id }, data: { status: parsed?.success ? 'done' : 'failed', resultJson: JSON.stringify(parsed?.success ? summary : { error: report?.error ?? job.error ?? '电脑回报格式无效' }), updatedAt: now() } });
   }
   publishWorkspaceChange({ kind: 'worktrees', nodeId: job.nodeId });
 }

@@ -97,7 +97,7 @@ describe('orchestration through a local executor', () => {
     await node.agent.idle(); await node.agent.pollOnce();
     expect((await prisma.projectLocation.findFirstOrThrow({ where: { projectId: project.id } })).error).toContain('PATH_NOT_ALLOWED');
     await rm(outside, { recursive: true, force: true });
-    data(await owner().post(`/api/projects/${project.id}/locations`).send({ nodeId: node.id, path: repo }));
+    data(await owner().post(`/api/projects/${project.id}/locations`).send({ nodeId: node.id, path: repo, replace: true }));
     await drive(node.agent, async () => (await prisma.projectLocation.findFirst({ where: { projectId: project.id } }))?.status === 'verified', 15_000);
     const location = await prisma.projectLocation.findFirstOrThrow({ where: { projectId: project.id } });
     expect(JSON.parse(location.fingerprintJson).branches).toContain('main');
@@ -216,9 +216,9 @@ describe('node protocol', () => {
     const caps = { protocol: 1, providers: [], maxConcurrent: 2, allowedRoots: [root], freeBytes: null };
     const otherLease = await supertest(app).post('/api/v1/node/lease').set('Authorization', `Node ${other.token}`).send({ capabilities: caps, activeJobIds: [], max: 2 });
     expect(otherLease.body.data.jobs).toHaveLength(0);
-    expect(otherLease.body.data.accepts).toEqual(['usage_v1']);
+    expect(otherLease.body.data.accepts).toEqual(['usage_v1', 'caps_v2']);
     const lease = await supertest(app).post('/api/v1/node/lease').set('Authorization', `Node ${node.token}`).send({ capabilities: caps, activeJobIds: [], max: 2 });
-    expect(lease.body.data.accepts).toEqual(['usage_v1']);
+    expect(lease.body.data.accepts).toEqual(['usage_v1', 'caps_v2']);
     const leased = lease.body.data.jobs[0];
     expect(leased.id).toBe(job.id);
     expect((await supertest(app).post('/api/v1/node/lease').set('Authorization', `Node ${node.token}`).send({ capabilities: caps, activeJobIds: [job.id], max: 2 })).body.data.jobs).toHaveLength(0);
@@ -254,7 +254,7 @@ describe('node protocol', () => {
     const leaseNext = async () => {
       const response = await supertest(app).post('/api/v1/node/lease').set('Authorization', `Node ${node.token}`).send({ capabilities: caps, activeJobIds: [], max: 1 });
       expect(response.status).toBe(200);
-      expect(response.body.data.accepts).toEqual(['usage_v1']);
+      expect(response.body.data.accepts).toEqual(['usage_v1', 'caps_v2']);
       return response.body.data.jobs[0] as { id: string; leaseToken: string };
     };
     const report = (id: string, body: Record<string, unknown>) => supertest(app).post(`/api/v1/node/jobs/${id}/result`).set('Authorization', `Node ${node.token}`).send(body);

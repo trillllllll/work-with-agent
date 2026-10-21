@@ -26,7 +26,7 @@ export async function assertAllowed(path: string, roots: string[]) {
     const canonical = await realpath(root).catch(() => null);
     if (canonical && inside(canonical, actual)) return actual;
   }
-  throw new NodeError('PATH_NOT_ALLOWED', `路径不在本机执行端允许的目录内：${path}`);
+  throw new NodeError('PATH_NOT_ALLOWED', `路径不在这台电脑允许的目录内：${path}`);
 }
 
 export async function probe(path: string, roots: string[]) {
@@ -51,9 +51,9 @@ export function worktreePath(dataDir: string, name: string) {
 /** Worktrees reused by later jobs must be ones this node created. */
 export async function assertManagedWorktree(dataDir: string, path: string) {
   const root = resolve(dataDir, 'worktrees');
-  if (!inside(root, path)) throw new NodeError('WORKTREE_NOT_MANAGED', '只能复用本执行端创建的 worktree');
+  if (!inside(root, path)) throw new NodeError('WORKTREE_NOT_MANAGED', '只能复用这台电脑创建的 worktree');
   const actual = await realpath(path).catch(() => { throw new NodeError('WORKTREE_MISSING', `worktree 已不存在：${path}`); });
-  if (!inside(await realpath(root), actual)) throw new NodeError('WORKTREE_NOT_MANAGED', '只能复用本执行端创建的 worktree');
+  if (!inside(await realpath(root), actual)) throw new NodeError('WORKTREE_NOT_MANAGED', '只能复用这台电脑创建的 worktree');
   return actual;
 }
 async function exists(path: string) { try { await stat(path); return true; } catch { return false; } }
@@ -256,7 +256,7 @@ export async function cleanupWorktrees(dataDir: string, paths: string[], deleteB
     try {
       const actual = await assertManagedWorktree(dataDir, path);
       const rel = relative(await realpath(root), actual).split(sep);
-      if (rel.length !== 2) throw new NodeError('WORKTREE_NOT_MANAGED', '只能删除执行端创建的 worktree 目录');
+      if (rel.length !== 2) throw new NodeError('WORKTREE_NOT_MANAGED', '只能删除这台电脑创建的 worktree 目录');
       if (!await exists(join(actual, '.git'))) {
         // A leftover directory without git metadata: only remove it when empty.
         await rmdir(actual).catch(() => { throw new NodeError('BROKEN_NOT_EMPTY', '目录不是 worktree 且不为空，请手动检查'); });

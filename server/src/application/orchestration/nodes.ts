@@ -10,16 +10,102 @@ import { checkLocalOrigin } from '../security.js';
 import { canonical } from '../commands.js';
 import { JOB_LEASE_MS, NODE_ONLINE_MS, NODE_RESULT_FEATURES, leaseRequestSchema, progressRequestSchema, reportRequestSchema, runResultSchema, type JobKind, type LeasedJob } from '../../node-agent/protocol.js';
 import { boundedJson, costMicroUsd, int32, int32Any } from '../run-usage.js';
+import { appendOrchestrationEvent, publishOrchestration } from './events.js';
 
 type Db = Prisma.TransactionClient;
 export const now = () => new Date().toISOString();
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const newToken = () => randomBytes(32).toString('base64url');
 export const activeJobStatuses = ['queued', 'leased'];
+const openJobStatuses = ['queued', 'leased', 'lost'] as const;
 
-export function nodeDto(row: AgentNode) {
+type LocationBrief = { id: string; projectId: string; path: string; status: string; project?: { name: string } | null };
+
+export function nodeDto(row: AgentNode, locations: LocationBrief[] = [], activeJobs = 0) {
   const { tokenHash: _hash, capabilitiesJson, inventoryJson: _inventory, ...value } = row;
-  return { ...value, capabilities: JSON.parse(capabilitiesJson), online: isOnline(row) };
+  return {
+    ...value,
+    capabilities: JSON.parse(capabilitiesJson),
+    online: isOnline(row),
+    locations: locations.map((location) => ({ id: location.id, projectId: location.projectId, projectName: location.project?.name ?? '', path: location.path, status: location.status })),
+    activeJobs,
+  };
+}
+
+export function reportedMaxConcurrent(capabilitiesJson: string): number | null {
+  try {
+    const parsed = JSON.parse(capabilitiesJson) as { maxConcurrent?: unknown };
+    return typeof parsed.maxConcurrent === 'number' && Number.isFinite(parsed.maxConcurrent) ? parsed.maxConcurrent : null;
+  } catch { return null; }
+}
+
+export function providerAvailable(capabilitiesJson: string, provider: string) {
+  try {
+    const parsed = JSON.parse(capabilitiesJson) as { providers?: Array<{ provider?: unknown; available?: unknown }> };
+    return Array.isArray(parsed.providers) && parsed.providers.some((item) => item?.provider === provider && item.available === true);
+  } catch { return false; }
+}
+
+export function reportedProviders(capabilitiesJson: string): unknown[] {
+  try {
+    const parsed = JSON.parse(capabilitiesJson) as { providers?: unknown };
+    return Array.isArray(parsed.providers) ? parsed.providers : [];
+  } catch { return []; }
+}
+
+const locationInclude = { include: { project: { select: { name: true } } } } as const;
+
+async function present(row: AgentNode) {
+  const [locations, activeJobs] = await Promise.all([
+    prisma.projectLocation.findMany({ where: { nodeId: row.id }, ...locationInclude }),
+    prisma.nodeJob.count({ where: { nodeId: row.id, status: { in: activeJobStatuses } } }),
+  ]);
+  return nodeDto(row, locations, activeJobs);
+}
+
+function nodeCommand(serverUrl: string, token: string) {
+  return `node server/dist/node-agent/index.js --server ${serverUrl} --token ${token} --roots <${localize('你的代码目录')}>`;
+}
+
+function orchestrationUsesNode(row: { nodeId: string | null; extraLocationsJson: string; steps: Array<{ nodeId: string | null }> }, nodeId: string) {
+  if (row.nodeId === nodeId) return true;
+  try {
+    const extra = JSON.parse(row.extraLocationsJson) as Array<{ nodeId?: string }>;
+    if (Array.isArray(extra) && extra.some((item) => item?.nodeId === nodeId)) return true;
+  } catch { /* a malformed extra list does not match */ }
+  return row.steps.some((step) => step.nodeId === nodeId);
+}
+
+/** Cancel queued/leased/lost work and pause running rounds that still use this computer. Caller publishes after commit. */
+async function cancelWorkOnNode(tx: Db, nodeId: string, at: string) {
+  const open = await tx.nodeJob.findMany({ where: { nodeId, status: { in: [...openJobStatuses] } }, select: { id: true } });
+  const openIds = open.map((job) => job.id);
+  if (openIds.length) await tx.nodeJob.updateMany({ where: { id: { in: openIds }, status: { in: [...openJobStatuses] } }, data: { status: 'cancelled', error: '电脑已断开', endedAt: at, updatedAt: at } });
+  const cancelled = openIds.length ? await tx.nodeJob.findMany({ where: { id: { in: openIds }, status: 'cancelled', error: '电脑已断开' }, select: { id: true, kind: true, stepId: true } }) : [];
+  const cancelledJobIds = cancelled.map((job) => job.id);
+  if (cancelledJobIds.length) {
+    const stepIds = cancelled.map((job) => job.stepId).filter((id): id is string => !!id);
+    await tx.orchestrationStep.updateMany({
+      where: { status: { in: ['dispatched', 'verifying'] }, OR: [...(stepIds.length ? [{ id: { in: stepIds } }] : []), { lastJobId: { in: cancelledJobIds } }] },
+      data: { status: 'needs_user', error: '电脑已断开，这一步已取消', updatedAt: at },
+    });
+    const cleanupIds = cancelled.filter((job) => job.kind === 'cleanup').map((job) => job.id);
+    if (cleanupIds.length) await tx.worktreeCleanup.updateMany({ where: { jobId: { in: cleanupIds } }, data: { status: 'failed', resultJson: JSON.stringify({ error: '电脑已断开' }), updatedAt: at } });
+  }
+  const running = await tx.orchestration.findMany({ where: { status: 'running' }, select: { id: true, taskId: true, nodeId: true, extraLocationsJson: true, steps: { select: { nodeId: true } } } });
+  const paused: Array<{ id: string; taskId: string }> = [];
+  for (const row of running) {
+    if (!orchestrationUsesNode(row, nodeId)) continue;
+    const changed = await tx.orchestration.updateMany({ where: { id: row.id, status: 'running' }, data: { status: 'paused', pauseReason: 'computer_offline', revision: { increment: 1 }, updatedAt: at } });
+    if (!changed.count) continue;
+    await appendOrchestrationEvent(tx, row.id, 'paused', 'server', null, { reason: 'computer_offline', nodeId });
+    paused.push({ id: row.id, taskId: row.taskId });
+  }
+  return { cancelledJobIds, pausedOrchestrationIds: paused.map((item) => item.id), paused };
+}
+
+function publishPaused(paused: Array<{ id: string; taskId: string }>) {
+  for (const item of paused) publishOrchestration({ orchestrationId: item.id, taskId: item.taskId, status: 'paused', pauseReason: 'computer_offline' });
 }
 export function isOnline(row: Pick<AgentNode, 'lastSeenAt' | 'status'>, at = Date.now()) {
   return row.status === 'active' && !!row.lastSeenAt && at - Date.parse(row.lastSeenAt) < NODE_ONLINE_MS;
@@ -73,21 +159,78 @@ export function columnsForRunReport(job: { kind: string; payloadJson: string }, 
 }
 
 export class NodeService {
-  async list() { return (await prisma.agentNode.findMany({ orderBy: { createdAt: 'desc' } })).map(nodeDto); }
+  async list() {
+    const rows = await prisma.agentNode.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' }, include: { locations: locationInclude } });
+    const ids = rows.map((row) => row.id);
+    const counts = ids.length ? await prisma.nodeJob.groupBy({ by: ['nodeId'], where: { nodeId: { in: ids }, status: { in: activeJobStatuses } }, _count: { _all: true } }) : [];
+    const active = new Map(counts.map((row) => [row.nodeId, row._count._all]));
+    return rows.map((row) => nodeDto(row, row.locations, active.get(row.id) ?? 0));
+  }
   async create(raw: unknown, serverUrl: string) {
     const input = z.object({ name: z.string().trim().min(1).max(100) }).strict().parse(raw);
     const token = newToken();
     const row = await prisma.agentNode.create({ data: { name: input.name, tokenHash: hash(token), createdAt: now(), updatedAt: now() } });
     // The plaintext token is only returned once.
-    return { node: nodeDto(row), token, serverUrl, command: `node server/dist/node-agent/index.js --server ${serverUrl} --token ${token} --roots <${localize('你的代码目录')}>` };
+    return { node: await present(row), token, serverUrl, command: nodeCommand(serverUrl, token) };
   }
+  async rename(id: string, raw: unknown) {
+    const input = z.object({ name: z.string().trim().min(1).max(100) }).strict().parse(raw);
+    const existing = await prisma.agentNode.findUnique({ where: { id } });
+    if (!existing || existing.deletedAt) throw new DomainError('NOT_FOUND', '电脑不存在', 404);
+    if (existing.status !== 'active') throw new DomainError('NODE_UNAVAILABLE', '已断开的电脑不能改名', 409);
+    const row = await prisma.agentNode.update({ where: { id }, data: { name: input.name, updatedAt: now() } });
+    return present(row);
+  }
+  /** Disconnect: revoke the token and cancel in-flight work. Repeating it on an already-revoked computer is a no-op. */
   async revoke(id: string) {
-    const row = await prisma.agentNode.update({ where: { id }, data: { status: 'revoked', updatedAt: now() } }).catch(() => { throw new DomainError('NOT_FOUND', '执行端不存在', 404); });
-    await prisma.nodeJob.updateMany({ where: { nodeId: id, status: 'queued' }, data: { status: 'cancelled', error: '执行端已吊销', updatedAt: now(), endedAt: now() } });
-    return nodeDto(row);
+    const at = now();
+    const outcome = await prisma.$transaction(async (tx) => {
+      const existing = await tx.agentNode.findUnique({ where: { id } });
+      if (!existing || existing.deletedAt) throw new DomainError('NOT_FOUND', '电脑不存在', 404);
+      const row = await tx.agentNode.update({ where: { id }, data: { status: 'revoked', updatedAt: at } });
+      const cancelled = await cancelWorkOnNode(tx, id, at);
+      return { row, ...cancelled };
+    });
+    publishPaused(outcome.paused);
+    return { node: await present(outcome.row), cancelledJobIds: outcome.cancelledJobIds, pausedOrchestrationIds: outcome.pausedOrchestrationIds };
+  }
+  /** Rotate the token of an active computer. In-flight work is cancelled the same way as a disconnect; the computer stays active. */
+  async reissue(id: string, serverUrl: string) {
+    const token = newToken();
+    const at = now();
+    const outcome = await prisma.$transaction(async (tx) => {
+      const existing = await tx.agentNode.findUnique({ where: { id } });
+      if (!existing || existing.deletedAt) throw new DomainError('NOT_FOUND', '电脑不存在', 404);
+      if (existing.status !== 'active') throw new DomainError('NODE_UNAVAILABLE', '已断开的电脑不能重新生成连接命令', 409);
+      const row = await tx.agentNode.update({ where: { id }, data: { tokenHash: hash(token), updatedAt: at } });
+      const cancelled = await cancelWorkOnNode(tx, id, at);
+      return { row, ...cancelled };
+    });
+    publishPaused(outcome.paused);
+    return { node: await present(outcome.row), token, serverUrl, command: nodeCommand(serverUrl, token) };
+  }
+  /** Soft-delete a revoked computer. Locations stay unless the caller confirms they should go too. */
+  async remove(id: string, removeLocations: boolean) {
+    await prisma.$transaction(async (tx) => {
+      const existing = await tx.agentNode.findUnique({ where: { id }, include: { locations: true } });
+      if (!existing || existing.deletedAt) throw new DomainError('NOT_FOUND', '电脑不存在', 404);
+      if (existing.status !== 'revoked') throw new DomainError('NODE_NOT_REVOKED', '只能删除已断开的电脑', 409);
+      if (existing.locations.length && !removeLocations) throw Object.assign(new DomainError('NODE_HAS_LOCATIONS', '这台电脑还有项目位置，确认后会一并移除', 409), { details: { locationIds: existing.locations.map((location) => location.id) } });
+      if (removeLocations && existing.locations.length) {
+        for (const location of existing.locations) {
+          if (await tx.orchestration.count({ where: { locationId: location.id, status: { in: ['running', 'paused', 'awaiting_acceptance'] } } })) throw new DomainError('ORCHESTRATION_ACTIVE', '有编排正在使用该位置', 409);
+        }
+        const ids = existing.locations.map((location) => location.id);
+        await tx.orchestration.updateMany({ where: { locationId: { in: ids } }, data: { locationId: null } });
+        await tx.projectLocation.deleteMany({ where: { id: { in: ids } } });
+      }
+      const at = now();
+      await tx.agentNode.update({ where: { id }, data: { deletedAt: at, updatedAt: at } });
+    });
+    return { ok: true };
   }
   /** Heartbeat + capability report + lease. Also renews the leases of jobs the node still runs. */
-  async lease(node: AgentNode, raw: unknown): Promise<{ jobs: LeasedJob[]; cancel: string[]; accepts: string[] }> {
+  async lease(node: AgentNode, raw: unknown): Promise<{ jobs: LeasedJob[]; cancel: string[]; accepts: string[]; nodeId: string }> {
     const input = leaseRequestSchema.parse(raw);
     const at = now();
     const expires = new Date(Date.now() + JOB_LEASE_MS).toISOString();
@@ -108,7 +251,7 @@ export class NodeService {
           if (changed.count) jobs.push({ id: job.id, kind: job.kind as JobKind, phase: job.phase, leaseToken, payload: JSON.parse(job.payloadJson) });
         }
       }
-      return { jobs, cancel, accepts: [...NODE_RESULT_FEATURES] };
+      return { jobs, cancel, accepts: [...NODE_RESULT_FEATURES], nodeId: node.id };
     });
   }
   async progress(node: AgentNode, id: string, raw: unknown) {
@@ -168,9 +311,10 @@ export async function expireLeases(at = now()) {
 export async function authenticateNode(req: Request): Promise<AgentNode> {
   checkLocalOrigin(req);
   const header = req.headers.authorization ?? '';
-  if (!header.startsWith('Node ')) throw new DomainError('AUTH_REQUIRED', '缺少执行端凭据', 401);
+  if (!header.startsWith('Node ')) throw new DomainError('AUTH_REQUIRED', '缺少电脑凭据', 401);
   const row = await prisma.agentNode.findUnique({ where: { tokenHash: hash(header.slice(5).trim()) } });
-  if (!row || row.status !== 'active') throw new DomainError('AUTH_REQUIRED', '执行端凭据无效或已吊销', 401);
+  if (!row) throw new DomainError('NODE_TOKEN_INVALID', '电脑凭据无效', 401);
+  if (row.status !== 'active' || row.deletedAt) throw new DomainError('NODE_REVOKED', '电脑已断开', 401);
   return row;
 }
 export function nodeMiddleware(req: Request, _res: Response, next: NextFunction) {

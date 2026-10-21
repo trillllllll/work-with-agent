@@ -624,6 +624,7 @@ model AgentNode {
   lastSeenAt       String?
   createdAt        String
   updatedAt        String
+  deletedAt        String?
   locations        ProjectLocation[]
   jobs             NodeJob[]
 }
@@ -632,6 +633,7 @@ model Project {
   name            String
   defaultBranch   String  @default("main")
   defaultProvider String  @default("codex")
+  defaultParallel Int     @default(2)
   archivedAt      String?
   revision        Int     @default(1)
   createdAt       String

@@ -4,7 +4,7 @@ import { permissionsSchema, providerSchema, resultSchema } from '../runner/contr
 
 export const NODE_PROTOCOL_VERSION = 2;
 /** Lease `accepts` values. A node sends the matching result fields only when the server lists them. */
-export const NODE_RESULT_FEATURES = ['usage_v1'] as const;
+export const NODE_RESULT_FEATURES = ['usage_v1', 'caps_v2'] as const;
 /** A node that has not leased for this long is shown offline. */
 export const NODE_ONLINE_MS = 90_000;
 /** Leases renew on every heartbeat; an expired lease turns the job `lost`. */
@@ -139,18 +139,27 @@ export const cleanupResultSchema = z.object({
 }).strict();
 export const pullRequestResultSchema = z.object({ url: z.string().max(2000), existing: z.boolean(), output: z.string().max(20_000).default('') }).strict();
 
+const providerCapabilitySchema = z.object({ provider: providerSchema, available: z.boolean(), version: z.string().max(200).default(''), path: z.string().max(4096).default('') }).strict();
 export const capabilitiesSchema = z.object({
   protocol: z.number().int(),
   version: z.string().max(100).default(''),
   platform: z.string().max(100).default(''),
-  providers: z.array(z.object({ provider: providerSchema, available: z.boolean(), version: z.string().max(200).default('') })).max(10).default([]),
+  providers: z.array(providerCapabilitySchema).max(10).default([]),
   maxConcurrent: z.number().int().min(1).max(4).default(2),
   allowedRoots: z.array(z.string().max(4096)).max(50).default([]),
   freeBytes: z.number().nonnegative().nullable().default(null),
   /** GitHub CLI available locally (optional PR creation). */
   gh: z.boolean().default(false),
+  /** Set by the desktop shell via WWA_NODE_MANAGED. Manual CLI stays `cli`. */
+  managedBy: z.enum(['desktop', 'cli']).default('cli'),
+  /** Log file path reported by the desktop shell. Manual CLI sends null. */
+  logPath: z.string().max(4096).nullable().default(null),
+  /** Latest lease or report failure summary. At most 500 characters and never a token. */
+  lastError: z.string().max(500).nullable().default(null),
+  startedAt: z.string().max(40).nullable().default(null),
 }).strict();
-export type NodeCapabilities = z.infer<typeof capabilitiesSchema>;
+/** Input shape, so callers that omit the new optional fields (the current executor) still typecheck. `providers` stays required: the executor always sends the array and reads `.providers` without a null check. `parse` fills the defaults. */
+export type NodeCapabilities = Omit<z.input<typeof capabilitiesSchema>, 'providers'> & { providers: Array<z.input<typeof providerCapabilitySchema>> };
 
 export const leaseRequestSchema = z.object({ capabilities: capabilitiesSchema, activeJobIds: z.array(z.string().min(1).max(100)).max(50).default([]), max: z.number().int().min(0).max(4).default(1) }).strict();
 export const progressRequestSchema = z.object({ leaseToken: z.string().min(16).max(200), message: z.string().min(1).max(10_000) }).strict();

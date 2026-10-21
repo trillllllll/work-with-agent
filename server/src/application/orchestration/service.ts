@@ -11,7 +11,7 @@ import { internalActor } from '../security.js';
 import { TaskService } from '../workspace-task.js';
 import { providerSchema, type RunResult } from '../../runner/contracts.js';
 import { prepareResultSchema, pullRequestResultSchema, pushResultSchema, runResultSchema, type FetchSpec, type GitFacts, type RunPayload } from '../../node-agent/protocol.js';
-import { activeJobStatuses, enqueueJob, expireLeases, isOnline, jobDto, now } from './nodes.js';
+import { activeJobStatuses, enqueueJob, expireLeases, isOnline, jobDto, now, providerAvailable, reportedMaxConcurrent, reportedProviders } from './nodes.js';
 import { applyProbeResult, resolveProjectForTask } from './projects.js';
 import { appendOrchestrationEvent, publishOrchestration } from './events.js';
 import { generatePlan, planSchema, reviewDevelop, reviewFinal, validatePlan, type Plan } from './planner.js';
@@ -90,6 +90,20 @@ async function updateTaskStatus(taskId: string, status: 'doing' | 'done' | 'bloc
 
 const normalizeRemote = (url: string | null | undefined) => (url ?? '').trim().replace(/\.git$/, '').replace(/^git@([^:]+):/, 'https://$1/').replace(/^ssh:\/\/git@/, 'https://').replace(/\/+$/, '').toLowerCase();
 
+/** Selected computers must have reported the provider as available, and maxParallel must fit the smallest reported concurrency. An unreported provider counts as unavailable; a missing maxConcurrent counts as 0. */
+function assertComputersCanRun(nodes: Array<{ id: string; name: string; capabilitiesJson: string }>, provider: string, maxParallel: number) {
+  for (const node of nodes) {
+    if (!providerAvailable(node.capabilitiesJson, provider)) throw Object.assign(new DomainError('PROVIDER_UNAVAILABLE', `电脑「${node.name}」上没有可用的 ${provider}`, 409), { details: { nodeId: node.id, nodeName: node.name, provider } });
+  }
+  let limit = Number.POSITIVE_INFINITY;
+  let limiter = nodes[0];
+  for (const node of nodes) {
+    const max = reportedMaxConcurrent(node.capabilitiesJson) ?? 0;
+    if (max < limit) { limit = max; limiter = node; }
+  }
+  if (limiter && maxParallel > limit) throw Object.assign(new DomainError('PARALLEL_EXCEEDS_NODE', `并行数不能超过电脑「${limiter.name}」的并发上限 ${limit}`, 409), { details: { maxConcurrent: limit, nodeId: limiter.id, nodeName: limiter.name } });
+}
+
 /** Cross-machine rounds: extra machines must hold the same project with the same `origin`, which carries the branches between them. */
 async function resolveExtraLocations(projectId: string, primary: { id: string; nodeId: string; fingerprintJson: string }, ids: string[]): Promise<Target[]> {
   if (!ids.length) return [];
@@ -102,9 +116,9 @@ async function resolveExtraLocations(projectId: string, primary: { id: string; n
     const location = await prisma.projectLocation.findUnique({ where: { id }, include: { node: true } });
     if (!location || location.projectId !== projectId) throw new DomainError('LOCATION_REQUIRED', '附加位置不属于该项目', 400);
     if (location.status !== 'verified') throw new DomainError('LOCATION_UNVERIFIED', `${location.node.name} 上的位置还没有通过验证`, 400);
-    if (location.node.status !== 'active') throw new DomainError('NODE_UNAVAILABLE', `${location.node.name} 已吊销`, 400);
-    if (((JSON.parse(location.node.capabilitiesJson) as { protocol?: number }).protocol ?? 0) < 2) throw new DomainError('NODE_OUTDATED', `${location.node.name} 的执行端版本太旧，不支持跨机运行`, 400);
-    if (seen.has(location.nodeId)) throw new DomainError('DUPLICATE_NODE', '每台执行端只能选一个位置', 400);
+    if (location.node.status !== 'active' || location.node.deletedAt) throw new DomainError('NODE_UNAVAILABLE', `${location.node.name} 已断开`, 400);
+    if (((JSON.parse(location.node.capabilitiesJson) as { protocol?: number }).protocol ?? 0) < 2) throw new DomainError('NODE_OUTDATED', `${location.node.name} 的电脑版本太旧，不支持跨机运行`, 400);
+    if (seen.has(location.nodeId)) throw new DomainError('DUPLICATE_NODE', '每台电脑只能选一个位置', 400);
     if (normalizeRemote((JSON.parse(location.fingerprintJson) as { originUrl?: string | null }).originUrl) !== primaryOrigin) throw new DomainError('ORIGIN_MISMATCH', `${location.node.name} 上仓库的 origin 和主位置不同`, 400);
     seen.add(location.nodeId);
     result.push({ locationId: location.id, nodeId: location.nodeId, path: location.path });
@@ -154,11 +168,13 @@ export class OrchestrationService {
     if (open && open.status !== 'draft') throw new DomainError('ORCHESTRATION_OPEN', '该任务已有进行中的编排', 409);
     const priorSummary = priorRoundDigest(await loadPriorRounds(input.taskId, open?.id)) || null;
     const { plan, raw: modelRaw } = await generatePlan(snapshot.main, snapshot.subtasks, priorSummary ?? undefined);
-    const locations = await prisma.projectLocation.findMany({ where: { projectId: project.id, status: 'verified' }, include: { node: true } });
+    const locations = await prisma.projectLocation.findMany({ where: { projectId: project.id, status: 'verified', node: { deletedAt: null } }, include: { node: true } });
     const ranked = locations.sort((a, b) => Number(isOnline(b.node)) - Number(isOnline(a.node)));
+    const reported = ranked[0] ? reportedMaxConcurrent(ranked[0].node.capabilitiesJson) : null;
+    const maxParallel = reported === null ? project.defaultParallel : Math.min(project.defaultParallel, reported);
     const round = open?.round ?? ((await prisma.orchestration.aggregate({ where: { taskId: input.taskId }, _max: { round: true } }))._max.round ?? 0) + 1;
     const integrationBranch = `orch/${slug(snapshot.main.title, shortId(snapshot.main.id))}-r${round}`;
-    const data = { projectId: project.id, defaultBranch: project.defaultBranch, integrationBranch, planJson: JSON.stringify(plan), taskSnapshotJson: JSON.stringify(snapshot), grantJson: JSON.stringify({ provider: project.defaultProvider, maxParallel: 2, allowShell: true }), updatedAt: now() };
+    const data = { projectId: project.id, defaultBranch: project.defaultBranch, integrationBranch, planJson: JSON.stringify(plan), taskSnapshotJson: JSON.stringify(snapshot), grantJson: JSON.stringify({ provider: project.defaultProvider, maxParallel, allowShell: true }), updatedAt: now() };
     const row = await prisma.$transaction(async (tx) => {
       const saved = open
         ? await tx.orchestration.update({ where: { id: open.id }, data: { ...data, revision: { increment: 1 } } })
@@ -166,7 +182,7 @@ export class OrchestrationService {
       await appendOrchestrationEvent(tx, saved.id, 'plan_generated', 'model', null, { plan, raw: modelRaw, priorSummary });
       return saved;
     });
-    return { ...orchestrationDto(row), priorSummary, locations: ranked.map((location) => ({ id: location.id, nodeId: location.nodeId, nodeName: location.node.name, online: isOnline(location.node), path: location.path, originUrl: (JSON.parse(location.fingerprintJson) as { originUrl?: string | null }).originUrl ?? null, protocol: (JSON.parse(location.node.capabilitiesJson) as { protocol?: number }).protocol ?? 0 })) };
+    return { ...orchestrationDto(row), priorSummary, locations: ranked.map((location) => ({ id: location.id, nodeId: location.nodeId, nodeName: location.node.name, online: isOnline(location.node), path: location.path, originUrl: (JSON.parse(location.fingerprintJson) as { originUrl?: string | null }).originUrl ?? null, protocol: (JSON.parse(location.node.capabilitiesJson) as { protocol?: number }).protocol ?? 0, providers: reportedProviders(location.node.capabilitiesJson) })) };
   }
 
   /** One-time authorization; after this nothing asks the user step by step. */
@@ -182,12 +198,14 @@ export class OrchestrationService {
     const plan: Plan = input.plan ?? decode<Plan>(row.planJson);
     try { validatePlan(plan, snapshot.subtasks); } catch (error) { throw new DomainError('INVALID_PLAN', (error as Error).message, 400); }
     const location = await prisma.projectLocation.findUnique({ where: { id: input.locationId }, include: { node: true } });
-    if (!location || location.projectId !== row.projectId) throw new DomainError('LOCATION_REQUIRED', '请选择该项目在某台执行端上的位置', 400);
-    if (location.status !== 'verified') throw new DomainError('LOCATION_UNVERIFIED', '该位置还没有通过执行端验证', 400);
-    if (location.node.status !== 'active') throw new DomainError('NODE_UNAVAILABLE', '执行端已吊销', 400);
+    if (!location || location.projectId !== row.projectId) throw new DomainError('LOCATION_REQUIRED', '请选择该项目在某台电脑上的位置', 400);
+    if (location.status !== 'verified') throw new DomainError('LOCATION_UNVERIFIED', '该位置还没有通过电脑验证', 400);
+    if (location.node.status !== 'active' || location.node.deletedAt) throw new DomainError('NODE_UNAVAILABLE', '电脑已断开', 400);
     const project = await prisma.project.findUniqueOrThrow({ where: { id: row.projectId } });
     const extra = await resolveExtraLocations(row.projectId, location, input.extraLocationIds);
     const grant: Grant = { provider: input.provider ?? providerSchema.parse(project.defaultProvider), maxParallel: input.maxParallel, allowShell: input.allowShell, ...(extra.length ? { remote: 'origin' } : {}) };
+    const extraNodes = extra.length ? await prisma.agentNode.findMany({ where: { id: { in: extra.map((item) => item.nodeId) } } }) : [];
+    assertComputersCanRun([location.node, ...extra.map((item) => extraNodes.find((node) => node.id === item.nodeId)).filter((node): node is NonNullable<typeof node> => !!node)], grant.provider, grant.maxParallel);
     const started = await prisma.$transaction(async (tx) => {
       const changed = await tx.orchestration.updateMany({ where: { id, status: 'draft', revision: input.expectedRevision }, data: { status: 'running', locationId: location.id, nodeId: location.nodeId, repoPath: location.path, extraLocationsJson: JSON.stringify(extra), grantJson: JSON.stringify(grant), planJson: JSON.stringify(plan), startedAt: now(), updatedAt: now(), revision: { increment: 1 } } });
       if (!changed.count) throw new DomainError('PLAN_STALE', '编排已变化', 409);
@@ -217,6 +235,7 @@ export class OrchestrationService {
   }
   async resume(id: string) {
     const row = await this.requireStatus(id, ['paused']);
+    if (row.pauseReason === 'computer_offline') throw new DomainError('COMPUTER_OFFLINE', '这台电脑已断开，请重新派发并另选电脑', 409);
     await prisma.$transaction(async (tx) => { await setStatus(tx, row, 'running', { pauseReason: null }); await appendOrchestrationEvent(tx, id, 'resumed', 'user', null, {}); });
     publishOrchestration({ orchestrationId: id, taskId: row.taskId, status: 'running' });
     await tickOrchestration(id);
@@ -318,7 +337,7 @@ export class OrchestrationService {
     if (!row.pushedAt) throw new DomainError('PUSH_REQUIRED', '先推送集成分支，再创建 PR', 409);
     if (row.pullRequestUrl) return this.get(id);
     const node = await prisma.agentNode.findUniqueOrThrow({ where: { id: row.nodeId } });
-    if (!(JSON.parse(node.capabilitiesJson) as { gh?: boolean }).gh) throw new DomainError('GH_UNAVAILABLE', '该执行端没有可用的 GitHub CLI（gh），请在那台电脑上安装并登录 gh', 409);
+    if (!(JSON.parse(node.capabilitiesJson) as { gh?: boolean }).gh) throw new DomainError('GH_UNAVAILABLE', '该电脑没有可用的 GitHub CLI（gh），请在那台电脑上安装并登录 gh', 409);
     const snapshot = decode<Snapshot>(row.taskSnapshotJson);
     const steps = await prisma.orchestrationStep.findMany({ where: { orchestrationId: id, kind: 'merge' }, orderBy: { position: 'asc' } });
     const lines = steps.map((step) => `- [${step.status === 'succeeded' ? 'x' : ' '}] ${snapshot.subtasks.find((task) => task.id === step.subtaskId)?.title ?? step.subtaskId}${step.mergeCommit ? ` (${step.mergeCommit.slice(0, 10)})` : ''}`);
@@ -375,7 +394,7 @@ function parseRun(job: NodeJob) {
   const report = job.resultJson ? decode<{ ok: boolean; result?: unknown; error?: string | null }>(job.resultJson) : null;
   const parsed = report?.result !== undefined ? runResultSchema.safeParse(report.result) : null;
   const run = parsed?.success ? parsed.data : null;
-  const error = report?.ok === false ? report.error ?? job.error ?? '执行失败' : run?.error ?? (parsed && !parsed.success ? '执行端回报格式无效' : null);
+  const error = report?.ok === false ? report.error ?? job.error ?? '执行失败' : run?.error ?? (parsed && !parsed.success ? '电脑回报格式无效' : null);
   return { run, result: (run?.result ?? null) as RunResult | null, facts: (run?.facts ?? null) as GitFacts | null, error, stderr: run?.stderrTail ?? '' };
 }
 
@@ -588,7 +607,7 @@ async function developFailure(row: Orchestration, step: OrchestrationStep, job: 
     return;
   }
   if (hasResult && step.continueCount < MAX_CONTINUE && step.workPath) {
-    await stepUpdate(step, { status: 'pending', continueCount: { increment: 1 }, feedback: `执行端核对未通过：\n- ${problems.join('\n- ')}` });
+    await stepUpdate(step, { status: 'pending', continueCount: { increment: 1 }, feedback: `电脑核对未通过：\n- ${problems.join('\n- ')}` });
     return;
   }
   const pauseReason = looksRateLimited(output) ? 'rate_limited' : 'develop_failed';
@@ -765,13 +784,13 @@ export async function onJobFinished(jobId: string) {
   if (job.orchestrationId) void tickOrchestration(job.orchestrationId).catch((error) => console.error('编排推进失败：', error));
 }
 
-/** Periodic: expire leases (pause affected rounds as node_offline), auto-resume once the node is back, advance running rounds. */
+/** Periodic: expire leases (pause affected rounds as node_offline), auto-resume only node_offline once the node is back, advance running rounds. computer_offline stays paused. */
 export async function tickAllOrchestrations() {
   const lost = await expireLeases();
   for (const job of lost) {
     if (['probe', 'inventory', 'cleanup'].includes(job.kind)) {
-      await prisma.nodeJob.update({ where: { id: job.id }, data: { status: 'failed', error: '执行端离线', endedAt: now() } });
-      if (job.kind === 'cleanup') await prisma.worktreeCleanup.updateMany({ where: { jobId: job.id }, data: { status: 'failed', resultJson: JSON.stringify({ error: '执行端离线，未确认是否已删除；请刷新列表核对' }), updatedAt: now() } });
+      await prisma.nodeJob.update({ where: { id: job.id }, data: { status: 'failed', error: '电脑离线', endedAt: now() } });
+      if (job.kind === 'cleanup') await prisma.worktreeCleanup.updateMany({ where: { jobId: job.id }, data: { status: 'failed', resultJson: JSON.stringify({ error: '电脑离线，未确认是否已删除；请刷新列表核对' }), updatedAt: now() } });
       continue;
     }
     if (job.orchestrationId) {
@@ -779,6 +798,7 @@ export async function tickAllOrchestrations() {
       await pauseOrchestration(job.orchestrationId, 'node_offline', { jobId: job.id });
     }
   }
+  // Only a temporary drop (node_offline) resumes itself. computer_offline waits for a redispatch.
   const offline = await prisma.orchestration.findMany({ where: { status: 'paused', pauseReason: 'node_offline' } });
   for (const row of offline) {
     if (await prisma.nodeJob.count({ where: { orchestrationId: row.id, status: 'lost' } })) continue;

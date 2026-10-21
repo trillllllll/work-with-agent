@@ -110,6 +110,7 @@ describe('classifyFailure', () => {
     expect(classifyFailure({ pauseReason: 'transfer_failed' })).toBe('other');
     expect(classifyFailure({ pauseReason: 'invalid_model_output' })).toBe('other');
     expect(classifyFailure({ pauseReason: 'node_offline' })).toBe('other');
+    expect(classifyFailure({ pauseReason: 'computer_offline', error: '429', exitCode: 1, hasResult: false })).toBeNull();
     expect(classifyFailure({})).toBe('other');
   });
 
@@ -145,7 +146,7 @@ describe('node git steps', () => {
       const repo = join(root, 'code', 'repo'); await mkdir(repo, { recursive: true });
       const run = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@e', ...args], { cwd, encoding: 'utf8' }).trim();
       run(repo, 'init', '-b', 'main'); await writeFile(join(repo, 'demo.md'), '<<<<<<< sample in docs\n'); run(repo, 'add', '-A'); run(repo, 'commit', '-m', 'init');
-      await expect(probe(repo, [join(root, 'elsewhere')])).rejects.toThrow('不在本机执行端允许');
+      await expect(probe(repo, [join(root, 'elsewhere')])).rejects.toThrow('不在这台电脑允许');
       await expect(probe(join(repo, '..'), [root])).rejects.toThrow();
       expect((await probe(repo, [join(root, 'code')])).branches).toEqual(['main']);
       expect(() => worktreePath(root, '../escape')).toThrow();
