@@ -3,6 +3,7 @@ import { importanceBand } from '@/lib/proposal-fields.js';
 import type { ProposalItem } from '@/lib/proposal-group.js';
 import { asLabels, memoryKindLabel, originLabel, Stars } from '@/components/workspace/memory-view.js';
 import { CommandFields } from './EditFields.js';
+import { BodyText } from '@/components/shared/BodyText.js';
 import { stringOf } from './present.js';
 
 export function MemoryBody({ item, editing, onChange }: { item: ProposalItem; editing: boolean; onChange: (key: string, value: unknown) => void }) {
@@ -36,7 +37,7 @@ export function MemoryBody({ item, editing, onChange }: { item: ProposalItem; ed
         </div>
       ) : null}
       {!editing && detailTitle ? <p className="text-base font-semibold">{detailTitle}</p> : null}
-      {!editing && detailContent ? <p className="whitespace-pre-wrap text-sm">{detailContent}</p> : null}
+      {!editing && detailContent ? <BodyText text={detailContent} /> : null}
       {!editing && detailReason ? <blockquote className="border-l-2 border-[var(--glass-border)] pl-3 text-sm text-muted-foreground">{t('memory.why', { reason: detailReason })}</blockquote> : null}
       <CommandFields item={item} editing={editing} onChange={onChange} quoteReason omitKeys={editing ? [] : ['title', 'content', 'reason']} />
     </div>

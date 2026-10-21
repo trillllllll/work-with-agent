@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from '@/lib/api.js';
+import { BodyText } from '@/components/shared/BodyText.js';
 import { json, submitCommands, usePlatformAction } from '@/lib/platform.js';
 import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
@@ -69,15 +70,15 @@ export function KnowledgeGraph({ topicId }: { topicId: string | null }) {
     </div>
     <aside className="glass-subtle space-y-3 rounded-xl p-4">
       <div className="flex flex-wrap gap-1" role="tablist" aria-label={t('graph.sidebar')}>{(['read', 'open', 'ontology', 'maintain'] as const).map((id) => <Button key={id} size="sm" variant={panel === id ? 'secondary' : 'ghost'} onClick={() => setPanel(id)}>{t(`graph.panels.${id}`)}</Button>)}</div>
-      {panel === 'read' && <div className="space-y-3 text-sm">{selected ? <><h2 className="font-semibold">{selected.title}</h2><p className="text-xs text-muted-foreground">{selected.kind ? t('graph.nodeMeta', { type: typeLabel(selected.type), kind: entityKindLabel(selected.kind) }) : typeLabel(selected.type)}</p><p className="whitespace-pre-wrap text-muted-foreground">{selected.excerpt || selected.description || t('graph.noExcerpt')}</p><h3 className="text-xs font-semibold">{t('graph.neighbors')}</h3><ul className="space-y-2">{neighbors.map(({ edge, node }) => <li key={edge.id}><button type="button" className="text-left" onClick={() => node && setSelectedId(node.id)}>{node?.title}</button><span className="ml-2 text-xs text-muted-foreground">{relationLabel(edge.relation)}</span></li>)}{!neighbors.length && <li className="text-xs text-muted-foreground">{t('graph.noNeighbors')}</li>}</ul></> : <p className="text-muted-foreground">{t('graph.selectNode')}</p>}</div>}
-      {panel === 'open' && <div className="space-y-2 text-sm">{!selected && <p className="text-muted-foreground">{t('graph.selectRecord')}</p>}{selected && <h2 className="font-semibold">{selected.title}</h2>}{detail.data?.content && <p className="whitespace-pre-wrap">{detail.data.content}</p>}{selected?.type === 'entity' && <p className="whitespace-pre-wrap">{selected.description || t('graph.noEntityDescription')}</p>}{selected && !['memory', 'material', 'entity'].includes(selected.type) && <p className="whitespace-pre-wrap text-muted-foreground">{selected.excerpt}</p>}</div>}
+      {panel === 'read' && <div className="space-y-3 text-sm">{selected ? <><h2 className="font-semibold">{selected.title}</h2><p className="text-xs text-muted-foreground">{selected.kind ? t('graph.nodeMeta', { type: typeLabel(selected.type), kind: entityKindLabel(selected.kind) }) : typeLabel(selected.type)}</p><BodyText text={selected.excerpt || selected.description || t('graph.noExcerpt')} className="text-muted-foreground" /><h3 className="text-xs font-semibold">{t('graph.neighbors')}</h3><ul className="space-y-2">{neighbors.map(({ edge, node }) => <li key={edge.id}><button type="button" className="text-left" onClick={() => node && setSelectedId(node.id)}>{node?.title}</button><span className="ml-2 text-xs text-muted-foreground">{relationLabel(edge.relation)}</span></li>)}{!neighbors.length && <li className="text-xs text-muted-foreground">{t('graph.noNeighbors')}</li>}</ul></> : <p className="text-muted-foreground">{t('graph.selectNode')}</p>}</div>}
+      {panel === 'open' && <div className="space-y-2 text-sm">{!selected && <p className="text-muted-foreground">{t('graph.selectRecord')}</p>}{selected && <h2 className="font-semibold">{selected.title}</h2>}{detail.data?.content && <BodyText text={detail.data.content} />}{selected?.type === 'entity' && <BodyText text={selected.description || t('graph.noEntityDescription')} />}{selected && !['memory', 'material', 'entity'].includes(selected.type) && <BodyText text={selected.excerpt ?? ''} className="text-muted-foreground" />}</div>}
       {panel === 'ontology' && <Ontology topicId={topicId} nodes={nodes.filter((node) => node.type === 'entity')} busy={busy} run={run} />}
       {panel === 'maintain' && <Maintain topicId={topicId} nodes={nodes} selected={selected} edges={neighbors} busy={busy} run={run} />}
       <form className="space-y-2 border-t pt-3" onSubmit={(event) => { event.preventDefault(); void ask(); }}>
         <Textarea aria-label={t('graph.askLabel')} placeholder={t('graph.askPlaceholder')} value={question} onChange={(event) => setQuestion(event.target.value)} rows={3} />
         <Button size="sm" disabled={asking || !question.trim()}>{asking ? t('graph.searching') : t('graph.ask')}</Button>
         {answer?.notice && <p className="text-xs text-muted-foreground">{answer.notice}</p>}
-        {answer?.answer && <p className="whitespace-pre-wrap text-sm">{answer.answer}</p>}
+        {answer?.answer && <BodyText text={answer.answer} />}
         {answer?.mode === 'retrieval' && <ul className="space-y-2 text-sm">{answer.citations.map((node) => <li key={node.id}><strong>{node.title}</strong><p className="text-xs text-muted-foreground">{node.excerpt}</p></li>)}</ul>}
       </form>
     </aside>

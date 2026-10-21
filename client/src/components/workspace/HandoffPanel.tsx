@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { Input } from '@/components/ui/input.js';
 import { Textarea } from '@/components/ui/textarea.js';
-import { MarkdownView } from '@/components/chat/MarkdownView.js';
+import { BodyText } from '@/components/shared/BodyText.js';
 import { ContextPicker, type Evidence } from './ContextPicker.js';
 import { downloadFileName, isMarkdownFile } from './artifact-name.js';
 import { reviewPreview } from './review-text.js';
@@ -97,7 +97,7 @@ function HandoffCard({ handoff: initial, task }: { handoff: any; task?: Task }) 
   const { run, busy } = usePlatformAction();
   const actualTask = task ?? taskQuery.data;
   return <article className="glass-subtle space-y-3 rounded-xl border p-4"><button type="button" className="flex w-full flex-wrap justify-between gap-2 text-left" aria-expanded={open} onClick={() => setOpen(!open)}><strong className="min-w-0 break-words text-sm">{actualTask?.title ?? handoff.instruction?.split('\n')[0] ?? handoff.taskId}</strong><span className="text-xs text-muted-foreground">{handoff.provider} · {statusName(handoff.status)}</span></button>{open && <>
-    <p className="whitespace-pre-wrap break-words text-sm">{handoff.instruction}</p>{handoff.status === 'prepared' && !handoff.runs?.length && <div className="space-y-2">{revisedInstruction === null ? <Button size="sm" variant="ghost" onClick={() => setRevisedInstruction(handoff.instruction)}>{t('handoff.editGoal')}</Button> : <><Textarea aria-label={t('handoff.editAria')} value={revisedInstruction} onChange={(event) => setRevisedInstruction(event.target.value)} /><Button size="sm" disabled={busy || !actualTask || !revisedInstruction.trim()} onClick={() => void run(async () => { const result = await api(`/api/v1/handoffs/${handoff.id}`, { method: 'PATCH', body: json({ expectedRevision: handoff.revision, expectedTaskRevision: actualTask?.revision, instruction: revisedInstruction }) }); setRevisedInstruction(null); return result; }, t('handoff.savedVersionToast'))}>{t('handoff.saveVersion')}</Button></>}</div>}
+    <BodyText text={handoff.instruction} />{handoff.status === 'prepared' && !handoff.runs?.length && <div className="space-y-2">{revisedInstruction === null ? <Button size="sm" variant="ghost" onClick={() => setRevisedInstruction(handoff.instruction)}>{t('handoff.editGoal')}</Button> : <><Textarea aria-label={t('handoff.editAria')} value={revisedInstruction} onChange={(event) => setRevisedInstruction(event.target.value)} /><Button size="sm" disabled={busy || !actualTask || !revisedInstruction.trim()} onClick={() => void run(async () => { const result = await api(`/api/v1/handoffs/${handoff.id}`, { method: 'PATCH', body: json({ expectedRevision: handoff.revision, expectedTaskRevision: actualTask?.revision, instruction: revisedInstruction }) }); setRevisedInstruction(null); return result; }, t('handoff.savedVersionToast'))}>{t('handoff.saveVersion')}</Button></>}</div>}
     <details className="disclosure"><summary className="cursor-pointer text-xs text-muted-foreground">{t('handoff.frozenContext')}</summary><pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap break-all text-xs">{JSON.stringify(parseStored(handoff.inputSnapshot, {}), null, 2)}</pre></details>
     {handoff.mode === 'manual' ? <p className="rounded-lg bg-muted p-3 text-xs">{t('handoff.manualClaim', { provider: handoff.provider, id: handoff.id })}</p> : <div className="space-y-2"><Input aria-label={t('handoff.sourceAria')} placeholder={t('handoff.sourcePlaceholder')} disabled={busy} value={sourcePath} onChange={(event) => setSourcePath(event.target.value)} /><p className="text-xs text-muted-foreground">{t('handoff.gitHint')}</p><details className="disclosure"><summary className="cursor-pointer text-xs">{t('handoff.nonGitSummary')}</summary><Textarea className="mt-2" aria-label={t('handoff.inputFilesAria')} placeholder={t('handoff.inputFilesPlaceholder')} disabled={busy} value={inputFiles} onChange={(event) => { setInputFiles(event.target.value); setInputFilesEdited(true); }} /><p className="mt-1 text-xs text-muted-foreground">{t('handoff.inputFilesHint')}</p></details><Button size="sm" disabled={busy || !sourcePath.trim() || handoff.status !== 'prepared'} onClick={() => void run(() => api(`/api/v1/handoffs/${handoff.id}/start`, { method: 'POST', body: json({ sourcePath, inputFiles: inputFiles.split(/\r?\n/).map((path) => path.trim()).filter(Boolean), requestId: crypto.randomUUID() }) }), t('handoff.startedToast'))}>{t('handoff.start', { provider: handoff.provider === 'codex' ? 'Codex' : 'Claude Code' })}</Button></div>}
     {(handoff.runs ?? []).map((execution: any) => {
@@ -123,14 +123,14 @@ function ReviewSummary({ text }: { text: string }) {
   const { t } = useTranslation('workspace');
   const [open, setOpen] = useState(false);
   const { long, preview } = reviewPreview(text);
-  if (!long) return <MarkdownView content={text} />;
+  if (!long) return <BodyText text={text} format="markdown" />;
   return <>
-    <p className="whitespace-pre-wrap break-words text-sm">{preview}</p>
+    <BodyText text={preview} />
     <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(true)}>{t('handoff.expand')}</Button>
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent surface="glass" className="max-h-[min(85dvh,calc(100%-3rem))] max-w-[min(42rem,calc(100%-3rem))] overflow-y-auto">
         <DialogHeader><DialogTitle>{t('handoff.resultTitle')}</DialogTitle><DialogDescription>{t('handoff.resultDescription')}</DialogDescription></DialogHeader>
-        <MarkdownView content={text} />
+        <BodyText text={text} format="markdown" />
       </DialogContent>
     </Dialog>
   </>;
@@ -140,14 +140,14 @@ function ArtifactPreview({ content, encoding, markdown }: { content: string; enc
   const [open, setOpen] = useState(false);
   if (encoding !== 'utf8') return <pre className="my-3 max-h-80 overflow-auto whitespace-pre-wrap break-all text-xs">{t('handoff.binary')}</pre>;
   const { long } = reviewPreview(content);
-  const body = markdown ? <MarkdownView content={content} /> : <pre className="whitespace-pre-wrap break-all text-xs">{content}</pre>;
+  const body = <BodyText text={content} format={markdown ? 'markdown' : 'plain'} mono={!markdown} size="xs" />;
   return <>
     <div className={long ? 'my-3 max-h-40 overflow-hidden rounded-lg border p-3' : 'my-3 max-h-80 overflow-auto rounded-lg border p-3'}>{body}</div>
     {long && <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(true)}>{t('handoff.expand')}</Button>}
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent surface="glass" className="max-h-[min(85dvh,calc(100%-3rem))] max-w-[min(42rem,calc(100%-3rem))] overflow-y-auto">
         <DialogHeader><DialogTitle>{t('handoff.artifactTitle')}</DialogTitle><DialogDescription>{t('handoff.artifactDescription')}</DialogDescription></DialogHeader>
-        {markdown ? <MarkdownView content={content} /> : <pre className="whitespace-pre-wrap break-all text-sm">{content}</pre>}
+        <BodyText text={content} format={markdown ? 'markdown' : 'plain'} mono={!markdown} />
       </DialogContent>
     </Dialog>
   </>;

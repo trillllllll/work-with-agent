@@ -6,7 +6,7 @@ import { api } from '@/lib/api.js';
 import { intlLocale } from '@/i18n/index.js';
 import { Button } from '@/components/ui/button.js';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
-import { MarkdownView } from '@/components/chat/MarkdownView.js';
+import { BodyText } from '@/components/shared/BodyText.js';
 import { DiffLines } from './SkillEditor.js';
 import { formatSkillDiff, skillSourceLabel, type SkillDetail, type SkillDiff } from './skill-format.js';
 
@@ -26,7 +26,7 @@ function VersionDialog({ skillId, revision, onClose }: { skillId: string; revisi
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         {version.error && <p role="alert" className="text-sm text-destructive">{version.error.message}</p>}
-        {version.data && <MarkdownView content={version.data.instructions} />}
+        {version.data && <BodyText text={version.data.instructions} format="markdown" />}
         <DialogFooter><Button variant="outline" onClick={onClose}>{t('action.close')}</Button></DialogFooter>
       </DialogContent>
     </Dialog>

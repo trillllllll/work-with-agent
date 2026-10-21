@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog.js';
-import { MarkdownView } from '@/components/chat/MarkdownView.js';
+import { BodyText } from '@/components/shared/BodyText.js';
 import { cn } from '@/lib/utils.js';
 import { SkillHistory } from './SkillHistory.js';
 import { openSkillEditor, skillImportErrorText, skillOriginLabel, type SkillDetail, type SkillListItem } from './skill-format.js';
@@ -106,7 +106,7 @@ function SkillDetailView({ id, onBack }: { id: string; onBack: () => void }) {
         <button type="button" role="tab" aria-selected={tab === 'history'} data-testid="skill-tab-history" className={tabClass(tab === 'history')} onClick={() => setTab('history')}>{t('history.title')}</button>
       </div>
       {tab === 'body'
-        ? <div role="tabpanel" className="glass-subtle glass-scrollbar min-h-0 overflow-y-auto rounded-xl p-4" data-testid="skill-instructions"><MarkdownView content={skill.instructions} /></div>
+        ? <div role="tabpanel" className="glass-subtle glass-scrollbar min-h-0 overflow-y-auto rounded-xl p-4" data-testid="skill-instructions"><BodyText text={skill.instructions} format="markdown" /></div>
         : <div role="tabpanel" className="glass-scrollbar min-h-0 overflow-y-auto"><SkillHistory skill={skill} /></div>}
       {confirmDelete && <ConfirmDialog title={t('page.deleteTitle')} itemName={skill.name} description={t('page.deleteDescription')} busy={busy} onCancel={() => setConfirmDelete(false)} onConfirm={() => void act(() => api(`/api/skills/${skill.id}?expectedRevision=${skill.revision}`, { method: 'DELETE' }), t('page.deletedToast')).then((ok) => { setConfirmDelete(false); if (ok) onBack(); })} />}
     </article>

@@ -5,6 +5,7 @@ import type { ProposalItem } from '@/lib/proposal-group.js';
 import { Input } from '@/components/ui/input.js';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.js';
 import { Textarea } from '@/components/ui/textarea.js';
+import { BodyText } from '@/components/shared/BodyText.js';
 import { FieldDiff } from '@/components/chat/ReviewCard.js';
 import { displayText, fieldLabel, recordOf } from './present.js';
 
@@ -59,7 +60,7 @@ function ReadRow({ label, text, code, quote }: { label: string; text: string; co
   return (
     <div>
       <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="whitespace-pre-wrap text-sm">{text}</div>
+      <BodyText text={text} />
     </div>
   );
 }

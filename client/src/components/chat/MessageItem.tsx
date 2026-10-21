@@ -15,7 +15,7 @@ import { ExternalPromptCard } from './ExternalPromptCard.js';
 import { WorktreeCleanupChatCard } from '@/components/orchestration/WorktreesPage.js';
 import { isAppChangeApproval, ReviewCard } from './ReviewCard.js';
 import { isTaskBatchApproval, TaskBatchCard } from './TaskBatchCard.js';
-import { MarkdownView } from './MarkdownView.js';
+import { MarkdownView } from '@/components/shared/MarkdownView.js';
 
 function payloadText(activity: ToolActivity, argumentsLabel: string, resultLabel: string) {
   const parts: string[] = [];

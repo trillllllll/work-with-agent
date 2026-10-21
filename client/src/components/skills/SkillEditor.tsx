@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { Textarea } from '@/components/ui/textarea.js';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
-import { MarkdownView } from '@/components/chat/MarkdownView.js';
+import { BodyText } from '@/components/shared/BodyText.js';
 import { cn } from '@/lib/utils.js';
 import { lineDiff, skillSaveRequest, type FromApproval, type OpenSkillEditorDetail, type SkillDetail, type SkillDiffLine, type SkillDraftInput } from './skill-format.js';
 
@@ -103,7 +103,7 @@ export function SkillEditor({ state, onClose }: { state: EditorState; onClose: (
             </div>
             {mode === 'edit'
               ? <Textarea aria-label={t('editor.bodyLabel')} rows={12} className="font-mono text-[13px]" value={draft.instructions} onChange={(event) => set({ instructions: event.target.value })} />
-              : <div className="min-h-40 rounded-lg border p-3" data-testid="skill-editor-preview">{draft.instructions.trim() ? <MarkdownView content={draft.instructions} /> : <p className="text-muted-foreground">{t('editor.emptyBody')}</p>}</div>}
+              : <div className="min-h-40 rounded-lg border p-3" data-testid="skill-editor-preview">{draft.instructions.trim() ? <BodyText text={draft.instructions} format="markdown" /> : <p className="text-muted-foreground">{t('editor.emptyBody')}</p>}</div>}
           </div>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" aria-label={t('editor.enableLabel')} checked={draft.enabled} onChange={(event) => set({ enabled: event.target.checked })} />{t('editor.enableHint')}</label>
           <label className="grid gap-1 text-sm">{t('editor.reason')}<Input aria-label={t('editor.reasonLabel')} placeholder={reasonPlaceholder} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>

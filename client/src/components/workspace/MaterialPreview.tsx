@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MarkdownView } from '@/components/chat/MarkdownView.js';
+import { BodyText } from '@/components/shared/BodyText.js';
 import { attachmentPreviewKind } from '@/lib/attachment-title.js';
 
 type PreviewBody =
@@ -71,13 +71,13 @@ export function MaterialPreview({ materialId, revision, kind, content, fileName,
   const written = content?.trim() ?? '';
   const frame = 'absolute inset-0 h-full w-full rounded-lg border bg-white';
   return <div className="flex h-full min-h-0 flex-col gap-3">
-    {written && (kind === 'markdown' ? <div className="min-h-0 flex-1 overflow-auto"><MarkdownView content={content ?? ''} /></div> : <p className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words text-sm">{content}</p>)}
+    {written && <BodyText text={content ?? ''} format={kind === 'markdown' ? 'markdown' : 'plain'} className="min-h-0 flex-1 overflow-auto" />}
     {body.status === 'loading' && <p className="text-sm text-muted-foreground">{t('materialPreview.loading')}</p>}
     {body.status === 'error' && <p className="text-sm text-destructive">{t('materialPreview.error')}</p>}
     {body.status === 'unsupported' && <p className="text-sm text-muted-foreground">{t('materialPreview.unsupported')}</p>}
     {body.status === 'empty' && <p className="text-sm text-muted-foreground">{t('materialPreview.empty')}</p>}
-    {body.status === 'markdown' && <div className="min-h-0 flex-1 overflow-auto"><MarkdownView content={body.text} /></div>}
-    {body.status === 'text' && <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words font-mono text-sm">{body.text}</pre>}
+    {body.status === 'markdown' && <BodyText text={body.text} format="markdown" className="min-h-0 flex-1 overflow-auto" />}
+    {body.status === 'text' && <BodyText text={body.text} format="plain" mono className="min-h-0 flex-1 overflow-auto" />}
     {body.status === 'html' && <div className="relative min-h-0 flex-1"><iframe title={t('materialPreview.frameTitle')} sandbox="" srcDoc={body.text} className={frame} /></div>}
     {body.status === 'pdf' && <div className="relative min-h-0 flex-1"><iframe title={t('materialPreview.frameTitle')} src={body.url} className={frame} /></div>}
     {body.status === 'image' && <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto"><img alt={fileName || t('materialPreview.imageAlt')} src={body.url} className="max-h-full max-w-full object-contain" /></div>}

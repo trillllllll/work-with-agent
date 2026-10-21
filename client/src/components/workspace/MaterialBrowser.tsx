@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils.js';
 import { Button } from '@/components/ui/button.js';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog.js';
 import { Textarea } from '@/components/ui/textarea.js';
+import { BodyText } from '@/components/shared/BodyText.js';
 import { MaterialPreview } from './MaterialPreview.js';
 import { OrganizationPrompt } from './OrganizationPrompt.js';
 
@@ -199,7 +200,7 @@ export function MaterialBrowser({ topicId, taskId, onCreate, onEdit, children }:
                 {organizeResult?.proposalIds?.length > 0 && <a className="block text-sm text-primary underline" href="#/proposals">{t('materials.reviewSuggestions')}</a>}
               </div>
             </details>
-            <details className="disclosure shrink-0"><summary className="cursor-pointer text-xs text-muted-foreground">{t('materials.historySummary')}</summary><div className="max-h-[min(12rem,30dvh)] overflow-auto">{openedResource.evidence?.map((ref) => <p key={`${ref.type}:${ref.id}`} className="my-2 break-all text-xs">{t('materials.evidenceLine', { type: ref.type, id: ref.id, revision: ref.revision })}</p>)}{openedResource.versions?.map((version) => <div key={version.revision} className="mt-3 border-t pt-2 text-xs"><p>{t('materials.versionLine', { revision: version.revision, reason: version.reason ?? t('materials.savedOriginal') })}</p><p className="mt-1 whitespace-pre-wrap">{version.content}</p></div>)}</div></details>
+            <details className="disclosure shrink-0"><summary className="cursor-pointer text-xs text-muted-foreground">{t('materials.historySummary')}</summary><div className="max-h-[min(12rem,30dvh)] overflow-auto">{openedResource.evidence?.map((ref) => <p key={`${ref.type}:${ref.id}`} className="my-2 break-all text-xs">{t('materials.evidenceLine', { type: ref.type, id: ref.id, revision: ref.revision })}</p>)}{openedResource.versions?.map((version) => <div key={version.revision} className="mt-3 border-t pt-2 text-xs"><p className="mt-1 whitespace-pre-wrap">{t('materials.versionLine', { revision: version.revision, reason: version.reason ?? t('materials.savedOriginal') })}</p><BodyText text={version.content ?? ''} className="mt-1" /></div>)}</div></details>
           </div>}
         </DialogContent>
       </Dialog>
