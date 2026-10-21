@@ -6,7 +6,7 @@ import { ChangeService, ToolService, type ExecutionAdapter } from '../services.j
 import type { Actor } from './security.js';
 import { chatContextV3, contextFromRequest, type ChatContextV3 } from '../agent/chat-context.js';
 import { readPageState } from '../agent/app-knowledge.js';
-import { blockReason, changeDisplayName, changeStatus, filterFromPageState, migrateChangeNames, reversibleOp, syncEntityName, type ChangeStatus } from './change-list.js';
+import { DIFF_IGNORED_FIELDS, blockReason, changeDisplayName, changeStatus, filterFromPageState, migrateChangeNames, reversibleOp, syncEntityName, type ChangeStatus } from './change-list.js';
 
 const api = request(app);
 const snap = (value: unknown) => JSON.stringify(value);
@@ -194,6 +194,39 @@ describe('GET /api/changes', () => {
     const tool = await api.get('/api/changes').query({ entityId: 'zzchf09' });
     expect(tool.body.data.items[0].changeSummary).toEqual({ kind: 'tool', toolName: 'echo', success: true });
     expect(tool.body.data.items[0].canUndo).toBe(false);
+  });
+
+  it('skips a key that only one snapshot has, and ignores bookkeeping fields', async () => {
+    expect(DIFF_IGNORED_FIELDS).toEqual(['updatedAt', 'revision', 'createdAt']);
+    const shared = { title: 'zzch same', status: 'todo' };
+    await prisma.changeRecord.createMany({ data: [
+      { id: 'zzchd-oneside', entityType: 'task', entityId: 'zzchd-oneside', operation: 'update', entityName: 'zzch diff', source: 'user', beforeSnapshot: snap(shared), afterSnapshot: snap({ ...shared, priority: 'high', scheduledStart: '2026-10-01' }), createdAt: '2026-09-01T00:00:00.000Z' },
+      { id: 'zzchd-null', entityType: 'task', entityId: 'zzchd-null', operation: 'update', entityName: 'zzch diff', source: 'user', beforeSnapshot: snap({ title: 'zzch same', status: null }), afterSnapshot: snap({ title: 'zzch same', status: 'doing' }), createdAt: '2026-09-02T00:00:00.000Z' },
+      { id: 'zzchd-ignore', entityType: 'task', entityId: 'zzchd-ignore', operation: 'update', entityName: 'zzch diff', source: 'user', beforeSnapshot: snap({ ...shared, updatedAt: '2026-01-01T00:00:00.000Z', revision: 1, createdAt: '2026-01-01T00:00:00.000Z' }), afterSnapshot: snap({ ...shared, updatedAt: '2026-02-01T00:00:00.000Z', revision: 2, createdAt: '2026-01-02T00:00:00.000Z' }), createdAt: '2026-09-03T00:00:00.000Z' },
+      { id: 'zzchd-real', entityType: 'task', entityId: 'zzchd-real', operation: 'update', entityName: 'zzch diff', source: 'user', beforeSnapshot: snap({ title: 'zzch old', status: 'todo', updatedAt: '2026-01-01T00:00:00.000Z', revision: 1, createdAt: '2026-01-01T00:00:00.000Z', sortOrder: 1 }), afterSnapshot: snap({ title: 'zzch new', status: 'todo', priority: 'low', updatedAt: '2026-02-01T00:00:00.000Z', revision: 2, createdAt: '2026-01-02T00:00:00.000Z', sortOrder: 4 }), createdAt: '2026-09-04T00:00:00.000Z' },
+      { id: 'zzchd-group', entityType: 'task', entityId: 'zzchd-group', operation: 'update', entityName: 'zzch diff', source: 'user', beforeSnapshot: snap({ version: 2, entities: { tasks: { 'zzchd-group': { title: 'zzch same', description: 'keep' } }, topics: {}, tags: {} }, scopes: [] }), afterSnapshot: snap({ version: 2, entities: { tasks: { 'zzchd-group': { title: 'zzch same', description: 'keep', dueDate: '2026-10-21' } }, topics: {}, tags: {} }, scopes: [] }), createdAt: '2026-09-05T00:00:00.000Z' },
+    ] });
+    const summary = async (id: string) => (await api.get('/api/changes').query({ entityId: id })).body.data.items[0].changeSummary;
+    expect(await summary('zzchd-oneside')).toBeNull();
+    expect(await summary('zzchd-null')).toEqual({ field: 'status', before: '', after: 'doing' });
+    expect(await summary('zzchd-ignore')).toBeNull();
+    expect(await summary('zzchd-real')).toEqual({ field: 'title', before: 'zzch old', after: 'zzch new' });
+    expect(await summary('zzchd-group')).toBeNull();
+  });
+
+  it('keeps GET /api/v1/changes free of entityName', async () => {
+    await prisma.changeRecord.create({ data: { id: 'zzch-v1-shape', entityType: 'task', entityId: 'zzch-v1-entity', operation: 'update', entityName: 'zzch should-not-leak', source: 'user', conversationId: 'zzch-v1-chat', approvalId: 'zzch-v1-approval', requestId: 'zzch-v1-request', beforeSnapshot: '{"title":"a"}', afterSnapshot: '{"title":"b"}', createdAt: '2026-02-01T00:00:00.000Z' } });
+    const rows = await new ChangeService().list('task', 'zzch-v1-entity');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).not.toHaveProperty('entityName');
+    expect(Object.keys(rows[0]).sort()).toEqual(['actorId', 'afterSnapshot', 'approvalId', 'approvedByActorId', 'beforeSnapshot', 'connectionId', 'conversationId', 'createdAt', 'entityId', 'entityType', 'id', 'operation', 'proposalId', 'requestId', 'reversalOf', 'reversible', 'source', 'undoneAt']);
+    expect(rows[0]).toMatchObject({ id: 'zzch-v1-shape', reversible: true, operation: 'update', conversationId: 'zzch-v1-chat', beforeSnapshot: '{"title":"a"}', afterSnapshot: '{"title":"b"}' });
+    const response = await api.get('/api/v1/changes').query({ entityId: 'zzch-v1-entity' });
+    expect(response.status).toBe(200);
+    expect(response.body.data.items).toHaveLength(1);
+    expect(response.body.data.items[0]).not.toHaveProperty('entityName');
+    expect(response.body.data.items[0]).toMatchObject({ id: 'zzch-v1-shape', reversible: true, source: 'user', undoneAt: null });
+    expect(Object.keys(response.body.data.items[0]).sort()).toEqual(Object.keys(rows[0]).sort());
   });
 
   it('matches a full id, a name fragment, and English text that only looks like an id', async () => {

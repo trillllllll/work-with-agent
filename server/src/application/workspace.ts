@@ -54,9 +54,13 @@ export class WorkspaceMutation {
 export class ChangeService {
   constructor(private readonly mutations = new WorkspaceMutation()) {}
 
+  /** Only `GET /api/v1/changes` calls this. `entityName` is a UI column and stays off the v1 payload. */
   async list(entityType?: string, entityId?: string) {
     const records = await prisma.changeRecord.findMany({ where: { ...(entityType ? { entityType } : {}), ...(entityId ? { entityId } : {}) }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] });
-    return records.map((record) => ({ ...record, reversible: reversibleChange(record.entityType, record.operation) }));
+    return records.map((record) => {
+      const { entityName: _entityName, ...fields } = record;
+      return { ...fields, reversible: reversibleChange(record.entityType, record.operation) };
+    });
   }
 
   async undo(id: string, context: MutationContext = { source: 'user' }) {

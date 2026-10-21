@@ -20,6 +20,8 @@ const FIELD_PRIORITY: Record<string, string[]> = {
   tag: ['name', 'color'],
 };
 const OTHER_FIELDS = ['title', 'name', 'enabled', 'status', 'archivedAt'];
+/** Bookkeeping keys omitted before a field diff. A later stats feature will add `completedAt` and `completedAtEstimated`. */
+export const DIFF_IGNORED_FIELDS = ['updatedAt', 'revision', 'createdAt'] as const;
 
 export type OpGroup = (typeof OP_GROUPS)[number];
 export type ChangeStatus = (typeof STATUSES)[number];
@@ -277,12 +279,26 @@ function toolSummary(raw: unknown): ChangeSummary | null {
   return { kind: 'tool', toolName: value.toolName, success };
 }
 
+function withoutIgnored(value: Record<string, unknown> | null) {
+  if (!value) return null;
+  const next: Record<string, unknown> = { ...value };
+  for (const key of DIFF_IGNORED_FIELDS) delete next[key];
+  return next;
+}
+
 function fieldSummary(record: ChangeRow): ChangeSummary | null {
   if (!UPDATE_OPS.includes(record.operation)) return null;
-  const before = subjectObject(record.entityType, record.entityId, record.beforeSnapshot);
-  const after = subjectObject(record.entityType, record.entityId, record.afterSnapshot);
+  const before = withoutIgnored(subjectObject(record.entityType, record.entityId, record.beforeSnapshot));
+  const after = withoutIgnored(subjectObject(record.entityType, record.entityId, record.afterSnapshot));
   if (!before && !after) return null;
-  for (const field of FIELD_PRIORITY[record.entityType] ?? OTHER_FIELDS) {
+  const both = Boolean(before) && Boolean(after);
+  const priority = FIELD_PRIORITY[record.entityType] ?? OTHER_FIELDS;
+  const rest = [...new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})])]
+    .filter((field) => !priority.includes(field))
+    .sort((left, right) => left.localeCompare(right));
+  for (const field of [...priority, ...rest]) {
+    // A key that exists on only one snapshot is a schema addition, not an edit. An explicit null is a value.
+    if (both && (!(field in before!) || !(field in after!))) continue;
     const left = before?.[field];
     const right = after?.[field];
     if (JSON.stringify(left ?? null) === JSON.stringify(right ?? null)) continue;
