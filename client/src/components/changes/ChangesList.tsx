@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge.js';
 import { Button } from '@/components/ui/button.js';
 import { Skeleton } from '@/components/ui/skeleton.js';
 import { Tooltip } from '@/components/ui/tooltip.js';
-import { CHANGE_ENTITY_TYPES, groupChangesByDay, type ChangeDay } from './change-filters.js';
+import { CHANGE_ENTITY_TYPES, changeTimeLabel, groupChangesByDay, type ChangeDay } from './change-filters.js';
 
 const OPERATION_IDS = ['create', 'update', 'delete', 'archive', 'archive_preserve', 'reorder', 'move_tasks_to_inbox', 'restore', 'permanent_delete', 'confirm_summary', 'discard_summary', 'execute', 'undo'] as const;
 const FIELD_KEYS: Record<string, string> = {
@@ -71,8 +71,7 @@ function entityLabel(entityType: string, t: TFunction<'settings'>) {
 }
 
 function formatTime(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(intlLocale());
+  return changeTimeLabel(value, intlLocale());
 }
 
 function blockedReason(item: ChangeListItem, t: TFunction<'settings'>) {

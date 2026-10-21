@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EMPTY_CHANGE_FILTERS, changeChips, changeDay, filterCount, filtersFromQuery, filtersToPageState, filtersToQueryPatch, groupChangesByDay, hasActiveFilters, rangeToFrom, removeChangeChip, toChangeApiQuery, type ChangeFilters } from './change-filters.js';
+import { EMPTY_CHANGE_FILTERS, changeChips, changeDay, changeTimeLabel, filterCount, filtersFromQuery, filtersToPageState, filtersToQueryPatch, groupChangesByDay, hasActiveFilters, rangeToFrom, removeChangeChip, toChangeApiQuery, type ChangeFilters } from './change-filters.js';
 
 const sample: ChangeFilters = { type: ['task', 'topic'], op: ['update', 'other'], source: ['user', 'c:conn-1'], status: ['reversible'], range: '7d', q: ' alpha ' };
 
@@ -110,5 +110,20 @@ describe('chips', () => {
     expect(hasActiveFilters({ ...EMPTY_CHANGE_FILTERS, q: 'alpha' })).toBe(true);
     expect(filterCount({ ...EMPTY_CHANGE_FILTERS, q: 'alpha' })).toBe(0);
     expect(hasActiveFilters({ ...EMPTY_CHANGE_FILTERS, range: 'today' })).toBe(true);
+  });
+});
+
+describe('changeTimeLabel', () => {
+  const now = new Date(2026, 9, 21, 15, 0);
+  it('shows only the clock for today and yesterday', () => {
+    expect(changeTimeLabel(new Date(2026, 9, 21, 9, 5).toISOString(), 'en-GB', now)).toBe('09:05');
+    expect(changeTimeLabel(new Date(2026, 9, 20, 23, 30).toISOString(), 'en-GB', now)).toBe('23:30');
+  });
+  it('adds the date for earlier days and the year across years', () => {
+    expect(changeTimeLabel(new Date(2026, 9, 18, 8, 0).toISOString(), 'en-GB', now)).toMatch(/18 Oct.*08:00/);
+    expect(changeTimeLabel(new Date(2025, 11, 31, 8, 0).toISOString(), 'en-GB', now)).toMatch(/2025/);
+  });
+  it('returns the raw value when unparsable', () => {
+    expect(changeTimeLabel('nope', 'en-GB', now)).toBe('nope');
   });
 });

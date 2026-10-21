@@ -217,3 +217,13 @@ export function removeChangeChip(filters: ChangeFilters, id: string): ChangeFilt
   if (dimension === 'range') return { ...filters, range: 'all' };
   return filters;
 }
+
+/** Row time: today and yesterday sit under their own day header, so they only show the clock. */
+export function changeTimeLabel(createdAt: string, locale: string, now = new Date()): string {
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return createdAt;
+  const clock: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', hour12: false };
+  if (changeDay(createdAt, now) !== 'earlier') return date.toLocaleTimeString(locale, clock);
+  const sameYear = date.getFullYear() === now.getFullYear();
+  return date.toLocaleString(locale, { ...(sameYear ? {} : { year: 'numeric' }), month: 'short', day: 'numeric', ...clock });
+}
