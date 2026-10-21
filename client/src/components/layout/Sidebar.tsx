@@ -53,7 +53,7 @@ export function Sidebar({ compact, route, page, topics, topicsLoading, selectedT
   const assistant = { ...chatItem, label: t('sidebar.aiAssistant') };
   if (compact) return <aside className="app-sidebar assistant-compact-nav" style={{ gridColumn: 1, gridRow: '1 / 3' }}>
     <div className="flex justify-center py-3"><ThemeToggle /></div>
-    <nav aria-label={t('sidebar.mainNav')} className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto">{[...navigationItems, assistant].map(({ view, label, icon: Icon }) => <button key={view} type="button" title={label} aria-label={label} aria-current={route === view ? 'page' : undefined} className="grid size-10 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => onNavigate(view)}><Icon className="size-4" /></button>)}</nav>
+    <nav aria-label={t('sidebar.mainNav')} className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-x-hidden overflow-y-auto">{[...navigationItems, assistant].map(({ view, label, icon: Icon }) => <button key={view} type="button" title={label} aria-label={label} aria-current={route === view ? 'page' : undefined} className="grid size-10 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => onNavigate(view)}><Icon className="size-4" /></button>)}</nav>
   </aside>;
   return (
     <aside className={`app-sidebar${planning ? ' planning-sidebar' : ''}`} style={{ gridColumn: 1, gridRow: "1 / 3" }}>
