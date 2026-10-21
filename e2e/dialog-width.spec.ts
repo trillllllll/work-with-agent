@@ -69,6 +69,8 @@ test('弹窗宽度留出边距，不铺满窗口', async ({ page, request }) => 
   expect(settings.left).toBeGreaterThan(16);
 
   await page.setViewportSize({ width: 700, height: 800 });
+  // 窗口变窄后，侧栏要等 matchMedia 的 change 事件和下一次渲染才卸载；在此之前侧栏的「新建清单」仍在
+  await expect(page.locator('.app-sidebar')).toHaveCount(0);
   await page.goto('/#/topics');
   await page.getByRole('button', { name: '新建清单', exact: true }).click();
   const narrowForm = await measure(page, '新建清单');
