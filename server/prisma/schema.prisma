@@ -104,6 +104,7 @@ model Task {
   @@index([parentId])
   @@index([deleteBatchId])
   @@index([completedAt])
+  @@index([createdAt])
   @@map("tasks")
 }
 
@@ -236,6 +237,7 @@ model ChangeRecord {
   createdAt String @default("") @map("created_at")
   @@index([entityType, entityId, createdAt])
   @@index([connectionId, createdAt])
+  @@index([createdAt, connectionId])
   @@map("change_records")
 }
 

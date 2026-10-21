@@ -25,6 +25,7 @@ import { createLibraryRouter } from './routes/library.js';
 import { ReviewService } from './application/reviews.js';
 import { OrganizationService } from './application/knowledge-organizations.js';
 import { FocusService } from './application/focus.js';
+import { statsOverview } from './application/stats-overview.js';
 import { listPlanTimeBands, replacePlanTimeBands } from './application/plan-time-bands.js';
 import { isValidVisibleViews, type MobileNavigationView } from './domain/mobile-navigation.js';
 import { readMobileNavigation, writeMobileNavigation } from './application/mobile-navigation.js';
@@ -186,6 +187,15 @@ app.get('/api/tasks/:id/activity', async (req, res, next) => { try { send(res, a
 app.get('/api/plan/time-bands', async (_req, res, next) => { try { send(res, await listPlanTimeBands()); } catch (error) { next(error); } });
 app.put('/api/plan/time-bands', async (req, res, next) => { try { send(res, await replacePlanTimeBands(req.body)); } catch (error) { next(error); } });
 app.get('/api/focus-sessions', async (req, res, next) => { try { send(res, await focus.list(req.query)); } catch (error) { next(error); } });
+app.get('/api/stats/overview', async (req, res, next) => {
+  try {
+    send(res, await statsOverview({
+      from: typeof req.query.from === 'string' ? req.query.from : '',
+      to: typeof req.query.to === 'string' ? req.query.to : '',
+      tz: typeof req.query.tz === 'string' ? req.query.tz : '',
+    }));
+  } catch (error) { next(error); }
+});
 app.post('/api/focus-sessions', schema(z.object({ taskId: z.string().min(1).nullable(), kind: z.enum(['focus', 'break']).optional(), startedAt: z.string().min(1), endedAt: z.string().min(1), durationMinutes: z.number().int().min(0).max(1440), plannedMinutes: z.number().int().min(1).max(10080).optional(), completed: z.boolean().optional() })), async (req, res, next) => { try { send(res, await focus.create(req.body)); } catch (error) { next(error); } });
 app.post('/api/tasks', async (req, res, next) => { try { send(res, await tasks.create(req.body, userContext(req))); } catch (error) { next(error); } });
 app.patch('/api/tasks/:id', async (req, res, next) => { try { send(res, await tasks.update(String(req.params.id), req.body, userContext(req))); } catch (error) { next(error); } });

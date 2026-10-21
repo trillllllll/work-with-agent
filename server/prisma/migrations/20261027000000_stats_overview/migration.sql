@@ -14,3 +14,8 @@ ALTER TABLE "Connection" ADD COLUMN "last_used_at" TEXT;
 
 -- CreateIndex
 CREATE INDEX "change_records_connection_id_created_at_idx" ON "change_records"("connection_id", "created_at");
+
+-- Range aggregates for the stats overview. (created_at, connection_id) covers the
+-- connection write GROUP BY so SQLite does not read snapshot blobs.
+CREATE INDEX "tasks_created_at_idx" ON "tasks"("created_at");
+CREATE INDEX "change_records_created_at_connection_id_idx" ON "change_records"("created_at", "connection_id");

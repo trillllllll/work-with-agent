@@ -833,5 +833,7 @@ export const en: Record<string, string> = {
   "统计的结束时间无效": "The stats range end time is invalid",
   "统计区间的开始必须早于结束": "The stats range start must be earlier than the end",
   "统计区间不能超过 366 天": "The stats range cannot be longer than 366 days",
+  "统计区间无效": "The stats range is invalid",
+  "统计分区加载失败": "This stats section failed to load",
   "统计需要同时提供开始和结束时间": "Stats needs both a start and an end time"
 };
