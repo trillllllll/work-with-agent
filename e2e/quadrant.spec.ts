@@ -31,7 +31,7 @@ test('四象限复用优先级，并支持全局、清单和拖动保存', async
 
   await page.goto('/#/board');
   await expect(page.getByRole('heading', { name: '四象限清单', exact: true })).toBeVisible();
-  const quadrantToggle = page.getByRole('button', { name: '四象限', exact: true }).last();
+  const quadrantToggle = page.getByRole('main').getByRole('button', { name: '四象限', exact: true });
   await quadrantToggle.click();
   await expect(page.getByTestId(`task-card-${high.id}`)).toBeVisible();
   const source = page.getByTestId(`task-card-${high.id}`);
@@ -48,7 +48,7 @@ test('四象限复用优先级，并支持全局、清单和拖动保存', async
   await session.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: to.x + to.width / 2, y: to.y + to.height / 2, button: 'left', buttons: 0, clickCount: 1 });
   await expect.poll(async () => (await data(await request.get(`${apiUrl}/api/tasks/${high.id}`))).priority).toBe('medium');
   await page.reload();
-  await page.getByRole('button', { name: '四象限', exact: true }).last().click();
+  await page.getByRole('main').getByRole('button', { name: '四象限', exact: true }).click();
   const mediumRegion = page.getByRole('region', { name: '重要但不紧急，计划安排', exact: true });
   await expect(mediumRegion.getByTestId(`task-card-${high.id}`)).toBeVisible();
   const lowRegion = page.getByRole('region', { name: '不重要但紧急，快速处理或委派', exact: true });
