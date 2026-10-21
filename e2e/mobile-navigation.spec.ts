@@ -26,6 +26,14 @@ async function putConfig(request: APIRequestContext, visibleViews: string[]) {
 }
 const sleep = (ms: number) => new Promise(done => setTimeout(done, ms));
 
+async function waitForSettingsScroll(page: Page) {
+  const scroller = page.getByTestId('settings-category');
+  await expect.poll(async () => scroller.evaluate((node) => new Promise<boolean>((resolve) => {
+    const first = node.scrollTop;
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve(node.scrollTop === first)));
+  }))).toBe(true);
+}
+
 test('exact order, fixed more, persistence and empty selection', async ({
   page,
   request,
@@ -340,13 +348,19 @@ test('键盘：手柄聚焦后 Space、方向键、Space 完成排序', async ({
   const panel = page.getByTestId('mobile-navigation-settings');
   const handle = panel.getByRole('button', { name: '拖动规划', exact: true });
   await expect(handle).toBeVisible();
+  const targetRow = panel.getByTestId('mobile-navigation-row-inbox');
+  await handle.scrollIntoViewIfNeeded();
+  await targetRow.scrollIntoViewIfNeeded();
+  await waitForSettingsScroll(page);
 
   await handle.focus();
   await page.keyboard.press('Space');
   await sleep(150);
   await page.keyboard.press('ArrowDown');
+  await waitForSettingsScroll(page);
   await sleep(150);
   await page.keyboard.press('ArrowDown');
+  await waitForSettingsScroll(page);
   await sleep(150);
   await page.keyboard.press('Space');
 
