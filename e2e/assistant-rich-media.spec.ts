@@ -44,9 +44,13 @@ test('停止后保留已完成块，迟到内容不再出现，历史保持相�
   await page.goto('/#/chat');
   await page.getByLabel('向 AI 提问').fill('富媒体验收停止'); await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect(page.locator('[data-block-type=mermaid]')).toHaveAttribute('data-block-status', 'ready');
+  // mock 发完「中间说明」后停 5 秒。服务端按 100ms 批量下发文字，等这段文字真的到了页面再停止，
+  // 否则这个块还停在 pending 类型（尚无文字），停止后变成 pending 错误块，不是文字块。
+  await expect(page.locator('[data-block-type=text][data-block-status=pending]')).toContainText('中间说明');
   await page.getByRole('button', { name: '停止生成' }).click();
   await expect(page.getByRole('button', { name: '停止生成' })).toHaveCount(0);
   await expect(page.locator('[data-block-type=text]').last()).toHaveAttribute('data-block-status', 'error');
+  await expect(page.locator('[data-block-type=text]').last()).toContainText('中间说明');
   await expect(page.getByText('最后一段', { exact: false })).toHaveCount(0);
   await page.reload();
   await expect(page.locator('[data-block-type=mermaid]')).toHaveAttribute('data-block-status', 'ready');
