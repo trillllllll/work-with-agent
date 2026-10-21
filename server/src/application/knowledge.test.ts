@@ -448,6 +448,28 @@ describe('knowledge evidence and review closed loops', () => {
     expect((await reviews.batches(ownerActor, rule.id))[0].counts).toBeNull();
   });
 
+  it('counts a completion by completedAt and ignores a later title edit', async () => {
+    const project = await topic();
+    const early = await write('task.create', { topicId: project, title: '早已完成' });
+    const done = await write('task.update', { status: 'done' }, early.id, early.revision);
+    await prisma.task.update({ where: { id: early.id }, data: { completedAt: '2020-01-01T00:00:00.000Z', completedAtEstimated: false } });
+    await write('task.update', { title: '早已完成但刚改标题' }, early.id, done.revision);
+    const stored = await prisma.task.findUniqueOrThrow({ where: { id: early.id } });
+    expect(stored).toMatchObject({ status: 'done', completedAt: '2020-01-01T00:00:00.000Z', completedAtEstimated: false });
+    const reviews = new ReviewService();
+    const rule = await reviews.createRule(ownerActor, { name: '完成口径', topicIds: [project], provider: 'none' });
+    const stale = await reviews.run(ownerActor, rule.id);
+    const numbers = (content: string, label: string) => [...content.matchAll(new RegExp(`^- ${label}：(\\d+)$`, 'gm'))].reduce((sum, match) => sum + Number(match[1]), 0);
+    expect(stale?.counts?.completed).toBe(0);
+    expect(numbers(stale!.content, '完成')).toBe(0);
+    const fresh = await write('task.create', { topicId: project, title: '窗口内完成' });
+    await write('task.update', { status: 'done' }, fresh.id, fresh.revision);
+    const current = await reviews.run(ownerActor, rule.id, { occurrenceKey: 'manual:completed-at-window', at: new Date(Date.now() + 5_000) });
+    expect(current?.counts?.completed).toBe(1);
+    expect(numbers(current!.content, '完成')).toBe(1);
+    expect(current?.counts).toEqual({ added: numbers(current!.content, '新增'), completed: numbers(current!.content, '完成'), overdue: numbers(current!.content, '逾期未完成'), blocked: numbers(current!.content, '阻塞') });
+  });
+
   it('counts pending proposals recorded on the organization request', async () => {
     const project = await topic();
     const task = await write('task.create', { topicId: project, title: '原始任务' });

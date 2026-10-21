@@ -197,12 +197,15 @@ export class ReviewService {
         if (topic?.archivedAt) { skipped.push(topic.name); continue; }
         snapshots.push(await takeKnowledgeSnapshot(actor, { topicId }));
         const tasks = await prisma.task.findMany({ where: { topicId, deletedAt: null }, orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }] });
-        const changed = tasks.filter((task) => task.updatedAt >= cutoff && task.updatedAt <= at.toISOString());
+        const updatedInWindow = tasks.filter((task) => task.updatedAt >= cutoff && task.updatedAt <= at.toISOString());
+        const completedTasks = tasks.filter((task) => task.status === 'done' && task.completedAt != null && task.completedAt >= cutoff && task.completedAt <= at.toISOString());
+        const seen = new Set(updatedInWindow.map((task) => task.id));
+        const changed = [...updatedInWindow, ...completedTasks.filter((task) => !seen.has(task.id))].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id));
         const materials = await prisma.material.findMany({ where: { topicId, archivedAt: null, updatedAt: { gte: cutoff, lte: at.toISOString() } }, orderBy: { updatedAt: 'desc' } });
         const memories = await prisma.memory.findMany({ where: { topicId, updatedAt: { gte: cutoff, lte: at.toISOString() } }, orderBy: { updatedAt: 'desc' } });
         const proposals = await prisma.organizationRequest.findMany({ where: { topicId, status: 'proposed' } });
-        const added = changed.filter((task) => task.createdAt >= cutoff).length;
-        const completed = changed.filter((task) => task.status === 'done').length;
+        const added = updatedInWindow.filter((task) => task.createdAt >= cutoff).length;
+        const completed = completedTasks.length;
         const overdue = tasks.filter((task) => task.status !== 'done' && (scheduleLastDate(task) ?? '9999-12-31') < today).length;
         const blocked = tasks.filter((task) => task.status === 'blocked').length;
         counts.added += added;
