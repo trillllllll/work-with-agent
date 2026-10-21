@@ -220,6 +220,7 @@ model ChangeRecord {
   proposalId String? @map("proposal_id")
   entityType String @map("entity_type")
   entityId String @map("entity_id")
+  entityName String? @map("entity_name")
   operation String
   beforeSnapshot String? @map("before_snapshot")
   afterSnapshot String? @map("after_snapshot")
@@ -232,6 +233,8 @@ model ChangeRecord {
   approvedByActorId String? @map("approved_by_actor_id")
   createdAt String @default("") @map("created_at")
   @@index([entityType, entityId, createdAt])
+  @@index([createdAt, id])
+  @@index([entityId])
   @@map("change_records")
 }
 

@@ -113,9 +113,9 @@ describe('REST task workflow', () => {
     expect(history.map((item: any) => item.reason)).toEqual(['created', 'topic_archived']);
     expect(history[1].fromTopic.name).toBe(topic.name);
 
-    const changes = (await request(app).get(`/api/changes?entityType=topic&entityId=${topic.id}`)).body.data;
+    const changes = (await request(app).get(`/api/changes?entityType=topic&entityId=${topic.id}`)).body.data.items;
     const archive = changes.find((item: any) => item.operation === 'archive');
-    expect(archive.reversible).toBe(true);
+    expect(archive.canUndo).toBe(true);
     expect((await request(app).post(`/api/changes/${archive.id}/undo`)).status).toBe(200);
     expect((await request(app).get(`/api/topics/${topic.id}`)).status).toBe(200);
     expect((await request(app).get(`/api/tasks/${active.id}`)).body.data.topicId).toBe(topic.id);
@@ -132,7 +132,7 @@ describe('REST task workflow', () => {
     const task = (await request(app).post('/api/tasks').send({ topicId: source.id, title: '归属已变化' })).body.data;
     await request(app).delete(`/api/topics/${source.id}`);
     await request(app).patch(`/api/tasks/${task.id}`).send({ topicId: target.id });
-    const changes = (await request(app).get(`/api/changes?entityType=topic&entityId=${source.id}`)).body.data;
+    const changes = (await request(app).get(`/api/changes?entityType=topic&entityId=${source.id}`)).body.data.items;
     const response = await request(app).post(`/api/changes/${changes.find((item: any) => item.operation === 'archive').id}/undo`);
     expect(response.status).toBe(409);
     expect(response.body.code).toBe('UNDO_CONFLICT');
@@ -145,7 +145,7 @@ describe('REST task workflow', () => {
     const topic = (await request(app).post('/api/topics').send({ name: `撤销归属-${Date.now()}` })).body.data;
     const task = (await request(app).post('/api/tasks').send({ title: '撤销归属任务' })).body.data;
     await request(app).patch(`/api/tasks/${task.id}`).send({ topicId: topic.id });
-    const changes = (await request(app).get(`/api/changes?entityType=task&entityId=${task.id}`)).body.data;
+    const changes = (await request(app).get(`/api/changes?entityType=task&entityId=${task.id}`)).body.data.items;
     await request(app).post(`/api/changes/${changes.find((item: any) => item.operation === 'update').id}/undo`);
     expect((await request(app).get(`/api/tasks/${task.id}`)).body.data.topicId).toBeNull();
     const history = (await request(app).get(`/api/tasks/${task.id}/topic-history`)).body.data;

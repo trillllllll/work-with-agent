@@ -4,6 +4,7 @@ import { digest } from '../runner/workspaces.js';
 import { assertTopicAccess, actorFromConnection, type Actor } from './security.js';
 import { prisma } from '../infrastructure/prisma.js';
 import type { Prisma, Run, Handoff } from '@prisma/client';
+import { changeDisplayName, syncEntityName } from './change-list.js';
 
 export const now = () => new Date().toISOString();
 export type Db = Prisma.TransactionClient;
@@ -45,6 +46,9 @@ export async function appendEvent(tx: Db, runId: string, type: string, payload: 
   return tx.runEvent.create({ data: { runId, sequence: run.lastSequence, eventId, type, payload: serialized, createdAt: now() } });
 }
 export async function handoffAudit(tx: Db, actor: Actor, entityType: string, entityId: string, operation: string, before: unknown, after: unknown) {
-  return tx.changeRecord.create({ data: { entityType, entityId, operation, beforeSnapshot: before ? JSON.stringify(before) : null, afterSnapshot: after ? JSON.stringify(after) : null, source: actor.kind === 'user' ? 'user' : 'agent', actorId: actor.id, connectionId: actor.connectionId, createdAt: now() } });
+  const entityName = changeDisplayName(entityType, entityId, before, after, operation);
+  const record = await tx.changeRecord.create({ data: { entityType, entityId, entityName, operation, beforeSnapshot: before ? JSON.stringify(before) : null, afterSnapshot: after ? JSON.stringify(after) : null, source: actor.kind === 'user' ? 'user' : 'agent', actorId: actor.id, connectionId: actor.connectionId, createdAt: now() } });
+  await syncEntityName(tx, entityType, entityId, operation, entityName);
+  return record;
 }
 export const activeRunStatuses = ['created', 'accepted', 'running', 'cancelling', 'unknown'];

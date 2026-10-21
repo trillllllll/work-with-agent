@@ -54,6 +54,8 @@ export const chatContextV3 = chatContextV2.extend({
     query: short.optional(), folderId: short.optional(), tagIds: z.array(short).max(100).optional(),
     kind: short.optional(), libraryView: short.optional(), taskTopicId: short.optional(), linkedTaskId: short.optional(),
     selectedId: short.optional(), selectedRevision: z.number().int().positive().optional(), status: short.optional(),
+    operation: short.optional(),
+    source: short.optional(),
   }).strict(),
   attachments: z.array(chatAttachment).max(20).refine((items) => items.reduce((sum, item) => sum + [...item.text].length, 0) <= 40000, '附件合计最多 40,000 字符'),
 }).strict();

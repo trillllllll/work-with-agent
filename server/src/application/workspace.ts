@@ -5,6 +5,7 @@ import { TopicService, TagService } from './workspace-topic.js';
 import { parseInput, tagColors, taskFields as taskFieldObject, topicCreateSchema } from './workspace-input.js';
 import { ChangeGroup, conflict, isGroup, notFound, now, prisma, restoreGroup, mutationTransaction, recordChange, type Db, type MutationContext, type GroupSnapshot } from './workspace-store.js';
 import { hasUndoHandler, externalUndo } from './undo-registry.js';
+import { blockReason, blockedChangeError, reversibleOp } from './change-list.js';
 import { ownerActor } from './security.js';
 
 export { TaskService, TopicService, TagService };
@@ -62,8 +63,8 @@ export class ChangeService {
     return mutationTransaction(context, async (tx) => {
       const record = await tx.changeRecord.findUnique({ where: { id } });
       if (!record) throw notFound('变更记录不存在');
-      if (!reversibleChange(record.entityType, record.operation)) throw new DomainError('CHANGE_NOT_REVERSIBLE', record.entityType === 'execution' ? '受控执行记录不可撤销' : '该变更不可撤销', 400);
-      if (record.undoneAt) throw new DomainError('CHANGE_ALREADY_UNDONE', '该变更已经撤销', 400);
+      const blocked = blockReason(record);
+      if (blocked) throw blockedChangeError(blocked);
       const before = record.beforeSnapshot ? JSON.parse(record.beforeSnapshot) : null;
       const after = record.afterSnapshot ? JSON.parse(record.afterSnapshot) : null;
       if (hasUndoHandler(record.entityType) || before?.version === 3) {
@@ -117,15 +118,8 @@ async function assertUndoCurrent(tx: Db, beforeItem: { entityType: string; entit
   }
 }
 
-function reversibleChange(entityType: string, operation: string) {
-  if (operation.startsWith('undo:')) return false;
-  if (entityType === 'workspace' && operation === 'batch') return true;
-  if (entityType === 'proposal' && operation === 'batch') return true;
-  if (hasUndoHandler(entityType)) return true;
-  if (entityType === 'task') return ['create', 'update', 'delete', 'restore', 'reorder'].includes(operation);
-  if (entityType === 'topic') return ['create', 'update', 'delete', 'archive', 'archive_preserve', 'restore', 'move_tasks_to_inbox', 'confirm_summary', 'discard_summary'].includes(operation);
-  if (entityType === 'tag') return ['create', 'update', 'delete'].includes(operation);
-  return false;
+export function reversibleChange(entityType: string, operation: string) {
+  return reversibleOp(entityType, operation);
 }
 
 const taskFields = ['id', 'topicId', 'title', 'description', 'status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'deletedAt', 'createdAt', 'updatedAt', 'parentId', 'sortOrder', 'revision', 'deleteBatchId', 'tagIds'];

@@ -5,6 +5,7 @@ type UndoHandler = (tx: Db, actor: Actor, record: UndoRecord, context: MutationC
 const handlers = new Map<string, UndoHandler>();
 export function registerUndoHandler(entityType: string, handler: UndoHandler) { handlers.set(entityType, handler); }
 export function hasUndoHandler(entityType: string) { return handlers.has(entityType); }
+export function undoHandlerTypes() { return [...handlers.keys()]; }
 export function externalUndo(tx: Db, actor: Actor, record: UndoRecord, context: MutationContext) {
   const handler = handlers.get(record.entityType);
   if (!handler) throw new Error(`不支持的撤销类型: ${record.entityType}`);

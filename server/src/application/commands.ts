@@ -9,6 +9,7 @@ import { prisma } from '../infrastructure/prisma.js';
 import { TaskService, TopicService, TagService, ChangeService } from './workspace.js';
 import { taskCreateSchema, taskUpdateSchema, topicCreateSchema, topicUpdateSchema, tagCreateSchema, tagUpdateSchema, reorderSchema, parseInput } from './workspace-input.js';
 import { type Db, type MutationContext, type GroupSnapshot, isGroup, now } from './workspace-store.js';
+import { changeDisplayName } from './change-list.js';
 import { type Actor, getActor, assertOwner, assertOwnerOrLearningSkill, assertTopicAccess, actorFromConnection } from './security.js';
 import { commandDescriptor } from './command-catalog.js';
 import { discardPendingBlobs, flushUnreferencedBlobs } from './task-images.js';
@@ -369,7 +370,12 @@ async function executeBatch(tx: Db, actor: Actor, commands: Command[], proposalI
     const parts = changes.filter((row) => !workspace.includes(row));
     if (combinedWorkspace) parts.unshift({ ...workspace[0], entityType: 'workspace', operation: 'batch', beforeSnapshot: JSON.stringify(combinedWorkspace.before), afterSnapshot: JSON.stringify(combinedWorkspace.after) });
     await tx.changeRecord.deleteMany({ where: { id: { in: changes.map((row) => row.id) } } });
-    const record = await tx.changeRecord.create({ data: { entityType: merged ? 'workspace' : 'proposal', entityId: proposalId ?? randomUUID(), operation: commands[0].kind === 'change.undo' ? 'undo:batch' : 'batch', beforeSnapshot: JSON.stringify(merged?.before ?? { version: 3, changes: parts.map((row) => ({ entityType: row.entityType, entityId: row.entityId, operation: row.operation, snapshot: row.beforeSnapshot })) }), afterSnapshot: JSON.stringify(merged?.after ?? { version: 3, changes: parts.map((row) => ({ entityType: row.entityType, entityId: row.entityId, operation: row.operation, snapshot: row.afterSnapshot })) }), source, actorId: recordedActor.id, connectionId: recordedActor.connectionId, proposalId, approvedByActorId: attribution?.approvedByActorId ?? null, createdAt: now() } });
+    const operation = commands[0].kind === 'change.undo' ? 'undo:batch' : 'batch';
+    const batchType = merged ? 'workspace' : 'proposal';
+    const batchId = proposalId ?? randomUUID();
+    const beforeValue = merged?.before ?? { version: 3, changes: parts.map((row) => ({ entityType: row.entityType, entityId: row.entityId, operation: row.operation, snapshot: row.beforeSnapshot })) };
+    const afterValue = merged?.after ?? { version: 3, changes: parts.map((row) => ({ entityType: row.entityType, entityId: row.entityId, operation: row.operation, snapshot: row.afterSnapshot })) };
+    const record = await tx.changeRecord.create({ data: { entityType: batchType, entityId: batchId, entityName: changeDisplayName(batchType, batchId, beforeValue, afterValue, operation), operation, beforeSnapshot: JSON.stringify(beforeValue), afterSnapshot: JSON.stringify(afterValue), source, actorId: recordedActor.id, connectionId: recordedActor.connectionId, proposalId, approvedByActorId: attribution?.approvedByActorId ?? null, createdAt: now() } });
     changeId = record.id;
   }
   const affectedTaskIds = [...new Set(results.flatMap((result: any) => result?.meta?.affectedTaskIds ?? []))];
