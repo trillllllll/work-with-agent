@@ -1,4 +1,4 @@
-import { test, expect, type APIRequestContext } from './fixtures.js';
+import { test, expect, type APIRequestContext, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
 const apiUrl = 'http://127.0.0.1:3015';
@@ -16,6 +16,10 @@ function gate() {
   let release!: () => void;
   const promise = new Promise<void>((resolve) => { release = resolve; });
   return { promise, release };
+}
+// 服务端已写入时，详情里的 metaDirty 要等「正在保存…」卸下的那一帧才变 false。
+async function waitForDetailSaveIdle(page: Page) {
+  await expect(page.getByRole('status').filter({ hasText: /正在保存|保存中…/ })).toHaveCount(0);
 }
 
 test.beforeEach(resetE2eDatabase);
@@ -446,6 +450,7 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await expect.poll(async () => (await task(request, item.id)).tagIds).toEqual([]);
     await tag.check();
     await expect.poll(async () => (await task(request, item.id)).tagIds).toEqual([label.id]);
+    await waitForDetailSaveIdle(page);
     await page.goto('/#/tags');
     await page.getByRole('button', { name: '删除标签：重要事项', exact: true }).click();
     await page.getByRole('dialog', { name: '删除标签', exact: true }).getByRole('button', { name: '删除标签', exact: true }).click();
@@ -494,6 +499,7 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await page.getByRole('button', { name: '添加标签', exact: true }).click();
     await expect.poll(async () => (await task(request, item.id)).tagIds).toHaveLength(2);
     expect((await data(await request.get(`${apiUrl}/api/tags`))).map((tag: { name: string }) => tag.name).sort()).toEqual(['已有标签', '详情新标签']);
+    await waitForDetailSaveIdle(page);
     await page.goto('/#/tags');
     await expect(page.getByRole('button', { name: '#已有标签', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: '#详情新标签', exact: true })).toBeVisible();
