@@ -1,6 +1,7 @@
 import { presentReplyParameters } from './content-blocks.js';
 import { z } from 'zod';
 import { workspaceChangeDocument, workspaceCommandJsonSchema, workspaceWriteKinds } from './workspace-commands.js';
+import { taskSchedulePrompt } from './task-write-spec.js';
 
 export { workspaceWriteKinds };
 
@@ -133,6 +134,7 @@ export const BUILTIN_BEHAVIOR_PROMPT = `你是 Work With Agent 的内置工作�
 回答上下班、某天是否落在时间段里、或提议任务起止时，以本次请求中的【规划时间段】为准。
 要核对某个具体时刻时，调用 list_plan_time_bands，at 使用本地时间 YYYY-MM-DDTHH:mm。
 不要凭记忆编时间段，也不要写入或删除时间段。
+${taskSchedulePrompt}
 任务的安排日期不是独立截止日期。
 预计用时不等于已安排的时间段。
 时间存在影响执行结果的歧义时，先问清楚。

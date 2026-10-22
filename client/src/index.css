@@ -833,11 +833,68 @@
     color: var(--background);
   }
 
+  .sidebar-rail {
+    position: relative;
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+  }
+
+  /* The global thin scrollbar reserves a column. Hide it so the thumb can float. */
   .sidebar-scroll {
     min-height: 0;
     flex: 1;
+    overflow-x: hidden;
     overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 2px 2px 10px;
+    scrollbar-width: none;
+  }
+
+  .sidebar-scroll::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
+  }
+
+  .sidebar-scroll-thumb {
+    position: absolute;
+    top: 0;
+    right: 3px;
+    z-index: 1;
+    width: 3px;
+    border-radius: 999px;
+    background: var(--scrollbar-thumb-hover);
+    opacity: 0;
+    pointer-events: none;
+    touch-action: none;
+    transition: opacity 180ms linear;
+  }
+
+  .sidebar-rail.is-on .sidebar-scroll-thumb:not([data-empty]) {
+    opacity: 1;
+    pointer-events: auto;
+    cursor: grab;
+  }
+
+  .sidebar-rail.is-on .sidebar-scroll-thumb:not([data-empty]):active {
+    cursor: grabbing;
+  }
+
+  .sidebar-rail.fade-b .sidebar-scroll {
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
+  }
+
+  .sidebar-rail.fade-t .sidebar-scroll {
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 14px);
+    mask-image: linear-gradient(to bottom, transparent, #000 14px);
+  }
+
+  .sidebar-rail.fade-tb .sidebar-scroll {
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 16px), transparent);
+    mask-image: linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 16px), transparent);
   }
 
   .sidebar-footer {
@@ -1059,6 +1116,10 @@
     .sidebar-link:active,
     .sidebar-row:active {
       transform: none;
+    }
+
+    .sidebar-scroll-thumb {
+      transition: none;
     }
   }
 
@@ -2601,7 +2662,7 @@ textarea.task-title.line-through {
 .assistant-compact-nav .sidebar-link > span { display: none; }
 .assistant-compact-nav .sidebar-link { justify-content: center; padding-inline: 8px; }
 .assistant-compact-nav .sidebar-nav { padding-inline: 0; }
-.assistant-compact-nav .sidebar-scroll { padding-inline: 0; }
+.assistant-compact-nav .sidebar-scroll { padding: 0; }
 .assistant-compact-nav [aria-label="清单"] { overflow: hidden; }
 
 @media (max-width: 1023px) {
