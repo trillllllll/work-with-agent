@@ -61,7 +61,7 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test('规划页保持路由，并按公式摆放 14:00 时间块', async ({ page, request }) => {
+test('规划页保持路由，并按公式摆放 14:00 时间块', async ({ page, request }, testInfo) => {
   const today = localKey();
   const created = await jsonData(await request.post(`${apiUrl}/api/tasks`, { data: { title: '下午安排', estimatedMinutes: 90, dueDate: today, scheduledStart: `${today}T14:00`, scheduledEnd: `${today}T15:30` } })) as { id: string };
   await page.goto('/#/plan');
@@ -82,7 +82,14 @@ test('规划页保持路由，并按公式摆放 14:00 时间块', async ({ page
   await expect(page.locator(`[data-testid="task-block"][data-task-id="${created.id}"]`)).toBeVisible();
 
   await page.getByRole('button', { name: '月', exact: true }).click();
-  await expect(page.locator(`[data-drop-id="cell:${today}"]`)).toContainText('14:00');
+  const monthCell = page.locator(`[data-drop-id="cell:${today}"]`);
+  if (testInfo.project.name === 'mobile') {
+    await expect(monthCell).toContainText('下午安排');
+    expect(await monthCell.innerText()).not.toContain('14:00');
+    await expect(monthCell.locator('.plan-month-task')).toHaveAttribute('title', /14:00/);
+  } else {
+    await expect(monthCell).toContainText('14:00');
+  }
 });
 
 test('托盘拖到 16:00 得到一小时并可以撤销', async ({ page, request }, testInfo) => {

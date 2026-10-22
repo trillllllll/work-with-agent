@@ -2495,6 +2495,18 @@ textarea.task-title.line-through {
   .plan-calendar {
     --plan-band-rail: 80px;
   }
+
+  .plan-month-task {
+    height: 16px;
+    line-height: 16px;
+    font-size: 10px;
+    padding: 0 2px;
+    margin-bottom: 2px;
+  }
+
+  .plan-month-time { display: none; }
+
+  .plan-month-cell > div:first-child > button:first-child { font-size: 12px; }
 }
 
 .plan-calendar.plan-calendar-week {
