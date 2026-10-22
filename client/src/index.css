@@ -2507,6 +2507,19 @@ textarea.task-title.line-through {
   .plan-month-time { display: none; }
 
   .plan-month-cell > div:first-child > button:first-child { font-size: 12px; }
+
+  .plan-month-cell[data-over] {
+    background: color-mix(in srgb, var(--primary) 18%, transparent);
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--primary) 40%, transparent);
+  }
+}
+
+@media (pointer: coarse) {
+  .plan-drag-source {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
 }
 
 .plan-calendar.plan-calendar-week {

@@ -137,7 +137,8 @@
     "dropUnschedule": "Drop here to unschedule",
     "noMatches": "No matching tasks",
     "overdue": "Overdue · {{label}}",
-    "trayHint": "Drag to schedule, or open the task to edit the time."
+    "trayHint": "Drag to schedule, or open the task to edit the time.",
+    "movePreview": "→ {{weekday}}, {{date}}"
   },
   "timeBand": {
     "open": "Time blocks",

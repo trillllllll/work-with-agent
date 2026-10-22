@@ -1,8 +1,9 @@
 import { useTranslation } from 'react-i18next';
 import { usePageContext } from '@/lib/assistant-context.js';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { DndContext, DragOverlay, PointerSensor, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent, type DragMoveEvent, type DragStartEvent, type DragOverEvent } from '@dnd-kit/core';
+import { DndContext, DragOverlay, MouseSensor, TouchSensor, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent, type DragMoveEvent, type DragStartEvent, type DragOverEvent } from '@dnd-kit/core';
 import type { Tag, Task, Topic } from '@/lib/api.js';
+import { useMediaQuery } from '@/hooks/useMediaQuery.js';
 import { useLocalDate, useTasks } from '@/hooks/useTodo.js';
 import { addDays, addMinutes, applyDrop, eachDate, formatTime, isOverdue, layoutTimed, localDateTime, minutesBetween, minutesOf, occursOn, rangeOf, resizeSchedule, scheduleDateKey, scheduleLabel, shiftMonth, type SchedulePatch, type TimedBlock } from '@/lib/schedule.js';
 import { intlLocale } from '@/i18n/index.js';
@@ -20,6 +21,9 @@ import { TimeBandControls } from './TimeBandDialog.js';
 import { usePlanTimeBands } from './usePlanTimeBands.js';
 import { ChevronLeft, ChevronRight, PanelRight, X } from 'lucide-react';
 import { laneCap, layoutLanes, type LaneMore } from '@/lib/plan-layout.js';
+import { clampPlanDragOverlay, formatPlanDay, planAutoScroll, weekdayIdOf } from '@/lib/plan-drag.js';
+
+const narrowOverlayModifiers = [clampPlanDragOverlay];
 
 type Mode = 'day' | 'week' | 'month';
 function readPlanMode(): Mode {
@@ -53,20 +57,20 @@ function rangeLabel(mode: Mode, anchor: string, range: [string, string]) {
 }
 function DropTarget({ id, className, style, children }: { id: string; className?: string; style?: CSSProperties; children?: ReactNode }) {
   const { setNodeRef, isOver } = useDroppable({ id });
-  return <div ref={setNodeRef} data-drop-id={id} style={style} className={cn(className, isOver && 'bg-primary/10 outline-2 outline-primary/40')}>{children}</div>;
+  return <div ref={setNodeRef} data-drop-id={id} data-over={isOver ? '' : undefined} style={style} className={cn(className, isOver && 'bg-primary/10 outline-2 outline-primary/40')}>{children}</div>;
 }
 function DragTask({ task, instance, busy, offset = 0, className, style, lane, laneCount, children }: { task: Task; instance: string; busy: boolean; offset?: number; className?: string; style?: CSSProperties; lane?: number; laneCount?: number; children: ReactNode }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `${task.id}:${instance}`, data: { task, offset }, disabled: busy });
-  return <div ref={setNodeRef} style={{ ...style, touchAction: 'manipulation' }} className={cn(className, isDragging && 'opacity-40')} {...listeners} {...attributes} data-lane={lane} data-lane-count={laneCount}>{children}</div>;
+  return <div ref={setNodeRef} style={{ ...style, touchAction: 'manipulation' }} className={cn('plan-drag-source', className, isDragging && 'opacity-40')} {...listeners} {...attributes} data-lane={lane} data-lane-count={laneCount}>{children}</div>;
 }
 function ResizeHandle({ task, edge, busy, onOpen }: { task: Task; onOpen: Props['onOpen']; edge: 'start' | 'end'; busy: boolean }) {
   const { t } = useTranslation('plan');
   const { attributes, listeners, setNodeRef } = useDraggable({ id: `${task.id}:resize:${edge}`, data: { task, edge }, disabled: busy });
-  return <button type="button" ref={setNodeRef} {...attributes} {...listeners} onPointerDown={(event) => { event.stopPropagation(); listeners?.onPointerDown?.(event); }} aria-label={t(edge === 'start' ? 'plan.resizeStart' : 'plan.resizeEnd', { title: task.title })} title={t('plan.resizeHint')} style={{ touchAction: 'none' }} onClick={(event) => { event.stopPropagation(); onOpen(task.id); }} className={cn('absolute inset-x-1 z-10 h-2 cursor-ns-resize rounded focus-visible:bg-primary/30', edge === 'start' ? 'top-0' : 'bottom-0')} />;
+  return <button type="button" ref={setNodeRef} {...attributes} {...listeners} onPointerDown={(event) => { event.stopPropagation(); listeners?.onPointerDown?.(event); }} onMouseDown={(event) => { event.stopPropagation(); listeners?.onMouseDown?.(event); }} onTouchStart={(event) => { event.stopPropagation(); listeners?.onTouchStart?.(event); }} aria-label={t(edge === 'start' ? 'plan.resizeStart' : 'plan.resizeEnd', { title: task.title })} title={t('plan.resizeHint')} style={{ touchAction: 'none' }} onClick={(event) => { event.stopPropagation(); onOpen(task.id); }} className={cn('absolute inset-x-1 z-10 h-2 cursor-ns-resize rounded focus-visible:bg-primary/30', edge === 'start' ? 'top-0' : 'bottom-0')} />;
 }
 function Check({ task, busy, onToggle }: { task: Task; busy: boolean; onToggle: Props['onToggle'] }) {
   const { t } = useTranslation('plan');
-  return <input type="checkbox" className="task-checkbox size-4 shrink-0 accent-primary" checked={task.status === 'done'} disabled={busy} aria-label={t(task.status === 'done' ? 'plan.reopenTask' : 'plan.completeTask', { title: task.title })} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} onChange={() => { void Promise.resolve(onToggle(task)).catch(() => undefined); }} />;
+  return <input type="checkbox" className="task-checkbox size-4 shrink-0 accent-primary" checked={task.status === 'done'} disabled={busy} aria-label={t(task.status === 'done' ? 'plan.reopenTask' : 'plan.completeTask', { title: task.title })} onPointerDown={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()} onTouchStart={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} onChange={() => { void Promise.resolve(onToggle(task)).catch(() => undefined); }} />;
 }
 function clock(min: number) {
   if (min >= 1440) return '24:00';
@@ -76,7 +80,7 @@ function clock(min: number) {
 function timedRange(block: TimedBlock) {
   return `${block.startsHere ? formatTime(block.task.scheduledStart!) : '00:00'}—${block.endsHere ? formatTime(block.task.scheduledEnd!) : '24:00'}`;
 }
-function TimedTask({ block, dateKey, busy, left, width, lane, laneCount, onOpen, onToggle }: { block: TimedBlock; dateKey: string; busy: boolean; left: number; width: number; lane: number; laneCount: number; onOpen: Props['onOpen']; onToggle: Props['onToggle'] }) {
+function TimedTask({ block, dateKey, busy, left, width, lane, laneCount, onOpen, onToggle, skipClick }: { block: TimedBlock; dateKey: string; busy: boolean; left: number; width: number; lane: number; laneCount: number; onOpen: Props['onOpen']; onToggle: Props['onToggle']; skipClick: { current: boolean } }) {
   const { t } = useTranslation('plan');
   const task = block.task;
   const height = block.point ? 28 : Math.max(24, (block.endMin - block.startMin) / 60 * hourHeight - 2);
@@ -90,7 +94,7 @@ function TimedTask({ block, dateKey, busy, left, width, lane, laneCount, onOpen,
       {!block.point && block.startsHere && <ResizeHandle task={task} edge="start" busy={busy} onOpen={onOpen} />}
       <div className="flex min-w-0 items-start gap-1">
         <Check task={task} busy={busy} onToggle={onToggle} />
-        <button type="button" className="min-w-0 flex-1 text-left" aria-label={t('plan.openTask', { title: task.title })} onClick={() => onOpen(task.id)}>
+        <button type="button" className="min-w-0 flex-1 text-left" aria-label={t('plan.openTask', { title: task.title })} onClick={() => { if (!skipClick.current) onOpen(task.id); }}>
           {showInline ? <span className="flex w-full min-w-0 items-start gap-1"><span className="plan-task-title min-w-0 flex-1">{title}</span><span className="plan-timed-when-inline shrink-0 whitespace-nowrap text-[10px] text-muted-foreground tabular-nums">{range}</span></span> : <span className="plan-task-title block">{title}</span>}
           {height >= 44 && <span className="plan-timed-when block truncate text-[10px] text-muted-foreground tabular-nums">{range}</span>}
         </button>
@@ -112,7 +116,7 @@ function NowLine({ dateKey, today }: { dateKey: string; today: string }) {
   return dateKey === today ? <div className="pointer-events-none absolute inset-x-0 z-10 h-0.5 bg-destructive" style={{ top: minutesOf(now) / 60 * hourHeight }} /> : null;
 }
 const allDayPreviewLimit = 2;
-function Timeline({ days, tasks, today, busy, bands, allDayOpen, onAllDayOpen, onOpen, onToggle, onCreate, activeTaskId }: { days: string[]; tasks: Task[]; today: string; busy: boolean; bands: readonly PlanTimeBand[]; allDayOpen: boolean | null; onAllDayOpen: (open: boolean) => void; onOpen: Props['onOpen']; onToggle: Props['onToggle']; onCreate: (value: ScheduleValue) => void; activeTaskId: string | null }) {
+function Timeline({ days, tasks, today, busy, bands, allDayOpen, onAllDayOpen, onOpen, onToggle, onCreate, activeTaskId, skipClick }: { days: string[]; tasks: Task[]; today: string; busy: boolean; bands: readonly PlanTimeBand[]; allDayOpen: boolean | null; onAllDayOpen: (open: boolean) => void; onOpen: Props['onOpen']; onToggle: Props['onToggle']; onCreate: (value: ScheduleValue) => void; activeTaskId: string | null; skipClick: { current: boolean } }) {
   const { t } = useTranslation('plan');
   const scroller = useRef<HTMLDivElement>(null);
   const calendar = useRef<HTMLDivElement>(null);
@@ -154,7 +158,7 @@ function Timeline({ days, tasks, today, busy, bands, allDayOpen, onAllDayOpen, o
         return <div key={day} className="min-h-0 min-w-0 border-l border-[var(--glass-divider)]">
           <DropTarget id={`dayhead:${day}`} className="plan-day-heading p-1 text-center text-xs"><button type="button" onClick={() => onCreate({ dueDate: day, scheduledStart: null, scheduledEnd: null })} aria-label={t('plan.addAllDay', { date: day })} className="flex w-full items-center justify-center gap-2 rounded py-2 hover:bg-muted"><span className="text-muted-foreground">{dateLabel(day, { weekday: 'short' })}</span><span className={cn('inline-grid size-7 place-items-center rounded-full text-sm', day === today && 'bg-primary text-primary-foreground')}>{Number(day.slice(8))}</span></button></DropTarget>
           <DropTarget id={`allday:${day}`} className={cn('min-h-12 space-y-1 p-1', allDayExpanded && 'max-h-36 overflow-y-auto')}>
-            {visible.map((task) => <DragTask key={task.id} task={task} instance={`all:${day}`} busy={busy}><div className={cn('flex items-center gap-1 rounded bg-muted/50 px-1 py-1 text-xs', task.status === 'done' && 'opacity-55 line-through')}><Check task={task} busy={busy} onToggle={onToggle} /><button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => onOpen(task.id)}>{task.title}</button></div></DragTask>)}
+            {visible.map((task) => <DragTask key={task.id} task={task} instance={`all:${day}`} busy={busy}><div className={cn('flex items-center gap-1 rounded bg-muted/50 px-1 py-1 text-xs', task.status === 'done' && 'opacity-55 line-through')}><Check task={task} busy={busy} onToggle={onToggle} /><button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => { if (!skipClick.current) onOpen(task.id); }}>{task.title}</button></div></DragTask>)}
             {hidden > 0 && <button type="button" className="task-fold min-w-0" onClick={() => onAllDayOpen(true)}><span className="min-w-0 truncate">{t('plan.more', { count: hidden })}</span></button>}
           </DropTarget>
         </div>;
@@ -176,7 +180,7 @@ function Timeline({ days, tasks, today, busy, bands, allDayOpen, onAllDayOpen, o
             })}
             {Array.from({ length: 24 }, (_, hour) => <div key={hour} className="pointer-events-none absolute inset-x-0 z-[1] border-b border-[var(--glass-divider)]" style={{ top: hour * hourHeight, height: hourHeight }} />)}
             <div data-testid="plan-task-lane" className="pointer-events-none absolute inset-y-0 right-0 z-[2]" style={{ left: banded && !week ? 'var(--plan-band-rail, 112px)' : 0 }}>
-              {placed.map((item) => <TimedTask key={item.block.id} block={item.block} dateKey={day} left={item.left} width={item.width} lane={item.lane} laneCount={item.laneCount} busy={busy} onOpen={onOpen} onToggle={onToggle} />)}
+              {placed.map((item) => <TimedTask key={item.block.id} block={item.block} dateKey={day} left={item.left} width={item.width} lane={item.lane} laneCount={item.laneCount} busy={busy} onOpen={onOpen} onToggle={onToggle} skipClick={skipClick} />)}
               {mores.map((more) => <LaneMoreButton key={more.id} more={more} onOpen={(button, taskIds) => { overlapOpener.current = button; openingTask.current = false; setOverlap({ day, taskIds }); }} />)}
             </div>
             <NowLine dateKey={day} today={today} />
@@ -228,6 +232,9 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
   const [creating, setCreating] = useState<ScheduleValue | null>(null);
   const previewRef = useRef(preview);
   const dragData = useRef<{ task: Task; edge?: 'start' | 'end'; offset?: number } | null>(null);
+  const skipClick = useRef(false);
+  const savedTouchAction = useRef<string | null>(null);
+  const narrow = useMediaQuery('(max-width: 639px)');
   const [saving, setSaving] = useState(false);
   const saveLock = useRef(false);
   const range = rangeOf(mode, anchor);
@@ -238,8 +245,14 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
   const tasks = (planned.data ?? []).map((task) => preview?.task.id === task.id ? { ...task, ...preview.patch } : task);
   const tray = useMemo(() => (trayQuery.data ?? []).filter((task) => (trayFilter === 'all' || (trayFilter === 'unplanned' ? !scheduleDateKey(task) : Boolean(scheduleDateKey(task)))) && task.title.toLocaleLowerCase().includes(search.toLocaleLowerCase())).sort((a, b) => Number(isOverdue(b, today)) - Number(isOverdue(a, today)) || (scheduleDateKey(a) ?? '').localeCompare(scheduleDateKey(b) ?? '') || a.id.localeCompare(b.id)), [trayQuery.data, trayFilter, search, today]);
   const disabled = busy || saving;
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
-  const clearDrag = () => { setDragging(null); setActiveTaskId(null); setPreview(null); previewRef.current = null; dragData.current = null; };
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+  );
+  const clearDrag = () => {
+    setDragging(null); setActiveTaskId(null); setPreview(null); previewRef.current = null; dragData.current = null;
+    if (savedTouchAction.current !== null) { document.body.style.touchAction = savedTouchAction.current; savedTouchAction.current = null; }
+  };
   const save = async (task: Task, patch: SchedulePatch) => {
     if (saveLock.current) return;
     saveLock.current = true; setSaving(true);
@@ -247,6 +260,11 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
     finally { saveLock.current = false; setSaving(false); }
   };
   const onDragStart = (event: DragStartEvent) => {
+    // Mouse drags: dnd-kit already swallows the click that follows the drop. Only a touch drag needs the 400ms guard and must stop native panning.
+    if (typeof TouchEvent !== 'undefined' && event.activatorEvent instanceof TouchEvent) {
+      skipClick.current = true;
+      if (savedTouchAction.current === null) { savedTouchAction.current = document.body.style.touchAction; document.body.style.touchAction = 'none'; }
+    }
     const data = event.active.data.current;
     dragData.current = data ? { task: data.task, edge: data.edge, offset: data.offset } : null;
     setDragging(data?.edge ? null : data?.task ?? null);
@@ -280,11 +298,14 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
     const data = dragData.current;
     const patch = data?.edge ? previewRef.current?.patch : dropPatch(event);
     clearDrag();
+    window.setTimeout(() => { skipClick.current = false; }, 400);
     if (data?.task && patch && !disabled) void save(data.task, patch);
   };
   const days = eachDate(range[0], range[1]);
   const error = planned.error || trayQuery.error;
-  return <DndContext sensors={sensors} autoScroll={Boolean(dragging)} collisionDetection={pointerWithin} onDragStart={onDragStart} onDragMove={onDragMove} onDragOver={(event) => { if (dragData.current?.edge) return; const patch = dropPatch(event); setPreview(patch && dragData.current ? { task: dragData.current.task, patch } : null); }} onDragEnd={onDragEnd} onDragCancel={clearDrag}>
+  const overlayDate = dragging ? (preview?.patch.dueDate ?? scheduleDateKey(dragging)) : null;
+  const overlayDetail = !dragging ? null : narrow ? (overlayDate ? t('plan.movePreview', { date: formatPlanDay(overlayDate, intlLocale()), weekday: t(`weekday.${weekdayIdOf(overlayDate)}.short`) }) : null) : scheduleLabel({ ...dragging, ...preview?.patch });
+  return <DndContext sensors={sensors} autoScroll={planAutoScroll(mode, narrow, dragging)} collisionDetection={pointerWithin} onDragStart={onDragStart} onDragMove={onDragMove} onDragOver={(event) => { if (dragData.current?.edge) return; const patch = dropPatch(event); setPreview(patch && dragData.current ? { task: dragData.current.task, patch } : null); }} onDragEnd={onDragEnd} onDragCancel={() => { clearDrag(); window.setTimeout(() => { skipClick.current = false; }, 400); }}>
     <div data-testid="plan-page" className="plan-page mx-auto p-4 pb-10 sm:p-6">
       <header className="plan-header">
         <h1 className="text-2xl font-semibold">{t('plan.title')}</h1>
@@ -296,7 +317,7 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
       </div>
       {error ? <p role="alert" className="text-destructive">{error.message}</p> : planned.isLoading || trayQuery.isLoading ? <p className="py-12 text-center text-muted-foreground">{t('shared.loadingTasks')}</p> : <div className="plan-layout" data-tray-open={trayOpen || undefined}>
         <div className="min-w-0">
-          {mode !== 'month' ? <Timeline days={days} tasks={tasks} today={today} busy={disabled} bands={timeBands.data?.bands ?? []} allDayOpen={allDayOpen} onAllDayOpen={(open) => { setAllDayOpen(open); localStorage.setItem('todo.plan.allDayOpen', String(open)); }} onOpen={onOpen} onToggle={onToggle} onCreate={setCreating} activeTaskId={activeTaskId} /> : <div data-testid="month-horizontal-scroll" className="plan-month-scroll overflow-x-auto max-sm:overflow-visible"><div className="min-w-[560px] max-sm:min-w-0">
+          {mode !== 'month' ? <Timeline days={days} tasks={tasks} today={today} busy={disabled} bands={timeBands.data?.bands ?? []} allDayOpen={allDayOpen} onAllDayOpen={(open) => { setAllDayOpen(open); localStorage.setItem('todo.plan.allDayOpen', String(open)); }} onOpen={onOpen} onToggle={onToggle} onCreate={setCreating} activeTaskId={activeTaskId} skipClick={skipClick} /> : <div data-testid="month-horizontal-scroll" className="plan-month-scroll overflow-x-auto max-sm:overflow-visible"><div className="min-w-[560px] max-sm:min-w-0">
             <div className="grid grid-cols-7 py-2 text-center text-xs text-muted-foreground">{weekdayIds.map((day) => <div key={day}>{t(`weekday.${day}.narrow`)}</div>)}</div>
             <div className="grid grid-cols-7">{days.map((day) => {
               const items = tasks.filter((task) => occursOn(task, day)).sort((a, b) => (a.scheduledStart ?? '').localeCompare(b.scheduledStart ?? '') || a.id.localeCompare(b.id));
@@ -304,7 +325,7 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
                 <div className="mb-1 flex justify-between"><button type="button" aria-label={t('plan.viewDay', { date: day })} className={cn('rounded px-1 text-sm', day === today && 'bg-primary text-primary-foreground')} onClick={() => { chooseAnchor(day); chooseMode('day'); }}>{Number(day.slice(8))}</button><button type="button" aria-label={t('plan.addAllDay', { date: day })} className="plan-month-add max-sm:hidden" disabled={disabled} onClick={() => setCreating({ dueDate: day, scheduledStart: null, scheduledEnd: null })}>{t('plan.addMark')}</button></div>
                 {items.slice(0, 3).map((task) => {
                   const continued = scheduleDateKey(task) !== day;
-                  return <DragTask key={task.id} task={task} instance={`month:${day}`} offset={task.scheduledStart && day !== task.scheduledStart.slice(0, 10) ? minutesBetween(task.scheduledStart, `${day}T00:00`) : 0} busy={disabled}><button type="button" title={scheduleLabel(task)} className={cn('plan-month-task mb-1 flex w-full min-w-0 items-center gap-1 rounded px-1 py-0.5 text-left text-[11px]', task.status === 'done' && 'opacity-55 line-through')} onClick={() => onOpen(task.id)}>{continued ? <span className="shrink-0 tabular-nums text-muted-foreground">↳</span> : task.scheduledStart ? <span className="plan-month-time max-sm:hidden shrink-0 tabular-nums text-muted-foreground">{formatTime(task.scheduledStart)}</span> : null}<span className="min-w-0 flex-1 truncate">{task.title}</span></button></DragTask>;
+                  return <DragTask key={task.id} task={task} instance={`month:${day}`} offset={task.scheduledStart && day !== task.scheduledStart.slice(0, 10) ? minutesBetween(task.scheduledStart, `${day}T00:00`) : 0} busy={disabled}><button type="button" title={scheduleLabel(task)} className={cn('plan-month-task mb-1 flex w-full min-w-0 items-center gap-1 rounded px-1 py-0.5 text-left text-[11px]', task.status === 'done' && 'opacity-55 line-through')} onClick={() => { if (!skipClick.current) onOpen(task.id); }}>{continued ? <span className="shrink-0 tabular-nums text-muted-foreground">↳</span> : task.scheduledStart ? <span className="plan-month-time max-sm:hidden shrink-0 tabular-nums text-muted-foreground">{formatTime(task.scheduledStart)}</span> : null}<span className="min-w-0 flex-1 truncate">{task.title}</span></button></DragTask>;
                 })}
                 {items.length > 3 && <button type="button" className="px-1 text-xs text-muted-foreground" aria-label={t('plan.moreTasks', { date: day, count: items.length - 3 })} onClick={() => { chooseAnchor(day); chooseMode('day'); }}>+{items.length - 3}</button>}
               </DropTarget>;
@@ -316,13 +337,13 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
           <Input type="search" aria-label={t('plan.searchLabel')} placeholder={t('plan.searchPlaceholder')} value={search} onChange={(event) => setSearch(event.target.value)} />
           <select aria-label={t('plan.filterLabel')} value={trayFilter} onChange={(event) => setTrayFilter(event.target.value)} className="glass-control my-2 h-9 w-full rounded px-2 text-sm"><option value="unplanned">{t('schedule.unscheduled')}</option><option value="planned">{t('plan.scheduled')}</option><option value="all">{t('plan.all')}</option></select>
           <DropTarget id="unschedule" className="mb-2 rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">{t('plan.dropUnschedule')}</DropTarget>
-          <div className="max-h-64 space-y-1 overflow-y-auto xl:max-h-[60vh]">{!tray.length && <p className="py-6 text-center text-sm text-muted-foreground">{t('plan.noMatches')}</p>}{tray.map((task) => <DragTask key={task.id} task={task} instance="tray" busy={disabled}><button type="button" data-testid="tray-item" className="block w-full cursor-grab rounded-lg px-2 py-2 text-left hover:bg-muted" onClick={() => onOpen(task.id)}><span className="block truncate text-sm">{task.title}</span><span className={cn('block truncate text-[10px] text-muted-foreground', isOverdue(task, today) && 'text-destructive')}>{isOverdue(task, today) ? t('plan.overdue', { label: scheduleLabel(task) }) : scheduleLabel(task)}</span></button></DragTask>)}</div>
+          <div className="max-h-64 space-y-1 overflow-y-auto xl:max-h-[60vh]">{!tray.length && <p className="py-6 text-center text-sm text-muted-foreground">{t('plan.noMatches')}</p>}{tray.map((task) => <DragTask key={task.id} task={task} instance="tray" busy={disabled}><button type="button" data-testid="tray-item" className="block w-full cursor-grab rounded-lg px-2 py-2 text-left hover:bg-muted" onClick={() => { if (!skipClick.current) onOpen(task.id); }}><span className="block truncate text-sm">{task.title}</span><span className={cn('block truncate text-[10px] text-muted-foreground', isOverdue(task, today) && 'text-destructive')}>{isOverdue(task, today) ? t('plan.overdue', { label: scheduleLabel(task) }) : scheduleLabel(task)}</span></button></DragTask>)}</div>
           <p className="mt-3 text-[11px] text-muted-foreground">{t('plan.trayHint')}</p>
         </aside>
       </div>}
       <footer className="plan-footer"><span className="text-xs text-muted-foreground">{rangeLabel(mode, anchor, range)}</span><div className="flex flex-wrap items-center gap-4"><label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={showCompleted} onChange={(event) => { setShowCompleted(event.target.checked); localStorage.setItem('todo.plan.showCompleted', String(event.target.checked)); }} />{t('shared.showCompleted')}</label><TimeBandControls /></div></footer>
     </div>
-    <DragOverlay>{dragging && <div className="glass-control max-w-64 rounded-lg px-3 py-2 text-sm shadow-lg"><p className="truncate">{dragging.title}</p><p className="text-xs text-muted-foreground">{scheduleLabel({ ...dragging, ...preview?.patch })}</p></div>}</DragOverlay>
+    <DragOverlay modifiers={narrow ? narrowOverlayModifiers : undefined}>{dragging && <div data-testid="plan-drag-overlay" className={cn('glass-control rounded-lg px-3 py-2 text-sm shadow-lg', narrow ? 'max-w-[calc(100vw-16px)]' : 'max-w-64')}><p className="truncate">{dragging.title}</p>{overlayDetail ? <p className="text-xs text-muted-foreground">{overlayDetail}</p> : null}</div>}</DragOverlay>
     {creating && <CreateScheduledTask initial={creating} topics={topics} onClose={() => setCreating(null)} onCreate={onCreate} />}
   </DndContext>;
 }
