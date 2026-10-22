@@ -24,6 +24,8 @@ import { laneCap, layoutLanes, type LaneMore } from '@/lib/plan-layout.js';
 import { clampPlanDragOverlay, formatPlanDay, planAutoScroll, weekdayIdOf } from '@/lib/plan-drag.js';
 
 const narrowOverlayModifiers = [clampPlanDragOverlay];
+// dnd-kit sizes the overlay to the dragged node; a 54px phone month bar would stack the date preview one glyph per line.
+const narrowOverlayStyle: CSSProperties = { width: 'max-content', height: 'auto' };
 
 type Mode = 'day' | 'week' | 'month';
 function readPlanMode(): Mode {
@@ -343,7 +345,7 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
       </div>}
       <footer className="plan-footer"><span className="text-xs text-muted-foreground">{rangeLabel(mode, anchor, range)}</span><div className="flex flex-wrap items-center gap-4"><label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={showCompleted} onChange={(event) => { setShowCompleted(event.target.checked); localStorage.setItem('todo.plan.showCompleted', String(event.target.checked)); }} />{t('shared.showCompleted')}</label><TimeBandControls /></div></footer>
     </div>
-    <DragOverlay modifiers={narrow ? narrowOverlayModifiers : undefined}>{dragging && <div data-testid="plan-drag-overlay" className={cn('glass-control rounded-lg px-3 py-2 text-sm shadow-lg', narrow ? 'max-w-[calc(100vw-16px)]' : 'max-w-64')}><p className="truncate">{dragging.title}</p>{overlayDetail ? <p className="text-xs text-muted-foreground">{overlayDetail}</p> : null}</div>}</DragOverlay>
+    <DragOverlay modifiers={narrow ? narrowOverlayModifiers : undefined} style={narrow ? narrowOverlayStyle : undefined}>{dragging && <div data-testid="plan-drag-overlay" className={cn('glass-control rounded-lg px-3 py-2 text-sm shadow-lg', narrow ? 'max-w-[calc(100vw-16px)]' : 'max-w-64')}><p className="truncate">{dragging.title}</p>{overlayDetail ? <p className={cn('text-xs text-muted-foreground', narrow && 'whitespace-nowrap')}>{overlayDetail}</p> : null}</div>}</DragOverlay>
     {creating && <CreateScheduledTask initial={creating} topics={topics} onClose={() => setCreating(null)} onCreate={onCreate} />}
   </DndContext>;
 }
