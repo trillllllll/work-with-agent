@@ -3,6 +3,7 @@ import { withChatAttachments } from '../application/chat-attachments.js';
 import { KnowledgeService } from '../application/knowledge.js';
 import { assertTopicAccess } from '../application/security.js';
 import { libraryFiltersSchema } from '../application/library/schema.js';
+import { readPlanTimeBands } from '../application/plan-time-bands.js';
 import { readAppKnowledge, readPageState } from './app-knowledge.js';
 import { createHash } from 'node:crypto';
 import { DomainError } from '../domain/task.js';
@@ -246,6 +247,11 @@ export async function executeBuiltinTool(input: {
     if (input.name === 'get_time') {
       if (Object.keys(args).some((key) => key !== 'timeZone')) throw new DomainError('INVALID_TOOL_ARGUMENTS', 'get_time 只接受 timeZone', 400);
       return { success: true, data: getCurrentTime({ timeZone: typeof args.timeZone === 'string' ? args.timeZone : undefined }, input.context, input.clock) };
+    }
+    if (input.name === 'list_plan_time_bands') {
+      if (Object.keys(args).some((key) => key !== 'at')) throw new DomainError('INVALID_TOOL_ARGUMENTS', 'list_plan_time_bands 只接受 at', 400);
+      if (args.at !== undefined && typeof args.at !== 'string') throw new DomainError('INVALID_TOOL_ARGUMENTS', 'at 须为 YYYY-MM-DDTHH:mm', 400);
+      return { success: true, data: await readPlanTimeBands(args.at) };
     }
     if (input.name === 'get_work_context') return { success: true, data: { scope: input.context.scope, page: input.context.page, taskId: input.context.taskId, materialId: input.context.materialId, timeZone: input.context.timeZone, timeZoneSource: input.context.timeZoneSource, note: '固定说明、简报和记忆已在系统消息中。需要全文时继续用工具读取。' } };
     if (input.name === 'query_tasks') return { success: true, data: redact(await queryTasks(args, input.context)) };

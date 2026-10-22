@@ -10,6 +10,7 @@ import { taskDto, taskInclude } from './workspace-store.js';
 import { taskActivity } from './task-activity.js';
 import { TaskService, TopicService, ChangeService } from './workspace.js';
 import { taskListSchema, parseInput } from './workspace-input.js';
+import { readPlanTimeBands } from './plan-time-bands.js';
 import { readTaskImage, taskImageResponseHeaders } from './task-images.js';
 
 const commands = new CommandService();
@@ -72,6 +73,14 @@ function page<T extends { id: string }>(rows: T[], query: { limit: number; curso
   const hasMore = index + items.length < rows.length;
   return { items, hasMore, nextCursor: hasMore && items.length ? Buffer.from(JSON.stringify({ filter: fingerprint, id: items.at(-1)!.id })).toString('base64url') : null };
 }
+workspaceQueryRouter.get('/plan/time-bands', async (req, res, next) => {
+  try {
+    getActor(req);
+    const at = req.query.at;
+    if (at !== undefined && typeof at !== 'string') throw new DomainError('INVALID_INPUT', 'at 须为 YYYY-MM-DDTHH:mm', 400);
+    res.json({ data: await readPlanTimeBands(at), error: null });
+  } catch (error) { next(error); }
+});
 workspaceQueryRouter.get('/tasks', async (req, res, next) => {
   try {
     const actor = getActor(req);

@@ -48,7 +48,7 @@ describe('stdio MCP authenticated HTTP contract', () => {
   afterAll(async () => { await client?.close(); if (http) await new Promise<void>((resolve) => http.close(() => resolve())); });
   it('advertises Todo, knowledge, proposals and handoff tools', async () => {
     const { tools } = await client.listTools();
-    expect(tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(['list_tasks', 'get_task', 'get_task_image', 'submit_commands', 'get_proposal', 'get_material', 'list_library_folders', 'list_library_tags', 'claim_handoff', 'report_run']));
+    expect(tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(['list_tasks', 'list_plan_time_bands', 'get_task', 'get_task_image', 'submit_commands', 'get_proposal', 'get_material', 'list_library_folders', 'list_library_tags', 'claim_handoff', 'report_run']));
   });
   it('lists library folders and tags through the existing reads', async () => {
     await client.callTool({ name: 'list_library_folders', arguments: {} });
@@ -56,6 +56,9 @@ describe('stdio MCP authenticated HTTP contract', () => {
     await client.callTool({ name: 'list_library_tags', arguments: {} });
     expect(calls.at(-1)?.url).toBe('/api/v1/library/tags');
     expect(calls.at(-1)?.authorization).toBe('Bearer isolated-test-connection');
+    await client.callTool({ name: 'list_plan_time_bands', arguments: { at: '2026-10-12T10:00' } });
+    expect(calls.at(-1)?.url).toContain('/api/v1/plan/time-bands?');
+    expect(calls.at(-1)?.url).toContain('at=2026-10-12T10%3A00');
   });
   it('preserves pagination and authenticated connection identity', async () => {
     const result = await client.callTool({ name: 'list_tasks', arguments: { topicId: 'scope-1', inbox: false, cursor: 'cursor-1', limit: 2, scheduledFrom: '2026-10-12', scheduledTo: '2026-10-12' } });

@@ -123,7 +123,7 @@ export type SseEvent = {
   supersedesApprovalId?: string;
 };
 
-const READ_ONLY_TOOLS = new Set(['image_search', 'present_reply', 'read_app_knowledge', 'read_page_state', 'list_topics', 'get_topic', 'get_topic_progress', 'list_tasks', 'get_task', 'conversation_search', 'get_time', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'get_change_schema', 'orchestration_read', 'orchestration_stats']);
+const READ_ONLY_TOOLS = new Set(['image_search', 'present_reply', 'read_app_knowledge', 'read_page_state', 'list_topics', 'get_topic', 'get_topic_progress', 'list_tasks', 'get_task', 'conversation_search', 'get_time', 'list_plan_time_bands', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'get_change_schema', 'orchestration_read', 'orchestration_stats']);
 const PREVIEW_MAX = 80;
 
 const LIBRARY_READS = new Set(['list', 'search', 'read', 'content', 'linked_tasks', 'task_materials', 'folders', 'tags', 'ask']);
@@ -189,7 +189,7 @@ export function toolPreview(name: string, args: Record<string, unknown> = {}, re
   if (name === 'propose_worktree_cleanup') return t('chat:toolPreview.waitingCleanup');
   if (name === 'orchestration_read') return orchestrationReadPreview(args, status);
   if (name === 'orchestration_stats') return t('chat:toolPreview.orchestration.stats');
-  if (name === 'get_time' || name === 'get_work_context' || name === 'query_tasks' || name === 'query_topics' || name === 'get_task_activity' || name === 'search_workspace' || name === 'library_read' || name === 'memory_read' || name === 'get_change_schema') {
+  if (name === 'get_time' || name === 'list_plan_time_bands' || name === 'get_work_context' || name === 'query_tasks' || name === 'query_topics' || name === 'get_task_activity' || name === 'search_workspace' || name === 'library_read' || name === 'memory_read' || name === 'get_change_schema') {
     return clip(textField(args, ['q', 'title', 'taskId']) || (status === 'running' ? t('chat:toolPreview.reading') : t('chat:toolPreview.read')));
   }
   if (name === 'conversation_search') {

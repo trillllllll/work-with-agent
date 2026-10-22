@@ -75,6 +75,7 @@
     "library": "Project materials",
     "proposeTaskChanges": "Edit tasks in bulk",
     "getTime": "Current time",
+    "listPlanTimeBands": "Plan hours",
     "getWorkContext": "Work context",
     "queryTasks": "Find tasks",
     "queryTopics": "Find lists",

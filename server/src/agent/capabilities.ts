@@ -52,8 +52,9 @@ export const builtinTools: BuiltinTool[] = [
   { name: 'present_reply', description: '最终富媒体回答：按 blocks 数组顺序混排 text、mermaid、chart、svg、html（需要用户操作的交互小页面，规则见【交互页面】）和真实图片搜索引用。文字优先 type 后 markdown。只展示，不执行业务修改；同轮只能调用一次且不得与其他工具混用，调用后结束回答。图片先用 image_search 获得 resultIds。图表数据若无可核实来源必须标记 simulated 或 unverified。', parameters: presentReplyParameters, writesBusinessData: false },
   { name: 'image_search', description: '通过已配置的真实图片搜索服务查找图片，获得 searchId、resultIds 和来源。未配置时明确不可用；不能编造图片 URL。', parameters: { type: 'object', additionalProperties: false, required: ['query'], properties: { query: { type: 'string', minLength: 1, maxLength: 300 }, limit: { type: 'integer', minimum: 1, maximum: 8 } } }, writesBusinessData: false },
   { name: 'read_app_knowledge', description: '读取当前版本的应用功能说明，按页面或关键词搜索。', parameters: { type: 'object', additionalProperties: false, properties: { page: { type: 'string' }, q: { type: 'string' } } }, writesBusinessData: false },
-  { name: 'read_page_state', description: '读取本次请求冻结的页面筛选、日期范围、多选对象，以及服务端当前时间段或安全状态。', parameters: { type: 'object', additionalProperties: false, properties: {} }, writesBusinessData: false },
+  { name: 'read_page_state', description: '读取本次请求冻结的页面筛选、日期范围、多选对象，以及该页的安全状态。规划页同时附上当前规划时间段。', parameters: { type: 'object', additionalProperties: false, properties: {} }, writesBusinessData: false },
   { name: 'get_time', description: '读取当前时间。使用用户时区，不能传入当前时间。', parameters: { type: 'object', additionalProperties: false, properties: { timeZone: { type: 'string', description: 'IANA 时区。省略时使用本次请求的时区。' } } }, writesBusinessData: false },
+  { name: 'list_plan_time_bands', description: '读取当前已保存的规划时间段。这些是每周重复的背景，不是任务。省略 at 返回全部。at 为本地时间 YYYY-MM-DDTHH:mm，返回该时刻命中的全部时间段。结束时刻不包含在段内。不能写入或删除时间段。', parameters: { type: 'object', additionalProperties: false, properties: { at: { type: 'string', description: '本地墙上时间 YYYY-MM-DDTHH:mm。省略则只返回全部时间段。' } } }, writesBusinessData: false },
   { name: 'get_work_context', description: '读取当前范围、附近任务摘要、固定说明、当前简报和已确认记忆概况。', parameters: { type: 'object', additionalProperties: false, properties: { includeBrief: { type: 'boolean' } } }, writesBusinessData: false },
   { name: 'query_tasks', description: '查询任务、读取详情、标签、回收站或清单归属历史。归档和回收站必须显式指定。', parameters: { type: 'object', additionalProperties: false, required: ['action'], properties: { scope: { enum: ['current', 'all'] }, usePageFilter: { type: 'boolean', description: 'list 时使用本次页面筛选和多选；默认为 true，跨页查询设 false' }, action: { enum: ['list', 'get', 'tags', 'trash', 'assignments'] }, taskId: { type: 'string' }, topicId: { type: ['string', 'null'] }, q: { type: 'string' }, status: { enum: ['open', 'done', 'all', 'todo', 'doing', 'blocked'] }, dueFrom: { type: 'string' }, dueTo: { type: 'string' }, scheduledFrom: { type: 'string' }, scheduledTo: { type: 'string' }, tagIds: { type: 'array', items: { type: 'string' } }, sort: { enum: ['manual', 'date', 'priority'] }, includeArchived: { type: 'boolean' }, includeDeleted: { type: 'boolean' }, ...paging } }, writesBusinessData: false },
   { name: 'query_topics', description: '查询清单。get 同时返回状态统计。', parameters: { type: 'object', additionalProperties: false, required: ['action'], properties: { action: { enum: ['list', 'get'] }, topicId: { type: 'string' }, archived: { type: 'boolean' } } }, writesBusinessData: false },
@@ -129,6 +130,9 @@ export const BUILTIN_BEHAVIOR_PROMPT = `你是 Work With Agent 的内置工作�
 【时间与安排】
 涉及今天、明天、本周、下周和当前时刻时，先使用 get_time。
 使用用户时区，不使用模型记忆或服务器默认时区推测日期。
+回答上下班、某天是否落在时间段里、或提议任务起止时，以本次请求中的【规划时间段】为准。
+要核对某个具体时刻时，调用 list_plan_time_bands，at 使用本地时间 YYYY-MM-DDTHH:mm。
+不要凭记忆编时间段，也不要写入或删除时间段。
 任务的安排日期不是独立截止日期。
 预计用时不等于已安排的时间段。
 时间存在影响执行结果的歧义时，先问清楚。

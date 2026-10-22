@@ -35,6 +35,8 @@ export const en: Record<string, string> = {
   "富媒体回答必须通过独立展示流提交，不能作为业务工具执行": "A rich-media answer must be submitted through a separate display stream and cannot be executed as a business tool",
   "read_page_state 不接受额外参数": "read_page_state does not accept extra parameters",
   "get_time 只接受 timeZone": "get_time only accepts timeZone",
+  "list_plan_time_bands 只接受 at": "list_plan_time_bands only accepts at",
+  "at 须为 YYYY-MM-DDTHH:mm": "at must be YYYY-MM-DDTHH:mm",
   "消息不存在": "Message does not exist",
   "family 无效": "family is invalid",
   "内置 AI 不支持此操作。可以整理成提示词交给具备对应能力的工具。": "Built-in AI does not support this operation. You can turn it into a prompt for a tool with the right capability.",

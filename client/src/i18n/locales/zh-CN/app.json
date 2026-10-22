@@ -75,6 +75,7 @@
     "library": "项目资料",
     "proposeTaskChanges": "整组任务修改",
     "getTime": "当前时间",
+    "listPlanTimeBands": "规划时间段",
     "getWorkContext": "工作上下文",
     "queryTasks": "查询任务",
     "queryTopics": "查询清单",

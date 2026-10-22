@@ -41,6 +41,7 @@ describe('builtin run context', () => {
     expect(seen).toContain('服务端重新读取的标题');
     expect(seen).toContain('先问清楚指哪些任务，不要默认取附近任务');
     expect(seen).toContain('get_time');
+    expect(seen).toContain('【规划时间段】');
     expect(seen).not.toContain('execute_shell');
     expect(nearby.split('\n').filter((line) => line.startsWith('- ')).length).toBeLessThanOrEqual(8);
     const topicName = String(topic.body.data.name);

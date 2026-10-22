@@ -8,13 +8,16 @@ import { fileURLToPath } from 'node:url';
 import { PrismaClient } from '@prisma/client';
 import supertest from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { presentPlanTimeBands, planTimeBandPrompt, type PlanTimeBand } from './application/plan-time-bands.js';
+import { contextFromRequest } from './agent/chat-context.js';
+import { executeBuiltinTool } from './agent/builtin-tools.js';
 import { app } from './app.js';
 import { prisma } from './infrastructure/prisma.js';
 import request, { ownerSession } from './test-auth.js';
 import { migrateDatabase } from './db-migrate.js';
 
 const path = '/api/plan/time-bands';
-const valid = {
+const valid: PlanTimeBand = {
   id: '00000000-0000-4000-8000-000000000001',
   name: '工作',
   startMinute: 540,
@@ -22,6 +25,15 @@ const valid = {
   weekdays: [1, 2, 3, 4, 5],
   color: 'blue',
 };
+const lunch: PlanTimeBand = {
+  id: '00000000-0000-4000-8000-000000000003',
+  name: '午休',
+  startMinute: 720,
+  endMinute: 780,
+  weekdays: [1, 2, 3, 4, 5],
+  color: 'orange',
+};
+const toolRun = { id: 'band-run', leaseToken: 'band-token', conversationId: 'band-conversation', assistantMessageId: 'band-assistant', sourceUserMessageId: 'band-user' };
 const migrations = fileURLToPath(new URL('../prisma/migrations/', import.meta.url));
 
 beforeEach(async () => {
@@ -161,6 +173,69 @@ describe('规划时间段 API', () => {
     } finally {
       await fresh.$disconnect();
     }
+  });
+});
+
+describe('规划时间段读取', () => {
+  it('把分钟写成钟点，重叠的两条都命中，结束时刻和周六不算在内', () => {
+    const midday = presentPlanTimeBands([valid, lunch], '2026-10-12T12:30');
+    expect(midday.bands.map((band) => [band.name, band.start, band.end, band.weekdays])).toEqual([
+      ['工作', '09:00', '18:00', [1, 2, 3, 4, 5]],
+      ['午休', '12:00', '13:00', [1, 2, 3, 4, 5]],
+    ]);
+    expect(midday.at?.weekday).toBe(1);
+    expect(midday.at?.matches.map((band) => band.name)).toEqual(['工作', '午休']);
+    expect(planTimeBandPrompt(midday)).toContain('- 工作 09:00–18:00 星期 1,2,3,4,5 颜色 blue');
+    expect(presentPlanTimeBands([valid], '2026-10-12T09:00').at?.matches).toHaveLength(1);
+    expect(presentPlanTimeBands([valid], '2026-10-12T18:00').at?.matches).toEqual([]);
+    expect(presentPlanTimeBands([valid], '2026-10-17T10:00').at?.matches).toEqual([]);
+  });
+
+  it('空列表写明当前没有规划时间段', () => {
+    const empty = presentPlanTimeBands([]);
+    expect(empty.empty).toBe(true);
+    expect(planTimeBandPrompt(empty)).toContain('当前没有已保存的规划时间段');
+  });
+
+  it('拒绝不存在的日期', () => {
+    expect(() => presentPlanTimeBands([valid], '2026-02-31T10:00')).toThrow(/YYYY-MM-DDTHH:mm/);
+  });
+
+  it('连接可以读取最新配置，不能改写', async () => {
+    expect((await request(app).put(path).send({ bands: [valid, lunch] })).status).toBe(200);
+    expect((await request(app).get('/api/v1/plan/time-bands')).body.data.bands.map((band: { name: string }) => band.name)).toEqual(['工作', '午休']);
+    expect((await supertest(app).get('/api/v1/plan/time-bands')).status).toBe(401);
+    const session = await ownerSession(app);
+    const connection = await supertest(app).post('/api/v1/connections').set('Cookie', session.cookie).set('X-CSRF-Token', session.csrf).send({ name: '时间段只读', host: 'codex', topicIds: [], includeInbox: false, autoActions: [] });
+    expect(connection.status).toBe(200);
+    const token = connection.body.data.token as string;
+    try {
+      const read = await supertest(app).get('/api/v1/plan/time-bands').query({ at: '2026-10-12T12:30' }).set('Authorization', `Bearer ${token}`);
+      expect(read.status).toBe(200);
+      expect(read.body.data.at.matches.map((band: { name: string }) => band.name)).toEqual(['工作', '午休']);
+      expect((await supertest(app).get('/api/v1/plan/time-bands').query({ at: 'nope' }).set('Authorization', `Bearer ${token}`)).status).toBe(400);
+      expect((await supertest(app).put(path).set('Authorization', `Bearer ${token}`).send({ bands: [] })).status).toBe(403);
+      expect((await request(app).put(path).send({ bands: [lunch] })).status).toBe(200);
+      const latest = await supertest(app).get('/api/v1/plan/time-bands').set('Authorization', `Bearer ${token}`);
+      expect(latest.body.data.bands.map((band: { name: string }) => band.name)).toEqual(['午休']);
+    } finally {
+      await prisma.connection.deleteMany({ where: { id: connection.body.data.id } });
+    }
+  });
+
+  it('内置工具读到刚保存的数据，规划页用同一份结果，多余参数被拒绝', async () => {
+    expect((await request(app).put(path).send({ bands: [valid] })).status).toBe(200);
+    const context = contextFromRequest({ pageContext: { page: 'inbox' } });
+    const hit = await executeBuiltinTool({ name: 'list_plan_time_bands', args: { at: '2026-10-12T10:00' }, context, run: toolRun, toolCallId: 'call-bands' });
+    expect(hit).toMatchObject({ success: true, data: { at: { matches: [{ name: '工作', start: '09:00', end: '18:00' }] } } });
+    const extra = await executeBuiltinTool({ name: 'list_plan_time_bands', args: { at: '2026-10-12T10:00', color: 'blue' }, context, run: toolRun, toolCallId: 'call-extra' });
+    expect(extra).toMatchObject({ success: false, code: 'INVALID_TOOL_ARGUMENTS' });
+    const plan = await executeBuiltinTool({ name: 'read_page_state', args: {}, context: contextFromRequest({ pageContext: { page: 'plan' } }), run: toolRun, toolCallId: 'call-plan' });
+    expect(plan).toMatchObject({ success: true, data: { bands: [{ name: '工作', weekdays: [1, 2, 3, 4, 5], start: '09:00' }] } });
+    expect(JSON.stringify(plan)).not.toContain('weekdaysJson');
+    const inbox = await executeBuiltinTool({ name: 'read_page_state', args: {}, context, run: toolRun, toolCallId: 'call-inbox' });
+    expect(inbox.success).toBe(true);
+    expect(inbox.data).not.toHaveProperty('bands');
   });
 });
 
