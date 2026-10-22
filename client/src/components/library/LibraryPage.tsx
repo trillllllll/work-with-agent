@@ -9,6 +9,10 @@ import { api, ApiError, type Topic } from '@/lib/api.js';
 import { intlLocale, t as translate } from '../../i18n/index.js';
 import { submitCommands, type Command } from '@/lib/platform.js';
 import { BodyText } from '@/components/shared/BodyText.js';
+import { Button } from '@/components/ui/button.js';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogPortal, DialogTitle } from '@/components/ui/dialog.js';
+import { Input } from '@/components/ui/input.js';
+import { Textarea } from '@/components/ui/textarea.js';
 import { Highlighted } from './highlight.js';
 import { LibraryPreview } from './LibraryPreview.js';
 import { TaskLinkPicker } from './TaskLinkPicker.js';
@@ -259,7 +263,7 @@ export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topi
       </div>
     </div>
     {dialog && <BatchDialog mode={dialog} ids={snapshot.selectedIds} topics={topics} folders={folders.data?.items ?? []} tags={tags.data?.items ?? []} onClose={() => setDialog(null)} applyBatch={applyBatch} />}
-    {composer && <Composer kind={composer} onClose={() => setComposer(null)} onRefresh={refresh} />}
+    {composer && <Composer kind={composer} container={surfaceRef.current} onClose={() => setComposer(null)} onRefresh={refresh} />}
     {editor && <NameDialog editor={editor} folders={folders.data?.items ?? []} onClose={() => setEditor(null)} onSave={saveEditor} />}
   </section>;
 }
@@ -373,10 +377,13 @@ function FolderNav({ folders, tags, open, onClose, onEdit, onRefresh }: { folder
   </>;
 }
 
-function Composer({ kind, onClose, onRefresh }: { kind: 'text' | 'link'; onClose: () => void; onRefresh: () => Promise<void> }) {
+function Composer({ kind, container, onClose, onRefresh }: { kind: 'text' | 'link'; container: HTMLElement | null; onClose: () => void; onRefresh: () => Promise<void> }) {
   const { t } = useTranslation('library');
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
+  const [mode, setMode] = useState<'edit' | 'preview'>('edit');
+  const text = kind === 'text';
+  const label = text ? t('libraryPage.addText') : t('libraryPage.addLink');
   const save = async () => {
     const name = title.trim();
     if (!name) return;
@@ -385,17 +392,60 @@ function Composer({ kind, onClose, onRefresh }: { kind: 'text' | 'link'; onClose
     await onRefresh();
     onClose();
   };
-  return <div className="library-dialog library-surface" role="dialog" aria-label={kind === 'link' ? t('libraryPage.addLink') : t('libraryPage.addText')}>
-    <section>
-      <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="library-name">{kind === 'link' ? t('kind.link') : t('kind.text')}</h2><button type="button" className="library-btn" onClick={() => askAssistant()}>{t('shared.aiAssistant')}</button><button type="button" className="library-btn" onClick={() => askAssistant({ kind: 'draft', title: title || t('libraryPage.draftTitle'), text: `${title}\n\n${body}`, unsaved: true })}>{t('libraryPage.includeDraft')}</button></div>
-      <input className="library-search mt-3 w-full" aria-label={kind === 'link' ? t('libraryPage.linkTitle') : t('libraryPage.textTitle')} value={title} onChange={(event) => setTitle(event.target.value)} />
-      <textarea className="library-search mt-2 h-24 w-full py-2" aria-label={kind === 'link' ? t('libraryPage.linkUrl') : t('libraryPage.textBody')} value={body} onChange={(event) => setBody(event.target.value)} />
-      <div className="mt-3 flex gap-2">
-        <button type="button" className="library-btn library-btn-primary" onClick={() => { void save().catch((error) => toast.error(error instanceof Error ? error.message : t('libraryPage.saveFailed'))); }}>{t('shared.save')}</button>
-        <button type="button" className="library-btn" onClick={onClose}>{t('shared.cancel')}</button>
-      </div>
-    </section>
-  </div>;
+  const keepOpen = (event: { preventDefault(): void }) => event.preventDefault();
+  return (
+    <Dialog open modal={false} onOpenChange={(open) => { if (!open) onClose(); }}>
+      {/* Radix omits its overlay in non-modal mode; keep the backdrop local to this page. */}
+      <DialogPortal container={container ?? undefined}>
+        <div data-library-composer-overlay="" aria-hidden="true" />
+      </DialogPortal>
+      <DialogContent
+        container={container}
+        surface="glass"
+        data-library-composer=""
+        aria-describedby={undefined}
+        className={`z-[80] flex w-[min(760px,calc(100vw-3rem))] max-w-none flex-col gap-4 overflow-hidden p-5 ${text ? 'h-[min(40rem,calc(100dvh-3rem))]' : ''}`}
+        onEscapeKeyDown={keepOpen}
+        onInteractOutside={keepOpen}
+        onPointerDownOutside={keepOpen}
+      >
+        <DialogHeader className="shrink-0 flex-row flex-wrap items-center justify-between gap-2 pr-8 text-left">
+          <DialogTitle className="shrink-0">{label}</DialogTitle>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => askAssistant()}>{t('shared.aiAssistant')}</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => askAssistant({ kind: 'draft', title: title || t('libraryPage.draftTitle'), text: `${title}\n\n${body}`, unsaved: true })}>{t('libraryPage.includeDraft')}</Button>
+          </div>
+        </DialogHeader>
+        <form className="flex min-h-0 flex-1 flex-col gap-3" onSubmit={(event) => { event.preventDefault(); void save().catch((error) => toast.error(error instanceof Error ? error.message : t('libraryPage.saveFailed'))); }}>
+          <Input autoFocus className="shrink-0" aria-label={text ? t('libraryPage.textTitle') : t('libraryPage.linkTitle')} placeholder={text ? t('libraryPage.textTitle') : t('libraryPage.linkTitle')} value={title} onChange={(event) => setTitle(event.target.value)} />
+          {text ? (
+            <div className="flex min-h-0 flex-1 flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <span className="flex-1 text-sm">{t('libraryPage.textBody')}</span>
+                <div role="group" aria-label={t('libraryPage.bodyMode')} className="flex gap-1">
+                  <Button type="button" size="xs" variant={mode === 'edit' ? 'secondary' : 'ghost'} aria-pressed={mode === 'edit'} onClick={() => setMode('edit')}>{t('libraryPage.edit')}</Button>
+                  <Button type="button" size="xs" variant={mode === 'preview' ? 'secondary' : 'ghost'} aria-pressed={mode === 'preview'} onClick={() => setMode('preview')}>{t('shared.preview')}</Button>
+                </div>
+              </div>
+              {mode === 'edit' ? (
+                <Textarea aria-label={t('libraryPage.textBody')} value={body} onChange={(event) => setBody(event.target.value)} className="field-sizing-fixed min-h-0 flex-1 resize-none overflow-auto font-mono md:text-[13px]" style={{ fieldSizing: 'fixed' }} />
+              ) : (
+                <div className="min-h-0 flex-1 overflow-auto rounded-lg border p-3" data-testid="library-composer-preview">
+                  {body.trim() ? <BodyText text={body} format="markdown" /> : <p className="text-sm text-muted-foreground">{t('libraryPage.emptyBody')}</p>}
+                </div>
+              )}
+            </div>
+          ) : (
+            <Input aria-label={t('libraryPage.linkUrl')} placeholder={t('libraryPage.linkUrl')} value={body} onChange={(event) => setBody(event.target.value)} />
+          )}
+          <DialogFooter className="shrink-0 sm:justify-end">
+            <Button type="button" variant="outline" onClick={onClose}>{t('shared.cancel')}</Button>
+            <Button type="submit" disabled={!title.trim()}>{t('shared.save')}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function NameDialog({ editor, folders, onClose, onSave }: { editor: Editor; folders: LibraryFolder[]; onClose: () => void; onSave: (value: string) => Promise<void> }) {

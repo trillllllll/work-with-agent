@@ -53,6 +53,7 @@ function DialogContent({
   closeButtonClassName,
   motion = "default",
   surface = "default",
+  container,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
@@ -60,9 +61,11 @@ function DialogContent({
   closeButtonClassName?: string
   motion?: "default" | "none"
   surface?: "default" | "glass"
+  /** Portal into this node. Omit to portal to document.body. */
+  container?: HTMLElement | null
 }) {
   return (
-    <DialogPortal data-slot="dialog-portal">
+    <DialogPortal data-slot="dialog-portal" container={container ?? undefined}>
       <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Content
         data-slot="dialog-content"

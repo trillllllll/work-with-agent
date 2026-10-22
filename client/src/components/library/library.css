@@ -527,11 +527,36 @@ label.library-btn {
   }
 }
 
-/* Keep the composer mounted while its saved page and assistant share the screen. */
+/* The writing box scrolls. Do not grow with the note. */
+[data-library-composer-overlay] {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+[data-library-composer] textarea {
+  field-sizing: fixed;
+  resize: none;
+}
+
+/* Keep library dialogs mounted while the saved page and assistant share the screen. */
 @media (min-width: 1024px) {
   .app-backdrop[data-assistant-open] .library-dialog { right: 400px; }
   .app-backdrop[data-assistant-open] .library-dialog > section { max-width: 100%; }
+  .app-backdrop[data-assistant-open] [data-library-composer-overlay] { right: 400px; }
+  .app-backdrop[data-assistant-open] [data-library-composer] {
+    left: calc(50% - 200px);
+    width: min(760px, calc(100vw - 400px - 3rem));
+    max-width: min(760px, calc(100vw - 400px - 3rem));
+  }
 }
 @media (min-width: 1280px) {
   .app-backdrop[data-assistant-open] .library-dialog { right: 416px; }
+  .app-backdrop[data-assistant-open] [data-library-composer-overlay] { right: 416px; }
+  .app-backdrop[data-assistant-open] [data-library-composer] {
+    left: calc(50% - 208px);
+    width: min(760px, calc(100vw - 416px - 3rem));
+    max-width: min(760px, calc(100vw - 416px - 3rem));
+  }
 }
