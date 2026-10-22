@@ -8,6 +8,7 @@ import { TopicList } from '@/components/topics/TopicList.js';
 import { BrandMark } from '@/components/layout/BrandMark.js';
 import { NavCount } from '@/components/layout/NavCount.js';
 import { ThemeToggle } from '@/components/layout/ThemeToggle.js';
+import { SidebarScroll } from '@/components/layout/SidebarScroll.js';
 
 type SidebarProps = {
   compact?: boolean;
@@ -53,7 +54,9 @@ export function Sidebar({ compact, route, page, topics, topicsLoading, selectedT
   const assistant = { ...chatItem, label: t('sidebar.aiAssistant') };
   if (compact) return <aside className="app-sidebar assistant-compact-nav" style={{ gridColumn: 1, gridRow: '1 / 3' }}>
     <div className="flex justify-center py-3"><ThemeToggle /></div>
-    <nav aria-label={t('sidebar.mainNav')} className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-x-hidden overflow-y-auto">{[...navigationItems, assistant].map(({ view, label, icon: Icon }) => <button key={view} type="button" title={label} aria-label={label} aria-current={route === view ? 'page' : undefined} className="grid size-10 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => onNavigate(view)}><Icon className="size-4" /></button>)}</nav>
+    <SidebarScroll>
+      <nav aria-label={t('sidebar.mainNav')} className="flex flex-col items-center gap-1">{[...navigationItems, assistant].map(({ view, label, icon: Icon }) => <button key={view} type="button" title={label} aria-label={label} aria-current={route === view ? 'page' : undefined} className="grid size-10 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => onNavigate(view)}><Icon className="size-4" /></button>)}</nav>
+    </SidebarScroll>
   </aside>;
   return (
     <aside className={`app-sidebar${planning ? ' planning-sidebar' : ''}`} style={{ gridColumn: 1, gridRow: "1 / 3" }}>
@@ -61,7 +64,7 @@ export function Sidebar({ compact, route, page, topics, topicsLoading, selectedT
         <BrandMark />
         <ThemeToggle />
       </div>
-      <div className="sidebar-scroll glass-scrollbar">
+      <SidebarScroll>
         <nav aria-label={t('sidebar.mainNav')} className="sidebar-nav">
           {[...links(['today', 'plan', 'focus', 'stats', 'search']), assistant].map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}
         </nav>
@@ -77,7 +80,7 @@ export function Sidebar({ compact, route, page, topics, topicsLoading, selectedT
         <nav aria-label={t('sidebar.work')} className="sidebar-nav">
           {links(['connections', 'proposals', 'knowledge', 'library', 'skills', 'runs', 'worktrees', 'reviews']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} count={item.view === 'proposals' ? pendingProposals : undefined} />)}
         </nav></>}
-      </div>
+      </SidebarScroll>
       <div className="sidebar-footer">
         <nav aria-label={t('sidebar.tools')} className="sidebar-nav">
           {planning && <details><summary className="sidebar-link"><Ellipsis className="size-4" /><span className="flex-1">{t('sidebar.more')}</span><ChevronDown className="size-3.5" /></summary>{links(['tags', 'archived', 'trash', 'changes']).map((item) => <SidebarLink key={item.view} active={current(item.view)} label={item.label} icon={item.icon} onClick={() => onNavigate(item.view)} />)}</details>}
