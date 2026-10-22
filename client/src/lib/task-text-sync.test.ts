@@ -144,6 +144,35 @@ describe('TaskTextSyncCoordinator', () => {
     coordinator.dispose();
   });
 
+  it('同一任务重复打开时，后到的打开不能用服务端文字覆盖刚输入的草稿', async () => {
+    const { coordinator, open, edit } = await setup();
+    const first = open();
+    const second = open();
+    await first;
+    edit('刚输入还没落盘');
+    await second;
+    await flush();
+    expect(coordinator.getRecord('task-1')?.draft.description).toBe('刚输入还没落盘');
+    coordinator.dispose();
+  });
+
+  it('保存确认并清理本地记录后继续输入，再次打开（查询刷新）不丢正文', async () => {
+    const { coordinator, clock, transport, store, open, edit } = await setup();
+    await open();
+    edit('第一段');
+    clock.advance(2000);
+    expect(await until(() => transport.sent.length === 1)).toBe(true);
+    transport.succeed(0, { revision: 2, title: '标题', description: '第一段' });
+    expect(await until(() => coordinator.status('task-1') === 'clean')).toBe(true);
+    await flush();
+    expect(await store.load(scopeKey, 'task-1')).toEqual([]);
+    edit('第一段，未保存补充');
+    await open('task-1', { revision: 2, title: '标题', description: '第一段' });
+    await flush();
+    expect(coordinator.getRecord('task-1')?.draft.description).toBe('第一段，未保存补充');
+    coordinator.dispose();
+  });
+
   it('输入后 1999ms 网络发送次数为 0；2000ms 且本地事务完成后恰好发送一次', async () => {
     const { coordinator, clock, transport, open, edit } = await setup();
     await open();

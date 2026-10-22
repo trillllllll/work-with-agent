@@ -187,9 +187,12 @@ export class TaskTextSyncCoordinator {
       if (mine.outbox) void this.pump(taskId);
       return { record: this.records.get(key)!, staleBranches: [] };
     }
-    if (mine) {
+    // 内存里已有本窗口的活记录（另一次打开先完成、落盘仍在节流，或已确认后被清理）时沿用它：
+    // 详情会随查询刷新重新打开同一任务，按服务端文字重建记录会丢掉刚输入、尚未落盘的正文。
+    const live = this.records.get(key);
+    if (mine || live) {
       this.flushQueuedEdit(taskId);
-      return { record: this.records.get(key) ?? mine, staleBranches: [] };
+      return { record: this.records.get(key) ?? live ?? mine!, staleBranches: mine ? [] : this.pausedStale.get(taskId) ?? [] };
     }
     const others = existing.filter((record) => record.branchId !== this.branchId);
     if (this.deps.locks) {
