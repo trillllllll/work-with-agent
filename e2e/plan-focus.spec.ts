@@ -104,9 +104,11 @@ test('托盘拖到 16:00 得到一小时并可以撤销', async ({ page, request
 });
 
 test('月视图拖到另一天保留时分', async ({ page, request }) => {
-  const today = localKey();
-  const tomorrow = addDays(today, 1);
-  const next = tomorrow.slice(0, 7) === today.slice(0, 7) ? tomorrow : addDays(today, -1);
+  // 固定在月中的周三拖到周四：手机上月视图最小 560px 宽、横向滚动，若"明天"落在可视区右侧边缘
+  // （今天是周四到周日时），dnd-kit 的自动滚动会在松手前把网格再往右推一两列，结果取决于运行日期和机器快慢。
+  const today = '2026-10-14';
+  await page.clock.setFixedTime(new Date(`${today}T12:00:00`));
+  const next = addDays(today, 1);
   const created = await jsonData(await request.post(`${apiUrl}/api/tasks`, { data: { title: '跨日安排', dueDate: today, scheduledStart: `${today}T14:00`, scheduledEnd: `${today}T15:30` } })) as { id: string };
   await page.goto('/#/plan');
   await page.getByRole('button', { name: '日', exact: true }).click();
