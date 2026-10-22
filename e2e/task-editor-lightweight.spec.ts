@@ -194,19 +194,38 @@ test('短正文仍铺满详情剩余高度', async ({ page, request }) => {
   await page.setViewportSize({ width: 1400, height: 900 });
   const detail = await openDetail(page, request, '短正文高度', '只有一行');
   await expectProseAboveMaterials(detail);
+  // 不写死像素：顶部操作按钮会随字体换行（CI 没有 Inter，回退 DejaVu Sans 时多一行，正文少 40px），
+  // 这里检查正文把剩余空间全部吃满：正文底部贴着填充区底部、信息行前没有留白、滚动区不溢出。
   const metrics = await detail.evaluate((node) => {
     const prose = node.querySelector('[data-task-editor-prose]');
+    const fill = prose?.closest('.task-description-fill');
+    const infoRows = node.querySelector('.task-info-rows');
+    const beforeInfo = infoRows?.previousElementSibling;
+    const scroller = fill?.closest('.overflow-y-auto');
     const focus = [...node.querySelectorAll('button')].find((button) => button.textContent?.includes('开始专注'));
-    if (!(prose instanceof HTMLElement) || !(focus instanceof HTMLElement)) return null;
+    if (!(prose instanceof HTMLElement) || !(fill instanceof HTMLElement) || !(infoRows instanceof HTMLElement) || !(beforeInfo instanceof HTMLElement) || !(scroller instanceof HTMLElement) || !(focus instanceof HTMLElement)) return null;
+    const proseBox = prose.getBoundingClientRect();
+    const range = document.createRange();
+    range.selectNodeContents(prose);
     const dialogBox = node.getBoundingClientRect();
     const focusBox = focus.getBoundingClientRect();
     return {
-      proseHeight: prose.getBoundingClientRect().height,
+      proseHeight: proseBox.height,
+      proseMinHeight: parseFloat(getComputedStyle(prose).minHeight) || 0,
+      contentHeight: range.getBoundingClientRect().height,
+      fillSlack: fill.getBoundingClientRect().bottom - proseBox.bottom,
+      infoSlack: infoRows.getBoundingClientRect().top - beforeInfo.getBoundingClientRect().bottom,
+      overflow: scroller.scrollHeight - scroller.clientHeight,
       bottomGap: dialogBox.bottom - focusBox.bottom,
     };
   });
   expect(metrics).not.toBeNull();
-  expect(metrics!.proseHeight).toBeGreaterThan(160);
+  expect(metrics!.proseMinHeight).toBeGreaterThan(0);
+  expect(metrics!.proseHeight).toBeGreaterThanOrEqual(metrics!.proseMinHeight);
+  expect(metrics!.proseHeight).toBeGreaterThan(metrics!.contentHeight * 3);
+  expect(metrics!.fillSlack).toBeLessThanOrEqual(1);
+  expect(metrics!.infoSlack).toBeLessThanOrEqual(1);
+  expect(metrics!.overflow).toBeLessThanOrEqual(1);
   expect(metrics!.bottomGap).toBeGreaterThanOrEqual(0);
   expect(metrics!.bottomGap).toBeLessThan(48);
 
