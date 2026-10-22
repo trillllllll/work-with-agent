@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { taskCreateSchema, taskUpdateSchema, topicCreateSchema, topicUpdateSchema, tagCreateSchema, tagUpdateSchema, reorderSchema } from './workspace-input.js';
+import { completeChildrenLine, createStatusLine, scheduleMoves, scheduleShapes, statusTransitionLine } from '../agent/task-write-spec.js';
 
 export function jsonSchema(schema: z.ZodTypeAny): Record<string, unknown> {
   if (schema instanceof z.ZodOptional || schema instanceof z.ZodDefault) return jsonSchema(schema._def.innerType);
@@ -28,8 +29,8 @@ const schemas: Record<string, z.ZodTypeAny> = {
   'tag.create': tagCreateSchema, 'tag.update': tagUpdateSchema,
 };
 const descriptions: Record<string, string> = {
-  'task.create': '创建待办；仅title必需。dueDate为安排日期，scheduledStart可单独表示时间点，提供scheduledEnd表示时间段，开始日与日期须一致。可用clientRef声明新ID，在后续input中用{$ref:clientRef}引用。',
-  'task.update': '局部修改；省略保持原值，null清空可空值，[]清空标签。单改dueDate整体移动安排，dueDate=null清空全部安排，开始时间自动同步安排日期，scheduledEnd=null变为时间点。完成父任务须明确completeChildren。',
+  'task.create': `创建待办；仅 title 必需。${createStatusLine}${scheduleShapes}可用 clientRef 声明新 ID，在后续 input 中用 {"$ref":"clientRef"} 引用。`,
+  'task.update': `局部修改；省略保持原值，null 清空可空值，[] 清空标签。${scheduleMoves}${statusTransitionLine()}。${completeChildrenLine}`,
   'task.delete': '移入回收站；父任务包括当前未删除的子任务。',
   'task.restore': '恢复同删除批次；父任务或清单不可用时返回恢复提示。',
   'task.permanent_delete': '用户专用永久删除；不可撤销，不可和其他命令混用。',

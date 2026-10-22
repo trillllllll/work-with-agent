@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { DomainError } from '../domain/task.js';
 import { calendarDate, isCalendarDate, isLocalDateTime, localDateTime, reorderSchema, tagColors, tagCreateSchema, topicCreateSchema } from '../application/workspace-input.js';
+import { completeChildrenLine, createStatusLine, dueDateDescription, estimateLine, parentLine, reorderCoverageLine, scheduleMoves, scheduleShapes, scheduledEndDescription, scheduledStartDescription, sortLine, statusTransitionLine, tagIdsDescription, topicIdDescription } from './task-write-spec.js';
 
 export const workspaceWriteKinds = [
   'task.create', 'task.update', 'task.delete', 'task.restore', 'task.reorder',
@@ -42,18 +43,18 @@ const stringSchema = { type: 'string', minLength: 1, 'x-wwa-trim': true } as con
 const nullableId = { anyOf: [{ type: 'null' }, stringSchema] };
 const parentSchema = { anyOf: [{ type: 'null' }, stringSchema, { type: 'object', additionalProperties: false, required: ['$ref'], properties: { $ref: stringSchema } }] };
 const taskProperties = {
-  topicId: nullableId,
-  parentId: parentSchema,
+  topicId: { ...nullableId, description: topicIdDescription },
+  parentId: { ...parentSchema, description: parentLine },
   title: stringSchema,
   description: { type: 'string' },
-  status: { enum: ['todo', 'doing', 'blocked', 'done'] },
+  status: { enum: ['todo', 'doing', 'blocked', 'done'], description: `${statusTransitionLine()}。${createStatusLine}` },
   priority: { enum: ['none', 'low', 'medium', 'high'] },
-  dueDate: { anyOf: [{ type: 'null' }, { type: 'string', format: 'wwa-calendar-date' }] },
-  estimatedMinutes: { anyOf: [{ type: 'null' }, { type: 'integer', minimum: 1, maximum: 10080 }] },
-  scheduledStart: { anyOf: [{ type: 'null' }, { type: 'string', format: 'wwa-local-date-time' }] },
-  scheduledEnd: { anyOf: [{ type: 'null' }, { type: 'string', format: 'wwa-local-date-time' }] },
+  dueDate: { anyOf: [{ type: 'null' }, { type: 'string', format: 'wwa-calendar-date' }], description: dueDateDescription },
+  estimatedMinutes: { anyOf: [{ type: 'null' }, { type: 'integer', minimum: 1, maximum: 10080 }], description: estimateLine },
+  scheduledStart: { anyOf: [{ type: 'null' }, { type: 'string', format: 'wwa-local-date-time' }], description: scheduledStartDescription },
+  scheduledEnd: { anyOf: [{ type: 'null' }, { type: 'string', format: 'wwa-local-date-time' }], description: scheduledEndDescription },
   resultSummary: { type: 'string' },
-  tagIds: { type: 'array', items: stringSchema, uniqueItems: true },
+  tagIds: { type: 'array', items: stringSchema, uniqueItems: true, description: tagIdsDescription },
 };
 
 export type JsonSchema = {
@@ -106,7 +107,7 @@ function commandSchema(kind: string, input: JsonSchema, fields: { clientRef?: bo
 }
 
 const taskCreateJson = objectSchema(taskProperties, ['title']);
-const taskUpdateJson = objectSchema({ ...taskProperties, completeChildren: { type: 'boolean' } }, [], 1);
+const taskUpdateJson = objectSchema({ ...taskProperties, completeChildren: { type: 'boolean', description: completeChildrenLine } }, [], 1);
 const topicProperties = { name: stringSchema, description: { type: 'string' }, color: { enum: [...tagColors] }, isExploration: { type: 'boolean' }, goal: { type: 'string' } };
 const topicCreateJson = objectSchema(topicProperties, ['name']);
 const topicUpdateJson = objectSchema({ ...topicProperties, draftSummary: { type: 'string' } }, [], 1);
@@ -133,7 +134,7 @@ const reorderCommand = {
   kind: 'task.reorder',
   description: '按给定顺序重排同一父级下的任务。',
   required: ['kind', 'input'],
-  notes: ['input 只含 topicId、parentId、orderedTaskIds。'],
+  notes: ['input 只含 topicId、parentId、orderedTaskIds。', reorderCoverageLine],
   requiresRevision: false,
   zod: z.object({ kind: z.literal('task.reorder'), input: reorderInput }).strict(),
   inputSchema: reorderJson,
@@ -141,8 +142,8 @@ const reorderCommand = {
 } satisfies CommandSpec;
 
 const registry = new Map<string, CommandSpec>([
-  create('task.create', '新建任务。标题必填，初始状态为 todo。', z.object({ kind: z.literal('task.create'), clientRef: id.optional(), input: taskCreateInput }).strict(), taskCreateJson, ['不需要已有对象版本。', 'parentId 可以是任务 ID，或 {"$ref":"clientRef"}。']),
-  existing('task.update', '修改已有任务。至少提供一个实际字段，省略的字段保持原值。', z.object({ kind: z.literal('task.update'), targetId: id, expectedRevision: z.number().int().min(1), input: taskUpdateInput }).strict(), taskUpdateJson, ['必须携带刚读取的 expectedRevision。', 'null 清空可空字段，[] 清空集合。']),
+  create('task.create', '新建任务。标题必填，初始状态为 todo。', z.object({ kind: z.literal('task.create'), clientRef: id.optional(), input: taskCreateInput }).strict(), taskCreateJson, ['不需要已有对象版本。', 'parentId 可以是任务 ID，或 {"$ref":"clientRef"}。', scheduleShapes, createStatusLine]),
+  existing('task.update', '修改已有任务。至少提供一个实际字段，省略的字段保持原值。', z.object({ kind: z.literal('task.update'), targetId: id, expectedRevision: z.number().int().min(1), input: taskUpdateInput }).strict(), taskUpdateJson, ['必须携带刚读取的 expectedRevision。', 'null 清空可空字段，[] 清空集合。', scheduleMoves, statusTransitionLine(), completeChildrenLine, parentLine, sortLine]),
   existing('task.delete', '删除任务。对象 ID 和版本在命令外层，input 必须是空对象。', z.object({ kind: z.literal('task.delete'), targetId: id, expectedRevision: z.number().int().min(1), input: emptyInput }).strict(), emptyJson, ['input 必须是 {}。']),
   existing('task.restore', '恢复任务。对象 ID 和版本在命令外层，input 必须是空对象。', z.object({ kind: z.literal('task.restore'), targetId: id, expectedRevision: z.number().int().min(1), input: emptyInput }).strict(), emptyJson, ['input 必须是 {}。']),
   reorderCommand,

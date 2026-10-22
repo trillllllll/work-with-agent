@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { prisma } from './infrastructure/prisma.js';
 import { AgentService, type ModelMessage } from './agent.js';
 import type { ToolCall } from './application/workspace.js';
-import { builtinTools } from './agent/capabilities.js';
+import { builtinSystemPrompt, builtinTools, proposeChangesParameters } from './agent/capabilities.js';
 import { executeBuiltinTool } from './agent/builtin-tools.js';
-import { jsonSchemaAccepts, parseWorkspaceCommand, workspaceChangeDocument, workspaceCommandJsonSchema } from './agent/workspace-commands.js';
+import { jsonSchemaAccepts, parseWorkspaceCommand, workspaceChangeDocument, workspaceCommandJsonSchema, type JsonSchema } from './agent/workspace-commands.js';
+import { statusTransitionLine } from './agent/task-write-spec.js';
+import { allowedTaskTransitions } from './domain/task.js';
 import type { StoredChatContext } from './agent/chat-context.js';
 
 const context: StoredChatContext = {
@@ -12,6 +14,13 @@ const context: StoredChatContext = {
   timeZone: 'Asia/Shanghai', timeZoneSource: 'context', referencedApprovalId: null,
 };
 const schema = workspaceCommandJsonSchema();
+
+function commandInput(kind: string) {
+  const branches = (proposeChangesParameters.properties.operations.items as { oneOf: Array<{ properties: { command: JsonSchema } }> }).oneOf;
+  const command = branches[0].properties.command;
+  const match = command.oneOf?.find((item) => item.properties?.kind?.const === kind);
+  return match?.properties?.input?.properties ?? {};
+}
 
 function acceptsRuntime(command: { kind: string; targetId?: string; expectedRevision?: number; clientRef?: string; input?: Record<string, unknown> }) {
   try { parseWorkspaceCommand(command); return true; }
@@ -66,12 +75,28 @@ describe('workspace command contract', () => {
     for (const command of invalid) expect(acceptsRuntime(command), JSON.stringify(command)).toBe(false);
   });
 
+  it('shows task write values and rules on the propose_changes schema and in the prompt', () => {
+    const update = commandInput('task.update');
+    const reorder = workspaceChangeDocument('task.reorder');
+    expect(update.dueDate?.description).toContain('全天');
+    expect(update.dueDate?.description).toContain('YYYY-MM-DD');
+    expect(update.status?.description).toContain(statusTransitionLine());
+    expect(statusTransitionLine()).toContain(`已完成 done 只能到 待办 ${allowedTaskTransitions('done')[0]}`);
+    expect(update.completeChildren?.description).toContain('连同未完成子任务一起完成');
+    expect(reorder.notes.join('\n')).toContain('同一父级下全部未删除任务');
+    const prompt = builtinSystemPrompt();
+    for (const shape of ['无安排', '全天', '时间点', '时间段']) expect(prompt).toContain(shape);
+  });
+
   it('returns one kind from get_change_schema and rejects an unknown kind', async () => {
     const run = { id: 'schema-run', leaseToken: 'schema', conversationId: 'schema', assistantMessageId: 'schema', sourceUserMessageId: 'schema' };
     const topic = await executeBuiltinTool({ name: 'get_change_schema', args: { family: 'workspace', kind: 'topic.create' }, context, run, toolCallId: 'schema-topic' });
     expect(topic.success).toBe(true);
     expect(jsonSchemaAccepts((topic.data as { command: never }).command, { kind: 'topic.create', input: { name: '清单' } })).toBe(true);
     expect(workspaceChangeDocument('tag.create').kind).toBe('tag.create');
+    const taskUpdate = await executeBuiltinTool({ name: 'get_change_schema', args: { family: 'workspace', kind: 'task.update' }, context, run, toolCallId: 'schema-task-update' });
+    expect(taskUpdate.success).toBe(true);
+    expect((taskUpdate.data as { notes: string[] }).notes.join('\n')).toContain('留下日期就是全天');
     const unknown = await executeBuiltinTool({ name: 'get_change_schema', args: { family: 'workspace', kind: 'task.nope' }, context, run, toolCallId: 'schema-unknown' });
     expect(unknown).toMatchObject({ success: false, code: 'INVALID_TOOL_ARGUMENTS' });
     expect(unknown.error).toContain('未知的修改类型');
