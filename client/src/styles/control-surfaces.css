@@ -1,0 +1,100 @@
+/* Shared material recipes. Geometry remains with the owning component/page. */
+@layer components {
+  .glass-surface {
+    background: var(--surface-card-paint);
+    border: var(--surface-card-border);
+    box-shadow: var(--surface-card-shadow);
+    color: var(--surface-card-text);
+  }
+  .glass-subtle {
+    background: var(--glass-subtle);
+    border: 1px solid var(--glass-border-soft);
+    box-shadow: inset 0 1px 0 var(--glass-highlight);
+  }
+  .glass-control {
+    background: var(--surface-input-paint);
+    border: var(--surface-input-border);
+    border-radius: var(--surface-input-radius);
+    color: var(--surface-input-text);
+    box-shadow: var(--surface-input-shadow);
+    font-family: var(--surface-input-font);
+    transition: border-color var(--surface-input-duration), box-shadow var(--surface-input-duration);
+  }
+  .glass-control:focus-visible, .glass-control:focus-within {
+    outline: none;
+    border-color: var(--ring);
+    box-shadow: var(--surface-input-focus);
+  }
+  .glass-control[aria-invalid='true'] { border-color: var(--destructive); }
+  .glass-control[aria-invalid='true']:focus-visible { outline: 2px solid var(--destructive); outline-offset: 2px; }
+  .glass-control:disabled { opacity: var(--surface-input-disabled-opacity); }
+  .glass-overlay {
+    background: var(--surface-overlay-paint);
+    background-color: var(--surface-overlay-bg);
+    border: var(--surface-overlay-border);
+    border-radius: var(--surface-overlay-radius);
+    color: var(--surface-overlay-text);
+    box-shadow: var(--surface-overlay-shadow);
+    font-family: var(--surface-overlay-font);
+  }
+  .glass-button {
+    position: relative;
+    border: var(--surface-button-border);
+    border-radius: var(--surface-button-radius);
+    background: var(--surface-button-paint);
+    color: var(--surface-button-text);
+    box-shadow: var(--surface-button-shadow);
+    font-family: var(--surface-button-font);
+    font-weight: var(--surface-button-font-weight);
+    transition: filter var(--surface-button-duration), box-shadow var(--surface-button-duration), transform var(--surface-button-duration), background-color var(--surface-button-duration), color var(--surface-button-duration);
+  }
+  .glass-button-primary { background: var(--surface-primary-paint); color: var(--surface-primary-text); border-color: var(--primary); }
+  .glass-button-destructive { background: var(--destructive); color: var(--destructive-foreground); border-color: var(--destructive); }
+  .glass-button-ghost { background: transparent; border-color: transparent; box-shadow: none; color: var(--muted-foreground); }
+  .glass-button-ghost:hover:not(:disabled):not([aria-disabled='true']) { background: var(--glass-hover); border-color: var(--glass-border-soft); }
+  @media (hover: hover) {
+    .glass-button:hover:not(:disabled):not([aria-disabled='true']) {
+      filter: brightness(var(--surface-button-hover-brightness));
+      transform: translateY(var(--surface-button-hover-offset));
+      box-shadow: var(--surface-button-hover-shadow);
+    }
+    .glass-button-ghost:hover:not(:disabled):not([aria-disabled='true']) { box-shadow: inset 0 1px 0 var(--glass-highlight); }
+  }
+  .glass-button:active:not(:disabled):not([aria-disabled='true']) { transform: translateY(var(--surface-button-pressed-offset)); filter: brightness(.96); box-shadow: var(--surface-button-pressed-shadow); }
+  .glass-button:focus-visible { outline: none; box-shadow: var(--surface-button-focus); }
+  .glass-button:disabled, .glass-button[aria-disabled='true'] { opacity: var(--surface-button-disabled-opacity); transform: none; filter: saturate(.5); box-shadow: none; }
+  .surface-switch { background: var(--surface-input-bg); border-color: var(--glass-border); box-shadow: var(--surface-input-shadow); transition: background-color var(--control-duration), border-color var(--control-duration); }
+  .surface-switch[data-state='checked'] { background: var(--primary); border-color: var(--primary); }
+  .surface-switch:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+  .surface-switch:disabled { opacity: var(--control-disabled-opacity); }
+  .surface-switch-thumb { background: var(--primary-foreground); box-shadow: 0 1px 3px rgb(0 0 0 / .25), inset 0 1px 0 rgb(255 255 255 / .75); transition: transform var(--control-duration); }
+}
+
+/* Native choice controls keep browser semantics and the existing hit targets. */
+:where(.dovun-workspace, .controls-page, .library-surface, .work-context) input:where([type='checkbox'], [type='radio']) {
+  accent-color: var(--primary);
+}
+:where(.dovun-workspace, .controls-page, .library-surface, .work-context) input:where([type='checkbox'], [type='radio']):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+
+/* Sonner owns inline layout/animation; only its material is shared. */
+[data-sonner-toaster] [data-sonner-toast][data-styled='true'] {
+  background: var(--surface-overlay-paint);
+  border: var(--surface-overlay-border);
+  border-radius: var(--surface-overlay-radius);
+  color: var(--surface-overlay-text);
+  box-shadow: var(--surface-overlay-shadow);
+  font-family: var(--control-font-family);
+}
+[data-sonner-toaster] [data-sonner-toast][data-type='success'] { color: var(--success); }
+[data-sonner-toaster] [data-sonner-toast][data-type='warning'] { color: var(--warning); }
+[data-sonner-toaster] [data-sonner-toast][data-type='error'] { color: var(--destructive); }
+[data-sonner-toaster] [data-description] { color: var(--muted-foreground); }
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-button, .glass-control, .surface-switch, .surface-switch-thumb { transition: none; animation: none; }
+  .glass-button:hover, .glass-button:active { transform: none; }
+  [data-slot='skeleton'] { animation: none; }
+}
