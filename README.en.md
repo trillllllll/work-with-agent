@@ -38,7 +38,7 @@ Terminology (in Chinese): [CONTEXT.md](./CONTEXT.md). API and host integration (
 
 <img src="./docs/design/dovun/implementation/evidence/plan-en-light.png" width="880" alt="Porcelain light: the real Plan view">
 
-In **Work context**, confirmed memories group into communities by their relationships and can be shown as 3D terrain. The sample data below puts sign-in, lists, memory, and handoff in their own clusters; higher ground means more important, better-connected knowledge.
+In **Work context**, confirmed memories group into communities by their relationships and can be shown as 3D terrain. The screenshot shows the real Work context page after this redesign; the existing terrain view remains available.
 
 <img src="./docs/design/dovun/implementation/evidence/knowledge-en-dark.png" width="880" alt="Ink dark: the real Work context page">
 

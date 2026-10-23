@@ -37,9 +37,12 @@ export function MorePage({ route, onNavigate }: MorePageProps) {
         <ChevronRight aria-hidden="true" className="size-4 text-muted-foreground" />
       </button>
       <nav aria-label={t('morePage.nav')} className="grid gap-6 lg:grid-cols-2">
-        {navigationGroups.map((group) => (
+        {navigationGroups.map((group) => {
+          const Panel = group.id === 'advanced' ? 'details' : 'div';
+          return (
           <section key={group.id} aria-label={t(`app:groups.${group.id}`)}>
-            <h2 className="mb-1.5 px-3 text-xs font-medium text-muted-foreground">{t(`app:groups.${group.id}`)}</h2>
+            <Panel {...(group.id === 'advanced' ? { open: group.views.some(view => view === route) } : {})}>
+            {group.id === 'advanced' ? <summary className="mb-1.5 cursor-pointer px-3 text-xs font-medium text-muted-foreground">{t(`app:groups.${group.id}`)}</summary> : <h2 className="mb-1.5 px-3 text-xs font-medium text-muted-foreground">{t(`app:groups.${group.id}`)}</h2>}
             <div className="glass-subtle overflow-hidden rounded-2xl">
               {group.views.map((view, index) => {
                 const item = navigationItem(view);
@@ -65,8 +68,9 @@ export function MorePage({ route, onNavigate }: MorePageProps) {
                 );
               })}
             </div>
+            </Panel>
           </section>
-        ))}
+        ); })}
       </nav>
     </div>
   );

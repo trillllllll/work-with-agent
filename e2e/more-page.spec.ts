@@ -14,9 +14,9 @@ test('更多页展示统一导航分组与聊天卡片', async ({ page }) => {
   const nav = page.getByRole('navigation', { name: '工作区导航' });
   await expect(nav).toBeVisible();
   for (const group of ['日常', '清单', '积累', 'AI 协作', '高级工具', '通用入口']) {
-    await expect(page.getByRole('region', { name: group })).toBeVisible();
+    await expect(nav.getByRole('region', { name: group })).toBeVisible();
   }
-  await page.getByText('高级工具', { exact: true }).click();
+  await nav.getByText('高级工具', { exact: true }).click();
   for (const label of labels) {
     await expect(nav.getByRole('button', { name: label, exact: true })).toBeVisible();
   }

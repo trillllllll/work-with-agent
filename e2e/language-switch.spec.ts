@@ -17,7 +17,7 @@ test('设置里切换到英文后界面变为英文，刷新后保持，切回�
   await expect(section.getByRole('heading', { name: 'Language' })).toBeVisible();
   await expect(section.getByRole('button', { name: 'English' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-  expect(await page.evaluate(() => window.localStorage.getItem('wwa.language'))).toBe('en');
+  expect(await page.evaluate(() => window.localStorage.getItem('dovun.language'))).toBe('en');
 
   await page.goto('/#/more');
   const apiRequest = page.waitForRequest((request) => request.url().includes('/api/'));

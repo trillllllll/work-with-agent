@@ -191,7 +191,11 @@ test('批量确认时一条成功，冲突的那条留在卡片上', async ({ pa
   const bad = await submit(access.token, [{ kind: 'task.update', targetId: second.id, expectedRevision: second.revision, input: { title: '批量乙已确认' } }]);
   await openProposals(page);
   await expect(cards(page)).toHaveCount(2);
-  await e2eDatabase.proposal.update({ where: { id: bad.proposalId }, data: { revision: { increment: 1 } } });
+  // Make the revision stale when this exact confirmation is sent, after any background refetch.
+  await page.route(`**/api/v1/proposals/${bad.proposalId}/approve`, async route => {
+    await e2eDatabase.proposal.update({ where: { id: bad.proposalId }, data: { revision: { increment: 1 } } });
+    await route.continue();
+  });
   await cards(page).nth(0).getByRole('checkbox').check();
   await cards(page).nth(1).getByRole('checkbox').check();
   await page.getByRole('button', { name: '确认所选', exact: true }).click();

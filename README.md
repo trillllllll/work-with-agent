@@ -38,7 +38,7 @@
 
 <img src="./docs/design/dovun/implementation/evidence/plan-light.png" width="880" alt="浅色界面：规划的周视图，周三下午三条重叠的任务叠成一张卡片">
 
-在「工作上下文」里，确认过的记忆会按关系收成社区，也可以铺成三维地形。下面用的是示例数据：登录、清单、记忆和交接各自成团，高处是更重要、连接更多的知识。
+在「工作上下文」里，确认过的记忆会按关系收成社区，也可以铺成三维地形。下图展示本轮真实工作上下文页面；三维地形仍保留在原有功能中。
 
 <img src="./docs/design/dovun/implementation/evidence/knowledge-dark.png" width="880" alt="石墨深色：真实工作上下文页面">
 
