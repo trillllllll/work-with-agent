@@ -22,7 +22,7 @@ function classificationClass(active: boolean) {
   return cn('sidebar-topic-item group relative flex min-w-0 items-center rounded-xl border border-transparent', active ? 'border-primary/20 bg-primary/[0.09] shadow-[inset_0_1px_0_rgb(255_255_255/0.35)] dark:bg-primary/[0.14]' : 'hover:border-[var(--glass-border)] hover:bg-[var(--glass-hover)]');
 }
 function classificationLabelClass(active: boolean) {
-  return cn('relative flex min-h-11 min-w-0 flex-1 items-center gap-2.5 px-2.5 text-left text-[13px] transition-[color,transform] duration-200 lg:min-h-10', active ? 'font-semibold text-primary' : 'text-foreground/75 hover:translate-x-0.5 hover:text-foreground');
+  return cn('relative flex min-h-11 min-w-0 flex-1 items-center gap-2.5 px-2.5 text-left text-[13px] transition-[color,transform] duration-200 lg:min-h-10', active ? 'font-semibold text-brand-link' : 'text-foreground/75 hover:translate-x-0.5 hover:text-foreground');
 }
 
 function SidebarTopicList({ topics, loading, selectedTopicId, onSelect, onEdit }: TopicListProps) {

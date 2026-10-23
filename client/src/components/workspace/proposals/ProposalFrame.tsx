@@ -77,7 +77,7 @@ export function ProposalFrame({ proposal, analysis, connections, topics, state, 
           </p>
         </div>
       </div>
-      {editing ? <div className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: 'color-mix(in srgb, #4772FA 40%, transparent)', background: 'color-mix(in srgb, #4772FA 12%, transparent)' }}>{t('edit.banner')}</div> : null}
+      {editing ? <div className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: 'color-mix(in srgb, var(--primary) 40%, transparent)', background: 'color-mix(in srgb, var(--primary) 12%, transparent)' }}>{t('edit.banner')}</div> : null}
       {impact ? <p className="text-sm text-muted-foreground">{impact}</p> : null}
       {note ? <p className="rounded-lg border border-[var(--warning-border)] bg-[var(--warning-bg)] px-3 py-2 text-sm text-foreground">{note}</p> : null}
       {error ? (

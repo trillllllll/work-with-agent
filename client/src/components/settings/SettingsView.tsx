@@ -31,7 +31,7 @@ function DesktopSettings({ category, onCategoryChange, onNavigate }: { category:
       <nav aria-label={t('layout.nav.label')} className="glass-scrollbar w-[232px] shrink-0 overflow-y-auto border-r border-[var(--glass-divider)] px-3 py-4">
         {SETTINGS_GROUPS.map((group) => (
           <div key={group} className="mb-3 last:mb-0">
-            <h2 className="px-3 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/80">{t(`layout.groups.${group}`)}</h2>
+            <h2 className="px-3 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{t(`layout.groups.${group}`)}</h2>
             <ul className="space-y-0.5">
               {categoriesInGroup(group).map(({ id }) => {
                 const Icon = SETTINGS_CATEGORY_ICONS[id];
@@ -46,14 +46,14 @@ function DesktopSettings({ category, onCategoryChange, onNavigate }: { category:
                       className={cn(
                         'group flex w-full items-start gap-2.5 rounded-xl px-3 py-2 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 motion-reduce:transition-none',
                         active
-                          ? 'bg-white/80 text-foreground shadow-[0_2px_8px_rgb(15_23_42/0.10),inset_0_1px_0_rgb(255_255_255/0.85)] dark:bg-white/15 dark:shadow-[0_2px_8px_rgb(0_0_0/0.2),inset_0_1px_0_rgb(255_255_255/0.12)]'
-                          : 'text-muted-foreground hover:bg-white/45 hover:text-foreground dark:hover:bg-white/10',
+                          ? 'bg-accent text-accent-foreground shadow-[var(--surface-button-shadow)]'
+                          : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                       )}
                     >
-                      <Icon aria-hidden="true" className={cn('mt-0.5 size-4 shrink-0', active ? 'text-primary' : 'text-muted-foreground/80 group-hover:text-foreground')} />
+                      <Icon aria-hidden="true" className={cn('mt-0.5 size-4 shrink-0', active ? 'text-brand-link' : 'text-muted-foreground group-hover:text-foreground')} />
                       <span className="min-w-0 flex-1">
                         <span className="block text-[13px] font-medium">{t(`layout.categories.${id}.title`)}</span>
-                        <span id={`settings-nav-hint-${id}`} className="mt-0.5 block truncate text-[11px] text-muted-foreground/80">{hints[id]}</span>
+                        <span id={`settings-nav-hint-${id}`} className="mt-0.5 block truncate text-[11px] text-muted-foreground">{hints[id]}</span>
                       </span>
                     </button>
                   </li>

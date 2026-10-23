@@ -28,7 +28,7 @@ function ContextMenuContent({
       <ContextMenuPrimitive.Content
         data-slot="context-menu-content"
         className={cn(
-          "glass-overlay z-50 max-h-(--radix-context-menu-content-available-height) min-w-[8rem] origin-(--radix-context-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-xl p-1 text-popover-foreground",
+          "glass-overlay z-50 max-h-(--radix-context-menu-content-available-height) min-w-[8rem] origin-(--radix-context-menu-content-transform-origin) overflow-x-hidden overflow-y-auto p-1 text-popover-foreground",
           className
         )}
         {...props}
@@ -151,7 +151,7 @@ function ContextMenuSubContent({
       <ContextMenuPrimitive.SubContent
         data-slot="context-menu-sub-content"
         className={cn(
-          "glass-overlay z-[80] min-w-[8rem] origin-(--radix-context-menu-content-transform-origin) overflow-hidden rounded-xl p-1 text-popover-foreground pointer-events-auto",
+          "glass-overlay z-[80] min-w-[8rem] origin-(--radix-context-menu-content-transform-origin) overflow-hidden p-1 text-popover-foreground pointer-events-auto",
           className
         )}
         {...props}

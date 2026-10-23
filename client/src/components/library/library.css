@@ -1,42 +1,24 @@
 .library-surface {
-  --lib-bg: #F5F5F5;
-  --lib-panel: #FFFFFF;
-  --lib-subtle: #F7F7F8;
-  --lib-text: #171717;
-  --lib-muted: #666666;
-  --lib-border: #D6D6D6;
-  --lib-hover: #EEEEF0;
-  --lib-selected: #E8EDF5;
-  --lib-selected-text: #172B4D;
-  --lib-focus: #2563EB;
-  --lib-primary: #171717;
-  --lib-primary-text: #FFFFFF;
-  --lib-danger: #B42338;
-  --lib-success: #287A4B;
-  --lib-warning: #8A5A00;
-  --lib-highlight: #FFF0A6;
+  --lib-bg: var(--surface-panel);
+  --lib-panel: var(--card);
+  --lib-subtle: var(--muted);
+  --lib-text: var(--foreground);
+  --lib-muted: var(--muted-foreground);
+  --lib-border: var(--border);
+  --lib-hover: var(--glass-hover);
+  --lib-selected: var(--selected);
+  --lib-selected-text: var(--foreground);
+  --lib-focus: var(--ring);
+  --lib-primary: var(--primary);
+  --lib-primary-text: var(--primary-foreground);
+  --lib-danger: var(--destructive);
+  --lib-success: var(--success);
+  --lib-warning: var(--warning);
+  --lib-highlight: var(--warning-bg);
   color: var(--lib-text);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--control-font-family);
 }
 
-.dark .library-surface {
-  --lib-bg: #111111;
-  --lib-panel: #1B1B1B;
-  --lib-subtle: #222222;
-  --lib-text: #F0F0F0;
-  --lib-muted: #A6A6A6;
-  --lib-border: #383838;
-  --lib-hover: #2B2B2D;
-  --lib-selected: #263449;
-  --lib-selected-text: #DCE8FF;
-  --lib-focus: #93B4FF;
-  --lib-primary: #F0F0F0;
-  --lib-primary-text: #171717;
-  --lib-danger: #FF8E9D;
-  --lib-success: #77D5A0;
-  --lib-warning: #F1CA75;
-  --lib-highlight: #68531B;
-}
 
 .library-surface,
 .library-surface * { box-sizing: border-box; }
@@ -93,7 +75,8 @@
   flex: 1;
   border: 1px solid var(--lib-border);
   border-radius: 10px;
-  background: var(--lib-panel);
+  background: var(--surface-input-paint);
+  box-shadow: var(--surface-input-shadow);
   color: var(--lib-text);
   padding: 0 12px;
   font: inherit;
@@ -121,14 +104,23 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
+  background: var(--surface-button-paint);
+  box-shadow: var(--surface-button-shadow);
+  transition: filter var(--control-duration), box-shadow var(--control-duration);
   box-sizing: border-box;
   white-space: nowrap;
   cursor: pointer;
 }
 
 .library-btn:disabled {
+  opacity: var(--control-disabled-opacity);
+  box-shadow: none;
   cursor: default;
 }
+
+.library-select { background: var(--surface-input-paint); box-shadow: var(--surface-input-shadow); }
+.library-search:focus-visible, .library-select:focus-visible { outline: 0; box-shadow: var(--surface-input-focus); }
+.library-btn:hover:not(:disabled) { filter: brightness(var(--surface-button-hover-brightness)); }
 
 label.library-btn {
   position: relative;
@@ -141,7 +133,7 @@ label.library-btn {
 }
 
 .library-btn-primary {
-  background: var(--lib-primary);
+  background: var(--surface-primary-paint);
   color: var(--lib-primary-text);
   border-color: var(--lib-primary);
 }
@@ -164,8 +156,9 @@ label.library-btn {
   min-height: 0;
   overflow: auto;
   border: 1px solid var(--lib-border);
-  border-radius: 12px;
-  background: var(--lib-panel);
+  border-radius: var(--surface-card-radius);
+  background: var(--surface-card-paint);
+  box-shadow: var(--surface-card-shadow);
 }
 
 .library-side-button,
@@ -268,8 +261,9 @@ label.library-btn {
   max-height: 320px;
   overflow: auto;
   border: 1px solid var(--lib-border);
-  border-radius: 12px;
-  background: var(--lib-panel);
+  border-radius: var(--surface-card-radius);
+  background: var(--surface-card-paint);
+  box-shadow: var(--surface-card-shadow);
   color: var(--lib-text);
   padding: 12px;
   box-shadow: none;
@@ -336,8 +330,9 @@ label.library-btn {
   gap: 4px;
   margin-top: 4px;
   border: 1px solid var(--lib-border);
-  border-radius: 10px;
-  background: var(--lib-panel);
+  border-radius: var(--surface-overlay-radius);
+  background: var(--surface-overlay-paint);
+  box-shadow: var(--surface-overlay-shadow);
   padding: 8px;
 }
 
@@ -403,7 +398,8 @@ label.library-btn {
   z-index: 80;
   display: grid;
   place-items: center;
-  background: rgba(0, 0, 0, 0.28);
+  background: var(--overlay-backdrop);
+  backdrop-filter: blur(var(--overlay-backdrop-blur));
   padding: 16px;
 }
 
@@ -412,8 +408,9 @@ label.library-btn {
   max-height: min(720px, calc(100vh - 32px));
   overflow: auto;
   border: 1px solid var(--lib-border);
-  border-radius: 12px;
-  background: var(--lib-panel);
+  border-radius: var(--surface-overlay-radius);
+  background: var(--surface-overlay-paint);
+  box-shadow: var(--surface-overlay-shadow);
   color: var(--lib-text);
   padding: 16px;
 }
@@ -532,7 +529,8 @@ label.library-btn {
   position: fixed;
   inset: 0;
   z-index: 80;
-  background: rgba(0, 0, 0, 0.28);
+  background: var(--overlay-backdrop);
+  backdrop-filter: blur(var(--overlay-backdrop-blur));
 }
 
 [data-library-composer] textarea {
@@ -554,3 +552,5 @@ label.library-btn {
     max-width: min(760px, calc(100vw - var(--dovun-right-reserved) - 3rem));
   }
 }
+
+@media (prefers-reduced-motion: reduce) { .library-btn, .library-sheet, .library-color { transition: none; } }

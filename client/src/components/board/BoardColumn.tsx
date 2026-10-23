@@ -30,13 +30,13 @@ export function TaskCard({ task, topics, tags, selected = false, readonly = fals
   return <TaskActions task={task} topics={topics} tags={tags} readonly={readonly} busy={busy} textDirty={textDirty} onOpen={onOpen} onToggle={onToggle} onMove={onMove} onDelete={onDelete} onSave={onSave} onCreate={onCreate}>
     <article data-testid={`task-card-${task.id}`} data-selected={selected || undefined} className="glass-subtle group rounded-xl p-3 transition-colors hover:border-primary/25 hover:bg-[var(--glass-hover)]" onClick={(event) => { const target = event.target; if (!(target instanceof Element) || target.closest('button, a, select, label, input, [role="menu"], [role="menuitem"], [role="listbox"], [role="option"]')) return; onOpen(task.id); }}>
       <div className="flex items-start justify-between gap-1.5">
-        <button type="button" onClick={(event) => { event.stopPropagation(); onOpen(task.id); }} className="min-w-0 flex-1 text-left text-xs leading-relaxed font-bold hover:text-primary">{task.title}</button>
+        <button type="button" onClick={(event) => { event.stopPropagation(); onOpen(task.id); }} className="min-w-0 flex-1 text-left text-xs leading-relaxed font-bold hover:text-brand-link">{task.title}</button>
         <TaskMenuButton />
       </div>
       {task.resultSummary && <div className="mt-2 rounded-lg border border-success bg-success-bg/70 px-2 py-1.5 text-[11px] leading-relaxed text-success">{t('taskCard.result', { summary: task.resultSummary })}</div>}
       {(priority !== 'none' || task.dueDate) && (
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
-          {priority !== 'none' && <span className={priority === 'high' ? 'text-destructive' : priority === 'medium' ? 'text-warning' : 'text-primary'} title={t('taskCard.priorityTitle', { priority: priorityLabel })}><Flag className="mr-1 inline size-3" />{priorityLabel}</span>}
+          {priority !== 'none' && <span className={priority === 'high' ? 'text-destructive' : priority === 'medium' ? 'text-warning' : 'text-brand-link'} title={t('taskCard.priorityTitle', { priority: priorityLabel })}><Flag className="mr-1 inline size-3" />{priorityLabel}</span>}
           {task.dueDate && <span title={t('taskCard.dueTitle', { date: task.dueDate })}><CalendarDays className="mr-1 inline size-3" />{task.dueDate}</span>}
         </div>
       )}
@@ -70,7 +70,7 @@ export function BoardColumn({ label, count, isTodo = false, onAddTask, children 
       </div>
       <div className="flex flex-col gap-2">{children}</div>
       {isTodo && onAddTask && (
-        <Button variant="ghost" size="sm" className="mt-2 w-full justify-start text-muted-foreground hover:text-primary" onClick={onAddTask}>
+        <Button variant="ghost" size="sm" className="mt-2 w-full justify-start text-muted-foreground hover:text-brand-link" onClick={onAddTask}>
           <Plus />{t('boardColumn.addTask')}
         </Button>
       )}

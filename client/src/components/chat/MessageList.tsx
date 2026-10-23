@@ -94,7 +94,7 @@ export function MessageList({ messages, emptyState, approvals, approvalPending, 
       <div data-chat-scroll ref={scrollRef} onScroll={handleScroll} className="glass-scrollbar h-full min-w-0 overflow-y-auto overscroll-contain px-3 py-3">
         {!messages.length && !approvals.length && (emptyState ?? (
           <div className="flex flex-col items-center px-6 py-16 text-center">
-            <div className="glass-subtle grid size-12 place-items-center rounded-2xl border-primary/15 text-primary">
+            <div className="glass-subtle grid size-12 place-items-center rounded-2xl border-primary/15 text-brand-link">
               <Sparkles className="size-5" />
             </div>
             <p className="mt-4 max-w-xs text-[13px] leading-relaxed text-muted-foreground">

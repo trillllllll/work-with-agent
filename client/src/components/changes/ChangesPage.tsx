@@ -69,7 +69,7 @@ export function ChangesPage() {
 
   return <div className="min-h-full px-4 pt-5 pb-24 sm:px-8 sm:pt-7 lg:pb-7">
     <header className="border-b glass-divider pb-4">
-      <div className="flex items-center gap-2"><History className="size-5 text-primary" /><div><span className="text-[11px] font-bold tracking-[0.13em] text-muted-foreground uppercase">{t('changes.eyebrow')}</span><h1 className="mt-1 text-2xl font-semibold tracking-tight">{t('changes.title')}</h1></div></div>
+      <div className="flex items-center gap-2"><History className="size-5 text-brand-link" /><div><span className="text-[11px] font-bold tracking-[0.13em] text-muted-foreground uppercase">{t('changes.eyebrow')}</span><h1 className="mt-1 text-2xl font-semibold tracking-tight">{t('changes.title')}</h1></div></div>
       <p className="mt-2 text-[13px] text-muted-foreground">{t('changes.description')}</p>
     </header>
     <ChangesFilters filters={filters} connections={connections} loaded={list.data ? items.length : null} total={total} onSearch={commitSearch} onList={commitList} onRange={commitRange} onReplace={replaceFilters} />

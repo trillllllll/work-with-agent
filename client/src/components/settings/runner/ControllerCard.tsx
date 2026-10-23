@@ -33,7 +33,7 @@ export function ControllerCard({ origin }: { origin: string }) {
           <dd className="mt-0.5">
             {settings.data?.model || t('computers.controller.modelMissing')}
             {' '}
-            <a className="text-primary underline-offset-4 hover:underline" href={`#${settingsHash('model')}`}>{t('computers.controller.modelLink')}</a>
+            <a className="text-brand-link underline-offset-4 hover:underline" href={`#${settingsHash('model')}`}>{t('computers.controller.modelLink')}</a>
           </dd>
         </div>
       </dl>

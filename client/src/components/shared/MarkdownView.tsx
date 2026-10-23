@@ -59,7 +59,7 @@ function markdownComponents(diagrams: boolean): Components {
     h1: ({ children }) => <h1 className="mt-3 mb-1.5 text-base font-semibold">{children}</h1>,
     h2: ({ children }) => <h2 className="mt-3 mb-1.5 text-[15px] font-semibold">{children}</h2>,
     h3: ({ children }) => <h3 className="mt-2.5 mb-1 text-sm font-semibold">{children}</h3>,
-    a: ({ children, href }) => <a href={href} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">{children}</a>,
+    a: ({ children, href }) => <a href={href} target="_blank" rel="noreferrer" className="text-brand-link underline underline-offset-2">{children}</a>,
     blockquote: ({ children }) => <blockquote className="my-2 rounded-xl border border-border px-3 py-2 text-muted-foreground">{children}</blockquote>,
     code: ({ children, className }) => {
       if (diagrams && isMermaidFence(className)) return <MermaidBlock source={mermaidSource(fenceText(children))} />;

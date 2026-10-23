@@ -90,7 +90,7 @@ export function WorkspaceModal({ suspended = false, assistantOpen, assistantSlot
     <header className="flex shrink-0 items-center gap-3 border-b border-black/[0.06] px-5 py-3 dark:border-white/[0.08] sm:px-6">
       <DialogTitle className="sr-only">{currentLabel}</DialogTitle>
       <nav className="min-w-0 overflow-x-auto [scrollbar-width:none]" aria-label={t('modal.nav')}>
-        <div className="flex min-w-max gap-1 rounded-full border border-black/[0.06] bg-black/[0.035] p-1 shadow-inner dark:border-white/[0.08] dark:bg-white/[0.06]">
+        <div className="flex min-w-max gap-1 rounded-full border border-[var(--glass-border)] bg-muted p-1 shadow-[var(--surface-input-shadow)]">
           {tabs.map(({ view: tabView, label, icon: Icon }) => {
             const active = tabView === view;
             return (
@@ -104,10 +104,10 @@ export function WorkspaceModal({ suspended = false, assistantOpen, assistantSlot
                   'group flex min-h-9 items-center gap-2 rounded-full px-4 py-1.5 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 motion-reduce:transition-none',
                   active
                     ? 'bg-white/80 text-foreground shadow-[0_2px_8px_rgb(15_23_42/0.10),inset_0_1px_0_rgb(255_255_255/0.85)] dark:bg-white/15 dark:text-foreground dark:shadow-[0_2px_8px_rgb(0_0_0/0.2),inset_0_1px_0_rgb(255_255_255/0.12)]'
-                    : 'text-muted-foreground hover:bg-white/45 hover:text-foreground dark:hover:bg-white/10',
+                    : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                 )}
               >
-                <Icon className={cn('size-4 shrink-0 transition-colors', active ? 'text-primary' : 'text-muted-foreground/80 group-hover:text-foreground')} />
+                <Icon className={cn('size-4 shrink-0 transition-colors', active ? 'text-brand-link' : 'text-muted-foreground group-hover:text-foreground')} />
                 <span className="whitespace-nowrap text-[13px] font-medium">{label}</span>
               </button>
             );
@@ -125,7 +125,7 @@ export function WorkspaceModal({ suspended = false, assistantOpen, assistantSlot
     <Dialog open={!suspended} onOpenChange={(open) => { if (!open) onClose(); }}>
     {createPortal(<>
         {header}
-        <section className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-white/15 dark:bg-black/10">
+        <section className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--surface-panel)]">
           <div ref={scroller} data-testid="workspace-modal-scroller" data-page-scroll className="glass-scrollbar h-full min-h-0 overflow-y-auto overscroll-contain">{content}</div>
           {mobile && !assistantOpen && (
             <Button
@@ -144,7 +144,6 @@ export function WorkspaceModal({ suspended = false, assistantOpen, assistantSlot
         onInteractOutside={keepWorkspaceInteraction}
         showCloseButton={false}
         aria-describedby={undefined}
-        overlayClassName="bg-slate-950/20 backdrop-blur-md backdrop-saturate-150 dark:bg-black/35"
         className={cn(
           'glass-overlay flex flex-col gap-0 p-0 text-foreground duration-300',
           'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.98] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.98] motion-reduce:!animate-none',

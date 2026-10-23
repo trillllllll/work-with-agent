@@ -39,7 +39,7 @@ const fieldKeys = new Set(['title', 'description', 'status', 'priority', 'dueDat
 function fieldLabel(field: string) {
   return fieldKeys.has(field) ? translate(`tasks:taskExpand.fields.${field}`) : field;
 }
-const flagTone: Record<TaskPriority, string> = { none: 'text-muted-foreground', low: 'text-primary', medium: 'text-warning', high: 'text-destructive' };
+const flagTone: Record<TaskPriority, string> = { none: 'text-muted-foreground', low: 'text-brand-link', medium: 'text-warning', high: 'text-destructive' };
 
 function metaOf(task: Task): MetaDraft {
   const draft = taskDraft(task);
