@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280" width="100%" role="img" aria-labelledby="chart-title chart-desc" lang="zh-CN">
+  <title id="chart-title">静态 SVG 兼容性验证</title>
+  <desc id="chart-desc"><![CDATA[完成率 > 80% / https://example.test / A < B & C]]></desc>
+  <defs>
+    <linearGradient id="_gradient"><stop offset="0%" stop-color="#416e85"/><stop offset="100%" stop-color="#7a6bd6"/></linearGradient>
+    <clipPath id="clip"><rect x="24" y="66" width="672" height="100" rx="12"/></clipPath>
+    <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0 0L6 3L0 6Z" fill="#416e85"/></marker>
+  </defs>
+  <text x="24" y="36" font-size="1.25em" font-weight="600" fill="#416e85">文字、渐变、裁剪与 CDATA</text>
+  <g clip-path="url( '#clip' )"><rect x="24" y="66" width="672" height="100" style="fill: url('#_gradient'); stroke-width: 1;"/></g>
+  <text x="44" y="110" style="fill:white;font-size:16px;letter-spacing:1px">完成分布<tspan dx="12" dy="24" font-style="italic">文字排版正常</tspan></text>
+  <path d="M24 196L680 196" stroke="#416e85" stroke-width="2" fill="none" marker-end="url(#arrow)" vector-effect="non-scaling-stroke"/>
+  <text x="24" y="244" fill="#416e85" font-size="12pt"><![CDATA[CDATA: A < B & 正常保留]]></text>
+</svg>

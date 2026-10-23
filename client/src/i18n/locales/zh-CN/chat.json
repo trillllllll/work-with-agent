@@ -407,6 +407,8 @@
     "enlarged": "放大后的图"
   },
   "visualization": {
+    "policy": {"attribute": "SVG 包含不支持或无效的属性：{{attribute}}", "format": "SVG 内容或规模不符合静态图示规则", "reference": "SVG 引用了不存在或类型不符的资源", "cycle": "SVG 资源引用存在循环、嵌套箭头或引用过深"},
+    "sanitizerChanged": "安全过滤改变了图示内容，已停止显示",
     "canvasFailed": "无法创建导出画布",
     "exportFailed": "导出失败",
     "unsupportedSyntax": "图形含有不支持的语法或交互",

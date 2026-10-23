@@ -1,8 +1,10 @@
 import { test, expect } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 import { readFileSync } from 'node:fs';
+import { sanitizeSvg } from '../server/src/agent/svg-sanitize.js';
 
 const svg = readFileSync('e2e/fixtures/weekly-work-distribution.svg', 'utf8');
+const policyCases = JSON.parse(readFileSync('e2e/fixtures/svg-policy-cases.json', 'utf8')) as { name: string; source: string; allow: boolean }[];
 const fence = (source: string, language = 'svg') => '```' + language + '\n' + source + '\n```';
 
 test.beforeEach(async ({ page }) => {
@@ -10,6 +12,69 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => { localStorage.setItem('agent-studio.theme', 'light'); (window as any).__REACT_GRAB_DISABLED__ = true; });
 });
 test.afterAll(() => e2eDatabase.$disconnect());
+
+test('静态SVG组合在消息、源码、放大、SVG与PNG导出和重载中保留CDATA文字', async ({ page }) => {
+  const source = readFileSync('e2e/fixtures/static-svg-showcase.svg', 'utf8');
+  const canonical = sanitizeSvg(source);
+  const conversation = await e2eDatabase.conversation.create({ data: {} });
+  await e2eDatabase.message.create({ data: { conversationId: conversation.id, role: 'assistant', content: fence(source) } });
+  await e2eDatabase.message.create({ data: { conversationId: conversation.id, role: 'assistant', content: '共享静态图示', blocksJson: JSON.stringify({ schemaVersion: 1, blocks: [{ id: 'static-showcase', index: 0, type: 'svg', status: 'ready', title: '共享静态图示', source: canonical }] }) } });
+  await page.addInitScript((id) => localStorage.setItem('agent-studio.conversationId', id), conversation.id);
+  await page.goto('/#/chat');
+  const preview = page.locator('[data-svg-block]').first();
+  for (const image of [preview.getByRole('img'), page.locator('[data-block-type=svg]').getByRole('img')]) {
+    await expect(image).toBeVisible();
+    await expect.poll(() => image.evaluate((node) => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  }
+  await preview.screenshot({ path: `/tmp/wwa-static-svg-${test.info().project.name}.png` });
+  await preview.getByRole('button', { name: '查看源码', exact: true }).click();
+  await expect(preview.locator('pre')).toContainText('CDATA: A < B & 正常保留');
+  await preview.getByRole('button', { name: '查看源码', exact: true }).click();
+  for (const [name, extension] of [['SVG', 'svg'], ['导出 PNG', 'png']]) {
+    const download = page.waitForEvent('download');
+    await preview.getByRole('button', { name, exact: true }).click();
+    const saved = await download;
+    expect(saved.suggestedFilename()).toBe(`diagram.${extension}`);
+    const bytes = readFileSync((await saved.path())!);
+    if (extension === 'svg') {
+      expect(bytes.toString()).toBe(canonical);
+      expect(bytes.toString()).toContain('CDATA: A &lt; B &amp; 正常保留');
+    } else expect(bytes.subarray(1, 4).toString()).toBe('PNG');
+  }
+  await preview.getByRole('button', { name: '放大查看', exact: true }).click();
+  await expect(page.getByRole('dialog').getByRole('img')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toBeHidden();
+  await page.reload();
+  await expect(page.locator('[data-svg-block] img')).toBeVisible();
+  await expect(page.locator('[data-block-type=svg] img')).toBeVisible();
+});
+
+test('共享策略矩阵：Node与浏览器一致，文字保留，允许的静态SVG可被浏览器解码', async ({ page }) => {
+  await page.goto('/#/chat');
+  const expected = policyCases.map((item) => {
+    try { return { ok: true, source: sanitizeSvg(item.source) }; } catch { return { ok: false }; }
+  });
+  const actual = await page.evaluate(async ({ cases, modulePath }) => {
+    const { safeSvg } = await import(modulePath);
+    const results = [];
+    for (const item of cases) {
+      let source: string;
+      try { source = safeSvg(item.source); } catch { results.push({ ok: false }); continue; }
+      const url = URL.createObjectURL(new Blob([source], { type: 'image/svg+xml' }));
+      try {
+        const image = new Image(); image.src = url; await image.decode();
+        results.push({ ok: true, source });
+      } catch { results.push({ ok: true, source, decodeFailed: true }); }
+      finally { URL.revokeObjectURL(url); }
+    }
+    return results;
+  }, { cases: policyCases, modulePath: '/src/lib/safe-svg.ts' });
+  for (let index = 0; index < policyCases.length; index++) {
+    expect(expected[index].ok, policyCases[index].name).toBe(policyCases[index].allow);
+    expect(actual[index], policyCases[index].name).toEqual(expected[index]);
+  }
+});
 
 test('历史 Markdown 和富媒体文字块里的 SVG 可预览、查看源码、放大和导出，危险内容不执行', async ({ page }) => {
   const errors: string[] = [];

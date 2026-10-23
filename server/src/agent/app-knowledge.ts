@@ -40,7 +40,7 @@ export const appKnowledge = [
   { id: 'stats', title: '统计', content: '统计页在专注后面，按本地日历汇总完成、逾期、专注、规划和 AI 使用。可选 7 天、30 天，或不超过 366 天的自定义区间。某一块加载失败时，其余块仍显示。有记录的天数很少时数字照常统计，趋势图先不画。助手没有统计总览工具，不要编造这些数字；派发轮次仍用 orchestration_stats。' },
   { id: 'topics', title: '清单管理', content: '清单管理可新建、选择和编辑清单，也可进入收集箱或设置。清单隔离工作上下文，但不妨碍用户要求跨清单查询。' },
   { id: 'more', title: '手机导航', content: '手机底栏由设置决定，更多页面提供其他入口。AI 助手可从每页顶栏打开，不必进入更多。聊天返回后保留原页面状态。' },
-  { id: 'assistant', title: 'AI 助手', content: '每页顶栏打开 AI 助手，快捷键是 Command+Shift+L 或 Ctrl+Shift+L。电脑右侧展开，手机全屏。跨页继续同一会话，下一条消息跟随当前页面；固定上下文后保持对象和范围。草稿及选中文字仅主动带入，每个最多 20000 字符、合计 40000 字符。关闭只收起，不中断运行。助手可用 present_reply 混排文字和 SVG 图示，SVG 应输出独立内容块，支持 aria-label 无障碍描述；已完成消息中的 SVG 代码块也能安全预览，支持查看源码、放大和导出，危险或无效内容会显示失败提示并保留源码。来源链接来自实际工具读取，点击可看原文。' },
+  { id: 'assistant', title: 'AI 助手', content: '每页顶栏打开 AI 助手，快捷键是 Command+Shift+L 或 Ctrl+Shift+L。电脑右侧展开，手机全屏。跨页继续同一会话，下一条消息跟随当前页面；固定上下文后保持对象和范围。草稿及选中文字仅主动带入，每个最多 20000 字符、合计 40000 字符。关闭只收起，不中断运行。助手可用 present_reply 混排文字和 SVG 图示，SVG 应输出独立内容块。前后端共用静态 SVG 规则，支持无障碍与语言说明、常用文字和描边填充属性、本地渐变和裁剪，以及受限内联展示样式；CDATA 文字会保留。脚本、事件、外链、动画、滤镜、mask、pattern、use、symbol、textPath，以及内联 CSS transform/d 不支持；SVG transform/d 属性可用。箭头不能嵌套，图元数量、尺寸、引用深度和估算渲染成本有限制；已完成消息中的 SVG 代码块也能安全预览，支持查看源码、放大和导出，危险或无效内容会显示失败提示并保留源码。来源链接来自实际工具读取，点击可看原文。' },
 ];
 export function readAppKnowledge(args: Record<string, unknown>) {
   if (Object.keys(args).some((key) => !['page', 'q'].includes(key))) throw new DomainError('INVALID_TOOL_ARGUMENTS', '只支持 page 和 q', 400);

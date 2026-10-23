@@ -27,6 +27,8 @@ export default defineConfig({
     { name: 'webkit-editor', use: { ...devices['Desktop Safari'], locale: 'zh-CN' }, testMatch: /task-editor-lightweight|task-detail-editor|task-detail-rich|task-materials/ },
     // 只跑助手 HTML 块用例的 WebKit 项目（Desktop Safari）。
     { name: 'webkit-html', use: { ...devices['Desktop Safari'], locale: 'zh-CN' }, testMatch: /assistant-html-blocks/ },
+    // The macOS desktop app uses WebKit; keep SVG parser/filter parity covered.
+    { name: 'webkit-svg', use: { ...devices['Desktop Safari'], locale: 'zh-CN' }, testMatch: /svg-chat/ },
   ],
   webServer: [
     {
