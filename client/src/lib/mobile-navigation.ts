@@ -32,7 +32,7 @@ export type MobileNavigationSettings = {
 };
 
 export const DEFAULT_MOBILE_NAVIGATION: MobileNavigationSettings = {
-  visibleViews: ['inbox', 'today', 'quadrant', 'topics'],
+  visibleViews: ['today', 'plan', 'topics', 'library'],
 };
 
 export const MAX_MOBILE_NAVIGATION_ITEMS = 4;

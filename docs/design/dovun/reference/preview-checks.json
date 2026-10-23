@@ -1,0 +1,27 @@
+{
+  "sizes": [
+    16,
+    24,
+    32
+  ],
+  "pixelStats": [
+    {
+      "id": "source",
+      "distinctForegroundPixels": 100
+    },
+    {
+      "id": "gap",
+      "distinctForegroundPixels": 86
+    },
+    {
+      "id": "duo",
+      "distinctForegroundPixels": 87
+    },
+    {
+      "id": "compact",
+      "distinctForegroundPixels": 81
+    }
+  ],
+  "normalization": "80% active bounding box",
+  "errors": []
+}

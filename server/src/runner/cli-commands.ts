@@ -1,3 +1,4 @@
+import { defaultMobileNavigationJson } from '../domain/mobile-navigation.js';
 import { access } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { delimiter, isAbsolute, join, resolve, win32 as winPath } from 'node:path';
@@ -124,7 +125,7 @@ async function storedRow() {
 async function writeStored(provider: CliProvider, stored: StoredCli) {
   const timestamp = now();
   const data = { ...fields(provider, stored), updatedAt: timestamp };
-  await prisma.appSetting.upsert({ where: { id: 'default' }, create: { id: 'default', createdAt: timestamp, ...data }, update: data });
+  await prisma.appSetting.upsert({ where: { id: 'default' }, create: { mobileNavigationJson: defaultMobileNavigationJson, id: 'default', createdAt: timestamp, ...data }, update: data });
 }
 
 export function viewFor(provider: CliProvider, stored: StoredCli, discovered?: { command: string; version: string; applied: boolean; message?: string }): CliCommandView {

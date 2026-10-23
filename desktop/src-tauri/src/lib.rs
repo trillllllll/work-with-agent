@@ -46,7 +46,7 @@ impl LauncherConfig {
     }
 }
 
-/// Set once the remote workspace page signals it loaded a Work With Agent client.
+/// Set once the remote workspace page signals it loaded a Dovun client.
 static LAUNCH_CONFIRMED: AtomicBool = AtomicBool::new(false);
 /// The bundled splash page URL, captured before the window navigates anywhere else.
 static SPLASH_URL: OnceLock<Url> = OnceLock::new();
@@ -143,7 +143,7 @@ pub fn run() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .unwrap_or_else(|error| panic!("{}: {error}", tr!("启动 Work With Agent 失败", "Failed to start Work With Agent")))
+        .unwrap_or_else(|error| panic!("{}: {error}", tr!("启动 Dovun 失败", "Failed to start Dovun")))
         .run(|app, event| match event {
             RunEvent::Exit => {
                 stop_node_agent(app);
@@ -249,7 +249,7 @@ fn launch_remote(app: &AppHandle, remote_url: &str) -> Result<(), String> {
     open_workspace(app, format!("{url}/?launcher=1"));
     // The remote page confirms itself by redirecting to /wwa-launcher-done, which
     // on_navigation cancels. If nothing confirms in time, the address probably is
-    // not a Work With Agent server.
+    // not a Dovun server.
     let handle = app.clone();
     let address = url.to_string();
     thread::spawn(move || {
@@ -258,7 +258,7 @@ fn launch_remote(app: &AppHandle, remote_url: &str) -> Result<(), String> {
             thread::sleep(Duration::from_secs(1));
         }
         if LAUNCH_CONFIRMED.load(Ordering::SeqCst) { return; }
-        show_launch_error(&handle, tr!("{address} 没有在 30 秒内打开 Work With Agent 工作区。请核对这是否为正确的服务器地址。", "{address} did not open a Work With Agent workspace within 30 seconds. Check that this is the right server address."));
+        show_launch_error(&handle, tr!("{address} 没有在 30 秒内打开 Dovun 工作区。请核对这是否为正确的服务器地址。", "{address} did not open a Dovun workspace within 30 seconds. Check that this is the right server address."));
     });
     Ok(())
 }
@@ -430,7 +430,7 @@ fn show_message(app: &AppHandle, message: String) {
             let text = serde_json::to_string(&message).unwrap_or_else(|_| format!("{:?}", tr!("启动失败", "Launch failed")));
             let _ = window.eval(&format!("const status = document.getElementById('status'); if (status) status.textContent = {text};"));
         }
-        handle.dialog().message(&message).title("Work With Agent").blocking_show();
+        handle.dialog().message(&message).title("Dovun").blocking_show();
     });
 }
 
@@ -510,12 +510,12 @@ fn port_busy_message_in(lang: i18n::Lang, user: PortUser, port: u16) -> Option<S
     match user {
         PortUser::Free => None,
         PortUser::Wwa => Some(tr!(lang;
-            "端口 {port} 已被本机另一个 Work With Agent 服务占用。请先退出已打开的 Work With Agent；若找不到已打开的窗口，可能是上次异常退出残留的服务，重启电脑后再试。",
-            "Port {port} is already used by another Work With Agent service on this computer. Quit the open Work With Agent first; if you cannot find its window, a service may be left over from a crash, so restart the computer and try again."
+            "端口 {port} 已被本机另一个 Dovun 服务占用。请先退出已打开的 Dovun；若找不到已打开的窗口，可能是上次异常退出残留的服务，重启电脑后再试。",
+            "Port {port} is already used by another Dovun service on this computer. Quit the open Dovun first; if you cannot find its window, a service may be left over from a crash, so restart the computer and try again."
         )),
         PortUser::Foreign => Some(tr!(lang;
-            "端口 {port} 被其他程序占用，Work With Agent 无法启动。请找到占用该端口的程序并关闭后重试。",
-            "Port {port} is used by another program, so Work With Agent cannot start. Close the program using this port and try again."
+            "端口 {port} 被其他程序占用，Dovun 无法启动。请找到占用该端口的程序并关闭后重试。",
+            "Port {port} is used by another program, so Dovun cannot start. Close the program using this port and try again."
         )),
     }
 }
@@ -873,7 +873,7 @@ fn start_node_agent(app: &AppHandle) {
             state.0.lock().expect("node lock").take();
             let code = status.code();
             if code == Some(3) {
-                notify(&handle, &tr!("这台电脑已在 WWA 中被吊销", "This computer was revoked in WWA"), &tr!("执行端已退出，不会自动重启。", "The executor has exited and will not restart."));
+                notify(&handle, &tr!("这台电脑已在 Dovun 中被吊销", "This computer was revoked in Dovun"), &tr!("执行端已退出，不会自动重启。", "The executor has exited and will not restart."));
             }
             if !should_restart(code) || !NODE_WANTED.load(Ordering::SeqCst) { return; }
             failures += 1;
@@ -950,7 +950,7 @@ mod tests {
     #[test]
     fn another_instance_message_names_the_service() {
         let message = port_busy_message_in(i18n::Lang::Zh, PortUser::Wwa, DESKTOP_PORT).expect("busy message");
-        assert!(message.contains("另一个 Work With Agent"));
+        assert!(message.contains("另一个 Dovun"));
         assert!(message.contains("残留的服务"));
         assert!(message.contains("47316"));
     }
@@ -959,13 +959,13 @@ mod tests {
     fn a_foreign_occupant_is_called_out() {
         let message = port_busy_message_in(i18n::Lang::Zh, PortUser::Foreign, DESKTOP_PORT).expect("busy message");
         assert!(message.contains("其他程序"));
-        assert!(!message.contains("另一个 Work With Agent"));
+        assert!(!message.contains("另一个 Dovun"));
     }
 
     #[test]
     fn busy_messages_follow_english_system_language() {
         let other = port_busy_message_in(i18n::Lang::En, PortUser::Wwa, DESKTOP_PORT).expect("busy message");
-        assert!(other.contains("another Work With Agent service") && other.contains("47316"));
+        assert!(other.contains("another Dovun service") && other.contains("47316"));
         let foreign = port_busy_message_in(i18n::Lang::En, PortUser::Foreign, DESKTOP_PORT).expect("busy message");
         assert!(foreign.contains("another program"));
     }

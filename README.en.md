@@ -1,11 +1,13 @@
-# Work With Agent
+# Dovun
 
 [简体中文](./README.md) | **English**
 
 ![CI](https://github.com/trillllllll/work-with-agent/actions/workflows/ci.yml/badge.svg)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)
 
-A personal task list that runs on your own machine. Codex, Claude Code, and Grok read the same tasks and project memory, and their writes wait for your approval.
+Your personal workspace for tasks, materials, plans, and accumulated knowledge, with AI ready to help. AI changes wait for your approval.
+
+This branch implements the Dovun visual redesign and migration. Versions 0.3.0 and 0.4.0 are not released yet; existing public installers still use the previous name. Repository and deployment addresses remain unchanged.
 
 - **Capture first.** Inbox, Today, lists, tags, subtasks, and manual ordering. Tasks don't need a model.
 - **Then hand it to an AI.** Copy a config from **AI connections**. The host reads tasks, materials, and memories over MCP.
@@ -13,7 +15,7 @@ A personal task list that runs on your own machine. Codex, Claude Code, and Grok
 
 [Quick start](#quick-start) · [Download](#download)
 
-<img src="./docs/readme/task-list-light-en.png" width="880" alt="Light theme: the Sign-in revamp list, with the task Switch sign-in to one-time links open on the right, showing two materials and subtasks">
+<img src="./docs/design/dovun/implementation/evidence/today-light.png" width="880" alt="Light theme: the Sign-in revamp list, with the task Switch sign-in to one-time links open on the right, showing two materials and subtasks">
 
 ## Features
 
@@ -30,11 +32,11 @@ A personal task list that runs on your own machine. Codex, Claude Code, and Grok
 
 Terminology (in Chinese): [CONTEXT.md](./CONTEXT.md). API and host integration (in Chinese): [docs/stages-2-5-api.md](./docs/stages-2-5-api.md).
 
-<img src="./docs/readme/task-list-dark-en.png" width="880" alt="Dark theme: the same list and task details, with each list's own color in the sidebar">
+<img src="./docs/design/dovun/implementation/evidence/today-dark.png" width="880" alt="Dark theme: the same list and task details, with each list's own color in the sidebar">
 
 **Plan** lays out scheduled tasks by day, week, or month. Tasks with a date but no time go in the all-day row at the top. Tasks that crowd the same time slot stack into one card.
 
-<img src="./docs/readme/plan-week-en.png" width="880" alt="Light theme: the Plan week view, with three overlapping Wednesday-afternoon tasks stacked into one card">
+<img src="./docs/design/dovun/implementation/evidence/plan-light.png" width="880" alt="Light theme: the Plan week view, with three overlapping Wednesday-afternoon tasks stacked into one card">
 
 In **Work context**, confirmed memories group into communities by their relationships and can be shown as 3D terrain. The sample data below puts sign-in, lists, memory, and handoff in their own clusters; higher ground means more important, better-connected knowledge.
 

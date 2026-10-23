@@ -1,7 +1,7 @@
 import { test, expect, type APIRequestContext, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const base = 'http://127.0.0.1:3015';
+const base = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 
 async function command(request: APIRequestContext, commands: unknown[]) {
   const response = await request.post(`${base}/api/v1/commands`, { data: { requestId: crypto.randomUUID(), commands } });

@@ -5,7 +5,7 @@ test.beforeEach(async () => { await resetE2eDatabase(); });
 test.afterAll(() => e2eDatabase.$disconnect());
 
 test('missing model is explicit and a deleted source leaves the conversation open', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
   const assistant = page.getByTestId('ai-assistant');
   await expect(assistant.getByRole('status')).toContainText('未配置模型');
@@ -19,7 +19,7 @@ test('missing model is explicit and a deleted source leaves the conversation ope
 
 test('transport failure preserves the draft and offers retry', async ({ page, request }) => {
   await request.patch('http://127.0.0.1:3015/api/settings', { data: { baseUrl: 'http://127.0.0.1:4010/v1', model: 'mock-model', apiKey: 'e2e-key' } });
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
   const assistant = page.getByTestId('ai-assistant');
   const input = assistant.getByRole('textbox', { name: '向 AI 提问' });

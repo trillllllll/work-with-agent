@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
-const api = 'http://127.0.0.1:3015';
+const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 test.beforeEach(async ({ page }) => {
   await resetE2eDatabase();
   await page.addInitScript(() => { (window as any).__REACT_GRAB_DISABLED__ = true; });

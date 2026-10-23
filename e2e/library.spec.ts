@@ -2,7 +2,7 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { test, expect, type APIRequestContext, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const base = 'http://127.0.0.1:3015';
+const base = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const shots = '/tmp/wwa-library-shots';
 
 async function command(request: APIRequestContext, commands: unknown[]) {

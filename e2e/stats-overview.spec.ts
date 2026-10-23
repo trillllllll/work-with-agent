@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { test, expect, type APIRequestContext, type Page, type TestInfo } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const apiUrl = 'http://127.0.0.1:3015';
+const apiUrl = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const dash = '—';
 
 test.use({ timezoneId: 'Asia/Shanghai' });
@@ -311,7 +311,7 @@ test('只有 AI 分区失败时显示错误和重试，其他三块正常', asyn
     }
     // 在路由回调里再用 Playwright 的 request / route.fetch 会把响应体提前释放。
     const upstream = await fetch(route.request().url(), {
-      headers: { cookie: 'wwa_session=wwa-e2e-owner-session', origin: 'http://127.0.0.1:5175', 'x-csrf-token': csrf },
+      headers: { cookie: 'wwa_session=wwa-e2e-owner-session', origin: (process.env.E2E_UI_URL ?? 'http://127.0.0.1:5175'), 'x-csrf-token': csrf },
     });
     const json = await upstream.json() as { data: { ai: unknown } };
     json.data.ai = { error: { code: 'X', message: 'boom' } };

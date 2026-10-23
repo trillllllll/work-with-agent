@@ -2,7 +2,7 @@ import type { Locator } from '@playwright/test';
 import { test, expect, type APIRequestContext } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const base = 'http://127.0.0.1:3015';
+const base = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 
 test.beforeEach(resetE2eDatabase);
 test.afterAll(() => e2eDatabase.$disconnect());
@@ -47,7 +47,7 @@ test('创建连接明确显示必填条件，并在条件满足后可提交', as
   await expect(dialog.getByRole('heading', { name: '把「我的 Claude Code」配置到 Claude Code', exact: true })).toBeVisible();
   await expect(dialog.getByText(/claude mcp add work_with_agent/)).toBeVisible();
   await expect(dialog.getByText(/--scope user --env/)).toBeVisible();
-  await expect(dialog.getByText(/http:\/\/127\.0\.0\.1:3015/).first()).toBeVisible();
+  await expect(dialog.getByText(process.env.E2E_API_URL ?? 'http://127.0.0.1:3015', { exact: false }).first()).toBeVisible();
   await expect(page.getByText(/项目绝对路径/)).toHaveCount(0);
   await expect(dialog.getByRole('button', { name: '复制 Claude Code 配置命令', exact: true })).toBeVisible();
   await expect.poll(() => e2eDatabase.connection.count()).toBe(1);
@@ -67,7 +67,7 @@ test('创建 Grok 连接时给出 grok mcp add 命令，自检配置不回显凭
   await expect(dialog.getByText(/grok mcp add work_with_agent/)).toBeVisible();
   await expect(dialog.getByText(/--scope user/)).toBeVisible();
   await expect(dialog.getByText(/--transport http/)).toBeVisible();
-  await expect(dialog.getByText(/http:\/\/127\.0\.0\.1:3015\/mcp/)).toBeVisible();
+  await expect(dialog.getByText(`${process.env.E2E_API_URL ?? 'http://127.0.0.1:3015'}/mcp`, { exact: false })).toBeVisible();
   await expect(dialog.getByText(/Authorization: Bearer /)).toBeVisible();
   await expect(dialog.getByText('grok mcp list', { exact: true })).toBeVisible();
   await expect(dialog.getByRole('button', { name: '复制 Grok 配置命令', exact: true })).toBeVisible();
@@ -92,7 +92,7 @@ test('创建 Grok 连接时给出 grok mcp add 命令，自检配置不回显凭
   const snippet = page.locator(`[id="${panelId}"]`).locator('pre');
   await expect(snippet).toContainText('grok mcp add work_with_agent');
   await expect(snippet).toContainText('--transport http');
-  await expect(snippet).toContainText('http://127.0.0.1:3015/mcp');
+  await expect(snippet).toContainText(`${process.env.E2E_API_URL ?? 'http://127.0.0.1:3015'}/mcp`);
   await expect(snippet).toContainText('填入创建时保存的凭据');
   await expect(snippet).not.toContainText(token);
   await expect(snippet).not.toContainText('<paste the credential returned once at creation>');

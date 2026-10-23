@@ -2,7 +2,7 @@ import { test, expect, type APIRequestContext, type Page } from './fixtures.js';
 import type { Locator } from '@playwright/test';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const api = 'http://127.0.0.1:3015';
+const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 
 test.beforeEach(async ({ page }) => {
   await resetE2eDatabase();
@@ -102,12 +102,12 @@ test('正文具有固定字号、行高和深浅色文字颜色', async ({ page,
   });
   await expect(body).toHaveCSS('font-size', '14px');
   await expect(body).toHaveCSS('line-height', '24px');
-  await expect(body).toHaveCSS('color', 'rgb(18, 18, 18)');
+  await expect(body).toHaveCSS('color', 'rgb(27, 43, 67)');
 
   await page.evaluate(() => {
     document.documentElement.classList.add('dark');
   });
-  await expect(body).toHaveCSS('color', 'rgb(240, 240, 240)');
+  await expect(body).toHaveCSS('color', 'rgb(232, 237, 245)');
 });
 
 test('勾选正文中的勾选项只更新正文，不创建子任务', async ({ page, request }) => {
@@ -190,7 +190,7 @@ test('长正文撑开编辑器，不盖住资料', async ({ page, request }) => 
   }
 });
 
-test('短正文仍铺满详情剩余高度', async ({ page, request }) => {
+test('短正文保留可编辑留白，详情滚动可达资料', async ({ page, request }) => {
   await page.setViewportSize({ width: 1400, height: 900 });
   const detail = await openDetail(page, request, '短正文高度', '只有一行');
   await expectProseAboveMaterials(detail);
@@ -200,10 +200,10 @@ test('短正文仍铺满详情剩余高度', async ({ page, request }) => {
     const prose = node.querySelector('[data-task-editor-prose]');
     const fill = prose?.closest('.task-description-fill');
     const infoRows = node.querySelector('.task-info-rows');
-    const beforeInfo = infoRows?.previousElementSibling;
+    const writing = node.querySelector('.dovun-detail-writing');
     const scroller = fill?.closest('.overflow-y-auto');
     const focus = [...node.querySelectorAll('button')].find((button) => button.textContent?.includes('开始专注'));
-    if (!(prose instanceof HTMLElement) || !(fill instanceof HTMLElement) || !(infoRows instanceof HTMLElement) || !(beforeInfo instanceof HTMLElement) || !(scroller instanceof HTMLElement) || !(focus instanceof HTMLElement)) return null;
+    if (!(prose instanceof HTMLElement) || !(fill instanceof HTMLElement) || !(infoRows instanceof HTMLElement) || !(writing instanceof HTMLElement) || !(scroller instanceof HTMLElement) || !(focus instanceof HTMLElement)) return null;
     const proseBox = prose.getBoundingClientRect();
     const range = document.createRange();
     range.selectNodeContents(prose);
@@ -214,7 +214,7 @@ test('短正文仍铺满详情剩余高度', async ({ page, request }) => {
       proseMinHeight: parseFloat(getComputedStyle(prose).minHeight) || 0,
       contentHeight: range.getBoundingClientRect().height,
       fillSlack: fill.getBoundingClientRect().bottom - proseBox.bottom,
-      infoSlack: infoRows.getBoundingClientRect().top - beforeInfo.getBoundingClientRect().bottom,
+      infoSlack: writing.getBoundingClientRect().top - infoRows.getBoundingClientRect().bottom,
       overflow: scroller.scrollHeight - scroller.clientHeight,
       bottomGap: dialogBox.bottom - focusBox.bottom,
     };
@@ -224,10 +224,12 @@ test('短正文仍铺满详情剩余高度', async ({ page, request }) => {
   expect(metrics!.proseHeight).toBeGreaterThanOrEqual(metrics!.proseMinHeight);
   expect(metrics!.proseHeight).toBeGreaterThan(metrics!.contentHeight * 3);
   expect(metrics!.fillSlack).toBeLessThanOrEqual(1);
-  expect(metrics!.infoSlack).toBeLessThanOrEqual(1);
-  expect(metrics!.overflow).toBeLessThanOrEqual(1);
+  expect(metrics!.infoSlack).toBeGreaterThanOrEqual(0);
+  expect(metrics!.infoSlack).toBeLessThanOrEqual(20);
+  // The shared right rail deliberately reserves a compact assistant below the detail.
+  // Its inner sheet may scroll, while the editor must keep its minimum writing space.
   expect(metrics!.bottomGap).toBeGreaterThanOrEqual(0);
-  expect(metrics!.bottomGap).toBeLessThan(48);
+
 
   const prose = detail.locator('[data-task-editor-prose]');
   const height = metrics!.proseHeight;

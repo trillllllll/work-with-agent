@@ -1,7 +1,7 @@
 import { test, expect, type APIRequestContext, type Locator, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const api = 'http://127.0.0.1:3015';
+const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const oldTitle = '按大威的意见，修改k8s入门文档';
 const checkTitle = '核对，第9节，我们怎么使用k8s';
 const composer = '例如：创建任务：整理 API 文档';

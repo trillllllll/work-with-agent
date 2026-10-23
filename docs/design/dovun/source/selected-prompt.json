@@ -1,0 +1,8 @@
+{
+  "tool": "built-in image_gen",
+  "reference_image": "../reference/original-stack.png",
+  "transparent_background": true,
+  "id": "gap",
+  "name": "A 宽缝",
+  "prompt": "Use case: logo-brand refinement. Edit the attached Dovun B work-stack symbol. This is a refinement of the selected identity, NOT a new logo concept. Preserve its distinctive staggered interlocking work cards, indexed vertical spine/step rhythm, asymmetric upward-right silhouette, ink navy #354d85 with a warm coral #cf7659 right-hand card. Keep broad solid geometric masses and rounded outside corners. Make it demonstrably simpler and legible as an app icon at 16, 24 and 32px. Exact flat fills only; no gradients, textures, shadows, lighting or fine detail. Transparent background, centered emblem only with about 12% empty outer margin. Do NOT introduce text, letters, checkmarks, browser frames, extra objects, floating dots, outlines, or new decorative elements. The negative-space channels must be generously open: about one tenth of the active symbol width, not hairline seams. Carefully align the angled edges. VARIANT A — FAITHFUL WIDE-GAP THREE-PART REFINEMENT. Retain the original three-part construction: broad navy lower-left card, tall navy middle spine, coral upper-right card. Increase both negative-space channels dramatically. Simplify the S-bend of the middle spine to one clear large step, make each piece at least one fifth of the symbol width. Eliminate tiny hooks, narrow bottom slivers and sharp micro-notches. Preserve enough of the original three-card silhouette for instant recognition."
+}

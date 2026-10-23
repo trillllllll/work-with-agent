@@ -1,31 +1,40 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "./styles/workbench.css";
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --radius: 1.25rem;
+  --radius: 1.125rem;
   color-scheme: light;
+  --workbench-sheet: linear-gradient(150deg, #ffffff, #fdfbf8);
+  --workbench-frame: linear-gradient(135deg, #f7f5f1, #f0efed);
+  --workbench-panel-shadow: 0 4px 16px rgb(45 51 62 / 0.045), inset 0 1px 0 #fff;
+  --workbench-control-shadow: 0 3px 12px rgb(45 51 62 / 0.055), inset 0 1px 0 #fff;
+  --workbench-selected: linear-gradient(110deg, #e8eef9, #f1f3f8);
+  --workbench-selected-edge: #354d85;
+  --workbench-coral: #cf7659;
+  --workbench-muted-coral: #f6e9e1;
 
-  --background: hsl(0 0% 95%);
-  --foreground: hsl(0 0% 7%);
-  --card: hsl(0 0% 100%);
-  --card-foreground: hsl(0 0% 7%);
-  --popover: hsl(0 0% 100%);
-  --popover-foreground: hsl(0 0% 7%);
-  --primary: hsl(0 0% 8%);
-  --primary-foreground: hsl(0 0% 100%);
-  --secondary: hsl(0 0% 93%);
-  --secondary-foreground: hsl(0 0% 14%);
-  --muted: hsl(0 0% 93%);
-  --muted-foreground: hsl(0 0% 42%);
-  --accent: hsl(0 0% 90%);
-  --accent-foreground: hsl(0 0% 8%);
+  --background: #eeece8;
+  --foreground: #1b2b43;
+  --card: #fffefc;
+  --card-foreground: #1b2b43;
+  --popover: #fffefc;
+  --popover-foreground: #1b2b43;
+  --primary: #354d85;
+  --primary-foreground: #ffffff;
+  --secondary: #edf0f6;
+  --secondary-foreground: #2f456f;
+  --muted: #efefed;
+  --muted-foreground: #697487;
+  --accent: #e9edf6;
+  --accent-foreground: #273e69;
   --destructive: hsl(356 58% 45%);
   --destructive-foreground: hsl(0 0% 100%);
-  --border: hsl(0 0% 84%);
-  --input: hsl(0 0% 80%);
-  --ring: hsl(0 0% 18%);
+  --border: #dedfdf;
+  --input: #d6d9df;
+  --ring: #6b87bb;
 
   /* 语义功能色：审批黄 / 成功绿 / 探索紫（亮态） */
   --warning: hsl(35 92% 33%);
@@ -52,46 +61,54 @@
   --time-band-gray-bg: #F0F2F5; --time-band-gray-fg: #374151;
 
   /* 轻透玻璃语义令牌 */
-  --glass-bg: rgb(250 250 250 / 0.94);
-  --glass-bg-strong: rgb(255 255 255 / 0.97);
-  --glass-subtle: rgb(255 255 255 / 0.72);
-  --glass-control: rgb(255 255 255 / 0.86);
-  --glass-hover: rgb(238 238 238 / 0.9);
+  --glass-bg: #fbfaf8;
+  --glass-bg-strong: #fffefc;
+  --glass-subtle: rgb(255 255 255 / 0.62);
+  --glass-control: rgb(255 255 255 / 0.82);
+  --glass-hover: #edf1f8;
   --menu-highlight: var(--glass-hover);
-  --glass-border: rgb(0 0 0 / 0.09);
-  --glass-border-soft: rgb(0 0 0 / 0.06);
-  --glass-highlight: rgb(255 255 255 / 0.92);
-  --glass-shadow: 0 18px 50px -34px rgb(0 0 0 / 0.36), inset 0 1px 0 var(--glass-highlight);
-  --glass-divider: rgb(0 0 0 / 0.08);
+  --glass-border: rgb(48 64 88 / 0.13);
+  --glass-border-soft: rgb(48 64 88 / 0.075);
+  --glass-highlight: rgb(255 255 255 / 0.94);
+  --glass-shadow: 0 8px 24px -15px rgb(40 48 64 / 0.2), inset 0 1px 0 var(--glass-highlight);
+  --glass-divider: rgb(48 64 88 / 0.09);
   --scrollbar-thumb: rgb(90 90 90 / 0.3);
   --scrollbar-thumb-hover: rgb(55 55 55 / 0.48);
   --scrollbar-track: transparent;
-  --sidebar: hsl(0 0% 96.5%);
+  --sidebar: #f3f1ee;
 }
 
 .dark {
-  --radius: 1.25rem;
+  --radius: 1.125rem;
   color-scheme: dark;
+  --workbench-sheet: linear-gradient(135deg, #1c2835, #16212d);
+  --workbench-frame: linear-gradient(135deg, #152333, #101c29);
+  --workbench-panel-shadow: 0 6px 20px rgb(0 0 0 / 0.15), inset 0 1px 0 rgb(220 232 250 / 0.045);
+  --workbench-control-shadow: 0 3px 12px rgb(0 0 0 / 0.12), inset 0 1px 0 rgb(220 232 250 / 0.05);
+  --workbench-selected: linear-gradient(110deg, #3b3030, #2a2c34);
+  --workbench-selected-edge: #d98a6a;
+  --workbench-coral: #e2a18b;
+  --workbench-muted-coral: #392d2c;
 
-  --background: hsl(0 0% 5%);
-  --foreground: hsl(0 0% 94%);
-  --card: hsl(0 0% 9%);
-  --card-foreground: hsl(0 0% 94%);
-  --popover: hsl(0 0% 10%);
-  --popover-foreground: hsl(0 0% 94%);
-  --primary: hsl(0 0% 96%);
-  --primary-foreground: hsl(0 0% 7%);
-  --secondary: hsl(0 0% 15%);
-  --secondary-foreground: hsl(0 0% 90%);
-  --muted: hsl(0 0% 14%);
-  --muted-foreground: hsl(0 0% 63%);
-  --accent: hsl(0 0% 18%);
-  --accent-foreground: hsl(0 0% 96%);
+  --background: #0c1725;
+  --foreground: #e8edf5;
+  --card: #1c2734;
+  --card-foreground: #e8edf5;
+  --popover: #202c3b;
+  --popover-foreground: #e8edf5;
+  --primary: #8eaddf;
+  --primary-foreground: #102139;
+  --secondary: #25344a;
+  --secondary-foreground: #d2e0f5;
+  --muted: #202c39;
+  --muted-foreground: #a2afc0;
+  --accent: #283a52;
+  --accent-foreground: #e8edf5;
   --destructive: hsl(356 62% 52%);
   --destructive-foreground: hsl(0 0% 100%);
-  --border: hsl(0 0% 19%);
-  --input: hsl(0 0% 25%);
-  --ring: hsl(0 0% 78%);
+  --border: #354354;
+  --input: #435368;
+  --ring: #8eaddf;
 
   /* 语义功能色（暗态：压饱和防发光，文字提亮一档） */
   --warning: hsl(42 88% 72%);
@@ -117,21 +134,21 @@
   --time-band-pink-bg: #352130; --time-band-pink-fg: #FBCFE8;
   --time-band-gray-bg: #252B35; --time-band-gray-fg: #E5E7EB;
 
-  --glass-bg: rgb(27 27 27 / 0.95);
-  --glass-bg-strong: rgb(31 31 31 / 0.97);
-  --glass-subtle: rgb(255 255 255 / 0.065);
-  --glass-control: rgb(255 255 255 / 0.085);
-  --glass-hover: rgb(255 255 255 / 0.13);
+  --glass-bg: #18232f;
+  --glass-bg-strong: #18232f;
+  --glass-subtle: rgb(255 255 255 / 0.035);
+  --glass-control: rgb(255 255 255 / 0.055);
+  --glass-hover: #26374d;
   --menu-highlight: color-mix(in srgb, white 22%, rgb(from var(--glass-bg-strong) r g b / 1));
-  --glass-border: rgb(255 255 255 / 0.11);
-  --glass-border-soft: rgb(255 255 255 / 0.07);
-  --glass-highlight: rgb(255 255 255 / 0.13);
-  --glass-shadow: 0 14px 34px -24px rgb(0 0 0 / 0.72), inset 0 1px 0 var(--glass-highlight);
-  --glass-divider: rgb(255 255 255 / 0.09);
+  --glass-border: rgb(185 202 225 / 0.15);
+  --glass-border-soft: rgb(185 202 225 / 0.085);
+  --glass-highlight: rgb(255 255 255 / 0.065);
+  --glass-shadow: 0 12px 30px -15px rgb(0 0 0 / 0.45), inset 0 1px 0 var(--glass-highlight);
+  --glass-divider: rgb(185 202 225 / 0.1);
   --scrollbar-thumb: rgb(170 170 170 / 0.34);
   --scrollbar-thumb-hover: rgb(220 220 220 / 0.52);
   --scrollbar-track: transparent;
-  --sidebar: hsl(0 0% 7.5%);
+  --sidebar: #111e2c;
 }
 
 @theme inline {
@@ -174,7 +191,7 @@
   --color-explore-bg: var(--explore-bg);
   --color-explore-border: var(--explore-border);
 
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
 
   --shadow-card: 0 1px 2px rgb(15 23 42 / 0.06);
@@ -241,8 +258,8 @@
   }
 
   .app-frame {
-    background: var(--glass-bg-strong);
-    box-shadow: 0 28px 90px -48px rgb(0 0 0 / 0.58);
+    background: var(--workbench-frame);
+    box-shadow: 0 16px 50px -26px rgb(22 31 48 / 0.3), inset 0 1px 0 var(--glass-highlight);
   }
 
   @media (min-width: 1280px) {
@@ -643,7 +660,7 @@
     background: var(--glass-control);
     border: 1px solid var(--glass-border);
     box-shadow: inset 0 1px 0 var(--glass-highlight);
-    backdrop-filter: blur(14px) saturate(105%);
+    backdrop-filter: none;
   }
 
   .glass-overlay {
@@ -671,8 +688,7 @@
     isolation: isolate;
     border: 1px solid transparent;
     overflow: hidden;
-    backdrop-filter: blur(14px) saturate(140%);
-    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    backdrop-filter: none;
     box-shadow: inset 0 1px 0 var(--glass-highlight), 0 8px 18px -14px rgb(15 23 42 / 0.62);
     transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease, color 180ms ease;
   }
@@ -706,11 +722,11 @@
 
   .glass-button-primary {
     border-color: color-mix(in srgb, var(--primary) 52%, var(--glass-border));
-    background: color-mix(in srgb, var(--primary) 80%, transparent);
+    background: var(--primary);
   }
 
   .glass-button-primary:hover {
-    background: color-mix(in srgb, var(--primary) 88%, transparent);
+    background: color-mix(in srgb, var(--primary) 92%, var(--foreground));
   }
 
   .glass-button-destructive {
@@ -792,8 +808,8 @@
     min-height: 0;
     flex-direction: column;
     background: var(--sidebar);
-    border-right: 1px solid var(--glass-divider);
-    padding: 8px;
+    border-right: 0;
+    padding: 18px 14px 12px;
   }
 
   @media (min-width: 1280px) {
@@ -928,7 +944,7 @@
   .sidebar-link {
     display: flex;
     width: 100%;
-    min-height: 32px;
+    min-height: 40px;
     align-items: center;
     gap: 8px;
     border: 0;
@@ -995,7 +1011,7 @@
 
   .sidebar-row {
     display: flex;
-    min-height: 32px;
+    min-height: 40px;
     align-items: center;
     border-radius: 0.5rem;
     transition: background-color 120ms ease, transform 160ms ease;

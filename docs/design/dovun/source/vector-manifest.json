@@ -1,0 +1,135 @@
+{
+  "status": "矢量候选，待视觉样板确认；未替换正式应用",
+  "date": "2026-10-23",
+  "master": "assets/dovun-mark.svg",
+  "basis": "assets/dovun-icon-wide-gap.png",
+  "construction": "三片独立纯色路径，中央回折，两侧分别外移24源坐标单位",
+  "generation": "node docs/design/dovun/prototype/generate-assets.mjs",
+  "artifacts": [
+    {
+      "file": "assets/dovun-app-icon.svg",
+      "bytes": 1028,
+      "sha256": "daaca1046ca3444646c6e012e0d36d5f0557751be764dc10899ffdb79fcf05ef"
+    },
+    {
+      "file": "assets/dovun-mark-mono.svg",
+      "bytes": 871,
+      "sha256": "4566603e9184d937670595895d0344ccaf44d1dcc1bdb99c39bf57fd9d0720e7"
+    },
+    {
+      "file": "assets/dovun-mark-white.svg",
+      "bytes": 871,
+      "sha256": "b3357d435bc52a2440a5f98c021aa8eab5d2de26468aee808cb90eaf9630e50b"
+    },
+    {
+      "file": "assets/dovun-mark.svg",
+      "bytes": 871,
+      "sha256": "db267914dcc046260f6863dda6b048f92dfecdab83a4fe7326464dfb107fd872"
+    },
+    {
+      "file": "assets/exports/Dovun.icns",
+      "bytes": 130688,
+      "sha256": "e6b65814defb4fdc1df13fa7d3d78b8ced030b2b48247e9dfd047f6a2554e8aa"
+    },
+    {
+      "file": "assets/exports/Dovun.iconset/icon_128x128.png",
+      "bytes": 3113,
+      "sha256": "7a7ae868c1ecc484bae271a27d4e74a446b35f02cddcb19bfaf5614054a54336"
+    },
+    {
+      "file": "assets/exports/Dovun.iconset/icon_128x128@2x.png",
+      "bytes": 6971,
+      "sha256": "a0ae23760e4b6953611f289a614702333be412290cff745290cb8730fc7ebd52"
+    },
+    {
+      "file": "assets/exports/Dovun.iconset/icon_16x16.png",
+      "bytes": 459,
+      "sha256": "6f9ca43100498b5425a627c45d9d23aa17c6b64e36877b9b798779f63d108ea9"
+    },
+    {
+      "file": "assets/exports/Dovun.iconset/icon_16x16@2x.png",
+      "bytes": 803,
+      "sha256": "9cf15b584aae28533ee33570316f9bc3257414ea9455840da144a35e221205a2"
+    },
+    {
+      "file": "assets/exports/Dovun.iconset/icon_256x256.png",
+      "bytes": 6971,
+      "sha256": "a0ae23760e4b6953611f289a614702333be412290cff745290cb8730fc7ebd52"
+    },
+    {
+      "file": "assets/exports/Dovun.iconset/icon_256x256@2x.png",
+      "bytes": 17468,
+      "sha256": "bd9d597e5edb8e50770369193c2db20efa276db26685b90763cffa2e6e5573aa"
+    },
+    {
+      "file": "assets/exports/Dovun.iconset/icon_32x32.png",
+      "bytes": 803,
+      "sha256": "9cf15b584aae28533ee33570316f9bc3257414ea9455840da144a35e221205a2"
+    },
+    {
+      "file": "assets/exports/Dovun.iconset/icon_32x32@2x.png",
+      "bytes": 1504,
+      "sha256": "768c7c1485212848b288fd4cd91d63a82fd63a088b8fa5e544ffd6b3b2879fdd"
+    },
+    {
+      "file": "assets/exports/Dovun.iconset/icon_512x512.png",
+      "bytes": 17468,
+      "sha256": "bd9d597e5edb8e50770369193c2db20efa276db26685b90763cffa2e6e5573aa"
+    },
+    {
+      "file": "assets/exports/Dovun.iconset/icon_512x512@2x.png",
+      "bytes": 49662,
+      "sha256": "c3a5f0c5e28a1a9e6514260eef2ad7510f9ed289872319b6d18586a7f10d443b"
+    },
+    {
+      "file": "assets/exports/dovun-app-1024.png",
+      "bytes": 49662,
+      "sha256": "c3a5f0c5e28a1a9e6514260eef2ad7510f9ed289872319b6d18586a7f10d443b"
+    },
+    {
+      "file": "assets/exports/dovun-mark-1024.png",
+      "bytes": 34679,
+      "sha256": "ed03e531c40abf5002daff3e6d2c41be058bcf5329f13ec4283dc02501078bc0"
+    },
+    {
+      "file": "assets/exports/dovun-mark-128.png",
+      "bytes": 2459,
+      "sha256": "7c3d536e496f55fd156312a06e353b9ba36ac60817603712d57ee2e0a5af100e"
+    },
+    {
+      "file": "assets/exports/dovun-mark-16.png",
+      "bytes": 429,
+      "sha256": "80898c6b55b118bc5ecee0c47407d2a840ac652333a299a18e8d4023bbd23ff5"
+    },
+    {
+      "file": "assets/exports/dovun-mark-24.png",
+      "bytes": 583,
+      "sha256": "57d3f9f20202805190b86f33c4a57bef6626519d6d02dd5e5fc2d63287a9a562"
+    },
+    {
+      "file": "assets/exports/dovun-mark-256.png",
+      "bytes": 5403,
+      "sha256": "5ce23ca5a32edcff455feb3007257f78baab2eee32170d2a3d19a0d6caca2b9f"
+    },
+    {
+      "file": "assets/exports/dovun-mark-32.png",
+      "bytes": 741,
+      "sha256": "f8184331704ed1ce551e5a2cc636d1493981c32d5fed349292af61d39307dce1"
+    },
+    {
+      "file": "assets/exports/dovun-mark-512.png",
+      "bytes": 12679,
+      "sha256": "5deb515247c0439a5564326c6c0ed1dd7c5e5c61ec1388c6cfc2bfe490826d31"
+    },
+    {
+      "file": "assets/exports/dovun-mark-64.png",
+      "bytes": 1274,
+      "sha256": "b2281bdeb7435e8222b3d581173ca950722a9269ba05eab3e6cd4b1c876289a6"
+    },
+    {
+      "file": "assets/exports/dovun.ico",
+      "bytes": 14794,
+      "sha256": "e5a85c97c57d2447dfc1394f887fc61137860a74ebb4291c53ea9654b8a4744c"
+    }
+  ]
+}

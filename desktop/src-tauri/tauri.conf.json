@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Work With Agent",
+  "productName": "Dovun",
   "version": "0.2.5",
   "identifier": "app.workwithagent.desktop",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Work With Agent",
+        "title": "Dovun",
         "width": 1200,
         "height": 800,
         "minWidth": 578,
@@ -28,7 +28,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
+    "targets": [
+      "app",
+      "dmg"
+    ],
     "resources": {
       "../resources/node.exe": "node.exe",
       "../resources/server/": "server/",

@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
-const base = 'http://127.0.0.1:3015';
+const base = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 test.beforeEach(resetE2eDatabase);
 test.afterAll(() => e2eDatabase.$disconnect());
 test('父任务移动展示完整影响，取消后仍留在原处，确认后成员变化拒绝整组', async ({ page, request }) => {

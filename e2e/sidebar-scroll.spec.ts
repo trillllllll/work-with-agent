@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const apiUrl = 'http://127.0.0.1:3015';
+const apiUrl = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 
 test.afterAll(async () => { await e2eDatabase.$disconnect(); });
 
@@ -70,6 +70,6 @@ test('侧栏滚动条浮出且不占宽，边缘按剩余内容渐隐', async ({
   await expect(compact).toBeVisible();
   await expect.poll(() => compact.evaluate((node) => {
     const rail = node.parentElement as HTMLElement;
-    return { gap: rail.clientWidth - node.clientWidth, fade: rail.className.includes('fade-b') || rail.className.includes('fade-tb') };
+    return { gap: rail.clientWidth - node.clientWidth, fade: (rail.className.includes('fade-b') || rail.className.includes('fade-tb') || rail.className.includes('fade-t')) === (node.scrollHeight > node.clientHeight + 1) };
   })).toEqual({ gap: 0, fade: true });
 });

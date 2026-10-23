@@ -26,7 +26,7 @@
   },
   "session": {
     "loginFailed": "登录失败",
-    "title": "打开你的工作室",
+    "title": "进入 Dovun",
     "connecting": "正在连接本机服务…",
     "remoteHint": "输入这台服务器的访问密钥。密钥在服务器首次启动时显示过一次。",
     "localHint": "使用启动终端显示的专属链接，或粘贴本次启动凭据。",
@@ -289,7 +289,7 @@
     "conflict": "这份规则刚被别处改过，请刷新后再试。",
     "refresh": "刷新",
     "emptyTitle": "还没有回顾规则",
-    "emptyDescription": "定好范围和时间，WWA 会按时整理这段时间的任务变化，需要你决定的建议会放进「待确认」。",
+    "emptyDescription": "定好范围和时间，Dovun 会按时整理这段时间的任务变化，需要你决定的建议会放进「待确认」。",
     "emptyStep1": "选范围和时间",
     "emptyStep1Hint": "收集箱或某几个清单，每天或每周几点",
     "emptyStep2": "本机服务按时生成",

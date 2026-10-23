@@ -1,0 +1,52 @@
+{
+  "status": "passed",
+  "checkedAt": "2026-10-23T07:20:56.435Z",
+  "scope": "Standalone sample, not production acceptance",
+  "checks": [
+    "Today is the default; advanced navigation starts collapsed.",
+    "Capture, edit, close, reopen and reload preserve the demo task and draft.",
+    "Task completion updates the list.",
+    "Library search, type filtering, add and source preview work.",
+    "Brief, confirmed memories, working instructions and source links are distinct.",
+    "Task-scoped assistant makes a simulated proposal; accepting updates only the demo schedule.",
+    "Plan renders seven days, date navigation and a day view from demo task schedules.",
+    "Long unbroken titles fit 390px; future tasks leave Today, past tasks become overdue, and evening schedules stay reachable.",
+    "Dismissing a suggestion leaves the demo task unchanged.",
+    "Dark theme and English apply to the page, navigation and assistant.",
+    "Empty, loading and error previews render; retry returns to normal.",
+    "390px navigation, full-screen assistant, focus containment, Escape and active advanced group work.",
+    "Representative pages fit in both languages and themes at mobile width.",
+    "Vector has three flat paths; three separate shapes remain at 16, 24 and 32px."
+  ],
+  "iconChecks": [
+    {
+      "size": 16,
+      "alphaThreshold": 128,
+      "components": [
+        32,
+        35,
+        29
+      ]
+    },
+    {
+      "size": 24,
+      "alphaThreshold": 128,
+      "components": [
+        72,
+        80,
+        73
+      ]
+    },
+    {
+      "size": 32,
+      "alphaThreshold": 128,
+      "components": [
+        127,
+        135,
+        126
+      ]
+    }
+  ],
+  "errors": [],
+  "failedRequests": []
+}

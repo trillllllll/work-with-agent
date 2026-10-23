@@ -369,7 +369,7 @@
     "createTitle": "New list",
     "description": "Enter a name to start adding tasks.",
     "name": "List name",
-    "namePlaceholder": "For example: Agent studio",
+    "namePlaceholder": "For example: Dovun",
     "color": "Color",
     "colorGroup": "List color",
     "exploration": "Exploration and goals",

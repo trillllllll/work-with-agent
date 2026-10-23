@@ -1,7 +1,7 @@
 import { test, expect, type Locator, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const apiUrl = 'http://127.0.0.1:3015';
+const apiUrl = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const day = '2026-10-16';
 
 test.use({ timezoneId: 'Asia/Shanghai' });

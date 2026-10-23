@@ -1,18 +1,12 @@
 import { useTranslation } from 'react-i18next';
 import { ChevronRight, MessageSquare } from 'lucide-react';
 import type { View } from '@/lib/api.js';
-import { navigationItems } from '@/lib/navigation-items.js';
+import { navigationGroups, navigationItem } from '@/lib/navigation-items.js';
 import { usePendingProposalCount } from '@/lib/use-pending-proposal-count.js';
 import { NavCount } from '@/components/layout/NavCount.js';
 import { ThemeToggle } from '@/components/layout/ThemeToggle.js';
 import { cn } from '@/lib/utils.js';
 
-const groups: { id: 'views' | 'organize' | 'work' | 'system'; views: View[] }[] = [
-  { id: 'views', views: ['inbox', 'today', 'plan', 'focus', 'stats', 'quadrant', 'topics'] },
-  { id: 'organize', views: ['search', 'tags', 'archived'] },
-  { id: 'work', views: ['connections', 'proposals', 'knowledge', 'library', 'skills', 'runs', 'worktrees', 'reviews'] },
-  { id: 'system', views: ['settings', 'trash', 'changes'] },
-];
 
 type MorePageProps = {
   route: View;
@@ -43,12 +37,12 @@ export function MorePage({ route, onNavigate }: MorePageProps) {
         <ChevronRight aria-hidden="true" className="size-4 text-muted-foreground" />
       </button>
       <nav aria-label={t('morePage.nav')} className="grid gap-6 lg:grid-cols-2">
-        {groups.map((group) => (
-          <section key={group.id} aria-label={t(`morePage.groups.${group.id}`)}>
-            <h2 className="mb-1.5 px-3 text-xs font-medium text-muted-foreground">{t(`morePage.groups.${group.id}`)}</h2>
+        {navigationGroups.map((group) => (
+          <section key={group.id} aria-label={t(`app:groups.${group.id}`)}>
+            <h2 className="mb-1.5 px-3 text-xs font-medium text-muted-foreground">{t(`app:groups.${group.id}`)}</h2>
             <div className="glass-subtle overflow-hidden rounded-2xl">
               {group.views.map((view, index) => {
-                const item = navigationItems.find((entry) => entry.view === view)!;
+                const item = navigationItem(view);
                 const Icon = item.icon;
                 const active = route === view;
                 return (

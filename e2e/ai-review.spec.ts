@@ -1,7 +1,7 @@
 import { test, expect, type APIRequestContext, type Locator, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const api = 'http://127.0.0.1:3015';
+const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const composer = '例如：创建任务：整理 API 文档';
 
 async function post(request: APIRequestContext, path: string, data: unknown) {
@@ -74,7 +74,7 @@ test('确认安排修改后留在原页面，刷新仍是已完成卡片', async
   test.skip(Boolean(isMobile), '审批卡在桌面视口验收，窄屏另测');
   const task = await seedSchedule(request);
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await ask(page, '把安排改到2026-10-16');
   const card = page.getByTestId('approval-card');
   await expect(card).toHaveCount(1);
@@ -97,7 +97,7 @@ test('确认安排修改后留在原页面，刷新仍是已完成卡片', async
   await expect(wideCard).toHaveCount(1);
   await expectDiffLayout(wideCard);
   await wideCard.screenshot({ path: '/tmp/wwa-approval-wide.png' });
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await openChat(page);
   await expect(card).toHaveAttribute('data-state', 'pending');
   await expandChanges(card);
@@ -108,7 +108,7 @@ test('确认安排修改后留在原页面，刷新仍是已完成卡片', async
   expect(page.url()).toBe(urlBeforeApprove);
   await expect(card.getByRole('button', { name: '确认修改', exact: true })).toHaveCount(0);
   await expect(card.getByRole('status')).toContainText('已修改');
-  const chatHeader = page.locator('header').filter({ has: page.getByRole('heading', { name: 'AI 助手' }) });
+  const chatHeader = page.locator('header').filter({ has: page.getByRole('heading', { level: 2, name: 'Dovun 工作助手' }) });
   await expect(page.getByText('安排方案已放在确认卡里。')).toBeVisible();
   await expect(page.getByText('正在输出…')).toHaveCount(0);
   await expect(chatHeader.getByText('可用', { exact: true })).toBeVisible();
@@ -119,7 +119,7 @@ test('确认安排修改后留在原页面，刷新仍是已完成卡片', async
   await expect(page.getByTestId('approval-card')).toHaveCount(1);
   await expect(page.getByTestId('approval-card')).toHaveAttribute('data-state', 'executed');
   await expect(page.getByText('正在输出…')).toHaveCount(0);
-  await expect(page.locator('header').filter({ has: page.getByRole('heading', { name: 'AI 助手' }) }).getByText('可用', { exact: true })).toBeVisible();
+  await expect(page.locator('header').filter({ has: page.getByRole('heading', { level: 2, name: 'Dovun 工作助手' }) }).getByText('可用', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const stored = await e2eDatabase.task.findUniqueOrThrow({ where: { id: task.id } });
   expect(stored).toMatchObject({ dueDate: '2026-10-16', scheduledStart: '2026-10-16T11:00', scheduledEnd: '2026-10-16T12:00' });
@@ -130,7 +130,7 @@ test('深色审批卡使用约定颜色', async ({ page, isMobile, request }) =>
   await seedSchedule(request);
   await page.addInitScript(() => { localStorage.setItem('agent-studio.theme', 'dark'); });
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await ask(page, '把安排改到2026-10-16');
   const card = page.getByTestId('approval-card');
   await expect(card).toHaveAttribute('data-state', 'pending');
@@ -146,7 +146,7 @@ test('窄屏前后对比上下排列，主按钮独占一行', async ({ page, is
   test.skip(Boolean(isMobile), '窄屏由视口尺寸覆盖，不重复移动项目');
   await seedSchedule(request);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await ask(page, '把安排改到2026-10-16');
   const card = page.getByTestId('approval-card');
   await expect(card).toHaveAttribute('data-state', 'pending');
@@ -165,7 +165,7 @@ test('键盘从取消两次跳到确认修改', async ({ page, isMobile, request
   test.skip(Boolean(isMobile), '键盘焦点在桌面视口验收');
   await seedSchedule(request);
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await ask(page, '把安排改到2026-10-16');
   const card = page.getByTestId('approval-card');
   await expect(card).toHaveAttribute('data-state', 'pending');

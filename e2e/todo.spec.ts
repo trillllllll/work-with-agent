@@ -1,7 +1,7 @@
 import { test, expect, type APIRequestContext, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const apiUrl = 'http://127.0.0.1:3015';
+const apiUrl = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 async function data(response: Awaited<ReturnType<APIRequestContext['get']>>) {
   expect(response.ok(), await response.text()).toBe(true);
   return (await response.json()).data;
@@ -40,9 +40,9 @@ test.afterAll(async () => { await e2eDatabase.$disconnect(); });
 
 test.describe('无需模型的基础 Todo（桌面与移动）', () => {
   test('默认收集箱可连续创建、直接完成和重开，刷新后保持数据', async ({ page, request }) => {
-    await page.goto('/');
+    await page.goto('/#/inbox');
     await expect(page.getByRole('heading', { name: '收集箱', exact: true })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'AI 助手' })).toBeHidden();
+    await expect(page.getByRole('heading', { level: 2, name: 'Dovun 工作助手' })).toBeHidden();
     expect((await data(await request.get(`${apiUrl}/api/settings`))).apiKeyConfigured).toBe(false);
     const capture = page.getByRole('textbox', { name: '收集任务名称', exact: true });
     await capture.fill('只填写标题');
@@ -712,7 +712,7 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     // interval running so the test exercises the application's normal refresh.
     await page.clock.setFixedTime(new Date(2026, 8, 20, 23, 59, 58));
     await page.goto('/#/today');
-    const today = page.locator('section').filter({ has: page.getByRole('heading', { name: /^今天 ·/ }) });
+    const today = page.locator('section').filter({ has: page.getByRole('heading', { name: /^(今天|今天稍后) ·/ }) });
     const overdue = page.locator('section').filter({ has: page.getByRole('heading', { name: /^逾期 ·/ }) });
     await expect(today.getByTestId(`task-row-${previousDay.id}`)).toBeVisible();
     await expect(page.getByTestId(`task-row-${nextDay.id}`)).toBeHidden();

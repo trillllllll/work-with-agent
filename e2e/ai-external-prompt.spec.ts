@@ -1,7 +1,7 @@
 import { test, expect, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const api = 'http://127.0.0.1:3015';
+const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const composer = '例如：创建任务：整理 API 文档';
 
 async function openChat(page: Page) {
@@ -55,7 +55,7 @@ test('复制的是纯提示词，刷新后仍可复制', async ({ page, isMobile
   test.skip(Boolean(isMobile), '外部提示词在桌面视口验收');
   await installClipboard(page, async () => undefined);
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await ask(page, '整理成外部提示词');
   const card = await expectPromptCard(page);
   await card.getByRole('button', { name: '查看提示词', exact: true }).click();
@@ -98,7 +98,7 @@ test('剪贴板失败时展开可手动复制的文本，不宣称成功', async
     Object.defineProperty(navigator, 'clipboard', { configurable: true, get: () => clipboard });
   });
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await ask(page, '整理成外部提示词');
   const card = await expectPromptCard(page);
   await card.getByRole('button', { name: '复制提示词', exact: true }).click();
@@ -113,7 +113,7 @@ test('深色和窄屏外部提示词卡保持中性样式', async ({ page, isMob
   test.skip(Boolean(isMobile), '外部提示词视口在桌面项目里切换');
   await page.addInitScript(() => { localStorage.setItem('agent-studio.theme', 'dark'); });
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await ask(page, '整理成外部提示词');
   const card = await expectPromptCard(page);
   const colors = await card.evaluate((el) => ({ background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color }));

@@ -1,7 +1,7 @@
 import { test, expect, type APIRequestContext, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const base = 'http://127.0.0.1:3015';
+const base = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 
 async function owner(request: APIRequestContext, path: string, input: unknown) {
   const response = await request.post(`${base}${path}`, { data: input });
@@ -217,7 +217,7 @@ test('侧栏和更多页显示待确认数量', async ({ page, request, isMobile
     await expect(row.locator('[data-count]')).toHaveAttribute('data-count', '2');
   } else {
     await page.goto('/#/inbox');
-    const linkButton = page.getByRole('navigation', { name: '工作' }).getByRole('button', { name: '待确认', exact: true });
+    const linkButton = page.getByRole('region', { name: 'AI 协作', exact: true }).getByRole('button', { name: '待确认', exact: true });
     await expect(linkButton.locator('[data-count]')).toHaveAttribute('data-count', '2');
   }
 });

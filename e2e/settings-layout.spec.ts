@@ -194,9 +194,9 @@ test.describe('手机', () => {
     const panel = page.getByTestId('mobile-navigation-settings');
     await expect(panel).toBeVisible();
     await expect(panel.getByRole('button', { name: /^上移|^下移/ })).toHaveCount(0);
-    const row = panel.getByTestId('mobile-navigation-row-inbox');
-    const handle = (await row.getByRole('button', { name: '拖动收集箱' }).boundingBox())!;
-    const name = (await row.getByText('收集箱', { exact: true }).boundingBox())!;
+    const row = panel.getByTestId('mobile-navigation-row-today');
+    const handle = (await row.getByRole('button', { name: '拖动今天' }).boundingBox())!;
+    const name = (await row.getByText('今天', { exact: true }).boundingBox())!;
     const toggle = (await row.getByRole('switch').boundingBox())!;
     const center = (box: { y: number; height: number }) => box.y + box.height / 2;
     expect(Math.abs(center(handle) - center(name))).toBeLessThan(6);

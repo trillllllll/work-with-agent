@@ -1,7 +1,7 @@
 import { test, expect, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const apiUrl = 'http://127.0.0.1:3015';
+const apiUrl = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const detailText = `需要完整保留的说明${'。'.repeat(80)}`;
 
 test.beforeEach(async ({ page }) => {

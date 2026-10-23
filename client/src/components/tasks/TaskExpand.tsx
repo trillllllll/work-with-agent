@@ -1,10 +1,12 @@
 import { askAssistant, usePageContext } from '@/lib/assistant-context.js';
 import { createContext, forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type KeyboardEvent, type MutableRefObject, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useQuery } from '@tanstack/react-query';
+import { BodyText } from '@/components/shared/BodyText.js';
 import { intlLocale, t as translate } from '../../i18n/index.js';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, CalendarDays, Check, ChevronRight, Clock, Flag, FolderKanban, Hash, Timer, X } from 'lucide-react';
-import { ApiError, priorities, type Status, type Tag, type Task, type TaskPriority } from '@/lib/api.js';
+import { api, ApiError, priorities, type Status, type Tag, type Task, type TaskPriority } from '@/lib/api.js';
 import { isCompositionKey, sameField, taskDraft, queryKeys, type TaskDraft } from '@/lib/todo.js';
 import { scheduleLabel } from '@/lib/schedule.js';
 import { ScheduleFields, scheduleError, type ScheduleValue } from './ScheduleFields.js';
@@ -464,7 +466,19 @@ const InfoRow = forwardRef<HTMLButtonElement, { icon: typeof CalendarDays; label
   </button>;
 });
 
-export function TaskExpandBody({ fill = false }: { fill?: boolean }) {
+type DetailSection = 'details' | 'materials' | 'context';
+
+function TaskBrief() {
+  const { t } = useTranslation('app');
+  const edit = useEdit();
+  const topicId = edit.task.topicId ?? null;
+  const brief = useQuery({ queryKey: ['brief', topicId], queryFn: ({ signal }) => api<{ content: string; manualNotes: string }>(`/api/v1/knowledge/brief?topicId=${encodeURIComponent(topicId ?? 'inbox')}`, { signal }) });
+  return <section className="dovun-task-context"><h3>{t('companion.brief')}</h3>
+    {brief.isLoading ? <p role="status">{t('shell.loadingTasks')}</p> : brief.error ? <p role="alert">{brief.error.message}</p> : <><BodyText text={brief.data?.content || t('companion.emptyContext')} format="markdown" />{brief.data?.manualNotes && <><h3>{t('companion.fixedNotes')}</h3><BodyText text={brief.data.manualNotes} /></>}</>}
+  </section>;
+}
+
+export function TaskExpandBody({ fill = false, section = 'details' }: { fill?: boolean; section?: DetailSection }) {
   const { t } = useTranslation('tasks');
   const edit = useEdit();
   const record = edit.textRecord;
@@ -479,11 +493,7 @@ export function TaskExpandBody({ fill = false }: { fill?: boolean }) {
       <pre className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap rounded-lg bg-black/5 p-2 text-xs dark:bg-white/5">{textConflicts.map(([field, conflict]) => t('taskExpand.conflictBlock', { field: fieldLabel(field), local: conflict.local.slice(0, 200) || t('taskExpand.emptyValue'), remote: conflict.remote.slice(0, 200) || t('taskExpand.emptyValue') })).join('\n\n')}</pre>
     </div>}
     {record?.blockedReason === 'invalid-title' && <div role="alert" className="mb-3 rounded-xl border border-warning-border bg-warning-bg p-3 text-sm text-warning">{t('taskExpand.emptyTitleBlocked')}</div>}
-    <TaskDescription key={edit.taskId} taskId={edit.taskId} value={edit.draft.description} readonly={edit.readonly} fill={fill} openDescription={edit.openDescription} onEdit={(description) => edit.updateText({ description })} onComposeStart={edit.onComposeStart} onComposeEnd={edit.onComposeEnd} onOpenLinkedTask={(taskId) => { void edit.openLinkedTask(taskId); }} />
-    <SaveStatusRow status={edit.textStatus} taskId={edit.taskId} />
-    <TaskMaterials taskId={edit.taskId} topicId={edit.task?.topicId ?? null} description={edit.draft.description} readonly={edit.readonly} saveText={edit.saveText} onOpenLinkedTask={edit.openLinkedTask} />
-    <div className="mt-3 shrink-0"><SubtasksSection /></div>
-    <div className="task-info-rows mt-auto shrink-0">
+    <div hidden={section !== 'details'} className="task-info-rows mb-4 shrink-0">
       <TopicRow />
       <ScheduleControl />
       <EstimateControl />
@@ -491,6 +501,12 @@ export function TaskExpandBody({ fill = false }: { fill?: boolean }) {
       <TagPicker />
       <StartFocusButton />
     </div>
+    <div hidden={section !== 'details'} className="dovun-detail-writing"><TaskDescription key={edit.taskId} taskId={edit.taskId} value={edit.draft.description} readonly={edit.readonly} fill={fill} openDescription={edit.openDescription} onEdit={(description) => edit.updateText({ description })} onComposeStart={edit.onComposeStart} onComposeEnd={edit.onComposeEnd} onOpenLinkedTask={(taskId) => { void edit.openLinkedTask(taskId); }} />
+    <SaveStatusRow status={edit.textStatus} taskId={edit.taskId} /></div>
+    <div hidden={section === 'context'}><TaskMaterials taskId={edit.taskId} topicId={edit.task?.topicId ?? null} description={edit.draft.description} readonly={edit.readonly} saveText={edit.saveText} onOpenLinkedTask={edit.openLinkedTask} /></div>
+    <div hidden={section !== 'details'} className="mt-3 shrink-0"><SubtasksSection /></div>
+
+    {section === 'context' && <TaskBrief />}
   </div>;
 }
 
@@ -685,16 +701,26 @@ function TaskAssistantActions() {
 
 export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children' | 'fallback'> & { fallback?: Task; presentation: 'panel' | 'modal' | 'retained'; panelSlot: HTMLElement | null }>(function TaskDetailPane({ presentation, panelSlot, fallback, ...props }, ref) {
   const [activity, setActivity] = useState(false);
+  const [section, setSection] = useState<DetailSection>('details');
+  const { t } = useTranslation('app');
   const placeholder: Task = fallback ?? { id: props.id, title: '', description: '', status: 'todo', priority: 'none', dueDate: null, estimatedMinutes: null, scheduledStart: null, scheduledEnd: null, resultSummary: '', topicId: null, parentId: null, tagIds: [], allowedTransitions: [] };
   return <TaskExpand ref={ref} {...props} fallback={placeholder}>
     <DetailFrame presentation={presentation} panelSlot={panelSlot}>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="dovun-detail-tabs" role="tablist" aria-label={t('companion.details')}>
+          {(['details', 'materials', 'context'] as const).map((tab, index, tabs) => <button type="button" role="tab" key={tab} id={`detail-tab-${props.id}-${tab}`} aria-controls={`detail-panel-${props.id}`} aria-selected={section === tab} tabIndex={section === tab ? 0 : -1} onClick={() => setSection(tab)} onKeyDown={event => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault();
+            const next = event.key === 'Home' ? 0 : event.key === 'End' ? 2 : (index + (event.key === 'ArrowRight' ? 1 : 2)) % 3;
+            setSection(tabs[next]); document.getElementById(`detail-tab-${props.id}-${tabs[next]}`)?.focus();
+          }}>{t(`companion.${tab}`)}</button>)}
+        </div>
         <header className="task-detail-header">
           <TaskAssistantActions />
           <ParentTaskLink />
           <div data-testid="task-detail-title-row" className="flex min-w-0 items-start gap-2"><TaskStatusCheckbox /><div className="min-w-0 flex-1"><TaskTitleField /></div><ActivityButton onOpen={() => setActivity(true)} /><CloseDetailButton /></div>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5"><TaskExpandBody fill /></div>
+        <div role="tabpanel" id={`detail-panel-${props.id}`} aria-labelledby={`detail-tab-${props.id}-${section}`} className="min-h-0 flex-1 overflow-y-auto px-5 pb-5"><TaskExpandBody fill section={section} /></div>
       </div>
     </DetailFrame>
     <TaskActivityDialog taskId={props.id} open={activity} onOpenChange={setActivity} />
@@ -731,7 +757,7 @@ function ScheduleControl() {
   };
   return <Popover open={open} onOpenChange={changeOpen}>
     <PopoverTrigger asChild><InfoRow icon={CalendarDays} label={t('taskExpand.schedule')} value={scheduleLabel(edit.draft)} hasValue={Boolean(edit.draft.dueDate || edit.draft.scheduledStart)} disabled={edit.readonly} aria-label={t('taskExpand.schedule')} /></PopoverTrigger>
-    <PopoverContent data-task-editor className="z-[80] max-h-[75dvh] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto space-y-3" onPointerDown={(event) => event.stopPropagation()} onPointerDownOutside={keepSchedulePickerOpen} onInteractOutside={keepSchedulePickerOpen} onFocusOutside={keepSchedulePickerOpen}>
+    <PopoverContent data-task-editor collisionPadding={12} style={{ maxHeight: 'min(75dvh, var(--radix-popover-content-available-height))' }} className="z-[80] max-h-[75dvh] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto space-y-3" onPointerDown={(event) => event.stopPropagation()} onPointerDownOutside={keepSchedulePickerOpen} onInteractOutside={keepSchedulePickerOpen} onFocusOutside={keepSchedulePickerOpen}>
       <ScheduleFields value={value} onChange={setValue} estimatedMinutes={edit.draft.estimatedMinutes} disabled={saving} />
       <div className="flex justify-end gap-2"><Button type="button" variant="ghost" disabled={saving} onClick={() => changeOpen(false)}>{t('shared.cancel')}</Button><Button type="button" disabled={saving || Boolean(scheduleError(value))} onClick={() => {
         if (lock.current) return;

@@ -4,6 +4,7 @@ import { markDesktopShell } from '@/lib/desktop-shell.js';
 import { api, setCsrfToken } from '@/lib/api.js';
 import { EditorRuntime, markEditorSessionExpired, TaskEditorRuntimeProvider, useBeforeunloadGuard } from '@/lib/task-editor-runtime.js';
 import { UnsyncedTasksButton } from '@/components/tasks/task-save-status.js';
+import { BrandMark } from '@/components/layout/BrandMark.js';
 import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 
@@ -48,14 +49,14 @@ export function SessionGate({ children }: { children: ReactNode }) {
     // redirect below; it cancels the navigation and marks the launch confirmed.
     if (new URLSearchParams(window.location.search).get('launcher') === '1') {
       markDesktopShell();
-      window.history.replaceState(null, '', `${window.location.pathname}#/inbox`);
+      window.history.replaceState(null, '', `${window.location.pathname}#/today`);
       window.location.assign('/wwa-launcher-done');
     }
     void api<{ mode: 'local' | 'server' }>('/api/v1/server/info').then((info) => { if (alive) setRemote(info.mode === 'server'); }).catch(() => {});
     const params = new URLSearchParams(window.location.hash.slice(1));
     const initialToken = params.get('owner-token');
     if (initialToken) {
-      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/inbox`);
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/today`);
       void login(initialToken);
     } else {
       void api<{ authenticated: boolean; csrfToken?: string; actor?: { id: string } }>('/api/v1/auth/session').then((session) => {
@@ -75,7 +76,7 @@ export function SessionGate({ children }: { children: ReactNode }) {
   }, []);
   if (state === 'ready') return <EditorRuntimeMount runtime={runtime}>{children}</EditorRuntimeMount>;
   return <main className="flex min-h-dvh items-center justify-center bg-background p-6"><form className="glass-surface w-full max-w-md space-y-5 rounded-2xl p-7" onSubmit={(event) => { event.preventDefault(); void login(token); }}>
-    <h1 className="text-xl font-semibold">{t('session.title')}</h1>
+    <BrandMark /><h1 className="text-xl font-semibold">{t('session.title')}</h1>
     {state === 'loading' ? <p className="text-sm text-muted-foreground">{t('session.connecting')}</p> : <>
       <p className="text-sm text-muted-foreground">{remote ? t('session.remoteHint') : t('session.localHint')}</p>
       <Input aria-label={remote ? t('session.accessKey') : t('session.launchCredential')} type="password" autoComplete="off" value={token} onChange={(event) => setToken(event.target.value)} required />

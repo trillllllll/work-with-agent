@@ -7,7 +7,7 @@ import { test, expect } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
 const GIB = 1024 ** 3;
-const web = 'http://127.0.0.1:5175';
+const web = (process.env.E2E_UI_URL ?? 'http://127.0.0.1:5175');
 
 test.beforeEach(async ({ page }) => {
   await resetE2eDatabase();
@@ -95,7 +95,7 @@ async function pickTopic(page: Page, card: Locator, name: string) {
 }
 
 function installShellEvents(page: Page, nodeId: string) {
-  const origin = 'http://127.0.0.1:5175';
+  const origin = (process.env.E2E_UI_URL ?? 'http://127.0.0.1:5175');
   page.on('request', (request) => {
     const url = request.url();
     const detail = url.includes('wwa-node-unpair')

@@ -1,7 +1,7 @@
 import { test, expect, type APIRequestContext, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const api = 'http://127.0.0.1:3015';
+const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const composer = '例如：创建任务：整理 API 文档';
 const surfaces = [
   { width: 1280, height: 800, theme: 'light' },
@@ -45,7 +45,7 @@ for (const surface of surfaces) {
     test.setTimeout(60_000);
     await prepare(page, request, surface);
     const task = await post(request, '/api/tasks', { title: '修复样本' }) as { id: string; revision: number };
-    await page.goto('/');
+    await page.goto('/#/inbox');
     await expect(page.locator('html')).toHaveClass(surface.theme === 'dark' ? /dark/ : /light/);
     await ask(page, '修复预览标题');
     const cards = page.getByTestId('approval-card');
@@ -75,7 +75,7 @@ for (const surface of surfaces) {
     test.setTimeout(60_000);
     await prepare(page, request, surface);
     await post(request, '/api/tasks', { title: '调整样本' });
-    await page.goto('/');
+    await page.goto('/#/inbox');
     await ask(page, '请生成调整样本');
     const card = page.getByTestId('approval-card');
     await expect(card).toHaveCount(1);
@@ -102,7 +102,7 @@ for (const surface of surfaces) {
     test.skip(Boolean(isMobile), '视口在用例内设置');
     test.setTimeout(60_000);
     await prepare(page, request, surface);
-    await page.goto('/');
+    await page.goto('/#/inbox');
     await ask(page, '继续处理到上限');
     await expect(page.getByRole('button', { name: '继续此请求', exact: true })).toBeVisible();
     await page.getByRole('button', { name: '继续此请求', exact: true }).click();
@@ -115,7 +115,7 @@ test('待确认页的调整打开所属会话', async ({ page, isMobile, request
   test.setTimeout(60_000);
   await prepare(page, request, surfaces[0]);
   await post(request, '/api/tasks', { title: '调整样本' });
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await ask(page, '请生成调整样本');
   await expect(page.getByTestId('approval-card')).toHaveCount(1);
   await page.goto('/#/proposals');

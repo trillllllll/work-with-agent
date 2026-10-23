@@ -1,6 +1,6 @@
 import { test, expect, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
-const api = 'http://127.0.0.1:3015';
+const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const mock = 'http://127.0.0.1:4010';
 const defaults = ['https://cdn.jsdelivr.net', 'https://cdnjs.cloudflare.com', 'https://unpkg.com'];
 test.beforeEach(async ({ page, request }) => {

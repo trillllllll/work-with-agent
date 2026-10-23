@@ -1,7 +1,7 @@
 import { test, expect, type APIRequestContext, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const apiUrl = 'http://127.0.0.1:3015';
+const apiUrl = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const composerPlaceholder = '例如：创建任务：整理 API 文档';
 
 async function responseData<T>(response: Awaited<ReturnType<APIRequestContext['get']>>) {
@@ -148,7 +148,7 @@ test.describe('Agent 工作室 MVP', () => {
     test.skip(Boolean(isMobile), '聊天栏桌面布局在桌面视口验收');
     await page.goto('/#/board');
 
-    const chatHeading = page.getByRole('heading', { name: 'AI 助手' });
+    const chatHeading = page.getByRole('heading', { level: 2, name: 'Dovun 工作助手' });
     const boardSection = page.getByRole('main');
     await expect(chatHeading).toBeHidden();
     await page.getByRole('button', { name: '打开聊天', exact: true }).click();
@@ -178,8 +178,8 @@ test.describe('Agent 工作室 MVP', () => {
     const task = await responseData<{ id: string }>(await request.post(`${apiUrl}/api/tasks`, { data: { title: '检查器任务' } }));
     await page.goto('/#/inbox');
 
-    await expect(page.getByLabel('WWA', { exact: true })).toBeVisible();
-    await expect(page.getByText('WWA', { exact: true })).toHaveCount(1);
+    await expect(page.getByLabel('Dovun', { exact: true })).toBeVisible();
+    await expect(page.getByText('dovun', { exact: true })).toHaveCount(1);
     const row = page.getByTestId(`task-row-${task.id}`);
     await row.getByRole('button', { name: '检查器任务', exact: true }).click();
     const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
@@ -187,7 +187,7 @@ test.describe('Agent 工作室 MVP', () => {
 
     await page.getByRole('button', { name: '打开聊天', exact: true }).click();
     await expect(page.getByRole('dialog', { name: '保存未完成的编辑？' })).toHaveCount(0);
-    await expect(page.getByRole('heading', { name: 'AI 助手' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Dovun 工作助手' })).toBeVisible();
     await expect(detail).toBeVisible();
     await page.getByRole('button', { name: '关闭聊天' }).click();
     await expect(detail.getByLabel('详情', { exact: true })).toHaveAttribute('data-value', '检查器草稿');
@@ -198,7 +198,7 @@ test.describe('Agent 工作室 MVP', () => {
     test.skip(!isMobile, '聊天栏移动布局在移动视口验收');
     await page.goto('/#/chat');
 
-    const chatHeading = page.getByRole('heading', { name: 'AI 助手' });
+    const chatHeading = page.getByRole('heading', { level: 2, name: 'Dovun 工作助手' });
     await expect(chatHeading).toBeVisible();
     await expect(page.getByRole('button', { name: '返回当前页面' })).toHaveCount(0);
 

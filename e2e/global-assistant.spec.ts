@@ -22,7 +22,7 @@ test.beforeEach(async ({ page, request }) => {
 test.afterAll(() => e2eDatabase.$disconnect());
 
 test('all pages share one assistant; workspace modal, shortcuts, sources and history', async ({ page, isMobile }) => {
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await open(page);
   const first = await ask(page, 'AI验收第一页');
   expect(first.context.schemaVersion).toBe(3);
@@ -66,7 +66,7 @@ test('all pages share one assistant; workspace modal, shortcuts, sources and his
 
 test('task and AI coexist, manual draft attachment, selection and mobile return preserve editor', async ({ page, request, isMobile }) => {
   const task = (await (await request.post(`${api}/api/tasks`, { data: { title: '并排任务', description: '已保存的正文', topicId: null } })).json()).data;
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await page.getByRole('button', { name: '并排任务', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '任务详情', exact: true }).last()).toBeVisible();
   await page.getByRole('button', { name: '带上当前草稿', exact: true }).click();
@@ -89,7 +89,7 @@ test('a valid 300-character task title can chat without clipping the attached dr
   const created = await request.post(api + '/api/tasks', { data: { title, description, topicId: null } });
   expect(created.ok()).toBe(true);
   const task = (await created.json()).data;
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await page.getByRole('button', { name: title, exact: true }).click();
   await expect(page.getByRole('dialog', { name: '任务详情', exact: true }).last()).toBeVisible();
   await page.getByRole('button', { name: '带上当前草稿', exact: true }).click();
@@ -103,14 +103,14 @@ test('a valid 300-character task title can chat without clipping the attached dr
 
 test('desktop widths and theme remain usable with current content visible', async ({ page, isMobile }) => {
   test.skip(isMobile, 'desktop layout sizes');
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await open(page);
   for (const width of [1440, 1024]) {
     await page.setViewportSize({ width, height: 900 });
     await expect(panel(page)).toBeVisible();
     const box = await panel(page).boundingBox();
-    expect(box?.width).toBeGreaterThanOrEqual(398);
-    expect(box?.width).toBeLessThanOrEqual(400);
+    expect(box?.width).toBeGreaterThanOrEqual(width === 1440 ? 426 : 346);
+    expect(box?.width).toBeLessThanOrEqual(width === 1440 ? 440 : 360);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: `/tmp/wwa-ai-${width}-light.png` });
   }
@@ -163,7 +163,7 @@ test('material draft is opt-in and survives assistant close', async ({ page, isM
 test('explicit multiselection is carried instead of a nearby sample', async ({ page, request }) => {
   const tasks = [];
   for (const title of ['范围甲', '范围乙', '范围丙']) tasks.push((await (await request.post(`${api}/api/tasks`, { data: { title, topicId: null } })).json()).data);
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await page.getByRole('button', { name: '选入 AI 上下文：范围甲', exact: true }).click();
   await page.getByRole('button', { name: '选入 AI 上下文：范围乙', exact: true }).click();
   await open(page);
@@ -174,7 +174,7 @@ test('explicit multiselection is carried instead of a nearby sample', async ({ p
 
 test('in-flight request stays on A while navigation changes the next message to B', async ({ page, request }) => {
   const a = (await (await request.post(`${api}/api/tasks`, { data: { title: '任务 A', topicId: null } })).json()).data;
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await page.getByRole('button', { name: '任务 A', exact: true }).click();
   await page.getByRole('button', { name: 'AI 助手', exact: true }).last().click();
   let release!: () => void;
@@ -201,7 +201,7 @@ test('in-flight request stays on A while navigation changes the next message to 
 });
 
 test('every route shares input and mobile visual viewport keeps the composer visible', async ({ page, isMobile }) => {
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await open(page);
   await panel(page).getByRole('textbox', { name: '向 AI 提问' }).fill('全局草稿');
   for (const name of ['today', 'search', 'tags', 'quadrant', 'plan', 'library', 'knowledge', 'connections', 'runs', 'reviews', 'proposals', 'settings', 'trash', 'changes', 'focus', 'topics', 'archived', 'inbox']) {

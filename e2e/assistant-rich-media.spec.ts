@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
-const api = 'http://127.0.0.1:3015';
+const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 test.beforeEach(async ({ page, request }) => {
   await resetE2eDatabase();
   const saved = await request.patch(`${api}/api/settings`, { data: { model: 'mock', baseUrl: 'http://127.0.0.1:4010/v1', apiKey: 'test-key' } });

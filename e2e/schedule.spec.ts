@@ -2,7 +2,7 @@ import { test, expect, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 import type { Locator } from '@playwright/test';
 
-const api = 'http://127.0.0.1:3015';
+const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const today = () => { const date = new Date(); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; };
 const dayShift = (day: string, count: number) => new Date(Date.parse(`${day}T12:00:00Z`) + count * 86400000).toISOString().slice(0, 10);
 const showDate = (day: string) => day.replace(/-/g, '/');
@@ -146,11 +146,11 @@ test('点开时间下拉改时钟，未保存不写入', async ({ page, request 
   const calendar = page.getByRole('dialog', { name: '选择日期', exact: true });
   const selectedDay = calendar.getByRole('button', { name: day, exact: true });
   const lightDay = await selectedDay.evaluate((node) => getComputedStyle(node));
-  expect(rgbSum(lightDay.backgroundColor)).toBeLessThan(120);
+  expect(rgbSum(lightDay.backgroundColor)).toBeLessThan(400);
   expect(rgbSum(lightDay.color)).toBeGreaterThan(700);
   await page.evaluate(() => document.documentElement.classList.add('dark'));
   const darkDay = await selectedDay.evaluate((node) => getComputedStyle(node));
-  expect(rgbSum(darkDay.backgroundColor)).toBeGreaterThan(700);
+  expect(rgbSum(darkDay.backgroundColor)).toBeGreaterThan(500);
   expect(rgbSum(darkDay.color)).toBeLessThan(120);
   await page.evaluate(() => document.documentElement.classList.remove('dark'));
   await calendar.getByRole('button', { name: '完成', exact: true }).click();
@@ -169,7 +169,7 @@ test('点开时间下拉改时钟，未保存不写入', async ({ page, request 
   if (!minuteBox) throw new Error('分钟滚轮没有布局');
   expect(minuteBox.x + minuteBox.width).toBeLessThanOrEqual(box.x + box.width + 1);
   const hour = picker.getByRole('button', { name: '14时', exact: true });
-  expect(rgbSum(await hour.evaluate((node) => getComputedStyle(node).color))).toBeLessThan(120);
+  expect(rgbSum(await hour.evaluate((node) => getComputedStyle(node).color))).toBeLessThan(200);
   await page.evaluate(() => document.documentElement.classList.add('dark'));
   expect(rgbSum(await hour.evaluate((node) => getComputedStyle(node).color))).toBeGreaterThan(600);
   await page.evaluate(() => document.documentElement.classList.remove('dark'));

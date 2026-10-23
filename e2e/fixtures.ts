@@ -8,8 +8,11 @@ export const test = base.extend({
     const wrapped = new Proxy(request, { get(target, property) {
       const original = Reflect.get(target, property);
       if (typeof original !== 'function') return original;
-      if (!['post', 'patch', 'delete'].includes(String(property))) return original.bind(target);
+      if (!['get', 'post', 'put', 'patch', 'delete', 'head'].includes(String(property))) return original.bind(target);
       return async (url: string, options: any = {}) => {
+        // Allow the suite to use isolated ports without touching another running test service.
+        if (process.env.E2E_API_URL) url = url.replace(/^http:\/\/127\.0\.0\.1:3015(?=\/|$)/, process.env.E2E_API_URL);
+        if (!['post', 'patch', 'delete'].includes(String(property))) return original.call(target, url, options);
         const path = new URL(url).pathname;
         let data = typeof options.data === 'object' ? { ...options.data } : {};
         const match = path.match(/^\/api\/(tasks|topics|tags|trash\/tasks)\/([^/]+)/);

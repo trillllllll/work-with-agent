@@ -1,7 +1,7 @@
 import { test, expect, type Locator, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const apiUrl = 'http://127.0.0.1:3015';
+const apiUrl = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 
 function localKey(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -148,7 +148,7 @@ test('375px 周视图可横滑，专注芯片在底栏上方', async ({ page }) 
   await page.goto('/#/plan');
   await page.getByRole('button', { name: '日', exact: true }).click();
   const tabs = page.getByRole('navigation', { name: '主导航' });
-  await expect(tabs.getByRole('button')).toHaveText(['收集箱', '今天', '四象限', '清单', '更多']);
+  await expect(tabs.getByRole('button')).toHaveText(['今天', '规划', '清单', '资料库', '更多']);
   await page.getByRole('button', { name: '周', exact: true }).click();
   const scroll = await page.getByTestId('calendar-horizontal-scroll').evaluate((node) => ({ scrollWidth: node.scrollWidth, clientWidth: node.clientWidth, pageWidth: document.documentElement.scrollWidth }));
   expect(scroll.scrollWidth).toBeGreaterThanOrEqual(720);
@@ -157,7 +157,7 @@ test('375px 周视图可横滑，专注芯片在底栏上方', async ({ page }) 
   await page.goto('/#/focus');
   await page.getByRole('button', { name: '开始专注', exact: true }).click();
   await expect(page.getByTestId('focus-chip')).toHaveCount(0);
-  await tabs.getByRole('button', { name: '收集箱', exact: true }).click();
+  await tabs.getByRole('button', { name: '今天', exact: true }).click();
   const chip = page.getByTestId('focus-chip');
   await expect(chip).toBeVisible();
   const chipBox = await chip.boundingBox();
@@ -178,7 +178,8 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('一分钟专注完成后留下记录，刷新则暂停且不归零', async ({ page, request }) => {
-  test.setTimeout(150_000);
+  test.setTimeout(45_000);
+  await page.clock.install();
   await page.goto('/#/focus');
   await page.evaluate(() => {
     localStorage.setItem('todo.focusTimer', JSON.stringify({ phase: 'idle', taskId: null, taskTitle: null, accumulatedMs: 0, segmentStartedAt: null, sessionStartedAt: null, plannedMinutes: 1, breakMinutes: 5, cycle: 0, autoStartBreak: false }));
@@ -191,6 +192,7 @@ test('一分钟专注完成后留下记录，刷新则暂停且不归零', async
   const chip = page.getByTestId('focus-chip');
   await expect(chip).toBeVisible();
   const clock = chip.locator('.tabular-nums');
+  await page.clock.runFor(1500);
   await expect(clock).not.toHaveText('01:00');
   const before = clockSeconds((await clock.textContent()) ?? '00:00');
   expect(before).toBeGreaterThan(0);
@@ -202,7 +204,8 @@ test('一分钟专注完成后留下记录，刷新则暂停且不归零', async
   expect(after).toBeLessThanOrEqual(before);
   expect(after).toBeLessThan(60);
   await chip.getByRole('button', { name: '继续' }).click();
-  await expect(page.getByText('专注完成，休息一下').first()).toBeVisible({ timeout: 70_000 });
+  await page.clock.fastForward(61_000);
+  await expect(page.getByText('专注完成，休息一下').first()).toBeVisible();
   await expect(chip).toContainText('休息一下');
   await expect.poll(async () => {
     const rows = await jsonData(await request.get(`${apiUrl}/api/focus-sessions`)) as { durationMinutes: number; completed: boolean; kind: string; startedAt: string }[];

@@ -9,13 +9,14 @@ test.afterAll(async () => { await e2eDatabase.$disconnect(); });
 
 const labels = ['收集箱', '今天', '规划', '专注', '四象限', '清单', '搜索', '标签', '已归档', '回收站', '变更历史', '设置', 'AI 连接', '待确认', '工作上下文', '资料库', '技能', 'AI 执行', 'Worktree 管理', '定期回顾'];
 
-test('更多页展示 4 个分组、20 个入口与聊天卡片', async ({ page }) => {
+test('更多页展示统一导航分组与聊天卡片', async ({ page }) => {
   await page.goto('/#/more');
   const nav = page.getByRole('navigation', { name: '工作区导航' });
   await expect(nav).toBeVisible();
-  for (const group of ['视图', '整理', '工作', '系统']) {
+  for (const group of ['日常', '清单', '积累', 'AI 协作', '高级工具', '通用入口']) {
     await expect(page.getByRole('region', { name: group })).toBeVisible();
   }
+  await page.getByText('高级工具', { exact: true }).click();
   for (const label of labels) {
     await expect(nav.getByRole('button', { name: label, exact: true })).toBeVisible();
   }

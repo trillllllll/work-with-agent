@@ -1,7 +1,7 @@
 import { test, expect, type APIRequestContext, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const base = 'http://127.0.0.1:3015';
+const base = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 
 test.beforeEach(async ({ page }) => {
   await resetE2eDatabase();
@@ -91,8 +91,8 @@ test('工作上下文默认显示当前进展，建议不会直接变成记忆',
   expect(wideRail!.x).toBeGreaterThan(wideBrief!.x + 40);
   expect(wideRail!.y).toBeLessThan(wideBrief!.y + wideBrief!.height);
   if (testInfo.project.name === 'chromium') {
-    const work = page.getByRole('navigation', { name: '工作', exact: true });
-    await expect(work.getByRole('button')).toHaveText(['AI 连接', '待确认', '工作上下文', '资料库', '技能', 'AI 执行', 'Worktree 管理', '定期回顾']);
+    await expect(page.getByRole('region', { name: '积累', exact: true }).getByRole('button')).toHaveText(['资料库', '工作上下文', '定期回顾']);
+    await expect(page.getByRole('region', { name: 'AI 协作', exact: true }).getByRole('button')).toContainText(['AI 助手', '待确认', '技能', 'AI 连接', 'AI 执行']);
   }
   await setTheme(page, 'light');
   await shot(page, testInfo.project.name, '1440-light-brief');

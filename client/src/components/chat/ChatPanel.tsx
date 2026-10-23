@@ -1,3 +1,4 @@
+import mark from '@/assets/dovun-mark.svg';
 import { settingsHash } from '@/components/settings/settings-categories.js';
 import { ContextSummary } from './ContextSummary.js';
 import { suggestions } from '@/lib/assistant-context.js';
@@ -51,7 +52,7 @@ export function ChatPanel({ chat, onClose, mobile, presentation = 'side', onExpa
   const { messages, approvals, busy, interrupted, input, setInput, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference, showRepreview } = chat;
   const materialCount = chat.context?.selectedMaterialIds.length ?? 0;
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col" data-testid="ai-assistant" data-presentation={presentation}>
+    <div className="dovun-assistant flex h-full min-h-0 min-w-0 flex-col" data-testid="ai-assistant" data-presentation={presentation}>
       <header className="assistant-header flex shrink-0 items-center gap-2 border-b px-4 py-3">
         <Sparkles className="size-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1"><h2 className="text-sm font-semibold">{t('chatPanel.title')}</h2><span className="text-[10px] text-muted-foreground" role="status">{busy ? t('status.working') : interrupted ? t('status.interrupted') : settings.isLoading ? t('status.checking') : settings.error ? t('status.unknown') : configured ? t('status.available') : t('status.noModel')}</span></div>
@@ -66,9 +67,11 @@ export function ChatPanel({ chat, onClose, mobile, presentation = 'side', onExpa
         {presentation === 'side' && <Button variant="ghost" size="icon-sm" title={t('chatPanel.hideAssistant')} aria-label={mobile ? t('chatPanel.backToPage') : t('chatPanel.closeChat')} onClick={onClose}><X /></Button>}
       </header>
 
-      {!settings.isLoading && !settings.error && !configured && <p className="px-4 py-2 text-xs text-muted-foreground">{t('chatPanel.configureModel')} <a className="font-medium text-primary underline-offset-4 hover:underline" href={`#${settingsHash('model')}`}>{t('chatPanel.configureModelAction')}</a></p>}
-      {!messages.length && <div className="flex flex-wrap gap-2 px-3 pt-3">{suggestions(chat.context?.page ?? '').map((item) => <Button key={item} size="sm" variant="outline" className="h-auto whitespace-normal text-left" onClick={() => setInput(item)}>{item}</Button>)}</div>}
-      <AssistantInputProvider setInput={setInput}><MessageList messages={messages} approvals={approvals} approvalPending={approve.isPending || reject.isPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} unresolvedApprovalIds={unresolvedApprovalIds} phase={decisionPhase} onApprove={(id) => approve.mutate(id)} onReject={(id) => reject.mutate(id)} onChanged={refreshApprovals} onRepreviewed={showRepreview} /></AssistantInputProvider>
+      {!settings.isLoading && !settings.error && !configured && <p className="shrink-0 px-4 py-2 text-xs text-muted-foreground">{t('chatPanel.configureModel')} <a className="font-medium text-primary underline-offset-4 hover:underline" href={`#${settingsHash('model')}`}>{t('chatPanel.configureModelAction')}</a></p>}
+      <AssistantInputProvider setInput={setInput}><MessageList emptyState={<>
+      <div className="dovun-assistant-welcome"><img src={mark} alt="" /><h3>{t('chatPanel.title')}</h3><p>{t('chatPanel.greeting')}</p></div>
+      <div className="dovun-assistant-suggestions flex flex-wrap gap-2 px-3 pt-3">{suggestions(chat.context?.page ?? '').map((item) => <Button key={item} size="sm" variant="outline" className="h-auto whitespace-normal text-left" onClick={() => setInput(input.trim() ? `${input}\n\n${item}` : item)}>{item}</Button>)}</div>
+      </>} messages={messages} approvals={approvals} approvalPending={approve.isPending || reject.isPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} unresolvedApprovalIds={unresolvedApprovalIds} phase={decisionPhase} onApprove={(id) => approve.mutate(id)} onReject={(id) => reject.mutate(id)} onChanged={refreshApprovals} onRepreviewed={showRepreview} /></AssistantInputProvider>
       {pausedRun && ['new_user_message', 'interrupted', 'round_limit'].includes(pausedRun.reason) && (
         <div className="mx-3 mb-2 flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-xs">
           <span>{pausedRun.reason === 'new_user_message' ? t('system.pausedFollowUp') : t('chatPanel.requestPaused')}</span>

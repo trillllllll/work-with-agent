@@ -1,7 +1,7 @@
 import { test, expect, type APIRequestContext, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const api = 'http://127.0.0.1:3015';
+const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const composer = '例如：创建任务：整理 API 文档';
 
 async function post(request: APIRequestContext, path: string, data: unknown) {
@@ -40,7 +40,7 @@ test.afterAll(() => e2eDatabase.$disconnect());
 test('读取项目资料不出现审核卡', async ({ page, isMobile }) => {
   test.skip(Boolean(isMobile), '资料工具在桌面视口验收，窄屏只检查审核按钮');
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await ask(page, '读取项目资料');
   await expect(page.getByText('我先查看项目资料。', { exact: true })).toBeVisible();
   await expect(page.getByText('查询了 1 项', { exact: true })).toBeVisible();
@@ -56,7 +56,7 @@ test('拒绝项目资料关联后数据不变，窄屏仍能点审核按钮', as
   const created = material.results[0];
   const task = await post(request, '/api/tasks', { title: '需要关联的任务' }) as { id: string };
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await ask(page, `关联这份项目资料 materialId=${created.id} materialRevision=${created.revision} organizationRevision=${created.organizationRevision} taskId=${task.id}`);
   const card = page.getByTestId('approval-card');
   await expect(card).toHaveCount(1);

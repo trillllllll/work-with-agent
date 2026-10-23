@@ -16,7 +16,7 @@ import { MOBILE_NAVIGATION_VIEWS } from './domain/mobile-navigation.js';
 import { migrateDatabase } from './db-migrate.js';
 
 const path = '/api/settings/mobile-navigation';
-const defaults = ['inbox', 'today', 'quadrant', 'topics'];
+const defaults = ['today', 'plan', 'topics', 'library'];
 const migrations = fileURLToPath(new URL('../prisma/migrations/', import.meta.url));
 
 describe('mobile navigation', () => {
@@ -195,7 +195,7 @@ describe('mobile navigation', () => {
     try {
       expect((await request(app).patch('/api/settings').send({ baseUrl: 'https://api.example.com/v1', model: 'example-model', apiKey: 'seed-key-123' })).status).toBe(200);
       const seeded = (await prisma.appSetting.findUniqueOrThrow({ where: { id: 'default' } })).mobileNavigationJson;
-      expect(seeded).toBe('["inbox","today","quadrant","topics"]');
+      expect(seeded).toBe(JSON.stringify(defaults));
       const callsAfterModel = calls.mock.calls.length;
 
       expect((await request(app).put(path).send({ visibleViews: ['focus', 'chat'] })).status).toBe(200);
@@ -259,7 +259,7 @@ describe('手机底栏迁移', () => {
         expect(column).toBeDefined();
         expect(Number(column!.notnull)).toBe(1);
         // PRAGMA 返回的默认值带 SQL 字面量引号。
-        expect(JSON.parse(column!.dflt_value.replace(/^'|'$/g, ''))).toEqual(defaults);
+        expect(JSON.parse(column!.dflt_value.replace(/^'|'$/g, ''))).toEqual(['inbox', 'today', 'quadrant', 'topics']);
 
         const row = await client.appSetting.findUniqueOrThrow({ where: { id: 'default' } });
         expect(row.mobileNavigationJson).toBe('["inbox","today","quadrant","topics"]');

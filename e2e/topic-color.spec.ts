@@ -1,7 +1,7 @@
 import { test, expect, type APIRequestContext } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const apiUrl = 'http://127.0.0.1:3015';
+const apiUrl = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 async function data(response: Awaited<ReturnType<APIRequestContext['get']>>) {
   expect(response.ok(), await response.text()).toBe(true);
   return (await response.json()).data;
@@ -36,7 +36,7 @@ test('清单颜色留在方块上，探索只多一枚标签', async ({ page, re
 
   if (desktop) {
     await expect(page.locator('.sidebar-list-mark[data-color="blue"]')).toBeVisible();
-    await expect(page.locator('nav[aria-label="清单"] .sidebar-explore-tag')).toHaveText('探索');
+    await expect(page.locator('[aria-label="清单"] .sidebar-explore-tag')).toHaveText('探索');
   }
   await page.goto('/#/topics');
   await expect(page.locator('.list-color-dot[data-color="blue"]')).toBeVisible();

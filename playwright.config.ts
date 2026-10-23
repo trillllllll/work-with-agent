@@ -1,7 +1,13 @@
 import { defineConfig, devices } from '@playwright/test';
 import { createHash } from 'node:crypto';
 const root = process.cwd();
-const databaseUrl = 'file:../../e2e/.data/agent-studio-e2e.db';
+const databaseFile = process.env.E2E_DATABASE_FILE ?? 'agent-studio-e2e.db';
+const databaseUrl = `file:../../e2e/.data/${databaseFile}`;
+const apiPort = process.env.E2E_API_PORT ?? '3015';
+const uiPort = process.env.E2E_UI_PORT ?? '5175';
+process.env.E2E_API_URL = `http://127.0.0.1:${apiPort}`;
+process.env.E2E_DATABASE_URL = databaseUrl;
+process.env.E2E_UI_URL = `http://127.0.0.1:${uiPort}`;
 
 export default defineConfig({
   testDir: './e2e',
@@ -12,13 +18,13 @@ export default defineConfig({
   retries: 0,
   reporter: process.env.CI ? [['line'], ['html', { open: 'never' }]] : 'list',
   use: {
-    baseURL: 'http://127.0.0.1:5175',
+    baseURL: `http://127.0.0.1:${uiPort}`,
     // The UI follows the browser language; the suite asserts the default Chinese UI.
     locale: 'zh-CN',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     storageState: { cookies: [{ name: 'wwa_session', value: 'wwa-e2e-owner-session', domain: '127.0.0.1', path: '/', expires: -1, httpOnly: true, secure: false, sameSite: 'Strict' }], origins: [] },
-    extraHTTPHeaders: { 'X-CSRF-Token': createHash('sha256').update('csrf:wwa-e2e-owner-session').digest('hex'), Origin: 'http://127.0.0.1:5175' },
+    extraHTTPHeaders: { 'X-CSRF-Token': createHash('sha256').update('csrf:wwa-e2e-owner-session').digest('hex'), Origin: `http://127.0.0.1:${uiPort}` },
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'], locale: 'zh-CN' } },
@@ -39,17 +45,17 @@ export default defineConfig({
     },
     {
       command: 'node e2e/prepare-db.mjs && node --import tsx server/src/index.ts',
-      url: 'http://127.0.0.1:3015/api/v1/auth/session',
+      url: `http://127.0.0.1:${apiPort}/api/v1/auth/session`,
       reuseExistingServer: false,
       timeout: 120_000,
-      env: { PORT: '3015', CLIENT_ORIGIN: 'http://127.0.0.1:5175', DATABASE_URL: databaseUrl, AGENT_WORKSPACE_ROOT: root },
+      env: { PORT: apiPort, CLIENT_ORIGIN: `http://127.0.0.1:${uiPort}`, DATABASE_URL: databaseUrl, E2E_DATABASE_FILE: databaseFile, AGENT_WORKSPACE_ROOT: root, KNOWLEDGE_STORAGE_ROOT: `${root}/e2e/.data/${databaseFile}-blobs`, WWA_RUNNER_DIR: `${root}/e2e/.data/${databaseFile}-runner` },
     },
     {
-      command: 'npm run dev -w client -- --port 5175',
-      url: 'http://127.0.0.1:5175',
+      command: `npm run dev -w client -- --port ${uiPort}`,
+      url: `http://127.0.0.1:${uiPort}`,
       reuseExistingServer: false,
       timeout: 120_000,
-      env: { VITE_API_URL: 'http://127.0.0.1:3015' },
+      env: { VITE_API_URL: `http://127.0.0.1:${apiPort}` },
     },
   ],
 });

@@ -1,7 +1,7 @@
 import { test, expect, type APIRequestContext, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const api = 'http://127.0.0.1:3015';
+const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const panel = (page: Page) => page.getByTestId('ai-assistant');
 
 async function openAssistant(page: Page) {
@@ -93,7 +93,7 @@ test('skill loading: catalog, 使用技能 row, and old conversations keep the v
 
 test('drafting a skill: nothing is written until confirm or editor save', async ({ page, request, isMobile }) => {
   test.skip(isMobile, 'chat cards are covered on desktop');
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await ask(page, '起草技能验收 名称=验收起草');
   const card = panel(page).getByTestId('approval-card').filter({ hasText: '验收起草' });
   await expect(card.getByTestId('skill-proposal')).toContainText('验收起草');
@@ -177,7 +177,7 @@ test('no enabled skills: the catalog and load_skill stay out of the request', as
   test.skip(isMobile, 'desktop only');
   const created = await request.post(`${api}/api/skills`, { data: { name: '停用的技能', description: '不会出现', instructions: '正文', enabled: false } });
   expect(created.status()).toBe(201);
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await ask(page, '技能加载验收', '没有可用技能。');
   await expect(panel(page).getByTestId('skill-usage')).toHaveCount(0);
   await ask(page, 'AI验收零技能', 'AI验收完成，已读取当前页面与功能说明。');
@@ -186,7 +186,7 @@ test('no enabled skills: the catalog and load_skill stay out of the request', as
 
 test('存为技能 drafts from the conversation and writes only on save', async ({ page, request, isMobile }) => {
   test.skip(isMobile, 'desktop only');
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await ask(page, 'AI验收存为技能', 'AI验收完成，已读取当前页面与功能说明。');
   const openDraft = async () => {
     await panel(page).getByRole('button', { name: '更多会话操作' }).click();

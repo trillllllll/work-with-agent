@@ -2,7 +2,7 @@ import { test, expect, type Page, type APIRequestContext } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
 const apiPath =
-  'http://127.0.0.1:3015/api/settings/mobile-navigation';
+  `${process.env.E2E_API_URL ?? 'http://127.0.0.1:3015'}/api/settings/mobile-navigation`;
 const navPath = '**/api/settings/mobile-navigation';
 
 test.beforeEach(resetE2eDatabase);

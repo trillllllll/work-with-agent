@@ -1,7 +1,7 @@
 import { test, expect, type APIRequestContext } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const apiUrl = 'http://127.0.0.1:3015';
+const apiUrl = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 
 async function data<T>(response: Awaited<ReturnType<APIRequestContext['get']>>) {
   expect(response.ok(), await response.text()).toBe(true);

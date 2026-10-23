@@ -1,7 +1,7 @@
 import { test, expect, type APIRequestContext, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const api = 'http://127.0.0.1:3015';
+const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const composer = '例如：创建任务：整理 API 文档';
 
 async function post(request: APIRequestContext, path: string, data: unknown) {
@@ -34,7 +34,7 @@ test.afterAll(() => e2eDatabase.$disconnect());
 test('读取当前时间后回答本地日期，不生成审批', async ({ page, isMobile }) => {
   test.skip(Boolean(isMobile), '时间读取在桌面视口验收');
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto('/');
+  await page.goto('/#/inbox');
   const expected = await page.evaluate(() => new Intl.DateTimeFormat('en-CA', {
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     year: 'numeric',
@@ -51,7 +51,7 @@ test('读取任务动态时说明最近 30 天，并把接口创建者显示为�
   test.skip(Boolean(isMobile), '任务动态在桌面视口验收');
   const task = await post(request, '/api/tasks', { title: '动态样本' }) as { id: string };
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await ask(page, `读取任务动态 taskId=${task.id}`);
   await expect(page.getByText(/最近 30 天的动态里，记录到的操作者是你。这不代表从未发生过更早的修改。/)).toBeVisible();
   await expect(page.getByTestId('approval-card')).toHaveCount(0);

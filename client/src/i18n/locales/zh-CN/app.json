@@ -21,7 +21,7 @@
     "plan": "规划",
     "focus": "专注",
     "stats": "统计",
-    "chat": "聊天",
+    "chat": "AI 助手",
     "more": "更多"
   },
   "color": {
@@ -204,7 +204,8 @@
     "dragHint": "上下拖动调整顺序，向右拖成子任务，向左拖回根任务。",
     "completeSubtasksTitle": "一并完成子任务？",
     "completeSubtasksDescription": "该任务还有未完成的子任务。继续后将一并标记为完成。",
-    "completeSubtasks": "一并完成"
+    "completeSubtasks": "一并完成",
+    "laterToday": "今天稍后"
   },
   "confirm": {
     "deleteTask": "删除任务",
@@ -220,5 +221,35 @@
     "moveTasksOut": "移出归档清单的任务",
     "moveTasksDescription": "将“{{name}}”的任务移到收集箱，保留父子关系。",
     "moveTasks": "移出任务"
+  },
+  "groups": {
+    "daily": "日常",
+    "lists": "清单",
+    "knowledge": "积累",
+    "collaboration": "AI 协作",
+    "advanced": "高级工具",
+    "system": "通用"
+  },
+  "brand": {
+    "positioning": "个人工作台"
+  },
+  "companion": {
+    "title": "Dovun 工作助手",
+    "greeting": "一起把工作往前推。",
+    "description": "任务、资料与积累，都在你的工作台。",
+    "suggestion": "帮我梳理今天的安排",
+    "contextSuggestion": "梳理当前工作的关键要点",
+    "open": "展开对话",
+    "configure": "配置模型",
+    "noModel": "连接模型后，可以围绕当前工作讨论。",
+    "agenda": "今日安排",
+    "emptyAgenda": "给重要的工作留出时间。",
+    "restoreDetail": "返回任务详情",
+    "details": "任务详情",
+    "materials": "相关资料",
+    "context": "工作上下文",
+    "emptyContext": "当前清单还没有简报。",
+    "fixedNotes": "固定说明",
+    "brief": "当前简报"
   }
 }

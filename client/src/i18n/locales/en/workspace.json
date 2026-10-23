@@ -27,7 +27,7 @@
   },
   "session": {
     "loginFailed": "Sign-in failed",
-    "title": "Open your workspace",
+    "title": "Open Dovun",
     "connecting": "Connecting to the local service…",
     "remoteHint": "Enter this server's access key. It was shown once, when the server first started.",
     "localHint": "Use the private link from the startup terminal, or paste this launch credential.",
@@ -290,7 +290,7 @@
     "conflict": "This rule was changed elsewhere. Refresh and try again.",
     "refresh": "Refresh",
     "emptyTitle": "No review rules yet",
-    "emptyDescription": "Pick a scope and a time. WWA summarizes task changes on that schedule, and suggestions that need a decision go to the review queue.",
+    "emptyDescription": "Pick a scope and a time. Dovun summarizes task changes on that schedule, and suggestions that need a decision go to the review queue.",
     "emptyStep1": "Pick scope and time",
     "emptyStep1Hint": "Inbox or a few lists, daily or weekly",
     "emptyStep2": "The local service runs on time",

@@ -1,0 +1,44 @@
+{
+  "brand": "Dovun",
+  "positioning": "个人工作台",
+  "concept": "归栈",
+  "selected_variant": {
+    "id": "gap",
+    "label": "A 宽缝"
+  },
+  "selected_on": "2026-10-23",
+  "selection_evidence": "用户：还用宽缝吧。把这次设计的理念一起落盘",
+  "status": "用户选定的概念图；待矢量化及当前图形查重",
+  "assets": [
+    {
+      "file": "assets/dovun-icon-wide-gap.png",
+      "source_file": "/Users/byc/.codex/visualizations/2026/10/23/01a1668b-8c18-79a0-b555-13ce093dc110/dovun-stack-gap.png",
+      "sha256": "2c71606f9e0410ee458e8dff43fad711a510906d9ceb94ee61d3c19238272407",
+      "bytes": 681051,
+      "width": 1254,
+      "height": 1254
+    },
+    {
+      "file": "reference/original-stack.png",
+      "source_file": "/Users/byc/.codex/visualizations/2026/10/23/01a1668b-8c18-79a0-b555-13ce093dc110/dovun-fresh-stack.png",
+      "sha256": "63cddd2b4bb383a361f7e8572bc27e5a85ee4488da7c236de9a00442a5ff0923",
+      "bytes": 551716,
+      "width": 1254,
+      "height": 1254
+    },
+    {
+      "file": "reference/16px-comparison.png",
+      "source_file": "/Users/byc/.codex/visualizations/2026/10/23/01a1668b-8c18-79a0-b555-13ce093dc110/dovun-stack-refinements-pixels.png",
+      "sha256": "b1a8a791d3afedbf152fb740a9b707585d276e0482f6754e61f559961a007f77",
+      "bytes": 23912,
+      "width": 1944,
+      "height": 314
+    },
+    {
+      "file": "reference/preview-checks.json",
+      "source_file": "/Users/byc/.codex/visualizations/2026/10/23/01a1668b-8c18-79a0-b555-13ce093dc110/dovun-stack-preview-checks.json",
+      "sha256": "24acf03e3a6e2c3e8647fdb7045628caa2d52ee7c5e18392da30ef4a287af744",
+      "bytes": 411
+    }
+  ]
+}

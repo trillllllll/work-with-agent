@@ -51,7 +51,7 @@ export function parseHash(path: string, params: URLSearchParams): HashState {
   }
   if (head === 'settings') return { view: 'settings', knowledgeSection: null, knowledgeTopicId: null, knowledgeTopicExplicit: false, settingsCategory: parseSettingsCategory(rest[0]), query };
   if ((validViews as string[]).includes(head)) return { view: head as View, knowledgeSection: null, knowledgeTopicId: null, knowledgeTopicExplicit: false, settingsCategory: null, query };
-  return { view: 'inbox', knowledgeSection: null, knowledgeTopicId: null, knowledgeTopicExplicit: false, settingsCategory: null, query };
+  return { view: 'today', knowledgeSection: null, knowledgeTopicId: null, knowledgeTopicExplicit: false, settingsCategory: null, query };
 }
 
 function applyHash(next: string, mode: 'push' | 'replace') {

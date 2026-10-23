@@ -168,7 +168,7 @@
     "previewHint": "修改前会先预览，确认后才执行"
   },
   "chatPanel": {
-    "title": "AI 助手",
+    "title": "Dovun 工作助手",
     "newConversation": "新对话",
     "moreActions": "更多会话操作",
     "saveSession": "保存完整会话为资料",
@@ -196,7 +196,8 @@
     "unsavedAttachment": "{{title}} · 未保存草稿",
     "selectedAttachment": "{{title}} · 选中文字",
     "removeAttachment": "移除 {{title}}",
-    "configureModelAction": "去配置"
+    "configureModelAction": "去配置",
+    "greeting": "一起把工作往前推。"
   },
   "chatPickers": {
     "history": "历史对话",
@@ -407,7 +408,12 @@
     "enlarged": "放大后的图"
   },
   "visualization": {
-    "policy": {"attribute": "SVG 包含不支持或无效的属性：{{attribute}}", "format": "SVG 内容或规模不符合静态图示规则", "reference": "SVG 引用了不存在或类型不符的资源", "cycle": "SVG 资源引用存在循环、嵌套箭头或引用过深"},
+    "policy": {
+      "attribute": "SVG 包含不支持或无效的属性：{{attribute}}",
+      "format": "SVG 内容或规模不符合静态图示规则",
+      "reference": "SVG 引用了不存在或类型不符的资源",
+      "cycle": "SVG 资源引用存在循环、嵌套箭头或引用过深"
+    },
     "sanitizerChanged": "安全过滤改变了图示内容，已停止显示",
     "canvasFailed": "无法创建导出画布",
     "exportFailed": "导出失败",

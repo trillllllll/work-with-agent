@@ -1,11 +1,13 @@
-# Work With Agent
+# Dovun
 
 **简体中文** | [English](./README.en.md)
 
 ![CI](https://github.com/trillllllll/work-with-agent/actions/workflows/ci.yml/badge.svg)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)
 
-本机上的个人任务台。Codex、Claude Code 和 Grok 读取同一份待办和项目记忆，写入默认等你确认。
+你的个人工作台。把任务、资料、安排和积累放在一起，AI 随时参与协助；AI 的修改默认等你确认。
+
+当前分支正在实施 Dovun A/B 视觉与迁移，尚未发布 0.3.0/0.4.0。已有公开安装包仍使用旧名称；仓库与部署地址保持可用。
 
 - **先记下来。** 收集箱、今天、清单、标签、子任务、手动排序。待办不需要模型。
 - **再交给 AI。** 在「AI 连接」里复制一条配置。宿主通过 MCP 读任务、材料和记忆。
@@ -13,7 +15,7 @@
 
 [快速开始](#quick-start) · [下载安装](#下载安装)
 
-<img src="./docs/readme/task-list-light-zh.png" width="880" alt="浅色界面：清单「登录改造」，右侧打开任务「把登录改成一次性链接」，带两份资料和子任务">
+<img src="./docs/design/dovun/implementation/evidence/today-light.png" width="880" alt="浅色界面：清单「登录改造」，右侧打开任务「把登录改成一次性链接」，带两份资料和子任务">
 
 ## 功能
 
@@ -30,11 +32,11 @@
 
 术语见 [CONTEXT.md](./CONTEXT.md)。接口与交接见 [接口与宿主接入](./docs/stages-2-5-api.md)。
 
-<img src="./docs/readme/task-list-dark-zh.png" width="880" alt="深色界面：同一清单和任务详情，侧栏里每个清单有自己的颜色">
+<img src="./docs/design/dovun/implementation/evidence/today-dark.png" width="880" alt="深色界面：同一清单和任务详情，侧栏里每个清单有自己的颜色">
 
 「规划」按日、周、月排开有安排时间的任务，没有具体时间的放在顶部全天一栏。同一时段挤在一起的任务会叠成一张卡片。
 
-<img src="./docs/readme/plan-week-zh.png" width="880" alt="浅色界面：规划的周视图，周三下午三条重叠的任务叠成一张卡片">
+<img src="./docs/design/dovun/implementation/evidence/plan-light.png" width="880" alt="浅色界面：规划的周视图，周三下午三条重叠的任务叠成一张卡片">
 
 在「工作上下文」里，确认过的记忆会按关系收成社区，也可以铺成三维地形。下面用的是示例数据：登录、清单、记忆和交接各自成团，高处是更重要、连接更多的知识。
 

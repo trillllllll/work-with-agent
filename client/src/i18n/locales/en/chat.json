@@ -173,7 +173,7 @@
     "previewHint": "Changes are previewed and run only after you confirm."
   },
   "chatPanel": {
-    "title": "AI assistant",
+    "title": "Dovun assistant",
     "newConversation": "New conversation",
     "moreActions": "More conversation actions",
     "saveSession": "Save the full conversation as a material",
@@ -203,7 +203,8 @@
     "unsavedAttachment": "{{title}} · Unsaved draft",
     "selectedAttachment": "{{title}} · Selected text",
     "removeAttachment": "Remove {{title}}",
-    "configureModelAction": "Configure"
+    "configureModelAction": "Configure",
+    "greeting": "Move your work forward."
   },
   "chatPickers": {
     "history": "Conversation history",
@@ -426,7 +427,12 @@
     "enlarged": "Enlarged diagram"
   },
   "visualization": {
-    "policy": {"attribute": "SVG contains an unsupported or invalid attribute: {{attribute}}", "format": "SVG content or size is outside the static graphic rules", "reference": "SVG references a missing resource or an incompatible resource type", "cycle": "SVG references contain a cycle, nested markers, or an excessive depth"},
+    "policy": {
+      "attribute": "SVG contains an unsupported or invalid attribute: {{attribute}}",
+      "format": "SVG content or size is outside the static graphic rules",
+      "reference": "SVG references a missing resource or an incompatible resource type",
+      "cycle": "SVG references contain a cycle, nested markers, or an excessive depth"
+    },
     "sanitizerChanged": "Safety filtering changed the graphic content; rendering was stopped",
     "canvasFailed": "Couldn't create the export canvas",
     "exportFailed": "Couldn't export",

@@ -1,7 +1,7 @@
 import { test, expect, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const api = 'http://127.0.0.1:3015';
+const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const panel = (page: Page) => page.getByTestId('ai-assistant');
 
 async function open(page: Page) {
@@ -24,7 +24,7 @@ test.afterAll(() => e2eDatabase.$disconnect());
 
 test('completed chat messages render mermaid diagrams', async ({ page }) => {
   test.setTimeout(90_000);
-  await page.goto('/');
+  await page.goto('/#/inbox');
   await open(page);
   await send(page, '画出这些图');
   const chat = panel(page);

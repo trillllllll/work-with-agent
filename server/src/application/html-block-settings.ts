@@ -1,3 +1,4 @@
+import { defaultMobileNavigationJson } from '../domain/mobile-navigation.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { DEFAULT_HTML_CDN, normalizeCdnEntry, type HtmlBlockPolicy } from '../agent/html-block.js';
 
@@ -34,6 +35,6 @@ export async function saveHtmlBlockSettings(input: { enabled?: boolean; cdn?: st
     data.htmlCdnAllowlist = JSON.stringify(normalized);
   }
   const timestamp = new Date().toISOString();
-  await prisma.appSetting.upsert({ where: { id: 'default' }, create: { id: 'default', ...data, createdAt: timestamp, updatedAt: timestamp }, update: { ...data, updatedAt: timestamp } });
+  await prisma.appSetting.upsert({ where: { id: 'default' }, create: { mobileNavigationJson: defaultMobileNavigationJson, id: 'default', ...data, createdAt: timestamp, updatedAt: timestamp }, update: { ...data, updatedAt: timestamp } });
   return htmlBlockSettings();
 }

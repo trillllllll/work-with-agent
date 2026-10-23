@@ -1,7 +1,7 @@
 import { test, expect, type APIRequestContext } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const base = 'http://127.0.0.1:3015';
+const base = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 
 async function owner(request: APIRequestContext, path: string, input: unknown) {
   const response = await request.post(`${base}${path}`, { data: input });

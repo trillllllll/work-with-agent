@@ -40,6 +40,22 @@ export const moreItem: NavigationItem = navItem('more', 'app:nav.more', Menu);
 
 const itemsByView = new Map<View, NavigationItem>([...navigationItems, chatItem].map((item) => [item.view, item]));
 
+/** Ordered product navigation shared by the sidebar and the mobile More page. */
+export const navigationGroups = [
+  { id: 'daily', views: ['today', 'plan', 'focus', 'stats', 'quadrant'] },
+  { id: 'lists', views: ['inbox', 'topics', 'tags', 'archived'] },
+  { id: 'knowledge', views: ['library', 'knowledge', 'reviews'] },
+  { id: 'collaboration', views: ['chat', 'proposals', 'skills', 'connections', 'runs'] },
+  { id: 'advanced', views: ['worktrees'] },
+  { id: 'system', views: ['search', 'settings', 'changes', 'trash'] },
+] as const satisfies readonly { id: string; views: readonly View[] }[];
+
+export function navigationItem(view: View): NavigationItem {
+  const item = itemsByView.get(view);
+  if (!item) throw new Error(`Unknown navigation view: ${view}`);
+  return item;
+}
+
 export function mobileNavigationItem(view: MobileNavigationView): NavigationItem {
   return itemsByView.get(view)!;
 }

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { test, expect, type Locator, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const apiUrl = 'http://127.0.0.1:3015';
+const apiUrl = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const fixedTime = '2026-10-12T10:00:00+08:00';
 const work = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -169,7 +169,7 @@ test('另一个浏览器上下文能读到同一份已保存设置', async ({ pa
   const other = await browser.newContext({
     timezoneId: 'Asia/Shanghai',
     storageState: { cookies: [{ name: 'wwa_session', value: 'wwa-e2e-owner-session', domain: '127.0.0.1', path: '/', expires: -1, httpOnly: true, secure: false, sameSite: 'Strict' }], origins: [] },
-    extraHTTPHeaders: { 'X-CSRF-Token': csrf, Origin: 'http://127.0.0.1:5175' },
+    extraHTTPHeaders: { 'X-CSRF-Token': csrf, Origin: (process.env.E2E_UI_URL ?? 'http://127.0.0.1:5175') },
   });
   try {
     const otherPage = await other.newPage();
@@ -177,7 +177,7 @@ test('另一个浏览器上下文能读到同一份已保存设置', async ({ pa
     await otherPage.addInitScript(() => {
       (window as unknown as { __REACT_GRAB_DISABLED__?: boolean }).__REACT_GRAB_DISABLED__ = true;
     });
-    await otherPage.goto('http://127.0.0.1:5175/#/plan');
+    await otherPage.goto(`${process.env.E2E_UI_URL ?? 'http://127.0.0.1:5175'}/#/plan`);
     const day = otherPage.locator('[data-testid="time-band-day"][data-date="2026-10-12"]');
     await expect(day.getByTestId('time-band-segment')).toHaveCount(3);
     await otherPage.getByRole('button', { name: '时间段', exact: true }).click();

@@ -1,7 +1,7 @@
 import { test, expect, type Page, type APIRequestContext } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const apiUrl = 'http://127.0.0.1:3015';
+const apiUrl = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 
 type Row = { id: string; title: string };
 
@@ -449,9 +449,9 @@ test('浅色和深色主题使用现有文字颜色', async ({ page, request }) 
   await choose('浅色');
   await expect(link).toHaveCSS('color', await resolvedColor(page, '--muted-foreground'));
   expect(await variables()).toEqual({
-    muted: 'hsl(0 0% 42%)',
-    foreground: 'hsl(0 0% 7%)',
-    hover: 'rgb(238 238 238 / 0.9)',
+    muted: '#697487',
+    foreground: '#1b2b43',
+    hover: '#edf1f8',
   });
   await link.hover();
   await expect(link).toHaveCSS('color', await resolvedColor(page, '--foreground'));
@@ -459,9 +459,9 @@ test('浅色和深色主题使用现有文字颜色', async ({ page, request }) 
   await choose('深色');
   await expect(link).toHaveCSS('color', await resolvedColor(page, '--muted-foreground'));
   expect(await variables()).toEqual({
-    muted: 'hsl(0 0% 63%)',
-    foreground: 'hsl(0 0% 94%)',
-    hover: 'rgb(255 255 255 / 0.13)',
+    muted: '#a2afc0',
+    foreground: '#e8edf5',
+    hover: '#26374d',
   });
   await link.hover();
   await expect(link).toHaveCSS('color', await resolvedColor(page, '--foreground'));

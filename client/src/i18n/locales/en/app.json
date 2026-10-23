@@ -21,7 +21,7 @@
     "plan": "Plan",
     "focus": "Focus",
     "stats": "Stats",
-    "chat": "Chat",
+    "chat": "AI assistant",
     "more": "More"
   },
   "color": {
@@ -204,7 +204,8 @@
     "dragHint": "Drag up or down to reorder, right to make a subtask, and left to make a top-level task.",
     "completeSubtasksTitle": "Complete subtasks too?",
     "completeSubtasksDescription": "This task still has open subtasks. Continuing will mark them complete too.",
-    "completeSubtasks": "Complete all"
+    "completeSubtasks": "Complete all",
+    "laterToday": "Later today"
   },
   "confirm": {
     "deleteTask": "Delete task",
@@ -222,5 +223,35 @@
     "moveTasksOut": "Move tasks out of this list",
     "moveTasksDescription": "Move tasks in “{{name}}” to Inbox and keep parent-child relationships.",
     "moveTasks": "Move tasks"
+  },
+  "groups": {
+    "daily": "Everyday",
+    "lists": "Lists",
+    "knowledge": "Knowledge",
+    "collaboration": "AI collaboration",
+    "advanced": "Advanced",
+    "system": "General"
+  },
+  "brand": {
+    "positioning": "Your personal workspace"
+  },
+  "companion": {
+    "title": "Dovun assistant",
+    "greeting": "Move your work forward.",
+    "description": "Your tasks, materials and knowledge, together.",
+    "suggestion": "Help me plan today",
+    "contextSuggestion": "Review the current work",
+    "open": "Open conversation",
+    "configure": "Configure a model",
+    "noModel": "Connect a model to discuss the current work.",
+    "agenda": "Today’s schedule",
+    "emptyAgenda": "Make room for important work.",
+    "restoreDetail": "Back to task details",
+    "details": "Task details",
+    "materials": "Materials",
+    "context": "Work context",
+    "emptyContext": "No brief for this list yet.",
+    "fixedNotes": "Working instructions",
+    "brief": "Current brief"
   }
 }

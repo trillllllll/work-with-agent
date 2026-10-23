@@ -40,7 +40,7 @@ describe('parseHash settings routes', () => {
     expect(parse('stats', 'range=7d&from=2026-10-01&to=2026-10-07')).toEqual({ view: 'stats', knowledgeSection: null, knowledgeTopicId: null, knowledgeTopicExplicit: false, settingsCategory: null, query: { range: '7d', from: '2026-10-01', to: '2026-10-07' } });
   });
 
-  it('falls back to the inbox for unknown views', () => {
-    expect(parse('nowhere')).toMatchObject({ view: 'inbox', settingsCategory: null });
+  it('falls back to Today for unknown views', () => {
+    expect(parse('nowhere')).toMatchObject({ view: 'today', settingsCategory: null });
   });
 });

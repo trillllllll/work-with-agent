@@ -3,7 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { test, expect, type APIRequestContext, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const base = 'http://127.0.0.1:3015';
+const base = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const totalRecords = 320;
 const pasteId = 'paste-target-id-0001';
 const undoTitle = '星港可撤销周报';

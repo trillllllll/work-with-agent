@@ -3,7 +3,7 @@ import type { TestInfo } from '@playwright/test';
 import { test, expect, type APIRequestContext, type Locator, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
-const apiUrl = 'http://127.0.0.1:3015';
+const apiUrl = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const sourceDay = '2026-10-14';
 const shotDir = '/workspace/wwa-todo-shots/mobile-month-dnd';
 const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'] as const;

@@ -43,6 +43,6 @@ describe('手机底栏契约', () => {
     }
     expect(metadata.has('more')).toBe(false);
     expect(moreItem.view).toBe('more');
-    expect(chatItem.label).toBe('聊天');
+    expect(chatItem.label).toBe('AI 助手');
   });
 });
