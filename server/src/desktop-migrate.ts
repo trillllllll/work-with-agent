@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import { exclusiveDataGuard } from './shared/data-guard.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { cp, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, rmdir, writeFile } from 'node:fs/promises';
+import { cp, lstat, mkdir, open, readFile, readlink, readdir, realpath, rename, rm, rmdir, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { createConnection } from 'node:net';
 import { fileURLToPath } from 'node:url';
@@ -27,7 +27,18 @@ async function manifest(root: string): Promise<Entry[]> {
       if (dir === root && name === receiptName) continue;
       const path = join(dir, name), stat = await lstat(path), key = relative(root, path);
       if (stat.isDirectory()) await visit(path);
-      else if (stat.isSymbolicLink()) throw new Error(`Migration cannot safely copy a symbolic link: ${key}. Materialize it in a separate offline source copy first.`);
+      else if (stat.isSymbolicLink()) {
+        // Executor dependency links stay inert, relative, and inside their own worktree.
+        // Never follow links when copying, or permit database/blob/external links.
+        const link = await readlink(path);
+        const parts = key.split(/[/\\]/);
+        const worktree = parts.length > 4 && parts[0] === 'node' && parts[1] === 'worktrees'
+          ? join(root, ...parts.slice(0, 4)) : null;
+        const resolved = await realpath(path).catch(() => '');
+        const rel = worktree && resolved ? relative(worktree, resolved) : '..';
+        if (!worktree || isAbsolute(link) || !rel || rel.startsWith('..') || isAbsolute(rel)) throw new Error(`Migration cannot safely copy a symbolic link: ${key}.`);
+        entries.push({ path: key, link });
+      }
       else if (stat.isFile()) entries.push({ path: key, sha256: await fileHash(path) });
       else throw new Error(`Migration cannot copy an active special file: ${key}. Stop all local services first.`);
     }

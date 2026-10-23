@@ -76,6 +76,20 @@ describe('offline Dovun data migration', () => {
     await expect(migrateDesktopData(f)).rejects.toThrow('symbolic link');
     expect((await readdir(f.root)).some(name => name.includes('backup-'))).toBe(false);
   });
+  it('preserves relative executor dependency links without reading outside the worktree', async () => {
+    const f = await fixture();
+    const dependency = join(f.source, 'node/worktrees/project/attempt/node_modules');
+    await mkdir(join(dependency, '.bin'), { recursive: true });
+    await mkdir(join(dependency, 'tool')); await writeFile(join(dependency, 'tool/cli.js'), 'inert dependency');
+    await symlink('../tool/cli.js', join(dependency, '.bin/tool'));
+    expect((await migrateDesktopData(f)).status).toBe('migrated');
+    expect(await readFile(join(f.target, 'node/worktrees/project/attempt/node_modules/.bin/tool'), 'utf8')).toBe('inert dependency');
+  });
+  it('rejects executor links escaping their own worktree', async () => {
+    const f = await fixture(); const dir = join(f.source, 'node/worktrees/project/attempt');
+    await mkdir(dir, { recursive: true }); await symlink('../../../../agent-studio.db', join(dir, 'escape'));
+    await expect(migrateDesktopData(f)).rejects.toThrow('symbolic link');
+  });
   it('blocks startup for the full migration', async () => {
     const f = await fixture();
     const result = await migrateDesktopData({ ...f, beforeVerify: async () => {

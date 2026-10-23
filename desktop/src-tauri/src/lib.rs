@@ -21,7 +21,7 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_window_state::StateFlags;
 
-const DESKTOP_PORT: u16 = 47316;
+const DESKTOP_PORT: u16 = 47317;
 static DATA_PREPARED: Mutex<bool> = Mutex::new(false);
 
 #[cfg(windows)]
@@ -167,6 +167,7 @@ pub fn run() {
 fn launch(app: &AppHandle) -> Result<(), String> {
     prepare_data(app)?;
     let data = data_dir()?;
+    prepare_origin_state(app, &data)?;
     match read_launcher_config(&data) {
         // First run without a choice yet: the splash page shows the mode picker on its own.
         None => Ok(()),
@@ -436,6 +437,13 @@ fn prepare_data(app: &AppHandle) -> Result<(), String> {
 
 fn prepare_data_and_launchers(app: &AppHandle) -> Result<(), String> {
     migrate_default_data(app)?;
+    let (node, server, _) = bundled_paths(app)?;
+    let mut command = Command::new(node);
+    command.arg(server.join("dist/parallel-prepare.js")).arg(data_dir()?);
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let output = command.output().map_err(|error| error.to_string())?;
+    if !output.status.success() { return Err(String::from_utf8_lossy(&output.stderr).trim().to_string()); }
     #[cfg(unix)]
     {
         let data = data_dir()?;
@@ -445,10 +453,44 @@ fn prepare_data_and_launchers(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+// Runs on the launch worker. Restore into the main WebView so any recovered
+// sessionStorage stays in the same top-level browsing context as the workspace.
+fn prepare_origin_state(app: &AppHandle, data: &Path) -> Result<(), String> {
+    if !data.join(".dovun-migration.json").exists() { return Ok(()); }
+    let (node, server, _) = bundled_paths(app)?;
+    let mut command = Command::new(node);
+    command.arg(server.join("dist/profile-origin-migrate.js")).arg(data)
+        .stdout(Stdio::piped()).stderr(Stdio::piped());
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let mut child = command.spawn().map_err(|error| error.to_string())?;
+    let stdout = child.stdout.take().ok_or("Cannot read migration output")?;
+    let mut first = String::new();
+    BufReader::new(stdout).read_line(&mut first).map_err(|error| error.to_string())?;
+    if !first.trim().is_empty() {
+        let url = Url::parse(first.trim()).map_err(|_| "Invalid browser migration address")?;
+        if url.host_str() != Some("127.0.0.1") || url.port() != Some(47316) { let _ = child.kill(); return Err("Invalid browser migration origin".into()); }
+        let handle = app.clone();
+        let (sender, receiver) = mpsc::channel();
+        app.run_on_main_thread(move || {
+            let result = handle.get_webview_window("main").ok_or_else(|| "Missing main window".to_string())
+                .and_then(|window| window.navigate(url).map_err(|error| error.to_string()));
+            let _ = sender.send(result);
+        }).map_err(|error| error.to_string())?;
+        if let Err(error) = receiver.recv_timeout(Duration::from_secs(15)).map_err(|error| error.to_string())? { let _ = child.kill(); return Err(error); }
+    }
+    let output = child.wait_with_output().map_err(|error| error.to_string())?;
+    if !output.status.success() { return Err(String::from_utf8_lossy(&output.stderr).trim().to_string()); }
+    Ok(())
+}
+
 fn migrate_default_data(app: &AppHandle) -> Result<(), String> {
     if data_override().is_some() { return Ok(()); }
     let target = data_dir()?;
     let source = target.parent().ok_or("Cannot locate data parent")?.join("work-with-agent");
+    // Once initialized, both workspaces evolve independently. Never compare or
+    // re-import the old source on a normal launch (it may be running alongside us).
+    if target.join("dovun.db").exists() { return Ok(()); }
     if !source.exists() { return Ok(()); }
     if let Some(message) = port_busy_message(probe_port(DESKTOP_PORT), DESKTOP_PORT) { return Err(message); }
     let (node, server, _) = bundled_paths(app)?;
@@ -1059,7 +1101,7 @@ mod tests {
         let message = port_busy_message_in(i18n::Lang::Zh, PortUser::Wwa, DESKTOP_PORT).expect("busy message");
         assert!(message.contains("另一个 Dovun"));
         assert!(message.contains("残留的服务"));
-        assert!(message.contains("47316"));
+        assert!(message.contains("47317"));
     }
 
     #[test]
@@ -1072,7 +1114,7 @@ mod tests {
     #[test]
     fn busy_messages_follow_english_system_language() {
         let other = port_busy_message_in(i18n::Lang::En, PortUser::Wwa, DESKTOP_PORT).expect("busy message");
-        assert!(other.contains("another Dovun service") && other.contains("47316"));
+        assert!(other.contains("another Dovun service") && other.contains("47317"));
         let foreign = port_busy_message_in(i18n::Lang::En, PortUser::Foreign, DESKTOP_PORT).expect("busy message");
         assert!(foreign.contains("another program"));
     }

@@ -2,13 +2,24 @@ import { describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join, win32 } from 'node:path';
 import { tmpdir } from 'node:os';
-import { migrateProfileTree, profileRoots } from './profile-migrate.js';
+import { migrateProfileTree, profileRoots, prepareNativeProfiles } from './profile-migrate.js';
 async function fixture(run: (source: string, target: string) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), 'dovun-profile-')); const source = join(root, 'old profile'), target = join(root, 'new profile');
   try { await mkdir(join(source, 'WebsiteData/IndexedDB'), { recursive: true }); await writeFile(join(source, 'WebsiteData/IndexedDB/origin-scope'), 'original service / user / unsent draft'); await writeFile(join(source, 'WebsiteData/salt'), 'origin hash salt'); await run(source, target); }
   finally { await rm(root, { recursive: true, force: true }); }
 }
 describe('new application identity profile handoff', () => {
+  it('does not inspect the old app or re-import changed source state after successful initialization', async () => fixture(async (source, target) => {
+    const pairs = [{ source, target }], marker = join(target + '-prepared.json');
+    let checks = 0;
+    await prepareNativeProfiles(pairs, marker, async () => { checks++; });
+    expect(checks).toBeGreaterThan(0);
+    await writeFile(join(source, 'new-old-work'), 'independent WWA change');
+    await prepareNativeProfiles(pairs, marker, async () => { throw new Error('WWA is now running'); });
+    expect(await readdir(target)).not.toContain('new-old-work');
+    await rm(target, { recursive: true });
+    await expect(prepareNativeProfiles(pairs, marker, async () => {})).rejects.toThrow('profile is missing');
+  }));
   it('backs up and copies complete browser state, retaining origin salts and original files', async () => fixture(async (source, target) => {
     const result = await migrateProfileTree(source, target); expect(result.status).toBe('migrated');
     expect(await readFile(join(target, 'WebsiteData/IndexedDB/origin-scope'), 'utf8')).toContain('unsent draft');

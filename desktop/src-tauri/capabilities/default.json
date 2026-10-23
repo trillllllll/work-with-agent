@@ -3,7 +3,7 @@
   "description": "The window loads the local server. It does not receive shell or filesystem permissions.",
   "windows": ["main"],
   "remote": {
-    "urls": ["http://127.0.0.1:47316/*", "http://127.0.0.1:47111/*"]
+    "urls": ["http://127.0.0.1:47317/*", "http://127.0.0.1:47111/*"]
   },
   "permissions": ["window-state:default"]
 }

@@ -63,9 +63,9 @@ describe('desktop connection configuration', () => {
       expect(config.command).toBe('/tmp/Library/Application Support/work-with-agent/bin/dovun-mcp');
       expect(config.args).toEqual([]);
     }
-    expect(config.env.DOVUN_API_URL).toBe('http://127.0.0.1:47316');
+    expect(config.env.DOVUN_API_URL).toBe('http://127.0.0.1:47317');
     expect(config.env.DOVUN_CONNECTION_TOKEN).toBe('secret');
-    expect(config.url).toBe('http://127.0.0.1:47316/mcp');
+    expect(config.url).toBe('http://127.0.0.1:47317/mcp');
     if (process.platform !== 'win32') expect(desktopMcpCommand()).toBe(config.command);
   });
 

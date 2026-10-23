@@ -2,7 +2,7 @@ import { runtimeEnv } from '../shared/runtime-env.js';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-export const DESKTOP_PORT = 47316;
+export const DESKTOP_PORT = 47317;
 
 export function isDesktopPackage() {
   return runtimeEnv('PACKAGED') === '1';

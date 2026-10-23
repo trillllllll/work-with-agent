@@ -83,13 +83,28 @@ async function ensureOldAppStopped(parentPid: number) {
     if (lines.some(line => { const [pid, ...parts] = line.trim().split(/\s+/); const name = parts.join(' ').split('/').pop(); return Number(pid) !== parentPid && ['work-with-agent', 'dovun'].includes(name ?? ''); })) throw new Error('Quit the previous desktop app before restoring browser state.');
   }
 }
+export async function prepareNativeProfiles(pairs: Array<{ source: string; target: string }>, marker: string, ensureStopped: () => Promise<void>) {
+  if (await exists(marker)) {
+    const receipt = JSON.parse(await readFile(marker, 'utf8'));
+    if (receipt.version !== 1 || JSON.stringify(receipt.pairs) !== JSON.stringify(pairs)) throw new Error('Invalid native profile migration receipt.');
+    for (const target of receipt.importedTargets ?? []) if (!await exists(target)) throw new Error('An imported browser profile is missing. Restore its backup before starting.');
+    return;
+  }
+  await ensureStopped();
+  const importedTargets: string[] = [];
+  for (const pair of pairs) {
+    const result = await migrateProfileTree(pair.source, pair.target, ensureStopped);
+    if (result.status !== 'absent') importedTargets.push(pair.target);
+  }
+  await mkdir(dirname(marker), { recursive: true });
+  await writeFile(marker, JSON.stringify({ version: 1, pairs, importedTargets, completedAt: new Date().toISOString() }), { mode: 0o600 });
+}
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const parentPid = Number(process.argv[2]);
   if (!Number.isInteger(parentPid) || parentPid < 1) throw new Error('Missing desktop process identity.');
-  await ensureOldAppStopped(parentPid);
   const { homedir } = await import('node:os');
-  for (const pair of profileRoots(process.platform, homedir(), process.env.LOCALAPPDATA)) {
-    await migrateProfileTree(pair.source, pair.target, () => ensureOldAppStopped(parentPid));
-  }
+  const pairs = profileRoots(process.platform, homedir(), process.env.LOCALAPPDATA);
+  const marker = join(dirname(pairs[pairs.length - 1].target), '.dovun-native-profiles.json');
+  await prepareNativeProfiles(pairs, marker, () => ensureOldAppStopped(parentPid));
   console.log('Dovun browser profile prepared.');
 }
