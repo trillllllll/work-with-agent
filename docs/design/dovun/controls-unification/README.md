@@ -1,6 +1,6 @@
 # 全系统控件统一
 
-状态：2026-10-24 源码完成，浏览器验收与构建完成；服务端完整测试有一项运行环境限制，见下文。此目录记录真实应用控件统一，不取代此前任务密度实验。
+状态：2026-10-24 源码完成，浏览器验收、打包及本机覆盖安装完成；服务端完整测试有一项运行环境限制，见下文。此目录记录真实应用控件统一，不取代此前任务密度实验。
 
 ## 基准
 
@@ -41,7 +41,7 @@
 
 ## 验收与发布
 
-隔离数据、目录和端口验证。覆盖中英文、浅深/系统主题、桌面与 390px、Chromium/WebKit。记录视觉截图、页面清单、功能与测试结果。当前不打安装包、不覆盖安装、不部署。
+隔离数据、目录和端口验证。覆盖中英文、浅深/系统主题、桌面与 390px、Chromium/WebKit。记录视觉截图、页面清单、功能与测试结果。源码交付阶段不打安装包、不覆盖安装、不部署；用户随后追加授权的本机安装见下方记录。
 
 
 ## 验收结果
@@ -73,7 +73,19 @@ npm run build
 - 原始参数完整保留。应用保留既有尺寸档位、字号层级和页面布局；不把所有面板强制成示例卡片的内边距。浅深色辅助文字与链接作对比度适配；手机输入框保留 16px。
 - WebKit 全站报告记录了 ResizeObserver 的单次投递通知（含对应路由），未发现持续布局循环或溢出；没有吞掉通知或修改图表逻辑。
 - 构建仍提示部分 JS 分包超过 500kB；本轮未做无关的依赖拆分。
-- 未做 macOS 安装包、原生应用安装后冒烟、Windows 实机测试或服务器部署。Vite 开发态真实控件页可运行，生产构建不包含此入口。
+- 已按后续授权生成 macOS 包并覆盖本机 Dovun。未自动打开已安装应用；原生窗口交互、Windows 实机和服务器部署仍未验收。Vite 开发态真实控件页可运行，生产构建不包含此入口。
 - CI 与 Dockerfile 未修改。现有 WWA/Dovun 数据、同步和自动化开关均未操作。
 
 [结构化检查记录](verification.json) 与 [全站 Chromium](evidence/route-audit-chromium.json)、[手机](evidence/route-audit-mobile.json)、[WebKit](evidence/route-audit-webkit-controls.json) 保留具体范围及浏览器通知。
+
+## 本机覆盖安装（2026-10-24）
+
+用户追加授权「打包覆盖安装本机的 Dovun」。已构建源码 `77ae4c3`，版本仍为 `0.4.0`，标识 `app.dovun.desktop`，本机端口仍为 47317。
+
+- 桌面构建日志确认 `Finished 2 bundles`、`EXIT:0`；DMG 为 `desktop/src-tauri/target/release/bundle/dmg/Dovun_0.4.0_aarch64.dmg`。
+- 打包资源在隔离临时目录通过本机模式、重启数据保留、MCP 恢复和服务器模式冒烟；未对真实工作台执行测试写入。
+- 正常退出 Dovun 并确认 47317 释放后，备份数据库、浏览器偏好和旧应用；仅删除并重新复制 `/Applications/Dovun.app`。安装前后数据库与已有 sidecar 的大小/SHA256 一致，备份库 quick_check 为 ok。真实数据及备份细节仅保存于用户本机私有安装记录，不进入仓库。
+- 安装包 15386 个文件/链接与构建包逐项一致，签名验证通过。新包内 JS `index-BPE84ZPP.js`、CSS `index-CDSIfqBO.css` 与本次前端构建一致。
+- 已移除构建目录的 Dovun.app，保留 DMG。已安装的 Dovun 保持关闭；WWA、数据绑定和自动化开关未操作；未部署。
+
+构建、冒烟、安装日志分别为 `/tmp/dovun-controls-desktop-build.log`、`/tmp/dovun-controls-desktop-smoke.log`、`/tmp/dovun-controls-install.log`。

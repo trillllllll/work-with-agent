@@ -54,10 +54,22 @@
     "warning": "Existing chunks over 500kB"
   },
   "release": {
-    "installerBuilt": false,
-    "installed": false,
+    "installerBuilt": true,
+    "installed": true,
     "deployed": false,
     "ciChanged": false,
-    "dockerfileChanged": false
+    "dockerfileChanged": false,
+    "runtimeSmoke": "passed with isolated temporary data; local and server modes",
+    "applicationKeptClosed": true,
+    "installedSourceCommit": "77ae4c3e737a91d917fc10546b479dd0c57a55fb",
+    "installedVersion": "0.4.0",
+    "identifier": "app.dovun.desktop",
+    "dataHashUnchanged": true,
+    "installedAppFilesVerified": 15386,
+    "assets": {
+      "/assets/index-BPE84ZPP.js": "b0094ad71281c22f4ca4c378d2796770745f4a3b57ec339eb907800de3656577",
+      "/assets/index-CDSIfqBO.css": "2d1843bf308ba388c18cca429af6a8755ee46e9ef06caf4987a7ee61b6fafb64"
+    },
+    "installedAt": "2026-10-24T00:32:32.142945+08:00"
   }
 }
