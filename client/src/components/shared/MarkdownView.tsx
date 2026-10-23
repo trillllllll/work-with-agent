@@ -6,6 +6,8 @@ import { Check, Copy } from 'lucide-react';
 import { cn } from '@/lib/utils.js';
 import { isMermaidFence, mermaidSource } from '@/lib/mermaid-fence.js';
 import { MermaidBlock } from './MermaidBlock.js';
+import { isSvgFence } from '@/lib/svg-fence.js';
+import { SvgBlock } from './SvgBlock.js';
 
 function fenceText(children: ReactNode): string {
   if (typeof children === 'string' || typeof children === 'number') return String(children);
@@ -65,7 +67,14 @@ function markdownComponents(diagrams: boolean): Components {
       if (isBlock) return <code className="font-mono">{children}</code>;
       return <code className="rounded-md bg-muted px-1 py-0.5 font-mono text-[0.85em]">{children}</code>;
     },
-    pre: ({ children }) => diagrams && hasMermaidFence(children) ? <>{children}</> : <PreBlock>{children}</PreBlock>,
+    pre: ({ children }) => {
+      const child = Children.toArray(children)[0];
+      if (diagrams && isValidElement<{ className?: string; children?: ReactNode }>(child)) {
+        const source = fenceText(child.props.children);
+        if (isSvgFence(child.props.className, source)) return <SvgBlock source={source.replace(/\n$/, '')} />;
+      }
+      return diagrams && hasMermaidFence(children) ? <>{children}</> : <PreBlock>{children}</PreBlock>;
+    },
     table: ({ children }) => (
       <div className="my-2 min-w-0 max-w-full overflow-x-auto">
         <table className="w-full border-collapse text-xs">{children}</table>

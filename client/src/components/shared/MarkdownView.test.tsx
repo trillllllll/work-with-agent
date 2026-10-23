@@ -14,6 +14,21 @@ function html(diagrams: boolean) {
 }
 
 describe('chat markdown diagrams', () => {
+  it('previews SVG fences only in diagram-enabled code blocks, including unlabelled history', () => {
+    const svg = '<svg viewBox="0 0 100 40"><text x="8" y="24">完成记录</text></svg>';
+    for (const language of ['svg', 'SVG', 'xml', 'html', '']) {
+      const content = '```' + language + '\n' + svg + '\n```';
+      const preview = renderToStaticMarkup(<MarkdownView content={content} diagrams />);
+      expect(preview).toContain('data-svg-block');
+      expect(preview).not.toContain('<pre');
+      const plain = renderToStaticMarkup(<MarkdownView content={content} />);
+      expect(plain).not.toContain('data-svg-block');
+      expect(plain).toContain('&lt;svg');
+    }
+    expect(renderToStaticMarkup(<MarkdownView content={'`' + svg + '`'} diagrams />)).not.toContain('data-svg-block');
+    expect(renderToStaticMarkup(<MarkdownView content={'```ts\n' + svg + '\n```'} diagrams />)).not.toContain('data-svg-block');
+  });
+
   it('turns a mermaid fence into a diagram and leaves other code as code', () => {
     const rendered = html(true);
     expect(rendered).toContain('data-mermaid-block');

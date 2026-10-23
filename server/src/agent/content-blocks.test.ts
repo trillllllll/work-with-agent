@@ -12,6 +12,7 @@ describe('validated display blocks', () => {
     const safe = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><defs><marker id="arrow" markerWidth="6" markerHeight="6"><path d="M0 0 L6 3 L0 6" /></marker></defs><path d="M10 10 L100 10" marker-end="url(#arrow)"/><text x="10" y="50">中文</text></svg>';
     expect(sanitizeSvg(safe)).toContain('中文');
     expect(sanitizeSvg('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" role="img"><title>图</title></svg>')).toContain('role="img"');
+    expect(() => sanitizeSvg(String.raw`<svg><rect fill="u\72l(https\3a\2f\2f blocked-svg.invalid/x)"/></svg>`)).toThrow('SVG 包含不允许的属性：fill');
     expect(() => sanitizeSvg('<svg onload="alert(1)"/>')).toThrow('SVG 包含不允许的属性：onload');
     expect(() => sanitizeSvg('<svg role="javascript:alert(1)"/>')).toThrow('SVG 包含不允许的属性：role');
     expect(() => sanitizeSvg('<svg><path fill="url(https://bad.invalid)"/></svg>')).toThrow('SVG 包含不允许的属性：fill');

@@ -13,7 +13,7 @@ export function sanitizeSvg(source: string) {
     if (++count > 500 || depth > 24 || !elements.has(node.tagName)) throw new Error('SVG 包含不允许的图元或超出规模');
     for (const attr of Array.from(node.attributes)) {
       if (attr.name === 'xmlns') { if (attr.value !== 'http://www.w3.org/2000/svg') throw new Error('SVG 命名空间无效'); continue; }
-      if (!attributes.has(attr.name) || /[<>]|javascript:|data:|https?:|\/\/|expression|@import/i.test(attr.value)) throw new Error(`SVG 包含不允许的属性：${attr.name.slice(0, 80)}`);
+      if (!attributes.has(attr.name) || /[<>\\\x00-\x1f\x7f]|javascript:|data:|https?:|\/\/|expression|@import/i.test(attr.value)) throw new Error(`SVG 包含不允许的属性：${attr.name.slice(0, 80)}`);
       if (attr.name === 'xmlns' && attr.value !== 'http://www.w3.org/2000/svg') throw new Error('SVG 命名空间无效');
       if (attr.name === 'id') { if (!/^[A-Za-z][\w-]{0,79}$/.test(attr.value) || ids.has(attr.value)) throw new Error('SVG id 无效'); ids.add(attr.value); }
       if (/url\s*\(/i.test(attr.value)) { const match = /^url\(#([A-Za-z][\w-]{0,79})\)$/.exec(attr.value); if (!match) throw new Error('SVG 只能引用内部标记'); refs.push(match[1]); }

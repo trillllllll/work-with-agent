@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from 'next-themes';
 import DOMPurify from 'dompurify';
+import { safeSvg } from '@/lib/safe-svg.js';
 import { Code, Copy, Download, Maximize2, Minus, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button.js';
@@ -42,7 +43,7 @@ function useSvg(block: ContentBlock, dark: boolean) {
         const result = await mermaid.render(`diagram-${crypto.randomUUID()}`, source);
         source = result.svg;
       }
-      const clean = DOMPurify.sanitize(source, { USE_PROFILES: { svg: true, svgFilters: true }, FORBID_TAGS: ['foreignObject', 'script', 'a', 'image', 'animate', 'set'], FORBID_ATTR: ['href', 'xlink:href', 'onload', 'onclick'] });
+      const clean = block.type === 'svg' ? safeSvg(source) : DOMPurify.sanitize(source, { USE_PROFILES: { svg: true, svgFilters: true }, FORBID_TAGS: ['foreignObject', 'script', 'a', 'image', 'animate', 'set'], FORBID_ATTR: ['href', 'xlink:href', 'onload', 'onclick'] });
       if (!clean.includes('<svg')) throw new Error(t('visualization.invalidSvg'));
       if (!cancelled) setSvg(clean);
     })().catch((reason) => { if (!cancelled) setError(reason instanceof Error ? reason.message : t('visualization.renderFailed')); });
