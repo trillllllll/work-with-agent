@@ -17,7 +17,7 @@
     {
       "version": "0.4.0",
       "identifier": "app.dovun.desktop",
-      "dmg": "/Users/byc/.codex/worktrees/dovun-04/work-with-agent/desktop/src-tauri/target/release/bundle/dmg/Dovun_0.4.0_aarch64.dmg",
+      "dmg": "/Users/byc/WorkSpace/work-with-agent/desktop/src-tauri/target/release/bundle/dmg/Dovun_0.4.0_aarch64.dmg",
       "bytes": 181190850,
       "sha256": "63b19f1dd0b103df692db695904b733817c530e343ae4bea8e53abba1dac398f",
       "assets": {

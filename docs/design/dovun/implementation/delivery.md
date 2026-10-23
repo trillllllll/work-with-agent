@@ -41,6 +41,6 @@ A 瓷白浅色、B 石墨深色共用真实应用布局，分层底板/工作区
 
 本轮没有用真实用户数据库或 profile 做迁移试验，没有启动或替换已安装的应用，没有改服务器文件或数据。macOS 证据包括打包身份、原生编译/逻辑测试、独立审查和真实 WebKit 隔离 profile 恢复；没有把这些表述成已安装应用的升级验收。Windows 仅做路径与迁移逻辑测试，缺少 Windows WebView2 原生升级与安装运行证据。
 
-大 chunk 提示和既有 Rust unused-function 提示不阻止构建；macOS 仍为 ad-hoc 签名且没有公证。新名称/图形的法律注册或商标授权不由本次实现验收确认。
+大 chunk 提示和既有 Rust unused-function 提示不阻止构建；macOS 仍为 ad-hoc 签名且没有公证。
 
 后续真实安装与部署按 [迁移手册](../../../dovun-migration.md)及仓库 AGENTS.md 执行，分别记录数据摘要、版本和公网资源。已有 MCP 和同宿主连接只更新原条目，不新增第二条。
