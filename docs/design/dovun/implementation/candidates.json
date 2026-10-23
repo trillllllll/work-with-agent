@@ -1,0 +1,30 @@
+{
+  "installed": false,
+  "deployed": false,
+  "candidates": [
+    {
+      "version": "0.3.0",
+      "identifier": "app.workwithagent.desktop",
+      "dmg": "/Users/byc/WorkSpace/work-with-agent/desktop/src-tauri/target/release/bundle/dmg/Dovun_0.3.0_aarch64.dmg",
+      "bytes": 181199890,
+      "sha256": "262467cd4966ea76b2e8f1bc4d7836cbb234a12e36fa5ed8da01df74ecb77d0b",
+      "assets": {
+        "assets/index-DIMeGmb1.js": "75f057f185ced042eb851cfe30da9335e4481d2419cd90e3b9202178033967b0",
+        "assets/index-By2nt-co.css": "8605880df49caa314c8a06b469b9a25b3b865662eda3884917958c500f8ae262"
+      },
+      "bundledAssetsMatchBuild": true
+    },
+    {
+      "version": "0.4.0",
+      "identifier": "app.dovun.desktop",
+      "dmg": "/Users/byc/.codex/worktrees/dovun-04/work-with-agent/desktop/src-tauri/target/release/bundle/dmg/Dovun_0.4.0_aarch64.dmg",
+      "bytes": 181190850,
+      "sha256": "63b19f1dd0b103df692db695904b733817c530e343ae4bea8e53abba1dac398f",
+      "assets": {
+        "assets/index-UrX0cIKz.js": "199c693a8101731605bca4234fd66f018f62f6bf9d41880fa5fd72d90d98a92b",
+        "assets/index-By2nt-co.css": "8605880df49caa314c8a06b469b9a25b3b865662eda3884917958c500f8ae262"
+      },
+      "bundledAssetsMatchBuild": true
+    }
+  ]
+}

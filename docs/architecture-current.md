@@ -6,7 +6,7 @@ React 客户端复用任务、规划、资料、上下文和助手组件。共�
 
 Express API 与 MCP 复用应用层权限和操作逻辑，SQLite/Prisma 保存业务数据。REST 路径、MCP 工具名、对象 ID 和业务表结构不随品牌改名改变。桌面 Tauri 包装 Node API/执行端与同一客户端；远程模式加载实际服务器页面。无模型时任务、安排与资料仍可操作，助手明确显示配置入口。
 
-0.3.0 启动链先准备数据目录和启动器，再选择本机或远程模式。新旧配置解析集中于 `server/src/shared/runtime-env.ts`；目录迁移位于 `server/src/desktop-migrate.ts`，独立 SQLite 互斥与进程生命周期租约位于 `shared/data-guard.ts`。浏览器入口先迁移偏好和作用域草稿，再挂载应用。失败可见且保留原状态。细节与限制见 [迁移手册](dovun-migration.md)。
+本分支 0.4.0 在首次 WebView 创建前备份并恢复原生浏览器 profile，再准备本机/远程数据及启动器。`runtime-env.ts` 只接受新配置，并阻断过期配置导致的空工作台；`desktop-migrate.ts` 保留完整目录迁移，`profile-migrate.ts` 负责原生浏览器状态树。两者都核对完整性、保留来源并拒绝覆盖冲突。独立 0.3.0 分支保留运行兼容。细节见 [新身份迁移](dovun-04-handoff.md)和 [目录迁移手册](dovun-migration.md)。
 
 [旧架构基线](architecture-baseline.md)保留当时的规划，不代表当前全部功能。当前界面证据见 [实际应用改造](design/dovun/implementation/README.md)，领域词义见 [CONTEXT.md](../CONTEXT.md)。
 
