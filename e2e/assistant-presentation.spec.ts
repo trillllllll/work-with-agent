@@ -14,7 +14,7 @@ test('同一助手放大缩小保留输入、手动附件及页面，直接进�
   await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
   const assistant = page.getByTestId('ai-assistant');
   await assistant.getByLabel('向 AI 提问').fill('保留这段没有发送的草稿');
-  await page.evaluate(() => window.dispatchEvent(new CustomEvent('wwa-open-assistant', { detail: { attachment: { id: 'reference-draft', title: '手动附加', kind: 'draft', text: '尚未保存', unsaved: true } } })));
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('dovun-open-assistant', { detail: { attachment: { id: 'reference-draft', title: '手动附加', kind: 'draft', text: '尚未保存', unsaved: true } } })));
   await assistant.getByRole('button', { name: '放大到独立页' }).click();
   await expect(page).toHaveURL(/#\/chat$/);
   await expect(assistant).toHaveAttribute('data-presentation', 'expanded');

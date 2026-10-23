@@ -165,7 +165,7 @@ test('未确认的离线请求阻止切换历史和跨会话调整，不把新�
   await page.getByRole('button', { name: '历史对话', exact: true }).click();
   await page.getByRole('button', { name: /另一段历史对话/ }).click();
   expect(await page.evaluate(() => localStorage.getItem('dovun.conversationId'))).toBeNull();
-  await page.evaluate((id) => window.dispatchEvent(new CustomEvent('wwa-adjust-approval', { detail: { approvalId: 'other-approval', conversationId: id } })), other.id);
+  await page.evaluate((id) => window.dispatchEvent(new CustomEvent('dovun-adjust-approval', { detail: { approvalId: 'other-approval', conversationId: id } })), other.id);
   expect(await page.evaluate(() => localStorage.getItem('dovun.conversationId'))).toBeNull();
   await page.getByLabel('向 AI 提问').fill('另一条新输入'); await page.getByRole('button', { name: '发送', exact: true }).click();
   expect(sends).toBe(1); await expect(page.getByLabel('向 AI 提问')).toHaveValue('另一条新输入');
