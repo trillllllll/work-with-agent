@@ -364,7 +364,7 @@ fn watch_restart_codes(app: &AppHandle) {
 }
 
 fn obsolete_data_override(current: Option<std::ffi::OsString>, legacy: Option<std::ffi::OsString>) -> Result<(), String> {
-    if current.is_none() && legacy.is_some_and(|value| !value.is_empty()) {
+    if current.filter(|value| !value.is_empty()).is_none() && legacy.is_some_and(|value| !value.is_empty()) {
         return Err("Old WWA_DATA_DIR configuration detected. Stop the old workspace, back up or migrate that custom folder, and set DOVUN_DATA_DIR before starting. No empty workspace was created.".into());
     }
     Ok(())
@@ -1045,6 +1045,7 @@ mod tests {
     #[test]
     fn obsolete_custom_data_stops_before_window_or_workspace_creation() {
         assert!(obsolete_data_override(None, Some("/custom/original".into())).unwrap_err().contains("No empty workspace"));
+        assert!(obsolete_data_override(Some("".into()), Some("/custom/original".into())).is_err());
         assert!(obsolete_data_override(Some("/custom/original".into()), Some("/custom/original".into())).is_ok());
     }
 

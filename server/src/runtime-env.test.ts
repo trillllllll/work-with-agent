@@ -8,6 +8,7 @@ describe('Dovun current configuration', () => {
   });
   it('stops obsolete custom configurations instead of selecting an empty default workspace', () => {
     expect(() => assertCurrentEnvironment({ WWA_DATA_DIR: '/custom/original' })).toThrow('No empty workspace');
+    expect(() => assertCurrentEnvironment({ WWA_DATA_DIR: '/custom/original', DOVUN_DATA_DIR: '' })).toThrow('No empty workspace');
     expect(() => assertCurrentEnvironment({ WWA_OWNER_KEY: 'never-print-this-secret' })).toThrow('WWA_OWNER_KEY');
     expect(() => assertCurrentEnvironment({ WWA_OWNER_KEY: 'never-print-this-secret' })).not.toThrow('never-print-this-secret');
     expect(() => assertCurrentEnvironment({ WWA_DATA_DIR: '/custom/original', DOVUN_DATA_DIR: '/custom/original' })).not.toThrow();
