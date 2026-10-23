@@ -1,0 +1,1031 @@
+{
+  "results": [
+    {
+      "route": "today",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "inbox",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "topics",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "plan",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "quadrant",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "focus",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "stats",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "library",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "knowledge/brief",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "knowledge/memories",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "knowledge/extractions",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "reviews",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "proposals",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "skills",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "connections",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "runs",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "worktrees",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "search",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "tags",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "archived",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "settings",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "settings/model",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "settings/local",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "settings/skills",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "settings/projects",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "settings/ui",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "settings/data",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "settings/about",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "changes",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "trash",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "chat",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "more",
+      "theme": "light",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "today",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "inbox",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "topics",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "plan",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "quadrant",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "focus",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "stats",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "library",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "knowledge/brief",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "knowledge/memories",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "knowledge/extractions",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "reviews",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "proposals",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "skills",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "connections",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "runs",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "worktrees",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "search",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "tags",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "archived",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "settings",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "settings/model",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "settings/local",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "settings/skills",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "settings/projects",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "settings/ui",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "settings/data",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "settings/about",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "changes",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "trash",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "chat",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "more",
+      "theme": "light",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(241, 240, 235)"
+    },
+    {
+      "route": "today",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "inbox",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "topics",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "plan",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "quadrant",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "focus",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "stats",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "library",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "knowledge/brief",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "knowledge/memories",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "knowledge/extractions",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "reviews",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "proposals",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "skills",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "connections",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "runs",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "worktrees",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "search",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "tags",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "archived",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "settings",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "settings/model",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "settings/local",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "settings/skills",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "settings/projects",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "settings/ui",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "settings/data",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "settings/about",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "changes",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "trash",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "chat",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "more",
+      "theme": "dark",
+      "viewport": 1586,
+      "pageWidth": 1586,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "today",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "inbox",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "topics",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "plan",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "quadrant",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "focus",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "stats",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "library",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "knowledge/brief",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "knowledge/memories",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "knowledge/extractions",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "reviews",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "proposals",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "skills",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "connections",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "runs",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "worktrees",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "search",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "tags",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "archived",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "settings",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "settings/model",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "settings/local",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "settings/skills",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "settings/projects",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "settings/ui",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "settings/data",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "settings/about",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "changes",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "trash",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "chat",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    },
+    {
+      "route": "more",
+      "theme": "dark",
+      "viewport": 390,
+      "pageWidth": 390,
+      "fontSize": "14px",
+      "background": "rgb(28, 33, 38)"
+    }
+  ],
+  "errors": [],
+  "browserNotifications": [],
+  "taskDetail": true
+}

@@ -7,15 +7,15 @@
 
 你的个人工作台。把任务、资料、安排和积累放在一起，AI 随时参与协助；AI 的修改默认等你确认。
 
-当前分支为 Dovun 0.4.0 完成版候选，0.3.0 过渡版在独立分支保留。已有公开安装包仍使用旧名称，尚未安装或部署本轮候选；仓库与部署地址保持可用。升级前请读 [身份迁移说明](docs/dovun-04-handoff.md)。
+当前分支为 Dovun 0.4.0 完成版候选，0.3.0 过渡版在独立分支保留。已有公开安装包仍使用旧名称，本轮控件样式改造尚未安装或部署；仓库与部署地址保持可用。升级前请读 [身份迁移说明](docs/dovun-04-handoff.md)。
 
 - **先记下来。** 收集箱、今天、清单、标签、子任务、手动排序。待办不需要模型。
 - **再交给 AI。** 在「AI 连接」里复制一条配置。宿主通过 MCP 读任务、材料和记忆。
 - **你点头才改。** 写入进「待确认」。可以撤销。数据在本机 SQLite，开发时 API 只听 `127.0.0.1`。
 
-[快速开始](#quick-start) · [下载安装](#下载安装)
+[快速开始](#quick-start) · [下载安装](#下载安装) · [最新控件样式与实际截图](docs/design/dovun/controls-unification/README.md)
 
-<img src="./docs/design/dovun/implementation/evidence/today-light.png" width="880" alt="瓷白浅色：真实 Dovun 今天与任务详情">
+<img src="./docs/design/dovun/controls-unification/evidence/task-detail-light-1586.png" width="880" alt="浅色材质：隔离数据中的真实 Dovun 任务详情">
 
 ## 功能
 
@@ -32,15 +32,15 @@
 
 术语见 [CONTEXT.md](./CONTEXT.md)。接口与交接见 [接口与宿主接入](./docs/stages-2-5-api.md)。
 
-<img src="./docs/design/dovun/implementation/evidence/today-dark.png" width="880" alt="深色界面：同一清单和任务详情，侧栏里每个清单有自己的颜色">
+<img src="./docs/design/dovun/controls-unification/evidence/today-dark-1586.png" width="880" alt="石墨深色：隔离数据中的真实今天页面">
 
 「规划」按日、周、月排开有安排时间的任务，没有具体时间的放在顶部全天一栏。同一时段挤在一起的任务会叠成一张卡片。
 
-<img src="./docs/design/dovun/implementation/evidence/plan-light.png" width="880" alt="浅色界面：规划的周视图，周三下午三条重叠的任务叠成一张卡片">
+<img src="./docs/design/dovun/controls-unification/evidence/plan-light-1586.png" width="880" alt="浅色材质：真实规划页面">
 
 在「工作上下文」里，确认过的记忆会按关系收成社区，也可以铺成三维地形。下图展示本轮真实工作上下文页面；三维地形仍保留在原有功能中。
 
-<img src="./docs/design/dovun/implementation/evidence/knowledge-dark.png" width="880" alt="石墨深色：真实工作上下文页面">
+<img src="./docs/design/dovun/controls-unification/evidence/knowledge-brief-dark-1586.png" width="880" alt="石墨深色：真实工作上下文页面">
 
 ## 架构
 

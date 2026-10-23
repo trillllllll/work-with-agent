@@ -7,15 +7,15 @@
 
 Your personal workspace for tasks, materials, plans, and accumulated knowledge, with AI ready to help. AI changes wait for your approval.
 
-This branch contains the Dovun 0.4.0 candidate. The 0.3 transition remains on a separate branch. Existing public installers still use the previous name; no installation or deployment has been performed. Read the [identity migration notes](docs/dovun-04-handoff.md) before upgrading. Repository and deployment addresses remain unchanged.
+This branch contains the Dovun 0.4.0 candidate. The 0.3 transition remains on a separate branch. Existing public installers still use the previous name; this control styling revision has not been installed or deployed. Read the [identity migration notes](docs/dovun-04-handoff.md) before upgrading. Repository and deployment addresses remain unchanged.
 
 - **Capture first.** Inbox, Today, lists, tags, subtasks, and manual ordering. Tasks don't need a model.
 - **Then hand it to an AI.** Copy a config from **AI connections**. The host reads tasks, materials, and memories over MCP.
 - **Nothing changes until you approve.** Writes land in the **Review queue** and can be undone. Data lives in local SQLite, and in development the API listens only on `127.0.0.1`.
 
-[Quick start](#quick-start) · [Download](#download)
+[Quick start](#quick-start) · [Download](#download) · [Current control styles and verification](docs/design/dovun/controls-unification/README.md)
 
-<img src="./docs/design/dovun/implementation/evidence/today-en-light.png" width="880" alt="Porcelain light: Today and task details in the real Dovun workspace">
+<img src="./docs/design/dovun/controls-unification/evidence/today-en-light-1440.png" width="880" alt="Light materials: Today in the real Dovun workspace">
 
 ## Features
 
@@ -32,15 +32,15 @@ This branch contains the Dovun 0.4.0 candidate. The 0.3 transition remains on a 
 
 Terminology (in Chinese): [CONTEXT.md](./CONTEXT.md). API and host integration (in Chinese): [docs/stages-2-5-api.md](./docs/stages-2-5-api.md).
 
-<img src="./docs/design/dovun/implementation/evidence/today-en-dark.png" width="880" alt="Ink dark: the real Dovun workspace">
+<img src="./docs/design/dovun/controls-unification/evidence/today-en-dark-1440.png" width="880" alt="Ink dark: the real Dovun workspace">
 
 **Plan** lays out scheduled tasks by day, week, or month. Tasks with a date but no time go in the all-day row at the top. Tasks that crowd the same time slot stack into one card.
 
-<img src="./docs/design/dovun/implementation/evidence/plan-en-light.png" width="880" alt="Porcelain light: the real Plan view">
+<img src="./docs/design/dovun/controls-unification/evidence/plan-light-1586.png" width="880" alt="Light materials: Plan with Chinese verification fixtures">
 
 In **Work context**, confirmed memories group into communities by their relationships and can be shown as 3D terrain. The screenshot shows the real Work context page after this redesign; the existing terrain view remains available.
 
-<img src="./docs/design/dovun/implementation/evidence/knowledge-en-dark.png" width="880" alt="Ink dark: the real Work context page">
+<img src="./docs/design/dovun/controls-unification/evidence/knowledge-brief-dark-1586.png" width="880" alt="Graphite materials: Work context with Chinese verification fixtures">
 
 ## Architecture
 

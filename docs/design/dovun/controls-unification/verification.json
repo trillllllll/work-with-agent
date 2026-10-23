@@ -1,0 +1,63 @@
+{
+  "date": "2026-10-24T00:21:07.141660+08:00",
+  "branch": "codex/dovun-workspace",
+  "baseline": "8c518b4",
+  "design": "Default controls-lab v2, global fontSize 14px; readable foreground adapter; existing geometry retained",
+  "clientUnit": {
+    "filesPassed": 62,
+    "testsPassed": 367
+  },
+  "serverUnit": {
+    "files": 95,
+    "testsPassed": 831,
+    "testsFailed": 1,
+    "failure": "desktop data import blocked by live WWA listener on 47316; guard preserved"
+  },
+  "coreE2E": {
+    "scheduled": 99,
+    "initialPassed": 94,
+    "existingSkipped": 3,
+    "initialFailed": 2,
+    "failure": "Narrow dialog gutter regression (16px vs existing 24px)",
+    "resolution": "Restored 24px; 17 relevant rechecks passed"
+  },
+  "finalSurfaceAudit": {
+    "testsPassed": 12,
+    "projects": [
+      "chromium",
+      "mobile",
+      "webkit-controls"
+    ],
+    "routes": 32,
+    "routeMeasurementsPerProject": 128,
+    "englishCore": true,
+    "lockedSession": true,
+    "notifications": {
+      "chromium": [],
+      "mobile": [],
+      "webkit-controls": [
+        {
+          "route": "http://127.0.0.1:5189/#/inbox",
+          "message": "ResizeObserver loop completed with undelivered notifications."
+        }
+      ]
+    }
+  },
+  "staticChecks": {
+    "language": "passed",
+    "tokenDrift": "passed",
+    "diff": "passed"
+  },
+  "build": {
+    "server": "passed",
+    "client": "passed",
+    "warning": "Existing chunks over 500kB"
+  },
+  "release": {
+    "installerBuilt": false,
+    "installed": false,
+    "deployed": false,
+    "ciChanged": false,
+    "dockerfileChanged": false
+  }
+}

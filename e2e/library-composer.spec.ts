@@ -107,7 +107,7 @@ test('composer fits the viewport and leaves the desktop assistant usable in both
       expect(backdrop.x + backdrop.width).toBeLessThanOrEqual(assistantBox.x);
       await page.screenshot({ path: `/tmp/wwa-composer-${width}-assistant-light.png`, animations: 'disabled' });
       await page.evaluate(() => document.documentElement.classList.add('dark'));
-      await expect(composer).toHaveCSS('background-color', 'rgb(24, 35, 47)');
+      await expect(composer).toHaveCSS('background-color', 'rgb(52, 61, 70)');
       await page.screenshot({ path: `/tmp/wwa-composer-${width}-assistant-dark.png`, animations: 'disabled' });
       await page.evaluate(() => document.documentElement.classList.remove('dark'));
     }

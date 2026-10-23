@@ -28,6 +28,17 @@ async function openDetails(page: Page, title: string) {
   await page.getByRole('button', { name: '安排时间', exact: true }).click();
 }
 
+// Selected dates now use a solid brand fill in both themes; verify readability,
+// rather than the previous light/dark inversion of black and white.
+function contrastRatio(a: string, b: string) {
+  const luminance = (value: string) => {
+    const channels = (value.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number).map(v => v / 255);
+    return channels.reduce((sum, v, i) => sum + (v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4) * [.2126, .7152, .0722][i], 0);
+  };
+  const x = luminance(a), y = luminance(b);
+  return (Math.max(x, y) + .05) / (Math.min(x, y) + .05);
+}
+
 test.beforeEach(async ({ page }) => {
   await resetE2eDatabase();
   await page.clock.setFixedTime(new Date(`${today()}T12:00:00`));
@@ -146,12 +157,10 @@ test('点开时间下拉改时钟，未保存不写入', async ({ page, request 
   const calendar = page.getByRole('dialog', { name: '选择日期', exact: true });
   const selectedDay = calendar.getByRole('button', { name: day, exact: true });
   const lightDay = await selectedDay.evaluate((node) => getComputedStyle(node));
-  expect(rgbSum(lightDay.backgroundColor)).toBeLessThan(400);
-  expect(rgbSum(lightDay.color)).toBeGreaterThan(700);
+  expect(contrastRatio(lightDay.color, lightDay.backgroundColor)).toBeGreaterThanOrEqual(4.5);
   await page.evaluate(() => document.documentElement.classList.add('dark'));
   const darkDay = await selectedDay.evaluate((node) => getComputedStyle(node));
-  expect(rgbSum(darkDay.backgroundColor)).toBeGreaterThan(500);
-  expect(rgbSum(darkDay.color)).toBeLessThan(120);
+  expect(contrastRatio(darkDay.color, darkDay.backgroundColor)).toBeGreaterThanOrEqual(4.5);
   await page.evaluate(() => document.documentElement.classList.remove('dark'));
   await calendar.getByRole('button', { name: '完成', exact: true }).click();
 

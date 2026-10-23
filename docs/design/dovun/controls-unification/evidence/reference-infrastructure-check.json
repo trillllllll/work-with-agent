@@ -1,0 +1,126 @@
+[
+  {
+    "engine": "chromium",
+    "status": "passed",
+    "viewports": [
+      {
+        "width": 1586,
+        "scrollWidth": 1586,
+        "theme": "light"
+      },
+      {
+        "width": 1586,
+        "scrollWidth": 1586,
+        "theme": "dark"
+      },
+      {
+        "width": 1440,
+        "scrollWidth": 1440,
+        "theme": "light"
+      },
+      {
+        "width": 1440,
+        "scrollWidth": 1440,
+        "theme": "dark"
+      },
+      {
+        "width": 1280,
+        "scrollWidth": 1280,
+        "theme": "light"
+      },
+      {
+        "width": 1280,
+        "scrollWidth": 1280,
+        "theme": "dark"
+      },
+      {
+        "width": 1024,
+        "scrollWidth": 1024,
+        "theme": "light"
+      },
+      {
+        "width": 1024,
+        "scrollWidth": 1024,
+        "theme": "dark"
+      },
+      {
+        "width": 390,
+        "scrollWidth": 390,
+        "theme": "light"
+      },
+      {
+        "width": 390,
+        "scrollWidth": 390,
+        "theme": "dark"
+      }
+    ],
+    "errors": [],
+    "businessRequests": [],
+    "dialogFocusRestored": true,
+    "nestedMenuKeyboard": true,
+    "systemTheme": true,
+    "reference": "Approved default lab material with 14px base font; application component styles"
+  },
+  {
+    "engine": "webkit",
+    "status": "passed",
+    "viewports": [
+      {
+        "width": 1586,
+        "scrollWidth": 1586,
+        "theme": "light"
+      },
+      {
+        "width": 1586,
+        "scrollWidth": 1586,
+        "theme": "dark"
+      },
+      {
+        "width": 1440,
+        "scrollWidth": 1440,
+        "theme": "light"
+      },
+      {
+        "width": 1440,
+        "scrollWidth": 1440,
+        "theme": "dark"
+      },
+      {
+        "width": 1280,
+        "scrollWidth": 1280,
+        "theme": "light"
+      },
+      {
+        "width": 1280,
+        "scrollWidth": 1280,
+        "theme": "dark"
+      },
+      {
+        "width": 1024,
+        "scrollWidth": 1024,
+        "theme": "light"
+      },
+      {
+        "width": 1024,
+        "scrollWidth": 1024,
+        "theme": "dark"
+      },
+      {
+        "width": 390,
+        "scrollWidth": 390,
+        "theme": "light"
+      },
+      {
+        "width": 390,
+        "scrollWidth": 390,
+        "theme": "dark"
+      }
+    ],
+    "errors": [],
+    "businessRequests": [],
+    "dialogFocusRestored": true,
+    "nestedMenuKeyboard": true,
+    "systemTheme": true,
+    "reference": "Approved default lab material with 14px base font; application component styles"
+  }
+]

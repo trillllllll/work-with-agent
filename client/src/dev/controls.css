@@ -1,0 +1,18 @@
+.controls-page { max-width: 1280px; margin: auto; padding: 40px; }
+.controls-header { display: flex; justify-content: space-between; align-items: center; gap: 24px; margin-bottom: 32px; }
+.controls-header h1 { font-size: 30px; font-weight: 650; margin-block: 8px; letter-spacing: -.8px; }
+.controls-actions, .controls-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.controls-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start; }
+.controls-section { display: flex; flex-direction: column; gap: 20px; min-width: 0; border-radius: 14px; padding: 24px; }
+.controls-section h2 { font-size: 16px; font-weight: 600; }
+.controls-field { display: grid; gap: 8px; font-size: 13px; }
+.controls-note { font-size: 12px; color: var(--muted-foreground); }
+.controls-card { padding: 16px; display: grid; gap: 12px; border-radius: 11px; font-size: 13px; }
+.controls-card > button { justify-self: start; }
+.controls-feedback { padding: 12px; border-width: 1px; border-radius: 8px; font-size: 13px; }
+@media (max-width: 760px) {
+  .controls-page { padding: 24px 16px; }
+  .controls-header { flex-direction: column; align-items: start; }
+  .controls-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .controls-section { padding: 18px; }
+}

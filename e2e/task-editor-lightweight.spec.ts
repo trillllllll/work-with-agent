@@ -102,12 +102,12 @@ test('正文具有固定字号、行高和深浅色文字颜色', async ({ page,
   });
   await expect(body).toHaveCSS('font-size', '14px');
   await expect(body).toHaveCSS('line-height', '24px');
-  await expect(body).toHaveCSS('color', 'rgb(27, 43, 67)');
+  await expect(body).toHaveCSS('color', 'rgb(48, 58, 70)');
 
   await page.evaluate(() => {
     document.documentElement.classList.add('dark');
   });
-  await expect(body).toHaveCSS('color', 'rgb(232, 237, 245)');
+  await expect(body).toHaveCSS('color', 'rgb(230, 233, 236)');
 });
 
 test('勾选正文中的勾选项只更新正文，不创建子任务', async ({ page, request }) => {
