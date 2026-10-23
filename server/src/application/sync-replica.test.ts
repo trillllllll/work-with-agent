@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { mkdtempSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -42,6 +42,8 @@ describe('replica alignment', () => {
   beforeAll(async () => {
     const hubUrl = process.env.DATABASE_URL ?? '';
     if (!hubUrl.includes('sync-phase1') && !hubUrl.includes('test.db')) throw new Error(`refusing to write the workspace database at ${hubUrl}`);
+    // Prisma's schema engine requires the SQLite file to exist on this platform.
+    writeFileSync(join(replicaDir, 'replica.db'), '', { flag: 'a' });
     execFileSync(process.execPath, [require.resolve('prisma/build/index.js'), 'migrate', 'deploy', '--schema', 'prisma/schema.prisma'], {
       cwd: serverRoot,
       env: { ...process.env, DATABASE_URL: replicaUrl },
