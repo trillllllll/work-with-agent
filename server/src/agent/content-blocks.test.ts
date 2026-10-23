@@ -1,8 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { presentReplyParameters, presentReplySchema, projectBlocks, validateReplyBlock } from './content-blocks.js';
 import { sanitizeSvg } from './svg-sanitize.js';
+import { readFileSync } from 'node:fs';
 const deniedImages = async () => { throw new Error('无权图片引用'); };
 describe('validated display blocks', () => {
+  it('accepts the original weekly SVG including its accessibility label as a standalone block', async () => {
+    const source = readFileSync(new URL('../../../e2e/fixtures/weekly-work-distribution.svg', import.meta.url), 'utf8');
+    const block = await validateReplyBlock({ type: 'svg', source }, deniedImages);
+    expect(block.source).toContain('aria-label="本周各条工作线完成分布"');
+    expect(block.source).toContain('整周 0 条完成');
+  });
   it('shares the model schema and runtime schema, rejects arbitrary option/functions/unknown keys', async () => {
     expect((presentReplyParameters.properties as any).blocks.items.anyOf.length).toBe(6);
     expect(presentReplySchema.safeParse({ blocks: [{ type: 'text', markdown: '可用' }] }).success).toBe(true);

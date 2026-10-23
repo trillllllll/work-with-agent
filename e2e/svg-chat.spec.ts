@@ -1,7 +1,8 @@
 import { test, expect } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
+import { readFileSync } from 'node:fs';
 
-const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280"><text x="8" y="26" fill="#8b95a5">本周完成记录</text><rect x="202" y="55" width="80" height="30" fill="#416e85"/><text x="242" y="75" text-anchor="middle" fill="#ffffff">8 条</text></svg>';
+const svg = readFileSync('e2e/fixtures/weekly-work-distribution.svg', 'utf8');
 const fence = (source: string, language = 'svg') => '```' + language + '\n' + source + '\n```';
 
 test.beforeEach(async ({ page }) => {
@@ -41,7 +42,12 @@ test('历史 Markdown 和富媒体文字块里的 SVG 可预览、查看源码�
   await first.getByRole('button', { name: '查看源码', exact: true }).click();
   const download = page.waitForEvent('download');
   await first.getByRole('button', { name: 'SVG', exact: true }).click();
-  expect((await download).suggestedFilename()).toBe('diagram.svg');
+  const exported = await download;
+  expect(exported.suggestedFilename()).toBe('diagram.svg');
+  const savedSvg = readFileSync((await exported.path())!, 'utf8');
+  expect(savedSvg).toContain('aria-label="本周各条工作线完成分布"');
+  expect(savedSvg).toContain('整周 0 条完成');
+  expect(savedSvg).toContain('10-20 那 4 条是 11:27 同一分钟勾完的，不代表分段投入');
   await first.getByRole('button', { name: '放大查看', exact: true }).click();
   await expect(page.getByRole('dialog').getByRole('img')).toBeVisible();
   await page.keyboard.press('Escape');

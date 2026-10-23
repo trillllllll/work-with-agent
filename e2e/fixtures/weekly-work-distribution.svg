@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280" width="100%" role="img" aria-label="本周各条工作线完成分布">
+  <text x="242" y="26" fill="#8b95a5" font-size="11" text-anchor="middle">10-19 一</text>
+  <text x="346" y="26" fill="#8b95a5" font-size="11" text-anchor="middle">10-20 二</text>
+  <text x="450" y="26" fill="#8b95a5" font-size="11" text-anchor="middle">10-21 三</text>
+  <text x="554" y="26" fill="#8b95a5" font-size="11" text-anchor="middle">10-22 四</text>
+  <text x="658" y="26" fill="#8b95a5" font-size="11" text-anchor="middle">10-23 五</text>
+  <text x="8" y="74" fill="#8b95a5" font-size="11">BUGONLINE-10940</text>
+  <rect x="306" y="55" width="80" height="30" rx="4" fill="#7a6bd6"/>
+  <text x="346" y="75" fill="#ffffff" font-size="12" text-anchor="middle">4</text>
+  <text x="8" y="124" fill="#8b95a5" font-size="11">PRD-6288 / 评估</text>
+  <rect x="202" y="105" width="80" height="30" rx="4" fill="#4a86c8"/>
+  <text x="242" y="125" fill="#ffffff" font-size="12" text-anchor="middle">4</text>
+  <text x="8" y="174" fill="#8b95a5" font-size="11">对接接入</text>
+  <rect x="618" y="155" width="80" height="30" rx="4" fill="#6aa84f"/>
+  <text x="658" y="175" fill="#ffffff" font-size="12" text-anchor="middle">1</text>
+  <text x="8" y="224" fill="#8b95a5" font-size="11">PRD-6342 TR4</text>
+  <rect x="202" y="205" width="496" height="30" rx="4" fill="none" stroke="#c05b5b" stroke-dasharray="4 4"/>
+  <text x="450" y="225" fill="#c05b5b" font-size="11" text-anchor="middle">整周 0 条完成</text>
+  <text x="8" y="266" fill="#8b95a5" font-size="10">10-20 那 4 条是 11:27 同一分钟勾完的，不代表分段投入</text>
+</svg>

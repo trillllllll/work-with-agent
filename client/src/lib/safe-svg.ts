@@ -1,7 +1,7 @@
 import DOMPurify from 'dompurify';
 
 const tags = 'svg g defs marker path rect circle ellipse line polyline polygon text tspan title desc'.split(' ');
-const attributes = 'xmlns viewBox width height x y x1 y1 x2 y2 cx cy r rx ry d points fill stroke stroke-width stroke-linecap stroke-linejoin stroke-dasharray opacity fill-opacity stroke-opacity transform font-size font-family font-weight text-anchor dominant-baseline id marker-start marker-mid marker-end markerWidth markerHeight refX refY orient markerUnits preserveAspectRatio role'.split(' ');
+const attributes = 'xmlns viewBox width height x y x1 y1 x2 y2 cx cy r rx ry d points fill stroke stroke-width stroke-linecap stroke-linejoin stroke-dasharray opacity fill-opacity stroke-opacity transform font-size font-family font-weight text-anchor dominant-baseline id marker-start marker-mid marker-end markerWidth markerHeight refX refY orient markerUnits preserveAspectRatio role aria-label'.split(' ');
 
 /** Validate before filtering: no active content, CSS, external resources or oversized trees. */
 export function safeSvg(source: string): string {

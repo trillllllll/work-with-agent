@@ -1,6 +1,6 @@
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 const elements = new Set('svg g defs marker path rect circle ellipse line polyline polygon text tspan title desc'.split(' '));
-const attributes = new Set('xmlns viewBox width height x y x1 y1 x2 y2 cx cy r rx ry d points fill stroke stroke-width stroke-linecap stroke-linejoin stroke-dasharray opacity fill-opacity stroke-opacity transform font-size font-family font-weight text-anchor dominant-baseline id marker-start marker-mid marker-end markerWidth markerHeight refX refY orient markerUnits preserveAspectRatio role'.split(' '));
+const attributes = new Set('xmlns viewBox width height x y x1 y1 x2 y2 cx cy r rx ry d points fill stroke stroke-width stroke-linecap stroke-linejoin stroke-dasharray opacity fill-opacity stroke-opacity transform font-size font-family font-weight text-anchor dominant-baseline id marker-start marker-mid marker-end markerWidth markerHeight refX refY orient markerUnits preserveAspectRatio role aria-label'.split(' '));
 /** Rebuild allowed SVG, rejecting active content and every external resource. */
 export function sanitizeSvg(source: string) {
   if (Buffer.byteLength(source) > 65536 || /<!DOCTYPE|<!ENTITY|<\?/i.test(source)) throw new Error('SVG 声明或大小不符合要求');
