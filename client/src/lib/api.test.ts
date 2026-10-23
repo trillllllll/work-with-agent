@@ -11,9 +11,9 @@ describe('task status options', () => {
 
 describe('request headers', () => {
   it('send the chosen UI language so server messages match it', async () => {
-    expect(authHeaders()['X-WWA-Language']).toBe('zh-CN');
+    expect(authHeaders()['X-Dovun-Language']).toBe('zh-CN');
     await i18n.changeLanguage('en');
-    expect(authHeaders()['X-WWA-Language']).toBe('en');
+    expect(authHeaders()['X-Dovun-Language']).toBe('en');
     await i18n.changeLanguage('zh-CN');
   });
 });

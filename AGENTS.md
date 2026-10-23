@@ -21,7 +21,7 @@
 
 ## 本机打包
 
-macOS Apple Silicon。标识 `app.workwithagent.desktop`，版本看 `package.json` 和 `desktop/src-tauri/tauri.conf.json`。`npm run desktop:build` 等于 `node scripts/assemble-desktop.mjs && node scripts/tauri.mjs build`。组装脚本要求 Node ≥ 22，并往包里放 Node 22.13.0。本机 Volta 默认是 16，不能直接用。
+macOS Apple Silicon。当前分支候选标识 `app.dovun.desktop`（独立 0.3.0 分支仍为 `app.workwithagent.desktop`），版本看 `package.json` 和 `desktop/src-tauri/tauri.conf.json`。`npm run desktop:build` 等于 `node scripts/assemble-desktop.mjs && node scripts/tauri.mjs build`。组装脚本要求 Node ≥ 22，并往包里放 Node 22.13.0。本机 Volta 默认是 16，不能直接用。
 
 ```bash
 export PATH="/Users/byc/.volta/tools/image/node/22.13.0/bin:/Users/byc/.cargo/bin:$PATH"

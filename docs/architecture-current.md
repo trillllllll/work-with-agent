@@ -9,3 +9,5 @@ Express API 与 MCP 复用应用层权限和操作逻辑，SQLite/Prisma 保存�
 0.3.0 启动链先准备数据目录和启动器，再选择本机或远程模式。新旧配置解析集中于 `server/src/shared/runtime-env.ts`；目录迁移位于 `server/src/desktop-migrate.ts`，独立 SQLite 互斥与进程生命周期租约位于 `shared/data-guard.ts`。浏览器入口先迁移偏好和作用域草稿，再挂载应用。失败可见且保留原状态。细节与限制见 [迁移手册](dovun-migration.md)。
 
 [旧架构基线](architecture-baseline.md)保留当时的规划，不代表当前全部功能。当前界面证据见 [实际应用改造](design/dovun/implementation/README.md)，领域词义见 [CONTEXT.md](../CONTEXT.md)。
+
+0.4.0 分支使用新系统标识，先恢复原生 profile 再创建 WebView；运行兼容已退出，历史数据导入保留。见 [新身份迁移](dovun-04-handoff.md)。

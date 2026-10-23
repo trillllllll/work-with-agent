@@ -29,7 +29,7 @@ export const mcpCredential = new AsyncLocalStorage<string>();
 
 function credential() {
   const value = mcpCredential.getStore() ?? runtimeEnv('CONNECTION_TOKEN');
-  if (!value) throw new Error('DOVUN_CONNECTION_TOKEN is required (legacy WWA_CONNECTION_TOKEN also supported); create a scoped connection in the workspace');
+  if (!value) throw new Error('DOVUN_CONNECTION_TOKEN is required; create a scoped connection in the workspace');
   return value;
 }
 
@@ -39,7 +39,7 @@ function apiBase() {
   return base;
 }
 
-// HTTP MCP forwards the caller's Accept-Language; stdio MCP can set WWA_LANGUAGE. Otherwise the API answers in zh-CN.
+// HTTP MCP forwards the caller's Accept-Language; stdio MCP can set DOVUN_LANGUAGE. Otherwise the API answers in zh-CN.
 function forwardedLanguage(): Record<string, string> {
   const language = requestLocale() ?? runtimeEnv('LANGUAGE');
   return language ? { 'Accept-Language': language } : {};
@@ -215,7 +215,7 @@ export function createMcpServer() {
     const fetched = await requestBinary(`/api/v1/knowledge/materials/${encodeURIComponent(materialId)}/versions/${encodeURIComponent(String(revision))}/attachment`);
     if (!fetched.ok) return toolError(fetched.code, fetched.message, fetched.status, fetched.retryable);
     const fileName = attachmentFileName(fetched.headers.get('content-disposition'));
-    const mimeType = resolveAttachmentMime(fetched.headers.get('x-wwa-mime-type'), fileName);
+    const mimeType = resolveAttachmentMime(fetched.headers.get('x-dovun-mime-type'), fileName);
     const byteSize = fetched.bytes.byteLength;
     const metadata = { type: 'text' as const, text: materialMetadata({ materialId, revision, fileName, mimeType, byteSize }) };
     const uri = `wwa://materials/${materialId}/versions/${revision}/attachment`;

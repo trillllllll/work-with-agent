@@ -2,11 +2,11 @@ export type ConnectionConfiguration = {
   command: string;
   args: string[];
   url: string;
-  env: { DOVUN_API_URL?: string; DOVUN_CONNECTION_TOKEN?: string; WWA_API_URL: string; WWA_CONNECTION_TOKEN: string };
+  env: { DOVUN_API_URL: string; DOVUN_CONNECTION_TOKEN: string };
 };
 
 export type McpEntryName = 'dovun' | 'work_with_agent';
-const apiUrl = (config: ConnectionConfiguration) => config.env.DOVUN_API_URL ?? config.env.WWA_API_URL;
+const apiUrl = (config: ConnectionConfiguration) => config.env.DOVUN_API_URL;
 
 /** PowerShell single-quotes a value and escapes an embedded quote by doubling it. */
 export function quotePowerShell(value: string) {
@@ -50,7 +50,7 @@ function genericJson(config: ConnectionConfiguration, token: string) {
   }, null, 2);
 }
 
-/** Setup snippet. `token` is the credential; config.env.WWA_CONNECTION_TOKEN is not copied. */
+/** Setup snippet. `token` is the credential; config.env.DOVUN_CONNECTION_TOKEN is not copied. */
 export function setupSnippet(host: string, config: ConnectionConfiguration, token: string, entry: McpEntryName = 'dovun') {
   if (entry === 'work_with_agent') {
     if (host === 'codex') return codexConfig(config, token).split('mcp_servers.dovun').join('mcp_servers.work_with_agent');

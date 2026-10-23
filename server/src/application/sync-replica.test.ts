@@ -84,17 +84,17 @@ describe('replica alignment', () => {
   });
 
   it('stores a credential outside the database', () => {
-    const previous = process.env.WWA_DATA_DIR;
+    const previous = process.env.DOVUN_DATA_DIR;
     const directory = mkdtempSync(join(tmpdir(), 'wwa-sync-bind-'));
-    process.env.WWA_DATA_DIR = directory;
+    process.env.DOVUN_DATA_DIR = directory;
     try {
       writeSyncBinding({ url: 'https://wwa.example.com', token: 'a'.repeat(32) });
       expect(readSyncBinding()?.url).toBe('https://wwa.example.com');
       expect(statSync(join(directory, 'sync-device.json')).mode & 0o777).toBe(0o600);
       expect(readSyncBinding()?.token).toBe('a'.repeat(32));
     } finally {
-      if (previous === undefined) delete process.env.WWA_DATA_DIR;
-      else process.env.WWA_DATA_DIR = previous;
+      if (previous === undefined) delete process.env.DOVUN_DATA_DIR;
+      else process.env.DOVUN_DATA_DIR = previous;
       rmSync(directory, { recursive: true, force: true });
     }
   });
@@ -102,14 +102,14 @@ describe('replica alignment', () => {
   it('aligns both sides, then merges fields and keeps a same-field conflict', async () => {
     expect((await request(app).get('/api/v1/sync/baseline/rows?entity=task')).status).toBe(401);
     const session = await ownerSession(app);
-    const previousData = process.env.WWA_DATA_DIR;
+    const previousData = process.env.DOVUN_DATA_DIR;
     const dataDir = mkdtempSync(join(tmpdir(), 'wwa-sync-status-'));
-    process.env.WWA_DATA_DIR = dataDir;
+    process.env.DOVUN_DATA_DIR = dataDir;
     try {
       expect((await request(app).get('/api/v1/sync/status').set('Cookie', session.cookie)).body.data.bound).toBe(false);
     } finally {
-      if (previousData === undefined) delete process.env.WWA_DATA_DIR;
-      else process.env.WWA_DATA_DIR = previousData;
+      if (previousData === undefined) delete process.env.DOVUN_DATA_DIR;
+      else process.env.DOVUN_DATA_DIR = previousData;
       rmSync(dataDir, { recursive: true, force: true });
     }
     const stamp = new Date().toISOString();
@@ -164,19 +164,19 @@ describe('replica alignment', () => {
 
     const queuedBefore = await replica.syncOutbox.count({ where: { opId: { startsWith: 'change-enqueue-1' } } });
     expect(queuedBefore).toBe(0);
-    const previousUrl = process.env.WWA_SYNC_URL;
-    const previousToken = process.env.WWA_SYNC_TOKEN;
-    process.env.WWA_SYNC_URL = 'https://wwa.example.com';
-    process.env.WWA_SYNC_TOKEN = 'b'.repeat(32);
+    const previousUrl = process.env.DOVUN_SYNC_URL;
+    const previousToken = process.env.DOVUN_SYNC_TOKEN;
+    process.env.DOVUN_SYNC_URL = 'https://wwa.example.com';
+    process.env.DOVUN_SYNC_TOKEN = 'b'.repeat(32);
     try {
       await replica.$transaction(async (tx) => {
         await recordCommittedGroup(tx, 'change-enqueue-1', { entities: { tasks: { [ids.replicaOnly]: null }, topics: {}, tags: {} } }, { entities: { tasks: { [ids.replicaOnly]: await readLive(tx, 'task', ids.replicaOnly).then((item) => item.row) }, topics: {}, tags: {} } });
       });
     } finally {
-      if (previousUrl === undefined) delete process.env.WWA_SYNC_URL;
-      else process.env.WWA_SYNC_URL = previousUrl;
-      if (previousToken === undefined) delete process.env.WWA_SYNC_TOKEN;
-      else process.env.WWA_SYNC_TOKEN = previousToken;
+      if (previousUrl === undefined) delete process.env.DOVUN_SYNC_URL;
+      else process.env.DOVUN_SYNC_URL = previousUrl;
+      if (previousToken === undefined) delete process.env.DOVUN_SYNC_TOKEN;
+      else process.env.DOVUN_SYNC_TOKEN = previousToken;
     }
     expect(await replica.syncOutbox.count({ where: { opId: { startsWith: 'change-enqueue-1:' } } })).toBe(1);
   }, 30_000);

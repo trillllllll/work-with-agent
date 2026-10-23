@@ -92,15 +92,15 @@ try {
   child = start({
     PORT: String(remotePort),
     CLIENT_ORIGIN: remoteOrigin,
-    WWA_PUBLIC_URL: remoteOrigin,
-    WWA_DATA_DIR: remoteData,
+    DOVUN_PUBLIC_URL: remoteOrigin,
+    DOVUN_DATA_DIR: remoteData,
     DATABASE_URL: `file:${resolve(remoteData, 'agent-studio.db')}`,
     KNOWLEDGE_STORAGE_ROOT: resolve(remoteData, 'knowledge-blobs'),
-    WWA_RUNNER_DIR: resolve(remoteData, 'runner'),
+    DOVUN_RUNNER_DIR: resolve(remoteData, 'runner'),
     AGENT_WORKSPACE_ROOT: resolve(remoteData, 'workspace'),
-    WWA_SERVER_MODE: '1',
-    WWA_BIND_HOST: '127.0.0.1',
-    WWA_OWNER_KEY: ownerKey,
+    DOVUN_SERVER_MODE: '1',
+    DOVUN_BIND_HOST: '127.0.0.1',
+    DOVUN_OWNER_KEY: ownerKey,
   });
   const banner = await waitLine(child, 'API listening');
   if (/owner-token=/.test(banner)) throw new Error('服务器模式不应在日志里打印一次性启动凭据');
@@ -149,14 +149,14 @@ function start(overrides = {}) {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: {
       ...process.env,
-      WWA_PACKAGED: '1',
+      DOVUN_PACKAGED: '1',
       PORT: String(port),
       CLIENT_ORIGIN: origin,
-      WWA_DATA_DIR: dataDir,
-      WWA_STATIC_DIR: resolve(resources, 'client'),
+      DOVUN_DATA_DIR: dataDir,
+      DOVUN_STATIC_DIR: resolve(resources, 'client'),
       DATABASE_URL: `file:${resolve(dataDir, 'agent-studio.db')}`,
       KNOWLEDGE_STORAGE_ROOT: resolve(dataDir, 'knowledge-blobs'),
-      WWA_RUNNER_DIR: resolve(dataDir, 'runner'),
+      DOVUN_RUNNER_DIR: resolve(dataDir, 'runner'),
       AGENT_WORKSPACE_ROOT: resolve(dataDir, 'workspace'),
       ...overrides,
     },
@@ -249,7 +249,7 @@ function startProxy(credential) {
   const proxyProcess = spawn(nodeBinary, [resolve(serverDir, 'dist/mcp/index.js')], {
     cwd: serverDir,
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, WWA_API_URL: origin, WWA_CONNECTION_TOKEN: credential },
+    env: { ...process.env, DOVUN_API_URL: origin, DOVUN_CONNECTION_TOKEN: credential },
   });
   const pending = new Map();
   let buffer = '';

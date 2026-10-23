@@ -126,8 +126,8 @@ export function useTodoActions() {
       setPending((value) => value - 1);
     }
   }
-  const patch = (id: string, changes: unknown, relatedIds: string[] = []) => write<Task>(`/api/tasks/${id}`, 'PATCH', changes, [id, ...relatedIds], t('dovun.taskUpdated'));
-  const create = (input: unknown, parentId?: string | null) => write<Task>('/api/tasks', 'POST', input, parentId ? [parentId] : [], t('dovun.taskCreated'));
+  const patch = (id: string, changes: unknown, relatedIds: string[] = []) => write<Task>(`/api/tasks/${id}`, 'PATCH', changes, [id, ...relatedIds], t('todo.taskUpdated'));
+  const create = (input: unknown, parentId?: string | null) => write<Task>('/api/tasks', 'POST', input, parentId ? [parentId] : [], t('todo.taskCreated'));
   return { write, patch, create, pending: pending > 0 };
 }
 

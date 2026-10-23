@@ -29,10 +29,10 @@ const loopbackHosts = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 /** Process-local proof for the MCP client's fetch to 127.0.0.1. A public request cannot invent it. */
 const mcpLoopbackToken = randomBytes(32).toString('base64url');
 export function mcpLoopbackHeaders() {
-  return { 'x-wwa-loopback': mcpLoopbackToken };
+  return { 'x-dovun-loopback': mcpLoopbackToken };
 }
 function trustedMcpLoopback(req: Request) {
-  const given = req.headers['x-wwa-loopback'];
+  const given = req.headers['x-dovun-loopback'];
   if (typeof given !== 'string' || given.length !== mcpLoopbackToken.length) return false;
   if (!timingSafeEqual(Buffer.from(given), Buffer.from(mcpLoopbackToken))) return false;
   const peer = req.socket?.remoteAddress ?? '';
@@ -40,7 +40,6 @@ function trustedMcpLoopback(req: Request) {
   return loopbackPeer && loopbackHosts.has(req.hostname);
 }
 const cookieName = 'dovun_session';
-const legacyCookieName = 'wwa_session';
 const bootstrapTokens = new Map<string, number>();
 /** Prefer the repository root's version; packaged runtimes may only ship server/package.json. */
 function readVersion() {
@@ -220,7 +219,7 @@ export async function connectionTokenActive(credential: string) {
 async function authenticate(req: Request): Promise<{ actor: Actor; csrfToken?: string } | null> {
   checkLocalOrigin(req);
   const authorization = req.headers.authorization;
-  const sessionToken = cookies(req)[cookieName] ?? cookies(req)[legacyCookieName];
+  const sessionToken = cookies(req)[cookieName];
   if (authorization && sessionToken) throw new DomainError('AMBIGUOUS_IDENTITY', '不能同时提交连接凭据和用户会话', 400);
   if (authorization) {
     if (!authorization.startsWith('Bearer ')) throw new DomainError('AUTH_REQUIRED', '连接凭据无效', 401);
@@ -329,7 +328,7 @@ export function connectionConfiguration(credential: string) {
     : developmentMcpConfiguration(entry);
   return {
     ...launch,
-    env: { DOVUN_API_URL: api, DOVUN_CONNECTION_TOKEN: credential, WWA_API_URL: api, WWA_CONNECTION_TOKEN: credential },
+    env: { DOVUN_API_URL: api, DOVUN_CONNECTION_TOKEN: credential },
     url: `${api}/mcp`,
     hosts: ['codex', 'claude-code', 'grok'],
   };

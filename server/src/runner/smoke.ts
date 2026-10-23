@@ -11,7 +11,7 @@ import { generateExternalReview } from './review-generator.js';
 
 export async function runRealCliSmoke() {
   const root = await mkdtemp(join(tmpdir(), 'wwa-cli-smoke-'));
-  process.env.WWA_RUNNER_DIR = root;
+  process.env.DOVUN_RUNNER_DIR = root;
   const fixture = resolve(root, 'fixture'); await mkdir(fixture);
   await git(fixture, ['init']); await git(fixture, ['config', 'user.email', 'smoke@example.invalid']); await git(fixture, ['config', 'user.name', 'Acceptance smoke']);
   await writeFile(resolve(fixture, 'README.txt'), 'Isolated real CLI acceptance fixture.'); await git(fixture, ['add', '.']); await git(fixture, ['commit', '-m', 'fixture']);
@@ -45,7 +45,7 @@ export async function runRealCliSmoke() {
   return outcomes;
 }
 export async function runRealReviewSmoke() {
-  const root = await mkdtemp(join(tmpdir(), 'wwa-review-smoke-')); process.env.WWA_RUNNER_DIR = root;
+  const root = await mkdtemp(join(tmpdir(), 'wwa-review-smoke-')); process.env.DOVUN_RUNNER_DIR = root;
   console.log(JSON.stringify({ evidenceDirectory: root }));
   const outcomes: Array<{ provider: string; success: boolean; result?: unknown; error?: string }> = [];
   for (const provider of ['codex', 'claude'] as const) {

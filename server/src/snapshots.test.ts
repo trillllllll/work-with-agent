@@ -26,12 +26,12 @@ let previousBlobRoot: string | undefined;
 
 beforeAll(async () => {
   previousDatabaseUrl = process.env.DATABASE_URL;
-  previousDataDir = process.env.WWA_DATA_DIR;
+  previousDataDir = process.env.DOVUN_DATA_DIR;
   previousBlobRoot = process.env.KNOWLEDGE_STORAGE_ROOT;
   scratch = mkdtempSync(join(tmpdir(), 'wwa-snapshot-'));
   await mkdir(join(scratch, 'source'), { recursive: true });
   process.env.DATABASE_URL = `file:${join(scratch, 'source', 'agent-studio.db')}`;
-  process.env.WWA_DATA_DIR = join(scratch, 'source-data');
+  process.env.DOVUN_DATA_DIR = join(scratch, 'source-data');
   process.env.KNOWLEDGE_STORAGE_ROOT = join(scratch, 'source-blobs');
   const { migrateDatabase } = await import('./db-migrate.js');
   await migrateDatabase(process.env.DATABASE_URL);
@@ -52,8 +52,8 @@ beforeAll(async () => {
 afterAll(async () => {
   if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
   else process.env.DATABASE_URL = previousDatabaseUrl;
-  if (previousDataDir === undefined) delete process.env.WWA_DATA_DIR;
-  else process.env.WWA_DATA_DIR = previousDataDir;
+  if (previousDataDir === undefined) delete process.env.DOVUN_DATA_DIR;
+  else process.env.DOVUN_DATA_DIR = previousDataDir;
   if (previousBlobRoot === undefined) delete process.env.KNOWLEDGE_STORAGE_ROOT;
   else process.env.KNOWLEDGE_STORAGE_ROOT = previousBlobRoot;
   await rm(scratch, { recursive: true, force: true }).catch(() => {});
@@ -116,7 +116,7 @@ describe('snapshot import', () => {
     const exported = await getSnapshotZip();
     const target = join(scratch, 'target');
     process.env.DATABASE_URL = `file:${join(target, 'agent-studio.db')}`;
-    process.env.WWA_DATA_DIR = join(target, 'data');
+    process.env.DOVUN_DATA_DIR = join(target, 'data');
     process.env.KNOWLEDGE_STORAGE_ROOT = join(target, 'blobs');
 
     const response = await supertest(app).put('/api/v1/server/snapshot/import').set(owner()).set('Content-Type', 'application/zip').send(exported.body as Buffer);
@@ -146,7 +146,7 @@ describe('snapshot import', () => {
 describe('snapshot merge', () => {
   it('adds missing rows, keeps existing ids, and does not replace the live database', async () => {
     process.env.DATABASE_URL = `file:${join(scratch, 'source', 'agent-studio.db')}`;
-    process.env.WWA_DATA_DIR = join(scratch, 'source-data');
+    process.env.DOVUN_DATA_DIR = join(scratch, 'source-data');
     process.env.KNOWLEDGE_STORAGE_ROOT = join(scratch, 'source-blobs');
     const source = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL });
     try {
@@ -165,7 +165,7 @@ describe('snapshot merge', () => {
     await mkdir(target, { recursive: true });
     const targetUrl = `file:${join(target, 'agent-studio.db')}`;
     process.env.DATABASE_URL = targetUrl;
-    process.env.WWA_DATA_DIR = join(target, 'data');
+    process.env.DOVUN_DATA_DIR = join(target, 'data');
     process.env.KNOWLEDGE_STORAGE_ROOT = join(target, 'blobs');
     const { migrateDatabase } = await import('./db-migrate.js');
     await migrateDatabase(targetUrl);
@@ -218,7 +218,7 @@ describe('seed snapshot', () => {
     const exported = await getSnapshotZip();
     const area = join(scratch, 'seed-area');
     process.env.DATABASE_URL = `file:${join(area, 'agent-studio.db')}`;
-    process.env.WWA_DATA_DIR = join(area, 'data');
+    process.env.DOVUN_DATA_DIR = join(area, 'data');
     process.env.KNOWLEDGE_STORAGE_ROOT = join(area, 'blobs');
     await mkdir(join(area, 'data', 'snapshots'), { recursive: true });
     writeFileSync(join(area, 'data', 'snapshots', 'seed.zip'), exported.body as Buffer);

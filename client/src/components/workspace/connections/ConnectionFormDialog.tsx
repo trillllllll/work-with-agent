@@ -168,7 +168,7 @@ function SetupStep({ created }: { created: CreatedConnection }) {
           <CopyButton label={t('connections.copySnippet')} text={t('connections.samplePrompt')} />
         </li>
       </ol>
-      <p className="text-xs text-muted-foreground">{t('connections.credentialWarning', { url: created.configuration.env.WWA_API_URL })}</p>
+      <p className="text-xs text-muted-foreground">{t('connections.credentialWarning', { url: created.configuration.env.DOVUN_API_URL })}</p>
       <p className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">{t('connections.waitingStatic')}</p>
     </div>
   );

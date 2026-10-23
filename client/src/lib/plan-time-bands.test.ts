@@ -203,16 +203,15 @@ describe('时间段背景', () => {
 
   it('本地星期按显示日计算，不随系统时区漂移', () => {
     const clientRoot = fileURLToPath(new URL('../../', import.meta.url));
-    const weekday = (timeZone: string, dateKey: string) => Number(execFileSync(process.execPath, [
+    // One process per timezone checks all dates; avoid fifteen cold TS loaders in a test.
+    const weekdays = (timeZone: string) => JSON.parse(execFileSync(process.execPath, [
       '--import', 'tsx',
       '--input-type=module',
       '-e',
-      `import bands from './src/lib/plan-time-bands.ts'; process.stdout.write(String(bands.isoWeekday(${JSON.stringify(dateKey)})));`,
+      `import bands from './src/lib/plan-time-bands.ts'; process.stdout.write(JSON.stringify(['2026-10-12','2026-10-17','2026-10-18'].map(bands.isoWeekday)));`,
     ], { cwd: clientRoot, env: { ...process.env, TZ: timeZone }, encoding: 'utf8' }));
     for (const timeZone of ['Asia/Shanghai', 'America/Los_Angeles', 'Pacific/Auckland', 'Pacific/Kiritimati', 'Etc/GMT+12']) {
-      expect(weekday(timeZone, '2026-10-12')).toBe(1);
-      expect(weekday(timeZone, '2026-10-17')).toBe(6);
-      expect(weekday(timeZone, '2026-10-18')).toBe(7);
+      expect(weekdays(timeZone)).toEqual([1, 6, 7]);
     }
     expect(isoWeekday('2026-10-12')).toBe(1);
   });

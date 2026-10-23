@@ -54,9 +54,8 @@ export class NodeAgent {
   private exited = false;
   constructor(private readonly config: NodeConfig, private readonly http: typeof fetch = fetch, private readonly hooks: NodeAgentHooks = {}) {
     if (!config.roots.length) throw new Error('至少需要一个允许的目录（--roots）');
-    // The runner supervisor keeps its control files under WWA_RUNNER_DIR; give it this node's own data directory.
-    process.env.WWA_RUNNER_DIR = resolve(config.dataDir, 'runner'); // 0.3 internal compatibility for older runner modules.
-    if (process.env.DOVUN_RUNNER_DIR !== undefined) process.env.DOVUN_RUNNER_DIR = resolve(config.dataDir, 'runner');
+    // The runner supervisor keeps its control files under DOVUN_RUNNER_DIR; give it this node's own data directory.
+     process.env.DOVUN_RUNNER_DIR = resolve(config.dataDir, 'runner');
   }
   private runner() { return (this.runnerModule ??= import('../runner/supervisor.js')); }
   private runnerApi(): Promise<NodeRunner> { return this.hooks.runner ? Promise.resolve(this.hooks.runner) : this.runner(); }

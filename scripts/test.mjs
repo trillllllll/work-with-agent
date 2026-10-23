@@ -5,7 +5,7 @@ import { prismaClientIsCurrent } from './prisma-current.mjs';
 
 const root = process.cwd();
 // file: 路径按 Prisma 约定相对 server/prisma/schema.prisma 解析，落到 server/data/test.db。
-const databaseUrl = 'file:../data/test.db';
+const databaseUrl = `file:${resolve(root, 'server/data/test.db')}`;
 const databasePath = resolve(root, 'server/data/test.db');
 
 await mkdir(dirname(databasePath), { recursive: true });

@@ -17,13 +17,13 @@ test('设置里切换到英文后界面变为英文，刷新后保持，切回�
   await expect(section.getByRole('heading', { name: 'Language' })).toBeVisible();
   await expect(section.getByRole('button', { name: 'English' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-  expect(await page.evaluate(() => window.localStorage.getItem('wwa.language'))).toBe('en');
+  expect(await page.evaluate(() => window.localStorage.getItem('dovun.language'))).toBe('en');
 
   await page.goto('/#/more');
   const apiRequest = page.waitForRequest((request) => request.url().includes('/api/'));
   await page.reload();
   // Every API call carries the chosen language so server messages come back in English.
-  expect((await apiRequest).headers()['x-wwa-language']).toBe('en');
+  expect((await apiRequest).headers()['x-dovun-language']).toBe('en');
   const nav = page.getByRole('navigation', { name: 'Workspace navigation' });
   await expect(nav.getByRole('button', { name: 'Inbox', exact: true })).toBeVisible();
   await expect(nav.getByRole('button', { name: 'Settings', exact: true })).toBeVisible();
@@ -39,7 +39,7 @@ test('设置里切换到英文后界面变为英文，刷新后保持，切回�
 
 test('服务端按请求语言返回错误信息', async ({ request }) => {
   const apiUrl = 'http://127.0.0.1:3015';
-  const english = await request.get(`${apiUrl}/api/tasks/missing-task`, { headers: { 'X-WWA-Language': 'en' } });
+  const english = await request.get(`${apiUrl}/api/tasks/missing-task`, { headers: { 'X-Dovun-Language': 'en' } });
   expect(english.status()).toBe(404);
   expect((await english.json()).error).toBe('Task does not exist');
   const chinese = await request.get(`${apiUrl}/api/tasks/missing-task`);

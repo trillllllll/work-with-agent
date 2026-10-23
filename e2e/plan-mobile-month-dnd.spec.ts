@@ -35,7 +35,7 @@ function chromiumOnly(testInfo: TestInfo) {
 }
 
 function shotsOnly() {
-  test.skip(process.env.WWA_SHOTS !== '1', 'WWA_SHOTS 未设为 1，不写截图');
+  test.skip(process.env.DOVUN_SHOTS !== '1', 'DOVUN_SHOTS 未设为 1，不写截图');
 }
 
 function shotPath(name: string) {

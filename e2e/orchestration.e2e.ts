@@ -36,7 +36,7 @@ test.beforeAll(async ({ request }) => {
   const gh = join(root, 'gh.mjs');
   await writeFile(gh, `#!/usr/bin/env node\nimport fs from 'node:fs';\nconst args = process.argv.slice(2); const f = ${JSON.stringify(join(root, 'gh-pr'))};\nif (args[0] === '--version') { console.log('gh 0.0.0'); process.exit(0); }\nif (args[1] === 'view') { if (fs.existsSync(f)) { console.log(fs.readFileSync(f, 'utf8')); process.exit(0); } process.exit(1); }\nif (args[1] === 'create') { const url = 'https://github.com/example/demo/pull/42'; fs.writeFileSync(f, url); console.log(url); process.exit(0); }\nprocess.exit(2);\n`);
   await chmod(gh, 0o755);
-  process.env.WWA_GH_BIN = gh;
+  process.env.DOVUN_GH_BIN = gh;
   // The orchestrator model is the mock model on its own port.
   const saved = await request.patch(`${api}/api/settings`, { data: { baseUrl: `${mock}/v1`, model: 'mock-model', apiKey: 'e2e-key' } });
   expect(saved.ok(), await saved.text()).toBe(true);
@@ -49,14 +49,14 @@ test.beforeAll(async ({ request }) => {
 test.afterAll(async () => {
   agent?.kill('SIGTERM');
   if (root) await rm(root, { recursive: true, force: true });
-  delete process.env.WWA_GH_BIN;
+  delete process.env.DOVUN_GH_BIN;
 });
 
 function startAgent(issued: string, extra: Record<string, string> = {}) {
   agentLog = '';
   agent = spawn(process.execPath, ['--max-old-space-size=256', '--import', 'tsx', resolve(repoRoot, 'server/src/node-agent/index.ts'), '--server', api, '--token', issued, '--roots', code, '--data', nodeData, '--max', '2'], {
     cwd: repoRoot,
-    env: { ...process.env, WWA_CODEX_BIN: resolve(repoRoot, 'server/test/stub-orchestration-cli.mjs'), STUB_DELAY_MS: '100', NODE_OPTIONS: '', ...extra },
+    env: { ...process.env, DOVUN_CODEX_BIN: resolve(repoRoot, 'server/test/stub-orchestration-cli.mjs'), STUB_DELAY_MS: '100', NODE_OPTIONS: '', ...extra },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   agent.stdout?.on('data', (chunk) => { agentLog += chunk; });

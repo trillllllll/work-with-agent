@@ -28,7 +28,7 @@ static DATA_PREPARED: Mutex<bool> = Mutex::new(false);
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 struct ServerProcess(Mutex<Option<Child>>);
-/// The local executor (wwa-node) this app runs in the background once the user paired it.
+/// The local executor (dovun-node) this app runs in the background once the user paired it.
 struct NodeProcess(Mutex<Option<Child>>);
 /// Cleared on exit or unpair so the watcher does not restart the executor.
 static NODE_WANTED: AtomicBool = AtomicBool::new(false);
@@ -67,36 +67,34 @@ pub fn run() {
             tauri::plugin::Builder::<tauri::Wry, ()>::new("dovun-navigation")
                 .on_navigation(|webview, url| {
                     let path = url.path().trim_end_matches('/');
-                    let compatible_path = if let Some(tail) = path.strip_prefix("/dovun-") { format!("/wwa-{tail}") } else { path.to_string() };
-                    let path = compatible_path.as_str();
-                    if path == "/wwa-launcher-done" {
+                    if path == "/dovun-launcher-done" {
                         LAUNCH_CONFIRMED.store(true, Ordering::SeqCst);
                         return false;
                     }
-                    if path == "/wwa-launcher" {
+                    if path == "/dovun-launcher" {
                         open_launcher(webview.app_handle());
                         return false;
                     }
                     // Sentinels used by the workspace (local or remote origin); none of them reaches a server.
-                    if path == "/wwa-notify" {
+                    if path == "/dovun-notify" {
                         let title = query_value(url, "title").unwrap_or_default();
                         let body = query_value(url, "body").unwrap_or_default();
                         notify(webview.app_handle(), &title, &body);
                         return false;
                     }
-                    if path == "/wwa-node-status" {
+                    if path == "/dovun-node-status" {
                         let script = desktop_event_script(&node_status_detail(webview.app_handle()));
                         let _ = webview.eval(script);
                         return false;
                     }
-                    if path == "/wwa-node-pair" {
+                    if path == "/dovun-node-pair" {
                         let server = query_value(url, "server").unwrap_or_default();
                         let token = query_value(url, "token").unwrap_or_default();
                         let node = query_value(url, "node").unwrap_or_default();
                         pair_node(webview.app_handle(), server, token, node);
                         return false;
                     }
-                    if path == "/wwa-node-unpair" {
+                    if path == "/dovun-node-unpair" {
                         let node = query_value(url, "node").unwrap_or_default();
                         unpair_node(webview.app_handle(), node);
                         return false;
@@ -107,22 +105,23 @@ pub fn run() {
         )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(
-            // Omit VISIBLE. Exit persists is_visible(), so a hidden window would reopen hidden.
-            tauri_plugin_window_state::Builder::default()
-                .with_state_flags(
-                    StateFlags::SIZE
-                        | StateFlags::POSITION
-                        | StateFlags::MAXIMIZED
-                        | StateFlags::DECORATIONS
-                        | StateFlags::FULLSCREEN,
-                )
-                .build(),
-        )
         .manage(ServerProcess(Mutex::new(None)))
         .manage(NodeProcess(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![launcher_config_get, launcher_config_set, launcher_retry, desktop_notify])
         .setup(|app| {
+            // No WebView exists yet: restore storage before its first origin is opened.
+            if let Err(message) = prepare_browser_profile(app.handle()) {
+                let handle = app.handle().clone();
+                app.dialog().message(&message).title("Dovun · Restore local state").show(move |_| handle.exit(1));
+                return Ok(());
+            }
+            // Its exit hook writes state even without windows; register only after restoration.
+            app.handle().plugin(
+                tauri_plugin_window_state::Builder::default()
+                    .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED | StateFlags::DECORATIONS | StateFlags::FULLSCREEN)
+                    .build(),
+            )?;
+            tauri::WebviewWindowBuilder::from_config(app, &app.config().app.windows[0])?.build()?;
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_min_size(Some(LogicalSize::new(578.0, 640.0)));
                 let _ = window.show();
@@ -250,7 +249,7 @@ fn launch_remote(app: &AppHandle, remote_url: &str) -> Result<(), String> {
     probe_remote(url)?;
     LAUNCH_CONFIRMED.store(false, Ordering::SeqCst);
     open_workspace(app, format!("{url}/?launcher=1"));
-    // The remote page confirms itself by redirecting to /wwa-launcher-done, which
+    // The remote page confirms itself by redirecting to /dovun-launcher-done, which
     // on_navigation cancels. If nothing confirms in time, the address probably is
     // not a Dovun server.
     let handle = app.clone();
@@ -364,6 +363,25 @@ fn watch_restart_codes(app: &AppHandle) {
     });
 }
 
+fn obsolete_data_override(current: Option<std::ffi::OsString>, legacy: Option<std::ffi::OsString>) -> Result<(), String> {
+    if current.is_none() && legacy.is_some_and(|value| !value.is_empty()) {
+        return Err("Old WWA_DATA_DIR configuration detected. Stop the old workspace, back up or migrate that custom folder, and set DOVUN_DATA_DIR before starting. No empty workspace was created.".into());
+    }
+    Ok(())
+}
+
+fn prepare_browser_profile(app: &AppHandle) -> Result<(), String> {
+    obsolete_data_override(std::env::var_os("DOVUN_DATA_DIR"), std::env::var_os("WWA_DATA_DIR"))?;
+    let (node, server, _) = bundled_paths(app)?;
+    let mut command = Command::new(node);
+    command.arg(server.join("dist/profile-migrate.js")).arg(std::process::id().to_string());
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let output = command.output().map_err(|error| error.to_string())?;
+    if !output.status.success() { return Err(String::from_utf8_lossy(&output.stderr).trim().to_string()); }
+    Ok(())
+}
+
 fn bundled_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf, PathBuf), String> {
     let root = app.path().resource_dir().map_err(|error| error.to_string())?;
     let node = existing(&root, &["node.exe", "resources/node.exe", "node", "resources/node"]).ok_or_else(|| tr!("安装包里没有 Node。查找目录：{}", "Node is missing from the installation. Searched: {}", root.display()))?;
@@ -402,15 +420,13 @@ fn data_dir() -> Result<PathBuf, String> {
 }
 
 fn environment(suffix: &str) -> Option<std::ffi::OsString> {
-    let current = format!("DOVUN_{suffix}"); let legacy = format!("WWA_{suffix}");
-    let value = std::env::var_os(&current); let fallback = std::env::var_os(&legacy);
-    if value.is_some() && fallback.is_some() && value != fallback { eprintln!("{current} and {legacy} differ; using {current}"); }
-    value.or(fallback)
+    std::env::var_os(format!("DOVUN_{suffix}"))
 }
 fn database_file(data: &Path) -> Result<PathBuf, String> {
     let current = data.join("dovun.db"); let old = data.join("agent-studio.db");
     if current.exists() && old.exists() { return Err("Both database names exist. Choose the source after backing up both files.".into()); }
-    Ok(if old.exists() { old } else { current })
+    if old.exists() { return Err("Old database found. Run the offline data migration before starting the workspace.".into()); }
+    Ok(current)
 }
 fn prepare_data(app: &AppHandle) -> Result<(), String> {
     prepare_once(&DATA_PREPARED, || {
@@ -465,18 +481,9 @@ fn write_mcp_launcher(data: &Path, node: &Path, entry: &Path) -> Result<(), Stri
     use std::os::unix::fs::PermissionsExt;
     permissions.set_mode(0o755);
     fs::set_permissions(&script, permissions).map_err(|error| error.to_string())?;
-    fs::copy(&script, data.join("bin/wwa-mcp")).map_err(|error| error.to_string())?;
-    // One-release forwarding for host configs using the old absolute launcher path.
-    if data_override().is_none() && data.join(".dovun-migration.json").exists() {
-        if let Some(parent) = data.parent() {
-            let old = parent.join("work-with-agent/bin/wwa-mcp");
-            if old.is_file() {
-                fs::write(&old, &body).map_err(|error| error.to_string())?;
-                let mut permissions = fs::metadata(&old).map_err(|error| error.to_string())?.permissions();
-                permissions.set_mode(0o755); fs::set_permissions(&old, permissions).map_err(|error| error.to_string())?;
-            }
-        }
-    }
+    // The old source and verified backups remain intact; retire only this managed target alias.
+    let legacy = data.join("bin/wwa-mcp");
+    if legacy.exists() { fs::remove_file(legacy).map_err(|error| error.to_string())?; }
     Ok(())
 }
 
@@ -514,7 +521,7 @@ fn show_launch_error(app: &AppHandle, message: String) {
     let _ = app.run_on_main_thread(move || {
         if let Some(window) = handle.get_webview_window("main") {
             let text = serde_json::to_string(&message).unwrap_or_else(|_| format!("{:?}", tr!("启动失败", "Launch failed")));
-            let _ = window.eval(&format!("window.wwaLaunchError && window.wwaLaunchError({text});"));
+            let _ = window.eval(&format!("window.dovunLaunchError && window.dovunLaunchError({text});"));
         }
     });
 }
@@ -695,7 +702,7 @@ fn iso_now() -> String {
 fn desktop_event_script(detail: &serde_json::Value) -> String {
     let json = serde_json::to_string(detail).unwrap_or_else(|_| "{}".to_string());
     let json = json.replace('\u{2028}', "\\u2028").replace('\u{2029}', "\\u2029");
-    format!("window.__DOVUN_SHELL__=true;window.dispatchEvent(new CustomEvent(window.__DOVUN_CLIENT__?'dovun-desktop':'wwa-desktop', {{detail: {json}}}))")
+    format!("window.dispatchEvent(new CustomEvent('dovun-desktop', {{detail: {json}}}))")
 }
 
 fn emit_desktop(app: &AppHandle, detail: &serde_json::Value) {
@@ -1036,17 +1043,9 @@ mod tests {
     }
 
     #[test]
-    #[cfg(unix)]
-    fn remote_mode_preparation_refreshes_launchers_without_starting_local_api() {
-        let root = std::env::temp_dir().join(format!("dovun-launcher-{}", std::process::id()));
-        let data = root.join("dovun"); let old = root.join("work-with-agent/bin/wwa-mcp");
-        fs::create_dir_all(old.parent().unwrap()).unwrap(); fs::write(&old, "old application path").unwrap();
-        fs::create_dir_all(&data).unwrap(); fs::write(data.join(".dovun-migration.json"), "{}").unwrap();
-        fs::write(data.join("launcher.json"), r#"{"mode":"remote","remoteUrl":"https://example.com"}"#).unwrap();
-        write_mcp_launcher(&data, Path::new("/Applications/Dovun.app/node"), Path::new("/Applications/Dovun.app/mcp.js")).unwrap();
-        assert!(fs::read_to_string(&old).unwrap().contains("Dovun.app"));
-        assert_eq!(fs::read(data.join("bin/dovun-mcp")).unwrap(), fs::read(data.join("bin/wwa-mcp")).unwrap());
-        fs::remove_dir_all(root).unwrap();
+    fn obsolete_custom_data_stops_before_window_or_workspace_creation() {
+        assert!(obsolete_data_override(None, Some("/custom/original".into())).unwrap_err().contains("No empty workspace"));
+        assert!(obsolete_data_override(Some("/custom/original".into()), Some("/custom/original".into())).is_ok());
     }
 
     #[test]
@@ -1237,7 +1236,7 @@ mod tests {
             "note": "line\u{2028}break",
         });
         let script = desktop_event_script(&detail);
-        assert!(script.contains("window.__DOVUN_CLIENT__?'dovun-desktop':'wwa-desktop'"));
+        assert!(script.contains("new CustomEvent('dovun-desktop'"));
         assert!(script.ends_with("}))"));
         assert!(!script.contains('\u{2028}'));
         let json = serde_json::to_string(&detail).unwrap().replace('\u{2028}', "\\u2028").replace('\u{2029}', "\\u2029");
