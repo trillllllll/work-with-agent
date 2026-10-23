@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { DatabaseSync, backup } from 'node:sqlite';
+import { DatabaseSync } from 'node:sqlite';
 import { mkdir, cp, access, writeFile } from 'node:fs/promises';
 import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +17,7 @@ await access(source);
 const destination = resolve(root, '.backups', new Date().toISOString().replace(/[:.]/g, '-'));
 await mkdir(destination, { recursive: true });
 const db = new DatabaseSync(source, { readOnly: true });
-try { await backup(db, resolve(destination, 'workspace.db')); } finally { db.close(); }
+try { db.exec(`VACUUM INTO '${resolve(destination, 'workspace.db').replaceAll("'", "''")}'`); } finally { db.close(); }
 const directories = [
   { name: 'knowledge-blobs', path: resolve(process.env.KNOWLEDGE_STORAGE_ROOT ?? resolve(root, 'server/data/knowledge-blobs')) },
   { name: 'runner', path: resolve(process.env.DOVUN_RUNNER_DIR ?? process.env.WWA_RUNNER_DIR ?? resolve(root, 'server/runtime/runner')) },
