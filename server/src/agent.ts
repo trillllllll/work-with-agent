@@ -61,7 +61,23 @@ function serializeToolCalls(calls: ToolCall[]) {
   return JSON.stringify(calls.map((call) => ({ id: call.id, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.arguments ?? {}) } })));
 }
 export type ModelToolDelta = { index: number; id: string; name: string; argumentsDelta: string };
-export type ModelDelta = { text?: string; toolCalls?: ToolCall[]; toolDelta?: ModelToolDelta };
+export type ModelUsage = { inputTokens?: number; cachedInputTokens?: number; outputTokens?: number; model?: string };
+export type ModelDelta = { text?: string; toolCalls?: ToolCall[]; toolDelta?: ModelToolDelta; usage?: ModelUsage };
+
+function readUsage(chunk: any, model: string): ModelUsage | undefined {
+  const usage = chunk?.usage;
+  if (!usage || typeof usage !== 'object') return undefined;
+  const input = usage.prompt_tokens ?? usage.input_tokens;
+  const output = usage.completion_tokens ?? usage.output_tokens;
+  const cached = usage.prompt_cache_hit_tokens ?? usage.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens;
+  if (typeof input !== 'number' && typeof output !== 'number' && typeof cached !== 'number') return undefined;
+  return {
+    ...(typeof input === 'number' ? { inputTokens: input } : {}),
+    ...(typeof output === 'number' ? { outputTokens: output } : {}),
+    ...(typeof cached === 'number' ? { cachedInputTokens: cached } : {}),
+    model,
+  };
+}
 export type ModelToolDefinition = { type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } };
 
 const modelError = (message: string, code = 'MODEL_ERROR') => Object.assign(new Error(message), { code });
@@ -76,7 +92,7 @@ export class ModelAdapter {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
       signal,
-      body: JSON.stringify({ model: config.model, messages, ...(includeTools ? { tools: tools ?? this.toolDefinitions(), tool_choice: 'auto' } : {}), stream }),
+      body: JSON.stringify({ model: config.model, messages, ...(includeTools ? { tools: tools ?? this.toolDefinitions(), tool_choice: 'auto' } : {}), stream, ...(stream ? { stream_options: { include_usage: true } } : {}) }),
     });
     if (!response.ok) throw modelError(`模型服务错误：${response.status}`, 'MODEL_HTTP_ERROR');
     return response;
@@ -139,6 +155,8 @@ export class ModelAdapter {
           const calls = emitToolCalls();
           if (calls.length) yield { toolCalls: calls };
         }
+        const usage = readUsage(chunk, config.model);
+        if (usage) yield { usage };
       }
     };
     while (true) {
@@ -158,8 +176,19 @@ export class ModelAdapter {
   async complete(messages: ModelMessage[], signal?: AbortSignal, includeTools = false, tools?: ModelToolDefinition[]) {
     let text = '';
     const toolCalls: ToolCall[] = [];
-    for await (const delta of this.stream(messages, signal, includeTools, tools)) { text += delta.text ?? ''; if (delta.toolCalls) toolCalls.push(...delta.toolCalls); }
-    return { text, toolCalls };
+    const usage: Required<Pick<ModelUsage, 'inputTokens' | 'cachedInputTokens' | 'outputTokens'>> = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 };
+    let sawUsage = false;
+    for await (const delta of this.stream(messages, signal, includeTools, tools)) {
+      text += delta.text ?? '';
+      if (delta.toolCalls) toolCalls.push(...delta.toolCalls);
+      if (delta.usage) {
+        sawUsage = true;
+        usage.inputTokens += delta.usage.inputTokens ?? 0;
+        usage.cachedInputTokens += delta.usage.cachedInputTokens ?? 0;
+        usage.outputTokens += delta.usage.outputTokens ?? 0;
+      }
+    }
+    return { text, toolCalls, ...(sawUsage ? { usage } : {}) };
   }
 }
 

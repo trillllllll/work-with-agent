@@ -124,6 +124,20 @@ async function saveCursor(runId: string, token: string, cursor: RunCursor) {
   if (!updated.count) throw new DomainError('LEASE_LOST', '这次请求已经失去执行权', 409);
 }
 
+async function addRunUsage(runId: string, token: string, usage: { inputTokens: number; cachedInputTokens: number; outputTokens: number }, model: string | null) {
+  const updated = await prisma.agentRun.updateMany({
+    where: { id: runId, leaseToken: token, state: 'running' },
+    data: {
+      inputTokens: { increment: usage.inputTokens },
+      cachedInputTokens: { increment: usage.cachedInputTokens },
+      outputTokens: { increment: usage.outputTokens },
+      ...(model ? { model } : {}),
+      updatedAt: nowIso(),
+    },
+  });
+  if (!updated.count) throw new DomainError('LEASE_LOST', '这次请求已经失去执行权', 409);
+}
+
 async function saveMessages(runId: string, token: string, messages: ModelMessage[]) {
   await prisma.$transaction(async (tx) => {
     const run = await tx.agentRun.findUnique({ where: { id: runId } });
@@ -281,6 +295,8 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
   timer.unref?.();
   let text = '';
   const calls: ToolCall[] = [];
+  const usage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 };
+  let usageModel: string | null = null;
   const batcher = new TextBatcher(
     (delta) => recordEvent(runId, token, { type: 'message_delta', conversationId: run.conversationId, messageId: assistant.id, delta }),
     () => controller.abort(),
@@ -310,7 +326,14 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
         await batcher.add(chunk.text);
       }
       if (chunk.toolCalls) calls.push(...chunk.toolCalls);
+      if (chunk.usage) {
+        usage.inputTokens += chunk.usage.inputTokens ?? 0;
+        usage.cachedInputTokens += chunk.usage.cachedInputTokens ?? 0;
+        usage.outputTokens += chunk.usage.outputTokens ?? 0;
+        if (chunk.usage.model) usageModel = chunk.usage.model;
+      }
     }
+    if (usage.inputTokens || usage.cachedInputTokens || usage.outputTokens || usageModel) await addRunUsage(runId, token, usage, usageModel);
     await batcher.finish();
     if (reply) {
       if (calls.length !== 1 || calls[0].name !== 'present_reply') throw new Error('富媒体回答必须单独提交；业务修改继续走原有审批');

@@ -3,7 +3,7 @@ import { app } from './app.js';
 import { prisma } from './infrastructure/prisma.js';
 import ownerRequest from './test-auth.js';
 import { classifyFailure, failureKindFromStep, noNewCommitProblem } from './application/orchestration/checks.js';
-import { aggregateDispatchStats, dispatchStats, parseStatsQuery, type StatsJob, type StatsRound, type StatsStep } from './application/orchestration/stats.js';
+import { aggregateDispatchStats, dispatchStats, parseStatsQuery, type StatsAssistantRun, type StatsJob, type StatsRound, type StatsStep } from './application/orchestration/stats.js';
 
 const owner = () => ownerRequest(app);
 const stamp = `stats-${Date.now()}`;
@@ -167,6 +167,31 @@ describe('dispatch stats aggregation', () => {
     expect(all.legacy).toMatchObject({ count: 2, inputTokens: 7, cachedInputTokens: 1, outputTokens: 3, costMicroUsd: 40, costJobs: 1, noCostJobs: 1, durationMs: 5000 + 60 * 60 * 1000 });
     expect(all.resources.inputTokens).toBe(stats.resources.inputTokens + 1000);
     expect(all.roundCount).toBe(0);
+  });
+
+  it('sums built-in assistant runs by updatedAt, grouping models, with unknown cost', () => {
+    const assistantRuns: StatsAssistantRun[] = [
+      { id: 'chat-1', createdAt: '2099-06-02T00:00:00.000Z', completedAt: '2099-06-02T00:01:00.000Z', updatedAt: '2099-06-02T00:01:00.000Z', inputTokens: 300, cachedInputTokens: 120, outputTokens: 50, model: 'k1' },
+      { id: 'chat-2', createdAt: '2099-06-03T00:00:00.000Z', completedAt: '2099-06-03T00:02:00.000Z', updatedAt: '2099-06-03T00:02:00.000Z', inputTokens: 100, cachedInputTokens: 0, outputTokens: 20, model: 'k1' },
+      { id: 'chat-no-usage', createdAt: '2099-06-04T00:00:00.000Z', completedAt: null, updatedAt: '2099-06-04T00:00:30.000Z', inputTokens: null, cachedInputTokens: null, outputTokens: null, model: null },
+      { id: 'chat-out', createdAt: TO, completedAt: TO, updatedAt: TO, inputTokens: 999, cachedInputTokens: 0, outputTokens: 999, model: 'k2' },
+    ];
+    const stats = aggregate({ assistantRuns });
+    expect(stats.assistant).toEqual({
+      runs: 3,
+      runsWithUsage: 2,
+      durationMs: 60_000 + 120_000 + 30_000,
+      inputTokens: 400,
+      cachedInputTokens: 120,
+      outputTokens: 70,
+      costMicroUsd: null,
+      byModel: [
+        { key: 'k1', jobs: 2, durationMs: 180_000, inputTokens: 400, cachedInputTokens: 120, outputTokens: 70, costMicroUsd: 0 },
+      ],
+    });
+    const filtered = aggregate({ assistantRuns, projectId: 'project-p' });
+    expect(filtered.assistant.runs).toBe(0);
+    expect(filtered.assistant.byModel).toEqual([]);
   });
 
   it('fills every UTC day and splits a Shanghai midnight across byDay', () => {

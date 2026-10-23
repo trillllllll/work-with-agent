@@ -45,6 +45,15 @@ type DispatchStats = {
   top5ByDuration: RankDuration[];
   top5ByCost: RankCost[];
   legacy: { count: number; inputTokens: number; outputTokens: number; cachedInputTokens: number; costMicroUsd: number; costJobs: number; durationMs: number };
+  assistant: {
+    runs: number;
+    runsWithUsage: number;
+    durationMs: number;
+    inputTokens: number;
+    cachedInputTokens: number;
+    outputTokens: number;
+    byModel: UsageGroup[];
+  };
 };
 type Project = { id: string; name: string };
 type Mode = 'this' | 'last' | 'custom';
@@ -93,7 +102,7 @@ export function DispatchStatsView({ rangeFrom, rangeTo }: { rangeFrom?: string; 
     },
   });
   const data = stats.data;
-  const empty = !!data && data.roundCount === 0 && data.resources.jobs === 0 && data.legacy.count === 0;
+  const empty = !!data && data.roundCount === 0 && data.resources.jobs === 0 && data.legacy.count === 0 && data.assistant.runs === 0;
   const maxFailure = data ? Math.max(1, ...FAILURE_KINDS.map((kind) => data.failureKinds[kind] ?? 0)) : 1;
   const modeClass = (selected: boolean) => `shrink-0 rounded-full px-3 py-1 text-sm ${selected ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`;
   const groupLabel = (key: string) => key === 'unknown' ? t('runs.stats.unknown') : key;
@@ -200,6 +209,22 @@ export function DispatchStatsView({ rangeFrom, rangeTo }: { rangeFrom?: string; 
           </ol>}
         </section>
       </div>
+      {data.assistant.runs > 0 && <section className="glass-subtle rounded-xl border p-4 text-sm" data-testid="stats-assistant">
+        <h2 className="text-sm font-semibold">{t('runs.stats.assistant')}</h2>
+        <p className="text-xs text-muted-foreground">{t('runs.stats.assistantLine', {
+          count: data.assistant.runs,
+          tokens: formatTokens(data.assistant.inputTokens + data.assistant.outputTokens),
+          cached: formatTokens(data.assistant.cachedInputTokens),
+          duration: formatDuration(data.assistant.durationMs),
+        })}</p>
+        {data.assistant.byModel.length > 0 && <ul className="mt-2 space-y-1">
+          {data.assistant.byModel.map((group) => <li key={group.key} className="flex items-center justify-between gap-3 text-xs">
+            <span className="min-w-0 truncate text-muted-foreground">{groupLabel(group.key)}</span>
+            <span className="shrink-0 tabular-nums">{t('runs.stats.assistantModelLine', { count: group.jobs, tokens: formatTokens(group.inputTokens + group.outputTokens) })}</span>
+          </li>)}
+        </ul>}
+        <p className="mt-1 text-xs text-muted-foreground">{t('runs.stats.noCostAssistant')}</p>
+      </section>}
       <section className="glass-subtle rounded-xl border p-4 text-sm">
         <h2 className="text-sm font-semibold">{t('runs.stats.legacy')}</h2>
         <p className="text-xs text-muted-foreground">{t('runs.stats.legacyLine', {

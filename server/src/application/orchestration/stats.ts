@@ -69,6 +69,17 @@ export type StatsLegacyRun = {
   costMicroUsd: number | null;
 };
 
+export type StatsAssistantRun = {
+  id: string;
+  createdAt: string | null;
+  completedAt: string | null;
+  updatedAt: string;
+  inputTokens: number | null;
+  cachedInputTokens: number | null;
+  outputTokens: number | null;
+  model: string | null;
+};
+
 export type StatsTask = { id: string; title: string };
 export type StatsNode = { id: string; name: string };
 export type StatsProject = { id: string; name: string };
@@ -127,6 +138,17 @@ export type DispatchStats = {
     costJobs: number;
     noCostJobs: number;
     durationMs: number;
+  };
+  /** Built-in assistant chat usage. Buckets by the run's updatedAt. No cost data (pricing unknown). */
+  assistant: {
+    runs: number;
+    runsWithUsage: number;
+    durationMs: number;
+    inputTokens: number;
+    cachedInputTokens: number;
+    outputTokens: number;
+    costMicroUsd: number | null;
+    byModel: UsageGroup[];
   };
 };
 
@@ -188,6 +210,7 @@ export function aggregateDispatchStats(input: {
   steps: StatsStep[];
   jobs: StatsJob[];
   legacyRuns: StatsLegacyRun[];
+  assistantRuns?: StatsAssistantRun[];
   tasks: StatsTask[];
   nodes: StatsNode[];
   projects: StatsProject[];
@@ -296,6 +319,34 @@ export function aggregateDispatchStats(input: {
     }
   }
 
+  const assistant = { runs: 0, runsWithUsage: 0, durationMs: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, costMicroUsd: null as number | null, byModel: [] as UsageGroup[] };
+  if (!projectId) {
+    const byModel = new Map<string, UsageGroup>();
+    for (const run of input.assistantRuns ?? []) {
+      if (!inRange(run.updatedAt, parsed.fromMs, parsed.toMs)) continue;
+      assistant.runs += 1;
+      const inputTokens = run.inputTokens ?? 0;
+      const cachedInputTokens = run.cachedInputTokens ?? 0;
+      const outputTokens = run.outputTokens ?? 0;
+      if (run.inputTokens != null || run.outputTokens != null) assistant.runsWithUsage += 1;
+      const runDuration = durationMs(run.createdAt, run.completedAt ?? run.updatedAt);
+      assistant.durationMs += runDuration;
+      assistant.inputTokens += inputTokens;
+      assistant.cachedInputTokens += cachedInputTokens;
+      assistant.outputTokens += outputTokens;
+      if (run.inputTokens == null && run.outputTokens == null && !run.model) continue;
+      const key = run.model || 'unknown';
+      const group = byModel.get(key) ?? emptyGroup(key);
+      group.jobs += 1;
+      group.durationMs += runDuration;
+      group.inputTokens += inputTokens;
+      group.cachedInputTokens += cachedInputTokens;
+      group.outputTokens += outputTokens;
+      byModel.set(key, group);
+    }
+    assistant.byModel = sortedGroups(byModel);
+  }
+
   const zone = input.tz?.trim() || 'UTC';
   if (input.tz?.trim()) assertTimeZone(zone);
   const format = calendarFormatter(zone);
@@ -342,6 +393,7 @@ export function aggregateDispatchStats(input: {
     top5ByDuration,
     top5ByCost,
     legacy,
+    assistant,
     byDay: [...byDay.values()],
   };
 }
@@ -388,10 +440,17 @@ export async function dispatchStats(query: { from: string; to: string; projectId
     : [];
   const orchestrationById = new Map(jobOrchestrations.map((row) => [row.id, row]));
   const taskIds = [...new Set([...rounds.map((round) => round.taskId), ...jobOrchestrations.map((row) => row.taskId)])];
-  const [tasks, projects, legacyRuns] = await Promise.all([
+  const [tasks, projects, legacyRuns, assistantRuns] = await Promise.all([
     taskIds.length ? prisma.task.findMany({ where: { id: { in: taskIds } }, select: { id: true, title: true } }) : Promise.resolve([]),
     prisma.project.findMany({ select: { id: true, name: true } }),
     projectId ? Promise.resolve([]) : prisma.run.findMany({ where: { endedAt: { gte: parsed.from, lt: parsed.to } }, select: { id: true, startedAt: true, endedAt: true, inputTokens: true, cachedInputTokens: true, outputTokens: true, costMicroUsd: true } }),
+    projectId ? Promise.resolve([]) : prisma.agentRun.findMany({
+      where: {
+        updatedAt: { gte: parsed.from, lt: parsed.to },
+        OR: [{ inputTokens: { not: null } }, { outputTokens: { not: null } }],
+      },
+      select: { id: true, createdAt: true, completedAt: true, updatedAt: true, inputTokens: true, cachedInputTokens: true, outputTokens: true, model: true },
+    }),
   ]);
   const nodes = [...new Map(jobs.map((job) => [job.nodeId, { id: job.nodeId, name: job.node?.name || 'unknown' }])).values()];
 
@@ -404,6 +463,7 @@ export async function dispatchStats(query: { from: string; to: string; projectId
     tasks,
     nodes,
     legacyRuns,
+    assistantRuns,
     rounds: rounds.map((round) => ({
       id: round.id,
       taskId: round.taskId,

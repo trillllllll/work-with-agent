@@ -301,6 +301,10 @@ model AgentRun {
   createdAt           String   @map("created_at")
   updatedAt           String   @map("updated_at")
   completedAt         String?  @map("completed_at")
+  inputTokens         Int?     @map("input_tokens")
+  cachedInputTokens   Int?     @map("cached_input_tokens")
+  outputTokens        Int?     @map("output_tokens")
+  model               String?
   conversation        Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   approvals           Approval[]
   events              AgentRunEvent[]
