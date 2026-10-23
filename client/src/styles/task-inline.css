@@ -1,0 +1,51 @@
+/* Shared 48px task cards. Material comes from the approved control themes. */
+.task-rows { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.task-row {
+  position: relative; display: flex; align-items: center; gap: 6px;
+  height: 48px; min-height: 48px; min-width: 0; padding: 3px 8px;
+  border: var(--surface-card-border); border-radius: 10px;
+  background: var(--surface-card-paint); box-shadow: var(--surface-card-shadow);
+}
+.task-row:hover:not([data-selected]) { border-color: var(--ring); }
+.task-row[data-selected] { background: linear-gradient(color-mix(in srgb, var(--workbench-selected) 45%, transparent), color-mix(in srgb, var(--workbench-selected) 45%, transparent)), var(--surface-card-paint); border-color: var(--ring); box-shadow: inset 2px 0 var(--workbench-selected-edge), var(--surface-card-shadow); }
+.task-row[data-drop-parent='true'] { border-color: var(--ring); background: var(--workbench-selected); }
+.task-children { position: relative; border-top: 0; padding-top: 5px; }
+.task-children::before { content: ''; position: absolute; inset: 0 auto 0 -12px; width: 1px; background: var(--glass-divider); }
+.task-inline-content { position: relative; display: flex; flex: 1; align-items: center; gap: 5px; min-width: 0; }
+.task-inline-open { flex: 1; min-width: 0; padding-block: 9px; text-align: left; }
+.task-inline-title, .task-inline-title-measure { font-size: 14px; font-weight: 500; line-height: 21px; white-space: nowrap; }
+.task-inline-title { display: block; overflow: hidden; text-overflow: ellipsis; }
+.task-inline-open:focus-visible, .task-inline-tags:focus-visible, .task-inline-info:focus-visible, .task-inline-schedule:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 4px; }
+.task-inline-info, .task-inline-tags { display: inline-flex; align-items: center; flex: none; gap: 3px; white-space: nowrap; font-size: 11px; line-height: 18px; color: var(--muted-foreground); }
+.task-inline-info:empty { display: none; }
+.task-inline-info .task-place-chip { max-width: 80px; overflow: hidden; text-overflow: ellipsis; padding: 0; color: var(--muted-foreground); background: transparent; }
+.task-inline-tags { min-height: 30px; padding: 0; border-radius: 5px; }
+.task-inline-tags > span, .task-inline-measure > span { display: inline-flex; flex: none; }
+.task-inline-content .task-tag-chip, .task-inline-content .task-meta-pill { padding: 0 5px; line-height: 18px; font-size: 11px; }
+.task-inline-content[data-short-tags] .task-inline-tags .task-tag-chip { min-width: 21px; text-align: center; }
+.task-inline-probe { position: absolute; width: 0; height: 0; overflow: hidden; visibility: hidden; pointer-events: none; }
+.task-inline-measure { display: flex; width: max-content; gap: 0; }
+.task-inline-measure [data-measure-text]::after { content: attr(data-measure-text); }
+.task-tag-initial-measure { min-width: 21px; text-align: center; }
+.task-inline-measure .task-inline-info { display: inline-flex; }
+.task-inline-schedule { display: inline-flex; align-items: center; gap: 3px; flex: none; white-space: nowrap; color: var(--muted-foreground); font-size: 11px; line-height: 20px; font-variant-numeric: tabular-nums; }
+.task-inline-schedule svg { width: 13px; height: 13px; }
+.task-tag-popover { max-width: calc(100vw - 24px); max-height: min(320px, 70vh); overflow-y: auto; z-index: 85; }
+.task-tag-popover .task-tag-chip { overflow-wrap: anywhere; }
+.task-row .task-drag-handle { width: 10px; flex: none; }
+.task-row .task-expand, .task-expand-placeholder { width: 18px; flex: none; }
+.task-row .task-expand { height: 32px; }
+.task-row-ai { flex: none; width: 20px; min-height: 32px; border-radius: 5px; font-size: 10px; opacity: .45; }
+.task-row:hover .task-row-ai, .task-row:focus-within .task-row-ai, .task-row-ai[aria-pressed='true'] { opacity: 1; }
+.task-inline-check { display: grid; place-items: center; width: 26px; height: 40px; flex: none; cursor: pointer; }
+.task-row .task-checkbox { width: 18px; height: 18px; margin: 0; flex: none; }
+.task-menu-placeholder, .task-row > [data-slot='dropdown-menu-trigger'] { width: 28px; height: 34px; }
+.task-menu-placeholder { flex: none; }
+.task-drag-overlay .task-row { width: 100%; }
+@media (pointer: coarse) { .task-row-ai { opacity: 1; } }
+@media (max-width: 600px) {
+  .task-row { gap: 4px; padding-inline: 6px; }
+  .task-row .task-drag-handle { display: none; }
+  .task-inline-schedule { font-size: 10px; }
+  .task-inline-schedule svg { display: none; }
+}

@@ -55,7 +55,7 @@ async function visibleOrder(page: Page, ids: string[]) {
 async function rowGeometry(page: Page, id: string) {
   return page.getByTestId(`task-row-${id}`).evaluate((node) => {
     const checkbox = node.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-    const title = checkbox.nextElementSibling as HTMLElement;
+    const title = node.querySelector<HTMLElement>('.task-inline-title')!;
     const children = node.closest('.task-children')!;
     return {
       checkboxX: checkbox.getBoundingClientRect().x,
@@ -190,8 +190,8 @@ test.describe('已完成子任务保持缩进并混排', () => {
         expect(await visibleOrder(page, [A.id, B.id, seeded.C.id])).toEqual([A.id, B.id, seeded.C.id]);
         const a = await rowGeometry(page, A.id);
         const b = await rowGeometry(page, B.id);
-        expect(a.indent).toBe('56px');
-        expect(b.indent).toBe('56px');
+        expect(a.indent).toBe('24px');
+        expect(b.indent).toBe('24px');
         expect(parseFloat(b.minHeight)).toBeGreaterThanOrEqual(44);
         expect(Math.abs(a.checkboxX - b.checkboxX)).toBeLessThanOrEqual(1);
         expect(Math.abs(a.titleX - b.titleX)).toBeLessThanOrEqual(1);
@@ -225,23 +225,22 @@ test.describe('已完成子任务保持缩进并混排', () => {
 
         const muted = await tokenPaint(page, '--muted-foreground');
         const foreground = await tokenPaint(page, '--foreground');
-        const divider = await tokenPaint(page, '--glass-divider');
-        const hover = await tokenPaint(page, '--glass-subtle');
-        const selectedFill = await tokenPaint(page, '--glass-hover');
-        const selectedBorder = await tokenPaint(page, '--glass-border-soft');
+        const ring = await tokenPaint(page, '--ring');
         expect(await doneTitle.evaluate((node) => getComputedStyle(node).color)).toBe(muted.color);
         expect(await openTitle.evaluate((node) => getComputedStyle(node).color)).toBe(foreground.color);
         const seam = page.locator('.task-children .task-row-block').nth(1);
-        await expect(seam).toHaveCSS('border-top-width', '1px');
-        expect(await seam.evaluate((node) => getComputedStyle(node).borderTopColor)).toBe(divider.borderTopColor);
+        await expect(seam).toHaveCSS('border-top-width', '0px');
+        await expect(page.locator('.task-children').first()).toHaveCSS('row-gap', '5px');
 
         const canHover = await page.evaluate(() => matchMedia('(hover: hover)').matches);
         const handle = doneRow.locator('.task-drag-handle');
-        if (canHover) {
+        if (width < 600) {
+          await expect(handle).toBeHidden();
+        } else if (canHover) {
           await expect(handle).toHaveCSS('opacity', '0');
           await doneRow.hover();
           await expect(handle).toHaveCSS('opacity', '1');
-          await expect.poll(async () => doneRow.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(hover.backgroundColor);
+          await expect(doneRow).toHaveCSS('border-top-color', ring.borderTopColor);
         } else {
           await expect(handle).toHaveCSS('opacity', '1');
         }

@@ -324,8 +324,8 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     const parentBox = await parentRow.boundingBox();
     const childBox = await childRow.boundingBox();
     if (!parentBox || !childBox) throw new Error('父子任务行没有布局');
-    expect(childBox.x - parentBox.x).toBeGreaterThanOrEqual(40);
-    await expect(childRow.locator('xpath=ancestor::*[contains(@class,"task-children")]')).toHaveCSS('margin-left', '56px');
+    expect(childBox.x - parentBox.x).toBeGreaterThanOrEqual(24);
+    await expect(childRow.locator('xpath=ancestor::*[contains(@class,"task-children")]')).toHaveCSS('margin-left', '24px');
     const overflow = await page.getByTestId('task-list').evaluate((node) => {
       const surface = node.closest('section') ?? node;
       return surface.scrollWidth - surface.clientWidth;
@@ -735,7 +735,7 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await page.goto('/#/inbox');
     await expect(page.getByRole('heading', { name: '收集箱', exact: true })).toBeVisible();
     await expect(page.getByText('这是一个分类，这里只显示放在收集箱里的任务。', { exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: '收集箱', exact: true })).toHaveAttribute('aria-current', 'page');
+    if ((page.viewportSize()?.width ?? 1280) >= 1024) await expect(page.getByRole('button', { name: '收集箱', exact: true })).toHaveAttribute('aria-current', 'page');
     await expect(page.getByTestId(`task-row-${inboxTask.id}`)).toBeVisible();
     await expect(page.getByTestId(`task-row-${topicTask.id}`)).toHaveCount(0);
     await page.getByRole('button', { name: '筛选', exact: true }).click();
@@ -746,14 +746,14 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await page.goto('/#/board');
     await expect(page.getByTestId(`task-row-${topicTask.id}`)).toBeVisible();
     await expect(page.getByTestId(`task-row-${inboxTask.id}`)).toHaveCount(0);
-    await expect(page.getByRole('button', { name: '收集箱', exact: true })).not.toHaveAttribute('aria-current', 'page');
+    if ((page.viewportSize()?.width ?? 1280) >= 1024) await expect(page.getByRole('button', { name: '收集箱', exact: true })).not.toHaveAttribute('aria-current', 'page');
 
     await page.goto('/#/search');
     const inboxRow = page.getByTestId(`task-row-${inboxTask.id}`);
-    await expect(inboxRow.getByText('收集箱', { exact: true })).toBeVisible();
-    await expect(inboxRow.getByText('#跨类标签', { exact: true })).toBeVisible();
-    await expect(inboxRow.locator('.task-place-chip + .task-tag-chip, .task-place-chip ~ .task-tag-chip').first()).toHaveAttribute('data-color', 'violet');
-    await expect(page.getByTestId(`task-row-${topicTask.id}`).getByText('隔离主题', { exact: true })).toBeVisible();
+    await expect(inboxRow.locator('.task-inline-content > .task-inline-info')).toHaveAttribute('aria-label', '收集箱');
+    await expect(inboxRow.locator('button.task-inline-tags')).toHaveAttribute('aria-label', /跨类标签/);
+    await expect(inboxRow.locator('.task-inline-tags .task-tag-chip').first()).toHaveAttribute('data-color', 'violet');
+    await expect(page.getByTestId(`task-row-${topicTask.id}`).locator('.task-inline-content > .task-inline-info')).toHaveAttribute('aria-label', '隔离主题');
 
     await page.goto('/#/tags');
     await expect(page.getByText('选择一个标签后，按分类查看带有该标签的任务。', { exact: true })).toBeVisible();

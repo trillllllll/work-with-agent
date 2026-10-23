@@ -172,6 +172,7 @@ type TooltipProps = {
   disabledTrigger?: boolean
   className?: string
   contentClassName?: string
+  contentProps?: Pick<React.ComponentProps<typeof TooltipPrimitive.Content>, "onPointerDown" | "onMouseDown" | "onTouchStart" | "onClick">
   children: React.ReactNode
 }
 
@@ -183,6 +184,7 @@ function Tooltip({
   disabledTrigger = false,
   className,
   contentClassName,
+  contentProps,
   children,
 }: TooltipProps) {
   const coarse = useCoarsePointer()
@@ -198,6 +200,7 @@ function Tooltip({
       disabledTrigger={disabledTrigger}
       className={className}
       contentClassName={contentClassName}
+      contentProps={contentProps}
       coarse={coarse}
     >
       {children}
@@ -213,6 +216,7 @@ function TooltipInteraction({
   disabledTrigger,
   className,
   contentClassName,
+  contentProps,
   coarse,
   children,
 }: TooltipProps & { coarse: boolean }) {
@@ -313,7 +317,7 @@ function TooltipInteraction({
         >
           {trigger}
         </TooltipTrigger>
-        <TooltipContent side={side} align={align} className={contentClassName}>
+        <TooltipContent {...contentProps} side={side} align={align} className={contentClassName}>
           {content}
         </TooltipContent>
       </TooltipRoot>

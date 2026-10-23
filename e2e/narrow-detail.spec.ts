@@ -41,7 +41,8 @@ test('窄窗口打开任务后列表仍可读，日期仍显示', async ({ page,
       };
     });
     expect(metrics.dateShown, `${width}px 应显示安排日期`).toBe(true);
-    expect(metrics.dateText).toContain(dueDate);
+    expect(metrics.dateText).toBe('9/24');
+    await expect(row.locator('time')).toHaveAttribute('dateTime', dueDate);
     expect(metrics.rowWidth, `${width}px 任务行宽度`).toBeGreaterThan(240);
     expect(metrics.mainWidth, `${width}px 列表栏宽度`).toBeGreaterThan(width >= 1024 ? 360 : 240);
     expect(metrics.scrollOverflow).toBeLessThanOrEqual(1);

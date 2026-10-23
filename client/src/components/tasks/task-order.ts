@@ -3,7 +3,7 @@ import { arrayMove } from '@dnd-kit/sortable';
 type OrderedTask = { id: string; sortOrder?: number; children?: OrderedTask[] };
 
 export const dragIndentThreshold = 20;
-export const dragIndentOffset = 56;
+export const dragIndentOffset = 24;
 
 export type OrderRow = { id: string; parentId: string | null; hasChildren: boolean };
 export type DropProjection = { parentId: string | null; orderedIds: string[] };

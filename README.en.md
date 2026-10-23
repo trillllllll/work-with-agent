@@ -13,9 +13,9 @@ This branch contains the Dovun 0.4.0 candidate. The 0.3 transition remains on a 
 - **Then hand it to an AI.** Copy a config from **AI connections**. The host reads tasks, materials, and memories over MCP.
 - **Nothing changes until you approve.** Writes land in the **Review queue** and can be undone. Data lives in local SQLite, and in development the API listens only on `127.0.0.1`.
 
-[Quick start](#quick-start) · [Download](#download) · [Current control styles and verification](docs/design/dovun/controls-unification/README.md)
+[Quick start](#quick-start) · [Download](#download) · [Current control styles and verification](docs/design/dovun/controls-unification/README.md) · [Inline task cards and verification](docs/design/dovun/task-inline/README.md)
 
-<img src="./docs/design/dovun/controls-unification/evidence/today-en-light-1440.png" width="880" alt="Light materials: Today in the real Dovun workspace">
+<img src="./docs/design/dovun/task-inline/evidence/inbox-en-light-1586.png" width="880" alt="Light materials: compact task list in the real Dovun workspace">
 
 ## Features
 
@@ -32,7 +32,7 @@ This branch contains the Dovun 0.4.0 candidate. The 0.3 transition remains on a 
 
 Terminology (in Chinese): [CONTEXT.md](./CONTEXT.md). API and host integration (in Chinese): [docs/stages-2-5-api.md](./docs/stages-2-5-api.md).
 
-<img src="./docs/design/dovun/controls-unification/evidence/today-en-dark-1440.png" width="880" alt="Ink dark: the real Dovun workspace">
+<img src="./docs/design/dovun/task-inline/evidence/inbox-en-dark-1586.png" width="880" alt="Ink dark: the real Dovun workspace">
 
 **Plan** lays out scheduled tasks by day, week, or month. Tasks with a date but no time go in the all-day row at the top. Tasks that crowd the same time slot stack into one card.
 

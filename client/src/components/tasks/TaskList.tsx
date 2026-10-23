@@ -7,6 +7,10 @@ import { CalendarDays, Clock, GripVertical } from 'lucide-react';
 import type { Tag, Task, Topic } from '@/lib/api.js';
 import { priorities, statuses } from '@/lib/api.js';
 import type { TaskDraft } from '@/lib/todo.js';
+import { localDate } from '@/lib/todo.js';
+import { Tooltip } from '@/components/ui/tooltip.js';
+import { TaskInlineContent } from './TaskInlineContent.js';
+import { inlineSchedule } from './task-inline.js';
 import { scheduleLabel } from '@/lib/schedule.js';
 import { cn } from '@/lib/utils.js';
 import { completeSiblingIds, dragIndentOffset, projectTaskDrop, reorderTaskGroup, type OrderRow } from './task-order.js';
@@ -14,7 +18,7 @@ import { useTaskCollapse } from './task-collapse.js';
 import { TaskActions, TaskMenuButton, type TaskActionProps } from './TaskActionsMenu.js';
 
 type Props = { assistantSelectedIds?: string[]; onAssistantSelect?: (id: string) => void; tasks: Task[]; topics: Topic[]; tags: Tag[]; onOpen: (id: string) => void; onToggle: (task: Task) => Promise<unknown>; onMove: (task: Task, topicId: string | null) => Promise<unknown>; onDelete: (task: Task) => void; onSave: (task: Task, patch: Partial<TaskDraft>) => Promise<Task | undefined>; onCreate: (input: { title: string; topicId: string | null; parentId: string | null }) => Promise<unknown>; onReorder?: (tasks: Task[], parentId: string | null) => Promise<unknown>; onNest?: (task: Task, parentId: string | null, orderedIds: string[]) => Promise<unknown>; onDragSettled?: () => void; hierarchical?: boolean; foldDone?: boolean; readonly?: boolean; busy?: boolean; selectedTaskId?: string; textDirty?: boolean };
-type Actions = Pick<Props, 'assistantSelectedIds' | 'onAssistantSelect' | 'topics' | 'tags' | 'onOpen' | 'onToggle' | 'onMove' | 'onDelete' | 'onSave' | 'onCreate' | 'onReorder' | 'hierarchical' | 'readonly' | 'busy' | 'selectedTaskId' | 'textDirty'> & { dropParentId?: string; onToggleChildren?: (parentId: string) => void };
+type Actions = Pick<Props, 'assistantSelectedIds' | 'onAssistantSelect' | 'topics' | 'tags' | 'onOpen' | 'onToggle' | 'onMove' | 'onDelete' | 'onSave' | 'onCreate' | 'onReorder' | 'hierarchical' | 'readonly' | 'busy' | 'selectedTaskId' | 'textDirty'> & { reserveDisclosure?: boolean; dropParentId?: string; onToggleChildren?: (parentId: string) => void };
 type SortScope = 'tree' | 'siblings';
 type TaskDragData = { groupId: string; hierarchical: boolean; hasChildren: boolean; sortScope: SortScope };
 type DragState = { id: string; width: number; overId: string; x: number; sortScope: SortScope };
@@ -73,7 +77,7 @@ export function TaskList({ assistantSelectedIds, onAssistantSelect, tasks, topic
     if (result !== undefined && patch.parentId && patch.parentId !== task.id) expandChildren(patch.parentId);
     return result;
   } : onSave;
-  const resting = { assistantSelectedIds, onAssistantSelect, topics, tags, onOpen, onToggle, onMove, onDelete, onSave: saveTask, onCreate: createChild, hierarchical, readonly, busy, selectedTaskId, textDirty, skipClick, dropParentId: '', onToggleChildren: toggleChildren };
+  const resting = { reserveDisclosure: hierarchical && roots.some(parent => childrenOf(parent.id).length > 0), assistantSelectedIds, onAssistantSelect, topics, tags, onOpen, onToggle, onMove, onDelete, onSave: saveTask, onCreate: createChild, hierarchical, readonly, busy, selectedTaskId, textDirty, skipClick, dropParentId: '', onToggleChildren: toggleChildren };
   function openGroup(groupId: string) {
     if (groupId === 'root' || groupId === 'flat') return visibleRoots;
     return childrenOf(groupId);
@@ -176,17 +180,24 @@ const TaskArticle = forwardRef<HTMLElement, { task: Task; group?: Task[]; index?
   const selected = !preview && selectedTaskId === task.id;
   const showHandle = Boolean(onReorder) || preview;
   const open = () => { if (!skipClick.current) onOpen(task.id); };
-  const article = <article ref={ref} {...(preview ? {} : listeners)} data-testid={preview ? undefined : `task-row-${task.id}`} data-selected={selected || undefined} data-drop-parent={!preview && actions.dropParentId === task.id || undefined} onClick={(event) => { if (preview || skipClick.current) return; const target = event.target; if (!(target instanceof Element) || target.closest('button, a, select, label, input, [role="menu"], [role="menuitem"], [role="listbox"], [role="option"]')) return; open(); }} className={cn('task-row group flex min-h-11 items-center gap-2 border border-transparent px-2.5 py-1.5', !preview && onReorder && 'cursor-grab', selected ? 'border-[var(--glass-border-soft)] bg-[var(--glass-hover)]' : 'hover:bg-[var(--glass-subtle)]')}>
-    {!preview && actions.onAssistantSelect && <button type="button" className={cn('shrink-0 rounded px-1 py-1 text-[10px] text-muted-foreground hover:bg-muted', actions.assistantSelectedIds?.includes(task.id) && 'bg-primary/10 text-brand-link')} aria-label={t('taskList.selectAi', { title: task.title })} aria-pressed={actions.assistantSelectedIds?.includes(task.id) ?? false} onMouseDown={stopDrag} onTouchStart={stopDrag} onPointerDown={stopDrag} onClick={(event) => { event.stopPropagation(); actions.onAssistantSelect?.(task.id); }}>AI</button>}
+  const schedule = inlineSchedule(task, localDate());
+  const info = [
+    ...(task.priority !== 'none' ? [{ key: 'priority', text: priorities.find(value => value.value === task.priority)?.label ?? task.priority, className: 'task-meta-pill' }] : []),
+    ...(!['todo', 'done'].includes(task.status) ? [{ key: 'status', text: statuses.find(value => value.value === task.status)?.label ?? task.status, className: 'task-meta-pill' }] : []),
+    ...(!hierarchical ? [{ key: 'topic', text: task.topic?.name ?? t('shared.inbox'), className: 'task-place-chip' }] : []),
+    ...(!hierarchical && task.parentId ? [{ key: 'parent', text: t('shared.subtask'), className: 'task-meta-pill' }] : []),
+  ];
+  const article = <article ref={ref} {...(preview ? {} : listeners)} data-testid={preview ? undefined : `task-row-${task.id}`} data-selected={selected || undefined} data-drop-parent={!preview && actions.dropParentId === task.id || undefined} onClick={(event) => { if (preview || skipClick.current) return; const target = event.target; if (!(target instanceof Element) || target.closest('button, a, select, label, input, [role="menu"], [role="menuitem"], [role="listbox"], [role="option"]')) return; open(); }} className={cn('task-row group', !preview && onReorder && 'cursor-grab', selected ? 'border-[var(--glass-border-soft)] bg-[var(--glass-hover)]' : 'hover:bg-[var(--glass-subtle)]')}>
+    {preview && actions.onAssistantSelect && <span className="task-row-ai" aria-hidden="true">AI</span>}
+    {!preview && actions.onAssistantSelect && <button type="button" className={cn('task-row-ai text-muted-foreground hover:bg-muted', actions.assistantSelectedIds?.includes(task.id) && 'bg-primary/10 text-brand-link')} aria-label={t('taskList.selectAi', { title: task.title })} aria-pressed={actions.assistantSelectedIds?.includes(task.id) ?? false} onMouseDown={stopDrag} onTouchStart={stopDrag} onPointerDown={stopDrag} onClick={(event) => { event.stopPropagation(); actions.onAssistantSelect?.(task.id); }}>AI</button>}
     {showHandle && <span className="task-drag-handle cursor-grab text-muted-foreground/60" title={t('taskList.drag')}><GripVertical className="size-4" /></span>}
-    {hierarchical && !nested && (hasChildren && !preview
+    {hierarchical && actions.reserveDisclosure && !nested && (hasChildren && !preview
       ? <button type="button" className="task-expand" aria-label={t(childrenCollapsed ? 'taskList.expandSubtasks' : 'taskList.collapseSubtasks', { title: task.title })} aria-expanded={!childrenCollapsed} onClick={(event) => { event.stopPropagation(); actions.onToggleChildren?.(task.id); }} onMouseDown={stopDrag} onTouchStart={stopDrag} onPointerDown={stopDrag}><span className="disclosure-chevron" data-open={!childrenCollapsed || undefined} aria-hidden="true" /></button>
-      : <span className="w-5 shrink-0" aria-hidden="true" />)}
-    <input type="checkbox" className="task-checkbox size-[18px] shrink-0 accent-primary" checked={task.status === 'done'} disabled={preview || readonly || busy} aria-label={t(task.status === 'done' ? 'shared.reopenTask' : 'shared.completeTask', { title: task.title })} onMouseDown={stopDrag} onTouchStart={stopDrag} onPointerDown={stopDrag} onChange={() => { void onToggle(task).catch(() => undefined); }} />
-    <button type="button" aria-label={task.title} className="min-w-0 flex-1 py-0.5 text-left" disabled={preview} onClick={(event) => { event.stopPropagation(); open(); }}><span className={cn('block break-words text-sm font-medium', task.status === 'done' && 'text-muted-foreground line-through')}>{task.title}</span><span aria-hidden="true" className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">{task.priority !== 'none' && <span className="task-meta-pill">{priorities.find((value) => value.value === task.priority)?.label}</span>}{task.status !== 'todo' && task.status !== 'done' && <span className="task-meta-pill">{statuses.find((value) => value.value === task.status)?.label}</span>}{!hierarchical && <span className="task-place-chip">{task.topic?.name ?? t('shared.inbox')}</span>}{task.tags?.map((tag) => <span key={tag.id} className="task-tag-chip" data-color={tag.color || 'violet'}>#{tag.name}</span>)}{!hierarchical && task.parentId && <span className="task-meta-pill">{t('shared.subtask')}</span>}</span></button>
-    {task.scheduledStart && <span className="hidden max-w-[45%] shrink-0 items-center gap-1 text-xs text-muted-foreground min-[578px]:flex"><Clock className="size-3.5" strokeWidth={1.75} /><time className="truncate" dateTime={task.scheduledStart} title={scheduleLabel(task)}><span className="task-schedule-full">{scheduleLabel(task)}</span><span className="task-schedule-time">{task.scheduledStart.slice(11, 16)}</span></time></span>}
-    {task.dueDate && !task.scheduledStart && <time dateTime={task.dueDate} className="hidden shrink-0 items-center gap-1 text-xs text-muted-foreground min-[578px]:flex"><CalendarDays className="size-3.5" />{task.dueDate}</time>}
-    {!preview && <TaskMenuButton />}
+      : <span className="task-expand-placeholder" aria-hidden="true" />)}
+    <label className="task-inline-check" onMouseDown={stopDrag} onTouchStart={stopDrag} onPointerDown={stopDrag}><input type="checkbox" className="task-checkbox size-[18px] shrink-0 accent-primary" checked={task.status === 'done'} disabled={preview || readonly || busy} aria-label={t(task.status === 'done' ? 'shared.reopenTask' : 'shared.completeTask', { title: task.title })} onMouseDown={stopDrag} onTouchStart={stopDrag} onPointerDown={stopDrag} onChange={() => { void onToggle(task).catch(() => undefined); }} /></label>
+    <TaskInlineContent task={task} info={info} preview={preview} onOpen={open} />
+    {schedule && <Tooltip contentProps={{ onPointerDown: stopDrag, onMouseDown: stopDrag, onTouchStart: stopDrag, onClick: stopDrag }} content={<span onPointerDown={stopDrag} onMouseDown={stopDrag} onTouchStart={stopDrag} onClick={stopDrag}>{scheduleLabel(task)}</span>}><span className="task-inline-schedule" tabIndex={preview ? undefined : 0} aria-label={scheduleLabel(task)} onPointerDown={stopDrag} onMouseDown={stopDrag} onTouchStart={stopDrag} onClick={stopDrag}>{task.scheduledStart ? <Clock aria-hidden="true" /> : <CalendarDays aria-hidden="true" />}<time dateTime={schedule.dateTime}>{schedule.label}</time></span></Tooltip>}
+    {preview ? <span className="task-menu-placeholder" /> : <TaskMenuButton />}
   </article>;
   if (preview) return article;
   const menu: TaskActionProps = { topics, tags, readonly, busy, textDirty, onOpen, onToggle, onMove, onDelete, onSave, onCreate, onReorder };

@@ -308,6 +308,8 @@
     "selectedTag": "Selected tag"
   },
   "taskList": {
+    "tags": "Tags",
+    "showTags": "Show task tags: {{names}}",
     "empty": "No tasks",
     "completedCount": "Completed · {{count}}",
     "drag": "Drag to reorder",

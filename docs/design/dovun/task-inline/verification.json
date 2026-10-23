@@ -1,0 +1,84 @@
+{
+  "date": "2026-10-24T01:08:35.378335+08:00",
+  "branch": "codex/dovun-workspace",
+  "baseline": "28e6a28",
+  "design": "inline-3 default 48px; existing control materials and 14px title retained",
+  "clientUnit": {
+    "filesPassed": 63,
+    "testsPassed": 370
+  },
+  "serverUnit": {
+    "files": 95,
+    "initialPassed": 830,
+    "initialFailed": 2,
+    "failure": "orchestration-phase2 stub git commit returned nothing to commit; dependent cleanup case also failed",
+    "recheckPassed": 2,
+    "migrationGuardChanged": false
+  },
+  "coreE2E": {
+    "scheduled": 165,
+    "initialPassed": 153,
+    "existingSkipped": 3,
+    "initialFailed": 9,
+    "resolution": "Updated old geometry, date, navigation, theme and DOM assertions; retained AI/menu preview widths; selected cards retain surface paint. All nine failures rechecked successfully.",
+    "firstRecheck": {
+      "passed": 16,
+      "failed": 3
+    },
+    "finalRecheck": {
+      "passed": 13,
+      "failed": 0
+    },
+    "overlappingRunsAreNotUniqueTotals": true
+  },
+  "visual": {
+    "engines": [
+      "chromium",
+      "mobile",
+      "webkit-controls"
+    ],
+    "languages": [
+      "zh-CN",
+      "en"
+    ],
+    "themes": [
+      "light",
+      "dark"
+    ],
+    "widths": [
+      1586,
+      1280,
+      1024,
+      578,
+      390,
+      320
+    ],
+    "measurementsPerEngine": 24,
+    "screenshots": 13,
+    "rowHeight": 48,
+    "parentChildAndTodayRail": true,
+    "tagPopoverAndDateTooltipPadding": true,
+    "listResizeObserverNotifications": 0,
+    "remainingNotification": "WebKit: one ResizeObserver delivery notification when opening existing task detail; recorded with phase detail, no list or popover notification"
+  },
+  "staticChecks": {
+    "language": "passed",
+    "tokens": "passed",
+    "diff": "passed"
+  },
+  "review": "Two Important issues resolved and re-reviewed; no remaining Critical or Important",
+  "build": {
+    "server": "passed",
+    "client": "passed",
+    "warning": "Existing JS chunks over 500kB"
+  },
+  "release": {
+    "version": "0.4.0",
+    "identifier": "app.dovun.desktop",
+    "built": false,
+    "installed": false,
+    "deployed": false,
+    "ciChanged": false,
+    "dockerfileChanged": false
+  }
+}

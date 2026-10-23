@@ -13,9 +13,9 @@
 - **再交给 AI。** 在「AI 连接」里复制一条配置。宿主通过 MCP 读任务、材料和记忆。
 - **你点头才改。** 写入进「待确认」。可以撤销。数据在本机 SQLite，开发时 API 只听 `127.0.0.1`。
 
-[快速开始](#quick-start) · [下载安装](#下载安装) · [最新控件样式与实际截图](docs/design/dovun/controls-unification/README.md)
+[快速开始](#quick-start) · [下载安装](#下载安装) · [最新控件样式与实际截图](docs/design/dovun/controls-unification/README.md) · [单行任务卡片与验收](docs/design/dovun/task-inline/README.md)
 
-<img src="./docs/design/dovun/controls-unification/evidence/task-detail-light-1586.png" width="880" alt="浅色材质：隔离数据中的真实 Dovun 任务详情">
+<img src="./docs/design/dovun/task-inline/evidence/inbox-zh-CN-light-1586.png" width="880" alt="浅色材质：真实 Dovun 48px 单行任务卡片">
 
 ## 功能
 
@@ -32,7 +32,7 @@
 
 术语见 [CONTEXT.md](./CONTEXT.md)。接口与交接见 [接口与宿主接入](./docs/stages-2-5-api.md)。
 
-<img src="./docs/design/dovun/controls-unification/evidence/today-dark-1586.png" width="880" alt="石墨深色：隔离数据中的真实今天页面">
+<img src="./docs/design/dovun/task-inline/evidence/today-detail-dark-1586.png" width="880" alt="石墨深色：隔离数据中的真实今天页面">
 
 「规划」按日、周、月排开有安排时间的任务，没有具体时间的放在顶部全天一栏。同一时段挤在一起的任务会叠成一张卡片。
 

@@ -306,6 +306,8 @@
     "selectedTag": "所选标签"
   },
   "taskList": {
+    "tags": "标签",
+    "showTags": "查看任务标签：{{names}}",
     "empty": "暂无任务",
     "completedCount": "已完成 · {{count}}",
     "drag": "拖动排序",

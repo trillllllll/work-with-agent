@@ -50,25 +50,11 @@
 .dovun-task-content .quick-capture { min-height: 64px; border: 1px solid var(--glass-border); background: var(--glass-control); box-shadow: var(--workbench-control-shadow); margin-bottom: 28px; padding: 8px 12px; }
 .dovun-task-content .quick-capture > svg { width: 23px; height: 23px; }
 .dovun-task-content .quick-capture input { height: 42px; font-size: 15px; background: transparent; box-shadow: none; }
-.dovun-task-content .task-rows { padding-top: 3px; }
-.dovun-task-content .task-row { position: relative; background: var(--surface-card-paint); border: var(--surface-card-border); box-shadow: var(--surface-card-shadow); min-height: 76px; padding: 14px 12px; gap: 12px; border-radius: 10px; }
-.dovun-task-content .task-row button[aria-label] > .block { font-size: 15px; font-weight: 550; line-height: 1.55; overflow-wrap: anywhere; }
-.dovun-task-content .task-row button[aria-label] > span + span { font-size: 12px; margin-top: 6px; }
-.dovun-task-content .task-row:hover:not([data-selected]) { background: var(--surface-card-paint); }
-.dovun-task-content .task-row[data-selected] { background: var(--workbench-selected); border-color: var(--glass-border-soft); box-shadow: inset 3px 0 0 var(--workbench-selected-edge), var(--surface-card-shadow); }
-.dovun-task-content .task-checkbox { appearance: none; width: 23px; height: 23px; border: 1.3px solid var(--muted-foreground); border-radius: 50%; background-color: transparent; cursor: pointer; }
+.dovun-task-content .task-checkbox { appearance: none; border: 1.3px solid var(--muted-foreground); border-radius: 50%; background-color: transparent; cursor: pointer; }
 .dovun-task-content .task-checkbox:checked { background-color: var(--primary); border-color: var(--primary); background-position: center; background-repeat: no-repeat; background-size: 14px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3 8 3 3 7-7' stroke='white' fill='none' stroke-width='2'/%3E%3C/svg%3E"); }
 .dovun-task-content .task-checkbox:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 .dovun-task-content .task-checkbox:disabled { opacity: .5; cursor: default; }
 .dovun-task-content .task-place-chip { color: var(--muted-foreground); background: transparent; padding: 0; }
-.dovun-task-content .task-row time { max-width: 120px; font-size: 12px; }
-.task-schedule-time { display: none; }
-.is-today .task-schedule-full { display: none; }
-.is-today .task-schedule-time { display: inline; font-variant-numeric: tabular-nums; }
-.dovun-task-content .task-row > button[aria-pressed] { opacity: 0; font-size: 10px; }
-.dovun-task-content .task-row:hover > button[aria-pressed],
-.dovun-task-content .task-row:focus-within > button[aria-pressed],
-.dovun-task-content .task-row > button[aria-pressed='true'] { opacity: 1; }
 .dovun-task-content section > h2 { font-size: 16px; letter-spacing: -.2px; margin-top: 24px; margin-bottom: 10px; }
 .dovun-work-rail { display: flex; flex-direction: column; min-height: 0; min-width: 0; margin: 0 10px 12px 0; overflow: hidden; background: var(--workbench-sheet); border: 1px solid var(--glass-border-soft); border-radius: var(--surface-overlay-radius); box-shadow: var(--workbench-panel-shadow); }
 .dovun-work-rail.hidden { display: none; }
@@ -133,8 +119,6 @@
   .dovun-page-header { margin-bottom: 20px; }
   .dovun-task-content .quick-capture { min-height: 54px; margin-bottom: 22px; }
   .dovun-task-content .quick-capture input { font-size: 16px; }
-  .dovun-task-content .task-row { padding-inline: 6px; gap: 8px; min-height: 74px; }
-  .dovun-task-content .task-row button[aria-label] > .block { font-size: 14px; }
   .dovun-workspace .dovun-task-slot { display: none; }
   .dovun-workspace .dovun-chat-slot { min-height: 0; }
 }
