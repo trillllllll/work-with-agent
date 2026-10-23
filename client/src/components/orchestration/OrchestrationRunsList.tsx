@@ -45,8 +45,8 @@ export function OrchestrationRunsList() {
   });
   const items = feed.data?.pages.flatMap((page) => page.items) ?? [];
   const openRound = (item: FeedItem) => {
-    sessionStorage.setItem('wwa-open-orchestration', JSON.stringify({ taskId: item.taskId, orchestrationId: item.id }));
-    window.dispatchEvent(new CustomEvent('wwa-open-task', { detail: { taskId: item.taskId } }));
+    sessionStorage.setItem('dovun-open-orchestration', JSON.stringify({ taskId: item.taskId, orchestrationId: item.id }));
+    window.dispatchEvent(new CustomEvent('dovun-open-task', { detail: { taskId: item.taskId } }));
   };
   return <div className="space-y-3">
     <div className="flex flex-wrap gap-2">

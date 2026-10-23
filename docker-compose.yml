@@ -1,4 +1,4 @@
-# One always-on Work With Agent instance; every device (desktop app, phone
+# One always-on Dovun instance; every device (desktop app, phone
 # browser) connects to it and shares the same data.
 #
 # Copy this file to compose.override.yml (or export the variables) and fill in
@@ -14,11 +14,13 @@ services:
     restart: unless-stopped
     environment:
       # A long random secret. Generate with: openssl rand -base64 32
-      WWA_OWNER_KEY: ${WWA_OWNER_KEY:?请在环境变量中设置 WWA_OWNER_KEY}
+      DOVUN_OWNER_KEY: ${DOVUN_OWNER_KEY:-${WWA_OWNER_KEY:?Set DOVUN_OWNER_KEY}}
+      WWA_OWNER_KEY: ${WWA_OWNER_KEY:-}
       # The address browsers use to reach this server; cookies and CORS follow it.
-      WWA_PUBLIC_URL: ${WWA_PUBLIC_URL:?请设置 WWA_PUBLIC_URL，例如 https://wwa.example.com}
-      WWA_PUBLIC_HTTPS: 1
-      CLIENT_ORIGIN: ${WWA_PUBLIC_URL}
+      DOVUN_PUBLIC_URL: ${DOVUN_PUBLIC_URL:-${WWA_PUBLIC_URL:?Set DOVUN_PUBLIC_URL}}
+      WWA_PUBLIC_URL: ${WWA_PUBLIC_URL:-}
+      DOVUN_PUBLIC_HTTPS: 1
+      CLIENT_ORIGIN: ${DOVUN_PUBLIC_URL:-${WWA_PUBLIC_URL:?Set DOVUN_PUBLIC_URL}}
       TZ: ${TZ:-Asia/Shanghai}
       BRAVE_IMAGE_SEARCH_KEY: ${BRAVE_IMAGE_SEARCH_KEY:-}
       BRAVE_IMAGE_SEARCH_PROXY_URL: ${BRAVE_IMAGE_SEARCH_PROXY_URL:-}

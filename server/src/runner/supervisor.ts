@@ -1,3 +1,4 @@
+import { runtimeEnv } from '../shared/runtime-env.js';
 import { spawn } from 'node:child_process';
 import { mkdir, readFile, writeFile, open } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -7,7 +8,7 @@ import type { LaunchSpec, RunnerReceipt } from './contracts.js';
 import { DomainError } from '../domain/task.js';
 
 // Resolve identically from src and dist, and keep runtime files out of the source checkout's tracked scope.
-export const runnerRoot = () => resolve(process.env.WWA_RUNNER_DIR ?? fileURLToPath(new URL('../../runtime/runner/', import.meta.url)));
+export const runnerRoot = () => resolve(runtimeEnv('RUNNER_DIR') ?? (process.env.DOVUN_CONTAINER === '1' ? '/data/runner' : undefined) ?? fileURLToPath(new URL('../../runtime/runner/', import.meta.url)));
 export const controlDirectory = (runId: string) => resolve(runnerRoot(), 'runs', runId);
 export async function launchSupervisor(spec: LaunchSpec) {
   await mkdir(spec.controlDir, { recursive: true });

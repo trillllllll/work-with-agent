@@ -1,3 +1,4 @@
+/** Historical HTML block attributes and CSS aliases remain a saved-content contract. */
 import { t } from '../i18n/index.js';
 
 /** Pure helpers for html reply blocks: srcdoc assembly, CSP and bridge message checks. */

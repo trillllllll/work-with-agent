@@ -32,15 +32,15 @@ export function OrchestrationButton({ taskId, disabled }: { taskId: string; disa
   const attention = useQuery({ queryKey: ['orchestrations', 'attention'], queryFn: () => api<{ items: Array<{ taskId: string; status: string }> }>('/api/orchestrations/attention'), staleTime: 5_000 });
   const mine = attention.data?.items.find((item) => item.taskId === taskId);
   useEffect(() => {
-    const raw = sessionStorage.getItem('wwa-open-orchestration');
+    const raw = sessionStorage.getItem('dovun-open-orchestration');
     if (!raw) return;
     try {
       const parsed = JSON.parse(raw) as { taskId?: string; orchestrationId?: string };
       if (parsed.taskId !== taskId) return;
-      sessionStorage.removeItem('wwa-open-orchestration');
+      sessionStorage.removeItem('dovun-open-orchestration');
       setFocusId(parsed.orchestrationId ?? null);
       setOpen(true);
-    } catch { sessionStorage.removeItem('wwa-open-orchestration'); }
+    } catch { sessionStorage.removeItem('dovun-open-orchestration'); }
   }, [taskId]);
   return <>
     <Button size="sm" variant="ghost" disabled={disabled} onClick={() => setOpen(true)}>{mine ? t('panel.buttonMine', { status: orchestrationStatusLabels[mine.status] ?? mine.status }) : t('panel.buttonStart')}</Button>

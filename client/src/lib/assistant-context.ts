@@ -34,7 +34,7 @@ export function attachmentError(items: ChatAttachment[]) {
   return '';
 }
 export function askAssistant(attachment?: Omit<ChatAttachment, 'id'>) {
-  window.dispatchEvent(new CustomEvent('wwa-open-assistant', { detail: attachment ? { attachment: { ...attachment, id: crypto.randomUUID() } } : {} }));
+  window.dispatchEvent(new CustomEvent('dovun-open-assistant', { detail: attachment ? { attachment: { ...attachment, id: crypto.randomUUID() } } : {} }));
 }
 export function suggestions(page: string): string[] {
   const group = page === 'plan' ? 'plan' : page === 'library' ? 'library' : page === 'settings' || page === 'connections' ? 'settings' : 'default';

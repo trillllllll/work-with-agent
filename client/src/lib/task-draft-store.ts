@@ -1,6 +1,6 @@
 import type { TaskText, TaskTextDraftV1 } from './task-editor-types.js';
 
-export const DRAFT_DATABASE = 'wwa-task-editor';
+export const DRAFT_DATABASE = 'dovun-task-editor';
 export const DRAFT_STORE = 'drafts';
 export const DRAFT_KEY_PATH = ['scopeKey', 'taskId', 'branchId'];
 

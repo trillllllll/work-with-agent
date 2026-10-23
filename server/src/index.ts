@@ -1,5 +1,8 @@
+import './shared/runtime-bootstrap.js';
+import { registerDataWriter } from './shared/data-guard.js';
+import { runtimeEnv } from './shared/runtime-env.js';
 import { agent, app, reviewService } from './app.js';
-import { DESKTOP_PORT, isDesktopPackage, isServerMode, publicWorkspaceUrl } from './application/desktop-paths.js';
+import { DESKTOP_PORT, isDesktopPackage, isServerMode, publicWorkspaceUrl, desktopDataDir } from './application/desktop-paths.js';
 import { createOwnerBootstrapToken, resolveOwnerKeyHash } from './application/security.js';
 import { reconcileLocalRuns } from './application/runs.js';
 import { startReviewScheduler } from './application/reviews.js';
@@ -10,6 +13,8 @@ import { mountDesktopStatic } from './desktop-static.js';
 import { startOrchestrationScheduler } from './application/orchestration/service.js';
 
 async function start() {
+  process.title = 'dovun-server';
+  if (isDesktopPackage() || isServerMode()) await registerDataWriter(desktopDataDir());
   if (isDesktopPackage() || isServerMode()) {
     // Finish a snapshot import staged by the previous process, then restore seed.zip
     // on a fresh deployment, both before the first migration touches the database.
@@ -21,13 +26,14 @@ async function start() {
   }
   // Fail fast on a malformed configured key; generate and log one only on first boot.
   if (isServerMode()) resolveOwnerKeyHash();
-  if (process.env.WWA_STATIC_DIR) mountDesktopStatic(app, process.env.WWA_STATIC_DIR);
+  const staticDir = runtimeEnv('STATIC_DIR') ?? (process.env.DOVUN_CONTAINER === '1' ? '/app/client-dist' : undefined);
+  if (staticDir) mountDesktopStatic(app, staticDir);
   const autoMemory = sharedAutoMemoryService();
   await autoMemory.prepareStartup();
   await agent.boot();
 
   const port = Number(process.env.PORT) || (isDesktopPackage() ? DESKTOP_PORT : 3016);
-  const host = process.env.WWA_BIND_HOST ?? (isServerMode() ? '0.0.0.0' : '127.0.0.1');
+  const host = runtimeEnv('BIND_HOST') ?? (isServerMode() ? '0.0.0.0' : '127.0.0.1');
   process.env.CLIENT_ORIGIN ??= isDesktopPackage()
     ? `http://127.0.0.1:${port}`
     : isServerMode()

@@ -175,7 +175,10 @@
       "complete": "完成与重开",
       "result": "写回结果"
     },
-    "samplePrompt": "请使用 work_with_agent 的 list_tasks 列出我的收集箱任务。"
+    "samplePrompt": "请使用 work_with_agent 的 list_tasks 列出我的收集箱任务。",
+    "transitionHint": "已有 work_with_agent 配置时，更新原条目并保留名称；不要执行新增命令或再建一条连接。",
+    "legacyEntry": "更新原有 work_with_agent 条目",
+    "reuseExisting": "这个宿主已有连接，已打开原连接供你更新。"
   },
   "reviews": {
     "title": "定期回顾",

@@ -10,7 +10,7 @@ async function openComposer(page: Page, kind: '文本' | '链接') {
 test.beforeEach(async ({ page }) => {
   await resetE2eDatabase();
   await page.addInitScript(() => {
-    localStorage.setItem('agent-studio.theme', 'light');
+    localStorage.setItem('dovun.theme', 'light');
     (window as any).__REACT_GRAB_DISABLED__ = true;
   });
   await page.goto('/#/library');

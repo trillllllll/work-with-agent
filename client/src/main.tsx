@@ -1,3 +1,6 @@
+import { preferenceMigrationError } from './lib/browser-state-bootstrap.js';
+import { migrateBrowserDrafts } from './lib/browser-state-migration.js';
+import i18n from './i18n/index.js';
 if (import.meta.env.DEV && !navigator.webdriver) {
   import('react-grab');
 }
@@ -13,11 +16,24 @@ import { SessionGate } from './components/workspace/SessionGate.js';
 import { CommandPreviewProvider } from './components/dialogs/CommandPreviewProvider.js';
 import './index.css';
 
-createRoot(document.getElementById('root')!).render(
+async function start() {
+  if (preferenceMigrationError) throw preferenceMigrationError;
+  await migrateBrowserDrafts(indexedDB, localStorage);
+  createRoot(document.getElementById('root')!).render(
   <QueryClientProvider client={queryClient}>
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem storageKey="agent-studio.theme" disableTransitionOnChange>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem storageKey="dovun.theme" disableTransitionOnChange>
       <SessionGate><CommandPreviewProvider><App /></CommandPreviewProvider></SessionGate>
       <Toaster richColors position="top-center" />
     </ThemeProvider>
   </QueryClientProvider>
 );
+
+}
+void start().catch(() => {
+  const root = document.getElementById('root')!;
+  const section = document.createElement('section'); section.setAttribute('role', 'alert'); section.style.cssText = 'max-width:36rem;margin:15vh auto;padding:2rem';
+  const title = document.createElement('h1'); title.textContent = i18n.t('app:migration.blocked');
+  const message = document.createElement('p'); message.textContent = i18n.t('app:migration.retained');
+  const retry = document.createElement('button'); retry.textContent = i18n.t('app:migration.retry'); retry.onclick = () => location.reload();
+  section.append(title, message, retry); root.replaceChildren(section);
+});

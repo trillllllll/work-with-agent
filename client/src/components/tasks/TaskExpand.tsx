@@ -734,7 +734,7 @@ function StartFocusButton() {
   return <button type="button" className="task-info-row" disabled={edit.readonly} onClick={() => {
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') void Notification.requestPermission();
     dispatch({ type: 'START', taskId: edit.taskId, taskTitle: edit.draft.title, now: Date.now() });
-    window.dispatchEvent(new CustomEvent('wwa-open-focus'));
+    window.dispatchEvent(new CustomEvent('dovun-open-focus'));
   }}>
     <Timer className="size-4 shrink-0 text-muted-foreground" aria-hidden />
     <span className="w-20 shrink-0 text-left text-muted-foreground">{t('taskExpand.startFocus')}</span>

@@ -2,8 +2,11 @@ export type ConnectionConfiguration = {
   command: string;
   args: string[];
   url: string;
-  env: { WWA_API_URL: string; WWA_CONNECTION_TOKEN: string };
+  env: { DOVUN_API_URL?: string; DOVUN_CONNECTION_TOKEN?: string; WWA_API_URL: string; WWA_CONNECTION_TOKEN: string };
 };
+
+export type McpEntryName = 'dovun' | 'work_with_agent';
+const apiUrl = (config: ConnectionConfiguration) => config.env.DOVUN_API_URL ?? config.env.WWA_API_URL;
 
 /** PowerShell single-quotes a value and escapes an embedded quote by doubling it. */
 export function quotePowerShell(value: string) {
@@ -12,27 +15,27 @@ export function quotePowerShell(value: string) {
 
 function claudeCommand(config: ConnectionConfiguration, token: string) {
   const quotedArgs = config.args.map(quotePowerShell).join(' ');
-  const apiEnv = quotePowerShell(`WWA_API_URL=${config.env.WWA_API_URL}`);
-  const tokenEnv = quotePowerShell(`WWA_CONNECTION_TOKEN=${token}`);
-  return `claude mcp add work_with_agent ${quotePowerShell(config.command)} ${quotedArgs} --scope user --env ${apiEnv} ${tokenEnv}`;
+  const apiEnv = quotePowerShell(`DOVUN_API_URL=${apiUrl(config)}`);
+  const tokenEnv = quotePowerShell(`DOVUN_CONNECTION_TOKEN=${token}`);
+  return `claude mcp add dovun ${quotePowerShell(config.command)} ${quotedArgs} --scope user --env ${apiEnv} ${tokenEnv}`;
 }
 
 function grokCommand(config: ConnectionConfiguration, token: string) {
-  return `grok mcp add work_with_agent --scope user --transport http ${config.url} --header ${quotePowerShell(`Authorization: Bearer ${token}`)}`;
+  return `grok mcp add dovun --scope user --transport http ${config.url} --header ${quotePowerShell(`Authorization: Bearer ${token}`)}`;
 }
 
 function codexConfig(config: ConnectionConfiguration, token: string) {
-  return `[mcp_servers.work_with_agent]\ncommand = ${JSON.stringify(config.command)}\nargs = ${JSON.stringify(config.args)}\n[mcp_servers.work_with_agent.env]\nWWA_API_URL = ${JSON.stringify(config.env.WWA_API_URL)}\nWWA_CONNECTION_TOKEN = ${JSON.stringify(token)}`;
+  return `[mcp_servers.dovun]\ncommand = ${JSON.stringify(config.command)}\nargs = ${JSON.stringify(config.args)}\n[mcp_servers.dovun.env]\nDOVUN_API_URL = ${JSON.stringify(apiUrl(config))}\nDOVUN_CONNECTION_TOKEN = ${JSON.stringify(token)}`;
 }
 
 /** Claude self-check JSON. Env is rebuilt so a server placeholder in config.env is not copied. */
 function claudeCheckJson(config: ConnectionConfiguration, token: string) {
   return JSON.stringify({
     mcpServers: {
-      work_with_agent: {
+      dovun: {
         command: config.command,
         args: config.args,
-        env: { WWA_API_URL: config.env.WWA_API_URL, WWA_CONNECTION_TOKEN: token },
+        env: { DOVUN_API_URL: apiUrl(config), DOVUN_CONNECTION_TOKEN: token },
       },
     },
   }, null, 2);
@@ -43,12 +46,18 @@ function genericJson(config: ConnectionConfiguration, token: string) {
     command: config.command,
     args: config.args,
     url: config.url,
-    env: { WWA_API_URL: config.env.WWA_API_URL, WWA_CONNECTION_TOKEN: token },
+    env: { DOVUN_API_URL: apiUrl(config), DOVUN_CONNECTION_TOKEN: token },
   }, null, 2);
 }
 
 /** Setup snippet. `token` is the credential; config.env.WWA_CONNECTION_TOKEN is not copied. */
-export function setupSnippet(host: string, config: ConnectionConfiguration, token: string) {
+export function setupSnippet(host: string, config: ConnectionConfiguration, token: string, entry: McpEntryName = 'dovun') {
+  if (entry === 'work_with_agent') {
+    if (host === 'codex') return codexConfig(config, token).replaceAll('mcp_servers.dovun', 'mcp_servers.work_with_agent');
+    if (host === 'claude') return claudeCheckJson(config, token).replace('"dovun":', '"work_with_agent":');
+    // Existing HTTP entries are edited in place; never offer a second add command.
+    return JSON.stringify({ entry: 'work_with_agent', url: config.url, headers: { Authorization: `Bearer ${token}` } }, null, 2);
+  }
   if (host === 'codex') return codexConfig(config, token);
   if (host === 'claude') return claudeCommand(config, token);
   if (host === 'grok') return grokCommand(config, token);

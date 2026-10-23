@@ -22,6 +22,7 @@ use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_window_state::StateFlags;
 
 const DESKTOP_PORT: u16 = 47316;
+static DATA_PREPARED: Mutex<bool> = Mutex::new(false);
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -63,9 +64,11 @@ pub fn run() {
         .plugin(
             // The workspace client redirects to these sentinel paths to talk to the shell
             // from either origin; both navigations are cancelled and handled here.
-            tauri::plugin::Builder::<tauri::Wry, ()>::new("wwa-navigation")
+            tauri::plugin::Builder::<tauri::Wry, ()>::new("dovun-navigation")
                 .on_navigation(|webview, url| {
                     let path = url.path().trim_end_matches('/');
+                    let compatible_path = if let Some(tail) = path.strip_prefix("/dovun-") { format!("/wwa-{tail}") } else { path.to_string() };
+                    let path = compatible_path.as_str();
                     if path == "/wwa-launcher-done" {
                         LAUNCH_CONFIRMED.store(true, Ordering::SeqCst);
                         return false;
@@ -136,6 +139,7 @@ pub fn run() {
             thread::spawn(move || {
                 if let Err(message) = launch(&handle) {
                     show_message(&handle, message);
+                    return;
                 }
                 // Independent of the workspace mode: a paired executor always comes up with the app.
                 start_node_agent(&handle);
@@ -162,6 +166,7 @@ pub fn run() {
 }
 
 fn launch(app: &AppHandle) -> Result<(), String> {
+    prepare_data(app)?;
     let data = data_dir()?;
     match read_launcher_config(&data) {
         // First run without a choice yet: the splash page shows the mode picker on its own.
@@ -179,8 +184,6 @@ fn launch_local(app: &AppHandle, data: &Path) -> Result<(), String> {
     for directory in ["knowledge-blobs", "runner", "workspace", "logs", "bin"] {
         fs::create_dir_all(data.join(directory)).map_err(|error| tr!("无法创建数据目录：{error}", "Could not create the data folder: {error}"))?;
     }
-    #[cfg(unix)]
-    write_mcp_launcher(data, &node, &server.join("dist/mcp/index.js"))?;
     let log = data.join("logs/server.log");
     let mut command = Command::new(&node);
     command
@@ -189,15 +192,15 @@ fn launch_local(app: &AppHandle, data: &Path) -> Result<(), String> {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .env("WWA_PACKAGED", "1")
+        .env("DOVUN_PACKAGED", "1")
         .env("PORT", DESKTOP_PORT.to_string())
         .env("CLIENT_ORIGIN", format!("http://127.0.0.1:{DESKTOP_PORT}"))
-        .env("WWA_DATA_DIR", data)
-        .env("DATABASE_URL", format!("file:{}", data.join("agent-studio.db").display()))
+        .env("DOVUN_DATA_DIR", data)
+        .env("DATABASE_URL", format!("file:{}", database_file(data)?.display()))
         .env("KNOWLEDGE_STORAGE_ROOT", data.join("knowledge-blobs"))
-        .env("WWA_RUNNER_DIR", data.join("runner"))
+        .env("DOVUN_RUNNER_DIR", data.join("runner"))
         .env("AGENT_WORKSPACE_ROOT", data.join("workspace"))
-        .env("WWA_STATIC_DIR", &client)
+        .env("DOVUN_STATIC_DIR", &client)
         .env_remove("NODE_OPTIONS");
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
@@ -294,12 +297,14 @@ fn write_launcher_config(data: &Path, config: &LauncherConfig) -> Result<(), Str
 }
 
 #[tauri::command]
-fn launcher_config_get() -> Result<Option<LauncherConfig>, String> {
+fn launcher_config_get(app: AppHandle) -> Result<Option<LauncherConfig>, String> {
+    prepare_data(&app)?;
     Ok(read_launcher_config(&data_dir()?))
 }
 
 #[tauri::command]
-fn launcher_config_set(mode: String, remote_url: String) -> Result<(), String> {
+fn launcher_config_set(app: AppHandle, mode: String, remote_url: String) -> Result<(), String> {
+    prepare_data(&app)?;
     if mode != "local" && mode != "remote" { return Err(tr!("未知启动模式", "Unknown launch mode")); }
     let remote_url = remote_url.trim().trim_end_matches('/').to_string();
     if mode == "remote" { probe_remote(&remote_url)?; }
@@ -314,7 +319,9 @@ fn launcher_retry(app: AppHandle) -> Result<(), String> {
     thread::spawn(move || {
         if let Err(message) = launch(&handle) {
             show_message(&handle, message);
+            return;
         }
+        start_node_agent(&handle);
     });
     Ok(())
 }
@@ -372,7 +379,7 @@ fn existing(root: &Path, relatives: &[&str]) -> Option<PathBuf> {
 }
 
 fn data_dir() -> Result<PathBuf, String> {
-    if let Some(value) = std::env::var_os("WWA_DATA_DIR") {
+    if let Some(value) = data_override() {
         if !value.is_empty() {
             return Ok(PathBuf::from(value));
         }
@@ -384,25 +391,92 @@ fn data_dir() -> Result<PathBuf, String> {
             .or_else(|| std::env::var_os("APPDATA"))
             .or_else(|| std::env::var_os("USERPROFILE"))
             .ok_or_else(|| tr!("找不到用户数据目录", "Could not find the user data folder"))?;
-        return Ok(PathBuf::from(base).join("work-with-agent"));
+        return Ok(PathBuf::from(base).join("dovun"));
     }
 
     #[cfg(not(target_os = "windows"))]
     {
         let home = std::env::var("HOME").map_err(|_| tr!("找不到用户主目录", "Could not find the home folder"))?;
-        return Ok(PathBuf::from(home).join("Library/Application Support/work-with-agent"));
+        return Ok(PathBuf::from(home).join("Library/Application Support/dovun"));
     }
 }
 
+fn environment(suffix: &str) -> Option<std::ffi::OsString> {
+    let current = format!("DOVUN_{suffix}"); let legacy = format!("WWA_{suffix}");
+    let value = std::env::var_os(&current); let fallback = std::env::var_os(&legacy);
+    if value.is_some() && fallback.is_some() && value != fallback { eprintln!("{current} and {legacy} differ; using {current}"); }
+    value.or(fallback)
+}
+fn database_file(data: &Path) -> Result<PathBuf, String> {
+    let current = data.join("dovun.db"); let old = data.join("agent-studio.db");
+    if current.exists() && old.exists() { return Err("Both database names exist. Choose the source after backing up both files.".into()); }
+    Ok(if old.exists() { old } else { current })
+}
+fn prepare_data(app: &AppHandle) -> Result<(), String> {
+    prepare_once(&DATA_PREPARED, || {
+        prepare_data_and_launchers(app)
+    })
+}
+
+fn prepare_data_and_launchers(app: &AppHandle) -> Result<(), String> {
+    migrate_default_data(app)?;
+    #[cfg(unix)]
+    {
+        let data = data_dir()?;
+        let (node, server, _) = bundled_paths(app)?;
+        write_mcp_launcher(&data, &node, &server.join("dist/mcp/index.js"))?;
+    }
+    Ok(())
+}
+
+fn migrate_default_data(app: &AppHandle) -> Result<(), String> {
+    if data_override().is_some() { return Ok(()); }
+    let target = data_dir()?;
+    let source = target.parent().ok_or("Cannot locate data parent")?.join("work-with-agent");
+    if !source.exists() { return Ok(()); }
+    if let Some(message) = port_busy_message(probe_port(DESKTOP_PORT), DESKTOP_PORT) { return Err(message); }
+    let (node, server, _) = bundled_paths(app)?;
+    let mut command = Command::new(node);
+    command.arg(server.join("dist/desktop-migrate.js")).arg(source).arg(target);
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let output = command.output().map_err(|error| error.to_string())?;
+    if !output.status.success() { return Err(String::from_utf8_lossy(&output.stderr).trim().to_string()); }
+    Ok(())
+}
+
+fn prepare_once(state: &Mutex<bool>, action: impl FnOnce() -> Result<(), String>) -> Result<(), String> {
+    let mut ready = state.lock().map_err(|_| "Data preparation was interrupted")?;
+    if *ready { return Ok(()); }
+    action()?;
+    *ready = true;
+    Ok(())
+}
+
+fn data_override() -> Option<std::ffi::OsString> { environment("DATA_DIR").filter(|value| !value.is_empty()) }
+
 #[cfg(unix)]
 fn write_mcp_launcher(data: &Path, node: &Path, entry: &Path) -> Result<(), String> {
-    let script = data.join("bin/wwa-mcp");
+    fs::create_dir_all(data.join("bin")).map_err(|error| error.to_string())?;
+    let script = data.join("bin/dovun-mcp");
     let body = format!("#!/bin/bash\nexec {} {} \"$@\"\n", shell_quote(node), shell_quote(entry));
-    fs::write(&script, body).map_err(|error| tr!("无法写入 MCP 启动脚本：{error}", "Could not write the MCP launcher script: {error}"))?;
+    fs::write(&script, &body).map_err(|error| tr!("无法写入 MCP 启动脚本：{error}", "Could not write the MCP launcher script: {error}"))?;
     let mut permissions = fs::metadata(&script).map_err(|error| error.to_string())?.permissions();
     use std::os::unix::fs::PermissionsExt;
     permissions.set_mode(0o755);
     fs::set_permissions(&script, permissions).map_err(|error| error.to_string())?;
+    fs::copy(&script, data.join("bin/wwa-mcp")).map_err(|error| error.to_string())?;
+    // One-release forwarding for host configs using the old absolute launcher path.
+    if data_override().is_none() && data.join(".dovun-migration.json").exists() {
+        if let Some(parent) = data.parent() {
+            let old = parent.join("work-with-agent/bin/wwa-mcp");
+            if old.is_file() {
+                fs::write(&old, &body).map_err(|error| error.to_string())?;
+                let mut permissions = fs::metadata(&old).map_err(|error| error.to_string())?.permissions();
+                permissions.set_mode(0o755); fs::set_permissions(&old, permissions).map_err(|error| error.to_string())?;
+            }
+        }
+    }
     Ok(())
 }
 
@@ -621,7 +695,7 @@ fn iso_now() -> String {
 fn desktop_event_script(detail: &serde_json::Value) -> String {
     let json = serde_json::to_string(detail).unwrap_or_else(|_| "{}".to_string());
     let json = json.replace('\u{2028}', "\\u2028").replace('\u{2029}', "\\u2029");
-    format!("window.dispatchEvent(new CustomEvent('wwa-desktop', {{detail: {json}}}))")
+    format!("window.__DOVUN_SHELL__=true;window.dispatchEvent(new CustomEvent(window.__DOVUN_CLIENT__?'dovun-desktop':'wwa-desktop', {{detail: {json}}}))")
 }
 
 fn emit_desktop(app: &AppHandle, detail: &serde_json::Value) {
@@ -853,8 +927,8 @@ fn start_node_agent(app: &AppHandle) {
     let entry = server.join("dist/node-agent/index.js");
     if !entry.exists() { return; }
     let _ = fs::create_dir_all(data.join("logs"));
-    NODE_WANTED.store(true, Ordering::SeqCst);
-    if !spawn_node_agent(app, &node, &entry, &dir, &data.join("logs/node.log")) { return; }
+    if NODE_WANTED.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() { return; }
+    if !spawn_node_agent(app, &node, &entry, &dir, &data.join("logs/node.log")) { NODE_WANTED.store(false, Ordering::SeqCst); return; }
     let handle = app.clone();
     thread::spawn(move || {
         let mut failures: u32 = 0;
@@ -898,10 +972,10 @@ fn spawn_node_agent(app: &AppHandle, node: &Path, entry: &Path, dir: &Path, log:
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .env("WWA_NODE_LOGIN_PATH", "1")
-        .env("WWA_NODE_MANAGED", "desktop")
-        .env("WWA_NODE_LOG", log)
-        .env("WWA_NODE_VERSION", app.package_info().version.to_string())
+        .env("DOVUN_NODE_LOGIN_PATH", "1")
+        .env("DOVUN_NODE_MANAGED", "desktop")
+        .env("DOVUN_NODE_LOG", log)
+        .env("DOVUN_NODE_VERSION", app.package_info().version.to_string())
         .env_remove("NODE_OPTIONS");
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
@@ -941,6 +1015,39 @@ fn append_log(path: &Path, line: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_preparation_retries_and_only_success_is_cached() {
+        let state = Mutex::new(false);
+        assert!(prepare_once(&state, || Err("old service still running".into())).is_err());
+        assert!(!*state.lock().unwrap());
+        assert!(prepare_once(&state, || Ok(())).is_ok());
+        assert!(prepare_once(&state, || panic!("successful migration must not repeat")).is_ok());
+    }
+
+    #[test]
+    fn empty_data_overrides_use_the_same_default_migration_path() {
+        let old_new = std::env::var_os("DOVUN_DATA_DIR"); let old_legacy = std::env::var_os("WWA_DATA_DIR");
+        std::env::set_var("DOVUN_DATA_DIR", ""); std::env::set_var("WWA_DATA_DIR", "");
+        assert!(data_override().is_none()); assert!(data_dir().unwrap().ends_with("dovun"));
+        std::env::remove_var("DOVUN_DATA_DIR"); assert!(data_override().is_none());
+        if let Some(value) = old_new { std::env::set_var("DOVUN_DATA_DIR", value); } else { std::env::remove_var("DOVUN_DATA_DIR"); }
+        if let Some(value) = old_legacy { std::env::set_var("WWA_DATA_DIR", value); } else { std::env::remove_var("WWA_DATA_DIR"); }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn remote_mode_preparation_refreshes_launchers_without_starting_local_api() {
+        let root = std::env::temp_dir().join(format!("dovun-launcher-{}", std::process::id()));
+        let data = root.join("dovun"); let old = root.join("work-with-agent/bin/wwa-mcp");
+        fs::create_dir_all(old.parent().unwrap()).unwrap(); fs::write(&old, "old application path").unwrap();
+        fs::create_dir_all(&data).unwrap(); fs::write(data.join(".dovun-migration.json"), "{}").unwrap();
+        fs::write(data.join("launcher.json"), r#"{"mode":"remote","remoteUrl":"https://example.com"}"#).unwrap();
+        write_mcp_launcher(&data, Path::new("/Applications/Dovun.app/node"), Path::new("/Applications/Dovun.app/mcp.js")).unwrap();
+        assert!(fs::read_to_string(&old).unwrap().contains("Dovun.app"));
+        assert_eq!(fs::read(data.join("bin/dovun-mcp")).unwrap(), fs::read(data.join("bin/wwa-mcp")).unwrap());
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn a_free_port_has_no_busy_message() {
@@ -1130,7 +1237,7 @@ mod tests {
             "note": "line\u{2028}break",
         });
         let script = desktop_event_script(&detail);
-        assert!(script.starts_with("window.dispatchEvent(new CustomEvent('wwa-desktop', {detail: "));
+        assert!(script.contains("window.__DOVUN_CLIENT__?'dovun-desktop':'wwa-desktop'"));
         assert!(script.ends_with("}))"));
         assert!(!script.contains('\u{2028}'));
         let json = serde_json::to_string(&detail).unwrap().replace('\u{2028}', "\\u2028").replace('\u{2029}', "\\u2029");

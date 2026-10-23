@@ -381,7 +381,7 @@ test('深色主题下统计页没有控制台错误', async ({ page }) => {
     errors.push(`console: ${message.text()} @ ${location.url}:${location.lineNumber}:${location.columnNumber}`);
   });
   await page.addInitScript(() => {
-    localStorage.setItem('agent-studio.theme', 'dark');
+    localStorage.setItem('dovun.theme', 'dark');
     document.documentElement?.classList.add('dark');
   });
   await page.goto('/#/stats');

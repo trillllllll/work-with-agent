@@ -45,7 +45,7 @@ test('创建连接明确显示必填条件，并在条件满足后可提交', as
 
   await submit.click();
   await expect(dialog.getByRole('heading', { name: '把「我的 Claude Code」配置到 Claude Code', exact: true })).toBeVisible();
-  await expect(dialog.getByText(/claude mcp add work_with_agent/)).toBeVisible();
+  await expect(dialog.getByText(/claude mcp add dovun/)).toBeVisible();
   await expect(dialog.getByText(/--scope user --env/)).toBeVisible();
   await expect(dialog.getByText(process.env.E2E_API_URL ?? 'http://127.0.0.1:3015', { exact: false }).first()).toBeVisible();
   await expect(page.getByText(/项目绝对路径/)).toHaveCount(0);
@@ -64,7 +64,7 @@ test('创建 Grok 连接时给出 grok mcp add 命令，自检配置不回显凭
   await dialog.getByRole('button', { name: '创建并配置宿主', exact: true }).click();
 
   await expect(dialog.getByRole('heading', { name: '把「我的 Grok」配置到 Grok', exact: true })).toBeVisible();
-  await expect(dialog.getByText(/grok mcp add work_with_agent/)).toBeVisible();
+  await expect(dialog.getByText(/grok mcp add dovun/)).toBeVisible();
   await expect(dialog.getByText(/--scope user/)).toBeVisible();
   await expect(dialog.getByText(/--transport http/)).toBeVisible();
   await expect(dialog.getByText(`${process.env.E2E_API_URL ?? 'http://127.0.0.1:3015'}/mcp`, { exact: false })).toBeVisible();
@@ -90,7 +90,7 @@ test('创建 Grok 连接时给出 grok mcp add 命令，自检配置不回显凭
   const panelId = await check.getAttribute('aria-controls');
   expect(panelId).toBeTruthy();
   const snippet = page.locator(`[id="${panelId}"]`).locator('pre');
-  await expect(snippet).toContainText('grok mcp add work_with_agent');
+  await expect(snippet).toContainText('grok mcp add dovun');
   await expect(snippet).toContainText('--transport http');
   await expect(snippet).toContainText(`${process.env.E2E_API_URL ?? 'http://127.0.0.1:3015'}/mcp`);
   await expect(snippet).toContainText('填入创建时保存的凭据');

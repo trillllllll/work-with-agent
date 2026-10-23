@@ -20,7 +20,7 @@ function installWindow(origin = 'http://localhost:3016') {
   return {
     assigned,
     dispatch(detail: unknown) {
-      const event = new CustomEvent('wwa-desktop', { detail });
+      const event = new CustomEvent('dovun-desktop', { detail });
       for (const listener of listeners) listener(event);
     },
   };

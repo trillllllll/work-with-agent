@@ -125,7 +125,7 @@ export const API_URL = '';
 let csrfToken = '';
 export function setCsrfToken(value: string) { csrfToken = value; }
 /** Every API call carries the CSRF token (when signed in) and the chosen UI language, so server messages match it. */
-export function authHeaders(): Record<string, string> { return { 'X-WWA-Language': currentLanguage(), ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}) }; }
+export function authHeaders(): Record<string, string> { return { 'X-Dovun-Language': currentLanguage(), 'X-WWA-Language': currentLanguage(), ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}) }; }
 
 export type MutationMeta = { changeId?: string; affectedTaskIds?: string[]; warnings?: string[] };
 export type ApiEnvelope<T> = { data: T; error: null; meta?: MutationMeta };

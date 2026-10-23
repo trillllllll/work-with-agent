@@ -15,7 +15,7 @@ This branch implements the Dovun visual redesign and migration. Versions 0.3.0 a
 
 [Quick start](#quick-start) · [Download](#download)
 
-<img src="./docs/design/dovun/implementation/evidence/today-light.png" width="880" alt="Light theme: the Sign-in revamp list, with the task Switch sign-in to one-time links open on the right, showing two materials and subtasks">
+<img src="./docs/design/dovun/implementation/evidence/today-en-light.png" width="880" alt="Porcelain light: Today and task details in the real Dovun workspace">
 
 ## Features
 
@@ -32,21 +32,21 @@ This branch implements the Dovun visual redesign and migration. Versions 0.3.0 a
 
 Terminology (in Chinese): [CONTEXT.md](./CONTEXT.md). API and host integration (in Chinese): [docs/stages-2-5-api.md](./docs/stages-2-5-api.md).
 
-<img src="./docs/design/dovun/implementation/evidence/today-dark.png" width="880" alt="Dark theme: the same list and task details, with each list's own color in the sidebar">
+<img src="./docs/design/dovun/implementation/evidence/today-en-dark.png" width="880" alt="Ink dark: the real Dovun workspace">
 
 **Plan** lays out scheduled tasks by day, week, or month. Tasks with a date but no time go in the all-day row at the top. Tasks that crowd the same time slot stack into one card.
 
-<img src="./docs/design/dovun/implementation/evidence/plan-light.png" width="880" alt="Light theme: the Plan week view, with three overlapping Wednesday-afternoon tasks stacked into one card">
+<img src="./docs/design/dovun/implementation/evidence/plan-en-light.png" width="880" alt="Porcelain light: the real Plan view">
 
 In **Work context**, confirmed memories group into communities by their relationships and can be shown as 3D terrain. The sample data below puts sign-in, lists, memory, and handoff in their own clusters; higher ground means more important, better-connected knowledge.
 
-<img src="./docs/readme/knowledge-graph-dark-en.png" width="880" alt="Dark 3D terrain: sample project memory grouped into four communities: Sign-in, Lists, Memory, and Handoff">
+<img src="./docs/design/dovun/implementation/evidence/knowledge-en-dark.png" width="880" alt="Ink dark: the real Work context page">
 
 ## Architecture
 
 The work loop: capture, fill in context, hand off, and bring the results back. (The diagram is in Chinese.)
 
-![Work With Agent work loop](./architecture.svg)
+![Dovun work loop](./architecture.svg)
 
 <a id="download"></a>
 
@@ -57,7 +57,7 @@ Prebuilt installers are on [GitHub Releases](https://github.com/trillllllll/work
 - macOS Apple Silicon: `.dmg`
 - Windows x64: NSIS installer `.exe`
 
-After installation, data lives in `~/Library/Application Support/work-with-agent/` on macOS and `%LOCALAPPDATA%\work-with-agent\` on Windows. The app listens on `127.0.0.1:47316`. The macOS bundle is ad-hoc signed (`signingIdentity` is `-` in `desktop/src-tauri/tauri.conf.json`) and not notarized by Apple. The Windows build has no code signing configured.
+For this branch’s candidate builds, data lives in `~/Library/Application Support/dovun/` on macOS and `%LOCALAPPDATA%\dovun\` on Windows. The app listens on `127.0.0.1:47316`. The macOS bundle is ad-hoc signed (`signingIdentity` is `-` in `desktop/src-tauri/tauri.conf.json`) and not notarized by Apple. The Windows build has no code signing configured.
 
 To build installers from source, see [Desktop app](#desktop-app).
 
@@ -97,13 +97,13 @@ macOS:
 npm run desktop:build
 ```
 
-The output is in `desktop/src-tauri/target/release/bundle/dmg/`. The app listens on `127.0.0.1:47316` and stores data in `~/Library/Application Support/work-with-agent/`. Before the first launch you can import your existing development database. The command refuses to overwrite a database that already exists at the target:
+The output is in `desktop/src-tauri/target/release/bundle/dmg/`. The app listens on `127.0.0.1:47316` and stores data in `~/Library/Application Support/dovun/`. Stop the desktop app, API and executor before importing development data. This tool backs up and verifies the entire source folder, preserves the original, and refuses conflicting workspaces:
 
 ```bash
 node scripts/import-desktop-data.mjs
 ```
 
-Codex, Claude Code, and Grok can connect only while the desktop app is open. Copy the configs again from **AI connections** in the app: the stdio command points at `bin/wwa-mcp` in the data directory above, and Grok uses `http://127.0.0.1:47316/mcp`. Configs that still point at port 3016 keep talking to the development server.
+Codex, Claude Code, and Grok can connect only while the desktop app is open. Copy the configs again from **AI connections** in the app: the stdio command points at `bin/dovun-mcp` in the data directory above, and Grok uses `http://127.0.0.1:47316/mcp`. Configs that still point at port 3016 keep talking to the development server.
 
 Windows x64:
 
@@ -111,7 +111,7 @@ Windows x64:
 npm run desktop:build:windows
 ```
 
-The output is in `desktop/src-tauri/target/release/bundle/nsis/`. Data lives in `%LOCALAPPDATA%\work-with-agent\`. The MCP stdio config calls the bundled `node.exe` with `server/dist/mcp/index.js` directly.
+The output is in `desktop/src-tauri/target/release/bundle/nsis/`. Data lives in `%LOCALAPPDATA%\dovun\`. The MCP stdio config calls the bundled `node.exe` with `server/dist/mcp/index.js` directly.
 
 ## Connect your AI tools
 
@@ -126,25 +126,25 @@ Open **AI connections**, create a Codex, Claude Code, or Grok connection, and se
 Codex `config.toml`:
 
 ```toml
-[mcp_servers.work_with_agent]
+[mcp_servers.dovun]
 command = "node"
 args = ["/absolute/path/to/work-with-agent/server/dist/mcp/index.js"]
 
-[mcp_servers.work_with_agent.env]
-WWA_API_URL = "http://127.0.0.1:3016"
-WWA_CONNECTION_TOKEN = "credential-shown-when-you-create-the-connection"
+[mcp_servers.dovun.env]
+DOVUN_API_URL = "http://127.0.0.1:3016"
+DOVUN_CONNECTION_TOKEN = "credential-shown-when-you-create-the-connection"
 ```
 
 Claude Code:
 
 ```bash
-claude mcp add work_with_agent node "/absolute/path/to/work-with-agent/server/dist/mcp/index.js" --scope user --env WWA_API_URL=http://127.0.0.1:3016 WWA_CONNECTION_TOKEN=credential-shown-when-you-create-the-connection
+claude mcp add dovun node "/absolute/path/to/work-with-agent/server/dist/mcp/index.js" --scope user --env DOVUN_API_URL=http://127.0.0.1:3016 DOVUN_CONNECTION_TOKEN=credential-shown-when-you-create-the-connection
 ```
 
 Grok:
 
 ```bash
-grok mcp add work_with_agent --scope user --transport http http://127.0.0.1:3016/mcp --header "Authorization: Bearer credential-shown-when-you-create-the-connection"
+grok mcp add dovun --scope user --transport http http://127.0.0.1:3016/mcp --header "Authorization: Bearer credential-shown-when-you-create-the-connection"
 ```
 
 Reload MCP in the host and ask it to call `list_tasks`. Writes that aren't allowed to run directly go to the **Review queue**; at that point, no data has changed yet. `get_task` includes screenshots referenced in the task description, and `get_material_attachment` reads a material file.
@@ -153,7 +153,7 @@ Reload MCP in the host and ask it to call `list_tasks`. Writes that aren't allow
 
 By default each computer has its own data. To share one dataset between the desktop app and phone browsers, run an always-on instance with `docker-compose.yml` from the repo root. For the full walkthrough, reverse proxy, and snapshot migration, see [Self-hosted deployment](./docs/deployment.md) (in Chinese).
 
-Two values are required: `WWA_OWNER_KEY` (at least 20 characters; `openssl rand -base64 32`) and `WWA_PUBLIC_URL` (the address browsers use; cookies and CORS follow it). Export them as environment variables or put them in a `.env` file in the repo root. The compose file's header also mentions putting them in `compose.override.yml`.
+Two values are required: `DOVUN_OWNER_KEY` (at least 20 characters; `openssl rand -base64 32`) and `DOVUN_PUBLIC_URL` (the address browsers use; cookies and CORS follow it). Export them as environment variables or put them in a `.env` file in the repo root. The compose file's header also mentions putting them in `compose.override.yml`.
 
 ```bash
 openssl rand -base64 32
@@ -163,7 +163,7 @@ docker compose logs -f
 
 `API listening` in the logs means the process is up. The container maps the host's `127.0.0.1:12716` to port `3016` inside the container and doesn't listen on the public network directly. Data is in `./data` (mounted at `/data` in the container).
 
-In the desktop app, choose **Connect to a server** on the launcher; you can switch back to local mode later from **Server** in the app. On a phone or browser, open `WWA_PUBLIC_URL` and sign in with `WWA_OWNER_KEY`. Server mode has no one-time startup link.
+In the desktop app, choose **Connect to a server** on the launcher; you can switch back to local mode later from **Server** in the app. On a phone or browser, open `DOVUN_PUBLIC_URL` and sign in with `DOVUN_OWNER_KEY`. Server mode has no one-time startup link.
 
 ## Configuration
 
@@ -171,19 +171,19 @@ This table lists only the variables in `server/.env.example` and `docker-compose
 
 | Variable | Where | Purpose |
 | --- | --- | --- |
-| `DATABASE_URL` | `.env.example` | SQLite. The example `file:../data/agent-studio.db` is relative to `server/prisma/schema.prisma`, i.e. `server/data/agent-studio.db` |
+| `DATABASE_URL` | `.env.example` | SQLite. The example `file:../data/dovun.db` is relative to `server/prisma/schema.prisma`, i.e. `server/data/dovun.db` |
 | `PORT` | `.env.example` (commented) | Defaults to `3016` |
-| `CLIENT_ORIGIN` | Both | Local example `http://127.0.0.1:5176,http://localhost:5176`. Set to `WWA_PUBLIC_URL` in compose |
+| `CLIENT_ORIGIN` | Both | Local example `http://127.0.0.1:5176,http://localhost:5176`. Set to `DOVUN_PUBLIC_URL` in compose |
 | `KNOWLEDGE_STORAGE_ROOT` | `.env.example` (commented) | Optional absolute path for material files |
-| `WWA_RUNNER_DIR` | `.env.example` (commented) | Optional absolute path for the runner directory |
-| `WWA_CODEX_BIN` | `.env.example` (commented) | Optional absolute path to the Codex executable |
-| `WWA_CLAUDE_BIN` | `.env.example` (commented) | Optional absolute path to the Claude Code executable |
-| `WWA_CODEX_WINDOWS_SANDBOX` | `.env.example` (commented) | On Windows, `unelevated` (default) or `elevated` |
+| `DOVUN_RUNNER_DIR` | `.env.example` (commented) | Optional absolute path for the runner directory |
+| `DOVUN_CODEX_BIN` | `.env.example` (commented) | Optional absolute path to the Codex executable |
+| `DOVUN_CLAUDE_BIN` | `.env.example` (commented) | Optional absolute path to the Claude Code executable |
+| `DOVUN_CODEX_WINDOWS_SANDBOX` | `.env.example` (commented) | On Windows, `unelevated` (default) or `elevated` |
 | `BRAVE_IMAGE_SEARCH_KEY` | Both | Optional. The image search key stays on the server |
 | `BRAVE_IMAGE_SEARCH_PROXY_URL` | `docker-compose.yml` | Optional. Outbound proxy for image search |
-| `WWA_OWNER_KEY` | `docker-compose.yml` (required) | Self-hosted sign-in key, at least 20 characters |
-| `WWA_PUBLIC_URL` | `docker-compose.yml` (required) | The address browsers use, e.g. `https://wwa.example.com` |
-| `WWA_PUBLIC_HTTPS` | `docker-compose.yml` | Fixed at `1` |
+| `DOVUN_OWNER_KEY` | `docker-compose.yml` (required) | Self-hosted sign-in key, at least 20 characters |
+| `DOVUN_PUBLIC_URL` | `docker-compose.yml` (required) | The address browsers use, e.g. `https://wwa.example.com` |
+| `DOVUN_PUBLIC_HTTPS` | `docker-compose.yml` | Fixed at `1` |
 | `TZ` | `docker-compose.yml` | Defaults to `Asia/Shanghai` |
 
 ## Project layout

@@ -32,8 +32,8 @@ echo EXIT:$? >> /tmp/wwa-desktop-build.log
 
 成功是日志里有 `Finished 2 bundles`，并且 `EXIT:0`。产物：
 
-- 应用：`desktop/src-tauri/target/release/bundle/macos/Work With Agent.app`
-- DMG：`desktop/src-tauri/target/release/bundle/dmg/Work With Agent_<版本>_aarch64.dmg`（版本以本次构建为准）
+- 应用：`desktop/src-tauri/target/release/bundle/macos/Dovun.app`
+- DMG：`desktop/src-tauri/target/release/bundle/dmg/Dovun_<版本>_aarch64.dmg`（版本以本次构建为准）
 
 签名身份是临时的 `"-"`。用户没要求时不要接着打开应用。
 
@@ -47,7 +47,7 @@ zsh 里 `status` 是只读变量。安装或打包脚本不要写 `status=$?`，
 2. 确认 `127.0.0.1:47316` 没有在听。
 3. 记下 `~/Library/Application Support/work-with-agent/agent-studio.db` 的大小和 sha256。安装前后必须一致。不要改这个库，也不要改服务器上的库。
 4. `rm -rf "/Applications/Work With Agent.app"`，再用 `ditto` 把新包拷进去。
-5. 删掉仓库里的 `desktop/src-tauri/target/release/bundle/macos/Work With Agent.app`，避免启动台出现两个图标。DMG 留下。
+5. 删掉仓库里的 `desktop/src-tauri/target/release/bundle/macos/Dovun.app`，避免启动台出现两个图标。DMG 留下。
 6. 核对 `Info.plist` 的标识和版本，以及包内 `index.html` 引用的 `assets/index-*.js` 与 `assets/index-*.css`。应用保持关闭。
 
 装好的应用只有在用户打开并选择本机模式后才听 `127.0.0.1:47316`。开发服务仍是 Vite `127.0.0.1:5176`、API `127.0.0.1:3016`。关窗口是隐藏，Command-Q 才退出。

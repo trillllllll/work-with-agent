@@ -5,7 +5,7 @@ import { initReactI18next } from 'react-i18next';
 export const supportedLanguages = ['zh-CN', 'en'] as const;
 export type Language = (typeof supportedLanguages)[number];
 export const defaultLanguage: Language = 'zh-CN';
-export const languageStorageKey = 'wwa.language';
+export const languageStorageKey = 'dovun.language';
 
 type Resources = Record<string, Record<string, Record<string, unknown>>>;
 const files = import.meta.glob('./locales/*/*.json', { eager: true, import: 'default' }) as Record<string, Record<string, unknown>>;

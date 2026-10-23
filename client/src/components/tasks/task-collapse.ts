@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 
-const STORAGE_KEY = 'todo.collapsedParents';
+const STORAGE_KEY = 'dovun.collapsedParents';
 
 export function readCollapsedParents(storage: Pick<Storage, 'getItem'> = window.localStorage): string[] {
   try {

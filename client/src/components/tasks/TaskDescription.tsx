@@ -39,8 +39,8 @@ export function TaskDescription({ taskId, value, readonly, fill, openDescription
       cancelUpload(uploadId);
       removeTaskUploadFromEditor(taskIdRef.current, uploadId);
     };
-    window.addEventListener('wwa-cancel-upload', onCancel);
-    return () => window.removeEventListener('wwa-cancel-upload', onCancel);
+    window.addEventListener('dovun-cancel-upload', onCancel);
+    return () => window.removeEventListener('dovun-cancel-upload', onCancel);
   }, []);
 
   const addImages = (files: File[]) => {

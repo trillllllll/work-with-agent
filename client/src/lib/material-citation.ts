@@ -4,6 +4,7 @@ import remarkParse from 'remark-parse';
 import { unified } from 'unified';
 
 const parse = unified().use(remarkParse).use(remarkGfm);
+/** Persisted document reference contract: retained to avoid rewriting user content. */
 const prefix = 'wwa-material:';
 
 function walk(node: Content | Root, visit: (node: Content) => void) {

@@ -1,3 +1,4 @@
+import { runtimeEnv } from '../shared/runtime-env.js';
 /** Builds the local CLI launch for a run. Reuses the server's runner adapters, adding an explicit git-write grant when asked. */
 import { mkdir, writeFile, access } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -13,14 +14,14 @@ function cliPath(cli: { command: string; prefix: string[] }) {
   return (cli.prefix[0] ?? cli.command).slice(0, 4096);
 }
 export async function resolveLocalCli(provider: Provider) {
-  const configured = process.env[provider === 'codex' ? 'WWA_CODEX_BIN' : 'WWA_CLAUDE_BIN'];
+  const configured = runtimeEnv(provider === 'codex' ? 'CODEX_BIN' : 'CLAUDE_BIN');
   if (configured) {
     const path = resolve(configured);
     await access(path);
     return /\.[cm]?js$/i.test(path) ? { command: process.execPath, prefix: [path] } : { command: path, prefix: [] as string[] };
   }
   const found = await pathFromProcessPath(provider);
-  if (!found) throw new Error(`本机没有找到 ${provider} CLI（可用 WWA_${provider.toUpperCase()}_BIN 指定）`);
+  if (!found) throw new Error(`本机没有找到 ${provider} CLI（可用 DOVUN_${provider.toUpperCase()}_BIN 指定）`);
   return commandFromPath(found);
 }
 export async function localProviders() {

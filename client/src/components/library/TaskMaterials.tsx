@@ -158,8 +158,8 @@ export function TaskMaterials({ taskId, topicId, description, readonly, saveText
       if (!detail || detail.taskId !== taskId) return;
       setPreview({ materialId: detail.materialId, revision: null, chunkId: null });
     };
-    window.addEventListener('wwa-preview-material', onPreview);
-    return () => window.removeEventListener('wwa-preview-material', onPreview);
+    window.addEventListener('dovun-preview-material', onPreview);
+    return () => window.removeEventListener('dovun-preview-material', onPreview);
   }, [taskId]);
 
   return <section className="library-surface task-materials" data-testid="task-materials" onDragOver={(event) => {

@@ -40,7 +40,7 @@ export const initialFocusState: FocusState = {
   autoStartBreak: false,
 };
 
-const storageKey = 'todo.focusTimer';
+const storageKey = 'dovun.focusTimer';
 
 function clamp(value: number, min: number, max: number) {
   if (!Number.isFinite(value)) return min;

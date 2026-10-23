@@ -1,3 +1,4 @@
+import { runtimeEnv } from '../shared/runtime-env.js';
 import { access, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -8,9 +9,9 @@ import { commandFromPath, discoverCli, fileExists, isCliProvider, pathFromProces
 
 const exec = promisify(execFile);
 export type CliCommand = { command: string; prefix: string[] };
-export function codexWindowsSandboxArgs(platform = process.platform, backend = process.env.WWA_CODEX_WINDOWS_SANDBOX ?? 'unelevated'): string[] {
+export function codexWindowsSandboxArgs(platform = process.platform, backend = runtimeEnv('CODEX_WINDOWS_SANDBOX') ?? 'unelevated'): string[] {
   if (platform !== 'win32') return [];
-  if (!['unelevated', 'elevated'].includes(backend)) throw new DomainError('INVALID_SANDBOX_BACKEND', 'WWA_CODEX_WINDOWS_SANDBOX 仅支持 unelevated 或 elevated', 503);
+  if (!['unelevated', 'elevated'].includes(backend)) throw new DomainError('INVALID_SANDBOX_BACKEND', 'DOVUN_CODEX_WINDOWS_SANDBOX 仅支持 unelevated 或 elevated', 503);
   // --ignore-user-config also omits this required native backend. Keep :workspace/:read-only
   // permissions; selecting a backend does not grant full access or modify global settings.
   return ['-c', `windows.sandbox="${backend}"`];
@@ -26,7 +27,7 @@ export async function resolveCli(provider: Provider): Promise<CliCommand> {
       return commandFromPath(path);
     }
   }
-  const configured = process.env[provider === 'codex' ? 'WWA_CODEX_BIN' : 'WWA_CLAUDE_BIN'];
+  const configured = runtimeEnv(provider === 'codex' ? 'CODEX_BIN' : 'CLAUDE_BIN');
   if (configured) {
     const path = resolve(configured);
     if (!await exists(path) || /\.(?:cmd|bat|ps1)$/i.test(path)) throw new DomainError('CLI_NOT_FOUND', '配置的 CLI 必须是可执行文件或 JavaScript 入口', 503);

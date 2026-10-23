@@ -181,7 +181,7 @@ test.describe('已完成子任务保持缩进并混排', () => {
     for (const width of [393, 1200]) {
       for (const theme of ['light', 'dark'] as const) {
         await page.setViewportSize({ width, height: 900 });
-        await page.evaluate((next) => localStorage.setItem('agent-studio.theme', next), theme);
+        await page.evaluate((next) => localStorage.setItem('dovun.theme', next), theme);
         await page.reload();
         await expect(page.locator('html')).toHaveClass(new RegExp(`\\b${theme}\\b`));
         await expect(page.getByTestId(`task-row-${A.id}`)).toBeVisible();

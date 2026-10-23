@@ -11,7 +11,7 @@ import { BodyText } from '@/components/shared/BodyText.js';
 import { cn } from '@/lib/utils.js';
 import { lineDiff, skillSaveRequest, type FromApproval, type OpenSkillEditorDetail, type SkillDetail, type SkillDiffLine, type SkillDraftInput } from './skill-format.js';
 
-export const SKILL_SAVED_EVENT = 'wwa-skill-saved';
+export const SKILL_SAVED_EVENT = 'dovun-skill-saved';
 export type SkillSavedDetail = { skillId: string; revision: number; approvalId?: string };
 
 type EditorState = { draft: SkillDraftInput; fromApproval?: FromApproval; title: string };
@@ -146,8 +146,8 @@ export function SkillEditorHost() {
         setState({ draft, fromApproval: detail.fromApproval, title });
       })();
     };
-    window.addEventListener('wwa-open-skill-editor', open);
-    return () => window.removeEventListener('wwa-open-skill-editor', open);
+    window.addEventListener('dovun-open-skill-editor', open);
+    return () => window.removeEventListener('dovun-open-skill-editor', open);
   }, [t]);
   if (!state) return null;
   return <SkillEditor key={generation} state={state} onClose={() => setState(null)} />;

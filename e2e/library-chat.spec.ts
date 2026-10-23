@@ -31,7 +31,7 @@ test.beforeEach(async ({ page, request }) => {
   const saved = await request.patch(`${api}/api/settings`, { data: { baseUrl: 'http://127.0.0.1:4010/v1', model: 'mock-model', apiKey: 'e2e-key' } });
   expect(saved.ok(), await saved.text()).toBe(true);
   await page.addInitScript(() => {
-    localStorage.setItem('agent-studio.theme', 'light');
+    localStorage.setItem('dovun.theme', 'light');
     (window as unknown as { __REACT_GRAB_DISABLED__?: boolean }).__REACT_GRAB_DISABLED__ = true;
   });
 });

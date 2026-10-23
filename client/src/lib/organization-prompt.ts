@@ -1,6 +1,6 @@
 // i18n-ignore-file: prompt sent to the model; tests and the server match this wording.
 export function organizationMcpPrompt(request: { id: string; purpose: string }) {
-  return `请使用已连接的 work_with_agent MCP 完成这次记忆整理。不要直接修改任务或记忆，也不要确认提议。
+  return `请使用已连接的 Dovun MCP（新配置名 dovun，过渡配置可能仍叫 work_with_agent） 完成这次记忆整理。不要直接修改任务或记忆，也不要确认提议。
 
 1. 调用 get_organization_request，requestId 为 ${request.id}。
 2. 只根据返回的冻结来源和其中的整理约定生成建议。整理目的：${request.purpose}

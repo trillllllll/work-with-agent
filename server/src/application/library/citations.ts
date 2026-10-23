@@ -1,6 +1,7 @@
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import type { Link, Parent, RootContent } from 'mdast';
 
+/** Persisted document reference contract: retained to avoid rewriting user content. */
 const prefix = 'wwa-material:';
 
 export type MaterialHit = { materialId: string; start: number; end: number; label: string };

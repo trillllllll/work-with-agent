@@ -131,7 +131,7 @@ export function App() {
   const [workspaceAssistantSlot, setWorkspaceAssistantSlot] = useState<HTMLDivElement | null>(null);
   const [sourceView, setSourceView] = useState<{ title: string; content: string; kind: string; id: string; topicId?: string | null; revision?: number } | null>(null);
   const mobileNavigation = useMobileNavigation();
-  const [selectedTopicId, setSelectedTopicId] = useState(() => localStorage.getItem('todo.selectedTopic') ?? '');
+  const [selectedTopicId, setSelectedTopicId] = useState(() => localStorage.getItem('dovun.selectedTopic') ?? '');
   const [chatOpen, setChatOpen] = useState(false);
   const [focusOpen, setFocusOpen] = useState(false);
   const [focusOrigin, setFocusOrigin] = useState<{ hash: string } | null>(null);
@@ -154,7 +154,7 @@ export function App() {
   const [sortMode, setSortMode] = useState('manual');
   const [filters, setFilters] = useState<TaskFilters>(emptyFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [dragHintSeen, setDragHintSeen] = useState(() => localStorage.getItem('todo.dragHintSeen') === '1');
+  const [dragHintSeen, setDragHintSeen] = useState(() => localStorage.getItem('dovun.dragHintSeen') === '1');
   const [selectedTag, setSelectedTag] = useState('');
   const [assistantSelectedIds, setAssistantSelectedIds] = useState<string[]>([]);
   const [prompt, setPrompt] = useState<(ActionPrompt & { resolve: (value: boolean) => void }) | null>(null);
@@ -168,7 +168,7 @@ export function App() {
   const page = workspaceView || isAssistantPage ? previousMain.current : route;
   useEffect(() => { if (!workspaceView && route !== 'chat') previousMain.current = route; }, [route, workspaceView]);
   useEffect(() => { setFilters(emptyFilters); setFiltersOpen(false); setLayout('list'); setSortMode('manual'); setShowCompleted(false); }, [page, selectedTopicId]);
-  useEffect(() => { if (selectedTopicId) localStorage.setItem('todo.selectedTopic', selectedTopicId); }, [selectedTopicId]);
+  useEffect(() => { if (selectedTopicId) localStorage.setItem('dovun.selectedTopic', selectedTopicId); }, [selectedTopicId]);
   const confirm = (value: ActionPrompt) => new Promise<boolean>((resolve) => setPrompt({ ...value, resolve }));
   const actions = useTodoActions();
   const queryClient = useQueryClient();
@@ -289,7 +289,7 @@ export function App() {
   const openChat = () => {
     setFocusOpen(false);
     if (hashRouteHead(window.location.hash) !== 'chat') setChatOpen(true);
-    requestAnimationFrame(() => window.dispatchEvent(new Event('wwa-focus-assistant')));
+    requestAnimationFrame(() => window.dispatchEvent(new Event('dovun-focus-assistant')));
   };
   const expandAssistant = () => {
     setAssistantOrigin({ route, hash: window.location.hash, context: structuredClone(pageContext), knowledgeSection, knowledgeTopicId, knowledgeTopicExplicit, settingsCategory });
@@ -328,11 +328,11 @@ export function App() {
     const shortcut = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'l') { event.preventDefault(); openChat(); }
     };
-    window.addEventListener('wwa-adjust-approval', open);
-    window.addEventListener('wwa-open-assistant', open);
-    window.addEventListener('wwa-open-focus', focus);
+    window.addEventListener('dovun-adjust-approval', open);
+    window.addEventListener('dovun-open-assistant', open);
+    window.addEventListener('dovun-open-focus', focus);
     window.addEventListener('keydown', shortcut);
-    return () => { window.removeEventListener('wwa-adjust-approval', open); window.removeEventListener('wwa-open-assistant', open); window.removeEventListener('wwa-open-focus', focus); window.removeEventListener('keydown', shortcut); };
+    return () => { window.removeEventListener('dovun-adjust-approval', open); window.removeEventListener('dovun-open-assistant', open); window.removeEventListener('dovun-open-focus', focus); window.removeEventListener('keydown', shortcut); };
   }, []);
   const sourceHandler = useRef((source: AssistantSource) => {});
   sourceHandler.current = (source) => {
@@ -352,10 +352,10 @@ export function App() {
   };
   useEffect(() => {
     const handler = (event: Event) => sourceHandler.current((event as CustomEvent<AssistantSource>).detail);
-    window.addEventListener('wwa-open-source', handler);
-    return () => window.removeEventListener('wwa-open-source', handler);
+    window.addEventListener('dovun-open-source', handler);
+    return () => window.removeEventListener('dovun-open-source', handler);
   }, []);
-  const markDragHint = () => { localStorage.setItem('todo.dragHintSeen', '1'); setDragHintSeen(true); };
+  const markDragHint = () => { localStorage.setItem('dovun.dragHintSeen', '1'); setDragHintSeen(true); };
   const newTopic = () => setTopicForm({ name: '', description: '', color: 'slate', isExploration: false });
   const createTask = (input: { title: string; topicId: string | null; parentId: string | null } & Partial<TaskDraft>) => actions.create(input, input.parentId);
   const captureTask = (input: { title: string; topicId: string | null; parentId: string | null }) => createTask({ ...input, ...(page === 'today' ? { dueDate: today } : {}) });
@@ -527,8 +527,8 @@ export function App() {
       const id = (event as CustomEvent<{ taskId: string }>).detail?.taskId;
       if (id) openUnsynced.current(id);
     };
-    window.addEventListener('wwa-open-task', handler);
-    return () => window.removeEventListener('wwa-open-task', handler);
+    window.addEventListener('dovun-open-task', handler);
+    return () => window.removeEventListener('dovun-open-task', handler);
   }, []);
   const detailPane = taskId ? <TaskDetailPane key={taskId} ref={detailRef} id={taskId} fallback={tasks.find((task) => task.id === taskId)} tags={tags} readonly={archived} presentation={isDesktop ? 'panel' : showChat ? 'retained' : 'modal'} panelSlot={detailSlot} onSave={patchTask} onClose={closeTask} onDirtyChange={setDetailDirty} onToggleTask={toggleTask} onCreateTask={createTask} onOpenTask={openTask} /> : null;
   const companionVisible = isDesktop && !isAssistantPage && !workspaceView && (page === 'today' || Boolean(taskId));

@@ -31,7 +31,7 @@ async function prepare(page: Page, request: APIRequestContext, surface: (typeof 
   const saved = await request.patch(`${api}/api/settings`, { data: { baseUrl: 'http://127.0.0.1:4010/v1', model: 'mock-model', apiKey: 'e2e-key' } });
   expect(saved.ok(), await saved.text()).toBe(true);
   await page.addInitScript((theme) => {
-    localStorage.setItem('agent-studio.theme', theme);
+    localStorage.setItem('dovun.theme', theme);
     (window as unknown as { __REACT_GRAB_DISABLED__?: boolean }).__REACT_GRAB_DISABLED__ = true;
   }, surface.theme);
   await page.setViewportSize({ width: surface.width, height: surface.height });

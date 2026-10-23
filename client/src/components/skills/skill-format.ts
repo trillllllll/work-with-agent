@@ -137,7 +137,7 @@ export function skillSaveRequest(draft: SkillDraftInput, reason: string, fromApp
 }
 
 export function openSkillEditor(detail: OpenSkillEditorDetail) {
-  window.dispatchEvent(new CustomEvent('wwa-open-skill-editor', { detail }));
+  window.dispatchEvent(new CustomEvent('dovun-open-skill-editor', { detail }));
 }
 
 type ReviewEntityLike = { entityType: string; entityId: string; operation: string; revisionBefore: number | null; fields: Array<{ key: string; before: unknown; after: unknown }> };

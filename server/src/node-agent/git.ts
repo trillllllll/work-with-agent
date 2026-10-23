@@ -1,3 +1,4 @@
+import { runtimeEnv } from '../shared/runtime-env.js';
 /** Mechanical, deterministic git steps run by the local executor. No judgment, no edits to code. */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -287,7 +288,7 @@ export async function cleanupWorktrees(dataDir: string, paths: string[], deleteB
 export async function createPullRequest(worktree: string, input: { branch: string; base: string; title: string; body: string }) {
   const current = await git(worktree, ['symbolic-ref', '--quiet', '--short', 'HEAD']).catch(() => '');
   if (current !== input.branch) throw new NodeError('BRANCH_MISMATCH', `worktree 当前分支是 ${current || '（分离 HEAD）'}，不是 ${input.branch}`);
-  const gh = process.env.WWA_GH_BIN || 'gh';
+  const gh = runtimeEnv('GH_BIN') || 'gh';
   const env = { ...process.env, GH_PROMPT_DISABLED: '1', GIT_TERMINAL_PROMPT: '0', NO_COLOR: '1' };
   const options = { cwd: worktree, windowsHide: true, timeout: 120_000, maxBuffer: 4 * 1024 * 1024, env };
   const existing = await exec(gh, ['pr', 'view', input.branch, '--json', 'url,state', '--jq', 'select(.state == "OPEN") | .url'], options).then((result) => result.stdout.trim(), () => '');
@@ -301,5 +302,5 @@ export async function createPullRequest(worktree: string, input: { branch: strin
 }
 
 export async function ghAvailable() {
-  try { await exec(process.env.WWA_GH_BIN || 'gh', ['--version'], { windowsHide: true, timeout: 10_000 }); return true; } catch { return false; }
+  try { await exec(runtimeEnv('GH_BIN') || 'gh', ['--version'], { windowsHide: true, timeout: 10_000 }); return true; } catch { return false; }
 }

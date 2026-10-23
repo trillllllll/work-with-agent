@@ -22,7 +22,7 @@ export function ChatComposer({ input, busy, reference, onChange, onSend, onCance
   const { t } = useTranslation('chat');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
-  useEffect(() => { const focus = () => textareaRef.current?.focus(); window.addEventListener('wwa-focus-assistant', focus); return () => window.removeEventListener('wwa-focus-assistant', focus); }, []);
+  useEffect(() => { const focus = () => textareaRef.current?.focus(); window.addEventListener('dovun-focus-assistant', focus); return () => window.removeEventListener('dovun-focus-assistant', focus); }, []);
   useEffect(() => { if (reference) textareaRef.current?.focus(); }, [reference?.id]);
   const resize = () => {
     const el = textareaRef.current;

@@ -29,11 +29,11 @@ const narrowOverlayStyle: CSSProperties = { width: 'max-content', height: 'auto'
 
 type Mode = 'day' | 'week' | 'month';
 function readPlanMode(): Mode {
-  const stored = localStorage.getItem('todo.plan.mode');
+  const stored = localStorage.getItem('dovun.plan.mode');
   return stored === 'day' || stored === 'week' || stored === 'month' ? stored : 'week';
 }
 function readPlanAnchor(today: string) {
-  const stored = localStorage.getItem('todo.plan.anchor');
+  const stored = localStorage.getItem('dovun.plan.anchor');
   if (!stored || !/^\d{4}-\d{2}-\d{2}$/.test(stored)) return today;
   const [year, month, day] = stored.split('-').map(Number);
   const date = new Date(year, month - 1, day);
@@ -217,13 +217,13 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
   const today = useLocalDate();
   const timeBands = usePlanTimeBands();
   const [mode, setMode] = useState<Mode>(readPlanMode);
-  const chooseMode = (next: Mode) => { setMode(next); localStorage.setItem('todo.plan.mode', next); };
+  const chooseMode = (next: Mode) => { setMode(next); localStorage.setItem('dovun.plan.mode', next); };
   const [anchor, setAnchor] = useState(() => readPlanAnchor(today));
-  const chooseAnchor = (next: string) => { setAnchor(next); localStorage.setItem('todo.plan.anchor', next); };
-  const [showCompleted, setShowCompleted] = useState(() => localStorage.getItem('todo.plan.showCompleted') === 'true');
+  const chooseAnchor = (next: string) => { setAnchor(next); localStorage.setItem('dovun.plan.anchor', next); };
+  const [showCompleted, setShowCompleted] = useState(() => localStorage.getItem('dovun.plan.showCompleted') === 'true');
   const [trayOpen, setTrayOpen] = useState(false);
   const [allDayOpen, setAllDayOpen] = useState<boolean | null>(() => {
-    const stored = localStorage.getItem('todo.plan.allDayOpen');
+    const stored = localStorage.getItem('dovun.plan.allDayOpen');
     return stored === 'true' ? true : stored === 'false' ? false : null;
   });
   const [trayFilter, setTrayFilter] = useState('unplanned');
@@ -319,7 +319,7 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
       </div>
       {error ? <p role="alert" className="text-destructive">{error.message}</p> : planned.isLoading || trayQuery.isLoading ? <p className="py-12 text-center text-muted-foreground">{t('shared.loadingTasks')}</p> : <div className="plan-layout" data-tray-open={trayOpen || undefined}>
         <div className="min-w-0">
-          {mode !== 'month' ? <Timeline days={days} tasks={tasks} today={today} busy={disabled} bands={timeBands.data?.bands ?? []} allDayOpen={allDayOpen} onAllDayOpen={(open) => { setAllDayOpen(open); localStorage.setItem('todo.plan.allDayOpen', String(open)); }} onOpen={onOpen} onToggle={onToggle} onCreate={setCreating} activeTaskId={activeTaskId} skipClick={skipClick} /> : <div data-testid="month-horizontal-scroll" className="plan-month-scroll overflow-x-auto max-sm:overflow-visible"><div className="min-w-[560px] max-sm:min-w-0">
+          {mode !== 'month' ? <Timeline days={days} tasks={tasks} today={today} busy={disabled} bands={timeBands.data?.bands ?? []} allDayOpen={allDayOpen} onAllDayOpen={(open) => { setAllDayOpen(open); localStorage.setItem('dovun.plan.allDayOpen', String(open)); }} onOpen={onOpen} onToggle={onToggle} onCreate={setCreating} activeTaskId={activeTaskId} skipClick={skipClick} /> : <div data-testid="month-horizontal-scroll" className="plan-month-scroll overflow-x-auto max-sm:overflow-visible"><div className="min-w-[560px] max-sm:min-w-0">
             <div className="grid grid-cols-7 py-2 text-center text-xs text-muted-foreground">{weekdayIds.map((day) => <div key={day}>{t(`weekday.${day}.narrow`)}</div>)}</div>
             <div className="grid grid-cols-7">{days.map((day) => {
               const items = tasks.filter((task) => occursOn(task, day)).sort((a, b) => (a.scheduledStart ?? '').localeCompare(b.scheduledStart ?? '') || a.id.localeCompare(b.id));
@@ -343,7 +343,7 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
           <p className="mt-3 text-[11px] text-muted-foreground">{t('plan.trayHint')}</p>
         </aside>
       </div>}
-      <footer className="plan-footer"><span className="text-xs text-muted-foreground">{rangeLabel(mode, anchor, range)}</span><div className="flex flex-wrap items-center gap-4"><label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={showCompleted} onChange={(event) => { setShowCompleted(event.target.checked); localStorage.setItem('todo.plan.showCompleted', String(event.target.checked)); }} />{t('shared.showCompleted')}</label><TimeBandControls /></div></footer>
+      <footer className="plan-footer"><span className="text-xs text-muted-foreground">{rangeLabel(mode, anchor, range)}</span><div className="flex flex-wrap items-center gap-4"><label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={showCompleted} onChange={(event) => { setShowCompleted(event.target.checked); localStorage.setItem('dovun.plan.showCompleted', String(event.target.checked)); }} />{t('shared.showCompleted')}</label><TimeBandControls /></div></footer>
     </div>
     <DragOverlay modifiers={narrow ? narrowOverlayModifiers : undefined} style={narrow ? narrowOverlayStyle : undefined}>{dragging && <div data-testid="plan-drag-overlay" className={cn('glass-control rounded-lg px-3 py-2 text-sm shadow-lg', narrow ? 'max-w-[calc(100vw-16px)]' : 'max-w-64')}><p className="truncate">{dragging.title}</p>{overlayDetail ? <p className={cn('text-xs text-muted-foreground', narrow && 'whitespace-nowrap')}>{overlayDetail}</p> : null}</div>}</DragOverlay>
     {creating && <CreateScheduledTask initial={creating} topics={topics} onClose={() => setCreating(null)} onCreate={onCreate} />}

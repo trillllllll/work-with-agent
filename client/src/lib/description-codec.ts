@@ -6,6 +6,7 @@ import { unified } from 'unified';
 import { materialCitation, materialIdFromHref } from './material-citation.js';
 
 const parser = unified().use(remarkParse).use(remarkGfm);
+/** Persisted document reference contract: retained to avoid rewriting user content. */
 const materialScheme = 'wwa-material:';
 
 export type DescriptionModel = {

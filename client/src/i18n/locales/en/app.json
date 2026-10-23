@@ -253,5 +253,10 @@
     "emptyContext": "No brief for this list yet.",
     "fixedNotes": "Working instructions",
     "brief": "Current brief"
+  },
+  "migration": {
+    "blocked": "Local drafts could not be restored",
+    "retained": "Your original data is preserved. Close other workspace tabs and check browser storage before retrying.",
+    "retry": "Reload"
   }
 }

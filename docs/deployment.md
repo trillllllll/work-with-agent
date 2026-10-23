@@ -1,6 +1,8 @@
-# 自托管服务器部署（多端数据同步）
+# Dovun 自托管服务器部署（多端数据同步）
 
-Work With Agent 支持把同一个服务部署到一台常开的机器（VPS/NAS）上，所有设备共用这一份数据：
+0.3.0 过渡版说明：新部署使用 `DOVUN_*`；已有 `.env` 中 `WWA_*` 继续可用，新名称优先。仓库地址、Compose 服务名、容器名和现有域名保持不变。已有卷中的 `agent-studio.db` 会继续使用，不静默创建空库；离线改目录见 [迁移手册](dovun-migration.md)。本轮没有实际部署。
+
+Dovun 支持把同一个服务部署到一台常开的机器（VPS/NAS）上，所有设备共用这一份数据：
 
 - 桌面应用切到「连接服务器」模式后，窗口加载的就是服务器页面；
 - 手机或任意浏览器直接访问服务器地址，输入访问密钥即可使用；
@@ -24,8 +26,8 @@ cd WorkWithAgent
 openssl rand -base64 32
 
 cat > .env <<'EOF'
-WWA_OWNER_KEY=把上面生成的密钥粘到这里
-WWA_PUBLIC_URL=https://wwa.example.com
+DOVUN_OWNER_KEY=把上面生成的密钥粘到这里
+DOVUN_PUBLIC_URL=https://wwa.example.com
 EOF
 
 docker compose up -d --build
@@ -60,11 +62,11 @@ apt install certbot python3-certbot-nginx
 certbot --nginx -d wwa.example.com
 ```
 
-境内服务器绑定域名需已完成 ICP 备案；若 443 被阻，可退到非标端口（如 8443，把 `WWA_PUBLIC_URL` 改成 `https://wwa.example.com:8443`）或改用 Tailscale 私网访问（`WWA_PUBLIC_HTTPS` 设 0 并使用 `http://100.x.x.x` 地址）。
+境内服务器绑定域名需已完成 ICP 备案；若 443 被阻，可退到非标端口（如 8443，把 `DOVUN_PUBLIC_URL` 改成 `https://wwa.example.com:8443`）或改用 Tailscale 私网访问（`DOVUN_PUBLIC_HTTPS` 设 0 并使用 `http://100.x.x.x` 地址）。
 
 ## 4. 客户端接入
 
-- **手机 / 浏览器**：打开 `https://wwa.example.com`，输入访问密钥（`WWA_OWNER_KEY`）。会话 7 天有效。
+- **手机 / 浏览器**：打开 `https://wwa.example.com`，输入访问密钥（`DOVUN_OWNER_KEY`）。会话 7 天有效。
 - **桌面应用**：设置 → 服务器 → 「切换工作区模式」→ 连接服务器 → 填入地址。首次安装时启动器也会直接给出这个选项。
 - **外部 AI 工具（MCP）**：在服务器的「连接」页面创建连接，生成的配置会直接指向公网地址。
 
@@ -88,7 +90,7 @@ docker compose up -d --build
 
 ## 7. 备份与恢复
 
-- **自动**：容器每天在 `data/snapshots/` 写一份全量快照，保留最近 7 份（`WWA_SNAPSHOT_KEEP` 可调）。
+- **自动**：容器每天在 `data/snapshots/` 写一份全量快照，保留最近 7 份（`DOVUN_SNAPSHOT_KEEP` 可调）。
 - **手动**：设置 → 备份与恢复 → 下载快照（任何模式可用，也是换机迁移包）。
 - **并入**：设置 → 备份与恢复 → 选择快照 → 并入此快照。相同 id 保留当前库，缺的记录补上，当前库多出来的记录保留。设置和登录会话不参与。服务不用重启。
 - **覆盖**：设置 → 备份与恢复 → 选择快照 → 恢复此快照。恢复前会自动把当前数据先备份一份，然后用快照换掉整库；服务会自动重启生效。
@@ -98,9 +100,9 @@ docker compose up -d --build
 
 ## 8. 安全模型
 
-- 登录唯一凭据是 `WWA_OWNER_KEY`（≥20 字符），校验带时序安全比较；错误 15 分钟内达 10 次会限流。
+- 登录唯一凭据是 `DOVUN_OWNER_KEY`（≥20 字符），校验带时序安全比较；错误 15 分钟内达 10 次会限流。
 - 一次性启动凭据（本机模式的启动链接）在服务器模式下**禁用**，不会出现在公网日志里。
-- 请求按 Host 白名单（`WWA_PUBLIC_URL`/`CLIENT_ORIGIN`）校验，未配置公网地址时全部拒绝。
+- 请求按 Host 白名单（`DOVUN_PUBLIC_URL`/`CLIENT_ORIGIN`）校验，未配置公网地址时全部拒绝。
 - 全程 HTTPS（反代终结），会话 cookie 带 `Secure`/`HttpOnly`/`SameSite=Strict`，写操作强制 CSRF。
 - 建议的宿主机加固：SSH 密钥登录并禁用密码、防火墙只放行 22/80/443、定期 `apt upgrade`。
 
@@ -115,7 +117,7 @@ docker compose up -d --build
 | 症状 | 排查 |
 | --- | --- |
 | 打不开页面，502 | 容器是否存活（`docker compose ps`）、nginx `proxy_pass` 端口是否 12716 |
-| 登录一直「凭据无效」 | 核对 `WWA_OWNER_KEY`（compose env 与 `.env`），注意首尾空白 |
-| 登录后所有请求 403 HOST_DENIED | nginx 缺 `proxy_set_header Host $host;`，或 `WWA_PUBLIC_URL` 与实际访问域名不一致 |
+| 登录一直「凭据无效」 | 核对 `DOVUN_OWNER_KEY`（compose env 与 `.env`），注意首尾空白 |
+| 登录后所有请求 403 HOST_DENIED | nginx 缺 `proxy_set_header Host $host;`，或 `DOVUN_PUBLIC_URL` 与实际访问域名不一致 |
 | cookie 登不上（反复回登录页） | HTTPS 未生效或缺 `X-Forwarded-Proto` 头，Secure cookie 被 http 丢弃 |
 | 恢复快照后一直转圈 | 查看日志确认容器以退出码 75 重启（`docker compose ps` 短暂 Exited 属预期） |

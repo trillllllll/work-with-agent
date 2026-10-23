@@ -38,7 +38,7 @@ export function localeFromAcceptLanguage(header: string | undefined): Locale | n
 }
 
 export function localeFromRequest(req: Pick<Request, 'headers'>): Locale {
-  const explicit = req.headers['x-wwa-language'];
+  const explicit = req.headers['x-dovun-language'] ?? req.headers['x-wwa-language'];
   return normalizeLocale(Array.isArray(explicit) ? explicit[0] : explicit)
     ?? localeFromAcceptLanguage(typeof req.headers['accept-language'] === 'string' ? req.headers['accept-language'] : undefined)
     ?? defaultLocale;

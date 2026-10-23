@@ -31,7 +31,7 @@ async function openDetails(page: Page, title: string) {
 test.beforeEach(async ({ page }) => {
   await resetE2eDatabase();
   await page.clock.setFixedTime(new Date(`${today()}T12:00:00`));
-  await page.addInitScript(() => { if (localStorage.getItem('todo.plan.showCompleted') === null) localStorage.setItem('todo.plan.showCompleted', 'true'); });
+  await page.addInitScript(() => { if (localStorage.getItem('dovun.plan.showCompleted') === null) localStorage.setItem('dovun.plan.showCompleted', 'true'); });
   await page.addInitScript(() => { (window as unknown as { __REACT_GRAB_DISABLED__?: boolean }).__REACT_GRAB_DISABLED__ = true; });
 });
 test.afterAll(async () => { await e2eDatabase.$disconnect(); });

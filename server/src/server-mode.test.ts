@@ -179,7 +179,7 @@ describe('server mode owner key resolution', () => {
     process.env.WWA_DATA_DIR = dataDirectory;
     process.env.WWA_OWNER_KEY = 'short';
     try {
-      expect(() => resolveOwnerKeyHash()).toThrow(/WWA_OWNER_KEY/);
+      expect(() => resolveOwnerKeyHash()).toThrow(/DOVUN_OWNER_KEY/);
     } finally {
       await rm(dataDirectory, { recursive: true, force: true });
     }

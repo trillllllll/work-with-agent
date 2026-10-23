@@ -15,7 +15,7 @@
 
 [快速开始](#quick-start) · [下载安装](#下载安装)
 
-<img src="./docs/design/dovun/implementation/evidence/today-light.png" width="880" alt="浅色界面：清单「登录改造」，右侧打开任务「把登录改成一次性链接」，带两份资料和子任务">
+<img src="./docs/design/dovun/implementation/evidence/today-light.png" width="880" alt="瓷白浅色：真实 Dovun 今天与任务详情">
 
 ## 功能
 
@@ -40,13 +40,13 @@
 
 在「工作上下文」里，确认过的记忆会按关系收成社区，也可以铺成三维地形。下面用的是示例数据：登录、清单、记忆和交接各自成团，高处是更重要、连接更多的知识。
 
-<img src="./docs/readme/knowledge-graph-dark-zh.png" width="880" alt="深色三维地形：示例项目记忆分成登录、清单、记忆、交接四个社区">
+<img src="./docs/design/dovun/implementation/evidence/knowledge-dark.png" width="880" alt="石墨深色：真实工作上下文页面">
 
 ## 架构
 
 工作闭环是：快速记录、补齐上下文、正式接力、结果回流。
 
-![Work With Agent 项目工作闭环](./architecture.svg)
+![Dovun 个人工作闭环](./architecture.svg)
 
 ## 下载安装
 
@@ -55,7 +55,7 @@
 - macOS Apple Silicon：`.dmg`
 - Windows x64：NSIS 安装包 `.exe`
 
-安装后的数据目录：macOS 为 `~/Library/Application Support/work-with-agent/`，Windows 为 `%LOCALAPPDATA%\work-with-agent\`。应用监听 `127.0.0.1:47316`。macOS 包是 ad-hoc 签名（`desktop/src-tauri/tauri.conf.json` 里 `signingIdentity` 为 `-`），没有 Apple 公证。Windows 构建未配置代码签名。
+当前分支候选包的数据目录（公开旧包仍用旧目录，升级先备份校验迁移）：macOS 为 `~/Library/Application Support/dovun/`，Windows 为 `%LOCALAPPDATA%\dovun\`。应用监听 `127.0.0.1:47316`。macOS 包是 ad-hoc 签名（`desktop/src-tauri/tauri.conf.json` 里 `signingIdentity` 为 `-`），没有 Apple 公证。Windows 构建未配置代码签名。
 
 从源码打包装见 [桌面应用](#桌面应用)。
 
@@ -93,13 +93,13 @@ macOS：
 npm run desktop:build
 ```
 
-产物在 `desktop/src-tauri/target/release/bundle/dmg/`。应用监听 `127.0.0.1:47316`，数据在 `~/Library/Application Support/work-with-agent/`。第一次打开前可以把现有开发库导入进去。目标里已经有数据库时，这条命令会拒绝覆盖：
+产物在 `desktop/src-tauri/target/release/bundle/dmg/`。应用监听 `127.0.0.1:47316`，数据在 `~/Library/Application Support/dovun/`。导入开发数据前先停止开发服务、桌面应用和执行端。下面工具会备份并完整复制来源目录，保留原件，拒绝合并或覆盖冲突目录；不要只复制数据库：
 
 ```bash
 node scripts/import-desktop-data.mjs
 ```
 
-桌面应用开着，Codex、Claude Code 和 Grok 才能连上。在应用的「AI 连接」里重新复制配置。stdio 命令指向上面目录中的 `bin/wwa-mcp`，Grok 使用 `http://127.0.0.1:47316/mcp`。原来指向 3016 的配置仍然只连接开发服务。
+桌面应用开着，Codex、Claude Code 和 Grok 才能连上。在应用的「AI 连接」里重新复制配置。stdio 命令指向上面目录中的 `bin/dovun-mcp`，Grok 使用 `http://127.0.0.1:47316/mcp`。原来指向 3016 的配置仍然只连接开发服务。
 
 Windows x64：
 
@@ -107,7 +107,7 @@ Windows x64：
 npm run desktop:build:windows
 ```
 
-产物在 `desktop/src-tauri/target/release/bundle/nsis/`。数据目录是 `%LOCALAPPDATA%\work-with-agent\`。MCP stdio 配置会直接调用安装包内的 `node.exe` 和 `server/dist/mcp/index.js`。
+产物在 `desktop/src-tauri/target/release/bundle/nsis/`。数据目录是 `%LOCALAPPDATA%\dovun\`。MCP stdio 配置会直接调用安装包内的 `node.exe` 和 `server/dist/mcp/index.js`。
 
 ## 接入 AI
 
@@ -119,28 +119,30 @@ npm run build -w server
 
 打开「AI 连接」，新建 Codex、Claude Code 或 Grok，至少勾选收集箱或一个清单。凭据只在创建时出现一次。页面上的复制按钮会填好本机的 Node 路径、`server/dist/mcp/index.js` 和凭据。下面是同一份配置的样子，把路径和凭据换成你自己的：
 
+已有 `work_with_agent` 条目时更新原条目，不执行下方新增命令；配置页可选择“更新原有条目”。下方只适用于首次连接。0.3.0 仍兼容旧 `WWA_*` 环境变量，新名称优先，差异会提示且不输出值。升级细节见 [迁移手册](docs/dovun-migration.md)。
+
 Codex 的 `config.toml`：
 
 ```toml
-[mcp_servers.work_with_agent]
+[mcp_servers.dovun]
 command = "node"
 args = ["/absolute/path/to/work-with-agent/server/dist/mcp/index.js"]
 
-[mcp_servers.work_with_agent.env]
-WWA_API_URL = "http://127.0.0.1:3016"
-WWA_CONNECTION_TOKEN = "创建连接时显示的凭据"
+[mcp_servers.dovun.env]
+DOVUN_API_URL = "http://127.0.0.1:3016"
+DOVUN_CONNECTION_TOKEN = "创建连接时显示的凭据"
 ```
 
 Claude Code：
 
 ```bash
-claude mcp add work_with_agent node "/absolute/path/to/work-with-agent/server/dist/mcp/index.js" --scope user --env WWA_API_URL=http://127.0.0.1:3016 WWA_CONNECTION_TOKEN=创建连接时显示的凭据
+claude mcp add dovun node "/absolute/path/to/work-with-agent/server/dist/mcp/index.js" --scope user --env DOVUN_API_URL=http://127.0.0.1:3016 DOVUN_CONNECTION_TOKEN=创建连接时显示的凭据
 ```
 
 Grok：
 
 ```bash
-grok mcp add work_with_agent --scope user --transport http http://127.0.0.1:3016/mcp --header "Authorization: Bearer 创建连接时显示的凭据"
+grok mcp add dovun --scope user --transport http http://127.0.0.1:3016/mcp --header "Authorization: Bearer 创建连接时显示的凭据"
 ```
 
 重新加载宿主的 MCP，让它调用 `list_tasks`。没有勾选「允许直接执行」的写入会进「待确认」，这时数据还没有改。`get_task` 会附带任务说明里引用的截图，材料原件用 `get_material_attachment` 读取。
@@ -149,7 +151,7 @@ grok mcp add work_with_agent --scope user --transport http http://127.0.0.1:3016
 
 默认每台电脑各自一份数据。要让桌面应用和手机浏览器共用同一份时，用仓库根目录的 `docker-compose.yml` 起一个常开实例。完整步骤、反向代理和快照迁移见 [自托管服务器部署](./docs/deployment.md)。
 
-必填两项：`WWA_OWNER_KEY`（至少 20 个字符；`openssl rand -base64 32`）和 `WWA_PUBLIC_URL`（浏览器访问地址，cookie 与 CORS 跟着它）。可以导出到环境变量，或写在仓库根目录的 `.env` 里。compose 文件头部也说明可以把变量写进 `compose.override.yml`。
+必填两项：`DOVUN_OWNER_KEY`（至少 20 个字符；`openssl rand -base64 32`）和 `DOVUN_PUBLIC_URL`（浏览器访问地址，cookie 与 CORS 跟着它）。可以导出到环境变量，或写在仓库根目录的 `.env` 里。compose 文件头部也说明可以把变量写进 `compose.override.yml`。
 
 ```bash
 openssl rand -base64 32
@@ -159,7 +161,7 @@ docker compose logs -f
 
 日志出现 `API listening` 即进程已起来。容器把宿主机的 `127.0.0.1:12716` 转到容器内的 `3016`，不直接对公网监听。数据在 `./data`（挂到容器的 `/data`）。
 
-桌面应用启动时选「连接服务器」，之后也能从应用内的「服务器」入口切回本机模式。手机或浏览器打开 `WWA_PUBLIC_URL`，用 `WWA_OWNER_KEY` 登录。服务器模式下没有一次性启动链接。
+桌面应用启动时选「连接服务器」，之后也能从应用内的「服务器」入口切回本机模式。手机或浏览器打开 `DOVUN_PUBLIC_URL`，用 `DOVUN_OWNER_KEY` 登录。服务器模式下没有一次性启动链接。
 
 ## 配置
 
@@ -167,19 +169,19 @@ docker compose logs -f
 
 | 变量 | 何处 | 作用 |
 | --- | --- | --- |
-| `DATABASE_URL` | `.env.example` | SQLite。示例 `file:../data/agent-studio.db`，相对 `server/prisma/schema.prisma`，即 `server/data/agent-studio.db` |
+| `DATABASE_URL` | `.env.example` | SQLite。示例 `file:../data/dovun.db`，相对 `server/prisma/schema.prisma`，即 `server/data/dovun.db` |
 | `PORT` | `.env.example`（注释） | 默认 `3016` |
-| `CLIENT_ORIGIN` | 两处 | 本地示例 `http://127.0.0.1:5176,http://localhost:5176`。compose 里设为 `WWA_PUBLIC_URL` |
+| `CLIENT_ORIGIN` | 两处 | 本地示例 `http://127.0.0.1:5176,http://localhost:5176`。compose 里设为 `DOVUN_PUBLIC_URL` |
 | `KNOWLEDGE_STORAGE_ROOT` | `.env.example`（注释） | 可选，材料文件的绝对路径 |
-| `WWA_RUNNER_DIR` | `.env.example`（注释） | 可选，执行器目录的绝对路径 |
-| `WWA_CODEX_BIN` | `.env.example`（注释） | 可选，Codex 可执行文件的绝对路径 |
-| `WWA_CLAUDE_BIN` | `.env.example`（注释） | 可选，Claude Code 可执行文件的绝对路径 |
-| `WWA_CODEX_WINDOWS_SANDBOX` | `.env.example`（注释） | Windows 上 `unelevated`（默认）或 `elevated` |
+| `DOVUN_RUNNER_DIR` | `.env.example`（注释） | 可选，执行器目录的绝对路径 |
+| `DOVUN_CODEX_BIN` | `.env.example`（注释） | 可选，Codex 可执行文件的绝对路径 |
+| `DOVUN_CLAUDE_BIN` | `.env.example`（注释） | 可选，Claude Code 可执行文件的绝对路径 |
+| `DOVUN_CODEX_WINDOWS_SANDBOX` | `.env.example`（注释） | Windows 上 `unelevated`（默认）或 `elevated` |
 | `BRAVE_IMAGE_SEARCH_KEY` | 两处 | 可选。图片搜索密钥只留在服务端 |
 | `BRAVE_IMAGE_SEARCH_PROXY_URL` | `docker-compose.yml` | 可选。图片搜索出口代理 |
-| `WWA_OWNER_KEY` | `docker-compose.yml`（必填） | 自托管登录密钥，至少 20 个字符 |
-| `WWA_PUBLIC_URL` | `docker-compose.yml`（必填） | 浏览器使用的地址，例如 `https://wwa.example.com` |
-| `WWA_PUBLIC_HTTPS` | `docker-compose.yml` | 固定为 `1` |
+| `DOVUN_OWNER_KEY` | `docker-compose.yml`（必填） | 自托管登录密钥，至少 20 个字符 |
+| `DOVUN_PUBLIC_URL` | `docker-compose.yml`（必填） | 浏览器使用的地址，例如 `https://wwa.example.com` |
+| `DOVUN_PUBLIC_HTTPS` | `docker-compose.yml` | 固定为 `1` |
 | `TZ` | `docker-compose.yml` | 默认 `Asia/Shanghai` |
 
 ## 项目结构

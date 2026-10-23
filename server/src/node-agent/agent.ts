@@ -1,3 +1,4 @@
+import { runtimeEnv } from '../shared/runtime-env.js';
 /**
  * wwa-node: the local executor. Pulls jobs from a (possibly remote) WWA server over outbound HTTPS,
  * performs mechanical git steps, launches local AI CLIs through the existing runner supervisor,
@@ -54,7 +55,8 @@ export class NodeAgent {
   constructor(private readonly config: NodeConfig, private readonly http: typeof fetch = fetch, private readonly hooks: NodeAgentHooks = {}) {
     if (!config.roots.length) throw new Error('至少需要一个允许的目录（--roots）');
     // The runner supervisor keeps its control files under WWA_RUNNER_DIR; give it this node's own data directory.
-    process.env.WWA_RUNNER_DIR = resolve(config.dataDir, 'runner');
+    process.env.WWA_RUNNER_DIR = resolve(config.dataDir, 'runner'); // 0.3 internal compatibility for older runner modules.
+    if (process.env.DOVUN_RUNNER_DIR !== undefined) process.env.DOVUN_RUNNER_DIR = resolve(config.dataDir, 'runner');
   }
   private runner() { return (this.runnerModule ??= import('../runner/supervisor.js')); }
   private runnerApi(): Promise<NodeRunner> { return this.hooks.runner ? Promise.resolve(this.hooks.runner) : this.runner(); }
@@ -114,8 +116,8 @@ export class NodeAgent {
     });
     const body: NodeCapabilities = { protocol: NODE_PROTOCOL_VERSION, version: this.config.version ?? '', platform: `${os.platform()}-${os.arch()}`, providers, maxConcurrent: this.config.maxConcurrent ?? 2, allowedRoots: this.config.roots, freeBytes: await this.freeBytes(), gh: this.gh };
     if (!capsV2) return body;
-    const logPath = process.env.WWA_NODE_LOG?.trim() || null;
-    return { ...body, managedBy: process.env.WWA_NODE_MANAGED === 'desktop' ? 'desktop' : 'cli', logPath: logPath ? logPath.slice(0, 4096) : null, lastError: this.lastError, startedAt: this.startedAt };
+    const logPath = runtimeEnv('NODE_LOG')?.trim() || null;
+    return { ...body, managedBy: runtimeEnv('NODE_MANAGED') === 'desktop' ? 'desktop' : 'cli', logPath: logPath ? logPath.slice(0, 4096) : null, lastError: this.lastError, startedAt: this.startedAt };
   }
   private async freeBytes() {
     try { await mkdir(this.config.dataDir, { recursive: true }); const stats = await statfs(this.config.dataDir); return stats.bavail * stats.bsize; } catch { return null; }

@@ -1,3 +1,4 @@
+import { runtimeEnv } from '../shared/runtime-env.js';
 import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -37,7 +38,8 @@ export function syncBindingPath() {
 
 /** Token stays in this file, never in the database that snapshots copy. */
 export function readSyncBinding(): SyncBinding | null {
-  if (process.env.WWA_SYNC_URL && process.env.WWA_SYNC_TOKEN) return { url: assertSyncUrl(process.env.WWA_SYNC_URL), token: process.env.WWA_SYNC_TOKEN };
+  const syncUrl = runtimeEnv('SYNC_URL'), syncToken = runtimeEnv('SYNC_TOKEN');
+  if (syncUrl && syncToken) return { url: assertSyncUrl(syncUrl), token: syncToken };
   const path = syncBindingPath();
   if (!existsSync(path)) return null;
   try {
@@ -64,7 +66,7 @@ export function writeSyncBinding(binding: SyncBinding) {
 
 /** Vitest shares this process with a developer binding file. Tests opt in with WWA_SYNC_URL. */
 function replicaBinding() {
-  if (process.env.VITEST && !process.env.WWA_SYNC_URL) return null;
+  if (process.env.VITEST && !runtimeEnv('SYNC_URL')) return null;
   return readSyncBinding();
 }
 

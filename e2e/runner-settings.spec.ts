@@ -388,7 +388,7 @@ test.describe('桌面', () => {
       errors.push(`console: ${message.text()} @ ${location.url}:${location.lineNumber}:${location.columnNumber}`);
     });
     await page.addInitScript(() => {
-      localStorage.setItem('agent-studio.theme', 'dark');
+      localStorage.setItem('dovun.theme', 'dark');
       document.documentElement?.classList.add('dark');
     });
     await page.goto('/#/settings/local');

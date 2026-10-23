@@ -176,7 +176,10 @@
       "complete": "Complete and reopen",
       "result": "Write back result"
     },
-    "samplePrompt": "Use list_tasks from work_with_agent to list the tasks in my Inbox."
+    "samplePrompt": "Use list_tasks from work_with_agent to list the tasks in my Inbox.",
+    "transitionHint": "If work_with_agent is already configured, update that entry and keep its name. Do not add a second connection.",
+    "legacyEntry": "Update the existing work_with_agent entry",
+    "reuseExisting": "This host already has a connection. Update the existing entry."
   },
   "reviews": {
     "title": "Reviews",

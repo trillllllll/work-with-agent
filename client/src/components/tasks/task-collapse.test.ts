@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { readCollapsedParents, toggleCollapsedParent, writeCollapsedParents } from './task-collapse.js';
 
 const memory = (initial?: string) => {
-  const map = new Map(initial ? [['todo.collapsedParents', initial]] : []);
+  const map = new Map(initial ? [['dovun.collapsedParents', initial]] : []);
   return {
     getItem: (key: string) => map.get(key) ?? null,
     setItem: (key: string, value: string) => { map.set(key, value); },
-    read: () => map.get('todo.collapsedParents') ?? null,
+    read: () => map.get('dovun.collapsedParents') ?? null,
   };
 };
 

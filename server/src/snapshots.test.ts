@@ -80,12 +80,12 @@ describe('snapshot export', () => {
     const response = await getSnapshotZip();
     expect(response.status).toBe(200);
     expect(response.headers['content-type']).toContain('application/zip');
-    expect(response.headers['content-disposition']).toMatch(/wwa-snapshot-.*\.zip/);
+    expect(response.headers['content-disposition']).toMatch(/dovun-snapshot-.*\.zip/);
     const zip = await JSZip.loadAsync(response.body as Buffer);
     const manifest = JSON.parse(await zip.file('manifest.json')!.async('string'));
     expect(manifest.schemaVersion).toBe(snapshots.localSchemaVersion());
     expect(manifest.exportedAt).toBeTruthy();
-    expect(zip.file('agent-studio.db')).toBeTruthy();
+    expect(zip.file('dovun.db')).toBeTruthy();
     const names = Object.keys(zip.files).filter((name) => name.startsWith('knowledge-blobs/'));
     expect(names.some((name) => name.endsWith(blobs.knowledgeHash('attachment-bytes')))).toBe(true);
   }, 60_000);

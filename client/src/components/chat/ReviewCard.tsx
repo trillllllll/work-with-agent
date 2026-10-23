@@ -169,7 +169,7 @@ export function ReviewCard({ approval, phase = '', unknown = false, unresolved =
     } finally { setBusyAction(''); }
   };
   const adjust = () => {
-    window.dispatchEvent(new CustomEvent('wwa-adjust-approval', { detail: { approvalId: approval.approvalId, conversationId: approval.conversationId, title: review?.title || review?.intent || t('review.proposal') } }));
+    window.dispatchEvent(new CustomEvent('dovun-adjust-approval', { detail: { approvalId: approval.approvalId, conversationId: approval.conversationId, title: review?.title || review?.intent || t('review.proposal') } }));
   };
   const count = review?.relatedEntityCount ?? 0;
   const relatedText = (executed: boolean) => {
@@ -183,7 +183,7 @@ export function ReviewCard({ approval, phase = '', unknown = false, unresolved =
   if (state === 'executed') return <section className="task-batch-card review-receipt" aria-label={review?.title || t('review.result')} data-testid="approval-card" data-approval-id={approval.approvalId} data-state={state}>
     <div className="flex flex-wrap items-center gap-2"><Check size={16} className="shrink-0 text-green-700 dark:text-green-300" /><h2 className="min-w-0 flex-1 text-sm font-medium" tabIndex={-1}>{entities.length === 1 ? entities[0].titleAfter || entities[0].titleBefore || review?.title : review?.title}</h2><span className="text-xs text-muted-foreground" role="status">{reviewStatusCopy(state, approval, unresolved)}</span></div>
     <div className="mt-2 flex flex-wrap gap-3">
-      {entities.length === 1 && entities[0].entityType === 'task' && entities[0].operation !== 'delete' && <button type="button" className="review-tech-trigger !mt-0" onClick={() => window.dispatchEvent(new CustomEvent('wwa-open-task', { detail: { taskId: entities[0].entityId } }))}>{t('review.viewTask')}</button>}
+      {entities.length === 1 && entities[0].entityType === 'task' && entities[0].operation !== 'delete' && <button type="button" className="review-tech-trigger !mt-0" onClick={() => window.dispatchEvent(new CustomEvent('dovun-open-task', { detail: { taskId: entities[0].entityId } }))}>{t('review.viewTask')}</button>}
       {skillOnly && <button type="button" className="review-tech-trigger !mt-0" onClick={() => { window.location.hash = '/skills'; }}>{t('review.viewSkill')}</button>}
       {canUndo && <button type="button" className="review-tech-trigger !mt-0" disabled={Boolean(busyAction)} onClick={() => void followUp('undo-preview')}>{t('actions.undo')}</button>}
       <button type="button" className="review-tech-trigger !mt-0" aria-expanded={showAll} onClick={() => setShowAll((value) => !value)}>{showAll ? t('review.collapseResult') : t('review.viewResult')}</button>
@@ -230,7 +230,7 @@ export function ReviewCard({ approval, phase = '', unknown = false, unresolved =
       )}
       {conflict && <div className="task-batch-actions"><button type="button" className="task-batch-primary" disabled={Boolean(busyAction)} onClick={() => void followUp('repreview')}>{t('review.repreview')}</button></div>}
       {canUndo && <div className="task-batch-actions"><button type="button" className="task-batch-secondary" disabled={Boolean(busyAction)} onClick={() => void followUp('undo-preview')}>{t('actions.undo')}</button></div>}
-      {state === 'superseded' && approval.supersededByApprovalId && <div className="task-batch-actions"><button type="button" className="task-batch-secondary" onClick={() => window.dispatchEvent(new CustomEvent('wwa-locate-approval', { detail: { approvalId: approval.supersededByApprovalId } }))}>{t('review.viewNewProposal')}</button></div>}
+      {state === 'superseded' && approval.supersededByApprovalId && <div className="task-batch-actions"><button type="button" className="task-batch-secondary" onClick={() => window.dispatchEvent(new CustomEvent('dovun-locate-approval', { detail: { approvalId: approval.supersededByApprovalId } }))}>{t('review.viewNewProposal')}</button></div>}
     </section>
   );
 }

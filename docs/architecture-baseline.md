@@ -1,5 +1,7 @@
 # Agent 工作室：第一版架构基线
 
+> 历史设计基线，保留当时的产品名与计划。Dovun 当前实现见 [当前架构](architecture-current.md)，术语见 [CONTEXT.md](../CONTEXT.md)。
+
 > 修订日期：2026-09-20
 >
 > 设计顺序：基础 Todo → AI 接入 → 记忆与整理 → Handoff 等增强。

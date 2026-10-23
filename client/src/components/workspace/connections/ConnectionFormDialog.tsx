@@ -132,9 +132,10 @@ function SetupStep({ created }: { created: CreatedConnection }) {
   const { t } = useTranslation('workspace');
   const [visible, setVisible] = useState(false);
   const label = hostLabel(created.host);
-  const setup = setupSnippet(created.host, created.configuration, created.token);
-  const copyLabel = created.host === 'grok' ? t('connections.copyGrok') : created.host === 'claude' ? t('connections.copyClaude') : created.host === 'codex' ? t('connections.copyCodex') : t('connections.copySnippet');
-  const confirmCommand = created.host === 'grok' ? 'grok mcp list' : created.host === 'claude' ? 'claude mcp get work_with_agent' : '';
+  const [legacyEntry, setLegacyEntry] = useState(false);
+  const setup = setupSnippet(created.host, created.configuration, created.token, legacyEntry ? 'work_with_agent' : 'dovun');
+  const copyLabel = legacyEntry ? t('connections.copySnippet') : created.host === 'grok' ? t('connections.copyGrok') : created.host === 'claude' ? t('connections.copyClaude') : created.host === 'codex' ? t('connections.copyCodex') : t('connections.copySnippet');
+  const confirmCommand = created.host === 'grok' ? 'grok mcp list' : created.host === 'claude' ? `claude mcp get ${legacyEntry ? 'work_with_agent' : 'dovun'}` : '';
   return (
     <div className="space-y-4">
       <div className="flex gap-2 rounded-lg border border-warning-border bg-warning-bg px-3 py-2 text-sm text-warning">
@@ -143,8 +144,8 @@ function SetupStep({ created }: { created: CreatedConnection }) {
       </div>
       <ol className="list-decimal space-y-4 pl-5 text-sm">
         <li className="space-y-2">
-          <p>{created.host === 'codex' ? t('connections.powershellCodex') : t('connections.powershellCommand')}</p>
-          <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg bg-muted p-3 text-xs">{setup}</pre>
+          <p>{legacyEntry ? t('connections.transitionHint') : created.host === 'codex' ? t('connections.powershellCodex') : t('connections.powershellCommand')}</p>
+          <p className="text-xs text-muted-foreground">{t('connections.transitionHint')}</p><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={legacyEntry} onChange={event => setLegacyEntry(event.target.checked)} />{t('connections.legacyEntry')}</label><pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg bg-muted p-3 text-xs">{setup}</pre>
           <CopyButton label={copyLabel} text={setup} />
           <div className="flex flex-wrap items-center gap-2">
             <Input readOnly className="min-w-0 flex-1" type={visible ? 'text' : 'password'} autoComplete="off" spellCheck={false} aria-label={t('connections.credentialAria')} value={created.token} />

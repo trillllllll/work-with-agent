@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-/** wwa-node entry: `node dist/node-agent/index.js --server URL --token TOKEN --roots DIR[,DIR] [--data DIR] [--max N]`; with only `--data DIR` it runs from the saved config (desktop auto-start). */
+import { registerDataWriter } from '../shared/data-guard.js';
+import { dirname } from 'node:path';
+import { runtimeEnv } from '../shared/runtime-env.js';
+/** dovun-node entry: `node dist/node-agent/index.js --server URL --token TOKEN --roots DIR[,DIR] [--data DIR] [--max N]`; with only `--data DIR` it runs from the saved config (desktop auto-start). */
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -8,11 +12,17 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { NodeAgent } from './agent.js';
 
-const REVOKED_HINT = '已被吊销，请在 WWA 里重新生成连接命令';
+/** 0.3 keeps an existing standalone executor directory; fresh installs use Dovun. */
+export function defaultNodeDataDir(base = homedir(), exists: (path: string) => boolean = existsSync) {
+  const legacy = resolve(base, '.wwa-node');
+  return exists(legacy) ? legacy : resolve(base, '.dovun-node');
+}
+
+const REVOKED_HINT = '已被吊销，请在 Dovun 里重新生成连接命令';
 
 /** Root package.json from source or dist (`server/{src,dist}/node-agent`), then the desktop bundle's `server/package.json`. */
 export async function readPackageVersion() {
-  const override = process.env.WWA_NODE_VERSION?.trim();
+  const override = runtimeEnv('NODE_VERSION')?.trim();
   if (override) return override.slice(0, 100);
   for (const url of [new URL('../../../package.json', import.meta.url), new URL('../../package.json', import.meta.url)]) {
     try {
@@ -48,25 +58,26 @@ async function adoptLoginShellPath() {
   if (process.platform === 'win32') return;
   const shell = process.env.SHELL && !process.env.SHELL.endsWith('nologin') ? process.env.SHELL : '/bin/zsh';
   try {
-    const { stdout } = await promisify(execFile)(shell, ['-ilc', 'printf "__WWA_PATH__%s" "$PATH"'], { timeout: 15_000, maxBuffer: 1_000_000 });
-    const value = stdout.split('__WWA_PATH__').pop()?.trim();
+    const { stdout } = await promisify(execFile)(shell, ['-ilc', 'printf "__DOVUN_PATH__%s" "$PATH"'], { timeout: 15_000, maxBuffer: 1_000_000 });
+    const value = stdout.split('__DOVUN_PATH__').pop()?.trim();
     if (value) process.env.PATH = [...new Set([...value.split(':'), ...(process.env.PATH ?? '').split(':')].filter(Boolean))].join(':');
   } catch { /* keep the inherited PATH */ }
 }
 
 function arg(name: string) { const index = process.argv.indexOf(`--${name}`); return index >= 0 ? process.argv[index + 1] : undefined; }
 async function main() {
-  const dataDir = resolve(arg('data') ?? process.env.WWA_NODE_DATA ?? resolve(homedir(), '.wwa-node'));
+  const dataDir = resolve(arg('data') ?? runtimeEnv('NODE_DATA') ?? defaultNodeDataDir());
   await mkdir(dataDir, { recursive: true });
   const configPath = resolve(dataDir, 'config.json');
   const saved = await readFile(configPath, 'utf8').then((text) => JSON.parse(text) as Record<string, unknown>, () => ({} as Record<string, unknown>));
-  const token = arg('token') ?? process.env.WWA_NODE_TOKEN ?? String(saved.token ?? '');
+  if (runtimeEnv('NODE_MANAGED') === 'desktop') await registerDataWriter(dirname(dataDir));
+  const token = arg('token') ?? runtimeEnv('NODE_TOKEN') ?? String(saved.token ?? '');
   if (refuseRevokedStart(saved, token, process.exit)) return;
   const config = {
-    server: arg('server') ?? process.env.WWA_NODE_SERVER ?? String(saved.server ?? ''),
+    server: arg('server') ?? runtimeEnv('NODE_SERVER') ?? String(saved.server ?? ''),
     token,
     // Allowed roots live only in this machine's config; the server can never widen them.
-    roots: (arg('roots') ?? process.env.WWA_NODE_ROOTS ?? (Array.isArray(saved.roots) ? (saved.roots as string[]).join(',') : '')).split(',').map((item) => item.trim()).filter(Boolean).map((item) => resolve(item.replace(/^~(?=$|[\\/])/, homedir()))),
+    roots: (arg('roots') ?? runtimeEnv('NODE_ROOTS') ?? (Array.isArray(saved.roots) ? (saved.roots as string[]).join(',') : '')).split(',').map((item) => item.trim()).filter(Boolean).map((item) => resolve(item.replace(/^~(?=$|[\\/])/, homedir()))),
     maxConcurrent: Math.min(4, Math.max(1, Number(arg('max') ?? saved.maxConcurrent ?? 2))),
     dataDir,
     version: await readPackageVersion(),
@@ -75,7 +86,7 @@ async function main() {
     console.error('用法：wwa-node --server <WWA 地址> --token <执行端令牌> --roots <允许的代码目录，逗号分隔> [--data <数据目录>] [--max <并发 1-4>]');
     process.exit(2);
   }
-  if (process.env.WWA_NODE_LOGIN_PATH === '1') await adoptLoginShellPath();
+  if (runtimeEnv('NODE_LOGIN_PATH') === '1') await adoptLoginShellPath();
   await writeFile(configPath, JSON.stringify({ server: config.server, token: config.token, roots: config.roots, maxConcurrent: config.maxConcurrent }, null, 2), { mode: 0o600 });
   const agent = new NodeAgent(config, fetch, { onRevoked: () => markConfigRevoked(configPath) });
   console.log(`[wwa-node] 已连接 ${config.server}，允许目录：${config.roots.join(', ')}，并发 ${config.maxConcurrent}`);

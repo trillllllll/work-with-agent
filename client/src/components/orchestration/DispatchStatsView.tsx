@@ -64,7 +64,7 @@ function formatRate(rate: number | null) {
 }
 
 function openTask(taskId: string) {
-  window.dispatchEvent(new CustomEvent('wwa-open-task', { detail: { taskId } }));
+  window.dispatchEvent(new CustomEvent('dovun-open-task', { detail: { taskId } }));
 }
 
 function seededDispatchRange(rangeFrom?: string, rangeTo?: string) {

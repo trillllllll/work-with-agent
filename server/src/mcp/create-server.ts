@@ -1,7 +1,8 @@
+import { runtimeEnv } from '../shared/runtime-env.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { mcpLoopbackHeaders } from '../application/security.js';
+import { mcpLoopbackHeaders, serverVersion } from '../application/security.js';
 import { requestLocale } from '../i18n/index.js';
 import {
   MAX_ATTACHMENT_BYTES,
@@ -27,25 +28,25 @@ import {
 export const mcpCredential = new AsyncLocalStorage<string>();
 
 function credential() {
-  const value = mcpCredential.getStore() ?? process.env.WWA_CONNECTION_TOKEN;
-  if (!value) throw new Error('WWA_CONNECTION_TOKEN is required; create a scoped connection in the workspace');
+  const value = mcpCredential.getStore() ?? runtimeEnv('CONNECTION_TOKEN');
+  if (!value) throw new Error('DOVUN_CONNECTION_TOKEN is required (legacy WWA_CONNECTION_TOKEN also supported); create a scoped connection in the workspace');
   return value;
 }
 
 function apiBase() {
-  const base = new URL(process.env.WWA_API_URL ?? `http://127.0.0.1:${Number(process.env.PORT) || 3016}`);
-  if (!['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname) || !['http:', 'https:'].includes(base.protocol) || base.username || base.password) throw new Error('WWA_API_URL must be a loopback HTTP(S) origin');
+  const base = new URL(runtimeEnv('API_URL') ?? `http://127.0.0.1:${Number(process.env.PORT) || 3016}`);
+  if (!['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname) || !['http:', 'https:'].includes(base.protocol) || base.username || base.password) throw new Error('DOVUN_API_URL must be a loopback HTTP(S) origin');
   return base;
 }
 
 // HTTP MCP forwards the caller's Accept-Language; stdio MCP can set WWA_LANGUAGE. Otherwise the API answers in zh-CN.
 function forwardedLanguage(): Record<string, string> {
-  const language = requestLocale() ?? process.env.WWA_LANGUAGE;
+  const language = requestLocale() ?? runtimeEnv('LANGUAGE');
   return language ? { 'Accept-Language': language } : {};
 }
 
 export function createMcpServer() {
-  const server = new McpServer({ name: 'work-with-agent', version: '2.0.0' }, {
+  const server = new McpServer({ name: 'dovun', version: serverVersion }, {
     instructions: 'Read only the lists authorized for this connection. Read current revisions before editing. Writes require a stable requestId; reuse it only to retry identical content. pending_approval means data has NOT changed. Never claim a proposal was applied. Omit fields to preserve them, use null to clear nullable fields and [] to clear sets. Handoff results do not complete tasks; the owner reviews results. Preserve source IDs and revisions when proposing memories. get_task returns referenced description images as image content (6 images, 1.5 MiB, 2000px, 6 MiB total; includeImages:false skips them). Use get_task_image for one image and get_material_attachment for a material file.',
   });
 

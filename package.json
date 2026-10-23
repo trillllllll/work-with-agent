@@ -1,6 +1,6 @@
 {
-  "name": "agent-studio",
-  "version": "0.2.5",
+  "name": "dovun",
+  "version": "0.3.0",
   "private": true,
   "workspaces": [
     "client",

@@ -2,8 +2,8 @@
  * Bridges to the desktop shell. The shell intercepts these sentinel navigations (they never reach a server),
  * which works for both the bundled local workspace and a remote workspace loaded in the desktop window.
  */
-const SHELL_KEY = 'wwa-desktop-shell';
-const NOTIFY_KEY = 'wwa-system-notifications';
+const SHELL_KEY = 'dovun-desktop-shell';
+const NOTIFY_KEY = 'dovun-system-notifications';
 
 export function markDesktopShell() { try { localStorage.setItem(SHELL_KEY, '1'); } catch { /* storage unavailable */ } }
 export function inDesktopShell() {
@@ -40,7 +40,7 @@ export async function systemNotify(title: string, body: string, tag?: string) {
       if (tauri?.core?.invoke) { await tauri.core.invoke('desktop_notify', { title, body }); return true; }
     } catch { /* A remote origin has no IPC; fall back to the sentinel navigation. */ }
     const params = new URLSearchParams({ title, body });
-    window.location.assign(`/wwa-notify?${params.toString()}`);
+    window.location.assign(`${desktopSentinel('notify')}?${params.toString()}`);
     return true;
   }
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return false;
@@ -52,6 +52,9 @@ export async function systemNotify(title: string, body: string, tag?: string) {
 /** Desktop only: hand a freshly issued node token to the shell, which asks for the code folder and starts wwa-node. */
 export function pairNodeOnThisComputer(server: string, token: string, nodeId: string) {
   const params = new URLSearchParams({ server, token, node: nodeId });
-  window.location.assign(`/wwa-node-pair?${params.toString()}`);
+  window.location.assign(`${desktopSentinel('node-pair')}?${params.toString()}`);
 }
-export function stopNodeOnThisComputer() { window.location.assign('/wwa-node-unpair'); }
+export function stopNodeOnThisComputer() { window.location.assign(desktopSentinel('node-unpair')); }
+
+/** New shells announce their contract in the first status reply; old shells keep the transition sentinel. */
+export function desktopSentinel(action: string) { return `/${(window as Window & { __DOVUN_SHELL__?: boolean }).__DOVUN_SHELL__ ? 'dovun' : 'wwa'}-${action}`; }

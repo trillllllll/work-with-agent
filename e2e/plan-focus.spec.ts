@@ -54,7 +54,7 @@ test.describe('规划页', () => {
 test.beforeEach(async ({ page }) => {
   await resetE2eDatabase();
   await page.clock.setFixedTime(new Date(`${localKey()}T12:00:00`));
-  await page.addInitScript(() => { if (localStorage.getItem('todo.plan.showCompleted') === null) localStorage.setItem('todo.plan.showCompleted', 'true'); });
+  await page.addInitScript(() => { if (localStorage.getItem('dovun.plan.showCompleted') === null) localStorage.setItem('dovun.plan.showCompleted', 'true'); });
   await page.addInitScript(() => {
     (window as unknown as { __REACT_GRAB_DISABLED__?: boolean }).__REACT_GRAB_DISABLED__ = true;
     if (typeof Notification !== 'undefined') Object.defineProperty(Notification, 'permission', { configurable: true, get: () => 'denied' });
@@ -170,7 +170,7 @@ test('375px 周视图可横滑，专注芯片在底栏上方', async ({ page }) 
 test.describe('专注计时', () => {
 test.beforeEach(async ({ page }) => {
   await resetE2eDatabase();
-  await page.addInitScript(() => { if (localStorage.getItem('todo.plan.showCompleted') === null) localStorage.setItem('todo.plan.showCompleted', 'true'); });
+  await page.addInitScript(() => { if (localStorage.getItem('dovun.plan.showCompleted') === null) localStorage.setItem('dovun.plan.showCompleted', 'true'); });
   await page.addInitScript(() => {
     (window as unknown as { __REACT_GRAB_DISABLED__?: boolean }).__REACT_GRAB_DISABLED__ = true;
     if (typeof Notification !== 'undefined') Object.defineProperty(Notification, 'permission', { configurable: true, get: () => 'denied' });
@@ -182,7 +182,7 @@ test('一分钟专注完成后留下记录，刷新则暂停且不归零', async
   await page.clock.install();
   await page.goto('/#/focus');
   await page.evaluate(() => {
-    localStorage.setItem('todo.focusTimer', JSON.stringify({ phase: 'idle', taskId: null, taskTitle: null, accumulatedMs: 0, segmentStartedAt: null, sessionStartedAt: null, plannedMinutes: 1, breakMinutes: 5, cycle: 0, autoStartBreak: false }));
+    localStorage.setItem('dovun.focusTimer', JSON.stringify({ phase: 'idle', taskId: null, taskTitle: null, accumulatedMs: 0, segmentStartedAt: null, sessionStartedAt: null, plannedMinutes: 1, breakMinutes: 5, cycle: 0, autoStartBreak: false }));
   });
   await page.reload();
   await expect(page.getByTestId('focus-page')).toBeVisible();

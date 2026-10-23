@@ -86,7 +86,7 @@ export function StatsPage({ onOpenTopic }: { onOpenTopic: (id: string) => void }
   const nav: StatsNav = {
     go: goHash,
     openTopic: (topicId) => { if (!topicId) goHash('#/inbox'); else onOpenTopic(topicId); },
-    openTask: (taskId) => { window.dispatchEvent(new CustomEvent('wwa-open-task', { detail: { taskId } })); },
+    openTask: (taskId) => { window.dispatchEvent(new CustomEvent('dovun-open-task', { detail: { taskId } })); },
   };
   const retry = () => { void overview.refetch(); };
   const data = overview.data;

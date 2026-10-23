@@ -225,8 +225,8 @@ test.beforeEach(async ({ page }) => {
   await resetE2eDatabase();
   await page.clock.setFixedTime(new Date('2026-10-14T12:00:00'));
   await page.addInitScript(() => {
-    if (localStorage.getItem('todo.plan.showCompleted') === null) localStorage.setItem('todo.plan.showCompleted', 'true');
-    localStorage.setItem('todo.plan.mode', 'month');
+    if (localStorage.getItem('dovun.plan.showCompleted') === null) localStorage.setItem('dovun.plan.showCompleted', 'true');
+    localStorage.setItem('dovun.plan.mode', 'month');
   });
   await page.addInitScript(() => {
     (window as unknown as { __REACT_GRAB_DISABLED__?: boolean }).__REACT_GRAB_DISABLED__ = true;
@@ -345,7 +345,7 @@ test('短按月视图任务打开详情且安排时间在视口内', async ({ pa
 
 test('月视图在长按前上滑不拖动任务', async ({ page, request }, testInfo) => {
   mobileOnly(testInfo);
-  await page.addInitScript(() => localStorage.setItem('todo.plan.anchor', '2026-03-15'));
+  await page.addInitScript(() => localStorage.setItem('dovun.plan.anchor', '2026-03-15'));
   const days = ['2026-03-03', '2026-03-10', '2026-03-18', '2026-03-26'];
   const created: { day: string; id: string }[] = [];
   for (const [index, day] of days.entries()) created.push({ day, id: (await createScheduled(request, `三月任务${index + 1}`, day)).id });
@@ -392,7 +392,7 @@ test('月视图在长按前上滑不拖动任务', async ({ page, request }, tes
 
 test('手机周视图拖到右缘停 1 秒不横滚', async ({ page, request }, testInfo) => {
   mobileOnly(testInfo);
-  await page.addInitScript(() => localStorage.setItem('todo.plan.mode', 'week'));
+  await page.addInitScript(() => localStorage.setItem('dovun.plan.mode', 'week'));
   const created = await createScheduled(request, '周缘时间块', sourceDay);
   await openPlan(page, 'week');
   const block = page.locator(`[data-testid="task-block"][data-task-id="${created.id}"]`);
@@ -435,7 +435,7 @@ for (const width of [640, 800, 1400] as const) {
 test('800×900 周视图拖到右缘可以横滚', async ({ page, request }, testInfo) => {
   chromiumOnly(testInfo);
   await page.setViewportSize({ width: 800, height: 900 });
-  await page.addInitScript(() => localStorage.setItem('todo.plan.mode', 'week'));
+  await page.addInitScript(() => localStorage.setItem('dovun.plan.mode', 'week'));
   const created = await createScheduled(request, '周缘时间块', sourceDay);
   await openPlan(page, 'week');
   const block = page.locator(`[data-testid="task-block"][data-task-id="${created.id}"]`);

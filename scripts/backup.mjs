@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { DatabaseSync, backup } from 'node:sqlite';
 import { mkdir, cp, access, writeFile } from 'node:fs/promises';
 import { resolve, dirname, basename } from 'node:path';
@@ -7,7 +8,9 @@ import dotenv from 'dotenv';
 // Stop the API and runner first so attachment and database snapshots describe the same point in time.
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 dotenv.config({ path: resolve(root, 'server/.env') });
-const databaseUrl = process.env.DATABASE_URL ?? 'file:../data/agent-studio.db';
+const current = resolve(root, 'server/data/dovun.db'), legacy = resolve(root, 'server/data/agent-studio.db');
+if (!process.env.DATABASE_URL && existsSync(current) && existsSync(legacy)) throw new Error('Both database names exist; set DATABASE_URL explicitly.');
+const databaseUrl = process.env.DATABASE_URL ?? `file:${existsSync(legacy) ? legacy : current}`;
 if (!databaseUrl.startsWith('file:')) throw new Error('Only local SQLite databases are supported');
 const source = resolve(root, 'server/prisma', databaseUrl.slice(5));
 await access(source);
@@ -17,7 +20,7 @@ const db = new DatabaseSync(source, { readOnly: true });
 try { await backup(db, resolve(destination, 'workspace.db')); } finally { db.close(); }
 const directories = [
   { name: 'knowledge-blobs', path: resolve(process.env.KNOWLEDGE_STORAGE_ROOT ?? resolve(root, 'server/data/knowledge-blobs')) },
-  { name: 'runner', path: resolve(process.env.WWA_RUNNER_DIR ?? resolve(root, 'server/runtime/runner')) },
+  { name: 'runner', path: resolve(process.env.DOVUN_RUNNER_DIR ?? process.env.WWA_RUNNER_DIR ?? resolve(root, 'server/runtime/runner')) },
 ];
 const copied = [];
 for (const entry of directories) {

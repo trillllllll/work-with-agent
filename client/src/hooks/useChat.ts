@@ -41,16 +41,16 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
   const newConversationRef = useRef('');
   onErrorRef.current = onError;
   const [input, setInput] = useState('');
-  const [conversationId, setConversationId] = useState<string>(() => localStorage.getItem('agent-studio.conversationId') ?? '');
+  const [conversationId, setConversationId] = useState<string>(() => localStorage.getItem('dovun.conversationId') ?? '');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [busy, setBusy] = useState(false);
   const activeRunId = useRef('');
-  const pendingRequestKey = useRef(localStorage.getItem('agent-studio.pendingRequestKey') || '');
-  const pendingRequestBody = useRef(localStorage.getItem('agent-studio.pendingRequestBody') || '');
+  const pendingRequestKey = useRef(localStorage.getItem('dovun.pendingRequestKey') || '');
+  const pendingRequestBody = useRef(localStorage.getItem('dovun.pendingRequestBody') || '');
   const clearPendingRequest = () => {
     pendingRequestKey.current = ''; pendingRequestBody.current = '';
-    localStorage.removeItem('agent-studio.pendingRequestKey'); localStorage.removeItem('agent-studio.pendingRequestBody');
+    localStorage.removeItem('dovun.pendingRequestKey'); localStorage.removeItem('dovun.pendingRequestBody');
   };
   const [stopping, setStopping] = useState(false);
   const [interrupted, setInterrupted] = useState(false);
@@ -81,8 +81,8 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
       const item = (event as CustomEvent<{ attachment?: ChatAttachment }>).detail?.attachment;
       if (item) addAttachment(item);
     };
-    window.addEventListener('wwa-open-assistant', handle);
-    return () => window.removeEventListener('wwa-open-assistant', handle);
+    window.addEventListener('dovun-open-assistant', handle);
+    return () => window.removeEventListener('dovun-open-assistant', handle);
   }, []);
   const approvalsRef = useRef(approvals);
   const conversationRef = useRef(conversationId);
@@ -131,7 +131,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
     } catch (reason) {
       if (generation !== loadGeneration.current) return;
       if (reason instanceof ApiError && reason.status === 404) {
-        localStorage.removeItem('agent-studio.conversationId');
+        localStorage.removeItem('dovun.conversationId');
         setConversationId('');
         setMessages([]);
         setApprovals([]);
@@ -143,7 +143,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
 
   useEffect(() => {
     if (!conversationId) return;
-    localStorage.setItem('agent-studio.conversationId', conversationId);
+    localStorage.setItem('dovun.conversationId', conversationId);
     if (newConversationRef.current === conversationId) {
       newConversationRef.current = '';
       return;
@@ -175,8 +175,8 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
       setReferencedApproval({ id: detail.approvalId, title: detail.title || tRef.current('review.proposal') });
       if (detail.conversationId && detail.conversationId !== conversationRef.current) setConversationId(detail.conversationId);
     };
-    window.addEventListener('wwa-adjust-approval', onAdjust);
-    return () => window.removeEventListener('wwa-adjust-approval', onAdjust);
+    window.addEventListener('dovun-adjust-approval', onAdjust);
+    return () => window.removeEventListener('dovun-adjust-approval', onAdjust);
   }, []);
 
   const settleTool = (tool: NonNullable<ChatMessage['tools']>[number], status: ToolActivityStatus, result?: ToolResult) => ({
@@ -315,10 +315,10 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
     // Store the exact body before sending. Replays must retain both the key and its original context.
     const storedBody = JSON.stringify(requestBody);
     try {
-      localStorage.setItem('agent-studio.pendingRequestBody', storedBody); localStorage.setItem('agent-studio.pendingRequestKey', requestKey);
+      localStorage.setItem('dovun.pendingRequestBody', storedBody); localStorage.setItem('dovun.pendingRequestKey', requestKey);
     } catch {
       // Do not start an untraceable request when the browser cannot save its recovery data.
-      try { localStorage.removeItem('agent-studio.pendingRequestBody'); localStorage.removeItem('agent-studio.pendingRequestKey'); } catch { /* Storage may be unavailable entirely. */ }
+      try { localStorage.removeItem('dovun.pendingRequestBody'); localStorage.removeItem('dovun.pendingRequestKey'); } catch { /* Storage may be unavailable entirely. */ }
       onErrorRef.current(tRef.current('errors.saveSendStateFailed'));
       return;
     }
@@ -415,7 +415,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
       if (!conversationRef.current) newConversationRef.current = event.conversationId;
       conversationRef.current = event.conversationId;
       setConversationId(event.conversationId);
-      localStorage.setItem('agent-studio.conversationId', event.conversationId);
+      localStorage.setItem('dovun.conversationId', event.conversationId);
     }
     setMessages((current) => applyMessageEvent(current, event));
     setApprovals((current) => applyApprovalEvent(current, event));
@@ -482,7 +482,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
       ...current.filter((item) => item.approvalId !== next.approvalId).map((item) => item.approvalId === body.supersedesApprovalId ? { ...item, status: 'rejected', supersededByApprovalId: next.approvalId } : item),
       next,
     ]);
-    window.dispatchEvent(new CustomEvent('wwa-locate-approval', { detail: { approvalId: next.approvalId } }));
+    window.dispatchEvent(new CustomEvent('dovun-locate-approval', { detail: { approvalId: next.approvalId } }));
   };
   const stop = async () => {
     if (stopping) return;
@@ -551,7 +551,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
     if (conversationRef.current !== found.conversationId) {
       loadGeneration.current++; conversationRef.current = found.conversationId;
       newConversationRef.current = found.conversationId; setConversationId(found.conversationId);
-      localStorage.setItem('agent-studio.conversationId', found.conversationId);
+      localStorage.setItem('dovun.conversationId', found.conversationId);
     }
   };
   const retry = async () => {
@@ -578,7 +578,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
     activeRunId.current = '';
     clearPendingRequest();
     loadGeneration.current++;
-    localStorage.removeItem('agent-studio.conversationId');
+    localStorage.removeItem('dovun.conversationId');
     newConversationRef.current = '';
     setConversationId('');
     setMessages([]);

@@ -241,7 +241,7 @@ async function mcpInitialize(credential) {
   const payload = text.trimStart().startsWith('{')
     ? JSON.parse(text)
     : JSON.parse(text.split('\n').find((line) => line.startsWith('data:'))?.slice(5) ?? '{}');
-  if (payload.result?.serverInfo?.name !== 'work-with-agent') throw new Error(`MCP initialize 未返回服务信息：${text}`);
+  if (payload.result?.serverInfo?.name !== 'dovun') throw new Error(`MCP initialize 未返回服务信息：${text}`);
 }
 
 /** The stdio entry hosts spawn stays alive across API restarts: unreachable while down, recovered when back. */

@@ -33,7 +33,7 @@ test.beforeEach(async ({ page, request }) => {
   const saved = await request.patch(`${api}/api/settings`, { data: { baseUrl: 'http://127.0.0.1:4010/v1', model: 'mock-model', apiKey: 'e2e-key' } });
   expect(saved.ok(), await saved.text()).toBe(true);
   await page.addInitScript(() => {
-    localStorage.setItem('agent-studio.theme', 'light');
+    localStorage.setItem('dovun.theme', 'light');
     (window as unknown as { __REACT_GRAB_DISABLED__?: boolean }).__REACT_GRAB_DISABLED__ = true;
   });
 });
@@ -111,7 +111,7 @@ test('剪贴板失败时展开可手动复制的文本，不宣称成功', async
 
 test('深色和窄屏外部提示词卡保持中性样式', async ({ page, isMobile }) => {
   test.skip(Boolean(isMobile), '外部提示词视口在桌面项目里切换');
-  await page.addInitScript(() => { localStorage.setItem('agent-studio.theme', 'dark'); });
+  await page.addInitScript(() => { localStorage.setItem('dovun.theme', 'dark'); });
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/#/inbox');
   await ask(page, '整理成外部提示词');

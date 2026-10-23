@@ -48,6 +48,9 @@ export function ConnectionsPage({ topics, archivedTopics = [] }: { topics: Topic
   };
   const create = async (draft: ConnectionDraft) => {
     try {
+      const current = await api<Connection[]>('/api/v1/connections');
+      const existing = current.find(item => item.host === draft.host && item.status !== 'revoked');
+      if (existing) { setMode({ kind: 'edit', connection: existing }); toast.info(t('connections.reuseExisting')); return; }
       const created = await api<CreatedConnection>('/api/v1/connections', { method: 'POST', body: json(draft) });
       await invalidate();
       setMode({ kind: 'setup', created });

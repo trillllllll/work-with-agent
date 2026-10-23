@@ -1,3 +1,4 @@
+import { desktopSentinel } from '@/lib/desktop-shell.js';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { markDesktopShell } from '@/lib/desktop-shell.js';
@@ -12,7 +13,7 @@ function EditorRuntimeMount({ runtime, children }: { runtime: EditorRuntime | nu
   useBeforeunloadGuard();
   return <TaskEditorRuntimeProvider runtime={runtime}>
     {children}
-    <UnsyncedTasksButton onOpenTask={(taskId) => { window.dispatchEvent(new CustomEvent('wwa-open-task', { detail: { taskId } })); }} />
+    <UnsyncedTasksButton onOpenTask={(taskId) => { window.dispatchEvent(new CustomEvent('dovun-open-task', { detail: { taskId } })); }} />
   </TaskEditorRuntimeProvider>;
 }
 
@@ -50,7 +51,7 @@ export function SessionGate({ children }: { children: ReactNode }) {
     if (new URLSearchParams(window.location.search).get('launcher') === '1') {
       markDesktopShell();
       window.history.replaceState(null, '', `${window.location.pathname}#/today`);
-      window.location.assign('/wwa-launcher-done');
+      window.location.assign(desktopSentinel('launcher-done'));
     }
     void api<{ mode: 'local' | 'server' }>('/api/v1/server/info').then((info) => { if (alive) setRemote(info.mode === 'server'); }).catch(() => {});
     const params = new URLSearchParams(window.location.hash.slice(1));

@@ -9,7 +9,7 @@ const fence = (source: string, language = 'svg') => '```' + language + '\n' + so
 
 test.beforeEach(async ({ page }) => {
   await resetE2eDatabase();
-  await page.addInitScript(() => { localStorage.setItem('agent-studio.theme', 'light'); (window as any).__REACT_GRAB_DISABLED__ = true; });
+  await page.addInitScript(() => { localStorage.setItem('dovun.theme', 'light'); (window as any).__REACT_GRAB_DISABLED__ = true; });
 });
 test.afterAll(() => e2eDatabase.$disconnect());
 
@@ -19,7 +19,7 @@ test('静态SVG组合在消息、源码、放大、SVG与PNG导出和重载中�
   const conversation = await e2eDatabase.conversation.create({ data: {} });
   await e2eDatabase.message.create({ data: { conversationId: conversation.id, role: 'assistant', content: fence(source) } });
   await e2eDatabase.message.create({ data: { conversationId: conversation.id, role: 'assistant', content: '共享静态图示', blocksJson: JSON.stringify({ schemaVersion: 1, blocks: [{ id: 'static-showcase', index: 0, type: 'svg', status: 'ready', title: '共享静态图示', source: canonical }] }) } });
-  await page.addInitScript((id) => localStorage.setItem('agent-studio.conversationId', id), conversation.id);
+  await page.addInitScript((id) => localStorage.setItem('dovun.conversationId', id), conversation.id);
   await page.goto('/#/chat');
   const preview = page.locator('[data-svg-block]').first();
   for (const image of [preview.getByRole('img'), page.locator('[data-block-type=svg]').getByRole('img')]) {
@@ -87,7 +87,7 @@ test('历史 Markdown 和富媒体文字块里的 SVG 可预览、查看源码�
   await e2eDatabase.message.create({ data: { conversationId: conversation.id, role: 'assistant', content: '富媒体文字块', blocksJson: JSON.stringify({ schemaVersion: 1, blocks: [{ id: 'text-svg', index: 0, type: 'text', status: 'ready', markdown: fence(svg, '') }, { id: 'standalone-svg', index: 1, type: 'svg', status: 'ready', title: '独立 SVG', source: svg }] }) } });
   const unsafe = '<svg xmlns="http://www.w3.org/2000/svg" onload="window.__svgExecuted=true"><script>window.__svgExecuted=true</script><image href="https://blocked-svg.invalid/image"/></svg>';
   await e2eDatabase.message.create({ data: { conversationId: conversation.id, role: 'assistant', content: fence(unsafe) } });
-  await page.addInitScript((id) => localStorage.setItem('agent-studio.conversationId', id), conversation.id);
+  await page.addInitScript((id) => localStorage.setItem('dovun.conversationId', id), conversation.id);
   await page.goto('/#/chat');
   const previews = page.locator('[data-svg-block]');
   await expect(previews).toHaveCount(3);

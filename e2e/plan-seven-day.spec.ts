@@ -167,7 +167,7 @@ test('离开规划页后仍停在上次的日月周和日期', async ({ page }) 
   await page.goto('/#/plan');
   await expect(page.locator('[data-plan-mode="week"]')).toHaveAttribute('aria-pressed', 'true');
   expect(await dates()).toEqual(['2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22', '2026-10-23', '2026-10-24', '2026-10-25']);
-  await page.evaluate(() => { localStorage.setItem('todo.plan.mode', 'year'); localStorage.setItem('todo.plan.anchor', '2026-02-31'); });
+  await page.evaluate(() => { localStorage.setItem('dovun.plan.mode', 'year'); localStorage.setItem('dovun.plan.anchor', '2026-02-31'); });
   await page.reload();
   await expect(page.locator('[data-plan-mode="week"]')).toHaveAttribute('aria-pressed', 'true');
   expect(await dates()).toEqual(['2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16', '2026-10-17', '2026-10-18']);

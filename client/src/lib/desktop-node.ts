@@ -6,7 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api } from './api.js';
-import { inDesktopShell, pairNodeOnThisComputer } from './desktop-shell.js';
+import { inDesktopShell, pairNodeOnThisComputer, desktopSentinel } from './desktop-shell.js';
 
 export type LocalNodeStatus = {
   nodeId: string | null;
@@ -107,7 +107,7 @@ function waitForDesktop<T>(match: (detail: unknown) => T | undefined, timeoutMs:
     const finish = (value: T | null) => {
       if (settled) return;
       settled = true;
-      window.removeEventListener('wwa-desktop', onEvent);
+      window.removeEventListener('dovun-desktop', onEvent);
       clearTimeout(timer);
       resolve(value);
     };
@@ -115,7 +115,7 @@ function waitForDesktop<T>(match: (detail: unknown) => T | undefined, timeoutMs:
       const matched = match(eventDetail(event));
       if (matched !== undefined) finish(matched);
     };
-    window.addEventListener('wwa-desktop', onEvent);
+    window.addEventListener('dovun-desktop', onEvent);
     const timer = setTimeout(() => finish(null), timeoutMs);
     cancel = () => finish(null);
     try {
@@ -133,7 +133,7 @@ export function requestLocalNodeStatus(timeoutMs = STATUS_TIMEOUT_MS): Promise<L
   return waitForDesktop((detail) => {
     const parsed = parseDesktopEvent(detail);
     return parsed?.type === 'node-status' ? parsed.status : undefined;
-  }, timeoutMs, () => { window.location.assign('/wwa-node-status'); }).promise;
+  }, timeoutMs, () => { window.location.assign(desktopSentinel('node-status')); }).promise;
 }
 
 /** Polls only inside the desktop shell. Elsewhere it stays null and does not touch the network. */
@@ -176,7 +176,7 @@ export function requestLocalUnpair(nodeId: string, timeoutMs = UNPAIR_TIMEOUT_MS
   return waitForDesktop((detail) => {
     const parsed = parseDesktopEvent(detail);
     return parsed?.type === 'node-unpair' ? parsed.result : undefined;
-  }, timeoutMs, () => { window.location.assign(`/wwa-node-unpair?${params.toString()}`); }).promise;
+  }, timeoutMs, () => { window.location.assign(`${desktopSentinel('node-unpair')}?${params.toString()}`); }).promise;
 }
 
 /** Hand the new token to the shell and wait for its pair result. Cancel when the dialog closes. */

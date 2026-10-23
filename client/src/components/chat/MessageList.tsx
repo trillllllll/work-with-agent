@@ -77,8 +77,8 @@ export function MessageList({ messages, emptyState, approvals, approvalPending, 
       const title = card.querySelector('h2');
       if (title instanceof HTMLElement) { title.tabIndex = -1; title.focus(); }
     };
-    window.addEventListener('wwa-locate-approval', locate);
-    return () => window.removeEventListener('wwa-locate-approval', locate);
+    window.addEventListener('dovun-locate-approval', locate);
+    return () => window.removeEventListener('dovun-locate-approval', locate);
   }, []);
 
   const jumpToBottom = () => {

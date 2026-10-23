@@ -68,7 +68,7 @@ async function setTheme(page: Page, theme: 'light' | 'dark') {
     return;
   }
   await page.evaluate((value) => {
-    localStorage.setItem('agent-studio.theme', value);
+    localStorage.setItem('dovun.theme', value);
     document.documentElement.classList.toggle('dark', value === 'dark');
   }, theme);
 }

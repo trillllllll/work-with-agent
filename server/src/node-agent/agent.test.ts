@@ -251,7 +251,7 @@ describe('wwa-node revocation and heartbeat', () => {
       const stopped = refuseRevokedStart(saved, TOKEN, (code) => { exits.push(code); });
       expect(stopped).toBe(true);
       expect(exits).toEqual([3]);
-      expect(errors.some((line) => line.includes('已被吊销，请在 WWA 里重新生成连接命令'))).toBe(true);
+      expect(errors.some((line) => line.includes('已被吊销，请在 Dovun 里重新生成连接命令'))).toBe(true);
       expect(refuseRevokedStart(saved, 'a-different-token', () => { throw new Error('should not exit'); })).toBe(false);
       expect(refuseRevokedStart({ token: TOKEN, server: SERVER }, TOKEN, () => { throw new Error('should not exit'); })).toBe(false);
     } finally { await rm(dir, { recursive: true, force: true }); }

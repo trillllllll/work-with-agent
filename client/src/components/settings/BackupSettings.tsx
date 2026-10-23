@@ -28,7 +28,7 @@ export function BackupSettings() {
     const response = await fetch('/api/v1/server/snapshot', { credentials: 'include', headers: authHeaders() });
     if (!response.ok) throw new Error(t('backup.downloadFailed', { status: response.status }));
     const disposition = response.headers.get('Content-Disposition') ?? '';
-    const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `wwa-snapshot-${Date.now()}.zip`;
+    const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `dovun-snapshot-${Date.now()}.zip`;
     const url = URL.createObjectURL(await response.blob());
     const anchor = document.createElement('a');
     anchor.href = url;

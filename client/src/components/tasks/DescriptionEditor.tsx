@@ -194,7 +194,7 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
   onOpenLinkedTaskRef.current = onOpenLinkedTask;
 
   const openMaterial = useCallback((materialId: string) => {
-    window.dispatchEvent(new CustomEvent('wwa-preview-material', { detail: { taskId: taskIdRef.current, materialId } }));
+    window.dispatchEvent(new CustomEvent('dovun-preview-material', { detail: { taskId: taskIdRef.current, materialId } }));
   }, []);
 
   const editor = useEditor({

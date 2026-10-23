@@ -12,9 +12,15 @@ const config: ConnectionConfiguration = {
 };
 
 describe('connection snippets', () => {
+  it('updates a legacy entry without offering another add command', () => {
+    for (const host of ['codex', 'claude', 'grok']) {
+      const text = setupSnippet(host, config, token, 'work_with_agent');
+      expect(text).toContain('work_with_agent'); expect(text).not.toContain('mcp add'); expect(text).toContain(token);
+    }
+  });
   it('builds a Claude setup command that contains the real token', () => {
     const snippet = setupSnippet('claude', config, token);
-    expect(snippet).toBe("claude mcp add work_with_agent '/usr/bin/node' 'src/mcp/index.js' '--flag' --scope user --env 'WWA_API_URL=http://127.0.0.1:3015' 'WWA_CONNECTION_TOKEN=secret-token'");
+    expect(snippet).toBe("claude mcp add dovun '/usr/bin/node' 'src/mcp/index.js' '--flag' --scope user --env 'DOVUN_API_URL=http://127.0.0.1:3015' 'DOVUN_CONNECTION_TOKEN=secret-token'");
     expect(snippet).toContain(token);
     expect(snippet).not.toContain(paste);
   });
@@ -23,10 +29,10 @@ describe('connection snippets', () => {
     const snippet = checkSnippet('claude', config, placeholder);
     expect(JSON.parse(snippet)).toEqual({
       mcpServers: {
-        work_with_agent: {
+        dovun: {
           command: config.command,
           args: config.args,
-          env: { WWA_API_URL: config.env.WWA_API_URL, WWA_CONNECTION_TOKEN: placeholder },
+          env: { DOVUN_API_URL: config.env.WWA_API_URL, DOVUN_CONNECTION_TOKEN: placeholder },
         },
       },
     });
@@ -38,19 +44,19 @@ describe('connection snippets', () => {
   it('uses grok mcp add with http transport for setup and for the self-check placeholder', () => {
     const setup = setupSnippet('grok', config, token);
     const check = checkSnippet('grok', config, placeholder);
-    expect(setup).toBe("grok mcp add work_with_agent --scope user --transport http http://127.0.0.1:3015/mcp --header 'Authorization: Bearer secret-token'");
-    expect(check).toBe(`grok mcp add work_with_agent --scope user --transport http http://127.0.0.1:3015/mcp --header 'Authorization: Bearer ${placeholder}'`);
+    expect(setup).toBe("grok mcp add dovun --scope user --transport http http://127.0.0.1:3015/mcp --header 'Authorization: Bearer secret-token'");
+    expect(check).toBe(`grok mcp add dovun --scope user --transport http http://127.0.0.1:3015/mcp --header 'Authorization: Bearer ${placeholder}'`);
     expect(setup).toContain(token);
     expect(check).toContain(placeholder);
     expect(check).not.toContain(token);
     expect(check).not.toContain(paste);
-    expect(check).not.toContain('[mcp_servers.work_with_agent]');
+    expect(check).not.toContain('[mcp_servers.dovun]');
   });
 
   it('uses TOML for Codex setup and self-check', () => {
     const setup = setupSnippet('codex', config, token);
     const check = checkSnippet('codex', config, placeholder);
-    const toml = (credential: string) => `[mcp_servers.work_with_agent]\ncommand = "/usr/bin/node"\nargs = ["src/mcp/index.js","--flag"]\n[mcp_servers.work_with_agent.env]\nWWA_API_URL = "http://127.0.0.1:3015"\nWWA_CONNECTION_TOKEN = ${JSON.stringify(credential)}`;
+    const toml = (credential: string) => `[mcp_servers.dovun]\ncommand = "/usr/bin/node"\nargs = ["src/mcp/index.js","--flag"]\n[mcp_servers.dovun.env]\nDOVUN_API_URL = "http://127.0.0.1:3015"\nDOVUN_CONNECTION_TOKEN = ${JSON.stringify(credential)}`;
     expect(setup).toBe(toml(token));
     expect(check).toBe(toml(placeholder));
     expect(check).not.toContain(token);
@@ -61,7 +67,7 @@ describe('connection snippets', () => {
     expect(quotePowerShell("a'b")).toBe("'a''b'");
     const quoted = setupSnippet('claude', { ...config, command: "C:\\tools\\node'x" }, "tok'en");
     expect(quoted).toContain("'C:\\tools\\node''x'");
-    expect(quoted).toContain("'WWA_CONNECTION_TOKEN=tok''en'");
+    expect(quoted).toContain("'DOVUN_CONNECTION_TOKEN=tok''en'");
     expect(setupSnippet('grok', config, "tok'en")).toContain("'Authorization: Bearer tok''en'");
   });
 
@@ -72,9 +78,9 @@ describe('connection snippets', () => {
       command: config.command,
       args: config.args,
       url: config.url,
-      env: { WWA_API_URL: config.env.WWA_API_URL, WWA_CONNECTION_TOKEN: token },
+      env: { DOVUN_API_URL: config.env.WWA_API_URL, DOVUN_CONNECTION_TOKEN: token },
     });
-    expect(JSON.parse(check).env.WWA_CONNECTION_TOKEN).toBe(placeholder);
+    expect(JSON.parse(check).env.DOVUN_CONNECTION_TOKEN).toBe(placeholder);
     expect(setup).not.toContain('claude mcp add');
     expect(setup).not.toContain('grok mcp add');
     expect(setup).not.toContain('[mcp_servers');

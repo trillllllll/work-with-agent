@@ -1,3 +1,4 @@
+import { runtimeEnv } from '../shared/runtime-env.js';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -38,7 +39,8 @@ function trustedMcpLoopback(req: Request) {
   const loopbackPeer = peer === '127.0.0.1' || peer === '::1' || peer === '::ffff:127.0.0.1';
   return loopbackPeer && loopbackHosts.has(req.hostname);
 }
-const cookieName = 'wwa_session';
+const cookieName = 'dovun_session';
+const legacyCookieName = 'wwa_session';
 const bootstrapTokens = new Map<string, number>();
 /** Prefer the repository root's version; packaged runtimes may only ship server/package.json. */
 function readVersion() {
@@ -86,9 +88,9 @@ function equalTokens(given: string, expected: string) {
 export function resolveOwnerKeyHash(): string | null {
   if (!isServerMode()) return null;
   if (serverOwnerKeyHash) return serverOwnerKeyHash;
-  const fromEnv = process.env.WWA_OWNER_KEY;
+  const fromEnv = runtimeEnv('OWNER_KEY');
   if (fromEnv) {
-    if (fromEnv.length < ownerKeyMinimum) throw new DomainError('OWNER_KEY_INVALID', `WWA_OWNER_KEY 至少需要 ${ownerKeyMinimum} 个字符`, 500);
+    if (fromEnv.length < ownerKeyMinimum) throw new DomainError('OWNER_KEY_INVALID', `DOVUN_OWNER_KEY 至少需要 ${ownerKeyMinimum} 个字符`, 500);
     serverOwnerKeyHash = hash(fromEnv);
     return serverOwnerKeyHash;
   }
@@ -218,7 +220,7 @@ export async function connectionTokenActive(credential: string) {
 async function authenticate(req: Request): Promise<{ actor: Actor; csrfToken?: string } | null> {
   checkLocalOrigin(req);
   const authorization = req.headers.authorization;
-  const sessionToken = cookies(req)[cookieName];
+  const sessionToken = cookies(req)[cookieName] ?? cookies(req)[legacyCookieName];
   if (authorization && sessionToken) throw new DomainError('AMBIGUOUS_IDENTITY', '不能同时提交连接凭据和用户会话', 400);
   if (authorization) {
     if (!authorization.startsWith('Bearer ')) throw new DomainError('AUTH_REQUIRED', '连接凭据无效', 401);
@@ -274,7 +276,7 @@ securityRouter.get('/server/info', (_req, res) => {
 });
 
 function cookieSecure(req: Request) {
-  return process.env.WWA_PUBLIC_HTTPS === '1' || req.headers['x-forwarded-proto'] === 'https';
+  return runtimeEnv('PUBLIC_HTTPS') === '1' || req.headers['x-forwarded-proto'] === 'https';
 }
 
 /** Bootstrap tokens are single-use launcher credentials for loopback mode; a network deployment must not honor them. */
@@ -327,7 +329,7 @@ export function connectionConfiguration(credential: string) {
     : developmentMcpConfiguration(entry);
   return {
     ...launch,
-    env: { WWA_API_URL: api, WWA_CONNECTION_TOKEN: credential },
+    env: { DOVUN_API_URL: api, DOVUN_CONNECTION_TOKEN: credential, WWA_API_URL: api, WWA_CONNECTION_TOKEN: credential },
     url: `${api}/mcp`,
     hosts: ['codex', 'claude-code', 'grok'],
   };

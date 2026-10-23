@@ -7,7 +7,7 @@ export function FocusChip() {
   const { state, dispatch, remainingLabel } = useFocus();
   if (state.phase === 'idle') return null;
   const running = state.phase === 'focusing' || state.phase === 'breaking';
-  const open = () => window.dispatchEvent(new CustomEvent('wwa-open-focus'));
+  const open = () => window.dispatchEvent(new CustomEvent('dovun-open-focus'));
   return (
     <div role="button" tabIndex={0} data-testid="focus-chip" className="glass-surface fixed right-4 bottom-4 z-50 flex h-10 max-w-[260px] cursor-pointer items-center gap-2 rounded-full pr-1.5 pl-3 text-sm shadow-[var(--glass-shadow)] max-md:bottom-20" onClick={open} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); } }}>
       <span className="tabular-nums">{remainingLabel}</span>

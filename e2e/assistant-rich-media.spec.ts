@@ -16,7 +16,7 @@ test('真实页面在回复完成前显示文字和图形，切换布局不重�
   await page.getByLabel('向 AI 提问').fill('富媒体验收'); await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect(page.locator('[data-block-type=text]').first()).toContainText('文字流式前缀😀');
   await expect(page.getByRole('button', { name: '停止生成' })).toBeVisible();
-  const conversationId = await page.evaluate(() => localStorage.getItem('agent-studio.conversationId'));
+  const conversationId = await page.evaluate(() => localStorage.getItem('dovun.conversationId'));
   await page.getByRole('button', { name: '放大到独立页' }).click();
   await expect(page.locator('[data-block-type=mermaid]')).toHaveAttribute('data-block-status', 'ready');
   await page.getByRole('button', { name: '缩小回原页面' }).click();
@@ -25,7 +25,7 @@ test('真实页面在回复完成前显示文字和图形，切换布局不重�
   await expect(page.getByRole('img', { name: '处理流程', exact: true })).toBeVisible();
   await expect(page.getByRole('img', { name: 'SVG 图示', exact: true })).toBeVisible();
   await expect(page.getByRole('img', { name: /每周完成，浏览器验收数据/ })).toBeVisible();
-  expect(requests).toBe(1); expect(await page.evaluate(() => localStorage.getItem('agent-studio.conversationId'))).toBe(conversationId);
+  expect(requests).toBe(1); expect(await page.evaluate(() => localStorage.getItem('dovun.conversationId'))).toBe(conversationId);
   const before = await page.locator('[data-block-id]').evaluateAll((nodes) => nodes.map((node) => ({ id: node.getAttribute('data-block-id'), type: node.getAttribute('data-block-type'), status: node.getAttribute('data-block-status') })));
   await page.reload();
   await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
@@ -63,7 +63,7 @@ test('四类 Mermaid、四类图表、标准 SVG、图片布局和恶意块隔�
   const conversation = await e2eDatabase.conversation.create({ data: {} });
   const items = [1, 2].map((index) => ({ id: `fixture-image-${index}`, url: `https://images.example.test/${index}.svg`, thumbnail: `https://images.example.test/${index}.svg`, title: `测试图片${index}`, sourceUrl: `https://sources.example.test/${index}`, searchedAt: '2026-10-19T00:00:00Z' }));
   await e2eDatabase.message.create({ data: { conversationId: conversation.id, role: 'tool', toolCallId: 'fixture-search', content: JSON.stringify({ toolName: 'image_search', success: true, data: { searchId: 'fixture-authorized-search', items } }) } });
-  await page.addInitScript((id) => localStorage.setItem('agent-studio.conversationId', id), conversation.id);
+  await page.addInitScript((id) => localStorage.setItem('dovun.conversationId', id), conversation.id);
   await page.route('https://images.example.test/**', (route) => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 40"><rect width="80" height="40" fill="teal"/></svg>' }));
   await page.goto('/#/chat');
   await page.getByLabel('向 AI 提问').fill('可视化矩阵验收'); await page.getByRole('button', { name: '发送', exact: true }).click();
@@ -98,7 +98,7 @@ test('刷新进行中的流，恢复轮询失败后重连同一请求，不丢�
   await page.goto('/#/chat');
   await page.getByLabel('向 AI 提问').fill('富媒体验收停止时长用于重连'); await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect(page.locator('[data-block-type=text]').first()).toContainText('文字流式前缀😀');
-  const conversationId = await page.evaluate(() => localStorage.getItem('agent-studio.conversationId'));
+  const conversationId = await page.evaluate(() => localStorage.getItem('dovun.conversationId'));
   await page.route('**/api/agent/runs/*/events?*', (route) => route.abort('internetdisconnected'));
   await page.reload();
   await expect(page.locator('[data-block-type=text]').first()).toContainText('文字流式前缀😀');
@@ -108,7 +108,7 @@ test('刷新进行中的流，恢复轮询失败后重连同一请求，不丢�
   await expect(page.locator('[data-block-type=text]').last()).toContainText('最后一段', { timeout: 10000 });
   await expect(page.getByRole('button', { name: '停止生成' })).toHaveCount(0);
   expect(sends).toBe(1);
-  expect(await page.evaluate(() => localStorage.getItem('agent-studio.conversationId'))).toBe(conversationId);
+  expect(await page.evaluate(() => localStorage.getItem('dovun.conversationId'))).toBe(conversationId);
   expect(errors).toEqual([]);
 });
 
@@ -120,11 +120,11 @@ test('新会话首帧丢失后刷新，用原请求编号找回，不再发送�
   await page.goto('/#/chat');
   await page.getByLabel('向 AI 提问').fill('富媒体验收停止首帧恢复'); await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect.poll(() => e2eDatabase.agentRun.count()).toBe(1);
-  const key = await page.evaluate(() => localStorage.getItem('agent-studio.pendingRequestKey'));
+  const key = await page.evaluate(() => localStorage.getItem('dovun.pendingRequestKey'));
   expect(key).toBeTruthy();
   await page.reload();
   await expect(page.locator('[data-block-type=text]').last()).toContainText('最后一段', { timeout: 10000 });
-  await expect.poll(() => page.evaluate(() => localStorage.getItem('agent-studio.pendingRequestKey'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('dovun.pendingRequestKey'))).toBeNull();
   expect(sends).toBe(1); expect(await e2eDatabase.agentRun.count()).toBe(1);
   const run = await e2eDatabase.agentRun.findFirstOrThrow(); expect(run.requestKey).toBe(key);
 });
@@ -140,7 +140,7 @@ test('首条请求在到达服务器前断网，刷新后用原编号和原内�
   await page.getByLabel('向 AI 提问').fill('富媒体验收首条离线恢复'); await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect.poll(() => bodies.length).toBe(1);
   expect(await e2eDatabase.agentRun.count()).toBe(0);
-  const key = await page.evaluate(() => localStorage.getItem('agent-studio.pendingRequestKey')); expect(key).toBeTruthy();
+  const key = await page.evaluate(() => localStorage.getItem('dovun.pendingRequestKey')); expect(key).toBeTruthy();
   await page.reload();
   await expect(page.locator('[data-block-type=text]').last()).toContainText('最后一段', { timeout: 15000 });
   await expect(page.getByRole('button', { name: '停止生成' })).toHaveCount(0);
@@ -148,7 +148,7 @@ test('首条请求在到达服务器前断网，刷新后用原编号和原内�
   expect(await e2eDatabase.agentRun.count()).toBe(1);
   const run = await e2eDatabase.agentRun.findFirstOrThrow(); expect(run.requestKey).toBe(key);
   expect(await e2eDatabase.message.count({ where: { conversationId: run.conversationId, role: 'user' } })).toBe(1);
-  await expect.poll(() => page.evaluate(() => localStorage.getItem('agent-studio.pendingRequestBody'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('dovun.pendingRequestBody'))).toBeNull();
   await page.getByLabel('向 AI 提问').fill('下一条可以正常发送');
   await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
 });
@@ -164,9 +164,9 @@ test('未确认的离线请求阻止切换历史和跨会话调整，不把新�
   await expect(page.getByText('聊天连接中断，已保留收到的内容。', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '历史对话', exact: true }).click();
   await page.getByRole('button', { name: /另一段历史对话/ }).click();
-  expect(await page.evaluate(() => localStorage.getItem('agent-studio.conversationId'))).toBeNull();
+  expect(await page.evaluate(() => localStorage.getItem('dovun.conversationId'))).toBeNull();
   await page.evaluate((id) => window.dispatchEvent(new CustomEvent('wwa-adjust-approval', { detail: { approvalId: 'other-approval', conversationId: id } })), other.id);
-  expect(await page.evaluate(() => localStorage.getItem('agent-studio.conversationId'))).toBeNull();
+  expect(await page.evaluate(() => localStorage.getItem('dovun.conversationId'))).toBeNull();
   await page.getByLabel('向 AI 提问').fill('另一条新输入'); await page.getByRole('button', { name: '发送', exact: true }).click();
   expect(sends).toBe(1); await expect(page.getByLabel('向 AI 提问')).toHaveValue('另一条新输入');
   expect(await e2eDatabase.agentRun.count()).toBe(0);
@@ -196,7 +196,7 @@ test('浏览器无法保存请求恢复数据时保留输入，不发送或锁�
   await page.evaluate(() => {
     const original = Storage.prototype.setItem;
     (window as any).__restorePendingStorage = () => { Storage.prototype.setItem = original; };
-    Storage.prototype.setItem = function(key, value) { if (key.startsWith('agent-studio.pendingRequest')) throw new DOMException('full', 'QuotaExceededError'); return original.call(this, key, value); };
+    Storage.prototype.setItem = function(key, value) { if (key.startsWith('dovun.pendingRequest')) throw new DOMException('full', 'QuotaExceededError'); return original.call(this, key, value); };
   });
   const input = page.getByLabel('向 AI 提问'); await input.fill('富媒体验收存储恢复');
   await page.getByRole('button', { name: '发送', exact: true }).click();

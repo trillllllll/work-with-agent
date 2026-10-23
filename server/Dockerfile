@@ -28,17 +28,12 @@ RUN npm prune --omit=dev \
   && npm install --no-save "prisma@$(node -p "require('./server/package.json').devDependencies.prisma")" \
   && npx prisma generate --schema server/prisma/schema.prisma
 
-# Compose overrides these per deployment; the defaults describe a server-mode container.
-ENV WWA_SERVER_MODE=1 \
-    WWA_BIND_HOST=0.0.0.0 \
+# Container fallbacks are applied only after explicit DOVUN_* / WWA_* settings.
+# Injecting new-name defaults here would mask an existing legacy override.
+ENV DOVUN_CONTAINER=1 \
     PORT=3016 \
-    WWA_DATA_DIR=/data \
-    DATABASE_URL=file:/data/agent-studio.db \
     KNOWLEDGE_STORAGE_ROOT=/data/knowledge-blobs \
-    WWA_RUNNER_DIR=/data/runner \
-    AGENT_WORKSPACE_ROOT=/data/workspace \
-    WWA_STATIC_DIR=/app/client-dist \
-    WWA_SNAPSHOT_DIR=/data/snapshots
+    AGENT_WORKSPACE_ROOT=/data/workspace
 
 VOLUME /data
 EXPOSE 3016

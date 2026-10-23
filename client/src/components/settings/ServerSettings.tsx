@@ -1,3 +1,4 @@
+import { desktopSentinel } from '@/lib/desktop-shell.js';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api.js';
@@ -35,7 +36,7 @@ export function ServerSettings() {
         </div>
       </dl>
       {inDesktopShell && (
-        <Button type="button" variant="outline" className="mt-4" onClick={() => { window.location.assign('/wwa-launcher'); }}>{t('server.switchMode')}</Button>
+        <Button type="button" variant="outline" className="mt-4" onClick={() => { window.location.assign(desktopSentinel('launcher')); }}>{t('server.switchMode')}</Button>
       )}
     </section>
   );

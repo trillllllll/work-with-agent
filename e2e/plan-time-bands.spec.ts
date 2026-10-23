@@ -26,7 +26,7 @@ test.use({ timezoneId: 'Asia/Shanghai' });
 
 test.beforeEach(async ({ page }) => {
   await resetE2eDatabase();
-  await page.addInitScript(() => { if (localStorage.getItem('todo.plan.showCompleted') === null) localStorage.setItem('todo.plan.showCompleted', 'true'); });
+  await page.addInitScript(() => { if (localStorage.getItem('dovun.plan.showCompleted') === null) localStorage.setItem('dovun.plan.showCompleted', 'true'); });
   await page.clock.setFixedTime(new Date(fixedTime));
   await page.addInitScript(() => {
     (window as unknown as { __REACT_GRAB_DISABLED__?: boolean }).__REACT_GRAB_DISABLED__ = true;

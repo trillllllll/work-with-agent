@@ -155,7 +155,7 @@ test('删除正文中的图片后，图片记录仍可访问直到任务永久�
 });
 
 test('详情正文画出有序列表序号，待办列表仍无序号', async ({ page, request }) => {
-  await page.addInitScript(() => localStorage.setItem('agent-studio.theme', 'dark'));
+  await page.addInitScript(() => localStorage.setItem('dovun.theme', 'dark'));
   const description = '3. 甲\n4. 乙\n\n- 圆点\n\n间隔\n\n- [ ] 待办\n\n10. 十\n11. 十一\n';
   const created = await request.post(`${apiUrl}/api/tasks`, { data: { title: '序号样本', description } });
   expect(created.ok(), await created.text()).toBe(true);

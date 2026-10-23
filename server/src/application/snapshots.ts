@@ -1,3 +1,4 @@
+import { runtimeEnv, runtimeSetting } from '../shared/runtime-env.js';
 import { existsSync, readdirSync, renameSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -53,7 +54,7 @@ function manifestOf(): SnapshotManifest {
 
 export function snapshotFileName(manifest: SnapshotManifest) {
   const stamp = manifest.exportedAt.replace(/[:.]/g, '-');
-  return `wwa-snapshot-${stamp}.zip`;
+  return `dovun-snapshot-${stamp}.zip`;
 }
 
 async function vacuumIntoCopy(target: string) {
@@ -70,7 +71,7 @@ export async function createSnapshot(): Promise<{ bytes: Buffer; manifest: Snaps
   try {
     const dbCopy = join(staging, 'agent-studio.db');
     await vacuumIntoCopy(dbCopy);
-    zip.file('agent-studio.db', await readFile(dbCopy));
+    zip.file('dovun.db', await readFile(dbCopy));
   } finally {
     await rm(staging, { recursive: true, force: true });
   }
@@ -135,7 +136,7 @@ export async function importSnapshot(zipBytes: Buffer, options: ImportOptions = 
   const zip = await JSZip.loadAsync(zipBytes).catch(() => { throw new DomainError('SNAPSHOT_INVALID', '无法读取快照文件', 400); });
   const manifest = await readManifest(zip);
   assertCompatible(manifest);
-  const dbEntry = zip.file('agent-studio.db');
+  const dbEntry = zip.file('dovun.db') ?? zip.file('agent-studio.db');
   if (!dbEntry) throw new DomainError('SNAPSHOT_INVALID', '快照缺少数据库文件', 400);
   if (options.backup !== false) await writeBackupSnapshot('import');
   const live = databasePath();
@@ -220,12 +221,12 @@ export function scheduleRestart() {
   setTimeout(() => process.exit(75), 1_000).unref();
 }
 
-/** Optional daily snapshots into WWA_SNAPSHOT_DIR, keeping the newest WWA_SNAPSHOT_KEEP files. */
+/** Daily container snapshots; explicit DOVUN_SNAPSHOT_DIR (legacy WWA_* in 0.3) can override or disable. */
 export function startSnapshotScheduler() {
-  const configured = process.env.WWA_SNAPSHOT_DIR?.trim();
+  const configured = runtimeSetting('SNAPSHOT_DIR', '/data/snapshots')?.trim();
   if (!configured) return () => {};
   const target = resolve(desktopDataDir(), configured);
-  const keep = Math.max(1, Number(process.env.WWA_SNAPSHOT_KEEP) || 7);
+  const keep = Math.max(1, Number(runtimeEnv('SNAPSHOT_KEEP')) || 7);
   const run = async () => {
     try {
       const { bytes, manifest } = await createSnapshot();

@@ -1,16 +1,16 @@
 [package]
-name = "work-with-agent"
-version = "0.2.5"
-description = "Work With Agent"
+name = "dovun"
+version = "0.3.0"
+description = "Dovun personal workspace"
 edition = "2021"
 rust-version = "1.77"
 
 [lib]
-name = "work_with_agent_lib"
+name = "dovun_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "work-with-agent"
+name = "dovun"
 path = "src/main.rs"
 
 [build-dependencies]

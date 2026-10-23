@@ -13,7 +13,7 @@ export function AssistantInputProvider({ setInput, children }: { setInput: (upda
       const previous = lastFilled.current.get(blockId) ?? null;
       setInput((current) => mergeFill(current, text, previous));
       lastFilled.current.set(blockId, text);
-      requestAnimationFrame(() => window.dispatchEvent(new Event('wwa-focus-assistant')));
+      requestAnimationFrame(() => window.dispatchEvent(new Event('dovun-focus-assistant')));
     },
   }), [setInput]);
   return <AssistantInputContext.Provider value={value}>{children}</AssistantInputContext.Provider>;

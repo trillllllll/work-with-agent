@@ -47,8 +47,8 @@
 - [文件清单与校验值](source/manifest.json)：记录选定日期、来源、尺寸和 SHA256。
 - [小尺寸预览检查记录](reference/preview-checks.json)：保留这轮预览的方法与检查结果。
 
-本次落盘仅包含设计图稿及说明，尚未替换应用内图标、名称或安装包标识。
+上文记录图形选定时的原始设计状态。现已完成纯色矢量重绘并用于真实应用、favicon、启动页与桌面图标，见 [实际应用改造](implementation/README.md)。0.3.0 系统标识仍保留旧值。
 
 ## 工作台改造样板
 
-同日开始 Dovun 工作台改造，产出 [可点击视觉样板](prototype/index.html)、[视觉规范与矢量候选](visual-spec.md) 和 [分阶段实施记录](rollout-plan.md)。矢量稿在原选定方向上整理为纯色，供本批审查；上面的原始 PNG 与来源记录保持不变。正式界面与技术迁移尚未实施。
+同日开始 Dovun 工作台改造，产出 [可点击视觉样板](prototype/index.html)、[视觉规范与矢量候选](visual-spec.md) 和 [分阶段实施记录](rollout-plan.md)。矢量稿在原选定方向上整理为纯色，供本批审查；上面的原始 PNG 与来源记录保持不变。旧样板保留作历史记录；正式界面与 0.3.0 迁移的最新状态见 [实施进度](rollout-plan.md)。

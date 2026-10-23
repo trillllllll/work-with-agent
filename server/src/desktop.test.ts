@@ -1,3 +1,4 @@
+import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
 import { cp, mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
@@ -59,7 +60,7 @@ describe('desktop connection configuration', () => {
       expect(config.args).toHaveLength(1);
       expect(config.args[0]).toMatch(/dist[\\/]mcp[\\/]index\.js$/);
     } else {
-      expect(config.command).toBe('/tmp/Library/Application Support/work-with-agent/bin/wwa-mcp');
+      expect(config.command).toBe('/tmp/Library/Application Support/work-with-agent/bin/dovun-mcp');
       expect(config.args).toEqual([]);
     }
     expect(config.env.WWA_API_URL).toBe('http://127.0.0.1:47316');
@@ -72,7 +73,7 @@ describe('desktop connection configuration', () => {
     if (process.platform !== 'win32') return;
     delete process.env.WWA_DATA_DIR;
     const base = process.env.LOCALAPPDATA || process.env.APPDATA || homedir();
-    expect(desktopDataDir()).toBe(join(base, 'work-with-agent'));
+    expect(desktopDataDir()).toBe(join(base, 'dovun'));
   });
 });
 
@@ -109,19 +110,22 @@ describe('desktop static hosting', () => {
 });
 
 describe('desktop data import', () => {
-  it('copies a database into an empty directory and refuses to overwrite it', async () => {
+  it('imports a full verified workspace, repeats safely and refuses conflicting new data', async () => {
     const source = await mkdtemp(join(tmpdir(), 'wwa-import-src-'));
     const destination = await mkdtemp(join(tmpdir(), 'wwa-import-dst-'));
-    await writeFile(join(source, 'agent-studio.db'), 'sqlite-copy');
+    const db = new DatabaseSync(join(source, 'agent-studio.db')); db.exec('CREATE TABLE tasks (id TEXT PRIMARY KEY)'); db.close();
+    const before = await readFile(join(source, 'agent-studio.db'));
     await mkdir(join(source, 'knowledge-blobs'));
     await writeFile(join(source, 'knowledge-blobs/blob'), 'blob');
     const script = fileURLToPath(new URL('../../scripts/import-desktop-data.mjs', import.meta.url));
     const run = () => execFileSync(process.execPath, [script, '--source-dir', source, '--data-dir', destination], { encoding: 'utf8' });
     try {
       expect(run()).toContain(destination);
-      expect(await readFile(join(destination, 'agent-studio.db'), 'utf8')).toBe('sqlite-copy');
+      expect(await readFile(join(destination, 'dovun.db'))).toEqual(before);
       expect(await readFile(join(destination, 'knowledge-blobs/blob'), 'utf8')).toBe('blob');
-      expect(() => run()).toThrow(/拒绝覆盖/);
+      expect(run()).toContain('already-migrated');
+      await writeFile(join(source, 'changed.txt'), 'changed after migration');
+      expect(() => run()).toThrow(/Both old and new data exist/);
     } finally {
       await rm(source, { recursive: true, force: true });
       await rm(destination, { recursive: true, force: true });

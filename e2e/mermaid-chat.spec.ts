@@ -18,7 +18,7 @@ test.beforeEach(async ({ page, request }) => {
   await resetE2eDatabase();
   const response = await request.patch(`${api}/api/settings`, { data: { baseUrl: 'http://127.0.0.1:4010/v1', model: 'mock-model', apiKey: 'e2e-key' } });
   expect(response.ok()).toBe(true);
-  await page.addInitScript(() => { localStorage.setItem('agent-studio.theme', 'light'); (window as any).__REACT_GRAB_DISABLED__ = true; });
+  await page.addInitScript(() => { localStorage.setItem('dovun.theme', 'light'); (window as any).__REACT_GRAB_DISABLED__ = true; });
 });
 test.afterAll(() => e2eDatabase.$disconnect());
 

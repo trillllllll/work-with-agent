@@ -19,7 +19,7 @@ test.beforeAll(() => mkdir(shots, { recursive: true }));
 test.beforeEach(async ({ page }) => {
   await resetE2eDatabase();
   await page.addInitScript(() => {
-    localStorage.setItem('agent-studio.theme', 'light');
+    localStorage.setItem('dovun.theme', 'light');
     (window as unknown as { __REACT_GRAB_DISABLED__?: boolean }).__REACT_GRAB_DISABLED__ = true;
   });
 });
@@ -133,10 +133,10 @@ test('关闭预览后焦点回到资料行，离开任务后保留搜索和选�
 test('亮色和暗色在三种宽度下都没有横向溢出', async ({ page, request }) => {
   const material = await createMaterial(request, '截图资料', '三种宽度都要能看见资料库');
   for (const theme of ['light', 'dark'] as const) {
-    await page.addInitScript((value) => localStorage.setItem('agent-studio.theme', value), theme);
+    await page.addInitScript((value) => localStorage.setItem('dovun.theme', value), theme);
     await page.setViewportSize({ width: 1600, height: 1000 });
     await openLibrary(page);
-    await page.evaluate((value) => localStorage.setItem('agent-studio.theme', value), theme);
+    await page.evaluate((value) => localStorage.setItem('dovun.theme', value), theme);
     await page.reload();
     await expect(page.getByRole('heading', { name: '资料库', exact: true })).toBeVisible();
     await page.getByTestId(`library-row-${material.id}`).click();
@@ -386,7 +386,7 @@ test('会话资料带着空解析位置时预览仍显示正文', async ({ page,
   });
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.addInitScript(() => { localStorage.setItem('agent-studio.theme', 'dark'); });
+  await page.addInitScript(() => { localStorage.setItem('dovun.theme', 'dark'); });
   await page.setViewportSize({ width: 1400, height: 900 });
   await openLibrary(page);
   await page.getByTestId(`library-row-${created.id}`).click();
