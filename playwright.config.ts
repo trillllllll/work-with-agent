@@ -1,8 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
+import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 const root = process.cwd();
 const databaseFile = process.env.E2E_DATABASE_FILE ?? 'agent-studio-e2e.db';
-const databaseUrl = `file:../../e2e/.data/${databaseFile}`;
+const databaseUrl = `file:${resolve(root, 'e2e/.data', databaseFile)}`;
 const apiPort = process.env.E2E_API_PORT ?? '3015';
 const uiPort = process.env.E2E_UI_PORT ?? '5175';
 process.env.E2E_API_URL = `http://127.0.0.1:${apiPort}`;
@@ -23,7 +24,7 @@ export default defineConfig({
     locale: 'zh-CN',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
-    storageState: { cookies: [{ name: 'wwa_session', value: 'wwa-e2e-owner-session', domain: '127.0.0.1', path: '/', expires: -1, httpOnly: true, secure: false, sameSite: 'Strict' }], origins: [] },
+    storageState: { cookies: [{ name: 'dovun_session', value: 'wwa-e2e-owner-session', domain: '127.0.0.1', path: '/', expires: -1, httpOnly: true, secure: false, sameSite: 'Strict' }], origins: [] },
     extraHTTPHeaders: { 'X-CSRF-Token': createHash('sha256').update('csrf:wwa-e2e-owner-session').digest('hex'), Origin: `http://127.0.0.1:${uiPort}` },
   },
   projects: [
@@ -48,7 +49,7 @@ export default defineConfig({
       url: `http://127.0.0.1:${apiPort}/api/v1/auth/session`,
       reuseExistingServer: false,
       timeout: 120_000,
-      env: { PORT: apiPort, CLIENT_ORIGIN: `http://127.0.0.1:${uiPort}`, DATABASE_URL: databaseUrl, E2E_DATABASE_FILE: databaseFile, AGENT_WORKSPACE_ROOT: root, KNOWLEDGE_STORAGE_ROOT: `${root}/e2e/.data/${databaseFile}-blobs`, WWA_RUNNER_DIR: `${root}/e2e/.data/${databaseFile}-runner` },
+      env: { PORT: apiPort, CLIENT_ORIGIN: `http://127.0.0.1:${uiPort}`, DATABASE_URL: databaseUrl, E2E_DATABASE_FILE: databaseFile, AGENT_WORKSPACE_ROOT: root, KNOWLEDGE_STORAGE_ROOT: `${root}/e2e/.data/${databaseFile}-blobs`, DOVUN_RUNNER_DIR: `${root}/e2e/.data/${databaseFile}-runner` },
     },
     {
       command: `npm run dev -w client -- --port ${uiPort}`,

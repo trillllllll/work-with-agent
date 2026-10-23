@@ -8,7 +8,7 @@ import { en } from './locales/en.js';
  * `{0}` placeholders) to English. Translation happens only at the HTTP boundary,
  * so stored data, model-facing tool results and tests keep the source wording.
  *
- * Locale per request: `X-WWA-Language` (the client's explicit setting), then
+ * Locale per request: `X-Dovun-Language` (the client's explicit setting), then
  * `Accept-Language`, then zh-CN.
  */
 export const supportedLocales = ['zh-CN', 'en'] as const;
@@ -38,7 +38,7 @@ export function localeFromAcceptLanguage(header: string | undefined): Locale | n
 }
 
 export function localeFromRequest(req: Pick<Request, 'headers'>): Locale {
-  const explicit = req.headers['x-dovun-language'] ?? req.headers['x-wwa-language'];
+  const explicit = req.headers['x-dovun-language'];
   return normalizeLocale(Array.isArray(explicit) ? explicit[0] : explicit)
     ?? localeFromAcceptLanguage(typeof req.headers['accept-language'] === 'string' ? req.headers['accept-language'] : undefined)
     ?? defaultLocale;

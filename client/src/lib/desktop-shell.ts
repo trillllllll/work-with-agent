@@ -56,5 +56,5 @@ export function pairNodeOnThisComputer(server: string, token: string, nodeId: st
 }
 export function stopNodeOnThisComputer() { window.location.assign(desktopSentinel('node-unpair')); }
 
-/** New shells announce their contract in the first status reply; old shells keep the transition sentinel. */
-export function desktopSentinel(action: string) { return `/${(window as Window & { __DOVUN_SHELL__?: boolean }).__DOVUN_SHELL__ ? 'dovun' : 'wwa'}-${action}`; }
+/** One desktop communication contract after the transition release. */
+export function desktopSentinel(action: string) { return `/dovun-${action}`; }

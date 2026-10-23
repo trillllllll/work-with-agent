@@ -14,7 +14,7 @@ import { setOrchestratorModel, type OrchestratorModel } from './application/orch
 import { tickAllOrchestrations } from './application/orchestration/service.js';
 
 const stub = fileURLToPath(new URL('../test/stub-orchestration-cli.mjs', import.meta.url));
-const previous = { runner: process.env.WWA_RUNNER_DIR, codex: process.env.WWA_CODEX_BIN, log: process.env.STUB_LOG, gh: process.env.WWA_GH_BIN, delay: process.env.STUB_DELAY_MS };
+const previous = { runner: process.env.DOVUN_RUNNER_DIR, codex: process.env.DOVUN_CODEX_BIN, log: process.env.STUB_LOG, gh: process.env.DOVUN_GH_BIN, delay: process.env.STUB_DELAY_MS };
 let root = ''; let server: Server; let base = ''; let restoreModel: OrchestratorModel;
 const created: { tasks: string[]; orchestrations: string[]; projects: string[]; nodes: string[]; topics: string[] } = { tasks: [], orchestrations: [], projects: [], nodes: [], topics: [] };
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { cwd, encoding: 'utf8' }).trim();
@@ -58,14 +58,14 @@ let shared: { laptop: TestNode; desk: TestNode; orchestrationId: string; remote:
 
 beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), 'wwa-orch2-'));
-  process.env.WWA_CODEX_BIN = stub;
+  process.env.DOVUN_CODEX_BIN = stub;
   process.env.STUB_LOG = join(root, 'stub.log');
   process.env.STUB_DELAY_MS = '50';
   // Fake GitHub CLI: records its arguments and prints a PR URL, like `gh pr create`.
   const gh = join(root, 'fake-gh.mjs');
   await writeFile(gh, `#!/usr/bin/env node\nconst fs = require('node:fs');\nconst args = process.argv.slice(2);\nif (args[0] === '--version') { console.log('gh version 0.0.0'); process.exit(0); }\nfs.appendFileSync(${JSON.stringify(join(root, 'gh.log'))}, JSON.stringify(args) + '\\n');\nif (args[0] === 'pr' && args[1] === 'view') { const f = ${JSON.stringify(join(root, 'gh-pr'))}; if (fs.existsSync(f)) { console.log(fs.readFileSync(f, 'utf8')); process.exit(0); } console.error('no pull requests found'); process.exit(1); }\nif (args[0] === 'pr' && args[1] === 'create') { const url = 'https://github.com/example/demo/pull/7'; fs.writeFileSync(${JSON.stringify(join(root, 'gh-pr'))}, url); console.log('Creating pull request...'); console.log(url); process.exit(0); }\nprocess.exit(2);\n`.replace("const fs = require('node:fs');", "import fs from 'node:fs';"));
   await chmod(gh, 0o755);
-  process.env.WWA_GH_BIN = gh;
+  process.env.DOVUN_GH_BIN = gh;
   restoreModel = setOrchestratorModel(model);
   server = app.listen(0, '127.0.0.1');
   await new Promise((done) => server.once('listening', done));
@@ -87,7 +87,7 @@ afterAll(async () => {
   await prisma.task.deleteMany({ where: { parentId: { in: created.tasks } } });
   await prisma.task.deleteMany({ where: { id: { in: created.tasks } } });
   await prisma.topic.deleteMany({ where: { id: { in: created.topics } } }).catch(() => undefined);
-  for (const [key, value] of Object.entries({ WWA_RUNNER_DIR: previous.runner, WWA_CODEX_BIN: previous.codex, STUB_LOG: previous.log, WWA_GH_BIN: previous.gh, STUB_DELAY_MS: previous.delay })) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+  for (const [key, value] of Object.entries({ DOVUN_RUNNER_DIR: previous.runner, DOVUN_CODEX_BIN: previous.codex, STUB_LOG: previous.log, DOVUN_GH_BIN: previous.gh, STUB_DELAY_MS: previous.delay })) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
   await rm(root, { recursive: true, force: true });
 });
 

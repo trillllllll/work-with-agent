@@ -34,7 +34,7 @@ describe('system notifications', () => {
     expect(await systemNotify('任务待验收', '完成了')).toBe(true);
     expect(assigned).toHaveLength(1);
     const url = new URL(assigned[0], 'http://x');
-    expect(url.pathname).toBe('/wwa-notify');
+    expect(url.pathname).toBe('/dovun-notify');
     expect(url.searchParams.get('title')).toBe('任务待验收');
     const invoke = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('window', { __TAURI__: { core: { invoke } }, location: { assign: (value: string) => assigned.push(value) } });

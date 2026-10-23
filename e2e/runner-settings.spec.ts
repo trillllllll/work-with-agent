@@ -98,14 +98,14 @@ function installShellEvents(page: Page, nodeId: string) {
   const origin = (process.env.E2E_UI_URL ?? 'http://127.0.0.1:5175');
   page.on('request', (request) => {
     const url = request.url();
-    const detail = url.includes('wwa-node-unpair')
+    const detail = url.includes('dovun-node-unpair')
       ? { type: 'node-unpair', ok: true, stopped: false, configRemoved: false, cancelled: 0, message: 'e2e-not-stopped' }
-      : url.includes('wwa-node-status')
+      : url.includes('dovun-node-status')
         ? { type: 'node-status', nodeId, server: origin, running: true, configured: true, logPath: '/var/log/wwa/node.log' }
         : null;
     if (!detail) return;
     // The status listener is attached before the sentinel navigation. Dispatch after fulfill, or the page waits on the route forever.
-    setTimeout(() => { void page.evaluate((payload) => window.dispatchEvent(new CustomEvent('wwa-desktop', { detail: payload })), detail).catch(() => undefined); }, 30);
+    setTimeout(() => { void page.evaluate((payload) => window.dispatchEvent(new CustomEvent('dovun-desktop', { detail: payload })), detail).catch(() => undefined); }, 30);
   });
 }
 
@@ -240,8 +240,8 @@ test.describe('桌面', () => {
     const project = await bodyOf<{ id: string }>(await request.post(`${web}/api/projects`, { data: { name: '壳项目' } }));
     const located = await request.post(`${web}/api/projects/${project.id}/locations`, { data: { nodeId: computer.id, path: '/srv/shell-repo' } });
     expect(located.ok(), await located.text()).toBe(true);
-    await page.addInitScript(() => localStorage.setItem('wwa-desktop-shell', '1'));
-    await page.route('**/wwa-node-*', (route) => route.fulfill({ status: 204 }));
+    await page.addInitScript(() => localStorage.setItem('dovun-desktop-shell', '1'));
+    await page.route('**/dovun-node-*', (route) => route.fulfill({ status: 204 }));
     installShellEvents(page, computer.id);
 
     await page.goto('/#/settings/local');

@@ -14,7 +14,7 @@ import { setOrchestratorModel, type OrchestratorModel } from './application/orch
 import { tickAllOrchestrations, tickOrchestration } from './application/orchestration/service.js';
 
 const stub = fileURLToPath(new URL('../test/stub-orchestration-cli.mjs', import.meta.url));
-const previous = { runner: process.env.WWA_RUNNER_DIR, codex: process.env.WWA_CODEX_BIN, log: process.env.STUB_LOG };
+const previous = { runner: process.env.DOVUN_RUNNER_DIR, codex: process.env.DOVUN_CODEX_BIN, log: process.env.STUB_LOG };
 let root = ''; let server: Server; let base = ''; let restoreModel: OrchestratorModel;
 const created: { tasks: string[]; orchestrations: string[]; projects: string[]; nodes: string[] } = { tasks: [], orchestrations: [], projects: [], nodes: [] };
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { cwd, encoding: 'utf8' }).trim();
@@ -55,7 +55,7 @@ async function drive(agent: NodeAgent, until: () => Promise<boolean>, timeoutMs 
 
 beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), 'wwa-orch-'));
-  process.env.WWA_CODEX_BIN = stub;
+  process.env.DOVUN_CODEX_BIN = stub;
   process.env.STUB_LOG = join(root, 'stub.log');
   restoreModel = setOrchestratorModel(model);
   server = app.listen(0, '127.0.0.1');
@@ -76,7 +76,7 @@ afterAll(async () => {
   await prisma.changeRecord.deleteMany({ where: { entityId: { in: created.tasks } } }).catch(() => undefined);
   await prisma.task.deleteMany({ where: { parentId: { in: created.tasks } } });
   await prisma.task.deleteMany({ where: { id: { in: created.tasks } } });
-  for (const [key, value] of Object.entries({ WWA_RUNNER_DIR: previous.runner, WWA_CODEX_BIN: previous.codex, STUB_LOG: previous.log })) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+  for (const [key, value] of Object.entries({ DOVUN_RUNNER_DIR: previous.runner, DOVUN_CODEX_BIN: previous.codex, STUB_LOG: previous.log })) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
   await rm(root, { recursive: true, force: true });
 });
 

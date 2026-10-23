@@ -39,13 +39,13 @@ async function journal(dir: string, id: string) {
 
 describe('wwa-node revocation and heartbeat', () => {
   const previous = {
-    runner: process.env.WWA_RUNNER_DIR,
-    codex: process.env.WWA_CODEX_BIN,
-    claude: process.env.WWA_CLAUDE_BIN,
-    gh: process.env.WWA_GH_BIN,
-    managed: process.env.WWA_NODE_MANAGED,
-    log: process.env.WWA_NODE_LOG,
-    version: process.env.WWA_NODE_VERSION,
+    runner: process.env.DOVUN_RUNNER_DIR,
+    codex: process.env.DOVUN_CODEX_BIN,
+    claude: process.env.DOVUN_CLAUDE_BIN,
+    gh: process.env.DOVUN_GH_BIN,
+    managed: process.env.DOVUN_NODE_MANAGED,
+    log: process.env.DOVUN_NODE_LOG,
+    version: process.env.DOVUN_NODE_VERSION,
   };
   const errors: string[] = [];
   let spy: ReturnType<typeof vi.spyOn> | null = null;
@@ -54,13 +54,13 @@ describe('wwa-node revocation and heartbeat', () => {
     spy?.mockRestore();
     spy = null;
     const restore = (key: string, value: string | undefined) => { if (value === undefined) delete process.env[key]; else process.env[key] = value; };
-    restore('WWA_RUNNER_DIR', previous.runner);
-    restore('WWA_CODEX_BIN', previous.codex);
-    restore('WWA_CLAUDE_BIN', previous.claude);
-    restore('WWA_GH_BIN', previous.gh);
-    restore('WWA_NODE_MANAGED', previous.managed);
-    restore('WWA_NODE_LOG', previous.log);
-    restore('WWA_NODE_VERSION', previous.version);
+    restore('DOVUN_RUNNER_DIR', previous.runner);
+    restore('DOVUN_CODEX_BIN', previous.codex);
+    restore('DOVUN_CLAUDE_BIN', previous.claude);
+    restore('DOVUN_GH_BIN', previous.gh);
+    restore('DOVUN_NODE_MANAGED', previous.managed);
+    restore('DOVUN_NODE_LOG', previous.log);
+    restore('DOVUN_NODE_VERSION', previous.version);
   });
 
   async function temp() {
@@ -68,11 +68,11 @@ describe('wwa-node revocation and heartbeat', () => {
     spy?.mockRestore();
     spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => { errors.push(args.map(String).join(' ')); });
     const dir = await mkdtemp(join(tmpdir(), 'wwa-node-agent-'));
-    process.env.WWA_CODEX_BIN = join(dir, 'missing-codex');
-    process.env.WWA_CLAUDE_BIN = join(dir, 'missing-claude');
-    process.env.WWA_GH_BIN = join(dir, 'missing-gh');
-    delete process.env.WWA_NODE_MANAGED;
-    delete process.env.WWA_NODE_LOG;
+    process.env.DOVUN_CODEX_BIN = join(dir, 'missing-codex');
+    process.env.DOVUN_CLAUDE_BIN = join(dir, 'missing-claude');
+    process.env.DOVUN_GH_BIN = join(dir, 'missing-gh');
+    delete process.env.DOVUN_NODE_MANAGED;
+    delete process.env.DOVUN_NODE_LOG;
     return dir;
   }
 
@@ -178,9 +178,9 @@ describe('wwa-node revocation and heartbeat', () => {
     try {
       const cli = join(dir, 'codex.js');
       await writeFile(cli, 'console.log("codex 1.2.3\\n")\n');
-      process.env.WWA_CODEX_BIN = cli;
-      process.env.WWA_NODE_MANAGED = 'desktop';
-      process.env.WWA_NODE_LOG = join(dir, 'logs', 'node.log');
+      process.env.DOVUN_CODEX_BIN = cli;
+      process.env.DOVUN_NODE_MANAGED = 'desktop';
+      process.env.DOVUN_NODE_LOG = join(dir, 'logs', 'node.log');
       const bodies: Array<Record<string, unknown>> = [];
       let step = 0;
       const http: typeof fetch = async (_input, init) => {
@@ -274,15 +274,15 @@ describe('wwa-node revocation and heartbeat', () => {
     } finally { await rm(dir, { recursive: true, force: true }); }
   });
 
-  it('reads the root package version and lets WWA_NODE_VERSION override it', async () => {
+  it('reads the root package version and lets DOVUN_NODE_VERSION override it', async () => {
     const dir = await temp();
     try {
-      delete process.env.WWA_NODE_VERSION;
+      delete process.env.DOVUN_NODE_VERSION;
       const expected = JSON.parse(await readFile(fileURLToPath(new URL('../../../package.json', import.meta.url)), 'utf8')).version as string;
       expect(await readPackageVersion()).toBe(expected);
-      process.env.WWA_NODE_VERSION = '   ';
+      process.env.DOVUN_NODE_VERSION = '   ';
       expect(await readPackageVersion()).toBe(expected);
-      process.env.WWA_NODE_VERSION = '9.9.9-desktop';
+      process.env.DOVUN_NODE_VERSION = '9.9.9-desktop';
       expect(await readPackageVersion()).toBe('9.9.9-desktop');
     } finally { await rm(dir, { recursive: true, force: true }); }
   });

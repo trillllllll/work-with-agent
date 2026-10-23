@@ -9,8 +9,8 @@ import { ContextService } from '../application/conversation.js';
 
 describe('server i18n', () => {
   it('prefers X-WWA-Language, then Accept-Language, then zh-CN', () => {
-    expect(localeFromRequest({ headers: { 'x-wwa-language': 'en', 'accept-language': 'zh-CN' } })).toBe('en');
-    expect(localeFromRequest({ headers: { 'x-wwa-language': 'zh-CN', 'accept-language': 'en-US' } })).toBe('zh-CN');
+    expect(localeFromRequest({ headers: { 'x-dovun-language': 'en', 'accept-language': 'zh-CN' } })).toBe('en');
+    expect(localeFromRequest({ headers: { 'x-dovun-language': 'zh-CN', 'accept-language': 'en-US' } })).toBe('zh-CN');
     expect(localeFromRequest({ headers: { 'accept-language': 'fr-FR,en-GB;q=0.8,zh;q=0.5' } })).toBe('en');
     expect(localeFromRequest({ headers: { 'accept-language': 'fr-FR' } })).toBe('zh-CN');
     expect(localeFromRequest({ headers: {} })).toBe('zh-CN');
@@ -42,7 +42,7 @@ describe('server i18n', () => {
     const zh = await supertest(app).get('/api/tasks/missing');
     expect(zh.status).toBe(401);
     expect(zh.body.error).toBe('请先登录本机工作区');
-    const english = await supertest(app).get('/api/tasks/missing').set('X-WWA-Language', 'en');
+    const english = await supertest(app).get('/api/tasks/missing').set('X-Dovun-Language', 'en');
     expect(english.status).toBe(401);
     expect(english.body).toMatchObject({ error: en['请先登录本机工作区'], code: 'AUTH_REQUIRED' });
     const browser = await supertest(app).get('/api/tasks/missing').set('Accept-Language', 'en-US,en;q=0.9');

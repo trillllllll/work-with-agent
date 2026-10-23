@@ -8,7 +8,7 @@ const config: ConnectionConfiguration = {
   command: '/usr/bin/node',
   args: ['src/mcp/index.js', '--flag'],
   url: 'http://127.0.0.1:3015/mcp',
-  env: { WWA_API_URL: 'http://127.0.0.1:3015', WWA_CONNECTION_TOKEN: paste },
+  env: { DOVUN_API_URL: 'http://127.0.0.1:3015', DOVUN_CONNECTION_TOKEN: paste },
 };
 
 describe('connection snippets', () => {
@@ -32,7 +32,7 @@ describe('connection snippets', () => {
         dovun: {
           command: config.command,
           args: config.args,
-          env: { DOVUN_API_URL: config.env.WWA_API_URL, DOVUN_CONNECTION_TOKEN: placeholder },
+          env: { DOVUN_API_URL: config.env.DOVUN_API_URL, DOVUN_CONNECTION_TOKEN: placeholder },
         },
       },
     });
@@ -78,7 +78,7 @@ describe('connection snippets', () => {
       command: config.command,
       args: config.args,
       url: config.url,
-      env: { DOVUN_API_URL: config.env.WWA_API_URL, DOVUN_CONNECTION_TOKEN: token },
+      env: { DOVUN_API_URL: config.env.DOVUN_API_URL, DOVUN_CONNECTION_TOKEN: token },
     });
     expect(JSON.parse(check).env.DOVUN_CONNECTION_TOKEN).toBe(placeholder);
     expect(setup).not.toContain('claude mcp add');

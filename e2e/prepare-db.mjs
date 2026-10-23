@@ -11,7 +11,7 @@ await rm(databasePath, { force: true });
 const command = process.platform === 'win32' ? 'cmd.exe' : 'npm';
 const runScript = (script) => {
   const args = process.platform === 'win32' ? ['/d', '/s', '/c', `npm run ${script}`] : ['run', script];
-  execFileSync(command, args, { cwd: root, env: { ...process.env, DATABASE_URL: `file:../../e2e/.data/${databaseFile}` }, stdio: 'inherit' });
+  execFileSync(command, args, { cwd: root, env: { ...process.env, DATABASE_URL: `file:${databasePath}` }, stdio: 'inherit' });
 };
 
 if (!await prismaClientIsCurrent(root)) runScript('prisma:generate');

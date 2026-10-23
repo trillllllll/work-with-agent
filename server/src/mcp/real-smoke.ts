@@ -61,10 +61,10 @@ async function main() {
     const config = { mcpServers: { wwa: { command: process.execPath, args: [entry] } } };
     const enabledTools = phase.startsWith('handoff') ? ['get_handoff', 'claim_handoff', 'report_progress', 'report_run'] : ['list_tasks', 'get_task', 'submit_commands'];
     const args = provider === 'codex'
-      ? ['--ask-for-approval', 'never', '--sandbox', 'read-only', '-c', `mcp_servers.wwa.command=${JSON.stringify(process.execPath)}`, '-c', `mcp_servers.wwa.args=${JSON.stringify([entry])}`, '-c', 'mcp_servers.wwa.env_vars=["WWA_API_URL","WWA_CONNECTION_TOKEN"]', '-c', `mcp_servers.wwa.enabled_tools=${JSON.stringify(enabledTools)}`, ...enabledTools.flatMap((tool) => ['-c', `mcp_servers.wwa.tools.${tool}.approval_mode="approve"`]), 'exec', ...(sessionId ? ['resume', sessionId] : []), '--ignore-user-config', '--skip-git-repo-check', '--json', '-']
+      ? ['--ask-for-approval', 'never', '--sandbox', 'read-only', '-c', `mcp_servers.wwa.command=${JSON.stringify(process.execPath)}`, '-c', `mcp_servers.wwa.args=${JSON.stringify([entry])}`, '-c', 'mcp_servers.wwa.env_vars=["DOVUN_API_URL","DOVUN_CONNECTION_TOKEN"]', '-c', `mcp_servers.wwa.enabled_tools=${JSON.stringify(enabledTools)}`, ...enabledTools.flatMap((tool) => ['-c', `mcp_servers.wwa.tools.${tool}.approval_mode="approve"`]), 'exec', ...(sessionId ? ['resume', sessionId] : []), '--ignore-user-config', '--skip-git-repo-check', '--json', '-']
       : ['-p', '--verbose', '--output-format', 'stream-json', '--permission-mode', 'dontAsk', '--permission-prompts', 'none', '--strict-mcp-config', '--mcp-config', JSON.stringify(config), '--tools', '', '--allowedTools', ...enabledTools.map((tool) => `mcp__wwa__${tool}`), ...(sessionId ? ['--resume', sessionId] : [])];
     let stdout = '', stderr = '';
-    const child = spawn(cli.command, [...cli.prefix, ...args], { cwd: evidence, env: { ...process.env, WWA_API_URL: base, WWA_CONNECTION_TOKEN: credential }, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(cli.command, [...cli.prefix, ...args], { cwd: evidence, env: { ...process.env, DOVUN_API_URL: base, DOVUN_CONNECTION_TOKEN: credential }, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     child.stdout.on('data', (chunk) => { stdout += chunk; });
     child.stderr.on('data', (chunk) => { stderr += chunk; });
     child.stdin.end(prompt);

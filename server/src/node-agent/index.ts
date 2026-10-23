@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { registerDataWriter } from '../shared/data-guard.js';
 import { dirname } from 'node:path';
-import { runtimeEnv } from '../shared/runtime-env.js';
+import { runtimeEnv, assertCurrentEnvironment } from '../shared/runtime-env.js';
 /** dovun-node entry: `node dist/node-agent/index.js --server URL --token TOKEN --roots DIR[,DIR] [--data DIR] [--max N]`; with only `--data DIR` it runs from the saved config (desktop auto-start). */
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -12,10 +12,10 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { NodeAgent } from './agent.js';
 
-/** 0.3 keeps an existing standalone executor directory; fresh installs use Dovun. */
-export function defaultNodeDataDir(base = homedir(), exists: (path: string) => boolean = existsSync) {
-  const legacy = resolve(base, '.wwa-node');
-  return exists(legacy) ? legacy : resolve(base, '.dovun-node');
+/** Standalone executors require an explicit offline import of old state. */
+export function defaultNodeDataDir(base = homedir()) {
+  if (existsSync(resolve(base, '.wwa-node'))) throw new Error('Old standalone executor state exists. Stop that executor and explicitly choose --data <existing-folder> or migrate an offline copy; refusing to start an empty executor.');
+  return resolve(base, '.dovun-node');
 }
 
 const REVOKED_HINT = '已被吊销，请在 Dovun 里重新生成连接命令';
@@ -66,6 +66,7 @@ async function adoptLoginShellPath() {
 
 function arg(name: string) { const index = process.argv.indexOf(`--${name}`); return index >= 0 ? process.argv[index + 1] : undefined; }
 async function main() {
+  assertCurrentEnvironment();
   const dataDir = resolve(arg('data') ?? runtimeEnv('NODE_DATA') ?? defaultNodeDataDir());
   await mkdir(dataDir, { recursive: true });
   const configPath = resolve(dataDir, 'config.json');

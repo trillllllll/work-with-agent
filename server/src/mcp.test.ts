@@ -17,7 +17,7 @@ describe('stdio MCP authenticated HTTP contract', () => {
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
       const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : undefined;
-      calls.push({ url: req.url!, authorization: req.headers.authorization, loopback: req.headers['x-wwa-loopback'], body });
+      calls.push({ url: req.url!, authorization: req.headers.authorization, loopback: req.headers['x-dovun-loopback'], body });
       if (req.url === '/api/v1/tasks/task-image') {
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({ data: { id: 'task-image', description: '说明\n![示意图](/api/tasks/task-image/images/image-a)\n![太大](/api/tasks/task-image/images/image-big)\n![](/api/tasks/other/images/image-x)\n', children: [{ id: 'child-1', description: '![](/api/tasks/child-1/images/image-c)' }] }, error: null }));
@@ -43,7 +43,7 @@ describe('stdio MCP authenticated HTTP contract', () => {
     await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve));
     const address = http.address() as { port: number };
     client = new Client({ name: 'contract-test', version: '1.0.0' });
-    await client.connect(new StdioClientTransport({ command: process.execPath, args: ['--import', 'tsx', fileURLToPath(new URL('./mcp/index.ts', import.meta.url))], env: { ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)), WWA_API_URL: `http://127.0.0.1:${address.port}`, WWA_CONNECTION_TOKEN: 'isolated-test-connection' }, stderr: 'pipe' }));
+    await client.connect(new StdioClientTransport({ command: process.execPath, args: ['--import', 'tsx', fileURLToPath(new URL('./mcp/index.ts', import.meta.url))], env: { ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)), DOVUN_API_URL: `http://127.0.0.1:${address.port}`, DOVUN_CONNECTION_TOKEN: 'isolated-test-connection' }, stderr: 'pipe' }));
   }, 20_000);
   afterAll(async () => { await client?.close(); if (http) await new Promise<void>((resolve) => http.close(() => resolve())); });
   it('advertises Todo, knowledge, proposals and handoff tools', async () => {
@@ -137,7 +137,7 @@ describe('MCP is served by the workspace process', () => {
   let api: Server;
   let workspace: Server;
   let client: Client;
-  const previousApi = process.env.WWA_API_URL;
+  const previousApi = process.env.DOVUN_API_URL;
   const calls: Array<{ authorization: string | undefined }> = [];
   beforeAll(async () => {
     api = createServer((req, res) => {
@@ -146,7 +146,7 @@ describe('MCP is served by the workspace process', () => {
       res.end(JSON.stringify({ data: { items: [{ id: 'task-1' }], nextCursor: null, hasMore: false }, error: null }));
     });
     await new Promise<void>((resolve) => api.listen(0, '127.0.0.1', resolve));
-    process.env.WWA_API_URL = `http://127.0.0.1:${(api.address() as { port: number }).port}`;
+    process.env.DOVUN_API_URL = `http://127.0.0.1:${(api.address() as { port: number }).port}`;
     const app = express();
     app.use(express.json());
     mountMcp(app, async (token) => token === 'isolated-test-connection');
@@ -157,8 +157,8 @@ describe('MCP is served by the workspace process', () => {
     await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), { requestInit: { headers: { Authorization: 'Bearer isolated-test-connection' } } }));
   }, 20_000);
   afterAll(async () => {
-    if (previousApi === undefined) delete process.env.WWA_API_URL;
-    else process.env.WWA_API_URL = previousApi;
+    if (previousApi === undefined) delete process.env.DOVUN_API_URL;
+    else process.env.DOVUN_API_URL = previousApi;
     await client?.close();
     await Promise.all([api, workspace].filter(Boolean).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
   });
@@ -241,7 +241,7 @@ describe('MCP task images and material attachments', () => {
     await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve));
     const address = http.address() as { port: number };
     client = new Client({ name: 'media-contract', version: '1.0.0' });
-    await client.connect(new StdioClientTransport({ command: process.execPath, args: ['--import', 'tsx', fileURLToPath(new URL('./mcp/index.ts', import.meta.url))], env: { ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)), WWA_API_URL: `http://127.0.0.1:${address.port}`, WWA_CONNECTION_TOKEN: 'isolated-test-connection' }, stderr: 'pipe' }));
+    await client.connect(new StdioClientTransport({ command: process.execPath, args: ['--import', 'tsx', fileURLToPath(new URL('./mcp/index.ts', import.meta.url))], env: { ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)), DOVUN_API_URL: `http://127.0.0.1:${address.port}`, DOVUN_CONNECTION_TOKEN: 'isolated-test-connection' }, stderr: 'pipe' }));
   }, 30_000);
   afterAll(async () => { await client?.close(); if (http) await new Promise<void>((resolve) => http.close(() => resolve())); });
 

@@ -20,7 +20,7 @@ const db = new DatabaseSync(source, { readOnly: true });
 try { db.exec(`VACUUM INTO '${resolve(destination, 'workspace.db').replaceAll("'", "''")}'`); } finally { db.close(); }
 const directories = [
   { name: 'knowledge-blobs', path: resolve(process.env.KNOWLEDGE_STORAGE_ROOT ?? resolve(root, 'server/data/knowledge-blobs')) },
-  { name: 'runner', path: resolve(process.env.DOVUN_RUNNER_DIR ?? process.env.WWA_RUNNER_DIR ?? resolve(root, 'server/runtime/runner')) },
+  { name: 'runner', path: resolve(process.env.DOVUN_RUNNER_DIR ?? process.env.DOVUN_RUNNER_DIR ?? resolve(root, 'server/runtime/runner')) },
 ];
 const copied = [];
 for (const entry of directories) {

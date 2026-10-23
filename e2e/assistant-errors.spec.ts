@@ -11,7 +11,7 @@ test('missing model is explicit and a deleted source leaves the conversation ope
   await expect(assistant.getByRole('status')).toContainText('未配置模型');
   const input = assistant.getByRole('textbox', { name: '向 AI 提问' });
   await input.fill('保留这条输入');
-  await page.evaluate(() => window.dispatchEvent(new CustomEvent('wwa-open-source', { detail: { kind: 'task', id: 'deleted-source', title: '已删除任务' } })));
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('dovun-open-source', { detail: { kind: 'task', id: 'deleted-source', title: '已删除任务' } })));
   await expect(page.getByText('来源已删除、不可访问或版本不存在', { exact: true })).toBeVisible();
   await expect(assistant).toBeVisible();
   await expect(input).toHaveValue('保留这条输入');

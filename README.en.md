@@ -7,7 +7,7 @@
 
 Your personal workspace for tasks, materials, plans, and accumulated knowledge, with AI ready to help. AI changes wait for your approval.
 
-This branch implements the Dovun visual redesign and migration. Versions 0.3.0 and 0.4.0 are not released yet; existing public installers still use the previous name. Repository and deployment addresses remain unchanged.
+This branch contains the Dovun 0.4.0 candidate. The 0.3 transition remains on a separate branch. Existing public installers still use the previous name; no installation or deployment has been performed. Read the [identity migration notes](docs/dovun-04-handoff.md) before upgrading. Repository and deployment addresses remain unchanged.
 
 - **Capture first.** Inbox, Today, lists, tags, subtasks, and manual ordering. Tasks don't need a model.
 - **Then hand it to an AI.** Copy a config from **AI connections**. The host reads tasks, materials, and memories over MCP.

@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
@@ -38,6 +38,7 @@ try {
   if (mcp.status !== 401) throw new Error(`未授权的 MCP 请求应被拒绝，实际是 ${mcp.status}`);
   const localInfo = await (await fetch(`${origin}/api/v1/server/info`)).json();
   if (localInfo.data?.version !== expectedVersion) throw new Error(`桌面运行时版本不一致：${localInfo.data?.version}，期望 ${expectedVersion}`);
+  await access(resolve(dataDir, 'dovun.db'));
   const first = await login({ bootstrapToken: firstToken });
   const imageSettings = await api(first, '/api/settings/image-search');
   const imageConfig = (await imageSettings.json()).data;
@@ -92,15 +93,15 @@ try {
   child = start({
     PORT: String(remotePort),
     CLIENT_ORIGIN: remoteOrigin,
-    WWA_PUBLIC_URL: remoteOrigin,
-    WWA_DATA_DIR: remoteData,
-    DATABASE_URL: `file:${resolve(remoteData, 'agent-studio.db')}`,
+    DOVUN_PUBLIC_URL: remoteOrigin,
+    DOVUN_DATA_DIR: remoteData,
+    DATABASE_URL: '',
     KNOWLEDGE_STORAGE_ROOT: resolve(remoteData, 'knowledge-blobs'),
-    WWA_RUNNER_DIR: resolve(remoteData, 'runner'),
+    DOVUN_RUNNER_DIR: resolve(remoteData, 'runner'),
     AGENT_WORKSPACE_ROOT: resolve(remoteData, 'workspace'),
-    WWA_SERVER_MODE: '1',
-    WWA_BIND_HOST: '127.0.0.1',
-    WWA_OWNER_KEY: ownerKey,
+    DOVUN_SERVER_MODE: '1',
+    DOVUN_BIND_HOST: '127.0.0.1',
+    DOVUN_OWNER_KEY: ownerKey,
   });
   const banner = await waitLine(child, 'API listening');
   if (/owner-token=/.test(banner)) throw new Error('服务器模式不应在日志里打印一次性启动凭据');
@@ -114,6 +115,7 @@ try {
     body: JSON.stringify({ ownerKey: 'wrong-owner-key-0123456789' }),
   });
   if (rejected.status !== 401) throw new Error(`错误访问密钥应返回 401，实际 ${rejected.status}`);
+  await access(resolve(remoteData, 'dovun.db'));
   const remote = await login({ ownerKey }, remoteOrigin);
   const remoteTask = await api(remote, '/api/tasks', { method: 'POST', body: JSON.stringify({ title: '服务器模式冒烟任务' }) }, remoteOrigin);
   if (!remoteTask.ok) throw new Error(`服务器模式创建任务失败：${remoteTask.status} ${await remoteTask.text()}`);
@@ -149,14 +151,14 @@ function start(overrides = {}) {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: {
       ...process.env,
-      WWA_PACKAGED: '1',
+      DOVUN_PACKAGED: '1',
       PORT: String(port),
       CLIENT_ORIGIN: origin,
-      WWA_DATA_DIR: dataDir,
-      WWA_STATIC_DIR: resolve(resources, 'client'),
-      DATABASE_URL: `file:${resolve(dataDir, 'agent-studio.db')}`,
+      DOVUN_DATA_DIR: dataDir,
+      DOVUN_STATIC_DIR: resolve(resources, 'client'),
+      DATABASE_URL: '',
       KNOWLEDGE_STORAGE_ROOT: resolve(dataDir, 'knowledge-blobs'),
-      WWA_RUNNER_DIR: resolve(dataDir, 'runner'),
+      DOVUN_RUNNER_DIR: resolve(dataDir, 'runner'),
       AGENT_WORKSPACE_ROOT: resolve(dataDir, 'workspace'),
       ...overrides,
     },
@@ -249,7 +251,7 @@ function startProxy(credential) {
   const proxyProcess = spawn(nodeBinary, [resolve(serverDir, 'dist/mcp/index.js')], {
     cwd: serverDir,
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, WWA_API_URL: origin, WWA_CONNECTION_TOKEN: credential },
+    env: { ...process.env, DOVUN_API_URL: origin, DOVUN_CONNECTION_TOKEN: credential },
   });
   const pending = new Map();
   let buffer = '';

@@ -14,7 +14,7 @@ export async function runRealHandoffSmoke() {
   const root = await mkdtemp(join(tmpdir(), 'wwa-handoff-real-'));
   const database = resolve(root, 'acceptance.db'); await writeFile(database, '');
   process.env.DATABASE_URL = `file:${database.replace(/\\/g, '/')}`;
-  process.env.WWA_RUNNER_DIR = resolve(root, 'runner');
+  process.env.DOVUN_RUNNER_DIR = resolve(root, 'runner');
   const schema = fileURLToPath(new URL('../../prisma/schema.prisma', import.meta.url));
   await promisify(execFile)(process.execPath, [createRequire(import.meta.url).resolve('prisma/build/index.js'), 'migrate', 'deploy', '--schema', schema], { windowsHide: true, env: process.env, maxBuffer: 1024 * 1024 });
   const [{ prisma }, { HandoffService }, { RunService }, { ownerActor }, { registerKnowledgeCommands }] = await Promise.all([import('../infrastructure/prisma.js'), import('../application/handoff.js'), import('../application/runs.js'), import('../application/security.js'), import('../application/knowledge.js')]);

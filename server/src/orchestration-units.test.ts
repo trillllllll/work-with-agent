@@ -301,7 +301,7 @@ describe('usage result negotiation', () => {
 
   it('strips exitCode, usage and diff unless the lease accepts usage_v1', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wwa-accepts-'));
-    const previous = { runner: process.env.WWA_RUNNER_DIR, codex: process.env.WWA_CODEX_BIN };
+    const previous = { runner: process.env.DOVUN_RUNNER_DIR, codex: process.env.DOVUN_CODEX_BIN };
     const reports: Array<{ ok?: boolean; result?: Record<string, unknown>; error?: string }> = [];
     const run = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@e', ...args], { cwd, encoding: 'utf8' }).trim();
     try {
@@ -322,7 +322,7 @@ describe('usage result negotiation', () => {
         "console.log(JSON.stringify({ type: 'thread.started', thread_id: 'thread-fake' }));",
         "console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1200, cached_input_tokens: 200, output_tokens: 80, reasoning_output_tokens: 10 } }));",
       ].join('\n'));
-      process.env.WWA_CODEX_BIN = cli;
+      process.env.DOVUN_CODEX_BIN = cli;
       const queue = [
         { id: 'job-old', branch: 'feature-old', name: 'g1/old', accepts: undefined as string[] | undefined },
         { id: 'job-new', branch: 'feature-new', name: 'g1/new', accepts: ['usage_v1'] },
@@ -359,8 +359,8 @@ describe('usage result negotiation', () => {
       expect((nextReport.result?.usage as { runDurationMs: number }).runDurationMs).toBeGreaterThanOrEqual(0);
       expect((nextReport.result?.facts as { diff: unknown }).diff).toEqual(emptyDiff());
     } finally {
-      if (previous.runner === undefined) delete process.env.WWA_RUNNER_DIR; else process.env.WWA_RUNNER_DIR = previous.runner;
-      if (previous.codex === undefined) delete process.env.WWA_CODEX_BIN; else process.env.WWA_CODEX_BIN = previous.codex;
+      if (previous.runner === undefined) delete process.env.DOVUN_RUNNER_DIR; else process.env.DOVUN_RUNNER_DIR = previous.runner;
+      if (previous.codex === undefined) delete process.env.DOVUN_CODEX_BIN; else process.env.DOVUN_CODEX_BIN = previous.codex;
       await rm(root, { recursive: true, force: true });
     }
   }, 90_000);

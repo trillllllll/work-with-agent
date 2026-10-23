@@ -234,7 +234,7 @@ test('两个独立浏览器 context：A 保存后 B 在 35 秒内同步，且不
   const contextB = await browser.newContext({
     viewport: { width: 390, height: 844 },
     storageState: {
-      cookies: [{ name: 'wwa_session', value: 'wwa-e2e-owner-session', domain: '127.0.0.1', path: '/', expires: -1, httpOnly: true, secure: false, sameSite: 'Strict' }],
+      cookies: [{ name: 'dovun_session', value: 'wwa-e2e-owner-session', domain: '127.0.0.1', path: '/', expires: -1, httpOnly: true, secure: false, sameSite: 'Strict' }],
       origins: [],
     },
   });

@@ -168,7 +168,7 @@ test('另一个浏览器上下文能读到同一份已保存设置', async ({ pa
   if (!browser) throw new Error('当前浏览器不支持独立上下文');
   const other = await browser.newContext({
     timezoneId: 'Asia/Shanghai',
-    storageState: { cookies: [{ name: 'wwa_session', value: 'wwa-e2e-owner-session', domain: '127.0.0.1', path: '/', expires: -1, httpOnly: true, secure: false, sameSite: 'Strict' }], origins: [] },
+    storageState: { cookies: [{ name: 'dovun_session', value: 'wwa-e2e-owner-session', domain: '127.0.0.1', path: '/', expires: -1, httpOnly: true, secure: false, sameSite: 'Strict' }], origins: [] },
     extraHTTPHeaders: { 'X-CSRF-Token': csrf, Origin: (process.env.E2E_UI_URL ?? 'http://127.0.0.1:5175') },
   });
   try {

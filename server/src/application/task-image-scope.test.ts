@@ -106,7 +106,7 @@ describe('scoped task image reads', () => {
     const download = await request(app).get(`/api/v1/knowledge/materials/${materialId}/versions/1/attachment`).set('Authorization', `Bearer ${token}`).buffer(true).parse(binaryParser);
     expect(download.status, JSON.stringify(download.body)).toBe(200);
     expect(download.headers['content-type']).toMatch(/application\/octet-stream/);
-    expect(download.headers['x-wwa-mime-type']).toBe('text/plain');
+    expect(download.headers['x-dovun-mime-type']).toBe('text/plain');
     expect(download.body).toEqual(text);
     const hiddenMaterial = await commands.submit(ownerActor, { requestId: randomUUID(), commands: [{ kind: 'material.create', input: { topicId: hiddenTopic.body.data.id, title: '保密说明', kind: 'attachment', fileName: 'secret.txt', mimeType: 'text/plain', attachmentBase64: Buffer.from('secret-bytes').toString('base64') } }] });
     expect(hiddenMaterial.status).toBe('applied');

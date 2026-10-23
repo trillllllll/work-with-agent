@@ -45,7 +45,7 @@ describe('desktop node events', () => {
       configured: true,
       logPath: '/data/logs/node.log',
     });
-    expect(assigned).toEqual(['/wwa-node-status']);
+    expect(assigned).toEqual(['/dovun-node-status']);
   });
 
   it('coerces a partial status payload and rejects unknown payloads', async () => {
@@ -66,7 +66,7 @@ describe('desktop node events', () => {
     const { assigned } = installWindow();
     const pending = requestLocalNodeStatus();
     await vi.advanceTimersByTimeAsync(2_999);
-    expect(assigned).toEqual(['/wwa-node-status']);
+    expect(assigned).toEqual(['/dovun-node-status']);
     await vi.advanceTimersByTimeAsync(1);
     await expect(pending).resolves.toBeNull();
   });
@@ -84,7 +84,7 @@ describe('desktop node events', () => {
     vi.mocked(api).mockResolvedValue({ cancelledJobIds: ['job-1'], pausedOrchestrationIds: ['orch-1'] });
     const { assigned, dispatch } = installWindow();
     const pending = disconnectThisComputer('node/1');
-    await vi.waitFor(() => { expect(assigned.some((url) => url.startsWith('/wwa-node-unpair'))).toBe(true); });
+    await vi.waitFor(() => { expect(assigned.some((url) => url.startsWith('/dovun-node-unpair'))).toBe(true); });
     expect(api).toHaveBeenCalledWith('/api/nodes/node%2F1/revoke', { method: 'POST', body: '{}' });
     dispatch({ type: 'node-unpair', ok: true, stopped: false, configRemoved: true, cancelled: 2, message: 'left running' });
     await expect(pending).resolves.toEqual({
@@ -92,7 +92,7 @@ describe('desktop node events', () => {
       pausedOrchestrationIds: ['orch-1'],
       local: { ok: true, stopped: false, configRemoved: true, cancelled: 2, message: 'left running' },
     });
-    expect(assigned[assigned.length - 1]).toBe('/wwa-node-unpair?node=node%2F1');
+    expect(assigned[assigned.length - 1]).toBe('/dovun-node-unpair?node=node%2F1');
   });
 
   it('returns a null local result when unpair times out after revoke', async () => {

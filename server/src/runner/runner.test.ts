@@ -13,9 +13,9 @@ import { pathToFileURL } from 'node:url';
 import { providerEnvironment } from './environment.js';
 
 let root: string;
-const priorRoot = process.env.WWA_RUNNER_DIR;
-beforeAll(async () => { root = await mkdtemp(join(tmpdir(), 'wwa-runner-test-')); process.env.WWA_RUNNER_DIR = root; });
-afterAll(async () => { process.env.WWA_RUNNER_DIR = priorRoot; if (!priorRoot) delete process.env.WWA_RUNNER_DIR; if (inside(tmpdir(), root) && root !== tmpdir()) await rm(root, { recursive: true, force: true }); });
+const priorRoot = process.env.DOVUN_RUNNER_DIR;
+beforeAll(async () => { root = await mkdtemp(join(tmpdir(), 'wwa-runner-test-')); process.env.DOVUN_RUNNER_DIR = root; });
+afterAll(async () => { process.env.DOVUN_RUNNER_DIR = priorRoot; if (!priorRoot) delete process.env.DOVUN_RUNNER_DIR; if (inside(tmpdir(), root) && root !== tmpdir()) await rm(root, { recursive: true, force: true }); });
 
 describe('CLI boundary contracts', () => {
   it('uses explicit sessions, structured output and noninteractive restricted permissions', () => {

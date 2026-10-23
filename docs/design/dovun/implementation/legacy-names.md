@@ -14,3 +14,5 @@
 | 历史资料与测试 | 原设计、调研、兼容夹具、脱敏测试凭据 | 保留来源与测试意义 |
 
 排查使用 `rg -n 'WWA_|work_with_agent|work-with-agent|agent-studio|wwa-' client/src server/src desktop scripts .github README* docs/deployment.md`，逐项按上表判断，不做全仓机械替换。密钥与用户正文不纳入扫描输出。
+
+0.4.0 分支已移除上表的运行配置回退、旧事件桥、旧语言/会话入口和目标目录的旧启动别名。旧配置仅作为启动阻断诊断，旧目录/偏好/草稿仅作为导入来源；正文协议、快照解析、外部仓库与现有部署身份继续保留。`window.wwa` / `wwa:*` sandbox 协议属于已有交互资料内容的兼容接口。

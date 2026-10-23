@@ -150,7 +150,7 @@ export const capabilitiesSchema = z.object({
   freeBytes: z.number().nonnegative().nullable().default(null),
   /** GitHub CLI available locally (optional PR creation). */
   gh: z.boolean().default(false),
-  /** Set by the desktop shell via WWA_NODE_MANAGED. Manual CLI stays `cli`. */
+  /** Set by the desktop shell via DOVUN_NODE_MANAGED. Manual CLI stays `cli`. */
   managedBy: z.enum(['desktop', 'cli']).default('cli'),
   /** Log file path reported by the desktop shell. Manual CLI sends null. */
   logPath: z.string().max(4096).nullable().default(null),

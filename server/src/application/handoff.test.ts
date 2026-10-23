@@ -16,7 +16,7 @@ import { registerKnowledgeCommands } from './knowledge.js';
 const handoffs = new HandoffService(); const runs = new RunService();
 const tasks: string[] = []; const connections: string[] = []; const ids: string[] = [];
 let localRoot: string | undefined;
-const previousRunner = process.env.WWA_RUNNER_DIR; const previousCli = process.env.WWA_CODEX_BIN;
+const previousRunner = process.env.DOVUN_RUNNER_DIR; const previousCli = process.env.DOVUN_CODEX_BIN;
 beforeAll(() => registerKnowledgeCommands());
 async function setup() {
   const task = await prisma.task.create({ data: { title: '交接测试', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } }); tasks.push(task.id);
@@ -33,8 +33,8 @@ afterAll(async () => {
   await prisma.organizationRequest.deleteMany({ where: { id: { in: organizationIds } } });
   await prisma.runEvent.deleteMany({ where: { runId: { in: runIds } } }); await prisma.artifact.deleteMany({ where: { runId: { in: runIds } } }); await prisma.handoffReview.deleteMany({ where: { handoffId: { in: ids } } }); await prisma.run.deleteMany({ where: { id: { in: runIds } } }); await prisma.handoff.deleteMany({ where: { id: { in: ids } } });
   await prisma.changeRecord.deleteMany({ where: { entityId: { in: [...tasks, ...ids, ...runIds] } } }); await prisma.taskTopicAssignment.deleteMany({ where: { taskId: { in: tasks } } }); await prisma.task.updateMany({ where: { id: { in: tasks } }, data: { parentId: null } }); await prisma.task.deleteMany({ where: { id: { in: tasks } } }); await prisma.connection.deleteMany({ where: { id: { in: connections } } });
-  if (previousRunner) process.env.WWA_RUNNER_DIR = previousRunner; else delete process.env.WWA_RUNNER_DIR;
-  if (previousCli) process.env.WWA_CODEX_BIN = previousCli; else delete process.env.WWA_CODEX_BIN;
+  if (previousRunner) process.env.DOVUN_RUNNER_DIR = previousRunner; else delete process.env.DOVUN_RUNNER_DIR;
+  if (previousCli) process.env.DOVUN_CODEX_BIN = previousCli; else delete process.env.DOVUN_CODEX_BIN;
   if (localRoot && inside(tmpdir(), localRoot)) await rm(localRoot, { recursive: true, force: true });
 });
 const result = { outcome: 'ready_for_review', summary: '产物已准备好', questions: [], artifacts: [{ name: '分析', kind: 'text', content: '结果' }], checks: [] };
@@ -102,12 +102,12 @@ describe('Handoff, immutable Run result and separate review', () => {
     expect((await prisma.task.findUniqueOrThrow({ where: { id: child.id } })).status).toBe('done');
   });
   it('collects a durable completion after API restart, preserves the completion/cancel race and starts continuation as a new run', async () => {
-    localRoot ??= await mkdtemp(join(tmpdir(), 'wwa-handoff-local-')); process.env.WWA_RUNNER_DIR = resolve(localRoot, 'runner');
+    localRoot ??= await mkdtemp(join(tmpdir(), 'wwa-handoff-local-')); process.env.DOVUN_RUNNER_DIR = resolve(localRoot, 'runner');
     const source = resolve(localRoot, 'source'); await mkdir(source);
     await git(source, ['init']); await git(source, ['config', 'core.autocrlf', 'false']); await git(source, ['config', 'user.email', 'test@example.invalid']); await git(source, ['config', 'user.name', 'Test']); await writeFile(resolve(source, 'base.txt'), 'base\n'); await git(source, ['add', '.']); await git(source, ['commit', '-m', 'base']);
     const fakeCli = resolve(localRoot, 'fixture-cli.cjs');
     await writeFile(fakeCli, `require('fs').writeFileSync('result.txt','controlled fixture result\\n');for(const event of [{type:'thread.started',thread_id:'explicit-fixture-session'},{type:'turn.started'},{type:'item.completed',item:{type:'agent_message',text:JSON.stringify(${JSON.stringify({ ...result, artifacts: [] })})}},{type:'turn.completed'}]) console.log(JSON.stringify(event));`);
-    process.env.WWA_CODEX_BIN = fakeCli;
+    process.env.DOVUN_CODEX_BIN = fakeCli;
     const initial = await setup();
     const prepared = await handoffs.prepare(ownerActor, { taskId: initial.task.id, expectedTaskRevision: 1, instruction: 'Controlled fixture', provider: 'codex', mode: 'local', materialIds: [], memoryIds: [] }); ids.push(prepared.id);
     const started = await runs.start(ownerActor, prepared.id, { sourcePath: source, requestId: randomUUID() });
@@ -129,10 +129,10 @@ describe('Handoff, immutable Run result and separate review', () => {
     expect(await readFile(resolve(source, 'result.txt'), 'utf8')).toBe('controlled fixture result\n');
   }, 20000);
   it('records a preparation failure, accepts corrected selected inputs and retries as a new native session', async () => {
-    localRoot ??= await mkdtemp(join(tmpdir(), 'wwa-handoff-local-')); process.env.WWA_RUNNER_DIR = resolve(localRoot, 'runner');
+    localRoot ??= await mkdtemp(join(tmpdir(), 'wwa-handoff-local-')); process.env.DOVUN_RUNNER_DIR = resolve(localRoot, 'runner');
     const source = resolve(localRoot, 'selected-retry-source'); await mkdir(resolve(source, 'notes'), { recursive: true }); await writeFile(resolve(source, 'notes', 'input.txt'), 'frozen input'); await writeFile(resolve(source, 'unselected.txt'), 'excluded');
     const cli = resolve(localRoot, 'selected-retry-cli.cjs');
-    await writeFile(cli, `if(require('fs').readFileSync('notes/input.txt','utf8')!=='frozen input'||require('fs').existsSync('unselected.txt'))process.exit(3);for(const event of [{type:'thread.started',thread_id:'fresh-retry-session'},{type:'turn.started'},{type:'item.completed',item:{type:'agent_message',text:JSON.stringify(${JSON.stringify({ ...result, artifacts: [] })})}}])console.log(JSON.stringify(event));`); process.env.WWA_CODEX_BIN = cli;
+    await writeFile(cli, `if(require('fs').readFileSync('notes/input.txt','utf8')!=='frozen input'||require('fs').existsSync('unselected.txt'))process.exit(3);for(const event of [{type:'thread.started',thread_id:'fresh-retry-session'},{type:'turn.started'},{type:'item.completed',item:{type:'agent_message',text:JSON.stringify(${JSON.stringify({ ...result, artifacts: [] })})}}])console.log(JSON.stringify(event));`); process.env.DOVUN_CODEX_BIN = cli;
     const initial = await setup(); const prepared = await handoffs.prepare(ownerActor, { taskId: initial.task.id, expectedTaskRevision: 1, instruction: 'Read selected files', provider: 'codex', mode: 'local', materialIds: [], memoryIds: [] }); ids.push(prepared.id);
     const requestId = randomUUID();
     await expect(runs.start(ownerActor, prepared.id, { sourcePath: source, inputFiles: ['./missing.txt'], requestId })).rejects.toMatchObject({ code: 'INPUT_FILE_NOT_FOUND' });
@@ -158,12 +158,12 @@ describe('Handoff, immutable Run result and separate review', () => {
     expect(continuedWorkspace).toEqual(workspace); expect(continuation.externalSessionId).toBe('fresh-retry-session'); expect((await finish(continuation.id)).status).toBe('returned');
   }, 25000);
   it('reuses a prepared workspace after a missing CLI failure without guessing an external session', async () => {
-    localRoot ??= await mkdtemp(join(tmpdir(), 'wwa-handoff-local-')); process.env.WWA_RUNNER_DIR = resolve(localRoot, 'runner');
-    const source = resolve(localRoot, 'cli-retry-source'); await mkdir(source); process.env.WWA_CODEX_BIN = resolve(localRoot, 'missing-cli.cjs');
+    localRoot ??= await mkdtemp(join(tmpdir(), 'wwa-handoff-local-')); process.env.DOVUN_RUNNER_DIR = resolve(localRoot, 'runner');
+    const source = resolve(localRoot, 'cli-retry-source'); await mkdir(source); process.env.DOVUN_CODEX_BIN = resolve(localRoot, 'missing-cli.cjs');
     const initial = await setup(); const prepared = await handoffs.prepare(ownerActor, { taskId: initial.task.id, expectedTaskRevision: 1, instruction: 'Retry CLI', provider: 'codex', mode: 'local', materialIds: [], memoryIds: [] }); ids.push(prepared.id);
     await expect(runs.start(ownerActor, prepared.id, { sourcePath: source, requestId: randomUUID() })).rejects.toMatchObject({ code: 'CLI_NOT_FOUND' });
     const failed = await prisma.run.findFirstOrThrow({ where: { handoffId: prepared.id } }); expect(failed.externalSessionId).toBeNull(); expect(JSON.parse(failed.workspaceJson).workPath).toBeTruthy();
-    const cli = resolve(localRoot, 'cli-retry.cjs'); await writeFile(cli, `for(const event of [{type:'thread.started',thread_id:'new-native-session'},{type:'turn.started'},{type:'item.completed',item:{type:'agent_message',text:JSON.stringify(${JSON.stringify({ ...result, artifacts: [] })})}}])console.log(JSON.stringify(event));`); process.env.WWA_CODEX_BIN = cli;
+    const cli = resolve(localRoot, 'cli-retry.cjs'); await writeFile(cli, `for(const event of [{type:'thread.started',thread_id:'new-native-session'},{type:'turn.started'},{type:'item.completed',item:{type:'agent_message',text:JSON.stringify(${JSON.stringify({ ...result, artifacts: [] })})}}])console.log(JSON.stringify(event));`); process.env.DOVUN_CODEX_BIN = cli;
     const retry = await runs.continue(ownerActor, failed.id, { answer: 'CLI现已配置', requestId: randomUUID() });
     expect(retry.continuationOf).toBe(failed.id); expect(retry.externalSessionId).toBeNull(); expect((await prisma.run.findUniqueOrThrow({ where: { id: retry.id } })).workspaceJson).toBe(failed.workspaceJson);
     const launch = JSON.parse(await readFile(resolve(localRoot, 'runner', 'runs', retry.id, 'launch.json'), 'utf8')); expect(launch.args).not.toContain('resume'); expect(launch.args).not.toContain('--last');

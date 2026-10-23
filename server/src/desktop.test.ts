@@ -14,15 +14,15 @@ import { desktopDataDir, desktopMcpCommand, sqliteDatabaseUrl } from './applicat
 import { mountDesktopStatic } from './desktop-static.js';
 
 const previous = {
-  packaged: process.env.WWA_PACKAGED,
-  data: process.env.WWA_DATA_DIR,
+  packaged: process.env.DOVUN_PACKAGED,
+  data: process.env.DOVUN_DATA_DIR,
   port: process.env.PORT,
   database: process.env.DATABASE_URL,
 };
 
 afterEach(() => {
-  restore('WWA_PACKAGED', previous.packaged);
-  restore('WWA_DATA_DIR', previous.data);
+  restore('DOVUN_PACKAGED', previous.packaged);
+  restore('DOVUN_DATA_DIR', previous.data);
   restore('PORT', previous.port);
   restore('DATABASE_URL', previous.database);
 });
@@ -34,13 +34,13 @@ function restore(name: string, value: string | undefined) {
 
 describe('desktop connection configuration', () => {
   it('launches the dev source tree through tsx without a dist build', () => {
-    delete process.env.WWA_PACKAGED;
+    delete process.env.DOVUN_PACKAGED;
     delete process.env.PORT;
     const config = connectionConfiguration('secret');
     expect(config.command).toBe(process.execPath);
     expect(config.args[0]).toMatch(/node_modules[\\/]tsx[\\/]dist[\\/]cli\.mjs$/);
     expect(config.args[1]).toMatch(/src[\\/]mcp[\\/]index\.ts$/);
-    expect(config.env.WWA_API_URL).toBe('http://127.0.0.1:3016');
+    expect(config.env.DOVUN_API_URL).toBe('http://127.0.0.1:3016');
     expect(config.url).toBe('http://127.0.0.1:3016/mcp');
   });
 
@@ -51,8 +51,8 @@ describe('desktop connection configuration', () => {
   });
 
   it('points a packaged app at the stable launcher and desktop port', () => {
-    process.env.WWA_PACKAGED = '1';
-    process.env.WWA_DATA_DIR = '/tmp/Library/Application Support/work-with-agent';
+    process.env.DOVUN_PACKAGED = '1';
+    process.env.DOVUN_DATA_DIR = '/tmp/Library/Application Support/work-with-agent';
     delete process.env.PORT;
     const config = connectionConfiguration('secret');
     if (process.platform === 'win32') {
@@ -63,15 +63,15 @@ describe('desktop connection configuration', () => {
       expect(config.command).toBe('/tmp/Library/Application Support/work-with-agent/bin/dovun-mcp');
       expect(config.args).toEqual([]);
     }
-    expect(config.env.WWA_API_URL).toBe('http://127.0.0.1:47316');
-    expect(config.env.WWA_CONNECTION_TOKEN).toBe('secret');
+    expect(config.env.DOVUN_API_URL).toBe('http://127.0.0.1:47316');
+    expect(config.env.DOVUN_CONNECTION_TOKEN).toBe('secret');
     expect(config.url).toBe('http://127.0.0.1:47316/mcp');
     if (process.platform !== 'win32') expect(desktopMcpCommand()).toBe(config.command);
   });
 
   it('uses the Windows local application data directory when packaged', () => {
     if (process.platform !== 'win32') return;
-    delete process.env.WWA_DATA_DIR;
+    delete process.env.DOVUN_DATA_DIR;
     const base = process.env.LOCALAPPDATA || process.env.APPDATA || homedir();
     expect(desktopDataDir()).toBe(join(base, 'dovun'));
   });

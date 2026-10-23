@@ -70,7 +70,7 @@ test.beforeAll(async ({ request }) => {
   const node = await bodyOf(await request.post(`${api}/api/nodes`, { data: { name: 'E2E 笔记本' } }));
   agent = spawn(process.execPath, ['--max-old-space-size=256', '--import', 'tsx', resolve(repoRoot, 'server/src/node-agent/index.ts'), '--server', api, '--token', node.data.token, '--roots', code, '--data', nodeData, '--max', '2'], {
     cwd: repoRoot,
-    env: { ...process.env, WWA_CODEX_BIN: resolve(repoRoot, 'server/test/stub-orchestration-cli.mjs'), STUB_DELAY_MS: '100', NODE_OPTIONS: '' },
+    env: { ...process.env, DOVUN_CODEX_BIN: resolve(repoRoot, 'server/test/stub-orchestration-cli.mjs'), STUB_DELAY_MS: '100', NODE_OPTIONS: '' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   agent.stdout?.on('data', (chunk) => { agentLog += chunk; });

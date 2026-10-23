@@ -64,7 +64,7 @@ export function writeSyncBinding(binding: SyncBinding) {
   return { url };
 }
 
-/** Vitest shares this process with a developer binding file. Tests opt in with WWA_SYNC_URL. */
+/** Vitest shares this process with a developer binding file. Tests opt in with DOVUN_SYNC_URL. */
 function replicaBinding() {
   if (process.env.VITEST && !runtimeEnv('SYNC_URL')) return null;
   return readSyncBinding();
@@ -277,7 +277,7 @@ export async function runReplicaCycle(db: ReplicaDb, transport: ReplicaTransport
 function hubData(binding: SyncBinding, path: string, init?: RequestInit) {
   return fetch(new URL(path, binding.url), {
     ...init,
-    headers: { accept: 'application/json', authorization: `Bearer ${binding.token}`, 'content-type': 'application/json', 'x-wwa-language': 'zh-CN' },
+    headers: { accept: 'application/json', authorization: `Bearer ${binding.token}`, 'content-type': 'application/json', 'x-dovun-language': 'zh-CN' },
   }).then(async (response) => {
     const body = await response.json().catch(() => null) as { data?: unknown; error?: string } | null;
     if (!response.ok || !body || body.data === undefined) throw new DomainError('SYNC_FAILED', body?.error || '同步操作无效', response.status || 502);
