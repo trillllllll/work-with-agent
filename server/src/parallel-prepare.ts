@@ -13,7 +13,7 @@ export async function isolateImportedBindings(data: string) {
   }
   const archive = join(data, 'migration-disabled-bindings');
   await mkdir(archive, { recursive: true, mode: 0o700 });
-  for (const [old, name] of [['node/config.json', 'node-config.json'], ['sync-device.json', 'sync-device.json']]) {
+  for (const [old, name] of [['node/config.json', 'node-config.json'], ['node/state.json', 'node-state.json'], ['sync-device.json', 'sync-device.json']]) {
     const source = join(data, old), target = join(archive, name);
     if (await exists(source)) {
       if (await exists(target)) throw new Error('Imported binding archive conflicts with current binding. No credentials were overwritten.');
