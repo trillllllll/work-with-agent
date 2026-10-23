@@ -53,7 +53,7 @@ function genericJson(config: ConnectionConfiguration, token: string) {
 /** Setup snippet. `token` is the credential; config.env.WWA_CONNECTION_TOKEN is not copied. */
 export function setupSnippet(host: string, config: ConnectionConfiguration, token: string, entry: McpEntryName = 'dovun') {
   if (entry === 'work_with_agent') {
-    if (host === 'codex') return codexConfig(config, token).replaceAll('mcp_servers.dovun', 'mcp_servers.work_with_agent');
+    if (host === 'codex') return codexConfig(config, token).split('mcp_servers.dovun').join('mcp_servers.work_with_agent');
     if (host === 'claude') return claudeCheckJson(config, token).replace('"dovun":', '"work_with_agent":');
     // Existing HTTP entries are edited in place; never offer a second add command.
     return JSON.stringify({ entry: 'work_with_agent', url: config.url, headers: { Authorization: `Bearer ${token}` } }, null, 2);
