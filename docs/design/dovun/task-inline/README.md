@@ -28,3 +28,14 @@
 ## 交付边界
 
 本次授权包括提交、push、打包并覆盖 /Applications/Dovun.app，沿用 0.4.0；不合并 main、不打标签、不部署服务器、不重复迁移，不改变同步或自动化开关。本机覆盖前备份数据库、已有 sidecar、偏好和旧应用，覆盖后核对哈希并保持关闭。以最终核验记录为准，不以源码完成代表安装完成。
+
+## 本机安装完成（2026-10-24）
+
+- 已提交并推送源码 `1cebe44`，该提交已包含本轮应用功能知识。桌面构建确认 `Finished 2 bundles` / `EXIT:0`；隔离本机模式、重启数据保留、MCP 恢复与服务器模式冒烟通过。
+- 已正常退出 Dovun 并释放 47317；备份数据库、已有 sidecar、偏好和旧应用后，整包替换 `/Applications/Dovun.app`。版本仍为 0.4.0，标识 `app.dovun.desktop`，未重复迁移。
+- 安装前后数据大小与 SHA256 一致，备份库 quick_check 为 ok；15386 个文件/链接逐项与构建包一致，签名 deep strict 检查通过。包内应用功能知识与已编译源码一致，Node 为 22.13.0。
+- 包内页面资源为 `index-BNfb3vie.js`、`index-Bb0Ps5o_.css`，与本次构建一致。备份和详细数据核对记录保存在本机私有安装记录中，不进入仓库。
+- 已移除构建目录的重复 Dovun.app，保留 `desktop/src-tauri/target/release/bundle/dmg/Dovun_0.4.0_aarch64.dmg`。应用保持关闭、47317 无监听；WWA、业务数据绑定、同步和自动化开关未操作，服务器未部署。
+- 尚未打开已安装的原生窗口进行交互；WebKit 浏览器与隔离打包运行时验收已完成。Windows 实机未验收。
+
+构建、冒烟与安装日志分别为 `/tmp/dovun-inline-desktop-build.log`、`/tmp/dovun-inline-desktop-smoke.log`、`/tmp/dovun-inline-install.log`。

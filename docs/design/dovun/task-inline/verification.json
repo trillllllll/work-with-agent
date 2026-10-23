@@ -75,10 +75,22 @@
   "release": {
     "version": "0.4.0",
     "identifier": "app.dovun.desktop",
-    "built": false,
-    "installed": false,
+    "built": true,
+    "installed": true,
     "deployed": false,
     "ciChanged": false,
-    "dockerfileChanged": false
+    "dockerfileChanged": false,
+    "installedSourceCommit": "1cebe449f29b43af1a9b8ffa9cd666cfbb348394",
+    "installedAt": "2026-10-24T01:11:50.643783+08:00",
+    "dataHashUnchanged": true,
+    "filesVerified": 15386,
+    "assets": [
+      "/assets/index-BNfb3vie.js",
+      "/assets/index-Bb0Ps5o_.css"
+    ],
+    "applicationKeptClosed": true,
+    "runtimeSmoke": "passed: local mode and server mode in isolated temporary data",
+    "signature": "ad hoc; deep strict verification passed",
+    "appKnowledgeMatchesPackagedSource": true
   }
 }
