@@ -428,16 +428,18 @@ export function TaskTitleField({ className }: { className?: string }) {
     const parent = node?.parentElement;
     if (!node || !parent) return;
     let width = parent.clientWidth;
+    let frame = 0;
     const fit = () => fitTitle(node);
     fit();
     const observer = new ResizeObserver(() => {
       const next = parent.clientWidth;
-      if (next === width) return;
+      if (!next || next === width) return;
       width = next;
-      fit();
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(fit);
     });
     observer.observe(parent);
-    return () => observer.disconnect();
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
   }, [edit.draft.title]);
   return <Textarea variant="inline" ref={ref} data-task-editor aria-label={t('taskExpand.titleLabel')} required rows={1} value={edit.draft.title} disabled={edit.readonly} onChange={(event) => edit.updateText({ title: flattenTitle(event.target.value) })} onPaste={(event) => {
     const text = event.clipboardData.getData('text');
@@ -688,12 +690,12 @@ function DetailFrame({ presentation, panelSlot, children }: { presentation: 'pan
   </>;
 }
 
-function TaskAssistantActions() {
+function TaskAssistantActions({ showAssistant = true }: { showAssistant?: boolean }) {
   const { t } = useTranslation('tasks');
   const edit = useEdit();
   const [history, setHistory] = useState(false);
   return <div className="flex flex-wrap gap-2 pb-2">
-    <Button size="sm" variant="ghost" onClick={() => askAssistant()}>{t('taskExpand.assistant')}</Button>
+    {showAssistant && <Button size="sm" variant="ghost" onClick={() => askAssistant()}>{t('taskExpand.assistant')}</Button>}
     <Button size="sm" variant="ghost" onMouseDown={(event) => event.preventDefault()} onClick={() => askAssistant({ kind: 'draft', title: edit.draft.title || t('taskExpand.currentDraft'), text: `${edit.draft.title}\n\n${edit.draft.description}`, taskId: edit.taskId, unsaved: true })}>{t('taskExpand.withDraft')}</Button>
     <Button size="sm" variant="ghost" data-testid="task-ai-history" onClick={() => setHistory(true)}>{t('taskExpand.aiHistory')}</Button>
     {!edit.task.parentId && <OrchestrationButton taskId={edit.taskId} disabled={edit.readonly} />}
@@ -718,11 +720,12 @@ export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children
           }}>{t(`companion.${tab}`)}</Button>)}
         </div>
         <header className="task-detail-header">
-          <TaskAssistantActions />
+          <TaskAssistantActions showAssistant={presentation !== 'panel'} />
           <ParentTaskLink />
           <div data-testid="task-detail-title-row" className="flex min-w-0 items-start gap-2"><TaskStatusCheckbox /><div className="min-w-0 flex-1"><TaskTitleField /></div><ActivityButton onOpen={() => setActivity(true)} /><CloseDetailButton /></div>
         </header>
         <div role="tabpanel" id={`detail-panel-${props.id}`} aria-labelledby={`detail-tab-${props.id}-${section}`} className="min-h-0 flex-1 overflow-y-auto px-5 pb-5"><TaskExpandBody fill section={section} /></div>
+        {presentation === 'panel' && <footer className="dovun-task-assistant-footer"><Button onClick={() => askAssistant()}>{t('workRail.askAssistant')}</Button></footer>}
       </div>
     </DetailFrame>
     <TaskActivityDialog taskId={props.id} open={activity} onOpenChange={setActivity} />

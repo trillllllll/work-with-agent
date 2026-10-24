@@ -1,4 +1,14 @@
 {
+  "workRail": {
+    "title": "Work sidebar",
+    "task": "Task",
+    "assistant": "AI assistant",
+    "close": "Close work sidebar",
+    "hasDraft": "Unsent draft",
+    "askAssistant": "Ask AI",
+    "discussing": "Task in discussion",
+    "viewTask": "View task"
+  },
   "nav": {
     "inbox": "Inbox",
     "today": "Today",

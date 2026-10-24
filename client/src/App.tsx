@@ -1,3 +1,4 @@
+import { WorkRailTabs } from './components/layout/WorkRailTabs.js';
 import { Surface } from '@/components/ui/surface.js';
 import { createPortal } from 'react-dom';
 import { Sparkles } from 'lucide-react';
@@ -157,7 +158,6 @@ export function App() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [dragHintSeen, setDragHintSeen] = useState(() => localStorage.getItem('dovun.dragHintSeen') === '1');
   const [selectedTag, setSelectedTag] = useState('');
-  const [assistantSelectedIds, setAssistantSelectedIds] = useState<string[]>([]);
   const [prompt, setPrompt] = useState<(ActionPrompt & { resolve: (value: boolean) => void }) | null>(null);
   const topicSaveLock = useRef(false);
   const detailRef = useRef<TaskDetailHandle>(null);
@@ -207,7 +207,6 @@ export function App() {
   if (filters.dueTo) params.dueTo = filters.dueTo;
   if (page === 'today') params.dueTo = today;
   if (page === 'tags' ? selectedTag : filters.tag) params.tagIds = page === 'tags' ? selectedTag : filters.tag;
-  useEffect(() => setAssistantSelectedIds([]), [page, selectedTopicId, JSON.stringify(params)]);
   const taskPage = ['inbox', 'board', 'quadrant', 'today', 'search', 'tags'].includes(page);
   const tasksQuery = useTasks(params, taskPage && (page !== 'board' || Boolean(selectedTopicId)) && (page !== 'tags' || Boolean(selectedTag)));
   const tasks = tasksQuery.data ?? [];
@@ -224,7 +223,7 @@ export function App() {
     ...(taskPage && !workspaceView ? {
       scope: params.inbox ? { kind: 'inbox' as const } : params.topicId ? { kind: 'topic' as const, topicId: params.topicId } : { kind: 'all' as const },
       taskFilter: (contextPage === 'tags' && !selectedTag) || (contextPage === 'board' && !selectedTopicId) ? null : { status: params.status as 'open' | 'all', sort: params.sort as 'manual' | 'date', ...(params.q ? { q: params.q } : {}), ...(params.dueFrom ? { dueFrom: params.dueFrom } : {}), ...(params.dueTo ? { dueTo: params.dueTo } : {}), ...(params.tagIds ? { tagIds: [params.tagIds] } : {}), ...(archived ? { includeArchived: true } : {}) },
-      selectedTaskIds: assistantSelectedIds,
+      selectedTaskIds: baseContext.selectedTaskIds,
       pageState: { layout, showCompleted },
     } : {}),
     ...(contextPage === 'library' ? { materialId: librarySnapshot.preview?.materialId ?? null, materialRevision: librarySnapshot.preview?.revision ?? null, materialVersionMode: librarySnapshot.preview?.revision == null ? 'latest' as const : 'historical' as const, selectedMaterialIds: librarySnapshot.selectedIds, pageState: { query: librarySnapshot.query, folderId: librarySnapshot.folderId, tagIds: librarySnapshot.tagIds, kind: librarySnapshot.kind, libraryView: librarySnapshot.view, taskTopicId: librarySnapshot.taskTopicId } } : {}),
@@ -275,17 +274,19 @@ export function App() {
   };
   const selectTopic = (id: string) => transitionFromDetail(() => { setSourceView(null); setTaskId(''); setSelectedTopicId(id); navigate('board'); });
   const openTask = (id: string) => {
-    if (id === taskId) return;
-    transitionFromDetail(() => { setSourceView(null); setTaskId(id); });
+    if (id === taskId) { setFocusOpen(false); setChatOpen(false); return; }
+    transitionFromDetail(() => { setSourceView(null); setTaskId(id); setFocusOpen(false); setChatOpen(false); });
   };
   const openLinkedTask = async (id: string) => {
-    if (id === taskId) return;
+    if (id === taskId) { setFocusOpen(false); setChatOpen(false); return; }
     if (taskId && detailRef.current) {
       const saved = await detailRef.current.ensureSaved();
       if (!saved) return;
     }
     setSourceView(null);
     setTaskId(id);
+    setFocusOpen(false);
+    setChatOpen(false);
   };
   const openChat = () => {
     setFocusOpen(false);
@@ -339,7 +340,7 @@ export function App() {
   sourceHandler.current = (source) => {
     void api<{ title: string; content: string; kind: string; id: string; topicId?: string | null }>(`/api/v1/assistant/sources/${source.kind}/${encodeURIComponent(source.id)}${source.revision ? `?revision=${source.revision}` : ''}`).then((resolved) => {
       transitionFromDetail(() => {
-        if (source.kind === 'task') { setSourceView(null); setTaskId(source.id); }
+        if (source.kind === 'task') { setSourceView(null); setTaskId(source.id); setFocusOpen(false); }
         else if (source.kind === 'material') { setSourceView(null); setTaskId(''); patchLibrary({ preview: { materialId: source.id, revision: source.revision ?? null, chunkId: null } }); navigate('library'); }
         else { setTaskId(''); setSourceView(resolved); }
         if ((workspaceView || isAssistantPage) && source.kind !== 'material') {
@@ -347,7 +348,7 @@ export function App() {
           navigate(previousMain.current);
           setChatOpen(isDesktop);
         }
-        if (!isDesktop) setChatOpen(false);
+        if (!isDesktop || source.kind === 'task') setChatOpen(false);
       });
     }).catch((error) => toast.error(error instanceof Error ? error.message : t('shell.sourceUnreadable')));
   };
@@ -476,7 +477,7 @@ export function App() {
     await actions.write(`/api/trash/tasks/${task.id}/permanent`, 'DELETE', undefined, [task.id, ...descendants.keys()], t('shell.taskDeletedForever'));
   };
   const run = (work: Promise<unknown>) => { void work.catch((error) => { if (!(error instanceof ApiError)) toast.error(error instanceof Error ? error.message : t('action.failed')); }); };
-  const listProps = { assistantSelectedIds, onAssistantSelect: (id: string) => setAssistantSelectedIds((ids) => ids.includes(id) ? ids.filter((item) => item !== id) : ids.length < 100 ? [...ids, id] : ids), topics, tags, onOpen: openTask, onToggle: toggleTask, onMove: moveTask, onDelete: (task: Task) => run(deleteTask(task)), onSave: patchTask, onCreate: createTask, readonly: archived, busy: actions.pending, selectedTaskId: taskId, textDirty: detailDirty };
+  const listProps = { topics, tags, onOpen: openTask, onToggle: toggleTask, onMove: moveTask, onDelete: (task: Task) => run(deleteTask(task)), onSave: patchTask, onCreate: createTask, readonly: archived, busy: actions.pending, selectedTaskId: taskId, textDirty: detailDirty };
   const planProps = { onCreate: createTask, topics, tags, onOpen: openTask, onToggle: toggleTask, onSave: patchTask, onDelete: (task: Task) => run(deleteTask(task)), busy: actions.pending };
 
   const title = page === 'board' ? detail?.name ?? t('shell.selectList') : navigationItems.find((item) => item.view === page)?.label ?? t('shell.workspace');
@@ -503,12 +504,12 @@ export function App() {
     </>}
   </div>;
   const content = page === 'plan' ? <PlanPage {...planProps} /> : page === 'focus' ? <FocusPage presentation={focusOrigin ? 'expanded' : 'direct'} onExpand={expandFocus} onShrink={shrinkFocus} onClose={() => setFocusOpen(false)} /> : page === 'stats' ? <StatsPage onOpenTopic={selectTopic} /> : page === 'connections' ? <ConnectionsPage topics={topics} archivedTopics={archivedQuery.data ?? []} /> : page === 'proposals' ? <ProposalsPage /> : page === 'knowledge' ? <KnowledgePage topics={topics} archivedTopics={archivedQuery.data ?? []} topicId={knowledgeTopicExplicit ? (knowledgeTopicId ?? '') : selectedTopicId} topicExplicit={knowledgeTopicExplicit} topicsReady={topicsQuery.isSuccess && archivedQuery.isSuccess} section={knowledgeSection ?? 'brief'} onLocate={openKnowledge} onOpenSettings={() => openSettings('model')} /> : page === 'skills' ? <SkillsPage /> : page === 'library' ? <LibraryPage topics={topics} selectedTopicId={selectedTopicId} onOpenTask={openLinkedTask} /> : page === 'runs' ? <RunsPage /> : page === 'worktrees' ? <WorktreesPage /> : page === 'reviews' ? <ReviewsPage topics={topics} /> : taskPage ? taskContent : page === 'topics' ? <TopicListPage topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onSelectTopic={selectTopic} onNewTopic={newTopic} onEditTopic={setTopicForm} onOpenSettings={() => navigateSafely('settings')} onOpenInbox={() => navigateSafely('inbox')} /> : page === 'archived' ? <div className="p-5 sm:p-7"><h1 className="mb-5 text-2xl font-semibold">{t('nav.archived')}</h1><div className="space-y-3">{!(archivedQuery.data ?? []).length && <p className="text-sm text-muted-foreground">{t('shell.noArchivedLists')}</p>}{(archivedQuery.data ?? []).map((topic) => <Surface as="article" tone="subtle" key={topic.id} className="flex flex-wrap items-center gap-3 rounded-xl p-4"><Button variant="row" size="bare" className="flex-1 text-left font-medium" onClick={() => selectTopic(topic.id)}>{topic.name}</Button><Button variant="outline" onClick={() => run(actions.write(`/api/topics/${topic.id}/restore`, 'POST', undefined, [topic.id], t('shell.listRestored')))}>{t('shell.restoreList')}</Button><Button variant="outline" onClick={() => run((async () => { if (await confirm({ title: t('confirm.moveTasksOut'), description: t('confirm.moveTasksDescription', { name: topic.name }), confirm: t('confirm.moveTasks') })) await actions.write(`/api/topics/${topic.id}/move-tasks-to-inbox`, 'POST', undefined, [topic.id], t('shell.tasksMovedToInbox')); })())}>{t('shell.moveTasksToInbox')}</Button></Surface>)}</div></div> : <MorePage route={route} onNavigate={navigateSafely} />;
-  const chatPanel = <ChatPanel chat={chat} presentation={isAssistantPage ? assistantOrigin ? 'expanded' : 'direct' : 'side'} onExpand={expandAssistant} onShrink={shrinkAssistant} mobile={!isDesktop} onClose={() => setChatOpen(false)} />;
+  const chatPanel = <ChatPanel chat={chat} presentation={isAssistantPage ? assistantOrigin ? 'expanded' : 'direct' : 'side'} onExpand={expandAssistant} onShrink={shrinkAssistant} mobile={!isDesktop} taskReference={!workspaceView && !isAssistantPage && chat.context?.taskId ? { title: chat.context.label, onOpen: () => { openTask(chat.context!.taskId!); requestAnimationFrame(() => document.getElementById('work-rail-tab-task')?.focus()); } } : undefined} onClose={() => setChatOpen(false)} />;
   const showChat = chatOpen || route === 'chat';
   const focusSide = focusOpen && isDesktop && !isFocusPage && !isAssistantPage;
-  const sidePanel = (showChat && !isAssistantPage) || focusSide;
   const chatAccessory = showChat && !workspaceView && !isAssistantPage;
   const focusAccessory = focusSide && !workspaceView && !chatAccessory;
+  const taskRail = Boolean(taskId) && !workspaceView && !isAssistantPage && !sourceView && !focusAccessory;
   const focusPageVisible = isFocusPage && (isDesktop || !showChat);
   const closeTask = () => { setDetailDirty(false); setTaskId(''); };
   const taskIdRef = useRef(taskId);
@@ -531,25 +532,26 @@ export function App() {
     window.addEventListener('dovun-open-task', handler);
     return () => window.removeEventListener('dovun-open-task', handler);
   }, []);
-  const detailPane = taskId ? <TaskDetailPane key={taskId} ref={detailRef} id={taskId} fallback={tasks.find((task) => task.id === taskId)} tags={tags} readonly={archived} presentation={isDesktop ? 'panel' : showChat ? 'retained' : 'modal'} panelSlot={detailSlot} onSave={patchTask} onClose={closeTask} onDirtyChange={setDetailDirty} onToggleTask={toggleTask} onCreateTask={createTask} onOpenTask={openTask} /> : null;
+  const detailPane = taskId ? <TaskDetailPane key={taskId} ref={detailRef} id={taskId} fallback={tasks.find((task) => task.id === taskId)} tags={tags} readonly={archived} presentation={isDesktop || taskRail ? 'panel' : showChat ? 'retained' : 'modal'} panelSlot={detailSlot} onSave={patchTask} onClose={closeTask} onDirtyChange={setDetailDirty} onToggleTask={toggleTask} onCreateTask={createTask} onOpenTask={openTask} /> : null;
   const companionVisible = isDesktop && !isAssistantPage && !workspaceView && (page === 'today' || Boolean(taskId));
-  const hasAccessory = !isAssistantPage && (showChat || focusSide || companionVisible);
+  const hasAccessory = !isAssistantPage && (showChat || focusSide || companionVisible || taskRail);
 
   return <FocusProvider>
     <div data-assistant-open={showChat || undefined} className="app-backdrop h-dvh overflow-hidden bg-background p-0 xl:p-4">
       <div className={cn('app-frame dovun-workspace h-full overflow-hidden', isDesktop ? 'grid' : 'flex flex-col')} style={isDesktop ? { gridTemplateColumns: hasAccessory ? 'var(--dovun-nav-width) minmax(0, 1fr) var(--dovun-work-width)' : 'var(--dovun-nav-width) minmax(0, 1fr)', gridTemplateRows: '44px minmax(0, 1fr)' } : undefined}>
         {isDesktop ? <Sidebar compact={!wide} key="sidebar" route={route} page={isAssistantPage ? 'chat' : page} topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onNavigate={navigateSafely} onSelectTopic={selectTopic} onEditTopic={setTopicForm} onNewTopic={newTopic} /> : <div key="sidebar" className="hidden" />}
         <header className="dovun-appbar flex h-11 shrink-0 items-center justify-between px-4" style={isDesktop ? { gridColumn: '2 / -1', gridRow: 1 } : undefined}><span className="dovun-appbar-label">{t('brand.positioning')}</span>{!isAssistantPage && <Button variant="ghost" size="sm" onClick={openChat} aria-label={t('shell.openAssistant')}><Sparkles className="size-4" />{t('shell.assistant')}</Button>}</header>
-        <main key="main" className={cn('app-main dovun-main glass-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto bg-[var(--glass-bg-strong)]', ((!isDesktop && showChat) || sourceView || isAssistantPage) && 'hidden')} style={isDesktop ? { gridColumn: 2, gridRow: 2 } : undefined}>{content}</main>
+        <main key="main" className={cn('app-main dovun-main glass-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto bg-[var(--glass-bg-strong)]', ((!isDesktop && (showChat || taskRail)) || sourceView || isAssistantPage) && 'hidden')} style={isDesktop ? { gridColumn: 2, gridRow: 2 } : undefined}>{content}</main>
         {sourceView && <section className={cn('min-h-0 overflow-auto p-5', (isAssistantPage || (!isDesktop && showChat)) && 'hidden')} style={isDesktop ? { gridColumn: 2, gridRow: 2 } : undefined} aria-label={t('shell.sourceText')}><Button variant="ghost" onClick={() => setSourceView(null)}>{t('shell.backToPage')}</Button><h2 className="my-3 text-lg font-semibold">{sourceView.title}</h2><BodyText text={sourceView.content} /></section>}
-        <aside className={cn('dovun-work-rail', !isDesktop && 'contents', isDesktop && !hasAccessory && 'hidden')} data-chat={chatAccessory || undefined} data-task={Boolean(taskId) || undefined} aria-label={t('shell.workspace')} style={isDesktop ? { gridColumn: 3, gridRow: 2 } : undefined}>
-          <div ref={setDetailSlot} className={cn('dovun-task-slot min-h-0 min-w-0 overflow-hidden', isDesktop && taskId && !sourceView && !isAssistantPage && !focusAccessory ? '' : 'hidden')} />
-          {companionVisible && !chatAccessory && !focusAccessory && <WorkCompanion tasks={tasks} today={today} compact={Boolean(taskId)} onOpen={openChat} onAsk={text => { if (!chat.input.trim()) chat.setInput(text); openChat(); }} onConfigure={() => openSettings('model')} onOpenTask={openTask} />}
-          <div key="accessory" ref={setAssistantSlot} className={cn('accessory-pane dovun-chat-slot min-h-0 min-w-0 flex-1 overflow-hidden', chatAccessory ? '' : 'hidden')} />
+        <aside className={cn('dovun-work-rail', !isDesktop && (taskRail ? 'dovun-mobile-task-rail' : 'contents'), isDesktop && !hasAccessory && 'hidden')} data-tabbed={taskRail || undefined} data-chat={chatAccessory || undefined} data-task={Boolean(taskId) || undefined} aria-label={t('shell.workspace')} style={isDesktop ? { gridColumn: 3, gridRow: 2 } : undefined}>
+          {taskRail && <WorkRailTabs active={chatAccessory ? 'assistant' : 'task'} hasDraft={Boolean(chat.input.trim())} onSelect={tab => { setFocusOpen(false); setChatOpen(tab === 'assistant'); }} onClose={() => transitionFromDetail(() => { closeTask(); setChatOpen(false); })} />}
+          <div ref={setDetailSlot} id="work-rail-panel-task" role={taskRail ? 'tabpanel' : undefined} aria-labelledby={taskRail ? 'work-rail-tab-task' : undefined} className={cn('dovun-task-slot min-h-0 min-w-0 overflow-hidden', (isDesktop || taskRail) && taskId && !sourceView && !isAssistantPage && !focusAccessory && !chatAccessory ? '' : 'hidden')} />
+          {companionVisible && !taskId && !chatAccessory && !focusAccessory && <WorkCompanion tasks={tasks} today={today} onOpen={openChat} onAsk={text => { if (!chat.input.trim()) chat.setInput(text); openChat(); }} onConfigure={() => openSettings('model')} onOpenTask={openTask} />}
+          <div key="accessory" ref={setAssistantSlot} id="work-rail-panel-assistant" role={taskRail ? 'tabpanel' : undefined} aria-labelledby={taskRail ? 'work-rail-tab-assistant' : undefined} className={cn('accessory-pane dovun-chat-slot min-h-0 min-w-0 flex-1 overflow-hidden', chatAccessory ? '' : 'hidden')} />
           {focusAccessory && <div className="accessory-pane h-full min-h-0 min-w-0 overflow-hidden"><FocusPage presentation="side" onExpand={expandFocus} onShrink={shrinkFocus} onClose={() => setFocusOpen(false)} /></div>}
         </aside>
         <div ref={setAssistantPageSlot} data-testid="assistant-page" className={cn('min-h-0 min-w-0 flex-1 overflow-hidden', !isAssistantPage && 'hidden')} style={isDesktop ? { gridColumn: '2 / -1', gridRow: 2 } : undefined} />
-        {!isDesktop && (!showChat || isAssistantPage) && (() => {
+        {!isDesktop && !taskRail && (!showChat || isAssistantPage) && (() => {
           // 服务端配置驱动手机底栏；初次加载失败时按默认四项显示，不回写服务器。
           const visibleViews = mobileNavigation.data?.visibleViews ?? DEFAULT_MOBILE_NAVIGATION.visibleViews;
           const items = [...visibleViews.map(mobileNavigationItem), moreItem];

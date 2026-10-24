@@ -34,14 +34,11 @@
 .task-row .task-drag-handle { width: 10px; flex: none; }
 .task-row .task-expand, .task-expand-placeholder { width: 18px; flex: none; }
 .task-row .task-expand { height: 32px; }
-.task-row-ai { flex: none; width: 20px; min-height: 32px; border-radius: 5px; font-size: 10px; opacity: .45; }
-.task-row:hover .task-row-ai, .task-row:focus-within .task-row-ai, .task-row-ai[aria-pressed='true'] { opacity: 1; }
 .task-inline-check { display: grid; place-items: center; width: 26px; height: 40px; flex: none; cursor: pointer; }
 .task-row .task-checkbox { width: 18px; height: 18px; margin: 0; flex: none; }
 .task-menu-placeholder, .task-row > [data-slot='dropdown-menu-trigger'] { width: 28px; height: 34px; }
 .task-menu-placeholder { flex: none; }
 .task-drag-overlay .task-row { width: 100%; }
-@media (pointer: coarse) { .task-row-ai { opacity: 1; } }
 @media (max-width: 600px) {
   .task-row { gap: 4px; padding-inline: 6px; }
   .task-row .task-drag-handle { display: none; }

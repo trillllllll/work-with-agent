@@ -64,7 +64,7 @@ test('all pages share one assistant; workspace modal, shortcuts, sources and his
   }
 });
 
-test('task and AI coexist, manual draft attachment, selection and mobile return preserve editor', async ({ page, request, isMobile }) => {
+test('task and AI switch, manual draft attachment and return preserve editor', async ({ page, request, isMobile }) => {
   const task = (await (await request.post(`${api}/api/tasks`, { data: { title: '并排任务', description: '已保存的正文', topicId: null } })).json()).data;
   await page.goto('/#/inbox');
   await page.getByRole('button', { name: '并排任务', exact: true }).click();
@@ -72,7 +72,7 @@ test('task and AI coexist, manual draft attachment, selection and mobile return 
   await page.getByRole('button', { name: '带上当前草稿', exact: true }).click();
   await expect(panel(page)).toBeVisible();
   if (isMobile) { await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: '/tmp/wwa-ai-390.png' }); }
-  if (!isMobile) await expect(page.getByRole('textbox', { name: '详情', exact: true })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: '详情', exact: true })).toBeHidden();
   await expect(page.getByTestId('assistant-context')).toContainText('未保存');
   const sent = await ask(page, 'AI验收当前草稿');
   expect(sent.context.taskId).toBe(task.id);
@@ -160,15 +160,16 @@ test('material draft is opt-in and survives assistant close', async ({ page, isM
   expect(attached.context.attachments[0]).toMatchObject({ unsaved: true, text: '尚未保存的资料\n\n只存在于编辑器中的文字' });
 });
 
-test('explicit multiselection is carried instead of a nearby sample', async ({ page, request }) => {
-  const tasks = [];
-  for (const title of ['范围甲', '范围乙', '范围丙']) tasks.push((await (await request.post(`${api}/api/tasks`, { data: { title, topicId: null } })).json()).data);
+test('task lists use page context without AI selection controls', async ({ page, request }) => {
+  for (const title of ['范围甲', '范围乙', '范围丙']) {
+    await request.post(`${api}/api/tasks`, { data: { title, topicId: null } });
+  }
   await page.goto('/#/inbox');
-  await page.getByRole('button', { name: '选入 AI 上下文：范围甲', exact: true }).click();
-  await page.getByRole('button', { name: '选入 AI 上下文：范围乙', exact: true }).click();
+  await expect(page.getByRole('button', { name: /^选入 AI 上下文/ })).toHaveCount(0);
   await open(page);
   const body = await ask(page, 'AI验收这些任务');
-  expect(body.context.selectedTaskIds.sort()).toEqual([tasks[0].id, tasks[1].id].sort());
+  expect(body.context.selectedTaskIds).toEqual([]);
+  expect(body.context.scope).toEqual({ kind: 'inbox' });
 });
 
 
@@ -176,7 +177,7 @@ test('in-flight request stays on A while navigation changes the next message to 
   const a = (await (await request.post(`${api}/api/tasks`, { data: { title: '任务 A', topicId: null } })).json()).data;
   await page.goto('/#/inbox');
   await page.getByRole('button', { name: '任务 A', exact: true }).click();
-  await page.getByRole('button', { name: 'AI 助手', exact: true }).last().click();
+  await page.getByRole('button', { name: '问 AI', exact: true }).click();
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
   await page.route('**/api/chat', async (route) => { await gate; await route.continue(); });

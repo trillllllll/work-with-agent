@@ -61,6 +61,7 @@ test('任务编辑器放大缩小时保留同一个节点和草稿', async ({ pa
   await page.getByRole('button', { name: '放大到独立页' }).click();
   await expect(title).toBeHidden();
   await page.getByRole('button', { name: '缩小回原页面' }).click();
+  await page.getByRole('tab', { name: '任务', exact: true }).click();
   await expect(title).toHaveValue('保留编辑草稿');
   expect(await title.evaluate((element) => (element as any).__retainedMarker)).toBe('original');
 });

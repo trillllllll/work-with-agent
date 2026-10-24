@@ -56,8 +56,7 @@
 .dovun-work-rail.hidden { display: none; }
 .dovun-work-rail.contents { display: contents; }
 .dovun-task-slot { flex: 1; }
-.dovun-work-rail[data-chat][data-task] .dovun-task-slot { flex: .9; min-height: 260px; border-bottom: 1px solid var(--glass-divider); }
-.dovun-work-rail[data-chat] .dovun-chat-slot { min-height: 280px; }
+.dovun-work-rail[data-chat] .dovun-chat-slot { min-height: 0; }
 .dovun-detail-tabs { display: flex; gap: 6px; padding: 13px 13px 0; border-bottom: 1px solid var(--glass-divider); flex: none; }
 .dovun-detail-tabs button { min-height: 38px; flex: 1; padding: 4px 6px 12px; font-size: 13px; color: var(--muted-foreground); border-bottom: 2px solid transparent; }
 .dovun-detail-tabs button[aria-selected='true'] { color: var(--primary); font-weight: 600; border-bottom-color: var(--primary); }
@@ -123,3 +122,16 @@
 /* Hidden panes stay mounted, including the mobile Portal outside the workspace. */
 [data-task-editor] [hidden] { display: none !important; }
 .dovun-detail-writing { display: flex; flex-direction: column; flex: 1 0 auto; min-width: 0; }
+
+/* Task and assistant keep their mounted hosts and take turns filling the rail. */
+.dovun-rail-header { flex: none; padding: 14px 16px; border-bottom: 1px solid var(--glass-divider); }
+.dovun-rail-tabs { display: flex; gap: 4px; padding: 4px; border: 1px solid var(--glass-border); border-radius: 10px; background: var(--glass-bg-strong); }
+.dovun-rail-tabs > button { display: flex; flex: 1; align-items: center; justify-content: center; gap: 8px; min-height: 38px; border-radius: 7px; color: var(--muted-foreground); font-size: 13px; }
+.dovun-rail-tabs > button[aria-selected='true'] { background: var(--surface-primary-paint); color: var(--primary-foreground); font-weight: 600; }
+.dovun-rail-tabs > button[aria-selected='false'] { background: transparent; }
+.dovun-chat-task-reference { display: flex; flex: none; align-items: center; gap: 10px; margin: 12px 16px 0; padding: 10px 12px; border: 1px solid var(--glass-border-soft); border-radius: 10px; background: var(--workbench-selected); }
+.dovun-task-assistant-footer { display: flex; flex: none; justify-content: flex-end; padding: 14px 20px; border-top: 1px solid var(--glass-divider); }
+@media (max-width: 1023px) {
+  .dovun-work-rail.dovun-mobile-task-rail { flex: 1; margin: 0; border-radius: 0; border-inline: 0; border-bottom: 0; }
+  .dovun-workspace .dovun-work-rail[data-tabbed] .dovun-task-slot:not(.hidden) { display: block; }
+}

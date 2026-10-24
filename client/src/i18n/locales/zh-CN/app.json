@@ -1,4 +1,14 @@
 {
+  "workRail": {
+    "title": "工作侧栏",
+    "task": "任务",
+    "assistant": "AI 助手",
+    "close": "关闭工作侧栏",
+    "hasDraft": "有未发送草稿",
+    "askAssistant": "问 AI",
+    "discussing": "正在讨论的任务",
+    "viewTask": "查看任务"
+  },
   "nav": {
     "inbox": "收集箱",
     "today": "今天",

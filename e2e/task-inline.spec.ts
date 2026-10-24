@@ -92,16 +92,13 @@ test('48px inline cards adapt tags to available space and expose all names witho
   await writeFile(`${evidence}/audit-${testInfo.project.name}.json`, JSON.stringify({ results, errors, browserNotifications, tagPopover: true, fullTitle: true }, null, 2) + '\n');
 });
 
-test('inline card controls keep completion, AI selection, menus and detail autosave independent', async ({ page, request }) => {
+test('inline card controls keep completion, menus and detail autosave independent', async ({ page, request }) => {
   const response = await request.post(`${api}/api/tasks`, { data: { title: '单行交互回归' } });
   const task = (await response.json()).data;
   await page.goto('/#/inbox');
   const row = page.getByTestId(`task-row-${task.id}`);
   await row.hover();
-  const ai = row.getByRole('button', { name: '选入 AI 上下文：单行交互回归' });
-  await ai.click();
-  await expect(ai).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('textbox', { name: '任务标题', exact: true })).toHaveCount(0);
+  await expect(row.getByRole('button', { name: /^选入 AI 上下文/ })).toHaveCount(0);
   await row.getByRole('button', { name: '任务操作：单行交互回归', exact: true }).click();
   await expect(page.getByRole('menu')).toBeVisible();
   await page.keyboard.press('Escape');

@@ -21,8 +21,8 @@ import { completeSiblingIds, dragIndentOffset, projectTaskDrop, reorderTaskGroup
 import { useTaskCollapse } from './task-collapse.js';
 import { TaskActions, TaskMenuButton, type TaskActionProps } from './TaskActionsMenu.js';
 
-type Props = { assistantSelectedIds?: string[]; onAssistantSelect?: (id: string) => void; tasks: Task[]; topics: Topic[]; tags: Tag[]; onOpen: (id: string) => void; onToggle: (task: Task) => Promise<unknown>; onMove: (task: Task, topicId: string | null) => Promise<unknown>; onDelete: (task: Task) => void; onSave: (task: Task, patch: Partial<TaskDraft>) => Promise<Task | undefined>; onCreate: (input: { title: string; topicId: string | null; parentId: string | null }) => Promise<unknown>; onReorder?: (tasks: Task[], parentId: string | null) => Promise<unknown>; onNest?: (task: Task, parentId: string | null, orderedIds: string[]) => Promise<unknown>; onDragSettled?: () => void; hierarchical?: boolean; foldDone?: boolean; readonly?: boolean; busy?: boolean; selectedTaskId?: string; textDirty?: boolean };
-type Actions = Pick<Props, 'assistantSelectedIds' | 'onAssistantSelect' | 'topics' | 'tags' | 'onOpen' | 'onToggle' | 'onMove' | 'onDelete' | 'onSave' | 'onCreate' | 'onReorder' | 'hierarchical' | 'readonly' | 'busy' | 'selectedTaskId' | 'textDirty'> & { reserveDisclosure?: boolean; dropParentId?: string; onToggleChildren?: (parentId: string) => void };
+type Props = { tasks: Task[]; topics: Topic[]; tags: Tag[]; onOpen: (id: string) => void; onToggle: (task: Task) => Promise<unknown>; onMove: (task: Task, topicId: string | null) => Promise<unknown>; onDelete: (task: Task) => void; onSave: (task: Task, patch: Partial<TaskDraft>) => Promise<Task | undefined>; onCreate: (input: { title: string; topicId: string | null; parentId: string | null }) => Promise<unknown>; onReorder?: (tasks: Task[], parentId: string | null) => Promise<unknown>; onNest?: (task: Task, parentId: string | null, orderedIds: string[]) => Promise<unknown>; onDragSettled?: () => void; hierarchical?: boolean; foldDone?: boolean; readonly?: boolean; busy?: boolean; selectedTaskId?: string; textDirty?: boolean };
+type Actions = Pick<Props, 'topics' | 'tags' | 'onOpen' | 'onToggle' | 'onMove' | 'onDelete' | 'onSave' | 'onCreate' | 'onReorder' | 'hierarchical' | 'readonly' | 'busy' | 'selectedTaskId' | 'textDirty'> & { reserveDisclosure?: boolean; dropParentId?: string; onToggleChildren?: (parentId: string) => void };
 type SortScope = 'tree' | 'siblings';
 type TaskDragData = { groupId: string; hierarchical: boolean; hasChildren: boolean; sortScope: SortScope };
 type DragState = { id: string; width: number; overId: string; x: number; sortScope: SortScope };
@@ -48,7 +48,7 @@ const levelCollision: CollisionDetection = (args) => {
 const sortTasks = (tasks: Task[]) => [...tasks].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id.localeCompare(b.id));
 function stopDrag(event: { stopPropagation: () => void }) { event.stopPropagation(); }
 
-export function TaskList({ assistantSelectedIds, onAssistantSelect, tasks, topics, tags, onOpen, onToggle, onMove, onDelete, onSave, onCreate, onReorder, onNest, onDragSettled, hierarchical = false, foldDone = false, readonly = false, busy, selectedTaskId, textDirty }: Props) {
+export function TaskList({ tasks, topics, tags, onOpen, onToggle, onMove, onDelete, onSave, onCreate, onReorder, onNest, onDragSettled, hierarchical = false, foldDone = false, readonly = false, busy, selectedTaskId, textDirty }: Props) {
   const { t } = useTranslation('tasks');
   const sensors = useSensors(useSensor(MouseSensor, { activationConstraint: { distance: 6 } }), useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }));
   const skipClick = useRef(false);
@@ -81,7 +81,7 @@ export function TaskList({ assistantSelectedIds, onAssistantSelect, tasks, topic
     if (result !== undefined && patch.parentId && patch.parentId !== task.id) expandChildren(patch.parentId);
     return result;
   } : onSave;
-  const resting = { reserveDisclosure: hierarchical && roots.some(parent => childrenOf(parent.id).length > 0), assistantSelectedIds, onAssistantSelect, topics, tags, onOpen, onToggle, onMove, onDelete, onSave: saveTask, onCreate: createChild, hierarchical, readonly, busy, selectedTaskId, textDirty, skipClick, dropParentId: '', onToggleChildren: toggleChildren };
+  const resting = { reserveDisclosure: hierarchical && roots.some(parent => childrenOf(parent.id).length > 0), topics, tags, onOpen, onToggle, onMove, onDelete, onSave: saveTask, onCreate: createChild, hierarchical, readonly, busy, selectedTaskId, textDirty, skipClick, dropParentId: '', onToggleChildren: toggleChildren };
   function openGroup(groupId: string) {
     if (groupId === 'root' || groupId === 'flat') return visibleRoots;
     return childrenOf(groupId);
@@ -192,8 +192,6 @@ const TaskArticle = forwardRef<HTMLElement, { task: Task; group?: Task[]; index?
     ...(!hierarchical && task.parentId ? [{ key: 'parent', text: t('shared.subtask'), className: 'task-meta-pill' }] : []),
   ];
   const article = <Surface as="article" tone="card" ref={ref} {...(preview ? {} : listeners)} data-testid={preview ? undefined : `task-row-${task.id}`} data-selected={selected || undefined} data-drop-parent={!preview && actions.dropParentId === task.id || undefined} onClick={(event) => { if (preview || skipClick.current) return; const target = event.target; if (!(target instanceof Element) || target.closest('button, a, select, label, input, [role="menu"], [role="menuitem"], [role="listbox"], [role="option"]')) return; open(); }} className={cn('task-row group', !preview && onReorder && 'cursor-grab', selected ? 'border-[var(--glass-border-soft)] bg-[var(--glass-hover)]' : 'hover:bg-[var(--glass-subtle)]')}>
-    {preview && actions.onAssistantSelect && <span className="task-row-ai" aria-hidden="true">AI</span>}
-    {!preview && actions.onAssistantSelect && <Button variant="plain" size="bare" type="button" className={cn('task-row-ai text-muted-foreground hover:bg-muted', actions.assistantSelectedIds?.includes(task.id) && 'bg-primary/10 text-brand-link')} aria-label={t('taskList.selectAi', { title: task.title })} aria-pressed={actions.assistantSelectedIds?.includes(task.id) ?? false} onMouseDown={stopDrag} onTouchStart={stopDrag} onPointerDown={stopDrag} onClick={(event) => { event.stopPropagation(); actions.onAssistantSelect?.(task.id); }}>AI</Button>}
     {showHandle && <span className="task-drag-handle cursor-grab text-muted-foreground/60" title={t('taskList.drag')}><GripVertical className="size-4" /></span>}
     {hierarchical && actions.reserveDisclosure && !nested && (hasChildren && !preview
       ? <Button variant="plain" size="bare" type="button" className="task-expand" aria-label={t(childrenCollapsed ? 'taskList.expandSubtasks' : 'taskList.collapseSubtasks', { title: task.title })} aria-expanded={!childrenCollapsed} onClick={(event) => { event.stopPropagation(); actions.onToggleChildren?.(task.id); }} onMouseDown={stopDrag} onTouchStart={stopDrag} onPointerDown={stopDrag}><span className="disclosure-chevron" data-open={!childrenCollapsed || undefined} aria-hidden="true" /></Button>

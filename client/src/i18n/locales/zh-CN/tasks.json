@@ -311,7 +311,6 @@
     "empty": "暂无任务",
     "completedCount": "已完成 · {{count}}",
     "drag": "拖动排序",
-    "selectAi": "选入 AI 上下文：{{title}}",
     "expandSubtasks": "展开子任务：{{title}}",
     "collapseSubtasks": "收起子任务：{{title}}"
   },

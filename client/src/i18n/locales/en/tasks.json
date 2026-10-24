@@ -313,7 +313,6 @@
     "empty": "No tasks",
     "completedCount": "Completed · {{count}}",
     "drag": "Drag to reorder",
-    "selectAi": "Add to AI context: {{title}}",
     "expandSubtasks": "Expand subtasks: {{title}}",
     "collapseSubtasks": "Collapse subtasks: {{title}}"
   },
