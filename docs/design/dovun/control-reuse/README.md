@@ -93,3 +93,16 @@
 ## 发布记录
 
 验证、提交及本机覆盖安装按本次授权进行；最终状态、提交号和资源核对见 verification.json。安装前退出 Dovun、确认 47317 释放，备份数据库与已有 sidecar、偏好和旧应用，覆盖后核对数据及资源并保持关闭。WWA、迁移和自动化开关不操作。
+
+
+### 本机覆盖完成（2026-10-24）
+
+- 构建源码 **9cd6185** 已提交并推送到 `codex/dovun-workspace`，包含公共控件补齐、版本衔接修复、应用功能知识与回归证据；没有合并 main 或打标签。
+- Node 22.13.0 打包成功，日志确认 `Finished 2 bundles` / `EXIT:0`。本机模式、重启数据保留、MCP 恢复和隔离服务器模式冒烟通过；服务器模式只是临时测试，不是部署。
+- 正常退出 Dovun、确认 47317 释放，备份数据库与已有 sidecar、本机偏好/浏览器状态和旧应用后，整包替换 `/Applications/Dovun.app`。安装前后数据库及偏好大小/哈希一致，备份数据库 quick_check 为 ok。
+- 标识 `app.dovun.desktop`，版本仍为 0.4.0；15,386 个文件/链接与构建包一致，签名 deep strict 检查通过。包内前端、功能知识与本次编译产物一致。
+- 本次前端资源：`index-CGtderuE.js`、`index-tTnKjECA.css`。DMG checksum 验证通过，SHA256 见 verification.json。
+- 构建目录重复 Dovun.app 已移除，DMG 保留。应用保持关闭，47317 无监听。没有重复迁移数据，没有更改同步/自动化开关；WWA、服务器、CI 和 Dockerfile 未操作。
+- 已安装的原生窗口没有打开交互；界面验证使用真实应用的 Chromium、手机 Chromium、WebKit 与隔离打包运行时。Windows 实机未验收。
+
+安装备份与逐项数据核对保存在本机私有记录，不上传仓库。构建、冒烟及安装日志为 `/tmp/dovun-controls-save-desktop-build.log`、`/tmp/dovun-controls-save-desktop-smoke.log`、`/tmp/dovun-controls-save-install.log`。

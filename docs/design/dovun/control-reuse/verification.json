@@ -105,13 +105,44 @@
   ],
   "release": {
     "authorized": true,
-    "committed": false,
-    "pushed": false,
-    "packaged": false,
-    "installed": false,
+    "committed": true,
+    "pushed": true,
+    "sourceCommit": "9cd61854cf8840541a3b6453b35acae54d2fcfe9",
+    "packaged": true,
+    "installed": true,
     "deployed": false,
     "real_data_changed": false,
-    "status": "validated; commit/push then package and install"
+    "version": "0.4.0",
+    "identifier": "app.dovun.desktop",
+    "node": "22.13.0",
+    "build": {
+      "finishedBundles": 2,
+      "exit": 0
+    },
+    "desktopSmoke": "local mode, restart persistence, MCP recovery and isolated server mode passed",
+    "dataAndPreferencesUnchanged": true,
+    "backup": "database and existing sidecars, local preferences/browser profile, previous application backed up outside repository",
+    "filesVerified": 15386,
+    "assets": [
+      "/assets/index-CGtderuE.js",
+      "/assets/index-tTnKjECA.css"
+    ],
+    "dmg": {
+      "path": "desktop/src-tauri/target/release/bundle/dmg/Dovun_0.4.0_aarch64.dmg",
+      "sha256": "64ec2a9d6ba1aa40d87ebead0765764abb6af82f28dda4bfe955cdde5446accd",
+      "checksumVerified": true
+    },
+    "codesign": "deep strict passed",
+    "applicationKeptClosed": true,
+    "port47317Released": true,
+    "duplicateBuildAppRemoved": true,
+    "serverDeployment": false,
+    "wwaChanged": false,
+    "ciOrDockerfileChanged": false,
+    "limits": [
+      "Installed native window not opened; actual UI validated in Chromium/mobile/WebKit and assembled runtime verified in isolation.",
+      "Existing WebKit ResizeObserver notification and bundle-size warning remain documented."
+    ]
   },
   "versionConflictRepair": {
     "mechanism": "publish successful text PATCH into shared cache and advance only contiguous authenticated local text receipts inside the task queue",
