@@ -1,3 +1,5 @@
+import { Surface } from '@/components/ui/surface.js';
+import { Checkbox } from '@/components/ui/checkbox.js';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { relativeTime } from '@/components/workspace/memory-view.js';
@@ -53,9 +55,9 @@ export function ProposalFrame({ proposal, analysis, connections, topics, state, 
   const targetIds = [...new Set(analysis.items.map((item) => item.command.targetId).filter((id): id is string => Boolean(id)))];
   const rawPreview = previewText(proposal.preview);
   return (
-    <article data-testid="proposal-card" data-proposal-id={proposal.id} data-state={state} className="proposal-card glass-subtle space-y-4 rounded-xl p-4">
+    <Surface as="article" tone="subtle" data-testid="proposal-card" data-proposal-id={proposal.id} data-state={state} className="proposal-card  space-y-4 rounded-xl p-4">
       <div className="flex items-start gap-3">
-        {selectable ? <input className="mt-1 size-4 shrink-0 accent-primary" type="checkbox" checked={selected} disabled={selectionLocked} aria-label={t('bulk.selectOne', { title: analysis.title })} onChange={(event) => onSelected(event.target.checked)} /> : null}
+        {selectable ? <Checkbox className="mt-1 size-4 shrink-0 accent-primary"  checked={selected} disabled={selectionLocked} aria-label={t('bulk.selectOne', { title: analysis.title })} onChange={(event) => onSelected(event.target.checked)} /> : null}
         <div className="min-w-0 flex-1">
           <div className="flex items-start gap-2">
             {Icon ? <Icon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-muted-foreground" /> : null}
@@ -98,6 +100,6 @@ export function ProposalFrame({ proposal, analysis, connections, topics, state, 
           {rawPreview ? <div><div>{t('tech.preview')}</div><pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-[var(--glass-control)] p-3">{rawPreview}</pre></div> : null}
         </CollapsibleContent>
       </Collapsible>
-    </article>
+    </Surface>
   );
 }

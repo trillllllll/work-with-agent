@@ -73,11 +73,6 @@
   height: 40px;
   min-width: 0;
   flex: 1;
-  border: 1px solid var(--lib-border);
-  border-radius: 10px;
-  background: var(--surface-input-paint);
-  box-shadow: var(--surface-input-shadow);
-  color: var(--lib-text);
   padding: 0 12px;
   font: inherit;
   font-size: 14px;
@@ -87,10 +82,6 @@
 .library-btn {
   max-width: 100%;
   height: 36px;
-  border: 1px solid var(--lib-border);
-  border-radius: 8px;
-  background: var(--lib-panel);
-  color: var(--lib-text);
   padding: 0 12px;
   font: inherit;
   font-size: 14px;
@@ -104,23 +95,10 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: var(--surface-button-paint);
-  box-shadow: var(--surface-button-shadow);
-  transition: filter var(--control-duration), box-shadow var(--control-duration);
   box-sizing: border-box;
   white-space: nowrap;
   cursor: pointer;
 }
-
-.library-btn:disabled {
-  opacity: var(--control-disabled-opacity);
-  box-shadow: none;
-  cursor: default;
-}
-
-.library-select { background: var(--surface-input-paint); box-shadow: var(--surface-input-shadow); }
-.library-search:focus-visible, .library-select:focus-visible { outline: 0; box-shadow: var(--surface-input-focus); }
-.library-btn:hover:not(:disabled) { filter: brightness(var(--surface-button-hover-brightness)); }
 
 label.library-btn {
   position: relative;
@@ -130,12 +108,6 @@ label.library-btn {
 .library-btn:has(input:focus-visible) {
   outline: 2px solid var(--lib-focus);
   outline-offset: 2px;
-}
-
-.library-btn-primary {
-  background: var(--surface-primary-paint);
-  color: var(--lib-primary-text);
-  border-color: var(--lib-primary);
 }
 
 .library-btn-danger { color: var(--lib-danger); }
@@ -155,10 +127,6 @@ label.library-btn {
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  border: 1px solid var(--lib-border);
-  border-radius: var(--surface-card-radius);
-  background: var(--surface-card-paint);
-  box-shadow: var(--surface-card-shadow);
 }
 
 .library-side-button,
@@ -168,26 +136,12 @@ label.library-btn {
   min-height: 32px;
   align-items: center;
   gap: 8px;
-  border: 0;
-  background: transparent;
-  color: var(--lib-text);
   padding: 6px 10px;
   text-align: left;
   font: inherit;
   font-size: 14px;
   line-height: 20px;
 }
-
-.library-side-button[aria-current="page"],
-.library-tag[aria-pressed="true"],
-.library-row[aria-selected="true"] {
-  background: var(--lib-selected);
-  color: var(--lib-selected-text);
-}
-
-.library-side-button:hover,
-.library-tag:hover,
-.library-row:hover { background: var(--lib-hover); }
 
 .library-rule { height: 1px; margin: 8px 10px; background: var(--lib-border); border: 0; }
 
@@ -238,8 +192,6 @@ label.library-btn {
 .library-preview-actions,
 .library-preview-block { padding: 0 12px 12px; }
 
-.library-tab[aria-selected="true"] { background: var(--lib-selected); color: var(--lib-selected-text); }
-
 .library-snippet mark,
 .library-quote {
   background: var(--lib-highlight);
@@ -260,13 +212,7 @@ label.library-btn {
   width: 360px;
   max-height: 320px;
   overflow: auto;
-  border: 1px solid var(--lib-border);
-  border-radius: var(--surface-card-radius);
-  background: var(--surface-card-paint);
-  box-shadow: var(--surface-card-shadow);
-  color: var(--lib-text);
   padding: 12px;
-  box-shadow: none;
 }
 
 .library-upload-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -321,19 +267,6 @@ label.library-btn {
   border: 1px solid var(--lib-focus);
   border-radius: 8px;
   background: var(--lib-highlight);
-}
-
-.library-menu {
-  position: absolute;
-  z-index: 40;
-  display: grid;
-  gap: 4px;
-  margin-top: 4px;
-  border: 1px solid var(--lib-border);
-  border-radius: var(--surface-overlay-radius);
-  background: var(--surface-overlay-paint);
-  box-shadow: var(--surface-overlay-shadow);
-  padding: 8px;
 }
 
 .library-surface.material-picker {
@@ -391,34 +324,6 @@ label.library-btn {
   appearance: none;
 }
 .task-material-row { display: flex; height: 44px; align-items: center; gap: 8px; }
-
-.library-dialog {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: grid;
-  place-items: center;
-  background: var(--overlay-backdrop);
-  backdrop-filter: blur(var(--overlay-backdrop-blur));
-  padding: 16px;
-}
-
-.library-dialog > section {
-  width: min(560px, calc(100vw - 32px));
-  max-height: min(720px, calc(100vh - 32px));
-  overflow: auto;
-  border: 1px solid var(--lib-border);
-  border-radius: var(--surface-overlay-radius);
-  background: var(--surface-overlay-paint);
-  box-shadow: var(--surface-overlay-shadow);
-  color: var(--lib-text);
-  padding: 16px;
-}
-
-.library-surface :focus-visible {
-  outline: 2px solid var(--lib-focus);
-  outline-offset: 2px;
-}
 
 .library-color { transition: background-color 120ms, color 120ms, border-color 120ms; }
 .library-sheet { transition: transform 160ms, opacity 160ms; }
@@ -539,13 +444,8 @@ label.library-btn {
 }
 
 /* Portals can live on body. Reserve the actual responsive work rail. */
-:root { --dovun-right-reserved: 360px; }
-@media (min-width: 1280px) { :root { --dovun-right-reserved: 400px; } }
-@media (min-width: 1440px) { :root { --dovun-right-reserved: 456px; } }
 @media (min-width: 1024px) {
-  :root:has(.app-backdrop[data-assistant-open]) .library-dialog,
   :root:has(.app-backdrop[data-assistant-open]) [data-library-composer-overlay] { right: var(--dovun-right-reserved); }
-  :root:has(.app-backdrop[data-assistant-open]) .library-dialog > section { max-width: 100%; }
   :root:has(.app-backdrop[data-assistant-open]) [data-library-composer] {
     left: calc((100% - var(--dovun-right-reserved)) / 2);
     width: min(760px, calc(100vw - var(--dovun-right-reserved) - 3rem));

@@ -1,3 +1,5 @@
+import { TableRow } from '@/components/ui/table-row.js';
+import { Checkbox } from '@/components/ui/checkbox.js';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -59,17 +61,17 @@ function NodeSection({ view }: { view: NodeView }) {
       <Button size="sm" variant="outline" className="ml-auto" disabled={view.refreshing || refresh.isPending} onClick={() => refresh.mutate()}>{view.refreshing ? tr('worktrees.scanning') : tr('worktrees.refresh')}</Button></div>
     {view.pendingCards.map((item) => <CleanupCardView key={item.id} card={item} />)}
     {view.worktrees.length > 0 && <>
-      <table className="mt-3 w-full text-left text-xs"><thead className="text-muted-foreground"><tr><th className="w-6"><input type="checkbox" aria-label={tr('worktrees.selectAll')} checked={removable.length > 0 && removable.every((entry) => chosen.includes(entry.path))} onChange={(event) => setSelected(event.target.checked ? removable.map((entry) => entry.path) : [])} /></th><th>{tr('worktrees.name')}</th><th>{tr('worktrees.branch')}</th><th>{tr('worktrees.size')}</th><th>{tr('worktrees.state')}</th><th>{tr('worktrees.link')}</th></tr></thead>
-        <tbody>{view.worktrees.map((entry) => <tr key={entry.path} className="border-t align-top">
-          <td className="py-1"><input type="checkbox" aria-label={tr('worktrees.selectEntry', { name: entry.name })} disabled={entry.action === 'blocked'} checked={chosen.includes(entry.path)} onChange={(event) => setSelected(event.target.checked ? [...chosen, entry.path] : chosen.filter((path) => path !== entry.path))} /></td>
+      <table className="mt-3 w-full text-left text-xs"><thead className="text-muted-foreground"><TableRow><th className="w-6"><Checkbox  aria-label={tr('worktrees.selectAll')} checked={removable.length > 0 && removable.every((entry) => chosen.includes(entry.path))} onChange={(event) => setSelected(event.target.checked ? removable.map((entry) => entry.path) : [])} /></th><th>{tr('worktrees.name')}</th><th>{tr('worktrees.branch')}</th><th>{tr('worktrees.size')}</th><th>{tr('worktrees.state')}</th><th>{tr('worktrees.link')}</th></TableRow></thead>
+        <tbody>{view.worktrees.map((entry) => <TableRow key={entry.path} className="border-t align-top">
+          <td className="py-1"><Checkbox  aria-label={tr('worktrees.selectEntry', { name: entry.name })} disabled={entry.action === 'blocked'} checked={chosen.includes(entry.path)} onChange={(event) => setSelected(event.target.checked ? [...chosen, entry.path] : chosen.filter((path) => path !== entry.path))} /></td>
           <td className="py-1"><div className="font-medium">{entry.name}</div><code className="break-all text-muted-foreground">{entry.path}</code></td>
           <td className="py-1"><code className="break-all">{entry.branch ?? '—'}</code>{entry.head && <div className="text-muted-foreground">{entry.head.slice(0, 10)}</div>}</td>
           <td className="py-1">{formatBytes(entry.sizeBytes)}{entry.sizeTruncated ? '+' : ''}</td>
           <td className="py-1">{entry.broken ? tr('worktrees.broken') : entry.dirtyCount ? tr('worktrees.dirty', { count: entry.dirtyCount }) : tr('worktrees.clean')}{entry.reason && <div className="text-amber-600">{entry.reason}</div>}{entry.warning && <div className="text-muted-foreground">{entry.warning}</div>}</td>
           <td className="py-1">{usageLabel(entry.usage)}</td>
-        </tr>)}</tbody></table>
+        </TableRow>)}</tbody></table>
       <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
-        <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={deleteBranches} onChange={(event) => setDeleteBranches(event.target.checked)} />{tr('worktrees.deleteBranches')}</label>
+        <label className="flex items-center gap-2 text-xs"><Checkbox  checked={deleteBranches} onChange={(event) => setDeleteBranches(event.target.checked)} />{tr('worktrees.deleteBranches')}</label>
         <Button size="sm" variant="outline" className="text-destructive" disabled={!chosen.length || preview.isPending || view.cleaning} onClick={() => preview.mutate()}>{tr('worktrees.deleteSelected', { count: chosen.length })}</Button>
       </div>
     </>}

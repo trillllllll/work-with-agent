@@ -45,7 +45,7 @@ test('桌面三栏按资料模块宽度测量，窄屏收起文件夹', async ({
   const pw = (await preview.boundingBox())!.width;
   expect(Math.abs(fw - 208)).toBeLessThanOrEqual(1);
   expect(Math.abs(pw - 360)).toBeLessThanOrEqual(1);
-  await expect(surface).toHaveCSS('background-color', 'rgb(245, 245, 245)');
+  await expect(surface).toHaveCSS('background-color', 'rgb(250, 249, 245)');
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
 
   await page.setViewportSize({ width: 390, height: 844 });

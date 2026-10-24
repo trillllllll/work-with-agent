@@ -1,3 +1,4 @@
+import { Radio } from '@/components/ui/checkbox.js';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { api, type ReviewRule, type Settings } from '@/lib/api.js';
@@ -74,7 +75,7 @@ export function ProviderCards({ value, onChange }: ProviderCardsProps) {
         return (
           <label key={provider} className={cn('block cursor-pointer rounded-xl border px-3 py-3', selected ? 'border-foreground' : 'border-border')}>
             <span className="flex items-start gap-3">
-              <input type="radio" className="mt-1 size-4 shrink-0 accent-primary" name="review-provider" value={provider} aria-label={t(titleKey[provider])} checked={selected} onChange={() => onChange(provider)} />
+              <Radio  className="mt-1 size-4 shrink-0 accent-primary" name="review-provider" value={provider} aria-label={t(titleKey[provider])} checked={selected} onChange={() => onChange(provider)} />
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-baseline gap-2">
                   <span className="text-sm font-medium">{t(titleKey[provider])}</span>

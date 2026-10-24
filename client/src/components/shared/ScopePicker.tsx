@@ -1,3 +1,4 @@
+import { Checkbox } from '@/components/ui/checkbox.js';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Inbox, Search } from 'lucide-react';
@@ -75,7 +76,7 @@ export function ScopePicker({ topics, archivedTopics, missingIds, includeInbox, 
         </div>
         <div className="border-b border-border p-1">
           <label className={cn('flex min-h-[34px] items-center gap-2 rounded-lg px-2', includeInbox && 'bg-muted')}>
-            <input type="checkbox" className="size-4 shrink-0 accent-primary" aria-label={labels.inboxAria} checked={includeInbox} onChange={(event) => onChange({ includeInbox: event.target.checked, topicIds })} />
+            <Checkbox  className="size-4 shrink-0 accent-primary" aria-label={labels.inboxAria} checked={includeInbox} onChange={(event) => onChange({ includeInbox: event.target.checked, topicIds })} />
             <Inbox aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
             <span className="shrink-0 text-sm">{t('inbox')}</span>
             <span className="truncate text-xs text-muted-foreground">{labels.inboxHint}</span>
@@ -89,7 +90,7 @@ export function ScopePicker({ topics, archivedTopics, missingIds, includeInbox, 
               return (
                 <div key={id}>
                   <label className="flex min-h-[34px] items-center gap-2 rounded-lg border border-warning-border bg-warning-bg px-2">
-                    <input type="checkbox" className="size-4 shrink-0 accent-primary" aria-label={labels.itemAria(name)} checked={checked} onChange={(event) => toggle(id, event.target.checked)} />
+                    <Checkbox  className="size-4 shrink-0 accent-primary" aria-label={labels.itemAria(name)} checked={checked} onChange={(event) => toggle(id, event.target.checked)} />
                     <span className="min-w-0 flex-1 truncate text-sm text-warning line-through">{name}</span>
                   </label>
                   {checked && <p className="px-2 py-1 text-xs text-warning">{labels.missingRow(name)}</p>}
@@ -104,7 +105,7 @@ export function ScopePicker({ topics, archivedTopics, missingIds, includeInbox, 
               const checked = topicIds.includes(topic.id);
               return (
                 <label key={topic.id} className={cn('flex min-h-[34px] items-center gap-2 rounded-lg px-2', checked && 'bg-muted')}>
-                  <input type="checkbox" className="size-4 shrink-0 accent-primary" aria-label={labels.itemAria(topic.name)} checked={checked} onChange={(event) => toggle(topic.id, event.target.checked)} />
+                  <Checkbox  className="size-4 shrink-0 accent-primary" aria-label={labels.itemAria(topic.name)} checked={checked} onChange={(event) => toggle(topic.id, event.target.checked)} />
                   <span className="sidebar-list-mark" data-color={topic.color || 'slate'} aria-hidden="true" />
                   <span className="min-w-0 flex-1 truncate text-sm">{topic.name}</span>
                   <Badge variant="outline">{labels.archivedBadge}</Badge>
@@ -119,7 +120,7 @@ export function ScopePicker({ topics, archivedTopics, missingIds, includeInbox, 
               const checked = topicIds.includes(topic.id);
               return (
                 <label key={topic.id} className={cn('flex min-h-[34px] items-center gap-2 rounded-lg px-2', checked && 'bg-muted')}>
-                  <input type="checkbox" className="size-4 shrink-0 accent-primary" aria-label={labels.itemAria(topic.name)} checked={checked} onChange={(event) => toggle(topic.id, event.target.checked)} />
+                  <Checkbox  className="size-4 shrink-0 accent-primary" aria-label={labels.itemAria(topic.name)} checked={checked} onChange={(event) => toggle(topic.id, event.target.checked)} />
                   <span className="sidebar-list-mark" data-color={topic.color || 'slate'} aria-hidden="true" />
                   <span className="min-w-0 flex-1 truncate text-sm">{topic.name}</span>
                   {topic.isExploration && <em className="sidebar-explore-tag">{exploringLabel}</em>}

@@ -1,3 +1,6 @@
+import { Checkbox } from '@/components/ui/checkbox.js';
+import { Surface } from '@/components/ui/surface.js';
+import { NativeSelect } from '@/components/ui/native-select.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
@@ -66,11 +69,11 @@ export function KnowledgeGraph({ topicId }: { topicId: string | null }) {
       <GraphCanvas nodes={nodes} edges={edges} selectedId={selectedId} spatial={spatial} onSelect={(node) => { setSelectedId(node.id); setFocus({ type: node.type, id: node.rawId }); }} />
       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">{nodeTypes.map((type) => <span key={type} className="inline-flex items-center gap-1"><i className="inline-block size-2 rounded-full" style={{ background: colors[type] }} />{t(`graph.types.${type}`)}</span>)}<span className="inline-flex items-center gap-1"><i className="inline-block size-2 rounded-full" style={{ background: colors.thread }} />{t('graph.types.thread')}</span><span className="inline-flex items-center gap-1"><i className="inline-block size-2 rounded-full" style={{ background: colors.crystal }} />{t('graph.types.crystal')}</span></div>
       <div aria-label={t('graph.nodesLabel')} className="flex max-h-28 flex-wrap gap-2 overflow-y-auto">{nodes.map((node) => <Button key={node.id} size="sm" variant={selectedId === node.id ? 'secondary' : 'ghost'} onClick={() => { setSelectedId(node.id); setFocus({ type: node.type, id: node.rawId }); }}>{node.title}</Button>)}{!nodes.length && <p className="text-sm text-muted-foreground">{t('graph.noNodes')}</p>}</div>
-      <label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={history} onChange={(event) => setHistory(event.target.checked)} />{t('graph.includeHistory')}</label>
+      <label className="flex items-center gap-2 text-xs text-muted-foreground"><Checkbox  checked={history} onChange={(event) => setHistory(event.target.checked)} />{t('graph.includeHistory')}</label>
     </div>
-    <aside className="glass-subtle space-y-3 rounded-xl p-4">
+    <Surface as="aside" tone="subtle" className="space-y-3 rounded-xl p-4">
       <div className="flex flex-wrap gap-1" role="tablist" aria-label={t('graph.sidebar')}>{(['read', 'open', 'ontology', 'maintain'] as const).map((id) => <Button key={id} size="sm" variant={panel === id ? 'secondary' : 'ghost'} onClick={() => setPanel(id)}>{t(`graph.panels.${id}`)}</Button>)}</div>
-      {panel === 'read' && <div className="space-y-3 text-sm">{selected ? <><h2 className="font-semibold">{selected.title}</h2><p className="text-xs text-muted-foreground">{selected.kind ? t('graph.nodeMeta', { type: typeLabel(selected.type), kind: entityKindLabel(selected.kind) }) : typeLabel(selected.type)}</p><BodyText text={selected.excerpt || selected.description || t('graph.noExcerpt')} className="text-muted-foreground" /><h3 className="text-xs font-semibold">{t('graph.neighbors')}</h3><ul className="space-y-2">{neighbors.map(({ edge, node }) => <li key={edge.id}><button type="button" className="text-left" onClick={() => node && setSelectedId(node.id)}>{node?.title}</button><span className="ml-2 text-xs text-muted-foreground">{relationLabel(edge.relation)}</span></li>)}{!neighbors.length && <li className="text-xs text-muted-foreground">{t('graph.noNeighbors')}</li>}</ul></> : <p className="text-muted-foreground">{t('graph.selectNode')}</p>}</div>}
+      {panel === 'read' && <div className="space-y-3 text-sm">{selected ? <><h2 className="font-semibold">{selected.title}</h2><p className="text-xs text-muted-foreground">{selected.kind ? t('graph.nodeMeta', { type: typeLabel(selected.type), kind: entityKindLabel(selected.kind) }) : typeLabel(selected.type)}</p><BodyText text={selected.excerpt || selected.description || t('graph.noExcerpt')} className="text-muted-foreground" /><h3 className="text-xs font-semibold">{t('graph.neighbors')}</h3><ul className="space-y-2">{neighbors.map(({ edge, node }) => <li key={edge.id}><Button variant="row" size="bare" type="button" className="text-left" onClick={() => node && setSelectedId(node.id)}>{node?.title}</Button><span className="ml-2 text-xs text-muted-foreground">{relationLabel(edge.relation)}</span></li>)}{!neighbors.length && <li className="text-xs text-muted-foreground">{t('graph.noNeighbors')}</li>}</ul></> : <p className="text-muted-foreground">{t('graph.selectNode')}</p>}</div>}
       {panel === 'open' && <div className="space-y-2 text-sm">{!selected && <p className="text-muted-foreground">{t('graph.selectRecord')}</p>}{selected && <h2 className="font-semibold">{selected.title}</h2>}{detail.data?.content && <BodyText text={detail.data.content} />}{selected?.type === 'entity' && <BodyText text={selected.description || t('graph.noEntityDescription')} />}{selected && !['memory', 'material', 'entity'].includes(selected.type) && <BodyText text={selected.excerpt ?? ''} className="text-muted-foreground" />}</div>}
       {panel === 'ontology' && <Ontology topicId={topicId} nodes={nodes.filter((node) => node.type === 'entity')} busy={busy} run={run} />}
       {panel === 'maintain' && <Maintain topicId={topicId} nodes={nodes} selected={selected} edges={neighbors} busy={busy} run={run} />}
@@ -81,7 +84,7 @@ export function KnowledgeGraph({ topicId }: { topicId: string | null }) {
         {answer?.answer && <BodyText text={answer.answer} />}
         {answer?.mode === 'retrieval' && <ul className="space-y-2 text-sm">{answer.citations.map((node) => <li key={node.id}><strong>{node.title}</strong><p className="text-xs text-muted-foreground">{node.excerpt}</p></li>)}</ul>}
       </form>
-    </aside>
+    </Surface>
   </div>;
 }
 
@@ -115,8 +118,8 @@ function Maintain({ topicId, nodes, selected, edges, busy, run }: { topicId: str
     <div className="flex flex-wrap gap-2"><Button size="sm" disabled={busy || !name.trim()}>{t('graph.saveEntity')}</Button><Button type="button" size="sm" variant="ghost" disabled={busy || (selected.memoryCount ?? 0) > 0} onClick={() => void run(() => submitCommands([{ kind: 'entity.delete', targetId: selected.rawId, expectedRevision: selected.revision, input: {} }]), t('graph.entityDeleted'))}>{t('graph.deleteEntity')}</Button><Button type="button" size="sm" variant="outline" disabled={busy || (selected.memoryCount ?? 0) < 3} onClick={() => void run(() => submitCommands([{ kind: 'memory.crystallize', input: { topicId, entityId: selected.rawId } }]), t('graph.crystalSaved'))}>{t('graph.crystallize')}</Button></div>
     <p className="text-xs text-muted-foreground">{t('graph.connectedMemories', { count: selected.memoryCount ?? 0 })}</p>
     <div className="space-y-2 border-t pt-3">
-      <select aria-label={t('graph.connectTo')} className="glass-control h-9 w-full rounded-lg px-3 text-sm" value={target} onChange={(event) => setTarget(event.target.value)}><option value="">{t('graph.chooseNode')}</option>{nodes.filter((node) => node.id !== selected.id).map((node) => <option key={node.id} value={`${node.type}:${node.rawId}`}>{t('graph.nodeOption', { type: typeLabel(node.type), title: node.title })}</option>)}</select>
-      <select aria-label={t('graph.relationType')} className="glass-control h-9 w-full rounded-lg px-3 text-sm" value={relation} onChange={(event) => setRelation(event.target.value)}>{(['related', 'about', 'contrasts'] as const).map((id) => <option key={id} value={id}>{relationLabel(id)}</option>)}</select>
+      <NativeSelect aria-label={t('graph.connectTo')} className="glass-control h-9 w-full rounded-lg px-3 text-sm" value={target} onChange={(event) => setTarget(event.target.value)}><option value="">{t('graph.chooseNode')}</option>{nodes.filter((node) => node.id !== selected.id).map((node) => <option key={node.id} value={`${node.type}:${node.rawId}`}>{t('graph.nodeOption', { type: typeLabel(node.type), title: node.title })}</option>)}</NativeSelect>
+      <NativeSelect aria-label={t('graph.relationType')} className="glass-control h-9 w-full rounded-lg px-3 text-sm" value={relation} onChange={(event) => setRelation(event.target.value)}>{(['related', 'about', 'contrasts'] as const).map((id) => <option key={id} value={id}>{relationLabel(id)}</option>)}</NativeSelect>
       <Button type="button" size="sm" variant="outline" disabled={busy || !target} onClick={() => { const [toType, ...rest] = target.split(':'); void run(() => submitCommands([{ kind: 'graph.link', input: { topicId, fromType: 'entity', fromId: selected.rawId, toType, toId: rest.join(':'), relation } }]), t('graph.linkCreated')); }}>{t('graph.createLink')}</Button>
       <ul className="space-y-1">{edges.filter(({ edge }) => edge.manual).map(({ edge, node }) => <li key={edge.id} className="flex items-center justify-between gap-2"><span>{t('graph.nodeOption', { type: relationLabel(edge.relation), title: node?.title ?? '' })}</span><Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => void run(() => submitCommands([{ kind: 'graph.unlink', targetId: edge.id, input: {} }]), t('graph.linkRemoved'))}>{t('graph.remove')}</Button></li>)}</ul>
     </div>
@@ -125,7 +128,7 @@ function Maintain({ topicId, nodes, selected, edges, busy, run }: { topicId: str
 
 function KindSelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const { t } = useTranslation('knowledge');
-  return <select aria-label={t('graph.entityKind')} className="glass-control h-9 w-full rounded-lg px-3 text-sm" value={value} onChange={(event) => onChange(event.target.value)}>{entityKindKeys.map((id) => <option key={id} value={id}>{t(`memoryView.entityKinds.${id}`)}</option>)}</select>;
+  return <NativeSelect aria-label={t('graph.entityKind')} className="glass-control h-9 w-full rounded-lg px-3 text-sm" value={value} onChange={(event) => onChange(event.target.value)}>{entityKindKeys.map((id) => <option key={id} value={id}>{t(`memoryView.entityKinds.${id}`)}</option>)}</NativeSelect>;
 }
 
 type Point = GraphNode & { x: number; y: number; h: number; vx: number; vy: number; cluster: string; homeX: number; homeY: number };

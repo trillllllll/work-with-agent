@@ -1,3 +1,6 @@
+import { Surface } from '@/components/ui/surface.js';
+import { NativeSelect } from '@/components/ui/native-select.js';
+import { Switch } from '@/components/ui/switch.js';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -81,7 +84,7 @@ function SkillDetailView({ id, onBack }: { id: string; onBack: () => void }) {
   if (!skill) return <p className="p-4 text-sm text-muted-foreground">{t('action.loading')}</p>;
   const status = skill.deletedAt ? t('state.deleted') : skill.enabled ? t('state.enabledStatus') : t('state.disabledStatus');
   const toggleEnabled = () => act(() => api(`/api/skills/${skill.id}`, { method: 'PATCH', body: JSON.stringify({ expectedRevision: skill.revision, enabled: !skill.enabled }) }), skill.enabled ? t('page.disabledToast') : t('page.enabledToast'));
-  const tabClass = (selected: boolean) => cn('shrink-0 rounded-full px-3 py-1 text-sm', selected ? 'bg-primary text-primary-foreground' : 'text-muted-foreground');
+  const tabClass = (_selected: boolean) => 'shrink-0 px-3 py-1 text-sm';
   return (
     <article className="flex min-h-0 flex-1 flex-col gap-3" aria-label={t('page.detailLabel', { name: skill.name })} data-testid="skill-detail">
       <Button variant="ghost" size="sm" className="shrink-0 self-start @3xl:hidden" onClick={onBack}><ArrowLeft />{t('page.backToList')}</Button>
@@ -94,7 +97,7 @@ function SkillDetailView({ id, onBack }: { id: string; onBack: () => void }) {
           ? <Button size="sm" disabled={busy} onClick={() => void act(() => api(`/api/skills/${skill.id}/restore`, { method: 'POST', body: '{}' }), t('page.restored'))}>{t('action.restore')}</Button>
           : (
             <div className="flex flex-wrap items-center gap-2">
-              <label className="flex items-center gap-1.5 text-xs text-muted-foreground"><input type="checkbox" role="switch" aria-label={t('page.enableNamed', { name: skill.name })} checked={skill.enabled} disabled={busy} onChange={() => void toggleEnabled()} />{skill.enabled ? t('state.enabled') : t('state.disabled')}</label>
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground"><Switch aria-label={t('page.enableNamed', { name: skill.name })} checked={skill.enabled} disabled={busy} onCheckedChange={() => void toggleEnabled()} />{skill.enabled ? t('state.enabled') : t('state.disabled')}</label>
               <Button size="sm" variant="outline" onClick={() => openSkillEditor({ skillId: skill.id })}>{t('action.edit')}</Button>
               <Button size="sm" variant="outline" disabled={busy} onClick={() => setConfirmDelete(true)}>{t('action.delete')}</Button>
             </div>
@@ -102,11 +105,11 @@ function SkillDetailView({ id, onBack }: { id: string; onBack: () => void }) {
       </header>
       <p className="shrink-0 text-sm">{skill.description}</p>
       <div role="tablist" aria-label={t('page.detailTabs')} className="flex shrink-0 gap-2">
-        <button type="button" role="tab" aria-selected={tab === 'body'} data-testid="skill-tab-body" className={tabClass(tab === 'body')} onClick={() => setTab('body')}>{t('field.body')}</button>
-        <button type="button" role="tab" aria-selected={tab === 'history'} data-testid="skill-tab-history" className={tabClass(tab === 'history')} onClick={() => setTab('history')}>{t('history.title')}</button>
+        <Button variant="tab" size="bare" type="button" role="tab" aria-selected={tab === 'body'} data-testid="skill-tab-body" className={tabClass(tab === 'body')} onClick={() => setTab('body')}>{t('field.body')}</Button>
+        <Button variant="tab" size="bare" type="button" role="tab" aria-selected={tab === 'history'} data-testid="skill-tab-history" className={tabClass(tab === 'history')} onClick={() => setTab('history')}>{t('history.title')}</Button>
       </div>
       {tab === 'body'
-        ? <div role="tabpanel" className="glass-subtle glass-scrollbar min-h-0 overflow-y-auto rounded-xl p-4" data-testid="skill-instructions"><BodyText text={skill.instructions} format="markdown" /></div>
+        ? <Surface as="div" tone="subtle" role="tabpanel" className="glass-scrollbar min-h-0 overflow-y-auto rounded-xl p-4" data-testid="skill-instructions"><BodyText text={skill.instructions} format="markdown" /></Surface>
         : <div role="tabpanel" className="glass-scrollbar min-h-0 overflow-y-auto"><SkillHistory skill={skill} /></div>}
       {confirmDelete && <ConfirmDialog title={t('page.deleteTitle')} itemName={skill.name} description={t('page.deleteDescription')} busy={busy} onCancel={() => setConfirmDelete(false)} onConfirm={() => void act(() => api(`/api/skills/${skill.id}?expectedRevision=${skill.revision}`, { method: 'DELETE' }), t('page.deletedToast')).then((ok) => { setConfirmDelete(false); if (ok) onBack(); })} />}
     </article>
@@ -173,33 +176,33 @@ export function SkillsPage() {
         </div>
         <Button variant="outline" onClick={() => fileRef.current?.click()}><FileUp />{t('import.button')}</Button>
         <Button onClick={() => openSkillEditor({})}><Plus />{t('action.create')}</Button>
-        <input ref={fileRef} type="file" accept=".md,text/markdown,text/plain" className="hidden" data-testid="skill-import-input" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void importFile(file); }} />
+        <Input variant="inline" ref={fileRef} type="file" accept=".md,text/markdown,text/plain" className="hidden" data-testid="skill-import-input" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void importFile(file); }} />
       </header>
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-5 @3xl:grid-cols-[minmax(240px,320px)_minmax(0,1fr)]">
         <div className={cn('flex min-h-0 min-w-0 flex-col gap-3', selectedId && 'hidden @3xl:flex')}>
           <Input aria-label={t('page.searchLabel')} placeholder={t('page.searchPlaceholder')} value={q} onChange={(event) => setQ(event.target.value)} />
           <div className="flex gap-2">
-            <select aria-label={t('page.statusLabel')} className="glass-control h-9 min-w-0 flex-1 rounded-lg px-3 text-sm" value={status} onChange={(event) => { setStatus(event.target.value as StatusFilter); setSelectedId(''); }}>
+            <NativeSelect aria-label={t('page.statusLabel')} className="glass-control h-9 min-w-0 flex-1 rounded-lg px-3 text-sm" value={status} onChange={(event) => { setStatus(event.target.value as StatusFilter); setSelectedId(''); }}>
               <option value="all">{t('page.statusAll')}</option><option value="enabled">{t('state.enabledStatus')}</option><option value="disabled">{t('state.disabledStatus')}</option><option value="deleted">{t('state.deleted')}</option>
-            </select>
-            <select aria-label={t('page.originLabel')} className="glass-control h-9 min-w-0 flex-1 rounded-lg px-3 text-sm" value={origin} onChange={(event) => setOrigin(event.target.value)}>
+            </NativeSelect>
+            <NativeSelect aria-label={t('page.originLabel')} className="glass-control h-9 min-w-0 flex-1 rounded-lg px-3 text-sm" value={origin} onChange={(event) => setOrigin(event.target.value)}>
               <option value="">{t('page.originAll')}</option><option value="manual">{t('origin.manual')}</option><option value="import">{t('origin.import')}</option><option value="assistant">{t('origin.assistant')}</option>
-            </select>
+            </NativeSelect>
           </div>
           {list.error && <p role="alert" className="text-sm text-destructive">{list.error.message}</p>}
           {list.isLoading ? <p className="text-sm text-muted-foreground">{t('action.loading')}</p> : !skills.length ? <p className="py-8 text-sm text-muted-foreground">{empty}</p> : (
-            <ul aria-label={t('page.listLabel')} className="glass-scrollbar glass-subtle min-h-0 divide-y divide-[var(--glass-divider)] overflow-y-auto rounded-xl">
+            <Surface as="ul" tone="subtle" aria-label={t('page.listLabel')} className="glass-scrollbar  min-h-0 divide-y divide-[var(--glass-divider)] overflow-y-auto rounded-xl">
               {skills.map((skill) => (
                 <li key={skill.id} data-testid="skill-row" data-skill-name={skill.name} className={cn('flex items-start gap-2 px-3 py-2.5', selectedId === skill.id && 'bg-[color-mix(in_srgb,var(--foreground)_8%,transparent)]')}>
-                  <button type="button" className="min-w-0 flex-1 text-left" aria-current={selectedId === skill.id ? 'true' : undefined} onClick={() => setSelectedId(skill.id)}>
+                  <Button variant="row" size="bare" type="button" className="min-w-0 flex-1 text-left" aria-current={selectedId === skill.id ? 'true' : undefined} onClick={() => setSelectedId(skill.id)}>
                     <span className="flex items-center gap-2"><span className="truncate font-medium">{skill.name}</span><span className="shrink-0 text-[11px] text-muted-foreground">v{skill.revision}</span></span>
                     <span className="mt-0.5 line-clamp-2 block text-xs text-muted-foreground">{skill.description}</span>
                     <span className="mt-1 block text-[11px] text-muted-foreground">{skillOriginLabel(skill.origin)} · {new Date(skill.updatedAt).toLocaleDateString(intlLocale())}</span>
-                  </button>
-                  {!skill.deletedAt && <label className="flex shrink-0 items-center gap-1 pt-0.5 text-xs text-muted-foreground"><input type="checkbox" role="switch" aria-label={t('page.enableNamed', { name: skill.name })} checked={skill.enabled} disabled={toggling === skill.id} onChange={() => void toggle(skill)} />{skill.enabled ? t('state.enabled') : t('state.disabled')}</label>}
+                  </Button>
+                  {!skill.deletedAt && <label className="flex shrink-0 items-center gap-1 pt-0.5 text-xs text-muted-foreground"><Switch aria-label={t('page.enableNamed', { name: skill.name })} checked={skill.enabled} disabled={toggling === skill.id} onCheckedChange={() => void toggle(skill)} />{skill.enabled ? t('state.enabled') : t('state.disabled')}</label>}
                 </li>
               ))}
-            </ul>
+            </Surface>
           )}
         </div>
         <div className={cn('flex min-h-0 min-w-0 flex-col', !selectedId && 'hidden @3xl:flex')}>

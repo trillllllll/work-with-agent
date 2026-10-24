@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button.js';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Input } from '@/components/ui/input.js';
@@ -17,7 +18,7 @@ export function StatsRangeBar({ mode, from, to, valid, onPreset, onCustom }: {
   const [draftFrom, setDraftFrom] = useState(from);
   const [draftTo, setDraftTo] = useState(to);
   const draftValid = isValidRange(draftFrom, draftTo);
-  const pill = (selected: boolean) => `shrink-0 rounded-full px-3 py-1 text-sm ${selected ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`;
+  const pill = (_selected: boolean) => 'shrink-0 px-3 py-1 text-sm';
 
   function commit(nextFrom: string, nextTo: string) {
     setDraftFrom(nextFrom);
@@ -37,11 +38,11 @@ export function StatsRangeBar({ mode, from, to, valid, onPreset, onCustom }: {
     <div className="space-y-2">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <div className="flex gap-2" role="group" aria-label={t('range.label')}>
-          <button type="button" data-testid="stats-range-7d" aria-pressed={mode === '7d'} className={pill(mode === '7d')} onClick={() => onPreset('7d')}>{t('range.d7')}</button>
-          <button type="button" data-testid="stats-range-30d" aria-pressed={mode === '30d'} className={pill(mode === '30d')} onClick={() => onPreset('30d')}>{t('range.d30')}</button>
+          <Button variant="tab" size="bare" type="button" data-testid="stats-range-7d" aria-pressed={mode === '7d'} className={pill(mode === '7d')} onClick={() => onPreset('7d')}>{t('range.d7')}</Button>
+          <Button variant="tab" size="bare" type="button" data-testid="stats-range-30d" aria-pressed={mode === '30d'} className={pill(mode === '30d')} onClick={() => onPreset('30d')}>{t('range.d30')}</Button>
           <Popover open={open} onOpenChange={onOpenChange}>
             <PopoverTrigger asChild>
-              <button type="button" data-testid="stats-range-custom" aria-pressed={mode === 'custom'} className={pill(mode === 'custom')}>{t('range.custom')}</button>
+              <Button variant="tab" size="bare" type="button" data-testid="stats-range-custom" aria-pressed={mode === 'custom'} className={pill(mode === 'custom')}>{t('range.custom')}</Button>
             </PopoverTrigger>
             <PopoverContent className="w-72 space-y-3 p-3">
               <label className="block space-y-1 text-xs text-muted-foreground">

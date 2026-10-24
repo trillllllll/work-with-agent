@@ -137,9 +137,9 @@ export function ReviewRuleDialog({ mode, rule, seed, initialStep = 1, topics, ar
               const title = index === 1 ? t('reviews.stepWhatWhen') : t('reviews.stepHow');
               const allowed = editing || index === 1 || step1Valid;
               return (
-                <button key={index} type="button" className="flex min-h-8 min-w-0 flex-1 items-center" disabled={!allowed} aria-current={step === index ? 'step' : undefined} aria-label={t('reviews.stepProgress', { step: index, title })} onClick={() => goTo(index)}>
+                <Button variant="plain" size="bare" key={index} type="button" className="flex min-h-8 min-w-0 flex-1 items-center" disabled={!allowed} aria-current={step === index ? 'step' : undefined} aria-label={t('reviews.stepProgress', { step: index, title })} onClick={() => goTo(index)}>
                   <span className={cn('h-1.5 w-full rounded-full', step === index ? 'bg-foreground' : 'bg-foreground/20', !allowed && 'opacity-40')} />
-                </button>
+                </Button>
               );
             })}
           </div>

@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button.js';
 import { cn } from '@/lib/utils.js';
@@ -15,7 +16,7 @@ export function BulkBar({ groups, items, running, result, onClear, onApprove, on
   if (!groups && !running && !result) return null;
   const summary = running ? t('bulk.running') : groups > 0 ? t('bulk.selected', { groups, items }) : '';
   return (
-    <div
+    <Surface as="div" tone="subtle"
       role="region"
       aria-label={t('bulk.selected', { groups, items })}
       className={cn(
@@ -28,6 +29,6 @@ export function BulkBar({ groups, items, running, result, onClear, onApprove, on
       <Button type="button" variant="ghost" size="sm" disabled={running} onClick={onClear}>{t('bulk.clear')}</Button>
       <Button type="button" variant="outline" size="sm" disabled={running || groups < 1} onClick={onReject}>{t('bulk.reject')}</Button>
       <Button type="button" size="sm" disabled={running || groups < 1} onClick={onApprove}>{t('bulk.approve')}</Button>
-    </div>
+    </Surface>
   );
 }

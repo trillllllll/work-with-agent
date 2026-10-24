@@ -1,3 +1,7 @@
+import { TableRow } from '@/components/ui/table-row.js';
+import { NativeSelect } from '@/components/ui/native-select.js';
+import { Input } from '@/components/ui/input.js';
+import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure.js';
 import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -52,7 +56,7 @@ function TaskLinkSelect({ resource, topicId, busy, run }: { resource: MaterialDe
   const [choice, setChoice] = useState(resource.taskId ?? '');
   useEffect(() => { setChoice(resource.taskId ?? ''); }, [resource.id, resource.revision, resource.taskId]);
   const known = tasks.data?.some((task) => task.id === resource.taskId);
-  return <select className="glass-control h-9 max-w-full rounded-lg px-3 text-sm" value={choice} disabled={busy || tasks.isLoading} onChange={(event) => {
+  return <NativeSelect className="glass-control h-9 max-w-full rounded-lg px-3 text-sm" value={choice} disabled={busy || tasks.isLoading} onChange={(event) => {
     const next = event.target.value;
     const previous = resource.taskId ?? '';
     setChoice(next);
@@ -61,7 +65,7 @@ function TaskLinkSelect({ resource, topicId, busy, run }: { resource: MaterialDe
     <option value="">{t('materials.noLink')}</option>
     {resource.taskId && !known && <option value={resource.taskId}>{tasks.data ? resource.taskTitle || t('materials.currentTask') : t('materials.reading')}</option>}
     {tasks.data?.map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}
-  </select>;
+  </NativeSelect>;
 }
 function currentVersion(resource: MaterialDetail) {
   return resource.versions?.find((item) => item.revision === resource.revision) ?? resource.versions?.[0];
@@ -144,12 +148,12 @@ export function MaterialBrowser({ topicId, taskId, onCreate, onEdit, children }:
     : detail.error ? t('materials.readFailedDetail') : t('materials.reading');
   return <div className="min-w-0 space-y-3">
     <div className="ctx-sheet-bar">
-      <div role="group" aria-label={t('materials.navAria')} className="ctx-actions">{viewOrder.filter((value) => value !== 'linked' || !taskId).map((value) => <Button key={value} type="button" className="ctx-btn" aria-pressed={view === value} onClick={() => setView(value)}>{t(`materials.views.${value}`)}</Button>)}</div>
-      <select aria-label={t('materials.kindFilterAria')} className="ctx-select" value={kind} onChange={(event) => setKind(event.target.value)}><option value="">{t('materials.allKinds')}</option>{Object.entries(materialKindNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+      <div role="group" aria-label={t('materials.navAria')} className="ctx-actions">{viewOrder.filter((value) => value !== 'linked' || !taskId).map((value) => <Button variant="outline" key={value} type="button" className="ctx-btn" aria-pressed={view === value} onClick={() => setView(value)}>{t(`materials.views.${value}`)}</Button>)}</div>
+      <NativeSelect aria-label={t('materials.kindFilterAria')} className="ctx-select" value={kind} onChange={(event) => setKind(event.target.value)}><option value="">{t('materials.allKinds')}</option>{Object.entries(materialKindNames).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</NativeSelect>
       <div className="ctx-sheet-end">
-        <input ref={inputRef} className="sr-only" type="file" multiple aria-label={t('materials.importAria')} onChange={(event) => { const files = [...(event.target.files ?? [])]; event.target.value = ''; void importFiles(files); }} />
-        <Button type="button" className="ctx-btn" onClick={onCreate}>{t('materials.save')}</Button>
-        <Button type="button" className="ctx-btn ctx-btn-primary" onClick={() => inputRef.current?.click()}>{t('materials.import')}</Button>
+        <Input variant="inline" ref={inputRef} className="sr-only" type="file" multiple aria-label={t('materials.importAria')} onChange={(event) => { const files = [...(event.target.files ?? [])]; event.target.value = ''; void importFiles(files); }} />
+        <Button variant="outline" type="button" className="ctx-btn" onClick={onCreate}>{t('materials.save')}</Button>
+        <Button variant="default" type="button" className="ctx-btn ctx-btn-primary" onClick={() => inputRef.current?.click()}>{t('materials.import')}</Button>
       </div>
     </div>
     {children}
@@ -157,15 +161,15 @@ export function MaterialBrowser({ topicId, taskId, onCreate, onEdit, children }:
     {list.error && <p role="alert" className="ctx-error">{list.error.message}</p>}
     <div className={cn('ctx-table-wrap', dragOver && 'ring-2 ring-primary')} onDragOver={(event) => { event.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={onDrop}>
       <table className="ctx-table" aria-label={t('materials.tableAria')}>
-        <thead><tr>{columns.map(([key, label]) => <th key={key} aria-sort={sort === key ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}><button type="button" className="ctx-btn" onClick={() => toggleSort(key)}>{label}{sort === key ? (dir === 'asc' ? ' ↑' : ' ↓') : ''}</button></th>)}{!taskId && <th>{t('materials.linkedColumn')}</th>}</tr></thead>
+        <thead><TableRow>{columns.map(([key, label]) => <th key={key} aria-sort={sort === key ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}><Button variant="outline" size="bare" type="button" className="ctx-btn" onClick={() => toggleSort(key)}>{label}{sort === key ? (dir === 'asc' ? ' ↑' : ' ↓') : ''}</Button></th>)}{!taskId && <th>{t('materials.linkedColumn')}</th>}</TableRow></thead>
         <tbody>
-          {!list.isLoading && !list.data?.items.length && <tr><td colSpan={taskId ? 3 : 4}>{t('materials.empty')}</td></tr>}
-          {list.data?.items.map((item) => <tr key={item.id} aria-selected={opened === item.id}>
-            <td><button type="button" className="ctx-name-link" aria-haspopup="dialog" aria-expanded={opened === item.id} onClick={() => { setOrganizeResult(null); setOpened(item.id); }}>{item.title}</button>{item.id.startsWith('auto-chat:') && <span className="ctx-badge">{t('materials.autoExcerpt')}</span>}</td>
+          {!list.isLoading && !list.data?.items.length && <TableRow><td colSpan={taskId ? 3 : 4}>{t('materials.empty')}</td></TableRow>}
+          {list.data?.items.map((item) => <TableRow key={item.id} aria-selected={opened === item.id}>
+            <td><Button variant="link" size="bare" type="button" className="ctx-name-link" aria-haspopup="dialog" aria-expanded={opened === item.id} onClick={() => { setOrganizeResult(null); setOpened(item.id); }}>{item.title}</Button>{item.id.startsWith('auto-chat:') && <span className="ctx-badge">{t('materials.autoExcerpt')}</span>}</td>
             <td>{materialTypeLabel(item.kind, item.fileName)}</td>
             <td>{formatWhen(item.updatedAt)}</td>
             {!taskId && <td>{item.taskTitle ?? ''}</td>}
-          </tr>)}
+          </TableRow>)}
         </tbody>
       </table>
     </div>
@@ -190,20 +194,20 @@ export function MaterialBrowser({ topicId, taskId, onCreate, onEdit, children }:
                 <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => void run(() => submitCommands([{ kind: 'material.archive', targetId: openedResource.id, expectedRevision: openedResource.revision, input: { archived: !openedResource.archivedAt } }]), openedResource.archivedAt ? t('materials.restoredToast') : t('materials.archivedToast'))}>{openedResource.archivedAt ? t('materials.restore') : t('materials.archive')}</Button>
               </div>
             </div>
-            <details className="disclosure shrink-0">
-              <summary className="cursor-pointer text-xs text-muted-foreground">{t('materials.organize')}</summary>
+            <Disclosure className="disclosure shrink-0">
+              <DisclosureTrigger className="cursor-pointer text-xs text-muted-foreground">{t('materials.organize')}</DisclosureTrigger>
               <div className="mt-2 max-h-[min(12rem,30dvh)] space-y-2 overflow-auto">
                 <Textarea aria-label={t('materials.purposeAria')} value={purpose} onChange={(event) => setPurpose(event.target.value)} rows={2} />
-                <select aria-label={t('materials.methodAria')} className="glass-control h-9 rounded-lg px-3 text-sm" value={provider} onChange={(event) => setProvider(event.target.value)}><option value="external">{t('materials.methodExternal')}</option><option value="builtin">{t('materials.methodBuiltin')}</option></select>
+                <NativeSelect aria-label={t('materials.methodAria')} className="glass-control h-9 rounded-lg px-3 text-sm" value={provider} onChange={(event) => setProvider(event.target.value)}><option value="external">{t('materials.methodExternal')}</option><option value="builtin">{t('materials.methodBuiltin')}</option></NativeSelect>
                 <Button type="button" size="sm" disabled={busy || !purpose.trim()} onClick={() => void run(async () => { const request = await api<any>('/api/v1/knowledge/organizations', { method: 'POST', body: json({ topicId, purpose, provider, materialIds: [openedResource.id] }) }); const result = provider === 'builtin' ? await api(`/api/v1/knowledge/organizations/${request.id}/generate`, { method: 'POST', body: '{}' }) : request; setOrganizeResult(result); return result; }, provider === 'builtin' ? t('materials.builtinToast') : t('materials.externalToast'))}>{t('materials.organize')}</Button>
                 {organizeResult?.provider === 'external' && !['proposed', 'completed'].includes(organizeResult.status) && <OrganizationPrompt id={organizeResult.id} purpose={organizeResult.purpose} />}
                 {organizeResult?.proposalIds?.length > 0 && <a className="block text-sm text-brand-link underline" href="#/proposals">{t('materials.reviewSuggestions')}</a>}
               </div>
-            </details>
-            <details className="disclosure shrink-0"><summary className="cursor-pointer text-xs text-muted-foreground">{t('materials.historySummary')}</summary><div className="max-h-[min(12rem,30dvh)] overflow-auto">{openedResource.evidence?.map((ref) => <p key={`${ref.type}:${ref.id}`} className="my-2 break-all text-xs">{t('materials.evidenceLine', { type: ref.type, id: ref.id, revision: ref.revision })}</p>)}{openedResource.versions?.map((version) => <div key={version.revision} className="mt-3 border-t pt-2 text-xs"><p className="mt-1 whitespace-pre-wrap">{t('materials.versionLine', { revision: version.revision, reason: version.reason ?? t('materials.savedOriginal') })}</p><BodyText text={version.content ?? ''} className="mt-1" /></div>)}</div></details>
+            </Disclosure>
+            <Disclosure className="disclosure shrink-0"><DisclosureTrigger className="cursor-pointer text-xs text-muted-foreground">{t('materials.historySummary')}</DisclosureTrigger><div className="max-h-[min(12rem,30dvh)] overflow-auto">{openedResource.evidence?.map((ref) => <p key={`${ref.type}:${ref.id}`} className="my-2 break-all text-xs">{t('materials.evidenceLine', { type: ref.type, id: ref.id, revision: ref.revision })}</p>)}{openedResource.versions?.map((version) => <div key={version.revision} className="mt-3 border-t pt-2 text-xs"><p className="mt-1 whitespace-pre-wrap">{t('materials.versionLine', { revision: version.revision, reason: version.reason ?? t('materials.savedOriginal') })}</p><BodyText text={version.content ?? ''} className="mt-1" /></div>)}</div></Disclosure>
           </div>}
         </DialogContent>
       </Dialog>
-    <div className="ctx-actions"><Button type="button" className="ctx-btn" disabled={!cursor} onClick={() => setCursor(Math.max(0, cursor - 40))}>{t('materials.previousPage')}</Button><Button type="button" className="ctx-btn" disabled={list.data?.nextCursor == null} onClick={() => setCursor(list.data?.nextCursor ?? 0)}>{t('materials.nextPage')}</Button></div>
+    <div className="ctx-actions"><Button variant="outline" type="button" className="ctx-btn" disabled={!cursor} onClick={() => setCursor(Math.max(0, cursor - 40))}>{t('materials.previousPage')}</Button><Button variant="outline" type="button" className="ctx-btn" disabled={list.data?.nextCursor == null} onClick={() => setCursor(list.data?.nextCursor ?? 0)}>{t('materials.nextPage')}</Button></div>
   </div>;
 }

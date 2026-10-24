@@ -4,7 +4,7 @@ import { test, expect } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
 const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
-const evidence = resolve('docs/design/dovun/task-inline/evidence');
+const evidence = resolve(process.env.DOVUN_EVIDENCE_DIR ? `${process.env.DOVUN_EVIDENCE_DIR}/task-inline` : 'docs/design/dovun/task-inline/evidence');
 test.beforeEach(resetE2eDatabase);
 test.afterAll(() => e2eDatabase.$disconnect());
 

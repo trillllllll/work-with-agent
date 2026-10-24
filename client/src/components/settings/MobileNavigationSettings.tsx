@@ -1,3 +1,5 @@
+import { Surface } from '@/components/ui/surface.js';
+import { Button } from '@/components/ui/button.js';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -16,6 +18,7 @@ import {
 } from '@/lib/mobile-navigation.js';
 import { mobileNavigationItem, moreItem, type NavigationItem } from '@/lib/navigation-items.js';
 import { mobileNavigationKey } from '@/hooks/useMobileNavigation.js';
+import { Switch } from '@/components/ui/switch.js';
 import { Skeleton } from '@/components/ui/skeleton.js';
 
 /** 只放在拖动手柄上，禁止整个列表禁用触摸滚动。 */
@@ -132,7 +135,7 @@ export function MobileNavigationSettings() {
         <p className="mnav-description">{t('mobileNavigation.description')}</p>
         <div className="mnav-load-error">
           <span>{t('mobileNavigation.loadFailed')}</span>
-          <button type="button" className="mnav-retry-button" onClick={() => void navigationQuery.refetch()}>{t('mobileNavigation.reload')}</button>
+          <Button variant="outline" size="bare" type="button" className="mnav-retry-button" onClick={() => void navigationQuery.refetch()}>{t('mobileNavigation.reload')}</Button>
         </div>
       </section>
     );
@@ -162,7 +165,7 @@ export function MobileNavigationSettings() {
       <h3 className="mnav-title">{t('mobileNavigation.title')}</h3>
       <p className="mnav-description">{t('mobileNavigation.description')}</p>
 
-      <div className="mnav-preview" data-testid="mobile-navigation-preview">
+      <Surface as="div" tone="card" className="mnav-preview" data-testid="mobile-navigation-preview">
         <p className="mnav-preview-title">{t('mobileNavigation.preview')}</p>
         <div className="mnav-preview-bar" style={{ gridTemplateColumns: `repeat(${previewItems.length}, minmax(0, 1fr))` }}>
           {previewItems.map(({ view, label, icon: Icon }) => (
@@ -172,37 +175,37 @@ export function MobileNavigationSettings() {
             </span>
           ))}
         </div>
-      </div>
+      </Surface>
 
       <h4 className="mnav-group-title" id="mnav-shown-title">{t('mobileNavigation.shown')}</h4>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd} accessibility={{ screenReaderInstructions: { draggable: t('mobileNavigation.reorderHint') } }}>
         <SortableContext items={draft} strategy={verticalListSortingStrategy}>
-          <ul className="mnav-list" aria-labelledby="mnav-shown-title">
+          <Surface as="ul" tone="card" className="mnav-list" aria-labelledby="mnav-shown-title">
             {draft.map((view) => (
               <SortableRow key={view} view={view} disabled={pending} onToggle={toggle} />
             ))}
-          </ul>
+          </Surface>
         </SortableContext>
       </DndContext>
 
       <h4 className="mnav-group-title">{t('mobileNavigation.hidden')}</h4>
-      <ul className="mnav-list">
+      <Surface as="ul" tone="card" className="mnav-list">
         {hiddenRows.map((view) => (
           <li key={view} className="mnav-row" data-testid={`mobile-navigation-row-${view}`}>
             <ModuleIcon view={view} />
             <span className="mnav-name">{MOBILE_NAVIGATION_LABELS[view]}</span>
-            <Switch view={view} checked={false} disabled={pending || atCapacity} onToggle={toggle} />
+            <NavigationSwitch view={view} checked={false} disabled={pending || atCapacity} onToggle={toggle} />
           </li>
         ))}
-      </ul>
+      </Surface>
 
-      <ul className="mnav-list mnav-fixed-list">
+      <Surface as="ul" tone="card" className="mnav-list mnav-fixed-list">
         <li className="mnav-row" data-testid="mobile-navigation-fixed-more">
           <moreItem.icon aria-hidden="true" className="size-5 shrink-0" strokeWidth={1.75} />
           <span className="mnav-name">{moreItem.label}</span>
           <span className="mnav-note">{t('mobileNavigation.pinned')}</span>
         </li>
-      </ul>
+      </Surface>
 
       {atCapacity && <p className="mnav-hint">{t('mobileNavigation.atCapacity', { max: MAX_MOBILE_NAVIGATION_ITEMS })}</p>}
 
@@ -212,9 +215,9 @@ export function MobileNavigationSettings() {
       {saveFailed && retryCandidate && (
         <div className="mnav-error" data-testid="mobile-navigation-save-error" role="alert">
           <span>{t('mobileNavigation.saveFailed')}</span>
-          <button type="button" className="mnav-retry-button" disabled={pending} onClick={() => save(retryCandidate)}>
+          <Button variant="outline" size="bare" type="button" className="mnav-retry-button" disabled={pending} onClick={() => save(retryCandidate)}>
             <RotateCcw aria-hidden="true" className="size-3.5" strokeWidth={1.75} />{t('mobileNavigation.retrySave')}
-          </button>
+          </Button>
         </div>
       )}
     </section>
@@ -226,23 +229,9 @@ function ModuleIcon({ view }: { view: MobileNavigationView }) {
   return <Icon aria-hidden="true" className="size-5 shrink-0" strokeWidth={1.75} />;
 }
 
-function Switch({ view, checked, disabled, onToggle }: { view: MobileNavigationView; checked: boolean; disabled: boolean; onToggle: (view: MobileNavigationView, checked: boolean) => void }) {
+function NavigationSwitch({ view, checked, disabled, onToggle }: { view: MobileNavigationView; checked: boolean; disabled: boolean; onToggle: (view: MobileNavigationView, checked: boolean) => void }) {
   const { t } = useTranslation('settings');
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={t('mobileNavigation.showInBar', { label: MOBILE_NAVIGATION_LABELS[view] })}
-      disabled={disabled}
-      className="mnav-switch-hit"
-      onClick={() => onToggle(view, !checked)}
-    >
-      <span className="mnav-switch-track" data-checked={checked || undefined}>
-        <span className="mnav-switch-knob" />
-      </span>
-    </button>
-  );
+  return <span className="mnav-switch-hit"><Switch checked={checked} disabled={disabled} aria-label={t('mobileNavigation.showInBar', { label: MOBILE_NAVIGATION_LABELS[view] })} onCheckedChange={(next) => onToggle(view, next)} /></span>;
 }
 
 function SortableRow({ view, disabled, onToggle }: { view: MobileNavigationView; disabled: boolean; onToggle: (view: MobileNavigationView, checked: boolean) => void }) {
@@ -257,7 +246,7 @@ function SortableRow({ view, disabled, onToggle }: { view: MobileNavigationView;
       data-testid={`mobile-navigation-row-${view}`}
       data-dragging={isDragging || undefined}
     >
-      <button
+      <Button variant="row" size="bare"
         type="button"
         ref={setActivatorNodeRef}
         className="mnav-icon-button"
@@ -268,10 +257,10 @@ function SortableRow({ view, disabled, onToggle }: { view: MobileNavigationView;
         {...listeners}
       >
         <GripVertical aria-hidden="true" className="size-4" strokeWidth={1.75} />
-      </button>
+      </Button>
       <ModuleIcon view={view} />
       <span className="mnav-name">{label}</span>
-      <Switch view={view} checked disabled={disabled} onToggle={onToggle} />
+      <NavigationSwitch view={view} checked disabled={disabled} onToggle={onToggle} />
     </li>
   );
 }

@@ -68,23 +68,15 @@
 .ctx-tab {
   height: 44px;
   padding: 0;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  background: transparent;
-  color: var(--ctx-muted);
+
   font-size: 14px;
   line-height: 22px;
 }
-.ctx-tab[aria-selected="true"] { border-bottom-color: var(--ctx-text); color: var(--ctx-text); font-weight: 600; }
+
 .ctx-tab-note { margin: -12px 0 24px; font-size: 12px; line-height: 18px; color: var(--ctx-muted); }
 
 .ctx-stack { display: flex; flex-direction: column; gap: 16px; }
 .ctx-card {
-  border: 1px solid var(--ctx-border);
-  border-radius: 12px;
-  background: var(--surface-card-paint);
-  box-shadow: var(--surface-card-shadow);
   padding: 20px;
 }
 .ctx-section-title { margin: 16px 0 8px; font-size: 16px; line-height: 24px; font-weight: 600; }
@@ -98,28 +90,7 @@
 .work-context .ctx-select {
   height: 40px;
   min-height: 40px;
-  border-radius: 8px;
-  border: 1px solid var(--ctx-border);
-  background: var(--surface-input-paint);
-  color: var(--ctx-text);
   padding-inline: 14px;
-  box-shadow: var(--surface-input-shadow);
-}
-.work-context .ctx-btn { background: var(--surface-button-paint); box-shadow: var(--surface-button-shadow); }
-.work-context .ctx-field:focus-visible, .work-context .ctx-select:focus-visible { outline: 0; box-shadow: var(--surface-input-focus); }
-.work-context .ctx-btn:disabled { opacity: var(--control-disabled-opacity); box-shadow: none; }
-.work-context .ctx-btn:hover,
-.work-context .ctx-tab:hover { background: var(--ctx-hover); }
-.work-context .ctx-btn-primary {
-  background: var(--surface-primary-paint);
-  color: var(--ctx-primary-text);
-  border-color: transparent;
-}
-.work-context .ctx-btn-primary:hover { background: var(--ctx-primary-bg); color: var(--ctx-primary-text); }
-.work-context .ctx-btn[aria-pressed="true"] {
-  background: var(--surface-primary-paint);
-  color: var(--ctx-primary-text);
-  border-color: transparent;
 }
 .work-context textarea.ctx-field { height: auto; min-height: 120px; padding-block: 10px; }
 
@@ -153,11 +124,6 @@
 
 .work-context .ctx-brief .markdown-body { font-size: 14px; line-height: 22px; }
 .work-context .ctx-brief .markdown-body h2 { font-size: 16px; line-height: 24px; font-weight: 600; }
-
-.work-context :focus-visible {
-  outline: 2px solid var(--ctx-focus);
-  outline-offset: 2px;
-}
 
 .work-context button,
 .work-context a,
@@ -275,10 +241,6 @@
   min-height: 40px;
   margin-top: 12px;
   padding: 0 14px;
-  border: 1px solid var(--ctx-border);
-  border-radius: 8px;
-  background: var(--surface-input-paint);
-  color: var(--ctx-text);
   cursor: pointer;
 }
 

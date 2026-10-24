@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { useTranslation } from 'react-i18next';
 import { CalendarDays, Flag, Plus } from 'lucide-react';
 import { availableTaskStatuses, priorities, statuses, type Status, type Tag, type Task, type Topic } from '@/lib/api.js';
@@ -28,9 +29,9 @@ export function TaskCard({ task, topics, tags, selected = false, readonly = fals
   const priority = task.priority ?? 'none';
   const priorityLabel = priorities.find((item) => item.value === priority)?.label ?? t('taskCard.noPriority');
   return <TaskActions task={task} topics={topics} tags={tags} readonly={readonly} busy={busy} textDirty={textDirty} onOpen={onOpen} onToggle={onToggle} onMove={onMove} onDelete={onDelete} onSave={onSave} onCreate={onCreate}>
-    <article data-testid={`task-card-${task.id}`} data-selected={selected || undefined} className="glass-subtle group rounded-xl p-3 transition-colors hover:border-primary/25 hover:bg-[var(--glass-hover)]" onClick={(event) => { const target = event.target; if (!(target instanceof Element) || target.closest('button, a, select, label, input, [role="menu"], [role="menuitem"], [role="listbox"], [role="option"]')) return; onOpen(task.id); }}>
+    <Surface as="article" tone="subtle" data-testid={`task-card-${task.id}`} data-selected={selected || undefined} className="group rounded-xl p-3 transition-colors hover:border-primary/25 hover:bg-[var(--glass-hover)]" onClick={(event) => { const target = event.target; if (!(target instanceof Element) || target.closest('button, a, select, label, input, [role="menu"], [role="menuitem"], [role="listbox"], [role="option"]')) return; onOpen(task.id); }}>
       <div className="flex items-start justify-between gap-1.5">
-        <button type="button" onClick={(event) => { event.stopPropagation(); onOpen(task.id); }} className="min-w-0 flex-1 text-left text-xs leading-relaxed font-bold hover:text-brand-link">{task.title}</button>
+        <Button variant="row" size="bare" type="button" onClick={(event) => { event.stopPropagation(); onOpen(task.id); }} className="min-w-0 flex-1 text-left text-xs leading-relaxed font-bold hover:text-brand-link">{task.title}</Button>
         <TaskMenuButton />
       </div>
       {task.resultSummary && <div className="mt-2 rounded-lg border border-success bg-success-bg/70 px-2 py-1.5 text-[11px] leading-relaxed text-success">{t('taskCard.result', { summary: task.resultSummary })}</div>}
@@ -48,7 +49,7 @@ export function TaskCard({ task, topics, tags, selected = false, readonly = fals
           {statuses.filter((item) => availableTaskStatuses(task).includes(item.value)).map((item) => <SelectItem value={item.value} key={item.value}>{item.label}</SelectItem>)}
         </SelectContent>
       </Select>
-    </article>
+    </Surface>
   </TaskActions>;
 }
 
@@ -63,7 +64,7 @@ type BoardColumnProps = {
 export function BoardColumn({ label, count, isTodo = false, onAddTask, children }: BoardColumnProps) {
   const { t } = useTranslation('plan');
   return (
-    <div className="glass-subtle flex w-[82vw] max-w-80 shrink-0 snap-start flex-col rounded-2xl p-2.5 max-md:max-h-full md:w-auto md:max-w-none md:shrink md:snap-none md:min-h-[350px]">
+    <Surface as="div" tone="subtle" className="flex w-[82vw] max-w-80 shrink-0 snap-start flex-col rounded-2xl p-2.5 max-md:max-h-full md:w-auto md:max-w-none md:shrink md:snap-none md:min-h-[350px]">
       <div className="mb-3 flex items-center justify-between px-1">
         <h2 className="text-[11px] font-semibold tracking-wide text-muted-foreground">{label}</h2>
         <span className="glass-control min-w-5 rounded-full px-1.5 py-0.5 text-center text-[10px] text-muted-foreground">{count}</span>
@@ -74,6 +75,6 @@ export function BoardColumn({ label, count, isTodo = false, onAddTask, children 
           <Plus />{t('boardColumn.addTask')}
         </Button>
       )}
-    </div>
+    </Surface>
   );
 }

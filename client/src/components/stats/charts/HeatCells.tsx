@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button.js';
 import { useTranslation } from 'react-i18next';
 import { Tooltip } from '@/components/ui/tooltip.js';
 import { shortMonthDay } from '@/lib/stats-range.js';
@@ -14,7 +15,7 @@ export function HeatCells({ days, label }: { days: { date: string; count: number
         const background = cell.count <= 0 ? 'var(--muted)' : `color-mix(in oklab, var(--tag-violet-fg) ${mix}%, var(--muted))`;
         return (
           <Tooltip key={cell.date} content={text}>
-            <button type="button" className="size-3.5 shrink-0 rounded-[3px]" style={{ background }} aria-label={text} />
+            <Button variant="plain" size="bare" type="button" className="size-3.5 shrink-0 rounded-[3px]" style={{ background }} aria-label={text} />
           </Tooltip>
         );
       })}

@@ -29,7 +29,7 @@ function PopoverContent({
         align={align}
         sideOffset={sideOffset}
         className={cn(
-          "glass-overlay z-50 w-56 origin-(--radix-popover-content-transform-origin) p-2 text-popover-foreground outline-hidden",
+          "glass-overlay z-[var(--layer-floating)] w-56 origin-(--radix-popover-content-transform-origin) p-2 text-popover-foreground outline-hidden",
           className
         )}
         {...props}

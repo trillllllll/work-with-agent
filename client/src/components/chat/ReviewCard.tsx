@@ -1,3 +1,5 @@
+import { Surface } from '@/components/ui/surface.js';
+import { Button } from '@/components/ui/button.js';
 import { CalendarDays, Check, ClipboardList } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -32,7 +34,7 @@ export function FieldDiff({ label, before, after }: { label: string; before: str
         <span aria-hidden="true">→</span>
         <span>{full ? after : right.text}</span>
       </div>
-      {clipped && <button type="button" className="task-batch-secondary review-inline" onClick={() => setFull((value) => !value)}>{full ? t('review.collapseDiff') : t('review.expandDiff')}</button>}
+      {clipped && <Button variant="outline" size="bare" type="button" className="task-batch-secondary review-inline" onClick={() => setFull((value) => !value)}>{full ? t('review.collapseDiff') : t('review.expandDiff')}</Button>}
     </div>
   );
 }
@@ -180,19 +182,19 @@ export function ReviewCard({ approval, phase = '', unknown = false, unresolved =
     if (review?.reversibility === 'unsupported') return review.reversibilityReason ? t('review.relatedPendingUnsupported', { count, reason: review.reversibilityReason }) : t('review.relatedPendingUnsupportedBare', { count });
     return review ? t('review.relatedPendingUndo', { count }) : t('review.relatedCount', { count });
   };
-  if (state === 'executed') return <section className="task-batch-card review-receipt" aria-label={review?.title || t('review.result')} data-testid="approval-card" data-approval-id={approval.approvalId} data-state={state}>
+  if (state === 'executed') return <Surface as="section" tone="card" className="task-batch-card review-receipt" aria-label={review?.title || t('review.result')} data-testid="approval-card" data-approval-id={approval.approvalId} data-state={state}>
     <div className="flex flex-wrap items-center gap-2"><Check size={16} className="shrink-0 text-green-700 dark:text-green-300" /><h2 className="min-w-0 flex-1 text-sm font-medium" tabIndex={-1}>{entities.length === 1 ? entities[0].titleAfter || entities[0].titleBefore || review?.title : review?.title}</h2><span className="text-xs text-muted-foreground" role="status">{reviewStatusCopy(state, approval, unresolved)}</span></div>
     <div className="mt-2 flex flex-wrap gap-3">
-      {entities.length === 1 && entities[0].entityType === 'task' && entities[0].operation !== 'delete' && <button type="button" className="review-tech-trigger !mt-0" onClick={() => window.dispatchEvent(new CustomEvent('dovun-open-task', { detail: { taskId: entities[0].entityId } }))}>{t('review.viewTask')}</button>}
-      {skillOnly && <button type="button" className="review-tech-trigger !mt-0" onClick={() => { window.location.hash = '/skills'; }}>{t('review.viewSkill')}</button>}
-      {canUndo && <button type="button" className="review-tech-trigger !mt-0" disabled={Boolean(busyAction)} onClick={() => void followUp('undo-preview')}>{t('actions.undo')}</button>}
-      <button type="button" className="review-tech-trigger !mt-0" aria-expanded={showAll} onClick={() => setShowAll((value) => !value)}>{showAll ? t('review.collapseResult') : t('review.viewResult')}</button>
+      {entities.length === 1 && entities[0].entityType === 'task' && entities[0].operation !== 'delete' && <Button variant="plain" size="bare" type="button" className="review-tech-trigger !mt-0" onClick={() => window.dispatchEvent(new CustomEvent('dovun-open-task', { detail: { taskId: entities[0].entityId } }))}>{t('review.viewTask')}</Button>}
+      {skillOnly && <Button variant="plain" size="bare" type="button" className="review-tech-trigger !mt-0" onClick={() => { window.location.hash = '/skills'; }}>{t('review.viewSkill')}</Button>}
+      {canUndo && <Button variant="plain" size="bare" type="button" className="review-tech-trigger !mt-0" disabled={Boolean(busyAction)} onClick={() => void followUp('undo-preview')}>{t('actions.undo')}</Button>}
+      <Button variant="plain" size="bare" type="button" className="review-tech-trigger !mt-0" aria-expanded={showAll} onClick={() => setShowAll((value) => !value)}>{showAll ? t('review.collapseResult') : t('review.viewResult')}</Button>
     </div>
     {showAll && <div className="mt-3"><div data-testid="approval-impact">{(review?.consequences ?? []).map((line) => <p key={line} className="task-batch-summary">{line}</p>)}</div><p className="task-batch-summary" data-testid="approval-related">{relatedText(true)}</p><div className="review-entities">{entities.map((entity) => <EntityBlock key={`${entity.entityType}:${entity.entityId}`} entity={entity} />)}</div></div>}
     {localError && <p className="task-batch-alert" role="alert">{localError}</p>}
-  </section>;
+  </Surface>;
   return (
-    <section className="task-batch-card" aria-label={review?.title || t('review.proposal')} data-testid="approval-card" data-approval-id={approval.approvalId} data-state={state}>
+    <Surface as="section" tone="card" className="task-batch-card" aria-label={review?.title || t('review.proposal')} data-testid="approval-card" data-approval-id={approval.approvalId} data-state={state}>
       <div className="review-heading"><span className="review-symbol"><ClipboardList size={18} /></span><div><span className="review-kicker">{approval.reversesApprovalId ? t('review.undoPreview') : skillOnly ? t('review.skillPreview') : t('review.changePreview')}</span><h2 className="task-batch-title" tabIndex={-1}>{review?.title || t('review.proposal')}</h2></div></div>
       <p className="task-batch-status" data-tone={state === 'rejected' || state === 'superseded' || state === 'capability_removed' ? 'neutral' : state === 'approving' || state === 'rejecting' ? 'pending' : state} role="status">
         <span>{reviewStatusCopy(state, approval, unresolved)}</span>
@@ -222,15 +224,15 @@ export function ReviewCard({ approval, phase = '', unknown = false, unresolved =
       {localError && <p className="task-batch-alert" role="alert">{localError}</p>}
       {state === 'pending' && (
         <div className="task-batch-actions">
-          <button type="button" className="task-batch-secondary" disabled={decisionLocked} onClick={cancel}>{t('actions.cancel')}</button>
-          <button type="button" className="task-batch-secondary" disabled={decisionLocked} onClick={adjust}>{t('review.adjust')}</button>
-          {skillOnly && <button type="button" className="task-batch-secondary" disabled={decisionLocked || approval.proposalRevision == null} onClick={editSkill}>{t('review.editInEditor')}</button>}
-          <button type="button" className="task-batch-primary" disabled={decisionLocked} onClick={confirm}>{skillOnly ? t('review.confirmSave') : t('review.confirm')}</button>
+          <Button variant="outline" size="bare" type="button" className="task-batch-secondary" disabled={decisionLocked} onClick={cancel}>{t('actions.cancel')}</Button>
+          <Button variant="outline" size="bare" type="button" className="task-batch-secondary" disabled={decisionLocked} onClick={adjust}>{t('review.adjust')}</Button>
+          {skillOnly && <Button variant="outline" size="bare" type="button" className="task-batch-secondary" disabled={decisionLocked || approval.proposalRevision == null} onClick={editSkill}>{t('review.editInEditor')}</Button>}
+          <Button variant="default" size="bare" type="button" className="task-batch-primary" disabled={decisionLocked} onClick={confirm}>{skillOnly ? t('review.confirmSave') : t('review.confirm')}</Button>
         </div>
       )}
-      {conflict && <div className="task-batch-actions"><button type="button" className="task-batch-primary" disabled={Boolean(busyAction)} onClick={() => void followUp('repreview')}>{t('review.repreview')}</button></div>}
-      {canUndo && <div className="task-batch-actions"><button type="button" className="task-batch-secondary" disabled={Boolean(busyAction)} onClick={() => void followUp('undo-preview')}>{t('actions.undo')}</button></div>}
-      {state === 'superseded' && approval.supersededByApprovalId && <div className="task-batch-actions"><button type="button" className="task-batch-secondary" onClick={() => window.dispatchEvent(new CustomEvent('dovun-locate-approval', { detail: { approvalId: approval.supersededByApprovalId } }))}>{t('review.viewNewProposal')}</button></div>}
-    </section>
+      {conflict && <div className="task-batch-actions"><Button variant="default" size="bare" type="button" className="task-batch-primary" disabled={Boolean(busyAction)} onClick={() => void followUp('repreview')}>{t('review.repreview')}</Button></div>}
+      {canUndo && <div className="task-batch-actions"><Button variant="outline" size="bare" type="button" className="task-batch-secondary" disabled={Boolean(busyAction)} onClick={() => void followUp('undo-preview')}>{t('actions.undo')}</Button></div>}
+      {state === 'superseded' && approval.supersededByApprovalId && <div className="task-batch-actions"><Button variant="outline" size="bare" type="button" className="task-batch-secondary" onClick={() => window.dispatchEvent(new CustomEvent('dovun-locate-approval', { detail: { approvalId: approval.supersededByApprovalId } }))}>{t('review.viewNewProposal')}</Button></div>}
+    </Surface>
   );
 }

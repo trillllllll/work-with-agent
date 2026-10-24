@@ -1,3 +1,6 @@
+import { Surface } from '@/components/ui/surface.js';
+import { Textarea } from '@/components/ui/textarea.js';
+import { Button } from '@/components/ui/button.js';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ExternalPromptPart } from '@/chat.js';
@@ -25,7 +28,7 @@ export function ExternalPromptCard({ part }: { part: ExternalPromptPart }) {
     }
   };
   return (
-    <section className="task-batch-card" data-testid="external-prompt-card" aria-label={title}>
+    <Surface as="section" tone="card" className="task-batch-card" data-testid="external-prompt-card" aria-label={title}>
       <h2 className="task-batch-title">{title}</h2>
       <p className="task-batch-summary">{part.limitation}</p>
       <p className="task-batch-summary">{t('externalPrompt.ready')}</p>
@@ -38,13 +41,13 @@ export function ExternalPromptCard({ part }: { part: ExternalPromptPart }) {
       {manual && (
         <label className="task-batch-summary">
           {t('externalPrompt.manualCopy')}
-          <textarea className="external-prompt-manual" readOnly value={part.prompt} aria-label={t('externalPrompt.manualCopy')} />
+          <Textarea className="external-prompt-manual" readOnly value={part.prompt} aria-label={t('externalPrompt.manualCopy')} />
         </label>
       )}
       <div className="task-batch-actions">
-        <button type="button" className="task-batch-primary" onClick={() => void copy()}>{copied ? t('externalPrompt.copied') : t('externalPrompt.copy')}</button>
+        <Button variant="default" size="bare" type="button" className="task-batch-primary" onClick={() => void copy()}>{copied ? t('externalPrompt.copied') : t('externalPrompt.copy')}</Button>
       </div>
       <p className="task-batch-summary">{t('externalPrompt.pasteBack')}</p>
-    </section>
+    </Surface>
   );
 }

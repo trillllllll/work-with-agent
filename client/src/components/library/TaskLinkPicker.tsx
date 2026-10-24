@@ -1,3 +1,6 @@
+import { Input } from '@/components/ui/input.js';
+import { Button } from '@/components/ui/button.js';
+import { Checkbox } from '@/components/ui/checkbox.js';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
@@ -28,13 +31,13 @@ export function TaskLinkPicker({ selectedIds, onChange }: { selectedIds: string[
     onChange(checked ? [...new Set([...selectedIds, taskId])] : selectedIds.filter((item) => item !== taskId));
   };
   return <div className="library-task-picker" data-testid="library-task-picker">
-    <input className="library-search library-task-search" aria-label={t('taskLinkPicker.searchLabel')} value={query} onChange={(event) => setQuery(event.target.value)} />
+    <Input className="library-search library-task-search" aria-label={t('taskLinkPicker.searchLabel')} value={query} onChange={(event) => setQuery(event.target.value)} />
     {selectedIds.length > 0 && <p className="library-meta">{t('taskLinkPicker.selected', { count: selectedIds.length })}</p>}
-    {tasks.isError && <div className="library-meta" role="alert"><p>{tasks.error instanceof Error ? tasks.error.message : t('taskLinkPicker.loadFailed')}</p><button type="button" className="library-btn" onClick={() => { void tasks.refetch(); }}>{t('shared.retry')}</button></div>}
+    {tasks.isError && <div className="library-meta" role="alert"><p>{tasks.error instanceof Error ? tasks.error.message : t('taskLinkPicker.loadFailed')}</p><Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => { void tasks.refetch(); }}>{t('shared.retry')}</Button></div>}
     {!tasks.isError && <ul className="library-task-results">
       {(tasks.data ?? []).map((task) => <li key={task.id} data-testid={`task-picker-row-${task.id}`}>
         <label className="library-task-option">
-          <input type="checkbox" aria-label={t('shared.selectNamed', { name: task.title })} checked={selectedIds.includes(task.id)} onChange={(event) => toggle(task.id, event.target.checked)} />
+          <Checkbox  aria-label={t('shared.selectNamed', { name: task.title })} checked={selectedIds.includes(task.id)} onChange={(event) => toggle(task.id, event.target.checked)} />
           <span className="min-w-0">
             <span className="library-name block truncate">{task.title}</span>
             <span className="library-meta block truncate">{topicName(task)} · {statusName(task.status)}</span>

@@ -1,3 +1,4 @@
+import { Checkbox } from '@/components/ui/checkbox.js';
 import { useState, type FormEvent } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { Eye, EyeOff, TriangleAlert } from 'lucide-react';
@@ -145,7 +146,7 @@ function SetupStep({ created }: { created: CreatedConnection }) {
       <ol className="list-decimal space-y-4 pl-5 text-sm">
         <li className="space-y-2">
           <p>{legacyEntry ? t('connections.transitionHint') : created.host === 'codex' ? t('connections.powershellCodex') : t('connections.powershellCommand')}</p>
-          <p className="text-xs text-muted-foreground">{t('connections.transitionHint')}</p><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={legacyEntry} onChange={event => setLegacyEntry(event.target.checked)} />{t('connections.legacyEntry')}</label><pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg bg-muted p-3 text-xs">{setup}</pre>
+          <p className="text-xs text-muted-foreground">{t('connections.transitionHint')}</p><label className="flex items-center gap-2 text-sm"><Checkbox  checked={legacyEntry} onChange={event => setLegacyEntry(event.target.checked)} />{t('connections.legacyEntry')}</label><pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg bg-muted p-3 text-xs">{setup}</pre>
           <CopyButton label={copyLabel} text={setup} />
           <div className="flex flex-wrap items-center gap-2">
             <Input readOnly className="min-w-0 flex-1" type={visible ? 'text' : 'password'} autoComplete="off" spellCheck={false} aria-label={t('connections.credentialAria')} value={created.token} />

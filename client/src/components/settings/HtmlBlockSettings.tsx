@@ -1,3 +1,4 @@
+import { Checkbox } from '@/components/ui/checkbox.js';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -29,7 +30,7 @@ export function HtmlBlockSettings() {
   return <section aria-label={t('htmlBlocks.region')}><h3 className="text-lg font-semibold">{t('htmlBlocks.title')}</h3>
     <p className="mt-1 text-sm text-muted-foreground">{t('htmlBlocks.description')}</p>
     {settings.isError ? <p role="alert" className="mt-3 text-sm">{t('htmlBlocks.loadFailed')}<Button variant="ghost" size="sm" onClick={() => void settings.refetch()}>{t('actions.retry')}</Button></p> : <div className="mt-4 space-y-4">
-      <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="size-4" checked={pendingEnabled ?? data?.enabled ?? false} disabled={!data} onChange={(event) => { setPendingEnabled(event.target.checked); save.mutate({ enabled: event.target.checked }); }} />{t('htmlBlocks.allow')}</label>
+      <label className="flex items-center gap-2 text-sm"><Checkbox  className="size-4" checked={pendingEnabled ?? data?.enabled ?? false} disabled={!data} onChange={(event) => { setPendingEnabled(event.target.checked); save.mutate({ enabled: event.target.checked }); }} />{t('htmlBlocks.allow')}</label>
       <form className="space-y-2" onSubmit={(event) => { event.preventDefault(); save.mutate({ cdn: lines(cdn) }); }}>
         <Label htmlFor="html-cdn-allowlist">{t('htmlBlocks.cdnLabel')}</Label>
         <Textarea id="html-cdn-allowlist" rows={4} spellCheck={false} className="font-mono text-xs" value={cdn} disabled={!data || save.isPending} onChange={(event) => setCdn(event.target.value)} />

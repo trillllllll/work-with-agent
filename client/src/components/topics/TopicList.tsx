@@ -35,14 +35,14 @@ function SidebarTopicList({ topics, loading, selectedTopicId, onSelect, onEdit }
         const active = topic.id === selectedTopicId;
         return (
           <div key={topic.id} className="sidebar-row" data-active={active || undefined}>
-            <button type="button" onClick={() => onSelect(topic.id)} aria-current={active ? 'page' : undefined} className="sidebar-link">
+            <Button variant="row" size="bare" type="button" onClick={() => onSelect(topic.id)} aria-current={active ? 'page' : undefined} className="sidebar-link">
               <span className="sidebar-list-mark" data-color={topic.color || 'slate'} aria-hidden="true" />
               <span className="min-w-0 flex-1 truncate">{topic.name}</span>
               {topic.isExploration && <em className="sidebar-explore-tag">{t('topicList.exploring')}</em>}
-            </button>
-            <button type="button" aria-label={t('topicList.editNamed', { name: topic.name })} onClick={() => onEdit(topic)} className="sidebar-edit">
+            </Button>
+            <Button variant="row" size="bare" type="button" aria-label={t('topicList.editNamed', { name: topic.name })} onClick={() => onEdit(topic)} className="sidebar-edit">
               <Pencil className="size-3.5" strokeWidth={1.75} />
-            </button>
+            </Button>
           </div>
         );
       })}
@@ -59,19 +59,19 @@ function PageTopicList({ topics, loading, selectedTopicId, onSelect, onEdit, onO
   const { t } = useTranslation('settings');
   return (
     <div className={cn('sidebar-topic-list flex flex-col gap-1', className)}>
-      {onOpenInbox && <div data-active={inboxActive || undefined} className={classificationClass(inboxActive)}><button type="button" onClick={onOpenInbox} aria-current={inboxActive ? 'page' : undefined} className={classificationLabelClass(inboxActive)}><span className={cn('size-1.5 shrink-0 rounded-full transition-[background-color,box-shadow,transform] duration-200', inboxActive ? 'scale-110 bg-primary shadow-[0_0_0_3px_var(--accent)]' : 'bg-muted-foreground/40')} /><span className="truncate">{t('topicList.inbox')}</span></button></div>}
+      {onOpenInbox && <div data-active={inboxActive || undefined} className={classificationClass(inboxActive)}><Button variant="plain" size="bare" type="button" onClick={onOpenInbox} aria-current={inboxActive ? 'page' : undefined} className={classificationLabelClass(inboxActive)}><span className={cn('size-1.5 shrink-0 rounded-full transition-[background-color,box-shadow,transform] duration-200', inboxActive ? 'scale-110 bg-primary shadow-[0_0_0_3px_var(--accent)]' : 'bg-muted-foreground/40')} /><span className="truncate">{t('topicList.inbox')}</span></Button></div>}
       {loading ? Array.from({ length: 5 }, (_, index) => <Skeleton key={index} className="h-9 w-full" />) : topics.length ? topics.map((topic) => {
         const active = topic.id === selectedTopicId;
         return (
           <div key={topic.id} data-active={active || undefined} className={classificationClass(active)}>
-            <button type="button" onClick={() => onSelect(topic.id)} aria-current={active ? 'page' : undefined} className={classificationLabelClass(active)}>
+            <Button variant="plain" size="bare" type="button" onClick={() => onSelect(topic.id)} aria-current={active ? 'page' : undefined} className={classificationLabelClass(active)}>
               <span className="list-color-dot" data-color={topic.color || 'slate'} aria-hidden="true" />
               <span className="truncate">{topic.name}</span>
               {topic.isExploration && <em className="sidebar-explore-tag ml-auto">{t('topicList.exploring')}</em>}
-            </button>
-            <button type="button" title={t('topicList.edit')} aria-label={t('topicList.editNamed', { name: topic.name })} onClick={() => onEdit(topic)} className="mr-1 grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground opacity-100 transition-[background-color,color,opacity,transform] duration-200 hover:scale-105 hover:bg-[var(--glass-hover)] hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100">
+            </Button>
+            <Button variant="plain" size="bare" type="button" title={t('topicList.edit')} aria-label={t('topicList.editNamed', { name: topic.name })} onClick={() => onEdit(topic)} className="mr-1 grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground opacity-100 transition-[background-color,color,opacity,transform] duration-200 hover:scale-105 hover:bg-[var(--glass-hover)] hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100">
               <Pencil className="size-3.5" />
-            </button>
+            </Button>
           </div>
         );
       }) : <p className="rounded-xl border border-dashed border-[var(--glass-border)] px-3 py-4 text-xs leading-relaxed text-muted-foreground">{t('topicList.empty')}</p>}

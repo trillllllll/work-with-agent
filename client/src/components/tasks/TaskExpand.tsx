@@ -1,3 +1,5 @@
+import { TagChip } from '@/components/ui/tag-chip.js';
+import { Checkbox } from '@/components/ui/checkbox.js';
 import { askAssistant, usePageContext } from '@/lib/assistant-context.js';
 import { createContext, forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type KeyboardEvent, type MutableRefObject, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -5,7 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { BodyText } from '@/components/shared/BodyText.js';
 import { intlLocale, t as translate } from '../../i18n/index.js';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, CalendarDays, Check, ChevronRight, Clock, Flag, FolderKanban, Hash, Timer, X } from 'lucide-react';
+import { AlertTriangle, CalendarDays,  ChevronRight, Clock, Flag, FolderKanban, Hash, Timer, X } from 'lucide-react';
 import { api, ApiError, priorities, type Status, type Tag, type Task, type TaskPriority } from '@/lib/api.js';
 import { isCompositionKey, sameField, taskDraft, queryKeys, type TaskDraft } from '@/lib/todo.js';
 import { scheduleLabel } from '@/lib/schedule.js';
@@ -395,11 +397,11 @@ function StaleBranchDialog({ taskId, branches, onResolved }: { taskId: string; b
     try { await coordinator.restoreBranch(taskId, branchId); onResolved(); }
     finally { setBusy(false); }
   };
-  return <Dialog open><DialogContent surface="glass"><DialogHeader><DialogTitle>{t('taskExpand.staleTitle')}</DialogTitle><DialogDescription>{t('taskExpand.staleDescription')}</DialogDescription></DialogHeader><div className="max-h-72 space-y-2 overflow-y-auto">{branches.map((branch) => <button key={branch.branchId} type="button" disabled={busy} className="w-full rounded-xl border border-border p-3 text-left hover:bg-[var(--glass-hover)]" onClick={() => { void restore(branch.branchId); }}>
+  return <Dialog open><DialogContent surface="glass"><DialogHeader><DialogTitle>{t('taskExpand.staleTitle')}</DialogTitle><DialogDescription>{t('taskExpand.staleDescription')}</DialogDescription></DialogHeader><div className="max-h-72 space-y-2 overflow-y-auto">{branches.map((branch) => <Button variant="card" size="bare" key={branch.branchId} type="button" disabled={busy} className="w-full rounded-xl border-border p-3 text-left hover:bg-[var(--glass-hover)]" onClick={() => { void restore(branch.branchId); }}>
     <p className="truncate text-sm font-medium">{branch.draft.title || t('shared.untitled')}</p>
     <p className="mt-1 line-clamp-2 whitespace-pre-wrap text-xs text-muted-foreground">{branch.draft.description.slice(0, 160)}</p>
     <p className="mt-1 text-xs text-muted-foreground">{t('taskExpand.updatedAt', { time: new Date(branch.updatedAt).toLocaleString(intlLocale()) })}</p>
-  </button>)}</div></DialogContent></Dialog>;
+  </Button>)}</div></DialogContent></Dialog>;
 }
 
 function flattenTitle(value: string) {
@@ -437,7 +439,7 @@ export function TaskTitleField({ className }: { className?: string }) {
     observer.observe(parent);
     return () => observer.disconnect();
   }, [edit.draft.title]);
-  return <textarea ref={ref} data-task-editor aria-label={t('taskExpand.titleLabel')} required rows={1} value={edit.draft.title} disabled={edit.readonly} onChange={(event) => edit.updateText({ title: flattenTitle(event.target.value) })} onPaste={(event) => {
+  return <Textarea variant="inline" ref={ref} data-task-editor aria-label={t('taskExpand.titleLabel')} required rows={1} value={edit.draft.title} disabled={edit.readonly} onChange={(event) => edit.updateText({ title: flattenTitle(event.target.value) })} onPaste={(event) => {
     const text = event.clipboardData.getData('text');
     if (!/[\r\n]/.test(text)) return;
     event.preventDefault();
@@ -455,15 +457,15 @@ function TaskStatusCheckbox() {
   const { t } = useTranslation('tasks');
   const edit = useEdit();
   const done = edit.draft.status === 'done';
-  return <button type="button" role="checkbox" aria-checked={done} aria-label={t(done ? 'shared.reopenTask' : 'shared.completeTask', { title: edit.draft.title })} disabled={edit.readonly} className="task-check-round mt-[5px] shrink-0" onClick={() => edit.setStatus(done ? 'todo' : 'done')}>{done && <Check className="size-3" aria-hidden />}</button>;
+  return <Checkbox shape="round" checked={done} aria-label={t(done ? 'shared.reopenTask' : 'shared.completeTask', { title: edit.draft.title })} disabled={edit.readonly} className="task-check-round mt-[5px] shrink-0" onChange={() => edit.setStatus(done ? 'todo' : 'done')} />;
 }
 
 const InfoRow = forwardRef<HTMLButtonElement, { icon: typeof CalendarDays; label: string; value: string; hasValue: boolean; disabled?: boolean; 'aria-label': string }>(function InfoRow({ icon: Icon, label, value, hasValue, ...props }, ref) {
-  return <button ref={ref} type="button" {...props} className="task-info-row">
+  return <Button variant="row" size="bare" ref={ref} type="button" {...props} className="task-info-row">
     <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
     <span className="w-20 shrink-0 text-left text-muted-foreground">{label}</span>
     <span className={cn('min-w-0 flex-1 truncate text-right', hasValue ? '' : 'text-muted-foreground')}>{value}</span>
-  </button>;
+  </Button>;
 });
 
 type DetailSection = 'details' | 'materials' | 'context';
@@ -557,13 +559,13 @@ function TagPicker() {
   return <Popover>
     <div className={cn('task-info-row', edit.readonly && 'opacity-50')}>
       <PopoverTrigger asChild>
-        <button type="button" className="flex min-w-0 flex-1 items-center gap-[0.625rem] bg-transparent p-0 text-left" aria-label={t('taskExpand.tags')} disabled={edit.readonly}>
+        <Button variant="row" size="bare" type="button" className="flex min-w-0 flex-1 items-center gap-[0.625rem] bg-transparent p-0 text-left" aria-label={t('taskExpand.tags')} disabled={edit.readonly}>
           <Hash className="size-4 shrink-0 text-muted-foreground" aria-hidden />
           <span className="w-20 shrink-0 text-left text-muted-foreground">{t('taskExpand.tags')}</span>
           {selected.length === 0 && <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">{t('taskExpand.set')}</span>}
-        </button>
+        </Button>
       </PopoverTrigger>
-      {selected.length > 0 && <div className="flex min-w-0 flex-wrap justify-end gap-1.5">{selected.map((tag) => <span key={tag.id} className="task-tag-chip inline-flex items-center gap-1" data-color={tag.color || 'violet'}>#{tag.name}{!edit.readonly && <button type="button" className="grid size-4 place-items-center rounded-full hover:bg-black/10 dark:hover:bg-white/10" aria-label={t('taskExpand.removeTag', { name: tag.name })} onClick={() => edit.toggleTag(tag.id, false)}><X className="size-3" /></button>}</span>)}</div>}
+      {selected.length > 0 && <div className="flex min-w-0 flex-wrap justify-end gap-1.5">{selected.map((tag) => <TagChip key={tag.id} className="inline-flex items-center gap-1" data-color={tag.color || 'violet'}>#{tag.name}{!edit.readonly && <Button variant="plain" size="bare" type="button" className="grid size-4 place-items-center rounded-full hover:bg-black/10 dark:hover:bg-white/10" aria-label={t('taskExpand.removeTag', { name: tag.name })} onClick={() => edit.toggleTag(tag.id, false)}><X className="size-3" /></Button>}</TagChip>)}</div>}
     </div>
     <PopoverContent data-task-editor className="space-y-2">
       <form className="space-y-1" onSubmit={(event) => { event.preventDefault(); void add(); }}>
@@ -572,7 +574,7 @@ function TagPicker() {
       </form>
       <div className="max-h-56 space-y-1 overflow-y-auto">
         {!edit.tags.length && <p className="px-2 py-1.5 text-xs text-muted-foreground">{t('taskExpand.tagHint')}</p>}
-        {edit.tags.map((tag) => <label key={tag.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-[var(--glass-hover)]"><input type="checkbox" checked={edit.draft.tagIds?.includes(tag.id) ?? false} onChange={(event) => edit.toggleTag(tag.id, event.target.checked)} />{tag.name}</label>)}
+        {edit.tags.map((tag) => <label key={tag.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-[var(--glass-hover)]"><Checkbox  checked={edit.draft.tagIds?.includes(tag.id) ?? false} onChange={(event) => edit.toggleTag(tag.id, event.target.checked)} />{tag.name}</label>)}
       </div>
     </PopoverContent>
   </Popover>;
@@ -644,12 +646,12 @@ function ParentTaskLink() {
   if (parentId === edit.taskId || notFound) return unavailable;
   if (parent && parent.id === parentId) {
     if (parent.deletedAt) return unavailable;
-    return <div data-testid="task-parent-row" className="task-parent-row"><button type="button" data-testid="task-parent-link" className="task-parent-link" title={parent.title} aria-label={t('taskExpand.openParent', { title: parent.title })} onClick={openParent}><span data-testid="task-parent-title" className="task-parent-title">{parent.title}</span><ChevronRight aria-hidden="true" width={14} height={14} strokeWidth={1.5} className="task-parent-chevron" /></button></div>;
+    return <div data-testid="task-parent-row" className="task-parent-row"><Button variant="plain" size="bare" type="button" data-testid="task-parent-link" className="task-parent-link" title={parent.title} aria-label={t('taskExpand.openParent', { title: parent.title })} onClick={openParent}><span data-testid="task-parent-title" className="task-parent-title">{parent.title}</span><ChevronRight aria-hidden="true" width={14} height={14} strokeWidth={1.5} className="task-parent-chevron" /></Button></div>;
   }
   if (parent && parent.id !== parentId) return unavailable;
   if (query.isFetching) return loading;
   if (query.isError) {
-    return <div data-testid="task-parent-row" className="task-parent-row"><button type="button" className="task-parent-link" aria-label={t('taskExpand.parentRetryLabel')} onClick={() => { void query.refetch(); }}>{t('taskExpand.parentRetry')}</button></div>;
+    return <div data-testid="task-parent-row" className="task-parent-row"><Button variant="plain" size="bare" type="button" className="task-parent-link" aria-label={t('taskExpand.parentRetryLabel')} onClick={() => { void query.refetch(); }}>{t('taskExpand.parentRetry')}</Button></div>;
   }
   return loading;
 }
@@ -708,12 +710,12 @@ export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children
     <DetailFrame presentation={presentation} panelSlot={panelSlot}>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="dovun-detail-tabs" role="tablist" aria-label={t('companion.details')}>
-          {(['details', 'materials', 'context'] as const).map((tab, index, tabs) => <button type="button" role="tab" key={tab} id={`detail-tab-${props.id}-${tab}`} aria-controls={`detail-panel-${props.id}`} aria-selected={section === tab} tabIndex={section === tab ? 0 : -1} onClick={() => setSection(tab)} onKeyDown={event => {
+          {(['details', 'materials', 'context'] as const).map((tab, index, tabs) => <Button variant="tab" size="bare" type="button" role="tab" key={tab} id={`detail-tab-${props.id}-${tab}`} aria-controls={`detail-panel-${props.id}`} aria-selected={section === tab} tabIndex={section === tab ? 0 : -1} onClick={() => setSection(tab)} onKeyDown={event => {
             if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
             event.preventDefault();
             const next = event.key === 'Home' ? 0 : event.key === 'End' ? 2 : (index + (event.key === 'ArrowRight' ? 1 : 2)) % 3;
             setSection(tabs[next]); document.getElementById(`detail-tab-${props.id}-${tabs[next]}`)?.focus();
-          }}>{t(`companion.${tab}`)}</button>)}
+          }}>{t(`companion.${tab}`)}</Button>)}
         </div>
         <header className="task-detail-header">
           <TaskAssistantActions />
@@ -731,7 +733,7 @@ function StartFocusButton() {
   const { t } = useTranslation('tasks');
   const edit = useEdit();
   const { dispatch } = useFocus();
-  return <button type="button" className="task-info-row" disabled={edit.readonly} onClick={() => {
+  return <Button variant="row" size="bare" type="button" className="task-info-row" disabled={edit.readonly} onClick={() => {
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') void Notification.requestPermission();
     dispatch({ type: 'START', taskId: edit.taskId, taskTitle: edit.draft.title, now: Date.now() });
     window.dispatchEvent(new CustomEvent('dovun-open-focus'));
@@ -739,7 +741,7 @@ function StartFocusButton() {
     <Timer className="size-4 shrink-0 text-muted-foreground" aria-hidden />
     <span className="w-20 shrink-0 text-left text-muted-foreground">{t('taskExpand.startFocus')}</span>
     <span className="min-w-0 flex-1 truncate text-right" />
-  </button>;
+  </Button>;
 }
 
 function ScheduleControl() {

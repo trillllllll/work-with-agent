@@ -1,3 +1,4 @@
+import { NativeSelect } from '@/components/ui/native-select.js';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Task } from '@/lib/api.js';
@@ -37,9 +38,9 @@ export function ScheduleFields({ value, onChange, estimatedMinutes = null, disab
   const error = scheduleError(value);
   const duration = value.scheduledStart && value.scheduledEnd ? minutesBetween(value.scheduledStart, value.scheduledEnd) : 0;
   return <fieldset disabled={disabled} className="min-w-0 space-y-3">
-    <label className="block text-sm">{t('schedule.mode')}<select aria-label={t('schedule.mode')} className="glass-control mt-1 h-9 w-full rounded-md px-2" value={mode} onChange={(event) => chooseMode(event.target.value)}>
+    <label className="block text-sm">{t('schedule.mode')}<NativeSelect aria-label={t('schedule.mode')} className="glass-control mt-1 h-9 w-full rounded-md px-2" value={mode} onChange={(event) => chooseMode(event.target.value)}>
       <option value="none">{t('schedule.noDate')}</option><option value="allday">{t('schedule.allDay')}</option><option value="point">{t('schedule.point')}</option><option value="range">{t('schedule.range')}</option>
-    </select></label>
+    </NativeSelect></label>
     {mode !== 'none' && <>
       <div className="flex gap-2">{[{ key: 'today', days: 0 }, { key: 'tomorrow', days: 1 }, { key: 'nextWeek', days: 7 }].map(({ key, days }) => <Button key={key} type="button" variant="outline" size="sm" onClick={() => {
         const date = new Date(); date.setDate(date.getDate() + days);

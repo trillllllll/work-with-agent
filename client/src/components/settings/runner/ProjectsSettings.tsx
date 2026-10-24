@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -50,7 +51,7 @@ export function ProjectsSettings() {
       ) : (projects.data ?? []).length === 0 ? <p className="mt-4 text-sm text-muted-foreground">{t('projects.empty')}</p> : (
         <div className="mt-4 space-y-3">{projects.data?.map((project) => <ProjectCard key={project.id} project={project} nodes={nodes.data ?? []} topics={topics.data ?? []} />)}</div>
       )}
-      <form aria-label={t('projects.create.form')} className="glass-subtle mt-4 space-y-3 rounded-xl p-4" onSubmit={(event) => { event.preventDefault(); if (name.trim() && branchOk) create.mutate(); }}>
+      <Surface as="form" tone="subtle" aria-label={t('projects.create.form')} className="mt-4 space-y-3 rounded-xl p-4" onSubmit={(event) => { event.preventDefault(); if (name.trim() && branchOk) create.mutate(); }}>
         <h3 className="text-sm font-medium">{t('projects.create.form')}</h3>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
@@ -78,7 +79,7 @@ export function ProjectsSettings() {
           </div>
         </div>
         <Button type="submit" size="sm" disabled={!name.trim() || !branchOk || create.isPending}>{t('projects.create.submit')}</Button>
-      </form>
+      </Surface>
       {archivedRows.length > 0 && (
         <Collapsible className="mt-4">
           <CollapsibleTrigger type="button" className="group flex w-full items-center gap-2 rounded-lg px-1 py-2 text-left text-sm text-muted-foreground hover:text-foreground">

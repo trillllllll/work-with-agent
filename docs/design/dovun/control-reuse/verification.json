@@ -1,0 +1,128 @@
+{
+  "date": "2026-10-24",
+  "branch": "codex/dovun-workspace",
+  "base": "9f3ce96e1a06bb13f40c1a25c4cb10262d887770",
+  "scope": "public control reuse and autosave revision bridge; authorized commit/push and local Dovun overwrite; no server deployment or migration",
+  "unit": {
+    "server": {
+      "files": 95,
+      "passed": 832
+    },
+    "client": {
+      "files": 64,
+      "passed": 375
+    }
+  },
+  "review": {
+    "critical": 0,
+    "important": 0,
+    "mode": "independent read-only review; issues fixed before verification"
+  },
+  "routes": [
+    {
+      "engine": "chromium",
+      "cases": 128,
+      "uncovered": 0,
+      "wrongPaint": 0,
+      "errors": [],
+      "notifications": []
+    },
+    {
+      "engine": "mobile",
+      "cases": 128,
+      "uncovered": 0,
+      "wrongPaint": 0,
+      "errors": [],
+      "notifications": []
+    },
+    {
+      "engine": "webkit-controls",
+      "cases": 128,
+      "uncovered": 0,
+      "wrongPaint": 0,
+      "errors": [],
+      "notifications": [
+        {
+          "route": "http://127.0.0.1:5199/#/inbox",
+          "message": "ResizeObserver loop completed with undelivered notifications."
+        }
+      ]
+    }
+  ],
+  "regression": {
+    "scheduled": 264,
+    "initial": {
+      "passed": 235,
+      "skipped": 13,
+      "failed": 16
+    },
+    "recheck": {
+      "scheduled": 28,
+      "passed": 24,
+      "skipped": 4,
+      "failed": 0,
+      "covers": "all failures from initial broad run; includes additional menu regression"
+    }
+  },
+  "build": "passed; existing >500k chunk warning",
+  "i18n": "passed",
+  "tokenDrift": "passed",
+  "final": {
+    "controls": {
+      "scheduled": 21,
+      "passed": 21,
+      "failed": 0
+    },
+    "combined_initial": {
+      "scheduled": 30,
+      "passed": 29,
+      "failed": 1,
+      "failure": "mobile completion before list event refresh; revision conflict"
+    },
+    "inline_recheck": {
+      "scheduled": 9,
+      "passed": 9,
+      "failed": 0,
+      "test_change": "wait for saved title to reach the list before completion; API persistence assertion retained"
+    },
+    "afterVersionFix": {
+      "scheduled": 39,
+      "passed": 39,
+      "failed": 0,
+      "skipped": 0,
+      "engines": [
+        "chromium",
+        "mobile",
+        "webkit-controls"
+      ],
+      "includes": "public controls, all-route surfaces, original inline task interactions and deterministic text-save version regression"
+    }
+  },
+  "limits": [
+    "One WebKit ResizeObserver loop browser notification retained in evidence; no application exceptions.",
+    "WebKit CDP-only true touch drag not supported; Chromium mobile touch and WebKit mouse/keyboard paths verified.",
+    "Existing bundle size warning."
+  ],
+  "release": {
+    "authorized": true,
+    "committed": false,
+    "pushed": false,
+    "packaged": false,
+    "installed": false,
+    "deployed": false,
+    "real_data_changed": false,
+    "status": "validated; commit/push then package and install"
+  },
+  "versionConflictRepair": {
+    "mechanism": "publish successful text PATCH into shared cache and advance only contiguous authenticated local text receipts inside the task queue",
+    "unit": 5,
+    "browserCases": 9,
+    "remoteConflictsPreserved": true,
+    "eventStreamBlockedInRegression": true,
+    "oldInlineRefreshWaitRemoved": true,
+    "independentReview": {
+      "critical": 0,
+      "important": 0
+    }
+  }
+}

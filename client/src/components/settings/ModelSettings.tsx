@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { useEffect, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -75,9 +76,9 @@ export function ModelSettings() {
             <Label htmlFor="settings-api-key">{t('modelSettings.apiKey')}</Label>
             <Input id="settings-api-key" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={settingsQuery.data?.apiKeyConfigured ? t('modelSettings.configuredPlaceholder', { masked: settingsQuery.data.apiKeyMasked ?? '' }) : t('modelSettings.enterKey')} autoComplete="new-password" />
           </div>
-          <div className="glass-subtle mb-6 rounded-xl px-3.5 py-2.5 text-xs text-muted-foreground">
+          <Surface as="div" tone="subtle" className="mb-6 rounded-xl px-3.5 py-2.5 text-xs text-muted-foreground">
             {settingsQuery.data?.apiKeyConfigured ? <Trans ns="settings" i18nKey="modelSettings.currentKey" t={t} values={{ masked: settingsQuery.data.apiKeyMasked ?? '' }} components={{ code: <code className="font-mono text-foreground" /> }} /> : t('modelSettings.noApiKey')}
-          </div>
+          </Surface>
           <div className="flex flex-wrap items-center gap-2">
             <Button disabled={save.isPending || clearKey.isPending}>{save.isPending ? t('modelSettings.testing') : t('modelSettings.testAndSave')}</Button>
             {settingsQuery.data?.apiKeyConfigured && (

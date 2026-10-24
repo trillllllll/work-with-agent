@@ -1,3 +1,7 @@
+import { TableRow } from '@/components/ui/table-row.js';
+import { Input } from '@/components/ui/input.js';
+import { NativeSelect } from '@/components/ui/native-select.js';
+import { Surface } from '@/components/ui/surface.js';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation, Trans } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
@@ -70,11 +74,11 @@ export function MemoryExtractionJobs({ topicId }: { topicId: string }) {
       <Button variant="outline" disabled={query.isFetching || invalidRange} onClick={() => void query.refetch()}>{t('jobs.refresh')}</Button>
     </div>
     <div className="memory-jobs-filters">
-      <label>{t('jobs.startDate')}<input type="date" aria-label={t('jobs.startDate')} value={from} onChange={(e) => change(setFrom, e.target.value)} /></label>
-      <label>{t('jobs.endDate')}<input type="date" aria-label={t('jobs.endDate')} value={to} onChange={(e) => change(setTo, e.target.value)} /></label>
-      <label>{t('jobs.model')}<select aria-label={t('jobs.filterModel')} value={model} onChange={(e) => change(setModel, e.target.value)}><option value="">{t('jobs.allModels')}</option>{Array.from(new Set([...(data?.filters.models ?? []), ...(model ? [model] : [])])).map((value) => <option key={value}>{value}</option>)}</select></label>
-      <label>{t('jobs.provider')}<select aria-label={t('jobs.filterProvider')} value={provider} onChange={(e) => change(setProvider, e.target.value)}><option value="">{t('jobs.allProviders')}</option>{Array.from(new Set([...(data?.filters.providers ?? []), ...(provider ? [provider] : [])])).map((value) => <option key={value} value={value}>{providerName(value)}</option>)}</select></label>
-      <label>{t('jobs.statusLabel')}<select aria-label={t('jobs.filterStatus')} value={status} onChange={(e) => change(setStatus, e.target.value)}><option value="">{t('jobs.allStatuses')}</option>{jobStatusKeys.map((key) => <option key={key} value={key}>{jobStatusLabel(key)}</option>)}</select></label>
+      <label>{t('jobs.startDate')}<Input type="date" aria-label={t('jobs.startDate')} value={from} onChange={(e) => change(setFrom, e.target.value)} /></label>
+      <label>{t('jobs.endDate')}<Input type="date" aria-label={t('jobs.endDate')} value={to} onChange={(e) => change(setTo, e.target.value)} /></label>
+      <label>{t('jobs.model')}<NativeSelect aria-label={t('jobs.filterModel')} value={model} onChange={(e) => change(setModel, e.target.value)}><option value="">{t('jobs.allModels')}</option>{Array.from(new Set([...(data?.filters.models ?? []), ...(model ? [model] : [])])).map((value) => <option key={value}>{value}</option>)}</NativeSelect></label>
+      <label>{t('jobs.provider')}<NativeSelect aria-label={t('jobs.filterProvider')} value={provider} onChange={(e) => change(setProvider, e.target.value)}><option value="">{t('jobs.allProviders')}</option>{Array.from(new Set([...(data?.filters.providers ?? []), ...(provider ? [provider] : [])])).map((value) => <option key={value} value={value}>{providerName(value)}</option>)}</NativeSelect></label>
+      <label>{t('jobs.statusLabel')}<NativeSelect aria-label={t('jobs.filterStatus')} value={status} onChange={(e) => change(setStatus, e.target.value)}><option value="">{t('jobs.allStatuses')}</option>{jobStatusKeys.map((key) => <option key={key} value={key}>{jobStatusLabel(key)}</option>)}</NativeSelect></label>
       <Button variant="ghost" onClick={() => { setFrom(''); setTo(''); setModel(''); setProvider(''); setStatus(''); setCursor(0); }}>{t('jobs.allTime')}</Button>
     </div>
     {invalidRange && <p role="alert" className="ctx-error">{t('jobs.invalidRange')}</p>}
@@ -82,22 +86,22 @@ export function MemoryExtractionJobs({ topicId }: { topicId: string }) {
     {query.error && <p role="alert" className="ctx-error"><Trans t={t} i18nKey="jobs.loadFailed" values={{ message: query.error.message }} components={{ retry: <Button variant="outline" onClick={() => void query.refetch()} /> }} /></p>}
     {data && !invalidRange && <>
       <div className="memory-jobs-metrics" aria-label={t('jobs.metricsLabel')}>
-        <div><span>{t('jobs.metrics.jobs')}</span><strong>{data.summary.jobCount.toLocaleString(intlLocale())}</strong></div>
-        <div><span>{t('jobs.metrics.inputTokens')}</span><strong>{formatTokens(data.summary.inputTokens)}</strong></div>
-        <div><span>{t('jobs.metrics.outputTokens')}</span><strong>{formatTokens(data.summary.outputTokens)}</strong></div>
-        <div><span>{t('jobs.metrics.totalTokens')}</span><strong>{formatTokens(data.summary.totalTokens)}</strong></div>
+        <Surface><span>{t('jobs.metrics.jobs')}</span><strong>{data.summary.jobCount.toLocaleString(intlLocale())}</strong></Surface>
+        <Surface><span>{t('jobs.metrics.inputTokens')}</span><strong>{formatTokens(data.summary.inputTokens)}</strong></Surface>
+        <Surface><span>{t('jobs.metrics.outputTokens')}</span><strong>{formatTokens(data.summary.outputTokens)}</strong></Surface>
+        <Surface><span>{t('jobs.metrics.totalTokens')}</span><strong>{formatTokens(data.summary.totalTokens)}</strong></Surface>
       </div>
       <p className="ctx-muted">{t('jobs.summaryNote', { count: data.summary.missingUsageCount })}</p>
       {!data.items.length ? <p className="memory-jobs-empty">{t('jobs.empty')}</p> : <>
         <div className="memory-jobs-table-wrap"><table className="memory-jobs-table">
           <caption className="sr-only">{t('jobs.caption')}</caption>
-          <thead><tr><th>{t('jobs.columns.timeList')}</th><th>{t('jobs.columns.modelProvider')}</th><th>{t('jobs.columns.tokens')}</th><th>{t('jobs.columns.statusUsage')}</th><th>{t('jobs.columns.duration')}</th></tr></thead>
-          <tbody>{data.items.map((job) => <tr key={job.id}><td><span>{jobTime(job)}</span><small>{job.scopeName}</small></td><td><Model job={job} /><small>{providerName(job.provider)}</small></td><td><Tokens job={job} /></td><td><Result job={job} /></td><td>{jobDuration(job)}</td></tr>)}</tbody>
+          <thead><TableRow><th>{t('jobs.columns.timeList')}</th><th>{t('jobs.columns.modelProvider')}</th><th>{t('jobs.columns.tokens')}</th><th>{t('jobs.columns.statusUsage')}</th><th>{t('jobs.columns.duration')}</th></TableRow></thead>
+          <tbody>{data.items.map((job) => <TableRow key={job.id}><td><span>{jobTime(job)}</span><small>{job.scopeName}</small></td><td><Model job={job} /><small>{providerName(job.provider)}</small></td><td><Tokens job={job} /></td><td><Result job={job} /></td><td>{jobDuration(job)}</td></TableRow>)}</tbody>
         </table></div>
-        <div className="memory-jobs-cards">{data.items.map((job) => <article key={job.id} className="ctx-card" aria-label={t('jobs.cardLabel', { id: job.id })}>
+        <div className="memory-jobs-cards">{data.items.map((job) => <Surface as="article" tone="card" key={job.id} className="ctx-card" aria-label={t('jobs.cardLabel', { id: job.id })}>
           <div className="memory-job-card-heading"><strong>{job.scopeName}</strong><span>{jobTime(job)}</span></div>
           <dl><dt>{t('jobs.model')}</dt><dd><Model job={job} /></dd><dt>{t('jobs.provider')}</dt><dd>{providerName(job.provider)}</dd><dt>{t('jobs.tokensLabel')}</dt><dd><Tokens job={job} /></dd><dt>{t('jobs.statusLabel')}</dt><dd><Result job={job} /></dd><dt>{t('jobs.columns.duration')}</dt><dd>{jobDuration(job)}</dd></dl>
-        </article>)}</div>
+        </Surface>)}</div>
       </>}
       <nav aria-label={t('jobs.pagination')} className="memory-jobs-pagination">
         <span>{t('jobs.pageSummary', { count: data.total, page: Math.floor(cursor / 20) + 1 })}</span>

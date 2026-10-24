@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Ellipsis, TriangleAlert } from 'lucide-react';
@@ -64,7 +65,7 @@ export function ConnectionCard({ connection, topics, archivedTopics, revoked = f
   const activity = [command, write].filter(Boolean).join(' · ') || t('connections.noActivity');
   const edit = onEdit ?? (() => {});
   return (
-    <article className="glass-subtle space-y-3 rounded-xl p-4">
+    <Surface as="article" tone="subtle" className="space-y-3 rounded-xl p-4">
       <div className="flex items-start gap-3">
         <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-xs font-semibold">{hostInitials(connection.host)}</span>
         <div className="min-w-0 flex-1">
@@ -122,7 +123,7 @@ export function ConnectionCard({ connection, topics, archivedTopics, revoked = f
           <ConnectionCheck id={connection.id} host={connection.host} lastCommandAt={connection.lastCommandAt} missingTopicIds={missingIds} topics={topics} archivedTopics={archivedTopics} onMissing={(ids) => setOverride({ revision: connection.revision, ids })} onEdit={edit} />
         </div>
       )}
-    </article>
+    </Surface>
   );
 }
 

@@ -1,3 +1,5 @@
+import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure.js';
+import { Checkbox } from '@/components/ui/checkbox.js';
 import { useTranslation } from 'react-i18next';
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
@@ -34,7 +36,7 @@ function QuadrantLane({ definition, tasks, props, showCompleted }: { definition:
     <div className="flex min-h-24 flex-1 flex-col gap-2">
       {active.map((task) => <DraggableTask key={task.id} task={task} props={props} />)}
       {!active.length && !completed.length && <p className="grid min-h-20 flex-1 place-items-center rounded-xl border border-dashed border-border/70 px-3 text-center text-xs text-muted-foreground">{t('quadrant.dropHere')}</p>}
-      {showCompleted && completed.length > 0 && <details className="mt-1 rounded-xl border border-dashed border-border/60 px-2 py-1.5"><summary className="flex cursor-pointer list-none items-center gap-1 text-xs text-muted-foreground"><ChevronDown className="size-3.5" />{t('quadrant.completed', { count: completed.length })}</summary><div className="mt-2 flex flex-col gap-2">{completed.map((task) => <DraggableTask key={task.id} task={task} props={props} completed />)}</div></details>}
+      {showCompleted && completed.length > 0 && <Disclosure className="mt-1 rounded-xl border border-dashed border-border/60 px-2 py-1.5"><DisclosureTrigger className="flex cursor-pointer list-none items-center gap-1 text-xs text-muted-foreground"><ChevronDown className="size-3.5" />{t('quadrant.completed', { count: completed.length })}</DisclosureTrigger><div className="mt-2 flex flex-col gap-2">{completed.map((task) => <DraggableTask key={task.id} task={task} props={props} completed />)}</div></Disclosure>}
     </div>
   </section>;
 }
@@ -57,7 +59,7 @@ export function QuadrantBoard({ tasks, showCompleted, onShowCompleted, onMoveQua
     void onMoveQuadrant(task, target);
   };
   return <div className="space-y-3" data-testid="quadrant-board">
-    <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-muted-foreground">{t('quadrant.hint')}</p><label className="inline-flex cursor-pointer items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={showCompleted} onChange={(event) => onShowCompleted(event.target.checked)} />{t('shared.showCompleted')}</label></div>
+    <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-muted-foreground">{t('quadrant.hint')}</p><label className="inline-flex cursor-pointer items-center gap-2 text-xs text-muted-foreground"><Checkbox  checked={showCompleted} onChange={(event) => onShowCompleted(event.target.checked)} />{t('shared.showCompleted')}</label></div>
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <div className="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-2">{quadrantDefinitions.map((definition) => <QuadrantLane key={definition.id} definition={definition} tasks={tasks.filter((task) => task.priority === definition.id)} props={props} showCompleted={showCompleted} />)}</div>
     </DndContext>

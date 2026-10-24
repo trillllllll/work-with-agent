@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button.js';
 import './library.css';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -16,10 +17,10 @@ export function MaterialReference({ materialId, fallback, onOpenTask }: { materi
   const title = detail.isError ? t('materialReference.unavailable') : detail.data?.title || fallback || t('shared.material');
   const close = () => { setTarget(null); buttonRef.current?.focus(); };
   return <>
-    <button ref={buttonRef} type="button" className="library-surface material-reference" data-testid={`material-reference-${materialId}`} onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setTarget({ materialId, revision: null, chunkId: null }); }}>
+    <Button variant="plain" size="bare" ref={buttonRef} type="button" className="library-surface material-reference" data-testid={`material-reference-${materialId}`} onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }} onClick={(event) => { event.preventDefault(); event.stopPropagation(); setTarget({ materialId, revision: null, chunkId: null }); }}>
       <FileText className="library-icon" aria-hidden />
       <span>{title}</span>
-    </button>
+    </Button>
     {target && createPortal(<div className="library-preview-host library-surface"><LibraryPreview target={target} onTargetChange={setTarget} onClose={close} onOpenTask={onOpenTask} /></div>, document.body)}
   </>;
 }

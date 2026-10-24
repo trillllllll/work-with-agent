@@ -94,7 +94,7 @@ export function WorkspaceModal({ suspended = false, assistantOpen, assistantSlot
           {tabs.map(({ view: tabView, label, icon: Icon }) => {
             const active = tabView === view;
             return (
-              <button
+              <Button variant="row" size="bare"
                 key={tabView}
                 type="button"
                 aria-label={label}
@@ -102,14 +102,11 @@ export function WorkspaceModal({ suspended = false, assistantOpen, assistantSlot
                 onClick={() => onViewChange(tabView)}
                 className={cn(
                   'group flex min-h-9 items-center gap-2 rounded-full px-4 py-1.5 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 motion-reduce:transition-none',
-                  active
-                    ? 'bg-white/80 text-foreground shadow-[0_2px_8px_rgb(15_23_42/0.10),inset_0_1px_0_rgb(255_255_255/0.85)] dark:bg-white/15 dark:text-foreground dark:shadow-[0_2px_8px_rgb(0_0_0/0.2),inset_0_1px_0_rgb(255_255_255/0.12)]'
-                    : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                 )}
               >
                 <Icon className={cn('size-4 shrink-0 transition-colors', active ? 'text-brand-link' : 'text-muted-foreground group-hover:text-foreground')} />
                 <span className="whitespace-nowrap text-[13px] font-medium">{label}</span>
-              </button>
+              </Button>
             );
           })}
         </div>

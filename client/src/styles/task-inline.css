@@ -3,8 +3,7 @@
 .task-row {
   position: relative; display: flex; align-items: center; gap: 6px;
   height: 48px; min-height: 48px; min-width: 0; padding: 3px 8px;
-  border: var(--surface-card-border); border-radius: 10px;
-  background: var(--surface-card-paint); box-shadow: var(--surface-card-shadow);
+  border-radius: 10px;
 }
 .task-row:hover:not([data-selected]) { border-color: var(--ring); }
 .task-row[data-selected] { background: linear-gradient(color-mix(in srgb, var(--workbench-selected) 45%, transparent), color-mix(in srgb, var(--workbench-selected) 45%, transparent)), var(--surface-card-paint); border-color: var(--ring); box-shadow: inset 2px 0 var(--workbench-selected-edge), var(--surface-card-shadow); }

@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -106,7 +107,7 @@ export function ProjectCard({ project, nodes, topics }: { project: ProjectRow; n
     bind.mutate({ ids: next, replace: false });
   };
   return (
-    <article className="glass-subtle space-y-4 rounded-xl p-4">
+    <Surface as="article" tone="subtle" className="space-y-4 rounded-xl p-4">
       <div className="flex flex-wrap items-end gap-2">
         <div className="min-w-0 flex-1 space-y-1">
           <Label htmlFor={`project-${project.id}-name`}>{t('projects.card.name')}</Label>
@@ -174,14 +175,14 @@ export function ProjectCard({ project, nodes, topics }: { project: ProjectRow; n
           {topicIds.map((id) => {
             const topic = topics.find((item) => item.id === id);
             const label = topic?.name ?? id;
-            return <Badge key={id} variant="secondary">{label}<button type="button" className="ml-1" aria-label={t('projects.topics.remove', { name: label })} disabled={bind.isPending} onClick={() => toggleTopic(id)}>×</button></Badge>;
+            return <Badge key={id} variant="secondary">{label}<Button variant="plain" size="bare" type="button" className="ml-1" aria-label={t('projects.topics.remove', { name: label })} disabled={bind.isPending} onClick={() => toggleTopic(id)}>×</Button></Badge>;
           })}
         </div>
         <Popover>
           <PopoverTrigger asChild><Button type="button" size="sm" variant="outline" disabled={bind.isPending}>{t('projects.topics.pick')}</Button></PopoverTrigger>
           <PopoverContent className="max-h-64 overflow-auto">
             {topics.length === 0 ? <p className="text-xs text-muted-foreground">{t('projects.topics.empty')}</p> : topics.map((topic) => (
-              <button key={topic.id} type="button" aria-pressed={topicIds.includes(topic.id)} disabled={bind.isPending} className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-sm hover:bg-[var(--glass-hover)] aria-pressed:font-medium" onClick={() => toggleTopic(topic.id)}>{topic.name}</button>
+              <Button variant="row" size="bare" key={topic.id} type="button" aria-pressed={topicIds.includes(topic.id)} disabled={bind.isPending} className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-sm hover:bg-[var(--glass-hover)] aria-pressed:font-medium" onClick={() => toggleTopic(topic.id)}>{topic.name}</Button>
             ))}
           </PopoverContent>
         </Popover>
@@ -196,7 +197,7 @@ export function ProjectCard({ project, nodes, topics }: { project: ProjectRow; n
           </ul>
         </ConfirmDialog>
       )}
-    </article>
+    </Surface>
   );
 }
 
@@ -212,10 +213,10 @@ export function ArchivedProjectCard({ project }: { project: ProjectRow }) {
     onError: (error: Error) => toast.error(error.message),
   });
   return (
-    <div className="glass-subtle flex flex-wrap items-center gap-2 rounded-xl px-3 py-2 text-sm">
+    <Surface as="div" tone="subtle" className="flex flex-wrap items-center gap-2 rounded-xl px-3 py-2 text-sm">
       <span className="font-medium">{project.name}</span>
       <Button type="button" size="sm" variant="outline" className="ml-auto" disabled={restore.isPending} onClick={() => restore.mutate()}>{t('projects.archived.restore')}</Button>
-    </div>
+    </Surface>
   );
 }
 

@@ -1,3 +1,6 @@
+import { Surface } from '@/components/ui/surface.js';
+import { Input } from '@/components/ui/input.js';
+import { Checkbox } from '@/components/ui/checkbox.js';
 import { useTranslation } from 'react-i18next';
 import { usePageContext } from '@/lib/assistant-context.js';
 import { Maximize2, Minimize2, Pause, Play, SkipForward, Square, Timer, X } from 'lucide-react';
@@ -58,7 +61,7 @@ export function FocusPage({ presentation = 'direct', onExpand, onShrink, onClose
     </header>}
     <div className={compact ? 'glass-scrollbar min-h-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto p-3' : 'mx-auto w-full max-w-5xl space-y-6 p-5 sm:p-7'}>
     {!compact && <div className="flex items-center gap-2"><h1 className="min-w-0 flex-1 text-2xl font-semibold">{t('focus.title')}</h1>{presentation === 'expanded' && <Button type="button" variant="ghost" size="icon-sm" onClick={onShrink} aria-label={t('focus.shrink')} title={t('focus.shrink')}><Minimize2 /></Button>}</div>}
-    <section className={compact ? 'glass-subtle flex flex-col items-center gap-4 rounded-2xl p-4' : 'glass-subtle flex flex-col items-center gap-6 rounded-2xl p-8'}>
+    <Surface as="section" tone="subtle" className={compact ? 'glass-subtle flex flex-col items-center gap-4 rounded-2xl p-4' : 'glass-subtle flex flex-col items-center gap-6 rounded-2xl p-8'}>
       <div className={compact ? 'relative grid size-[180px] place-items-center' : 'relative grid size-[240px] place-items-center'}>
         <svg width={ring} height={ring} viewBox={`0 0 ${ring} ${ring}`} aria-hidden="true">
           <circle cx={center} cy={center} r={radius} fill="none" stroke="var(--glass-hover)" strokeWidth={compact ? 10 : 12} />
@@ -80,19 +83,19 @@ export function FocusPage({ presentation = 'direct', onExpand, onShrink, onClose
         {(state.phase === 'focusing' || state.phase === 'focusPaused') && <Button type="button" variant="secondary" onClick={() => dispatch({ type: 'STOP_EARLY', now: Date.now() })}><Square className="size-4" strokeWidth={1.75} />{t('focus.endAndLog')}</Button>}
         {(state.phase === 'breaking' || state.phase === 'breakPaused' || state.phase === 'breakReady') && <Button type="button" variant="secondary" onClick={() => dispatch({ type: 'SKIP_BREAK' })}><SkipForward className="size-4" strokeWidth={1.75} />{t('focus.skipBreak')}</Button>}
       </div>
-    </section>
-    <section className={compact ? 'glass-control flex flex-wrap items-center gap-3 rounded-xl p-3 text-sm' : 'glass-control flex flex-wrap items-center gap-4 rounded-xl p-4 text-sm'}>
-      <label className="flex items-center gap-2">{t('focus.focusDuration')}<input type="number" min={5} max={120} className="glass-subtle w-20 rounded-lg px-2 py-1" aria-label={t('focus.focusDuration')} disabled={state.phase !== 'idle'} value={state.plannedMinutes} onChange={(event) => dispatch({ type: 'SET_DURATIONS', plannedMinutes: Number(event.target.value), breakMinutes: state.breakMinutes })} />{t('focus.minuteUnit')}</label>
-      <label className="flex items-center gap-2">{t('focus.breakDuration')}<input type="number" min={1} max={30} className="glass-subtle w-20 rounded-lg px-2 py-1" aria-label={t('focus.breakDuration')} disabled={state.phase !== 'idle'} value={state.breakMinutes} onChange={(event) => dispatch({ type: 'SET_DURATIONS', plannedMinutes: state.plannedMinutes, breakMinutes: Number(event.target.value) })} />{t('focus.minuteUnit')}</label>
-      <label className="flex items-center gap-2"><input type="checkbox" className="accent-[var(--primary)]" checked={state.autoStartBreak} disabled={state.phase !== 'idle'} onChange={(event) => dispatch({ type: 'SET_DURATIONS', plannedMinutes: state.plannedMinutes, breakMinutes: state.breakMinutes, autoStartBreak: event.target.checked })} />{t('focus.autoStartBreak')}</label>
-    </section>
+    </Surface>
+    <Surface as="section" tone="input" className={compact ? 'glass-control flex flex-wrap items-center gap-3 rounded-xl p-3 text-sm' : 'glass-control flex flex-wrap items-center gap-4 rounded-xl p-4 text-sm'}>
+      <label className="flex items-center gap-2">{t('focus.focusDuration')}<Input type="number" min={5} max={120} className="glass-subtle w-20 rounded-lg px-2 py-1" aria-label={t('focus.focusDuration')} disabled={state.phase !== 'idle'} value={state.plannedMinutes} onChange={(event) => dispatch({ type: 'SET_DURATIONS', plannedMinutes: Number(event.target.value), breakMinutes: state.breakMinutes })} />{t('focus.minuteUnit')}</label>
+      <label className="flex items-center gap-2">{t('focus.breakDuration')}<Input type="number" min={1} max={30} className="glass-subtle w-20 rounded-lg px-2 py-1" aria-label={t('focus.breakDuration')} disabled={state.phase !== 'idle'} value={state.breakMinutes} onChange={(event) => dispatch({ type: 'SET_DURATIONS', plannedMinutes: state.plannedMinutes, breakMinutes: Number(event.target.value) })} />{t('focus.minuteUnit')}</label>
+      <label className="flex items-center gap-2"><Checkbox  className="accent-[var(--primary)]" checked={state.autoStartBreak} disabled={state.phase !== 'idle'} onChange={(event) => dispatch({ type: 'SET_DURATIONS', plannedMinutes: state.plannedMinutes, breakMinutes: state.breakMinutes, autoStartBreak: event.target.checked })} />{t('focus.autoStartBreak')}</label>
+    </Surface>
     <section className={compact ? 'grid grid-cols-2 gap-3' : 'grid grid-cols-2 gap-4'}>
-      <article className="glass-subtle rounded-xl p-4">
+      <Surface as="article" tone="subtle" className="rounded-xl p-4">
         <p className="text-xs text-muted-foreground">{t('focus.today')}</p>
         <p className="text-2xl font-semibold tabular-nums">{todayMinutes}</p>
         <p className="text-xs text-muted-foreground">{t('focus.pomodoros', { count: todayCount })}</p>
-      </article>
-      <article className="glass-subtle rounded-xl p-4">
+      </Surface>
+      <Surface as="article" tone="subtle" className="rounded-xl p-4">
         <p className="text-xs text-muted-foreground">{t('focus.last7Days')}</p>
         <div className="mt-2 flex h-16 items-end gap-1.5">
           {minutes.map((value, index) => <span key={days[index]} className={cn('flex-1 rounded-sm', value ? days[index] === today ? 'bg-[var(--primary)]' : 'bg-[var(--primary)]/80' : 'h-1 bg-[var(--glass-hover)]')} style={value ? { height: `${Math.max(4, Math.round(value / peak * 64))}px` } : undefined} />)}
@@ -100,9 +103,9 @@ export function FocusPage({ presentation = 'direct', onExpand, onShrink, onClose
         <div className="mt-1 flex gap-1.5">
           {weekdayIds.map((day) => <span key={day} title={t(`weekday.${day}.full`)} className="flex-1 whitespace-nowrap text-center text-[10px] text-muted-foreground">{compact ? t(`weekday.${day}.narrow`) : t(`weekday.${day}.short`)}</span>)}
         </div>
-      </article>
+      </Surface>
     </section>
-    <section className="glass-subtle divide-y divide-[var(--glass-divider)] rounded-2xl">
+    <Surface as="section" tone="subtle" className="divide-y divide-[var(--glass-divider)] rounded-2xl">
       {sessions.isLoading && <p className="px-4 py-8 text-center text-sm text-muted-foreground">{t('shared.loadingTasks')}</p>}
       {sessions.error && <p role="alert" className="px-4 py-8 text-center text-sm text-destructive">{sessions.error.message}</p>}
       {!sessions.isLoading && !sessions.error && !rows.length && <p className="px-4 py-8 text-center text-sm text-muted-foreground">{t('focus.empty')}</p>}
@@ -111,7 +114,7 @@ export function FocusPage({ presentation = 'direct', onExpand, onShrink, onClose
         <time className="shrink-0 tabular-nums text-muted-foreground">{formatTime(session.startedAt)}-{formatTime(session.endedAt)}</time>
         <span className="shrink-0">{t('focus.sessionMinutes', { count: session.durationMinutes })}{!session.completed && <span className="ml-2 text-xs text-[var(--warning)]">{t('focus.interrupted')}</span>}</span>
       </div>)}
-    </section>
+    </Surface>
     </div>
   </div>;
 }

@@ -67,14 +67,14 @@ export function OrchestrationRunsList() {
     {!feed.isLoading && !items.length && <p className="py-8 text-sm text-muted-foreground">{t('runs.emptyOrchestrations')}</p>}
     {items.map((item) => {
       const started = item.startedAt && Number.isFinite(Date.parse(item.startedAt)) ? new Date(item.startedAt).toLocaleString(intlLocale()) : formatMissing();
-      return <button key={item.id} type="button" data-testid="orchestration-feed-item" className="glass-subtle flex w-full flex-wrap items-center gap-2 rounded-xl border p-4 text-left" onClick={() => openRound(item)}>
+      return <Button variant="card" size="bare" key={item.id} type="button" data-testid="orchestration-feed-item" className="flex w-full flex-wrap items-center gap-2 rounded-xl p-4 text-left" onClick={() => openRound(item)}>
         <strong className="min-w-0 break-words text-sm">{item.taskTitle ?? formatMissing()}</strong>
         <span className="text-xs text-muted-foreground">{orchestration('history.roundTotal', { round: item.round })}</span>
         <Badge variant="outline">{orchestrationStatusLabels[item.status] ?? item.status}</Badge>
         {item.projectName && <span className="text-xs text-muted-foreground">{item.projectName}</span>}
         <span className="text-xs text-muted-foreground">{item.nodeName ?? formatMissing()} · {item.provider ?? formatMissing()}</span>
         <span className="w-full text-xs text-muted-foreground">{started} · {formatDuration(item.totals.durationMs)} · {orchestration('history.tokens', { input: formatTokens(item.totals.inputTokens), output: formatTokens(item.totals.outputTokens) })} · {formatCost(item.totals.costMicroUsd)}</span>
-      </button>;
+      </Button>;
     })}
     {feed.hasNextPage && <Button size="sm" variant="outline" disabled={feed.isFetchingNextPage} onClick={() => void feed.fetchNextPage()}>{t('runs.loadMore')}</Button>}
   </div>;

@@ -117,11 +117,11 @@ function EditorCard({ draft, errors, disabled, onChange, onBlur, onDelete }: {
         <div role="group" aria-label={t('timeBand.repeatDays')} aria-describedby={errors.weekdays ? weekdayId : undefined} className="flex flex-wrap" style={{ gap: 4 }}>
           {weekdays.map(([value, day]) => {
             const pressed = draft.weekdays.includes(value);
-            return <button key={value} type="button" aria-label={t(`weekday.${day}.full`)} aria-pressed={pressed} disabled={disabled} className={cn('rounded-md border border-[var(--glass-border)]', pressed && 'bg-[var(--glass-hover)] font-medium')} style={{ minWidth: 32, height: 36, paddingInline: 6, fontSize: 14 }} onClick={() => {
+            return <Button variant="plain" size="bare" key={value} type="button" aria-label={t(`weekday.${day}.full`)} aria-pressed={pressed} disabled={disabled} className={cn('rounded-md border border-[var(--glass-border)]', pressed && 'bg-[var(--glass-hover)] font-medium')} style={{ minWidth: 32, height: 36, paddingInline: 6, fontSize: 14 }} onClick={() => {
               const nextDraft = { ...draft, weekdays: pressed ? draft.weekdays.filter((weekday) => weekday !== value) : [...draft.weekdays, value] };
               onChange(nextDraft);
               onBlur(nextDraft, 'weekdays');
-            }}>{t(`weekday.${day}.narrow`)}</button>;
+            }}>{t(`weekday.${day}.narrow`)}</Button>;
           })}
         </div>
         <FieldError id={weekdayId} message={errors.weekdays} />
@@ -131,10 +131,10 @@ function EditorCard({ draft, errors, disabled, onChange, onBlur, onDelete }: {
         <div className="flex flex-wrap" style={{ gap: 4 }}>
           {colors.map((value) => {
             const pressed = draft.color === value;
-            return <button key={value} type="button" aria-label={t(`timeBand.colors.${value}`)} aria-pressed={pressed} disabled={disabled} className="relative inline-flex items-center justify-center rounded-md" style={{ width: 36, height: 36, outline: pressed ? `2px solid var(--time-band-${value}-fg)` : undefined, outlineOffset: 0 }} onClick={() => onChange({ ...draft, color: value })}>
+            return <Button variant="plain" size="bare" key={value} type="button" aria-label={t(`timeBand.colors.${value}`)} aria-pressed={pressed} disabled={disabled} className="relative inline-flex items-center justify-center rounded-md" style={{ width: 36, height: 36, outline: pressed ? `2px solid var(--time-band-${value}-fg)` : undefined, outlineOffset: 0 }} onClick={() => onChange({ ...draft, color: value })}>
               <span aria-hidden="true" style={{ width: 20, height: 20, backgroundColor: `var(--time-band-${value}-bg)` }} />
               {pressed && <Check aria-hidden="true" className="absolute" style={{ width: 14, height: 14, color: `var(--time-band-${value}-fg)` }} />}
-            </button>;
+            </Button>;
           })}
         </div>
       </div>
@@ -213,8 +213,8 @@ export function TimeBandControls() {
   const atLimit = (drafts?.length ?? 0) >= 100;
 
   return <>
-    <button ref={triggerRef} type="button" className="glass-control inline-flex items-center justify-center rounded-md" style={{ height: 36, paddingLeft: 12, paddingRight: 12, fontSize: 14 }} onClick={openDialog}>{t('timeBand.open')}</button>
-    {query.isError && <p role="alert" className="flex items-center gap-2 text-xs text-destructive">{t('timeBand.loadFailed')}<button type="button" className="underline" onClick={() => { void query.refetch(); }}>{t('timeBand.retry')}</button></p>}
+    <Button variant="input" size="bare" ref={triggerRef} type="button" className="inline-flex items-center justify-center rounded-md" style={{ height: 36, paddingLeft: 12, paddingRight: 12, fontSize: 14 }} onClick={openDialog}>{t('timeBand.open')}</Button>
+    {query.isError && <p role="alert" className="flex items-center gap-2 text-xs text-destructive">{t('timeBand.loadFailed')}<Button variant="link" size="bare" type="button" className="underline" onClick={() => { void query.refetch(); }}>{t('timeBand.retry')}</Button></p>}
     <Dialog open={open} onOpenChange={(next) => { if (!next) close(); }}>
       <DialogContent
         surface="glass"
@@ -230,7 +230,7 @@ export function TimeBandControls() {
           <DialogDescription>{t('timeBand.description')}</DialogDescription>
         </DialogHeader>
         {!drafts ? <div className="min-w-0" style={{ display: 'grid', gap: 16 }}>
-          {query.isError ? <p role="alert" className="text-destructive">{t('timeBand.loadFailed')}<button type="button" className="ml-2 underline" onClick={() => { void query.refetch(); }}>{t('timeBand.retry')}</button></p> : <p>{t('timeBand.loading')}</p>}
+          {query.isError ? <p role="alert" className="text-destructive">{t('timeBand.loadFailed')}<Button variant="link" size="bare" type="button" className="ml-2 underline" onClick={() => { void query.refetch(); }}>{t('timeBand.retry')}</Button></p> : <p>{t('timeBand.loading')}</p>}
         </div> : <form className="flex min-h-0 flex-1 flex-col" style={{ gap: 16 }} onSubmit={(event) => { event.preventDefault(); void save(); }}>
           <fieldset disabled={saving} className="flex min-h-0 min-w-0 flex-1 flex-col border-0 p-0" style={{ gap: 16 }}>
             <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">

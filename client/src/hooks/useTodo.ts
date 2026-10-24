@@ -6,6 +6,7 @@ import { api, apiMutation, ApiError, type ApiEnvelope, type ChangePage, type Foc
 import { markChangeUndone } from '@/lib/change-list-cache.js';
 import { enqueueWrite, localDate, queryKeys, keepNewestTask } from '@/lib/todo.js';
 import { useCommandPreview, type CommandPreview } from '@/components/dialogs/CommandPreviewProvider.js';
+import { useEditorRuntime } from '@/lib/task-editor-runtime.js';
 
 export function invalidateTodo(client: QueryClient) {
   return Promise.all(['tasks', 'task', 'topics', 'topic', 'tags', 'trash', 'changes', 'task-topic-history'].map((key) => client.invalidateQueries({ queryKey: [key] })));
@@ -47,6 +48,7 @@ export function useLocalDate() {
   return today;
 }
 export function useTodoActions() {
+  const editor = useEditorRuntime();
   const { t } = useTranslation('app');
   const client = useQueryClient();
   const confirmPreview = useCommandPreview();
@@ -72,11 +74,20 @@ export function useTodoActions() {
     setPending((value) => value + 1);
     try {
       const response = await enqueueWrite(keys, async () => {
+        // A list snapshot can lag the text-save response, even after the detail has closed.
+        // Only bridge this editor's acknowledged text writes; remote revisions still conflict.
+        const textOnlyAdvance = /^\/api\/tasks\/[^/]+$/.test(path) && method === 'PATCH' && record.title === undefined && record.description === undefined;
+        if (id && textOnlyAdvance && typeof requestBody.expectedRevision === 'number') requestBody.expectedRevision = editor?.textSaves.advance(id, requestBody.expectedRevision) ?? requestBody.expectedRevision;
         // Advance only across successful writes already queued by this client.
         // A server refresh or another actor's write never supplies this version.
         if (id && followsLocalWrite && typeof requestBody.expectedRevision === 'number') {
           const versions = localVersions.current.get(id);
-          while (versions?.has(requestBody.expectedRevision)) requestBody.expectedRevision = versions.get(requestBody.expectedRevision)!;
+          let previous: number;
+          do {
+            previous = requestBody.expectedRevision;
+            requestBody.expectedRevision = versions?.get(previous) ?? previous;
+            if (textOnlyAdvance) requestBody.expectedRevision = editor?.textSaves.advance(id, requestBody.expectedRevision) ?? requestBody.expectedRevision;
+          } while (requestBody.expectedRevision !== previous);
         }
         let result: ApiEnvelope<T>;
         try { result = await apiMutation<T>(path, { method, headers: { 'X-Request-ID': requestId }, body: JSON.stringify(requestBody) }); }

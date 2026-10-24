@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button.js';
 export function HBarList({ rows }: { rows: { id: string; label: string; value: number; color: string; meta?: string; onClick?: () => void }[] }) {
   const max = Math.max(1, ...rows.map((row) => row.value));
   if (rows.length === 0) return null;
@@ -16,7 +17,7 @@ export function HBarList({ rows }: { rows: { id: string; label: string; value: n
         return (
           <li key={row.id} className="space-y-1">
             {row.onClick ? (
-              <button type="button" className="flex w-full items-center justify-between gap-2 text-left text-sm" onClick={row.onClick}>{label}</button>
+              <Button variant="row" size="bare" type="button" className="flex w-full items-center justify-between gap-2 text-left text-sm" onClick={row.onClick}>{label}</Button>
             ) : (
               <div className="flex items-center justify-between gap-2 text-sm">{label}</div>
             )}

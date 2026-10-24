@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button.js';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AppReviewEntity } from '../../../../server/src/domain/task-batch-types.js';
@@ -42,7 +43,7 @@ export function SkillProposalDetails({ entity }: { entity: AppReviewEntity }) {
       {instructions && (creating
         ? <div className={full ? 'min-w-0 max-w-full' : 'max-h-56 min-w-0 max-w-full overflow-hidden'} data-testid="skill-proposal-body"><div className="min-w-0 max-w-full rounded-lg border p-3"><BodyText text={text(instructions.after)} format="markdown" /></div></div>
         : <DiffLines label={t('proposal.bodyChanged')} lines={lineDiff(text(instructions.before), text(instructions.after))} />)}
-      {instructions && creating && <button type="button" className="review-tech-trigger !mt-0 justify-self-start" onClick={() => setFull((value) => !value)}>{full ? t('proposal.collapseBody') : t('proposal.expandBody')}</button>}
+      {instructions && creating && <Button variant="plain" size="bare" type="button" className="review-tech-trigger !mt-0 justify-self-start" onClick={() => setFull((value) => !value)}>{full ? t('proposal.collapseBody') : t('proposal.expandBody')}</Button>}
       {!instructions && !creating && <div className="text-sm text-muted-foreground">{t('proposal.bodyUnchanged')}</div>}
     </div>
   );

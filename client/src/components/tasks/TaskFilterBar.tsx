@@ -1,3 +1,5 @@
+import { NativeSelect } from '@/components/ui/native-select.js';
+import { Surface } from '@/components/ui/surface.js';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, ListFilter, Search } from 'lucide-react';
@@ -54,10 +56,10 @@ function FilterFields({ page, scoped, filters, sortMode, topics, tags, onChange,
   const showDates = page !== 'today';
   const showTag = page !== 'tags';
   return <div className={cn('grid grid-cols-1 gap-3', !stacked && 'sm:grid-cols-3')}>
-    {showStatus && <Field label={t('taskFilter.status')}><select className={selectClass} aria-label={t('taskFilter.statusAria')} value={filters.status} onChange={(event) => onChange({ status: event.target.value })}><option value="all">{t('taskFilter.anyStatus')}</option><option value="open">{t('taskFilter.incomplete')}</option><option value="done">{t('taskFilter.completed')}</option></select></Field>}
-    {scoped && <Field label={t('taskFilter.sort')}><select className={selectClass} aria-label={t('taskFilter.sortAria')} value={sortMode} onChange={(event) => onSort(event.target.value)}><option value="manual">{t('taskFilter.manual')}</option><option value="date">{t('taskFilter.byDate')}</option><option value="priority">{t('taskFilter.byPriority')}</option></select></Field>}
-    {!scoped && <Field label={t('taskFilter.list')}><select className={selectClass} aria-label={t('taskFilter.listAria')} value={filters.topic} onChange={(event) => onChange({ topic: event.target.value })}><option value="all">{t('taskFilter.allLists')}</option><option value="inbox">{t('shared.inbox')}</option>{topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}</select></Field>}
-    {showTag && <Field label={t('taskFilter.tag')}><select className={selectClass} aria-label={t('taskFilter.tagAria')} value={filters.tag} onChange={(event) => onChange({ tag: event.target.value })}><option value="">{t('taskFilter.allTags')}</option>{tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select></Field>}
+    {showStatus && <Field label={t('taskFilter.status')}><NativeSelect className={selectClass} aria-label={t('taskFilter.statusAria')} value={filters.status} onChange={(event) => onChange({ status: event.target.value })}><option value="all">{t('taskFilter.anyStatus')}</option><option value="open">{t('taskFilter.incomplete')}</option><option value="done">{t('taskFilter.completed')}</option></NativeSelect></Field>}
+    {scoped && <Field label={t('taskFilter.sort')}><NativeSelect className={selectClass} aria-label={t('taskFilter.sortAria')} value={sortMode} onChange={(event) => onSort(event.target.value)}><option value="manual">{t('taskFilter.manual')}</option><option value="date">{t('taskFilter.byDate')}</option><option value="priority">{t('taskFilter.byPriority')}</option></NativeSelect></Field>}
+    {!scoped && <Field label={t('taskFilter.list')}><NativeSelect className={selectClass} aria-label={t('taskFilter.listAria')} value={filters.topic} onChange={(event) => onChange({ topic: event.target.value })}><option value="all">{t('taskFilter.allLists')}</option><option value="inbox">{t('shared.inbox')}</option>{topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}</NativeSelect></Field>}
+    {showTag && <Field label={t('taskFilter.tag')}><NativeSelect className={selectClass} aria-label={t('taskFilter.tagAria')} value={filters.tag} onChange={(event) => onChange({ tag: event.target.value })}><option value="">{t('taskFilter.allTags')}</option>{tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</NativeSelect></Field>}
     {showDates && <div className={cn('min-w-0', !stacked && 'sm:col-span-3')}>
       <p className="text-xs text-muted-foreground">{t('taskFilter.date')}</p>
       <div className="mt-1 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
@@ -108,7 +110,7 @@ export function TaskFilterBar({ page, scoped, filters, sortMode, topics, tags, o
         {parts.length > 0 && <Button type="button" size="sm" variant="ghost" className="shrink-0" onClick={onClear}>{t('taskFilter.clear')}</Button>}
         {!open && summary && <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{summary}</span>}
       </div>
-      {open && <div id="task-filter-panel" className="mt-2 rounded-xl border border-[var(--glass-border-soft)] bg-[var(--glass-subtle)] p-3"><FilterFields page={page} scoped={scoped} filters={filters} sortMode={sortMode} topics={topics} tags={tags} onChange={onChange} onSort={onSort} /></div>}
+      {open && <Surface as="div" tone="subtle" id="task-filter-panel" className="mt-2 rounded-xl border border-[var(--glass-border-soft)] bg-[var(--)] p-3"><FilterFields page={page} scoped={scoped} filters={filters} sortMode={sortMode} topics={topics} tags={tags} onChange={onChange} onSort={onSort} /></Surface>}
     </div>
   );
 }

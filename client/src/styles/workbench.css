@@ -50,10 +50,6 @@
 .dovun-task-content .quick-capture { min-height: 64px; border: 1px solid var(--glass-border); background: var(--glass-control); box-shadow: var(--workbench-control-shadow); margin-bottom: 28px; padding: 8px 12px; }
 .dovun-task-content .quick-capture > svg { width: 23px; height: 23px; }
 .dovun-task-content .quick-capture input { height: 42px; font-size: 15px; background: transparent; box-shadow: none; }
-.dovun-task-content .task-checkbox { appearance: none; border: 1.3px solid var(--muted-foreground); border-radius: 50%; background-color: transparent; cursor: pointer; }
-.dovun-task-content .task-checkbox:checked { background-color: var(--primary); border-color: var(--primary); background-position: center; background-repeat: no-repeat; background-size: 14px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3 8 3 3 7-7' stroke='white' fill='none' stroke-width='2'/%3E%3C/svg%3E"); }
-.dovun-task-content .task-checkbox:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
-.dovun-task-content .task-checkbox:disabled { opacity: .5; cursor: default; }
 .dovun-task-content .task-place-chip { color: var(--muted-foreground); background: transparent; padding: 0; }
 .dovun-task-content section > h2 { font-size: 16px; letter-spacing: -.2px; margin-top: 24px; margin-bottom: 10px; }
 .dovun-work-rail { display: flex; flex-direction: column; min-height: 0; min-width: 0; margin: 0 10px 12px 0; overflow: hidden; background: var(--workbench-sheet); border: 1px solid var(--glass-border-soft); border-radius: var(--surface-overlay-radius); box-shadow: var(--workbench-panel-shadow); }
@@ -80,7 +76,7 @@
 .dovun-agenda > button { display: flex; width: 100%; align-items: flex-start; gap: 15px; padding: 15px 0; text-align: left; font-size: 13px; border-top: 1px solid var(--glass-divider); }
 .dovun-agenda time { color: var(--muted-foreground); flex: none; font-size: 12px; }
 .dovun-agenda > button > span { border-left: 2px solid var(--workbench-coral); padding-left: 12px; overflow-wrap: anywhere; }
-.dovun-companion-card { border: 1px solid var(--glass-border); border-radius: var(--surface-card-radius); padding: 24px 19px 15px; background: var(--surface-card-paint); box-shadow: var(--surface-card-shadow); }
+.dovun-companion-card { padding: 24px 19px 15px; }
 .dovun-companion-brand { display: flex; align-items: center; gap: 11px; margin-bottom: 18px; }
 .dovun-companion-brand > img { width: 46px; height: 51px; object-fit: contain; flex: none; }
 .dovun-companion-brand h2 { font-size: 20px; font-weight: 650; letter-spacing: -.4px; }
@@ -91,7 +87,7 @@
 .dovun-companion-secondary { display: flex; width: 100%; align-items: center; gap: 8px; border: 1px solid var(--glass-border); border-radius: 9px; padding: 11px 12px; margin-top: 10px; font-size: 12px; text-align: left; }
 .dovun-companion-secondary > span { flex: 1; }
 .dovun-companion-open { display: flex; align-items: center; justify-content: flex-end; gap: 6px; width: 100%; padding: 13px 1px 0; font-size: 11px; color: var(--muted-foreground); }
-.dovun-companion.is-compact .dovun-companion-card { padding: 12px; }
+.dovun-companion.is-compact .dovun-companion-card { padding: 24px 19px 15px; }
 .dovun-companion.is-compact .dovun-companion-brand { margin-bottom: 10px; }
 .dovun-companion.is-compact .dovun-companion-brand > img { width: 32px; height: 36px; }
 .dovun-companion.is-compact .dovun-companion-description { margin: 8px 0; }

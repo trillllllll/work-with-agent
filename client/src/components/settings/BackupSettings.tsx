@@ -1,3 +1,5 @@
+import { Input } from '@/components/ui/input.js';
+import { Surface } from '@/components/ui/surface.js';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -77,20 +79,20 @@ export function BackupSettings() {
       <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{t('backup.description')}</p>
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Button type="button" variant="outline" onClick={() => { void download().catch((error) => toast.error(error.message)); }}><Download className="size-4" />{t('backup.download')}</Button>
-        <input ref={fileInput} id="restore-file" type="file" accept=".zip" className="hidden" onChange={(event) => setRestoreFile(event.target.files?.[0] ?? null)} />
+        <Input variant="inline" ref={fileInput} id="restore-file" type="file" accept=".zip" className="hidden" onChange={(event) => setRestoreFile(event.target.files?.[0] ?? null)} />
         <Button type="button" variant="outline" disabled={!restoreFile || restore.isPending} onClick={() => setRestoreMode('merge')}>{restore.isPending && restoreMode === 'merge' ? t('backup.merging') : t('backup.merge')}</Button>
         <Button type="button" variant="outline" disabled={!restoreFile || restore.isPending} onClick={() => setRestoreMode('replace')}><RotateCcw className="size-4" />{restore.isPending && restoreMode === 'replace' ? t('backup.restoring') : t('backup.restore')}</Button>
         <Button type="button" variant="ghost" onClick={() => fileInput.current?.click()}>{restoreFile ? t('backup.selectedFile', { name: restoreFile.name }) : t('backup.chooseFile')}</Button>
       </div>
       {!!snapshotsQuery.data?.length && (
-        <ul className="glass-subtle mt-4 space-y-1.5 rounded-xl p-4 text-xs text-muted-foreground">
+        <Surface as="ul" tone="subtle" className="mt-4 space-y-1.5 rounded-xl p-4 text-xs text-muted-foreground">
           {snapshotsQuery.data.slice(0, 5).map((snapshot) => (
             <li key={snapshot.name} className="flex items-baseline justify-between gap-3">
               <span className="truncate font-mono">{snapshot.name}</span>
               <span className="shrink-0">{formatBytes(snapshot.size)}</span>
             </li>
           ))}
-        </ul>
+        </Surface>
       )}
       {restoreMode && (
         <ConfirmDialog

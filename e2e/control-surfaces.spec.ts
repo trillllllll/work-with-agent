@@ -4,7 +4,7 @@ import { test, expect } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
 const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
-const evidence = resolve('docs/design/dovun/controls-unification/evidence');
+const evidence = resolve(process.env.DOVUN_EVIDENCE_DIR ?? 'docs/design/dovun/controls-unification/evidence');
 test.afterAll(() => e2eDatabase.$disconnect());
 
 test('real controls keep focus, independent surface depth, theme and responsive layout', async ({ page }) => {
@@ -82,7 +82,15 @@ test('all application routes use shared themes without viewport overflow or page
         }
         // Allow data and font layout to settle before measuring and capturing.
         await page.waitForTimeout(150);
-        const metrics = await page.evaluate(() => ({ viewport: innerWidth, pageWidth: document.documentElement.scrollWidth, fontSize: getComputedStyle(document.body).fontSize, background: getComputedStyle(document.body).backgroundColor }));
+        const metrics = await page.evaluate(() => {
+          const visible = (el: Element) => { const box = el.getBoundingClientRect(); const s = getComputedStyle(el); return box.width > 2 && box.height > 2 && s.visibility !== 'hidden' && s.display !== 'none'; };
+          const controls = [...document.querySelectorAll('button, input, textarea, select')].filter(visible).filter(el => !el.closest('.tiptap, [data-user-content]'));
+          const uncovered = controls.filter(el => !el.hasAttribute('data-slot')).map(el => el.outerHTML.slice(0, 200));
+          const wrongPaint = controls.filter(el => el.getAttribute('data-slot') === 'button' && ['default', 'outline', 'secondary'].includes(el.getAttribute('data-variant') ?? '') && el.getAttribute('aria-pressed') !== 'true' && !getComputedStyle(el).backgroundImage.includes('linear-gradient')).map(el => el.outerHTML.slice(0, 200));
+          return { viewport: innerWidth, pageWidth: document.documentElement.scrollWidth, fontSize: getComputedStyle(document.body).fontSize, background: getComputedStyle(document.body).backgroundColor, controlCount: controls.length, uncovered, wrongPaint };
+        });
+        expect(metrics.uncovered, `${route}/${theme}/${width}: controls bypassing public components`).toEqual([]);
+        expect(metrics.wrongPaint, `${route}/${theme}/${width}: local CSS replaced public material`).toEqual([]);
         expect(metrics.pageWidth, `${route}/${theme}/${width}`).toBeLessThanOrEqual(width);
         expect(metrics.fontSize).toBe('14px');
         if (testInfo.project.name === 'chromium' && snapshots.has(route)) await page.screenshot({ path: `${evidence}/${route.replaceAll('/', '-')}-${theme}-${width}.png`, animations: 'disabled' });

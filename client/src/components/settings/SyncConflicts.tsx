@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -84,7 +85,7 @@ export function SyncConflicts() {
       <h3 id="settings-sync-title" className="text-lg font-semibold">{t('sync.title')}</h3>
       <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{t('sync.description')}</p>
       {mode === 'server' && (
-        <div className="mt-4 glass-subtle rounded-xl p-4">
+        <Surface as="div" tone="subtle" className="mt-4  rounded-xl p-4">
           <h4 className="text-sm font-medium">{t('sync.pairTitle')}</h4>
           <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{t('sync.pairDescription')}</p>
           <Button type="button" className="mt-3" variant="outline" disabled={generate.isPending} onClick={() => generate.mutate()}>{t('sync.generate')}</Button>
@@ -97,10 +98,10 @@ export function SyncConflicts() {
               </div>
             </div>
           )}
-        </div>
+        </Surface>
       )}
       {mode === 'local' && (
-        <div className="mt-4 glass-subtle rounded-xl p-4">
+        <Surface as="div" tone="subtle" className="mt-4  rounded-xl p-4">
           <h4 className="text-sm font-medium">{t('sync.bindTitle')}</h4>
           <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{t('sync.bindDescription')}</p>
           <p className="mt-2 text-[13px] text-muted-foreground">{boundText}</p>
@@ -111,13 +112,13 @@ export function SyncConflicts() {
             <Input id="sync-token" type="password" value={credential} onChange={(event) => setCredential(event.target.value)} autoComplete="new-password" />
             <Button type="button" variant="outline" disabled={align.isPending || !url || credential.length < 20} onClick={() => setConfirmAlign(true)}>{t('sync.align')}</Button>
           </div>
-        </div>
+        </Surface>
       )}
       {conflicts.isError && <p className="mt-4 text-sm text-destructive">{conflicts.error.message}</p>}
       {!conflicts.isError && rows.length === 0 && <p className="mt-4 text-sm text-muted-foreground">{t('sync.empty')}</p>}
       <ul className="mt-4 space-y-3">
         {rows.map((row) => (
-          <li key={row.id} className="glass-subtle rounded-xl p-4">
+          <Surface as="li" tone="subtle" key={row.id} className="rounded-xl p-4">
             <p className="text-sm font-medium">{t('sync.item', { field: row.field, entity: row.entityId })}</p>
             <dl className="mt-2 space-y-1 text-[13px] text-muted-foreground">
               <div><dt className="inline">{t('sync.base')}</dt><dd className="inline whitespace-pre-wrap">{show(row.base) || t('sync.blank')}</dd></div>
@@ -128,7 +129,7 @@ export function SyncConflicts() {
               <Button type="button" variant="outline" disabled={resolve.isPending} onClick={() => resolve.mutate({ id: row.id, choice: 'mine' })}>{t('sync.keepMine')}</Button>
               <Button type="button" variant="outline" disabled={resolve.isPending} onClick={() => resolve.mutate({ id: row.id, choice: 'theirs' })}>{t('sync.keepTheirs')}</Button>
             </div>
-          </li>
+          </Surface>
         ))}
       </ul>
       {confirmAlign && (

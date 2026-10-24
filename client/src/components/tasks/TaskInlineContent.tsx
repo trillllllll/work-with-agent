@@ -1,3 +1,5 @@
+import { TagChip } from '@/components/ui/tag-chip.js';
+import { Button } from '@/components/ui/button.js';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Tag, Task } from '@/lib/api.js';
@@ -42,20 +44,20 @@ export function TaskInlineContent({ task, info, preview, onOpen }: { task: Task;
   }, [signature]);
 
   const infoItems = (compact: boolean) => info.map(item => <span key={item.key} className={item.className}>{compact ? tagInitial(item.text) : item.text}</span>);
-  const tag = (item: Tag, short: boolean) => <span className="task-tag-chip" data-color={item.color || 'violet'} title={item.name}>{short ? tagInitial(item.name) : `#${item.name}`}</span>;
+  const tag = (item: Tag, short: boolean) => <TagChip className="" data-color={item.color || 'violet'} title={item.name}>{short ? tagInitial(item.name) : `#${item.name}`}</TagChip>;
   const names = tags.map(item => item.name).join(' · ');
   const infoText = info.map(item => item.text).join(' · ');
   const tagHint = [layout.mergeInfo ? infoText : '', names].filter(Boolean).join(' · ');
   const hidden = tags.length - layout.visible;
   const tagContents = <>{tags.slice(0, layout.visible).map(item => <span key={item.id}>{tag(item, layout.short)}</span>)}{hidden > 0 && <span className="task-meta-pill task-tag-count">+{hidden}</span>}</>;
   return <div ref={root} className="task-inline-content" data-short-tags={layout.short || undefined} data-compact-info={layout.compact || undefined}>
-    <button type="button" aria-label={task.title} title={task.title} className="task-inline-open" disabled={preview} onClick={event => { contain(event); onOpen(); }}>
+    <Button variant="plain" size="bare" type="button" aria-label={task.title} title={task.title} className="task-inline-open" disabled={preview} onClick={event => { contain(event); onOpen(); }}>
       <span className={cn('task-inline-title', task.status === 'done' && 'text-muted-foreground line-through')}>{task.title}</span>
-    </button>
+    </Button>
     {info.length > 0 && !layout.mergeInfo && <TooltipProvider><TooltipRoot><TooltipTrigger asChild><span className="task-inline-info" tabIndex={preview ? undefined : 0} aria-label={info.map(item => item.text).join(' · ')} onPointerDown={contain} onMouseDown={contain} onTouchStart={contain} onClick={contain}>{layout.summary ? <span className="task-meta-pill">{tagInitial(info[0].text)}·</span> : infoItems(layout.compact)}</span></TooltipTrigger><TooltipContent onMouseDown={contain} onTouchStart={contain} onPointerDown={contain} onClick={contain}>{info.map(item => item.text).join(' · ')}</TooltipContent></TooltipRoot></TooltipProvider>}
     {tags.length > 0 && (preview ? <span className="task-inline-tags">{tagContents}</span> : <Popover>
       <TooltipProvider><TooltipRoot><TooltipTrigger asChild><PopoverTrigger asChild>
-        <button type="button" className="task-inline-tags" aria-label={t('taskList.showTags', { names: tagHint })} title={tagHint} onPointerDown={contain} onMouseDown={contain} onTouchStart={contain} onClick={contain}>{tagContents}</button>
+        <Button variant="plain" size="bare" type="button" className="task-inline-tags" aria-label={t('taskList.showTags', { names: tagHint })} title={tagHint} onPointerDown={contain} onMouseDown={contain} onTouchStart={contain} onClick={contain}>{tagContents}</Button>
       </PopoverTrigger></TooltipTrigger><TooltipContent onMouseDown={contain} onTouchStart={contain} onPointerDown={contain} onClick={contain}>{tagHint}</TooltipContent></TooltipRoot></TooltipProvider>
       <PopoverContent className="task-tag-popover" aria-label={t('taskList.tags')} onPointerDown={contain} onMouseDown={contain} onTouchStart={contain} onClick={contain}>
         {layout.mergeInfo && <p className="mb-2 text-xs">{infoText}</p>}<p className="mb-2 text-xs text-muted-foreground">{t('taskList.tags')}</p><div className="flex flex-wrap gap-1.5">{tags.map(item => <span key={item.id}>{tag(item, false)}</span>)}</div>
@@ -66,8 +68,8 @@ export function TaskInlineContent({ task, info, preview, onOpen }: { task: Task;
       <span className="task-inline-info task-info-full">{info.map(item => <span key={item.key} className={item.className} data-measure-text={item.text} />)}</span>
       <span className="task-inline-info task-info-short">{info.map(item => <span key={item.key} className={item.className} data-measure-text={tagInitial(item.text)} />)}</span>
       <span className="task-inline-info task-info-summary"><span className="task-meta-pill" data-measure-text={info.length ? `${tagInitial(info[0].text)}·` : ''} /></span>
-      {tags.map(item => <span key={`full-${item.id}`} className="task-tag-chip" data-measure-full data-measure-text={`#${item.name}`} />)}
-      {tags.map(item => <span key={`short-${item.id}`} className="task-tag-chip task-tag-initial-measure" data-measure-initial data-measure-text={tagInitial(item.name)} />)}
+      {tags.map(item => <TagChip key={`full-${item.id}`} className="" data-measure-full data-measure-text={`#${item.name}`} />)}
+      {tags.map(item => <TagChip key={`short-${item.id}`} className="task-tag-initial-measure" data-measure-initial data-measure-text={tagInitial(item.name)} />)}
       {tags.map((item, index) => <span key={`count-${item.id}`} className="task-meta-pill" data-measure-count data-measure-text={`+${index + 1}`} />)}
     </div></div>
   </div>;

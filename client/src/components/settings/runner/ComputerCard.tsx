@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -44,7 +45,7 @@ export function ComputerCard({ computer, thisComputer, onDisconnect }: { compute
       ? t('computers.card.offline', { time: relativeTime(computer.lastSeenAt) })
       : t('computers.card.never');
   return (
-    <article className="glass-subtle space-y-4 rounded-xl p-4">
+    <Surface as="article" tone="subtle" className="space-y-4 rounded-xl p-4">
       <header className="flex flex-wrap items-center gap-2">
         <h4 className="font-medium">{computer.name}</h4>
         {thisComputer && <Badge variant="secondary">{t('computers.card.thisComputer')}</Badge>}
@@ -117,7 +118,7 @@ export function ComputerCard({ computer, thisComputer, onDisconnect }: { compute
         />
       )}
       {issued && <AddComputerDialog initial={issued} autoStart={autoStart} onClose={() => setIssued(null)} />}
-    </article>
+    </Surface>
   );
 }
 

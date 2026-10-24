@@ -1,3 +1,4 @@
+import { Checkbox } from '@/components/ui/checkbox.js';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -76,7 +77,7 @@ export function SkillHistory({ skill }: { skill: SkillDetail }) {
       <ol className="glass-subtle divide-y divide-[var(--glass-divider)] overflow-hidden rounded-xl">
         {versions.map((version) => (
           <li key={version.revision} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm" data-testid="skill-version" data-revision={version.revision}>
-            <input type="checkbox" aria-label={t('history.compare', { revision: version.revision })} checked={picked.includes(version.revision)} onChange={() => toggle(version.revision)} />
+            <Checkbox  aria-label={t('history.compare', { revision: version.revision })} checked={picked.includes(version.revision)} onChange={() => toggle(version.revision)} />
             <span className="font-medium">v{version.revision}</span>
             <span className="min-w-0 flex-1 truncate">{version.reason || t('history.noReason')}</span>
             <span className="text-xs text-muted-foreground">{skillSourceLabel(version.source)} · {new Date(version.createdAt).toLocaleString(intlLocale())}</span>

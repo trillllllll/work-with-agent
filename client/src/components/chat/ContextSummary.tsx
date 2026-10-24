@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure.js';
 import { useTranslation } from 'react-i18next';
 import type { ChatContextV2, ChatContextV3 } from '../../../../server/src/agent/chat-context.js';
 import { pageNames } from '@/lib/assistant-context.js';
@@ -12,8 +13,8 @@ export function ContextSummary({ context }: { context?: ChatContextV2 | ChatCont
   const statusName = (status: string) => (statuses as readonly string[]).includes(status) ? t(`contextSummary.status.${status}`) : '';
   const sectionName = (section: string) => (sections as readonly string[]).includes(section) ? t(`contextSummary.section.${section}`) : section;
   const layoutName = (layout: string) => (layouts as readonly string[]).includes(layout) ? t(`contextSummary.layout.${layout}`) : layout;
-  return <details className="text-xs text-muted-foreground" data-testid="context-summary">
-    <summary className="cursor-pointer py-1">{context.schemaVersion === 3 ? context.label : pageNames[context.page] ?? context.page}</summary>
+  return <Disclosure className="text-xs text-muted-foreground" data-testid="context-summary">
+    <DisclosureTrigger className="cursor-pointer py-1">{context.schemaVersion === 3 ? context.label : pageNames[context.page] ?? context.page}</DisclosureTrigger>
     <div className="space-y-1 break-words py-2">
       <p>{context.scope.kind === 'all' ? t('contextSummary.scopeAll') : context.scope.kind === 'inbox' ? t('contextSummary.scopeInbox') : t('contextSummary.scopeList')}</p>
       {context.taskId && <p>{t('contextSummary.currentTask')}</p>}
@@ -34,8 +35,8 @@ export function ContextSummary({ context }: { context?: ChatContextV2 | ChatCont
         {context.pageState.folderId && <p>{t('contextSummary.folderScope')}</p>}
         {context.selectedMaterialIds.length > 0 && <p>{t('contextSummary.selectedMaterials', { count: context.selectedMaterialIds.length })}</p>}
         {context.pageState.layout && <p>{t('contextSummary.layoutLine', { layout: layoutName(context.pageState.layout) })}</p>}
-        {context.attachments.map((item) => <details key={item.id}><summary>{t(item.unsaved ? 'contextSummary.unsavedAttachment' : 'contextSummary.selectedAttachment', { title: item.title })}</summary><pre className="max-h-40 overflow-auto whitespace-pre-wrap">{item.text}</pre></details>)}
+        {context.attachments.map((item) => <Disclosure key={item.id}><DisclosureTrigger>{t(item.unsaved ? 'contextSummary.unsavedAttachment' : 'contextSummary.selectedAttachment', { title: item.title })}</DisclosureTrigger><pre className="max-h-40 overflow-auto whitespace-pre-wrap">{item.text}</pre></Disclosure>)}
       </>}
     </div>
-  </details>;
+  </Disclosure>;
 }

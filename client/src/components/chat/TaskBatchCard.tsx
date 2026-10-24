@@ -1,3 +1,6 @@
+import { Surface } from '@/components/ui/surface.js';
+import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure.js';
+import { Button } from '@/components/ui/button.js';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Approval } from '@/chat.js';
@@ -130,7 +133,7 @@ export function TaskBatchCard({ approval, executing = false, unknown = false, on
     });
   };
   return (
-    <section className="task-batch-card" aria-label={label('taskBatch.ariaLabel')} data-testid="task-batch-card" data-approval-id={approval.approvalId} data-state={state}>
+    <Surface as="section" tone="card" className="task-batch-card" aria-label={label('taskBatch.ariaLabel')} data-testid="task-batch-card" data-approval-id={approval.approvalId} data-state={state}>
       <h2 className="task-batch-title">{label('taskBatch.title')}</h2>
       <p className="task-batch-status" data-testid="batch-status" data-tone={state} {...(state === 'executing' ? { role: 'status', 'aria-live': 'polite' as const } : {})}>
         <StatusIcon />
@@ -152,19 +155,19 @@ export function TaskBatchCard({ approval, executing = false, unknown = false, on
         </div>
       )}
       {state === 'failed' && approval.outcome?.success === false && <p className="task-batch-alert" role="alert">{approval.outcome.error}</p>}
-      <details className="task-batch-details">
-        <summary>{label('taskBatch.viewImpact')}</summary>
+      <Disclosure className="task-batch-details">
+        <DisclosureTrigger>{label('taskBatch.viewImpact')}</DisclosureTrigger>
         <ul>
           {related.flatMap((change) => change.fields.map((field) => <li key={`related:${change.taskId}:${field.field}`}>{line(change, field, true)}</li>))}
           {(preview?.afterTasks ?? preview?.beforeTasks ?? []).map((task) => <li key={task.id}>{label('taskBatch.versionLine', { title: task.title, id: task.id, revision: task.revision })}</li>)}
         </ul>
-      </details>
+      </Disclosure>
       {showActions && (
         <div className="task-batch-actions">
-          <button type="button" className="task-batch-secondary" disabled={busy} onClick={() => { setPressed(true); onReject(approval.approvalId); }}>{label('actions.reject')}</button>
-          <button type="button" className="task-batch-primary" disabled={busy} onClick={() => { setPressed(true); onApprove(approval.approvalId); }}>{busy ? label('taskBatch.executing') : label('taskBatch.confirm')}</button>
+          <Button variant="outline" size="bare" type="button" className="task-batch-secondary" disabled={busy} onClick={() => { setPressed(true); onReject(approval.approvalId); }}>{label('actions.reject')}</Button>
+          <Button variant="default" size="bare" type="button" className="task-batch-primary" disabled={busy} onClick={() => { setPressed(true); onApprove(approval.approvalId); }}>{busy ? label('taskBatch.executing') : label('taskBatch.confirm')}</Button>
         </div>
       )}
-    </section>
+    </Surface>
   );
 }

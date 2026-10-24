@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api.js';
@@ -65,7 +66,7 @@ function RoundCard({ round }: { round: HistoryRound }) {
   const { t } = useTranslation('orchestration');
   const totals = round.totals;
   const partial = totals.jobs > 0 && totals.costJobs < totals.jobs;
-  return <article data-testid="ai-history-round" className="glass-subtle space-y-3 rounded-xl border p-4">
+  return <Surface as="article" tone="subtle" data-testid="ai-history-round" className="space-y-3 rounded-xl border p-4">
     <div className="flex flex-wrap items-center gap-2">
       <span className="font-medium">{t('history.roundTotal', { round: round.round })}</span>
       <Badge variant="secondary">{round.role === 'subtask' ? t('history.roleSubtask') : t('history.roleMain')}</Badge>
@@ -101,7 +102,7 @@ function RoundCard({ round }: { round: HistoryRound }) {
         {step.error && <p className="text-xs text-destructive">{step.error}</p>}
       </section>)}
     </div>
-  </article>;
+  </Surface>;
 }
 
 function LegacyRuns({ rows }: { rows: History['legacy'] }) {
@@ -109,7 +110,7 @@ function LegacyRuns({ rows }: { rows: History['legacy'] }) {
   if (!rows.length) return null;
   return <section className="space-y-2">
     <h3 className="text-sm font-medium">{t('history.legacy')}</h3>
-    {rows.map((handoff) => <article key={handoff.id} className="glass-subtle space-y-2 rounded-xl border p-4">
+    {rows.map((handoff) => <Surface as="article" tone="subtle" key={handoff.id} className="space-y-2 rounded-xl border p-4">
       <p className="text-sm">{handoff.provider} · {handoff.mode} · {handoff.status}</p>
       {handoff.runs.map((run) => <p key={run.id} className="flex flex-wrap gap-x-2 text-xs text-muted-foreground">
         <span>{t('history.legacyRun')}</span>
@@ -122,7 +123,7 @@ function LegacyRuns({ rows }: { rows: History['legacy'] }) {
         {run.summary && <span className="w-full whitespace-pre-wrap break-words">{run.summary}</span>}
         {run.error && <span className="text-destructive">{run.error}</span>}
       </p>)}
-    </article>)}
+    </Surface>)}
   </section>;
 }
 

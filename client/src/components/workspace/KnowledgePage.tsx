@@ -1,3 +1,7 @@
+import { NativeSelect } from '@/components/ui/native-select.js';
+import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure.js';
+import { Surface } from '@/components/ui/surface.js';
+import { Checkbox } from '@/components/ui/checkbox.js';
 import { MemoryExtractionJobs } from './MemoryExtractionJobs.js';
 import { usePageContext } from '@/lib/assistant-context.js';
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
@@ -189,7 +193,7 @@ export function KnowledgePage({
   if (embedded) {
     return <section className="work-context work-context-embed space-y-4">
       <div role="tablist" aria-label={t('page.embeddedTabs')} className="ctx-tabs" onKeyDown={onTabKey}>
-        {([['materials', t('page.tabs.materials')], ['memories', t('page.tabs.memories')], ['brief', t('page.tabs.brief')], ['search', t('page.tabs.search')]] as const).map(([value, label]) => <button key={value} id={`context-tab-${value}`} type="button" role="tab" className="ctx-tab" aria-selected={section === value} tabIndex={section === value ? 0 : -1} onClick={() => locate(value)}>{label}</button>)}
+        {([['materials', t('page.tabs.materials')], ['memories', t('page.tabs.memories')], ['brief', t('page.tabs.brief')], ['search', t('page.tabs.search')]] as const).map(([value, label]) => <Button variant="tab" size="bare" key={value} id={`context-tab-${value}`} type="button" role="tab" className="ctx-tab" aria-selected={section === value} tabIndex={section === value ? 0 : -1} onClick={() => locate(value)}>{label}</Button>)}
       </div>
       {section === 'memories' && <p className="ctx-muted">{t('page.embeddedMemoryNote')}</p>}
       {body}
@@ -204,15 +208,15 @@ export function KnowledgePage({
             <h1 className="ctx-title">{t('page.title')}</h1>
           <div data-testid="context-toolbar" className="ctx-tools">
             <label className="ctx-muted">{t('page.list')}
-              <select aria-label={t('page.list')} className="ctx-select" value={topicId} onChange={(event) => locate(section === 'search' || section === 'tree' || section === 'graph' || section === 'extractions' ? section : (primaryTabs.some(([value]) => value === section) ? section : 'brief'), event.target.value)}>
+              <NativeSelect aria-label={t('page.list')} className="ctx-select" value={topicId} onChange={(event) => locate(section === 'search' || section === 'tree' || section === 'graph' || section === 'extractions' ? section : (primaryTabs.some(([value]) => value === section) ? section : 'brief'), event.target.value)}>
                 <option value="">{t('page.inbox')}</option>{section === 'extractions' && <option value="all">{t('page.allLists')}</option>}
                 {missing && <option value={topicId}>{t('page.unknownList')}</option>}
                 {knownTopics.map((topic) => <option key={topic.id} value={topic.id}>{topic.name}{topic.archivedAt ? t('page.archivedSuffix') : ''}</option>)}
-              </select>
+              </NativeSelect>
             </label>
-            <Button type="button" className="ctx-btn" aria-pressed={section === 'search'} onClick={() => locate('search')}>{t('page.tabs.search')}</Button>
+            <Button variant="outline" type="button" className="ctx-btn" aria-pressed={section === 'search'} onClick={() => locate('search')}>{t('page.tabs.search')}</Button>
             <DropdownMenu>
-              <DropdownMenuTrigger asChild><Button type="button" className="ctx-btn" aria-label={t('page.viewMode')}>{viewLabel}</Button></DropdownMenuTrigger>
+              <DropdownMenuTrigger asChild><Button variant="outline" type="button" className="ctx-btn" aria-label={t('page.viewMode')}>{viewLabel}</Button></DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onSelect={() => locate(primaryTabs.some(([value]) => value === section) ? section : 'brief')}>{t('page.view.standard')}</DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => locate('tree')}>{t('page.view.tree')}</DropdownMenuItem>
@@ -220,7 +224,7 @@ export function KnowledgePage({
               </DropdownMenuContent>
             </DropdownMenu>
             <DropdownMenu>
-              <DropdownMenuTrigger asChild><Button type="button" className="ctx-btn">{t('page.more')}</Button></DropdownMenuTrigger>
+              <DropdownMenuTrigger asChild><Button variant="outline" type="button" className="ctx-btn">{t('page.more')}</Button></DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem asChild><a href={`/api/v1/knowledge/export?${scope}`}>{t('page.exportScope')}</a></DropdownMenuItem>
               </DropdownMenuContent>
@@ -233,7 +237,7 @@ export function KnowledgePage({
           {primaryTabs.map(([value, label]) => {
             const selected = section === value;
             const fallback = !primaryTabs.some(([item]) => item === section) && value === 'brief';
-            return <button key={value} id={`context-tab-${value}`} type="button" role="tab" className="ctx-tab" aria-selected={selected} tabIndex={selected || fallback ? 0 : -1} onClick={() => locate(value)}>{label}</button>;
+            return <Button variant="tab" size="bare" key={value} id={`context-tab-${value}`} type="button" role="tab" className="ctx-tab" aria-selected={selected} tabIndex={selected || fallback ? 0 : -1} onClick={() => locate(value)}>{label}</Button>;
           })}
         </div>
         {section !== 'tree' && section !== 'graph' && section !== 'search' && section !== 'extractions' && <p className="ctx-tab-note">{tabNote}</p>}
@@ -319,13 +323,13 @@ function AutoStatus({ topicId, state, error, onRetry, onOpenSettings, onShowReco
       {showReason && <p className="ctx-error">{state?.latestJob?.errorMessage || state?.latestJob?.errorCode || t('page.auto.failed')}</p>}
     </div>
     <div className="ctx-actions">
-      {state?.state === 'unconfigured' && <Button type="button" className="ctx-btn" onClick={onOpenSettings}>{t('page.auto.configureModel')}</Button>}
-      <Button type="button" className="ctx-btn" onClick={onShowRecords}>{t('page.extractionHistory')}</Button>
-      {error && <Button type="button" className="ctx-btn" onClick={onRetry}>{t('page.auto.retry')}</Button>}
-      <Button type="button" className="ctx-btn ctx-btn-primary" disabled={busy || !state || state.state === 'disabled' || state.state === 'archived' || state.state === 'unconfigured'} onClick={() => void run()}>{t('page.auto.extractNow')}</Button>
-      <Button type="button" className="ctx-btn" disabled={busy || !state || state.state === 'archived'} onClick={() => void toggle()}>{state?.enabled === false ? t('page.auto.enable') : t('page.auto.pause')}</Button>
-      {failed && <Button type="button" className="ctx-btn" aria-expanded={showReason} onClick={() => setShowReason((value) => !value)}>{t('page.auto.viewReason')}</Button>}
-      {state?.latestJob?.status === 'failed' && <Button type="button" className="ctx-btn" disabled={busy} onClick={() => void retry()}>{t('page.auto.retry')}</Button>}
+      {state?.state === 'unconfigured' && <Button variant="outline" type="button" className="ctx-btn" onClick={onOpenSettings}>{t('page.auto.configureModel')}</Button>}
+      <Button variant="outline" type="button" className="ctx-btn" onClick={onShowRecords}>{t('page.extractionHistory')}</Button>
+      {error && <Button variant="outline" type="button" className="ctx-btn" onClick={onRetry}>{t('page.auto.retry')}</Button>}
+      <Button variant="default" type="button" className="ctx-btn ctx-btn-primary" disabled={busy || !state || state.state === 'disabled' || state.state === 'archived' || state.state === 'unconfigured'} onClick={() => void run()}>{t('page.auto.extractNow')}</Button>
+      <Button variant="outline" type="button" className="ctx-btn" disabled={busy || !state || state.state === 'archived'} onClick={() => void toggle()}>{state?.enabled === false ? t('page.auto.enable') : t('page.auto.pause')}</Button>
+      {failed && <Button variant="outline" type="button" className="ctx-btn" aria-expanded={showReason} onClick={() => setShowReason((value) => !value)}>{t('page.auto.viewReason')}</Button>}
+      {state?.latestJob?.status === 'failed' && <Button variant="outline" type="button" className="ctx-btn" disabled={busy} onClick={() => void retry()}>{t('page.auto.retry')}</Button>}
     </div>
   </section>;
 }
@@ -412,10 +416,10 @@ function ProposalCard({ topicId, proposal }: { topicId: string; proposal: Propos
     <p className="ctx-proposal-title">{titleText}</p>
     {bodyText && <p className="ctx-proposal-snip">{bodyText}</p>}
     <div className="ctx-actions mt-2">
-      <Button type="button" className="ctx-btn" aria-expanded={open} onClick={() => setOpen((value) => !value)}>{t('page.proposal.evidence')}</Button>
-      <Button type="button" className="ctx-btn ctx-btn-primary" disabled={busy} onClick={() => void confirm()}>{t('page.proposal.confirm')}</Button>
-      <Button type="button" className="ctx-btn" disabled={busy} onClick={() => void reject()}>{t('page.proposal.reject')}</Button>
-      <Button ref={editButton} type="button" className="ctx-btn" disabled={busy} onClick={() => setEditing(true)}>{t('page.proposal.editConfirm')}</Button>
+      <Button variant="outline" type="button" className="ctx-btn" aria-expanded={open} onClick={() => setOpen((value) => !value)}>{t('page.proposal.evidence')}</Button>
+      <Button variant="default" type="button" className="ctx-btn ctx-btn-primary" disabled={busy} onClick={() => void confirm()}>{t('page.proposal.confirm')}</Button>
+      <Button variant="outline" type="button" className="ctx-btn" disabled={busy} onClick={() => void reject()}>{t('page.proposal.reject')}</Button>
+      <Button variant="outline" ref={editButton} type="button" className="ctx-btn" disabled={busy} onClick={() => setEditing(true)}>{t('page.proposal.editConfirm')}</Button>
     </div>
     {open && <div className="ctx-proposal-more">
       {bodyText && <BodyText text={String(input.content ?? '')} className="ctx-body" />}
@@ -431,7 +435,7 @@ function ProposalCard({ topicId, proposal }: { topicId: string; proposal: Propos
         <label className="ctx-body">{t('page.proposal.body')}<Textarea aria-label={t('page.proposal.body')} className="ctx-field mt-1" value={content} onChange={(event) => setContent(event.target.value)} /></label>
         <label className="ctx-body">{t('page.proposal.reason')}<Input aria-label={t('page.proposal.reasonLabel')} className="ctx-field mt-1" value={reason} onChange={(event) => setReason(event.target.value)} /></label>
         {error && <p role="alert" className="ctx-error">{error}</p>}
-        <div className="ctx-actions"><Button type="button" className="ctx-btn" onClick={() => setEditing(false)}>{t('page.proposal.cancel')}</Button><Button type="button" className="ctx-btn ctx-btn-primary" disabled={busy || !title.trim() || !content.trim()} onClick={() => void saveAndConfirm()}>{t('page.proposal.confirm')}</Button></div>
+        <div className="ctx-actions"><Button variant="outline" type="button" className="ctx-btn" onClick={() => setEditing(false)}>{t('page.proposal.cancel')}</Button><Button variant="default" type="button" className="ctx-btn ctx-btn-primary" disabled={busy || !title.trim() || !content.trim()} onClick={() => void saveAndConfirm()}>{t('page.proposal.confirm')}</Button></div>
       </DialogContent>
     </Dialog>
   </article>;
@@ -441,8 +445,8 @@ function Pager({ testId, cursor, nextCursor, onPrevious, onNext }: { testId: str
   const { t } = useTranslation('knowledge');
   if (cursor === 0 && nextCursor == null) return null;
   return <div data-testid={testId} className="ctx-actions">
-    <Button type="button" className="ctx-btn" disabled={!cursor} onClick={onPrevious}>{t('page.pager.previous')}</Button>
-    <Button type="button" className="ctx-btn" disabled={nextCursor == null} onClick={() => { if (nextCursor != null) onNext(nextCursor); }}>{t('page.pager.next')}</Button>
+    <Button variant="outline" type="button" className="ctx-btn" disabled={!cursor} onClick={onPrevious}>{t('page.pager.previous')}</Button>
+    <Button variant="outline" type="button" className="ctx-btn" disabled={nextCursor == null} onClick={() => { if (nextCursor != null) onNext(nextCursor); }}>{t('page.pager.next')}</Button>
   </div>;
 }
 
@@ -452,17 +456,17 @@ function MemoryReading({ item, resource, openEditor }: { item: Resource; resourc
     <BodyText text={resource.content ?? ''} className="ctx-body" />
     {resource.uri && <a className="ctx-body underline" href={resource.uri} target="_blank" rel="noreferrer">{t('page.memory.viewSource')}</a>}
     <div className="ctx-actions mt-3">
-      <Button type="button" className="ctx-btn" onClick={() => openEditor(resource)}>{t('page.memory.edit')}</Button>
+      <Button variant="outline" type="button" className="ctx-btn" onClick={() => openEditor(resource)}>{t('page.memory.edit')}</Button>
       {item.status === 'active' && <RetireButton item={item} />}
     </div>
-    <details>
-      <summary>{t('page.memory.historyDetails')}</summary>
+    <Disclosure>
+      <DisclosureTrigger>{t('page.memory.historyDetails')}</DisclosureTrigger>
       {resource.evidence?.map((ref) => <p key={`${ref.type}:${ref.id}`} className="ctx-muted">{t('page.evidence', { type: ref.type, id: ref.id, revision: ref.revision })}</p>)}
       {resource.versions?.map((version) => {
         const reason = version.reason ?? t('page.memory.savedOriginal');
         return <div key={version.revision} className="mt-3 border-t pt-2"><p className="ctx-muted">{version.importance ? t('page.memory.versionWithImportance', { revision: version.revision, reason, importance: version.importance }) : t('page.memory.version', { revision: version.revision, reason })}</p><BodyText text={version.content} className="ctx-body" /></div>;
       })}
-    </details>
+    </Disclosure>
   </>;
 }
 
@@ -509,33 +513,33 @@ function MemoryBrowser({ embedded, topicId, scope, cursor, setCursor, status, se
   const items = list.data?.items ?? [];
   const selected = items.find((item) => item.id === opened);
   const showList = !failed && !trueEmpty && !searchMiss && !filteredEmpty && items.length > 0;
-  const records = !embedded && onShowRecords ? <Button type="button" className="ctx-btn" onClick={onShowRecords}>{t('page.extractionHistory')}</Button> : null;
+  const records = !embedded && onShowRecords ? <Button variant="outline" type="button" className="ctx-btn" onClick={onShowRecords}>{t('page.extractionHistory')}</Button> : null;
   const emptyAction = (auto?.pendingProposalCount ?? 0) > 0
-    ? <Button type="button" className="ctx-btn" onClick={onShowProposals}>{t('page.memory.viewProposals')}</Button>
+    ? <Button variant="outline" type="button" className="ctx-btn" onClick={onShowProposals}>{t('page.memory.viewProposals')}</Button>
     : (auto?.pendingSourceCount ?? 0) > 0
       ? null
-      : <Button type="button" className="ctx-btn" onClick={onShowMaterials}>{t('page.memory.addMaterials')}</Button>;
+      : <Button variant="outline" type="button" className="ctx-btn" onClick={onShowMaterials}>{t('page.memory.addMaterials')}</Button>;
   return <div className="ctx-stack">
     {!trueEmpty && <div className="ctx-sheet-bar">
       <Input aria-label={t('page.memory.searchLabel')} className="ctx-field max-w-sm" placeholder={t('page.memory.searchPlaceholder')} value={input} onChange={(event) => setInput(event.target.value)} onCompositionStart={onCompositionStart} onCompositionEnd={onCompositionEnd} />
-      <div role="group" aria-label={t('page.memory.statusLabel')} className="ctx-actions">{([['active', t('page.memory.active')], ['history', t('page.memory.history')], ['all', t('page.memory.all')]] as const).map(([value, label]) => <Button key={value} type="button" className="ctx-btn" aria-pressed={status === value} onClick={() => setStatus(value)}>{label}</Button>)}</div>
+      <div role="group" aria-label={t('page.memory.statusLabel')} className="ctx-actions">{([['active', t('page.memory.active')], ['history', t('page.memory.history')], ['all', t('page.memory.all')]] as const).map(([value, label]) => <Button variant="outline" key={value} type="button" className="ctx-btn" aria-pressed={status === value} onClick={() => setStatus(value)}>{label}</Button>)}</div>
       {(list.data?.total ?? 0) > 0 && <span className="ctx-muted">{t('page.memory.results', { count: list.data?.total ?? 0 })}</span>}
-      <div className="ctx-sheet-end">{records}<Button type="button" className="ctx-btn ctx-btn-primary" onClick={() => openEditor()}>{t('page.memory.addManual')}</Button></div>
+      <div className="ctx-sheet-end">{records}<Button variant="default" type="button" className="ctx-btn ctx-btn-primary" onClick={() => openEditor()}>{t('page.memory.addManual')}</Button></div>
     </div>}
     {activeEditor && <ResourceEditor key={activeEditor.id} type="memories" resource={activeEditor.resource} topicId={topicId || null} onClose={closeEditor} />}
-    {failed && <div role="alert" className="ctx-error"><p>{(list.error ?? probe.error)?.message}</p><Button type="button" className="ctx-btn" onClick={() => { void list.refetch(); void probe.refetch(); }}>{t('page.memory.retry')}</Button></div>}
-    {trueEmpty && <div data-testid="context-memory-empty" className="ctx-card ctx-empty">
+    {failed && <div role="alert" className="ctx-error"><p>{(list.error ?? probe.error)?.message}</p><Button variant="outline" type="button" className="ctx-btn" onClick={() => { void list.refetch(); void probe.refetch(); }}>{t('page.memory.retry')}</Button></div>}
+    {trueEmpty && <Surface as="div" tone="card" data-testid="context-memory-empty" className="ctx-card ctx-empty">
       <h2 className="ctx-empty-title">{t('page.memory.emptyTitle')}</h2>
       <p className="ctx-empty-copy">{t('page.memory.emptyCopy')}</p>
       <div className="ctx-actions">
         {!embedded && emptyAction}
         {!embedded && (auto?.pendingProposalCount ?? 0) === 0 && (auto?.pendingSourceCount ?? 0) > 0 && <RunNow topicId={topicId} />}
         {records}
-        <Button type="button" className="ctx-btn ctx-btn-primary" onClick={() => openEditor()}>{t('page.memory.addManual')}</Button>
+        <Button variant="default" type="button" className="ctx-btn ctx-btn-primary" onClick={() => openEditor()}>{t('page.memory.addManual')}</Button>
       </div>
-    </div>}
-    {searchMiss && <div className="ctx-card"><p>{t('page.memory.noMatch')}</p><Button type="button" className="ctx-btn" onClick={() => setInput('')}>{t('page.memory.clearSearch')}</Button></div>}
-    {filteredEmpty && <div className="ctx-card"><p>{t('page.memory.noActive')}</p><Button type="button" className="ctx-btn" onClick={() => setStatus('history')}>{t('page.memory.viewHistory')}</Button></div>}
+    </Surface>}
+    {searchMiss && <Surface as="div" tone="card" className="ctx-card"><p>{t('page.memory.noMatch')}</p><Button variant="outline" type="button" className="ctx-btn" onClick={() => setInput('')}>{t('page.memory.clearSearch')}</Button></Surface>}
+    {filteredEmpty && <Surface as="div" tone="card" className="ctx-card"><p>{t('page.memory.noActive')}</p><Button variant="outline" type="button" className="ctx-btn" onClick={() => setStatus('history')}>{t('page.memory.viewHistory')}</Button></Surface>}
     {showList && <div className="ctx-memory-split">
       <div className="ctx-mem-list">
         {items.map((item) => <div key={item.id} className="ctx-mem-row"><MemorySummary memory={item} selected={opened === item.id} onSelect={() => setOpened(opened === item.id ? '' : item.id)} /></div>)}
@@ -554,7 +558,7 @@ function RunNow({ topicId }: { topicId: string }) {
   const [error, setError] = useState('');
   const requestId = useRef<string | null>(null);
   return <>
-    <Button type="button" className="ctx-btn" onClick={() => void (async () => {
+    <Button variant="outline" type="button" className="ctx-btn" onClick={() => void (async () => {
       if (!requestId.current) requestId.current = crypto.randomUUID();
       setError('');
       try {
@@ -570,7 +574,7 @@ function RunNow({ topicId }: { topicId: string }) {
 function RetireButton({ item }: { item: Resource }) {
   const { t } = useTranslation('knowledge');
   const { run, busy } = usePlatformAction();
-  return <Button type="button" className="ctx-btn" disabled={busy} onClick={() => void run(() => submitCommands([{ kind: 'memory.retire', targetId: item.id, expectedRevision: item.revision, input: { reason: '用户将该记忆设为历史' } }]), t('page.memory.retired'))}>{t('page.memory.makeHistory')}</Button>; // i18n-ignore
+  return <Button variant="outline" type="button" className="ctx-btn" disabled={busy} onClick={() => void run(() => submitCommands([{ kind: 'memory.retire', targetId: item.id, expectedRevision: item.revision, input: { reason: '用户将该记忆设为历史' } }]), t('page.memory.retired'))}>{t('page.memory.makeHistory')}</Button>; // i18n-ignore
 }
 
 function ContextSearch({ topicId, scope, cursor, setCursor, input, setInput, submitted, history, setHistory, onCompositionStart, onCompositionEnd }: {
@@ -596,11 +600,11 @@ function ContextSearch({ topicId, scope, cursor, setCursor, input, setInput, sub
   return <div className="ctx-stack">
     <div className="ctx-actions">
       <Input aria-label={t('page.search.label')} className="ctx-field max-w-md" placeholder={t('page.search.placeholder')} value={input} onChange={(event) => setInput(event.target.value)} onCompositionStart={onCompositionStart} onCompositionEnd={onCompositionEnd} />
-      <label className="ctx-muted"><input type="checkbox" checked={history} onChange={(event) => setHistory(event.target.checked)} />{t('page.search.includeHistory')}</label>
+      <label className="ctx-muted"><Checkbox  checked={history} onChange={(event) => setHistory(event.target.checked)} />{t('page.search.includeHistory')}</label>
     </div>
-    {hits.error && <p role="alert" className="ctx-error">{hits.error.message}<Button type="button" className="ctx-btn" onClick={() => void hits.refetch()}>{t('page.search.retry')}</Button></p>}
+    {hits.error && <p role="alert" className="ctx-error">{hits.error.message}<Button variant="outline" type="button" className="ctx-btn" onClick={() => void hits.refetch()}>{t('page.search.retry')}</Button></p>}
     {submitted && hits.isSuccess && hits.data.total === 0 && <p>{t('page.search.noMatch')}</p>}
-    <div className="ctx-stack">{hits.data?.items.map((hit) => <article key={`${hit.type}:${hit.id}:${hit.revision}`} className="ctx-card"><h2 className="ctx-section-title">{hit.title}</h2><BodyText text={hit.snippet} className="ctx-body" /><p className="ctx-muted">{t(`page.search.hit.${hit.type === 'material' ? 'material' : hit.type === 'memory' ? 'memory' : 'task'}`, { revision: hit.revision, status: hit.status })}</p></article>)}</div>
+    <div className="ctx-stack">{hits.data?.items.map((hit) => <Surface as="article" tone="card" key={`${hit.type}:${hit.id}:${hit.revision}`} className="ctx-card"><h2 className="ctx-section-title">{hit.title}</h2><BodyText text={hit.snippet} className="ctx-body" /><p className="ctx-muted">{t(`page.search.hit.${hit.type === 'material' ? 'material' : hit.type === 'memory' ? 'memory' : 'task'}`, { revision: hit.revision, status: hit.status })}</p></Surface>)}</div>
     <Pager testId="context-pagination" cursor={cursor} nextCursor={hits.data?.nextCursor ?? null} onPrevious={() => setCursor(Math.max(0, cursor - 40))} onNext={setCursor} />
   </div>;
 }
@@ -649,7 +653,7 @@ function ResourceEditor({ type, resource, topicId, taskId, onClose }: { type: 'm
     reader.onerror = () => setFileError(t('page.editor.fileReadFailed'));
     reader.readAsDataURL(file);
   }
-  return <form className="ctx-card ctx-stack" onSubmit={(event) => { event.preventDefault(); if (!resolvedTitle.trim() || attachmentMissing) return; void run(async () => {
+  return <Surface as="form" tone="card" className="ctx-card ctx-stack" onSubmit={(event) => { event.preventDefault(); if (!resolvedTitle.trim() || attachmentMissing) return; void run(async () => {
     const input: Record<string, unknown> = { title: resolvedTitle, content, ...(!resource ? { topicId, kind, ...(isMaterial && taskId ? { taskId } : {}) } : {}) };
     if (isMaterial) { if (kind === 'link') input.uri = uri; if (kind === 'thread') input.metadata = { completeness, sessionId: sessionId || undefined, provider }; if (attachment) Object.assign(input, attachment); }
     else { input.kind = kind; input.evidence = evidence; input.reason = reason || (resource ? '用户修订' : '人工记录'); input.importance = importance; input.labels = labels.split(/[\s,，]+/).map((label) => label.trim()).filter(Boolean); input.origin = origin; } // i18n-ignore
@@ -659,16 +663,16 @@ function ResourceEditor({ type, resource, topicId, taskId, onClose }: { type: 'm
     <fieldset className="ctx-stack" disabled={busy}>
     <h2 className="ctx-section-title">{t(resource ? (isMaterial ? 'page.editor.editMaterial' : 'page.editor.editMemory') : (isMaterial ? 'page.editor.createMaterial' : 'page.editor.createMemory'))}</h2>
     <Input aria-label={isMaterial ? t('page.editor.materialTitle') : t('page.editor.memoryTitle')} className="ctx-field" placeholder={isMaterial && kind === 'attachment' ? t('page.editor.fileNamePlaceholder') : t('page.editor.titlePlaceholder')} value={title} onChange={(event) => { titleRef.current = event.target.value; setTitle(event.target.value); }} required={!(isMaterial && kind === 'attachment')} />
-    <select aria-label={isMaterial ? t('page.editor.materialKind') : t('page.editor.memoryKind')} className="ctx-select" disabled={Boolean(resource && (isMaterial || resource.kind === 'crystal'))} value={kind} onChange={(event) => setKind(event.target.value)}>{(isMaterial ? (['text', 'markdown', 'link', 'thread', 'attachment'] as const).map((value) => [value, t(`page.editor.materialKinds.${value}`)] as const) : resource?.kind === 'crystal' ? [['crystal', t('memoryView.kinds.crystal')] as const] : memoryKindKeys.filter((value) => value !== 'crystal').map((value) => [value, t(`memoryView.kinds.${value}`)] as const)).map(([value, name]) => <option key={value} value={value}>{name}</option>)}</select>
-    {!isMaterial && <div className="ctx-actions"><Stars value={importance} onChange={setImportance} /><select aria-label={t('page.editor.origin')} className="ctx-select" value={origin} onChange={(event) => setOrigin(event.target.value)}>{originKeys.map((value) => <option key={value} value={value}>{t(`memoryView.origins.${value}`)}</option>)}</select><Input aria-label={t('page.editor.tags')} className="ctx-field max-w-sm" placeholder={t('page.editor.tagsPlaceholder')} value={labels} onChange={(event) => setLabels(event.target.value)} /></div>}
+    <NativeSelect aria-label={isMaterial ? t('page.editor.materialKind') : t('page.editor.memoryKind')} className="ctx-select" disabled={Boolean(resource && (isMaterial || resource.kind === 'crystal'))} value={kind} onChange={(event) => setKind(event.target.value)}>{(isMaterial ? (['text', 'markdown', 'link', 'thread', 'attachment'] as const).map((value) => [value, t(`page.editor.materialKinds.${value}`)] as const) : resource?.kind === 'crystal' ? [['crystal', t('memoryView.kinds.crystal')] as const] : memoryKindKeys.filter((value) => value !== 'crystal').map((value) => [value, t(`memoryView.kinds.${value}`)] as const)).map(([value, name]) => <option key={value} value={value}>{name}</option>)}</NativeSelect>
+    {!isMaterial && <div className="ctx-actions"><Stars value={importance} onChange={setImportance} /><NativeSelect aria-label={t('page.editor.origin')} className="ctx-select" value={origin} onChange={(event) => setOrigin(event.target.value)}>{originKeys.map((value) => <option key={value} value={value}>{t(`memoryView.origins.${value}`)}</option>)}</NativeSelect><Input aria-label={t('page.editor.tags')} className="ctx-field max-w-sm" placeholder={t('page.editor.tagsPlaceholder')} value={labels} onChange={(event) => setLabels(event.target.value)} /></div>}
     {kind === 'link' && <Input type="url" aria-label={t('page.editor.sourceLink')} className="ctx-field" placeholder="https://…" value={uri} onChange={(event) => setUri(event.target.value)} required />}
-    {kind === 'thread' && <select aria-label={t('page.editor.threadScope')} className="ctx-select" value={completeness} onChange={(event) => setCompleteness(event.target.value)}><option value="excerpt">{t('page.editor.threadExcerpt')}</option><option value="full">{t('page.editor.threadFull')}</option><option value="summary">{t('page.editor.threadSummary')}</option></select>}
-    {kind === 'attachment' ? <><input aria-label={t('page.editor.chooseFile')} type="file" onChange={(event) => void selectFile(event.target.files?.[0])} />{fileError && <p role="alert">{fileError}</p>}</> : <Textarea aria-label={isMaterial ? t('page.editor.materialBody') : t('page.editor.memoryBody')} className="ctx-field" placeholder={isMaterial ? t('page.editor.materialBodyPlaceholder') : t('page.editor.memoryBodyPlaceholder')} value={content} onChange={(event) => setContent(event.target.value)} rows={5} />}
+    {kind === 'thread' && <NativeSelect aria-label={t('page.editor.threadScope')} className="ctx-select" value={completeness} onChange={(event) => setCompleteness(event.target.value)}><option value="excerpt">{t('page.editor.threadExcerpt')}</option><option value="full">{t('page.editor.threadFull')}</option><option value="summary">{t('page.editor.threadSummary')}</option></NativeSelect>}
+    {kind === 'attachment' ? <><Input aria-label={t('page.editor.chooseFile')} type="file" onChange={(event) => void selectFile(event.target.files?.[0])} />{fileError && <p role="alert">{fileError}</p>}</> : <Textarea aria-label={isMaterial ? t('page.editor.materialBody') : t('page.editor.memoryBody')} className="ctx-field" placeholder={isMaterial ? t('page.editor.materialBodyPlaceholder') : t('page.editor.memoryBodyPlaceholder')} value={content} onChange={(event) => setContent(event.target.value)} rows={5} />}
     {!isMaterial && <><ContextPicker topicId={topicId} selected={evidence} onChange={setEvidence} /><Input aria-label={t('page.editor.reason')} className="ctx-field" placeholder={t('page.editor.reasonPlaceholder')} value={reason} onChange={(event) => setReason(event.target.value)} /></>}
     {kind === 'thread' && <div className="ctx-actions"><Input aria-label={t('page.editor.host')} className="ctx-field" placeholder={t('page.editor.hostPlaceholder')} value={provider} onChange={(event) => setProvider(event.target.value)} /><Input aria-label={t('page.editor.sessionId')} className="ctx-field" placeholder={t('page.editor.sessionIdPlaceholder')} value={sessionId} onChange={(event) => setSessionId(event.target.value)} /></div>}
-    <div className="ctx-actions"><Button type="button" className="ctx-btn" disabled={busy} onClick={onClose}>{t('page.editor.cancel')}</Button><Button className="ctx-btn ctx-btn-primary" disabled={busy || !resolvedTitle.trim() || attachmentMissing || (!isMaterial && !content.trim())}>{isMaterial ? t('page.editor.saveMaterial') : t('page.editor.saveMemory')}</Button></div>
+    <div className="ctx-actions"><Button variant="outline" type="button" className="ctx-btn" disabled={busy} onClick={onClose}>{t('page.editor.cancel')}</Button><Button variant="default" className="ctx-btn ctx-btn-primary" disabled={busy || !resolvedTitle.trim() || attachmentMissing || (!isMaterial && !content.trim())}>{isMaterial ? t('page.editor.saveMaterial') : t('page.editor.saveMemory')}</Button></div>
     </fieldset>
-  </form>;
+  </Surface>;
 }
 
 function BriefPanel({ topicId, draft, updateDraft }: { topicId: string | null; draft: BriefDraft | null; updateDraft: (update: (current: BriefDraft | null) => BriefDraft | null) => void }) {
@@ -684,7 +688,7 @@ function BriefPanel({ topicId, draft, updateDraft }: { topicId: string | null; d
       return result;
     });
   }
-  return <div className="ctx-stack">{query.error && <p role="alert" className="ctx-error">{query.error.message}</p>}<div className="ctx-card ctx-brief">{query.data?.content ? <BodyText text={query.data.content} format="markdown" components={{ h1: ({ children }) => nodeText(children).trim() === '当前简报' ? null : <h2 className="ctx-section-title">{children}</h2> }} /> : <p className="ctx-muted">{t('page.brief.preparing')}</p>}</div><label className="ctx-body">{t('page.brief.pinnedNotes')}<Textarea className="ctx-field mt-2" aria-label={t('page.brief.pinnedNotesLabel')} disabled={!query.data} value={draft?.notes ?? query.data?.manualNotes ?? ''} onChange={(event) => { const notes = event.target.value; updateDraft((current) => ({ notes, revision: current?.revision ?? query.data.revision })); }} /></label><Button className="ctx-btn ctx-btn-primary" disabled={busy || draft === null} onClick={() => void save()}>{t('page.brief.savePinnedNotes')}</Button></div>; // i18n-ignore
+  return <div className="ctx-stack">{query.error && <p role="alert" className="ctx-error">{query.error.message}</p>}<Surface as="div" tone="card" className="ctx-card ctx-brief">{query.data?.content ? <BodyText text={query.data.content} format="markdown" components={{ h1: ({ children }) => nodeText(children).trim() === '当前简报' ? null : <h2 className="ctx-section-title">{children}</h2> }} /> : <p className="ctx-muted">{t('page.brief.preparing')}</p>}</Surface><label className="ctx-body">{t('page.brief.pinnedNotes')}<Textarea className="ctx-field mt-2" aria-label={t('page.brief.pinnedNotesLabel')} disabled={!query.data} value={draft?.notes ?? query.data?.manualNotes ?? ''} onChange={(event) => { const notes = event.target.value; updateDraft((current) => ({ notes, revision: current?.revision ?? query.data.revision })); }} /></label><Button variant="default" className="ctx-btn ctx-btn-primary" disabled={busy || draft === null} onClick={() => void save()}>{t('page.brief.savePinnedNotes')}</Button></div>; // i18n-ignore
 }
 
 function OrganizationPanel({ topicId }: { topicId: string | null }) {
@@ -693,5 +697,5 @@ function OrganizationPanel({ topicId }: { topicId: string | null }) {
   const [purpose, setPurpose] = useState(() => t('organization.defaultPurpose'));
   const [provider, setProvider] = useState('external');
   const { run, busy } = usePlatformAction();
-  return <details className="ctx-card"><summary className="cursor-pointer text-sm font-semibold">{t('page.organize.summary')}</summary><div className="ctx-stack mt-4"><Textarea aria-label={t('page.organize.goal')} className="ctx-field" value={purpose} onChange={(event) => setPurpose(event.target.value)} /><select aria-label={t('page.organize.method')} className="ctx-select" value={provider} onChange={(event) => setProvider(event.target.value)}><option value="external">{t('page.organize.external')}</option><option value="builtin">{t('page.organize.builtin')}</option></select><Button className="ctx-btn" disabled={busy || !purpose.trim()} onClick={() => void run(async () => { const request = await api<any>('/api/v1/knowledge/organizations', { method: 'POST', body: json({ topicId, purpose, provider }) }); return provider === 'builtin' ? api(`/api/v1/knowledge/organizations/${request.id}/generate`, { method: 'POST', body: '{}' }) : request; }, provider === 'builtin' ? t('page.organize.generated') : t('page.organize.prepared'))}>{t('page.organize.prepare')}</Button>{query.data?.map((request) => <article className="space-y-2 border-t pt-3" key={request.id}><p className="ctx-body">{request.purpose}</p><p className="ctx-muted">{request.status} · {new Date(request.createdAt).toLocaleString(intlLocale())}</p>{request.error && <p role="alert" className="ctx-error">{request.error}</p>}{request.result?.summary && <BodyText text={request.result.summary} className="ctx-body" />}{request.provider === 'external' && !['proposed', 'completed'].includes(request.status) && <OrganizationPrompt id={request.id} purpose={request.purpose} />}{request.proposalIds?.length > 0 && <a className="ctx-body underline" href="#/proposals">{t('page.organize.reviewProposals')}</a>}</article>)}</div></details>;
+  return <Disclosure tone="card" className="ctx-card"><DisclosureTrigger className="cursor-pointer text-sm font-semibold">{t('page.organize.summary')}</DisclosureTrigger><div className="ctx-stack mt-4"><Textarea aria-label={t('page.organize.goal')} className="ctx-field" value={purpose} onChange={(event) => setPurpose(event.target.value)} /><NativeSelect aria-label={t('page.organize.method')} className="ctx-select" value={provider} onChange={(event) => setProvider(event.target.value)}><option value="external">{t('page.organize.external')}</option><option value="builtin">{t('page.organize.builtin')}</option></NativeSelect><Button variant="outline" className="ctx-btn" disabled={busy || !purpose.trim()} onClick={() => void run(async () => { const request = await api<any>('/api/v1/knowledge/organizations', { method: 'POST', body: json({ topicId, purpose, provider }) }); return provider === 'builtin' ? api(`/api/v1/knowledge/organizations/${request.id}/generate`, { method: 'POST', body: '{}' }) : request; }, provider === 'builtin' ? t('page.organize.generated') : t('page.organize.prepared'))}>{t('page.organize.prepare')}</Button>{query.data?.map((request) => <article className="space-y-2 border-t pt-3" key={request.id}><p className="ctx-body">{request.purpose}</p><p className="ctx-muted">{request.status} · {new Date(request.createdAt).toLocaleString(intlLocale())}</p>{request.error && <p role="alert" className="ctx-error">{request.error}</p>}{request.result?.summary && <BodyText text={request.result.summary} className="ctx-body" />}{request.provider === 'external' && !['proposed', 'completed'].includes(request.status) && <OrganizationPrompt id={request.id} purpose={request.purpose} />}{request.proposalIds?.length > 0 && <a className="ctx-body underline" href="#/proposals">{t('page.organize.reviewProposals')}</a>}</article>)}</div></Disclosure>;
 }

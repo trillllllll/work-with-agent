@@ -89,3 +89,9 @@ npm run build
 - 已移除构建目录的 Dovun.app，保留 DMG。已安装的 Dovun 保持关闭；WWA、数据绑定和自动化开关未操作；未部署。
 
 构建、冒烟、安装日志分别为 `/tmp/dovun-controls-desktop-build.log`、`/tmp/dovun-controls-desktop-smoke.log`、`/tmp/dovun-controls-install.log`。
+
+## 2026-10-24 公共控件补齐
+
+后续实际截图发现：此前“已接入并验证”的覆盖表过于宽泛，设置底栏开关、资料库及工作上下文局部样式、助手引用与工具记录仍有独立实现。旧巡检主要证明页面可渲染、字号正确与不溢出，没有证明每个控件均复用了公共组件。
+
+本轮按组件类别补齐，并加入源码边界和实际材质检查；具体范围、保留边界与新截图见 [公共控件补齐记录](../control-reuse/README.md)。先前截图和构建记录保留其历史状态，不代表本轮已重新安装。

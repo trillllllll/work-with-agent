@@ -1,3 +1,5 @@
+import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure.js';
+import { Checkbox } from '@/components/ui/checkbox.js';
 import type { FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { tagColors } from '@/lib/api.js';
@@ -28,17 +30,17 @@ export function TopicModal({ form, onChange, onClose, onSave, onDelete, busy = f
         </div>
         <div className="mb-4">
           <Label>{t('topicModal.color')}</Label>
-          <div className="flex items-center gap-1.5" role="group" aria-label={t('topicModal.colorGroup')}>{tagColors.map((color) => <button key={color.id} type="button" className="tag-color-swatch" data-color={color.id} aria-label={color.label} aria-pressed={(form.color || 'slate') === color.id} onClick={() => onChange({ ...form, color: color.id })} />)}</div>
+          <div className="flex items-center gap-1.5" role="group" aria-label={t('topicModal.colorGroup')}>{tagColors.map((color) => <Button variant="plain" size="bare" key={color.id} type="button" className="tag-color-swatch" data-color={color.id} aria-label={color.label} aria-pressed={(form.color || 'slate') === color.id} onClick={() => onChange({ ...form, color: color.id })} />)}</div>
         </div>
-        <details className="disclosure mb-4"><summary className="mb-3 cursor-pointer text-sm text-muted-foreground">{t('topicModal.exploration')}</summary><div className="mb-4">
+        <Disclosure className="disclosure mb-4"><DisclosureTrigger className="mb-3 cursor-pointer text-sm text-muted-foreground">{t('topicModal.exploration')}</DisclosureTrigger><div className="mb-4">
           <Label htmlFor="topic-description">{t('topicModal.descriptionLabel')}</Label>
           <Textarea id="topic-description" value={form.description ?? ''} onChange={(event) => onChange({ ...form, description: event.target.value })} placeholder={t('topicModal.descriptionPlaceholder')} />
         </div>
         <div className="mb-4"><Label htmlFor="topic-goal">{t('topicModal.goal')}</Label><Input id="topic-goal" value={form.goal ?? ''} onChange={(event) => onChange({ ...form, goal: event.target.value })} /></div>
         <Label htmlFor="topic-exploration" className="mb-5 flex items-center gap-2 font-normal">
-          <input id="topic-exploration" type="checkbox" className="size-3.5 accent-primary" checked={form.isExploration} onChange={(event) => onChange({ ...form, isExploration: event.target.checked })} />
+          <Checkbox id="topic-exploration"  className="size-3.5 accent-primary" checked={form.isExploration} onChange={(event) => onChange({ ...form, isExploration: event.target.checked })} />
           {t('topicModal.stillExploring')}
-        </Label></details>
+        </Label></Disclosure>
         <div className="flex items-center justify-between gap-2 border-t pt-4">
           {form.id && onDelete ? <Button type="button" variant="outline" disabled={busy} onClick={onDelete}>{t('topicModal.archive')}</Button> : <span />}
           <div className="flex gap-2">

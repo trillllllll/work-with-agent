@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
@@ -118,10 +119,10 @@ export function StatsPage({ onOpenTopic }: { onOpenTopic: (id: string) => void }
         </div>
       )}
       {overview.isError && (
-        <div role="alert" data-testid="stats-section-error" className="glass-subtle flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4">
+        <Surface as="div" tone="subtle" role="alert" data-testid="stats-section-error" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4">
           <p className="text-sm text-destructive">{overview.error instanceof Error ? overview.error.message : t('sectionError')}</p>
           <Button type="button" variant="outline" size="sm" onClick={retry}>{t('retry')}</Button>
-        </div>
+        </Surface>
       )}
       {data && quiet && <><KpiCards data={data} quiet nav={nav} /><StatsEmpty nav={nav} /></>}
       {data && !quiet && (

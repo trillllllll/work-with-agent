@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button.js';
 import { useTranslation } from 'react-i18next';
 import { intlLocale, t as translate } from '../../i18n/index.js';
 
@@ -63,7 +64,7 @@ export function Stars({ value = 3, onChange }: { value?: number; onChange?: (val
   const { t } = useTranslation('knowledge');
   const stars = [1, 2, 3, 4, 5];
   if (!onChange) return <span aria-label={t('memoryView.stars.value', { value, max: 5 })} className="text-amber-500">{stars.map((star) => star <= value ? '★' : '☆').join('')}</span>;
-  return <div role="radiogroup" aria-label={t('memoryView.stars.group')} className="flex gap-1">{stars.map((star) => <button key={star} type="button" role="radio" aria-checked={value === star} aria-label={t('memoryView.stars.star', { count: star })} className={`text-lg leading-none ${star <= value ? 'text-amber-500' : 'text-muted-foreground'}`} onClick={() => onChange(star)}>{star <= value ? '★' : '☆'}</button>)}</div>;
+  return <div role="radiogroup" aria-label={t('memoryView.stars.group')} className="flex gap-1">{stars.map((star) => <Button variant="plain" size="bare" key={star} type="button" role="radio" aria-checked={value === star} aria-label={t('memoryView.stars.star', { count: star })} className={`text-lg leading-none ${star <= value ? 'text-amber-500' : 'text-muted-foreground'}`} onClick={() => onChange(star)}>{star <= value ? '★' : '☆'}</Button>)}</div>;
 }
 
 export function MemorySummary({ memory, selected, onSelect }: { memory: MemoryCardData; selected?: boolean; onSelect?: () => void }) {
@@ -71,7 +72,7 @@ export function MemorySummary({ memory, selected, onSelect }: { memory: MemoryCa
   const labels = asLabels(memory.labels);
   const excerpt = memoryExcerpt(memory);
   const status = memory.status === 'superseded' ? t('memoryView.status.superseded') : memory.status && memory.status !== 'active' ? t('memoryView.status.history') : '';
-  return <button type="button" onClick={onSelect} className={`w-full rounded-xl text-left ${selected ? 'ring-1 ring-primary/40' : ''}`} aria-pressed={selected}>
+  return <Button variant="row" size="bare" type="button" onClick={onSelect} className={`w-full rounded-xl text-left ${selected ? 'ring-1 ring-primary/40' : ''}`} aria-pressed={selected}>
     <span className="flex flex-wrap items-start justify-between gap-3">
       <strong className="text-sm">{memory.title}</strong>
       <Stars value={memory.importance ?? 3} />
@@ -84,5 +85,5 @@ export function MemorySummary({ memory, selected, onSelect }: { memory: MemoryCa
       {status && <span>{status}</span>}
       {labels.map((label) => <span key={label} className="rounded-full border px-2 py-0.5">{label}</span>)}
     </span>
-  </button>;
+  </Button>;
 }

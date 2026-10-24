@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button.js';
 import { useTranslation } from 'react-i18next';
 import { relativeTime } from '@/components/workspace/memory-view.js';
 import type { StatsAiSection, StatsRangeInfo, StatsSectionError } from '@/lib/api.js';
@@ -42,7 +43,7 @@ export function AiSection({ data, range, nav, onRetry }: { data: StatsAiSection 
         <Panel className="space-y-3">
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-sm font-medium">{t('ai.adoption')}</h3>
-            <button type="button" className="text-sm text-muted-foreground underline-offset-4 hover:underline" onClick={() => nav.go('#/proposals')}>{t('ai.proposalsLink')}</button>
+            <Button variant="link" size="bare" type="button" className="text-sm text-muted-foreground underline-offset-4 hover:underline" onClick={() => nav.go('#/proposals')}>{t('ai.proposalsLink')}</Button>
           </div>
           {total === 0 ? <p className="text-sm text-muted-foreground">{t('section.noData')}</p> : (
             <div className="flex items-center gap-4">
@@ -61,7 +62,7 @@ export function AiSection({ data, range, nav, onRetry }: { data: StatsAiSection 
         <Panel className="space-y-3">
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-sm font-medium">{t('ai.memory')}</h3>
-            <button type="button" className="text-sm text-muted-foreground underline-offset-4 hover:underline" onClick={() => nav.go('#/knowledge')}>{t('ai.knowledgeLink')}</button>
+            <Button variant="link" size="bare" type="button" className="text-sm text-muted-foreground underline-offset-4 hover:underline" onClick={() => nav.go('#/knowledge')}>{t('ai.knowledgeLink')}</Button>
           </div>
           <p className="text-2xl font-semibold tabular-nums">{t('ai.memoryAdded', { count: data.memories.created.value })}</p>
           <Delta current={data.memories.created.value} previous={data.memories.created.previous} />
@@ -83,7 +84,7 @@ export function AiSection({ data, range, nav, onRetry }: { data: StatsAiSection 
         <Panel className="space-y-3">
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-sm font-medium">{t('ai.dispatch')}</h3>
-            <button type="button" className="text-sm text-muted-foreground underline-offset-4 hover:underline" onClick={() => nav.go(runs)}>{t('ai.runsLink')}</button>
+            <Button variant="link" size="bare" type="button" className="text-sm text-muted-foreground underline-offset-4 hover:underline" onClick={() => nav.go(runs)}>{t('ai.runsLink')}</Button>
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div>
@@ -113,15 +114,15 @@ export function AiSection({ data, range, nav, onRetry }: { data: StatsAiSection 
       <Panel className="space-y-3">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-medium">{t('ai.connections')}</h3>
-          <button type="button" className="text-sm text-muted-foreground underline-offset-4 hover:underline" onClick={() => nav.go('#/connections')}>{t('app:nav.connections')}</button>
+          <Button variant="link" size="bare" type="button" className="text-sm text-muted-foreground underline-offset-4 hover:underline" onClick={() => nav.go('#/connections')}>{t('app:nav.connections')}</Button>
         </div>
         {data.connections.length === 0 ? <p className="text-sm text-muted-foreground">{t('ai.noConnections')}</p> : (
           <ul className="space-y-3">
             {data.connections.map((connection) => (
               <li key={connection.id} className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
-                <button type="button" className="min-w-0 flex-1 basis-40 truncate text-left text-sm" onClick={() => nav.go('#/connections')}>
+                <Button variant="row" size="bare" type="button" className="min-w-0 flex-1 basis-40 truncate text-left text-sm" onClick={() => nav.go('#/connections')}>
                   {[connection.name, connection.host].filter(Boolean).join(t('chart.join'))}
-                </button>
+                </Button>
                 <HeatCells days={connection.byDay} label={t('ai.heatLabel', { name: connection.name })} />
                 <span className="shrink-0 text-xs sm:w-32 sm:text-right text-muted-foreground tabular-nums">{[t('ai.writes', { count: connection.writes }), t('ai.proposalsCount', { count: connection.proposals })].join(t('chart.join'))}</span>
                 <span className="ml-auto shrink-0 text-right text-xs text-muted-foreground sm:ml-0 sm:w-16">{relativeTime(connection.lastActiveAt ?? undefined)}</span>

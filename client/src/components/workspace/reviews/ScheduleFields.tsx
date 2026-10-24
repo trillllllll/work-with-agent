@@ -78,7 +78,7 @@ export function ScheduleFields({ value, onChange }: ScheduleFieldsProps) {
                 {matches.length === 0 && <li className="px-2 py-1 text-xs text-muted-foreground">{t('reviews.zoneEmpty')}</li>}
                 {matches.map((zone) => (
                   <li key={zone}>
-                    <button type="button" className={cn('w-full truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted', zone === value.timeZone && 'bg-muted')} onClick={() => { onChange({ timeZone: zone }); setQuery(''); setOpen(false); }}>{zone}</button>
+                    <Button variant="row" size="bare" type="button" className={cn('w-full truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted', zone === value.timeZone && 'bg-muted')} onClick={() => { onChange({ timeZone: zone }); setQuery(''); setOpen(false); }}>{zone}</Button>
                   </li>
                 ))}
               </ul>

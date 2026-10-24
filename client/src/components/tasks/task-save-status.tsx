@@ -1,3 +1,5 @@
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover.js';
+import { Button } from '@/components/ui/button.js';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
@@ -77,25 +79,26 @@ export function UnsyncedTasksButton({ onOpenTask }: { onOpenTask: (taskId: strin
   const uploads = listUploads().filter((upload) => upload.state === 'compressing' || upload.state === 'uploading');
   const count = unsynced.length + uploads.length;
   if (!count) return null;
-  return createPortal(<div className="task-unsynced-dock">
-    <button type="button" className="task-unsynced-button" aria-label={t('saveStatus.unsyncedLabel', { count })} onClick={() => setOpen((value) => !value)}>
+  return createPortal(<div className="task-unsynced-dock"><Popover open={open} onOpenChange={setOpen}>
+    <PopoverTrigger asChild>
+    <Button variant="plain" size="bare" type="button" className="task-unsynced-button" aria-label={t('saveStatus.unsyncedLabel', { count })} >
       <CloudOff className="size-4" aria-hidden />
       {t('saveStatus.unsyncedCount', { count })}
-    </button>
-    {open && <div className="task-unsynced-list" role="dialog" aria-label={t('saveStatus.unsyncedList')}>
+    </Button></PopoverTrigger>
+    <PopoverContent side="top" align="end" className="task-unsynced-list" aria-label={t('saveStatus.unsyncedList')}>
       {unsynced.map((taskId) => {
         const record = coordinator?.getRecord(taskId);
-        return <button key={taskId} type="button" className="task-unsynced-item" onClick={() => { onOpenTask(taskId); setOpen(false); }}>
+        return <Button variant="row" size="bare" key={taskId} type="button" className="task-unsynced-item" onClick={() => { onOpenTask(taskId); setOpen(false); }}>
           <span className="task-unsynced-title">{record?.draft.title || t('shared.untitled')}</span>
           <span className="task-unsynced-state">{saveStatusLabel(coordinator?.status(taskId) ?? 'local-only', false) || t('saveStatus.unsynced')}</span>
-        </button>;
+        </Button>;
       })}
       {uploads.map((upload) => <div key={upload.uploadId} className="task-unsynced-item" role="status">
         <span className="task-unsynced-title">{upload.fileName}</span>
         <span className="task-unsynced-state">{upload.state === 'compressing' ? t('saveStatus.compressing') : t('saveStatus.uploading')}</span>
       </div>)}
-    </div>}
-  </div>, document.body);
+    </PopoverContent>
+  </Popover></div>, document.body);
 }
 
 function useStateReducer(): [number, () => void] {

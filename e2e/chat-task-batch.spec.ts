@@ -93,9 +93,9 @@ test('聊天里一次确认整组任务修改，刷新后仍是同一张已完�
     radius: getComputedStyle(el).borderRadius,
     padding: getComputedStyle(el).padding,
     border: getComputedStyle(el).borderTopWidth,
-    background: getComputedStyle(el).backgroundColor,
+    background: getComputedStyle(el).backgroundImage,
   }));
-  expect(pendingStyle).toEqual({ radius: '12px', padding: '16px', border: '1px', background: 'rgb(255, 255, 255)' });
+  expect(pendingStyle).toEqual({ radius: '11px', padding: '16px', border: '1px', background: expect.stringContaining('linear-gradient') });
 
   await card.getByRole('button', { name: '确认修改', exact: true }).click();
   await expect(card).toHaveAttribute('data-state', 'executed');
@@ -117,8 +117,8 @@ test('暗色卡片使用约定的背景和正文颜色', async ({ page, request 
   const card = page.getByTestId('approval-card');
   await expect(card).toHaveAttribute('data-state', 'pending');
   await expandChanges(card);
-  const colors = await card.evaluate((el) => ({ background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color }));
-  expect(colors).toEqual({ background: 'rgb(23, 23, 23)', color: 'rgb(245, 245, 245)' });
+  const colors = await card.evaluate((el) => ({ background: getComputedStyle(el).backgroundImage, color: getComputedStyle(el).color }));
+  expect(colors).toEqual({ background: expect.stringContaining('linear-gradient'), color: 'rgb(230, 233, 236)' });
 });
 
 test('取消整组修改不改任务', async ({ page, request }) => {
@@ -212,7 +212,7 @@ test('键盘确认修改并显示焦点轮廓', async ({ page, request }) => {
   await page.keyboard.press('Tab');
   const confirm = card.getByRole('button', { name: '确认修改', exact: true });
   await expect(confirm).toBeFocused();
-  expect(await confirm.evaluate((el) => getComputedStyle(el).outlineWidth)).toBe('2px');
+  expect(await confirm.evaluate((el) => { const s = getComputedStyle(el); return el.matches(':focus-visible') && ((s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) >= 2) || s.boxShadow.includes('0px 0px 0px 2px')); })).toBe(true);
   await page.keyboard.press('Enter');
   await expect(card).toHaveAttribute('data-state', 'executed');
 });

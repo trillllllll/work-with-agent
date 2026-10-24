@@ -1,3 +1,5 @@
+import { Button } from '@/components/ui/button.js';
+import { Surface } from '@/components/ui/surface.js';
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronRight, History, Trash2 } from 'lucide-react';
@@ -38,16 +40,13 @@ function DesktopSettings({ category, onCategoryChange, onNavigate }: { category:
                 const active = id === category;
                 return (
                   <li key={id}>
-                    <button
+                    <Button variant="row" size="bare"
                       type="button"
                       aria-current={active ? 'page' : undefined}
                       aria-describedby={`settings-nav-hint-${id}`}
                       onClick={() => { if (!active) onCategoryChange(id); }}
                       className={cn(
                         'group flex w-full items-start gap-2.5 rounded-xl px-3 py-2 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 motion-reduce:transition-none',
-                        active
-                          ? 'bg-accent text-accent-foreground shadow-[var(--surface-button-shadow)]'
-                          : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                       )}
                     >
                       <Icon aria-hidden="true" className={cn('mt-0.5 size-4 shrink-0', active ? 'text-brand-link' : 'text-muted-foreground group-hover:text-foreground')} />
@@ -55,7 +54,7 @@ function DesktopSettings({ category, onCategoryChange, onNavigate }: { category:
                         <span className="block text-[13px] font-medium">{t(`layout.categories.${id}.title`)}</span>
                         <span id={`settings-nav-hint-${id}`} className="mt-0.5 block truncate text-[11px] text-muted-foreground">{hints[id]}</span>
                       </span>
-                    </button>
+                    </Button>
                   </li>
                 );
               })}
@@ -124,11 +123,11 @@ function CategoryList({ onCategoryChange, onNavigate }: { onCategoryChange: (cat
       {groups.map((group) => (
         <section key={group.id} aria-labelledby={`settings-group-${group.id}`}>
           <h2 id={`settings-group-${group.id}`} className="mb-1.5 px-3 text-xs font-medium text-muted-foreground">{group.title}</h2>
-          <div className="glass-subtle overflow-hidden rounded-2xl">
+          <Surface as="div" tone="subtle" className="overflow-hidden rounded-2xl">
             {group.items.map((item, index) => {
               const Icon = item.icon;
               return (
-                <button
+                <Button variant="row" size="bare"
                   key={item.id}
                   type="button"
                   data-settings-item={item.id}
@@ -143,10 +142,10 @@ function CategoryList({ onCategoryChange, onNavigate }: { onCategoryChange: (cat
                     <span id={`settings-item-hint-${item.id}`} className="mt-0.5 block truncate text-xs text-muted-foreground">{item.hint}</span>
                   </span>
                   <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-                </button>
+                </Button>
               );
             })}
-          </div>
+          </Surface>
         </section>
       ))}
     </div>

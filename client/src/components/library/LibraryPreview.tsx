@@ -1,3 +1,8 @@
+import { Surface } from '@/components/ui/surface.js';
+import { Button } from '@/components/ui/button.js';
+import { NativeSelect } from '@/components/ui/native-select.js';
+import { Checkbox } from '@/components/ui/checkbox.js';
+import { Input } from '@/components/ui/input.js';
 import { askAssistant, usePageContext } from '@/lib/assistant-context.js';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -126,22 +131,22 @@ export function LibraryPreview({ target, onTargetChange, onClose, onOpenTask }: 
   };
 
   usePageContext('library', { label: material ? t('libraryPreview.contextLabel', { title: material.title }) : t('shared.library'), materialId: id, materialRevision: viewed || null, materialVersionMode: target.revision == null ? 'latest' : 'historical' });
-  if (!material || !extraction) return <aside className="library-panel library-preview" data-testid="library-preview" aria-label={t('libraryPreview.previewLabel')}><p className="library-meta p-3">{detail.error instanceof Error ? detail.error.message : t('libraryPreview.loading')}</p></aside>;
+  if (!material || !extraction) return <Surface as="aside" tone="card" className="library-panel library-preview" data-testid="library-preview" aria-label={t('libraryPreview.previewLabel')}><p className="library-meta p-3">{detail.error instanceof Error ? detail.error.message : t('libraryPreview.loading')}</p></Surface>;
   const status = extraction.status;
-  return <aside className="library-panel library-preview library-sheet" data-testid="library-preview" aria-label={t('libraryPreview.previewLabel')}>
+  return <Surface as="aside" tone="card" className="library-panel library-preview library-sheet" data-testid="library-preview" aria-label={t('libraryPreview.previewLabel')}>
     <div className="library-preview-head">
       <div className="min-w-0">
         <h2 className="library-name truncate" title={material.title}>{material.title}</h2>
         {viewed > 0 && <p className="library-meta" data-testid="library-preview-version">{t('libraryPreview.version', { revision: viewed })}</p>}
       </div>
-      <button type="button" className="library-btn" onClick={() => askAssistant()}>{t('shared.aiAssistant')}</button>
-      <button type="button" className="library-btn" onMouseDown={(event) => event.preventDefault()} onClick={() => { const selection = window.getSelection(); const node = selection?.anchorNode?.parentElement; if (selection && !selection.isCollapsed && node?.closest('[data-testid="library-preview"]')) askAssistant({ kind: 'selection', title: material.title, text: selection.toString(), materialId: id, unsaved: false }); else toast.error(t('libraryPreview.selectTextFirst')); }}>{t('libraryPreview.askSelection')}</button>
-      <button type="button" className="library-btn" onClick={onClose}>{t('shared.close')}</button>
+      <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => askAssistant()}>{t('shared.aiAssistant')}</Button>
+      <Button variant="outline" size="bare" type="button" className="library-btn" onMouseDown={(event) => event.preventDefault()} onClick={() => { const selection = window.getSelection(); const node = selection?.anchorNode?.parentElement; if (selection && !selection.isCollapsed && node?.closest('[data-testid="library-preview"]')) askAssistant({ kind: 'selection', title: material.title, text: selection.toString(), materialId: id, unsaved: false }); else toast.error(t('libraryPreview.selectTextFirst')); }}>{t('libraryPreview.askSelection')}</Button>
+      <Button variant="outline" size="bare" type="button" className="library-btn" onClick={onClose}>{t('shared.close')}</Button>
     </div>
     <div className="library-preview-tabs" role="tablist" aria-label={t('libraryPreview.previewTabs')}>
-      <button type="button" className="library-btn library-tab" role="tab" aria-selected={tab === 'original'} onClick={() => setTabChoice('original')}>{t('libraryPreview.original')}</button>
-      <button type="button" className="library-btn library-tab" role="tab" aria-selected={tab === 'text'} onClick={() => setTabChoice('text')}>{t('libraryPreview.extractedText')}</button>
-      {target.revision != null && <button type="button" className="library-btn" onClick={() => onTargetChange({ materialId: id, revision: null, chunkId: null })}>{t('libraryPreview.viewLatest')}</button>}
+      <Button variant="tab" size="bare" type="button" className="library-btn library-tab" role="tab" aria-selected={tab === 'original'} onClick={() => setTabChoice('original')}>{t('libraryPreview.original')}</Button>
+      <Button variant="tab" size="bare" type="button" className="library-btn library-tab" role="tab" aria-selected={tab === 'text'} onClick={() => setTabChoice('text')}>{t('libraryPreview.extractedText')}</Button>
+      {target.revision != null && <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => onTargetChange({ materialId: id, revision: null, chunkId: null })}>{t('libraryPreview.viewLatest')}</Button>}
     </div>
     <div className="library-preview-block min-h-0 flex-1 overflow-auto">
       {verified && chunk.data && <p className="library-meta">{t('libraryPreview.versionDetail', { revision: chunk.data.revision, detail: formatLocator(chunk.data.locator) })}</p>}
@@ -158,18 +163,18 @@ export function LibraryPreview({ target, onTargetChange, onClose, onOpenTask }: 
       const place = formatLocator(error.locator);
       return <p key={`${error.code}-${index}`} className="library-preview-block library-meta" style={{ color: 'var(--lib-danger)' }}>{place ? t('libraryPreview.locatedError', { place, message: error.message }) : error.message}</p>;
     })}
-    {(status === 'failed' || status === 'blocked' || status === 'partial') && <div className="library-preview-block"><button type="button" className="library-btn" onClick={() => { void command('material.reextract', {}); }}>{t('libraryPreview.retryExtract')}</button></div>}
+    {(status === 'failed' || status === 'blocked' || status === 'partial') && <div className="library-preview-block"><Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => { void command('material.reextract', {}); }}>{t('libraryPreview.retryExtract')}</Button></div>}
     <div className="library-preview-block">
       <h3 className="library-name">{t('libraryPreview.linkedTasks')}</h3>
       {tasks.data && <div className="library-linked-pages" data-testid="library-linked-tasks-pagination">
         <span>{t('libraryPreview.taskTotal', { count: tasks.data.total })}</span>
-        <button type="button" className="library-btn" disabled={taskCursor <= 0 || tasks.isPlaceholderData} onClick={() => setTaskPage({ id, cursor: Math.max(0, taskCursor - libraryPageSize) })}>{t('shared.previousPage')}</button>
+        <Button variant="outline" size="bare" type="button" className="library-btn" disabled={taskCursor <= 0 || tasks.isPlaceholderData} onClick={() => setTaskPage({ id, cursor: Math.max(0, taskCursor - libraryPageSize) })}>{t('shared.previousPage')}</Button>
         <span>{t('shared.pageNumber', { page: Math.floor(taskCursor / libraryPageSize) + 1 })}</span>
-        <button type="button" className="library-btn" disabled={tasks.data.nextCursor == null || tasks.isPlaceholderData} onClick={() => { if (tasks.data?.nextCursor != null) setTaskPage({ id, cursor: tasks.data.nextCursor }); }}>{t('shared.nextPage')}</button>
+        <Button variant="outline" size="bare" type="button" className="library-btn" disabled={tasks.data.nextCursor == null || tasks.isPlaceholderData} onClick={() => { if (tasks.data?.nextCursor != null) setTaskPage({ id, cursor: tasks.data.nextCursor }); }}>{t('shared.nextPage')}</Button>
       </div>}
-      <ul className="library-linked-tasks">{tasks.data?.items.map((task) => <li key={task.id} className="mt-1 flex items-center justify-between gap-2" data-testid={`library-linked-task-${task.id}`}><button type="button" className="library-btn" onClick={() => onOpenTask?.(task.id)}>{task.title}</button><button type="button" className="library-btn library-btn-danger" onClick={() => { void command('material.links', { expectedOrganizationRevision: material.organizationRevision, addTaskIds: [], removeTaskIds: [task.id], removeInlineReferences: false, expectedTaskRevisions: {} }); }}>{t('shared.unlink')}</button></li>)}</ul>
+      <ul className="library-linked-tasks">{tasks.data?.items.map((task) => <li key={task.id} className="mt-1 flex items-center justify-between gap-2" data-testid={`library-linked-task-${task.id}`}><Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => onOpenTask?.(task.id)}>{task.title}</Button><Button variant="outline" size="bare" type="button" className="library-btn library-btn-danger" onClick={() => { void command('material.links', { expectedOrganizationRevision: material.organizationRevision, addTaskIds: [], removeTaskIds: [task.id], removeInlineReferences: false, expectedTaskRevisions: {} }); }}>{t('shared.unlink')}</Button></li>)}</ul>
       <TaskLinkPicker selectedIds={selectedTaskIds} onChange={setSelectedTaskIds} />
-      <button type="button" className="library-btn mt-2" disabled={selectedTaskIds.length === 0} onClick={() => {
+      <Button variant="outline" size="bare" type="button" className="library-btn mt-2" disabled={selectedTaskIds.length === 0} onClick={() => {
         const chosen = selectedTaskIds;
         void (async () => {
           try {
@@ -178,33 +183,33 @@ export function LibraryPreview({ target, onTargetChange, onClose, onOpenTask }: 
             await refresh();
           } catch (error) { toast.error(error instanceof ApiError ? error.message : t('shared.actionFailed')); }
         })();
-      }}>{t('libraryPreview.linkSelected')}</button>
+      }}>{t('libraryPreview.linkSelected')}</Button>
     </div>
     <div className="library-preview-block">
       <h3 className="library-name">{t('libraryPreview.folderAndTags')}</h3>
-      <select aria-label={t('libraryPreview.folderLabel')} className="library-select mt-2 w-full" value={folderId} onChange={(event) => setFolderId(event.target.value)}>
+      <NativeSelect aria-label={t('libraryPreview.folderLabel')} className="library-select mt-2 w-full" value={folderId} onChange={(event) => setFolderId(event.target.value)}>
         <option value="">{t('shared.unfiled')}</option>
         {(folders.data?.items ?? []).map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
-      </select>
-      <div className="mt-2 flex flex-wrap gap-2">{(tags.data?.items ?? []).map((tag) => <label key={tag.id} className="library-meta flex items-center gap-1"><input type="checkbox" checked={tagIds.includes(tag.id)} onChange={(event) => setTagIds((current) => event.target.checked ? [...current, tag.id] : current.filter((item) => item !== tag.id))} />{tag.name}</label>)}</div>
-      <button type="button" className="library-btn mt-2" onClick={() => { void command('material.organize', { expectedOrganizationRevision: material.organizationRevision, folderId: folderId || null, tagIds }); }}>{t('libraryPreview.saveOrganization')}</button>
+      </NativeSelect>
+      <div className="mt-2 flex flex-wrap gap-2">{(tags.data?.items ?? []).map((tag) => <label key={tag.id} className="library-meta flex items-center gap-1"><Checkbox  checked={tagIds.includes(tag.id)} onChange={(event) => setTagIds((current) => event.target.checked ? [...current, tag.id] : current.filter((item) => item !== tag.id))} />{tag.name}</label>)}</div>
+      <Button variant="outline" size="bare" type="button" className="library-btn mt-2" onClick={() => { void command('material.organize', { expectedOrganizationRevision: material.organizationRevision, folderId: folderId || null, tagIds }); }}>{t('libraryPreview.saveOrganization')}</Button>
     </div>
     <div className="library-preview-actions">
-      <button type="button" className="library-btn" onClick={() => { void download(); }}>{t('libraryPreview.download')}</button>
-      <label className="library-btn">{t('libraryPreview.updateVersion')}<input className="sr-only" type="file" aria-label={t('libraryPreview.updateVersion')} onChange={(event) => {
+      <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => { void download(); }}>{t('libraryPreview.download')}</Button>
+      <Button asChild variant="outline" size="bare"><label className="library-btn">{t('libraryPreview.updateVersion')}<Input variant="inline" className="sr-only" type="file" aria-label={t('libraryPreview.updateVersion')} onChange={(event) => {
         const files = [...(event.target.files ?? [])];
         event.target.value = '';
         const file = files[0];
         if (!file) return;
         void enqueueUploads([{ file, relativePath: file.name }], { topicId: material.topicId, folderId: material.folderId, taskIds: [], replaceMaterialId: material.id, expectedRevision: material.revision, silent: true }).then(() => refresh()).catch((error) => toast.error(error instanceof Error ? error.message : t('libraryPreview.updateFailed')));
-      }} /></label>
-      <button type="button" className="library-btn" onClick={() => { void command('material.archive', { archived: !material.archivedAt }); }}>{material.archivedAt ? t('libraryPreview.restore') : t('shared.archive')}</button>
+      }} /></label></Button>
+      <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => { void command('material.archive', { archived: !material.archivedAt }); }}>{material.archivedAt ? t('libraryPreview.restore') : t('shared.archive')}</Button>
     </div>
     <div className="library-preview-block">
       <p className="library-meta">{t('libraryPreview.kindUpdated', { kind: kindLabel(material.kind), updated: formatUpdated(material.updatedAt) })}</p>
-      <ul className="mt-1">{material.versions.map((item) => <li key={item.revision}><button type="button" className="library-meta" onClick={() => onTargetChange({ materialId: id, revision: item.revision, chunkId: null })}>{t('libraryPreview.versionDetail', { revision: item.revision, detail: extractionLabel(item.extraction.status) })}</button></li>)}</ul>
+      <ul className="mt-1">{material.versions.map((item) => <li key={item.revision}><Button variant="plain" size="bare" type="button" className="library-meta" onClick={() => onTargetChange({ materialId: id, revision: item.revision, chunkId: null })}>{t('libraryPreview.versionDetail', { revision: item.revision, detail: extractionLabel(item.extraction.status) })}</Button></li>)}</ul>
     </div>
-  </aside>;
+  </Surface>;
 }
 
 function ChunkBrowser({ materialId, revision, highlightId }: { materialId: string; revision: number; highlightId: string | null }) {
@@ -264,7 +269,7 @@ function ChunkBrowser({ materialId, revision, highlightId }: { materialId: strin
       </article>)}
       {!items.length && ready && <p className="library-meta">{t('libraryPreview.noExtractedText')}</p>}
     </div>
-    {ready && next != null && <button type="button" className="library-btn mt-3" onClick={() => { void loadMore(); }}>{t('libraryPreview.loadMore')}</button>}
+    {ready && next != null && <Button variant="outline" size="bare" type="button" className="library-btn mt-3" onClick={() => { void loadMore(); }}>{t('libraryPreview.loadMore')}</Button>}
   </div>;
 }
 

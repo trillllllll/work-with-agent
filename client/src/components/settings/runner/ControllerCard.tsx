@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown } from 'lucide-react';
@@ -13,7 +14,7 @@ export function ControllerCard({ origin }: { origin: string }) {
   const settings = useSettingsQuery();
   const server = info.data?.mode === 'server';
   return (
-    <div className="glass-subtle rounded-xl p-4">
+    <Surface as="div" tone="subtle" className="rounded-xl p-4">
       <h4 className="font-medium">{t('computers.controller.title')}</h4>
       <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
         <div>
@@ -48,6 +49,6 @@ export function ControllerCard({ origin }: { origin: string }) {
           <CliCommands embedded />
         </CollapsibleContent>
       </Collapsible>
-    </div>
+    </Surface>
   );
 }

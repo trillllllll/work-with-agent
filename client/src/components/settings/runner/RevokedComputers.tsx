@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -23,11 +24,11 @@ export function RevokedComputers({ computers }: { computers: Computer[] }) {
       </CollapsibleTrigger>
       <CollapsibleContent className="space-y-2 pt-2">
         {computers.map((computer) => (
-          <div key={computer.id} className="glass-subtle flex flex-wrap items-center gap-2 rounded-xl px-3 py-2 text-sm">
+          <Surface as="div" tone="subtle" key={computer.id} className="flex flex-wrap items-center gap-2 rounded-xl px-3 py-2 text-sm">
             <span className="font-medium">{computer.name}</span>
             <span className="text-xs text-muted-foreground">{t('computers.revoked.when', { time: relativeTime(computer.updatedAt) })}</span>
             <Button type="button" size="sm" variant="ghost" className="ml-auto text-destructive" onClick={() => setPending(computer)}>{t('computers.revoked.delete')}</Button>
-          </div>
+          </Surface>
         ))}
       </CollapsibleContent>
       {pending && <DeleteRevoked computer={pending} onClose={() => setPending(null)} />}

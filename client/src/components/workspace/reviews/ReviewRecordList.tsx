@@ -1,3 +1,5 @@
+import { NativeSelect } from '@/components/ui/native-select.js';
+import { Surface } from '@/components/ui/surface.js';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ReviewBatch, ReviewRule } from '@/lib/api.js';
@@ -70,12 +72,12 @@ export function ReviewRecordList({ rules, batches, ruleId, selectedId, runningRu
           <Button type="button" size="sm" variant={attention ? 'ghost' : 'secondary'} aria-pressed={!attention} onClick={() => setAttention(false)}>{t('reviews.filterAll')}</Button>
           <Button type="button" size="sm" variant={attention ? 'secondary' : 'ghost'} aria-pressed={attention} onClick={() => setAttention(true)}>{t('reviews.filterAttention')}</Button>
         </div>
-        <select className="glass-control h-8 max-w-full min-w-0 flex-1 rounded-lg px-2 text-sm sm:max-w-56 sm:flex-none" aria-label={t('reviews.ruleFilterAria')} value={activeRule} onChange={(event) => onRuleChange(event.target.value || null)}>
+        <NativeSelect className="glass-control h-8 max-w-full min-w-0 flex-1 rounded-lg px-2 text-sm sm:max-w-56 sm:flex-none" aria-label={t('reviews.ruleFilterAria')} value={activeRule} onChange={(event) => onRuleChange(event.target.value || null)}>
           <option value="">{t('reviews.allRules')}</option>
           {rules.map((rule) => <option key={rule.id} value={rule.id}>{rule.name}</option>)}
-        </select>
+        </NativeSelect>
       </div>
-      <div className="glass-subtle overflow-hidden rounded-xl">
+      <Surface as="div" tone="subtle" className="overflow-hidden rounded-xl">
         {placeholders.map((rule) => (
           <div key={`running-${rule.id}`} aria-busy="true" className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3 first:border-t-0">
             <Badge variant="outline" className={statusClass.generating}>{t('reviews.statusGenerating')}</Badge>
@@ -87,7 +89,7 @@ export function ReviewRecordList({ rules, batches, ruleId, selectedId, runningRu
           const counts = batch.counts;
           return (
             <div key={batch.id} className={cn('border-t border-border first:border-t-0', selectedId === batch.id && 'bg-muted/60')}>
-              <button type="button" className={cn('flex w-full flex-col gap-1 px-4 pt-3 text-left hover:bg-muted/60', batch.pendingProposalCount > 0 ? 'pb-1' : 'pb-3')} onClick={() => onOpen(batch.id)}>
+              <Button variant="row" size="bare" type="button" className={cn('flex w-full flex-col gap-1 px-4 pt-3 text-left hover:bg-muted/60', batch.pendingProposalCount > 0 ? 'pb-1' : 'pb-3')} onClick={() => onOpen(batch.id)}>
                 <span className="flex min-w-0 flex-wrap items-center gap-2">
                   <Badge variant="outline" className={statusClass[batch.status]}>{t(statusKey[batch.status])}</Badge>
                   <span className="min-w-0 font-medium break-words">{batch.ruleName || t('reviews.fallbackName')}</span>
@@ -103,7 +105,7 @@ export function ReviewRecordList({ rules, batches, ruleId, selectedId, runningRu
                     <span>{t('reviews.statBlocked')} <b className="text-foreground">{counts.blocked}</b></span>
                   </span>
                 )}
-              </button>
+              </Button>
               {batch.pendingProposalCount > 0 && (
                 <a className="inline-block px-4 pb-3 text-xs underline underline-offset-4" href="#/proposals">{t('reviews.goConfirm', { count: batch.pendingProposalCount })}</a>
               )}
@@ -111,7 +113,7 @@ export function ReviewRecordList({ rules, batches, ruleId, selectedId, runningRu
           );
         })}
         {empty && <p className="px-4 py-8 text-sm text-muted-foreground">{attention || activeRule ? t('reviews.filteredEmpty') : t('reviews.empty')}</p>}
-      </div>
+      </Surface>
     </div>
   );
 }

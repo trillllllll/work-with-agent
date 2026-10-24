@@ -1,3 +1,8 @@
+import { Modal } from '@/components/ui/modal.js';
+import { Input } from '@/components/ui/input.js';
+import { Button } from '@/components/ui/button.js';
+import { NativeSelect } from '@/components/ui/native-select.js';
+import { Checkbox } from '@/components/ui/checkbox.js';
 import './library.css';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -178,20 +183,20 @@ export function TaskMaterials({ taskId, topicId, description, readonly, saveText
     <div className="task-materials-head">
       <h2 className="library-name">{t('taskMaterials.heading', { count: materials.data?.total ?? items.length })}</h2>
       {!readonly && <div className="task-materials-actions">
-        <label className="library-btn">{t('taskMaterials.uploadFiles')}<input className="sr-only" type="file" multiple aria-label={t('taskMaterials.uploadFiles')} onChange={(event) => { const files = [...(event.target.files ?? [])]; event.target.value = ''; void upload(files); }} /></label>
+        <Button asChild variant="outline" size="bare"><label className="library-btn">{t('taskMaterials.uploadFiles')}<Input variant="inline" className="sr-only" type="file" multiple aria-label={t('taskMaterials.uploadFiles')} onChange={(event) => { const files = [...(event.target.files ?? [])]; event.target.value = ''; void upload(files); }} /></label></Button>
         <Dialog open={picking} onOpenChange={(open) => { setPicking(open); if (!open) setPreview(null); }}>
-          <DialogTrigger asChild><button type="button" className="library-btn" onMouseDown={() => { bookmarkRef.current = null; }} onClick={() => {
+          <DialogTrigger asChild><Button variant="outline" size="bare" type="button" className="library-btn" onMouseDown={() => { bookmarkRef.current = null; }} onClick={() => {
             const bookmark = readTaskBookmark(taskId);
             bookmarkRef.current = bookmark ? { from: Math.min(bookmark.anchor, bookmark.head), to: Math.max(bookmark.anchor, bookmark.head) } : null;
-          }}>{t('taskMaterials.citeExisting')}</button></DialogTrigger>
+          }}>{t('taskMaterials.citeExisting')}</Button></DialogTrigger>
           <DialogContent className="library-surface material-picker" showCloseButton={false}>
             <DialogTitle>{t('taskMaterials.citeExisting')}</DialogTitle>
             <DialogDescription className="sr-only">{t('taskMaterials.citeDescription')}</DialogDescription>
             <PickerBody taskId={taskId} linked={linked} picked={picked} setPicked={setPicked} onPreview={setPreview} />
             <div className="material-picker-footer">
-              <button type="button" className="library-btn" onClick={() => { void linkOnly(); }}>{t('taskMaterials.linkOnly')}</button>
-              <button type="button" className="library-btn library-btn-primary" onClick={() => { void cite(); }}>{t('taskMaterials.insertReference')}</button>
-              <button type="button" className="library-btn" onClick={() => setPicking(false)}>{t('shared.cancel')}</button>
+              <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => { void linkOnly(); }}>{t('taskMaterials.linkOnly')}</Button>
+              <Button variant="default" size="bare" type="button" className="library-btn library-btn-primary" onClick={() => { void cite(); }}>{t('taskMaterials.insertReference')}</Button>
+              <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => setPicking(false)}>{t('shared.cancel')}</Button>
             </div>
             {preview && <LibraryPreview target={preview} onTargetChange={setPreview} onClose={() => setPreview(null)} onOpenTask={(linkedId) => { void onOpenLinkedTask?.(linkedId); }} />}
           </DialogContent>
@@ -203,20 +208,20 @@ export function TaskMaterials({ taskId, topicId, description, readonly, saveText
       {items.map((item) => <div key={item.id} className="task-material-row" data-testid={`task-material-${item.id}`}>
         <FileText className="library-icon" aria-hidden />
         <span className="library-name min-w-0 flex-1 truncate" title={item.title}>{item.title}</span>
-        <button type="button" className="library-btn" onClick={() => setPreview({ materialId: item.id, revision: null, chunkId: null })}>{t('shared.preview')}</button>
-        {!readonly && <button type="button" className="library-btn" onClick={() => { if (descriptionCitesMaterial(description, item.id)) setUnlink(item); else void remove(item, false).catch((error) => toast.error(error instanceof Error ? error.message : t('taskMaterials.unlinkFailed'))); }}>{t('shared.unlink')}</button>}
+        <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => setPreview({ materialId: item.id, revision: null, chunkId: null })}>{t('shared.preview')}</Button>
+        {!readonly && <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => { if (descriptionCitesMaterial(description, item.id)) setUnlink(item); else void remove(item, false).catch((error) => toast.error(error instanceof Error ? error.message : t('taskMaterials.unlinkFailed'))); }}>{t('shared.unlink')}</Button>}
       </div>)}
     </div>
-    {unlink && <div className="library-dialog library-surface" role="dialog" aria-label={t('shared.unlink')}>
+    {unlink && <Modal workspace className="library-surface" title={t('shared.unlink')} onClose={() => setUnlink(null)}>
       <section>
         <h2 className="library-name">{t('shared.unlink')}</h2>
         <p className="mt-2 text-sm">{t('taskMaterials.unlinkBody', { title: unlink.title })}</p>
         <div className="mt-3 flex gap-2">
-          <button type="button" className="library-btn" onClick={() => setUnlink(null)}>{t('shared.cancel')}</button>
-          <button type="button" className="library-btn library-btn-danger" onClick={() => { const material = unlink; setUnlink(null); void remove(material, true).catch((error) => toast.error(error instanceof Error ? error.message : t('taskMaterials.unlinkFailed'))); }}>{t('shared.unlink')}</button>
+          <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => setUnlink(null)}>{t('shared.cancel')}</Button>
+          <Button variant="outline" size="bare" type="button" className="library-btn library-btn-danger" onClick={() => { const material = unlink; setUnlink(null); void remove(material, true).catch((error) => toast.error(error instanceof Error ? error.message : t('taskMaterials.unlinkFailed'))); }}>{t('shared.unlink')}</Button>
         </div>
       </section>
-    </div>}
+    </Modal>}
     {preview && !picking && createPortal(<div className="library-preview-host library-surface"><LibraryPreview target={preview} onTargetChange={setPreview} onClose={() => setPreview(null)} onOpenTask={(linkedId) => { void onOpenLinkedTask?.(linkedId); }} /></div>, document.body)}
   </section>;
 }
@@ -253,26 +258,26 @@ function PickerBody({ taskId, linked, picked, setPicked, onPreview }: { taskId: 
   });
   const rows = (list.data?.items ?? []).map((item) => normalizeRow(item));
   return <>
-    <input className="library-search material-picker-search" aria-label={t('shared.searchMaterials')} placeholder={t('shared.searchPlaceholder')} value={query} onChange={(event) => setQuery(event.target.value)} onCompositionStart={() => setComposing(true)} onCompositionEnd={(event) => { setComposing(false); setQuery(event.currentTarget.value); }} />
-    <select className="library-select" aria-label={t('shared.typeFilter')} value={kind} onChange={(event) => setKind(event.target.value as typeof kind)}>
+    <Input className="library-search material-picker-search" aria-label={t('shared.searchMaterials')} placeholder={t('shared.searchPlaceholder')} value={query} onChange={(event) => setQuery(event.target.value)} onCompositionStart={() => setComposing(true)} onCompositionEnd={(event) => { setComposing(false); setQuery(event.currentTarget.value); }} />
+    <NativeSelect className="library-select" aria-label={t('shared.typeFilter')} value={kind} onChange={(event) => setKind(event.target.value as typeof kind)}>
       <option value="">{t('shared.allTypes')}</option>
       {materialKinds.map((value) => <option key={value} value={value}>{kindLabel(value)}</option>)}
-    </select>
+    </NativeSelect>
     <div className="material-picker-list">
-      {list.isError && <div className="library-error" role="alert"><p>{list.error instanceof Error ? list.error.message : t('shared.materialsLoadFailed')}</p><button type="button" className="library-btn" onClick={() => { void list.refetch(); }}>{t('shared.retry')}</button></div>}
+      {list.isError && <div className="library-error" role="alert"><p>{list.error instanceof Error ? list.error.message : t('shared.materialsLoadFailed')}</p><Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => { void list.refetch(); }}>{t('shared.retry')}</Button></div>}
       {!list.isError && list.isLoading && <p className="library-meta">{t('shared.loadingMaterials')}</p>}
       {!list.isError && !list.isLoading && !rows.length && <p className="library-meta">{t('shared.noMatchingMaterials')}</p>}
       {rows.map((item) => <div key={item.id} className="material-picker-row" data-testid={`material-picker-row-${item.id}`}>
-        <label className="material-picker-check"><input type="checkbox" aria-label={item.title} checked={picked.includes(item.id)} onChange={(event) => setPicked(event.target.checked ? [...picked, item.id] : picked.filter((id) => id !== item.id))} /></label>
+        <label className="material-picker-check"><Checkbox  aria-label={item.title} checked={picked.includes(item.id)} onChange={(event) => setPicked(event.target.checked ? [...picked, item.id] : picked.filter((id) => id !== item.id))} /></label>
         <span className="library-name min-w-0 flex-1 truncate" title={item.title}>{item.title}</span>
         <span className="library-meta shrink-0">{kindLabel(item.kind)}</span>
         {linked.has(item.id) && <span className="library-meta shrink-0">{t('taskMaterials.linked')}</span>}
-        <button type="button" className="library-btn" onClick={() => onPreview({ materialId: item.id, revision: item.hits[0]?.chunkId ? item.hits[0].revision : null, chunkId: item.hits[0]?.chunkId ?? null })}>{t('shared.preview')}</button>
+        <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => onPreview({ materialId: item.id, revision: item.hits[0]?.chunkId ? item.hits[0].revision : null, chunkId: item.hits[0]?.chunkId ?? null })}>{t('shared.preview')}</Button>
       </div>)}
     </div>
     {(cursor > 0 || list.data?.nextCursor != null) && <div className="flex gap-2">
-      <button type="button" className="library-btn" disabled={cursor <= 0} onClick={() => setCursor((value) => Math.max(0, value - 40))}>{t('shared.previousPage')}</button>
-      <button type="button" className="library-btn" disabled={list.data?.nextCursor == null} onClick={() => { if (list.data?.nextCursor != null) setCursor(list.data.nextCursor); }}>{t('shared.nextPage')}</button>
+      <Button variant="outline" size="bare" type="button" className="library-btn" disabled={cursor <= 0} onClick={() => setCursor((value) => Math.max(0, value - 40))}>{t('shared.previousPage')}</Button>
+      <Button variant="outline" size="bare" type="button" className="library-btn" disabled={list.data?.nextCursor == null} onClick={() => { if (list.data?.nextCursor != null) setCursor(list.data.nextCursor); }}>{t('shared.nextPage')}</Button>
     </div>}
   </>;
 }

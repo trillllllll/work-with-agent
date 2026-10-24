@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -93,22 +94,22 @@ export function ChangesList(props: ChangesListProps) {
     onLoadMore: props.onLoadMore,
   });
   if (props.loading) return <SkeletonRows />;
-  if (props.errorMessage) return <div className="glass-subtle mt-4 rounded-2xl px-6 py-10 text-center"><p role="alert" className="text-sm">{t('changes.loadFailedFirst')}</p>{props.errorMessage !== t('changes.loadFailedFirst') && <p className="mt-1 text-xs text-muted-foreground">{props.errorMessage}</p>}<Button type="button" variant="outline" size="sm" className="mt-3" onClick={props.onRetry}>{t('changes.retry')}</Button></div>;
+  if (props.errorMessage) return <Surface as="div" tone="subtle" className="mt-4 rounded-2xl px-6 py-10 text-center"><p role="alert" className="text-sm">{t('changes.loadFailedFirst')}</p>{props.errorMessage !== t('changes.loadFailedFirst') && <p className="mt-1 text-xs text-muted-foreground">{props.errorMessage}</p>}<Button type="button" variant="outline" size="sm" className="mt-3" onClick={props.onRetry}>{t('changes.retry')}</Button></Surface>;
   if (!props.items.length) {
-    return <div className="glass-subtle mt-4 rounded-2xl px-6 py-10 text-center">
+    return <Surface as="div" tone="subtle" className="mt-4 rounded-2xl px-6 py-10 text-center">
       <History className="mx-auto size-6 text-muted-foreground" />
       <h2 className="mt-3 text-base font-semibold">{props.filtered ? t('changes.noMatchTitle') : t('changes.emptyTitle')}</h2>
       <p className="mt-1 text-sm text-muted-foreground">{props.filtered ? t('changes.noMatchHint', { filters: props.filtersSummary }) : t('changes.emptyHint')}</p>
       {props.filtered && <Button type="button" variant="outline" size="sm" className="mt-3" onClick={props.onClear}>{t('changes.clearFilters')}</Button>}
-    </div>;
+    </Surface>;
   }
   const groups = groupChangesByDay(props.items);
   return <div className="mt-2">
     {groups.map((group) => <section key={group.day} className="mt-2">
       <h2 className="sticky top-0 z-[1] bg-[var(--glass-bg-strong)] py-2 text-[13px] font-semibold">{t(`changes.days.${group.day as ChangeDay}`)}</h2>
-      <div className="glass-subtle overflow-hidden rounded-2xl">
+      <Surface as="div" tone="subtle" className="overflow-hidden rounded-2xl">
         {group.items.map((item, index) => <ChangeRow key={item.id} item={item} pending={props.pendingIds.has(item.id)} divided={index > 0} onUndo={props.onUndo} />)}
-      </div>
+      </Surface>
     </section>)}
     <div className="flex flex-col items-center gap-2 py-4 text-xs text-muted-foreground">
       {props.fetchingNextPage && <p>{t('changes.loadingMore')}</p>}
@@ -121,13 +122,13 @@ export function ChangesList(props: ChangesListProps) {
 }
 
 function SkeletonRows() {
-  return <div className="glass-subtle mt-4 overflow-hidden rounded-2xl" aria-hidden="true">
+  return <Surface as="div" tone="subtle" className="mt-4 overflow-hidden rounded-2xl" aria-hidden="true">
     {Array.from({ length: 7 }, (_, index) => <div key={index} className={cn('grid grid-cols-[30px_minmax(0,1fr)_auto] items-center gap-3 px-3.5 py-3', index > 0 && 'border-t glass-divider')}>
       <Skeleton className="size-[30px] rounded-[9px]" />
       <div className="space-y-2"><Skeleton className="h-4 w-2/3" /><Skeleton className="h-3 w-1/2" /></div>
       <Skeleton className="h-[30px] w-16 rounded-md lg:w-[76px]" />
     </div>)}
-  </div>;
+  </Surface>;
 }
 
 function ChangeRow({ item, pending, divided, onUndo }: { item: ChangeListItem; pending: boolean; divided: boolean; onUndo: (item: ChangeListItem) => void }) {

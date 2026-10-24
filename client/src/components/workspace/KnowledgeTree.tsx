@@ -1,3 +1,5 @@
+import { Button } from '@/components/ui/button.js';
+import { Surface } from '@/components/ui/surface.js';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -20,16 +22,16 @@ export function KnowledgeTree({ topicId, brief }: { topicId: string | null; brie
     <nav aria-label={t('tree.label')} className="glass-subtle max-h-[70vh] space-y-1 overflow-y-auto rounded-xl p-3">
       {query.error && <p role="alert" className="text-sm text-destructive">{query.error.message}</p>}
       {branches.map((branch) => <div key={branch.id}>
-        <button type="button" className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm hover:bg-muted" aria-pressed={selected === branch.id} onClick={() => { setSelected(branch.id); if (branch.children?.length) toggle(branch.id); }}>
+        <Button variant="row" size="bare" type="button" className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm" aria-pressed={selected === branch.id} onClick={() => { setSelected(branch.id); if (branch.children?.length) toggle(branch.id); }}>
           <span className="flex min-w-0 items-center gap-1"><span className="disclosure-chevron" data-open={open.includes(branch.id) || selected.startsWith(branch.id) || undefined} aria-hidden="true" />{branch.label}</span><span className="text-xs text-muted-foreground">{branch.count}</span>
-        </button>
-        {(open.includes(branch.id) || branch.children?.some((child) => child.id === selected)) && branch.children?.map((child) => <button key={child.id} type="button" className="flex w-full items-center justify-between gap-2 rounded-lg py-1.5 pr-2 pl-7 text-left text-sm hover:bg-muted" aria-pressed={selected === child.id} onClick={() => setSelected(child.id)}><span>{child.label}</span><span className="text-xs text-muted-foreground">{child.count}</span></button>)}
+        </Button>
+        {(open.includes(branch.id) || branch.children?.some((child) => child.id === selected)) && branch.children?.map((child) => <Button variant="row" size="bare" key={child.id} type="button" className="flex w-full items-center justify-between gap-2 rounded-lg py-1.5 pr-2 pl-7 text-left text-sm" aria-pressed={selected === child.id} onClick={() => setSelected(child.id)}><span>{child.label}</span><span className="text-xs text-muted-foreground">{child.count}</span></Button>)}
       </div>)}
     </nav>
     <div className="min-w-0 space-y-3">
       {selected === 'brief' ? brief : <>
         {!query.isLoading && !entries.length && <p className="py-6 text-sm text-muted-foreground">{t('tree.empty')}</p>}
-        {entries.map((entry) => <article key={`${entry.type}:${entry.id}`} className="glass-subtle rounded-xl p-4">{entry.type === 'memory' ? <MemorySummary memory={entry} /> : <div><strong className="text-sm">{entry.title}</strong>{entry.excerpt && <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{entry.excerpt}</p>}<p className="mt-2 text-xs text-muted-foreground">{entry.type === 'material' ? t('tree.conversation') : t('tree.artifact')}</p></div>}</article>)}
+        {entries.map((entry) => <Surface as="article" tone="subtle" key={`${entry.type}:${entry.id}`} className="rounded-xl p-4">{entry.type === 'memory' ? <MemorySummary memory={entry} /> : <div><strong className="text-sm">{entry.title}</strong>{entry.excerpt && <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{entry.excerpt}</p>}<p className="mt-2 text-xs text-muted-foreground">{entry.type === 'material' ? t('tree.conversation') : t('tree.artifact')}</p></div>}</Surface>)}
       </>}
     </div>
   </div>;

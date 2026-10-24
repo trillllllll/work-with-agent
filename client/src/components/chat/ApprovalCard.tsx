@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, TriangleAlert } from 'lucide-react';
@@ -39,7 +40,7 @@ export function ApprovalCard({ approval, pending, onApprove, onReject }: { appro
   );
 
   return (
-    <div className="glass-subtle rounded-xl border-warning-border bg-warning-bg/75 p-3">
+    <Surface as="div" tone="subtle" className="rounded-xl border-warning-border bg-warning-bg/75 p-3">
       <div className="flex items-center gap-2">
         <TriangleAlert className="size-3.5 shrink-0 text-warning" />
         <span className="text-[11px] font-bold tracking-[0.06em] text-warning uppercase">{t('approval.needsReview')}</span>
@@ -62,6 +63,6 @@ export function ApprovalCard({ approval, pending, onApprove, onReject }: { appro
         <Button variant="outline" size="sm" disabled={pending} onClick={() => onReject(approval.approvalId)}>{t('actions.reject')}</Button>
         <Button size="sm" disabled={pending} onClick={() => onApprove(approval.approvalId)}>{t('approval.approve')}</Button>
       </div>
-    </div>
+    </Surface>
   );
 }

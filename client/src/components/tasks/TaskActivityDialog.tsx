@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button.js';
 import { useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
@@ -27,7 +28,7 @@ function Clip({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   const long = chars.length > previewLength;
   const shown = !long || open ? text : `${chars.slice(0, previewLength).join('')}…`;
-  return <span className="whitespace-pre-wrap break-words">{quoted(shown)}{long && <button type="button" className="ml-1 text-brand-link" onClick={() => setOpen((value) => !value)}>{open ? t('activity.collapse') : t('activity.expand')}</button>}</span>;
+  return <span className="whitespace-pre-wrap break-words">{quoted(shown)}{long && <Button variant="plain" size="bare" type="button" className="ml-1 text-brand-link" onClick={() => setOpen((value) => !value)}>{open ? t('activity.collapse') : t('activity.expand')}</Button>}</span>;
 }
 
 function names(values: string[]) {

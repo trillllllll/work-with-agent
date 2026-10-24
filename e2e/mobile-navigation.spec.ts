@@ -258,7 +258,7 @@ test('两个独立浏览器 context：A 保存后 B 在 35 秒内同步，且不
   }
 });
 
-test('鼠标拖动：从第一项拖到第三项后服务端数组变化且只发一次 PUT', async ({ page, request }) => {
+test('鼠标拖动：从第一项拖到第三项后服务端数组变化且只发一次 PUT', async ({ page, request, browserName }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await putConfig(request, ['plan', 'focus', 'inbox']);
 
@@ -289,15 +289,18 @@ test('鼠标拖动：从第一项拖到第三项后服务端数组变化且只�
   await page.mouse.down();
   await page.mouse.move(startX, startY + 12, { steps: 2 });
   await page.mouse.move(target!.x + target!.width / 2, endY, { steps: 15 });
-  const session = await page.context().newCDPSession(page);
-  await session.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: target!.x + target!.width / 2, y: endY, button: 'left', buttons: 0, clickCount: 1 });
-  await session.detach();
+  if (browserName === 'chromium') {
+    const session = await page.context().newCDPSession(page);
+    await session.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: target!.x + target!.width / 2, y: endY, button: 'left', buttons: 0, clickCount: 1 });
+    await session.detach();
+  } else await page.mouse.up();
 
   await expect.poll(() => readConfig(request)).toEqual(['focus', 'inbox', 'plan']);
   expect(puts).toBe(1);
 });
 
-test('触屏：真实 touch 长按并拖动完成排序', async ({ page, request }) => {
+test('触屏：真实 touch 长按并拖动完成排序', async ({ page, request, browserName }) => {
+  test.skip(browserName !== 'chromium', '真实 touch 拖动使用 Chromium CDP；WebKit 保留鼠标和键盘排序验收。');
   await page.setViewportSize({ width: 390, height: 844 });
   await putConfig(request, ['plan', 'focus', 'inbox']);
 
@@ -438,29 +441,19 @@ test('深浅主题的色值与开关尺寸符合规范', async ({ page, request 
   await sleep(400);
 
   const list = panel.locator('.mnav-list').first();
-  const onTrack = panel.getByTestId('mobile-navigation-row-inbox').locator('.mnav-switch-track');
-  const offTrack = panel.getByTestId('mobile-navigation-row-plan').locator('.mnav-switch-track');
+  const onTrack = panel.getByTestId('mobile-navigation-row-inbox').locator('[data-slot="switch"]');
+  const offTrack = panel.getByTestId('mobile-navigation-row-plan').locator('[data-slot="switch"]');
 
-  const surface = () => list.evaluate((element) => getComputedStyle(element).backgroundColor);
-  const divider = () => list.evaluate((element) => getComputedStyle(element).borderTopColor);
-  const trackColor = (track: ReturnType<Page['getByTestId']>) => track.evaluate((element) => getComputedStyle(element).backgroundColor);
-  const trackBox = (track: ReturnType<Page['getByTestId']>) => track.evaluate((element) => {
-    const rect = element.getBoundingClientRect();
-    return { width: rect.width, height: rect.height };
-  });
-
-  await expect.poll(surface).toBe('rgb(255, 255, 255)');
-  await expect.poll(() => divider()).toBe('rgb(229, 229, 229)');
-  await expect.poll(() => trackColor(onTrack)).toBe('rgb(71, 114, 250)');
-  await expect.poll(() => trackColor(offTrack)).toBe('rgb(212, 212, 212)');
-  expect(await trackBox(onTrack)).toEqual({ width: 40, height: 24 });
-
-  await page.evaluate(() => { document.documentElement.classList.add('dark'); });
-  // 开关轨道背景有 150ms 过渡，颜色断言都要等过渡完成。
-  await expect.poll(surface).toBe('rgb(36, 36, 36)');
-  await expect.poll(() => divider()).toBe('rgb(54, 54, 54)');
-  await expect.poll(() => trackColor(onTrack)).toBe('rgb(71, 114, 250)');
-  await expect.poll(() => trackColor(offTrack)).toBe('rgb(85, 85, 85)');
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate(t => { document.documentElement.className = t; }, theme);
+    expect(await list.evaluate(el => getComputedStyle(el).backgroundImage)).toContain('linear-gradient');
+    expect(await list.evaluate(el => getComputedStyle(el).boxShadow)).not.toBe('none');
+    await expect(onTrack).toHaveClass(/surface-switch/);
+    await expect(onTrack).toHaveAttribute('data-state', 'checked');
+    await expect(offTrack).toHaveAttribute('data-state', 'unchecked');
+    expect(await onTrack.evaluate(el => ({ width: el.getBoundingClientRect().width, height: el.getBoundingClientRect().height }))).toEqual({ width: 40, height: 24 });
+    await expect.poll(async () => (await onTrack.evaluate(el => getComputedStyle(el).backgroundColor)) !== (await offTrack.evaluate(el => getComputedStyle(el).backgroundColor))).toBe(true);
+  }
 });
 
 test('1023px 显示底栏，1024px 隐藏', async ({ page, request }) => {
@@ -523,18 +516,18 @@ test('截图检查：亮暗主题与窄宽视口', async ({ page, request }) => 
   await page.goto('/#/settings/ui');
   const panel = page.getByTestId('mobile-navigation-settings');
   await expect(panel).toBeVisible();
-  await page.screenshot({ path: 'test-results/mobile-navigation/390-light.png', fullPage: false });
+  await page.screenshot({ path: 'test-results/mobile-navigation/390-light.png', fullPage: false, animations: 'disabled' });
 
   await page.evaluate(() => { document.documentElement.classList.add('dark'); });
   await page.waitForTimeout(200);
-  await page.screenshot({ path: 'test-results/mobile-navigation/390-dark.png' });
+  await page.screenshot({ path: 'test-results/mobile-navigation/390-dark.png', animations: 'disabled' });
 
   await page.setViewportSize({ width: 320, height: 720 });
   await page.waitForTimeout(300);
-  await page.screenshot({ path: 'test-results/mobile-navigation/320.png' });
+  await page.screenshot({ path: 'test-results/mobile-navigation/320.png', animations: 'disabled' });
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/#/settings/ui');
   await expect(page.getByTestId('mobile-navigation-settings')).toBeVisible();
-  await page.screenshot({ path: 'test-results/mobile-navigation/desktop-settings.png' });
+  await page.screenshot({ path: 'test-results/mobile-navigation/desktop-settings.png', animations: 'disabled' });
 });

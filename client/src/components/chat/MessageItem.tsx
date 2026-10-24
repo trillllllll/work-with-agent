@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { MessageBlocks } from './MessageBlocks.js';
 import { ContextSummary } from './ContextSummary.js';
 import { SourceLinks } from './SourceLinks.js';
@@ -52,11 +53,11 @@ function ToolCallRow({ activity, approval, pending, executing, unknown, unresolv
     </>
   );
   return (
-    <div className="rounded-lg border border-border/80 bg-muted/40">
+    <Surface as="div" tone="subtle" className="rounded-lg">
       {payload ? (
-        <button type="button" aria-expanded={open} aria-label={`${label} ${activity.preview}`} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px]" onClick={() => setOpen((value) => !value)}>
+        <Button variant="row" size="bare" type="button" aria-expanded={open} aria-label={`${label} ${activity.preview}`} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px]" onClick={() => setOpen((value) => !value)}>
           {header}
-        </button>
+        </Button>
       ) : (
         <div className="flex items-center gap-2 px-2.5 py-1.5 text-[12px]">{header}</div>
       )}
@@ -66,7 +67,7 @@ function ToolCallRow({ activity, approval, pending, executing, unknown, unresolv
           <ApprovalCard approval={approval} pending={pending} onApprove={onApprove} onReject={onReject} />
         </div>
       )}
-    </div>
+    </Surface>
   );
 }
 
@@ -85,11 +86,11 @@ function SkillUsageRow({ activity }: { activity: ToolActivity }) {
     <span className={cn('min-w-0 flex-1 truncate', failed ? 'text-destructive' : 'text-foreground')}>{activity.status === 'running' ? (typeof activity.arguments.name === 'string' ? activity.arguments.name : '') : activity.preview}</span>
   </>;
   return (
-    <div className="rounded-lg border border-border/80 bg-muted/40" data-testid="skill-usage" data-skill-revision={skill?.revision ?? ''}>
-      {body ? <button type="button" aria-expanded={open} aria-label={t('messageItem.skillUsedLabel', { preview: activity.preview })} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px]" onClick={() => setOpen((value) => !value)}>{header}</button>
+    <Surface as="div" tone="subtle" className="rounded-lg" data-testid="skill-usage" data-skill-revision={skill?.revision ?? ''}>
+      {body ? <Button variant="row" size="bare" type="button" aria-expanded={open} aria-label={t('messageItem.skillUsedLabel', { preview: activity.preview })} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px]" onClick={() => setOpen((value) => !value)}>{header}</Button>
         : <div className="flex items-center gap-2 px-2.5 py-1.5 text-[12px]">{header}</div>}
       {open && body && <div className="max-h-80 overflow-auto border-t border-border/70 px-3 py-2" data-testid="skill-usage-body">{skill?.description && <p className="mb-2 text-[11px] text-muted-foreground">{skill.description}</p>}<MarkdownView content={body} /></div>}
-    </div>
+    </Surface>
   );
 }
 
@@ -97,11 +98,11 @@ function ToolRun({ activities, approvalFor, pending, executingApprovalId, unknow
   const { t } = useTranslation('chat');
   const [open, setOpen] = useState(false);
   return (
-    <div className="rounded-lg border border-border/80 bg-muted/40">
-      <button type="button" aria-expanded={open} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px]" onClick={() => setOpen((value) => !value)}>
+    <Surface as="div" tone="subtle" className="rounded-lg">
+      <Button variant="row" size="bare" type="button" aria-expanded={open} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px]" onClick={() => setOpen((value) => !value)}>
         <ChevronRight className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')} />
         <span className="font-medium">{t('messageItem.lookupCount', { count: activities.length })}</span>
-      </button>
+      </Button>
       {open && (
         <div className="flex flex-col gap-1 border-t border-border/70 p-1.5">
           {activities.map((activity) => {
@@ -110,7 +111,7 @@ function ToolRun({ activities, approvalFor, pending, executingApprovalId, unknow
           })}
         </div>
       )}
-    </div>
+    </Surface>
   );
 }
 

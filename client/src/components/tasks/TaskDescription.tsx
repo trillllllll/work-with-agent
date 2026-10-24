@@ -1,3 +1,4 @@
+import { Input } from '@/components/ui/input.js';
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ImagePlus } from 'lucide-react';
@@ -78,7 +79,7 @@ export function TaskDescription({ taskId, value, readonly, fill, openDescription
   }}>
     {!readonly && <div data-description-tools data-task-editor className="mt-1 flex flex-wrap gap-1">
       <Button type="button" variant="ghost" size="sm" aria-label={t('taskDescription.insertImage')} onMouseDown={(event) => event.preventDefault()} onClick={() => fileRef.current?.click()}><ImagePlus />{t('taskDescription.image')}</Button>
-      <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" aria-label={t('taskDescription.chooseImage')} onChange={(event) => { const files = [...(event.target.files ?? [])]; event.target.value = ''; if (files.length) addImages(files); }} />
+      <Input variant="inline" ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" aria-label={t('taskDescription.chooseImage')} onChange={(event) => { const files = [...(event.target.files ?? [])]; event.target.value = ''; if (files.length) addImages(files); }} />
     </div>}
     <DescriptionEditor ref={editorRef} value={value} taskId={taskId} readonly={readonly} fill={fill} openDescription={openDescription} onEdit={onEdit}
       onComposeStart={onComposeStart} onComposeEnd={onComposeEnd}

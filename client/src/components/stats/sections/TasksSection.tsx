@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button.js';
 import { useTranslation } from 'react-i18next';
 import type { StatsRangeInfo, StatsSectionError, StatsTasksSection } from '@/lib/api.js';
 import { chartState, combineActivity, eachDate, isSectionError, shortMonthDay } from '@/lib/stats-range.js';
@@ -59,16 +60,16 @@ export function TasksSection({ data, range, nav, onRetry }: { data: StatsTasksSe
             <ul className="space-y-2">
               {data.overdueTop.map((item) => (
                 <li key={item.id}>
-                  <button type="button" className="flex w-full items-center gap-2 text-left text-sm" onClick={() => nav.go('#/today')}>
+                  <Button variant="row" size="bare" type="button" className="flex w-full items-center gap-2 text-left text-sm" onClick={() => nav.go('#/today')}>
                     <span className="size-2 shrink-0 rounded-full" style={{ background: tagColor(item.topicColor) }} />
                     <span className="min-w-0 flex-1 truncate">{item.title}</span>
                     <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive">{t('tasks.overdueBadge', { count: item.days })}</span>
-                  </button>
+                  </Button>
                 </li>
               ))}
             </ul>
           )}
-          <button type="button" className="text-sm text-muted-foreground underline-offset-4 hover:underline" onClick={() => nav.go('#/today')}>{t('tasks.overdueLink')}</button>
+          <Button variant="link" size="bare" type="button" className="text-sm text-muted-foreground underline-offset-4 hover:underline" onClick={() => nav.go('#/today')}>{t('tasks.overdueLink')}</Button>
         </Panel>
       </div>
       <div className="grid min-w-0 gap-4 lg:grid-cols-2">

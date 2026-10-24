@@ -1,3 +1,5 @@
+import { Surface } from '@/components/ui/surface.js';
+import { Button } from '@/components/ui/button.js';
 import './library.css';
 import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
@@ -10,12 +12,12 @@ export function UploadQueue() {
   const [collapsed, setCollapsed] = useState(false);
   if (!records.length) return null;
   const finished = records.some((record) => record.status === 'done' || record.status === 'skipped' || record.status === 'cancelled');
-  return <aside className="library-surface library-upload-queue" data-testid="library-upload-queue" aria-label={t('uploadQueue.label')}>
+  return <Surface as="aside" tone="card" className="library-surface library-upload-queue" data-testid="library-upload-queue" aria-label={t('uploadQueue.label')}>
     <div className="library-upload-head">
       <p className="library-name">{t('uploadQueue.title')}</p>
       <div className="flex gap-1">
-        {finished && <button type="button" className="library-btn" onClick={() => clearFinishedUploads()}>{t('uploadQueue.clearFinished')}</button>}
-        <button type="button" className="library-btn" aria-expanded={!collapsed} onClick={() => setCollapsed((value) => !value)}>{collapsed ? t('uploadQueue.expand') : t('uploadQueue.collapse')}</button>
+        {finished && <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => clearFinishedUploads()}>{t('uploadQueue.clearFinished')}</Button>}
+        <Button variant="outline" size="bare" type="button" className="library-btn" aria-expanded={!collapsed} onClick={() => setCollapsed((value) => !value)}>{collapsed ? t('uploadQueue.expand') : t('uploadQueue.collapse')}</Button>
       </div>
     </div>
     {!collapsed && <ul className="mt-2 space-y-2">
@@ -32,20 +34,20 @@ export function UploadQueue() {
           </div>
           {record.error && <p className="library-meta" style={{ color: 'var(--lib-danger)' }}>{record.error}</p>}
           <div className="mt-1 flex flex-wrap gap-1">
-            {(record.status === 'queued' || record.status === 'uploading' || record.status === 'creating') && <button type="button" className="library-btn" onClick={() => cancelQueued(record.localId)}>{t('shared.cancel')}</button>}
-            {record.status === 'failed' && <button type="button" className="library-btn" onClick={() => { void retryUpload(record.localId); }}>{t('shared.retry')}</button>}
+            {(record.status === 'queued' || record.status === 'uploading' || record.status === 'creating') && <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => cancelQueued(record.localId)}>{t('shared.cancel')}</Button>}
+            {record.status === 'failed' && <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => { void retryUpload(record.localId); }}>{t('shared.retry')}</Button>}
             {record.status === 'duplicate' && <>
               <p className="library-meta w-full">{t('uploadQueue.status.duplicate')}</p>
               {(record.duplicates ?? []).map((item) => <span key={item.id} className="flex min-w-0 items-center gap-1">
                 <span className="library-name truncate" title={item.title}>{item.title}</span>
-                <button type="button" className="library-btn" onClick={() => { void resolveDuplicate(record.localId, 'reuse', record.target, item.id); }}>{t('uploadQueue.useExisting')}</button>
+                <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => { void resolveDuplicate(record.localId, 'reuse', record.target, item.id); }}>{t('uploadQueue.useExisting')}</Button>
               </span>)}
-              <button type="button" className="library-btn" onClick={() => { void resolveDuplicate(record.localId, 'create', record.target); }}>{t('uploadQueue.saveCopy')}</button>
-              <button type="button" className="library-btn" onClick={() => { void resolveDuplicate(record.localId, 'skip', record.target); }}>{t('uploadQueue.skip')}</button>
+              <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => { void resolveDuplicate(record.localId, 'create', record.target); }}>{t('uploadQueue.saveCopy')}</Button>
+              <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => { void resolveDuplicate(record.localId, 'skip', record.target); }}>{t('uploadQueue.skip')}</Button>
             </>}
           </div>
         </li>;
       })}
     </ul>}
-  </aside>;
+  </Surface>;
 }

@@ -1,3 +1,5 @@
+import { Button } from '@/components/ui/button.js';
+import { Surface } from '@/components/ui/surface.js';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -133,13 +135,13 @@ export function ProposalsPage() {
           <h1 className="text-2xl font-semibold">{t('title')}</h1>
           <p className="mt-2 text-sm text-muted-foreground">{t('description')}</p>
         </div>
-        <div role="tablist" aria-label={t('statusAria')} className="glass-control inline-flex flex-wrap rounded-lg p-1">
+        <Surface as="div" tone="input" role="tablist" aria-label={t('statusAria')} className="glass-control inline-flex flex-wrap rounded-lg p-1">
           {statuses.map((id) => (
-            <button key={id} type="button" role="tab" aria-selected={status === id} aria-pressed={status === id} className={cn('rounded-md px-3 py-1.5 text-sm', status === id && 'bg-[color-mix(in_srgb,var(--foreground)_10%,transparent)] font-medium')} onClick={() => selectStatus(id)}>
+            <Button variant="tab" size="bare" key={id} type="button" role="tab" aria-selected={status === id} aria-pressed={status === id} className="px-3 py-1.5 text-sm" onClick={() => selectStatus(id)}>
               {tabLabel(id)}
-            </button>
+            </Button>
           ))}
-        </div>
+        </Surface>
       </header>
       {query.error ? <p role="alert" className="text-sm">{query.error.message}</p> : null}
       {listed.length ? <ProposalFilters types={typeOptions} sources={sourceOptions} value={effective} onChange={setFilter} /> : null}
@@ -148,7 +150,7 @@ export function ProposalsPage() {
       {query.isLoading && !listed.length ? <p className="text-sm">{t('loading')}</p> : null}
       {!query.isLoading && !query.error && !listed.length ? (
         status === 'pending' ? (
-          <div className="glass-subtle rounded-xl px-4 py-8">
+          <Surface as="div" tone="subtle" className="rounded-xl px-4 py-8">
             <h2 className="text-base font-semibold">{t('empty.title')}</h2>
             <p className="mt-2 text-sm text-muted-foreground">{t('empty.pending')}</p>
             <ul className="mt-4 space-y-3">
@@ -159,7 +161,7 @@ export function ProposalsPage() {
                 </li>
               ))}
             </ul>
-          </div>
+          </Surface>
         ) : <p className="py-8 text-sm text-muted-foreground">{t('empty.other')}</p>
       ) : null}
       {listed.length && !filtered.length ? <p className="py-8 text-sm text-muted-foreground">{t('filter.empty')}</p> : null}

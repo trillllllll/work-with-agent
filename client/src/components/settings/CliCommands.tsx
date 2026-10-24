@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -59,7 +60,7 @@ function CliCommandForms({ settings, embedded = false }: { settings?: Settings; 
         const item = settings?.cli?.[provider];
         const source = item?.source === 'manual' ? t('cli.sourceManual') : item?.source === 'auto' ? t('cli.sourceAuto') : t('cli.sourceNone');
         return (
-          <form key={provider} className="glass-subtle mt-4 space-y-3 rounded-xl p-4" onSubmit={(event) => { event.preventDefault(); saveManual.mutate({ provider, command: drafts[provider] || item?.command || '' }); }}>
+          <Surface as="form" tone="subtle" key={provider} className="mt-4 space-y-3 rounded-xl p-4" onSubmit={(event) => { event.preventDefault(); saveManual.mutate({ provider, command: drafts[provider] || item?.command || '' }); }}>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h4 className="font-medium">{cliNames[provider]}</h4>
               <span className="text-xs text-muted-foreground">{source}{item?.version ? ` · ${item.version}` : ''}</span>
@@ -71,7 +72,7 @@ function CliCommandForms({ settings, embedded = false }: { settings?: Settings; 
               <Button type="submit" size="sm" disabled={saveManual.isPending}>{t('cli.saveManual')}</Button>
               {item?.source === 'manual' && <Button type="button" size="sm" variant="outline" disabled={restore.isPending} onClick={() => restore.mutate(provider)}>{t('cli.restoreAuto')}</Button>}
             </div>
-          </form>
+          </Surface>
         );
       })}
     </section>

@@ -1,3 +1,4 @@
+import { Checkbox } from '@/components/ui/checkbox.js';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
@@ -105,7 +106,7 @@ export function SkillEditor({ state, onClose }: { state: EditorState; onClose: (
               ? <Textarea aria-label={t('editor.bodyLabel')} rows={12} className="font-mono text-[13px]" value={draft.instructions} onChange={(event) => set({ instructions: event.target.value })} />
               : <div className="min-h-40 rounded-lg border p-3" data-testid="skill-editor-preview">{draft.instructions.trim() ? <BodyText text={draft.instructions} format="markdown" /> : <p className="text-muted-foreground">{t('editor.emptyBody')}</p>}</div>}
           </div>
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" aria-label={t('editor.enableLabel')} checked={draft.enabled} onChange={(event) => set({ enabled: event.target.checked })} />{t('editor.enableHint')}</label>
+          <label className="flex items-center gap-2 text-sm"><Checkbox  aria-label={t('editor.enableLabel')} checked={draft.enabled} onChange={(event) => set({ enabled: event.target.checked })} />{t('editor.enableHint')}</label>
           <label className="grid gap-1 text-sm">{t('editor.reason')}<Input aria-label={t('editor.reasonLabel')} placeholder={reasonPlaceholder} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
           {error && <div role="alert" className="grid gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
             <p>{error}</p>

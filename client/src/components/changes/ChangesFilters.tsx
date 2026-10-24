@@ -73,10 +73,10 @@ export function ChangesFilters({ filters, connections, loaded, total, onSearch, 
           const label = chipText(chip, t);
           return <span key={chip.id} className="inline-flex h-[26px] shrink-0 items-center gap-1 rounded-full bg-muted pr-1 pl-2.5 text-xs whitespace-nowrap">
             <span>{label}</span>
-            <button type="button" className="grid size-4 place-items-center rounded-full text-muted-foreground hover:text-foreground" aria-label={t('changes.removeChip', { label })} onClick={() => onReplace(removeChangeChip(filters, chip.id))}><X className="size-3" /></button>
+            <Button variant="plain" size="bare" type="button" className="grid size-4 place-items-center rounded-full text-muted-foreground hover:text-foreground" aria-label={t('changes.removeChip', { label })} onClick={() => onReplace(removeChangeChip(filters, chip.id))}><X className="size-3" /></Button>
           </span>;
         })}
-        {chips.length > 0 && <button type="button" className="shrink-0 px-1 text-xs underline underline-offset-2" onClick={() => onReplace(EMPTY_CHANGE_FILTERS)}>{t('changes.clearFilters')}</button>}
+        {chips.length > 0 && <Button variant="link" size="bare" type="button" className="shrink-0 px-1 text-xs underline underline-offset-2" onClick={() => onReplace(EMPTY_CHANGE_FILTERS)}>{t('changes.clearFilters')}</Button>}
       </div>
       {countLabel && <span className="shrink-0 self-end text-xs whitespace-nowrap text-muted-foreground lg:self-auto">{countLabel}</span>}
     </div>}
@@ -227,5 +227,5 @@ function OptionGroup({ title, children }: { title: string; children: ReactNode }
 }
 
 function OptionButton({ pressed, label, onClick }: { pressed: boolean; label: string; onClick: () => void }) {
-  return <button type="button" aria-pressed={pressed} className={cn('inline-flex h-8 items-center rounded-full border px-3 text-sm', pressed ? 'border-primary bg-primary text-primary-foreground' : 'glass-control')} onClick={onClick}>{label}</button>;
+  return <Button variant="input" size="bare" type="button" aria-pressed={pressed} className={cn('inline-flex h-8 items-center rounded-full border px-3 text-sm', pressed ? 'border-primary bg-primary text-primary-foreground' : 'glass-control')} onClick={onClick}>{label}</Button>;
 }

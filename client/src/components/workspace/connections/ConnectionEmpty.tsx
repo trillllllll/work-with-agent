@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button.js';
 import { hostInitials, hostLabel } from '@/lib/connection-status.js';
@@ -15,7 +16,7 @@ export function ConnectionEmpty({ onConnect }: ConnectionEmptyProps) {
     { title: t('connections.emptyStep3Title'), hint: t('connections.emptyStep3Hint') },
   ];
   return (
-    <div className="glass-subtle rounded-xl px-5 py-8 text-center">
+    <Surface as="div" tone="subtle" className="rounded-xl px-5 py-8 text-center">
       <h2 className="text-lg font-semibold">{t('connections.emptyTitle')}</h2>
       <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">{t('connections.emptyDescription')}</p>
       <ol className="mt-6 grid gap-3 text-left sm:grid-cols-3">
@@ -35,6 +36,6 @@ export function ConnectionEmpty({ onConnect }: ConnectionEmptyProps) {
           </Button>
         ))}
       </div>
-    </div>
+    </Surface>
   );
 }

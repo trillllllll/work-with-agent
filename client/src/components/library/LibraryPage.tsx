@@ -1,8 +1,13 @@
+import { ActionMenu, ActionMenuItem } from '@/components/ui/action-menu.js';
+import { Modal } from '@/components/ui/modal.js';
+import { TableRow } from '@/components/ui/table-row.js';
+import { Surface } from '@/components/ui/surface.js';
+import { NativeSelect } from '@/components/ui/native-select.js';
+import { Checkbox, Radio } from '@/components/ui/checkbox.js';
 import './library.css';
 import { askAssistant, usePageContext } from '@/lib/assistant-context.js';
 import { useEffect, useLayoutEffect, useRef, useState, type DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { createPortal } from 'react-dom';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, ApiError, type Topic } from '@/lib/api.js';
@@ -185,80 +190,76 @@ export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topi
       <header className="library-titlebar">
         <h1 className="library-title">{t('shared.library')}</h1>
         <div className="library-title-links">
-          <button type="button" className="library-btn" onClick={() => { window.location.hash = knowledgeHash('memories', selectedTopicId); }}>{t('libraryPage.memory')}</button>
-          <button type="button" className="library-btn" onClick={() => { window.location.hash = knowledgeHash('brief', selectedTopicId); }}>{t('libraryPage.currentProgress')}</button>
+          <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => { window.location.hash = knowledgeHash('memories', selectedTopicId); }}>{t('libraryPage.memory')}</Button>
+          <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => { window.location.hash = knowledgeHash('brief', selectedTopicId); }}>{t('libraryPage.currentProgress')}</Button>
         </div>
       </header>
       <div className="library-toolbar">
         <div className="library-toolbar-group library-toolbar-search">
-          <input className="library-search" aria-label={t('shared.searchMaterials')} placeholder={t('shared.searchPlaceholder')} value={snapshot.query} onChange={(event) => patchLibrary({ query: event.target.value })} onCompositionStart={() => setComposing(true)} onCompositionEnd={(event) => { setComposing(false); patchLibrary({ query: event.currentTarget.value }); }} />
+          <Input className="library-search" aria-label={t('shared.searchMaterials')} placeholder={t('shared.searchPlaceholder')} value={snapshot.query} onChange={(event) => patchLibrary({ query: event.target.value })} onCompositionStart={() => setComposing(true)} onCompositionEnd={(event) => { setComposing(false); patchLibrary({ query: event.currentTarget.value }); }} />
         </div>
         <div className="library-toolbar-group library-toolbar-filters">
-          <select className="library-select" aria-label={t('shared.typeFilter')} value={snapshot.kind} onChange={(event) => patchLibrary({ kind: event.target.value as typeof snapshot.kind })}>
+          <NativeSelect className="library-select" aria-label={t('shared.typeFilter')} value={snapshot.kind} onChange={(event) => patchLibrary({ kind: event.target.value as typeof snapshot.kind })}>
             <option value="">{t('shared.allTypes')}</option>
             {materialKinds.map((value) => <option key={value} value={value}>{kindLabel(value)}</option>)}
-          </select>
-          <select className="library-select" aria-label={t('libraryPage.linkedTaskFilter')} value={snapshot.taskTopicId} onChange={(event) => patchLibrary({ taskTopicId: event.target.value })}>
+          </NativeSelect>
+          <NativeSelect className="library-select" aria-label={t('libraryPage.linkedTaskFilter')} value={snapshot.taskTopicId} onChange={(event) => patchLibrary({ taskTopicId: event.target.value })}>
             <option value="">{t('libraryPage.allLists')}</option>
             <option value="inbox">{t('shared.inbox')}</option>
             {topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}
-          </select>
-          <button type="button" className="library-btn library-folder-button" onClick={() => setFoldersOpen(true)}>{t('shared.folders')}</button>
+          </NativeSelect>
+          <Button variant="outline" size="bare" type="button" className="library-btn library-folder-button" onClick={() => setFoldersOpen(true)}>{t('shared.folders')}</Button>
         </div>
         <div className="library-toolbar-group library-toolbar-actions">
-          <button type="button" className="library-btn" onClick={() => setDialog('ask')}>{t('libraryPage.askMaterials')}</button>
-          <div className="relative">
-            <button type="button" className="library-btn library-btn-primary" aria-expanded={addOpen} onClick={() => setAddOpen((value) => !value)}>{t('libraryPage.add')}</button>
-            {addOpen && <div className="library-menu" role="menu">
-              <button type="button" role="menuitem" onClick={() => { setAddOpen(false); fileRef.current?.click(); }}>{t('libraryPage.addFile')}</button>
-              <button type="button" role="menuitem" onClick={() => { setAddOpen(false); directoryRef.current?.click(); }}>{t('libraryPage.importFolder')}</button>
-              <button type="button" role="menuitem" onClick={() => { setAddOpen(false); setComposer('text'); }}>{t('kind.text')}</button>
-              <button type="button" role="menuitem" onClick={() => { setAddOpen(false); setComposer('link'); }}>{t('kind.link')}</button>
-            </div>}
-          </div>
-          <input ref={fileRef} className="sr-only" type="file" multiple aria-label={t('libraryPage.chooseFiles')} onChange={(event) => { const files = [...(event.target.files ?? [])]; event.target.value = ''; if (files.length) void filesFromList(files).then(takeFiles); }} />
-          <input ref={(node) => { directoryRef.current = node; node?.setAttribute('webkitdirectory', ''); }} className="sr-only" type="file" multiple aria-label={t('libraryPage.chooseFolder')} onChange={(event) => { const files = [...(event.target.files ?? [])]; event.target.value = ''; if (files.length) void filesFromList(files).then(takeFiles); }} />
+          <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => setDialog('ask')}>{t('libraryPage.askMaterials')}</Button>
+          <ActionMenu open={addOpen} onOpenChange={setAddOpen} trigger={<Button variant="default" size="bare" type="button" className="library-btn library-btn-primary">{t('libraryPage.add')}</Button>}>
+              <ActionMenuItem onSelect={() => { setAddOpen(false); fileRef.current?.click(); }}>{t('libraryPage.addFile')}</ActionMenuItem>
+              <ActionMenuItem onSelect={() => { setAddOpen(false); directoryRef.current?.click(); }}>{t('libraryPage.importFolder')}</ActionMenuItem>
+              <ActionMenuItem onSelect={() => { setAddOpen(false); setComposer('text'); }}>{t('kind.text')}</ActionMenuItem>
+              <ActionMenuItem onSelect={() => { setAddOpen(false); setComposer('link'); }}>{t('kind.link')}</ActionMenuItem>
+          </ActionMenu>
+          <Input variant="inline" ref={fileRef} className="sr-only" type="file" multiple aria-label={t('libraryPage.chooseFiles')} onChange={(event) => { const files = [...(event.target.files ?? [])]; event.target.value = ''; if (files.length) void filesFromList(files).then(takeFiles); }} />
+          <Input variant="inline" ref={(node) => { directoryRef.current = node; node?.setAttribute('webkitdirectory', ''); }} className="sr-only" type="file" multiple aria-label={t('libraryPage.chooseFolder')} onChange={(event) => { const files = [...(event.target.files ?? [])]; event.target.value = ''; if (files.length) void filesFromList(files).then(takeFiles); }} />
         </div>
       </div>
       {snapshot.selectedIds.length > 0 && <div className="library-toolbar" aria-label={t('libraryPage.bulkActions')}>
-        <button type="button" className="library-btn" onClick={() => setDialog('move')}>{t('shared.move')}</button>
-        <button type="button" className="library-btn" onClick={() => setDialog('tags')}>{t('shared.tags')}</button>
-        <button type="button" className="library-btn" onClick={() => setDialog('tasks')}>{t('libraryPage.linkTasks')}</button>
-        <button type="button" className="library-btn" onClick={() => { void applyBatch(snapshot.selectedIds, (item) => ({ kind: 'material.archive', targetId: item.id, expectedRevision: item.revision, input: { archived: true } })).then((outcome) => { if (!outcome.ok) setPageNotice(outcome.text); }); }}>{t('shared.archive')}</button>
-        <button type="button" className="library-btn" onClick={() => patchLibrary({ selectedIds: [] })}>{t('libraryPage.clearSelection')}</button>
+        <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => setDialog('move')}>{t('shared.move')}</Button>
+        <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => setDialog('tags')}>{t('shared.tags')}</Button>
+        <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => setDialog('tasks')}>{t('libraryPage.linkTasks')}</Button>
+        <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => { void applyBatch(snapshot.selectedIds, (item) => ({ kind: 'material.archive', targetId: item.id, expectedRevision: item.revision, input: { archived: true } })).then((outcome) => { if (!outcome.ok) setPageNotice(outcome.text); }); }}>{t('shared.archive')}</Button>
+        <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => patchLibrary({ selectedIds: [] })}>{t('libraryPage.clearSelection')}</Button>
       </div>}
       {pageNotice && <p className="library-meta" role="alert">{pageNotice}</p>}
       <div className={`library-body ${snapshot.preview ? 'has-preview' : 'no-preview'}`}>
         <FolderNav folders={folders.data?.items ?? []} tags={tags.data?.items ?? []} open={foldersOpen} onClose={() => setFoldersOpen(false)} onEdit={setEditor} onRefresh={refresh} />
-        <div ref={listRef} className="library-panel" data-testid="library-list" onScroll={(event) => patchLibrary({ scrollTop: event.currentTarget.scrollTop })}>
-          {showError && <div className="library-error" role="alert"><p>{list.error instanceof Error ? list.error.message : t('shared.materialsLoadFailed')}</p><button type="button" className="library-btn" onClick={() => { void list.refetch(); }}>{t('shared.retry')}</button></div>}
+        <Surface as="div" tone="card" ref={listRef} className="library-panel" data-testid="library-list" onScroll={(event) => patchLibrary({ scrollTop: event.currentTarget.scrollTop })}>
+          {showError && <div className="library-error" role="alert"><p>{list.error instanceof Error ? list.error.message : t('shared.materialsLoadFailed')}</p><Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => { void list.refetch(); }}>{t('shared.retry')}</Button></div>}
           {!showError && list.isLoading && !list.data && <p className="library-meta p-3">{t('shared.loadingMaterials')}</p>}
-          {!showError && !rows.length && !list.isLoading && <div className="p-6"><p>{t('shared.noMatchingMaterials')}</p><button type="button" className="library-btn mt-3" onClick={() => { clearLibraryFilters(); setDebounced(''); }}>{t('libraryPage.clearFilters')}</button></div>}
+          {!showError && !rows.length && !list.isLoading && <div className="p-6"><p>{t('shared.noMatchingMaterials')}</p><Button variant="outline" size="bare" type="button" className="library-btn mt-3" onClick={() => { clearLibraryFilters(); setDebounced(''); }}>{t('libraryPage.clearFilters')}</Button></div>}
           {!showError && rows.length > 0 && <table className="library-table">
-            <thead><tr><th /><th>{t('libraryPage.columnName')}</th><th className="library-col-optional">{t('libraryPage.columnType')}</th><th>{t('libraryPage.linkedTasksColumn')}</th><th className="library-col-optional">{t('libraryPage.columnUpdated')}</th><th>{t('shared.more')}</th></tr></thead>
+            <thead><TableRow><th /><th>{t('libraryPage.columnName')}</th><th className="library-col-optional">{t('libraryPage.columnType')}</th><th>{t('libraryPage.linkedTasksColumn')}</th><th className="library-col-optional">{t('libraryPage.columnUpdated')}</th><th>{t('shared.more')}</th></TableRow></thead>
             <tbody>
               {rows.map((row) => {
                 const hit = row.hits[0];
-                return <tr key={row.id} data-testid={`library-row-${row.id}`} aria-selected={snapshot.preview?.materialId === row.id} tabIndex={-1} className={`library-row library-color ${hit ? 'has-snippet' : ''}`} onClick={() => openPreview(row)}>
-                  <td><label className="library-check-hit" onClick={(event) => event.stopPropagation()}><input className="library-check" type="checkbox" aria-label={t('shared.selectNamed', { name: row.title })} checked={snapshot.selectedIds.includes(row.id)} onClick={(event) => event.stopPropagation()} onChange={(event) => { const selected = snapshot.selectedIds; patchLibrary({ selectedIds: event.target.checked ? [...selected, row.id] : selected.filter((item) => item !== row.id) }); }} /></label></td>
+                return <TableRow key={row.id} data-testid={`library-row-${row.id}`} aria-selected={snapshot.preview?.materialId === row.id} tabIndex={-1} className={`library-row library-color ${hit ? 'has-snippet' : ''}`} onClick={() => openPreview(row)}>
+                  <td><label className="library-check-hit" onClick={(event) => event.stopPropagation()}><Checkbox className="library-check"  aria-label={t('shared.selectNamed', { name: row.title })} checked={snapshot.selectedIds.includes(row.id)} onClick={(event) => event.stopPropagation()} onChange={(event) => { const selected = snapshot.selectedIds; patchLibrary({ selectedIds: event.target.checked ? [...selected, row.id] : selected.filter((item) => item !== row.id) }); }} /></label></td>
                   <td><div className="library-name truncate">{row.title}</div><div className="library-meta truncate">{hit ? <Highlighted text={hit.snippet} start={hit.highlightStart} end={hit.highlightEnd} /> : t('libraryPage.rowMeta', { folder: folderName(folders.data?.items ?? [], row.folderId), tags: row.tags.map((tag) => tag.name).join(' '), status: extractionLabel(row.extraction.status) })}</div></td>
                   <td className="library-col-optional library-meta">{kindLabel(row.kind)}</td>
                   <td className="library-meta">{row.linkedTaskCount}</td>
                   <td className="library-col-optional library-meta">{formatUpdated(row.updatedAt)}</td>
-                  <td><button type="button" className="library-btn" aria-label={t('shared.moreNamed', { name: row.title })} onClick={(event) => { event.stopPropagation(); setRowMenu((current) => current === row.id ? null : row.id); }}>{t('shared.more')}</button>
-                    {rowMenu === row.id && <div className="library-menu" role="menu"><button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setRowMenu(null); setEditor({ kind: 'material-rename', id: row.id, title: row.title }); }}>{t('shared.rename')}</button></div>}
+                  <td><ActionMenu open={rowMenu === row.id} onOpenChange={open => setRowMenu(open ? row.id : null)} trigger={<Button variant="outline" size="bare" type="button" className="library-btn" aria-label={t('shared.moreNamed', { name: row.title })} onClick={event => event.stopPropagation()}>{t('shared.more')}</Button>}><ActionMenuItem onSelect={() => { setRowMenu(null); setEditor({ kind: 'material-rename', id: row.id, title: row.title }); }}>{t('shared.rename')}</ActionMenuItem></ActionMenu>
                   </td>
-                </tr>;
+                </TableRow>;
               })}
             </tbody>
           </table>}
           {!showError && list.data && <footer className="library-pagination" data-testid="library-pagination">
             <span>{t('libraryPage.materialTotal', { count: list.data.total })}</span>
-            <button type="button" className="library-btn" disabled={snapshot.cursor <= 0 || list.isPlaceholderData} onClick={() => patchLibrary({ cursor: Math.max(0, snapshot.cursor - libraryPageSize) })}>{t('shared.previousPage')}</button>
+            <Button variant="outline" size="bare" type="button" className="library-btn" disabled={snapshot.cursor <= 0 || list.isPlaceholderData} onClick={() => patchLibrary({ cursor: Math.max(0, snapshot.cursor - libraryPageSize) })}>{t('shared.previousPage')}</Button>
             <span>{t('shared.pageNumber', { page: pageNumber })}</span>
-            <button type="button" className="library-btn" disabled={list.data.nextCursor == null || list.isPlaceholderData} onClick={() => { if (list.data?.nextCursor != null) patchLibrary({ cursor: list.data.nextCursor }); }}>{t('shared.nextPage')}</button>
+            <Button variant="outline" size="bare" type="button" className="library-btn" disabled={list.data.nextCursor == null || list.isPlaceholderData} onClick={() => { if (list.data?.nextCursor != null) patchLibrary({ cursor: list.data.nextCursor }); }}>{t('shared.nextPage')}</Button>
           </footer>}
-        </div>
+        </Surface>
         {snapshot.preview && <LibraryPreview target={snapshot.preview} onTargetChange={(preview) => patchLibrary({ preview })} onClose={closePreview} onOpenTask={onOpenTask} />}
       </div>
     </div>
@@ -340,40 +341,39 @@ function FolderNav({ folders, tags, open, onClose, onEdit, onRefresh }: { folder
     await onRefresh();
   };
   const body = <>
-    {([['all', 'libraryPage.viewAll'], ['recent', 'libraryPage.viewRecent'], ['unfiled', 'shared.unfiled'], ['archived', 'libraryPage.viewArchived']] as const).map(([view, key]) => <button key={view} type="button" className="library-side-button" aria-current={snapshot.view === view && !snapshot.folderId ? 'page' : undefined} onClick={() => { patchLibrary({ view, folderId: '' }); onClose(); }}>{t(key)}</button>)}
+    {([['all', 'libraryPage.viewAll'], ['recent', 'libraryPage.viewRecent'], ['unfiled', 'shared.unfiled'], ['archived', 'libraryPage.viewArchived']] as const).map(([view, key]) => <Button variant="row" size="bare" key={view} type="button" className="library-side-button" aria-current={snapshot.view === view && !snapshot.folderId ? 'page' : undefined} onClick={() => { patchLibrary({ view, folderId: '' }); onClose(); }}>{t(key)}</Button>)}
     <hr className="library-rule" />
     <p className="library-meta px-3">{t('shared.folders')}</p>
     {ordered.map(({ folder, depth }) => <div key={folder.id}>
       <div className="library-folder-row" style={{ paddingLeft: depth * 12 }}>
-        <button type="button" className="library-side-button" aria-current={snapshot.folderId === folder.id ? 'page' : undefined} onClick={() => { patchLibrary({ view: 'all', folderId: folder.id }); onClose(); }}>{folder.name}</button>
-        <button type="button" className="library-btn" aria-label={t('shared.moreNamed', { name: folder.name })} aria-expanded={menu === folder.id} onClick={() => setMenu((current) => current === folder.id ? null : folder.id)}>{t('shared.more')}</button>
+        <Button variant="row" size="bare" type="button" className="library-side-button" aria-current={snapshot.folderId === folder.id ? 'page' : undefined} onClick={() => { patchLibrary({ view: 'all', folderId: folder.id }); onClose(); }}>{folder.name}</Button>
+        <ActionMenu open={menu === folder.id} onOpenChange={open => setMenu(open ? folder.id : null)} trigger={<Button variant="outline" size="bare" type="button" className="library-btn" aria-label={t('shared.moreNamed', { name: folder.name })}>{t('shared.more')}</Button>}>
+        <ActionMenuItem onSelect={() => { setMenu(null); onEdit({ kind: 'folder-create', parentId: folder.id }); }}>{t('libraryPage.newSubfolder')}</ActionMenuItem>
+        <ActionMenuItem onSelect={() => { setMenu(null); onEdit({ kind: 'folder-rename', folder }); }}>{t('shared.rename')}</ActionMenuItem>
+        <ActionMenuItem onSelect={() => { setMenu(null); onEdit({ kind: 'folder-move', folder }); }}>{t('shared.move')}</ActionMenuItem>
+        <ActionMenuItem onSelect={() => { setMenu(null); void removeFolder(folder).catch((error) => toast.error(error instanceof Error ? error.message : t('libraryPage.deleteFolderFailed'))); }}>{t('libraryPage.deleteEmptyFolder')}</ActionMenuItem>
+        </ActionMenu>
       </div>
-      {menu === folder.id && <div className="library-menu" role="menu">
-        <button type="button" role="menuitem" onClick={() => { setMenu(null); onEdit({ kind: 'folder-create', parentId: folder.id }); }}>{t('libraryPage.newSubfolder')}</button>
-        <button type="button" role="menuitem" onClick={() => { setMenu(null); onEdit({ kind: 'folder-rename', folder }); }}>{t('shared.rename')}</button>
-        <button type="button" role="menuitem" onClick={() => { setMenu(null); onEdit({ kind: 'folder-move', folder }); }}>{t('shared.move')}</button>
-        <button type="button" role="menuitem" onClick={() => { setMenu(null); void removeFolder(folder).catch((error) => toast.error(error instanceof Error ? error.message : t('libraryPage.deleteFolderFailed'))); }}>{t('libraryPage.deleteEmptyFolder')}</button>
-      </div>}
     </div>)}
     <form className="flex gap-1 px-2 py-2" onSubmit={(event) => { event.preventDefault(); const next = name.trim(); if (!next) return; void submitCommands([{ kind: 'libraryFolder.create', input: { parentId: snapshot.folderId || null, name: next } }], crypto.randomUUID()).then(() => onRefresh()).then(() => setName('')).catch((error) => toast.error(error instanceof Error ? error.message : t('libraryPage.createFolderFailed'))); }}>
-      <input className="library-search" aria-label={t('libraryPage.newFolderName')} value={name} onChange={(event) => setName(event.target.value)} />
-      <button type="submit" className="library-btn">{t('libraryPage.create')}</button>
+      <Input className="library-search" aria-label={t('libraryPage.newFolderName')} value={name} onChange={(event) => setName(event.target.value)} />
+      <Button variant="outline" size="bare" type="submit" className="library-btn">{t('libraryPage.create')}</Button>
     </form>
     <hr className="library-rule" />
     <p className="library-meta px-3">{t('shared.tags')}</p>
     {tags.map((tag) => <div key={tag.id} className="library-folder-row">
-      <button type="button" className="library-tag" aria-pressed={snapshot.tagIds.includes(tag.id)} onClick={() => patchLibrary({ tagIds: snapshot.tagIds.includes(tag.id) ? snapshot.tagIds.filter((item) => item !== tag.id) : [...snapshot.tagIds, tag.id] })}>{tag.name}</button>
-      <button type="button" className="library-btn" aria-label={t('libraryPage.renameNamed', { name: tag.name })} onClick={() => onEdit({ kind: 'tag-rename', tag })}>{t('shared.rename')}</button>
-      <button type="button" className="library-btn" aria-label={t('libraryPage.deleteNamed', { name: tag.name })} onClick={() => { void removeTag(tag).catch((error) => toast.error(error instanceof Error ? error.message : t('libraryPage.deleteTagFailed'))); }}>{t('shared.delete')}</button>
+      <Button variant="row" size="bare" type="button" className="library-tag" aria-pressed={snapshot.tagIds.includes(tag.id)} onClick={() => patchLibrary({ tagIds: snapshot.tagIds.includes(tag.id) ? snapshot.tagIds.filter((item) => item !== tag.id) : [...snapshot.tagIds, tag.id] })}>{tag.name}</Button>
+      <Button variant="outline" size="bare" type="button" className="library-btn" aria-label={t('libraryPage.renameNamed', { name: tag.name })} onClick={() => onEdit({ kind: 'tag-rename', tag })}>{t('shared.rename')}</Button>
+      <Button variant="outline" size="bare" type="button" className="library-btn" aria-label={t('libraryPage.deleteNamed', { name: tag.name })} onClick={() => { void removeTag(tag).catch((error) => toast.error(error instanceof Error ? error.message : t('libraryPage.deleteTagFailed'))); }}>{t('shared.delete')}</Button>
     </div>)}
     <form className="flex gap-1 px-2 py-2" onSubmit={(event) => { event.preventDefault(); void createTag().catch((error) => toast.error(error instanceof Error ? error.message : t('libraryPage.createTagFailed'))); }}>
-      <input className="library-search" aria-label={t('libraryPage.newTagName')} value={tagName} onChange={(event) => setTagName(event.target.value)} />
-      <button type="submit" className="library-btn">{t('libraryPage.newTag')}</button>
+      <Input className="library-search" aria-label={t('libraryPage.newTagName')} value={tagName} onChange={(event) => setTagName(event.target.value)} />
+      <Button variant="outline" size="bare" type="submit" className="library-btn">{t('libraryPage.newTag')}</Button>
     </form>
   </>;
   return <>
-    <nav className="library-panel library-folders" data-testid="library-folders" aria-label={t('libraryPage.foldersNav')}>{body}</nav>
-    {open && createPortal(<div className="library-dialog library-surface" role="dialog" aria-label={t('shared.folders')}><section><button type="button" className="library-btn" onClick={onClose}>{t('shared.close')}</button>{body}</section></div>, document.body)}
+    <Surface as="nav" tone="card" className="library-panel library-folders" data-testid="library-folders" aria-label={t('libraryPage.foldersNav')}>{!open && body}</Surface>
+    {open && <Modal workspace className="library-surface" title={t('shared.folders')} onClose={onClose}><section><Button variant="outline" size="bare" type="button" className="library-btn" onClick={onClose}>{t('shared.close')}</Button>{body}</section></Modal>}
   </>;
 }
 
@@ -454,19 +454,19 @@ function NameDialog({ editor, folders, onClose, onSave }: { editor: Editor; fold
   const [value, setValue] = useState(initial);
   const excluded = editor.kind === 'folder-move' ? descendantIds(folders, editor.folder.id) : new Set<string>();
   const label = editor.kind === 'folder-move' ? t('libraryPage.moveFolder') : editor.kind === 'tag-rename' ? t('libraryPage.renameTag') : editor.kind === 'material-rename' ? t('libraryPage.renameMaterial') : editor.kind === 'folder-rename' ? t('libraryPage.renameFolder') : t('libraryPage.newSubfolder');
-  return <div className="library-dialog library-surface" role="dialog" aria-label={label}>
+  return <Modal workspace className="library-surface" title={label} onClose={onClose}>
     <section>
       <h2 className="library-name">{label}</h2>
-      {editor.kind === 'folder-move' ? <select className="library-select mt-3 w-full" aria-label={t('libraryPage.moveToFolder')} value={value} onChange={(event) => setValue(event.target.value)}>
+      {editor.kind === 'folder-move' ? <NativeSelect className="library-select mt-3 w-full" aria-label={t('libraryPage.moveToFolder')} value={value} onChange={(event) => setValue(event.target.value)}>
         <option value="">{t('shared.unfiled')}</option>
         {folders.filter((folder) => !excluded.has(folder.id)).map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
-      </select> : <input className="library-search mt-3 w-full" aria-label={editor.kind === 'tag-rename' ? t('libraryPage.tagName') : editor.kind === 'material-rename' ? t('libraryPage.materialName') : t('libraryPage.folderName')} value={value} onChange={(event) => setValue(event.target.value)} />}
+      </NativeSelect> : <Input className="library-search mt-3 w-full" aria-label={editor.kind === 'tag-rename' ? t('libraryPage.tagName') : editor.kind === 'material-rename' ? t('libraryPage.materialName') : t('libraryPage.folderName')} value={value} onChange={(event) => setValue(event.target.value)} />}
       <div className="mt-3 flex gap-2">
-        <button type="button" className="library-btn library-btn-primary" onClick={() => { void onSave(editor.kind === 'folder-move' ? value : value.trim()); }}>{t('shared.save')}</button>
-        <button type="button" className="library-btn" onClick={onClose}>{t('shared.cancel')}</button>
+        <Button variant="default" size="bare" type="button" className="library-btn library-btn-primary" onClick={() => { void onSave(editor.kind === 'folder-move' ? value : value.trim()); }}>{t('shared.save')}</Button>
+        <Button variant="outline" size="bare" type="button" className="library-btn" onClick={onClose}>{t('shared.cancel')}</Button>
       </div>
     </section>
-  </div>;
+  </Modal>;
 }
 
 function BatchDialog({ mode, ids, topics, folders, tags, onClose, applyBatch }: {
@@ -519,28 +519,28 @@ function BatchDialog({ mode, ids, topics, folders, tags, onClose, applyBatch }: 
     const result = await api<AnswerResult>('/api/v1/library/answers', { method: 'POST', body: JSON.stringify({ requestKey: crypto.randomUUID(), question, filters: libraryFilters(snapshot) }) });
     setAnswer(result);
   };
-  return <div className="library-dialog library-surface" role="dialog" aria-label={mode === 'ask' ? t('libraryPage.askMaterials') : t('libraryPage.bulkOrganize')}>
+  return <Modal workspace className="library-surface" title={mode === 'ask' ? t('libraryPage.askMaterials') : t('libraryPage.bulkOrganize')} onClose={onClose}>
     <section>
-      <div className="flex justify-between"><h2 className="library-name">{mode === 'move' ? t('shared.move') : mode === 'tags' ? t('shared.tags') : mode === 'tasks' ? t('libraryPage.linkTasks') : t('libraryPage.askMaterials')}</h2><button type="button" className="library-btn" onClick={onClose}>{t('shared.close')}</button></div>
-      {mode === 'move' && <select className="library-select mt-3 w-full" aria-label={t('libraryPage.moveToFolder')} value={folderId} onChange={(event) => setFolderId(event.target.value)}><option value="">{t('shared.unfiled')}</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}</select>}
+      <div className="flex justify-between"><h2 className="library-name">{mode === 'move' ? t('shared.move') : mode === 'tags' ? t('shared.tags') : mode === 'tasks' ? t('libraryPage.linkTasks') : t('libraryPage.askMaterials')}</h2><Button variant="outline" size="bare" type="button" className="library-btn" onClick={onClose}>{t('shared.close')}</Button></div>
+      {mode === 'move' && <NativeSelect className="library-select mt-3 w-full" aria-label={t('libraryPage.moveToFolder')} value={folderId} onChange={(event) => setFolderId(event.target.value)}><option value="">{t('shared.unfiled')}</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}</NativeSelect>}
       {mode === 'tags' && <div className="mt-3 space-y-2">
-        <label className="flex items-center gap-2"><input type="radio" name="library-tag-mode" checked={tagMode === 'add'} onChange={() => setTagMode('add')} />{t('libraryPage.addSelectedTags')}</label>
-        <label className="flex items-center gap-2"><input type="radio" name="library-tag-mode" checked={tagMode === 'remove'} onChange={() => setTagMode('remove')} />{t('libraryPage.removeSelectedTags')}</label>
-        <label className="flex items-center gap-2"><input type="radio" name="library-tag-mode" checked={tagMode === 'replace'} onChange={() => setTagMode('replace')} />{t('libraryPage.replaceAllTags')}</label>
-        {tags.map((tag) => <label key={tag.id} className="flex items-center gap-2"><input type="checkbox" checked={tagIds.includes(tag.id)} onChange={(event) => setTagIds((current) => event.target.checked ? [...current, tag.id] : current.filter((item) => item !== tag.id))} />{tag.name}</label>)}
+        <label className="flex items-center gap-2"><Radio  name="library-tag-mode" checked={tagMode === 'add'} onChange={() => setTagMode('add')} />{t('libraryPage.addSelectedTags')}</label>
+        <label className="flex items-center gap-2"><Radio  name="library-tag-mode" checked={tagMode === 'remove'} onChange={() => setTagMode('remove')} />{t('libraryPage.removeSelectedTags')}</label>
+        <label className="flex items-center gap-2"><Radio  name="library-tag-mode" checked={tagMode === 'replace'} onChange={() => setTagMode('replace')} />{t('libraryPage.replaceAllTags')}</label>
+        {tags.map((tag) => <label key={tag.id} className="flex items-center gap-2"><Checkbox  checked={tagIds.includes(tag.id)} onChange={(event) => setTagIds((current) => event.target.checked ? [...current, tag.id] : current.filter((item) => item !== tag.id))} />{tag.name}</label>)}
       </div>}
       {mode === 'tasks' && <TaskLinkPicker selectedIds={taskIds} onChange={setTaskIds} />}
       {mode === 'ask' && <>
-        <textarea className="library-search mt-3 h-24 w-full py-2" aria-label={t('libraryPage.askField')} value={question} onChange={(event) => setQuestion(event.target.value)} />
-        <button type="button" className="library-btn library-btn-primary mt-2" onClick={() => { void ask().catch((error) => toast.error(error instanceof ApiError ? error.message : t('libraryPage.askFailed'))); }}>{t('libraryPage.ask')}</button>
+        <Textarea className="library-search mt-3 h-24 w-full py-2" aria-label={t('libraryPage.askField')} value={question} onChange={(event) => setQuestion(event.target.value)} />
+        <Button variant="default" size="bare" type="button" className="library-btn library-btn-primary mt-2" onClick={() => { void ask().catch((error) => toast.error(error instanceof ApiError ? error.message : t('libraryPage.askFailed'))); }}>{t('libraryPage.ask')}</Button>
         {answer?.status === 'model_unavailable' && <p className="library-meta mt-3">{t('libraryPage.modelRequired')}</p>}
         {answer?.status === 'insufficient' && <p className="library-meta mt-3">{t('libraryPage.insufficient')}</p>}
         {answer?.paragraphs.map((paragraph, index) => <BodyText key={index} text={`${paragraph.text} ${paragraph.citationIds.join(' ')}`} className="mt-3" />)}
-        {answer?.citations.map((citation) => <button key={citation.id} type="button" className="library-quote mt-2 block w-full p-2 text-left" aria-label={`${citation.id} · ${citation.titleSnapshot}`} onClick={() => { patchLibrary({ preview: { materialId: citation.materialId, revision: typeof citation.revision === 'number' ? citation.revision : null, chunkId: citation.chunkId || null } }); onClose(); }}><span className="library-meta">{citation.id} · {citation.titleSnapshot}</span><span className="mt-1 block whitespace-pre-wrap text-sm">{citation.quote}</span></button>)}
+        {answer?.citations.map((citation) => <Button variant="card" size="bare" key={citation.id} type="button" className="library-quote mt-2 block w-full p-2 text-left" aria-label={`${citation.id} · ${citation.titleSnapshot}`} onClick={() => { patchLibrary({ preview: { materialId: citation.materialId, revision: typeof citation.revision === 'number' ? citation.revision : null, chunkId: citation.chunkId || null } }); onClose(); }}><span className="library-meta">{citation.id} · {citation.titleSnapshot}</span><span className="mt-1 block whitespace-pre-wrap text-sm">{citation.quote}</span></Button>)}
       </>}
       {notice && <p className="library-meta mt-3">{notice}</p>}
-      {mode !== 'ask' && <button type="button" className="library-btn library-btn-primary mt-3" disabled={busy} onClick={() => { void apply(); }}>{t('libraryPage.apply')}</button>}
+      {mode !== 'ask' && <Button variant="default" size="bare" type="button" className="library-btn library-btn-primary mt-3" disabled={busy} onClick={() => { void apply(); }}>{t('libraryPage.apply')}</Button>}
       <p className="sr-only">{topics.length}</p>
     </section>
-  </div>;
+  </Modal>;
 }

@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button.js';
@@ -25,7 +26,7 @@ export function compactDuration(minutes: number, t: Translate): string {
 }
 
 export function Panel({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn('glass-subtle min-w-0 rounded-xl border p-4', className)}>{children}</div>;
+  return <Surface as="div" tone="subtle" className={cn('glass-subtle min-w-0 rounded-xl border p-4', className)}>{children}</Surface>;
 }
 
 export function SectionFrame({ id, title, summary, link, children }: { id: 'tasks' | 'focus' | 'plan' | 'ai'; title: string; summary?: string; link?: { label: string; onClick: () => void }; children: ReactNode }) {
@@ -33,7 +34,7 @@ export function SectionFrame({ id, title, summary, link, children }: { id: 'task
     <section data-testid={`stats-section-${id}`} className="min-w-0 space-y-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-lg font-semibold">{title}</h2>
-        {link && <button type="button" className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline" onClick={link.onClick}>{link.label}</button>}
+        {link && <Button variant="link" size="bare" type="button" className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline" onClick={link.onClick}>{link.label}</Button>}
       </div>
       {summary && <p className="text-sm text-muted-foreground">{summary}</p>}
       {children}
@@ -46,10 +47,10 @@ export function SectionError({ id, title, message, onRetry }: { id: 'tasks' | 'f
   return (
     <section data-testid={`stats-section-${id}`} className="min-w-0 space-y-3">
       <h2 className="text-lg font-semibold">{title}</h2>
-      <div role="alert" data-testid="stats-section-error" className="glass-subtle flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4">
+      <Surface as="div" tone="subtle" role="alert" data-testid="stats-section-error" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4">
         <p className="text-sm text-destructive">{message || t('sectionError')}</p>
         <Button type="button" variant="outline" size="sm" onClick={onRetry}>{t('retry')}</Button>
-      </div>
+      </Surface>
     </section>
   );
 }

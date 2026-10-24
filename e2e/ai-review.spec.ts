@@ -37,7 +37,7 @@ async function seedSchedule(request: APIRequestContext) {
 async function cardStyle(card: Locator) {
   return card.evaluate((el) => {
     const style = getComputedStyle(el);
-    return { radius: style.borderRadius, padding: style.padding, border: style.borderTopWidth, background: style.backgroundColor, color: style.color };
+    return { radius: style.borderRadius, padding: style.padding, border: style.borderTopWidth, background: style.backgroundImage, shadow: style.boxShadow, color: style.color };
   });
 }
 
@@ -84,11 +84,12 @@ test('确认安排修改后留在原页面，刷新仍是已完成卡片', async
   await expect(card.getByTestId('approval-related')).toContainText('关联对象 0 项');
   await expect(card.getByRole('button', { name: '确认修改', exact: true })).toBeEnabled();
   expect(await cardStyle(card)).toEqual({
-    radius: '12px',
+    radius: '11px',
     padding: '16px',
     border: '1px',
-    background: 'rgb(255, 255, 255)',
-    color: 'rgb(23, 23, 23)',
+    background: expect.stringContaining('linear-gradient'),
+    shadow: expect.not.stringMatching(/^none$/),
+    color: 'rgb(48, 58, 70)',
   });
   await expectDiffLayout(card);
   await card.screenshot({ path: '/tmp/wwa-approval-light.png' });
@@ -137,8 +138,9 @@ test('深色审批卡使用约定颜色', async ({ page, isMobile, request }) =>
   await expandChanges(card);
   await expect(card.getByTestId('approval-impact')).toContainText('2026-10-16');
   const colors = await cardStyle(card);
-  expect(colors.background).toBe('rgb(23, 23, 23)');
-  expect(colors.color).toBe('rgb(245, 245, 245)');
+  expect(colors.background).toContain('linear-gradient');
+  expect(colors.shadow).not.toBe('none');
+  expect(colors.color).toBe('rgb(230, 233, 236)');
   await card.screenshot({ path: '/tmp/wwa-approval-dark.png' });
 });
 
@@ -175,7 +177,7 @@ test('键盘从取消两次跳到确认修改', async ({ page, isMobile, request
   await page.keyboard.press('Tab');
   const confirm = card.getByRole('button', { name: '确认修改', exact: true });
   await expect(confirm).toBeFocused();
-  expect(await confirm.evaluate((el) => getComputedStyle(el).outlineWidth)).toBe('2px');
+  expect(await confirm.evaluate((el) => { const s = getComputedStyle(el); return el.matches(':focus-visible') && ((s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) >= 2) || s.boxShadow.includes('0px 0px 0px 2px')); })).toBe(true);
   await page.keyboard.press('Enter');
   await expect(card).toHaveAttribute('data-state', 'executed');
 });

@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { useTranslation } from 'react-i18next';
 import { CalendarDays, Clock, Ellipsis, Inbox, Pencil, Play, TriangleAlert } from 'lucide-react';
 import type { ReviewBatch, ReviewRule, Topic } from '@/lib/api.js';
@@ -69,7 +70,7 @@ export function ReviewRuleCard({ rule, topics, archivedTopics, archivedLoaded, l
   const chip = 'inline-flex max-w-full items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-xs';
   const showModel = rule.provider === 'builtin' && modelMissing;
   return (
-    <article className="glass-subtle space-y-3 rounded-xl p-4">
+    <Surface as="article" tone="subtle" className="space-y-3 rounded-xl p-4">
       <div className="flex flex-wrap items-start gap-3">
         <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
           {rule.frequency === 'daily' ? <Clock className="size-4" /> : <CalendarDays className="size-4" />}
@@ -159,6 +160,6 @@ export function ReviewRuleCard({ rule, topics, archivedTopics, archivedLoaded, l
           <Pencil aria-hidden="true" />{t('reviews.edit')}
         </Button>
       </div>
-    </article>
+    </Surface>
   );
 }

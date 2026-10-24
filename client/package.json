@@ -3,8 +3,8 @@
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "test": "vitest run"
+    "build": "node ../scripts/check-control-reuse.mjs && tsc -b && vite build",
+    "test": "node ../scripts/check-control-reuse.mjs && vitest run"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

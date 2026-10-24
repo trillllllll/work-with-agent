@@ -1,3 +1,6 @@
+import { Button } from '@/components/ui/button.js';
+import { DisclosureTrigger } from '@/components/ui/disclosure.js';
+import { Surface } from '@/components/ui/surface.js';
 import { useTranslation } from 'react-i18next';
 import { ChevronRight, MessageSquare } from 'lucide-react';
 import type { View } from '@/lib/api.js';
@@ -25,31 +28,31 @@ export function MorePage({ route, onNavigate }: MorePageProps) {
         </div>
         <ThemeToggle />
       </header>
-      <button
+      <Button variant="card" size="bare"
         type="button"
         onClick={() => onNavigate('chat')}
-        className="glass-subtle mb-6 flex min-h-14 w-full items-center gap-3 rounded-2xl px-4 text-left transition-colors hover:bg-[var(--glass-hover)]"
+        className="mb-6 flex min-h-14 w-full items-center gap-3 rounded-2xl px-4 text-left transition-colors hover:bg-[var(--glass-hover)]"
       >
         <span className="glass-control flex size-9 shrink-0 items-center justify-center rounded-xl">
           <MessageSquare aria-hidden="true" className="size-5" strokeWidth={1.75} />
         </span>
         <span className="flex-1 text-[15px] font-medium">{t('morePage.openChat')}</span>
         <ChevronRight aria-hidden="true" className="size-4 text-muted-foreground" />
-      </button>
+      </Button>
       <nav aria-label={t('morePage.nav')} className="grid gap-6 lg:grid-cols-2">
         {navigationGroups.map((group) => {
           const Panel = group.id === 'advanced' ? 'details' : 'div';
           return (
           <section key={group.id} aria-label={t(`app:groups.${group.id}`)}>
             <Panel {...(group.id === 'advanced' ? { open: group.views.some(view => view === route) } : {})}>
-            {group.id === 'advanced' ? <summary className="mb-1.5 cursor-pointer px-3 text-xs font-medium text-muted-foreground">{t(`app:groups.${group.id}`)}</summary> : <h2 className="mb-1.5 px-3 text-xs font-medium text-muted-foreground">{t(`app:groups.${group.id}`)}</h2>}
-            <div className="glass-subtle overflow-hidden rounded-2xl">
+            {group.id === 'advanced' ? <DisclosureTrigger className="mb-1.5 cursor-pointer px-3 text-xs font-medium text-muted-foreground">{t(`app:groups.${group.id}`)}</DisclosureTrigger> : <h2 className="mb-1.5 px-3 text-xs font-medium text-muted-foreground">{t(`app:groups.${group.id}`)}</h2>}
+            <Surface as="div" tone="subtle" className="overflow-hidden rounded-2xl">
               {group.views.map((view, index) => {
                 const item = navigationItem(view);
                 const Icon = item.icon;
                 const active = route === view;
                 return (
-                  <button
+                  <Button variant="row" size="bare"
                     key={view}
                     type="button"
                     onClick={() => onNavigate(view)}
@@ -64,10 +67,10 @@ export function MorePage({ route, onNavigate }: MorePageProps) {
                     <span className="flex-1 text-[15px]">{item.label}</span>
                     {view === 'proposals' ? <NavCount count={pendingProposals} /> : null}
                     <ChevronRight aria-hidden="true" className="size-4 text-muted-foreground" />
-                  </button>
+                  </Button>
                 );
               })}
-            </div>
+            </Surface>
             </Panel>
           </section>
         ); })}

@@ -1,4 +1,6 @@
 import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react';
+import type { QueryClient } from '@tanstack/react-query';
+import { TaskTextSaveBridge } from './task-text-save-bridge.js';
 import { t } from '../i18n/index.js';
 import { ApiError, API_URL, api, apiMutation, authHeaders } from './api.js';
 import { enqueueWrite } from './todo.js';
@@ -12,13 +14,19 @@ export class EditorRuntime {
   readonly store = new TaskDraftStore();
   readonly coordinator: TaskTextSyncCoordinator;
   readonly scopeKey: string;
+  readonly textSaves: TaskTextSaveBridge;
 
-  constructor(scopeKey: string) {
+  constructor(scopeKey: string, client: QueryClient) {
     this.scopeKey = scopeKey;
+    this.textSaves = new TaskTextSaveBridge(client, () => runtime === this && !sessionExpired);
     this.coordinator = new TaskTextSyncCoordinator({
       scopeKey,
       store: this.store,
-      send: sendWithTimeout,
+      send: async (request) => {
+        const outcome = await sendWithTimeout(request);
+        if (outcome.kind === 'success') await this.textSaves.acknowledge(request, outcome.body);
+        return outcome;
+      },
       now: () => Date.now(),
       schedule: (fn, ms) => {
         const timer = window.setTimeout(fn, ms);
@@ -32,13 +40,13 @@ export class EditorRuntime {
     });
   }
 
-  static async open(actorId: string) {
+  static async open(actorId: string, client: QueryClient) {
     const origin = window.location.origin;
     const apiBase = normalizeApiBaseUrl(import.meta.env.VITE_API_URL as string | undefined ?? '', origin);
     const scopeKey = JSON.stringify([origin, apiBase, actorId]);
     if (runtime?.scopeKey === scopeKey) return runtime;
     runtime?.coordinator.dispose();
-    const next = new EditorRuntime(scopeKey);
+    const next = new EditorRuntime(scopeKey, client);
     runtime = next;
     return next;
   }

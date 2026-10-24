@@ -1,3 +1,6 @@
+import { NativeSelect } from '@/components/ui/native-select.js';
+import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure.js';
+import { Checkbox } from '@/components/ui/checkbox.js';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -77,10 +80,10 @@ function ProjectOverride({ taskId }: { taskId: string }) {
   const binding = useQuery({ queryKey: ['project-binding', 'task', taskId], queryFn: () => api<{ projectId: string | null }>(`/api/project-bindings/task/${taskId}`) });
   const save = useMutation({ mutationFn: (projectId: string | null) => api(`/api/project-bindings/task/${taskId}`, { method: 'PUT', body: JSON.stringify({ projectId }) }), onSuccess: () => void client.invalidateQueries({ queryKey: ['project-binding'] }), onError: (error) => toast.error(error.message) });
   return <label className="flex items-center gap-2 text-sm"><span className="text-muted-foreground">{t('panel.project')}</span>
-    <select className="rounded border bg-background px-2 py-1" value={binding.data?.projectId ?? ''} onChange={(event) => save.mutate(event.target.value || null)}>
+    <NativeSelect className="rounded border bg-background px-2 py-1" value={binding.data?.projectId ?? ''} onChange={(event) => save.mutate(event.target.value || null)}>
       <option value="">{t('panel.followTopic')}</option>
       {projects.data?.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-    </select>
+    </NativeSelect>
     <span className="text-xs text-muted-foreground">{t('panel.manageHint')}</span>
   </label>;
 }
@@ -109,14 +112,14 @@ function LaunchForm({ draft, taskId, onStarted }: { draft: Orchestration; taskId
       <ol className="mt-2 space-y-2">{draft.plan.steps.map((step) => <li key={step.taskId} className="rounded border p-2"><div className="font-medium">{titles.get(step.taskId) ?? step.taskId}</div>
         <div className="text-xs text-muted-foreground">{step.dependsOn.length ? t('panel.waitFor', { names: step.dependsOn.map((id) => titles.get(id) ?? id).join(t('panel.sep')) }) : t('panel.parallel')}{step.rationale ? t('panel.rationale', { rationale: step.rationale }) : ''}</div>
         {step.acceptanceCriteria && <div className="mt-1 text-xs">{t('panel.acceptance', { criteria: step.acceptanceCriteria })}</div>}</li>)}</ol>
-      {draft.priorSummary && <details className="disclosure" data-testid="prior-summary"><summary className="cursor-pointer text-sm">{t('panel.priorSummary')}</summary><BodyText text={draft.priorSummary} size="xs" className="mt-2 max-h-48 overflow-auto" /></details>}
+      {draft.priorSummary && <Disclosure className="disclosure" data-testid="prior-summary"><DisclosureTrigger className="cursor-pointer text-sm">{t('panel.priorSummary')}</DisclosureTrigger><BodyText text={draft.priorSummary} size="xs" className="mt-2 max-h-48 overflow-auto" /></Disclosure>}
     </section>
     <section className="space-y-2"><h3 className="font-medium">{t('panel.grantTitle')}</h3>
-      <label className="flex items-center gap-2"><span className="w-24 text-muted-foreground">{t('panel.location')}</span><select className="flex-1 rounded border bg-background px-2 py-1" value={locationId} onChange={(event) => setLocationId(event.target.value)}>
+      <label className="flex items-center gap-2"><span className="w-24 text-muted-foreground">{t('panel.location')}</span><NativeSelect className="flex-1 rounded border bg-background px-2 py-1" value={locationId} onChange={(event) => setLocationId(event.target.value)}>
         {!draft.locations?.length && <option value="">{t('panel.noLocation')}</option>}
-        {draft.locations?.map((location) => <option key={location.id} value={location.id}>{location.nodeName}{location.online ? '' : t('panel.offlineMark')} · {location.path}</option>)}</select></label>
+        {draft.locations?.map((location) => <option key={location.id} value={location.id}>{location.nodeName}{location.online ? '' : t('panel.offlineMark')} · {location.path}</option>)}</NativeSelect></label>
       {others.length > 0 && <fieldset className="space-y-1"><legend className="text-muted-foreground">{t('panel.crossMachine')}</legend>
-        {others.map((location) => { const usable = (location.protocol ?? 0) >= 2 && !!location.originUrl && !!primary?.originUrl; return <label key={location.id} className="flex items-center gap-2 text-xs"><input type="checkbox" disabled={!usable} checked={extraIds.includes(location.id)} onChange={(event) => setExtra(event.target.checked ? [...extraIds, location.id] : extraIds.filter((id) => id !== location.id))} /><span>{location.nodeName}{location.online ? '' : t('panel.offlineMark')} · {location.path}</span>{!usable && <span className="text-muted-foreground">{(location.protocol ?? 0) < 2 ? t('panel.nodeOutdated') : t('panel.noOrigin')}</span>}</label>; })}
+        {others.map((location) => { const usable = (location.protocol ?? 0) >= 2 && !!location.originUrl && !!primary?.originUrl; return <label key={location.id} className="flex items-center gap-2 text-xs"><Checkbox  disabled={!usable} checked={extraIds.includes(location.id)} onChange={(event) => setExtra(event.target.checked ? [...extraIds, location.id] : extraIds.filter((id) => id !== location.id))} /><span>{location.nodeName}{location.online ? '' : t('panel.offlineMark')} · {location.path}</span>{!usable && <span className="text-muted-foreground">{(location.protocol ?? 0) < 2 ? t('panel.nodeOutdated') : t('panel.noOrigin')}</span>}</label>; })}
         <p className="text-xs text-muted-foreground">{t('panel.crossHint')}</p>
       </fieldset>}
       <div className="flex flex-wrap items-center gap-2"><span className="w-24 text-muted-foreground">{t('panel.localAi')}</span>
@@ -127,7 +130,7 @@ function LaunchForm({ draft, taskId, onStarted }: { draft: Orchestration; taskId
         <Select value={String(maxParallel)} onValueChange={(value) => setMaxParallel(Number(value))}><SelectTrigger aria-label={t('panel.maxParallel')}><SelectValue /></SelectTrigger><SelectContent>{[1, 2, 3, 4].map((value) => <SelectItem key={value} value={String(value)} disabled={value > cap}>{value > cap ? `${value}${t('panel.parallelOver', { max: cap })}` : String(value)}</SelectItem>)}</SelectContent></Select>
       </div>
       {cap < 4 && <p className="text-xs text-muted-foreground">{t('panel.parallelOver', { max: cap })}</p>}
-      <label className="flex items-center gap-2"><input type="checkbox" checked={allowShell} onChange={(event) => setAllowShell(event.target.checked)} /><span>{t('panel.allowShell')}</span></label>
+      <label className="flex items-center gap-2"><Checkbox  checked={allowShell} onChange={(event) => setAllowShell(event.target.checked)} /><span>{t('panel.allowShell')}</span></label>
       <p className="text-xs text-muted-foreground">{t('panel.grantHint', { branch: draft.integrationBranch })}</p>
     </section>
     <Button disabled={!locationId || start.isPending || !!blocked || cap < 1 || maxParallel > cap} onClick={() => start.mutate()}>{start.isPending ? t('panel.starting') : t('panel.confirmStart')}</Button>
@@ -202,8 +205,8 @@ function Progress({ row, onRedispatch }: { row: Orchestration; onRedispatch: (dr
         <Button data-testid="reject-confirm" disabled={!reason.trim() || act.isPending} onClick={() => act.mutate({ path: 'reject', body: { reason } })}>{t('panel.rejectConfirm')}</Button>
       </DialogContent>
     </Dialog>
-    {events.length > 0 && <details><summary className="cursor-pointer text-muted-foreground">{t('panel.events', { count: events.length })}</summary>
-      <ul className="mt-2 space-y-1 text-xs">{events.map((event) => <li key={event.seq}><span className="text-muted-foreground">{new Date(event.createdAt).toLocaleTimeString(intlLocale())} · {event.actorKind} · {event.type}</span> {summarize(event.payload)}</li>)}</ul></details>}
+    {events.length > 0 && <Disclosure><DisclosureTrigger className="cursor-pointer text-muted-foreground">{t('panel.events', { count: events.length })}</DisclosureTrigger>
+      <ul className="mt-2 space-y-1 text-xs">{events.map((event) => <li key={event.seq}><span className="text-muted-foreground">{new Date(event.createdAt).toLocaleTimeString(intlLocale())} · {event.actorKind} · {event.type}</span> {summarize(event.payload)}</li>)}</ul></Disclosure>}
   </div>;
 }
 

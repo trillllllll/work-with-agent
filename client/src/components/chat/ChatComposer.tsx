@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { useEffect, useRef, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowUp, Square } from 'lucide-react';
@@ -42,17 +43,17 @@ export function ChatComposer({ input, busy, reference, onChange, onSend, onCance
       {reference && (
         <div className="flex items-center justify-between gap-3 text-xs">
           <span>{t('composer.adjusting', { title: reference.title })}</span>
-          <button type="button" className="shrink-0" onClick={onCancelReference}>{t('composer.removeReference')}</button>
+          <Button variant="plain" size="bare" type="button" className="shrink-0" onClick={onCancelReference}>{t('composer.removeReference')}</Button>
         </div>
       )}
-      <div className="assistant-input-box rounded-2xl border bg-muted/40 p-3 focus-within:border-foreground/40">
-        <Textarea
+      <Surface as="div" tone="input" className="assistant-input-box p-3">
+        <Textarea variant="inline"
           ref={textareaRef}
           aria-label={t('composer.askAi')}
           value={input}
           rows={1}
           placeholder={t('composer.placeholder')}
-          className="max-h-[120px] min-h-12 w-full resize-none rounded-none border-0 bg-transparent px-1 py-1 text-[13px] shadow-none focus-visible:ring-0"
+          className="max-h-[120px] min-h-12 w-full resize-none px-1 py-1 text-[13px]"
           onChange={(event) => { onChange(event.target.value); requestAnimationFrame(resize); }}
           onCompositionStart={() => { composing.current = true; }}
           onCompositionEnd={() => { composing.current = false; }}
@@ -63,7 +64,7 @@ export function ChatComposer({ input, busy, reference, onChange, onSend, onCance
           <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground" title={model}>{model || t('status.noModel')}</span>
           {busy ? <Button type="button" size="icon" className="size-8 rounded-full" onClick={onStop} disabled={stopping} aria-label={t('composer.stop')}><Square className="size-3 fill-current" /></Button> : <Button type="submit" size="icon" className="size-8 rounded-full" disabled={!input.trim()} aria-label={t('composer.send')}><ArrowUp /></Button>}
         </div>
-      </div>
+      </Surface>
       <p className="text-center text-[10px] text-muted-foreground">{stopping ? t('composer.stopping') : t('composer.previewHint')}</p>
     </form>
   );

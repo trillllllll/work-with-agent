@@ -1,3 +1,7 @@
+import { Surface } from '@/components/ui/surface.js';
+import { Modal } from '@/components/ui/modal.js';
+import { Textarea } from '@/components/ui/textarea.js';
+import { Input } from '@/components/ui/input.js';
 import { askAssistant } from '@/lib/assistant-context.js';
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -455,16 +459,14 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
   return <div className={cn('task-description-editor', fill && 'task-description-grow')}>
     <EditorContent editor={editor} className="task-description-input w-full" />
     {editor && !readonly && <FormatToolbar editor={editor} composing={() => composingRef.current} taskId={taskId} />}
-    {rawDialog && createPortal(<div className="task-raw-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setRawDialog(null); }}>
-      <div className="task-raw-dialog" role="dialog" aria-label={t('descriptionEditor.editRawTitle')}>
+    {rawDialog && <Modal title={t('descriptionEditor.editRawTitle')} onClose={() => setRawDialog(null)}>
         <p className="task-raw-dialog-title">{t('descriptionEditor.editRawTitle')}</p>
-        <textarea className="task-raw-dialog-input" aria-label={t('descriptionEditor.rawContent')} value={rawDialog.markdown} onChange={(event) => setRawDialog({ ...rawDialog, markdown: event.target.value })} rows={8} />
+        <Textarea className="task-raw-dialog-input" aria-label={t('descriptionEditor.rawContent')} value={rawDialog.markdown} onChange={(event) => setRawDialog({ ...rawDialog, markdown: event.target.value })} rows={8} />
         <div className="mt-2 flex justify-end gap-2">
           <Button variant="ghost" size="sm" onClick={() => setRawDialog(null)}>{t('shared.cancel')}</Button>
           <Button size="sm" onClick={applyRawEdit}>{t('descriptionEditor.apply')}</Button>
         </div>
-      </div>
-    </div>, document.body)}
+    </Modal>}
   </div>;
 }
 
@@ -561,7 +563,7 @@ function FormatToolbar({ editor, composing, taskId }: ToolbarProps) {
   };
   const currentLink = editor.getAttributes('link').href as string | undefined;
 
-  const bar = <div className="task-format-toolbar" data-format-tools role="toolbar" aria-label={t('descriptionEditor.format')} style={{ top: 0, left: 0 }} ref={(node) => {
+  const bar = <Surface as="div" tone="overlay" className="task-format-toolbar" data-format-tools role="toolbar" aria-label={t('descriptionEditor.format')} style={{ top: 0, left: 0 }} ref={(node) => {
     if (!node) return;
     const rect = node.getBoundingClientRect();
     const margin = 8;
@@ -575,14 +577,14 @@ function FormatToolbar({ editor, composing, taskId }: ToolbarProps) {
     node.style.top = `${top}px`;
     node.style.left = `${left}px`;
   }}>
-    <button type="button" className={cn(buttonClass, 'task-format-ask')} aria-label={t('descriptionEditor.askAi')} onMouseDown={(event) => event.preventDefault()} onClick={() => { const { from, to } = editor.state.selection; askAssistant({ kind: 'selection', title: t('descriptionEditor.selectionTitle'), text: editor.state.doc.textBetween(from, to, '\n'), taskId, unsaved: true }); }}>{t('descriptionEditor.askAi')}</button>
+    <Button variant="row" size="bare" type="button" className={cn(buttonClass, 'task-format-ask')} aria-label={t('descriptionEditor.askAi')} onMouseDown={(event) => event.preventDefault()} onClick={() => { const { from, to } = editor.state.selection; askAssistant({ kind: 'selection', title: t('descriptionEditor.selectionTitle'), text: editor.state.doc.textBetween(from, to, '\n'), taskId, unsaved: true }); }}>{t('descriptionEditor.askAi')}</Button>
     {touch ? <>
       <ToolbarButton className={buttonClass} label={t('descriptionEditor.bold')} icon={Bold} pressed={editor.isActive('bold')} onClick={() => run(() => editor.chain().focus().toggleBold().run())} />
       <ToolbarButton className={buttonClass} label={t('descriptionEditor.bulletList')} icon={List} pressed={editor.isActive('bulletList')} onClick={() => run(() => editor.chain().focus().toggleBulletList().run())} />
       <ToolbarButton className={buttonClass} label={t('descriptionEditor.checklist')} icon={ListTodo} pressed={editor.isActive('taskList')} onClick={() => run(() => editor.chain().focus().toggleTaskList().run())} />
       <Popover open={linkOpen} onOpenChange={setLinkOpen}>
         <PopoverTrigger asChild>
-          <button type="button" className={cn(buttonClass, 'task-format-more')} aria-label={t('descriptionEditor.moreFormats')} onMouseDown={(event) => event.preventDefault()}><MoreHorizontal className="size-4" aria-hidden /></button>
+          <Button variant="row" size="bare" type="button" className={cn(buttonClass, 'task-format-more')} aria-label={t('descriptionEditor.moreFormats')} onMouseDown={(event) => event.preventDefault()}><MoreHorizontal className="size-4" aria-hidden /></Button>
         </PopoverTrigger>
         <PopoverContent data-format-tools className="task-format-menu w-44" align="start">
           <MoreFormats editor={editor} onLink={() => { setLinkHref(currentLink ?? ''); setLinkOpen(true); }} />
@@ -593,21 +595,21 @@ function FormatToolbar({ editor, composing, taskId }: ToolbarProps) {
       <ToolbarButton className={buttonClass} label={t('descriptionEditor.italic')} icon={Italic} pressed={editor.isActive('italic')} onClick={() => run(() => editor.chain().focus().toggleItalic().run())} />
       <ToolbarButton className={buttonClass} label={t('descriptionEditor.strike')} icon={Strikethrough} pressed={editor.isActive('strike')} onClick={() => run(() => editor.chain().focus().toggleStrike().run())} />
       <ToolbarButton className={buttonClass} label={t('descriptionEditor.inlineCode')} icon={Code} pressed={editor.isActive('code')} onClick={() => run(() => editor.chain().focus().toggleCode().run())} />
-      <button type="button" className={cn(buttonClass, editor.isActive('link') && 'is-active')} aria-label={t('descriptionEditor.link')} aria-pressed={editor.isActive('link')} title={t('descriptionEditor.link')}
+      <Button variant="row" size="bare" type="button" className={cn(buttonClass, editor.isActive('link') && 'is-active')} aria-label={t('descriptionEditor.link')} aria-pressed={editor.isActive('link')} title={t('descriptionEditor.link')}
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => { setLinkHref(currentLink ?? ''); setLinkOpen(true); }}>
         <Link2 className="size-4" aria-hidden />
-      </button>
+      </Button>
       <Popover open={linkOpen} onOpenChange={setLinkOpen}>
         <PopoverTrigger asChild>
-          <button type="button" className={cn(buttonClass, 'task-format-more')} aria-label={t('descriptionEditor.moreFormats')} onMouseDown={(event) => event.preventDefault()}><MoreHorizontal className="size-4" aria-hidden /></button>
+          <Button variant="row" size="bare" type="button" className={cn(buttonClass, 'task-format-more')} aria-label={t('descriptionEditor.moreFormats')} onMouseDown={(event) => event.preventDefault()}><MoreHorizontal className="size-4" aria-hidden /></Button>
         </PopoverTrigger>
         <PopoverContent data-format-tools className="task-format-menu w-44" align="start">
           <MoreFormats editor={editor} onLink={() => { setLinkHref(currentLink ?? ''); setLinkOpen(true); }} />
         </PopoverContent>
       </Popover>
     </>}
-  </div>;
+  </Surface>;
 
   return createPortal(<>
     {bar}
@@ -617,7 +619,7 @@ function FormatToolbar({ editor, composing, taskId }: ToolbarProps) {
 
 function MoreFormats({ editor, onLink }: { editor: Editor; onLink: () => void }) {
   const { t } = useTranslation('tasks');
-  const item = (label: string, active: boolean, run: () => void) => <button type="button" className={cn('task-format-menu-item', active && 'is-active')} aria-pressed={active} onClick={() => { run(); editor.view.focus(); }}>{label}</button>;
+  const item = (label: string, active: boolean, run: () => void) => <Button variant="row" size="bare" type="button" className={cn('task-format-menu-item', active && 'is-active')} aria-pressed={active} onClick={() => { run(); editor.view.focus(); }}>{label}</Button>;
   return <div className="task-format-menu-list">
     {item(t('descriptionEditor.heading1'), editor.isActive('heading', { level: 1 }), () => editor.chain().focus().toggleHeading({ level: 1 }).run())}
     {item(t('descriptionEditor.heading2'), editor.isActive('heading', { level: 2 }), () => editor.chain().focus().toggleHeading({ level: 2 }).run())}
@@ -633,29 +635,29 @@ function MoreFormats({ editor, onLink }: { editor: Editor; onLink: () => void })
 }
 
 function ToolbarButton({ className, label, icon: Icon, pressed, onClick }: { className: string; label: string; icon: typeof Bold; pressed: boolean; onClick: () => void }) {
-  return <button type="button" className={cn(className, pressed && 'is-active')} aria-label={label} aria-pressed={pressed} title={label}
+  return <Button variant="row" size="bare" type="button" className={cn(className, pressed && 'is-active')} aria-label={label} aria-pressed={pressed} title={label}
     onMouseDown={(event) => event.preventDefault()}
     onClick={onClick}>
     <Icon className="size-4" aria-hidden />
-  </button>;
+  </Button>;
 }
 
 function LinkPopover({ editor, open, setOpen, href, setHref }: { editor: Editor; open: boolean; setOpen: (value: boolean) => void; href: string; setHref: (value: string) => void }) {
   const { t } = useTranslation('tasks');
   if (!open) return null;
   const sanitized = /^https?:|mailto:/i.test(href) ? href : '';
-  return createPortal(<div className="task-link-popover" data-format-tools role="dialog" aria-label={t('descriptionEditor.link')}>
-    <input className="task-link-input" aria-label={t('descriptionEditor.linkAddress')} placeholder={t('descriptionEditor.linkPlaceholder')} value={href} onChange={(event) => setHref(event.target.value)} onKeyDown={(event) => {
+  return <Modal modal={false} motion="none" className="task-link-popover" data-format-tools title={t('descriptionEditor.link')} onClose={() => setOpen(false)} onCloseAutoFocus={event => { event.preventDefault(); editor.commands.focus(); }}>
+    <Input className="task-link-input" aria-label={t('descriptionEditor.linkAddress')} placeholder={t('descriptionEditor.linkPlaceholder')} value={href} onChange={(event) => setHref(event.target.value)} onKeyDown={(event) => {
       if (event.key === 'Enter') { event.preventDefault(); apply(); }
       if (event.key === 'Escape') setOpen(false);
     }} />
     <div className="task-link-actions">
       {sanitized && <a className="task-link-action" href={sanitized} target="_blank" rel="noreferrer">{t('descriptionEditor.open')}</a>}
-      <button type="button" className="task-link-action" disabled={!sanitized} onClick={() => { editor.chain().focus().extendMarkRange('link').setLink({ href: sanitized }).run(); setOpen(false); }}>{t('descriptionEditor.apply')}</button>
-      <button type="button" className="task-link-action" onClick={() => { editor.chain().focus().extendMarkRange('link').unsetLink().run(); setOpen(false); }}>{t('descriptionEditor.removeLink')}</button>
-      <button type="button" className="task-link-action" onClick={() => setOpen(false)}>{t('shared.cancel')}</button>
+      <Button variant="row" size="bare" type="button" className="task-link-action" disabled={!sanitized} onClick={() => { editor.chain().focus().extendMarkRange('link').setLink({ href: sanitized }).run(); setOpen(false); }}>{t('descriptionEditor.apply')}</Button>
+      <Button variant="row" size="bare" type="button" className="task-link-action" onClick={() => { editor.chain().focus().extendMarkRange('link').unsetLink().run(); setOpen(false); }}>{t('descriptionEditor.removeLink')}</Button>
+      <Button variant="row" size="bare" type="button" className="task-link-action" onClick={() => setOpen(false)}>{t('shared.cancel')}</Button>
     </div>
-  </div>, document.body);
+  </Modal>;
   function apply() {
     if (!sanitized) return;
     editor.chain().focus().extendMarkRange('link').setLink({ href: sanitized }).run();

@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { useTranslation } from 'react-i18next';
 import type { ReviewRule } from '@/lib/api.js';
 import { Button } from '@/components/ui/button.js';
@@ -25,7 +26,7 @@ export function ReviewEmpty({ onTemplate }: ReviewEmptyProps) {
     { title: t('reviews.emptyStep3'), hint: t('reviews.emptyStep3Hint') },
   ];
   return (
-    <div className="glass-subtle rounded-xl px-5 py-8 text-center">
+    <Surface as="div" tone="subtle" className="rounded-xl px-5 py-8 text-center">
       <h2 className="text-lg font-semibold">{t('reviews.emptyTitle')}</h2>
       <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">{t('reviews.emptyDescription')}</p>
       <ol className="mt-6 grid gap-3 text-left sm:grid-cols-3">
@@ -48,6 +49,6 @@ export function ReviewEmpty({ onTemplate }: ReviewEmptyProps) {
         </Button>
       </div>
       <p className="mt-3 text-xs text-muted-foreground">{t('reviews.templateHint')}</p>
-    </div>
+    </Surface>
   );
 }

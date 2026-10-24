@@ -1,3 +1,6 @@
+import { TableRow } from '@/components/ui/table-row.js';
+import { Button } from '@/components/ui/button.js';
+import { Surface } from '@/components/ui/surface.js';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
@@ -104,15 +107,15 @@ export function DispatchStatsView({ rangeFrom, rangeTo }: { rangeFrom?: string; 
   const data = stats.data;
   const empty = !!data && data.roundCount === 0 && data.resources.jobs === 0 && data.legacy.count === 0 && data.assistant.runs === 0;
   const maxFailure = data ? Math.max(1, ...FAILURE_KINDS.map((kind) => data.failureKinds[kind] ?? 0)) : 1;
-  const modeClass = (selected: boolean) => `shrink-0 rounded-full px-3 py-1 text-sm ${selected ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}`;
+  const modeClass = (_selected: boolean) => 'shrink-0 px-3 py-1 text-sm';
   const groupLabel = (key: string) => key === 'unknown' ? t('runs.stats.unknown') : key;
 
   return <div className="space-y-4" data-testid="dispatch-stats">
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex gap-2 overflow-x-auto" role="group" aria-label={t('runs.tabStats')}>
-        <button type="button" className={modeClass(mode === 'this')} onClick={() => setMode('this')}>{t('runs.thisWeek')}</button>
-        <button type="button" className={modeClass(mode === 'last')} onClick={() => setMode('last')}>{t('runs.lastWeek')}</button>
-        <button type="button" className={modeClass(mode === 'custom')} onClick={() => setMode('custom')}>{t('runs.custom')}</button>
+        <Button variant="tab" size="bare" type="button" className={modeClass(mode === 'this')} onClick={() => setMode('this')}>{t('runs.thisWeek')}</Button>
+        <Button variant="tab" size="bare" type="button" className={modeClass(mode === 'last')} onClick={() => setMode('last')}>{t('runs.lastWeek')}</Button>
+        <Button variant="tab" size="bare" type="button" className={modeClass(mode === 'custom')} onClick={() => setMode('custom')}>{t('runs.custom')}</Button>
       </div>
       <Select value={projectId} onValueChange={setProjectId}>
         <SelectTrigger className="h-9 w-[11rem] rounded-xl text-sm" aria-label={t('runs.projectFilter')}><SelectValue /></SelectTrigger>
@@ -132,43 +135,43 @@ export function DispatchStatsView({ rangeFrom, rangeTo }: { rangeFrom?: string; 
     {empty && <p className="py-8 text-sm text-muted-foreground">{t('runs.statsEmpty')}</p>}
     {data && !empty && <>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <article className="glass-subtle rounded-xl border p-4" data-testid="stats-card-rounds">
+        <Surface as="article" tone="subtle" className="rounded-xl border p-4" data-testid="stats-card-rounds">
           <p className="text-xs text-muted-foreground">{t('runs.stats.rounds')}</p>
           <p className="text-2xl font-semibold tabular-nums">{data.roundCount}</p>
           <p className="text-xs text-muted-foreground">{t('runs.stats.accepted', { n: data.accepted })}</p>
-        </article>
-        <article className="glass-subtle rounded-xl border p-4">
+        </Surface>
+        <Surface as="article" tone="subtle" className="rounded-xl border p-4">
           <p className="text-xs text-muted-foreground">{t('runs.stats.steps')}</p>
           <p className="text-2xl font-semibold tabular-nums">{data.stepCount}</p>
           <p className="text-xs text-muted-foreground">{t('runs.stats.outcome', { succeeded: data.succeeded, failed: data.failed })}</p>
-        </article>
-        <article className="glass-subtle rounded-xl border p-4" data-testid="stats-card-pass">
+        </Surface>
+        <Surface as="article" tone="subtle" className="rounded-xl border p-4" data-testid="stats-card-pass">
           <p className="text-xs text-muted-foreground">{t('runs.stats.passRate')}</p>
           <p className="text-2xl font-semibold tabular-nums">{formatRate(data.firstPass.rate)}</p>
           <p className="text-xs text-muted-foreground">{t('runs.stats.passDetail', { passed: data.firstPass.passed, total: data.firstPass.total })}</p>
-        </article>
-        <article className="glass-subtle rounded-xl border p-4">
+        </Surface>
+        <Surface as="article" tone="subtle" className="rounded-xl border p-4">
           <p className="text-xs text-muted-foreground">{t('runs.stats.rework')}</p>
           <p className="text-2xl font-semibold tabular-nums">{data.rework}<span className="text-muted-foreground"> / </span><span data-testid="stats-rejected">{data.rejected}</span></p>
-        </article>
-        <article className="glass-subtle rounded-xl border p-4">
+        </Surface>
+        <Surface as="article" tone="subtle" className="rounded-xl border p-4">
           <p className="text-xs text-muted-foreground">{t('runs.stats.duration')}</p>
           <p className="text-2xl font-semibold">{formatDuration(data.resources.durationMs)}</p>
-        </article>
-        <article className="glass-subtle rounded-xl border p-4">
+        </Surface>
+        <Surface as="article" tone="subtle" className="rounded-xl border p-4">
           <p className="text-xs text-muted-foreground">{t('runs.stats.tokens')}</p>
           <p className="text-sm font-semibold">{t('runs.stats.tokenValue', { input: formatTokens(data.resources.inputTokens), output: formatTokens(data.resources.outputTokens) })}</p>
           <p className="text-xs text-muted-foreground">{t('runs.stats.cached', { cached: formatTokens(data.resources.cachedInputTokens) })}</p>
-        </article>
-        <article className="glass-subtle rounded-xl border p-4">
+        </Surface>
+        <Surface as="article" tone="subtle" className="rounded-xl border p-4">
           <p className="text-xs text-muted-foreground">{t('runs.stats.cost')}</p>
           <p className="text-2xl font-semibold">{data.resources.costJobs > 0 ? formatCost(data.resources.costMicroUsd) : formatMissing()}</p>
           {data.resources.noCostJobs > 0 && <p className="text-xs text-muted-foreground">{t('runs.stats.noCost', { n: data.resources.noCostJobs })}</p>}
-        </article>
-        <article className="glass-subtle rounded-xl border p-4">
+        </Surface>
+        <Surface as="article" tone="subtle" className="rounded-xl border p-4">
           <p className="text-xs text-muted-foreground">{t('runs.stats.diff')}</p>
           <p className="text-sm font-semibold">{formatDiff(data.resources.filesChanged, data.resources.linesAdded, data.resources.linesDeleted)}</p>
-        </article>
+        </Surface>
       </div>
       <section className="space-y-2" data-testid="stats-failures">
         <h2 className="text-sm font-semibold">{t('runs.stats.failures')}</h2>
@@ -194,7 +197,7 @@ export function DispatchStatsView({ rangeFrom, rangeTo }: { rangeFrom?: string; 
           <h2 className="text-sm font-semibold">{t('runs.stats.topDuration')}</h2>
           {data.top5ByDuration.length === 0 ? <p className="text-xs text-muted-foreground">{formatMissing()}</p> : <ol className="space-y-1 text-sm">
             {data.top5ByDuration.map((item) => <li key={item.taskId} className="flex items-center justify-between gap-3">
-              <button type="button" className="min-w-0 truncate text-left underline-offset-2 hover:underline" onClick={() => openTask(item.taskId)}>{item.title}</button>
+              <Button variant="link" size="bare" type="button" className="min-w-0 truncate text-left underline-offset-2 hover:underline" onClick={() => openTask(item.taskId)}>{item.title}</Button>
               <span className="shrink-0 text-xs text-muted-foreground">{formatDuration(item.durationMs)}</span>
             </li>)}
           </ol>}
@@ -203,13 +206,13 @@ export function DispatchStatsView({ rangeFrom, rangeTo }: { rangeFrom?: string; 
           <h2 className="text-sm font-semibold">{t('runs.stats.topCost')}</h2>
           {data.top5ByCost.length === 0 ? <p className="text-xs text-muted-foreground">{formatMissing()}</p> : <ol className="space-y-1 text-sm">
             {data.top5ByCost.map((item) => <li key={item.taskId} className="flex items-center justify-between gap-3">
-              <button type="button" className="min-w-0 truncate text-left underline-offset-2 hover:underline" onClick={() => openTask(item.taskId)}>{item.title}</button>
+              <Button variant="link" size="bare" type="button" className="min-w-0 truncate text-left underline-offset-2 hover:underline" onClick={() => openTask(item.taskId)}>{item.title}</Button>
               <span className="shrink-0 text-xs text-muted-foreground">{formatCost(item.costMicroUsd)}</span>
             </li>)}
           </ol>}
         </section>
       </div>
-      {data.assistant.runs > 0 && <section className="glass-subtle rounded-xl border p-4 text-sm" data-testid="stats-assistant">
+      {data.assistant.runs > 0 && <Surface as="section" tone="subtle" className="rounded-xl border p-4 text-sm" data-testid="stats-assistant">
         <h2 className="text-sm font-semibold">{t('runs.stats.assistant')}</h2>
         <p className="text-xs text-muted-foreground">{t('runs.stats.assistantLine', {
           count: data.assistant.runs,
@@ -224,8 +227,8 @@ export function DispatchStatsView({ rangeFrom, rangeTo }: { rangeFrom?: string; 
           </li>)}
         </ul>}
         <p className="mt-1 text-xs text-muted-foreground">{t('runs.stats.noCostAssistant')}</p>
-      </section>}
-      <section className="glass-subtle rounded-xl border p-4 text-sm">
+      </Surface>}
+      <Surface as="section" tone="subtle" className="rounded-xl border p-4 text-sm">
         <h2 className="text-sm font-semibold">{t('runs.stats.legacy')}</h2>
         <p className="text-xs text-muted-foreground">{t('runs.stats.legacyLine', {
           count: data.legacy.count,
@@ -233,7 +236,7 @@ export function DispatchStatsView({ rangeFrom, rangeTo }: { rangeFrom?: string; 
           cost: data.legacy.costJobs > 0 ? formatCost(data.legacy.costMicroUsd) : formatMissing(),
           duration: formatDuration(data.legacy.durationMs),
         })}</p>
-      </section>
+      </Surface>
     </>}
   </div>;
 }
@@ -245,23 +248,23 @@ function GroupTable({ title, rows, label }: { title: string; rows: UsageGroup[];
     <div className="overflow-x-auto">
       <table className="w-full min-w-[28rem] text-left text-xs">
         <thead className="text-muted-foreground">
-          <tr>
+          <TableRow>
             <th className="py-1 pr-2 font-medium">{t('runs.stats.column')}</th>
             <th className="py-1 pr-2 font-medium">{t('runs.stats.jobs')}</th>
             <th className="py-1 pr-2 font-medium">{t('runs.stats.duration')}</th>
             <th className="py-1 pr-2 font-medium">{t('runs.stats.tokens')}</th>
             <th className="py-1 font-medium">{t('runs.stats.cost')}</th>
-          </tr>
+          </TableRow>
         </thead>
         <tbody>
-          {rows.length === 0 && <tr><td className="py-2 text-muted-foreground" colSpan={5}>{formatMissing()}</td></tr>}
-          {rows.map((row) => <tr key={row.key} className="border-t">
+          {rows.length === 0 && <TableRow><td className="py-2 text-muted-foreground" colSpan={5}>{formatMissing()}</td></TableRow>}
+          {rows.map((row) => <TableRow key={row.key} className="border-t">
             <td className="py-1 pr-2">{label(row.key)}</td>
             <td className="py-1 pr-2 tabular-nums">{row.jobs}</td>
             <td className="py-1 pr-2">{formatDuration(row.durationMs)}</td>
             <td className="py-1 pr-2">{formatTokens(row.inputTokens + row.outputTokens)}</td>
             <td className="py-1">{formatCost(row.costMicroUsd)}</td>
-          </tr>)}
+          </TableRow>)}
         </tbody>
       </table>
     </div>
