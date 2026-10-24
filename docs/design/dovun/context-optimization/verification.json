@@ -1,8 +1,8 @@
 {
-  "checkedAt": "2026-10-24T14:18:13.350234+08:00",
+  "checkedAt": "2026-10-24T14:35:48.687953+08:00",
   "baseCommit": "2f835aade5b8c42774f6a25c8d5bd35c13480e1d",
   "branch": "codex/dovun-workspace",
-  "sourceStatus": "uncommitted",
+  "sourceStatus": "committed-and-pushed",
   "unit": {
     "server": {
       "files": 96,
@@ -36,12 +36,49 @@
     "benchmark": "isolated fixture text estimates, not billing"
   },
   "delivery": {
-    "packaged": false,
-    "installed": false,
+    "packaged": true,
+    "installed": true,
     "deployed": false,
-    "committed": false,
-    "pushed": false,
+    "committed": true,
+    "pushed": true,
     "realBusinessDataModified": false
   },
-  "recordScope": "pre-release-validation-snapshot; see release.md for subsequent authorized packaging and installation"
+  "recordScope": "source-validation-and-local-release",
+  "validationCheckedAt": "2026-10-24T14:18:13.350234+08:00",
+  "sourceCommit": "9770b4a6e30b98d7f3607376d485de103a42cd3c",
+  "release": {
+    "sourceCommit": "9770b4a6e30b98d7f3607376d485de103a42cd3c",
+    "version": "0.4.0",
+    "identifier": "app.dovun.desktop",
+    "node": "22.13.0",
+    "installedAt": "2026-10-24T14:31:38.538128+08:00",
+    "build": {
+      "bundles": 2,
+      "exitCode": 0
+    },
+    "desktopSmoke": "passed in isolated local and server runtimes",
+    "packagedContextChecks": "passed",
+    "codesign": "passed",
+    "installedFilesVerified": 15391,
+    "dataAndPreferencesUnchanged": true,
+    "backupQuickCheck": "ok",
+    "oldAppBackupVerified": true,
+    "applicationKeptClosed": true,
+    "port47317Released": true,
+    "duplicateBuildAppRemoved": true,
+    "frontendAssets": [
+      "index-C60OZo7O.js",
+      "index-vgdeqFs9.css"
+    ],
+    "dmg": {
+      "path": "desktop/src-tauri/target/release/bundle/dmg/Dovun_0.4.0_aarch64.dmg",
+      "bytes": 181228368,
+      "sha256": "723ff279ee806dfff43014a62d9e631f3e0c0a04f718006a367d5d5eb6a26263",
+      "verification": "passed"
+    },
+    "wwaModified": false,
+    "automationSettingsModified": false,
+    "ciModified": false,
+    "dockerfileModified": false
+  }
 }
