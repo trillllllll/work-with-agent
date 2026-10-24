@@ -1,3 +1,5 @@
+import { testDiscovery, withoutDiscovery } from './agent/test-model-tools.js';
+import type { ModelToolDefinition } from './agent.js';
 import { randomUUID } from 'node:crypto';
 import supertest from 'supertest';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -25,7 +27,10 @@ function latestUser(messages: ModelMessage[]) {
 
 function agentFor(script: (messages: ModelMessage[]) => { text?: string; toolCalls?: ToolCall[] }) {
   return new AgentService({
-    stream: async function* (messages: ModelMessage[]) {
+    stream: async function* (messages: ModelMessage[], _signal?: AbortSignal, _includeTools?: boolean, tools?: ModelToolDefinition[]) {
+      const discovery = testDiscovery(tools);
+      if (discovery) { yield discovery; return; }
+      messages = withoutDiscovery(messages);
       const delta = script(messages);
       if (delta.text) yield { text: delta.text };
       if (delta.toolCalls?.length) yield { toolCalls: delta.toolCalls };

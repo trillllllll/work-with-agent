@@ -130,7 +130,9 @@
     "tasksWithTitle_one": "{{count}} task · {{title}}",
     "tasksWithTitle_other": "{{count}} tasks · {{title}}",
     "lists_one": "{{count}} list",
-    "lists_other": "{{count}} lists"
+    "lists_other": "{{count}} lists",
+    "loadingTools": "Load capabilities on demand",
+    "readingSource": "Read original conversation content"
   },
   "toolActivity": {
     "noResult": "No result was returned"
@@ -483,5 +485,33 @@
     "fullscreen": "View fullscreen",
     "exportHtml": "Export HTML",
     "fullscreenDescription": "Runs the interactive page fullscreen. Its state is separate from the page in the conversation"
+  },
+  "usage": {
+    "open": "View context usage",
+    "title": "Context usage",
+    "shortTitle": "Context",
+    "empty": "Send a message to see the latest model request. Older conversations without recorded statistics show no invented data.",
+    "latest": "Latest request · Call {{round}} · Estimated tokens",
+    "composition": "Context composition as a share of this estimated input",
+    "categories": {
+      "messages": "Conversation & tool results",
+      "tools": "Tool definitions",
+      "system": "System rules",
+      "skills": "Skill catalog",
+      "manual": "App knowledge",
+      "work": "Work context",
+      "summary": "History summary"
+    },
+    "estimateHint": "Blocks are text estimates, not billed usage. Model capacity is unknown; free space and capacity percentages are unavailable.",
+    "overBudget": "The current request and tool chain exceed the history budget. The current request was preserved without silent truncation.",
+    "toolDetails": "Loaded tools ({{count}})",
+    "runTotals": "This run · {{count}} model requests",
+    "actualInput": "Provider input tokens",
+    "actualOutput": "Provider output tokens",
+    "cached": "Of which cached input tokens",
+    "estimatedTotal": "Total estimated input tokens",
+    "summaries": "Summary requests included",
+    "unknown": "Not reported",
+    "partial": "Provider usage is pending or incomplete. Known values may cover only part of this run. Totals include tool-loading and summary requests."
   }
 }

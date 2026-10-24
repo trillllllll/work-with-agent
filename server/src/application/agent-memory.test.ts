@@ -194,7 +194,7 @@ describe('bounded memory prompt and conversation archive', () => {
     const window = await tools.execute({ name: 'conversation_search', arguments: { messageId: ids[2], q: '独特青鸟原句' } }, { source: 'agent', conversationId: current.id });
     expect((window.data as { messages: Array<{ content: string }> }).messages.map((message) => message.content)).toEqual(bodies);
     const noted = await tools.execute({ name: 'conversation_search', arguments: { messageId: ids[2] } }, { source: 'agent', conversationId: older.id });
-    expect(noted.data).toEqual({ note: '这段对话已经在当前上下文里' });
-    expect(JSON.stringify(noted.data)).not.toContain('锚点原文青鸟');
+    expect((noted.data as { messages: Array<{ content: string }> }).messages.map(message => message.content)).toEqual(bodies);
+    expect(JSON.stringify(noted.data)).toContain('锚点原文青鸟');
   });
 });

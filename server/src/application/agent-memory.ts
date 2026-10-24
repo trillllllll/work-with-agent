@@ -333,7 +333,6 @@ async function searchConversations(args: Record<string, unknown>, context: Agent
   if (messageId) {
     const anchor = await prisma.message.findUnique({ where: { id: messageId } });
     if (!anchor) throw failure('NOT_FOUND', '消息不存在', 404);
-    if (context.conversationId && anchor.conversationId === context.conversationId) return { note: '这段对话已经在当前上下文里' };
     const rows = await prisma.message.findMany({
       where: { conversationId: anchor.conversationId, role: { in: ['user', 'assistant'] } },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],

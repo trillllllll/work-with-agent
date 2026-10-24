@@ -1,3 +1,6 @@
+import { withTestToolLoading } from './agent/test-model-tools.js';
+import { testDiscovery, withoutDiscovery } from './agent/test-model-tools.js';
+import type { ModelToolDefinition } from './agent.js';
 import supertest from 'supertest';
 import { describe, expect, it } from 'vitest';
 import request, { ownerSession } from './test-auth.js';
@@ -24,7 +27,10 @@ function latestUser(messages: ModelMessage[]) {
 
 function agentFor(script: (messages: ModelMessage[]) => { text?: string; toolCalls?: ToolCall[] } | never) {
   return new AgentService({
-    stream: async function* (messages: ModelMessage[]) {
+    stream: async function* (messages: ModelMessage[], _signal?: AbortSignal, _includeTools?: boolean, tools?: ModelToolDefinition[]) {
+      const discovery = testDiscovery(tools);
+      if (discovery) { yield discovery; return; }
+      messages = withoutDiscovery(messages);
       const delta = script(messages);
       if (delta.text) yield { text: delta.text };
       if (delta.toolCalls?.length) yield { toolCalls: delta.toolCalls };
@@ -382,7 +388,7 @@ describe('server owned change review', () => {
     let release = () => {};
     const gate = new Promise<void>((resolve) => { release = resolve; });
     const agent = new AgentService({
-      stream: async function* (messages: ModelMessage[]) {
+      stream: withTestToolLoading(async function* (messages: ModelMessage[]) {
         const text = latestUser(messages);
         if (text.includes(`插话-${stamp}`)) {
           yield { text: '现在可以继续。' };
@@ -394,7 +400,7 @@ describe('server owned change review', () => {
           return;
         }
         yield { text: '我准备修改。', toolCalls: [{ id: `call-hold-${stamp}`, name: 'propose_changes', arguments: { summary: '改标题', operations: [{ family: 'workspace', command: { kind: 'task.update', targetId: item.id, expectedRevision: item.revision, input: { title: `续写后-${stamp}` } } }] } }] };
-      },
+      }),
     } as never);
     try {
       const first = await agent.chat({ message: `续写中改标题-${stamp}`, pageContext: { page: 'inbox' }, requestKey: `review-hold-${stamp}` });

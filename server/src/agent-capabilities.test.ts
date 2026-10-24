@@ -1,3 +1,4 @@
+import { withTestToolLoading } from './agent/test-model-tools.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AgentService, type ModelMessage } from './agent.js';
 import type { ToolCall } from './application/workspace.js';
@@ -10,11 +11,11 @@ function userText(messages: ModelMessage[]) {
 
 function agentFor(script: (messages: ModelMessage[]) => { text?: string; toolCalls?: ToolCall[] }) {
   return new AgentService({
-    stream: async function* (messages: ModelMessage[]) {
+    stream: withTestToolLoading(async function* (messages: ModelMessage[]) {
       const delta = script(messages);
       if (delta.text) yield { text: delta.text };
       if (delta.toolCalls?.length) yield { toolCalls: delta.toolCalls };
-    },
+    }),
   } as never);
 }
 
@@ -50,7 +51,7 @@ describe('builtin capability boundary', () => {
       };
     });
     const result = await agent.chat({ message: '越界执行这些外部动作', pageContext: { page: 'inbox' } });
-    const attempts = result.events.filter((event) => event.type === 'tool_result');
+    const attempts = result.events.filter((event) => event.type === 'tool_result' && event.toolName !== 'load_tools');
     expect(attempts).toHaveLength(5);
     for (const attempt of attempts) expect(attempt.result).toMatchObject({ success: false, code: 'CAPABILITY_UNAVAILABLE' });
     expect(spy.mock.calls.length).toBe(before);

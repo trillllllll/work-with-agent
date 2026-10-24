@@ -1,3 +1,4 @@
+import { withTestToolLoading } from './agent/test-model-tools.js';
 import supertest from 'supertest';
 import { describe, expect, it } from 'vitest';
 import request, { ownerSession } from './test-auth.js';
@@ -45,11 +46,11 @@ describe('historical approval compatibility', () => {
     const task = await api.post('/api/tasks').send({ title: `旧接口不能绕过-${Date.now()}` });
     expect(task.status, JSON.stringify(task.body)).toBe(200);
     const agent = new AgentService({
-      stream: async function* (messages: ModelMessage[]) {
+      stream: withTestToolLoading(async function* (messages: ModelMessage[]) {
         if (messages.some((message) => message.role === 'tool')) { yield { text: '方案还在。' }; return; }
         const call: ToolCall = { id: 'call_hash', name: 'propose_changes', arguments: { summary: '改一个字', operations: [{ family: 'workspace', command: { kind: 'task.update', targetId: task.body.data.id, expectedRevision: task.body.data.revision, input: { title: '不该绕过' } } }] } };
         yield { toolCalls: [call] };
-      },
+      }),
     } as never);
     const chat = await agent.chat({ message: '请生成需要预览哈希的方案', pageContext: { page: 'inbox' } });
     const pending = chat.events.find((event) => event.type === 'approval_required');

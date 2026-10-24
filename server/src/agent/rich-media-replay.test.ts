@@ -1,3 +1,4 @@
+import { withTestToolLoading } from './test-model-tools.js';
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import request from '../test-auth.js';
@@ -21,10 +22,10 @@ describe('rich reply downstream consumers', () => {
       { type: 'chart', spec: { kind: 'bar', title: '图表投影唯一标记', categories: ['周一'], series: [{ name: '完成', values: [2] }], provenance: { kind: 'simulated', label: '验收模拟数据' } } },
     ] };
     const args = JSON.stringify(payload);
-    const agent = new AgentService({ stream: async function* () {
+    const agent = new AgentService({ stream: withTestToolLoading(async function* () {
       for (let offset = 0; offset < args.length; offset += 13) yield { toolDelta: { index: 0, id: 'rich-replay', name: 'present_reply', argumentsDelta: args.slice(offset, offset + 13) } };
       yield { toolCalls: [{ id: 'rich-replay', name: 'present_reply', arguments: payload }] };
-    } } as never);
+    }) } as never);
     const result = await agent.chat({ conversationId: conversation.id, message: '请展示流程和模拟图表', requestKey: randomUUID() });
     expect(result.events.some((event) => event.type === 'error')).toBe(false);
     const reply = await prisma.message.findFirstOrThrow({ where: { conversationId: conversation.id, role: 'assistant', blocksJson: { not: null } } });

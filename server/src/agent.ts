@@ -23,9 +23,10 @@ import { approvalView } from './agent/views.js';
 
 export type PageContext = { topicId?: string | null; taskId?: string | null; page?: string | null };
 export type ChatEvent = {
+  contextStats?: import('./agent/context-stats.js').ContextStats;
   context?: ChatContextV2 | ChatContextV3;
   sources?: AssistantSource[];
-  type: 'block_start' | 'block_delta' | 'block_commit' | 'block_error' | 'user_context' | 'sources' | 'message_start' | 'message_delta' | 'message_end' | 'tool_call' | 'tool_result' | 'approval_required' | 'approval_resolved' | 'run_state' | 'external_prompt' | 'error' | 'done';
+  type: 'context_stats' | 'block_start' | 'block_delta' | 'block_commit' | 'block_error' | 'user_context' | 'sources' | 'message_start' | 'message_delta' | 'message_end' | 'tool_call' | 'tool_result' | 'approval_required' | 'approval_resolved' | 'run_state' | 'external_prompt' | 'error' | 'done';
   conversationId?: string;
   messageId?: string;
   delta?: string;
@@ -176,16 +177,15 @@ export class ModelAdapter {
   async complete(messages: ModelMessage[], signal?: AbortSignal, includeTools = false, tools?: ModelToolDefinition[]) {
     let text = '';
     const toolCalls: ToolCall[] = [];
-    const usage: Required<Pick<ModelUsage, 'inputTokens' | 'cachedInputTokens' | 'outputTokens'>> = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 };
+    const usage: ModelUsage = {};
     let sawUsage = false;
     for await (const delta of this.stream(messages, signal, includeTools, tools)) {
       text += delta.text ?? '';
       if (delta.toolCalls) toolCalls.push(...delta.toolCalls);
       if (delta.usage) {
         sawUsage = true;
-        usage.inputTokens += delta.usage.inputTokens ?? 0;
-        usage.cachedInputTokens += delta.usage.cachedInputTokens ?? 0;
-        usage.outputTokens += delta.usage.outputTokens ?? 0;
+        for (const key of ['inputTokens', 'cachedInputTokens', 'outputTokens'] as const) if (typeof delta.usage[key] === 'number') usage[key] = (usage[key] ?? 0) + delta.usage[key]!;
+        if (delta.usage.model) usage.model = delta.usage.model;
       }
     }
     return { text, toolCalls, ...(sawUsage ? { usage } : {}) };
@@ -318,9 +318,12 @@ export class AgentService {
       const conversation = await tx.conversation.findUnique({ where: { id: conversationId } });
       if (!conversation) throw Object.assign(new Error('会话不存在'), { status: 404 });
       const messages = await tx.message.findMany({ where: { conversationId }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
-      const runs = await tx.agentRun.findMany({ where: { conversationId }, select: { id: true, state: true, pauseReason: true, nextEventSeq: true, sourceUserMessageId: true, contextJson: true, cursorJson: true } });
+      const runs = await tx.agentRun.findMany({ where: { conversationId }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], select: { id: true, state: true, pauseReason: true, nextEventSeq: true, sourceUserMessageId: true, contextJson: true, cursorJson: true } });
       const approvals = await tx.approval.findMany({ where: { conversationId }, orderBy: { createdAt: 'asc' } });
       const active = runs.find((run) => run.id === conversation.activeRunId) ?? null;
+      const contextEvent = active
+        ? await tx.agentRunEvent.findFirst({ where: { runId: active.id, type: 'context_stats' }, orderBy: { seq: 'desc' }, select: { dataJson: true } })
+        : await tx.agentRunEvent.findFirst({ where: { runId: { in: runs.map(run => run.id) }, type: 'context_stats' }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], select: { dataJson: true } });
       const liveMessageId = active && ['queued', 'running'].includes(active.state) ? (JSON.parse(active.cursorJson) as { assistantMessageId?: string }).assistantMessageId : null;
       const contexts = new Map(runs.map((run) => [run.sourceUserMessageId, (() => { const { timeZoneSource, ...context } = JSON.parse(run.contextJson); return context; })()]));
       return {
@@ -334,6 +337,7 @@ export class AgentService {
           sources: (JSON.parse(message.partsJson || '[]') as Array<{ type: string; sources?: AssistantSource[] }>).filter((part) => part.type === 'assistant_sources').flatMap((part) => part.sources ?? []),
         }); }),
         approvals,
+        contextStats: contextEvent ? JSON.parse(contextEvent.dataJson).contextStats : null,
         watermarks: Object.fromEntries(runs.map((run) => [run.id, run.nextEventSeq])),
         activeRun: active ? { id: active.id, state: active.state, pauseReason: active.pauseReason } : null,
       };

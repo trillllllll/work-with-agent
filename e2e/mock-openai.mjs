@@ -6,6 +6,27 @@ const port = Number(process.env.MOCK_OPENAI_PORT ?? 4010);
 let htmlLeaks = 0;
 const json = (res, status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
 const stream = (res, chunks) => {
+  // Deterministic model fixture learns the same lazy-loading protocol as a real
+  // model. No test-only execution bypass exists in the application.
+  const tools = res.contextTools ?? [];
+  if (tools.some(t => t.function.name === 'load_tools')) {
+    const calls = new Map();
+    for (const chunk of chunks) for (const choice of chunk.choices ?? []) for (const part of choice.delta?.tool_calls ?? []) {
+      const old = calls.get(part.index) ?? { name: '', arguments: '' };
+      calls.set(part.index, { name: part.function?.name || old.name, arguments: old.arguments + (part.function?.arguments ?? '') });
+    }
+    const required = new Set();
+    const groupFor = { present_reply: 'media', image_search: 'media', library_read: 'library', memory_read: 'memory', get_work_context: 'memory', orchestration_read: 'orchestration', orchestration_stats: 'orchestration', propose_worktree_cleanup: 'orchestration', prepare_external_prompt: 'external', query_tasks: 'tasks', query_topics: 'tasks', get_task_activity: 'tasks', list_plan_time_bands: 'tasks' };
+    for (const call of calls.values()) {
+      if (call.name === 'propose_changes') {
+        let args = {}; try { args = JSON.parse(call.arguments); } catch {}
+        const offered = tools.find(t => t.function.name === 'propose_changes')?.function.parameters.properties.operations.items.oneOf ?? [];
+        const families = new Set(offered.map(x => x.properties.family.const));
+        for (const operation of args.operations ?? []) if (!families.has(operation.family)) required.add(`${operation.family}_write`);
+      } else if (!tools.some(t => t.function.name === call.name) && groupFor[call.name]) required.add(groupFor[call.name]);
+    }
+    if (required.size) chunks = [{ choices: [{ delta: { tool_calls: [{ index: 0, id: 'mock-load-tools', function: { name: 'load_tools', arguments: JSON.stringify({ groups: [...required] }) } }] }, finish_reason: 'tool_calls' }] }];
+  }
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
   for (const chunk of chunks) res.write(`data: ${JSON.stringify(chunk)}\n\n`);
   res.end('data: [DONE]\n\n');
@@ -26,7 +47,15 @@ const server = http.createServer(async (req, res) => {
   if (req.method !== 'POST' || req.url !== '/v1/chat/completions') return json(res, 404, { error: 'not found' });
   let raw = ''; for await (const chunk of req) raw += chunk;
   const body = JSON.parse(raw || '{}');
-  const messages = body.messages ?? [];
+  res.contextTools = body.tools;
+  const rawMessages = body.messages ?? [];
+  const loaderIds = new Set(rawMessages.flatMap(m => (m.tool_calls ?? []).filter(c => c.function.name === 'load_tools').map(c => c.id)));
+  const messages = rawMessages.flatMap(m => {
+    if (m.role === 'tool' && loaderIds.has(m.tool_call_id)) return [];
+    if (!m.tool_calls) return [m];
+    const calls = m.tool_calls.filter(c => !loaderIds.has(c.id));
+    return calls.length ? [{ ...m, tool_calls: calls }] : m.content ? [{ ...m, tool_calls: undefined }] : [];
+  });
   const latestUser = String([...messages].reverse().find((item) => item.role === 'user')?.content ?? '');
   const system = String(messages.find((item) => item.role === 'system')?.content ?? '');
   if (system.includes('[编排计划]') || system.includes('[编排验收]') || system.includes('[编排最终验收]')) {
@@ -50,6 +79,15 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { model: body.model + '-actual', choices: [{ message: { role: 'assistant', content: JSON.stringify(output) }, finish_reason: 'stop' }], ...(body.model === 'mock-no-usage' ? {} : { usage: { prompt_tokens: 120, completion_tokens: 30, total_tokens: 150 } }) });
   }
   if (!body.stream) return json(res, 200, { choices: [{ message: { role: 'assistant', content: '连接成功' }, finish_reason: 'stop' }] });
+  if (latestUser.includes('上下文统计验收')) {
+    const alreadyRead = messages.some(m => m.role === 'tool' && String(m.content).includes('query_tasks'));
+    if (!alreadyRead) return stream(res, [{ choices: [{ delta: { tool_calls: [{ index: 0, id: 'context-tasks', function: { name: 'query_tasks', arguments: JSON.stringify({ action: 'list' }) } }] }, finish_reason: 'tool_calls' }] }]);
+    return stream(res, [{ choices: [{ delta: { content: '已读取隔离工作台的任务。保持原有数据，未进行修改。' }, finish_reason: 'stop' }] }]);
+  }
+  if (latestUser.includes('按需提案验收')) {
+    if (messages.some(m => m.role === 'tool' && String(m.content).includes('propose_changes'))) return stream(res, [{ choices: [{ delta: { content: '已收到审批后的真实执行回执。' }, finish_reason: 'stop' }] }]);
+    return stream(res, [{ choices: [{ delta: { tool_calls: [{ index: 0, id: 'context-proposal', function: { name: 'propose_changes', arguments: JSON.stringify({ summary: '创建隔离验证任务', operations: [{ family: 'workspace', command: { kind: 'task.create', input: { title: '上下文按需加载审批验证' } } }] }) } }] }, finish_reason: 'tool_calls' }] }]);
+  }
   if (latestUser.includes('html 选择题验收')) {
     const origin = `http://127.0.0.1:${port}`;
     const choice = `<p>选择一个方案</p><button onclick="wwa.fillInput('我选 A')">方案 A</button> <button onclick="wwa.fillInput('我选 B')">方案 B</button>

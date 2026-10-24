@@ -1,3 +1,4 @@
+import { withTestToolLoading } from './agent/test-model-tools.js';
 import { describe, expect, it } from 'vitest';
 import { prisma } from './infrastructure/prisma.js';
 import { AgentService, type ModelMessage } from './agent.js';
@@ -12,7 +13,7 @@ const baseContext = {
 };
 
 function agent(reply: (messages: ModelMessage[]) => AsyncGenerator<{ text?: string; toolCalls?: ToolCall[] }>) {
-  return new AgentService({ stream: reply } as never);
+  return new AgentService({ stream: withTestToolLoading(reply) } as never);
 }
 
 function afterLatestUser(messages: ModelMessage[]) {

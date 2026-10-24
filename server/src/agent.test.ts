@@ -1,3 +1,4 @@
+import { testDiscovery, withoutDiscovery } from './agent/test-model-tools.js';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -25,6 +26,9 @@ describe('Agent tool gate', () => {
     return prisma.appSetting.upsert({ where: { id: 'default' }, create: { id: 'default', openaiBaseUrl: 'http://mock-openai/v1', openaiApiKey: 'test-key', openaiModel: 'test-model', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, update: { openaiBaseUrl: 'http://mock-openai/v1', openaiApiKey: 'test-key', openaiModel: 'test-model', updatedAt: new Date().toISOString() } }).then(() => {
     vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? '{}'));
+      const discovery = testDiscovery(body.tools);
+      if (discovery) return sseResponse([{ choices: [{ delta: { tool_calls: discovery.toolCalls.map((call, index) => ({ index, id: call.id, function: { name: call.name, arguments: JSON.stringify(call.arguments) } })) }, finish_reason: 'tool_calls' }] }]);
+      body.messages = withoutDiscovery(body.messages ?? []);
       const user = [...(body.messages ?? [])].reverse().find((message: any) => message.role === 'user' && !String(message.content ?? '').startsWith('[更早对话的背景'));
       const listedTopic = (body.messages ?? []).find((message: any) => message.role === 'system')?.content.match(/当前清单：([^\n]+)/)?.[1];
       const topic = listedTopic && listedTopic !== '收集箱' ? listedTopic.trim().split(/\s+/).at(-1) : undefined;
@@ -121,9 +125,9 @@ describe('Agent tool gate', () => {
       return { event, ...(data ? JSON.parse(data) : {}) };
     });
     const modelRequest = vi.mocked(globalThis.fetch).mock.calls[0]?.[1];
-    expect(JSON.parse(String(modelRequest?.body)).tools.map((tool: { function: { name: string } }) => tool.function.name)).toEqual([
-      'present_reply', 'image_search', 'read_app_knowledge', 'read_page_state', 'get_time', 'list_plan_time_bands', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'conversation_search', 'get_change_schema', 'propose_changes', 'prepare_external_prompt', 'orchestration_read', 'orchestration_stats', 'propose_worktree_cleanup',
-    ]);
+    const initialTools = JSON.parse(String(modelRequest?.body)).tools.map((tool: { function: { name: string } }) => tool.function.name);
+    expect(initialTools).toEqual(expect.arrayContaining(['query_tasks', 'propose_changes', 'load_tools', 'read_context_source']));
+    expect(initialTools).not.toContain('present_reply');
     expect(events.some((event) => event.event === 'message_delta' && event.delta?.includes('我准备创建'))).toBe(true);
     expect(events.some((event) => event.event === 'approval_required')).toBe(true);
     const approval = events.find((event) => event.event === 'approval_required')!;
@@ -362,7 +366,7 @@ describe('Agent tool gate', () => {
       const stored = await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } });
       expect(stored.summary).toContain('用户：');
       expect(await prisma.message.count({ where: { conversationId: conversation.id, compactedAt: { not: null } } })).toBeGreaterThan(0);
-      expect((await prisma.message.findFirstOrThrow({ where: { conversationId: conversation.id, role: 'user' }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] })).compactedAt).toBeNull();
+      expect((await prisma.message.findFirstOrThrow({ where: { conversationId: conversation.id, role: 'user' }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] })).compactedAt).not.toBeNull();
       expect((await prisma.message.findFirstOrThrow({ where: { conversationId: conversation.id }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] })).compactedAt).toBeNull();
       await context.assemble(conversation.id, { page: 'inbox' });
       expect(calls).toBe(1);

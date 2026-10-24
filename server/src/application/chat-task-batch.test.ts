@@ -1,3 +1,4 @@
+import { withTestToolLoading } from '../agent/test-model-tools.js';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -78,7 +79,7 @@ async function owner(method: 'get' | 'post', path: string, body?: Record<string,
   return body === undefined ? query : query.send(body);
 }
 function scripted(handler: (messages: ModelMessage[]) => { text?: string; toolCalls?: ToolCall[] }) {
-  return { async *stream(messages: ModelMessage[]) { const step = handler(messages); if (step.text) yield { text: step.text }; if (step.toolCalls?.length) yield { toolCalls: step.toolCalls }; } } as never;
+  return { stream: withTestToolLoading(async function* (messages: ModelMessage[]) { const step = handler(messages); if (step.text) yield { text: step.text }; if (step.toolCalls?.length) yield { toolCalls: step.toolCalls }; }) } as never;
 }
 const call = (id: string, args: unknown): ToolCall => ({ id, name: 'propose_task_changes', arguments: args as Record<string, unknown> });
 const propose = (id: string, args: { summary: string; operations: Array<Record<string, unknown>> }): ToolCall => ({
@@ -422,7 +423,7 @@ describe('chat task batch contract', () => {
     });
     const result = await new AgentService(model).chat({ conversationId: f.conversation.id, message: '重复失败的整组', pageContext: { topicId: f.topic.id } });
     expect(streams).toBe(1);
-    const results = result.events.filter((event) => event.type === 'tool_result');
+    const results = result.events.filter((event) => event.type === 'tool_result' && event.toolName !== 'load_tools');
     expect(results).toHaveLength(3);
     expect(results[0]?.result?.code).toBe('INVALID_PARENT');
     expect(results.slice(1).map((event) => event.result?.code)).toEqual(['INVALID_TOOL_ARGUMENTS', 'INVALID_TOOL_ARGUMENTS']);

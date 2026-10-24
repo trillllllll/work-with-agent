@@ -1,0 +1,47 @@
+{
+  "checkedAt": "2026-10-24T14:18:13.350234+08:00",
+  "baseCommit": "2f835aade5b8c42774f6a25c8d5bd35c13480e1d",
+  "branch": "codex/dovun-workspace",
+  "sourceStatus": "uncommitted",
+  "unit": {
+    "server": {
+      "files": 96,
+      "passed": 841
+    },
+    "client": {
+      "files": 64,
+      "passed": 375
+    }
+  },
+  "browser": {
+    "passed": 38,
+    "skipped": 12,
+    "projects": [
+      "chromium",
+      "mobile",
+      "webkit-controls"
+    ],
+    "note": "Existing mobile skips; popup checks run on all three projects."
+  },
+  "checks": {
+    "build": "passed with existing Vite warnings",
+    "i18n": "passed",
+    "controls": "passed",
+    "diffWhitespace": "passed",
+    "independentReview": "no blocking findings after fixes"
+  },
+  "limits": {
+    "realProviderBillingMeasured": false,
+    "realModelSemanticQualityMeasured": false,
+    "benchmark": "isolated fixture text estimates, not billing"
+  },
+  "delivery": {
+    "packaged": false,
+    "installed": false,
+    "deployed": false,
+    "committed": false,
+    "pushed": false,
+    "realBusinessDataModified": false
+  },
+  "recordScope": "pre-release-validation-snapshot; see release.md for subsequent authorized packaging and installation"
+}

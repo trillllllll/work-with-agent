@@ -1,0 +1,160 @@
+{
+  "generatedAt": "2026-10-24T06:17:11.616Z",
+  "kind": "isolated-fixture-replay",
+  "estimator": "mixed-text-v1",
+  "note": "Same fixed content and estimator for both sides. Input totals include every declared model call and any summary request. Source data, provider tokenizer/billing and semantic model quality are not simulated as actual usage. These results are not the earlier 19029-token real-request sample.",
+  "rows": [
+    {
+      "id": "ordinary-query",
+      "title": "普通任务查询（完整两次调用）",
+      "estimator": "mixed-text-v1",
+      "before": {
+        "calls": 2,
+        "estimatedInputTokens": 24519,
+        "perCallInput": [
+          12221,
+          12298
+        ]
+      },
+      "after": {
+        "calls": 2,
+        "estimatedInputTokens": 7651,
+        "perCallInput": [
+          3787,
+          3864
+        ]
+      },
+      "savedTokens": 16868,
+      "reductionPercent": 68.8,
+      "summaryRequest": null,
+      "providerActualUsage": null
+    },
+    {
+      "id": "long-history",
+      "title": "长会话与大工具结果（稳定摘要）",
+      "estimator": "mixed-text-v1",
+      "before": {
+        "calls": 2,
+        "estimatedInputTokens": 59645,
+        "perCallInput": [
+          27624,
+          32021
+        ]
+      },
+      "after": {
+        "calls": 2,
+        "estimatedInputTokens": 13308,
+        "perCallInput": [
+          7313,
+          5995
+        ]
+      },
+      "savedTokens": 46337,
+      "reductionPercent": 77.7,
+      "summaryRequest": null,
+      "providerActualUsage": null
+    },
+    {
+      "id": "long-history-fresh",
+      "title": "首次压缩（两边均计入摘要请求）",
+      "estimator": "mixed-text-v1",
+      "before": {
+        "calls": 3,
+        "estimatedInputTokens": 66732,
+        "perCallInput": [
+          27624,
+          32021
+        ]
+      },
+      "after": {
+        "calls": 3,
+        "estimatedInputTokens": 20395,
+        "perCallInput": [
+          7313,
+          5995
+        ]
+      },
+      "savedTokens": 46337,
+      "reductionPercent": 69.4,
+      "summaryRequest": {
+        "estimatedInputTokens": 7087,
+        "estimatedOutputTokens": 84
+      },
+      "providerActualUsage": null
+    },
+    {
+      "id": "write-approval",
+      "title": "创建及审批后续办",
+      "estimator": "mixed-text-v1",
+      "before": {
+        "calls": 2,
+        "estimatedInputTokens": 24557,
+        "perCallInput": [
+          12223,
+          12334
+        ]
+      },
+      "after": {
+        "calls": 2,
+        "estimatedInputTokens": 12969,
+        "perCallInput": [
+          6429,
+          6540
+        ]
+      },
+      "savedTokens": 11588,
+      "reductionPercent": 47.2,
+      "summaryRequest": null,
+      "providerActualUsage": null
+    },
+    {
+      "id": "discovery-overhead",
+      "title": "未预选修改能力（计入额外加载调用）",
+      "estimator": "mixed-text-v1",
+      "before": {
+        "calls": 2,
+        "estimatedInputTokens": 24526,
+        "perCallInput": [
+          12213,
+          12313
+        ]
+      },
+      "after": {
+        "calls": 3,
+        "estimatedInputTokens": 16785,
+        "perCallInput": [
+          3779,
+          6487,
+          6519
+        ]
+      },
+      "savedTokens": 7741,
+      "reductionPercent": 31.6,
+      "summaryRequest": null,
+      "providerActualUsage": null
+    },
+    {
+      "id": "rich-media",
+      "title": "明确要求可视化（保留完整展示能力）",
+      "estimator": "mixed-text-v1",
+      "before": {
+        "calls": 1,
+        "estimatedInputTokens": 12216,
+        "perCallInput": [
+          12216
+        ]
+      },
+      "after": {
+        "calls": 1,
+        "estimatedInputTokens": 7076,
+        "perCallInput": [
+          7076
+        ]
+      },
+      "savedTokens": 5140,
+      "reductionPercent": 42.1,
+      "summaryRequest": null,
+      "providerActualUsage": null
+    }
+  ]
+}

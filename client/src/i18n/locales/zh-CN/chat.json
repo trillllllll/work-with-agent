@@ -127,7 +127,9 @@
     "ran": "已执行",
     "tasks_other": "{{count}} 条任务",
     "tasksWithTitle_other": "{{count}} 条任务 · {{title}}",
-    "lists_other": "{{count}} 个清单"
+    "lists_other": "{{count}} 个清单",
+    "loadingTools": "按需加载能力",
+    "readingSource": "回读对话原文"
   },
   "toolActivity": {
     "noResult": "没有返回结果"
@@ -464,5 +466,33 @@
     "fullscreen": "全屏查看",
     "exportHtml": "导出 HTML",
     "fullscreenDescription": "全屏运行交互页面，状态与对话里的页面互不影响"
+  },
+  "usage": {
+    "open": "查看上下文统计",
+    "title": "上下文用量",
+    "shortTitle": "上下文",
+    "empty": "发送消息后显示最近一次模型请求的上下文组成。历史会话未记录统计时，不补造数据。",
+    "latest": "最近请求 · 第 {{round}} 次调用 · token 估算",
+    "composition": "上下文分块占比，按本次估算输入为总量",
+    "categories": {
+      "messages": "对话与工具结果",
+      "tools": "工具定义",
+      "system": "系统规则",
+      "skills": "技能目录",
+      "manual": "应用功能说明",
+      "work": "工作上下文",
+      "summary": "历史摘要"
+    },
+    "estimateHint": "分块按文本估算，不是实际计费。模型容量未配置，暂不显示空闲空间或容量占比。",
+    "overBudget": "当前请求及工具链超过历史预算，已保留完整请求；未静默截断。",
+    "toolDetails": "已加载工具（{{count}}）",
+    "runTotals": "本次处理累计 · {{count}} 次模型请求",
+    "actualInput": "供应商输入 token",
+    "actualOutput": "供应商输出 token",
+    "cached": "其中缓存输入 token",
+    "estimatedTotal": "累计估算输入 token",
+    "summaries": "其中摘要请求次数",
+    "unknown": "未返回",
+    "partial": "供应商用量尚未返回或不完整；已知值可能只覆盖部分请求。累计包含按需加载后的调用与摘要请求。"
   }
 }

@@ -1,3 +1,4 @@
+import { withTestToolLoading } from './agent/test-model-tools.js';
 import { describe, expect, it } from 'vitest';
 import request from './test-auth.js';
 import { app } from './app.js';
@@ -48,12 +49,12 @@ describe('global assistant context', () => {
   it('persists request context and validated source links through the real run pipeline', async () => {
     let system = '';
     let replayText = '';
-    const agent = new AgentService({ stream: async function* (messages: ModelMessage[]) {
+    const agent = new AgentService({ stream: withTestToolLoading(async function* (messages: ModelMessage[]) {
       system = String(messages[0].content);
       replayText = JSON.stringify(messages);
       if (messages.some((message) => message.role === 'tool')) { yield { text: '规划支持日周月视图。' }; return; }
       yield { toolCalls: [{ id: 'assistant-help', name: 'read_app_knowledge', arguments: { page: 'plan' } }] };
-    } } as never);
+    }) } as never);
     const ctx = context({ page: 'plan', label: '周规划', pageState: { layout: 'week', dateFrom: '2026-10-12', dateTo: '2026-10-18' }, attachments: [{ id: 'draft', kind: 'draft', title: '我的草稿', text: '尚未保存的想法', unsaved: true }] });
     const result = await agent.chat({ message: '规划怎么用', context: ctx });
     expect(replayText).toContain('尚未保存的想法');

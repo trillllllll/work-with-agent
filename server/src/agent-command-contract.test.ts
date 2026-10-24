@@ -1,3 +1,5 @@
+import { testDiscovery, withoutDiscovery } from './agent/test-model-tools.js';
+import type { ModelToolDefinition } from './agent.js';
 import { describe, expect, it } from 'vitest';
 import { prisma } from './infrastructure/prisma.js';
 import { AgentService, type ModelMessage } from './agent.js';
@@ -34,7 +36,10 @@ async function counts() {
 
 function agentFor(operations: unknown[], summary: string) {
   return new AgentService({
-    stream: async function* (messages: ModelMessage[]) {
+    stream: async function* (messages: ModelMessage[], _signal?: AbortSignal, _includeTools?: boolean, tools?: ModelToolDefinition[]) {
+      const discovery = testDiscovery(tools);
+      if (discovery) { yield discovery; return; }
+      messages = withoutDiscovery(messages);
       if (messages.some((message) => message.role === 'tool')) { yield { text: '预览步骤结束。' }; return; }
       const call: ToolCall = { id: `call-${summary}`, name: 'propose_changes', arguments: { summary, operations } };
       yield { toolCalls: [call] };
@@ -119,7 +124,7 @@ describe('workspace command contract', () => {
     expect(await prisma.tag.findFirst({ where: { name: '标签' } })).toBeNull();
     expect(await prisma.task.findMany({ where: { id: { in: [first.id, second.id] } }, select: { id: true, sortOrder: true } })).toEqual(orders);
     const illegal = await agentFor([{ family: 'workspace', command: { kind: 'topic.create', input: { name: '清单', extra: true } } }], '非法字段').chat({ message: '非法字段', pageContext: { page: 'inbox' }, requestKey: `contract-illegal-${stamp}` });
-    expect(illegal.events.find((event) => event.type === 'tool_result')?.result).toMatchObject({ success: false });
+    expect(illegal.events.find((event) => event.type === 'tool_result' && event.toolName === 'propose_changes')?.result).toMatchObject({ success: false });
     expect(illegal.events.some((event) => event.type === 'approval_required')).toBe(false);
     expect(await counts()).toEqual({ ...before, tasks: before.tasks });
     const after = await counts();

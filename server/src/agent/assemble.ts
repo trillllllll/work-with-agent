@@ -7,9 +7,7 @@ import { KnowledgeService, takeKnowledgeSnapshot } from '../application/knowledg
 import { ownerActor } from '../application/security.js';
 import { DomainError } from '../domain/task.js';
 import { prisma } from '../infrastructure/prisma.js';
-import { builtinSystemPrompt } from './capabilities.js';
-import { htmlBlockPrompt } from './html-block.js';
-import { htmlBlockPolicy } from '../application/html-block-settings.js';
+import { lazySystemPrompt } from './tool-loading.js';
 import { readEnvelope } from './decision.js';
 import type { StoredChatContext } from './chat-context.js';
 import { codePoints } from './text.js';
@@ -93,6 +91,8 @@ export async function assembleRunMessages(input: {
   userText: string;
   contextService: ContextService;
   skills?: Array<{ name: string; description: string }>;
+  onSummary?: import('../application/conversation.js').OnSummary;
+  signal?: AbortSignal;
 }): Promise<ModelMessage[]> {
   const conversation = await prisma.conversation.findUnique({ where: { id: input.conversationId } });
   if (!conversation) throw new DomainError('NOT_FOUND', '会话不存在', 404);
@@ -103,7 +103,7 @@ export async function assembleRunMessages(input: {
   const topicId = input.context.scope.kind === 'topic' ? input.context.scope.topicId : null;
   let replay: ModelMessage[];
   if (!newerUser) {
-    const assembled = await input.contextService.assemble(input.conversationId, { topicId, taskId: input.context.taskId, page: input.context.page });
+    const assembled = await input.contextService.assemble(input.conversationId, { topicId, taskId: input.context.taskId, page: input.context.page }, input.signal, input.onSummary);
     replay = assembled.messages;
   } else {
     const filtered = rows.filter((row) => row.createdAt < source.createdAt || row.id === source.id || (row.createdAt === source.createdAt && row.id <= source.id));
@@ -146,11 +146,9 @@ export async function assembleRunMessages(input: {
     : input.context.scope.kind === 'inbox' ? '当前清单：收集箱' : '当前范围是全部可访问的数据';
   const skills = input.skills ?? [];
   const catalog = skillCatalog(skills);
-  const htmlPolicy = await htmlBlockPolicy();
   const system = [
-    builtinSystemPrompt({ loadSkill: skills.length > 0 }),
+    lazySystemPrompt(),
     ...(catalog ? [catalog] : []),
-    htmlBlockPrompt(htmlPolicy),
     appKnowledgePrompt(input.context.page),
     ...(input.context.language === 'en' ? [replyLanguageInstruction] : []),
     `【页面筛选与选中任务】\n${JSON.stringify({ taskFilter: input.context.taskFilter, selectedTaskIds: input.context.selectedTaskIds })}`,

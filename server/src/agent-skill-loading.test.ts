@@ -1,3 +1,4 @@
+import { toolsForGroups } from './agent/tool-loading.js';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AgentService, type ModelMessage, type ModelToolDefinition } from './agent.js';
 import { contextFromRequest } from './agent/chat-context.js';
@@ -6,7 +7,8 @@ import { builtinToolDefinitions } from './agent/capabilities.js';
 import { createSkill, deleteSkill } from './application/skills.js';
 import { prisma } from './infrastructure/prisma.js';
 
-const baseTools = ['present_reply', 'image_search', 'read_app_knowledge', 'read_page_state', 'get_time', 'list_plan_time_bands', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'conversation_search', 'get_change_schema', 'propose_changes', 'prepare_external_prompt', 'orchestration_read', 'orchestration_stats', 'propose_worktree_cleanup'];
+const allTools = ['present_reply', 'image_search', 'read_app_knowledge', 'read_page_state', 'get_time', 'list_plan_time_bands', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'conversation_search', 'get_change_schema', 'propose_changes', 'prepare_external_prompt', 'orchestration_read', 'orchestration_stats', 'propose_worktree_cleanup'];
+const baseTools = toolsForGroups(['tasks']).map(tool => tool.function.name);
 const context = contextFromRequest({ pageContext: { page: 'inbox' } });
 const run = { id: 'skill-run', leaseToken: 'skill-token', conversationId: 'skill-conversation', assistantMessageId: 'skill-assistant', sourceUserMessageId: 'skill-user' };
 let seq = 0;
@@ -48,7 +50,7 @@ describe('on-demand skill loading', () => {
       expect(call.system).not.toContain('不应进入本次目录');
       expect(call.tools).toEqual(baseTools);
     }
-    expect(builtinToolDefinitions().map((tool) => tool.function.name)).toEqual(baseTools);
+    expect(builtinToolDefinitions().map((tool) => tool.function.name)).toEqual(allTools);
   });
 
   it('lists only enabled skill names and descriptions, and registers load_skill for that run', async () => {
@@ -65,7 +67,7 @@ describe('on-demand skill loading', () => {
     });
     const result = await agent.chat({ message: '按技能处理', pageContext: { page: 'inbox' } });
     expect(result.events.some((event) => event.type === 'error')).toBe(false);
-    expect(calls[0]?.tools).toEqual([...baseTools, 'load_skill']);
+    expect(calls[0]?.tools).toEqual(toolsForGroups(['tasks'], true).map(tool => tool.function.name));
     const system = calls[0]?.system ?? '';
     expect(system).toContain('【可用技能】');
     expect(system).toContain('以下只是目录。用户请求与某项匹配时，先调用 load_skill 读取正文，再按正文执行。');
@@ -80,7 +82,7 @@ describe('on-demand skill loading', () => {
     expect(tool).toMatchObject({ result: { success: true, data: { skillId: beta.id, name: beta.name, revision: 1, description: '甲的描述', instructions: '甲的机密正文' } } });
     const row = await prisma.message.findFirst({ where: { role: 'tool', content: { contains: beta.id } } });
     expect(JSON.parse(row?.content ?? '{}').data).toEqual({ skillId: beta.id, name: beta.name, revision: 1, description: '甲的描述', instructions: '甲的机密正文' });
-    expect(calls[1]?.tools).toEqual([...baseTools, 'load_skill']);
+    expect(calls[1]?.tools).toEqual(toolsForGroups(['tasks'], true).map(tool => tool.function.name));
     expect(calls[1]?.system).toBe(system);
   });
 

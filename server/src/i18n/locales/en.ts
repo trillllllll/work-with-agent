@@ -2,6 +2,11 @@
 // (template literals use positional {0} placeholders); see scripts/server-messages.mjs.
 // Keep this object JSON-compatible: `npm run i18n:check` parses it and checks it against the sources.
 export const en: Record<string, string> = {
+  "本轮未加载此工具。先用 load_tools 加载对应组，下一轮再调用；本次未执行。": "This tool was not loaded for this call. Load its group with load_tools, then call it on the next turn. Nothing was executed.",
+  "请指定有效的能力组": "Specify valid capability groups.",
+  "原文读取参数无效": "Invalid original-message read parameters.",
+  "当前会话没有这条消息": "This message does not belong to the current conversation.",
+  "方案包含未加载的修改类型。先加载全部所需的 *_write 组；本次未创建方案。": "The proposal includes unloaded operation families. Load all required *_write groups first. No proposal was created.",
   "只支持 page 和 q": "Only page and q are supported",
   "同步协议版本不一致，请先升级到同一版本": "Sync protocol versions differ. Upgrade both sides to the same version first",
   "同步地址只接受 https 或本机 http": "Sync address must be https, or http on this computer",

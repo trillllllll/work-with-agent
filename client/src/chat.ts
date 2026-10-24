@@ -90,6 +90,7 @@ export type Approval = {
 export type ToolResult = { success: boolean; data?: unknown; error?: string; code?: string };
 
 export type SseEvent = {
+  contextStats?: import('./lib/context-usage.js').ContextUsage;
   blockId?: string;
   blockType?: ContentBlock['type'];
   index?: number;
@@ -123,7 +124,7 @@ export type SseEvent = {
   supersedesApprovalId?: string;
 };
 
-const READ_ONLY_TOOLS = new Set(['image_search', 'present_reply', 'read_app_knowledge', 'read_page_state', 'list_topics', 'get_topic', 'get_topic_progress', 'list_tasks', 'get_task', 'conversation_search', 'get_time', 'list_plan_time_bands', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'get_change_schema', 'orchestration_read', 'orchestration_stats']);
+const READ_ONLY_TOOLS = new Set(['load_tools', 'read_context_source', 'image_search', 'present_reply', 'read_app_knowledge', 'read_page_state', 'list_topics', 'get_topic', 'get_topic_progress', 'list_tasks', 'get_task', 'conversation_search', 'get_time', 'list_plan_time_bands', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'get_change_schema', 'orchestration_read', 'orchestration_stats']);
 const PREVIEW_MAX = 80;
 
 const LIBRARY_READS = new Set(['list', 'search', 'read', 'content', 'linked_tasks', 'task_materials', 'folders', 'tags', 'ask']);
@@ -183,6 +184,8 @@ export function skillUsagePreview(args: Record<string, unknown> = {}, result?: T
 export function toolPreview(name: string, args: Record<string, unknown> = {}, result?: ToolResult | null, status?: ToolActivityStatus) {
   if (status === 'rejected') return t('chat:toolPreview.rejected');
   if (name === 'load_skill') return skillUsagePreview(args, result, status);
+  if (name === 'load_tools') return t('chat:toolPreview.loadingTools');
+  if (name === 'read_context_source') return t('chat:toolPreview.readingSource');
   if (status === 'error' || result?.success === false) return clip(result?.error || t('chat:toolPreview.runFailed'));
   if (name === 'propose_changes') return clip(typeof args.summary === 'string' && args.summary.trim() ? args.summary : t('chat:toolPreview.waitingConfirm'));
   if (name === 'prepare_external_prompt') return t('chat:toolPreview.promptReady');

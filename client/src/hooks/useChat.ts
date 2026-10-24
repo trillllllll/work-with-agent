@@ -1,3 +1,4 @@
+import type { ContextUsage } from '@/lib/context-usage.js';
 import { readMessageBlocks } from '@/lib/message-blocks.js';
 import { contextLabel, attachmentError, type ChatAttachment, type ChatContextV3 } from '@/lib/assistant-context.js';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
@@ -42,6 +43,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
   onErrorRef.current = onError;
   const [input, setInput] = useState('');
   const [conversationId, setConversationId] = useState<string>(() => localStorage.getItem('dovun.conversationId') ?? '');
+  const [contextStats, setContextStats] = useState<ContextUsage | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [busy, setBusy] = useState(false);
@@ -104,7 +106,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
     if (!force && (mutatingRef.current || newConversationRef.current === id)) return;
     const generation = ++loadGeneration.current;
     try {
-      const snapshot = await api<{ messages: ChatMessage[]; approvals: Array<Parameters<typeof parseApproval>[0]>; watermarks: Record<string, number>; activeRun: { id: string; state: string; pauseReason?: string | null } | null }>(`/api/conversations/${id}/snapshot`);
+      const snapshot = await api<{ contextStats?: ContextUsage | null; messages: ChatMessage[]; approvals: Array<Parameters<typeof parseApproval>[0]>; watermarks: Record<string, number>; activeRun: { id: string; state: string; pauseReason?: string | null } | null }>(`/api/conversations/${id}/snapshot`);
       const history = snapshot.messages; const active = snapshot.activeRun;
       if (generation !== loadGeneration.current || conversationRef.current !== id) return;
       if (!force && busyRef.current) return;
@@ -117,6 +119,9 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
       let nextApprovals = snapshot.approvals.map(parseApproval);
       let restored = pairToolMessages(history.map((message: ChatMessage) => ({ id: message.id, role: message.role, content: message.content, status: message.status, toolCalls: message.toolCalls, toolCallId: message.toolCallId, parts: parseExternalParts(message.partsJson), context: message.context, sources: message.sources, blocks: readMessageBlocks(message.blocksJson) })), nextApprovals);
       for (const event of seenEvents.current.values()) if (event.conversationId === id && event.runId && (event.seq ?? 0) > (snapshot.watermarks[event.runId] ?? 0)) { restored = applyMessageEvent(restored, event); nextApprovals = applyApprovalEvent(nextApprovals, event); }
+      let restoredStats = snapshot.contextStats ?? null;
+      for (const event of seenEvents.current.values()) if (event.conversationId === id && event.runId && (event.seq ?? 0) > (snapshot.watermarks[event.runId] ?? 0) && event.contextStats) restoredStats = event.contextStats;
+      setContextStats(restoredStats);
       setMessages(restored);
       for (const [key, event] of seenEvents.current) if (event.runId && (event.seq ?? 0) <= (snapshot.watermarks[event.runId] ?? 0)) seenEvents.current.delete(key);
       setApprovals(nextApprovals);
@@ -133,7 +138,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
       if (reason instanceof ApiError && reason.status === 404) {
         localStorage.removeItem('dovun.conversationId');
         setConversationId('');
-        setMessages([]);
+        setContextStats(null); setMessages([]);
         setApprovals([]);
         return;
       }
@@ -323,6 +328,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
       return;
     }
     pendingRequestBody.current = storedBody; pendingRequestKey.current = requestKey;
+    setContextStats(null);
     activeRunId.current = ''; loadGeneration.current++; busyRef.current = true;
     onErrorRef.current(''); setInterrupted(false); setBusy(true); setPausedRun(null);
     setMessages((current) => [...current, { role: 'user', content: message, context: requestContext }]);
@@ -406,6 +412,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
       if (seenEvents.current.has(key)) return false;
       seenEvents.current.set(key, event);
     }
+    if (event.type === 'context_stats' && event.contextStats) setContextStats(event.contextStats);
     if (event.type === 'run_state' && event.state === 'paused' && event.pauseReason === 'user_stopped') {
       setMessages((current) => current.map((message) => ({ ...message, status: message.status === 'streaming' ? 'failed' : message.status, blocks: message.blocks?.map((block) => block.status === 'pending' ? { ...block, status: 'error', error: tRef.current('errors.stoppedIncomplete') } : block) })));
     }
@@ -505,7 +512,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
     loadGeneration.current++;
     newConversationRef.current = '';
     seenEvents.current.clear();
-    setMessages([]); setApprovals([]); setPausedRun(null); setInterrupted(false);
+    setContextStats(null); setMessages([]); setApprovals([]); setPausedRun(null); setInterrupted(false);
     setReferencedApproval(null); setUnknownApprovalIds([]); setUnresolvedApprovalIds([]);
     setConversationId(id);
   };
@@ -581,7 +588,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
     localStorage.removeItem('dovun.conversationId');
     newConversationRef.current = '';
     setConversationId('');
-    setMessages([]);
+    setContextStats(null); setMessages([]);
     setApprovals([]);
     setExecutingApprovalId('');
     setUnknownApprovalIds([]);
@@ -593,5 +600,5 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
     setPausedRun(null);
   };
 
-  return { stop, stopping, selectConversation, addMaterial, context, pinned: Boolean(pinnedContext), togglePin: () => setPinnedContext((current) => current ? null : structuredClone(pageContext ?? null)), attachments, removeAttachment: (id: string) => setAttachments((current) => current.filter((item) => item.id !== id)), conversationId, selectedTopicId, messages, approvals, busy, interrupted, input, setInput, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference: () => setReferencedApproval(null), showRepreview };
+  return { contextStats, stop, stopping, selectConversation, addMaterial, context, pinned: Boolean(pinnedContext), togglePin: () => setPinnedContext((current) => current ? null : structuredClone(pageContext ?? null)), attachments, removeAttachment: (id: string) => setAttachments((current) => current.filter((item) => item.id !== id)), conversationId, selectedTopicId, messages, approvals, busy, interrupted, input, setInput, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference: () => setReferencedApproval(null), showRepreview };
 }

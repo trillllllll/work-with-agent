@@ -1,3 +1,4 @@
+import { withTestToolLoading } from './agent/test-model-tools.js';
 import { afterAll, describe, expect, it } from 'vitest';
 import { prisma } from './infrastructure/prisma.js';
 import { AgentService, type ModelMessage } from './agent.js';
@@ -47,12 +48,12 @@ describe('agent run recovery', () => {
 
   it('restores an expired claim from its receipt, or back to pending when no receipt exists', async () => {
     const agent = new AgentService({
-      stream: async function* (messages: ModelMessage[]) {
+      stream: withTestToolLoading(async function* (messages: ModelMessage[]) {
         if (messages.some((message) => message.role === 'tool')) { yield { text: '还在等待。' }; return; }
         const task = await prisma.task.create({ data: { title: `回执样本-${Date.now()}`, description: '', createdAt: now(), updatedAt: now() } });
         const call: ToolCall = { id: 'call_claim', name: 'propose_changes', arguments: { summary: '改标题', operations: [{ family: 'workspace', command: { kind: 'task.update', targetId: task.id, expectedRevision: task.revision, input: { title: '已确认标题' } } }] } };
         yield { toolCalls: [call] };
-      },
+      }),
     } as never);
     const first = await agent.chat({ message: '生成第一份待确认', pageContext: { page: 'inbox' }, requestKey: `claim-a-${Date.now()}` });
     const second = await agent.chat({ message: '生成第二份待确认', pageContext: { page: 'inbox' }, requestKey: `claim-b-${Date.now()}` });
@@ -74,10 +75,10 @@ describe('agent run recovery', () => {
 
   it('returns RUN_BUSY when another request in the conversation is still active', async () => {
     const agent = new AgentService({
-      stream: async function* (messages: ModelMessage[]) {
+      stream: withTestToolLoading(async function* (messages: ModelMessage[]) {
         if (messages.some((message) => message.role === 'tool')) { yield { text: '时间已经读到。' }; return; }
         yield { toolCalls: [{ id: 'call_busy', name: 'get_time', arguments: {} }] };
-      },
+      }),
     } as never);
     const chat = await agent.chat({ message: '占用当前请求', pageContext: { page: 'inbox' }, requestKey: `busy-${Date.now()}` });
     const active = await prisma.agentRun.findFirstOrThrow({ where: { conversationId: chat.conversationId }, orderBy: { createdAt: 'desc' } });

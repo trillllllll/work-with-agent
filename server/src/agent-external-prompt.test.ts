@@ -1,3 +1,4 @@
+import { withTestToolLoading } from './agent/test-model-tools.js';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DomainError } from './domain/task.js';
 import { prisma } from './infrastructure/prisma.js';
@@ -27,7 +28,7 @@ describe('external prompt cards', () => {
     }) as typeof fetch;
     const before = await rows();
     const agent = new AgentService({
-      stream: async function* (messages: ModelMessage[]) {
+      stream: withTestToolLoading(async function* (messages: ModelMessage[]) {
         if (messages.some((message) => message.role === 'tool')) {
           yield { text: '提示词已经放在卡片里，可以复制。' };
           return;
@@ -46,7 +47,7 @@ describe('external prompt cards', () => {
         };
         yield { text: '我目前不能联网查资料。' };
         yield { toolCalls: [call] };
-      },
+      }),
     } as never);
     const result = await agent.chat({ message: '帮我上网查安装步骤', pageContext: { page: 'inbox' } });
     const event = result.events.find((item) => item.type === 'external_prompt');
@@ -74,13 +75,13 @@ describe('external prompt cards', () => {
     };
     expect(() => renderExternalPrompt(input)).toThrowError(expect.objectContaining({ code: 'PROMPT_TOO_LONG' }));
     const agent = new AgentService({
-      stream: async function* (messages: ModelMessage[]) {
+      stream: withTestToolLoading(async function* (messages: ModelMessage[]) {
         if (messages.some((message) => message.role === 'tool')) { yield { text: '提示词太长，没有保存。' }; return; }
         yield { toolCalls: [{ id: 'call_long', name: 'prepare_external_prompt', arguments: input }] };
-      },
+      }),
     } as never);
     const result = await agent.chat({ message: '整理一份特别长的外部提示词', pageContext: { page: 'inbox' } });
-    expect(result.events.find((event) => event.type === 'tool_result')?.result).toMatchObject({ success: false, code: 'PROMPT_TOO_LONG' });
+    expect(result.events.find((event) => event.type === 'tool_result' && event.toolName === 'prepare_external_prompt')?.result).toMatchObject({ success: false, code: 'PROMPT_TOO_LONG' });
     const assistant = await prisma.message.findFirst({ where: { conversationId: result.conversationId, role: 'assistant' }, orderBy: { createdAt: 'asc' } });
     expect(assistant?.partsJson ?? '[]').toBe('[]');
     expect(result.events.some((event) => event.type === 'external_prompt')).toBe(false);

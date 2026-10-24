@@ -7,7 +7,7 @@ import { z } from 'zod';
 import type { ChatEvent, ModelMessage, ModelToolDefinition, PageContext, ModelDelta } from '../agent.js';
 import { appendAutoMemoryAssistant, beginAutoMemoryTurn, completeAutoMemoryTurn, failAutoMemoryTurn } from '../application/auto-memory-chat.js';
 import { canonical } from '../application/commands.js';
-import { ContextService } from '../application/conversation.js';
+import { ContextService, type SummaryMetric } from '../application/conversation.js';
 import { checkKnowledgeScope } from '../application/knowledge.js';
 import { ownerActor } from '../application/security.js';
 import type { ToolCall } from '../application/workspace.js';
@@ -15,7 +15,13 @@ import { DomainError } from '../domain/task.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { enabledSkillCatalog } from '../application/skills.js';
 import { assembleRunMessages } from './assemble.js';
-import { builtinToolDefinitions } from './capabilities.js';
+import { buildContextStats, contextTotals, type ContextStats } from './context-stats.js';
+import { packModelMessages, textTokens } from './context-budget.js';
+import { initialToolGroups, toolGroupNames, toolGroupSchema, toolsForGroups, loadedFamilies, loadToolsInput, readSourceInput, mediaInstructions, type ToolGroup } from './tool-loading.js';
+import { htmlBlockPrompt } from './html-block.js';
+import { htmlBlockPolicy } from '../application/html-block-settings.js';
+import { withChatAttachments } from '../application/chat-attachments.js';
+import { builtinToolDefinitions, isBuiltinTool, CAPABILITY_UNAVAILABLE } from './capabilities.js';
 import { executeBuiltinTool, type BuiltinResult } from './builtin-tools.js';
 import { contextFromRequest, validateScopeAndResolveIds, type StoredChatContext } from './chat-context.js';
 import { recoverExpiredDecisions } from './decision.js';
@@ -41,6 +47,9 @@ export const runCursorSchema = z.object({
   assistantMessageId: z.string().nullable(),
   nextToolIndex: z.number().int().min(0),
   loadSkill: z.boolean().optional(),
+  toolGroups: z.array(toolGroupSchema).optional(),
+  offeredToolGroups: z.array(toolGroupSchema).optional(),
+  summaryCalls: z.array(z.object({ estimatedInputTokens: z.number(), estimatedOutputTokens: z.number(), actual: z.object({ inputTokens: z.number().optional(), outputTokens: z.number().optional(), cachedInputTokens: z.number().optional(), model: z.string().optional() }).nullable(), durationMs: z.number(), fallback: z.boolean() })).optional(),
 });
 export type RunCursor = z.infer<typeof runCursorSchema>;
 
@@ -124,18 +133,19 @@ async function saveCursor(runId: string, token: string, cursor: RunCursor) {
   if (!updated.count) throw new DomainError('LEASE_LOST', '这次请求已经失去执行权', 409);
 }
 
-async function addRunUsage(runId: string, token: string, usage: { inputTokens: number; cachedInputTokens: number; outputTokens: number }, model: string | null) {
-  const updated = await prisma.agentRun.updateMany({
-    where: { id: runId, leaseToken: token, state: 'running' },
-    data: {
-      inputTokens: { increment: usage.inputTokens },
-      cachedInputTokens: { increment: usage.cachedInputTokens },
-      outputTokens: { increment: usage.outputTokens },
-      ...(model ? { model } : {}),
-      updatedAt: nowIso(),
-    },
+async function addRunUsage(runId: string, token: string, usage: import('../agent.js').ModelUsage) {
+  await prisma.$transaction(async tx => {
+    const run = await tx.agentRun.findUniqueOrThrow({ where: { id: runId } });
+    if (run.leaseToken !== token || run.state !== 'running' || !run.leaseExpiresAt || run.leaseExpiresAt <= nowIso()) throw new DomainError('LEASE_LOST', '这次请求已经失去执行权', 409);
+    // SQLite NULL + increment stays NULL. Initialize only fields actually
+    // reported; absent usage is not zero usage.
+    await tx.agentRun.update({ where: { id: runId }, data: {
+      ...(typeof usage.inputTokens === 'number' ? { inputTokens: (run.inputTokens ?? 0) + usage.inputTokens } : {}),
+      ...(typeof usage.cachedInputTokens === 'number' ? { cachedInputTokens: (run.cachedInputTokens ?? 0) + usage.cachedInputTokens } : {}),
+      ...(typeof usage.outputTokens === 'number' ? { outputTokens: (run.outputTokens ?? 0) + usage.outputTokens } : {}),
+      ...(usage.model ? { model: usage.model } : {}), updatedAt: nowIso(),
+    } });
   });
-  if (!updated.count) throw new DomainError('LEASE_LOST', '这次请求已经失去执行权', 409);
 }
 
 async function saveMessages(runId: string, token: string, messages: ModelMessage[]) {
@@ -252,10 +262,16 @@ async function finishOwned(runId: string, token: string) {
 async function ensureMessages(runId: string, token: string, contextService: ContextService) {
   const run = await ownsLease(runId, token);
   const stored = JSON.parse(run.modelMessagesJson) as ModelMessage[];
-  if (stored.length) return stored;
   const cursor = readCursor(run.cursorJson);
+  if (stored.length) {
+    // Existing in-flight runs keep their full capability set. New user turns
+    // start with lazy groups; source recovery is available to both generations.
+    if (!cursor.toolGroups) await saveCursor(runId, token, { ...cursor, toolGroups: [...toolGroupNames] });
+    return stored;
+  }
   const skills = await enabledSkillCatalog();
   const source = await prisma.message.findUnique({ where: { id: run.sourceUserMessageId }, select: { content: true } });
+  const summaryCalls: SummaryMetric[] = [];
   const messages = await assembleRunMessages({
     runId,
     conversationId: run.conversationId,
@@ -264,10 +280,12 @@ async function ensureMessages(runId: string, token: string, contextService: Cont
     userText: source?.content ?? '',
     contextService,
     skills,
+    onSummary: async metric => { summaryCalls.push(metric); },
   });
   await ownsLease(runId, token);
+  for (const metric of summaryCalls) if (metric.actual) await addRunUsage(runId, token, metric.actual);
   await saveMessages(runId, token, messages);
-  await saveCursor(runId, token, { ...cursor, loadSkill: skills.length > 0 });
+  await saveCursor(runId, token, { ...cursor, loadSkill: skills.length > 0, toolGroups: initialToolGroups(source?.content ?? '', readContext(run.contextJson).page), summaryCalls });
   return messages;
 }
 
@@ -278,11 +296,23 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
     await pauseOwned(runId, token, 'round_limit', '这一轮处理已到上限。可以继续此请求。');
     return 'paused' as const;
   }
-  const messages = await ensureMessages(runId, token, contextService);
+  const messages = packModelMessages(await ensureMessages(runId, token, contextService));
   const owned = await ownsLease(runId, token);
   const cursor = readCursor(owned.cursorJson);
+  const tools = cursor.toolGroups ? toolsForGroups(cursor.toolGroups, cursor.loadSkill) : builtinToolDefinitions({ loadSkill: cursor.loadSkill });
+  const offered = new Set(tools.map(t => t.function.name));
+  if (cursor.toolGroups?.includes('media') && !String(messages[0]?.content).includes('【富媒体表达】\nSVG')) messages.splice(1, 0, { role: 'system', content: `【按需富媒体规则】\n${mediaInstructions}\n${htmlBlockPrompt(await htmlBlockPolicy())}` });
+  await saveMessages(runId, token, messages.filter(m => !(m.role === 'system' && String(m.content).startsWith('【按需富媒体规则】'))));
+  const stats = buildContextStats({ runId, round: cursor.round, messages, tools, fullTools: builtinToolDefinitions({ loadSkill: cursor.loadSkill }), loadedGroups: cursor.toolGroups ?? ['legacy-all'], summaryCalls: cursor.summaryCalls });
+  const publishStats = async () => {
+    const earlier = await prisma.agentRunEvent.findMany({ where: { runId, type: 'context_stats' }, orderBy: { seq: 'asc' }, select: { dataJson: true } });
+    stats.totals = contextTotals([...earlier.map(e => (JSON.parse(e.dataJson) as { contextStats: ContextStats }).contextStats), stats], cursor.summaryCalls);
+    await recordEvent(runId, token, { type: 'context_stats', contextStats: stats });
+  };
+  await publishStats();
+  const modelStarted = Date.now();
   const assistant = await prisma.message.create({ data: { conversationId: owned.conversationId, role: 'assistant', content: '', status: 'streaming', createdAt: nowIso() } });
-  const nextCursor = { ...cursor, assistantMessageId: assistant.id };
+  const nextCursor = { ...cursor, assistantMessageId: assistant.id, offeredToolGroups: cursor.toolGroups };
   await saveCursor(runId, token, nextCursor);
   await recordEvent(runId, token, { type: 'message_start', conversationId: owned.conversationId, messageId: assistant.id });
   const controller = new AbortController();
@@ -294,15 +324,14 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
   const timer = setTimeout(() => { timedOut = true; controller.abort(); }, MODEL_TIMEOUT_MS);
   timer.unref?.();
   let text = '';
+  let rawText = '';
   const calls: ToolCall[] = [];
-  const usage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 };
-  let usageModel: string | null = null;
   const batcher = new TextBatcher(
     (delta) => recordEvent(runId, token, { type: 'message_delta', conversationId: run.conversationId, messageId: assistant.id, delta }),
     () => controller.abort(),
   );
   try {
-    for await (const chunk of stream(messages, controller.signal, true, builtinToolDefinitions({ loadSkill: cursor.loadSkill === true }))) {
+    for await (const chunk of stream(messages, controller.signal, true, tools)) {
       if (controller.signal.aborted) throw new DomainError('LEASE_LOST', '请求已停止', 409);
       if (chunk.toolDelta) {
         const delta = chunk.toolDelta;
@@ -310,7 +339,7 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
         const current = { name: delta.name, arguments: (prior?.arguments ?? '') + delta.argumentsDelta };
         partialCalls.set(delta.index, current);
         if (presentationIndex === delta.index && current.name !== 'present_reply') throw new Error('展示工具名称发生冲突');
-        if (current.name === 'present_reply') {
+        if (current.name === 'present_reply' && offered.has('present_reply')) {
           if (presentationIndex !== undefined && presentationIndex !== delta.index) throw new Error('一次只能提交一个富媒体回答');
           if (!reply) {
             presentationIndex = delta.index;
@@ -322,25 +351,24 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
       }
       if (chunk.text) {
         if (reply) throw new Error('富媒体回答之后不能再追加另一份正文');
+        rawText += chunk.text;
         text += chunk.text;
         await batcher.add(chunk.text);
       }
       if (chunk.toolCalls) calls.push(...chunk.toolCalls);
       if (chunk.usage) {
-        usage.inputTokens += chunk.usage.inputTokens ?? 0;
-        usage.cachedInputTokens += chunk.usage.cachedInputTokens ?? 0;
-        usage.outputTokens += chunk.usage.outputTokens ?? 0;
-        if (chunk.usage.model) usageModel = chunk.usage.model;
+        stats.actual ??= {};
+        for (const key of ['inputTokens', 'cachedInputTokens', 'outputTokens'] as const) if (typeof chunk.usage[key] === 'number') stats.actual[key] = (stats.actual[key] ?? 0) + chunk.usage[key]!;
+        if (chunk.usage.model) stats.actual.model = chunk.usage.model;
       }
     }
-    if (usage.inputTokens || usage.cachedInputTokens || usage.outputTokens || usageModel) await addRunUsage(runId, token, usage, usageModel);
     await batcher.finish();
     if (reply) {
       if (calls.length !== 1 || calls[0].name !== 'present_reply') throw new Error('富媒体回答必须单独提交；业务修改继续走原有审批');
       text = await reply.finish();
       await recordEvent(runId, token, { type: 'message_delta', messageId: assistant.id, delta: text, compatibilityProjection: true });
       calls.length = 0;
-    } else if (calls.some((call) => call.name === 'present_reply')) throw new Error('当前模型没有提供工具参数增量，无法完成实时富媒体回答');
+    } else if (offered.has('present_reply') && calls.some((call) => call.name === 'present_reply')) throw new Error('当前模型没有提供工具参数增量，无法完成实时富媒体回答');
   } catch (error) {
     clearTimeout(timer);
     let failure = error;
@@ -350,6 +378,9 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
     if (timedOut) throw Object.assign(new Error('模型请求超时'), { code: 'MODEL_TIMEOUT' });
     throw failure;
   } finally {
+    stats.durationMs = Date.now() - modelStarted;
+    stats.estimatedOutputTokens = textTokens(rawText) + (partialCalls.size ? textTokens(JSON.stringify([...partialCalls.values()])) : textTokens(JSON.stringify(calls)));
+    try { if (stats.actual) await addRunUsage(runId, token, stats.actual); await publishStats(); } catch (error) { if (!isLeaseLoss(error)) throw error; }
     clearTimeout(timer);
     if (activeModelControllers.get(runId) === controller) activeModelControllers.delete(runId);
   }
@@ -362,6 +393,7 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
     content: text || null,
     ...(calls.length ? { tool_calls: calls.map((call) => ({ id: call.id ?? '', type: 'function' as const, function: { name: call.name, arguments: JSON.stringify(call.arguments ?? {}) } })) } : {}),
   };
+  messages.splice(0, messages.length, ...messages.filter(m => !(m.role === 'system' && String(m.content).startsWith('【按需富媒体规则】'))));
   messages.push(assistantMessage);
   await saveMessages(runId, token, messages);
   if (!calls.length) {
@@ -374,7 +406,10 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
 
 async function toolTurn(runId: string, token: string, contextService: ContextService) {
   const run = await ownsLease(runId, token);
-  const cursor = readCursor(run.cursorJson);
+  let cursor = readCursor(run.cursorJson);
+  const offeredGroups = cursor.offeredToolGroups ?? cursor.toolGroups;
+  const offeredFamilies = offeredGroups ? loadedFamilies(offeredGroups) : null;
+  const offered = new Set((offeredGroups ? toolsForGroups(offeredGroups, cursor.loadSkill) : builtinToolDefinitions({ loadSkill: cursor.loadSkill })).map(t => t.function.name));
   const assistantMessageId = cursor.assistantMessageId;
   if (!assistantMessageId) throw new DomainError('RUN_FAILED', '工具阶段缺少助手消息', 500);
   const assistant = await prisma.message.findUnique({ where: { id: assistantMessageId } });
@@ -396,6 +431,32 @@ async function toolTurn(runId: string, token: string, contextService: ContextSer
     await recordEvent(runId, token, { type: 'tool_call', conversationId: run.conversationId, messageId: assistantMessageId, toolCallId: call.id, toolName: call.function.name, arguments: args });
     let result: BuiltinResult;
     if (invalid) result = { success: false, code: 'INVALID_TOOL_ARGUMENTS', error: 'Tool 参数不是有效 JSON' };
+    else if (!offered.has(call.function.name) && !isBuiltinTool(call.function.name)) result = CAPABILITY_UNAVAILABLE;
+    else if (!offered.has(call.function.name)) result = { success: false, code: 'TOOL_NOT_LOADED', error: '本轮未加载此工具。先用 load_tools 加载对应组，下一轮再调用；本次未执行。' };
+    else if (call.function.name === 'load_tools') {
+      const requested = loadToolsInput.safeParse(args);
+      if (!requested.success) result = { success: false, code: 'INVALID_TOOL_ARGUMENTS', error: '请指定有效的能力组' };
+      else {
+        cursor = { ...cursor, toolGroups: [...new Set([...(cursor.toolGroups ?? []), ...requested.data.groups])] };
+        await saveCursor(runId, token, cursor);
+        result = { success: true, data: { groups: cursor.toolGroups, availableNextTurn: toolsForGroups(cursor.toolGroups!, cursor.loadSkill).map(t => t.function.name), note: '只加载定义，未修改业务数据；下一轮调用。' } };
+      }
+    } else if (call.function.name === 'read_context_source') {
+      const parsed = readSourceInput.safeParse(args);
+      if (!parsed.success) result = { success: false, code: 'INVALID_TOOL_ARGUMENTS', error: '原文读取参数无效' };
+      else {
+        const row = await prisma.message.findFirst({ where: { id: parsed.data.messageId, conversationId: run.conversationId } });
+        if (!row) result = { success: false, code: 'NOT_FOUND', error: '当前会话没有这条消息' };
+        else {
+          const [attached] = await withChatAttachments([row]);
+          const content = attached.content;
+          const end = Math.min(content.length, parsed.data.offset + parsed.data.limit);
+          result = { success: true, data: { messageId: row.id, role: row.role, offset: parsed.data.offset, totalCharacters: content.length, content: content.slice(parsed.data.offset, end), nextOffset: end < content.length ? end : null } };
+        }
+      }
+    } else if (call.function.name === 'propose_changes' && cursor.toolGroups && Array.isArray(args.operations) && args.operations.some(op => op && typeof op === 'object' && typeof (op as Record<string, unknown>).family === 'string' && !offeredFamilies!.includes(String((op as Record<string, unknown>).family)))) {
+      result = { success: false, code: 'TOOL_NOT_LOADED', error: '方案包含未加载的修改类型。先加载全部所需的 *_write 组；本次未创建方案。' };
+    }
     else if (call.function.name === 'propose_changes' && sawPropose) result = { success: false, code: 'INVALID_TOOL_ARGUMENTS', error: '一次回复只能提交一份修改方案' };
     else if (call.function.name === 'propose_changes') {
       sawPropose = true;
@@ -403,6 +464,10 @@ async function toolTurn(runId: string, token: string, contextService: ContextSer
       result = await executeBuiltinTool({ name: call.function.name, args, context, run: { id: runId, leaseToken: token, conversationId: run.conversationId, assistantMessageId, sourceUserMessageId: run.sourceUserMessageId }, toolCallId: call.id, loadSkill: cursor.loadSkill === true });
     } else {
       result = await executeBuiltinTool({ name: call.function.name, args, context, run: { id: runId, leaseToken: token, conversationId: run.conversationId, assistantMessageId, sourceUserMessageId: run.sourceUserMessageId }, toolCallId: call.id, loadSkill: cursor.loadSkill === true });
+    }
+    if (result.success && call.function.name === 'get_change_schema' && cursor.toolGroups) {
+      const group = `${String(args.family)}_write` as ToolGroup;
+      if (toolGroupSchema.safeParse(group).success) { cursor = { ...cursor, toolGroups: [...new Set([...cursor.toolGroups, group])] }; await saveCursor(runId, token, cursor); }
     }
     const sources = await sourcesFromTool(call.function.name, args, result);
     if (sourceReadTools.has(call.function.name)) {

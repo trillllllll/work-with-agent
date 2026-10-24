@@ -1,3 +1,4 @@
+import { withTestToolLoading } from './agent/test-model-tools.js';
 import { describe, expect, it } from 'vitest';
 import request from './test-auth.js';
 import { app } from './app.js';
@@ -27,10 +28,10 @@ describe('builtin run context', () => {
     expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
     let seen = '';
     const agent = new AgentService({
-      stream: async function* (messages: ModelMessage[]) {
+      stream: withTestToolLoading(async function* (messages: ModelMessage[]) {
         seen = String(messages[0]?.content ?? '');
         yield { text: '先确认范围。' };
-      },
+      }),
     } as never);
     await agent.chat({ message: '这些任务怎么处理', pageContext: { page: 'board', topicId, taskId: selected.body.data.id } });
     const notes = seen.split('【固定说明】')[1]?.split('【当前简报】')[0] ?? '';
@@ -54,10 +55,10 @@ describe('builtin run context', () => {
     const loose = (await api.post('/api/tasks').send({ title: '无清单上下文样本' })).body.data;
     let seen = '';
     const agent = new AgentService({
-      stream: async function* (messages: ModelMessage[]) {
+      stream: withTestToolLoading(async function* (messages: ModelMessage[]) {
         seen = String(messages[0]?.content ?? '');
         yield { text: '知道了。' };
-      },
+      }),
     } as never);
     await agent.chat({ message: '这个任务在哪', pageContext: { page: 'inbox', taskId: loose.id } });
     expect(seen).toContain('当前清单：收集箱');
