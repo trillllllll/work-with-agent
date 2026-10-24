@@ -1,0 +1,51 @@
+{
+  "checkedAt": "2026-10-24T15:06:46.455150+08:00",
+  "branch": "codex/dovun-workspace",
+  "sourceCommit": "7a00fc1cda72458209a1c78f7c985370687648e4",
+  "version": "0.4.0",
+  "tests": {
+    "server": 845,
+    "client": 375,
+    "browser": 6,
+    "browserProjects": [
+      "chromium",
+      "mobile",
+      "webkit-controls"
+    ],
+    "firstFullRun": "4 failures from incorrect test workspace override; environment corrected, full rerun passed"
+  },
+  "checks": {
+    "build": "passed",
+    "i18n": "passed",
+    "controls": "passed",
+    "independentReview": "no blocking findings",
+    "upgradeFixture": "preserved old settings columns and tasks",
+    "desktopSmoke": "passed, including reply style persistence",
+    "dmgVerification": "passed",
+    "codesign": "passed"
+  },
+  "release": {
+    "sourceCommit": "7a00fc1cda72458209a1c78f7c985370687648e4",
+    "version": "0.4.0",
+    "identifier": "app.dovun.desktop",
+    "assets": [
+      "/assets/index-BIuqNw_z.js",
+      "/assets/index-vgdeqFs9.css"
+    ],
+    "dmgBytes": 181230642,
+    "dmgSha256": "e112fabe8fc1f663af0d419f5d9cb82bafb6644e3c938e841f4631879322bf0a",
+    "compiledModulesAndMigrationMatch": true,
+    "installed": true,
+    "installedAt": "2026-10-24T15:05:25.207279+08:00",
+    "installedFilesVerified": 15394,
+    "dataAndPreferencesUnchanged": true,
+    "backupVerified": true,
+    "applicationKeptClosed": true,
+    "port47317Released": true,
+    "duplicateBuildAppRemoved": true,
+    "deployed": false,
+    "wwaModified": false,
+    "realDatabaseMigrated": false,
+    "realModelStyleAdherenceTested": false
+  }
+}
