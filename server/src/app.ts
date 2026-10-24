@@ -1,5 +1,6 @@
 import { imageSearchSettings, saveImageSearchKey } from './application/image-search-settings.js';
 import { htmlBlockSettings, saveHtmlBlockSettings } from './application/html-block-settings.js';
+import { replyStyleSettings, saveReplyStyle } from './application/reply-style-settings.js';
 import { resolveAssistantSource } from './agent/assistant-sources.js';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
@@ -240,6 +241,8 @@ app.get('/api/settings/image-search', async (_req, res, next) => { try { send(re
 app.patch('/api/settings/image-search', schema(z.object({ apiKey: z.string().trim().min(1).max(1000) }).strict()), async (req, res, next) => { try { send(res, await saveImageSearchKey(req.body.apiKey)); } catch (error) { next(error); } });
 app.delete('/api/settings/image-search', async (_req, res, next) => { try { send(res, await saveImageSearchKey('')); } catch (error) { next(error); } });
 app.get('/api/settings/html-blocks', async (_req, res, next) => { try { send(res, await htmlBlockSettings()); } catch (error) { next(error); } });
+app.get('/api/settings/reply-style', async (_req, res, next) => { try { send(res, await replyStyleSettings()); } catch (error) { next(error); } });
+app.patch('/api/settings/reply-style', schema(z.object({ replyStyle: z.string().trim().max(1000) }).strict()), async (req, res, next) => { try { send(res, await saveReplyStyle(req.body.replyStyle)); } catch (error) { next(error); } });
 app.patch('/api/settings/html-blocks', schema(z.object({ enabled: z.boolean().optional(), cdn: z.array(z.string().max(300)).max(50).optional() }).strict()), async (req, res, next) => { try { send(res, await saveHtmlBlockSettings(req.body)); } catch (error) { next(error); } });
 app.delete('/api/settings/api-key', async (_req, res, next) => { try { send(res, { ...await settings.clearApiKey(), cli: await cliSettings() }); } catch (error) { next(error); } });
 

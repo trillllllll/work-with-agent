@@ -694,5 +694,15 @@
       "confirm": "改为这个项目",
       "item": "{{topic}} 当前属于 {{project}}"
     }
+  },
+  "replyStyle": {
+    "title": "回复风格",
+    "description": "设置内置 AI 助手的表达偏好。",
+    "label": "风格要求",
+    "hint": "保存后从下一次发送消息起生效；留空则不附加风格要求。此配置不改变审批规则。最多 1000 字。",
+    "save": "保存回复风格",
+    "saving": "正在保存…",
+    "saved": "回复风格已保存",
+    "restoreDefault": "恢复默认"
   }
 }

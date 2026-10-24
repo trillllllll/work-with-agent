@@ -8,6 +8,7 @@ import { mobileNavigationKey } from '@/hooks/useMobileNavigation.js';
 import { currentLanguage, intlLocale } from '@/i18n/index.js';
 import type { SettingsCategory, SettingsSectionId } from './settings-categories.js';
 import { ModelSettings, useSettingsQuery } from './ModelSettings.js';
+import { ReplyStyleSettings } from './ReplyStyleSettings.js';
 import { ImageSearchSettings } from './ImageSearchSettings.js';
 import { HtmlBlockSettings } from './HtmlBlockSettings.js';
 import { WorktreesEntry } from './WorktreesEntry.js';
@@ -26,6 +27,7 @@ export type SettingsSectionProps = { onNavigate: (view: View) => void };
 /** Section id → component. Add a row here together with the id in `settings-categories.ts`. */
 export const SETTINGS_SECTION_COMPONENTS: Record<SettingsSectionId, ComponentType<SettingsSectionProps>> = {
   model: ModelSettings,
+  'reply-style': ReplyStyleSettings,
   'image-search': ImageSearchSettings,
   'html-blocks': HtmlBlockSettings,
   computers: ComputersSettings,

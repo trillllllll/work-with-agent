@@ -40,6 +40,11 @@ try {
   if (localInfo.data?.version !== expectedVersion) throw new Error(`桌面运行时版本不一致：${localInfo.data?.version}，期望 ${expectedVersion}`);
   await access(resolve(dataDir, 'dovun.db'));
   const first = await login({ bootstrapToken: firstToken });
+  const styleResponse = await api(first, '/api/settings/reply-style');
+  const style = (await styleResponse.json()).data;
+  if (!styleResponse.ok || style?.replyStyle !== '结论先行，多用短句。') throw new Error('桌面运行时未提供默认回复风格');
+  const savedStyle = await api(first, '/api/settings/reply-style', { method: 'PATCH', body: JSON.stringify({ replyStyle: '先给结论。使用短句。' }) });
+  if (!savedStyle.ok || (await savedStyle.json()).data?.replyStyle !== '先给结论。使用短句。') throw new Error('未配置模型时保存回复风格失败');
   const imageSettings = await api(first, '/api/settings/image-search');
   const imageConfig = (await imageSettings.json()).data;
   if (!imageSettings.ok || imageConfig?.provider !== 'brave') throw new Error('桌面运行时没有提供 Brave 图片搜索设置');
@@ -73,6 +78,8 @@ try {
   child = start();
   const secondToken = await readyToken(child);
   const second = await login({ bootstrapToken: secondToken });
+  const restoredStyle = await api(second, '/api/settings/reply-style');
+  if (!restoredStyle.ok || (await restoredStyle.json()).data?.replyStyle !== '先给结论。使用短句。') throw new Error('桌面运行时重启后回复风格未保留');
   const tasks = await api(second, '/api/tasks?inbox=true');
   const body = await tasks.json();
   if (!tasks.ok || !body.data?.some((task) => task.title === '桌面冒烟任务')) throw new Error('重启后没有读到冒烟任务');

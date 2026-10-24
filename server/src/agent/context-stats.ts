@@ -22,7 +22,7 @@ export function buildContextStats(input: { runId: string; round: number; message
     const content = String(message.content ?? '');
     // Only assembly boundary headings change category. Nested headings in rules,
     // user notes or rich-media policies do not change trust or execution behavior.
-    const boundaries = /(?=【(?:可用技能|应用功能知识 v[^】]*|回复语言[^】]*|页面筛选与选中任务|页面快照|用户主动带入的引用文本|本次请求的上下文|规划时间段|固定说明|当前简报|选中对象|已确认记忆|附近任务|本请求待确认方案|按需富媒体规则)】)/g;
+    const boundaries = /(?=【(?:回复风格|可用技能|应用功能知识 v[^】]*|回复语言[^】]*|页面筛选与选中任务|页面快照|用户主动带入的引用文本|本次请求的上下文|规划时间段|固定说明|当前简报|选中对象|已确认记忆|附近任务|本请求待确认方案|按需富媒体规则)】)/g;
     for (const part of content.split(boundaries)) {
       const id = part.startsWith('【可用技能】') ? 'skills' : part.startsWith('【应用功能知识') ? 'manual'
         : /^【(页面筛选|页面快照|用户主动|本次请求|规划时间段|固定说明|当前简报|选中对象|已确认记忆|附近任务|本请求待确认)/.test(part) ? 'work' : 'system';

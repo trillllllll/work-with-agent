@@ -13,6 +13,7 @@ import type { StoredChatContext } from './chat-context.js';
 import { codePoints } from './text.js';
 import { planTimeBandPrompt, readPlanTimeBands } from '../application/plan-time-bands.js';
 import { getCurrentTime } from './time.js';
+import { replyStylePrompt, replyStyleSettings } from '../application/reply-style-settings.js';
 
 const knowledge = new KnowledgeService();
 const BRIEF_CAP = 4000;
@@ -111,10 +112,11 @@ export async function assembleRunMessages(input: {
   }
   const time = getCurrentTime({}, input.context);
   const timeBands = readPlanTimeBands();
-  const [notes, brief, memory] = await Promise.all([
+  const [notes, brief, memory, style] = await Promise.all([
     fixedNotes(input.context),
     briefText(input.context),
     formatMemoryReference({ topicId }),
+    replyStyleSettings(),
   ]);
   const nearbyWhere = input.context.scope.kind === 'all' ? { deletedAt: null } : { deletedAt: null, topicId };
   const nearby = await prisma.task.findMany({
@@ -148,6 +150,7 @@ export async function assembleRunMessages(input: {
   const catalog = skillCatalog(skills);
   const system = [
     lazySystemPrompt(),
+    ...(style.replyStyle ? [replyStylePrompt(style.replyStyle)] : []),
     ...(catalog ? [catalog] : []),
     appKnowledgePrompt(input.context.page),
     ...(input.context.language === 'en' ? [replyLanguageInstruction] : []),

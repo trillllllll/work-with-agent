@@ -697,5 +697,15 @@
       "confirm": "Use this project",
       "item": "{{topic}} currently belongs to {{project}}"
     }
+  },
+  "replyStyle": {
+    "title": "Reply style",
+    "description": "Set how the built-in AI assistant writes.",
+    "label": "Style instructions",
+    "hint": "Applies from the next message after saving. Leave blank for no extra style instructions. Approval rules stay the same. Maximum 1,000 characters.",
+    "save": "Save reply style",
+    "saving": "Saving…",
+    "saved": "Reply style saved",
+    "restoreDefault": "Restore default"
   }
 }
