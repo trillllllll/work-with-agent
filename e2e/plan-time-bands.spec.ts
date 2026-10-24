@@ -568,7 +568,7 @@ test('侧栏位置仍能创建，任务可拖放、缩放、完成和打开详�
   await block.getByRole('button', { name: '打开任务：侧栏回归', exact: true }).click();
   const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
   await expect(detail).toBeVisible();
-  await page.getByRole('button', { name: '关闭任务详情', exact: true }).click();
+  await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
   await expect(detail).toBeHidden();
 
   if (testInfo.project.name !== 'mobile') {

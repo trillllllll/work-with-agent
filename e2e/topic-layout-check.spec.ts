@@ -41,7 +41,7 @@ test('清单页只留标题、上下文、录入和任务', async ({ page, reque
   await page.keyboard.press('Escape');
   await main.getByRole('button', { name: '先做这一条', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '任务详情', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '关闭任务详情', exact: true }).click();
+  await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
 
   await main.getByRole('button', { name: '工作上下文', exact: true }).click();
   await expect(page.getByRole('heading', { name: '工作上下文', exact: true })).toBeVisible();

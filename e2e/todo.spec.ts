@@ -236,7 +236,7 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await opened.getByRole('button', { name: '第三条', exact: true }).click();
     const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
     await expect(detail.getByLabel('详情', { exact: true })).toBeVisible();
-    await detail.getByRole('button', { name: '关闭任务详情', exact: true }).click();
+    await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
     await expect(detail).toBeHidden();
     await page.getByRole('button', { name: '筛选', exact: true }).click();
     await page.getByRole('combobox', { name: '筛选完成状态', exact: true }).selectOption('open');

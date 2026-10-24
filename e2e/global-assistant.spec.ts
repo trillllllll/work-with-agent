@@ -78,7 +78,7 @@ test('task and AI switch, manual draft attachment and return preserve editor', a
   expect(sent.context.taskId).toBe(task.id);
   expect(sent.context.attachments[0].text).toContain('已保存的正文');
   await expect(page.getByTestId('assistant-context').getByRole('button', { name: /^移除/ })).toHaveCount(0);
-  await panel(page).getByRole('button', { name: isMobile ? '返回当前页面' : '关闭聊天', exact: true }).click();
+  await page.getByRole('tab', { name: '任务', exact: true }).click();
   await expect(page.getByRole('textbox', { name: '详情', exact: true })).toBeVisible();
   await expect(page.getByRole('textbox', { name: '详情', exact: true })).toContainText('已保存的正文');
 });

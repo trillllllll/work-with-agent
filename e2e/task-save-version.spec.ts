@@ -35,7 +35,7 @@ for (const queued of [false, true]) test(`text save ${queued ? 'in flight' : 'ac
     release();
     await expect(row.locator('.task-inline-title')).toHaveText('保存后立即完成');
   }
-  await page.getByRole('button', { name: '关闭任务详情', exact: true }).click();
+  await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
   await row.getByRole('checkbox').click();
   if (queued) release();
   await expect.poll(async () => (await (await request.get(`${api}/api/tasks/${task.id}`)).json()).data.status).toBe('done');
@@ -55,7 +55,7 @@ test('a real remote write after autosave still conflicts instead of being overwr
   await expect(row.locator('.task-inline-title')).toHaveText('本窗口已保存');
   const remote = await request.patch(`${api}/api/tasks/${task.id}`, { data: { priority: 'high' } });
   expect(remote.ok()).toBe(true);
-  await page.getByRole('button', { name: '关闭任务详情', exact: true }).click();
+  await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
   const conflict = page.waitForResponse(response => response.url().endsWith(`/api/tasks/${task.id}`) && response.request().method() === 'PATCH');
   await row.getByRole('checkbox').click();
   expect((await conflict).status()).toBe(409);

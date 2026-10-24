@@ -76,7 +76,7 @@ test('详情和行菜单都能看到标题与详情改动，对话框留有边�
   expect(phone.scrollOverflow).toBeLessThanOrEqual(1);
   await expect(page.getByRole('dialog', { name: '任务动态', exact: true }).getByText('把标题从 「待整理任务」 改成 「改过的标题」')).toBeVisible();
   await page.getByRole('dialog', { name: '任务动态', exact: true }).getByRole('button', { name: 'Close', exact: true }).click();
-  await detail.getByRole('button', { name: '关闭任务详情', exact: true }).click();
+  await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
   await page.getByTestId(`task-row-${task.id}`).getByRole('button', { name: '任务操作：改过的标题', exact: true }).click();
   await page.getByRole('menuitem', { name: '任务动态', exact: true }).click();
   const menuDialog = page.getByRole('dialog', { name: '任务动态', exact: true });

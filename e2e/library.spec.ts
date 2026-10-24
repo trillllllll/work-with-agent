@@ -123,7 +123,7 @@ test('关闭预览后焦点回到资料行，离开任务后保留搜索和选�
   await page.getByLabel('类型筛选', { exact: true }).selectOption('text');
   await page.getByRole('button', { name: '从资料打开的任务', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '任务详情', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '关闭任务详情', exact: true }).click();
+  await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
   await expect(search).toHaveValue('可返回的资料');
   await expect(page.getByLabel('类型筛选', { exact: true })).toHaveValue('text');
   await expect(page.getByTestId('library-preview')).toBeVisible();

@@ -249,7 +249,7 @@ test.describe('已完成子任务保持缩进并混排', () => {
         await expect(openRow).toHaveAttribute('data-selected', 'true');
         await expect.poll(async () => openRow.evaluate((node) => getComputedStyle(node).backgroundImage)).not.toBe('none');
         await expect(openRow).toHaveCSS('border-top-width', '1px');
-        await page.getByRole('button', { name: '关闭任务详情', exact: true }).click();
+        await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
         await expect(page.getByRole('dialog', { name: '任务详情', exact: true })).toBeHidden();
       }
     }

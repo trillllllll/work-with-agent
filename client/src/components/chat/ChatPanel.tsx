@@ -30,10 +30,10 @@ type ChatPanelProps = {
   presentation?: 'side' | 'expanded' | 'direct';
   onExpand?: () => void;
   onShrink?: () => void;
-  taskReference?: { title: string; onOpen: () => void };
+  showClose?: boolean;
 };
 
-export function ChatPanel({ chat, onClose, mobile, presentation = 'side', onExpand, onShrink, taskReference }: ChatPanelProps) {
+export function ChatPanel({ chat, onClose, mobile, presentation = 'side', onExpand, onShrink, showClose = true }: ChatPanelProps) {
   const { t } = useTranslation('chat');
   const action = usePlatformAction();
   const settings = useQuery<Settings>({ queryKey: ['settings'], queryFn: () => api('/api/settings') });
@@ -67,10 +67,9 @@ export function ChatPanel({ chat, onClose, mobile, presentation = 'side', onExpa
         </DropdownMenuContent></DropdownMenu>
         {presentation === 'side' && <Button variant="ghost" size="icon-sm" onClick={onExpand} aria-label={t('chatPanel.expand')} title={t('chatPanel.expand')}><Maximize2 /></Button>}
         {presentation === 'expanded' && <Button variant="ghost" size="icon-sm" onClick={onShrink} aria-label={t('chatPanel.shrink')} title={t('chatPanel.shrink')}><Minimize2 /></Button>}
-        {presentation === 'side' && <Button variant="ghost" size="icon-sm" title={t('chatPanel.hideAssistant')} aria-label={mobile ? t('chatPanel.backToPage') : t('chatPanel.closeChat')} onClick={onClose}><X /></Button>}
+        {presentation === 'side' && showClose && <Button variant="ghost" size="icon-sm" title={t('chatPanel.hideAssistant')} aria-label={mobile ? t('chatPanel.backToPage') : t('chatPanel.closeChat')} onClick={onClose}><X /></Button>}
       </header>
 
-      {taskReference && <div className="dovun-chat-task-reference" data-testid="assistant-task-reference"><div className="min-w-0 flex-1"><span className="block text-[10px] text-muted-foreground">{t('app:workRail.discussing')}</span><span className="block truncate text-xs">{taskReference.title}</span></div><Button variant="ghost" size="sm" onClick={taskReference.onOpen}>{t('app:workRail.viewTask')}</Button></div>}
       {!settings.isLoading && !settings.error && !configured && <p className="shrink-0 px-4 py-2 text-xs text-muted-foreground">{t('chatPanel.configureModel')} <a className="font-medium text-brand-link underline-offset-4 hover:underline" href={`#${settingsHash('model')}`}>{t('chatPanel.configureModelAction')}</a></p>}
       <AssistantInputProvider setInput={setInput}><MessageList emptyState={<>
       <div className="dovun-assistant-welcome"><img src={mark} alt="" /><h3>{t('chatPanel.title')}</h3><p>{t('chatPanel.greeting')}</p></div>

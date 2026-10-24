@@ -5,9 +5,7 @@
     "assistant": "AI assistant",
     "close": "Close work sidebar",
     "hasDraft": "Unsent draft",
-    "askAssistant": "Ask AI",
-    "discussing": "Task in discussion",
-    "viewTask": "View task"
+    "askAssistant": "Ask AI"
   },
   "nav": {
     "inbox": "Inbox",

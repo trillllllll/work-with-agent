@@ -72,7 +72,7 @@ test('详情显示所属清单，无清单时显示收集箱', async ({ page, re
   const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
   await expect(detail.getByTestId('task-topic-row')).toContainText('所属清单');
   await expect(detail.getByTestId('task-topic-row').locator('.task-place-chip')).toHaveText('发布准备');
-  await detail.getByRole('button', { name: '关闭任务详情', exact: true }).click();
+  await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
   await page.goto('/#/inbox');
   await page.getByTestId(`task-row-${loose.id}`).getByRole('button', { name: '无清单任务', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '任务详情', exact: true }).getByTestId('task-topic-row').locator('.task-place-chip')).toHaveText('收集箱');

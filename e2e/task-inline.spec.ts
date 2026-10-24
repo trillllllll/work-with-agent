@@ -105,7 +105,7 @@ test('inline card controls keep completion, menus and detail autosave independen
   await row.getByRole('button', { name: task.title, exact: true }).click();
   await page.getByRole('textbox', { name: '任务标题', exact: true }).fill('中文输入与自动保存');
   await expect.poll(async () => (await (await request.get(`${api}/api/tasks/${task.id}`)).json()).data.title).toBe('中文输入与自动保存');
-  await page.getByRole('button', { name: '关闭任务详情', exact: true }).click();
+  await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
   await row.getByRole('checkbox').click();
   await page.getByText('已完成 · 1', { exact: true }).click();
   await expect(row).toHaveCSS('height', '48px');

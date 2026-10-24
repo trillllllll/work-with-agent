@@ -50,7 +50,7 @@ test('窄窗口打开任务后列表仍可读，日期仍显示', async ({ page,
       const box = await detail.boundingBox();
       expect(box?.width ?? width).toBeLessThan(width - 40);
     }
-    await detail.getByRole('button', { name: '关闭任务详情', exact: true }).click();
+    await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
     await expect(detail).toBeHidden();
   }
 });

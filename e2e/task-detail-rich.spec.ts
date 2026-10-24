@@ -208,7 +208,7 @@ test('详情正文画出有序列表序号，待办列表仍无序号', async ({
   });
   expect(room.gap).toBeGreaterThanOrEqual(20);
 
-  await detail.getByRole('button', { name: '关闭任务详情', exact: true }).click();
+  await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
   await page.getByTestId(`task-row-${fresh.id}`).getByRole('button', { name: '现打序号', exact: true }).click();
   const editor = page.getByRole('dialog', { name: '任务详情', exact: true }).locator('.task-prose');
   await editor.click();

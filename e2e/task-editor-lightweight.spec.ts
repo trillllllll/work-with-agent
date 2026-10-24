@@ -150,7 +150,7 @@ async function openDetail(page: Page, request: APIRequestContext, title: string,
   const task = (await created.json()).data;
   const existing = page.getByRole('dialog', { name: '任务详情', exact: true });
   if (await existing.isVisible()) {
-    await existing.getByRole('button', { name: '关闭任务详情', exact: true }).click();
+    await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
     await expect(existing).toBeHidden();
   }
   await page.goto('/#/inbox');

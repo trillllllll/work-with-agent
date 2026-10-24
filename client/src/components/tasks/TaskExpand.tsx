@@ -703,7 +703,7 @@ function TaskAssistantActions({ showAssistant = true }: { showAssistant?: boolea
   </div>;
 }
 
-export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children' | 'fallback'> & { fallback?: Task; presentation: 'panel' | 'modal' | 'retained'; panelSlot: HTMLElement | null }>(function TaskDetailPane({ presentation, panelSlot, fallback, ...props }, ref) {
+export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children' | 'fallback'> & { fallback?: Task; presentation: 'panel' | 'modal' | 'retained'; panelSlot: HTMLElement | null; showClose?: boolean }>(function TaskDetailPane({ presentation, panelSlot, fallback, showClose = true, ...props }, ref) {
   const [activity, setActivity] = useState(false);
   const [section, setSection] = useState<DetailSection>('details');
   const { t } = useTranslation('app');
@@ -722,7 +722,7 @@ export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children
         <header className="task-detail-header">
           <TaskAssistantActions showAssistant={presentation !== 'panel'} />
           <ParentTaskLink />
-          <div data-testid="task-detail-title-row" className="flex min-w-0 items-start gap-2"><TaskStatusCheckbox /><div className="min-w-0 flex-1"><TaskTitleField /></div><ActivityButton onOpen={() => setActivity(true)} /><CloseDetailButton /></div>
+          <div data-testid="task-detail-title-row" className="flex min-w-0 items-start gap-2"><TaskStatusCheckbox /><div className="min-w-0 flex-1"><TaskTitleField /></div><ActivityButton onOpen={() => setActivity(true)} />{showClose && <CloseDetailButton />}</div>
         </header>
         <div role="tabpanel" id={`detail-panel-${props.id}`} aria-labelledby={`detail-tab-${props.id}-${section}`} className="min-h-0 flex-1 overflow-y-auto px-5 pb-5"><TaskExpandBody fill section={section} /></div>
         {presentation === 'panel' && <footer className="dovun-task-assistant-footer"><Button onClick={() => askAssistant()}>{t('workRail.askAssistant')}</Button></footer>}

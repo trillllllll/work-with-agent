@@ -335,7 +335,7 @@ test('安排任务超过50条可搜索、筛选并打开，窄屏周视图没有
   await expect(page.getByTestId('tray-item')).toHaveCount(1);
   await page.getByTestId('tray-item').click();
   await expect(page.getByRole('dialog', { name: '任务详情', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '关闭任务详情', exact: true }).click();
+  await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
   await page.setViewportSize({ width: 375, height: 800 });
   await page.getByRole('button', { name: '周', exact: true }).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
