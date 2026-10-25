@@ -1,3 +1,5 @@
+import { prisma } from '../infrastructure/prisma.js';
+import { localHistoryFingerprint } from './sync-import.js';
 import { describe,it,expect } from 'vitest';
 import { mkdtemp,mkdir,rm,writeFile,readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -17,6 +19,16 @@ describe('workspace migration safeguards',()=>{
    const a=reconcile(${JSON.stringify(root+'/cloud.db')},${JSON.stringify(root+'/local.db')},'local');const b=reconcile(${JSON.stringify(root+'/cloud.db')},${JSON.stringify(root+'/local.db')},'local');assert.equal(a.archived,4);assert.equal(b.inserted,0);assert.equal(b.archived,0);const d=new DatabaseSync(${JSON.stringify(root+'/cloud.db')});assert.equal(d.prepare('SELECT count(*) AS n FROM MaterialTag').get().n,0);assert.equal(d.prepare('SELECT count(*) AS n FROM NodeJob').get().n,0);assert.equal(d.prepare('SELECT status FROM MaterialExtraction').get().status,'unsupported');assert.equal(d.prepare('SELECT leaseToken FROM MaterialExtraction').get().leaseToken,null);assert.equal(d.prepare("SELECT title FROM tasks WHERE id='same'").get().title,'cloud');assert.equal(d.prepare('SELECT state FROM agent_runs').get().state,'paused');assert.equal(d.prepare('SELECT secret FROM app_settings').get().secret,'cloud');assert.equal(d.prepare('SELECT active_run_id FROM conversations').get().active_run_id,null);assert.equal(d.prepare('SELECT lease_token FROM agent_runs').get().lease_token,null);d.close();const changed=new DatabaseSync(${JSON.stringify(root+'/local.db')});changed.exec("INSERT INTO tasks VALUES('third','same-history-new-task')");changed.close();assert.equal(reconcile(${JSON.stringify(root+'/cloud.db')},${JSON.stringify(root+'/local.db')},'local-again').inserted,1);console.log('passed');`);
    expect(execFileSync(process.execPath,['--experimental-sqlite',script],{encoding:'utf8'})).toContain('passed');
   }finally{await rm(root,{recursive:true,force:true});}
+ });
+ it('matches the offline SQLite inventory when Prisma returns BOOLEAN and integer values with different JavaScript types',async()=>{
+  const at=new Date().toISOString();
+  const skill=await prisma.skill.create({data:{name:'fingerprint Boolean fixture',description:'',instructions:'fixture',enabled:true,createdAt:at,updatedAt:at}});
+  try{
+   const local=await localHistoryFingerprint();
+   const script=`import {DatabaseSync} from 'node:sqlite';import {fingerprint} from ${JSON.stringify(pathToFileURL(resolve('../scripts/reconcile-workspaces.mjs')).href)};const db=new DatabaseSync(process.env.DATABASE_URL.slice(5),{readOnly:true});console.log(JSON.stringify(fingerprint(db)));db.close();`;
+   const offline=JSON.parse(execFileSync(process.execPath,['--experimental-sqlite','--input-type=module','-e',script],{encoding:'utf8',env:process.env}));
+   expect(local).toEqual(offline);
+  }finally{await prisma.skill.delete({where:{id:skill.id}});}
  });
  it('does not mistake upstream metadata for changed hooks, but detects actual hook changes',async()=>{
   const root=await mkdtemp(join(tmpdir(),'dovun-hooks-'));

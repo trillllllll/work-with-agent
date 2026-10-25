@@ -38,5 +38,5 @@
     "typescript": "^5.8.3",
     "vitest": "^3.1.1"
   },
-  "version": "0.5.0"
+  "version": "0.5.1"
 }

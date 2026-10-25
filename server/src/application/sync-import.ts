@@ -9,7 +9,7 @@ const historyTables = ['conversations','messages','approvals','agent_runs','agen
 function stable(value: unknown): string {
  if (Array.isArray(value)) return '[' + value.map(stable).join(',') + ']';
  if (value && typeof value === 'object') { const row=value as Record<string,unknown>; return '{'+Object.keys(row).sort().map(k=>JSON.stringify(k)+':'+stable(row[k])).join(',')+'}'; }
- return JSON.stringify(typeof value === 'bigint' ? Number(value) : value);
+ return JSON.stringify(typeof value === 'bigint' || typeof value === 'boolean' ? Number(value) : value);
 }
 /** Same canonical inventory as the offline reconciliation tool, excluding credentials. */
 export async function localHistoryFingerprint() {
