@@ -1,6 +1,6 @@
 /** Field-level three-way merge for hub sync. Ancestor is the op's before row. */
 export const syncFields = {
-  task: ['title', 'description', 'status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'topicId', 'parentId', 'deletedAt', 'deleteBatchId', 'sortOrder', 'tagIds'],
+  task: ['title', 'description', 'status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'topicId', 'parentId', 'deletedAt', 'deleteBatchId', 'sortOrder', 'tagIds', 'createdAt', 'completedAt', 'completedAtEstimated'],
   topic: ['name', 'description', 'color', 'isExploration', 'goal', 'draftSummary', 'finalSummary', 'summaryStatus', 'summaryUpdatedAt', 'archivedAt'],
   tag: ['name', 'color'],
 } as const;
@@ -13,14 +13,14 @@ export function isCompleteSyncRow(entity: SyncEntityType, value: unknown): value
   if (value === null) return true;
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const row = value as SyncRow;
-  const nullable = new Set(['dueDate', 'scheduledStart', 'scheduledEnd', 'topicId', 'parentId', 'deletedAt', 'deleteBatchId', 'summaryUpdatedAt', 'archivedAt']);
+  const nullable = new Set(['dueDate', 'scheduledStart', 'scheduledEnd', 'topicId', 'parentId', 'deletedAt', 'deleteBatchId', 'summaryUpdatedAt', 'archivedAt', 'createdAt', 'completedAt']);
   return syncFields[entity].every(field => {
     if (!Object.prototype.hasOwnProperty.call(row, field)) return false;
     const item = row[field];
     if (field === 'tagIds') return Array.isArray(item) && item.length <= 1000 && item.every(id => typeof id === 'string' && id.length > 0 && id.length <= 200) && new Set(item).size === item.length;
     if (field === 'status') return typeof item === 'string' && ['todo', 'doing', 'blocked', 'done'].includes(item);
     if (field === 'priority') return typeof item === 'string' && ['none', 'low', 'medium', 'high'].includes(item);
-    if (field === 'isExploration') return typeof item === 'boolean';
+    if (field === 'isExploration' || field === 'completedAtEstimated') return typeof item === 'boolean';
     if (field === 'sortOrder') return typeof item === 'number' && Number.isFinite(item);
     if (field === 'estimatedMinutes') return item === null || (typeof item === 'number' && Number.isSafeInteger(item) && item >= 0);
     if (item === null) return nullable.has(field);
@@ -43,7 +43,7 @@ export function isSyncEntityType(value: string): value is SyncEntityType {
 
 function empty(entityType: SyncEntityType): SyncRow {
   const row: SyncRow = {};
-  for (const field of syncFields[entityType]) row[field] = field === 'tagIds' ? [] : null;
+  for (const field of syncFields[entityType]) row[field] = field === 'tagIds' ? [] : field === 'completedAtEstimated' ? false : null;
   return row;
 }
 

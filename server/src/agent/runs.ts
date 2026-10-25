@@ -1,3 +1,4 @@
+import { coordinatorWork } from '../application/coordinator-work.js';
 import { ReplyStream } from './reply-stream.js';
 import { resolveImages } from './image-search.js';
 import { parseMessageBlocks, projectBlocks } from './content-blocks.js';
@@ -737,8 +738,8 @@ export async function checkAgentRuns(stream?: ModelStream, contextService?: Cont
 }
 
 export function startRunScheduler(stream: ModelStream, contextService: ContextService, intervalMs = 2000) {
-  void checkAgentRuns(stream, contextService);
-  const timer = setInterval(() => { void checkAgentRuns(stream, contextService); }, intervalMs);
+  void coordinatorWork(() => checkAgentRuns(stream, contextService));
+  const timer = setInterval(() => { void coordinatorWork(() => checkAgentRuns(stream, contextService)); }, intervalMs);
   timer.unref?.();
   return () => clearInterval(timer);
 }

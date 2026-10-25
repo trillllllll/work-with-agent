@@ -1,3 +1,4 @@
+import { coordinatorWork } from './application/coordinator-work.js';
 import './shared/runtime-bootstrap.js';
 import { registerDataWriter } from './shared/data-guard.js';
 import { runtimeEnv } from './shared/runtime-env.js';
@@ -11,6 +12,8 @@ import { recoverInterruptedUploads } from './application/library/uploads.js';
 import { startLibraryWorker } from './application/library/worker.js';
 import { mountDesktopStatic } from './desktop-static.js';
 import { startOrchestrationScheduler } from './application/orchestration/service.js';
+import { activeSyncBinding } from './application/sync-replica.js';
+import { workspaceEvents } from './application/workspace-events.js';
 
 async function start() {
   process.title = 'dovun-server';
@@ -29,8 +32,10 @@ async function start() {
   const staticDir = runtimeEnv('STATIC_DIR') ?? (process.env.DOVUN_CONTAINER === '1' ? '/app/client-dist' : undefined);
   if (staticDir) mountDesktopStatic(app, staticDir);
   const autoMemory = sharedAutoMemoryService();
-  await autoMemory.prepareStartup();
-  await agent.boot();
+  const validationOnly = runtimeEnv('COORDINATOR_DISABLED') === '1';
+  let replica = Boolean(activeSyncBinding()) || validationOnly;
+  console.log(`Workspace execution: ${validationOnly ? 'validation candidate; scheduling paused' : replica ? 'local replica; cloud schedules' : 'workspace coordinator'}`);
+  if (!replica) { await autoMemory.prepareStartup(); await agent.boot(); }
 
   const port = Number(process.env.PORT) || (isDesktopPackage() ? DESKTOP_PORT : 3016);
   const host = runtimeEnv('BIND_HOST') ?? (isServerMode() ? '0.0.0.0' : '127.0.0.1');
@@ -48,7 +53,7 @@ async function start() {
       ? publicWorkspaceUrl() || `http://${displayHost}:${port}`
       : `${process.env.CLIENT_ORIGIN!.split(',')[0].trim()}/#owner-token=${createOwnerBootstrapToken()}`;
     console.log(`Open workspace: ${workspace}`);
-    void reconcileLocalRuns();
+    if (!replica) void coordinatorWork(() => reconcileLocalRuns());
   });
   server.on('error', (error: NodeJS.ErrnoException) => {
     console.error(error.code === 'EADDRINUSE' ? `端口 ${port} 已被占用` : error);
@@ -61,18 +66,20 @@ async function start() {
       setTimeout(() => process.exit(0), 1_500).unref();
     });
   }
-  const timer = setInterval(() => { void reconcileLocalRuns(); }, 2_000);
+  const timer = setInterval(() => { if (!replica) void coordinatorWork(() => reconcileLocalRuns()); }, 2_000);
   timer.unref();
-  const stopOrchestrations = startOrchestrationScheduler();
-  const stopReviews = startReviewScheduler(reviewService);
-  const stopAutoMemory = startAutoMemoryScheduler(autoMemory);
-  void recoverInterruptedUploads();
-  const stopLibrary = startLibraryWorker();
+  const stopOrchestrations = replica ? () => {} : startOrchestrationScheduler();
+  const stopReviews = replica ? () => {} : startReviewScheduler(reviewService);
+  const stopAutoMemory = replica ? () => {} : startAutoMemoryScheduler(autoMemory);
+  if (!replica) void coordinatorWork(() => recoverInterruptedUploads());
+  const stopLibrary = replica ? () => {} : startLibraryWorker();
+  const bound = () => { replica = true; stopOrchestrations(); stopReviews(); stopAutoMemory(); stopLibrary(); agent.stopScheduler(); };
+  workspaceEvents.on('sync-bound', bound);
   const { startSnapshotScheduler } = await import('./application/snapshots.js');
   const stopSnapshots = startSnapshotScheduler();
   const { startReplicaSync } = await import('./application/sync-replica.js');
   const stopSync = startReplicaSync();
-  server.on('close', () => { clearInterval(timer); stopOrchestrations(); stopReviews(); stopAutoMemory(); stopLibrary(); stopSnapshots(); stopSync(); agent.stopScheduler(); });
+  server.on('close', () => { workspaceEvents.off('sync-bound', bound); clearInterval(timer); stopOrchestrations(); stopReviews(); stopAutoMemory(); stopLibrary(); stopSnapshots(); stopSync(); agent.stopScheduler(); });
 }
 
 start().catch((error) => {

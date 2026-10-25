@@ -8,6 +8,7 @@ const stopSync = startReplicaSync();
 const listener = app.listen(Number(process.env.SYNC_TEST_PORT ?? 0), '127.0.0.1', () => {
   const address = listener.address();
   if (!address || typeof address === 'string') throw new Error('Missing test address');
+  process.env.PORT = String(address.port);
   process.stdout.write(JSON.stringify({ port: address.port, bootstrap: createOwnerBootstrapToken() }) + '\n');
 });
 process.on('SIGTERM', () => {

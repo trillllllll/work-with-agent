@@ -1,4 +1,7 @@
-import { publishWorkspaceChange } from './workspace-events.js';
+import { pauseCoordinatorWork } from './coordinator-work.js';
+import { cacheAuthorization } from './workspace-cache-access.js';
+import { assertHistoryImported, legacyDraftImportAllowed } from './sync-import.js';
+import { publishWorkspaceChange, workspaceEvents } from './workspace-events.js';
 import { runtimeEnv } from '../shared/runtime-env.js';
 import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -17,7 +20,7 @@ type GroupSide = Parameters<typeof diffGroupOps>[0];
 type ReplicaDb = PrismaClient;
 type SyncSnapshot = { schemaVersion: string; tip: number; entities: Record<SyncEntityType, Array<{ id: string; row: SyncRow }>> };
 
-export type SyncBinding = { url: string; token: string };
+export type SyncBinding = { url: string; token: string; workspaceId?: string; legacyDraftsImported?: boolean };
 
 export type ReplicaTransport = {
   snapshot?(): Promise<SyncSnapshot>;
@@ -47,9 +50,9 @@ export function readSyncBinding(): SyncBinding | null {
   const path = syncBindingPath();
   if (!existsSync(path)) return null;
   try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as { url?: string; token?: string };
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as { url?: string; token?: string; workspaceId?: string; legacyDraftsImported?: boolean };
     if (!parsed.url || !parsed.token) return null;
-    return { url: assertSyncUrl(parsed.url), token: parsed.token };
+    return { url: assertSyncUrl(parsed.url), token: parsed.token, ...(typeof parsed.workspaceId === 'string' ? { workspaceId: parsed.workspaceId } : {}), ...(parsed.legacyDraftsImported === true ? {legacyDraftsImported:true} : {}) };
   } catch (error) {
     if (error instanceof DomainError) throw error;
     return null;
@@ -65,8 +68,9 @@ export function writeSyncBinding(binding: SyncBinding) {
   if (previous && (previous.url !== url || previous.token !== token)) throw new DomainError('SYNC_ALREADY_BOUND', '这台设备已绑定同步工作区，请先完成原工作区迁移再更换凭据', 409);
   const path = syncBindingPath();
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify({ url, token }), { mode: 0o600 });
+  writeFileSync(path, JSON.stringify({ url, token, ...(binding.workspaceId ? { workspaceId: binding.workspaceId } : {}) }), { mode: 0o600 });
   chmodSync(path, 0o600);
+  workspaceEvents.emit('sync-bound');
   return { url };
 }
 
@@ -75,12 +79,13 @@ function replicaBinding() {
   if (process.env.VITEST && !runtimeEnv('SYNC_URL')) return null;
   return readSyncBinding();
 }
+export function activeSyncBinding() { return isServerMode() ? null : replicaBinding(); }
 
 export async function syncStatus() {
   const binding = isServerMode() ? null : readSyncBinding();
   const state = await prisma.syncState.findUnique({ where: { id: 'local' } }).catch(() => null);
   const pending = await prisma.syncOutbox.count({ where: { state: 'pending' } });
-  return { mode: isServerMode() ? 'server' as const : 'local' as const, bound: Boolean(binding), url: binding?.url ?? null, baselineReady: Boolean(state?.baselineReady), appliedHubSeq: state?.appliedHubSeq ?? 0, pending, ...replicaHealth };
+  return { mode: isServerMode() ? 'server' as const : 'local' as const, bound: Boolean(binding), url: binding?.url ?? null, workspaceId: binding?.workspaceId ?? null, legacyDraftsImported: Boolean(binding?.legacyDraftsImported) || (isServerMode() && await legacyDraftImportAllowed()), baselineReady: Boolean(state?.baselineReady), appliedHubSeq: state?.appliedHubSeq ?? 0, pending, ...replicaHealth };
 }
 
 const replicaHealth = { lastSuccessAt: null as string | null, lastError: null as string | null, syncing: false };
@@ -249,21 +254,62 @@ function validatePull(page: Awaited<ReturnType<ReplicaTransport['pull']>>, curso
   if (!Number.isSafeInteger(page.tip) || page.tip < cursor || !Array.isArray(page.ops)) protocolError();
   let previous = cursor;
   const ids = new Set<string>();
+  let contiguous = true;
   for (const op of page.ops) {
-    if (!Number.isSafeInteger(op.seq) || op.seq !== previous + 1 || op.seq > page.tip || typeof op.opId !== 'string' || !op.opId || ids.has(op.opId) || typeof op.entityId !== 'string' || !op.entityId || !isSyncEntityType(op.entityType)) protocolError();
+    if (!Number.isSafeInteger(op.seq) || op.seq <= previous || op.seq > page.tip || typeof op.opId !== 'string' || !op.opId || ids.has(op.opId) || typeof op.entityId !== 'string' || !op.entityId || !isSyncEntityType(op.entityType)) protocolError();
+    if (op.seq !== previous + 1) contiguous = false;
     if (!validRow(op.entityType, op.before) || !validRow(op.entityType, op.after)) protocolError();
     ids.add(op.opId); previous = op.seq;
   }
   // A missing range needs explicit recovery; it is not permission to skip to the tip.
-  if (!page.ops.length && page.tip !== cursor) protocolError();
+  return contiguous && (page.ops.length > 0 || page.tip === cursor);
+}
+
+/** Recover an expired log without re-offering stale cached rows as new objects.
+ * Existing local history stays in private trash; only actual pending edits are rebased. */
+async function recoverReplica(db: ReplicaDb, transport: ReplicaTransport) {
+  if (!transport.snapshot) protocolError();
+  const snapshot = await transport.snapshot();
+  if (snapshot.schemaVersion !== localSchemaVersion()) throw new DomainError('SCHEMA_MISMATCH', '同步协议版本不一致，请先升级到同一版本', 409);
+  if (!Number.isSafeInteger(snapshot.tip) || snapshot.tip < 0 || !snapshot.entities) protocolError();
+  for (const entity of ['topic', 'tag', 'task'] as const) validateRows(entity, snapshot.entities[entity], '', Number.MAX_SAFE_INTEGER);
+  await db.$transaction(async tx => {
+    const pending = await tx.syncOutbox.findMany({ where: { state: 'pending' }, orderBy: { seq: 'asc' } });
+    const remoteTasks = new Set(snapshot.entities.task.map(item => item.id));
+    // Preserve old task history and foreign keys without reviving objects deleted on the hub.
+    const localTasks = await tx.task.findMany({ where: { deletedAt: null } });
+    for (const item of localTasks) if (!remoteTasks.has(item.id) && !pending.some(op => op.entityType === 'task' && op.entityId === item.id)) await tx.task.update({ where: { id: item.id }, data: { deletedAt: now(), deleteBatchId: 'sync-retired-cache', revision: { increment: 1 } } });
+    for (const entity of ['topic', 'tag', 'task'] as const) {
+      const rows = entity === 'task' ? orderTasks(snapshot.entities[entity]) : snapshot.entities[entity];
+      for (const item of rows) {
+        const live = await readLive(tx, entity, item.id);
+        const firstPending = pending.find(op => op.entityType === entity && op.entityId === item.id);
+        const base = firstPending?.beforeJson ? JSON.parse(firstPending.beforeJson) as SyncRow : null;
+        const row = firstPending ? mergeSyncRow(entity, live.row, base, item.row).row : item.row;
+        if (!syncRowsEqual(entity, live.row, row)) await writeLive(tx, entity, item.id, row);
+      }
+    }
+    const remoteTags = new Set(snapshot.entities.tag.map(item => item.id));
+    for (const tag of await tx.tag.findMany()) if (!remoteTags.has(tag.id) && !pending.some(op => op.entityType === 'tag' && op.entityId === tag.id)) {
+      await tx.taskTag.deleteMany({ where: { tagId: tag.id } }); await tx.tag.delete({ where: { id: tag.id } });
+    }
+    const remoteTopics = new Set(snapshot.entities.topic.map(item => item.id));
+    for (const topic of await tx.topic.findMany({ where: { archivedAt: null } })) if (!remoteTopics.has(topic.id) && !pending.some(op => op.entityType === 'topic' && op.entityId === topic.id)) await tx.topic.update({ where: { id: topic.id }, data: { archivedAt: now(), revision: { increment: 1 } } });
+    await tx.syncState.update({ where: { id: 'local' }, data: { baselineReady: true, appliedHubSeq: snapshot.tip, updatedAt: now() } });
+  }, { timeout: 30_000 });
+  return snapshot.tip;
 }
 
 async function pullFrom(db: ReplicaDb, transport: ReplicaTransport, after: number) {
   let cursor = after;
+  let recoveries = 0;
   for (;;) {
     const page = await transport.pull(cursor, 100);
     if (page.schemaVersion !== localSchemaVersion()) throw new DomainError('SCHEMA_MISMATCH', '同步协议版本不一致，请先升级到同一版本', 409);
-    validatePull(page, cursor);
+    if (!validatePull(page, cursor)) {
+      if (!transport.snapshot || recoveries++ > 1) protocolError();
+      cursor = await recoverReplica(db, transport); continue;
+    }
     if (!page.ops.length) return cursor;
     for (const op of page.ops) {
       await db.$transaction(async (tx) => {
@@ -363,11 +409,11 @@ function hubData(binding: SyncBinding, path: string, init?: RequestInit) {
   return fetch(new URL(path, binding.url), {
     ...init,
     signal: AbortSignal.timeout(20_000),
-    headers: { accept: 'application/json', authorization: `Bearer ${binding.token}`, 'content-type': 'application/json', 'x-dovun-language': 'zh-CN' },
+    headers: { accept: 'application/json', authorization: `Bearer ${binding.token}`, 'content-type': 'application/json', 'x-dovun-language': 'zh-CN', ...(binding.workspaceId ? { 'x-dovun-workspace-id': binding.workspaceId } : {}) },
   }).then(async (response) => {
     const body = await response.json().catch(() => null) as { data?: unknown; error?: string } | null;
     // Remote authentication failure must not expire the owner's local login.
-    if (response.status === 401 || response.status === 403) throw new DomainError('SYNC_AUTH_FAILED', '服务器未接受同步凭据，请核对后重试', 502);
+    if (response.status === 401 || response.status === 403) { await cacheAuthorization(binding, true); throw new DomainError('SYNC_AUTH_FAILED', '服务器未接受同步凭据，请核对后重试', 502); }
     if (!response.ok || !body || body.data === undefined) throw new DomainError('SYNC_FAILED', '同步操作无效', 502);
     return body.data;
   });
@@ -401,7 +447,19 @@ export async function bindReplica(binding: SyncBinding) {
     // Pairing only probes connectivity; a legacy log can contain historical gaps.
     // Alignment uses its atomic snapshot cursor, then incremental pages must be contiguous.
     if (!Number.isSafeInteger(probe.tip) || probe.tip < 0 || !Array.isArray(probe.ops)) protocolError();
-    return writeSyncBinding(normalized);
+    const identity = await hubData(normalized, '/api/v1/sync/identity') as { workspaceId?: unknown };
+    if (typeof identity.workspaceId !== 'string' || !identity.workspaceId) protocolError();
+    const resume = await pauseCoordinatorWork(); let bound = false;
+    try {
+    await assertHistoryImported(async fingerprint => {
+      const proof = await hubData(normalized, `/api/v1/sync/imports/${fingerprint}`) as { imported: boolean };
+      return proof.imported === true;
+    });
+    const active = await prisma.agentRun.count({ where: { state: { in: ['queued', 'running'] } } }) + await prisma.run.count({ where: { status: { in: ['created', 'accepted', 'running', 'unknown'] } } }) + await prisma.nodeJob.count({ where:{status:{in:['queued','leased']}} }) + await prisma.orchestration.count({ where:{status:'running'} });
+    if (active) throw new DomainError('EXECUTION_ACTIVE', '仍有执行任务未结束，请先处理后再连接共享工作区', 409);
+    const result = writeSyncBinding({ ...normalized, workspaceId: identity.workspaceId });
+    bound = true; return result;
+    } finally { if (!bound) resume(); }
   });
 }
 

@@ -5,7 +5,7 @@ import { Sparkles } from 'lucide-react';
 import { buildChatContext } from './lib/chat-context.js';
 import { pageNames, usePageContexts, type ChatContextV3 } from './lib/assistant-context.js';
 import { useLibrarySnapshot, patchLibrary } from './components/library/store.js';
-import type { AssistantSource } from '../../server/src/agent/assistant-sources.js';
+import type { AssistantSource } from '../../server/src/domain/assistant-source.js';
 import { isOverdue, occursOn } from './lib/schedule.js';
 import { focusOriginFromNavigation, hashRouteHead } from './lib/focus-presentation.js';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';

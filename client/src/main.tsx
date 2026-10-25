@@ -19,6 +19,7 @@ import './index.css';
 async function start() {
   if (preferenceMigrationError) throw preferenceMigrationError;
   await migrateBrowserDrafts(indexedDB, localStorage);
+  if (import.meta.env.PROD && 'serviceWorker' in navigator) void navigator.serviceWorker.register('/offline-worker.js').catch(() => {});
   createRoot(document.getElementById('root')!).render(
   <QueryClientProvider client={queryClient}>
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem storageKey="dovun.theme" disableTransitionOnChange>

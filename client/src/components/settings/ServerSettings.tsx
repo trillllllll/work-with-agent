@@ -1,4 +1,3 @@
-import { desktopSentinel } from '@/lib/desktop-shell.js';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api.js';
@@ -11,7 +10,6 @@ export const serverInfoQueryOptions = { queryKey: ['server-info'], queryFn: () =
 export function ServerSettings() {
   const { t } = useTranslation('settings');
   const infoQuery = useQuery<ServerInfo>(serverInfoQueryOptions);
-  const inDesktopShell = typeof window !== 'undefined' && '__TAURI__' in window;
   if (infoQuery.isError) return (
     <section aria-labelledby="settings-server-title">
       <h3 id="settings-server-title" className="text-lg font-semibold">{t('server.title')}</h3>
@@ -35,9 +33,7 @@ export function ServerSettings() {
           <dd className="mt-0.5 font-mono">{info?.version ?? '…'}</dd>
         </div>
       </dl>
-      {inDesktopShell && (
-        <Button type="button" variant="outline" className="mt-4" onClick={() => { window.location.assign(desktopSentinel('launcher')); }}>{t('server.switchMode')}</Button>
-      )}
+
     </section>
   );
 }

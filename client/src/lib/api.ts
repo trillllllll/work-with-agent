@@ -1,6 +1,7 @@
 import { readStoredApproval } from '../../../server/src/domain/task-batch-types.js';
 import { parseSseFrame, type Approval, type SseEvent, type ToolResult } from '../chat.js';
 import { currentLanguage, t } from '../i18n/index.js';
+import { browserReplica, offlineRequest, cacheableOfflineRead, cachedOfflineRead, cacheOfflineRead } from './offline-runtime.js';
 
 function labels<K extends string>(keys: Record<K, string>): Record<K, string> {
   const result = {} as Record<K, string>;
@@ -125,17 +126,49 @@ export const API_URL = '';
 let csrfToken = '';
 export function setCsrfToken(value: string) { csrfToken = value; }
 /** Every API call carries the CSRF token (when signed in) and the chosen UI language, so server messages match it. */
-export function authHeaders(): Record<string, string> { return { 'X-Dovun-Language': currentLanguage(), ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}) }; }
+export function authHeaders(): Record<string, string> { const workspaceId = browserReplica()?.workspaceId; return { 'X-Dovun-Language': currentLanguage(), ...(workspaceId ? { 'X-Dovun-Workspace-Id': workspaceId } : {}), ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}) }; }
 
 export type MutationMeta = { changeId?: string; affectedTaskIds?: string[]; warnings?: string[] };
 export type ApiEnvelope<T> = { data: T; error: null; meta?: MutationMeta };
 export class ApiError extends Error {
   constructor(message: string, public code?: string, public status?: number, public details?: unknown) { super(message); this.name = 'ApiError'; }
 }
+function normalizeApiError(error: unknown) {
+  if (error instanceof Error && (error.name === 'ZodError' || ('code' in error && error.code === 'INVALID_INPUT'))) return new ApiError(t('workspace:offline.errors.validation'), 'INVALID_INPUT', 400);
+  if (error instanceof Error && 'code' in error && error.code === 'TASK_STATUS_TRANSITION_NOT_ALLOWED') return new ApiError(t('workspace:offline.errors.transition'), String(error.code), 400);
+  return error instanceof Error && 'code' in error && 'status' in error && !(error instanceof ApiError)
+    ? new ApiError(error.message, String(error.code), Number(error.status), 'details' in error ? error.details : undefined)
+    : error;
+}
 export async function apiMutation<T = any>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
+  const replica = browserReplica();
+  try {
+    const local = await offlineRequest(path, init);
+    if (local !== undefined) return local;
+  } catch (error) {
+    throw normalizeApiError(error);
+  }
+  const cacheable = cacheableOfflineRead(path, init?.method);
+  try {
+    const prepared = replica ? await replica.prepareOnline(path, init) : init;
+    let result = await networkApiMutation<T>(path, prepared);
+    if (replica && browserReplica() !== replica) throw new ApiError(t('app:api.requestFailed'), 'SCOPE_CHANGED', 409);
+    if (replica) result = await replica.afterOnline(path, init, result);
+    if (cacheable) void cacheOfflineRead(path, result, replica);
+    return result;
+  } catch (error) {
+    if (cacheable && (!(error instanceof ApiError) || Number(error.status) >= 500)) {
+      const cached = await cachedOfflineRead(path, replica);
+      if (cached !== undefined) return cached as ApiEnvelope<T>;
+    }
+    throw normalizeApiError(error);
+  }
+}
+export async function networkApiMutation<T = any>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
   const headers = new Headers({ 'Content-Type': 'application/json', ...authHeaders() });
   new Headers(init?.headers).forEach((value, key) => headers.set(key, value));
-  const response = await fetch(`${API_URL}${path}`, { ...init, credentials: 'include', headers });
+  if (/^\/api\/v1\/(?:sync|auth|server\/info)(?:\/|\?|$)/.test(path)) headers.delete('X-Dovun-Workspace-Id');
+  const response = await fetch(`${API_URL}${path}`, { ...init, signal: init?.signal ?? AbortSignal.timeout(15_000), credentials: 'include', headers });
   const body = await response.json().catch(() => ({ data: null, error: t('app:api.invalidResponse') }));
   if (!response.ok) {
     if (response.status === 401 && typeof window !== 'undefined') window.dispatchEvent(new Event('workspace-session-expired'));
@@ -172,6 +205,7 @@ export function parseApproval(item: any): Approval {
 }
 
 export async function streamChat(body: unknown, onEvent: (event: SseEvent) => void, options?: { onAccepted?: () => void }) {
+  await browserReplica()?.prepareOnline('/api/chat', { method: 'POST', body: JSON.stringify(body) });
   const response = await fetch(`${API_URL}/api/chat`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', ...authHeaders() }, body: JSON.stringify(body) });
   if (!response.ok) {
     const payload = await response.json().catch(() => null);

@@ -1,6 +1,6 @@
 import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure.js';
 import { useTranslation } from 'react-i18next';
-import type { ChatContextV2, ChatContextV3 } from '../../../../server/src/agent/chat-context.js';
+import type { ChatContextV2, ChatContextV3 } from '../../../../server/src/domain/chat-context.js';
 import { pageNames } from '@/lib/assistant-context.js';
 
 const statuses = ['all', 'open', 'todo', 'doing', 'blocked', 'done'] as const;

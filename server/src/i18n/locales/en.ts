@@ -858,5 +858,12 @@ export const en: Record<string, string> = {
   "统计区间不能超过 366 天": "The stats range cannot be longer than 366 days",
   "统计区间无效": "The stats range is invalid",
   "统计分区加载失败": "This stats section failed to load",
-  "统计需要同时提供开始和结束时间": "Stats needs both a start and an end time"
+  "统计需要同时提供开始和结束时间": "Stats needs both a start and an end time",
+  "仍有执行任务未结束，请先处理后再连接共享工作区": "Some executions have not ended. Resolve them before connecting the shared workspace.",
+  "同步凭据不能访问这个入口": "A sync credential cannot access this endpoint.",
+  "共享工作区暂不可用，本机修改已保留": "The shared workspace is unavailable. Local changes have been retained.",
+  "记录已发生变化，请刷新": "The record has changed. Refresh and try again.",
+  "请等待本机修改同步完成后重试": "Wait until local changes finish syncing, then retry.",
+  "工作区身份已变化，本机待同步修改已保留": "The workspace identity changed. Pending local changes have been retained.",
+  "本机聊天和资料尚未迁入共享工作区，请先合并完整备份，原数据已保留": "Local conversations and materials have not been imported. Merge a full backup first; the original data is preserved."
 };

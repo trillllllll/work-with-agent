@@ -4,7 +4,8 @@ import { DomainError } from '../domain/task.js';
 import { ownerActor, assertTopicAccess } from '../application/security.js';
 import { appKnowledge, applicationVersion } from './app-knowledge.js';
 export const sourceReadTools = new Set(['read_app_knowledge', 'query_tasks', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'conversation_search']);
-export type AssistantSource = { kind: 'task' | 'material' | 'memory' | 'conversation' | 'help'; id: string; title: string; revision?: number };
+export type { AssistantSource } from '../domain/assistant-source.js';
+import type { AssistantSource } from '../domain/assistant-source.js';
 export async function resolveAssistantSource(kind: string, id: string, revision?: number) {
   if (revision !== undefined && (!Number.isInteger(revision) || revision < 1)) throw new DomainError('INVALID_SOURCE', '来源版本无效', 400);
   if (kind === 'help') {

@@ -44,9 +44,10 @@ export class TaskDraftStore {
   private open(): Promise<IDBDatabase> {
     if (this.database) return this.database;
     this.database = new Promise((resolve, reject) => {
-      const request = this.factory.open(DRAFT_DATABASE, 1);
+      const request = this.factory.open(DRAFT_DATABASE, 2);
       request.onupgradeneeded = () => {
         const db = request.result;
+        if (!db.objectStoreNames.contains('scopeMigrations')) db.createObjectStore('scopeMigrations');
         if (!db.objectStoreNames.contains(DRAFT_STORE)) {
           const store = db.createObjectStore(DRAFT_STORE, { keyPath: DRAFT_KEY_PATH });
           store.createIndex('byScopeTask', ['scopeKey', 'taskId']);
@@ -58,6 +59,27 @@ export class TaskDraftStore {
       request.onblocked = () => reject(new Error('draft database blocked by another version'));
     });
     return this.database;
+  }
+
+  /** Called only for an explicitly reconciled legacy workspace; never guesses across origins. */
+  async importLegacyScope(from: string, to: string): Promise<void> {
+    const db = await this.open();
+    return new Promise((resolve,reject)=>{
+      const tx=db.transaction([DRAFT_STORE,'scopeMigrations'],'readwrite'), markers=tx.objectStore('scopeMigrations'),store=tx.objectStore(DRAFT_STORE);
+      const marker=markers.get(from);
+      marker.onsuccess=()=>{
+        if(marker.result)return;
+        const read=store.index('byScope').getAll(from);
+        read.onsuccess=()=>{
+          for(const row of read.result as TaskTextDraftV1[]){
+            const target={...row,scopeKey:to,outbox:null,blockedReason:'server-reset' as const,retryCount:0,nextRetryAt:null};
+            const existing=store.get(draftKeyPath(target));existing.onsuccess=()=>{if(!existing.result)store.put(target);};
+          }
+          markers.put(to,from);
+        };
+      };
+      tx.oncomplete=()=>resolve();tx.onabort=tx.onerror=()=>reject(tx.error??new Error('Draft scope import failed'));
+    });
   }
 
   async load(scopeKey: string, taskId: string): Promise<TaskTextDraftV1[]> {

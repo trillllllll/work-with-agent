@@ -5,6 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { PrismaClient } from '@prisma/client';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import sharp from 'sharp';
 
 const require = createRequire(import.meta.url);
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -14,7 +18,7 @@ const children = new Set<ChildProcess>();
 
 async function start(name: string, port = 0): Promise<Peer> {
   const data = join(directory, name);
-  const env: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: `file:${join(data, 'test.db')}`, DOVUN_DATA_DIR: data, DOVUN_SERVER_MODE: '0', SYNC_TEST_PORT: String(port) };
+  const env: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: `file:${join(data, 'test.db')}`, DOVUN_DATA_DIR: data, KNOWLEDGE_STORAGE_ROOT: join(data, 'blobs'), DOVUN_SERVER_MODE: '0', SYNC_TEST_PORT: String(port) };
   delete env.VITEST; delete env.DOVUN_SYNC_URL; delete env.DOVUN_SYNC_TOKEN; delete env.DOVUN_CONTAINER;
   const child = spawn(process.execPath, ['--import', 'tsx', 'test/fixtures/sync-process.ts'], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
   children.add(child);
@@ -55,7 +59,7 @@ async function stop(peer: Peer) {
 
 describe('task sync across independent HTTP processes', () => {
   beforeAll(() => {
-    for (const name of ['hub', 'local']) {
+    for (const name of ['hub', 'local', 'hub-shared', 'local-shared']) {
       const data = join(directory, name); mkdirSync(data);
       writeFileSync(join(data, 'test.db'), '');
       execFileSync(process.execPath, [require.resolve('prisma/build/index.js'), 'migrate', 'deploy', '--schema', 'prisma/schema.prisma'], { cwd: root, env: { ...process.env, DATABASE_URL: `file:${join(data, 'test.db')}` }, stdio: 'pipe' });
@@ -110,5 +114,64 @@ describe('task sync across independent HTTP processes', () => {
     expect((await local.request(`/api/tasks/${taskId}`)).data.title).toBe('本机离线标题');
     expect((await hub.request(`/api/tasks/${taskId}`)).data.title).toBe('本机离线标题');
     await stop(local); await stop(hub);
+  }, 60_000);
+
+  it('shares chat and downloaded files, retains MCP scopes and requires approval for remote writes', async () => {
+    let hub = await start('hub-shared'), local = await start('local-shared');
+    const database = new PrismaClient({ datasourceUrl: `file:${join(directory, 'hub-shared', 'test.db')}` });
+    const stamp = new Date().toISOString();
+    await database.conversation.create({ data: { id: 'shared-conversation', summary: 'SHARED-HISTORY-TEST', createdAt: stamp, updatedAt: stamp, messages: { create: { id: 'shared-message', role: 'assistant', content: '同一个工作区的聊天正文', status: 'completed', createdAt: stamp } } } });
+    const publicTopic = (await hub.request('/api/topics', { name: '授权清单' })).data;
+    const privateTopic = (await hub.request('/api/topics', { name: '范围外清单' })).data;
+    const publicTask = (await hub.request('/api/tasks', { title: '授权任务', topicId: publicTopic.id })).data;
+    const privateTask = (await hub.request('/api/tasks', { title: '范围外任务', topicId: privateTopic.id })).data;
+    const paired = (await hub.request('/api/v1/sync/devices', { name: 'shared-fixture' })).data;
+    expect((await local.request('/api/v1/sync/bind', { url: `http://127.0.0.1:${hub.port}`, token: paired.token })).status).toBe(200);
+    expect((await local.request('/api/v1/sync/run', {})).status).toBe(200);
+    expect((await local.request('/api/conversations')).data.items.map((item: any) => item.id)).toContain('shared-conversation');
+    expect(JSON.stringify((await local.request('/api/conversations/shared-conversation/messages')).data)).toContain('同一个工作区的聊天正文');
+    const forbidden = await fetch(`http://127.0.0.1:${hub.port}/api/v1/sync/relay/api/v1/server/owner-key`, { headers: { authorization: `Bearer ${paired.token}` } });
+    expect(forbidden.status).toBe(403);
+    const connection = (await local.request('/api/v1/connections', { name: 'scope-fixture', host: 'codex', topicIds: [publicTopic.id], includeInbox: false, autoActions: [] })).data;
+    expect(connection.configuration.env.DOVUN_API_URL).toBe(`http://127.0.0.1:${local.port}`);
+    const mcp = new Client({ name: 'relay-scope-fixture', version: '1.0' });
+    await mcp.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${local.port}/mcp`), { requestInit: { headers: { authorization: `Bearer ${connection.token}` } } }));
+    const listing = await mcp.callTool({ name: 'list_tasks', arguments: { limit: 20 } });
+    const tasks = (listing.structuredContent as any).data.items;
+    expect(tasks.map((item: any) => item.id)).toEqual([publicTask.id]);
+    expect((await mcp.callTool({ name: 'get_capabilities', arguments: {} })).isError).not.toBe(true);
+    expect((await mcp.callTool({ name: 'list_trash', arguments: { limit: 20 } })).isError).not.toBe(true);
+    expect((await mcp.callTool({ name: 'get_task', arguments: { taskId: privateTask.id, includeImages: false } })).isError).toBe(true);
+    const proposed = await mcp.callTool({ name: 'submit_commands', arguments: { requestId: crypto.randomUUID(), commands: [{ kind: 'task.update', targetId: publicTask.id, expectedRevision: tasks[0].revision, input: { title: '批准后的标题' } }] } });
+    const proposal = (proposed.structuredContent as any).data;
+    expect(proposal.status).toBe('pending_approval');
+    expect((await hub.request(`/api/tasks/${publicTask.id}`)).data.title).toBe('授权任务');
+    expect((await local.request(`/api/v1/proposals/${proposal.proposalId}/approve`, { expectedRevision: proposal.proposalRevision, requestId: crypto.randomUUID() })).status).toBe(200);
+    await expect.poll(async () => (await local.request(`/api/tasks/${publicTask.id}`)).data.title, { timeout: 8000 }).toBe('批准后的标题');
+    const imageBytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: 'white' } }).jpeg().toBuffer();
+    const uploaded = await local.request(`/api/tasks/${publicTask.id}/images`, { attachmentBase64: imageBytes.toString('base64'), mimeType: 'image/jpeg' });
+    expect(uploaded.status).toBe(200);
+    const url = `http://127.0.0.1:${local.port}${uploaded.data.url}`;
+    const download = await fetch(url, { headers: { cookie: local.cookie } });
+    expect(download.status).toBe(200); expect(Buffer.from(await download.arrayBuffer())).toEqual(imageBytes);
+    await mcp.close(); await database.$disconnect(); await stop(hub);
+    // Allow the successful download's atomic cache write to finish before testing its offline read.
+    await expect.poll(async () => (await fetch(url, { headers: { cookie: local.cookie } })).status, { timeout: 8000 }).toBe(200);
+    const cached = await fetch(url, { headers: { cookie: local.cookie } });
+    expect(cached.headers.get('x-dovun-offline')).toBe('1'); expect(cached.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(Buffer.from(await cached.arrayBuffer())).toEqual(imageBytes);
+    expect(JSON.stringify((await local.request('/api/conversations/shared-conversation/messages')).data)).toContain('同一个工作区的聊天正文');
+    const unauthenticated = await fetch(url, { headers: { 'x-dovun-replica': 'owner' } });
+    expect(unauthenticated.status).toBe(401);
+    const hubPort = hub.port, localPort = local.port;
+    hub = await start('hub-shared', hubPort);
+    await database.syncDevice.delete({ where: { id: paired.deviceId } });
+    // The background sync path sees revocation first; the relay has not yet received a refusal.
+    expect((await local.request('/api/v1/sync/run', {})).code).toBe('SYNC_AUTH_FAILED');
+    await stop(hub); await stop(local); await database.$disconnect();
+    local = await start('local-shared', localPort);
+    const afterRestart = await fetch(url, { headers: { cookie: local.cookie } });
+    expect(afterRestart.status).toBe(502); expect(afterRestart.headers.get('x-dovun-offline')).toBe(null);
+    await stop(local);
   }, 60_000);
 });

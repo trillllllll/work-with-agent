@@ -568,5 +568,39 @@
     "previousPage": "上一页",
     "nextPage": "下一页",
     "defaultPurpose": "从这份材料整理下一步任务、决策和需要确认的问题"
+  },
+  "offline": {
+    "saved": "离线使用 · 已保存在此设备，{{count}} 条修改待同步",
+    "retrying": "同步暂不可用 · {{count}} 条修改已保留",
+    "pending": "已保存在此设备 · {{count}} 条修改待同步",
+    "retry": "重试",
+    "errors": {
+      "protocol": "同步响应无效，已保留本机修改和同步进度",
+      "requestReused": "请求编号已用于其他修改",
+      "preview": "请先确认关联变更",
+      "login": "请先登录本机工作区",
+      "pending": "请等待本机修改同步完成后重试",
+      "version": "记录已发生变化，请刷新",
+      "credential": "同步凭据已失效，请重新登录",
+      "failed": "同步操作无效",
+      "workspace": "工作区身份已变化，本机待同步修改已保留",
+      "schema": "同步协议版本不一致，请先升级到同一版本",
+      "notFound": "记录不存在",
+      "topicMissing": "清单不存在",
+      "archived": "已归档清单不能修改",
+      "notEditable": "任务不存在或已在回收站",
+      "order": "排序范围已发生变化，请刷新",
+      "existing": "请求编号已用于已有记录",
+      "initial": "新任务必须从待办状态开始",
+      "depth": "只支持一级子任务",
+      "topicRelation": "父子任务必须属于同一清单",
+      "tags": "部分标签不存在",
+      "cycle": "只支持一级子任务，不能形成循环",
+      "children": "还有未完成子任务，请确认一并完成",
+      "online": "此操作需要联网确认",
+      "notDeleted": "任务不在回收站",
+      "validation": "输入内容有误，请检查字段和日期",
+      "transition": "当前状态不支持这项操作"
+    }
   }
 }

@@ -104,4 +104,27 @@ describe('hub sync for tasks', () => {
     expect((await owner('get', '/api/v1/sync/baseline/snapshot?schemaVersion=old')).status).toBe(409);
   });
 
+  it('preserves historical creation and completion times instead of stamping the download date', async () => {
+    const created = await new TaskService().create({ title: '历史完成日期' }, { source: 'user' }); taskIds.push(created.id);
+    const device = await pairSyncDevice('history-time'); deviceIds.push(device.deviceId);
+    const base = (await prisma.$transaction(tx => readLive(tx, 'task', created.id))).row!;
+    const after = { ...base, status: 'done', createdAt: '2020-01-02T03:04:05.000Z', completedAt: '2020-02-03T04:05:06.000Z', completedAtEstimated: false };
+    await pushSyncOps(device.deviceId, { schemaVersion: localSchemaVersion(), ops: [{ opId: 'history-time-operation', entityType: 'task', entityId: created.id, before: base, after }] });
+    expect(await prisma.task.findUniqueOrThrow({ where: { id: created.id } })).toMatchObject({ createdAt: after.createdAt, completedAt: after.completedAt, completedAtEstimated: false });
+  });
+  it('retains missing-reference conflicts without blocking unrelated edits', async () => {
+    const one = await new TaskService().create({ title: '引用已被另一端删除' }, { source: 'user' });
+    const two = await new TaskService().create({ title: '无关任务' }, { source: 'user' }); taskIds.push(one.id, two.id);
+    const device = await pairSyncDevice('reference-conflict'); deviceIds.push(device.deviceId);
+    const base = (await prisma.$transaction(tx => readLive(tx, 'task', one.id))).row!;
+    const other = (await prisma.$transaction(tx => readLive(tx, 'task', two.id))).row!;
+    await pushSyncOps(device.deviceId, { schemaVersion: localSchemaVersion(), ops: [
+      { opId: 'reference-conflict-01', entityType: 'task', entityId: one.id, before: base, after: { ...base, title: '正文仍能保存', topicId: 'gone-topic', parentId: 'gone-parent', tagIds: ['gone-tag'] } },
+      { opId: 'reference-conflict-02', entityType: 'task', entityId: two.id, before: other, after: { ...other, description: '不受影响' } },
+    ] });
+    expect(await prisma.task.findUniqueOrThrow({ where: { id: one.id } })).toMatchObject({ title: '正文仍能保存', topicId: null, parentId: null });
+    expect(await prisma.syncConflict.count({ where: { entityId: one.id } })).toBe(3);
+    expect((await prisma.task.findUniqueOrThrow({ where: { id: two.id } })).description).toBe('不受影响');
+  });
+
 });

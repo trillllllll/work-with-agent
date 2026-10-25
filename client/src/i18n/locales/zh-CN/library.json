@@ -149,7 +149,9 @@
     "methodNative": "原文",
     "chunkMeta": "{{place}} · {{method}}",
     "noExtractedText": "还没有可显示的提取文字。",
-    "loadMore": "继续加载"
+    "loadMore": "继续加载",
+    "offlineReady": "此版本已在设备上，可离线查看",
+    "offlineOnDemand": "按需读取；未缓存的原文件需要联网"
   },
   "libraryPage": {
     "memory": "记忆",

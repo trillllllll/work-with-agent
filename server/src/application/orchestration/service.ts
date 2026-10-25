@@ -1,3 +1,4 @@
+import { coordinatorWork } from '../coordinator-work.js';
 /**
  * Orchestration state machine. The server only plans, dispatches NodeJobs, reads reports, compares
  * fields and decides. Every real action (worktrees, coding, commits, merges, tests, push) happens
@@ -815,7 +816,7 @@ export function startOrchestrationScheduler(intervalMs = 2_000) {
   const timer = setInterval(() => {
     if (running) return;
     running = true;
-    tickAllOrchestrations().catch((error) => console.error('编排调度失败：', error)).finally(() => { running = false; });
+    coordinatorWork(() => tickAllOrchestrations()).catch((error) => console.error('编排调度失败：', error)).finally(() => { running = false; });
   }, intervalMs);
   timer.unref();
   return () => clearInterval(timer);

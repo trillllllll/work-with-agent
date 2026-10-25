@@ -1142,6 +1142,14 @@ model SyncDevice {
   @@map("sync_devices")
 }
 
+model SyncWorkspace {
+  id          String @id
+  workspaceId String @unique @map("workspace_id")
+  createdAt   String @map("created_at")
+
+  @@map("sync_workspace")
+}
+
 /// Immutable request receipts, including conflicts and no-op writes. Stored with the business write.
 model SyncReceipt {
   opId        String @id @map("op_id")
@@ -1193,4 +1201,22 @@ model SyncState {
   updatedAt      String  @default("") @map("updated_at")
 
   @@map("sync_state")
+}
+
+model SyncImport {
+  id String @id
+  fingerprint String
+  source String
+  createdAt String @map("created_at")
+  @@index([fingerprint])
+  @@map("sync_imports")
+}
+model SyncImportArchive {
+  id String @id
+  source String
+  tableName String @map("table_name")
+  entityKey String @map("entity_key")
+  payload String
+  createdAt String @map("created_at")
+  @@map("sync_import_archive")
 }

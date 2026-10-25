@@ -1,7 +1,7 @@
 import { projectBlocks } from '../../server/src/agent/content-projection.js';
 import type { ContentBlock } from './lib/message-blocks.js';
-import type { ChatContextV2, ChatContextV3 } from '../../server/src/agent/chat-context.js';
-import type { AssistantSource } from '../../server/src/agent/assistant-sources.js';
+import type { ChatContextV2, ChatContextV3 } from '../../server/src/domain/chat-context.js';
+import type { AssistantSource } from '../../server/src/domain/assistant-source.js';
 import type { AppOutcome, AppReview, BatchOutcome, TaskBatchPreview } from '../../server/src/domain/task-batch-types.js';
 import { t } from './i18n/index.js';
 

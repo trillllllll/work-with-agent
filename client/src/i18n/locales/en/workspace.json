@@ -571,5 +571,39 @@
     "previousPage": "Previous",
     "nextPage": "Next",
     "defaultPurpose": "Turn this material into next tasks, decisions, and open questions"
+  },
+  "offline": {
+    "saved": "Offline · saved on this device, {{count}} changes pending",
+    "retrying": "Sync unavailable · {{count}} changes retained",
+    "pending": "Saved on this device · {{count}} changes pending",
+    "retry": "Retry",
+    "errors": {
+      "protocol": "Invalid sync response. Local changes and progress have been retained.",
+      "requestReused": "This request ID was already used for another change.",
+      "preview": "Confirm the related changes first.",
+      "login": "Sign in to the workspace first.",
+      "pending": "Wait until local changes finish syncing, then retry.",
+      "version": "The record has changed. Refresh and try again.",
+      "credential": "The sync credential has expired. Sign in again.",
+      "failed": "Sync is unavailable.",
+      "workspace": "The workspace identity changed. Pending local changes have been retained.",
+      "schema": "Sync versions differ. Update both sides to the same version.",
+      "notFound": "The record does not exist.",
+      "topicMissing": "The list does not exist.",
+      "archived": "Archived lists cannot be edited.",
+      "notEditable": "The task does not exist or is in Trash.",
+      "order": "The ordering scope changed. Refresh and try again.",
+      "existing": "This request ID already belongs to an existing record.",
+      "initial": "A new task must start in To do.",
+      "depth": "Only one level of subtasks is supported.",
+      "topicRelation": "Parent and child tasks must belong to the same list.",
+      "tags": "Some tags no longer exist.",
+      "cycle": "Subtasks support one level and cannot form a cycle.",
+      "children": "There are unfinished subtasks. Confirm completing them together.",
+      "online": "This operation needs an online confirmation.",
+      "notDeleted": "The task is not in Trash.",
+      "validation": "Invalid input. Check the fields and dates.",
+      "transition": "This operation is not allowed in the current task state."
+    }
   }
 }

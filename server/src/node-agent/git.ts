@@ -95,7 +95,16 @@ export async function hooksFingerprint(worktree: string) {
     const entries = await readdir(dir).catch(() => [] as string[]);
     for (const entry of entries.sort()) { hash.update(entry); hash.update(await readFile(join(dir, entry)).catch(() => Buffer.alloc(0))); }
   }
-  hash.update(await readFile(join(commonDir, 'config')).catch(() => Buffer.alloc(0)));
+  // push --set-upstream writes branch metadata in the same common config.
+  // Only hook configuration belongs to this safety fingerprint.
+  const configRead = async (args: string[]) => (await exec('git', ['-C', worktree, 'config', ...args], { timeout: 10_000, windowsHide: true })).stdout.trim();
+  const configured = await configRead(['--show-origin', '--get-all', 'core.hooksPath']).catch(() => '');
+  hash.update(configured);
+  const custom = await configRead(['--path', '--get', 'core.hooksPath']).catch(() => '');
+  if (custom) {
+    const directory = resolve(worktree, custom);
+    for (const entry of (await readdir(directory).catch(() => [] as string[])).sort()) { hash.update(entry); hash.update(await readFile(join(directory, entry)).catch(() => Buffer.alloc(0))); }
+  }
   return hash.digest('hex');
 }
 

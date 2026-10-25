@@ -118,6 +118,11 @@ export async function pairSyncDevice(name: string) {
   return { deviceId: id, token };
 }
 
+export async function syncWorkspaceIdentity() {
+  const identity = await prisma.syncWorkspace.upsert({ where: { id: 'workspace' }, create: { id: 'workspace', workspaceId: randomUUID(), createdAt: now() }, update: {} });
+  return { workspaceId: identity.workspaceId, schemaVersion: localSchemaVersion() };
+}
+
 const rowSchema = z.record(z.unknown()).nullable();
 const pushOpSchema = z.object({
   opId: z.string().min(8).max(200),
@@ -215,14 +220,16 @@ export async function writeLive(tx: Tx, entityType: SyncEntityType, entityId: st
   const existing = await tx.task.findUnique({ where: { id: entityId } });
   // completedAt is not a sync field. Derive it here because writeLive bypasses ChangeGroup.
   // done → done leaves the previous completion time alone.
-  const completion = scalars.status === 'done' && existing?.status === 'done'
+  const completion = scalars.status === 'done' && typeof row.completedAt === 'string'
+    ? { completedAt: row.completedAt, completedAtEstimated: row.completedAtEstimated === true }
+    : scalars.status === 'done' && existing?.status === 'done'
     ? {}
     : scalars.status === 'done'
       ? { completedAt: timestamp, completedAtEstimated: false }
       : { completedAt: null, completedAtEstimated: false };
   const saved = existing
-    ? await tx.task.update({ where: { id: entityId }, data: { ...scalars, ...completion, revision: { increment: 1 }, updatedAt: timestamp } })
-    : await tx.task.create({ data: { id: entityId, ...scalars, ...completion, revision: 1, createdAt: timestamp, updatedAt: timestamp } });
+    ? await tx.task.update({ where: { id: entityId }, data: { ...scalars, ...completion, ...(typeof row.createdAt === 'string' && row.createdAt ? { createdAt: row.createdAt } : {}), revision: { increment: 1 }, updatedAt: timestamp } })
+    : await tx.task.create({ data: { id: entityId, ...scalars, ...completion, revision: 1, createdAt: typeof row.createdAt === 'string' && row.createdAt ? row.createdAt : timestamp, updatedAt: timestamp } });
   const tagIds = Array.isArray(row.tagIds) ? row.tagIds.map(String) : [];
   await tx.taskTag.deleteMany({ where: { taskId: entityId } });
   if (tagIds.length) await tx.taskTag.createMany({ data: tagIds.map((tagId) => ({ taskId: entityId, tagId })) });
@@ -252,7 +259,7 @@ async function storeConflicts(tx: Tx, opId: string, deviceId: string, entityType
   }
 }
 
-async function applyIncoming(tx: Tx, deviceId: string, input: z.infer<typeof pushOpSchema>) {
+async function applyIncoming(tx: Tx, deviceId: string, input: z.infer<typeof pushOpSchema>, baseline = false) {
   if (!isSyncEntityType(input.entityType)) throw new DomainError('VALIDATION_ERROR', '同步操作无效', 400);
   const entityType = input.entityType;
   requireComplete(entityType, input.before);
@@ -270,6 +277,34 @@ async function applyIncoming(tx: Tx, deviceId: string, input: z.infer<typeof pus
   const before = canonicalSyncRow(entityType, input.before);
   const after = canonicalSyncRow(entityType, input.after);
   const merged = mergeSyncRow(entityType, live.row, before, after);
+  if (entityType === 'task' && merged.row) {
+    let row = merged.row;
+    const topic = typeof row.topicId === 'string' ? await tx.topic.findUnique({ where: { id: row.topicId } }) : null;
+    if (!baseline && live.row && topic?.archivedAt && row.topicId === live.row.topicId && !syncRowsEqual(entityType, before, after)) {
+      merged.conflicts.push({ field: '_deleted', base: before, live: live.row, incoming: after });
+      row = merged.row = live.row;
+    } else {
+      const invalidReference = (field: string, fallback: unknown) => {
+        merged.conflicts.push({ field, base: before?.[field] ?? null, live: fallback, incoming: row[field] });
+        row[field] = fallback;
+      };
+      if (row.topicId && (!topic || topic.archivedAt && !baseline)) invalidReference('topicId', null);
+      if (typeof row.parentId === 'string') {
+        const parent = await tx.task.findUnique({ where: { id: row.parentId } });
+        if (!parent || parent.id === input.entityId || parent.parentId || parent.deletedAt || parent.topicId !== row.topicId || await tx.task.count({ where: { parentId: input.entityId } })) invalidReference('parentId', null);
+      }
+      const ids = row.tagIds as string[];
+      const tags = await tx.tag.findMany({ where: { id: { in: ids } }, select: { id: true } });
+      const available = new Set(tags.map(tag => tag.id));
+      if (ids.some(id => !available.has(id))) invalidReference('tagIds', ids.filter(id => available.has(id)));
+    }
+    if (row.status !== 'done') {
+      if (row.completedAt != null && after?.status === 'done') merged.conflicts.push({ field: 'completedAt', base: before?.completedAt ?? null, live: null, incoming: row.completedAt });
+      row.completedAt = null; row.completedAtEstimated = false;
+    } else if (typeof row.completedAt !== 'string') {
+      row.completedAt = now(); row.completedAtEstimated = true;
+    }
+  }
   const changed = !syncRowsEqual(entityType, live.row, merged.row);
   let revision = live.revision;
   let seq: number | null = null;
@@ -443,7 +478,7 @@ export async function offerBaselineRows(deviceId: string, schemaVersion: string,
         results.push({ id: item.id, status: 'conflict' as const, row: live.row });
         continue;
       }
-      const applied = await applyIncoming(tx, deviceId, { opId: `baseline:${deviceId}:${entityType}:${item.id}`, entityType, entityId: item.id, before: null, after: incoming });
+      const applied = await applyIncoming(tx, deviceId, { opId: `baseline:${deviceId}:${entityType}:${item.id}`, entityType, entityId: item.id, before: null, after: incoming }, true);
       results.push({ id: item.id, status: applied.status === 'conflict' ? 'conflict' as const : 'copied' as const, row: applied.landed ?? incoming });
     }
     await tx.syncDevice.update({ where: { id: deviceId }, data: { lastSeenAt: now() } });

@@ -40,10 +40,11 @@ export class EditorRuntime {
     });
   }
 
-  static async open(actorId: string, client: QueryClient) {
+  static async open(actorId: string, client: QueryClient, workspaceId?: string, legacyDraftsImported = false) {
     const origin = window.location.origin;
     const apiBase = normalizeApiBaseUrl(import.meta.env.VITE_API_URL as string | undefined ?? '', origin);
-    const scopeKey = JSON.stringify([origin, apiBase, actorId]);
+    const scopeKey = JSON.stringify([origin, apiBase, actorId, ...(workspaceId ? [workspaceId] : [])]);
+    if (workspaceId && legacyDraftsImported) await (runtime?.scopeKey === scopeKey ? runtime.store : new TaskDraftStore()).importLegacyScope(JSON.stringify([origin,apiBase,actorId]),scopeKey);
     if (runtime?.scopeKey === scopeKey) return runtime;
     runtime?.coordinator.dispose();
     const next = new EditorRuntime(scopeKey, client);
@@ -65,28 +66,24 @@ export function markEditorSessionExpired(expired: boolean) {
 /** 请求超时、断线、5xx 由协调器按同一 requestId 幂等重试。 */
 async function sendWithTimeout(request: TransportRequest): Promise<TransportOutcome> {
   try {
-    const response = await fetch(`${API_URL}${request.path}`, {
+    const body = await apiMutation(request.path, {
       method: request.method,
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...authHeaders(), 'X-Request-ID': request.requestId },
       body: request.bodyJson,
       signal: AbortSignal.timeout(NETWORK_WAIT_MS),
     });
-    const body = await response.json().catch(() => null);
-    if (response.ok) {
+    {
       // 资料引用命令的结果数组归一成与 PATCH 相同的任务形状。
       if (request.path === '/api/v1/commands') {
         const data = (body as { data?: { results?: unknown[]; status?: string } } | null)?.data;
         if (data?.status === 'pending_approval') return { kind: 'rejected', status: 409, code: 'REFERENCE_PENDING', body };
-        return { kind: 'success', status: response.status, body: { data: Array.isArray(data?.results) ? data?.results[0] : data } };
+        return { kind: 'success', status: 200, body: { data: Array.isArray(data?.results) ? data?.results[0] : data } };
       }
-      return { kind: 'success', status: response.status, body };
+      return { kind: 'success', status: 200, body };
     }
-    const envelope = body as Record<string, unknown> | null;
-    const errorField = envelope?.error;
-    const code = errorField && typeof errorField === 'object' && 'code' in errorField ? String((errorField as { code?: unknown }).code) : typeof envelope?.code === 'string' ? envelope.code : undefined;
-    return { kind: 'rejected', status: response.status, code, body };
-  } catch {
+  } catch (error) {
+    if (error instanceof ApiError && error.status) return { kind: 'rejected', status: error.status, code: error.code, body: { code: error.code, error: error.message, details: error.details } };
     return { kind: 'network' };
   }
 }

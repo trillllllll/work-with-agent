@@ -168,12 +168,8 @@ fn launch(app: &AppHandle) -> Result<(), String> {
     prepare_data(app)?;
     let data = data_dir()?;
     prepare_origin_state(app, &data)?;
-    match read_launcher_config(&data) {
-        // First run without a choice yet: the splash page shows the mode picker on its own.
-        None => Ok(()),
-        Some(config) if config.mode == "remote" && !config.remote_url.is_empty() => launch_remote(app, &config.remote_url),
-        _ => launch_local(app, &data),
-    }
+    // Every launch uses the durable local replica. Cloud pairing lives in Sync settings.
+    launch_local(app, &data)
 }
 
 fn launch_local(app: &AppHandle, data: &Path) -> Result<(), String> {

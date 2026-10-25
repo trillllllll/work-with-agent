@@ -26,6 +26,7 @@ export function useWorkspaceEvents() {
   const client = useQueryClient();
   useEffect(() => {
     const refresh = () => { if (document.visibilityState === 'visible') void client.invalidateQueries(); };
+    const replicaRefresh = (event: Event) => { if ((event as CustomEvent).detail?.rowsChanged !== false) refresh(); };
     const events = new EventSource('/api/v1/events', { withCredentials: true });
     const notified = new Set<string>();
     const pending = new Set<string>();
@@ -79,7 +80,8 @@ export function useWorkspaceEvents() {
     for (const name of ['changed', 'workspace', 'mutation']) events.addEventListener(name, refresh);
     const interval = window.setInterval(refresh, 30_000);
     window.addEventListener('focus', refresh);
+    window.addEventListener('dovun-replica-change', replicaRefresh);
     document.addEventListener('visibilitychange', refresh);
-    return () => { events.close(); if (timer !== undefined) window.clearTimeout(timer); clearInterval(interval); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
+    return () => { events.close(); if (timer !== undefined) window.clearTimeout(timer); clearInterval(interval); window.removeEventListener('focus', refresh); window.removeEventListener('dovun-replica-change', replicaRefresh); document.removeEventListener('visibilitychange', refresh); };
   }, [client]);
 }

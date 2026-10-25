@@ -42,7 +42,7 @@ if (prompt.includes('## 独立核对任务')) {
   if (task.description.includes('forget commit') && !prompt.includes('主控对上一次结果的意见')) { writeFileSync(join(cwd, `${name}.txt`), content); result.summary = 'forgot to commit'; log(`develop ${task.title} ${startedAt} ${Date.now()} nocommit`); }
   else {
     writeFileSync(join(cwd, `${name}.txt`), content);
-    git('add', '-A'); git('commit', '-m', `wwa: ${task.title}`);
+    git('add', '-A'); if (git('diff', '--cached', '--name-only')) git('commit', '-m', `wwa: ${task.title}`);
     result.summary = `did ${task.title}`;
     result.checks = [{ name: 'unit', passed: true, detail: '' }];
     log(`develop ${task.title} ${startedAt} ${Date.now()}`);

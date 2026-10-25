@@ -326,7 +326,10 @@
     "pending": "{{count}} changes waiting to sync",
     "confirmed": "Last successful sync: {{time}}",
     "checking": "Waiting for server confirmation.",
-    "retry": "Retry now"
+    "retry": "Retry now",
+    "archiveTitle": "Preserved import versions ({{count}})",
+    "archiveDescription": "Original records are preserved when versions differ. Open one to compare; current content is retained.",
+    "archiveMore": "Load more"
   },
   "server": {
     "title": "Server",

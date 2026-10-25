@@ -1,3 +1,4 @@
+import { readKnowledgeBlob } from './knowledge-blobs.js';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { readFile, mkdir, writeFile, realpath, lstat, copyFile } from 'node:fs/promises';
 import { resolve, basename } from 'node:path';
@@ -77,6 +78,12 @@ export class RunService {
     const artifact = await prisma.artifact.findUnique({ where: { id: artifactId } });
     if (!artifact) throw new DomainError('NOT_FOUND', '产物不存在', 404);
     await runAccess(actor, artifact.runId);
+    const portable = decode(artifact.metadata) as { portableBlobHash?: string };
+    if (portable?.portableBlobHash && portable.portableBlobHash === artifact.hash && /^[a-f0-9]{64}$/.test(artifact.hash)) {
+      const bytes = await readKnowledgeBlob(artifact.hash);
+      if (digest(bytes) !== artifact.hash) throw new DomainError('ARTIFACT_CHANGED', '产物文件发生变化，无法当作原结果使用');
+      return { name: artifact.name, content: bytes.toString('base64'), hash: artifact.hash, encoding: 'base64' };
+    }
     if (artifact.content !== null) return { name: artifact.name, content: artifact.content, hash: artifact.hash, encoding: 'utf8' };
     if (!artifact.path || !inside(controlDirectory(artifact.runId), artifact.path)) throw new DomainError('NO_ARTIFACT_CONTENT', '此产物仅包含外部引用', 404);
     const actual = await realpath(artifact.path);

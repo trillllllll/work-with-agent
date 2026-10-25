@@ -4,7 +4,7 @@ import { mergeSyncRow, type SyncRow } from './sync-merge.js';
 const task = (patch: SyncRow = {}): SyncRow => ({
   title: '原来', description: '', status: 'todo', priority: 'none', dueDate: null, estimatedMinutes: null,
   scheduledStart: null, scheduledEnd: null, resultSummary: '', topicId: null, parentId: null, deletedAt: null,
-  deleteBatchId: null, sortOrder: 0, tagIds: [], ...patch,
+  deleteBatchId: null, sortOrder: 0, tagIds: [], createdAt: null, completedAt: null, completedAtEstimated: false, ...patch,
 });
 
 describe('sync field merge', () => {

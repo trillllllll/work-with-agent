@@ -153,7 +153,9 @@
     "methodNative": "Original",
     "chunkMeta": "{{place}} · {{method}}",
     "noExtractedText": "No extracted text to show yet.",
-    "loadMore": "Load more"
+    "loadMore": "Load more",
+    "offlineReady": "This version is saved on this device for offline viewing",
+    "offlineOnDemand": "Loaded on demand; uncached originals need a connection"
   },
   "libraryPage": {
     "memory": "Memory",

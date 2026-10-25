@@ -88,3 +88,16 @@ describe('connection snippets', () => {
     expect(check).not.toContain(paste);
   });
 });
+
+describe('cloud HTTP transport',()=>{
+ const config={transport:'http' as const,command:'/server/never-use',args:[],url:'https://example.test/mcp',env:{DOVUN_API_URL:'https://example.test',DOVUN_CONNECTION_TOKEN:'do-not-copy'}};
+ it('uses HTTP config for Codex and edits the existing WWA entry',()=>{
+  expect(setupSnippet('codex',config,'new-token','work_with_agent')).toBe('[mcp_servers.work_with_agent]\nurl = "https://example.test/mcp"\nhttp_headers = { Authorization = "Bearer new-token" }');
+ });
+ it('uses HTTP headers for Claude and excludes server executable paths',()=>{
+  const parsed=JSON.parse(checkSnippet('claude',config,'placeholder'));
+  expect(parsed.mcpServers.dovun).toEqual({type:'http',url:config.url,headers:{Authorization:'Bearer placeholder'}});
+  expect(setupSnippet('claude',config,'token')).not.toContain(config.command);
+  expect(setupSnippet('claude',config,'token','work_with_agent')).not.toContain('mcp add');
+ });
+});

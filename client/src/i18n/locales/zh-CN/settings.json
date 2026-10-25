@@ -325,7 +325,10 @@
     "pending": "{{count}} 条修改待同步",
     "confirmed": "最近一次同步成功：{{time}}",
     "checking": "等待服务器确认，尚不能确认已同步。",
-    "retry": "立即重试"
+    "retry": "立即重试",
+    "archiveTitle": "迁移保留版本（{{count}}）",
+    "archiveDescription": "相同记录存在差异时保留原始内容，可展开核对；当前内容不会被覆盖。",
+    "archiveMore": "继续加载"
   },
   "server": {
     "title": "服务器",

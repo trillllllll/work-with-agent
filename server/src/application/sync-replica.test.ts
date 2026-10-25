@@ -28,7 +28,7 @@ let transport: ReplicaTransport;
 
 function filled(entity: 'task' | 'topic', patch: Record<string, unknown>): SyncRow {
   const row: SyncRow = {};
-  for (const field of syncFields[entity]) row[field] = field === 'tagIds' ? [] : null;
+  for (const field of syncFields[entity]) row[field] = field === 'tagIds' ? [] : field === 'completedAtEstimated' ? false : null;
   if (entity === 'task') Object.assign(row, { title: '', description: '', status: 'todo', priority: 'none', resultSummary: '', sortOrder: 0 });
   else Object.assign(row, { name: '', description: '', color: 'slate', isExploration: false, goal: '', draftSummary: '', finalSummary: '', summaryStatus: 'empty' });
   return { ...row, ...patch };
@@ -63,7 +63,7 @@ describe('replica alignment', () => {
   }, 60_000);
 
   afterAll(async () => {
-    const taskIds = [ids.hubOnly, ids.replicaOnly, ids.shared, 'a-child-sync-test', 'z-parent-sync-test'];
+    const taskIds = [ids.hubOnly, ids.replicaOnly, ids.shared, 'a-child-sync-test', 'z-parent-sync-test', 'private-obsolete-cache'];
     const topicIds = [ids.hubTopic, ids.replicaTopic];
     await prisma.syncConflict.deleteMany({ where: { entityId: { in: [...taskIds, ...topicIds] } } });
     await prisma.syncOp.deleteMany({ where: { entityId: { in: [...taskIds, ...topicIds] } } });
@@ -299,6 +299,33 @@ describe('replica alignment', () => {
     await alignReplica(replica, { ...transport, snapshot: readSyncSnapshot });
     expect((await canonical(prisma, 'task', 'a-child-sync-test'))?.parentId).toBe('z-parent-sync-test');
     expect((await canonical(prisma, 'task', 'z-parent-sync-test'))?.title).toBe('后建的父任务');
+  });
+
+  it('recovers an expired log atomically while retaining edits made during snapshot download', async () => {
+    await pendingFixture(); await replica.syncOutbox.deleteMany();
+    const base = (await canonical(replica, 'task', ids.hubOnly))!;
+    await replica.$transaction(tx => writeLive(tx, 'task', 'private-obsolete-cache', filled('task', { title: '已从服务器移除的旧缓存' })));
+    const snapshot = await readSyncSnapshot(); snapshot.tip = 1000;
+    const item = snapshot.entities.task.find(item => item.id === ids.hubOnly)!;
+    item.row = { ...base, title: '云端的最新标题' };
+    const transportWithGap: ReplicaTransport = {
+      ...transport,
+      pull: async after => ({ tip: 1000, schemaVersion: localSchemaVersion(), ops: after === 1000 ? [] : [{ seq: 1000, opId: 'retained-log-op', entityType: 'task', entityId: ids.hubOnly, before: base, after: item.row }] }),
+      snapshot: async () => {
+        const after = { ...base, description: '重新下载时继续写下的正文' };
+        await replica.$transaction(async tx => {
+          await writeLive(tx, 'task', ids.hubOnly, after);
+          await tx.syncOutbox.create({ data: { opId: 'rebase-concurrent', entityType: 'task', entityId: ids.hubOnly, beforeJson: JSON.stringify(base), afterJson: JSON.stringify(after), state: 'pending', createdAt: new Date().toISOString() } });
+        });
+        return snapshot;
+      },
+    };
+    await runReplicaCycle(replica, transportWithGap);
+    expect(await canonical(replica, 'task', ids.hubOnly)).toMatchObject({ title: '云端的最新标题', description: '重新下载时继续写下的正文' });
+    expect((await replica.syncOutbox.findUniqueOrThrow({ where: { opId: 'rebase-concurrent' } })).state).toBe('pending');
+    expect((await replica.syncState.findUniqueOrThrow({ where: { id: 'local' } })).appliedHubSeq).toBe(1000);
+    expect((await replica.task.findUniqueOrThrow({ where: { id: 'private-obsolete-cache' } })).deleteBatchId).toBe('sync-retired-cache');
+    expect(await replica.syncOutbox.count({ where: { entityId: 'private-obsolete-cache' } })).toBe(0);
   });
 
 });

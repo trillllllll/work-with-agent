@@ -1,4 +1,5 @@
 export type ConnectionConfiguration = {
+  transport?: 'http' | 'stdio';
   command: string;
   args: string[];
   url: string;
@@ -14,6 +15,7 @@ export function quotePowerShell(value: string) {
 }
 
 function claudeCommand(config: ConnectionConfiguration, token: string) {
+  if (config.transport === 'http') return `claude mcp add --scope user --transport http dovun ${quotePowerShell(config.url)} --header ${quotePowerShell(`Authorization: Bearer ${token}`)}`;
   const quotedArgs = config.args.map(quotePowerShell).join(' ');
   const apiEnv = quotePowerShell(`DOVUN_API_URL=${apiUrl(config)}`);
   const tokenEnv = quotePowerShell(`DOVUN_CONNECTION_TOKEN=${token}`);
@@ -25,11 +27,13 @@ function grokCommand(config: ConnectionConfiguration, token: string) {
 }
 
 function codexConfig(config: ConnectionConfiguration, token: string) {
+  if (config.transport === 'http') return `[mcp_servers.dovun]\nurl = ${JSON.stringify(config.url)}\nhttp_headers = { Authorization = ${JSON.stringify(`Bearer ${token}`)} }`;
   return `[mcp_servers.dovun]\ncommand = ${JSON.stringify(config.command)}\nargs = ${JSON.stringify(config.args)}\n[mcp_servers.dovun.env]\nDOVUN_API_URL = ${JSON.stringify(apiUrl(config))}\nDOVUN_CONNECTION_TOKEN = ${JSON.stringify(token)}`;
 }
 
 /** Claude self-check JSON. Env is rebuilt so a server placeholder in config.env is not copied. */
 function claudeCheckJson(config: ConnectionConfiguration, token: string) {
+  if (config.transport === 'http') return JSON.stringify({ mcpServers: { dovun: { type: 'http', url: config.url, headers: { Authorization: `Bearer ${token}` } } } }, null, 2);
   return JSON.stringify({
     mcpServers: {
       dovun: {
@@ -42,6 +46,7 @@ function claudeCheckJson(config: ConnectionConfiguration, token: string) {
 }
 
 function genericJson(config: ConnectionConfiguration, token: string) {
+  if (config.transport === 'http') return JSON.stringify({ type: 'http', url: config.url, headers: { Authorization: `Bearer ${token}` } }, null, 2);
   return JSON.stringify({
     command: config.command,
     args: config.args,

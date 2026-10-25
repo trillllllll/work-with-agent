@@ -1,3 +1,4 @@
+import { coordinatorWork } from './coordinator-work.js';
 import { scheduleLastDate } from '../domain/schedule.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -292,7 +293,7 @@ export function startReviewScheduler(service = new ReviewService(), intervalMs =
   const run = async () => {
     if (busy || stopped) return;
     busy = true;
-    try { await service.tick(); } catch (error) { console.error('Review scheduler:', error instanceof Error ? error.message : error); }
+    try { await coordinatorWork(() => service.tick()); } catch (error) { console.error('Review scheduler:', error instanceof Error ? error.message : error); }
     finally { busy = false; }
   };
   const timer = setInterval(() => { void run(); }, intervalMs);

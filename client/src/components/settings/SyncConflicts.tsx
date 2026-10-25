@@ -1,7 +1,8 @@
+import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure.js';
 import { Surface } from '@/components/ui/surface.js';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from '@/lib/api.js';
 import { Button } from '@/components/ui/button.js';
@@ -36,6 +37,10 @@ export function SyncConflicts() {
   const queryClient = useQueryClient();
   const conflicts = useQuery(syncConflictsQueryOptions);
   const status = useQuery(syncStatusQueryOptions);
+  const archive = useInfiniteQuery({ queryKey:['sync-archive'], initialPageParam:'', queryFn:({pageParam})=>api<{items:Array<{id:string;source:string;tableName:string;entityKey:string}>;nextCursor:string|null}>('/api/v1/sync/archive?after='+encodeURIComponent(pageParam)), getNextPageParam:page=>page.nextCursor ?? undefined });
+  const archiveRows=archive.data?.pages.flatMap(page=>page.items) ?? [];
+  const [archiveItem,setArchiveItem] = useState<unknown>(null);
+  const readArchive = useMutation({ mutationFn:(id:string)=>api('/api/v1/sync/archive/'+id), onSuccess:setArchiveItem, onError:(error:Error)=>toast.error(error.message) });
   const server = useQuery(serverInfoQueryOptions);
   const [token, setToken] = useState<string | null>(null);
   const [url, setUrl] = useState('');
@@ -146,6 +151,13 @@ export function SyncConflicts() {
           </Surface>
         ))}
       </ul>
+      {Boolean(archiveRows.length) && <Disclosure className="mt-4">
+        <DisclosureTrigger className="text-sm">{t('sync.archiveTitle', {count:archiveRows.length})}</DisclosureTrigger>
+        <p className="mt-2 text-sm text-muted-foreground">{t('sync.archiveDescription')}</p>
+        <ul className="mt-2 max-h-64 overflow-auto">{archiveRows.map(item=><li key={item.id}><Button variant="ghost" size="sm" onClick={()=>readArchive.mutate(item.id)}>{item.source} · {item.tableName} · {item.entityKey}</Button></li>)}</ul>
+        {archive.hasNextPage && <Button variant="outline" size="sm" disabled={archive.isFetchingNextPage} onClick={()=>void archive.fetchNextPage()}>{t('sync.archiveMore')}</Button>}
+        {archiveItem != null && <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap break-words text-xs">{JSON.stringify(archiveItem,null,2)}</pre>}
+      </Disclosure>}
       {confirmAlign && (
         <ConfirmDialog title={t('sync.alignTitle')} itemName={url} description={t('sync.alignDescription')} busy={align.isPending} onCancel={() => { if (!align.isPending) setConfirmAlign(false); }} onConfirm={() => align.mutate()} />
       )}

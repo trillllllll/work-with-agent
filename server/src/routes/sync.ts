@@ -1,22 +1,28 @@
+import { prisma } from '../infrastructure/prisma.js';
 import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { DomainError } from '../domain/task.js';
 import { checkLocalOrigin, requireOwner } from '../application/security.js';
 import { publishWorkspaceChange } from '../application/commands.js';
-import { assertSchema, readSyncSnapshot, currentSyncSeq, findSyncDevice, listBaselineIds, listBaselineRows, offerBaselineRows, pairSyncDevice, pullSyncOps, pushBodySchema, pushSyncOps } from '../application/sync-log.js';
+import { assertSchema, syncWorkspaceIdentity, readSyncSnapshot, currentSyncSeq, findSyncDevice, listBaselineIds, listBaselineRows, offerBaselineRows, pairSyncDevice, pullSyncOps, pushBodySchema, pushSyncOps } from '../application/sync-log.js';
 import { alignBoundReplica, bindReplica, syncBoundReplicaNow, workspaceSyncConflicts, resolveWorkspaceSyncConflict, syncStatus } from '../application/sync-replica.js';
 
-async function syncDevice(req: Request) {
+export async function syncDevice(req: Request) {
   const authorization = req.headers.authorization;
   if (!authorization?.startsWith('Bearer ')) throw new DomainError('AUTH_REQUIRED', '同步设备凭据无效', 401);
   checkLocalOrigin(req);
   const device = await findSyncDevice(authorization.slice(7));
   if (!device) throw new DomainError('AUTH_REQUIRED', '同步设备凭据无效', 401);
+  const expected = req.headers['x-dovun-workspace-id'];
+  if (typeof expected === 'string' && (await syncWorkspaceIdentity()).workspaceId !== expected) throw new DomainError('WORKSPACE_CHANGED', '工作区身份已变化，本机待同步修改已保留', 409);
   return device;
 }
 
 export function createSyncRouter() {
   const router = Router();
+  router.get('/identity', async (req, res, next) => {
+    try { await allowSyncRead(req); res.setHeader('Cache-Control', 'no-store'); res.json({ data: await syncWorkspaceIdentity(), error: null }); } catch (error) { next(error); }
+  });
   router.post('/devices', async (req, res, next) => {
     try {
       await requireOwner(req);
@@ -128,6 +134,28 @@ export function createSyncRouter() {
       publishWorkspaceChange({ kind: 'sync', syncSeq: data.tip });
       res.json({ data, error: null });
     } catch (error) { next(error); }
+  });
+  router.get('/imports/:fingerprint', async (req, res, next) => {
+    try {
+      await allowSyncRead(req);
+      const fingerprint = z.string().regex(/^[a-f0-9]{64}$/).parse(req.params.fingerprint);
+      res.json({ data: { imported: Boolean(await prisma.syncImport.findFirst({ where: { fingerprint } })) }, error: null });
+    } catch (error) { next(error); }
+  });
+  router.get('/archive', async (req, res, next) => {
+    try {
+      await requireOwner(req);
+      const after = z.string().max(100).default('').parse(req.query.after ?? '');
+      const items = await prisma.syncImportArchive.findMany({ where:{id:{gt:after}}, select: { id:true, source:true, tableName:true, entityKey:true, createdAt:true }, orderBy: { id:'asc' }, take:200 });
+      res.json({ data:{items,nextCursor:items.length===200?items[items.length-1].id:null}, error:null });
+    } catch(error) { next(error); }
+  });
+  router.get('/archive/:id', async (req,res,next) => {
+    try {
+      await requireOwner(req);
+      const item=await prisma.syncImportArchive.findUniqueOrThrow({ where: { id:String(req.params.id) } });
+      res.json({ data:{...item,payload:JSON.parse(item.payload)},error:null });
+    } catch(error) { next(error); }
   });
   return router;
 }

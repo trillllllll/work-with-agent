@@ -36,12 +36,14 @@ import { localeMiddleware, translateMessage, translatePayload } from './i18n/ind
 import { createSkill, deleteSkill, diffSkill, draftSkill, getSkill, getSkillVersion, importSkill, listSkills, registerSkillCommands, restoreSkill, rollbackSkill, updateSkill } from './application/skills.js';
 import { createNodeRouter, createOrchestrationRouter } from './routes/orchestration.js';
 import { createSyncRouter } from './routes/sync.js';
+import { acceptReplicaRelay, relayBoundWorkspace } from './application/workspace-relay.js';
 
 export const app = express();
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '12mb' }));
 // After the body parser: its stream callbacks would otherwise drop the request's locale context.
 app.use(localeMiddleware);
+app.use(acceptReplicaRelay, relayBoundWorkspace);
 registerKnowledgeCommands();
 registerGraphCommands();
 registerLibraryCommands();
@@ -51,6 +53,7 @@ app.use('/api/v1', securityRouter);
 app.use('/api/v1/node', createNodeRouter());
 app.use('/api/v1/sync', createSyncRouter());
 app.use('/api/v1', identityMiddleware);
+app.get('/api/v1/identity', (req, res) => { res.json({ data: { actor: getActor(req) }, error: null }); });
 app.use('/api/v1/connections', connectionRouter);
 app.use('/api/v1/server', createServerRouter());
 app.use('/api/v1', commandsRouter, workspaceQueryRouter, handoffRouter);

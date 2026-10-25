@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button.js';
 import { useTranslation } from 'react-i18next';
-import type { AssistantSource } from '../../../../server/src/agent/assistant-sources.js';
+import type { AssistantSource } from '../../../../server/src/domain/assistant-source.js';
 export function SourceLinks({ sources }: { sources: AssistantSource[] }) {
   const { t } = useTranslation('chat');
   if (!sources.length) return null;

@@ -12,6 +12,7 @@ COPY server/prisma server/prisma
 RUN npx prisma generate --schema server/prisma/schema.prisma
 COPY server server
 COPY client client
+COPY scripts scripts
 RUN npm run build -w server && npm run build -w client
 
 FROM node:22-slim AS runtime
@@ -22,6 +23,7 @@ COPY --from=build /app/server/package.json server/
 COPY --from=build /app/server/dist server/dist
 COPY --from=build /app/server/prisma server/prisma
 COPY --from=build /app/client/dist client-dist
+COPY --from=build /app/scripts/reconcile-workspaces.mjs /app/scripts/verify-workspace-files.mjs scripts/
 COPY --from=build /app/node_modules node_modules
 COPY --from=build /app/server/node_modules server/node_modules
 RUN npm prune --omit=dev \

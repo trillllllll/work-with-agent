@@ -15,6 +15,7 @@ import { submitCommands } from '@/lib/platform.js';
 import { libraryPageSize } from './store.js';
 import { TaskLinkPicker } from './TaskLinkPicker.js';
 import { enqueueUploads } from './upload.js';
+import { offlineFileAvailable } from '@/lib/offline-runtime.js';
 import { extractionLabel, formatLocator, formatUpdated, kindLabel, type LibraryFolder, type LibraryTag, type LibraryPreviewTarget, type LinkedTask, type MaterialChunk, type MaterialDetail, type MaterialSource, type Page } from './types.js';
 
 function canLayout(mime: string | null, kind: string) {
@@ -84,6 +85,14 @@ export function LibraryPreview({ target, onTargetChange, onClose, onOpenTask }: 
     enabled: viewed > 0,
     retry: false,
   });
+  const cacheUrl = source.data?.kind === 'attachment' ? source.data.href : `/api/v1/library/materials/${encodeURIComponent(id)}/versions/${viewed}/source`;
+  const [offlineCopy, setOfflineCopy] = useState({ url: '', available: false });
+  useEffect(() => {
+    let alive = true;
+    const refresh = () => { void offlineFileAvailable(cacheUrl).then(available => { if (alive) setOfflineCopy({ url: cacheUrl, available }); }); };
+    refresh(); navigator.serviceWorker?.addEventListener('message', refresh);
+    return () => { alive = false; navigator.serviceWorker?.removeEventListener('message', refresh); };
+  }, [cacheUrl]);
   const [folderId, setFolderId] = useState('');
   const [tagIds, setTagIds] = useState<string[]>([]);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
@@ -138,6 +147,7 @@ export function LibraryPreview({ target, onTargetChange, onClose, onOpenTask }: 
       <div className="min-w-0">
         <h2 className="library-name truncate" title={material.title}>{material.title}</h2>
         {viewed > 0 && <p className="library-meta" data-testid="library-preview-version">{t('libraryPreview.version', { revision: viewed })}</p>}
+        {viewed > 0 && <p className="library-meta">{t(offlineCopy.url === cacheUrl && offlineCopy.available ? 'libraryPreview.offlineReady' : 'libraryPreview.offlineOnDemand')}</p>}
       </div>
       <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => askAssistant()}>{t('shared.aiAssistant')}</Button>
       <Button variant="outline" size="bare" type="button" className="library-btn" onMouseDown={(event) => event.preventDefault()} onClick={() => { const selection = window.getSelection(); const node = selection?.anchorNode?.parentElement; if (selection && !selection.isCollapsed && node?.closest('[data-testid="library-preview"]')) askAssistant({ kind: 'selection', title: material.title, text: selection.toString(), materialId: id, unsaved: false }); else toast.error(t('libraryPreview.selectTextFirst')); }}>{t('libraryPreview.askSelection')}</Button>

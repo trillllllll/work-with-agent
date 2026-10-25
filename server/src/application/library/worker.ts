@@ -1,3 +1,4 @@
+import { coordinatorWork } from '../coordinator-work.js';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -40,10 +41,10 @@ export async function requeueUnsupportedThreads() {
 
 export function startLibraryWorker() {
   if (timer) return () => undefined;
-  const pump = () => { while (running < 2) { running += 1; void runLibraryWorkerOnce().catch(() => undefined).finally(() => { running -= 1; }); } };
+  const pump = () => { while (running < 2) { running += 1; void coordinatorWork(() => runLibraryWorkerOnce()).catch(() => undefined).finally(() => { running -= 1; }); } };
   timer = setInterval(pump, 1000);
   timer.unref();
-  void requeueUnsupportedThreads().catch(() => undefined).finally(() => { if (timer) pump(); });
+  void coordinatorWork(() => requeueUnsupportedThreads()).catch(() => undefined).finally(() => { if (timer) pump(); });
   return () => { if (timer) clearInterval(timer); timer = null; };
 }
 

@@ -1,5 +1,5 @@
 import { useLayoutEffect, useSyncExternalStore } from 'react';
-import type { ChatContextV3, ChatAttachment } from '../../../server/src/agent/chat-context.js';
+import type { ChatContextV3, ChatAttachment } from '../../../server/src/domain/chat-context.js';
 import { t } from '../i18n/index.js';
 export type { ChatContextV3, ChatAttachment };
 

@@ -10,6 +10,7 @@ import { createRequire } from 'node:module';
 import { prisma } from '../infrastructure/prisma.js';
 import { DomainError } from '../domain/task.js';
 import { DESKTOP_PORT, desktopDataDir, desktopMcpConfiguration, isDesktopPackage, isServerMode, publicWorkspaceUrl } from './desktop-paths.js';
+import { isReplicaRequest } from './replica-identity.js';
 
 export type Actor = {
   id: string;
@@ -210,6 +211,15 @@ export async function touchConnectionLastUsed(id: string) {
 }
 
 export async function connectionTokenActive(credential: string) {
+  const { activeSyncBinding } = await import('./sync-replica.js');
+  const binding = activeSyncBinding();
+  if (binding) {
+    try {
+      const response = await fetch(new URL('/api/v1/identity', binding.url), { headers: { authorization: `Bearer ${credential}`, ...(binding.workspaceId ? { 'x-dovun-workspace-id': binding.workspaceId } : {}) }, signal: AbortSignal.timeout(10_000), redirect: 'error' });
+      if (!response.ok) return false;
+      return (await response.json()).data?.actor?.kind === 'connection';
+    } catch { return false; }
+  }
   const connection = await prisma.connection.findUnique({ where: { tokenHash: hash(credential) } });
   if (connection?.status !== 'active') return false;
   await touchConnectionLastUsed(connection.id);
@@ -218,6 +228,7 @@ export async function connectionTokenActive(credential: string) {
 
 async function authenticate(req: Request): Promise<{ actor: Actor; csrfToken?: string } | null> {
   checkLocalOrigin(req);
+  if (isReplicaRequest(req)) return { actor: ownerActor };
   const authorization = req.headers.authorization;
   const sessionToken = cookies(req)[cookieName];
   if (authorization && sessionToken) throw new DomainError('AMBIGUOUS_IDENTITY', '不能同时提交连接凭据和用户会话', 400);
@@ -239,7 +250,7 @@ async function authenticate(req: Request): Promise<{ actor: Actor; csrfToken?: s
 export async function requireOwner(req: Request) {
   const identity = await authenticate(req);
   if (!identity || identity.actor.kind !== 'user') throw new DomainError('AUTH_REQUIRED', '请先登录本机工作区', 401);
-  if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+  if (!isReplicaRequest(req) && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
     const given = req.headers['x-csrf-token'];
     const expected = identity.csrfToken!;
     if (typeof given !== 'string' || given.length !== expected.length || !timingSafeEqual(Buffer.from(given), Buffer.from(expected))) throw new DomainError('CSRF_REQUIRED', '用户会话校验失败，请重新打开工作区', 403);
@@ -250,7 +261,12 @@ export async function identityMiddleware(req: Request, _res: Response, next: Nex
   try {
     const identity = await authenticate(req);
     if (!identity) throw new DomainError('AUTH_REQUIRED', '请先登录本机工作区', 401);
-    if (identity.actor.kind === 'user' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    const expectedWorkspace = req.headers['x-dovun-workspace-id'];
+    if (typeof expectedWorkspace === 'string') {
+      const { syncWorkspaceIdentity } = await import('./sync-log.js');
+      if ((await syncWorkspaceIdentity()).workspaceId !== expectedWorkspace) throw new DomainError('WORKSPACE_CHANGED', '工作区身份已变化，本机待同步修改已保留', 409);
+    }
+    if (identity.actor.kind === 'user' && !isReplicaRequest(req) && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       const given = req.headers['x-csrf-token'];
       const expected = identity.csrfToken!;
       if (typeof given !== 'string' || given.length !== expected.length || !timingSafeEqual(Buffer.from(given), Buffer.from(expected))) throw new DomainError('CSRF_REQUIRED', '用户会话校验失败，请重新打开工作区', 403);
@@ -327,6 +343,7 @@ export function connectionConfiguration(credential: string) {
     ? desktopMcpConfiguration(entry)
     : developmentMcpConfiguration(entry);
   return {
+    transport: isServerMode() ? 'http' : 'stdio',
     ...launch,
     env: { DOVUN_API_URL: api, DOVUN_CONNECTION_TOKEN: credential },
     url: `${api}/mcp`,

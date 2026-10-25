@@ -1,3 +1,4 @@
+import { coordinatorWork } from './coordinator-work.js';
 import { randomBytes } from 'node:crypto';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { MemoryModelAdapter, type MemoryModel } from './auto-memory-model.js';
@@ -831,7 +832,7 @@ export function startAutoMemoryScheduler(service = sharedAutoMemoryService(), in
   const run = async () => {
     if (busy || stopped) return;
     busy = true;
-    try { await service.tick(); } catch (error) { console.error('Auto memory:', error instanceof Error ? error.message : error); }
+    try { await coordinatorWork(() => service.tick()); } catch (error) { console.error('Auto memory:', error instanceof Error ? error.message : error); }
     finally { busy = false; }
   };
   const timer = setInterval(() => { void run(); }, intervalMs);

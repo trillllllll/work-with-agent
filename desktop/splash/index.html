@@ -95,27 +95,9 @@
     <img src="dovun.svg" alt="" width="58" height="58" style="margin:0 auto 16px;display:block"><h1>Dovun</h1>
     <p id="status" data-i18n="startingLocal">正在启动本机服务…</p>
 
-    <form id="picker" class="hidden">
-      <p class="sub" id="picker-title" data-i18n="pickerTitle">选择工作区数据存放的位置。</p>
-      <div class="modes">
-        <label class="mode">
-          <input type="radio" name="mode" value="local" checked>
-          <span><strong data-i18n="localTitle">本机模式</strong><span data-i18n="localBody">数据保存在这台电脑，不上传。</span></span>
-        </label>
-        <label class="mode">
-          <input type="radio" name="mode" value="remote">
-          <span><strong data-i18n="remoteTitle">连接服务器</strong><span data-i18n="remoteBody">多台设备共用一份云端数据（自托管服务器）。</span></span>
-        </label>
-      </div>
-      <input id="remote-url" type="url" class="hidden" placeholder="https://wwa.example.com" spellcheck="false" autocomplete="off">
-      <button id="picker-apply" type="submit" data-i18n="apply">启动</button>
-      <p class="notice hidden" id="picker-note" data-i18n="remoteNote">连接后此电脑不再使用本机数据；可随时通过应用内的「服务器」入口切回。</p>
-    </form>
-
     <div id="error-card" class="hidden">
       <p id="error"></p>
       <button id="retry" type="button" data-i18n="retry">重试</button>
-      <button id="switch" class="secondary" type="button" data-i18n="openLauncher">打开启动器</button>
     </div>
   </main>
 
@@ -152,63 +134,8 @@
       document.querySelectorAll('[data-i18n]').forEach((node) => { node.textContent = messages[node.dataset.i18n]; });
     }
     const $status = document.getElementById('status');
-    const $picker = document.getElementById('picker');
     const $error = document.getElementById('error-card');
     const $errorText = document.getElementById('error');
-
-    function showPicker(config) {
-      $picker.classList.remove('hidden');
-      $error.classList.add('hidden');
-      const url = document.getElementById('remote-url');
-      if (config && config.remoteUrl) url.value = config.remoteUrl;
-      if (config && config.mode === 'remote') {
-        document.querySelector('input[value="remote"]').checked = true;
-        url.classList.remove('hidden');
-      }
-    }
-
-    async function init() {
-      if (!Tauri) return; // The dev splash server has no shell bridge.
-      let config = null;
-      try { config = await Tauri.core.invoke('launcher_config_get'); } catch { return; }
-      const switching = new URLSearchParams(location.search).get('switch') === '1';
-      if (!config) {
-        $status.textContent = text('firstRun');
-        showPicker(null);
-      } else if (switching) {
-        $status.textContent = text('switching');
-        showPicker(config);
-      }
-    }
-
-    document.querySelectorAll('input[name="mode"]').forEach((radio) => {
-      radio.addEventListener('change', () => {
-        const remote = document.querySelector('input[value="remote"]').checked;
-        document.getElementById('remote-url').classList.toggle('hidden', !remote);
-        document.getElementById('picker-note').classList.toggle('hidden', !remote);
-      });
-    });
-
-    document.getElementById('picker').addEventListener('submit', async (event) => {
-      event.preventDefault();
-      if (!Tauri) return;
-      const remote = document.querySelector('input[value="remote"]').checked;
-      const url = document.getElementById('remote-url').value.trim();
-      const apply = document.getElementById('picker-apply');
-      apply.disabled = true;
-      try {
-        if (remote) await Tauri.core.invoke('launcher_config_set', { mode: 'remote', remoteUrl: url });
-        else await Tauri.core.invoke('launcher_config_set', { mode: 'local', remoteUrl: '' });
-        await Tauri.core.invoke('launcher_retry');
-        $picker.classList.add('hidden');
-        $status.textContent = remote ? text('connecting', url) : text('startingLocal');
-      } catch (error) {
-        $errorText.textContent = String(error);
-        $error.classList.remove('hidden');
-      } finally {
-        apply.disabled = false;
-      }
-    });
 
     document.getElementById('retry').addEventListener('click', async () => {
       if (!Tauri) return;
@@ -217,7 +144,7 @@
       try { await Tauri.core.invoke('launcher_retry'); }
       catch (error) { $errorText.textContent = String(error); $error.classList.remove('hidden'); }
     });
-    document.getElementById('switch').addEventListener('click', () => { $error.classList.add('hidden'); showPicker(null); });
+
 
     window.dovunLaunchError = (message) => {
       $status.textContent = '';
@@ -225,7 +152,7 @@
       $error.classList.remove('hidden');
     };
 
-    init();
+
   </script>
 </body>
 </html>
