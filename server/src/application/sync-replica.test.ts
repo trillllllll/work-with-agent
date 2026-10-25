@@ -11,7 +11,7 @@ import { app } from '../app.js';
 import { prisma, sqliteConnectionUrl } from '../infrastructure/prisma.js';
 import { ownerSession } from '../test-auth.js';
 import { syncFields, type SyncRow } from './sync-merge.js';
-import { listBaselineRows, offerBaselineRows, pairSyncDevice, pullSyncOps, pushSyncOps, readLive, writeLive } from './sync-log.js';
+import { listBaselineRows, readSyncSnapshot, offerBaselineRows, pairSyncDevice, pullSyncOps, pushSyncOps, readLive, writeLive } from './sync-log.js';
 import { localSchemaVersion } from './snapshots.js';
 import { alignReplica, assertSyncUrl, readSyncBinding, recordCommittedGroup, runReplicaCycle, writeSyncBinding, type ReplicaTransport } from './sync-replica.js';
 
@@ -63,13 +63,15 @@ describe('replica alignment', () => {
   }, 60_000);
 
   afterAll(async () => {
-    const taskIds = [ids.hubOnly, ids.replicaOnly, ids.shared];
+    const taskIds = [ids.hubOnly, ids.replicaOnly, ids.shared, 'a-child-sync-test', 'z-parent-sync-test'];
     const topicIds = [ids.hubTopic, ids.replicaTopic];
     await prisma.syncConflict.deleteMany({ where: { entityId: { in: [...taskIds, ...topicIds] } } });
     await prisma.syncOp.deleteMany({ where: { entityId: { in: [...taskIds, ...topicIds] } } });
     await prisma.taskTag.deleteMany({ where: { taskId: { in: taskIds } } });
+    await prisma.task.updateMany({ where: { id: { in: taskIds } }, data: { parentId: null } });
     await prisma.task.deleteMany({ where: { id: { in: taskIds } } });
     await prisma.topic.deleteMany({ where: { id: { in: topicIds } } });
+    await prisma.syncReceipt.deleteMany();
     await prisma.syncDevice.deleteMany({ where: { id: { in: deviceIds } } });
     const setting = await prisma.appSetting.findUnique({ where: { id: 'default' } });
     if (setting?.openaiApiKey === hubSecret) await prisma.appSetting.update({ where: { id: 'default' }, data: { openaiApiKey: '' } });
@@ -126,7 +128,7 @@ describe('replica alignment', () => {
       await writeLive(tx, 'task', ids.shared, filled('task', { title: '本机标题' }));
     });
 
-    const aligned = await alignReplica(replica, transport);
+    const aligned = await alignReplica(replica, { ...transport, snapshot: readSyncSnapshot });
     expect(aligned.already).toBe(false);
     expect((await canonical(replica, 'task', ids.hubOnly))?.title).toBe('只在服务器');
     expect((await canonical(replica, 'task', ids.hubOnly))?.topicId).toBe(ids.hubTopic);
@@ -180,4 +182,123 @@ describe('replica alignment', () => {
     }
     expect(await replica.syncOutbox.count({ where: { opId: { startsWith: 'change-enqueue-1:' } } })).toBe(1);
   }, 30_000);
+  async function pendingFixture() {
+    await replica.syncOutbox.deleteMany();
+    await replica.syncState.upsert({ where: { id: 'local' }, create: { id: 'local', baselineReady: true, appliedHubSeq: 0, updatedAt: new Date().toISOString() }, update: { baselineReady: true, appliedHubSeq: 0 } });
+    await replica.syncOutbox.create({ data: { opId: 'protocol-pending-01', entityType: 'task', entityId: ids.hubOnly, beforeJson: null, afterJson: JSON.stringify(filled('task', { title: '必须保留的本机修改' })), state: 'pending', createdAt: new Date().toISOString() } });
+  }
+
+  it.each(['missing', 'foreign', 'duplicate', 'unconfirmed'])('keeps pending changes when the push receipt is %s', async (kind) => {
+    await pendingFixture();
+    const ack = { opId: 'protocol-pending-01', status: 'applied', seq: null, landed: null };
+    const results = kind === 'missing' ? [] : kind === 'foreign' ? [{ ...ack, opId: 'not-in-this-batch' }] : kind === 'duplicate' ? [ack, ack] : [{ ...ack, status: 'pending' }];
+    const invalid: ReplicaTransport = { ...transport, push: async () => ({ tip: 0, results }), pull: async () => ({ tip: 0, schemaVersion: localSchemaVersion(), ops: [] }) };
+    await expect(runReplicaCycle(replica, invalid)).rejects.toMatchObject({ code: 'SYNC_PROTOCOL_ERROR' });
+    expect((await replica.syncOutbox.findUniqueOrThrow({ where: { opId: ack.opId } })).state).toBe('pending');
+    expect((await replica.syncState.findUniqueOrThrow({ where: { id: 'local' } })).appliedHubSeq).toBe(0);
+  });
+
+  it('does not skip an unsupported entity and advance the pull cursor', async () => {
+    await pendingFixture(); await replica.syncOutbox.deleteMany();
+    const invalid: ReplicaTransport = { ...transport, pull: async () => ({ tip: 1, schemaVersion: localSchemaVersion(), ops: [{ seq: 1, opId: 'unknown-entity-01', entityType: 'future-entity', entityId: 'unknown', before: null, after: null }] }) };
+    await expect(runReplicaCycle(replica, invalid)).rejects.toMatchObject({ code: 'SYNC_PROTOCOL_ERROR' });
+    expect((await replica.syncState.findUniqueOrThrow({ where: { id: 'local' } })).appliedHubSeq).toBe(0);
+  });
+
+  it.each([{ tip: 0, seqs: [1] }, { tip: 2, seqs: [2, 1] }, { tip: 2, seqs: [2] }, { tip: 3, seqs: [1, 3] }])('validates a whole pull page before applying it: %j', async ({ tip, seqs }) => {
+    await pendingFixture(); await replica.syncOutbox.deleteMany();
+    const before = await canonical(replica, 'task', ids.hubOnly);
+    const invalid: ReplicaTransport = { ...transport, pull: async () => ({ tip, schemaVersion: localSchemaVersion(), ops: seqs.map((seq, index) => ({ seq, opId: `bad-page-op-${index}`, entityType: 'task', entityId: ids.hubOnly, before, after: { ...before, title: '不得落库的响应' } })) }) };
+    await expect(runReplicaCycle(replica, invalid)).rejects.toMatchObject({ code: 'SYNC_PROTOCOL_ERROR' });
+    expect(await canonical(replica, 'task', ids.hubOnly)).toEqual(before);
+    expect((await replica.syncState.findUniqueOrThrow({ where: { id: 'local' } })).appliedHubSeq).toBe(0);
+  });
+
+  it('keeps queued changes when initial alignment cannot reach the server', async () => {
+    await pendingFixture(); await replica.syncState.update({ where: { id: 'local' }, data: { baselineReady: false } });
+    const offline: ReplicaTransport = { ...transport, pull: async () => { throw new Error('offline'); } };
+    await expect(alignReplica(replica, offline)).rejects.toThrow('offline');
+    expect((await replica.syncOutbox.findUniqueOrThrow({ where: { opId: 'protocol-pending-01' } })).state).toBe('pending');
+  });
+
+  it('queues committed local changes even before baseline alignment finishes', async () => {
+    await pendingFixture(); await replica.syncOutbox.deleteMany();
+    await replica.syncState.update({ where: { id: 'local' }, data: { baselineReady: false } });
+    const previousUrl = process.env.DOVUN_SYNC_URL, previousToken = process.env.DOVUN_SYNC_TOKEN;
+    process.env.DOVUN_SYNC_URL = 'https://wwa.example.com'; process.env.DOVUN_SYNC_TOKEN = 'b'.repeat(32);
+    try {
+      await replica.$transaction(tx => recordCommittedGroup(tx, 'before-baseline-change', { entities: { tasks: {}, topics: {}, tags: {} } }, { entities: { tasks: { [ids.replicaOnly]: filled('task', { title: '对齐前的本机新增' }) }, topics: {}, tags: {} } }));
+    } finally {
+      if (previousUrl === undefined) delete process.env.DOVUN_SYNC_URL; else process.env.DOVUN_SYNC_URL = previousUrl;
+      if (previousToken === undefined) delete process.env.DOVUN_SYNC_TOKEN; else process.env.DOVUN_SYNC_TOKEN = previousToken;
+    }
+    expect(await replica.syncOutbox.count({ where: { opId: { startsWith: 'before-baseline-change:' }, state: 'pending' } })).toBe(1);
+  });
+
+  it('serializes a manual alignment and timer cycle on the same database', async () => {
+    await pendingFixture();
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const entered = new Promise<void>(resolve => { started = resolve; });
+    const calls: string[] = [];
+    const blocked: ReplicaTransport = { ...transport,
+      push: async body => { calls.push('push'); started(); await gate; return { tip: 0, results: body.ops.map(op => ({ opId: op.opId, status: 'applied', seq: null, landed: op.after })) }; },
+      pull: async () => { calls.push('pull'); return { tip: 0, schemaVersion: localSchemaVersion(), ops: [] }; },
+    };
+    const first = runReplicaCycle(replica, blocked);
+    await entered;
+    const second = alignReplica(replica, blocked);
+    expect(calls).toEqual(['push']);
+    release();
+    await first; await second;
+    expect(calls).toEqual(['push', 'pull']);
+  });
+
+  it('preserves an edit made while the initial offer is in flight', async () => {
+    await replica.syncOutbox.deleteMany();
+    await replica.syncState.update({ where: { id: 'local' }, data: { baselineReady: false, appliedHubSeq: 0 } });
+    const local = filled('task', { title: '开始对齐时的标题' });
+    await replica.$transaction(tx => writeLive(tx, 'task', ids.shared, local));
+    const concurrent: ReplicaTransport = { ...transport,
+      pull: async () => ({ tip: 0, schemaVersion: localSchemaVersion(), ops: [] }),
+      rows: async () => ({ rows: [] }),
+      offer: async (entity, rows) => {
+        if (entity === 'task') await replica.$transaction(tx => writeLive(tx, 'task', ids.shared, { ...local, title: '对齐期间新写的标题' }));
+        return { tip: 0, results: rows.map(item => ({ id: item.id, status: 'conflict', row: entity === 'task' ? { ...item.row, title: '云端标题' } : item.row })) };
+      },
+    };
+    await alignReplica(replica, concurrent);
+    expect((await canonical(replica, 'task', ids.shared))?.title).toBe('对齐期间新写的标题');
+  });
+
+  it('rejects malformed baseline pages without marking the baseline ready', async () => {
+    await replica.syncState.update({ where: { id: 'local' }, data: { baselineReady: false } });
+    const invalid: ReplicaTransport = { ...transport,
+      pull: async () => ({ tip: 0, schemaVersion: localSchemaVersion(), ops: [] }),
+      rows: async () => ({ rows: [{ id: 'z', row: filled('topic', {}) }, { id: 'a', row: filled('topic', {}) }] }),
+    };
+    await expect(alignReplica(replica, invalid)).rejects.toMatchObject({ code: 'SYNC_PROTOCOL_ERROR' });
+    expect((await replica.syncState.findUniqueOrThrow({ where: { id: 'local' } })).baselineReady).toBe(false);
+  });
+
+  it('rejects a snapshot with an invalid row before copying any entity', async () => {
+    await replica.syncState.update({ where: { id: 'local' }, data: { baselineReady: false } });
+    const invalid: ReplicaTransport = { ...transport, snapshot: async () => ({ tip: 0, schemaVersion: localSchemaVersion(), entities: { topic: [{ id: 'must-not-copy-topic', row: filled('topic', { name: '不能先落库' }) }], tag: [], task: [{ id: 'bad-task', row: filled('task', { status: 'unsupported' }) }] } }) };
+    await expect(alignReplica(replica, invalid)).rejects.toMatchObject({ code: 'SYNC_PROTOCOL_ERROR' });
+    expect(await replica.topic.findUnique({ where: { id: 'must-not-copy-topic' } })).toBe(null);
+    expect((await replica.syncState.findUniqueOrThrow({ where: { id: 'local' } })).baselineReady).toBe(false);
+  });
+
+  it('offers parent tasks before children even when their IDs sort after children', async () => {
+    await replica.syncState.update({ where: { id: 'local' }, data: { baselineReady: false } });
+    await replica.$transaction(async tx => {
+      await writeLive(tx, 'task', 'z-parent-sync-test', filled('task', { title: '后建的父任务' }));
+      await writeLive(tx, 'task', 'a-child-sync-test', filled('task', { title: '先建的子任务', parentId: 'z-parent-sync-test' }));
+    });
+    await alignReplica(replica, { ...transport, snapshot: readSyncSnapshot });
+    expect((await canonical(prisma, 'task', 'a-child-sync-test'))?.parentId).toBe('z-parent-sync-test');
+    expect((await canonical(prisma, 'task', 'z-parent-sync-test'))?.title).toBe('后建的父任务');
+  });
+
 });

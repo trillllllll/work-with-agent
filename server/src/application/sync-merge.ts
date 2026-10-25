@@ -8,6 +8,26 @@ export const syncFields = {
 export type SyncEntityType = keyof typeof syncFields;
 export type SyncRow = Record<string, unknown>;
 
+/** Runtime boundary shared by the hub and replica; JSON objects alone are not valid rows. */
+export function isCompleteSyncRow(entity: SyncEntityType, value: unknown): value is SyncRow | null {
+  if (value === null) return true;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const row = value as SyncRow;
+  const nullable = new Set(['dueDate', 'scheduledStart', 'scheduledEnd', 'topicId', 'parentId', 'deletedAt', 'deleteBatchId', 'summaryUpdatedAt', 'archivedAt']);
+  return syncFields[entity].every(field => {
+    if (!Object.prototype.hasOwnProperty.call(row, field)) return false;
+    const item = row[field];
+    if (field === 'tagIds') return Array.isArray(item) && item.length <= 1000 && item.every(id => typeof id === 'string' && id.length > 0 && id.length <= 200) && new Set(item).size === item.length;
+    if (field === 'status') return typeof item === 'string' && ['todo', 'doing', 'blocked', 'done'].includes(item);
+    if (field === 'priority') return typeof item === 'string' && ['none', 'low', 'medium', 'high'].includes(item);
+    if (field === 'isExploration') return typeof item === 'boolean';
+    if (field === 'sortOrder') return typeof item === 'number' && Number.isFinite(item);
+    if (field === 'estimatedMinutes') return item === null || (typeof item === 'number' && Number.isSafeInteger(item) && item >= 0);
+    if (item === null) return nullable.has(field);
+    return typeof item === 'string' && item.length <= 2_000_000;
+  });
+}
+
 export type SyncFieldConflict = {
   field: string;
   base: unknown;
@@ -78,10 +98,16 @@ export function mergeSyncRow(entityType: SyncEntityType, liveRaw: Record<string,
   const conflicts: SyncFieldConflict[] = [];
   const liveEditedOther = syncFields[entityType].some((field) => field !== 'deletedAt' && field !== 'deleteBatchId' && !sameValue(field, current[field], base[field]));
   const incomingSoftDelete = !sameValue('deletedAt', base.deletedAt, incoming.deletedAt) && incoming.deletedAt != null;
+  const liveSoftDelete = !sameValue('deletedAt', base.deletedAt, current.deletedAt) && current.deletedAt != null;
+  const incomingEditedOther = syncFields[entityType].some((field) => field !== 'deletedAt' && field !== 'deleteBatchId' && !sameValue(field, incoming[field], base[field]));
+  // The delete and its batch marker are one operation. Preserve edits on either arrival order.
+  if (liveSoftDelete && incomingEditedOther && !incomingSoftDelete) {
+    return { row: live, conflicts: [{ field: '_deleted', base: before, live, incoming: after }] };
+  }
   for (const field of syncFields[entityType]) {
     if (sameValue(field, base[field], incoming[field])) continue;
-    if (field === 'deletedAt' && incomingSoftDelete && liveEditedOther) {
-      conflicts.push({ field, base: base[field], live: current[field], incoming: incoming[field] });
+    if ((field === 'deletedAt' || field === 'deleteBatchId') && incomingSoftDelete && liveEditedOther) {
+      if (field === 'deletedAt') conflicts.push({ field: '_deleted', base: before, live, incoming: after });
       continue;
     }
     if (sameValue(field, base[field], current[field]) || sameValue(field, current[field], incoming[field]) || lastWriteWins.has(field)) {

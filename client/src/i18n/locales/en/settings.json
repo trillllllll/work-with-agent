@@ -320,7 +320,13 @@
     "aligned": "First alignment is done. Later changes follow the log.",
     "ready": "Aligned with {{url}}. Later changes follow the log.",
     "waiting": "Credential for {{url}} is saved. The first alignment is not done.",
-    "unbound": "No sync credential yet."
+    "unbound": "No sync credential yet.",
+    "syncing": "Syncing…",
+    "offline": "Sync is unavailable. Local changes are saved and will retry automatically.",
+    "pending": "{{count}} changes waiting to sync",
+    "confirmed": "Last successful sync: {{time}}",
+    "checking": "Waiting for server confirmation.",
+    "retry": "Retry now"
   },
   "server": {
     "title": "Server",

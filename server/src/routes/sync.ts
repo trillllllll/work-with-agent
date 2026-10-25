@@ -3,8 +3,8 @@ import { z } from 'zod';
 import { DomainError } from '../domain/task.js';
 import { checkLocalOrigin, requireOwner } from '../application/security.js';
 import { publishWorkspaceChange } from '../application/commands.js';
-import { assertSchema, currentSyncSeq, findSyncDevice, listBaselineIds, listBaselineRows, listSyncConflicts, offerBaselineRows, pairSyncDevice, pullSyncOps, pushBodySchema, pushSyncOps, resolveSyncConflict } from '../application/sync-log.js';
-import { alignBoundReplica, syncStatus, writeSyncBinding } from '../application/sync-replica.js';
+import { assertSchema, readSyncSnapshot, currentSyncSeq, findSyncDevice, listBaselineIds, listBaselineRows, offerBaselineRows, pairSyncDevice, pullSyncOps, pushBodySchema, pushSyncOps } from '../application/sync-log.js';
+import { alignBoundReplica, bindReplica, syncBoundReplicaNow, workspaceSyncConflicts, resolveWorkspaceSyncConflict, syncStatus } from '../application/sync-replica.js';
 
 async function syncDevice(req: Request) {
   const authorization = req.headers.authorization;
@@ -48,7 +48,7 @@ export function createSyncRouter() {
       const header = req.headers.authorization;
       if (header) await syncDevice(req);
       else await requireOwner(req);
-      res.json({ data: await listSyncConflicts(), error: null });
+      res.json({ data: await workspaceSyncConflicts(), error: null });
     } catch (error) { next(error); }
   });
   router.post('/conflicts/:id/resolve', async (req, res, next) => {
@@ -57,7 +57,7 @@ export function createSyncRouter() {
       const deviceId = header ? (await syncDevice(req)).id : 'server';
       if (!header) await requireOwner(req);
       const body = z.object({ choice: z.enum(['mine', 'theirs']) }).strict().parse(req.body ?? {});
-      const data = await resolveSyncConflict(String(req.params.id), body.choice, deviceId);
+      const data = await resolveWorkspaceSyncConflict(String(req.params.id), body.choice, deviceId);
       publishWorkspaceChange({ kind: 'sync', syncSeq: await currentSyncSeq() });
       res.json({ data, error: null });
     } catch (error) { next(error); }
@@ -72,7 +72,13 @@ export function createSyncRouter() {
     try {
       await requireOwner(req);
       const body = z.object({ url: z.string().min(1).max(300), token: z.string().min(20).max(200) }).strict().parse(req.body ?? {});
-      res.json({ data: writeSyncBinding(body), error: null });
+      res.json({ data: await bindReplica(body), error: null });
+    } catch (error) { next(error); }
+  });
+  router.post('/run', async (req, res, next) => {
+    try {
+      await requireOwner(req);
+      res.json({ data: await syncBoundReplicaNow(), error: null });
     } catch (error) { next(error); }
   });
   router.post('/align', async (req, res, next) => {
@@ -80,6 +86,14 @@ export function createSyncRouter() {
       await requireOwner(req);
       const data = await alignBoundReplica();
       res.json({ data, error: null });
+    } catch (error) { next(error); }
+  });
+  router.get('/baseline/snapshot', async (req, res, next) => {
+    try {
+      await allowSyncRead(req);
+      assertSchema(z.string().min(1).parse(req.query.schemaVersion));
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ data: await readSyncSnapshot(), error: null });
     } catch (error) { next(error); }
   });
   router.get('/baseline/ids', async (req, res, next) => {

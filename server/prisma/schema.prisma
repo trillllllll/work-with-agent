@@ -1142,6 +1142,16 @@ model SyncDevice {
   @@map("sync_devices")
 }
 
+/// Immutable request receipts, including conflicts and no-op writes. Stored with the business write.
+model SyncReceipt {
+  opId        String @id @map("op_id")
+  requestHash String @map("request_hash")
+  resultJson  String @map("result_json")
+  createdAt   String @map("created_at")
+
+  @@map("sync_receipts")
+}
+
 model SyncConflict {
   id           String  @id @default(cuid())
   opId         String  @map("op_id")

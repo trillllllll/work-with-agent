@@ -40,4 +40,18 @@ describe('sync field merge', () => {
     const base = task();
     expect(mergeSyncRow('task', base, base, null)).toEqual({ row: null, conflicts: [] });
   });
+  it('preserves the full incoming edit against an already soft-deleted task', () => {
+    const base = task();
+    const deleted = task({ deletedAt: '2026-10-25T00:00:00Z', deleteBatchId: 'batch' });
+    const merged = mergeSyncRow('task', deleted, base, task({ description: '离线新增内容' }));
+    expect(merged.row).toEqual(deleted);
+    expect(merged.conflicts[0]).toMatchObject({ field: '_deleted', incoming: { description: '离线新增内容' } });
+  });
+  it('keeps the delete marker and batch marker unchanged when deletion conflicts', () => {
+    const base = task();
+    const merged = mergeSyncRow('task', task({ title: '本地修改' }), base, task({ deletedAt: '2026-10-25T00:00:00Z', deleteBatchId: 'batch' }));
+    expect(merged.row).toMatchObject({ deletedAt: null, deleteBatchId: null, title: '本地修改' });
+    expect(merged.conflicts[0].field).toBe('_deleted');
+  });
+
 });

@@ -19,11 +19,11 @@ export type SyncConflict = {
   incoming: unknown;
 };
 
-type SyncStatus = { mode: 'local' | 'server'; bound: boolean; url: string | null; baselineReady: boolean; appliedHubSeq: number };
+type SyncStatus = { mode: 'local' | 'server'; bound: boolean; url: string | null; baselineReady: boolean; appliedHubSeq: number; pending: number; lastSuccessAt: string | null; lastError: string | null; syncing: boolean };
 type Pairing = { deviceId: string; token: string };
 
 export const syncConflictsQueryOptions = { queryKey: ['sync-conflicts'], queryFn: () => api<SyncConflict[]>('/api/v1/sync/conflicts') };
-export const syncStatusQueryOptions = { queryKey: ['sync-status'], queryFn: () => api<SyncStatus>('/api/v1/sync/status') };
+export const syncStatusQueryOptions = { queryKey: ['sync-status'], queryFn: () => api<SyncStatus>('/api/v1/sync/status'), refetchInterval: 5_000 };
 
 function show(value: unknown) {
   if (value == null) return '';
@@ -64,7 +64,15 @@ export function SyncConflicts() {
       void queryClient.invalidateQueries({ queryKey: ['sync-conflicts'] });
       void queryClient.invalidateQueries({ queryKey: ['tasks'] });
     },
-    onError: (error: Error) => { setConfirmAlign(false); toast.error(error.message); },
+    onError: (error: Error) => { setCredential(''); setConfirmAlign(false); void queryClient.invalidateQueries({ queryKey: ['sync-status'] }); toast.error(error.message); },
+  });
+  const retry = useMutation({
+    mutationFn: () => api('/api/v1/sync/run', { method: 'POST', body: '{}' }),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+      void queryClient.invalidateQueries({ queryKey: ['sync-conflicts'] });
+    },
+    onError: (error: Error) => toast.error(error.message),
   });
   const rows = conflicts.data ?? [];
   const mode = server.data?.mode ?? status.data?.mode;
@@ -105,13 +113,19 @@ export function SyncConflicts() {
           <h4 className="text-sm font-medium">{t('sync.bindTitle')}</h4>
           <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{t('sync.bindDescription')}</p>
           <p className="mt-2 text-[13px] text-muted-foreground">{boundText}</p>
-          <div className="mt-3 space-y-2">
+          {status.data?.bound ? <div className="mt-3 space-y-2">
+            <p role="status" className="text-sm text-muted-foreground">
+              {status.data.syncing ? t('sync.syncing') : status.data.lastError ? t('sync.offline') : status.data.pending > 0 ? t('sync.pending', { count: status.data.pending }) : status.data.lastSuccessAt ? t('sync.confirmed', { time: new Date(status.data.lastSuccessAt).toLocaleTimeString() }) : t('sync.checking')}
+            </p>
+            {status.data.pending > 0 && (status.data.syncing || status.data.lastError) && <p className="text-sm text-muted-foreground">{t('sync.pending', { count: status.data.pending })}</p>}
+            <Button type="button" variant="outline" disabled={retry.isPending || status.data.syncing} onClick={() => retry.mutate()}>{t('sync.retry')}</Button>
+          </div> : <div className="mt-3 space-y-2">
             <label className="block text-sm" htmlFor="sync-url">{t('sync.url')}</label>
             <Input id="sync-url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://" autoComplete="off" />
             <label className="block text-sm" htmlFor="sync-token">{t('sync.token')}</label>
             <Input id="sync-token" type="password" value={credential} onChange={(event) => setCredential(event.target.value)} autoComplete="new-password" />
             <Button type="button" variant="outline" disabled={align.isPending || !url || credential.length < 20} onClick={() => setConfirmAlign(true)}>{t('sync.align')}</Button>
-          </div>
+          </div>}
         </Surface>
       )}
       {conflicts.isError && <p className="mt-4 text-sm text-destructive">{conflicts.error.message}</p>}

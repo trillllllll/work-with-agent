@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { EventEmitter } from 'node:events';
 import { Router } from 'express';
 import { z } from 'zod';
 import type { ChangeRecord } from '@prisma/client';
@@ -14,6 +13,8 @@ import { type Actor, getActor, assertOwner, assertOwnerOrLearningSkill, assertTo
 import { commandDescriptor } from './command-catalog.js';
 import { discardPendingBlobs, flushUnreferencedBlobs } from './task-images.js';
 import { currentSyncSeq } from './sync-log.js';
+import { publishWorkspaceChange, workspaceEvents } from './workspace-events.js';
+export { publishWorkspaceChange, workspaceEvents } from './workspace-events.js';
 
 export type Evidence = { type: 'material' | 'memory' | 'task'; id: string; revision: number; hash?: string };
 export type Command = { kind: string; targetId?: string; expectedRevision?: number; input: Record<string, unknown>; clientRef?: string; entityId?: string; evidence?: Evidence[] };
@@ -31,8 +32,6 @@ const handlers = new Map<string, CommandHandler>();
 let evidenceValidator: ((tx: Db, actor: Actor, refs: Evidence[]) => Promise<unknown>) | undefined;
 export function registerEvidenceValidator(validate: NonNullable<typeof evidenceValidator>) { evidenceValidator = validate; }
 export function registerCommandHandler(kind: string, handler: CommandHandler) { handlers.set(kind, handler); }
-export const workspaceEvents = new EventEmitter();
-export function publishWorkspaceChange(data: unknown) { workspaceEvents.emit('change', data); }
 export function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
   if (value && typeof value === 'object') return `{${Object.entries(value).filter(([, item]) => item !== undefined).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}`;

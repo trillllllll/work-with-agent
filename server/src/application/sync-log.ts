@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { DomainError } from '../domain/task.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { localSchemaVersion } from './snapshots.js';
-import { canonicalSyncRow, isSyncEntityType, mergeSyncRow, syncFields, syncRowsEqual, type SyncEntityType, type SyncFieldConflict, type SyncRow } from './sync-merge.js';
+import { canonicalSyncRow, isCompleteSyncRow, isSyncEntityType, mergeSyncRow, syncFields, syncRowsEqual, type SyncEntityType, type SyncFieldConflict, type SyncRow } from './sync-merge.js';
 
 const now = () => new Date().toISOString();
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -101,8 +101,13 @@ export async function appendGroupSyncOps(tx: Tx, changeId: string, before: Group
 }
 
 export async function currentSyncSeq() {
-  const row = await prisma.syncOp.findFirst({ orderBy: { seq: 'desc' }, select: { seq: true } });
-  return row?.seq ?? 0;
+  return syncSequence(prisma);
+}
+
+async function syncSequence(tx: Pick<Tx, '$queryRaw'>) {
+  // MAX(seq) goes backwards after log cleanup. SQLite's high-water mark survives it.
+  const rows = await tx.$queryRaw<Array<{ seq: bigint | number }>>`SELECT seq FROM sqlite_sequence WHERE name = 'sync_ops'`;
+  return Number(rows[0]?.seq ?? 0);
 }
 
 export async function pairSyncDevice(name: string) {
@@ -138,10 +143,7 @@ function parseStored(value: string | null): SyncRow | null {
 }
 
 function requireComplete(entityType: SyncEntityType, row: Record<string, unknown> | null) {
-  if (!row) return;
-  for (const field of syncFields[entityType]) {
-    if (!(field in row)) throw new DomainError('VALIDATION_ERROR', '同步操作无效', 400);
-  }
+  if (!isCompleteSyncRow(entityType, row)) throw new DomainError('VALIDATION_ERROR', '同步内容的字段或类型无效', 400);
 }
 
 export async function readLive(tx: Tx, entityType: SyncEntityType, entityId: string): Promise<{ row: SyncRow | null; revision: number }> {
@@ -230,7 +232,7 @@ export async function writeLive(tx: Tx, entityType: SyncEntityType, entityId: st
 async function storeConflicts(tx: Tx, opId: string, deviceId: string, entityType: SyncEntityType, entityId: string, conflicts: SyncFieldConflict[]) {
   const timestamp = now();
   for (const conflict of conflicts) {
-    const pending = await tx.syncConflict.findFirst({ where: { entityType, entityId, field: conflict.field, state: 'pending' }, select: { id: true } });
+    const pending = await tx.syncConflict.findFirst({ where: { entityType, entityId, field: conflict.field, incomingJson: JSON.stringify(conflict.incoming ?? null), state: 'pending' }, select: { id: true } });
     if (pending) continue;
     await tx.syncConflict.create({
       data: {
@@ -255,6 +257,13 @@ async function applyIncoming(tx: Tx, deviceId: string, input: z.infer<typeof pus
   const entityType = input.entityType;
   requireComplete(entityType, input.before);
   requireComplete(entityType, input.after);
+  // Canonical field order makes retries independent of JSON property ordering.
+  const requestHash = hash(JSON.stringify([entityType, input.entityId, canonicalSyncRow(entityType, input.before), canonicalSyncRow(entityType, input.after)]));
+  const receipt = await tx.syncReceipt.findUnique({ where: { opId: input.opId } });
+  if (receipt) {
+    if (receipt.requestHash !== requestHash) throw new DomainError('SYNC_OP_REUSED', '同步请求编号已用于其他修改，已保留待同步内容', 409);
+    return { ...JSON.parse(receipt.resultJson), status: 'duplicate' as const };
+  }
   const existing = await tx.syncOp.findUnique({ where: { opId: input.opId } });
   if (existing) return { opId: input.opId, status: 'duplicate' as const, seq: existing.seq, revision: existing.revision, conflicts: [] as SyncFieldConflict[], landed: null as SyncRow | null };
   const live = await readLive(tx, entityType, input.entityId);
@@ -272,7 +281,7 @@ async function applyIncoming(tx: Tx, deviceId: string, input: z.infer<typeof pus
         deviceId,
         entityType,
         entityId: input.entityId,
-        beforeJson: before ? JSON.stringify(before) : null,
+        beforeJson: live.row ? JSON.stringify(live.row) : null,
         afterJson: merged.row ? JSON.stringify(merged.row) : null,
         revision,
         createdAt: now(),
@@ -281,7 +290,9 @@ async function applyIncoming(tx: Tx, deviceId: string, input: z.infer<typeof pus
     seq = created.seq;
   }
   if (merged.conflicts.length) await storeConflicts(tx, input.opId, deviceId, entityType, input.entityId, merged.conflicts);
-  return { opId: input.opId, status: merged.conflicts.length ? 'conflict' as const : 'applied' as const, seq, revision, conflicts: merged.conflicts, landed: merged.row };
+  const result = { opId: input.opId, status: merged.conflicts.length ? 'conflict' as const : 'applied' as const, seq, revision, conflicts: merged.conflicts, landed: merged.row };
+  await tx.syncReceipt.create({ data: { opId: input.opId, requestHash, resultJson: JSON.stringify(result), createdAt: now() } });
+  return result;
 }
 
 export async function pushSyncOps(deviceId: string, body: z.infer<typeof pushBodySchema>) {
@@ -390,6 +401,24 @@ export async function listBaselineRows(entityType: string, afterId: string, limi
     return page;
   });
   return { rows };
+}
+
+/** A single SQLite read transaction fixes rows and log position to the same snapshot. */
+export async function readSyncSnapshot() {
+  return prisma.$transaction(async tx => {
+    const tip = await syncSequence(tx);
+    const topics = await tx.topic.findMany({ orderBy: { id: 'asc' } });
+    const tags = await tx.tag.findMany({ orderBy: { id: 'asc' } });
+    const tasks = await tx.task.findMany({ include: { tags: true }, orderBy: { id: 'asc' } });
+    return {
+      schemaVersion: localSchemaVersion(), tip,
+      entities: {
+        topic: topics.map(row => ({ id: row.id, row: canonicalSyncRow('topic', row)! })),
+        tag: tags.map(row => ({ id: row.id, row: canonicalSyncRow('tag', row)! })),
+        task: tasks.map(row => ({ id: row.id, row: canonicalSyncRow('task', { ...row, tagIds: row.tags.map(item => item.tagId) })! })),
+      },
+    };
+  });
 }
 
 /** Copies rows the hub does not have, and files conflicts for rows that differ. The hub row stays. */

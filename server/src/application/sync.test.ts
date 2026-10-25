@@ -4,6 +4,7 @@ import { app } from '../app.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { ownerSession } from '../test-auth.js';
 import { TaskService } from './workspace.js';
+import { pairSyncDevice, pushSyncOps, readSyncSnapshot, readLive } from './sync-log.js';
 import { localSchemaVersion } from './snapshots.js';
 
 const secret = 'sync-secret-should-not-leak';
@@ -23,6 +24,7 @@ describe('hub sync for tasks', () => {
     await prisma.taskTag.deleteMany({ where: { taskId: { in: taskIds } } });
     await prisma.taskTopicAssignment.deleteMany({ where: { taskId: { in: taskIds } } });
     await prisma.task.deleteMany({ where: { id: { in: taskIds } } });
+    await prisma.syncReceipt.deleteMany();
     await prisma.syncDevice.deleteMany({ where: { id: { in: deviceIds } } });
     const setting = await prisma.appSetting.findUnique({ where: { id: 'default' } });
     if (setting?.openaiApiKey === secret) await prisma.appSetting.update({ where: { id: 'default' }, data: { openaiApiKey: '' } });
@@ -67,4 +69,39 @@ describe('hub sync for tasks', () => {
     expect((await prisma.task.findUniqueOrThrow({ where: { id: created.id } })).title).toBe('丙');
     expect((await owner('get', '/api/v1/sync/conflicts')).body.data.some((item: { id: string }) => item.id === row.id)).toBe(false);
   });
+  it('durably acknowledges no-ops and conflicts and rejects opId reuse', async () => {
+    const created = await new TaskService().create({ title: '回执重试' }, { source: 'user' });
+    taskIds.push(created.id);
+    const device = await pairSyncDevice('receipt-test'); deviceIds.push(device.deviceId);
+    const base = (await prisma.$transaction(tx => readLive(tx, 'task', created.id))).row!;
+    const noop = { opId: 'receipt-noop-0001', entityType: 'task', entityId: created.id, before: base, after: base };
+    const push = (ops: typeof noop[]) => pushSyncOps(device.deviceId, { schemaVersion: localSchemaVersion(), ops });
+    expect((await push([noop])).results[0].seq).toBe(null);
+    await prisma.task.update({ where: { id: created.id }, data: { title: '确认丢失后的其他设备修改' } });
+    expect((await push([noop])).results[0].status).toBe('duplicate');
+    expect((await prisma.task.findUniqueOrThrow({ where: { id: created.id } })).title).toBe('确认丢失后的其他设备修改');
+    await expect(push([{ ...noop, after: { ...base, title: '同编号另一请求' } }])).rejects.toMatchObject({ code: 'SYNC_OP_REUSED' });
+    const conflicting = { ...noop, opId: 'receipt-conflict-01', after: { ...base, title: '离线标题' } };
+    expect((await push([conflicting])).results[0].status).toBe('conflict');
+    const count = await prisma.syncConflict.count({ where: { opId: conflicting.opId } });
+    expect((await push([conflicting])).results[0].status).toBe('duplicate');
+    expect(await prisma.syncConflict.count({ where: { opId: conflicting.opId } })).toBe(count);
+    await push([{ ...conflicting, opId: 'receipt-conflict-02', after: { ...base, title: '第三份离线标题' } }]);
+    expect(await prisma.syncConflict.count({ where: { entityId: created.id, field: 'title' } })).toBe(count + 1);
+  });
+
+  it('returns one baseline with its log cursor and excludes settings and credentials', async () => {
+    const snapshot = await readSyncSnapshot();
+    expect(snapshot.schemaVersion).toBe(localSchemaVersion());
+    expect(snapshot.entities.task.some(item => taskIds.includes(item.id))).toBe(true);
+    expect(Object.keys(snapshot.entities).sort()).toEqual(['tag', 'task', 'topic']);
+    expect(JSON.stringify(snapshot)).not.toContain(secret);
+    const unauthorized = await request(app).get(`/api/v1/sync/baseline/snapshot?schemaVersion=${localSchemaVersion()}`);
+    expect(unauthorized.status).toBe(401);
+    const authorized = await owner('get', `/api/v1/sync/baseline/snapshot?schemaVersion=${localSchemaVersion()}`);
+    expect(authorized.status).toBe(200);
+    expect(authorized.headers['cache-control']).toBe('no-store');
+    expect((await owner('get', '/api/v1/sync/baseline/snapshot?schemaVersion=old')).status).toBe(409);
+  });
+
 });
