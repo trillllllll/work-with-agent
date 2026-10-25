@@ -1,3 +1,4 @@
+import { cliSettings } from '../runner/cli-commands.js';
 import { workspaceCachePath as cachePath, cacheAuthorization, cacheIsDenied } from './workspace-cache-access.js';
 import type { Request, Response, NextFunction } from 'express';
 import { createHash, randomUUID } from 'node:crypto';
@@ -16,12 +17,12 @@ import { readLive } from './sync-log.js';
 const PREFIX = '/api/v1/sync/relay';
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 const cacheLimit = 24 * 1024 * 1024;
-const ownerFamilies = /^\/api\/(?:chat(?:\/|$)|conversations(?:\/|$)|agent(?:\/|$)|orchestrations(?:\/|$)|projects(?:\/|$)|skills(?:\/|$)|focus-sessions(?:\/|$)|plan(?:\/|$)|settings(?:$|\/(?:reply-style|html-blocks|image-search)(?:\/|$))|v1\/(?:sync\/archive|commands|proposals|knowledge|library|handoffs|runs|runners|artifacts|connections|reviews|plan)(?:\/|$))/;
-const taskExtras = /^\/api\/tasks\/[^/]+\/(?:images(?:\/[^/]+)?|ai-history)$/;
+const ownerFamilies = /^\/api\/(?:chat(?:\/|$)|conversations(?:\/|$)|agent(?:\/|$)|orchestrations(?:\/|$)|nodes(?:\/|$)|worktrees(?:\/|$)|worktree-cleanups(?:\/|$)|project-bindings(?:\/|$)|projects(?:\/|$)|skills(?:\/|$)|focus-sessions(?:\/|$)|stats(?:\/|$)|changes(?:\/|$)|plan(?:\/|$)|settings(?:$|\/(?:reply-style|html-blocks|image-search|api-key)(?:\/|$))|v1\/(?:sync\/archive|assistant\/sources|commands|proposals|knowledge|library|handoffs|runs|runners|artifacts|connections|reviews|plan)(?:\/|$))/;
+const taskExtras = /^\/api\/tasks\/[^/]+\/(?:images(?:\/[^/]+)?|ai-history|activity|topic-history)$/;
 const scopedFamilies = /^\/api\/v1\/(?:tasks|topics|tags|changes|commands|proposals|knowledge|library|handoffs|runs|runners|artifacts|plan|identity|tools)(?:\/|$)|^\/api\/v1\/trash\/tasks(?:\/|$)/;
 const ordinaryTaskCommand = (body: any) => Array.isArray(body?.commands) && body.commands.length > 0 && body.commands.every((command: any) => /^(?:task|topic|tag)\./.test(command.kind) && command.kind !== 'task.reference_materials');
 export function relayPathAllowed(path: string) { return ownerFamilies.test(path) || taskExtras.test(path) || /^\/api\/(?:tasks|topics|tags)(?:\/|$)/.test(path); }
-const canCache = (path: string) => !/event-stream/.test(path) && /^\/api\/(?:conversations(?:\/|$)|v1\/(?:knowledge|library|artifacts)(?:\/|$)|tasks\/[^/]+\/images\/)/.test(path);
+const canCache = (path: string) => !/event-stream/.test(path) && /^\/api\/(?:conversations(?:\/|$)|v1\/(?:knowledge|library|artifacts)(?:\/|$)|tasks\/[^/]+\/(?:images\/|activity$|topic-history$|ai-history$))/.test(path);
 
 /** Pairing grants a full workspace replica, never a computer execution credential.
  * Only this allowlisted namespace can authenticate such a device as its owner. */
@@ -38,7 +39,7 @@ export async function acceptReplicaRelay(req: Request, _res: Response, next: Nex
 }
 
 async function cloudData(binding: SyncBinding, path: string) {
-  const response = await fetch(new URL(PREFIX + path, binding.url), { headers: { authorization: `Bearer ${binding.token}`, accept: 'application/json' }, signal: AbortSignal.timeout(20_000), redirect: 'error' });
+  const response = await fetch(new URL(PREFIX + path, binding.url), { headers: { authorization: `Bearer ${binding.token}`, ...(binding.workspaceId ? {'x-dovun-workspace-id':binding.workspaceId}:{}), accept: 'application/json' }, signal: AbortSignal.timeout(20_000), redirect: 'error' });
   const body = await response.json();
   if (!response.ok || !body || body.data === undefined) throw new DomainError('SYNC_UNAVAILABLE', '共享工作区暂不可用，本机修改已保留', 502);
   return body.data;
@@ -67,6 +68,12 @@ async function remapVersions(req: Request, binding: SyncBinding) {
   return body;
 }
 
+function localTaskChange(record:{entityType:string;beforeSnapshot:string|null;afterSnapshot:string|null}) {
+  if (['task','topic','tag'].includes(record.entityType)) return true;
+  if (record.entityType !== 'workspace') return false;
+  try {return [record.beforeSnapshot,record.afterSnapshot].filter(Boolean).every(raw=>{const row=JSON.parse(raw!);return row.version===2 && row.entities && Object.keys(row.entities).every(key=>['tasks','topics','tags'].includes(key));});} catch{return false;}
+}
+
 type CachedResponse = { status: number; type: string; disposition?: string; securityHeaders?: Record<string, string>; body: string };
 export async function relayBoundWorkspace(req: Request, res: Response, next: NextFunction) {
   const binding = activeSyncBinding();
@@ -75,6 +82,16 @@ export async function relayBoundWorkspace(req: Request, res: Response, next: Nex
   const bearer = typeof req.headers.authorization === 'string' && req.headers.authorization.startsWith('Bearer ');
   const allowed = bearer ? scopedFamilies.test(path) : ownerFamilies.test(path) || taskExtras.test(path);
   if (!allowed || !bearer && /^\/api\/v1\/commands(?:\/preview)?$/.test(path) && ordinaryTaskCommand(req.body)) { next(); return; }
+  // Task undo belongs to the durable local command record; cloud material/AI
+  // changes must be undone against the cloud record that created them.
+  const undo = path.match(/^\/api\/changes\/([^/]+)\/undo$/);
+  if (undo && !bearer) {
+    try {
+      await requireOwner(req);
+      const record = await prisma.changeRecord.findUnique({where:{id:decodeURIComponent(undo[1])}});
+      if (record && localTaskChange(record)) {next();return;}
+    } catch(error) {next(error);return;}
+  }
   let ownerAuthenticated = false;
   try {
     if (!bearer) { await requireOwner(req); ownerAuthenticated = true; }
@@ -87,10 +104,11 @@ export async function relayBoundWorkspace(req: Request, res: Response, next: Nex
     if (binding.workspaceId) headers.set('x-dovun-workspace-id', binding.workspaceId);
     for (const name of ['content-type', 'accept', 'accept-language', 'x-dovun-language', 'x-request-id', 'last-event-id']) if (typeof req.headers[name] === 'string') headers.set(name, req.headers[name] as string);
     const target = new URL((bearer ? '' : PREFIX) + req.url, binding.url);
-    const payload = writing ? bearer ? req.body : await remapVersions(req, binding) : undefined;
+    const binaryUpload = req.method === 'PUT' && /^\/api\/v1\/library\/uploads\/[^/]+\/content$/.test(path);
+    const payload = writing && !binaryUpload ? bearer ? req.body : await remapVersions(req, binding) : undefined;
     const disconnected = new AbortController();
     res.once('close', () => disconnected.abort());
-    const response = await fetch(target, { method: req.method, headers, ...(payload !== undefined ? { body: JSON.stringify(payload) } : {}), signal: AbortSignal.any([disconnected.signal, AbortSignal.timeout(path === '/api/chat' ? 10 * 60_000 : 30_000)]), redirect: 'error' });
+    const response = await fetch(target, { method: req.method, headers, ...(binaryUpload ? {body:req as unknown as BodyInit,duplex:'half'} : payload !== undefined ? { body: JSON.stringify(payload) } : {}), signal: AbortSignal.any([disconnected.signal, AbortSignal.timeout(path === '/api/chat' ? 10 * 60_000 : 30_000)]), redirect: 'error' });
     // A cloud login failure must not invalidate the desktop's local owner session.
     if (response.status === 401 || response.status === 403) {
       if (bearer) { res.status(response.status).json(await response.json()); return; }
@@ -108,6 +126,9 @@ export async function relayBoundWorkspace(req: Request, res: Response, next: Nex
     res.setHeader('Cache-Control', 'no-store');
     if (disposition) res.setHeader('content-disposition', disposition);
     for (const [header, value] of Object.entries(securityHeaders)) res.setHeader(header, value);
+    if (!bearer && /^\/api\/settings(?:$|\/api-key$)/.test(path) && response.ok && type.includes('application/json')) {
+      const body=await response.json();if(body.data)body.data.cli=await cliSettings();res.json(body);return;
+    }
     if (!bearer && /^\/api\/v1\/connections(?:\/[^/]+\/config)?$/.test(path) && response.ok && type.includes('application/json')) {
       const body = await response.json();
       if (body.data?.configuration) body.data.configuration = connectionConfiguration(body.data.token ?? '<paste the credential returned once at creation>');

@@ -51,7 +51,7 @@ type RawEvent = {
 export type TaskActivityEvent = {
   id: string;
   at: string | null;
-  evidence?: 'change_record' | 'task_created_at';
+  evidence?: 'change_record' | 'task_created_at' | 'sync_op';
   actor: { kind: 'user' | 'agent' | 'unknown'; name: string };
   approvedBy?: { kind: 'user'; name: string } | null;
   nameResolution?: 'current';
@@ -239,6 +239,16 @@ export async function taskActivity(actor: Actor, taskId: string, stats?: { skipp
     const at = normalizeActivityTime(record.createdAt);
     raw.push({ id: record.id, at, source: record.source, actorId: record.actorId, connectionId: record.connectionId, approvedByActorId: record.approvedByActorId ?? null, synthetic: false, ...change });
   }
+  // Replica writes have a durable sync log rather than a local command record.
+  // Include them in the shared history without inventing an undoable command.
+  const synced = await prisma.syncOp.findMany({where:{entityType:'task',entityId:taskId,deviceId:{not:'server'}},orderBy:{seq:'desc'}});
+  for (const op of synced) {
+    let before:Snap|null, after:Snap|null;
+    try { before=op.beforeJson?snap(JSON.parse(op.beforeJson)):null;after=op.afterJson?snap(JSON.parse(op.afterJson)):null; } catch {continue;}
+    if ((before&&!canReadTopic(actor,before.topicId)) || (after&&!canReadTopic(actor,after.topicId))) continue;
+    const change=diff(before,after,'update');if(!change)continue;
+    raw.push({id:'sync:'+op.opId,at:normalizeActivityTime(op.createdAt),source:'user',actorId:'local-owner',connectionId:null,approvedByActorId:null,synthetic:false,...change});
+  }
   if (!raw.some((event) => event.action === 'create')) {
     raw.push({ id: `created:${task.id}`, at: normalizeActivityTime(task.createdAt), source: 'unknown', actorId: null, connectionId: null, approvedByActorId: null, synthetic: true, action: 'create', changes: [] });
   }
@@ -296,7 +306,7 @@ function presentEvent(event: RawEvent, present: (change: RawChange) => TaskActiv
   return {
     id: event.id,
     at: event.at,
-    evidence: event.synthetic ? 'task_created_at' : 'change_record',
+    evidence: event.synthetic ? 'task_created_at' : event.id.startsWith('sync:') ? 'sync_op' : 'change_record',
     action: event.action,
     actor,
     approvedBy: event.approvedByActorId ? { kind: 'user', name: localize('你') } : null,

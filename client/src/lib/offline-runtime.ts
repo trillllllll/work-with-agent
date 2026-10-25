@@ -333,6 +333,6 @@ export async function restoreOfflineBrowserReplica(network: NetworkApi): Promise
 export function browserReplica() { return current; }
 export function pauseBrowserReplica() { current?.pause(); fileScope(null); }
 export async function offlineRequest(path: string, init?: RequestInit) { return current?.request(path, init); }
-export const cacheableOfflineRead = (path: string, method = 'GET') => method.toUpperCase() === 'GET' && /^\/api\/(?:conversations(?:\/|\?|$)|v1\/library(?:\/|\?|$)|v1\/knowledge(?:\/|\?|$)|plan\/|focus-sessions(?:\?|$)|stats\/|skills(?:\/|\?|$))/.test(path) && !/\/(?:file|download|raw)(?:\?|$)/.test(path);
+export const cacheableOfflineRead = (path: string, method = 'GET') => method.toUpperCase() === 'GET' && /^\/api\/(?:conversations(?:\/|\?|$)|v1\/library(?:\/|\?|$)|v1\/knowledge(?:\/|\?|$)|v1\/assistant\/sources\/|tasks\/[^/]+\/(?:activity|topic-history|ai-history)(?:\?|$)|plan\/|focus-sessions(?:\?|$)|stats\/|skills(?:\/|\?|$))/.test(path) && !/\/(?:file|download|raw)(?:\?|$)/.test(path);
 export async function cachedOfflineRead(path: string, runtime: BrowserOfflineRuntime | null) { return runtime?.store.cached(runtime.scope, path); }
 export async function cacheOfflineRead(path: string, value: unknown, runtime: BrowserOfflineRuntime | null) { if (runtime) await runtime.store.cache(runtime.scope, path, value).catch(() => {}); }
