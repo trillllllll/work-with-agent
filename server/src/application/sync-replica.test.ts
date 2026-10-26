@@ -29,7 +29,7 @@ let transport: ReplicaTransport;
 function filled(entity: 'task' | 'topic', patch: Record<string, unknown>): SyncRow {
   const row: SyncRow = {};
   for (const field of syncFields[entity]) row[field] = field === 'tagIds' ? [] : field === 'completedAtEstimated' ? false : null;
-  if (entity === 'task') Object.assign(row, { title: '', description: '', status: 'todo', priority: 'none', resultSummary: '', sortOrder: 0 });
+  if (entity === 'task') Object.assign(row, { title: '', description: '', status: 'todo', priority: 'none', resultSummary: '', recurrenceRule: '', sortOrder: 0 });
   else Object.assign(row, { name: '', description: '', color: 'slate', isExploration: false, goal: '', draftSummary: '', finalSummary: '', summaryStatus: 'empty' });
   return { ...row, ...patch };
 }
@@ -181,6 +181,36 @@ describe('replica alignment', () => {
       else process.env.DOVUN_SYNC_TOKEN = previousToken;
     }
     expect(await replica.syncOutbox.count({ where: { opId: { startsWith: 'change-enqueue-1:' } } })).toBe(1);
+  }, 30_000);
+
+  it('propagates a hub-side recurring completion and its spawned occurrence to the replica in one cycle', async () => {
+    const session = await ownerSession(app);
+    const created = await request(app).post('/api/tasks').set('Cookie', session.cookie).set('X-CSRF-Token', session.csrf).send({ title: '同步周报', dueDate: '2026-10-20', recurrenceRule: '{"unit":"week","step":1}' });
+    expect(created.status, JSON.stringify(created.body)).toBe(200);
+    const originId = created.body.data.id as string;
+    expect((await canonical(prisma, 'task', originId))?.recurrenceRule).toBe('{"unit":"week","step":1}');
+    await runReplicaCycle(replica, transport);
+    expect((await canonical(replica, 'task', originId))?.recurrenceRule).toBe('{"unit":"week","step":1}');
+
+    let done = await request(app).patch(`/api/tasks/${originId}`).set('Cookie', session.cookie).set('X-CSRF-Token', session.csrf).send({ status: 'done', expectedRevision: created.body.data.revision });
+    if (done.status === 428) {
+      const preview = await request(app).post('/api/v1/commands/preview').set('Cookie', session.cookie).set('X-CSRF-Token', session.csrf).send({ commands: done.body.details.commands });
+      done = await request(app).patch(`/api/tasks/${originId}`).set('Cookie', session.cookie).set('X-CSRF-Token', session.csrf).send({ status: 'done', expectedRevision: created.body.data.revision, previewToken: preview.body.data.previewToken });
+    }
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    const nextId = (done.body.meta.affectedTaskIds as string[]).find((id) => id !== originId)!;
+    expect(nextId).toBeTruthy();
+
+    await runReplicaCycle(replica, transport);
+    expect((await canonical(replica, 'task', originId))?.status).toBe('done');
+    const next = await canonical(replica, 'task', nextId);
+    expect(next).toMatchObject({ title: '同步周报', status: 'todo', dueDate: '2026-10-27', recurrenceRule: '{"unit":"week","step":1}' });
+    try {
+      await prisma.syncOp.deleteMany({ where: { entityId: { in: [originId, nextId] } } });
+      await prisma.taskTopicAssignment.deleteMany({ where: { taskId: { in: [originId, nextId] } } });
+      await prisma.changeRecord.deleteMany({ where: { OR: [{ entityId: originId }, { beforeSnapshot: { contains: originId } }, { afterSnapshot: { contains: originId } }] } });
+      await prisma.task.deleteMany({ where: { id: { in: [originId, nextId] } } });
+    } catch { /* best-effort fixture cleanup; afterAll scrubs the shared ids */ }
   }, 30_000);
   async function pendingFixture() {
     await replica.syncOutbox.deleteMany();

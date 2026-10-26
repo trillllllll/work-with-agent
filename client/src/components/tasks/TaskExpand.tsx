@@ -7,10 +7,11 @@ import { useQuery } from '@tanstack/react-query';
 import { BodyText } from '@/components/shared/BodyText.js';
 import { intlLocale, t as translate } from '../../i18n/index.js';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, CalendarDays,  ChevronRight, Clock, Flag, FolderKanban, Hash, Timer, X } from 'lucide-react';
+import { AlertTriangle, CalendarDays,  ChevronRight, Clock, Flag, FolderKanban, Hash, Repeat, Timer, X } from 'lucide-react';
 import { api, ApiError, priorities, type Status, type Tag, type Task, type TaskPriority } from '@/lib/api.js';
 import { isCompositionKey, sameField, taskDraft, queryKeys, type TaskDraft } from '@/lib/todo.js';
 import { scheduleLabel } from '@/lib/schedule.js';
+import { recurrenceLabel, recurrencePresets } from '@/lib/recurrence.js';
 import { ScheduleFields, scheduleError, type ScheduleValue } from './ScheduleFields.js';
 import { keepSchedulePickerOpen } from './SchedulePickers.js';
 import { useTask, useTodoActions } from '@/hooks/useTodo.js';
@@ -37,7 +38,7 @@ import { cn } from '@/lib/utils.js';
 // 非文字字段仍走本地草稿；title/description 由应用级协调器负责。
 type Editing = MetaEditing;
 
-const fieldKeys = new Set(['title', 'description', 'status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'topicId', 'parentId', 'tagIds']);
+const fieldKeys = new Set(['title', 'description', 'status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'recurrenceRule', 'topicId', 'parentId', 'tagIds']);
 function fieldLabel(field: string) {
   return fieldKeys.has(field) ? translate(`tasks:taskExpand.fields.${field}`) : field;
 }
@@ -75,6 +76,7 @@ type EditContext = {
   setPriority: (priority: TaskPriority) => void;
   setSchedule: (schedule: ScheduleValue, task: Task) => Promise<boolean>;
   setEstimate: (estimatedMinutes: number | null, task: Task) => Promise<boolean>;
+  setRecurrence: (recurrenceRule: string, task: Task) => Promise<boolean>;
   toggleTag: (id: string, checked: boolean) => void;
   resetDraft: () => void;
   requestClose: () => void;
@@ -358,6 +360,7 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
     setPriority: (priority) => { void applyImmediate({ priority }); },
     setSchedule: (schedule, task) => applyImmediate(schedule, task),
     setEstimate: (estimatedMinutes, task) => applyImmediate({ estimatedMinutes }, task),
+    setRecurrence: (recurrenceRule, task) => applyImmediate({ recurrenceRule }, task),
     toggleTag: (tagId, checked) => {
       const current = editingRef.current?.draft.tagIds ?? [];
       void applyImmediate({ tagIds: checked ? [...current, tagId] : current.filter((item) => item !== tagId) });
@@ -500,6 +503,7 @@ export function TaskExpandBody({ fill = false, section = 'details' }: { fill?: b
     <div hidden={section !== 'details'} className="task-info-rows mb-4 shrink-0">
       <TopicRow />
       <ScheduleControl />
+      <RecurrenceControl />
       <EstimateControl />
       <FlagRow />
       <TagPicker />
@@ -707,7 +711,7 @@ export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children
   const [activity, setActivity] = useState(false);
   const [section, setSection] = useState<DetailSection>('details');
   const { t } = useTranslation('app');
-  const placeholder: Task = fallback ?? { id: props.id, title: '', description: '', status: 'todo', priority: 'none', dueDate: null, estimatedMinutes: null, scheduledStart: null, scheduledEnd: null, resultSummary: '', topicId: null, parentId: null, tagIds: [], allowedTransitions: [] };
+  const placeholder: Task = fallback ?? { id: props.id, title: '', description: '', status: 'todo', priority: 'none', dueDate: null, estimatedMinutes: null, scheduledStart: null, scheduledEnd: null, resultSummary: '', recurrenceRule: '', topicId: null, parentId: null, tagIds: [], allowedTransitions: [] };
   return <TaskExpand ref={ref} {...props} fallback={placeholder}>
     <DetailFrame presentation={presentation} panelSlot={panelSlot}>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -789,6 +793,27 @@ function EstimateControl() {
       lock.current = true; setSaving(true);
       void edit.setEstimate(minutes, openedTask.current).then((saved) => { if (saved) setOpen(false); }).finally(() => { lock.current = false; setSaving(false); });
     }}>{saving ? t('shared.saving') : t('shared.save')}</Button></div></PopoverContent>
+  </Popover>;
+}
+
+function RecurrenceControl() {
+  const { t } = useTranslation('tasks');
+  const edit = useEdit();
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const lock = useRef(false);
+  const current = edit.draft.recurrenceRule ?? '';
+  const choose = (rule: string) => {
+    if (lock.current) return;
+    lock.current = true; setSaving(true);
+    void edit.setRecurrence(rule, edit.task).then((saved) => { if (saved) setOpen(false); }).finally(() => { lock.current = false; setSaving(false); });
+  };
+  return <Popover open={open} onOpenChange={(next) => { if (lock.current) return; setOpen(next); }}>
+    <PopoverTrigger asChild><InfoRow icon={Repeat} label={t('taskExpand.recurrence')} value={recurrenceLabel(current)} hasValue={Boolean(current)} disabled={edit.readonly} aria-label={t('taskExpand.recurrence')} /></PopoverTrigger>
+    <PopoverContent data-task-editor className="w-60 space-y-1">
+      <p className="px-1 pb-1 text-xs text-muted-foreground">{t('taskExpand.recurrenceHint')}</p>
+      {recurrencePresets.map((preset) => <Button key={preset.key} type="button" variant="ghost" size="sm" className="w-full justify-start" disabled={saving} aria-pressed={current === preset.rule} onClick={() => choose(preset.rule)}>{recurrenceLabel(preset.rule)}</Button>)}
+    </PopoverContent>
   </Popover>;
 }
 

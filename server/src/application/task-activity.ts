@@ -20,6 +20,7 @@ type Snap = {
   scheduledEnd: string | null;
   estimatedMinutes: number | null;
   resultSummary: string;
+  recurrenceRule: string;
   topicId: string | null;
   parentId: string | null;
   tagIds: string[];
@@ -27,7 +28,7 @@ type Snap = {
 };
 
 type RawChange =
-  | { field: 'title' | 'description' | 'resultSummary'; before: string; after: string }
+  | { field: 'title' | 'description' | 'resultSummary' | 'recurrenceRule'; before: string; after: string }
   | { field: 'status' | 'priority'; before: string; after: string }
   | { field: 'dueDate' | 'scheduledStart' | 'scheduledEnd'; before: string | null; after: string | null }
   | { field: 'topicId'; before: string | null; after: string | null }
@@ -57,7 +58,7 @@ export type TaskActivityEvent = {
   nameResolution?: 'current';
   action: RawEvent['action'];
   changes: Array<
-    | { field: 'title' | 'description' | 'resultSummary'; before: string; after: string }
+    | { field: 'title' | 'description' | 'resultSummary' | 'recurrenceRule'; before: string; after: string }
     | { field: 'status' | 'priority'; before: string; after: string }
     | { field: 'dueDate' | 'scheduledStart' | 'scheduledEnd'; before: string | null; after: string | null }
     | { field: 'topicId'; before: { id: string | null; name: string }; after: { id: string | null; name: string } }
@@ -84,6 +85,7 @@ function snap(value: unknown): Snap | null {
     scheduledEnd: typeof raw.scheduledEnd === 'string' ? raw.scheduledEnd : null,
     estimatedMinutes: typeof raw.estimatedMinutes === 'number' ? raw.estimatedMinutes : null,
     resultSummary: typeof raw.resultSummary === 'string' ? raw.resultSummary : '',
+    recurrenceRule: typeof raw.recurrenceRule === 'string' ? raw.recurrenceRule : '',
     topicId: typeof raw.topicId === 'string' ? raw.topicId : null,
     parentId: typeof raw.parentId === 'string' ? raw.parentId : null,
     tagIds,
@@ -177,6 +179,7 @@ function diff(before: Snap | null, after: Snap | null, operation: string): { act
   if (before.title !== after.title) changes.push({ field: 'title', before: before.title, after: after.title });
   if (before.description !== after.description) changes.push({ field: 'description', before: before.description, after: after.description });
   if (before.resultSummary !== after.resultSummary) changes.push({ field: 'resultSummary', before: before.resultSummary, after: after.resultSummary });
+  if (before.recurrenceRule !== after.recurrenceRule) changes.push({ field: 'recurrenceRule', before: before.recurrenceRule, after: after.recurrenceRule });
   if (before.status !== after.status && statuses.has(before.status) && statuses.has(after.status)) changes.push({ field: 'status', before: before.status, after: after.status });
   if (before.priority !== after.priority && priorities.has(before.priority) && priorities.has(after.priority)) changes.push({ field: 'priority', before: before.priority, after: after.priority });
   if (before.dueDate !== after.dueDate) changes.push({ field: 'dueDate', before: before.dueDate, after: after.dueDate });
@@ -305,7 +308,7 @@ function presentEvent(event: RawEvent, present: (change: RawChange) => TaskActiv
   };
 }
 
-const activityFields = ['title', 'description', 'resultSummary', 'status', 'priority', 'dueDate', 'scheduledStart', 'scheduledEnd', 'estimatedMinutes', 'topicId', 'parentId', 'tagIds', 'deleted'] as const;
+const activityFields = ['title', 'description', 'resultSummary', 'recurrenceRule', 'status', 'priority', 'dueDate', 'scheduledStart', 'scheduledEnd', 'estimatedMinutes', 'topicId', 'parentId', 'tagIds', 'deleted'] as const;
 
 export async function queryTaskActivity(actor: Actor, query: {
   taskId: string;

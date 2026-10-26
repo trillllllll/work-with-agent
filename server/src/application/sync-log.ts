@@ -211,6 +211,7 @@ export async function writeLive(tx: Tx, entityType: SyncEntityType, entityId: st
     scheduledStart: row.scheduledStart == null ? null : String(row.scheduledStart),
     scheduledEnd: row.scheduledEnd == null ? null : String(row.scheduledEnd),
     resultSummary: String(row.resultSummary ?? ''),
+    recurrenceRule: String(row.recurrenceRule ?? ''),
     topicId: row.topicId == null ? null : String(row.topicId),
     parentId: row.parentId == null ? null : String(row.parentId),
     deletedAt: row.deletedAt == null ? null : String(row.deletedAt),

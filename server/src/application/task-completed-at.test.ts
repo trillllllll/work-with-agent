@@ -41,7 +41,7 @@ function row(id: string) {
 function filled(patch: Record<string, unknown>): SyncRow {
   const value: SyncRow = {};
   for (const field of syncFields.task) value[field] = field === 'tagIds' ? [] : null;
-  return { ...value, title: '', description: '', status: 'todo', priority: 'none', resultSummary: '', sortOrder: 0, ...patch };
+  return { ...value, title: '', description: '', status: 'todo', priority: 'none', resultSummary: '', recurrenceRule: '', sortOrder: 0, ...patch };
 }
 function stripCompletionKeys(raw: string | null) {
   if (!raw) return raw;
@@ -63,11 +63,16 @@ describe('task completedAt', () => {
   afterAll(clean);
 
   it('drops completion keys only when the expected snapshot never had them', () => {
-    const current = { id: 't', status: 'done', updatedAt: 'u', completedAt: 'c', completedAtEstimated: false, tagIds: [] as string[] };
+    const current = { id: 't', status: 'done', updatedAt: 'u', completedAt: 'c', completedAtEstimated: false, recurrenceRule: '', tagIds: [] as string[] };
     const expected = { id: 't', status: 'done', updatedAt: 'u', tagIds: [] as string[] };
     expect(withoutLegacyTaskKeys(current)).not.toHaveProperty('completedAt');
+    expect(withoutLegacyTaskKeys(current)).not.toHaveProperty('recurrenceRule');
     expect(JSON.stringify(legacyTaskSnapshot(expected, current))).toBe(JSON.stringify(expected));
-    expect(legacyTaskSnapshot({ ...expected, completedAt: null }, current)).toBe(current);
+    // A snapshot from the completedAt era but before recurrenceRule keeps the completion pair and drops only the newer column.
+    const midEra = legacyTaskSnapshot({ ...expected, completedAt: null }, current)!;
+    expect(midEra).toMatchObject({ completedAt: 'c', completedAtEstimated: false });
+    expect(midEra).not.toHaveProperty('recurrenceRule');
+    expect(legacyTaskSnapshot({ ...expected, completedAt: null, recurrenceRule: '' }, current)).toBe(current);
   });
 
   it('writes completedAt when a task becomes done and keeps it across title, tag, and order edits', async () => {

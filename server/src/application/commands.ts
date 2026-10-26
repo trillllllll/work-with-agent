@@ -175,7 +175,7 @@ export async function assertPayloadVisible(tx: Db, actor: Actor, value: unknown)
 }
 function autoActions(command: Command) {
   if (command.kind !== 'task.update') return [requireHandler(command).autoAction ?? command.kind];
-  const fields: Record<string, string> = { title: 'task.content', description: 'task.content', dueDate: 'task.schedule', priority: 'task.schedule', estimatedMinutes: 'task.schedule', scheduledStart: 'task.schedule', scheduledEnd: 'task.schedule', status: 'task.complete', completeChildren: 'task.complete', resultSummary: 'task.result', topicId: 'task.move', parentId: 'task.move', tagIds: 'task.tags' };
+  const fields: Record<string, string> = { title: 'task.content', description: 'task.content', dueDate: 'task.schedule', priority: 'task.schedule', estimatedMinutes: 'task.schedule', scheduledStart: 'task.schedule', scheduledEnd: 'task.schedule', recurrenceRule: 'task.schedule', status: 'task.complete', completeChildren: 'task.complete', resultSummary: 'task.result', topicId: 'task.move', parentId: 'task.move', tagIds: 'task.tags' };
   return [...new Set(Object.keys(command.input).filter((key) => key in fields).map((key) => fields[key]))];
 }
 function canApply(actor: Actor, commands: Command[]) {

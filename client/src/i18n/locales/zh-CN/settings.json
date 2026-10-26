@@ -154,6 +154,8 @@
     "statusChange": "状态改为{{status}}",
     "statusWithChildren": "状态改为{{status}}，并完成未完成的子任务",
     "addSubtask": "添加子任务并更新父任务；已完成的父任务会重开",
+    "setRecurrence": "设置重复规则",
+    "spawnNextOccurrence": "这是重复任务，完成后会按计划日期生成下一次",
     "deleteTasks": "以下任务一起移入回收站",
     "restoreTasks": "恢复本次删除批次中仍在回收站的任务，原归属不可用时回到收集箱",
     "removeTag": "解除以下任务的标签关联，保留任务",

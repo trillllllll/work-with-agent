@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { DomainError } from '../domain/task.js';
+import { canonicalRecurrenceRuleText, isRecurrenceRuleText } from '../domain/recurrence.js';
 
 export function isCalendarDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -21,6 +22,7 @@ export function isLocalDateTime(value: string) {
 }
 export const localDateTime = z.string().refine(isLocalDateTime, '时间必须是有效的 YYYY-MM-DDTHH:mm 本地时间');
 const positiveMinutes = z.number().int().min(1, '时长必须至少 1 分钟').max(10080, '时长不能超过一周');
+const recurrenceRule = z.string().max(200).refine(isRecurrenceRuleText, '重复规则无效').transform(canonicalRecurrenceRuleText);
 export const taskFields = z.object({
   topicId: id.nullable().optional(),
   parentId: id.nullable().optional(),
@@ -33,6 +35,7 @@ export const taskFields = z.object({
   scheduledStart: localDateTime.nullable().optional(),
   scheduledEnd: localDateTime.nullable().optional(),
   resultSummary: z.string().optional(),
+  recurrenceRule: recurrenceRule.optional(),
   tagIds: z.array(id).refine((ids) => new Set(ids).size === ids.length, '标签不能重复').optional(),
 });
 export const taskCreateSchema = taskFields;

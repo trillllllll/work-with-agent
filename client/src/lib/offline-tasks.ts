@@ -1,6 +1,7 @@
 import { t } from '../i18n/index.js';
 import { allowedTaskTransitions, DomainError, Task as TaskDomain } from '../../../server/src/domain/task.js';
 import { emptySchedule, normalizeSchedule, shiftMinutes } from '../../../server/src/domain/schedule.js';
+import { nextRecurrenceDate, parseRecurrenceRule, recurrenceAnchor, recurrenceRuleText } from '../../../server/src/domain/recurrence.js';
 import { parseInput, taskCreateSchema, taskUpdateSchema, topicCreateSchema, topicUpdateSchema, tagCreateSchema, tagUpdateSchema, reorderSchema } from '../../../server/src/application/workspace-input.js';
 import { canonicalSyncRow, syncRowsEqual, type SyncEntityType, type SyncRow } from '../../../server/src/application/sync-merge.js';
 import type { BrowserReplica, ReplicaRow, ReplicaRows } from './offline-store.js';
@@ -121,7 +122,7 @@ export function mutateReplica(rows: ReplicaRows, path: string, method: string, r
       if (p && p.row.topicId !== topicId) fail('INVALID_PARENT', t('workspace:offline.errors.topicRelation'), 400);
       activeTopic(topicId);
       if ((input.tagIds ?? []).some(tag => !rows.tag[tag])) fail('NOT_FOUND', t('workspace:offline.errors.tags'), 404);
-      row = { description: '', status: 'todo', priority: 'none', estimatedMinutes: null, resultSummary: '', deletedAt: null, deleteBatchId: null, tagIds: [], ...input, ...normalizeSchedule(emptySchedule, input), topicId, parentId: p?.id ?? null, sortOrder: order(topicId, p?.id ?? null), completedAt: null, completedAtEstimated: false, createdAt: stamp };
+      row = { description: '', status: 'todo', priority: 'none', estimatedMinutes: null, resultSummary: '', recurrenceRule: '', deletedAt: null, deleteBatchId: null, tagIds: [], ...input, ...normalizeSchedule(emptySchedule, input), topicId, parentId: p?.id ?? null, sortOrder: order(topicId, p?.id ?? null), completedAt: null, completedAtEstimated: false, createdAt: stamp };
       parent(p?.id, true);
     } else if (entity === 'topic') row = { description: '', color: 'slate', isExploration: false, goal: '', draftSummary: '', finalSummary: '', summaryStatus: 'empty', summaryUpdatedAt: null, archivedAt: null, ...parseInput(topicCreateSchema, raw) };
     else row = { color: 'violet', ...parseInput(tagCreateSchema, raw) };
@@ -149,6 +150,17 @@ export function mutateReplica(rows: ReplicaRows, path: string, method: string, r
       if (input.status === 'done') for (const child of unfinished) touch('task', child.id, { status: 'done' });
       const textOnly = Object.keys(input).every(field => field === 'title' || field === 'description');
       if (!textOnly) { if (beforeTask.row.parentId !== parentId) parent(beforeTask.row.parentId, false); parent(parentId, rows.task[id].row.status !== 'done'); }
+      // Mirror of TaskService.update: completing a recurring task spawns the next occurrence in the same request.
+      if (input.status === 'done' && beforeTask.row.status !== 'done') {
+        const done = rows.task[id].row;
+        const rule = parseRecurrenceRule(String(done.recurrenceRule ?? ''));
+        if (rule) {
+          const schedule = normalizeSchedule({ dueDate: done.dueDate as string | null, scheduledStart: done.scheduledStart as string | null, scheduledEnd: done.scheduledEnd as string | null }, { dueDate: nextRecurrenceDate(rule, recurrenceAnchor(done.dueDate as string | null, done.scheduledStart as string | null)) });
+          const nextId = crypto.randomUUID();
+          rows.task[nextId] = { id: nextId, revision: 1, createdAt: stamp, updatedAt: stamp, row: { title: done.title, description: done.description, status: 'todo', priority: done.priority, estimatedMinutes: done.estimatedMinutes, resultSummary: '', recurrenceRule: recurrenceRuleText(rule), deletedAt: null, deleteBatchId: null, tagIds: [...(done.tagIds as string[])], ...schedule, topicId, parentId, sortOrder: order(topicId, parentId), completedAt: null, completedAtEstimated: false, createdAt: stamp } };
+          parent(parentId, true);
+        }
+      }
     } else { if (entity === 'topic') activeTopic(id); touch(entity, id, parseInput(entity === 'topic' ? topicUpdateSchema : tagUpdateSchema, raw)); }
   } else if (method === 'DELETE' && existing) {
     if (entity === 'task') {

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { DomainError } from '../domain/task.js';
 import { calendarDate, isCalendarDate, isLocalDateTime, localDateTime, reorderSchema, tagColors, tagCreateSchema, topicCreateSchema } from '../application/workspace-input.js';
-import { completeChildrenLine, createStatusLine, dueDateDescription, estimateLine, parentLine, reorderCoverageLine, scheduleMoves, scheduleShapes, scheduledEndDescription, scheduledStartDescription, sortLine, statusTransitionLine, tagIdsDescription, topicIdDescription } from './task-write-spec.js';
+import { completeChildrenLine, createStatusLine, dueDateDescription, estimateLine, parentLine, recurrenceDescription, reorderCoverageLine, scheduleMoves, scheduleShapes, scheduledEndDescription, scheduledStartDescription, sortLine, statusTransitionLine, tagIdsDescription, topicIdDescription } from './task-write-spec.js';
 
 export const workspaceWriteKinds = [
   'task.create', 'task.update', 'task.delete', 'task.restore', 'task.reorder',
@@ -54,6 +54,7 @@ const taskProperties = {
   scheduledStart: { anyOf: [{ type: 'null' }, { type: 'string', format: 'wwa-local-date-time' }], description: scheduledStartDescription },
   scheduledEnd: { anyOf: [{ type: 'null' }, { type: 'string', format: 'wwa-local-date-time' }], description: scheduledEndDescription },
   resultSummary: { type: 'string' },
+  recurrenceRule: { type: 'string', description: recurrenceDescription },
   tagIds: { type: 'array', items: stringSchema, uniqueItems: true, description: tagIdsDescription },
 };
 

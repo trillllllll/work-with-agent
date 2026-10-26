@@ -34,4 +34,5 @@ export const dueDateDescription = 'YYYY-MM-DD。有日期且开始和结束都�
 export const scheduledStartDescription = 'YYYY-MM-DDTHH:mm，本地时间。null 清掉结束时间；留下日期就是全天。';
 export const scheduledEndDescription = 'YYYY-MM-DDTHH:mm。null 变成时间点。结束必须晚于开始。00:00–23:59 是时间段，不是全天。';
 export const tagIdsDescription = '不重复的标签 id。[] 清空全部标签。';
+export const recurrenceDescription = '重复规则 JSON：{"unit":"day"|"week"|"month","step":1到365}，如 {"unit":"week","step":2} 是每两周。省略保持原值，空串清除重复。完成重复任务时按计划日期生成下一次，晚完成不顺延；月份不足该日时取当月最后一天。';
 export const topicIdDescription = '清单 id。null 表示收集箱。';

@@ -155,6 +155,8 @@
     "statusChange": "Change status to {{status}}",
     "statusWithChildren": "Change status to {{status}}, and complete unfinished subtasks",
     "addSubtask": "Add a subtask and update the parent. A completed parent is reopened",
+    "setRecurrence": "Set the repeat rule",
+    "spawnNextOccurrence": "This task repeats; completing it creates the next occurrence from the planned date",
     "deleteTasks": "Move the tasks below to Trash together",
     "restoreTasks": "Restore tasks from this delete batch that are still in Trash. If the original list is unavailable, they return to Inbox",
     "removeTag": "Remove this tag from the tasks below and keep the tasks",

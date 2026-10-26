@@ -1,6 +1,6 @@
 import { sameField, type TaskDraft } from '@/lib/todo.js';
 
-export const metaFields = ['status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'topicId', 'parentId', 'tagIds'] as const;
+export const metaFields = ['status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'recurrenceRule', 'topicId', 'parentId', 'tagIds'] as const;
 export type MetaDraft = Pick<TaskDraft, typeof metaFields[number]>;
 export type MetaEditing = { base: MetaDraft; draft: MetaDraft; conflicts: string[] };
 

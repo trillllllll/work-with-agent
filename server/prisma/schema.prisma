@@ -85,6 +85,7 @@ model Task {
   scheduledStart String?   @map("scheduled_start")
   scheduledEnd   String?   @map("scheduled_end")
   resultSummary String     @default("") @map("result_summary")
+  recurrenceRule String    @default("") @map("recurrence_rule")
   deletedAt String? @map("deleted_at")
   createdAt     String     @default("") @map("created_at")
   updatedAt     String     @default("") @map("updated_at")

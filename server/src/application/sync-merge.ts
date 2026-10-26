@@ -1,6 +1,6 @@
 /** Field-level three-way merge for hub sync. Ancestor is the op's before row. */
 export const syncFields = {
-  task: ['title', 'description', 'status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'topicId', 'parentId', 'deletedAt', 'deleteBatchId', 'sortOrder', 'tagIds', 'createdAt', 'completedAt', 'completedAtEstimated'],
+  task: ['title', 'description', 'status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'recurrenceRule', 'topicId', 'parentId', 'deletedAt', 'deleteBatchId', 'sortOrder', 'tagIds', 'createdAt', 'completedAt', 'completedAtEstimated'],
   topic: ['name', 'description', 'color', 'isExploration', 'goal', 'draftSummary', 'finalSummary', 'summaryStatus', 'summaryUpdatedAt', 'archivedAt'],
   tag: ['name', 'color'],
 } as const;

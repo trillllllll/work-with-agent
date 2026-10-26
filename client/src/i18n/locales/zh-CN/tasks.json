@@ -181,6 +181,7 @@
     "startChange": "把开始时间从{{before}}改成{{after}}",
     "endChange": "把结束时间从{{before}}改成{{after}}",
     "estimateChange": "把预计时长从{{before}}改成{{after}}",
+    "recurrenceChange": "把重复从{{before}}改成{{after}}",
     "listChange": "把清单从{{before}}改成{{after}}",
     "parentChange": "把父任务从{{before}}改成{{after}}",
     "tagsChange": "把标签从{{before}}改成{{after}}",
@@ -214,6 +215,7 @@
       "priority": "优先级",
       "dueDate": "安排日期",
       "estimatedMinutes": "预计时长",
+      "recurrenceRule": "重复",
       "scheduledStart": "开始时间",
       "scheduledEnd": "结束时间",
       "resultSummary": "结果摘要",
@@ -268,7 +270,24 @@
     "saveSchedule": "保存安排",
     "estimate": "预计时长",
     "estimateHint": "用于首次安排时间段，不改变已有安排。",
-    "estimateMinutes": "预计时长分钟"
+    "estimateMinutes": "预计时长分钟",
+    "recurrence": "重复",
+    "recurrenceHint": "完成后按原计划日期自动生成下一次，晚完成不顺延。"
+  },
+  "recurrence": {
+    "none": "不重复",
+    "invalid": "无效规则",
+    "biweekly": "每两周",
+    "unit": {
+      "day": "每天",
+      "week": "每周",
+      "month": "每月"
+    },
+    "every": {
+      "day": "每 {{step}} 天",
+      "week": "每 {{step}} 周",
+      "month": "每 {{step}} 个月"
+    }
   },
   "taskFilter": {
     "status": "状态",
@@ -311,6 +330,7 @@
     "empty": "暂无任务",
     "completedCount": "已完成 · {{count}}",
     "drag": "拖动排序",
+    "recurrenceAria": "重复任务：{{label}}",
     "expandSubtasks": "展开子任务：{{title}}",
     "collapseSubtasks": "收起子任务：{{title}}"
   },
