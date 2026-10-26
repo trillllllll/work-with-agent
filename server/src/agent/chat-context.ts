@@ -4,7 +4,7 @@ import { prisma } from '../infrastructure/prisma.js';
 import { ownerActor, assertTopicAccess } from '../application/security.js';
 import { assertTimeZone } from './time.js';
 
-const allPages = new Set(['today', 'plan', 'search', 'tags', 'library', 'topics', 'quadrant', 'archived', 'trash', 'focus', 'stats']);
+const allPages = new Set(['today', 'plan', 'search', 'tags', 'library', 'topics', 'quadrant', 'archived', 'trash', 'focus', 'stats', 'learning']);
 
 export const chatContextV2 = z.object({
   schemaVersion: z.literal(2),
@@ -30,6 +30,7 @@ export const chatContextV2 = z.object({
   }).strict().nullable(),
   timeZone: z.string().min(1),
   referencedApprovalId: z.string().min(1).nullable(),
+  identityId: z.enum(['work', 'study']).optional(),
 }).strict();
 
 export type ChatContextV2 = z.infer<typeof chatContextV2>;

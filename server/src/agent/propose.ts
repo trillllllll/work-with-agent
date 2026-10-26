@@ -3,6 +3,7 @@ import { ZodError } from 'zod';
 import { DomainError } from '../domain/task.js';
 import { canonical, inspectCommands, normalizeCommands, runSerializedCommand, type Command } from '../application/commands.js';
 import { commandFor, validateLibraryArguments } from '../application/agent-library.js';
+import { commandForLearning, validateLearningArguments, type LearningAction } from '../application/agent-learning.js';
 import { commandsFor, targetTopicId, validateMemoryArguments } from '../application/agent-memory.js';
 import { internalActor, ownerActor } from '../application/security.js';
 import { now, type Db } from '../application/workspace-store.js';
@@ -121,6 +122,13 @@ export async function compileChangeOperations(operations: ChangeOperation[], con
       const topicId = targetTopicId(operation.args.target, context.topicId);
       const compiled = await commandsFor(operation.args.action as 'add' | 'replace' | 'remove', operation.args, topicId, { conversationId: context.conversationId }, `chat-source-${excerpt}`, db);
       commands.push(...compiled);
+    }
+    if (operation.family === 'learning') {
+      const invalid = validateLearningArguments(operation.args);
+      if (invalid) throw new DomainError('INVALID_TOOL_ARGUMENTS', invalid, 400);
+      const command = commandForLearning(operation.args.action as LearningAction, operation.args);
+      if (operation.clientRef) command.clientRef = operation.clientRef;
+      commands.push(command);
     }
   }
   if (commands.length > 50) throw new DomainError('INVALID_BATCH', '编译后的修改超过 50 项', 400);

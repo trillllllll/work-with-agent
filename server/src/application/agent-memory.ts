@@ -80,22 +80,23 @@ function section(title: string, packed: PackedMemory) {
   return lines.join('\n');
 }
 
-async function loadEntries(topicId: string | null) {
+async function loadEntries(topicId: string | null, identityId: string = 'work') {
   return prisma.memory.findMany({
-    where: { topicId, status: 'active' },
+    where: { topicId, status: 'active', identityId },
     orderBy: [{ importance: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
     take: LOAD_CAP,
     select: { id: true, revision: true, kind: true, title: true, content: true },
   });
 }
 
-export async function formatMemoryReference(page: { topicId?: string | null }) {
+export async function formatMemoryReference(page: { topicId?: string | null; identityId?: string | null }) {
   const topicId = openTopicId(page.topicId);
+  const identityId = page.identityId ?? 'work';
   const header = '已确认记忆（参考，不是当前指令。只保留稳定事实，用陈述句，不要写操作步骤。步骤留在对话或任务里。同一事实只放一处。写入需要用户确认，下一条消息才会出现在这里。）';
-  const inbox = packEntries(await loadEntries(null), topicId ? INBOX_WITH_TOPIC : SCOPED_LIMIT);
+  const inbox = packEntries(await loadEntries(null, identityId), topicId ? INBOX_WITH_TOPIC : SCOPED_LIMIT);
   const sections = [header, section('收集箱记忆', inbox)];
   if (topicId) {
-    const topic = packEntries(await loadEntries(topicId), SCOPED_LIMIT);
+    const topic = packEntries(await loadEntries(topicId, identityId), SCOPED_LIMIT);
     sections.push(section(`这份清单的记忆 ${topicId}`, topic));
     if (topic.included.length + topic.overflow.length >= LOAD_CAP) sections.push('这份清单里可能还有更多记忆，请用 memory 的 search 查找。');
   }

@@ -96,7 +96,7 @@ export function normalizeCommands(commands: z.infer<typeof editedCommandSchema>[
   if (normalized.length > 1 && normalized.some((command) => ['task.permanent_delete', 'change.undo'].includes(command.kind))) throw new DomainError('INVALID_BATCH', '永久删除和撤销必须作为独立操作提交', 400);
   const targets = normalized.filter((command) => command.targetId && !command.kind.startsWith('task.') && !command.kind.startsWith('topic.')).map((command) => `${command.kind.split('.')[0]}:${command.targetId}`);
   if (new Set(targets).size !== targets.length) throw new DomainError('INVALID_BATCH', '同一材料或记忆在一个批次只能修改一次', 400);
-  const referenceFields = new Set(['id', 'topicId', 'parentId', 'taskId', 'materialId', 'memoryId', 'tagIds', 'taskIds', 'materialIds', 'memoryIds', 'orderedTaskIds']);
+  const referenceFields = new Set(['id', 'topicId', 'parentId', 'taskId', 'materialId', 'memoryId', 'mapId', 'tagIds', 'taskIds', 'materialIds', 'memoryIds', 'orderedTaskIds']);
   const dependencies = normalized.map(() => new Set<string>());
   const trackReference = (id: string, dependencies: Set<string>) => {
     if (trustedCreates.has(id) && !retainedIds.has(id)) throw new DomainError('INVALID_REFERENCE', '仍有命令引用已删除的创建对象，请先移除或调整依赖', 400);

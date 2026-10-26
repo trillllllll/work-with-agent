@@ -51,7 +51,7 @@ describe('workspace command contract', () => {
   it('keeps the explicit built-in tools and agrees on every valid or illegal command', () => {
     expect(builtinTools.map((tool) => tool.name)).toEqual([
       'present_reply', 'image_search', 'read_app_knowledge', 'read_page_state', 'get_time', 'list_plan_time_bands', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace',
-      'library_read', 'memory_read', 'conversation_search', 'get_change_schema', 'propose_changes', 'prepare_external_prompt', 'orchestration_read', 'orchestration_stats', 'propose_worktree_cleanup',
+      'library_read', 'memory_read', 'learning_read', 'conversation_search', 'get_change_schema', 'propose_changes', 'prepare_external_prompt', 'orchestration_read', 'orchestration_stats', 'propose_worktree_cleanup',
     ]);
     const valid = [
       { kind: 'topic.create', input: { name: '清单' } },

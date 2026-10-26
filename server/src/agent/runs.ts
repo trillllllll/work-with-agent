@@ -17,7 +17,8 @@ import { enabledSkillCatalog } from '../application/skills.js';
 import { assembleRunMessages } from './assemble.js';
 import { buildContextStats, contextTotals, type ContextStats } from './context-stats.js';
 import { packModelMessages, textTokens } from './context-budget.js';
-import { initialToolGroups, toolGroupNames, toolGroupSchema, toolsForGroups, loadedFamilies, loadToolsInput, readSourceInput, mediaInstructions, type ToolGroup } from './tool-loading.js';
+import { initialToolGroups, toolGroupNames, toolGroupSchema, toolsForGroups, loadedFamilies, loadToolsInput, readSourceInput, mediaInstructionsFor, scopeGroupsFor, isGroupAllowedFor, type ToolGroup } from './tool-loading.js';
+import { getAssistantIdentity, isAssistantIdentityId } from './identities.js';
 import { htmlBlockPrompt } from './html-block.js';
 import { htmlBlockPolicy } from '../application/html-block-settings.js';
 import { withChatAttachments } from '../application/chat-attachments.js';
@@ -53,7 +54,7 @@ export const runCursorSchema = z.object({
 });
 export type RunCursor = z.infer<typeof runCursorSchema>;
 
-export type ModelStream = (messages: ModelMessage[], signal?: AbortSignal, includeTools?: boolean, tools?: ModelToolDefinition[]) => AsyncIterable<ModelDelta>;
+export type ModelStream = (messages: ModelMessage[], signal?: AbortSignal, includeTools?: boolean, tools?: ModelToolDefinition[], identityId?: string) => AsyncIterable<ModelDelta>;
 
 const initialCursor = (): RunCursor => ({ schemaVersion: 1, phase: 'model', round: 0, budgetEndRound: 16, assistantMessageId: null, nextToolIndex: 0 });
 
@@ -263,13 +264,14 @@ async function ensureMessages(runId: string, token: string, contextService: Cont
   const run = await ownsLease(runId, token);
   const stored = JSON.parse(run.modelMessagesJson) as ModelMessage[];
   const cursor = readCursor(run.cursorJson);
+  const identityId = readContext(run.contextJson).identityId ?? 'work';
   if (stored.length) {
     // Existing in-flight runs keep their full capability set. New user turns
     // start with lazy groups; source recovery is available to both generations.
-    if (!cursor.toolGroups) await saveCursor(runId, token, { ...cursor, toolGroups: [...toolGroupNames] });
+    if (!cursor.toolGroups) await saveCursor(runId, token, { ...cursor, toolGroups: scopeGroupsFor(identityId, [...toolGroupNames]) });
     return stored;
   }
-  const skills = await enabledSkillCatalog();
+  const skills = await enabledSkillCatalog(identityId);
   const source = await prisma.message.findUnique({ where: { id: run.sourceUserMessageId }, select: { content: true } });
   const summaryCalls: SummaryMetric[] = [];
   const messages = await assembleRunMessages({
@@ -277,6 +279,7 @@ async function ensureMessages(runId: string, token: string, contextService: Cont
     conversationId: run.conversationId,
     sourceUserMessageId: run.sourceUserMessageId,
     context: readContext(run.contextJson),
+    identityId,
     userText: source?.content ?? '',
     contextService,
     skills,
@@ -285,7 +288,7 @@ async function ensureMessages(runId: string, token: string, contextService: Cont
   await ownsLease(runId, token);
   for (const metric of summaryCalls) if (metric.actual) await addRunUsage(runId, token, metric.actual);
   await saveMessages(runId, token, messages);
-  await saveCursor(runId, token, { ...cursor, loadSkill: skills.length > 0, toolGroups: initialToolGroups(source?.content ?? '', readContext(run.contextJson).page), summaryCalls });
+  await saveCursor(runId, token, { ...cursor, loadSkill: skills.length > 0, toolGroups: initialToolGroups(source?.content ?? '', readContext(run.contextJson).page, identityId), summaryCalls });
   return messages;
 }
 
@@ -299,11 +302,12 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
   const messages = packModelMessages(await ensureMessages(runId, token, contextService));
   const owned = await ownsLease(runId, token);
   const cursor = readCursor(owned.cursorJson);
-  const tools = cursor.toolGroups ? toolsForGroups(cursor.toolGroups, cursor.loadSkill) : builtinToolDefinitions({ loadSkill: cursor.loadSkill });
+  const identityId = readContext(owned.contextJson).identityId ?? 'work';
+  const tools = cursor.toolGroups ? toolsForGroups(cursor.toolGroups, cursor.loadSkill, identityId) : builtinToolDefinitions({ loadSkill: cursor.loadSkill });
   const offered = new Set(tools.map(t => t.function.name));
-  if (cursor.toolGroups?.includes('media') && !String(messages[0]?.content).includes('【富媒体表达】\nSVG')) messages.splice(1, 0, { role: 'system', content: `【按需富媒体规则】\n${mediaInstructions}\n${htmlBlockPrompt(await htmlBlockPolicy())}` });
+  if (cursor.toolGroups?.includes('media') && !String(messages[0]?.content).includes('【富媒体表达】\nSVG')) messages.splice(1, 0, { role: 'system', content: `【按需富媒体规则】\n${mediaInstructionsFor(identityId)}\n${htmlBlockPrompt(await htmlBlockPolicy())}` });
   await saveMessages(runId, token, messages.filter(m => !(m.role === 'system' && String(m.content).startsWith('【按需富媒体规则】'))));
-  const stats = buildContextStats({ runId, round: cursor.round, messages, tools, fullTools: builtinToolDefinitions({ loadSkill: cursor.loadSkill }), loadedGroups: cursor.toolGroups ?? ['legacy-all'], summaryCalls: cursor.summaryCalls });
+  const stats = buildContextStats({ runId, round: cursor.round, messages, tools, fullTools: identityId === 'work' ? builtinToolDefinitions({ loadSkill: cursor.loadSkill }) : toolsForGroups(scopeGroupsFor(identityId, [...toolGroupNames]), cursor.loadSkill, identityId), loadedGroups: cursor.toolGroups ?? ['legacy-all'], summaryCalls: cursor.summaryCalls });
   const publishStats = async () => {
     const earlier = await prisma.agentRunEvent.findMany({ where: { runId, type: 'context_stats' }, orderBy: { seq: 'asc' }, select: { dataJson: true } });
     stats.totals = contextTotals([...earlier.map(e => (JSON.parse(e.dataJson) as { contextStats: ContextStats }).contextStats), stats], cursor.summaryCalls);
@@ -331,7 +335,7 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
     () => controller.abort(),
   );
   try {
-    for await (const chunk of stream(messages, controller.signal, true, tools)) {
+    for await (const chunk of stream(messages, controller.signal, true, tools, identityId)) {
       if (controller.signal.aborted) throw new DomainError('LEASE_LOST', '请求已停止', 409);
       if (chunk.toolDelta) {
         const delta = chunk.toolDelta;
@@ -407,16 +411,17 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
 async function toolTurn(runId: string, token: string, contextService: ContextService) {
   const run = await ownsLease(runId, token);
   let cursor = readCursor(run.cursorJson);
+  const context = readContext(run.contextJson);
+  const identityId = context.identityId ?? 'work';
   const offeredGroups = cursor.offeredToolGroups ?? cursor.toolGroups;
-  const offeredFamilies = offeredGroups ? loadedFamilies(offeredGroups) : null;
-  const offered = new Set((offeredGroups ? toolsForGroups(offeredGroups, cursor.loadSkill) : builtinToolDefinitions({ loadSkill: cursor.loadSkill })).map(t => t.function.name));
+  const offeredFamilies = offeredGroups ? loadedFamilies(scopeGroupsFor(identityId, offeredGroups)) : null;
+  const offered = new Set((offeredGroups ? toolsForGroups(offeredGroups, cursor.loadSkill, identityId) : builtinToolDefinitions({ loadSkill: cursor.loadSkill })).map(t => t.function.name));
   const assistantMessageId = cursor.assistantMessageId;
   if (!assistantMessageId) throw new DomainError('RUN_FAILED', '工具阶段缺少助手消息', 500);
   const assistant = await prisma.message.findUnique({ where: { id: assistantMessageId } });
   if (!assistant || assistant.status !== 'completed' || !assistant.toolCalls) throw new DomainError('RUN_FAILED', '不完整的模型回复不能执行工具', 409);
   const calls = JSON.parse(assistant.toolCalls) as Array<{ id: string; function: { name: string; arguments: string } }>;
   const messages = JSON.parse(run.modelMessagesJson) as ModelMessage[];
-  const context = readContext(run.contextJson);
   let sawPropose = false;
   for (let index = cursor.nextToolIndex; index < calls.length; index += 1) {
     const call = calls[index];
@@ -437,9 +442,13 @@ async function toolTurn(runId: string, token: string, contextService: ContextSer
       const requested = loadToolsInput.safeParse(args);
       if (!requested.success) result = { success: false, code: 'INVALID_TOOL_ARGUMENTS', error: '请指定有效的能力组' };
       else {
-        cursor = { ...cursor, toolGroups: [...new Set([...(cursor.toolGroups ?? []), ...requested.data.groups])] };
-        await saveCursor(runId, token, cursor);
-        result = { success: true, data: { groups: cursor.toolGroups, availableNextTurn: toolsForGroups(cursor.toolGroups!, cursor.loadSkill).map(t => t.function.name), note: '只加载定义，未修改业务数据；下一轮调用。' } };
+        const disallowed = requested.data.groups.filter((group) => !isGroupAllowedFor(identityId, group));
+        if (disallowed.length) result = { success: false, code: 'GROUP_NOT_ALLOWED', error: `这些能力组不属于当前助手：${disallowed.join('、')}` };
+        else {
+          cursor = { ...cursor, toolGroups: [...new Set([...(cursor.toolGroups ?? []), ...requested.data.groups])] };
+          await saveCursor(runId, token, cursor);
+          result = { success: true, data: { groups: cursor.toolGroups, availableNextTurn: toolsForGroups(cursor.toolGroups!, cursor.loadSkill, identityId).map(t => t.function.name), note: '只加载定义，未修改业务数据；下一轮调用。' } };
+        }
       }
     } else if (call.function.name === 'read_context_source') {
       const parsed = readSourceInput.safeParse(args);
@@ -454,6 +463,8 @@ async function toolTurn(runId: string, token: string, contextService: ContextSer
           result = { success: true, data: { messageId: row.id, role: row.role, offset: parsed.data.offset, totalCharacters: content.length, content: content.slice(parsed.data.offset, end), nextOffset: end < content.length ? end : null } };
         }
       }
+    } else if (call.function.name === 'propose_changes' && Array.isArray(args.operations) && args.operations.some(op => op && typeof op === 'object' && typeof (op as Record<string, unknown>).family === 'string' && !getAssistantIdentity(identityId).writeFamilies.includes(String((op as Record<string, unknown>).family)))) {
+      result = { success: false, code: 'FAMILY_NOT_ALLOWED', error: '该修改类型不属于当前助手，未创建方案。' };
     } else if (call.function.name === 'propose_changes' && cursor.toolGroups && Array.isArray(args.operations) && args.operations.some(op => op && typeof op === 'object' && typeof (op as Record<string, unknown>).family === 'string' && !offeredFamilies!.includes(String((op as Record<string, unknown>).family)))) {
       result = { success: false, code: 'TOOL_NOT_LOADED', error: '方案包含未加载的修改类型。先加载全部所需的 *_write 组；本次未创建方案。' };
     }
@@ -467,7 +478,7 @@ async function toolTurn(runId: string, token: string, contextService: ContextSer
     }
     if (result.success && call.function.name === 'get_change_schema' && cursor.toolGroups) {
       const group = `${String(args.family)}_write` as ToolGroup;
-      if (toolGroupSchema.safeParse(group).success) { cursor = { ...cursor, toolGroups: [...new Set([...cursor.toolGroups, group])] }; await saveCursor(runId, token, cursor); }
+      if (toolGroupSchema.safeParse(group).success && isGroupAllowedFor(identityId, group)) { cursor = { ...cursor, toolGroups: [...new Set([...cursor.toolGroups, group])] }; await saveCursor(runId, token, cursor); }
     }
     const sources = await sourcesFromTool(call.function.name, args, result);
     if (sourceReadTools.has(call.function.name)) {
@@ -546,15 +557,24 @@ async function runLoop(runId: string, stream: ModelStream, contextService: Conte
   }
 }
 
-export async function startChat(input: { conversationId?: string; message: string; pageContext?: PageContext; context?: unknown; requestKey?: string }) {
+export async function startChat(input: { conversationId?: string; message: string; pageContext?: PageContext; context?: unknown; requestKey?: string; identityId?: string }) {
   const message = input.message.trim();
   if (!message) throw new DomainError('INVALID_MESSAGE', '消息不能为空', 400);
   if (input.requestKey !== undefined && (input.requestKey.trim().length < 1 || input.requestKey.length > 200)) throw new DomainError('INVALID_REQUEST', 'requestKey 无效', 400);
   const requestKey = input.requestKey?.trim() || `ephemeral:${randomUUID()}`;
+  // 身份以会话归属为准：已有会话按会话身份走并拒绝不一致的显式指定；新会话用请求声明，默认工作助手。
+  let identityId: string = input.identityId ?? 'work';
+  if (input.conversationId) {
+    const existing = await prisma.conversation.findUnique({ where: { id: input.conversationId }, select: { id: true, identityId: true } });
+    if (!existing) throw Object.assign(new Error('会话不存在'), { status: 404 });
+    if (input.identityId && input.identityId !== existing.identityId) throw new DomainError('IDENTITY_MISMATCH', '这个会话属于另一位助手，请切换到对应身份或新开一个会话', 409);
+    identityId = existing.identityId;
+  }
+  if (!isAssistantIdentityId(identityId)) throw new DomainError('INVALID_IDENTITY', '未知的助手身份', 400);
   const requestedContext = contextFromRequest({ context: input.context, pageContext: input.pageContext });
   // Hash the stable request, not the resolved data revisions, so a reconnect reuses
   // the first snapshot even when the underlying objects have since changed.
-  const requestHash = createHash('sha256').update(canonical({ message, context: requestedContext })).digest('hex');
+  const requestHash = createHash('sha256').update(canonical({ message, identityId, context: requestedContext })).digest('hex');
   const accepted = await prisma.agentRun.findUnique({ where: { requestKey } });
   if (accepted) {
     if (accepted.requestHash !== requestHash || (input.conversationId && input.conversationId !== accepted.conversationId)) throw new DomainError('IDEMPOTENCY_CONFLICT', '相同请求标识不能提交不同内容', 409);
@@ -566,9 +586,10 @@ export async function startChat(input: { conversationId?: string; message: strin
     if (!existingConversation) throw Object.assign(new Error('会话不存在'), { status: 404 });
   } else {
     const timestamp = nowIso();
-    conversationId = (await prisma.conversation.create({ data: { createdAt: timestamp, updatedAt: timestamp } })).id;
+    conversationId = (await prisma.conversation.create({ data: { identityId, createdAt: timestamp, updatedAt: timestamp } })).id;
   }
   const stored = await validateScopeAndResolveIds(requestedContext);
+  stored.identityId = identityId;
   // The request's UI language (X-WWA-Language / Accept-Language) decides the reply language.
   if (currentLocale() === 'en') stored.language = 'en';
   if (stored.referencedApprovalId) {
@@ -607,7 +628,8 @@ export async function startChat(input: { conversationId?: string; message: strin
     const { timeZoneSource, ...publicContext } = stored;
     await appendRunEvent(tx, created.id, 'user_context', { type: 'user_context', runId: created.id, conversationId, messageId: user.id, context: publicContext });
     await tx.conversation.update({ where: { id: conversationId }, data: { activeRunId: created.id, updatedAt: timestamp } });
-    await beginAutoMemoryTurn({ conversationId, userMessageId: user.id, topicId, createdAt: timestamp }, tx);
+    // 自动记忆提炼只属于工作助手；学习助手的长期记录走 learning_activity。
+    if (getAssistantIdentity(identityId).autoMemory) await beginAutoMemoryTurn({ conversationId, userMessageId: user.id, topicId, createdAt: timestamp }, tx);
     return created;
   });
 }

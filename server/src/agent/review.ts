@@ -5,7 +5,7 @@ import { isGroup } from '../application/workspace-store.js';
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
-const statusText: Record<string, string> = { todo: '待办', doing: '进行中', blocked: '阻塞', done: '已完成' };
+const statusText: Record<string, string> = { todo: '待办', doing: '进行中', blocked: '阻塞', done: '已完成', learning: '学习中' };
 const colorText: Record<string, string> = { violet: '紫', blue: '蓝', teal: '青', green: '绿', amber: '琥珀', rose: '玫红', slate: '灰' };
 const priorityText: Record<string, string> = { none: '无', low: '低', medium: '中', high: '高' };
 
@@ -16,6 +16,9 @@ const memoryKeys = ['title', 'content', 'kind', 'importance', 'labels', 'status'
 const tagKeys = ['name', 'color'] as const;
 const folderKeys = ['name', 'parentId'] as const;
 const skillKeys = ['name', 'description', 'instructions', 'enabled'] as const;
+const learningMapKeys = ['title', 'goal', 'status', 'deletedAt'] as const;
+const learningNodeKeys = ['title', 'detail', 'kind', 'status', 'mastery', 'parentId', 'sortOrder', 'deletedAt'] as const;
+const learningActivityKeys = ['kind', 'content', 'nodeId'] as const;
 const skillLabels: Record<string, string> = { name: '名称', description: '描述', instructions: '正文', enabled: '启用' };
 
 const labels: Record<string, string> = {
@@ -23,10 +26,11 @@ const labels: Record<string, string> = {
   estimatedMinutes: '预计用时', resultSummary: '结果摘要', topicId: '清单', parentId: '父任务', sortOrder: '排序', tagIds: '标签', deletedAt: '删除状态',
   name: '名称', goal: '目标', isExploration: '探索标记', draftSummary: '成果草稿', archivedAt: '归档状态', kind: '类型', content: '正文', uri: '链接',
   folderId: '文件夹', taskIds: '关联任务', importance: '重要度', labels: '标签', evidence: '证据', color: '颜色',
+  mastery: '掌握度', detail: '详情', nodeId: '条目',
 };
 
 export type ReviewEntityChange = {
-  entityType: 'task' | 'topic' | 'tag' | 'material' | 'memory' | 'libraryFolder' | 'libraryTag' | 'skill';
+  entityType: 'task' | 'topic' | 'tag' | 'material' | 'memory' | 'libraryFolder' | 'libraryTag' | 'skill' | 'learning_map' | 'learning_node' | 'learning_activity';
   entityId: string;
   titleBefore: string | null;
   titleAfter: string | null;
@@ -124,7 +128,7 @@ function fieldsFor(entityType: ReviewEntityChange['entityType'], before: Record<
     before = projectMaterialLinks(before, leftIds, includeEmpty);
     after = projectMaterialLinks(after, rightIds, includeEmpty);
   }
-  const keys = entityType === 'task' ? taskKeys : entityType === 'topic' ? topicKeys : entityType === 'material' ? materialKeys : entityType === 'memory' ? memoryKeys : entityType === 'libraryFolder' ? folderKeys : entityType === 'skill' ? skillKeys : tagKeys;
+  const keys = entityType === 'task' ? taskKeys : entityType === 'topic' ? topicKeys : entityType === 'material' ? materialKeys : entityType === 'memory' ? memoryKeys : entityType === 'libraryFolder' ? folderKeys : entityType === 'skill' ? skillKeys : entityType === 'learning_map' ? learningMapKeys : entityType === 'learning_node' ? learningNodeKeys : entityType === 'learning_activity' ? learningActivityKeys : tagKeys;
   const fields = [];
   for (const key of keys) {
     const left = before?.[key] ?? null;
@@ -161,7 +165,7 @@ function absorb(slots: Map<string, Slot>, record: ChangeRecord) {
     return;
   }
   const entityType = record.entityType as Slot['entityType'];
-  if (!['task', 'topic', 'tag', 'material', 'memory', 'libraryFolder', 'libraryTag', 'skill'].includes(entityType)) return;
+  if (!['task', 'topic', 'tag', 'material', 'memory', 'libraryFolder', 'libraryTag', 'skill', 'learning_map', 'learning_node', 'learning_activity'].includes(entityType)) return;
   remember(slots, entityType, record.entityId, before, after);
 }
 
@@ -190,6 +194,8 @@ export function buildReview(input: { intent: string; requestedOperationCount: nu
   const explicitEntities = entities.filter((entity) => entity.origin === 'explicit');
   const taskCount = explicitEntities.filter((entity) => entity.entityType === 'task').length;
   const consequences = consequenceLines(entities);
+  // 学习域尚无撤销处理器；如实标注，避免确认卡片给出错误预期。
+  const learningOnly = entities.length > 0 && entities.every((entity) => entity.entityType.startsWith('learning_'));
   return {
     schemaVersion: 1,
     title: taskCount && taskCount === explicitEntities.length ? `修改 ${taskCount} 个任务` : `修改 ${Math.max(explicitEntities.length, input.requestedOperationCount)} 项`,
@@ -199,8 +205,8 @@ export function buildReview(input: { intent: string; requestedOperationCount: nu
     affectedEntityCount: entities.length,
     relatedEntityCount: related.length,
     atomic: true,
-    reversibility: 'supported',
-    reversibilityReason: null,
+    reversibility: learningOnly ? 'unsupported' : 'supported',
+    reversibilityReason: learningOnly ? '学习域的修改暂不支持一键撤销' : null,
     consequences,
     entities,
   };
