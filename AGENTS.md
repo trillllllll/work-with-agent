@@ -1,10 +1,21 @@
 # Dovun / Work With Agent
 
+## 部署与执行规范
+
+- 只执行用户授权的范围。调查、方案、本机安装和线上发布分别对待；已授权的步骤连续完成，不重复确认。
+- 发布前更新并提交应用功能手册，完成相关测试和代码复核。记录实际提交，不能只凭版本号判断是否更新。
+- 本机部署必须覆盖 `/Applications/Dovun.app`：先确认无执行中任务，退出应用并备份实际数据、配置和旧应用，再整包替换，不合并旧包、不清数据、不改同步或自动化开关。
+- 本机只保留一个可运行的 Dovun。安装验收后删除构建目录中的重复 `.app`，旧应用保存为压缩备份，保留 DMG；未要求时不自动打开。
+- 线上发布先核对实际服务、配置和数据挂载，备份并保留回滚版本。Dovun 与旧 WWA 独立，不能混用应用、目录或数据库。
+- 在这台 VPS 禁止执行 `docker system df`（包括 `-v`），不做无界 Docker 统计；构建和查询设置资源限制或超时。不擅自重启主机、Docker或清理镜像、卷及数据。
+- 发布后验证服务健康、实际资源和相关业务流程。草稿与同步修复必须覆盖旧数据及登录后的同步，不能只验证页面打开。
+- 凭据不进入文档、日志或命令参数；临时认证材料用后清理。
+
 ## 先确认操作的是哪套应用
 
-当前 `codex/dovun-workspace` 分支构建的是 **Dovun**。用户说安装、打包或更新 Dovun 时，只操作 Dovun；旧 WWA 的应用、数据、服务和部署不随之更新。
+当前主应用是 **Dovun**，发布前核对实际分支、提交和构建身份，不按历史分支名判断。用户说安装、打包或更新 Dovun 时，只操作 Dovun；旧 WWA 的应用、数据、服务和部署不随之更新。
 
-| 项目 | Dovun（当前分支） | 旧 WWA（独立保留） |
+| 项目 | Dovun | 旧 WWA（独立保留） |
 | --- | --- | --- |
 | 安装路径 | `/Applications/Dovun.app` | `/Applications/Work With Agent.app` |
 | 系统应用标识 | `app.dovun.desktop` | `app.workwithagent.desktop` |
@@ -68,7 +79,7 @@ zsh 里 `status` 是只读变量。安装或打包脚本不要写 `status=$?`，
 5. 核对安装包全部文件/链接、签名、`Info.plist` 标识和版本、包内 `client/index.html` 的 `assets/index-*.js` 与 `assets/index-*.css`，以及应用功能知识与本次编译产物一致。重新核对数据库及偏好；不要改旧 WWA 库或服务器库。
 6. 核验成功后，移除构建目录中的重复 `.app`，保留 DMG。检查 `bundle/` 的历史版本子目录，发现旧候选先核对身份、归档，再清理对应可运行副本，不盲删其他应用或数据。用户没要求打开时，Dovun 保持关闭，47317 无监听。
 
-装好的 Dovun 只有在用户打开并选择本机模式后才听 `127.0.0.1:47317`。开发服务是另一套：默认 Vite `127.0.0.1:5176`、API `127.0.0.1:3016`，隔离测试可另用端口；不能拿开发服务冒充桌面安装验收。关窗口是隐藏，Command-Q 才退出。
+当前 Dovun 桌面启动后使用本机任务副本，由已安装应用提供 `127.0.0.1:47317` 服务。开发服务是另一套：默认 Vite `127.0.0.1:5176`、API `127.0.0.1:3016`，隔离测试可另用端口；不能拿开发服务冒充桌面安装验收。关窗口是隐藏，Command-Q 才退出。
 
 ## 旧 WWA 覆盖安装（仅明确要求更新 WWA 时）
 
@@ -80,11 +91,13 @@ zsh 里 `status` 是只读变量。安装或打包脚本不要写 `status=$?`，
 4. 只整包替换 `/Applications/Work With Agent.app`，不合并旧包内容；不操作 `/Applications/Dovun.app` 或 `dovun/` 数据目录。
 5. 核对 WWA 标识、版本、资源和数据后，清理本次 WWA 构建的重复 `.app`、保留 DMG。用户没要求打开时保持关闭。WWA 本机服务端口为 47316。
 
-## 旧 WWA 部署到 wwa.cby.red（仅明确授权时）
+## 当前 Dovun 线上位置
 
-以下是旧 WWA 的服务器运行说明，不能自动套用到当前 Dovun 分支。部署前确认目标源码、配置、数据库名及升级路径与服务器相容；不能直接用 Dovun 的 `HEAD` 覆盖旧 WWA 服务。只要求本机安装时，不连接或部署服务器。
+公网 `https://wwa.cby.red` 当前运行的是 Dovun。已知生产运行根为 `/opt/dovun-release-20261026`，配置为 `compose-production.json`，容器名仍为 `work-with-agent`，实际数据为该目录下的 `data/dovun.db`；nginx 443 转到 `127.0.0.1:12716`。每次发布仍须核对实际容器、镜像、挂载和有效配置，不能只凭名称判断。
 
-公网 `https://wwa.cby.red`：nginx 443（`/www/server/panel/vhost/nginx/wwa.cby.red.conf`）转到 Docker `127.0.0.1:12716`，容器里是 `WWA_SERVER_MODE=1`。源码和 compose 在 `/opt/work-with-agent`，数据在 `/opt/work-with-agent/data`。`www.cby.red` 是另一个站。
+## 旧 WWA 历史服务器部署（仅明确维护旧版时）
+
+以下仅保留旧 WWA 的历史流程，不用于当前 Dovun 发布。旧运行根为 `/opt/work-with-agent`，数据为 `data/agent-studio.db`，历史配置使用 `WWA_*`。维护旧版前先确认独立目标，不能占用或替换当前 Dovun 的服务。只要求本机安装时，不连接或部署服务器。`www.cby.red` 是另一个站。
 
 这台 VPS 不能从 GitHub `git pull`。`docs/deployment.md` 第 6 节的 `git pull` 在这里走不通。升级用本地 `git archive` 打已提交的源码包，再 scp 上去。
 
@@ -103,13 +116,13 @@ SSH 是 `root@1.14.75.14`。本机 Clash 可能把域名收成 `198.18.0.0/15` �
 4. 等到容器 `healthy`。日志里应有 `No pending migrations to apply` 和 `API listening on http://127.0.0.1:3016`。Prisma 的 openssl-1.1.x 警告不挡住健康检查。
 5. 再对一次数据库字节数，确认 `.env` 仍在。删掉服务器和本机的临时包。
 
-公网验收要绕过本机代理：
+以下公网入口当前属于 Dovun，仅用于验收对应的 Dovun 发布；不能用它证明旧 WWA 已更新。公网验收要绕过本机代理：
 
 ```bash
 curl --noproxy '*' --resolve wwa.cby.red:443:1.14.75.14 -fsS https://wwa.cby.red/api/v1/server/info
 curl --noproxy '*' --resolve wwa.cby.red:443:1.14.75.14 -fsS https://wwa.cby.red/ | grep -o 'assets/index-[^"]*'
 ```
 
-`/api/v1/server/info` 应为 `mode` `server`，`version` 与本次已提交源码的 `package.json` 一致。页面上的 `index-*.js` 和 `index-*.css` 应与这次构建、以及刚装上的桌面应用一致。
+`/api/v1/server/info` 应为 `mode` `server`，`version` 与本次已提交源码的 `package.json` 一致；同时核对实际镜像提交和资源哈希。页面上的 `index-*.js` 和 `index-*.css` 应与本次服务器构建一致；只有同次发布两端时，才要求与本次桌面产物一致。
 
-安装和部署分别按用户授权执行；界面改动不自动授权服务器部署。若用户要求两端发布，两端分别验收源码、数据和资源。只改壳或启动器时，只需重装对应桌面应用。只改服务器页面时，连接该服务器的桌面窗口会看到服务器新页面，本机模式仍需单独更新对应应用。
+安装和部署分别按用户授权执行；界面改动不自动授权服务器部署。若用户要求两端发布，两端分别验收源码、数据和资源。只改壳或启动器时，只需重装对应桌面应用；仅部署服务器不会更新本机安装包，不得宣称两端都已更新。
