@@ -343,23 +343,28 @@ export async function pushSyncOps(deviceId: string, body: z.infer<typeof pushBod
   return { schemaVersion: localSchemaVersion(), tip: await currentSyncSeq(), results: outcome };
 }
 
+/** Only known column additions may be recovered through a fresh baseline. */
+function isKnownLegacyLogRow(entity: SyncEntityType, row: SyncRow | null) {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
+  const defaults: Record<string, unknown> = entity === 'task' ? { recurrenceRule: '' } : entity === 'topic' ? { goalDueDate: null } : {};
+  const missing = syncFields[entity].filter(field => !Object.prototype.hasOwnProperty.call(row, field));
+  return missing.length > 0 && missing.every(field => Object.prototype.hasOwnProperty.call(defaults, field)) && isCompleteSyncRow(entity, { ...defaults, ...row });
+}
+
 export async function pullSyncOps(after: number, limit: number) {
-  const ops = await prisma.syncOp.findMany({ where: { seq: { gt: after } }, orderBy: { seq: 'asc' }, take: limit });
-  return {
-    schemaVersion: localSchemaVersion(),
-    tip: await currentSyncSeq(),
-    ops: ops.map((op) => ({
-      seq: op.seq,
-      opId: op.opId,
-      deviceId: op.deviceId,
-      entityType: op.entityType,
-      entityId: op.entityId,
-      before: parseStored(op.beforeJson),
-      after: parseStored(op.afterJson),
-      revision: op.revision,
-      createdAt: op.createdAt,
-    })),
-  };
+  const stored = await prisma.syncOp.findMany({ where: { seq: { gt: after } }, orderBy: { seq: 'asc' }, take: limit });
+  const ops = stored.map(op => ({
+    seq: op.seq, opId: op.opId, deviceId: op.deviceId, entityType: op.entityType, entityId: op.entityId,
+    before: parseStored(op.beforeJson), after: parseStored(op.afterJson), revision: op.revision, createdAt: op.createdAt,
+  }));
+  const knownLegacy = ops.some(op => isSyncEntityType(op.entityType) && [op.before, op.after].some(row => isKnownLegacyLogRow(op.entityType as SyncEntityType, row)));
+  const recoverable = ops.every(op => isSyncEntityType(op.entityType) && [op.before, op.after].every(row => isCompleteSyncRow(op.entityType as SyncEntityType, row) || isKnownLegacyLogRow(op.entityType as SyncEntityType, row)));
+  const identity = { schemaVersion: localSchemaVersion(), tip: await currentSyncSeq() };
+  // An empty page below tip already means an expired window to both browser and
+  // desktop replicas. They load a coherent snapshot and retain pending edits.
+  // Never rewrite historical JSON or substitute today's fields into old ops.
+  if (knownLegacy && recoverable) return { ...identity, ops: [], baselineRequired: true as const };
+  return { ...identity, ops };
 }
 
 export async function listSyncConflicts() {

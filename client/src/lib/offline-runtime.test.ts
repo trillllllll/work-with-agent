@@ -158,6 +158,54 @@ describe('durable browser workspace', () => {
     expect((await runtime.status())!.outbox).toHaveLength(0);
   });
 
+  it('recovers an old-schema log window from the current snapshot and clears the error', async () => {
+    const remote = hub(); vi.stubGlobal('fetch', remote.fetcher);
+    const runtime = await replica('legacy-log');
+    remote.tasks.task = row({ title: '云端当前标题', recurrenceRule: '{"unit":"week","step":1}' });
+    remote.ops.push({ seq: 1 });
+    vi.stubGlobal('fetch', async (input: string, init?: RequestInit) => {
+      if (input.includes('/pull?')) return Response.json({ data: { schemaVersion: 'protocol-test', tip: 1, ops: [], baselineRequired: true }, error: null });
+      return remote.fetcher(input, init);
+    });
+    await runtime.store.update(runtime.scope, state => ({ state: { ...state!, lastError: 'SYNC_PROTOCOL_ERROR' }, value: undefined }));
+    runtime.resume(); await runtime.sync();
+    expect(await runtime.status()).toMatchObject({ cursor: 1, lastError: null, outbox: [] });
+    expect((await runtime.status())!.rows.task.task.row).toMatchObject({ title: '云端当前标题', recurrenceRule: '{"unit":"week","step":1}' });
+    await runtime.sync();
+    expect((await runtime.status())!.cursor).toBe(1);
+  });
+
+  it('retains an edit made during a failed recovery snapshot and syncs it on retry', async () => {
+    const remote = hub(); vi.stubGlobal('fetch', remote.fetcher);
+    const runtime = await replica('legacy-pending');
+    remote.tasks.task.recurrenceRule = '{"unit":"week","step":1}';
+    remote.ops.push({ seq: 1 });
+    let began!: () => void, rejectSnapshot!: (error: Error) => void;
+    const started = new Promise<void>(resolve => { began = resolve; });
+    let failSnapshot = true;
+    vi.stubGlobal('fetch', async (input: string, init?: RequestInit) => {
+      if (input.includes('/pull?')) return Response.json({ data: { schemaVersion: 'protocol-test', tip: remote.ops.length, ops: [], baselineRequired: true }, error: null });
+      if (input.includes('/snapshot') && failSnapshot) {
+        began(); return new Promise<Response>((_resolve, reject) => { rejectSnapshot = reject; });
+      }
+      return remote.fetcher(input, init);
+    });
+    runtime.resume();
+    const failed = expect(runtime.sync()).rejects.toThrow('snapshot unavailable');
+    await started;
+    await edit(runtime, { title: '下载期间的本地修改' });
+    rejectSnapshot(new Error('snapshot unavailable'));
+    await failed;
+    expect((await runtime.status())!.cursor).toBe(0);
+    expect((await runtime.status())!.outbox).toHaveLength(1);
+    expect((await runtime.status())!.rows.task.task.row.title).toBe('下载期间的本地修改');
+    failSnapshot = false;
+    await runtime.sync();
+    expect((await runtime.status())!.outbox).toHaveLength(0);
+    expect((await runtime.status())!.lastError).toBeNull();
+    expect(remote.tasks.task).toMatchObject({ title: '下载期间的本地修改', recurrenceRule: '{"unit":"week","step":1}' });
+  });
+
   it('never treats a preview or pending proposal as committed task data', async () => {
     const remote = hub(); vi.stubGlobal('fetch', remote.fetcher);
     const runtime = await replica('preview');
