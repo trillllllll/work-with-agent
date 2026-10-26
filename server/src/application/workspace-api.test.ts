@@ -6,11 +6,17 @@ import { workspaceQueryRouter } from './workspace-api.js';
 import { ownerActor, type Actor } from './security.js';
 
 const scope: Actor = { id: 'query-reader', kind: 'connection', topicIds: ['visible'], includeInbox: false, autoActions: [], revision: 1 };
+// Keep one listener per actor, matching the stable supertest adapter's app cache.
+// Recreating the app for every request defeats that cache and churns test ports.
+const apps = new WeakMap<Actor, express.Express>();
 function api(actor: Actor = scope) {
+  const existing = apps.get(actor);
+  if (existing) return existing;
   const app = express();
   app.use((req, _res, next) => { (req as express.Request & { actor: Actor }).actor = actor; next(); });
   app.use('/api/v1', workspaceQueryRouter);
   app.use((error: { status?: number; code?: string; message: string }, _req: express.Request, res: express.Response, _next: express.NextFunction) => { res.status(error.status ?? 500).json({ error: error.message, code: error.code }); });
+  apps.set(actor, app);
   return app;
 }
 async function clean() {
@@ -44,8 +50,26 @@ describe('scoped workspace discovery and audit queries', () => {
     const second = await request(api()).get('/api/v1/trash/tasks').query({ cursor: first.body.data.nextCursor, limit: 1 });
     expect(second.body.data).toMatchObject({ items: [{ id: 'trashed-b' }], hasMore: false });
     expect((await request(api()).get('/api/v1/trash/tasks?topicId=hidden')).status).toBe(403);
-    expect((await request(api()).get('/api/v1/trash/tasks?inbox=true')).status).toBe(403);
+    const deniedInbox = await request(api()).get('/api/v1/trash/tasks?inbox=true');
+    expect({ status: deniedInbox.status, body: deniedInbox.body }, deniedInbox.text).toMatchObject({ status: 403, body: { code: 'SCOPE_DENIED' } });
     expect((await request(api({ ...scope, topicIds: [], includeInbox: true })).get('/api/v1/trash/tasks')).body.data.items.map((row: { id: string }) => row.id)).toEqual(['inbox']);
+  });
+
+  it('keeps inbox grants isolated across repeated requests on shared test servers', async () => {
+    const inboxActor: Actor = { ...scope, id: 'inbox-reader', topicIds: [], includeInbox: true };
+    expect(api()).toBe(api(scope));
+    expect(api(inboxActor)).toBe(api(inboxActor));
+    expect(api(inboxActor)).not.toBe(api());
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const denied = await request(api()).get('/api/v1/trash/tasks?inbox=true');
+      expect({ status: denied.status, body: denied.body }, denied.text).toMatchObject({ status: 403, body: { code: 'SCOPE_DENIED' } });
+      const allowed = await request(api(inboxActor)).get('/api/v1/trash/tasks?inbox=true');
+      expect(allowed.status, allowed.text).toBe(200);
+      expect(allowed.body.data.items.map((row: { id: string }) => row.id)).toEqual(['inbox']);
+      const scoped = await request(api()).get('/api/v1/trash/tasks');
+      expect(scoped.status, scoped.text).toBe(200);
+      expect(scoped.body.data.items.map((row: { id: string }) => row.id)).toEqual(['trashed-a', 'trashed-b']);
+    }
   });
 
   it('redacts historical outside-scope IDs, names, reasons and conversation references', async () => {
