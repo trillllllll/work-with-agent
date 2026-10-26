@@ -49,6 +49,85 @@ test('工作区弹层在放大后恢复原来的设置表单', async ({ page }) 
   await expect(field).toHaveValue('https://example.invalid/preserve-draft');
 });
 
+test('迟到的模型设置刷新不覆盖草稿，未编辑字段仍更新', async ({ page }) => {
+  let hold = false, started = false;
+  let release = () => {};
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const settings = { baseUrl: 'https://example.invalid/saved', model: 'saved-model', apiKeyConfigured: true, apiKeyMasked: 'e2e...key' };
+  await page.route('**/api/settings', async route => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const data = { ...settings };
+    if (hold) { started = true; await gate; }
+    await route.fulfill({ json: { data, error: null } });
+  });
+  try {
+    await page.goto('/#/settings/model');
+    const url = page.getByLabel('接口地址', { exact: true });
+    const model = page.getByLabel('模型名称', { exact: true });
+    const key = page.getByLabel('API Key', { exact: true });
+    await expect(url).toHaveValue(settings.baseUrl);
+    await expect(model).toHaveValue(settings.model);
+    await url.fill('https://example.invalid/local-draft');
+    await key.fill('local-unsaved-key');
+    await url.evaluate(element => element.setAttribute('data-test-instance', 'retained'));
+    hold = true;
+    settings.model = 'refreshed-model';
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await expect.poll(() => started).toBe(true);
+    await page.getByRole('dialog').getByRole('button', { name: 'AI 助手', exact: true }).click();
+    await page.getByRole('button', { name: '放大到独立页', exact: true }).click();
+    await expect(page.getByTestId('assistant-page')).toBeVisible();
+    await page.getByRole('button', { name: '缩小回原页面', exact: true }).click();
+    release();
+    await expect(model).toHaveValue('refreshed-model');
+    await expect(url).toHaveValue('https://example.invalid/local-draft');
+    await expect(key).toHaveValue('local-unsaved-key');
+    await expect(url).toHaveAttribute('data-test-instance', 'retained');
+  } finally { release(); }
+});
+
+test('连接测试回包只清理已提交的草稿，保留等待期间的新输入', async ({ page }) => {
+  const requests: Array<{ baseUrl: string; model: string; apiKey: string }> = [];
+  let release = () => {};
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let stored = { baseUrl: 'https://example.invalid/saved', model: 'saved-model', apiKeyConfigured: true, apiKeyMasked: 'e2e...key' };
+  await page.route('**/api/settings', async route => {
+    if (route.request().method() === 'PATCH') {
+      const submitted = route.request().postDataJSON();
+      requests.push(submitted);
+      if (requests.length === 1) await gate;
+      stored = { ...stored, baseUrl: submitted.baseUrl.replace(/\/$/, ''), model: submitted.model };
+    }
+    await route.fulfill({ json: { data: stored, error: null } });
+  });
+  try {
+    await page.goto('/#/settings/model');
+    const url = page.getByLabel('接口地址', { exact: true });
+    const model = page.getByLabel('模型名称', { exact: true });
+    const key = page.getByLabel('API Key', { exact: true });
+    const save = page.getByRole('button', { name: '测试连接并保存', exact: true });
+    await expect(url).toHaveValue(stored.baseUrl);
+    await url.fill('https://example.invalid/submitted/');
+    await model.fill('submitted-model');
+    await key.fill('submitted-key');
+    await save.click();
+    await expect.poll(() => requests.length).toBe(1);
+    await model.fill('newer-model-draft');
+    await key.fill('newer-key-draft');
+    release();
+    await expect(save).toBeEnabled();
+    await expect(url).toHaveValue('https://example.invalid/submitted');
+    await expect(model).toHaveValue('newer-model-draft');
+    await expect(key).toHaveValue('newer-key-draft');
+    expect(requests[0]).toEqual({ baseUrl: 'https://example.invalid/submitted/', model: 'submitted-model', apiKey: 'submitted-key' });
+    await save.click();
+    await expect.poll(() => requests.length).toBe(2);
+    expect(requests[1]).toEqual({ baseUrl: 'https://example.invalid/submitted', model: 'newer-model-draft', apiKey: 'newer-key-draft' });
+    await expect(key).toHaveValue('');
+    await expect(model).toHaveValue('newer-model-draft');
+  } finally { release(); }
+});
+
 test('任务编辑器放大缩小时保留同一个节点和草稿', async ({ page, request }) => {
   await page.setViewportSize({ width: 1280, height: 850 });
   const task = (await (await request.post(`${api}/api/tasks`, { data: { title: '编辑中的任务' } })).json()).data;

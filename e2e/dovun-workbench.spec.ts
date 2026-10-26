@@ -62,6 +62,7 @@ test('shared rail preserves chat draft and keeps all header controls reachable a
 });
 
 test('detail tabs keep the same editor and unsaved text mounted', async ({ page, request }) => {
+  await page.route('**/api/v1/knowledge/brief?*', route => route.fulfill({ json: { data: { content: '# 当前简报\n已加载的工作上下文', manualNotes: '' }, error: null } }));
   const task = (await (await request.post(api + '/api/tasks', { data: { title: '页签草稿', description: '原文', topicId: null } })).json()).data;
   await page.goto('/#/inbox');
   await page.getByTestId(`task-row-${task.id}`).click();
@@ -71,7 +72,8 @@ test('detail tabs keep the same editor and unsaved text mounted', async ({ page,
   await page.getByRole('tab', { name: '相关资料', exact: true }).click();
   await expect(editor).toBeHidden();
   await page.getByRole('tab', { name: '工作上下文', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '当前简报', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '当前简报', level: 1, exact: true })).toBeVisible();
+  await expect(page.getByRole('tabpanel', { name: '工作上下文', exact: true }).getByRole('heading', { name: '当前简报', level: 3, exact: true })).toBeVisible();
   await page.getByRole('tab', { name: '任务详情', exact: true }).click();
   await expect(editor).toContainText('保留切换前的正文');
   await expect(editor).toHaveAttribute('data-test-instance', 'retained');

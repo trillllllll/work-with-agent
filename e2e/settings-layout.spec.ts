@@ -190,6 +190,7 @@ test.describe('手机', () => {
   });
 
   test('底栏设置每项一行，没有上移下移按钮', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/#/settings/ui');
     const panel = page.getByTestId('mobile-navigation-settings');
     await expect(panel).toBeVisible();
@@ -201,7 +202,11 @@ test.describe('手机', () => {
     const center = (box: { y: number; height: number }) => box.y + box.height / 2;
     expect(Math.abs(center(handle) - center(name))).toBeLessThan(6);
     expect(Math.abs(center(toggle) - center(name))).toBeLessThan(6);
-    expect((await row.boundingBox())!.height).toBeLessThan(64);
+    // A 44px touch target plus 10px padding on each side is exactly 64px.
+    const height = (await row.boundingBox())!.height;
+    expect(height).toBeGreaterThanOrEqual(56);
+    expect(height).toBeLessThanOrEqual(64);
+    await expect(row.getByRole('button', { name: '拖动今天' })).toHaveCSS('height', '44px');
     await screenshot(page, 'mobile-ui');
   });
 });

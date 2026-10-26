@@ -1,5 +1,5 @@
 import { Surface } from '@/components/ui/surface.js';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -29,19 +29,24 @@ export function SettingsLoadError({ error, onRetry }: { error: unknown; onRetry:
 export function ModelSettings() {
   const { t } = useTranslation('settings');
   const queryClient = useQueryClient();
-  const [baseUrl, setBaseUrl] = useState('');
-  const [model, setModel] = useState('');
+  // null follows server settings; even an empty edited value remains a local draft.
+  const [baseUrlDraft, setBaseUrlDraft] = useState<string | null>(null);
+  const [modelDraft, setModelDraft] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState('');
   const [clearKeyConfirmation, setClearKeyConfirmation] = useState(false);
   const settingsQuery = useSettingsQuery();
-  useEffect(() => {
-    if (!settingsQuery.data) return;
-    setBaseUrl(settingsQuery.data.baseUrl);
-    setModel(settingsQuery.data.model);
-  }, [settingsQuery.data]);
-  const save = useMutation<Settings, Error, void>({
-    mutationFn: () => api('/api/settings', { method: 'PATCH', body: JSON.stringify({ baseUrl, model, ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}) }) }),
-    onSuccess: (data) => { queryClient.setQueryData(['settings'], data); setApiKey(''); toast.success(t('modelSettings.saved')); },
+  const baseUrl = baseUrlDraft ?? settingsQuery.data?.baseUrl ?? '';
+  const model = modelDraft ?? settingsQuery.data?.model ?? '';
+  const save = useMutation<Settings, Error, { baseUrl: string; model: string; apiKey: string }>({
+    mutationFn: (submitted) => api('/api/settings', { method: 'PATCH', body: JSON.stringify({ baseUrl: submitted.baseUrl, model: submitted.model, ...(submitted.apiKey.trim() ? { apiKey: submitted.apiKey.trim() } : {}) }) }),
+    onSuccess: (data, submitted) => {
+      queryClient.setQueryData(['settings'], data);
+      // A slow connection test must not consume edits made after this submission.
+      setBaseUrlDraft(current => current === submitted.baseUrl ? null : current);
+      setModelDraft(current => current === submitted.model ? null : current);
+      setApiKey(current => current === submitted.apiKey ? '' : current);
+      toast.success(t('modelSettings.saved'));
+    },
     onError: (error) => { toast.error(error.message); },
   });
   const clearKey = useMutation<Settings, Error, void>({
@@ -63,14 +68,14 @@ export function ModelSettings() {
       ) : settingsQuery.isError ? (
         <SettingsLoadError error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} />
       ) : (
-        <form className="mt-4" onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
+        <form className="mt-4" onSubmit={(event) => { event.preventDefault(); save.mutate({ baseUrl, model, apiKey }); }}>
           <div className="mb-4">
             <Label htmlFor="settings-base-url">{t('modelSettings.baseUrl')}</Label>
-            <Input id="settings-base-url" required value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://api.openai.com/v1" />
+            <Input id="settings-base-url" required value={baseUrl} onChange={(event) => setBaseUrlDraft(event.target.value)} placeholder="https://api.openai.com/v1" />
           </div>
           <div className="mb-4">
             <Label htmlFor="settings-model">{t('modelSettings.model')}</Label>
-            <Input id="settings-model" required value={model} onChange={(event) => setModel(event.target.value)} placeholder="gpt-4o-mini" />
+            <Input id="settings-model" required value={model} onChange={(event) => setModelDraft(event.target.value)} placeholder="gpt-4o-mini" />
           </div>
           <div className="mb-4">
             <Label htmlFor="settings-api-key">{t('modelSettings.apiKey')}</Label>
