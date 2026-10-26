@@ -547,7 +547,7 @@ export function App() {
     window.addEventListener('dovun-open-task', handler);
     return () => window.removeEventListener('dovun-open-task', handler);
   }, []);
-  const detailPane = taskId ? <TaskDetailPane key={taskId} ref={detailRef} id={taskId} fallback={tasks.find((task) => task.id === taskId)} tags={tags} readonly={archived} showClose={!taskRail} presentation={isDesktop || taskRail ? 'panel' : showChat ? 'retained' : 'modal'} panelSlot={detailSlot} onSave={patchTask} onClose={closeTask} onDirtyChange={setDetailDirty} onToggleTask={toggleTask} onCreateTask={createTask} onOpenTask={openTask} /> : null;
+  const detailPane = taskId ? <TaskDetailPane key={taskId} ref={detailRef} id={taskId} fallback={tasks.find((task) => task.id === taskId)} tags={tags} topics={topics} readonly={archived} showClose={!taskRail} presentation={isDesktop || taskRail ? 'panel' : showChat ? 'retained' : 'modal'} panelSlot={detailSlot} onSave={patchTask} onClose={closeTask} onDirtyChange={setDetailDirty} onToggleTask={toggleTask} onCreateTask={createTask} onOpenTask={openTask} /> : null;
   const companionVisible = isDesktop && !isAssistantPage && !workspaceView && (page === 'today' || Boolean(taskId));
   const hasAccessory = !isAssistantPage && (showChat || focusSide || companionVisible || taskRail);
 
