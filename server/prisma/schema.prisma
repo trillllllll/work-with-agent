@@ -27,6 +27,7 @@ model AppSetting {
   mobileNavigationJson String @default("[\"inbox\",\"today\",\"quadrant\",\"topics\"]") @map("mobile_navigation_json")
   htmlBlocksEnabled Boolean @default(true) @map("html_blocks_enabled")
   htmlCdnAllowlist String @default("[\"https://cdn.jsdelivr.net\",\"https://cdnjs.cloudflare.com\",\"https://unpkg.com\"]") @map("html_cdn_allowlist")
+  assistantIdentityJson String @default("{}") @map("assistant_identity_json")
   createdAt     String   @default("") @map("created_at")
   updatedAt     String   @default("") @map("updated_at")
 
@@ -204,6 +205,7 @@ enum ApprovalStatus {
 
 model Conversation {
   id        String    @id @default(cuid())
+  identityId String   @default("work") @map("identity_id")
   summary   String    @default("")
   summaryVersion Int   @default(0) @map("summary_version")
   lastCompactedAt String? @map("last_compacted_at")
@@ -215,6 +217,7 @@ model Conversation {
   approvals Approval[]
   agentRuns AgentRun[]
 
+  @@index([identityId])
   @@map("conversations")
 }
 
@@ -417,6 +420,7 @@ model MaterialVersion {
 }
 model Memory {
   id String @id @default(cuid())
+  identityId String @default("work") @map("identity_id")
   topicId String?
   kind String
   title String
@@ -432,6 +436,7 @@ model Memory {
   updatedAt String
   versions MemoryVersion[]
   @@index([topicId, status, importance, updatedAt])
+  @@index([identityId])
 }
 model MemoryVersion {
   id String @id @default(cuid())
@@ -1086,6 +1091,7 @@ model MemorySuggestionKey {
 
 model Skill {
   id           String         @id @default(cuid())
+  identityId   String         @default("work") @map("identity_id")
   name         String
   description  String
   instructions String
@@ -1098,6 +1104,66 @@ model Skill {
   versions     SkillVersion[]
 
   @@index([deletedAt, enabled, name])
+  @@index([identityId])
+}
+
+model LearningMap {
+  id        String   @id @default(cuid())
+  title     String
+  goal      String   @default("")
+  status    String   @default("active")
+  sortOrder Int      @default(0) @map("sort_order")
+  revision  Int      @default(1)
+  deletedAt String?  @map("deleted_at")
+  createdAt String   @default("") @map("created_at")
+  updatedAt String   @default("") @map("updated_at")
+  nodes        LearningNode[]
+  activities   LearningActivity[]
+
+  @@index([deletedAt, status, sortOrder])
+  @@map("learning_maps")
+}
+
+model LearningNode {
+  id        String   @id @default(cuid())
+  mapId     String   @map("map_id")
+  parentId  String?  @map("parent_id")
+  kind      String   @default("topic")
+  title     String
+  detail    String   @default("")
+  status    String   @default("todo")
+  mastery   Int      @default(0)
+  sortOrder Int      @default(0) @map("sort_order")
+  revision  Int      @default(1)
+  deletedAt String?  @map("deleted_at")
+  createdAt String   @default("") @map("created_at")
+  updatedAt String   @default("") @map("updated_at")
+  map          LearningMap      @relation(fields: [mapId], references: [id], onDelete: Restrict)
+  parent       LearningNode?    @relation("LearningChildren", fields: [parentId], references: [id], onDelete: Restrict)
+  children     LearningNode[]   @relation("LearningChildren")
+  activities   LearningActivity[]
+
+  @@index([mapId])
+  @@index([mapId, deletedAt, sortOrder])
+  @@index([parentId])
+  @@index([deletedAt])
+  @@map("learning_nodes")
+}
+
+model LearningActivity {
+  id        String   @id @default(cuid())
+  mapId     String   @map("map_id")
+  nodeId    String?  @map("node_id")
+  kind      String
+  content   String
+  metaJson  String   @default("{}") @map("meta_json")
+  createdAt String   @default("") @map("created_at")
+  map        LearningMap   @relation(fields: [mapId], references: [id], onDelete: Cascade)
+  node       LearningNode? @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+
+  @@index([nodeId, createdAt])
+  @@index([mapId, createdAt])
+  @@map("learning_activity")
 }
 
 model SkillVersion {
