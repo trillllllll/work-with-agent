@@ -60,8 +60,9 @@ test('重叠任务在周视图并排成泳道，每项可打开、完成，并�
   await expect(second.locator('xpath=..')).toHaveAttribute('data-lane-count', '1');
   await page.getByLabel('显示已完成', { exact: true }).check();
   await expect(first.getByLabel('重开任务：接口开发')).toBeChecked();
-  // The completed task moves to the free lane on the right.
-  await expect(first.locator('xpath=..')).toHaveAttribute('data-lane', '1');
+  // Completion changes the visual state only; both tasks keep their lanes.
+  await expect(first.locator('xpath=..')).toHaveAttribute('data-lane', '0');
+  await expect(second.locator('xpath=..')).toHaveAttribute('data-lane', '1');
   await second.getByRole('button', { name: '打开任务：需求评审', exact: true }).click();
   await expect(page.getByRole('button', { name: '安排时间', exact: true })).toContainText('14:30');
 });
