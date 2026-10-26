@@ -255,6 +255,17 @@ async function refreshOperationRevisions(db: Db, operations: ChangeOperation[]) 
         if (row) args.expectedRevision = row.revision;
       }
     }
+    if (operation.family === 'learning') {
+      const args = operation.args as { mapId?: unknown; expectedRevision?: unknown; nodeId?: unknown; expectedNodeRevision?: unknown };
+      if (typeof args.mapId === 'string' && typeof args.expectedRevision === 'number') {
+        const row = await db.learningMap.findUnique({ where: { id: args.mapId }, select: { revision: true } });
+        if (row) args.expectedRevision = row.revision;
+      }
+      if (typeof args.nodeId === 'string' && typeof args.expectedNodeRevision === 'number') {
+        const row = await db.learningNode.findUnique({ where: { id: args.nodeId }, select: { revision: true } });
+        if (row) args.expectedNodeRevision = row.revision;
+      }
+    }
     if (operation.family === 'skill' && operation.command.kind === 'skill.update') {
       const row = await db.skill.findUnique({ where: { id: operation.command.targetId }, select: { revision: true, deletedAt: true } });
       if (row && !row.deletedAt) operation.command.expectedRevision = row.revision;

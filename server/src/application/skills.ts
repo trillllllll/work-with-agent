@@ -368,8 +368,8 @@ export async function importSkill(input: { markdown: string; resolution?: 'versi
   });
 }
 
-export async function enabledSkillCatalog(db: Db = prisma) {
-  return db.skill.findMany({ where: { enabled: true, deletedAt: null }, select: { name: true, description: true }, orderBy: [{ name: 'asc' }, { id: 'asc' }] });
+export async function enabledSkillCatalog(identityId: string = 'work', db: Db = prisma) {
+  return db.skill.findMany({ where: { enabled: true, deletedAt: null, identityId }, select: { name: true, description: true }, orderBy: [{ name: 'asc' }, { id: 'asc' }] });
 }
 
 const draftSchema = z.object({ name: z.string(), description: z.string(), instructions: z.string() }).strict();

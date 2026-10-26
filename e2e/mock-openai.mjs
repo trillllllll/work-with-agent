@@ -285,6 +285,18 @@ document.getElementById('probe-out').textContent=JSON.stringify({html:html,scrip
     { choices: [{ delta: { content: text }, finish_reason: null }] },
     { choices: [{ delta: { tool_calls: [{ index: 0, id, function: { name, arguments: JSON.stringify(args) } }] }, finish_reason: 'tool_calls' }] },
   ]);
+  if (latestUser.includes('学习地图验收')) {
+    if (toolSince('propose_changes')) return stream(res, [{ choices: [{ delta: { content: '学习地图已创建，可以到学习地图页查看。' }, finish_reason: 'stop' }] }]);
+    if (!toolSince('learning_read')) return callTool('e2e_learning_read', 'learning_read', { action: 'list' }, '我先读取学习域。');
+    return callTool('e2e_learning_propose', 'propose_changes', {
+      summary: '创建 Rust 学习地图',
+      operations: [
+        { family: 'learning', clientRef: 'map', args: { action: 'map_create', title: 'Rust 学习地图', goal: '掌握 Rust 基础' } },
+        { family: 'learning', args: { action: 'node_create', mapId: { $ref: 'map' }, parentId: null, kind: 'topic', title: '所有权' } },
+        { family: 'learning', args: { action: 'node_create', mapId: { $ref: 'map' }, parentId: null, kind: 'item', title: '读第 4 章' } },
+      ],
+    }, '我准备创建学习地图。');
+  }
   if (latestUser.includes('列出任务')) {
     if (toolSince('query_tasks')) return stream(res, [{ choices: [{ delta: { content: '当前任务已读取完成。' }, finish_reason: 'stop' }] }]);
     return callTool(`e2e_list_${messages.length}`, 'query_tasks', { action: 'list', scope: 'current', usePageFilter: true, limit: 20 }, '我先读取任务。');

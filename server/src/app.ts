@@ -34,6 +34,8 @@ import { readMobileNavigation, writeMobileNavigation } from './application/mobil
 import { generateExternalReview } from './runner/review-generator.js';
 import { localeMiddleware, translateMessage, translatePayload } from './i18n/index.js';
 import { createSkill, deleteSkill, diffSkill, draftSkill, getSkill, getSkillVersion, importSkill, listSkills, registerSkillCommands, restoreSkill, rollbackSkill, updateSkill } from './application/skills.js';
+import { registerLearningCommands } from './application/learning-commands.js';
+import { learningRead, learningMapAggregate } from './application/learning.js';
 import { createNodeRouter, createOrchestrationRouter } from './routes/orchestration.js';
 import { createSyncRouter } from './routes/sync.js';
 import { acceptReplicaRelay, relayBoundWorkspace } from './application/workspace-relay.js';
@@ -48,6 +50,7 @@ registerKnowledgeCommands();
 registerGraphCommands();
 registerLibraryCommands();
 registerSkillCommands();
+registerLearningCommands();
 app.use('/api/v1', securityRouter);
 // Local executors (wwa-node) use their own token; they never get owner or MCP access.
 app.use('/api/v1/node', createNodeRouter());
@@ -264,6 +267,7 @@ app.put('/api/settings/mobile-navigation', async (req, res, next) => {
 
 const chatBody = z.object({
   conversationId: z.string().min(1).optional(),
+  identityId: z.enum(['work', 'study']).optional(),
   message: z.string().trim().min(1),
   requestKey: z.string().min(1).max(200).optional(),
   pageContext: z.object({ topicId: z.string().nullable().optional(), taskId: z.string().nullable().optional(), page: z.string().nullable().optional() }).optional(),
@@ -296,7 +300,9 @@ app.post('/api/chat', schema(chatBody), async (req, res) => {
 });
 
 app.get('/api/v1/assistant/sources/:kind/:id', async (req, res, next) => { try { send(res, await resolveAssistantSource(String(req.params.kind), String(req.params.id), req.query.revision === undefined ? undefined : Number(req.query.revision))); } catch (error) { next(error); } });
-app.get('/api/conversations', async (req, res, next) => { try { send(res, await agent.conversationList(typeof req.query.cursor === 'string' ? req.query.cursor : undefined)); } catch (error) { next(error); } });
+app.get('/api/v1/learning/maps', async (_req, res, next) => { try { send(res, await learningRead({ action: 'list' })); } catch (error) { next(error); } });
+app.get('/api/v1/learning/maps/:id', async (req, res, next) => { try { send(res, await learningMapAggregate(String(req.params.id))); } catch (error) { next(error); } });
+app.get('/api/conversations', async (req, res, next) => { try { const identity = z.enum(['work', 'study']).safeParse(req.query.identityId); send(res, await agent.conversationList(typeof req.query.cursor === 'string' ? req.query.cursor : undefined, identity.success ? identity.data : undefined)); } catch (error) { next(error); } });
 app.get('/api/conversations/:id/messages', async (req, res, next) => { try { send(res, await agent.messages(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/conversations/:id/snapshot', async (req, res, next) => { try { send(res, await agent.snapshot(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/conversations/:id/active-run', async (req, res, next) => { try { send(res, await agent.activeRun(String(req.params.id))); } catch (error) { next(error); } });

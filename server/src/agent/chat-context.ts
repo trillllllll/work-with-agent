@@ -3,7 +3,7 @@ import { prisma } from '../infrastructure/prisma.js';
 import { ownerActor, assertTopicAccess } from '../application/security.js';
 import { assertTimeZone } from './time.js';
 
-const allPages = new Set(['today', 'plan', 'search', 'tags', 'library', 'topics', 'quadrant', 'archived', 'trash', 'focus', 'stats']);
+const allPages = new Set(['today', 'plan', 'search', 'tags', 'library', 'topics', 'quadrant', 'archived', 'trash', 'focus', 'stats', 'learning']);
 
 export * from '../domain/chat-context.js';
 import { chatContextV2, chatContextV3, type ChatContextV2, type StoredChatContext } from '../domain/chat-context.js';

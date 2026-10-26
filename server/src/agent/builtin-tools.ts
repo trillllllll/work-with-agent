@@ -11,6 +11,7 @@ import { canonical } from '../application/commands.js';
 import { redact } from '../infrastructure/controlled-execution.js';
 import { LibraryService } from '../application/library/service.js';
 import { runAgentMemoryTool, validateConversationSearchArguments, validateMemoryArguments } from '../application/agent-memory.js';
+import { learningRead } from '../application/learning.js';
 import { ownerActor } from '../application/security.js';
 import { TaskService, TopicService, TagService } from '../application/workspace.js';
 import { queryTaskActivity } from '../application/task-activity.js';
@@ -231,7 +232,7 @@ export async function executeBuiltinTool(input: {
       if (!input.loadSkill) return CAPABILITY_UNAVAILABLE;
       const name = typeof input.args.name === 'string' ? input.args.name.trim() : '';
       if (!name) return { success: false, code: 'NOT_FOUND' };
-      const skill = await prisma.skill.findFirst({ where: { name, enabled: true, deletedAt: null } });
+      const skill = await prisma.skill.findFirst({ where: { name, enabled: true, deletedAt: null, identityId: input.context.identityId ?? 'work' } });
       if (!skill) return { success: false, code: 'NOT_FOUND' };
       return { success: true, data: { skillId: skill.id, name: skill.name, revision: skill.revision, description: skill.description, instructions: skill.instructions } };
     }
@@ -239,7 +240,7 @@ export async function executeBuiltinTool(input: {
     const args = input.args;
     if (input.name === 'image_search') return { success: true, data: await searchImages(args) };
     if (input.name === 'present_reply') return { success: false, code: 'PRESENT_REPLY_CHANNEL_REQUIRED', error: '富媒体回答必须通过独立展示流提交，不能作为业务工具执行' };
-    if (input.name === 'read_app_knowledge') return { success: true, data: readAppKnowledge(args) };
+    if (input.name === 'read_app_knowledge') return { success: true, data: readAppKnowledge(args, input.context.identityId ?? 'work') };
     if (input.name === 'read_page_state') {
       if (Object.keys(args).length) throw new DomainError('INVALID_TOOL_ARGUMENTS', 'read_page_state 不接受额外参数', 400);
       return { success: true, data: await readPageState(input.context) };
@@ -271,21 +272,22 @@ export async function executeBuiltinTool(input: {
       return { success: true, data: redact({ ...data, ...(revision && args.action === 'read' ? { viewedRevision: revision, note: '正文使用本次发送时的 viewedRevision；revision 是资料当前最新版本。' } : {}) }) };
     }
     if (input.name === 'memory_read') return redact(await memoryRead(args, input.context)) as BuiltinResult;
+    if (input.name === 'learning_read') return { success: true, data: redact(await learningRead(args)) };
     if (input.name === 'conversation_search') {
       const invalid = validateConversationSearchArguments(args);
       if (invalid) throw new DomainError('INVALID_TOOL_ARGUMENTS', invalid, 400);
       if (typeof args.messageId === 'string' && args.messageId) {
-        const row = await prisma.message.findUnique({ where: { id: args.messageId } });
+        const row = await prisma.message.findFirst({ where: { id: args.messageId, conversation: { identityId: input.context.identityId ?? 'work' } } });
         if (!row || !['user', 'assistant'].includes(row.role)) throw new DomainError('NOT_FOUND', '消息不存在', 404);
         const [expanded] = await withChatAttachments([row]);
         return { success: true, data: redact({ conversationId: row.conversationId, messages: [{ messageId: row.id, role: row.role, content: expanded.content, createdAt: row.createdAt }], truncated: false }) };
       }
       const topicId = input.context.scope.kind === 'topic' ? input.context.scope.topicId : null;
-      return redact(await runAgentMemoryTool({ name: 'conversation_search', arguments: args }, { conversationId: input.run.conversationId, topicId })) as BuiltinResult;
+      return redact(await runAgentMemoryTool({ name: 'conversation_search', arguments: args }, { conversationId: input.run.conversationId, topicId, identityId: input.context.identityId ?? 'work' })) as BuiltinResult;
     }
     if (input.name === 'get_change_schema') {
       const family = args.family;
-      if (family !== 'workspace' && family !== 'library' && family !== 'memory' && family !== 'skill') throw new DomainError('INVALID_TOOL_ARGUMENTS', 'family 无效', 400);
+      if (family !== 'workspace' && family !== 'library' && family !== 'memory' && family !== 'learning' && family !== 'skill') throw new DomainError('INVALID_TOOL_ARGUMENTS', 'family 无效', 400);
       return { success: true, data: changeSchemaDocument(family, typeof args.kind === 'string' ? args.kind : undefined) };
     }
     if (input.name === 'prepare_external_prompt') {

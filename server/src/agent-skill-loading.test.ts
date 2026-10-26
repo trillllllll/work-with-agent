@@ -7,7 +7,7 @@ import { builtinToolDefinitions } from './agent/capabilities.js';
 import { createSkill, deleteSkill } from './application/skills.js';
 import { prisma } from './infrastructure/prisma.js';
 
-const allTools = ['present_reply', 'image_search', 'read_app_knowledge', 'read_page_state', 'get_time', 'list_plan_time_bands', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'conversation_search', 'get_change_schema', 'propose_changes', 'prepare_external_prompt', 'orchestration_read', 'orchestration_stats', 'propose_worktree_cleanup'];
+const allTools = ['present_reply', 'image_search', 'read_app_knowledge', 'read_page_state', 'get_time', 'list_plan_time_bands', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'learning_read', 'conversation_search', 'get_change_schema', 'propose_changes', 'prepare_external_prompt', 'orchestration_read', 'orchestration_stats', 'propose_worktree_cleanup'];
 const baseTools = toolsForGroups(['tasks']).map(tool => tool.function.name);
 const context = contextFromRequest({ pageContext: { page: 'inbox' } });
 const run = { id: 'skill-run', leaseToken: 'skill-token', conversationId: 'skill-conversation', assistantMessageId: 'skill-assistant', sourceUserMessageId: 'skill-user' };

@@ -105,8 +105,8 @@ export class ModelAdapter {
     if (!payload?.choices?.[0]) throw modelError('模型服务返回了无效的连接测试结果', 'MODEL_INVALID_RESPONSE');
   }
 
-  async *stream(messages: ModelMessage[], signal?: AbortSignal, includeTools = true, tools?: ModelToolDefinition[]): AsyncGenerator<ModelDelta> {
-    const config = await this.settings.credentials();
+  async *stream(messages: ModelMessage[], signal?: AbortSignal, includeTools = true, tools?: ModelToolDefinition[], identityId?: string): AsyncGenerator<ModelDelta> {
+    const config = await this.settings.credentials(identityId);
     if (!config) throw modelError('未配置模型服务，请先在设置页填写接口地址、API Key 和模型名称', 'MODEL_NOT_CONFIGURED');
     const response = await this.request(config, messages, includeTools, true, signal, tools);
     if (!response.body) throw modelError('模型服务没有返回流', 'MODEL_EMPTY_STREAM');
@@ -204,23 +204,23 @@ export class AgentService {
 
   constructor(model: ModelAdapter | undefined = undefined, tools = new ToolService()) { this.tools = tools; this.model = model ?? new ModelAdapter(new SettingsService(), () => builtinToolDefinitions()); this.context = new ContextService(this.model); }
 
-  private streamModel(messages: ModelMessage[], signal?: AbortSignal, includeTools = true, tools?: ModelToolDefinition[]) { return this.model.stream(messages, signal, includeTools, tools); }
+  private streamModel(messages: ModelMessage[], signal?: AbortSignal, includeTools = true, tools?: ModelToolDefinition[], identityId?: string) { return this.model.stream(messages, signal, includeTools, tools, identityId); }
 
   async boot() {
     this.stopRuns?.();
-    this.stopRuns = startRunScheduler((messages, signal, includeTools, tools) => this.streamModel(messages, signal, includeTools ?? true, tools), this.context);
+    this.stopRuns = startRunScheduler((messages, signal, includeTools, tools, identityId) => this.streamModel(messages, signal, includeTools ?? true, tools, identityId), this.context);
   }
 
   stopScheduler() { this.stopRuns?.(); this.stopRuns = null; }
 
-  async *chatStream(input: { conversationId?: string; message: string; pageContext?: PageContext; context?: unknown; requestKey?: string; signal?: AbortSignal }): AsyncGenerator<ChatEvent> {
+  async *chatStream(input: { conversationId?: string; message: string; pageContext?: PageContext; context?: unknown; requestKey?: string; identityId?: string; signal?: AbortSignal }): AsyncGenerator<ChatEvent> {
     const run = await startChat(input);
-    if (run.state === 'queued') scheduleRun(run.id, (messages, signal, includeTools, tools) => this.streamModel(messages, signal, includeTools ?? true, tools), this.context);
+    if (run.state === 'queued') scheduleRun(run.id, (messages, signal, includeTools, tools, identityId) => this.streamModel(messages, signal, includeTools ?? true, tools, identityId), this.context);
     yield* followRun(run.id);
     return;
   }
 
-  async chat(input: { conversationId?: string; message: string; pageContext?: PageContext; context?: unknown; requestKey?: string; signal?: AbortSignal }) { const events: ChatEvent[] = []; for await (const event of this.chatStream(input)) events.push(event); return { conversationId: events.find((event) => event.conversationId)?.conversationId, events }; }
+  async chat(input: { conversationId?: string; message: string; pageContext?: PageContext; context?: unknown; requestKey?: string; identityId?: string; signal?: AbortSignal }) { const events: ChatEvent[] = []; for await (const event of this.chatStream(input)) events.push(event); return { conversationId: events.find((event) => event.conversationId)?.conversationId, events }; }
 
   async summarize(conversationId: string, text: string, signal?: AbortSignal) {
     try { const result = await this.model.complete([{ role: 'system', content: '请用简短中文说明刚才的任务变更结果，不要调用工具。' }, { role: 'user', content: text }], signal); return result.text || '变更已执行。'; } catch { return undefined; }
@@ -239,7 +239,7 @@ export class AgentService {
     const envelope = readEnvelope(approval.result);
     if (envelope) {
       const body = await approveAppChanges(approvalId, input);
-      if (body && typeof body === 'object' && (body as { resumed?: boolean }).resumed) scheduleRun(envelope.runId, (messages, signal, includeTools, tools) => this.streamModel(messages, signal, includeTools ?? true, tools), this.context);
+      if (body && typeof body === 'object' && (body as { resumed?: boolean }).resumed) scheduleRun(envelope.runId, (messages, signal, includeTools, tools, identityId) => this.streamModel(messages, signal, includeTools ?? true, tools, identityId), this.context);
       return { approval: await approvalView(approvalId), run: await runView(envelope.runId), ...(body as object) };
     }
     if (readStoredApproval(approval.result).resultState === 'batch') return approveTaskBatch(approvalId);
@@ -304,13 +304,14 @@ export class AgentService {
     const context = JSON.parse(run.contextJson) as { attachments?: Array<{ id: string }> };
     return { id: run.id, conversationId: run.conversationId, state: run.state, message: message?.content || '', attachmentIds: context.attachments?.map((item) => item.id) || [] };
   }
-  async conversationList(cursor?: string) {
+  async conversationList(cursor?: string, identityId?: string) {
     const rows = await prisma.conversation.findMany({
       take: 31, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      where: identityId ? { identityId } : undefined,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-      select: { id: true, createdAt: true, messages: { where: { role: 'user' }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 1, select: { content: true } } },
+      select: { id: true, identityId: true, createdAt: true, messages: { where: { role: 'user' }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 1, select: { content: true } } },
     });
-    return { items: rows.slice(0, 30).map((row) => ({ id: row.id, createdAt: row.createdAt, title: row.messages[0]?.content.slice(0, 100) || '新对话' })), nextCursor: rows.length > 30 ? rows[29].id : null };
+    return { items: rows.slice(0, 30).map((row) => ({ id: row.id, identityId: row.identityId, createdAt: row.createdAt, title: row.messages[0]?.content.slice(0, 100) || '新对话' })), nextCursor: rows.length > 30 ? rows[29].id : null };
   }
   async messages(conversationId: string) { return (await this.snapshot(conversationId)).messages; }
   async snapshot(conversationId: string) {
@@ -327,6 +328,7 @@ export class AgentService {
       const liveMessageId = active && ['queued', 'running'].includes(active.state) ? (JSON.parse(active.cursorJson) as { assistantMessageId?: string }).assistantMessageId : null;
       const contexts = new Map(runs.map((run) => [run.sourceUserMessageId, (() => { const { timeZoneSource, ...context } = JSON.parse(run.contextJson); return context; })()]));
       return {
+        identityId: conversation.identityId,
         messages: messages.map((message) => {
           const stale = message.status !== 'streaming' || message.id !== liveMessageId;
           const blocks = parseMessageBlocks(message.blocksJson).map((block) => stale && block.status === 'pending' ? { ...block, status: 'error' as const, error: '回复已中断，内容未完成' } : block);

@@ -24,6 +24,7 @@ export const chatContextV2 = z.object({
   }).strict().nullable(),
   timeZone: z.string().min(1),
   referencedApprovalId: z.string().min(1).nullable(),
+  identityId: z.enum(['work', 'study']).optional(),
 }).strict();
 
 export type ChatContextV2 = z.infer<typeof chatContextV2>;

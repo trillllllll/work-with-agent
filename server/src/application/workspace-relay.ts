@@ -17,9 +17,9 @@ import { readLive } from './sync-log.js';
 const PREFIX = '/api/v1/sync/relay';
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 const cacheLimit = 24 * 1024 * 1024;
-const ownerFamilies = /^\/api\/(?:chat(?:\/|$)|conversations(?:\/|$)|agent(?:\/|$)|orchestrations(?:\/|$)|nodes(?:\/|$)|worktrees(?:\/|$)|worktree-cleanups(?:\/|$)|project-bindings(?:\/|$)|projects(?:\/|$)|skills(?:\/|$)|focus-sessions(?:\/|$)|stats(?:\/|$)|changes(?:\/|$)|plan(?:\/|$)|settings(?:$|\/(?:reply-style|html-blocks|image-search|api-key)(?:\/|$))|v1\/(?:sync\/archive|assistant\/sources|commands|proposals|knowledge|library|handoffs|runs|runners|artifacts|connections|reviews|plan)(?:\/|$))/;
+const ownerFamilies = /^\/api\/(?:chat(?:\/|$)|conversations(?:\/|$)|agent(?:\/|$)|orchestrations(?:\/|$)|nodes(?:\/|$)|worktrees(?:\/|$)|worktree-cleanups(?:\/|$)|project-bindings(?:\/|$)|projects(?:\/|$)|skills(?:\/|$)|focus-sessions(?:\/|$)|stats(?:\/|$)|changes(?:\/|$)|plan(?:\/|$)|settings(?:$|\/(?:reply-style|html-blocks|image-search|api-key)(?:\/|$))|v1\/(?:sync\/archive|assistant\/sources|commands|proposals|knowledge|library|learning|handoffs|runs|runners|artifacts|connections|reviews|plan)(?:\/|$))/;
 const taskExtras = /^\/api\/tasks\/[^/]+\/(?:images(?:\/[^/]+)?|ai-history|activity|topic-history)$/;
-const scopedFamilies = /^\/api\/v1\/(?:tasks|topics|tags|changes|commands|proposals|knowledge|library|handoffs|runs|runners|artifacts|plan|identity|tools)(?:\/|$)|^\/api\/v1\/trash\/tasks(?:\/|$)/;
+const scopedFamilies = /^\/api\/v1\/(?:tasks|topics|tags|changes|commands|proposals|knowledge|library|learning|handoffs|runs|runners|artifacts|plan|identity|tools)(?:\/|$)|^\/api\/v1\/trash\/tasks(?:\/|$)/;
 const ordinaryTaskCommand = (body: any) => Array.isArray(body?.commands) && body.commands.length > 0 && body.commands.every((command: any) => /^(?:task|topic|tag)\./.test(command.kind) && command.kind !== 'task.reference_materials');
 export function relayPathAllowed(path: string) { return ownerFamilies.test(path) || taskExtras.test(path) || /^\/api\/(?:tasks|topics|tags)(?:\/|$)/.test(path); }
 const canCache = (path: string) => !/event-stream/.test(path) && /^\/api\/(?:conversations(?:\/|$)|v1\/(?:knowledge|library|artifacts)(?:\/|$)|tasks\/[^/]+\/(?:images\/|activity$|topic-history$|ai-history$))/.test(path);

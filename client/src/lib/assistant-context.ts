@@ -3,7 +3,7 @@ import type { ChatContextV3, ChatAttachment } from '../../../server/src/domain/c
 import { t } from '../i18n/index.js';
 export type { ChatContextV3, ChatAttachment };
 
-const pageNameIds = ['inbox', 'board', 'today', 'plan', 'search', 'tags', 'library', 'knowledge', 'topics', 'quadrant', 'archived', 'trash', 'focus', 'stats', 'settings', 'connections', 'skills', 'proposals', 'changes', 'runs', 'worktrees', 'reviews', 'more'] as const;
+const pageNameIds = ['inbox', 'board', 'today', 'plan', 'search', 'tags', 'library', 'knowledge', 'topics', 'quadrant', 'archived', 'trash', 'focus', 'stats', 'settings', 'connections', 'skills', 'proposals', 'changes', 'runs', 'worktrees', 'reviews', 'learning', 'more'] as const;
 export const pageNames: Record<string, string> = {};
 for (const id of pageNameIds) Object.defineProperty(pageNames, id, { enumerable: true, get: () => t(`chat:pageNames.${id}`) });
 type PublishedContext = { page: string; value: Partial<ChatContextV3> };
@@ -39,4 +39,8 @@ export function askAssistant(attachment?: Omit<ChatAttachment, 'id'>) {
 export function suggestions(page: string): string[] {
   const group = page === 'plan' ? 'plan' : page === 'library' ? 'library' : page === 'settings' || page === 'connections' ? 'settings' : 'default';
   return [1, 2, 3].map((index) => t(`chat:suggestions.${group}.${index}`));
+}
+/** 学习助手的起手问题；不跟页面走。 */
+export function studySuggestions(): string[] {
+  return [1, 2, 3].map((index) => t(`chat:suggestions.study.${index}`));
 }

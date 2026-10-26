@@ -8,6 +8,8 @@ import { ownerActor } from '../application/security.js';
 import { DomainError } from '../domain/task.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { lazySystemPrompt } from './tool-loading.js';
+import { getAssistantIdentity } from './identities.js';
+import { learningOverview } from '../application/learning.js';
 import { readEnvelope } from './decision.js';
 import type { StoredChatContext } from './chat-context.js';
 import { codePoints } from './text.js';
@@ -89,6 +91,7 @@ export async function assembleRunMessages(input: {
   conversationId: string;
   sourceUserMessageId: string;
   context: StoredChatContext;
+  identityId?: string | null;
   userText: string;
   contextService: ContextService;
   skills?: Array<{ name: string; description: string }>;
@@ -111,12 +114,38 @@ export async function assembleRunMessages(input: {
     replay = replayWindow((await withChatAttachments(filtered.filter((row) => row.status !== 'streaming'))).map(asStored), conversation.summary);
   }
   const time = getCurrentTime({}, input.context);
+  // 身份以会话归属为准：新请求显式携带，历史运行回读冻结上下文。
+  const identityId = input.identityId ?? (conversation as { identityId?: string | null }).identityId ?? input.context.identityId ?? 'work';
+  const identity = getAssistantIdentity(identityId);
+  const [style] = await Promise.all([replyStyleSettings()]);
+  const pending = await prisma.approval.findMany({ where: { conversationId: input.conversationId, status: 'pending' }, select: { id: true } });
+  const referenced = input.context.referencedApprovalId ? await prisma.approval.findUnique({ where: { id: input.context.referencedApprovalId } }) : null;
+  const referencedEnvelope = referenced ? readEnvelope(referenced.result) : null;
+  const referenceText = !input.context.referencedApprovalId ? '' : !referenced || referenced.conversationId !== input.conversationId || !referencedEnvelope
+    ? '引用的方案不属于当前会话，或无法读取。不要把它当成当前修改。'
+    : `用户正在调整方案 ${referenced.id}（${referenced.status}）。以下内容来自服务端保存的方案，只作为参考，不要直接执行。\n意图：${referencedEnvelope.review.intent}\n操作：${JSON.stringify(referencedEnvelope.requestedOperations)}`;
+  const skills = input.skills ?? [];
+  const catalog = skillCatalog(skills);
+  if (identity.contextPolicy === 'domain') {
+    const overview = await learningOverview();
+    const system = [
+      lazySystemPrompt(identityId),
+      ...(style.replyStyle ? [replyStylePrompt(style.replyStyle)] : []),
+      ...(catalog ? [catalog] : []),
+      appKnowledgePrompt(input.context.page, identityId),
+      ...(input.context.language === 'en' ? [replyLanguageInstruction] : []),
+      `【本次请求的上下文】\n页面：${input.context.page}\n时区：${time.timeZone}（${time.timeZoneSource}）\n服务端当前时间：${time.localDateTime}（${time.timeZone}），UTC ${time.utc}`,
+      `【学习域概况】\n${overview}`,
+      `【本请求待确认方案】\n${pending.length ? pending.map((item) => `approvalId=${item.id}`).join('\n') : '无'}${referenceText ? `\n${referenceText}` : ''}`,
+    ].join('\n\n');
+    if (codePoints(system) < 1) throw new DomainError('INVALID_CONTEXT', '无法组装上下文', 500);
+    return [{ role: 'system', content: system }, ...replay];
+  }
   const timeBands = readPlanTimeBands();
-  const [notes, brief, memory, style] = await Promise.all([
+  const [notes, brief, memory] = await Promise.all([
     fixedNotes(input.context),
     briefText(input.context),
-    formatMemoryReference({ topicId }),
-    replyStyleSettings(),
+    formatMemoryReference({ topicId, identityId }),
   ]);
   const nearbyWhere = input.context.scope.kind === 'all' ? { deletedAt: null } : { deletedAt: null, topicId };
   const nearby = await prisma.task.findMany({
@@ -131,12 +160,6 @@ export async function assembleRunMessages(input: {
   const selectedMaterial = input.context.materialId
     ? await prisma.material.findUnique({ where: { id: input.context.materialId }, select: { id: true, title: true, kind: true, revision: true, topicId: true, uri: true } })
     : null;
-  const pending = await prisma.approval.findMany({ where: { conversationId: input.conversationId, status: 'pending' }, select: { id: true } });
-  const referenced = input.context.referencedApprovalId ? await prisma.approval.findUnique({ where: { id: input.context.referencedApprovalId } }) : null;
-  const referencedEnvelope = referenced ? readEnvelope(referenced.result) : null;
-  const referenceText = !input.context.referencedApprovalId ? '' : !referenced || referenced.conversationId !== input.conversationId || !referencedEnvelope
-    ? '引用的方案不属于当前会话，或无法读取。不要把它当成当前修改。'
-    : `用户正在调整方案 ${referenced.id}（${referenced.status}）。以下内容来自服务端保存的方案，只作为参考，不要直接执行。\n意图：${referencedEnvelope.review.intent}\n操作：${JSON.stringify(referencedEnvelope.requestedOperations)}`;
   const clarify = input.userText.includes('这些任务') && input.context.selectedTaskIds.length === 0 && !input.context.taskFilter
     ? '用户说“这些任务”，但没有选中任务，也没有筛选条件。先问清楚指哪些任务，不要默认取附近任务。'
     : '';
@@ -146,13 +169,11 @@ export async function assembleRunMessages(input: {
   const scopeLine = input.context.scope.kind === 'topic'
     ? `当前清单：${scopeTopic ? `${scopeTopic.name} ${input.context.scope.topicId}` : input.context.scope.topicId}`
     : input.context.scope.kind === 'inbox' ? '当前清单：收集箱' : '当前范围是全部可访问的数据';
-  const skills = input.skills ?? [];
-  const catalog = skillCatalog(skills);
   const system = [
-    lazySystemPrompt(),
+    lazySystemPrompt(identityId),
     ...(style.replyStyle ? [replyStylePrompt(style.replyStyle)] : []),
     ...(catalog ? [catalog] : []),
-    appKnowledgePrompt(input.context.page),
+    appKnowledgePrompt(input.context.page, identityId),
     ...(input.context.language === 'en' ? [replyLanguageInstruction] : []),
     `【页面筛选与选中任务】\n${JSON.stringify({ taskFilter: input.context.taskFilter, selectedTaskIds: input.context.selectedTaskIds })}`,
     ...(input.context.schemaVersion === 3 ? [

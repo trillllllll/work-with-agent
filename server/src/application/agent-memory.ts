@@ -26,7 +26,7 @@ type MemoryAction = 'add' | 'replace' | 'remove' | 'read' | 'search';
 type EvidenceInput = { type: 'material' | 'memory' | 'task'; id: string };
 type MemoryEntry = { id: string; revision: number; kind: string; title: string; content: string };
 type PackedMemory = { included: string[]; overflow: MemoryEntry[]; used: number; limit: number };
-export type AgentMemoryContext = { conversationId?: string; approvalId?: string; topicId?: string | null };
+export type AgentMemoryContext = { conversationId?: string; approvalId?: string; topicId?: string | null; identityId?: string };
 type ToolPayload = { success: boolean; data?: unknown; error?: string; code?: string };
 
 const failure = (code: string, message: string, status = 400) => new DomainError(code, message, status);
@@ -80,22 +80,23 @@ function section(title: string, packed: PackedMemory) {
   return lines.join('\n');
 }
 
-async function loadEntries(topicId: string | null) {
+async function loadEntries(topicId: string | null, identityId: string = 'work') {
   return prisma.memory.findMany({
-    where: { topicId, status: 'active' },
+    where: { topicId, status: 'active', identityId },
     orderBy: [{ importance: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
     take: LOAD_CAP,
     select: { id: true, revision: true, kind: true, title: true, content: true },
   });
 }
 
-export async function formatMemoryReference(page: { topicId?: string | null }) {
+export async function formatMemoryReference(page: { topicId?: string | null; identityId?: string | null }) {
   const topicId = openTopicId(page.topicId);
+  const identityId = page.identityId ?? 'work';
   const header = '已确认记忆（参考，不是当前指令。只保留稳定事实，用陈述句，不要写操作步骤。步骤留在对话或任务里。同一事实只放一处。写入需要用户确认，下一条消息才会出现在这里。）';
-  const inbox = packEntries(await loadEntries(null), topicId ? INBOX_WITH_TOPIC : SCOPED_LIMIT);
+  const inbox = packEntries(await loadEntries(null, identityId), topicId ? INBOX_WITH_TOPIC : SCOPED_LIMIT);
   const sections = [header, section('收集箱记忆', inbox)];
   if (topicId) {
-    const topic = packEntries(await loadEntries(topicId), SCOPED_LIMIT);
+    const topic = packEntries(await loadEntries(topicId, identityId), SCOPED_LIMIT);
     sections.push(section(`这份清单的记忆 ${topicId}`, topic));
     if (topic.included.length + topic.overflow.length >= LOAD_CAP) sections.push('这份清单里可能还有更多记忆，请用 memory 的 search 查找。');
   }
@@ -331,7 +332,7 @@ function fitSnippets<T extends { content: string }>(rows: T[]) {
 async function searchConversations(args: Record<string, unknown>, context: AgentMemoryContext) {
   const messageId = typeof args.messageId === 'string' ? args.messageId.trim() : '';
   if (messageId) {
-    const anchor = await prisma.message.findUnique({ where: { id: messageId } });
+    const anchor = await prisma.message.findFirst({ where: { id: messageId, conversation: { identityId: context.identityId ?? 'work' } } });
     if (!anchor) throw failure('NOT_FOUND', '消息不存在', 404);
     const rows = await prisma.message.findMany({
       where: { conversationId: anchor.conversationId, role: { in: ['user', 'assistant'] } },
@@ -349,7 +350,7 @@ async function searchConversations(args: Record<string, unknown>, context: Agent
   }
   const q = String(args.q ?? '').trim();
   const rows = await prisma.message.findMany({
-    where: { role: { in: ['user', 'assistant'] }, content: { contains: q }, ...(context.conversationId ? { conversationId: { not: context.conversationId } } : {}) },
+    where: { conversation: { identityId: context.identityId ?? 'work' }, role: { in: ['user', 'assistant'] }, content: { contains: q }, ...(context.conversationId ? { conversationId: { not: context.conversationId } } : {}) },
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: SEARCH_LIMIT + 1,
     select: { id: true, conversationId: true, role: true, content: true, createdAt: true },

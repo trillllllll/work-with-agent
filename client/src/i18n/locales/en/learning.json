@@ -1,0 +1,42 @@
+{
+  "title": "Learning maps",
+  "defaultGoal": "Chat with the study assistant to plan what to learn.",
+  "askAssistant": "Ask study assistant",
+  "selectMap": "Learning map",
+  "loadFailed": "Failed to load learning maps",
+  "stats": {
+    "topics": "Topics",
+    "items": "Checklist items",
+    "done": "Completed",
+    "mastery": "Average mastery"
+  },
+  "empty": {
+    "title": "No learning maps yet",
+    "hint": "Open the study assistant and tell it what you want to learn. It will draft a learning map and checklist items; they appear here after you confirm."
+  },
+  "chart": {
+    "label": "Learning map structure, color encodes mastery",
+    "mastery": "Mastery"
+  },
+  "detail": {
+    "panel": "Item details",
+    "empty": "Click a node in the map to see details.",
+    "mastery": "Mastery"
+  },
+  "kind": {
+    "topic": "Topic",
+    "item": "Checklist item"
+  },
+  "status": {
+    "todo": "To learn",
+    "learning": "Learning",
+    "done": "Completed"
+  },
+  "activity": {
+    "title": "Recent learning activity",
+    "session": "Session",
+    "status": "Progress",
+    "note": "Note",
+    "empty": "No activity yet"
+  }
+}
