@@ -52,7 +52,7 @@ async function expectNoCollisions(scope: Locator) {
   expect(problems).toEqual([]);
 }
 
-test('截图场景：三条分成两条泳道，已完成的统计qps在右侧，开关后重排', async ({ page }) => {
+test('截图场景：三条分成两条泳道，完成状态不改变既有左右顺序', async ({ page }) => {
   await seedScreenshotScenario();
   await openDay(page);
   await page.getByLabel('显示已完成', { exact: true }).check();
@@ -185,4 +185,45 @@ test('拖动泳道里的任务只改时间，拖进拥挤时段不会中断，�
   }).toPass({ timeout: 15_000 });
   await expect(col.getByTestId('plan-lane-more')).toBeVisible();
   await expectNoCollisions(col);
+});
+
+
+test('父子默认相邻，水平换列持久化且不改排期或清单顺序', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === 'mobile', '鼠标水平换列');
+  await e2eDatabase.task.createMany({ data: [
+    { id: 'a-parent', title: '主任务', scheduledStart: at('10:00'), scheduledEnd: at('11:00'), dueDate: day, sortOrder: 0 },
+    { id: 'b-child', title: '子任务', parentId: 'a-parent', scheduledStart: at('10:00'), scheduledEnd: at('11:00'), dueDate: day, sortOrder: 0 },
+    { id: 'z-other', title: '其他任务', scheduledStart: at('10:00'), scheduledEnd: at('11:00'), dueDate: day, sortOrder: 0 },
+  ] });
+  await openDay(page);
+  await page.getByLabel('显示已完成', { exact: true }).check();
+  const col = column(page);
+  await scrollTo(page, 9.5);
+  expect(await lanes(col, 'a-parent')).toEqual({ lane: 0, count: 3 });
+  expect(await lanes(col, 'b-child')).toEqual({ lane: 1, count: 3 });
+  expect(await lanes(col, 'z-other')).toEqual({ lane: 2, count: 3 });
+
+  const source = (await card(col, 'b-child').locator('article').getByRole('button', { name: /^打开任务/ }).boundingBox())!;
+  const target = (await card(col, 'a-parent').boundingBox())!;
+  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(source.x + source.width / 2 - 20, source.y + source.height / 2, { steps: 4 });
+  await page.mouse.move(target.x + target.width * 0.25, target.y + target.height / 2, { steps: 16 });
+  await expect(card(col, 'a-parent').locator('article')).toHaveAttribute('data-lane-drop', 'before');
+  await page.mouse.up();
+
+  await expect.poll(() => lanes(col, 'b-child')).toEqual({ lane: 0, count: 3 });
+  expect(await lanes(col, 'a-parent')).toEqual({ lane: 1, count: 3 });
+  expect(await lanes(col, 'z-other')).toEqual({ lane: 2, count: 3 });
+  const child = (await (await page.request.get(`${apiUrl}/api/tasks/b-child`)).json()).data;
+  expect(child).toMatchObject({ scheduledStart: at('10:00'), scheduledEnd: at('11:00'), dueDate: day, parentId: 'a-parent', sortOrder: 0 });
+
+  await page.reload();
+  await expect.poll(() => lanes(column(page), 'b-child')).toEqual({ lane: 0, count: 3 });
+  expect(await lanes(column(page), 'a-parent')).toEqual({ lane: 1, count: 3 });
+  await column(page).getByLabel('完成任务：子任务', { exact: true }).click();
+  await page.getByRole('dialog', { name: '确认连带修改' }).getByRole('button', { name: '确认影响并执行', exact: true }).click();
+  await expect(column(page).getByLabel('重开任务：子任务', { exact: true })).toBeVisible();
+  expect(await lanes(column(page), 'b-child')).toEqual({ lane: 0, count: 3 });
+  await expectNoCollisions(column(page));
 });

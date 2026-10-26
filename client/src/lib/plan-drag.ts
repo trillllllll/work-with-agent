@@ -1,4 +1,42 @@
-import type { AutoScrollOptions, Modifier } from '@dnd-kit/core';
+import { pointerWithin, type AutoScrollOptions, type CollisionDetection, type DragEndEvent, type DragOverEvent, type Modifier, type Translate } from '@dnd-kit/core';
+
+export type PlanLaneDrop = { groupKey: string; sourceTaskId: string; targetTaskId: string; taskIds: string[]; side: 'before' | 'after' };
+type PlanDragEvent = DragOverEvent | DragEndEvent;
+
+export function horizontalPlanDrag(delta: Translate) {
+  return Math.abs(delta.x) >= 12 && Math.abs(delta.x) > Math.abs(delta.y) * 1.25;
+}
+
+/** Prefer same-group cards only for a horizontal drag; otherwise preserve time-slot drops. */
+export function createPlanCollisionDetection(isHorizontal: () => boolean): CollisionDetection {
+  return (args) => {
+    const source = args.active.data.current?.laneGroup as { groupKey?: string; dateKey?: string } | undefined;
+    const containers = new Map(args.droppableContainers.map((container) => [String(container.id), container]));
+    const horizontal = isHorizontal();
+    return pointerWithin(args).map((collision) => {
+      const container = containers.get(String(collision.id));
+      const target = container?.data.current?.laneDrop as { groupKey?: string; dateKey?: string } | undefined;
+      const eligible = Boolean(horizontal && target && source && target.groupKey === source.groupKey && target.dateKey === source.dateKey);
+      const isLane = Boolean(target);
+      const rank = eligible ? 0 : horizontal ? isLane ? 2 : 1 : isLane ? 1 : 0;
+      const rect = container?.rect.current;
+      const laneSide = args.pointerCoordinates && rect ? args.pointerCoordinates.x < rect.left + rect.width / 2 ? 'before' : 'after' : undefined;
+      return { collision, rank, laneSide };
+    }).sort((a, b) => a.rank - b.rank).map(({ collision, laneSide }) => laneSide ? { ...collision, data: { ...collision.data, laneSide } } : collision);
+  };
+}
+
+export function planLaneDrop(event: PlanDragEvent): PlanLaneDrop | null {
+  if (!event.over || !horizontalPlanDrag(event.delta)) return null;
+  const source = event.active.data.current?.laneGroup as { groupKey?: string; dateKey?: string } | undefined;
+  const sourceTaskId = event.active.data.current?.task?.id as string | undefined;
+  const target = event.over.data.current?.laneDrop as { groupKey?: string; dateKey?: string; taskId?: string; groupTaskIds?: string[] } | undefined;
+  if (!source || !sourceTaskId || !target?.groupKey || !target.taskId || !target.groupTaskIds?.length) return null;
+  if (source.groupKey !== target.groupKey || source.dateKey !== target.dateKey || sourceTaskId === target.taskId) return null;
+  const collision = event.collisions?.find((item) => String(item.id) === String(event.over!.id));
+  const side = collision?.data?.laneSide === 'before' ? 'before' : collision?.data?.laneSide === 'after' ? 'after' : event.delta.x >= 0 ? 'after' : 'before';
+  return { groupKey: target.groupKey, sourceTaskId, targetTaskId: target.taskId, taskIds: [...target.groupTaskIds], side };
+}
 
 const weekdayIds = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 const overlayInset = 8;

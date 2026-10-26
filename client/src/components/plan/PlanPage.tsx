@@ -4,7 +4,7 @@ import { NativeSelect } from '@/components/ui/native-select.js';
 import { useTranslation } from 'react-i18next';
 import { usePageContext } from '@/lib/assistant-context.js';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { DndContext, DragOverlay, MouseSensor, TouchSensor, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent, type DragMoveEvent, type DragStartEvent, type DragOverEvent } from '@dnd-kit/core';
+import { DndContext, DragOverlay, MouseSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent, type DragMoveEvent, type DragStartEvent, type DragOverEvent } from '@dnd-kit/core';
 import type { Tag, Task, Topic } from '@/lib/api.js';
 import { useMediaQuery } from '@/hooks/useMediaQuery.js';
 import { useLocalDate, useTasks } from '@/hooks/useTodo.js';
@@ -24,7 +24,8 @@ import { TimeBandControls } from './TimeBandDialog.js';
 import { usePlanTimeBands } from './usePlanTimeBands.js';
 import { ChevronLeft, ChevronRight, PanelRight, X } from 'lucide-react';
 import { laneCap, layoutLanes, type LaneMore } from '@/lib/plan-layout.js';
-import { clampPlanDragOverlay, formatPlanDay, planAutoScroll, weekdayIdOf } from '@/lib/plan-drag.js';
+import { clampPlanDragOverlay, createPlanCollisionDetection, formatPlanDay, horizontalPlanDrag, planAutoScroll, planLaneDrop, weekdayIdOf, type PlanLaneDrop } from '@/lib/plan-drag.js';
+import { loadPlanLaneOrders, movePlanLaneOrder, planLaneOrderLimit, savePlanLaneOrder, type PlanLaneOrders } from '@/lib/plan-lane-order.js';
 
 const narrowOverlayModifiers = [clampPlanDragOverlay];
 // dnd-kit sizes the overlay to the dragged node; a 54px phone month bar would stack the date preview one glyph per line.
@@ -64,8 +65,9 @@ function DropTarget({ id, className, style, children }: { id: string; className?
   const { setNodeRef, isOver } = useDroppable({ id });
   return <div ref={setNodeRef} data-drop-id={id} data-over={isOver ? '' : undefined} style={style} className={cn(className, isOver && 'bg-primary/10 outline-2 outline-primary/40')}>{children}</div>;
 }
-function DragTask({ task, instance, busy, offset = 0, className, style, lane, laneCount, children }: { task: Task; instance: string; busy: boolean; offset?: number; className?: string; style?: CSSProperties; lane?: number; laneCount?: number; children: ReactNode }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `${task.id}:${instance}`, data: { task, offset }, disabled: busy });
+type LaneGroup = { groupKey: string; dateKey: string };
+function DragTask({ task, instance, busy, offset = 0, className, style, lane, laneCount, laneGroup, children }: { task: Task; instance: string; busy: boolean; offset?: number; className?: string; style?: CSSProperties; lane?: number; laneCount?: number; laneGroup?: LaneGroup; children: ReactNode }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `${task.id}:${instance}`, data: { task, offset, laneGroup }, disabled: busy });
   return <div ref={setNodeRef} style={{ ...style, touchAction: 'manipulation' }} className={cn('plan-drag-source', className, isDragging && 'opacity-40')} {...listeners} {...attributes} data-lane={lane} data-lane-count={laneCount}>{children}</div>;
 }
 function ResizeHandle({ task, edge, busy, onOpen }: { task: Task; onOpen: Props['onOpen']; edge: 'start' | 'end'; busy: boolean }) {
@@ -85,17 +87,19 @@ function clock(min: number) {
 function timedRange(block: TimedBlock) {
   return `${block.startsHere ? formatTime(block.task.scheduledStart!) : '00:00'}—${block.endsHere ? formatTime(block.task.scheduledEnd!) : '24:00'}`;
 }
-function TimedTask({ block, dateKey, busy, left, width, lane, laneCount, onOpen, onToggle, skipClick }: { block: TimedBlock; dateKey: string; busy: boolean; left: number; width: number; lane: number; laneCount: number; onOpen: Props['onOpen']; onToggle: Props['onToggle']; skipClick: { current: boolean } }) {
+function TimedTask({ block, dateKey, busy, left, width, lane, laneCount, groupKey, groupTaskIds, laneDrop, onOpen, onToggle, skipClick }: { block: TimedBlock; dateKey: string; busy: boolean; left: number; width: number; lane: number; laneCount: number; groupKey: string; groupTaskIds: string[]; laneDrop: PlanLaneDrop | null; onOpen: Props['onOpen']; onToggle: Props['onToggle']; skipClick: { current: boolean } }) {
   const { t } = useTranslation('plan');
   const task = block.task;
+  const { setNodeRef: setDropRef } = useDroppable({ id: `lane:${dateKey}:${task.id}`, disabled: busy, data: { laneDrop: { groupKey, dateKey, taskId: task.id, groupTaskIds } } });
   const height = block.point ? 28 : Math.max(24, (block.endMin - block.startMin) / 60 * hourHeight - 2);
   const top = Math.min(block.startMin / 60 * hourHeight, timelineHeight - height);
   const offset = minutesBetween(task.scheduledStart!, addMinutes(`${dateKey}T00:00`, block.startMin));
   const range = timedRange(block);
   const showInline = !block.point && height < 44;
   const title = <>{block.point && <span>● {formatTime(task.scheduledStart!)} </span>}{!block.startsHere && '↳ '}{task.title}</>;
-  return <DragTask task={task} instance={dateKey} offset={offset} busy={busy} lane={lane} laneCount={laneCount} className="plan-lane-card pointer-events-auto absolute z-[2]" style={{ top, height, left: `calc(${left * 100}% + 2px)`, width: `calc(${width * 100}% - 4px)` }}>
-    <article data-testid="task-block" data-task-id={task.id} data-date={dateKey} data-point={block.point} title={t('plan.blockTitle', { title: task.title, schedule: scheduleLabel(task) })} className={cn('plan-timed-task relative h-full overflow-hidden rounded-md border px-1.5 text-xs leading-tight', block.point ? 'flex items-center border-dashed' : 'pt-2 pb-1', task.status === 'done' && 'opacity-55 line-through')}>
+  const dropping = laneDrop?.targetTaskId === task.id && laneDrop.groupKey === groupKey ? laneDrop : null;
+  return <DragTask task={task} instance={dateKey} offset={offset} busy={busy} lane={lane} laneCount={laneCount} laneGroup={{ groupKey, dateKey }} className="plan-lane-card pointer-events-auto absolute z-[2]" style={{ top, height, left: `calc(${left * 100}% + 2px)`, width: `calc(${width * 100}% - 4px)` }}>
+    <article ref={setDropRef} data-testid="task-block" data-task-id={task.id} data-date={dateKey} data-point={block.point} data-lane-drop={dropping?.side} title={t('plan.blockTitle', { title: task.title, schedule: scheduleLabel(task) })} style={dropping ? { boxShadow: dropping.side === 'before' ? 'inset 3px 0 0 var(--primary)' : 'inset -3px 0 0 var(--primary)' } : undefined} className={cn('plan-timed-task relative h-full overflow-hidden rounded-md border px-1.5 text-xs leading-tight', block.point ? 'flex items-center border-dashed' : 'pt-2 pb-1', task.status === 'done' && 'opacity-55 line-through')}>
       {!block.point && block.startsHere && <ResizeHandle task={task} edge="start" busy={busy} onOpen={onOpen} />}
       <div className="flex min-w-0 items-start gap-1">
         <Check task={task} busy={busy} onToggle={onToggle} />
@@ -121,7 +125,7 @@ function NowLine({ dateKey, today }: { dateKey: string; today: string }) {
   return dateKey === today ? <div className="pointer-events-none absolute inset-x-0 z-10 h-0.5 bg-destructive" style={{ top: minutesOf(now) / 60 * hourHeight }} /> : null;
 }
 const allDayPreviewLimit = 2;
-function Timeline({ days, tasks, today, busy, bands, allDayOpen, onAllDayOpen, onOpen, onToggle, onCreate, activeTaskId, skipClick }: { days: string[]; tasks: Task[]; today: string; busy: boolean; bands: readonly PlanTimeBand[]; allDayOpen: boolean | null; onAllDayOpen: (open: boolean) => void; onOpen: Props['onOpen']; onToggle: Props['onToggle']; onCreate: (value: ScheduleValue) => void; activeTaskId: string | null; skipClick: { current: boolean } }) {
+function Timeline({ days, tasks, today, busy, bands, allDayOpen, onAllDayOpen, onOpen, onToggle, onCreate, activeTaskId, skipClick, manualOrders, laneDrop }: { days: string[]; tasks: Task[]; today: string; busy: boolean; bands: readonly PlanTimeBand[]; allDayOpen: boolean | null; onAllDayOpen: (open: boolean) => void; onOpen: Props['onOpen']; onToggle: Props['onToggle']; onCreate: (value: ScheduleValue) => void; activeTaskId: string | null; skipClick: { current: boolean }; manualOrders: PlanLaneOrders; laneDrop: PlanLaneDrop | null }) {
   const { t } = useTranslation('plan');
   const scroller = useRef<HTMLDivElement>(null);
   const calendar = useRef<HTMLDivElement>(null);
@@ -174,7 +178,7 @@ function Timeline({ days, tasks, today, busy, bands, allDayOpen, onAllDayOpen, o
         <div>{Array.from({ length: 24 }, (_, hour) => <div key={hour} className="border-b border-[var(--glass-divider)] pr-1 text-right text-[10px] tabular-nums text-muted-foreground" style={{ height: hourHeight }}>{String(hour).padStart(2, '0')}:00</div>)}</div>
         {days.map((day) => {
           const banded = bandDays.has(day);
-          const { placed, mores } = layoutLanes(layoutTimed(tasks, day), laneCaps[day] ?? laneCap(0), { pinnedTaskId: activeTaskId ?? undefined });
+          const { placed, mores } = layoutLanes(layoutTimed(tasks, day), laneCaps[day] ?? laneCap(0), { pinnedTaskId: activeTaskId ?? undefined, manualOrders });
           return <div key={day} data-testid="time-band-day" data-date={day} data-band-rail={banded ? 'true' : 'false'} className="relative isolate border-l border-[var(--glass-divider)]">
             <TimeBandLayer bands={bands} dateKey={day} />
             {banded && !week && <div data-testid="time-band-rail" className="pointer-events-none absolute inset-y-0 z-[1] border-r border-[var(--glass-divider)]" style={{ width: 'var(--plan-band-rail, 112px)' }} />}
@@ -185,7 +189,7 @@ function Timeline({ days, tasks, today, busy, bands, allDayOpen, onAllDayOpen, o
             })}
             {Array.from({ length: 24 }, (_, hour) => <div key={hour} className="pointer-events-none absolute inset-x-0 z-[1] border-b border-[var(--glass-divider)]" style={{ top: hour * hourHeight, height: hourHeight }} />)}
             <div data-testid="plan-task-lane" className="pointer-events-none absolute inset-y-0 right-0 z-[2]" style={{ left: banded && !week ? 'var(--plan-band-rail, 112px)' : 0 }}>
-              {placed.map((item) => <TimedTask key={item.block.id} block={item.block} dateKey={day} left={item.left} width={item.width} lane={item.lane} laneCount={item.laneCount} busy={busy} onOpen={onOpen} onToggle={onToggle} skipClick={skipClick} />)}
+              {placed.map((item) => <TimedTask key={item.block.id} block={item.block} dateKey={day} left={item.left} width={item.width} lane={item.lane} laneCount={item.laneCount} groupKey={item.groupKey} groupTaskIds={item.groupTaskIds} laneDrop={laneDrop} busy={busy} onOpen={onOpen} onToggle={onToggle} skipClick={skipClick} />)}
               {mores.map((more) => <LaneMoreButton key={more.id} more={more} onOpen={(button, taskIds) => { overlapOpener.current = button; openingTask.current = false; setOverlap({ day, taskIds }); }} />)}
             </div>
             <NowLine dateKey={day} today={today} />
@@ -233,8 +237,12 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
   const [search, setSearch] = useState('');
   const [dragging, setDragging] = useState<Task | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [manualOrders, setManualOrders] = useState<PlanLaneOrders>(loadPlanLaneOrders);
+  const [laneDrop, setLaneDrop] = useState<PlanLaneDrop | null>(null);
   const [preview, setPreview] = useState<{ task: Task; patch: SchedulePatch } | null>(null);
   const [creating, setCreating] = useState<ScheduleValue | null>(null);
+  const horizontalDrag = useRef(false);
+  const collisionDetection = useMemo(() => createPlanCollisionDetection(() => horizontalDrag.current), []);
   const previewRef = useRef(preview);
   const dragData = useRef<{ task: Task; edge?: 'start' | 'end'; offset?: number } | null>(null);
   const skipClick = useRef(false);
@@ -255,7 +263,7 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
   );
   const clearDrag = () => {
-    setDragging(null); setActiveTaskId(null); setPreview(null); previewRef.current = null; dragData.current = null;
+    setDragging(null); setActiveTaskId(null); setLaneDrop(null); setPreview(null); previewRef.current = null; dragData.current = null; horizontalDrag.current = false;
     if (savedTouchAction.current !== null) { document.body.style.touchAction = savedTouchAction.current; savedTouchAction.current = null; }
   };
   const save = async (task: Task, patch: SchedulePatch) => {
@@ -277,7 +285,13 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
   };
   const onDragMove = (event: DragMoveEvent) => {
     const data = dragData.current;
-    if (!data?.edge) return;
+    if (!data?.edge) {
+      horizontalDrag.current = horizontalPlanDrag(event.delta);
+      const reorder = planLaneDrop(event);
+      setLaneDrop(reorder);
+      if (reorder) setPreview(null);
+      return;
+    }
     const patch = resizeSchedule(data.task, data.edge, event.delta.y / hourHeight * 60);
     previewRef.current = patch ? { task: data.task, patch } : null;
     setPreview(previewRef.current);
@@ -301,16 +315,29 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
   };
   const onDragEnd = (event: DragEndEvent) => {
     const data = dragData.current;
-    const patch = data?.edge ? previewRef.current?.patch : dropPatch(event);
+    const reorder = data?.edge ? null : planLaneDrop(event);
+    const patch = reorder ? null : data?.edge ? previewRef.current?.patch : dropPatch(event);
     clearDrag();
     window.setTimeout(() => { skipClick.current = false; }, 400);
-    if (data?.task && patch && !disabled) void save(data.task, patch);
+    if (reorder && !disabled) {
+      const current = manualOrders[reorder.groupKey] ?? reorder.taskIds;
+      const next = movePlanLaneOrder(current, reorder.sourceTaskId, reorder.targetTaskId, reorder.side);
+      setManualOrders(savePlanLaneOrder(reorder.groupKey, next, undefined, Date.now(), planLaneOrderLimit, manualOrders));
+    } else if (data?.task && patch && !disabled) void save(data.task, patch);
   };
   const days = eachDate(range[0], range[1]);
   const error = planned.error || trayQuery.error;
   const overlayDate = dragging ? (preview?.patch.dueDate ?? scheduleDateKey(dragging)) : null;
   const overlayDetail = !dragging ? null : narrow ? (overlayDate ? t('plan.movePreview', { date: formatPlanDay(overlayDate, intlLocale()), weekday: t(`weekday.${weekdayIdOf(overlayDate)}.short`) }) : null) : scheduleLabel({ ...dragging, ...preview?.patch });
-  return <DndContext sensors={sensors} autoScroll={planAutoScroll(mode, narrow, dragging)} collisionDetection={pointerWithin} onDragStart={onDragStart} onDragMove={onDragMove} onDragOver={(event) => { if (dragData.current?.edge) return; const patch = dropPatch(event); setPreview(patch && dragData.current ? { task: dragData.current.task, patch } : null); }} onDragEnd={onDragEnd} onDragCancel={() => { clearDrag(); window.setTimeout(() => { skipClick.current = false; }, 400); }}>
+  return <DndContext sensors={sensors} autoScroll={planAutoScroll(mode, narrow, dragging)} collisionDetection={collisionDetection} onDragStart={onDragStart} onDragMove={onDragMove} onDragOver={(event) => {
+    if (dragData.current?.edge) return;
+    horizontalDrag.current = horizontalPlanDrag(event.delta);
+    const reorder = planLaneDrop(event);
+    setLaneDrop(reorder);
+    if (reorder) { setPreview(null); return; }
+    const patch = dropPatch(event);
+    setPreview(patch && dragData.current ? { task: dragData.current.task, patch } : null);
+  }} onDragEnd={onDragEnd} onDragCancel={() => { clearDrag(); window.setTimeout(() => { skipClick.current = false; }, 400); }}>
     <div data-testid="plan-page" className="plan-page mx-auto p-4 pb-10 sm:p-6">
       <header className="plan-header">
         <h1 className="text-2xl font-semibold">{t('plan.title')}</h1>
@@ -322,7 +349,7 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
       </div>
       {error ? <p role="alert" className="text-destructive">{error.message}</p> : planned.isLoading || trayQuery.isLoading ? <p className="py-12 text-center text-muted-foreground">{t('shared.loadingTasks')}</p> : <div className="plan-layout" data-tray-open={trayOpen || undefined}>
         <div className="min-w-0">
-          {mode !== 'month' ? <Timeline days={days} tasks={tasks} today={today} busy={disabled} bands={timeBands.data?.bands ?? []} allDayOpen={allDayOpen} onAllDayOpen={(open) => { setAllDayOpen(open); localStorage.setItem('dovun.plan.allDayOpen', String(open)); }} onOpen={onOpen} onToggle={onToggle} onCreate={setCreating} activeTaskId={activeTaskId} skipClick={skipClick} /> : <div data-testid="month-horizontal-scroll" className="plan-month-scroll overflow-x-auto max-sm:overflow-visible"><div className="min-w-[560px] max-sm:min-w-0">
+          {mode !== 'month' ? <Timeline days={days} tasks={tasks} today={today} busy={disabled} bands={timeBands.data?.bands ?? []} allDayOpen={allDayOpen} onAllDayOpen={(open) => { setAllDayOpen(open); localStorage.setItem('dovun.plan.allDayOpen', String(open)); }} onOpen={onOpen} onToggle={onToggle} onCreate={setCreating} activeTaskId={activeTaskId} skipClick={skipClick} manualOrders={manualOrders} laneDrop={laneDrop} /> : <div data-testid="month-horizontal-scroll" className="plan-month-scroll overflow-x-auto max-sm:overflow-visible"><div className="min-w-[560px] max-sm:min-w-0">
             <div className="grid grid-cols-7 py-2 text-center text-xs text-muted-foreground">{weekdayIds.map((day) => <div key={day}>{t(`weekday.${day}.narrow`)}</div>)}</div>
             <div className="grid grid-cols-7">{days.map((day) => {
               const items = tasks.filter((task) => occursOn(task, day)).sort((a, b) => (a.scheduledStart ?? '').localeCompare(b.scheduledStart ?? '') || a.id.localeCompare(b.id));

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { Task } from './api.js';
-import { laneCap, layoutLanes, type LaneMore, type LanePlacement } from './plan-layout.js';
+import { laneCap, laneGroupKey, layoutLanes, type LaneMore, type LanePlacement } from './plan-layout.js';
 import { layoutTimed, type TimedBlock } from './schedule.js';
 
 const minutes = (hour: number, minute = 0) => hour * 60 + minute;
 const task = (id: string, start: string, end: string | null, status: Task['status'] = 'todo') => ({ id, status, scheduledStart: start, scheduledEnd: end, dueDate: start.slice(0, 10) }) as Task;
-function timed(id: string, startMin: number, endMin: number, status: Task['status'] = 'todo', date = '2026-10-17'): TimedBlock {
-  return { id: `${id}:${date}`, startMin, endMin, point: startMin === endMin, startsHere: startMin > 0, endsHere: endMin < 1440, task: { id, status } as Task };
+function timed(id: string, startMin: number, endMin: number, status: Task['status'] = 'todo', date = '2026-10-17', patch: Partial<Task> = {}): TimedBlock {
+  return { id: `${id}:${date}`, startMin, endMin, point: startMin === endMin, startsHere: startMin > 0, endsHere: endMin < 1440, task: { id, status, ...patch } as Task };
 }
 const laneOf = (placed: LanePlacement[], id: string) => placed.find((item) => item.block.task.id === id)!;
 const ids = (blocks: TimedBlock[]) => blocks.map((block) => block.task.id);
@@ -25,7 +25,7 @@ describe('lane cap', () => {
 });
 
 describe('layout lanes', () => {
-  it('puts the screenshot tasks in two lanes with the completed task on the right', () => {
+  it('keeps the longer task left regardless of another task completion', () => {
     const { placed, mores } = layoutLanes([
       timed('qps', minutes(15), minutes(16), 'done'),
       timed('alipay', minutes(15), minutes(16, 30)),
@@ -75,18 +75,59 @@ describe('layout lanes', () => {
     expect(laneOf(placed, 'early').laneCount).toBe(2);
   });
 
-  it('keeps an open task on the left of a completed one and widens to full width once the completed task is gone', () => {
-    const both = layoutLanes([
+  it('keeps lanes stable when completion status changes', () => {
+    const rows = (status: Task['status']) => [
       timed('open', minutes(10), minutes(11)),
-      timed('shut', minutes(10), minutes(12), 'done'),
-    ], 8);
-    expect(laneOf(both.placed, 'open')).toMatchObject({ lane: 0, width: 1 / 2 });
-    expect(laneOf(both.placed, 'shut')).toMatchObject({ lane: 1, width: 1 / 2 });
+      timed('shut', minutes(10), minutes(12), status),
+    ];
+    const before = layoutLanes(rows('todo'), 8);
+    const after = layoutLanes(rows('done'), 8);
+    expect(after.placed.map((item) => ({ id: item.block.task.id, lane: item.lane, width: item.width }))).toEqual(before.placed.map((item) => ({ id: item.block.task.id, lane: item.lane, width: item.width })));
+    expect(laneOf(after.placed, 'shut')).toMatchObject({ lane: 0, width: 1 / 2 });
+    expect(laneOf(after.placed, 'open')).toMatchObject({ lane: 1, width: 1 / 2 });
     const only = layoutLanes([timed('open', minutes(10), minutes(11))], 8);
     expect(only.placed[0]).toMatchObject({ lane: 0, laneCount: 1, width: 1 });
   });
 
-  it('does not open an extra lane just to push a completed task to the right', () => {
+  it('keeps parents, children and siblings adjacent before unrelated tasks', () => {
+    const rows = [
+      timed('other', minutes(10), minutes(11)),
+      timed('child-b', minutes(10), minutes(11), 'done', undefined, { parentId: 'parent', sortOrder: 1 }),
+      timed('grandchild', minutes(10), minutes(11), 'todo', undefined, { parentId: 'child-a', sortOrder: 0 }),
+      timed('parent', minutes(10), minutes(12), 'done'),
+      timed('child-a', minutes(10), minutes(11), 'todo', undefined, { parentId: 'parent', sortOrder: 0 }),
+    ];
+    const { placed, mores } = layoutLanes(rows, 8);
+    expect(mores).toEqual([]);
+    expect(ids(placed.map((item) => item.block))).toEqual(['parent', 'child-a', 'grandchild', 'child-b', 'other']);
+    expect(laneOf(placed, 'parent').laneCount).toBe(5);
+  });
+
+  it('keeps visible siblings together when their parent is absent', () => {
+    const { placed } = layoutLanes([
+      timed('z-other', minutes(10), minutes(11)),
+      timed('b-child', minutes(10), minutes(11), 'todo', undefined, { parentId: 'missing', sortOrder: 1 }),
+      timed('a-child', minutes(10), minutes(11), 'todo', undefined, { parentId: 'missing', sortOrder: 0 }),
+    ], 8);
+    expect(ids(placed.map((item) => item.block))).toEqual(['a-child', 'b-child', 'z-other']);
+  });
+
+  it('applies a valid manual order only to its exact overlap group', () => {
+    const rows = [
+      timed('a', minutes(10), minutes(11)),
+      timed('b', minutes(10), minutes(11)),
+      timed('c', minutes(10), minutes(11)),
+    ];
+    const group = [...rows].sort((a, b) => a.startMin - b.startMin || a.id.localeCompare(b.id));
+    const key = laneGroupKey(group);
+    expect(key).toBe('2026-10-17:600:a,b,c');
+    const manual = layoutLanes(rows, 8, { manualOrders: { [key]: ['c', 'a', 'b'] } });
+    expect(ids(manual.placed.map((item) => item.block))).toEqual(['c', 'a', 'b']);
+    const changedGroup = layoutLanes(rows.slice(0, 2), 8, { manualOrders: { [key]: ['c', 'a', 'b'] } });
+    expect(ids(changedGroup.placed.map((item) => item.block))).toEqual(['a', 'b']);
+  });
+
+  it('does not open an extra lane for completed tasks', () => {
     const { placed } = layoutLanes([
       timed('a', minutes(9), minutes(10)),
       timed('c', minutes(9, 30), minutes(11)),
@@ -169,7 +210,7 @@ describe('layout lanes', () => {
       timed('a', minutes(10), minutes(11)),
       timed('b', minutes(10), minutes(12), 'done'),
     ], 2, { pinnedTaskId: 'b' });
-    expect(laneOf(visible.placed, 'b').lane).toBe(1);
+    expect(laneOf(visible.placed, 'b').lane).toBe(0);
     expect(visible.mores).toEqual([]);
   });
 
