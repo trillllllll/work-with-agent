@@ -50,7 +50,7 @@ export default defineConfig({
       url: `http://127.0.0.1:${apiPort}/api/v1/auth/session`,
       reuseExistingServer: false,
       timeout: 120_000,
-      env: { PORT: apiPort, CLIENT_ORIGIN: `http://127.0.0.1:${uiPort}`, DATABASE_URL: databaseUrl, E2E_DATABASE_FILE: databaseFile, AGENT_WORKSPACE_ROOT: root, KNOWLEDGE_STORAGE_ROOT: `${root}/e2e/.data/${databaseFile}-blobs`, DOVUN_RUNNER_DIR: `${root}/e2e/.data/${databaseFile}-runner` },
+      env: { PORT: apiPort, CLIENT_ORIGIN: `http://127.0.0.1:${uiPort}`, DATABASE_URL: databaseUrl, E2E_DATABASE_FILE: databaseFile, AGENT_WORKSPACE_ROOT: root, KNOWLEDGE_STORAGE_ROOT: `${root}/e2e/.data/${databaseFile}-blobs`, DOVUN_RUNNER_DIR: `${root}/e2e/.data/${databaseFile}-runner`, DOVUN_DATA_DIR: `${root}/e2e/.data/${databaseFile}-runtime` },
     },
     {
       command: `npm run dev -w client -- --port ${uiPort}`,

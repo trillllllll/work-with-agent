@@ -10,7 +10,7 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 import { DomainError } from '../domain/task.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { desktopDataDir, isServerMode } from './desktop-paths.js';
-import { canonicalSyncRow, isCompleteSyncRow, isSyncEntityType, mergeSyncRow, syncRowsEqual, type SyncEntityType, type SyncRow } from './sync-merge.js';
+import { canonicalSyncRow, completeLegacySyncRow, isCompleteSyncRow, isLegacySyncRow, isSyncEntityType, mergeSyncRow, syncRowsEqual, type SyncEntityType, type SyncRow } from './sync-merge.js';
 import { appendGroupSyncOps, diffGroupOps, readLive, writeLive } from './sync-log.js';
 import { localSchemaVersion } from './snapshots.js';
 import { listSyncConflicts, resolveSyncConflict } from './sync-log.js';
@@ -284,7 +284,7 @@ async function recoverReplica(db: ReplicaDb, transport: ReplicaTransport) {
       for (const item of rows) {
         const live = await readLive(tx, entity, item.id);
         const firstPending = pending.find(op => op.entityType === entity && op.entityId === item.id);
-        const base = firstPending?.beforeJson ? JSON.parse(firstPending.beforeJson) as SyncRow : null;
+        const base = firstPending?.beforeJson ? completeLegacySyncRow(entity, JSON.parse(firstPending.beforeJson) as SyncRow, live.row) : null;
         const row = firstPending ? mergeSyncRow(entity, live.row, base, item.row).row : item.row;
         if (!syncRowsEqual(entity, live.row, row)) await writeLive(tx, entity, item.id, row);
       }
@@ -325,9 +325,24 @@ async function pullFrom(db: ReplicaDb, transport: ReplicaTransport, after: numbe
 async function pushPending(db: ReplicaDb, transport: ReplicaTransport) {
   const pending = await db.syncOutbox.findMany({ where: { state: 'pending' }, orderBy: { seq: 'asc' }, take: 50 });
   if (!pending.length) return;
+  const live = new Map<string, SyncRow | null>();
+  for (const op of pending) {
+    if (!isSyncEntityType(op.entityType)) continue;
+    const key = `${op.entityType}:${op.entityId}`;
+    const before = op.beforeJson ? JSON.parse(op.beforeJson) as SyncRow : null;
+    const after = op.afterJson ? JSON.parse(op.afterJson) as SyncRow : null;
+    if (!isLegacySyncRow(op.entityType, before) && !isLegacySyncRow(op.entityType, after)) continue;
+    if (!live.has(key)) live.set(key, (await readLive(db, op.entityType, op.entityId)).row);
+  }
   const result = await transport.push({
     schemaVersion: localSchemaVersion(),
-    ops: pending.map((op) => ({ opId: op.opId, entityType: op.entityType, entityId: op.entityId, before: op.beforeJson ? JSON.parse(op.beforeJson) as SyncRow : null, after: op.afterJson ? JSON.parse(op.afterJson) as SyncRow : null })),
+    ops: pending.map((op) => {
+      const entity = op.entityType as SyncEntityType;
+      const row = op.entityType && live.has(`${op.entityType}:${op.entityId}`) ? live.get(`${op.entityType}:${op.entityId}`) ?? null : null;
+      const before = op.beforeJson ? JSON.parse(op.beforeJson) as SyncRow : null;
+      const after = op.afterJson ? JSON.parse(op.afterJson) as SyncRow : null;
+      return { opId: op.opId, entityType: op.entityType, entityId: op.entityId, before: completeLegacySyncRow(entity, before, row), after: completeLegacySyncRow(entity, after, row) };
+    }),
   });
   if (!Number.isSafeInteger(result.tip) || result.tip < 0 || !Array.isArray(result.results) || result.results.length !== pending.length) protocolError();
   const receipts = new Set<string>();
