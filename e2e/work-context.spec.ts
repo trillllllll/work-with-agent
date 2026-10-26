@@ -120,7 +120,7 @@ test('工作上下文默认显示当前进展，建议不会直接变成记忆',
   await setTheme(page, 'light');
   await shot(page, testInfo.project.name, '390-light-tabs');
   await page.evaluate(() => document.documentElement.classList.add('dark'));
-  await expect(root).toHaveCSS('background-color', 'rgb(31, 31, 31)');
+  await expect(root).toHaveCSS('background-color', 'rgb(39, 46, 53)');
   await shot(page, testInfo.project.name, '390-dark-tabs');
 
   await page.setViewportSize({ width: 1440, height: 1000 });

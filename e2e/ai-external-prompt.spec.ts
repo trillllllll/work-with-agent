@@ -4,6 +4,28 @@ import { e2eDatabase, resetE2eDatabase } from './database.js';
 const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const composer = '例如：创建任务：整理 API 文档';
 
+async function expectSharedCardStyle(card: ReturnType<Page['getByTestId']>) {
+  await expect(card).toHaveAttribute('data-surface', 'card');
+  const style = await card.evaluate((el) => {
+    const probe = document.createElement('div');
+    probe.style.cssText = 'background:var(--surface-card-paint);color:var(--surface-card-text);border-radius:var(--surface-card-radius)';
+    el.append(probe);
+    const expected = getComputedStyle(probe);
+    const actual = getComputedStyle(el);
+    const result = {
+      actual: { radius: actual.borderRadius, paint: actual.backgroundImage, color: actual.color },
+      expected: { radius: expected.borderRadius, paint: expected.backgroundImage, color: expected.color },
+      padding: actual.padding, border: actual.borderTopWidth,
+    };
+    probe.remove();
+    return result;
+  });
+  expect(style.actual).toEqual(style.expected);
+  expect(style.actual.paint).not.toBe('none');
+  expect(style.padding).toBe('16px');
+  expect(style.border).toBe('1px');
+}
+
 async function openChat(page: Page) {
   if (!(await page.getByPlaceholder(composer).isVisible())) await page.getByRole('button', { name: '打开聊天', exact: true }).click();
 }
@@ -63,11 +85,7 @@ test('复制的是纯提示词，刷新后仍可复制', async ({ page, isMobile
   await expect(body).toContainText('目标');
   await expect(body).toContainText('请按以下格式返回');
   await expect(body).not.toContainText('我目前不能联网查资料。');
-  const style = await card.evaluate((el) => {
-    const value = getComputedStyle(el);
-    return { radius: value.borderRadius, padding: value.padding, border: value.borderTopWidth, background: value.backgroundColor };
-  });
-  expect(style).toEqual({ radius: '12px', padding: '16px', border: '1px', background: 'rgb(255, 255, 255)' });
+  await expectSharedCardStyle(card);
   const bodyBox = await body.evaluate((el) => ({ maxHeight: getComputedStyle(el).maxHeight, fontSize: getComputedStyle(el).fontSize, lineHeight: getComputedStyle(el).lineHeight }));
   expect(bodyBox).toEqual({ maxHeight: '320px', fontSize: '13px', lineHeight: '20px' });
   await card.screenshot({ path: '/tmp/wwa-external-light.png' });
@@ -116,8 +134,7 @@ test('深色和窄屏外部提示词卡保持中性样式', async ({ page, isMob
   await page.goto('/#/inbox');
   await ask(page, '整理成外部提示词');
   const card = await expectPromptCard(page);
-  const colors = await card.evaluate((el) => ({ background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color }));
-  expect(colors).toEqual({ background: 'rgb(23, 23, 23)', color: 'rgb(245, 245, 245)' });
+  await expectSharedCardStyle(card);
   await card.screenshot({ path: '/tmp/wwa-external-dark.png' });
 
   await page.setViewportSize({ width: 390, height: 844 });

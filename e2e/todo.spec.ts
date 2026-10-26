@@ -117,10 +117,18 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await expect.poll(async () => (await task(request, created.id)).dueDate).toBe('2028-02-29');
     await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('button', { name: '旗标：高', exact: true }).click();
     await expect.poll(async () => (await task(request, created.id)).priority).toBe('high');
-    await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('button', { name: '关闭任务详情', exact: true }).click();
+    await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
+    await expect(detail).toBeHidden();
     await row.getByRole('button', { name: '任务操作：修改后的任务', exact: true }).click();
-    await page.getByRole('menuitem', { name: '移动到' }).click();
-    await page.getByRole('menuitem', { name: '日常计划', exact: true }).click();
+    await expect(page.getByRole('menu')).toBeFocused();
+    const moveTo = page.getByRole('menuitem', { name: '移动到' });
+    await moveTo.click();
+    const destination = page.getByRole('menuitem', { name: '日常计划', exact: true });
+    const triggerBox = await moveTo.boundingBox(), destinationBox = await destination.boundingBox();
+    if (!triggerBox || !destinationBox) throw new Error('移动清单菜单没有布局');
+    // Enter the side-opening submenu before moving down to its destination.
+    await page.mouse.move(destinationBox.x + destinationBox.width / 2, triggerBox.y + triggerBox.height / 2, { steps: 5 });
+    await destination.click();
     await expect.poll(async () => (await task(request, created.id)).topicId).toBe(list.id);
     expect(await task(request, created.id)).toMatchObject({ priority: 'high', dueDate: '2028-02-29', description: '保留我的说明' });
     await page.goto('/#/board');
@@ -658,7 +666,7 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
       expect(receivedStatuses).toContain('done');
       expect(receivedStatuses).toHaveLength(3);
       await expect.poll(async () => (await task(request, first.id)).status).toBe('done');
-      await page.getByRole('dialog', { name: '任务详情', exact: true }).getByRole('button', { name: '关闭任务详情', exact: true }).click();
+      await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
     } finally { releaseFirst.release(); }
     await page.unroute(firstPattern);
 
@@ -681,7 +689,7 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
       await otherDetail.getByLabel('详情', { exact: true }).fill('另一任务的成功修改');
       await otherDetail.getByLabel('任务标题', { exact: true }).click();
       await expect.poll(async () => (await task(request, other.id)).description).toBe('另一任务的成功修改');
-      await otherDetail.getByRole('button', { name: '关闭任务详情', exact: true }).click();
+      await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
       releaseFailure.release();
       await expect(page.getByText('第一个任务保存失败', { exact: true }).first()).toBeVisible();
       expect((await task(request, other.id)).description).toBe('另一任务的成功修改');

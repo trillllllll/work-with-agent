@@ -19,7 +19,7 @@ async function openDatedTask(page: Page, taskId: string) {
   return { row, detail };
 }
 
-test('窄窗口打开任务后列表仍可读，日期仍显示', async ({ page, request }) => {
+test('窄窗口任务侧栏可关闭返回列表，日期仍显示', async ({ page, request }) => {
   const created = await request.post(`${apiUrl}/api/tasks`, { data: { title: '窄窗日期', dueDate } });
   expect(created.ok(), await created.text()).toBe(true);
   const task = (await created.json()).data;
@@ -28,6 +28,14 @@ test('窄窗口打开任务后列表仍可读，日期仍显示', async ({ page,
     await page.setViewportSize({ width, height: 800 });
     await page.goto('/#/inbox');
     const { row, detail } = await openDatedTask(page, task.id);
+    if (width < 1024) {
+      await expect(row).toBeHidden();
+      const box = await detail.boundingBox();
+      expect(Math.abs((box?.width ?? 0) - width)).toBeLessThanOrEqual(1);
+      await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
+      await expect(detail).toBeHidden();
+      await expect(row).toBeVisible();
+    }
     const metrics = await row.evaluate((node) => {
       const time = node.querySelector('time');
       const main = node.closest('main');
@@ -46,12 +54,10 @@ test('窄窗口打开任务后列表仍可读，日期仍显示', async ({ page,
     expect(metrics.rowWidth, `${width}px 任务行宽度`).toBeGreaterThan(240);
     expect(metrics.mainWidth, `${width}px 列表栏宽度`).toBeGreaterThan(width >= 1024 ? 360 : 240);
     expect(metrics.scrollOverflow).toBeLessThanOrEqual(1);
-    if (width < 1024) {
-      const box = await detail.boundingBox();
-      expect(box?.width ?? width).toBeLessThan(width - 40);
+    if (width >= 1024) {
+      await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
+      await expect(detail).toBeHidden();
     }
-    await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
-    await expect(detail).toBeHidden();
   }
 });
 
@@ -69,7 +75,7 @@ test('缩放跨过 1024px 时，正在输入的标题和详情还在', async ({ 
     await page.setViewportSize({ width, height: 800 });
     await expect(detail()).toBeVisible();
     await expect(page.getByRole('dialog', { name: '保存未完成的编辑？' })).toHaveCount(0);
-    if (width < 1024) await expect.poll(async () => (await detail().boundingBox())?.width ?? width).toBeLessThan(width - 40);
+    if (width < 1024) await expect.poll(async () => Math.abs(((await detail().boundingBox())?.width ?? 0) - width)).toBeLessThanOrEqual(1);
     else await expect.poll(async () => (await detail().boundingBox())?.x ?? 0).toBeGreaterThan(700);
     return detail();
   };

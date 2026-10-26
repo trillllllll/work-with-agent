@@ -50,7 +50,7 @@ test('记忆提取记录：真实接口、统计筛选、分页和移动端', as
     await page.getByRole('button', { name: '切换主题', exact: true }).click();
     await page.getByRole('menuitem', { name: '深色', exact: true }).click();
     await expect(page.locator('html')).toHaveClass(/dark/);
-    await expect(page.getByLabel('开始日期', { exact: true })).toHaveCSS('color', 'rgb(232, 237, 245)');
+    await expect(page.getByLabel('开始日期', { exact: true })).toHaveCSS('color', 'rgb(230, 233, 236)');
     await page.screenshot({ path: '/tmp/wwa-memory-1440-dark.png', fullPage: true, animations: 'disabled' });
   }
   await page.setViewportSize({ width: 390, height: 844 });

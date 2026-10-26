@@ -56,5 +56,5 @@ test('清单颜色留在方块上，探索只多一枚标签', async ({ page, re
   await page.goto('/#/search');
   const row = page.getByTestId(`task-row-${task.id}`);
   await expect(row.getByText('颜色样本', { exact: true })).toBeVisible();
-  await expect(row.locator('.task-place-chip')).not.toHaveAttribute('data-color', /.+/);
+  await expect(row.locator('.task-place-chip').filter({ visible: true })).not.toHaveAttribute('data-color', /.+/);
 });

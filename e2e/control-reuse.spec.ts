@@ -115,6 +115,8 @@ test('library menus do not open rows, mobile folder menus stay singular and work
   await expect(page.getByRole('menuitem', { name: '重命名', exact: true })).toBeVisible();
   await expect(row.getByRole('button', { name: '更多 公共控件验收资料', exact: true })).toHaveAttribute('aria-expanded', 'true');
   await page.keyboard.press('Escape');
+  await expect(page.locator('[role="menu"]')).toHaveCount(0);
+  await expect(row.getByRole('button', { name: '更多 公共控件验收资料', exact: true })).toBeFocused();
   await row.getByRole('button', { name: '更多 公共控件验收资料', exact: true }).press('ArrowDown');
   await expect(page.getByRole('menuitem', { name: '重命名', exact: true })).toBeFocused();
   await page.keyboard.press('Escape');

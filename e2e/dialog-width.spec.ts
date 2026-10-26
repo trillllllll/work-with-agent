@@ -29,7 +29,7 @@ async function measure(page: Page, name: string) {
   });
 }
 
-test('弹窗宽度留出边距，不铺满窗口', async ({ page, request }) => {
+test('弹窗留出边距，窄屏任务侧栏占满可用宽度', async ({ page, request }) => {
   const created = await request.post(`${apiUrl}/api/tasks`, { data: { title: '宽度检查' } });
   expect(created.ok(), await created.text()).toBe(true);
   const task = (await created.json()).data;
@@ -83,9 +83,9 @@ test('弹窗宽度留出边距，不铺满窗口', async ({ page, request }) => 
   await page.goto('/#/inbox');
   await page.getByRole('button', { name: '宽度检查', exact: true }).click();
   const detail = await measure(page, '任务详情');
-  expect(detail.width).toBeLessThanOrEqual(672);
-  expect(detail.width).toBeLessThan(detail.viewport - 40);
-  expect(detail.left).toBeGreaterThan(16);
+  expect(Math.abs(detail.width - detail.viewport)).toBeLessThanOrEqual(1);
+  expect(detail.left).toBeGreaterThanOrEqual(0);
+  expect(detail.scrollOverflow).toBeLessThanOrEqual(1);
   await page.keyboard.press('Escape');
 
   await page.setViewportSize({ width: 390, height: 800 });

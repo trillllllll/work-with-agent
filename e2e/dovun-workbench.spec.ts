@@ -42,13 +42,15 @@ test('shared rail preserves chat draft and keeps all header controls reachable a
   const task = (await (await request.post(api + '/api/tasks', { data: { title: '右栏验收任务', topicId: null } })).json()).data;
   await page.evaluate(() => { location.hash = '/inbox'; });
   await page.getByTestId(`task-row-${task.id}`).click();
+  await page.getByRole('tablist', { name: '工作侧栏' }).getByRole('tab', { name: 'AI 助手', exact: true }).click();
+  const rail = page.locator('.dovun-work-rail');
   for (const width of [1280, 1440]) {
     await page.setViewportSize({ width, height: width === 1280 ? 720 : 900 });
     await input.focus();
     await expect(assistant).toHaveCount(1);
-    const bounds = await assistant.boundingBox();
-    for (const label of ['关闭聊天', '放大到独立页']) {
-      const button = assistant.getByRole('button', { name: label, exact: true });
+    const bounds = await rail.boundingBox();
+    for (const label of ['关闭工作侧栏', '放大到独立页']) {
+      const button = rail.getByRole('button', { name: label, exact: true });
       await expect(button).toBeVisible();
       const rect = await button.boundingBox();
       expect(rect!.y).toBeGreaterThanOrEqual(bounds!.y);

@@ -178,9 +178,9 @@ test('点开时间下拉改时钟，未保存不写入', async ({ page, request 
   if (!minuteBox) throw new Error('分钟滚轮没有布局');
   expect(minuteBox.x + minuteBox.width).toBeLessThanOrEqual(box.x + box.width + 1);
   const hour = picker.getByRole('button', { name: '14时', exact: true });
-  expect(rgbSum(await hour.evaluate((node) => getComputedStyle(node).color))).toBeLessThan(200);
+  await expect.poll(async () => rgbSum(await hour.evaluate((node) => getComputedStyle(node).color))).toBeLessThan(200);
   await page.evaluate(() => document.documentElement.classList.add('dark'));
-  expect(rgbSum(await hour.evaluate((node) => getComputedStyle(node).color))).toBeGreaterThan(600);
+  await expect.poll(async () => rgbSum(await hour.evaluate((node) => getComputedStyle(node).color))).toBeGreaterThan(600);
   await page.evaluate(() => document.documentElement.classList.remove('dark'));
 
   const main = picker.locator('svg').nth(0);

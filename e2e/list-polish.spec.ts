@@ -25,7 +25,7 @@ test('层级清单不重复当前清单名，搜索仍显示归属', async ({ pa
 
   await page.goto('/#/search');
   const inboxRow = page.getByTestId(`task-row-${inbox.data.id}`);
-  await expect(inboxRow.locator('.task-place-chip')).toHaveText('收集箱');
+  await expect(inboxRow.locator('.task-place-chip').filter({ visible: true })).toHaveText('收集箱');
   await expect(inboxRow.getByText('#跨类标签', { exact: true })).toBeVisible();
 });
 
@@ -58,8 +58,9 @@ test('打开聊天后未保存的标题还在', async ({ page, request }) => {
   await detail.getByLabel('任务标题', { exact: true }).fill('还没保存的标题');
   await page.getByRole('button', { name: '打开聊天', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '保存未完成的编辑？' })).toHaveCount(0);
+  await expect(detail).toBeHidden();
+  await expect(page.getByRole('button', { name: '关闭工作侧栏', exact: true })).toBeVisible();
+  await page.getByRole('tablist', { name: '工作侧栏' }).getByRole('tab', { name: '任务', exact: true }).click();
   await expect(detail).toBeVisible();
-  await expect(page.getByRole('button', { name: '关闭聊天', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '关闭聊天', exact: true }).click();
   await expect(detail.getByLabel('任务标题', { exact: true })).toHaveValue('还没保存的标题');
 });

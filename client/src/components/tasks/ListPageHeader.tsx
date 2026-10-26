@@ -39,7 +39,7 @@ export function ListPageHeader({ page, title, scoped, archived, today, detail, b
           {page === 'board' && briefNotes && <p className="line-clamp-2 text-sm whitespace-pre-wrap text-muted-foreground">{briefNotes}</p>}
           {filterSummary && <p className="text-xs text-muted-foreground">{filterSummary}</p>}
           {page === 'inbox' && <p className="max-w-xl text-xs text-muted-foreground">{t('listPageHeader.inboxHint')}</p>}
-          
+
           {archived && <p className="text-sm text-muted-foreground">{t('listPageHeader.archivedReadonly')}</p>}
         </div>
         <div className="flex flex-wrap items-center gap-1">

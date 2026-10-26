@@ -41,6 +41,10 @@ jobs:
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test --project=chromium
+      - name: 验证生产页面离线与恢复
+        run: |
+          npm run build
+          npx playwright test -c playwright.offline.config.ts --project=chromium
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

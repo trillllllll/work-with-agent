@@ -87,7 +87,8 @@ test('详情里的代码块立即渲染，压缩后的图片上传后立即显�
 
   await page.setViewportSize({ width: 390, height: 800 });
   const box = await detail.boundingBox();
-  expect(box?.width ?? 390).toBeLessThan(350);
+  expect(Math.abs((box?.width ?? 0) - 390)).toBeLessThanOrEqual(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await expect(detail.locator('.task-image img')).toBeVisible();
   await expect(detail.locator('pre')).toContainText('const n = 1;');
 });

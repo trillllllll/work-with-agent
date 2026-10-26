@@ -173,7 +173,7 @@ test.describe('Agent 工作室 MVP', () => {
     await expect(composer).toHaveValue('关闭后仍然保留');
   });
 
-  test('WWA 品牌在侧栏，打开聊天后未保存的详情还在', async ({ page, isMobile, request }) => {
+  test('Dovun 品牌在侧栏，切换 AI 后任务详情草稿还在', async ({ page, isMobile, request }) => {
     test.skip(Boolean(isMobile), '桌面侧栏在桌面视口验收');
     const task = await responseData<{ id: string }>(await request.post(`${apiUrl}/api/tasks`, { data: { title: '检查器任务' } }));
     await page.goto('/#/inbox');
@@ -188,8 +188,9 @@ test.describe('Agent 工作室 MVP', () => {
     await page.getByRole('button', { name: '打开聊天', exact: true }).click();
     await expect(page.getByRole('dialog', { name: '保存未完成的编辑？' })).toHaveCount(0);
     await expect(page.getByRole('heading', { level: 2, name: 'Dovun 工作助手' })).toBeVisible();
+    await expect(detail).toBeHidden();
+    await page.getByRole('tablist', { name: '工作侧栏' }).getByRole('tab', { name: '任务', exact: true }).click();
     await expect(detail).toBeVisible();
-    await page.getByRole('button', { name: '关闭聊天' }).click();
     await expect(detail.getByLabel('详情', { exact: true })).toHaveAttribute('data-value', '检查器草稿');
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
   });
