@@ -110,18 +110,24 @@ function maxConcurrency(group: TimedBlock[]) {
   }
   return max;
 }
-/** Status only changes card styling; every task takes the leftmost free lane. */
+/** Allocate chronologically to preserve max concurrency, then order whole lanes by display preference. */
 function assignLanes(group: TimedBlock[]): Slot[] {
+  const preference = new Map(group.map((block, index) => [block.task.id, index]));
+  const chronological = [...group].sort((a, b) => a.startMin - b.startMin || preference.get(a.task.id)! - preference.get(b.task.id)!);
   const laneEnds = Array.from({ length: maxConcurrency(group) }, () => -1);
   const slots: Slot[] = [];
-  for (const block of group) {
-    let lane = laneEnds.findIndex((end) => end <= block.startMin);
-    if (lane === -1) lane = laneEnds.length;
-    if (lane === laneEnds.length) laneEnds.push(-1);
+  for (const block of chronological) {
+    const lane = laneEnds.findIndex((end) => end <= block.startMin);
     laneEnds[lane] = footprintEnd(block);
     slots.push({ block, lane });
   }
-  return slots;
+  // A later task may rank first after a horizontal move. Move its entire lane
+  // rather than treating earlier tasks as if they followed it in time.
+  const lanePriority = laneEnds.map(() => Number.POSITIVE_INFINITY);
+  for (const slot of slots) lanePriority[slot.lane] = Math.min(lanePriority[slot.lane], preference.get(slot.block.task.id)!);
+  const laneOrder = lanePriority.map((_, lane) => lane).sort((a, b) => lanePriority[a] - lanePriority[b]);
+  const laneIndex = new Map(laneOrder.map((lane, index) => [lane, index]));
+  return slots.map((slot) => ({ ...slot, lane: laneIndex.get(slot.lane)! })).sort((a, b) => preference.get(a.block.task.id)! - preference.get(b.block.task.id)!);
 }
 /** Keep the dragged block mounted: if it would fall into "+N", swap it with the overlapping block on the last visible lane. */
 function keepPinnedVisible(slots: Slot[], maxLanes: number, pinnedTaskId: string | undefined) {

@@ -138,6 +138,35 @@ describe('layout lanes', () => {
     expect(laneOf(placed, 'b')).toMatchObject({ lane: 0, laneCount: 2, width: 1 / 2 });
   });
 
+  it('reuses two lanes when a manual order reverses a chronological chain', () => {
+    const rows = [
+      timed('a', minutes(10), minutes(11)),
+      timed('b', minutes(10, 30), minutes(11, 30)),
+      timed('c', minutes(11), minutes(12)),
+    ];
+    const result = layoutLanes(rows, 2, { manualOrders: { [laneGroupKey(rows)]: ['c', 'b', 'a'] } });
+    expect(result.mores).toEqual([]);
+    expect(result.placed).toHaveLength(3);
+    expect(laneOf(result.placed, 'c')).toMatchObject({ lane: 0, laneCount: 2 });
+    expect(laneOf(result.placed, 'a').lane).toBe(0);
+    expect(laneOf(result.placed, 'b').lane).toBe(1);
+    expect(sameLaneOverlap(result.placed)).toBe(false);
+  });
+
+  it('reuses lanes when family order puts a later parent before an earlier child', () => {
+    const rows = [
+      timed('child', minutes(10), minutes(11), 'todo', undefined, { parentId: 'parent' }),
+      timed('other', minutes(10, 30), minutes(11, 30)),
+      timed('parent', minutes(11), minutes(12)),
+    ];
+    const result = layoutLanes(rows, 2);
+    expect(result.mores).toEqual([]);
+    expect(result.placed).toHaveLength(3);
+    expect(laneOf(result.placed, 'parent')).toMatchObject({ lane: 0, laneCount: 2 });
+    expect(laneOf(result.placed, 'child').lane).toBe(0);
+    expect(sameLaneOverlap(result.placed)).toBe(false);
+  });
+
   it('does not grow a block into a free neighboring lane', () => {
     const { placed } = layoutLanes([
       timed('a', minutes(9), minutes(10)),
@@ -255,7 +284,8 @@ describe('layout lanes', () => {
       if (concurrent > 1) sawOverlap = true;
       for (const maxLanes of [2, 8]) {
         const pinnedTaskId = blocks[Math.floor(rand() * blocks.length)].task.id;
-        for (const opts of [undefined, { pinnedTaskId }] as const) {
+        const manualOrders = Object.fromEntries(layoutLanes(blocks, 8).placed.map((item) => [item.groupKey, [...item.groupTaskIds].reverse()]));
+        for (const opts of [undefined, { pinnedTaskId }, { manualOrders }, { pinnedTaskId, manualOrders }] as const) {
           const result = layoutLanes(blocks, maxLanes, opts);
           expect(coveredIds(result)).toEqual(blocks.map((block) => block.id).sort());
           expect(sortedPlaced(result.placed)).toBe(true);
@@ -267,7 +297,7 @@ describe('layout lanes', () => {
           }
           if (result.mores.length === 0 && blocks.length > 0) expect(Math.max(...result.placed.map((item) => item.laneCount))).toBe(concurrent);
           expect(sameLaneOverlap(result.placed)).toBe(false);
-          if (opts) expect(result.placed.some((item) => item.block.task.id === pinnedTaskId)).toBe(true);
+          if (opts && 'pinnedTaskId' in opts) expect(result.placed.some((item) => item.block.task.id === pinnedTaskId)).toBe(true);
         }
       }
     }
