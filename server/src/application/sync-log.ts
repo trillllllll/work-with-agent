@@ -174,11 +174,12 @@ export async function writeLive(tx: Tx, entityType: SyncEntityType, entityId: st
       return 0;
     }
     const existing = await tx.topic.findUnique({ where: { id: entityId } });
+    const topicScalars = { name: String(row.name ?? ''), description: String(row.description ?? ''), color: String(row.color ?? 'slate'), isExploration: Boolean(row.isExploration), goal: String(row.goal ?? ''), goalDueDate: row.goalDueDate == null ? null : String(row.goalDueDate), draftSummary: String(row.draftSummary ?? ''), finalSummary: String(row.finalSummary ?? ''), summaryStatus: String(row.summaryStatus ?? 'empty'), summaryUpdatedAt: row.summaryUpdatedAt == null ? null : String(row.summaryUpdatedAt), archivedAt: row.archivedAt == null ? null : String(row.archivedAt) };
     if (!existing) {
-      await tx.topic.create({ data: { id: entityId, name: String(row.name ?? ''), description: String(row.description ?? ''), color: String(row.color ?? 'slate'), isExploration: Boolean(row.isExploration), goal: String(row.goal ?? ''), draftSummary: String(row.draftSummary ?? ''), finalSummary: String(row.finalSummary ?? ''), summaryStatus: String(row.summaryStatus ?? 'empty'), summaryUpdatedAt: row.summaryUpdatedAt == null ? null : String(row.summaryUpdatedAt), archivedAt: row.archivedAt == null ? null : String(row.archivedAt), revision: 1, createdAt: timestamp, updatedAt: timestamp } });
+      await tx.topic.create({ data: { id: entityId, ...topicScalars, revision: 1, createdAt: timestamp, updatedAt: timestamp } });
       return 1;
     }
-    const updated = await tx.topic.update({ where: { id: entityId }, data: { name: String(row.name ?? ''), description: String(row.description ?? ''), color: String(row.color ?? 'slate'), isExploration: Boolean(row.isExploration), goal: String(row.goal ?? ''), draftSummary: String(row.draftSummary ?? ''), finalSummary: String(row.finalSummary ?? ''), summaryStatus: String(row.summaryStatus ?? 'empty'), summaryUpdatedAt: row.summaryUpdatedAt == null ? null : String(row.summaryUpdatedAt), archivedAt: row.archivedAt == null ? null : String(row.archivedAt), revision: { increment: 1 }, updatedAt: timestamp } });
+    const updated = await tx.topic.update({ where: { id: entityId }, data: { ...topicScalars, revision: { increment: 1 }, updatedAt: timestamp } });
     return updated.revision;
   }
   if (entityType === 'tag') {

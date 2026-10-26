@@ -54,6 +54,7 @@ model Topic {
   color         String   @default("slate")
   isExploration Boolean  @default(false) @map("is_exploration")
   goal          String     @default("")
+  goalDueDate   String?    @map("goal_due_date")
   draftSummary  String     @default("") @map("draft_summary")
   finalSummary  String     @default("") @map("final_summary")
   summaryStatus String     @default("empty") @map("summary_status")

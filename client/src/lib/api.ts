@@ -18,7 +18,7 @@ function option<V extends string>(value: V, key: string): { value: V; label: str
   return { value, get label() { return t(key); } };
 }
 
-export type Topic = { id: string; name: string; description: string; color: TagColor; isExploration: boolean; goal?: string; draftSummary?: string; finalSummary?: string; summaryStatus?: string; summaryUpdatedAt?: string | null; archivedAt?: string | null; revision?: number };
+export type Topic = { id: string; name: string; description: string; color: TagColor; isExploration: boolean; goal?: string; goalDueDate?: string | null; draftSummary?: string; finalSummary?: string; summaryStatus?: string; summaryUpdatedAt?: string | null; archivedAt?: string | null; revision?: number };
 export type Status = 'todo' | 'doing' | 'blocked' | 'done';
 export type TaskPriority = 'none' | 'low' | 'medium' | 'high';
 export type Task = { id: string; topicId: string | null; title: string; description: string; status: Status; allowedTransitions: Status[]; priority: TaskPriority; dueDate: string | null; estimatedMinutes: number | null; scheduledStart: string | null; scheduledEnd: string | null; resultSummary: string; recurrenceRule?: string; createdAt?: string; updatedAt?: string; completedAt?: string | null; completedAtEstimated?: boolean; deletedAt?: string | null; parentId?: string | null; sortOrder?: number; revision?: number; deleteBatchId?: string | null; tags?: Tag[]; tagIds?: string[]; children?: Task[]; topic?: { id: string; name: string; archivedAt?: string | null } | null };

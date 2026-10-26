@@ -124,7 +124,7 @@ export function mutateReplica(rows: ReplicaRows, path: string, method: string, r
       if ((input.tagIds ?? []).some(tag => !rows.tag[tag])) fail('NOT_FOUND', t('workspace:offline.errors.tags'), 404);
       row = { description: '', status: 'todo', priority: 'none', estimatedMinutes: null, resultSummary: '', recurrenceRule: '', deletedAt: null, deleteBatchId: null, tagIds: [], ...input, ...normalizeSchedule(emptySchedule, input), topicId, parentId: p?.id ?? null, sortOrder: order(topicId, p?.id ?? null), completedAt: null, completedAtEstimated: false, createdAt: stamp };
       parent(p?.id, true);
-    } else if (entity === 'topic') row = { description: '', color: 'slate', isExploration: false, goal: '', draftSummary: '', finalSummary: '', summaryStatus: 'empty', summaryUpdatedAt: null, archivedAt: null, ...parseInput(topicCreateSchema, raw) };
+    } else if (entity === 'topic') row = { description: '', color: 'slate', isExploration: false, goal: '', goalDueDate: null, draftSummary: '', finalSummary: '', summaryStatus: 'empty', summaryUpdatedAt: null, archivedAt: null, ...parseInput(topicCreateSchema, raw) };
     else row = { color: 'violet', ...parseInput(tagCreateSchema, raw) };
     rows[entity][resultId] = { id: resultId, row, revision: 1, createdAt: stamp, updatedAt: stamp };
   } else if (method === 'PATCH' && existing) {

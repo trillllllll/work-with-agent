@@ -48,6 +48,7 @@ export const topicCreateSchema = z.object({
   color: tagColor.optional(),
   isExploration: z.boolean().optional(),
   goal: z.string().optional(),
+  goalDueDate: calendarDate.nullable().optional(),
 });
 export const topicUpdateSchema = topicCreateSchema.partial().extend({ draftSummary: z.string().optional() });
 export const tagCreateSchema = z.object({

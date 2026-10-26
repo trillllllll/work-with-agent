@@ -1,7 +1,7 @@
 /** Field-level three-way merge for hub sync. Ancestor is the op's before row. */
 export const syncFields = {
   task: ['title', 'description', 'status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'recurrenceRule', 'topicId', 'parentId', 'deletedAt', 'deleteBatchId', 'sortOrder', 'tagIds', 'createdAt', 'completedAt', 'completedAtEstimated'],
-  topic: ['name', 'description', 'color', 'isExploration', 'goal', 'draftSummary', 'finalSummary', 'summaryStatus', 'summaryUpdatedAt', 'archivedAt'],
+  topic: ['name', 'description', 'color', 'isExploration', 'goal', 'goalDueDate', 'draftSummary', 'finalSummary', 'summaryStatus', 'summaryUpdatedAt', 'archivedAt'],
   tag: ['name', 'color'],
 } as const;
 
@@ -13,7 +13,7 @@ export function isCompleteSyncRow(entity: SyncEntityType, value: unknown): value
   if (value === null) return true;
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const row = value as SyncRow;
-  const nullable = new Set(['dueDate', 'scheduledStart', 'scheduledEnd', 'topicId', 'parentId', 'deletedAt', 'deleteBatchId', 'summaryUpdatedAt', 'archivedAt', 'createdAt', 'completedAt']);
+  const nullable = new Set(['dueDate', 'scheduledStart', 'scheduledEnd', 'topicId', 'parentId', 'deletedAt', 'deleteBatchId', 'summaryUpdatedAt', 'archivedAt', 'createdAt', 'completedAt', 'goalDueDate']);
   return syncFields[entity].every(field => {
     if (!Object.prototype.hasOwnProperty.call(row, field)) return false;
     const item = row[field];

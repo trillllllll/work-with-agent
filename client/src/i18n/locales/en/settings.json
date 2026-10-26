@@ -367,6 +367,8 @@
   "topicList": {
     "empty": "No lists yet. Create one to start.",
     "exploring": "Explore",
+    "goalDueTag": "Goal",
+    "goalDueNamed": "Goal deadline for {{name}}: {{date}}",
     "editNamed": "Edit list: {{name}}",
     "edit": "Edit list",
     "inbox": "Inbox",
@@ -387,6 +389,8 @@
     "descriptionLabel": "Description",
     "descriptionPlaceholder": "What outcome should this list produce?",
     "goal": "Goal",
+    "goalPlaceholder": "The long-term outcome this list is driving toward, in a sentence or two.",
+    "goalDue": "Goal deadline",
     "stillExploring": "Still exploring",
     "archive": "Archive list",
     "saving": "Saving…",

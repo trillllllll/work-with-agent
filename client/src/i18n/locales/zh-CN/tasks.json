@@ -60,6 +60,8 @@
   },
   "listPageHeader": {
     "workContext": "工作上下文",
+    "goalDue": "目标截止 {{date}}",
+    "goalOverdue": "已逾期",
     "inboxHint": "这是一个分类，这里只显示放在收集箱里的任务。",
     "todayDue": "{{date}} · 未完成的到期任务",
     "archivedReadonly": "此清单已归档，内容只读。",

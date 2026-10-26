@@ -366,6 +366,8 @@
   "topicList": {
     "empty": "还没有清单，先创建一个。",
     "exploring": "探索",
+    "goalDueTag": "目标",
+    "goalDueNamed": "{{name}} 的目标截止日：{{date}}",
     "editNamed": "编辑清单：{{name}}",
     "edit": "编辑清单",
     "inbox": "收集箱",
@@ -386,6 +388,8 @@
     "descriptionLabel": "描述",
     "descriptionPlaceholder": "这个清单最终想形成什么结果？",
     "goal": "目标",
+    "goalPlaceholder": "这个清单要达成的长期目标，一两句话。",
+    "goalDue": "目标截止日",
     "stillExploring": "当前仍在探索",
     "archive": "归档清单",
     "saving": "正在保存…",

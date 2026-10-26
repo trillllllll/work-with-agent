@@ -61,6 +61,8 @@
   },
   "listPageHeader": {
     "workContext": "Work context",
+    "goalDue": "Goal due {{date}}",
+    "goalOverdue": "overdue",
     "inboxHint": "This category shows only tasks in the Inbox.",
     "todayDue": "{{date}} · Due tasks still open",
     "archivedReadonly": "This list is archived. Content is read-only.",
