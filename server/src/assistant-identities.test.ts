@@ -91,6 +91,16 @@ describe('assistant identities', () => {
     expect(families).toEqual(['learning']);
   });
 
+  it('loads media for interactive learning simulations and keeps simulation guidance study-only', () => {
+    expect(initialToolGroups('做一个光的折射模拟器，用参数实验和互动自测讲解', 'learning', 'study')).toContain('media');
+    const studyPrompt = systemPromptFor('study');
+    expect(studyPrompt).toContain('【可视化模拟与知识互动】');
+    expect(studyPrompt).toContain('“××模拟器”');
+    expect(studyPrompt).toContain('简化模型要注明“简化模拟”及关键假设');
+    expect(studyPrompt).toContain('保存学习进度、掌握度或学习动态仍须另行通过 propose_changes 生成待确认方案');
+    expect(builtinSystemPrompt()).not.toContain('【可视化模拟与知识互动】');
+  });
+
   it('isolates conversation search and original message reads in both directions', async () => {
     const phrase = stamp();
     const conversations: Array<{ id: string; identityId: string; messageId: string }> = [];

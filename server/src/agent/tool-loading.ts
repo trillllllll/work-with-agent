@@ -54,7 +54,7 @@ export function initialToolGroups(text: string, page: string, identityId: Assist
   if (identityId === 'study') {
     const selected = new Set<ToolGroup>(['learning']);
     if (/外部|联网|网页搜索|external/i.test(text)) selected.add('external');
-    if (/svg|html|mermaid|富媒体|图表|可视化|画图|绘图|图片|流程图|结构图|时序图|widget|diagram|chart/i.test(text)) selected.add('media');
+    if (/svg|html|mermaid|富媒体|图表|可视化|画图|绘图|图片|流程图|结构图|时序图|模拟器|仿真|互动|交互|演示|实验|widget|diagram|chart/i.test(text)) selected.add('media');
     if (/创建|新建|修改|更新|补充|添加|标记|掌握|归档|记录|整理|规划|待确认|提议|create|update|remember/i.test(text)) selected.add('learning_write');
     return [...selected];
   }

@@ -37,6 +37,8 @@ describe('interactive html blocks', () => {
   it('tells the model the rules only when enabled, and projects html as readable source', () => {
     expect(htmlBlockPrompt(policy)).toContain('wwa.fillInput');
     expect(htmlBlockPrompt(policy)).toContain('https://unpkg.com');
+    expect(htmlBlockPrompt(policy)).toContain('概念模拟器');
+    expect(htmlBlockPrompt(policy)).toContain('知识自测');
     expect(htmlBlockPrompt({ enabled: false, cdn: [] })).not.toContain('fillInput');
     const projection = projectBlocks([{ id: '1', index: 0, type: 'html', status: 'ready', title: '选择', source: page, alt: '两个选项' }]);
     expect(projection).toContain('选择'); expect(projection).toContain('wwa.fillInput');

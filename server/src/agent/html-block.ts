@@ -50,7 +50,7 @@ export function validateHtmlSource(source: string, policy: HtmlBlockPolicy) {
 export function htmlBlockPrompt(policy: HtmlBlockPolicy) {
   if (!policy.enabled) return '【交互页面】\nhtml 块已在设置中关闭。不要使用 html 块；需要图示时用 svg、mermaid 或 chart。';
   return `【交互页面】
-只有需要用户在页面里操作时（选择题、快速决策、筛选、小计算器），才在 present_reply 里用 html 块；静态图示仍用 svg、mermaid 或 chart。
+只有需要用户在页面里操作时（选择题、快速决策、筛选、小计算器、概念模拟器、互动讲解、参数实验、知识自测），才在 present_reply 里用 html 块；静态图示仍用 svg、mermaid 或 chart。
 html 块：{ type: "html", title, alt, source, height? }。source 是完整的单文件 HTML（最多 ${HTML_SOURCE_LIMIT} 字符），alt 用一句话说明页面内容和用法，height 是 ${HTML_HEIGHT_MIN}-${HTML_HEIGHT_MAX} 的初始高度。
 页面运行在隔离沙箱里：不能联网（fetch、XHR、WebSocket 都会失败），不能跳转、弹窗、提交表单，读不到 WWA 的数据。页面需要的数据直接写在 source 里。
 外部库只能从这些地址加载：${policy.cdn.join('、')}。地址必须写死精确版本号（例如 https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js），能加 integrity 就加。不能用 eval 或 new Function。
