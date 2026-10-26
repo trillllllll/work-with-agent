@@ -32,8 +32,8 @@ describe('手机底栏契约', () => {
     }
   });
 
-  it('20 个白名单 ID 都有名称、图标，且与公共菜单元数据对应', () => {
-    expect(MOBILE_NAVIGATION_VIEWS).toHaveLength(20);
+  it('21 个白名单 ID 都有名称、图标，且与公共菜单元数据对应', () => {
+    expect(MOBILE_NAVIGATION_VIEWS).toHaveLength(21);
     for (const view of MOBILE_NAVIGATION_VIEWS) {
       expect(MOBILE_NAVIGATION_LABELS[view].length).toBeGreaterThan(0);
     }

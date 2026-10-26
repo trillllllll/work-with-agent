@@ -5,6 +5,10 @@ export const e2eDatabase = new PrismaClient({ datasourceUrl: process.env.E2E_DAT
 
 export async function resetE2eDatabase() {
   await e2eDatabase.planTimeBand.deleteMany();
+  // 学习域：先动态后节点再地图，遵守外键顺序。
+  await e2eDatabase.learningActivity.deleteMany();
+  await e2eDatabase.learningNode.deleteMany();
+  await e2eDatabase.learningMap.deleteMany();
   for (const name of ['worktreeCleanup', 'orchestrationEvent', 'nodeJob', 'orchestrationStep', 'orchestration', 'projectBinding', 'projectLocation', 'project', 'agentNode', 'memorySuggestionKey', 'autoMemoryJob', 'autoMemorySource', 'autoMemoryTurn', 'autoMemoryScope', 'librarySearchPosting', 'librarySearchNormMap', 'librarySearchDocument', 'materialChunk', 'materialExtraction', 'materialTag', 'materialTaskLink', 'libraryAnswer', 'libraryUpload', 'codeApplication', 'handoffReview', 'artifact', 'runEvent', 'run', 'handoff', 'reviewBatch', 'reviewRule', 'organizationRequest', 'workingBrief', 'graphLink', 'entity', 'memoryVersion', 'memory', 'materialVersion', 'material', 'requestReceipt', 'proposal', 'connection'] as const) await e2eDatabase[name].deleteMany();
   const folders = await e2eDatabase.libraryFolder.findMany({ select: { id: true, parentId: true } });
   const pending = new Map(folders.map((folder) => [folder.id, folder.parentId]));

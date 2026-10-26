@@ -1,4 +1,4 @@
-import { Archive, Bot, CalendarClock, CalendarDays, CalendarRange, ChartColumn, ClipboardCheck, FolderKanban, GitBranch, Grid2X2, History, Inbox, Library, Menu, MessageSquare, NotebookText, Plug, Search, Settings, Sparkles, Tags, Timer, Trash2, type LucideIcon } from 'lucide-react';
+import { Archive, Bot, CalendarClock, CalendarDays, CalendarRange, ChartColumn, ClipboardCheck, FolderKanban, GitBranch, GraduationCap, Grid2X2, History, Inbox, Library, Menu, MessageSquare, NotebookText, Plug, Search, Settings, Sparkles, Tags, Timer, Trash2, type LucideIcon } from 'lucide-react';
 import { t } from '../i18n/index.js';
 import type { View } from './api.js';
 import type { MobileNavigationView } from './mobile-navigation.js';
@@ -25,6 +25,7 @@ export const navigationItems: NavigationItem[] = [
   navItem('proposals', 'app:nav.proposals', ClipboardCheck),
   navItem('knowledge', 'app:nav.knowledge', NotebookText),
   navItem('library', 'app:nav.library', Library),
+  navItem('learning', 'app:nav.learning', GraduationCap),
   navItem('skills', 'app:nav.skills', Sparkles),
   navItem('runs', 'app:nav.runs', Bot),
   navItem('worktrees', 'app:nav.worktrees', GitBranch),
@@ -44,7 +45,7 @@ const itemsByView = new Map<View, NavigationItem>([...navigationItems, chatItem]
 export const navigationGroups = [
   { id: 'daily', views: ['today', 'plan', 'focus', 'stats', 'quadrant'] },
   { id: 'lists', views: ['inbox', 'topics', 'tags', 'archived'] },
-  { id: 'knowledge', views: ['library', 'knowledge', 'reviews'] },
+  { id: 'knowledge', views: ['library', 'knowledge', 'learning', 'reviews'] },
   { id: 'collaboration', views: ['chat', 'proposals', 'skills', 'connections', 'runs'] },
   { id: 'advanced', views: ['worktrees'] },
   { id: 'system', views: ['search', 'settings', 'changes', 'trash'] },

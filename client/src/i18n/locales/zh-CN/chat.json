@@ -35,6 +35,7 @@
     "trash": "回收站",
     "focus": "专注",
     "stats": "统计",
+    "learning": "学习地图",
     "settings": "设置",
     "connections": "连接",
     "skills": "技能",
@@ -65,6 +66,11 @@
       "1": "帮我梳理当前工作的重点",
       "2": "找找相关任务和资料",
       "3": "这个页面怎么用？"
+    },
+    "study": {
+      "1": "帮我把这个主题整理成一张学习地图",
+      "2": "根据我的学习地图出几道题考考我",
+      "3": "我们学到哪了？接下来学什么"
     }
   },
   "attachments": {
@@ -199,7 +205,10 @@
     "selectedAttachment": "{{title}} · 选中文字",
     "removeAttachment": "移除 {{title}}",
     "configureModelAction": "去配置",
-    "greeting": "一起把工作往前推。"
+    "greeting": "一起把工作往前推。",
+    "identityWork": "工作助手",
+    "identityStudy": "学习助手",
+    "switchIdentity": "切换助手"
   },
   "chatPickers": {
     "history": "历史对话",

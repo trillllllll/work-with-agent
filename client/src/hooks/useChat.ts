@@ -26,6 +26,7 @@ type UseChatOptions = {
   selectedTopicId: string;
   taskId?: string;
   view: View;
+  identityId?: string;
   filters?: TaskFilters;
   sort?: string;
   includeArchived?: boolean;
@@ -33,7 +34,7 @@ type UseChatOptions = {
   onError: (message: string) => void;
 };
 
-export function useChat({ pageContext, selectedTopicId, taskId = '', view, filters, sort, includeArchived = false, today = '', onError }: UseChatOptions) {
+export function useChat({ pageContext, selectedTopicId, taskId = '', view, identityId, filters, sort, includeArchived = false, today = '', onError }: UseChatOptions) {
   const { t } = useTranslation('chat');
   const tRef = useRef(t);
   tRef.current = t;
@@ -43,6 +44,8 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
   onErrorRef.current = onError;
   const [input, setInput] = useState('');
   const [conversationId, setConversationId] = useState<string>(() => localStorage.getItem('dovun.conversationId') ?? '');
+  const identityIdRef = useRef(identityId ?? 'work');
+  identityIdRef.current = identityId ?? 'work';
   const [contextStats, setContextStats] = useState<ContextUsage | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
@@ -97,7 +100,13 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
   conversationRef.current = conversationId;
   busyRef.current = busy;
 
-  const invalidate = () => { void invalidateTodo(queryClient); void queryClient.invalidateQueries({ queryKey: ['proposals'] }); };
+  const invalidate = () => {
+    void invalidateTodo(queryClient);
+    void queryClient.invalidateQueries({ queryKey: ['proposals'] });
+    // 审批可能改到学习域；地图页未挂载时这里是无害的空失效。
+    void queryClient.invalidateQueries({ queryKey: ['learning-maps'] });
+    void queryClient.invalidateQueries({ queryKey: ['learning-map'] });
+  };
 
   const resumableReason = (reason: string | null | undefined) => Boolean(reason && ['new_user_message', 'interrupted', 'round_limit'].includes(reason));
   const reloadConversation = async (id = conversationRef.current, force = false) => {
@@ -316,7 +325,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, filte
     const requestKey = crypto.randomUUID();
     const requestContext = structuredClone(contextRef.current ?? buildChatContext({ page: view, topicId: selectedTopicId, taskId, materialId: view === 'library' ? library.preview?.materialId ?? null : null, filters, sort, includeArchived, today }));
     requestContext.referencedApprovalId = reference?.id ?? null;
-    const requestBody = { conversationId: conversationRef.current || undefined, message, requestKey, context: requestContext };
+    const requestBody = { conversationId: conversationRef.current || undefined, identityId: identityIdRef.current, message, requestKey, context: requestContext };
     // Store the exact body before sending. Replays must retain both the key and its original context.
     const storedBody = JSON.stringify(requestBody);
     try {

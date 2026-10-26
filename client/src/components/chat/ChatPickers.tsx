@@ -9,13 +9,13 @@ import { Button } from '@/components/ui/button.js';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.js';
 import type { LibraryRow, Page } from '@/components/library/types.js';
 
-type ConversationPage = { items: Array<{ id: string; title: string; createdAt: string }>; nextCursor: string | null };
-export function ChatHistory({ busy, currentId, onSelect }: { busy: boolean; currentId: string; onSelect: (id: string) => void }) {
+type ConversationPage = { items: Array<{ id: string; identityId?: string; title: string; createdAt: string }>; nextCursor: string | null };
+export function ChatHistory({ busy, currentId, identityId = 'work', onSelect }: { busy: boolean; currentId: string; identityId?: string; onSelect: (id: string) => void }) {
   const { t } = useTranslation('chat');
   const [open, setOpen] = useState(false);
   const history = useInfiniteQuery({
-    queryKey: ['assistant-history'], initialPageParam: '', enabled: open,
-    queryFn: ({ pageParam }) => api<ConversationPage>(`/api/conversations${pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : ''}`),
+    queryKey: ['assistant-history', identityId], initialPageParam: '', enabled: open,
+    queryFn: ({ pageParam }) => api<ConversationPage>(`/api/conversations?identityId=${encodeURIComponent(identityId)}${pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ''}`),
     getNextPageParam: (page) => page.nextCursor ?? undefined, staleTime: 0,
   });
   return <Popover open={open} onOpenChange={setOpen}><PopoverTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={t('chatPickers.history')} title={t('chatPickers.history')}><History /></Button></PopoverTrigger><PopoverContent data-assistant-floating align="end" className="w-80 max-w-[calc(100vw-2rem)] p-3">

@@ -2,7 +2,7 @@ import { Surface } from '@/components/ui/surface.js';
 import mark from '@/assets/dovun-mark.svg';
 import { settingsHash } from '@/components/settings/settings-categories.js';
 import { ContextSummary } from './ContextSummary.js';
-import { suggestions } from '@/lib/assistant-context.js';
+import { suggestions, studySuggestions } from '@/lib/assistant-context.js';
 import { ChevronDown, Ellipsis, Maximize2, Minimize2, RotateCcw, Sparkles, SquarePen, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChat } from '@/hooks/useChat.js';
@@ -25,6 +25,8 @@ import { AssistantInputProvider } from './assistant-input.js';
 
 type ChatPanelProps = {
   chat: ReturnType<typeof useChat>;
+  identityId?: string;
+  onSwitchIdentity?: (identityId: string) => void;
   onClose: () => void;
   mobile?: boolean;
   presentation?: 'side' | 'expanded' | 'direct';
@@ -33,7 +35,7 @@ type ChatPanelProps = {
   showClose?: boolean;
 };
 
-export function ChatPanel({ chat, onClose, mobile, presentation = 'side', onExpand, onShrink, showClose = true }: ChatPanelProps) {
+export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose, mobile, presentation = 'side', onExpand, onShrink, showClose = true }: ChatPanelProps) {
   const { t } = useTranslation('chat');
   const action = usePlatformAction();
   const settings = useQuery<Settings>({ queryKey: ['settings'], queryFn: () => api('/api/settings') });
@@ -58,8 +60,12 @@ export function ChatPanel({ chat, onClose, mobile, presentation = 'side', onExpa
     <div className="dovun-assistant flex h-full min-h-0 min-w-0 flex-col" data-testid="ai-assistant" data-presentation={presentation}>
       <header className="assistant-header flex shrink-0 items-center gap-2 border-b px-4 py-3">
         <Sparkles className="size-4 shrink-0 text-muted-foreground" />
-        <div className="min-w-0 flex-1"><h2 className="text-sm font-semibold">{t('chatPanel.title')}</h2><span className="text-[10px] text-muted-foreground" role="status">{busy ? t('status.working') : interrupted ? t('status.interrupted') : settings.isLoading ? t('status.checking') : settings.error ? t('status.unknown') : configured ? t('status.available') : t('status.noModel')}</span></div>
-        <ChatHistory busy={busy || action.busy || Boolean(executingApprovalId)} currentId={chat.conversationId} onSelect={chat.selectConversation} />
+        <div className="min-w-0 flex-1"><h2 className="text-sm font-semibold">{identityId === 'study' ? t('chatPanel.identityStudy') : t('chatPanel.title')}</h2><span className="text-[10px] text-muted-foreground" role="status">{busy ? t('status.working') : interrupted ? t('status.interrupted') : settings.isLoading ? t('status.checking') : settings.error ? t('status.unknown') : configured ? t('status.available') : t('status.noModel')}</span></div>
+        {onSwitchIdentity && <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" disabled={busy || Boolean(executingApprovalId)} aria-label={t('chatPanel.switchIdentity')} title={t('chatPanel.switchIdentity')}>{identityId === 'study' ? t('chatPanel.identityStudy') : t('chatPanel.identityWork')}<ChevronDown className="size-3" /></Button></DropdownMenuTrigger><DropdownMenuContent data-assistant-floating align="end">
+          <DropdownMenuItem disabled={identityId === 'work'} onSelect={() => onSwitchIdentity('work')}>{t('chatPanel.identityWork')}</DropdownMenuItem>
+          <DropdownMenuItem disabled={identityId === 'study'} onSelect={() => onSwitchIdentity('study')}>{t('chatPanel.identityStudy')}</DropdownMenuItem>
+        </DropdownMenuContent></DropdownMenu>}
+        <ChatHistory busy={busy || action.busy || Boolean(executingApprovalId)} currentId={chat.conversationId} identityId={identityId} onSelect={chat.selectConversation} />
         <Button variant="ghost" size="icon-sm" disabled={busy || Boolean(executingApprovalId)} onClick={startNew} aria-label={t('chatPanel.newConversation')} title={t('chatPanel.newConversation')}><SquarePen /></Button>
         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={t('chatPanel.moreActions')} title={t('chatPanel.moreActions')}><Ellipsis /></Button></DropdownMenuTrigger><DropdownMenuContent data-assistant-floating align="end">
           <DropdownMenuItem disabled={busy || action.busy || !chat.conversationId || !messages.length} onSelect={() => void action.run(() => api('/api/v1/knowledge/materials/from-conversation', { method: 'POST', body: json({ conversationId: chat.conversationId, topicId: chat.selectedTopicId || null, title: t('chatPanel.sessionMaterialTitle', { time: new Date().toLocaleString(intlLocale()) }) }) }), t('chatPanel.sessionSaved'))}>{t('chatPanel.saveSession')}</DropdownMenuItem>
@@ -73,7 +79,7 @@ export function ChatPanel({ chat, onClose, mobile, presentation = 'side', onExpa
       {!settings.isLoading && !settings.error && !configured && <p className="shrink-0 px-4 py-2 text-xs text-muted-foreground">{t('chatPanel.configureModel')} <a className="font-medium text-brand-link underline-offset-4 hover:underline" href={`#${settingsHash('model')}`}>{t('chatPanel.configureModelAction')}</a></p>}
       <AssistantInputProvider setInput={setInput}><MessageList emptyState={<>
       <div className="dovun-assistant-welcome"><img src={mark} alt="" /><h3>{t('chatPanel.title')}</h3><p>{t('chatPanel.greeting')}</p></div>
-      <div className="dovun-assistant-suggestions flex flex-wrap gap-2 px-3 pt-3">{suggestions(chat.context?.page ?? '').map((item) => <Button key={item} size="sm" variant="outline" className="h-auto whitespace-normal text-left" onClick={() => setInput(input.trim() ? `${input}\n\n${item}` : item)}>{item}</Button>)}</div>
+      <div className="dovun-assistant-suggestions flex flex-wrap gap-2 px-3 pt-3">{(identityId === 'study' ? studySuggestions() : suggestions(chat.context?.page ?? '')).map((item) => <Button key={item} size="sm" variant="outline" className="h-auto whitespace-normal text-left" onClick={() => setInput(input.trim() ? `${input}\n\n${item}` : item)}>{item}</Button>)}</div>
       </>} messages={messages} approvals={approvals} approvalPending={approve.isPending || reject.isPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} unresolvedApprovalIds={unresolvedApprovalIds} phase={decisionPhase} onApprove={(id) => approve.mutate(id)} onReject={(id) => reject.mutate(id)} onChanged={refreshApprovals} onRepreviewed={showRepreview} /></AssistantInputProvider>
       {pausedRun && ['new_user_message', 'interrupted', 'round_limit'].includes(pausedRun.reason) && (
         <div className="mx-3 mb-2 flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-xs">

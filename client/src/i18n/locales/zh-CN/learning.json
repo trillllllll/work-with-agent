@@ -1,0 +1,42 @@
+{
+  "title": "学习地图",
+  "defaultGoal": "和学习助手聊聊，规划要学什么。",
+  "askAssistant": "问学习助手",
+  "selectMap": "学习地图",
+  "loadFailed": "学习地图加载失败",
+  "stats": {
+    "topics": "主题",
+    "items": "清单条目",
+    "done": "已完成",
+    "mastery": "平均掌握度"
+  },
+  "empty": {
+    "title": "还没有学习地图",
+    "hint": "打开学习助手，告诉它你想学什么。它会起草一张学习地图和清单条目，你确认后就会出现在这里。"
+  },
+  "chart": {
+    "label": "学习地图结构图，颜色代表掌握度",
+    "mastery": "掌握度"
+  },
+  "detail": {
+    "panel": "条目详情",
+    "empty": "点击图谱中的节点查看详情。",
+    "mastery": "掌握度"
+  },
+  "kind": {
+    "topic": "主题",
+    "item": "清单条目"
+  },
+  "status": {
+    "todo": "待学习",
+    "learning": "学习中",
+    "done": "已完成"
+  },
+  "activity": {
+    "title": "最近学习动态",
+    "session": "陪学",
+    "status": "进度",
+    "note": "笔记",
+    "empty": "暂无动态"
+  }
+}
