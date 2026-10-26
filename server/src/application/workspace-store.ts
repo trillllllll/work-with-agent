@@ -66,18 +66,36 @@ type ScopeSnapshot = { scope: Scope; members: string[] };
 export type GroupSnapshot = { version: 2; entities: EntityMaps; scopes: ScopeSnapshot[] };
 export function isGroup(value: any): value is GroupSnapshot { return value?.version === 2 && Boolean(value.entities && value.scopes); }
 
-/** Old change snapshots predate completedAt. Drop both keys so undo can still match the row. */
+/**
+ * Columns added after the first shipped snapshots, grouped by the migration that
+ * introduced them. A group is detected by its first key: a snapshot that knows
+ * completedAt also knows completedAtEstimated, so the pair is kept or dropped together.
+ */
+const legacyTaskColumnGroups: readonly (readonly string[])[] = [['completedAt', 'completedAtEstimated'], ['recurrenceRule']];
+const legacyTopicColumnGroups: readonly (readonly string[])[] = [['goalDueDate']];
+
 export function withoutLegacyTaskKeys<T extends Record<string, unknown>>(row: T): T {
   const copy = { ...row };
-  delete copy.completedAt;
-  delete copy.completedAtEstimated;
+  for (const group of legacyTaskColumnGroups) for (const key of group) delete copy[key];
   return copy;
 }
 
-/** When the expected snapshot has no completedAt key, compare without the two new columns. */
+function legacySnapshot(groups: readonly (readonly string[])[], expected: object | null, current: Record<string, unknown> | null) {
+  if (!current || !expected) return current;
+  const missing = groups.filter((group) => !Object.prototype.hasOwnProperty.call(expected, group[0]));
+  if (!missing.length) return current;
+  const copy = { ...current };
+  for (const group of missing) for (const key of group) delete copy[key];
+  return copy;
+}
+
+/** Compare only against column groups the expected snapshot knows, so mixed-era snapshots still match. */
 export function legacyTaskSnapshot(expected: object | null, current: Record<string, unknown> | null) {
-  if (!current || !expected || Object.prototype.hasOwnProperty.call(expected, 'completedAt')) return current;
-  return withoutLegacyTaskKeys(current);
+  return legacySnapshot(legacyTaskColumnGroups, expected, current);
+}
+
+export function legacyTopicSnapshot(expected: object | null, current: Record<string, unknown> | null) {
+  return legacySnapshot(legacyTopicColumnGroups, expected, current);
 }
 
 async function readEntity(tx: Db, kind: keyof EntityMaps, id: string): Promise<any> {
@@ -172,7 +190,7 @@ export async function restoreGroup(tx: Db, before: GroupSnapshot, after: GroupSn
   for (const kind of ['tasks', 'topics', 'tags'] as const) {
     for (const [id, expected] of Object.entries(after.entities[kind])) {
       const current = await readEntity(tx, kind, id);
-      const comparable = kind === 'tasks' ? legacyTaskSnapshot(expected, current) : current;
+      const comparable = kind === 'tasks' ? legacyTaskSnapshot(expected, current) : kind === 'topics' ? legacyTopicSnapshot(expected, current) : current;
       if (expected === null ? current !== null : !current || current.revision !== expected.revision || JSON.stringify(comparable) !== JSON.stringify(expected)) throw conflict('对象已发生后续变更，无法撤销');
     }
   }

@@ -260,12 +260,14 @@ describe('Agent tool gate', () => {
   }
 
   it('replays the previous turn in the next model request', async () => {
+    await prisma.topic.update({ where: { id: topicId }, data: { goal: '年内完成整理', goalDueDate: '2026-12-31' } });
     const first = await request(app).post('/api/chat').send({ message: '请记住暗号青鸟', pageContext: { topicId, page: 'board' } });
     const conversationId = conversationIdFrom(first.text);
     expect(conversationId).toBeTruthy();
     await request(app).post('/api/chat').send({ conversationId, message: '暗号是什么', pageContext: { topicId, page: 'board', taskId } });
     const body = modelRequestFor('暗号是什么');
     expect(body.messages[0].content).toContain(`当前清单：${topicName} ${topicId}`);
+    expect(body.messages[0].content).toContain('清单目标：年内完成整理（截止 2026-12-31）');
     expect(body.messages[0].content).toContain(taskId);
     expect(body.messages[0].content).not.toContain('recentMessages');
     expect(body.messages).toEqual(expect.arrayContaining([

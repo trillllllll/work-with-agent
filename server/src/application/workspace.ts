@@ -126,8 +126,8 @@ export function reversibleChange(entityType: string, operation: string) {
   return reversibleOp(entityType, operation);
 }
 
-const taskFields = ['id', 'topicId', 'title', 'description', 'status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'deletedAt', 'createdAt', 'updatedAt', 'parentId', 'sortOrder', 'revision', 'deleteBatchId', 'tagIds'];
-const topicFields = ['id', 'name', 'description', 'color', 'isExploration', 'goal', 'draftSummary', 'finalSummary', 'summaryStatus', 'summaryUpdatedAt', 'archivedAt', 'createdAt', 'updatedAt', 'revision'];
+const taskFields = ['id', 'topicId', 'title', 'description', 'status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'recurrenceRule', 'deletedAt', 'createdAt', 'updatedAt', 'parentId', 'sortOrder', 'revision', 'deleteBatchId', 'tagIds'];
+const topicFields = ['id', 'name', 'description', 'color', 'isExploration', 'goal', 'goalDueDate', 'draftSummary', 'finalSummary', 'summaryStatus', 'summaryUpdatedAt', 'archivedAt', 'createdAt', 'updatedAt', 'revision'];
 function pickFields(value: Record<string, unknown>, fields: string[]) {
   return Object.fromEntries(fields.filter((key) => value[key] !== undefined).map((key) => [key, value[key]]));
 }
@@ -153,6 +153,7 @@ const legacyTaskSchema = taskFieldObject.extend({
   updatedAt: z.string().default(''),
   completedAt: z.string().nullable().default(null),
   completedAtEstimated: z.boolean().default(false),
+  recurrenceRule: taskFieldObject.shape.recurrenceRule.default(''),
 });
 const legacyTopicSchema = topicCreateSchema.extend({
   id: z.string().min(1),
@@ -160,6 +161,7 @@ const legacyTopicSchema = topicCreateSchema.extend({
   color: z.enum(tagColors).default('slate'),
   isExploration: z.boolean().default(false),
   goal: z.string().default(''),
+  goalDueDate: z.string().nullable().default(null),
   draftSummary: z.string().default(''),
   finalSummary: z.string().default(''),
   summaryStatus: z.string().default('empty'),

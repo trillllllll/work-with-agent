@@ -480,7 +480,7 @@ export function App() {
     if (!topicForm?.name?.trim() || topicSaveLock.current) return;
     topicSaveLock.current = true;
     try {
-      const response = await actions.write<Topic>(topicForm.id ? `/api/topics/${topicForm.id}` : '/api/topics', topicForm.id ? 'PATCH' : 'POST', { expectedRevision: topicForm.revision, name: topicForm.name.trim(), description: topicForm.description ?? '', color: topicForm.color ?? 'slate', isExploration: topicForm.isExploration ?? false, ...(topicForm.goal !== undefined ? { goal: topicForm.goal } : {}) }, [topicForm.id ?? 'topic-create'], topicForm.id ? t('shell.listUpdated') : t('shell.listCreated'));
+      const response = await actions.write<Topic>(topicForm.id ? `/api/topics/${topicForm.id}` : '/api/topics', topicForm.id ? 'PATCH' : 'POST', { expectedRevision: topicForm.revision, name: topicForm.name.trim(), description: topicForm.description ?? '', color: topicForm.color ?? 'slate', isExploration: topicForm.isExploration ?? false, ...(topicForm.goal !== undefined ? { goal: topicForm.goal } : {}), ...(topicForm.goalDueDate !== undefined ? { goalDueDate: topicForm.goalDueDate || null } : {}) }, [topicForm.id ?? 'topic-create'], topicForm.id ? t('shell.listUpdated') : t('shell.listCreated'));
       setTopicForm(null); selectTopic(response.data.id);
     } catch { /* Keep the form available. */ } finally { topicSaveLock.current = false; }
   };

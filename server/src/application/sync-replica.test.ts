@@ -10,7 +10,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { app } from '../app.js';
 import { prisma, sqliteConnectionUrl } from '../infrastructure/prisma.js';
 import { ownerSession } from '../test-auth.js';
-import { syncFields, type SyncRow } from './sync-merge.js';
+import { DomainError } from '../domain/task.js';
+import { isCompleteSyncRow, syncFields, type SyncRow } from './sync-merge.js';
 import { listBaselineRows, readSyncSnapshot, offerBaselineRows, pairSyncDevice, pullSyncOps, pushSyncOps, readLive, writeLive } from './sync-log.js';
 import { localSchemaVersion } from './snapshots.js';
 import { alignReplica, assertSyncUrl, readSyncBinding, recordCommittedGroup, runReplicaCycle, writeSyncBinding, type ReplicaTransport } from './sync-replica.js';
@@ -29,7 +30,7 @@ let transport: ReplicaTransport;
 function filled(entity: 'task' | 'topic', patch: Record<string, unknown>): SyncRow {
   const row: SyncRow = {};
   for (const field of syncFields[entity]) row[field] = field === 'tagIds' ? [] : field === 'completedAtEstimated' ? false : null;
-  if (entity === 'task') Object.assign(row, { title: '', description: '', status: 'todo', priority: 'none', resultSummary: '', sortOrder: 0 });
+  if (entity === 'task') Object.assign(row, { title: '', description: '', status: 'todo', priority: 'none', resultSummary: '', recurrenceRule: '', sortOrder: 0 });
   else Object.assign(row, { name: '', description: '', color: 'slate', isExploration: false, goal: '', draftSummary: '', finalSummary: '', summaryStatus: 'empty' });
   return { ...row, ...patch };
 }
@@ -182,6 +183,37 @@ describe('replica alignment', () => {
     }
     expect(await replica.syncOutbox.count({ where: { opId: { startsWith: 'change-enqueue-1:' } } })).toBe(1);
   }, 30_000);
+
+  it('propagates a hub-side recurring completion and its spawned occurrence to the replica in one cycle', async () => {
+    const session = await ownerSession(app);
+    const created = await request(app).post('/api/tasks').set('Cookie', session.cookie).set('X-CSRF-Token', session.csrf).send({ title: '同步周报', dueDate: '2026-10-20', recurrenceRule: '{"unit":"week","step":1}' });
+    expect(created.status, JSON.stringify(created.body)).toBe(200);
+    const originId = created.body.data.id as string;
+    expect((await canonical(prisma, 'task', originId))?.recurrenceRule).toBe('{"unit":"week","step":1}');
+    await runReplicaCycle(replica, transport);
+    expect((await canonical(replica, 'task', originId))?.recurrenceRule).toBe('{"unit":"week","step":1}');
+
+    let done = await request(app).patch(`/api/tasks/${originId}`).set('Cookie', session.cookie).set('X-CSRF-Token', session.csrf).send({ status: 'done', expectedRevision: created.body.data.revision });
+    if (done.status === 428) {
+      const preview = await request(app).post('/api/v1/commands/preview').set('Cookie', session.cookie).set('X-CSRF-Token', session.csrf).send({ commands: done.body.details.commands });
+      done = await request(app).patch(`/api/tasks/${originId}`).set('Cookie', session.cookie).set('X-CSRF-Token', session.csrf).send({ status: 'done', expectedRevision: created.body.data.revision, previewToken: preview.body.data.previewToken });
+    }
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    const nextId = (done.body.meta.affectedTaskIds as string[]).find((id) => id !== originId)!;
+    expect(nextId).toBeTruthy();
+
+    await runReplicaCycle(replica, transport);
+    expect((await canonical(replica, 'task', originId))?.status).toBe('done');
+    const next = await canonical(replica, 'task', nextId);
+    expect(next).toMatchObject({ title: '同步周报', status: 'todo', dueDate: '2026-10-27', recurrenceRule: '{"unit":"week","step":1}' });
+    try {
+      // syncOp rows stay: deleting them would punch gaps into the shared hub log and
+      // break seq-contiguity validation for every later test. afterAll scrubs them.
+      await prisma.taskTopicAssignment.deleteMany({ where: { taskId: { in: [originId, nextId] } } });
+      await prisma.changeRecord.deleteMany({ where: { OR: [{ entityId: originId }, { beforeSnapshot: { contains: originId } }, { afterSnapshot: { contains: originId } }] } });
+      await prisma.task.deleteMany({ where: { id: { in: [originId, nextId] } } });
+    } catch { /* best-effort fixture cleanup; afterAll scrubs the shared ids */ }
+  }, 30_000);
   async function pendingFixture() {
     await replica.syncOutbox.deleteMany();
     await replica.syncState.upsert({ where: { id: 'local' }, create: { id: 'local', baselineReady: true, appliedHubSeq: 0, updatedAt: new Date().toISOString() }, update: { baselineReady: true, appliedHubSeq: 0 } });
@@ -233,6 +265,33 @@ describe('replica alignment', () => {
       if (previousToken === undefined) delete process.env.DOVUN_SYNC_TOKEN; else process.env.DOVUN_SYNC_TOKEN = previousToken;
     }
     expect(await replica.syncOutbox.count({ where: { opId: { startsWith: 'before-baseline-change:' }, state: 'pending' } })).toBe(1);
+  });
+
+  it('drains a pre-migration outbox row by completing missing columns from the live row', async () => {
+    await replica.syncOutbox.deleteMany();
+    // A pending op persisted before a column-adding migration: its rows lack goalDueDate.
+    const legacyTopic = { ...filled('topic', { name: '迁移前清单' }) } as SyncRow;
+    delete (legacyTopic as Record<string, unknown>).goalDueDate;
+    await replica.$transaction(async (tx) => {
+      await writeLive(tx, 'topic', ids.replicaTopic, { ...legacyTopic, goalDueDate: '2026-12-31' });
+      await tx.syncState.upsert({ where: { id: 'local' }, create: { id: 'local', baselineReady: true, appliedHubSeq: 0, updatedAt: new Date().toISOString() }, update: { baselineReady: true } });
+      await tx.syncOutbox.create({ data: { opId: 'legacy-outbox-01', entityType: 'topic', entityId: ids.replicaTopic, beforeJson: null, afterJson: JSON.stringify(legacyTopic), state: 'pending', createdAt: new Date().toISOString() } });
+    });
+    const pushed: unknown[] = [];
+    const strictHub: ReplicaTransport = {
+      ...transport,
+      push: async (body) => {
+        for (const op of body.ops) {
+          if (!isCompleteSyncRow(op.entityType as 'task' | 'topic' | 'tag', op.before) || !isCompleteSyncRow(op.entityType as 'task' | 'topic' | 'tag', op.after)) throw new DomainError('VALIDATION_ERROR', '同步内容的字段或类型无效', 400);
+          pushed.push(op);
+        }
+        return transport.push(body);
+      },
+    };
+    await runReplicaCycle(replica, strictHub);
+    expect(pushed).toHaveLength(1);
+    expect((pushed[0] as { after: SyncRow }).after).toMatchObject({ name: '迁移前清单', goalDueDate: '2026-12-31' });
+    expect((await replica.syncOutbox.findUniqueOrThrow({ where: { opId: 'legacy-outbox-01' } })).state).toBe('acked');
   });
 
   it('serializes a manual alignment and timer cycle on the same database', async () => {

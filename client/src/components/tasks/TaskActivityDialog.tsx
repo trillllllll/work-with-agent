@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { api, priorities, statuses, type TaskActivityChange, type TaskActivityEvent } from '@/lib/api.js';
+import { recurrenceLabel } from '@/lib/recurrence.js';
 import { intlLocale, t as translate } from '../../i18n/index.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 
@@ -39,6 +40,10 @@ function minutesText(value: number | null) {
   return value === null ? translate('tasks:shared.none') : translate('tasks:shared.minuteCount', { count: value });
 }
 
+function recurrenceText(value: string) {
+  return value ? recurrenceLabel(value) : translate('tasks:recurrence.none');
+}
+
 function orNone(value: string | null | undefined) {
   return value ?? translate('tasks:shared.none');
 }
@@ -56,6 +61,7 @@ function sentence(change: TaskActivityChange) {
   if (change.field === 'dueDate') return changeText('tasks:activity.dateChange', orNone(change.before), orNone(change.after));
   if (change.field === 'scheduledStart' || change.field === 'scheduledEnd') return changeText(change.field === 'scheduledStart' ? 'tasks:activity.startChange' : 'tasks:activity.endChange', orNone(change.before?.replace('T', ' ')), orNone(change.after?.replace('T', ' ')));
   if (change.field === 'estimatedMinutes') return changeText('tasks:activity.estimateChange', minutesText(change.before), minutesText(change.after));
+  if (change.field === 'recurrenceRule') return changeText('tasks:activity.recurrenceChange', recurrenceText(change.before), recurrenceText(change.after));
   if (change.field === 'topicId') return changeText('tasks:activity.listChange', change.before.name, change.after.name);
   if (change.field === 'parentId') return changeText('tasks:activity.parentChange', change.before.title, change.after.title);
   if (change.field === 'tagIds') return changeText('tasks:activity.tagsChange', names(change.before), names(change.after));

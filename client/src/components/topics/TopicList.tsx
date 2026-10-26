@@ -1,10 +1,13 @@
 import { useTranslation } from 'react-i18next';
 import { Pencil, Plus, Settings } from 'lucide-react';
 import type { Topic } from '@/lib/api.js';
+import { localDate } from '@/lib/todo.js';
 import { cn } from '@/lib/utils.js';
 import { Button } from '@/components/ui/button.js';
 import { Skeleton } from '@/components/ui/skeleton.js';
 import { ThemeToggle } from '@/components/layout/ThemeToggle.js';
+
+const today = () => localDate();
 
 type TopicListProps = {
   topics: Topic[];
@@ -38,6 +41,7 @@ function SidebarTopicList({ topics, loading, selectedTopicId, onSelect, onEdit }
             <Button variant="row" size="bare" type="button" onClick={() => onSelect(topic.id)} aria-current={active ? 'page' : undefined} className="sidebar-link">
               <span className="sidebar-list-mark" data-color={topic.color || 'slate'} aria-hidden="true" />
               <span className="min-w-0 flex-1 truncate">{topic.name}</span>
+              {topic.goalDueDate && <em className={cn('sidebar-explore-tag', topic.goalDueDate < today() && 'text-destructive')} title={t('topicList.goalDueNamed', { name: topic.name, date: topic.goalDueDate })}>{t('topicList.goalDueTag')}</em>}
               {topic.isExploration && <em className="sidebar-explore-tag">{t('topicList.exploring')}</em>}
             </Button>
             <Button variant="row" size="bare" type="button" aria-label={t('topicList.editNamed', { name: topic.name })} onClick={() => onEdit(topic)} className="sidebar-edit">
@@ -67,7 +71,8 @@ function PageTopicList({ topics, loading, selectedTopicId, onSelect, onEdit, onO
             <Button variant="plain" size="bare" type="button" onClick={() => onSelect(topic.id)} aria-current={active ? 'page' : undefined} className={classificationLabelClass(active)}>
               <span className="list-color-dot" data-color={topic.color || 'slate'} aria-hidden="true" />
               <span className="truncate">{topic.name}</span>
-              {topic.isExploration && <em className="sidebar-explore-tag ml-auto">{t('topicList.exploring')}</em>}
+              {topic.goalDueDate && <em className={cn('sidebar-explore-tag ml-auto', topic.goalDueDate < today() && 'text-destructive')} title={t('topicList.goalDueNamed', { name: topic.name, date: topic.goalDueDate })}>{t('topicList.goalDueTag')}</em>}
+              {topic.isExploration && !topic.goalDueDate && <em className="sidebar-explore-tag ml-auto">{t('topicList.exploring')}</em>}
             </Button>
             <Button variant="plain" size="bare" type="button" title={t('topicList.edit')} aria-label={t('topicList.editNamed', { name: topic.name })} onClick={() => onEdit(topic)} className="mr-1 grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground opacity-100 transition-[background-color,color,opacity,transform] duration-200 hover:scale-105 hover:bg-[var(--glass-hover)] hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100">
               <Pencil className="size-3.5" />

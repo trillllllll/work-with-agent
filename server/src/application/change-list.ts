@@ -15,8 +15,8 @@ const STATUSES = ['reversible', 'undone', 'blocked'] as const;
 const DELETE_NAME_OPS = new Set(DELETE_OPS);
 const ID_LIKE = /^[A-Za-z0-9_-]{16,64}$/;
 const FIELD_PRIORITY: Record<string, string[]> = {
-  task: ['title', 'status', 'priority', 'dueDate', 'scheduledStart', 'topicId', 'parentId', 'description', 'tagIds'],
-  topic: ['name', 'description', 'color', 'goal', 'draftSummary', 'finalSummary', 'archivedAt'],
+  task: ['title', 'status', 'priority', 'dueDate', 'scheduledStart', 'topicId', 'parentId', 'description', 'tagIds', 'recurrenceRule'],
+  topic: ['name', 'description', 'color', 'goal', 'goalDueDate', 'draftSummary', 'finalSummary', 'archivedAt'],
   tag: ['name', 'color'],
 };
 const OTHER_FIELDS = ['title', 'name', 'enabled', 'status', 'archivedAt'];

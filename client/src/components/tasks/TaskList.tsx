@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { DndContext, DragOverlay, MouseSensor, TouchSensor, closestCenter, pointerWithin, useSensor, useSensors, type CollisionDetection, type DragEndEvent, type DragMoveEvent, type DragOverEvent, type DragStartEvent, type DraggableSyntheticListeners } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { CalendarDays, Clock, GripVertical } from 'lucide-react';
+import { CalendarDays, Clock, GripVertical, Repeat } from 'lucide-react';
 import type { Tag, Task, Topic } from '@/lib/api.js';
 import { priorities, statuses } from '@/lib/api.js';
 import type { TaskDraft } from '@/lib/todo.js';
@@ -16,6 +16,7 @@ import { Tooltip } from '@/components/ui/tooltip.js';
 import { TaskInlineContent } from './TaskInlineContent.js';
 import { inlineSchedule } from './task-inline.js';
 import { scheduleLabel } from '@/lib/schedule.js';
+import { recurrenceLabel } from '@/lib/recurrence.js';
 import { cn } from '@/lib/utils.js';
 import { completeSiblingIds, dragIndentOffset, projectTaskDrop, reorderTaskGroup, type OrderRow } from './task-order.js';
 import { useTaskCollapse } from './task-collapse.js';
@@ -198,6 +199,7 @@ const TaskArticle = forwardRef<HTMLElement, { task: Task; group?: Task[]; index?
       : <span className="task-expand-placeholder" aria-hidden="true" />)}
     <label className="task-inline-check" onMouseDown={stopDrag} onTouchStart={stopDrag} onPointerDown={stopDrag}><Checkbox shape="round"  className="task-checkbox size-[18px] shrink-0 accent-primary" checked={task.status === 'done'} disabled={preview || readonly || busy} aria-label={t(task.status === 'done' ? 'shared.reopenTask' : 'shared.completeTask', { title: task.title })} onMouseDown={stopDrag} onTouchStart={stopDrag} onPointerDown={stopDrag} onChange={() => { void onToggle(task).catch(() => undefined); }} /></label>
     <TaskInlineContent task={task} info={info} preview={preview} onOpen={open} />
+    {task.recurrenceRule && <span className="task-inline-schedule" aria-label={t('taskList.recurrenceAria', { label: recurrenceLabel(task.recurrenceRule) })} title={recurrenceLabel(task.recurrenceRule)}><Repeat aria-hidden="true" /></span>}
     {schedule && <Tooltip contentProps={{ onPointerDown: stopDrag, onMouseDown: stopDrag, onTouchStart: stopDrag, onClick: stopDrag }} content={<span onPointerDown={stopDrag} onMouseDown={stopDrag} onTouchStart={stopDrag} onClick={stopDrag}>{scheduleLabel(task)}</span>}><span className="task-inline-schedule" tabIndex={preview ? undefined : 0} aria-label={scheduleLabel(task)} onPointerDown={stopDrag} onMouseDown={stopDrag} onTouchStart={stopDrag} onClick={stopDrag}>{task.scheduledStart ? <Clock aria-hidden="true" /> : <CalendarDays aria-hidden="true" />}<time dateTime={schedule.dateTime}>{schedule.label}</time></span></Tooltip>}
     {preview ? <span className="task-menu-placeholder" /> : <TaskMenuButton />}
   </Surface>;

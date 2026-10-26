@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button.js';
 import { intlLocale } from '@/i18n/index.js';
 import { cn } from '@/lib/utils.js';
 
+const plusDays = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+
 type Layout = 'list' | 'board' | 'quadrant';
 
 type Props = {
@@ -34,7 +36,7 @@ export function ListPageHeader({ page, title, scoped, archived, today, detail, b
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
           {page === 'today' && <p className="dovun-page-date">{new Intl.DateTimeFormat(intlLocale(), { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date(`${today}T12:00:00`))}</p>}<h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-          {page === 'board' && detail?.goal && <p className="line-clamp-1 text-sm text-muted-foreground">{detail.goal}</p>}
+          {page === 'board' && detail && Boolean(detail.goal || detail.goalDueDate) && <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground"><span className="line-clamp-2 whitespace-pre-wrap">{detail.goal}</span>{detail.goalDueDate && <span className={cn('task-meta-pill shrink-0', detail.goalDueDate < today ? 'text-destructive' : detail.goalDueDate <= plusDays(today, 7) && 'text-warning')}>{t('listPageHeader.goalDue', { date: new Intl.DateTimeFormat(intlLocale(), { month: 'short', day: 'numeric' }).format(new Date(`${detail.goalDueDate}T12:00:00`)) })}{detail.goalDueDate < today ? ` · ${t('listPageHeader.goalOverdue')}` : ''}</span>}</p>}
           {page === 'board' && detail && <Button variant="plain" size="bare" type="button" className="topic-jump" onClick={onOpenKnowledge}><Library aria-hidden />{t('listPageHeader.workContext')}<ChevronRight aria-hidden /></Button>}
           {page === 'board' && briefNotes && <p className="line-clamp-2 text-sm whitespace-pre-wrap text-muted-foreground">{briefNotes}</p>}
           {filterSummary && <p className="text-xs text-muted-foreground">{filterSummary}</p>}

@@ -1,7 +1,7 @@
 /** Field-level three-way merge for hub sync. Ancestor is the op's before row. */
 export const syncFields = {
-  task: ['title', 'description', 'status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'topicId', 'parentId', 'deletedAt', 'deleteBatchId', 'sortOrder', 'tagIds', 'createdAt', 'completedAt', 'completedAtEstimated'],
-  topic: ['name', 'description', 'color', 'isExploration', 'goal', 'draftSummary', 'finalSummary', 'summaryStatus', 'summaryUpdatedAt', 'archivedAt'],
+  task: ['title', 'description', 'status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'recurrenceRule', 'topicId', 'parentId', 'deletedAt', 'deleteBatchId', 'sortOrder', 'tagIds', 'createdAt', 'completedAt', 'completedAtEstimated'],
+  topic: ['name', 'description', 'color', 'isExploration', 'goal', 'goalDueDate', 'draftSummary', 'finalSummary', 'summaryStatus', 'summaryUpdatedAt', 'archivedAt'],
   tag: ['name', 'color'],
 } as const;
 
@@ -13,7 +13,7 @@ export function isCompleteSyncRow(entity: SyncEntityType, value: unknown): value
   if (value === null) return true;
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const row = value as SyncRow;
-  const nullable = new Set(['dueDate', 'scheduledStart', 'scheduledEnd', 'topicId', 'parentId', 'deletedAt', 'deleteBatchId', 'summaryUpdatedAt', 'archivedAt', 'createdAt', 'completedAt']);
+  const nullable = new Set(['dueDate', 'scheduledStart', 'scheduledEnd', 'topicId', 'parentId', 'deletedAt', 'deleteBatchId', 'summaryUpdatedAt', 'archivedAt', 'createdAt', 'completedAt', 'goalDueDate']);
   return syncFields[entity].every(field => {
     if (!Object.prototype.hasOwnProperty.call(row, field)) return false;
     const item = row[field];
@@ -56,6 +56,27 @@ export function canonicalSyncRow(entityType: SyncEntityType, row: Record<string,
     else if (row[field] !== undefined) out[field] = row[field];
   }
   return out;
+}
+
+/**
+ * Outbox rows written before a column-adding migration lack the newer keys, but the
+ * hub boundary requires complete rows, so such an op could never drain. Fill missing
+ * fields from the live row (or empty defaults once the row is gone): before and after
+ * carry the same value for those fields, meaning the op makes no statement about them
+ * and the three-way merge leaves concurrent edits alone.
+ */
+export function completeLegacySyncRow(entityType: SyncEntityType, row: SyncRow | null, live: SyncRow | null): SyncRow | null {
+  if (!row) return null;
+  const missing = syncFields[entityType].filter((field) => !Object.prototype.hasOwnProperty.call(row, field));
+  if (!missing.length) return row;
+  const filled = { ...row };
+  const fallback = empty(entityType);
+  for (const field of missing) filled[field] = live && live[field] !== undefined ? live[field] : fallback[field];
+  return filled;
+}
+
+export function isLegacySyncRow(entityType: SyncEntityType, row: SyncRow | null): boolean {
+  return Boolean(row) && syncFields[entityType].some((field) => !Object.prototype.hasOwnProperty.call(row as SyncRow, field));
 }
 
 export function syncRowsEqual(entityType: SyncEntityType, left: SyncRow | null, right: SyncRow | null) {

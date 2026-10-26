@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { DomainError } from '../domain/task.js';
 import { calendarDate, isCalendarDate, isLocalDateTime, localDateTime, reorderSchema, tagColors, tagCreateSchema, topicCreateSchema } from '../application/workspace-input.js';
-import { completeChildrenLine, createStatusLine, dueDateDescription, estimateLine, parentLine, reorderCoverageLine, scheduleMoves, scheduleShapes, scheduledEndDescription, scheduledStartDescription, sortLine, statusTransitionLine, tagIdsDescription, topicIdDescription } from './task-write-spec.js';
+import { completeChildrenLine, createStatusLine, dueDateDescription, estimateLine, parentLine, recurrenceDescription, reorderCoverageLine, scheduleMoves, scheduleShapes, scheduledEndDescription, scheduledStartDescription, sortLine, statusTransitionLine, tagIdsDescription, topicIdDescription } from './task-write-spec.js';
 
 export const workspaceWriteKinds = [
   'task.create', 'task.update', 'task.delete', 'task.restore', 'task.reorder',
@@ -54,6 +54,7 @@ const taskProperties = {
   scheduledStart: { anyOf: [{ type: 'null' }, { type: 'string', format: 'wwa-local-date-time' }], description: scheduledStartDescription },
   scheduledEnd: { anyOf: [{ type: 'null' }, { type: 'string', format: 'wwa-local-date-time' }], description: scheduledEndDescription },
   resultSummary: { type: 'string' },
+  recurrenceRule: { type: 'string', description: recurrenceDescription },
   tagIds: { type: 'array', items: stringSchema, uniqueItems: true, description: tagIdsDescription },
 };
 
@@ -108,7 +109,7 @@ function commandSchema(kind: string, input: JsonSchema, fields: { clientRef?: bo
 
 const taskCreateJson = objectSchema(taskProperties, ['title']);
 const taskUpdateJson = objectSchema({ ...taskProperties, completeChildren: { type: 'boolean', description: completeChildrenLine } }, [], 1);
-const topicProperties = { name: stringSchema, description: { type: 'string' }, color: { enum: [...tagColors] }, isExploration: { type: 'boolean' }, goal: { type: 'string' } };
+const topicProperties = { name: stringSchema, description: { type: 'string' }, color: { enum: [...tagColors] }, isExploration: { type: 'boolean' }, goal: { type: 'string', description: '清单的长期目标，一两句话写清要达成什么。' }, goalDueDate: { anyOf: [{ type: 'null' }, { type: 'string', format: 'wwa-calendar-date' }], description: '目标截止日 YYYY-MM-DD；null 清除。' } };
 const topicCreateJson = objectSchema(topicProperties, ['name']);
 const topicUpdateJson = objectSchema({ ...topicProperties, draftSummary: { type: 'string' } }, [], 1);
 const tagProperties = { name: stringSchema, color: { enum: [...tagColors] } };

@@ -1,4 +1,5 @@
 import { emptySchedule, normalizeSchedule, shiftMinutes } from '../domain/schedule.js';
+import { nextRecurrenceDate, parseRecurrenceRule, recurrenceAnchor, recurrenceRuleText } from '../domain/recurrence.js';
 import { randomUUID } from 'node:crypto';
 import { Prisma, type Task } from '@prisma/client';
 import { DomainError, Task as TaskDomain } from '../domain/task.js';
@@ -158,6 +159,26 @@ export class TaskService {
       if (input.status === 'done') for (const child of unfinished) await group.task(child.id, { status: 'done' });
       if (before.parentId && before.parentId !== parentId) await touchParent(group, before.parentId, false);
       if (parentId) await touchParent(group, parentId, (input.status ?? before.status) !== 'done');
+      // 完成重复任务时，在同一变更组里生成下一次：同一事务、同一撤销记录、同一批同步操作。
+      // 按计划日期递推；同一次 PATCH 清空规则则不再生成，设置规则则按新规则生成。
+      if (input.status === 'done' && before.status !== 'done') {
+        const completed = await readTask(tx, taskId);
+        const rule = parseRecurrenceRule(completed.recurrenceRule);
+        if (rule) {
+          const anchor = recurrenceAnchor(completed.dueDate, completed.scheduledStart);
+          const schedule = normalizeSchedule({ dueDate: completed.dueDate, scheduledStart: completed.scheduledStart, scheduledEnd: completed.scheduledEnd }, { dueDate: nextRecurrenceDate(rule, anchor) });
+          await orderScope(group, { topicId, parentId });
+          if (parentId) await group.scope({ kind: 'children', id: parentId });
+          const nextId = randomUUID();
+          await group.capture('tasks', nextId);
+          const timestamp = now();
+          await tx.task.create({ data: { id: nextId, topicId, parentId, title: completed.title, description: completed.description, status: 'todo', priority: completed.priority, dueDate: schedule.dueDate, estimatedMinutes: completed.estimatedMinutes, scheduledStart: schedule.scheduledStart, scheduledEnd: schedule.scheduledEnd, recurrenceRule: recurrenceRuleText(rule), sortOrder: await nextOrder(tx, topicId, parentId), createdAt: timestamp, updatedAt: timestamp } });
+          await setTags(tx, nextId, completed.tags.map(({ tagId }) => tagId));
+          if (topicId) await tx.taskTopicAssignment.create({ data: assignmentData(nextId, null, topicId, 'created', group.context) });
+          // 新一次是待办，已完成的父任务要重新打开。
+          await touchParent(group, parentId, true);
+        }
+      }
       // 正文保存只改变引用；未引用图片随任务保留，任务永久删除时统一回收。
       if (input.description !== undefined && input.description !== before.description) {
         const mutation = normalizeContext(context);

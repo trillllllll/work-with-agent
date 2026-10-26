@@ -6,7 +6,7 @@ import { operationNames } from '@/lib/platform.js';
 import { Button } from '@/components/ui/button.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 
-type Impact = { detail?: { kind?: string; before?: { title?: string; name?: string }; input?: Record<string, unknown>; affectedTasks?: { id: string; title: string; revision: number; status: string }[] }; after?: unknown };
+type Impact = { detail?: { kind?: string; before?: { title?: string; name?: string; recurrenceRule?: string }; input?: Record<string, unknown>; affectedTasks?: { id: string; title: string; revision: number; status: string }[] }; after?: unknown };
 export type CommandPreview = { previewToken: string; requiresConfirmation: boolean; preview: Impact[] };
 type Prompt = { value: CommandPreview; resolve: (answer: boolean) => void };
 const PreviewContext = createContext<(preview: CommandPreview) => Promise<boolean>>(async () => false);
@@ -41,6 +41,8 @@ export function CommandPreviewProvider({ children }: { children: ReactNode }) {
     if (item.detail?.kind === 'task.delete') changes.push(t('commandPreview.deleteTasks'));
     if (item.detail?.kind === 'task.restore') changes.push(t('commandPreview.restoreTasks'));
     if (item.detail?.kind === 'tag.delete') changes.push(t('commandPreview.removeTag'));
+    if (typeof input.recurrenceRule === 'string' && input.recurrenceRule) changes.push(t('commandPreview.setRecurrence'));
+    if (input.status === 'done' && item.detail?.before?.recurrenceRule) changes.push(t('commandPreview.spawnNextOccurrence'));
     if ('parentId' in input && !('topicId' in input)) changes.push(t(input.parentId ? 'commandPreview.updateParent' : 'commandPreview.clearParent'));
     return changes.join(t('commandPreview.joiner'));
   };

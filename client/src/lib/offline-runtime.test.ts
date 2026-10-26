@@ -5,7 +5,7 @@ import { emptyReplicaRows, OfflineStore, type BrowserReplica } from './offline-s
 import { canonicalSyncRow, mergeSyncRow, syncRowsEqual, type SyncRow } from '../../../server/src/application/sync-merge.js';
 
 const stamp = '2026-10-25T10:00:00.000Z';
-const row = (patch: SyncRow = {}) => canonicalSyncRow('task', { title: '任务', description: '', status: 'todo', priority: 'none', dueDate: null, estimatedMinutes: null, scheduledStart: null, scheduledEnd: null, resultSummary: '', topicId: null, parentId: null, deletedAt: null, deleteBatchId: null, sortOrder: 0, tagIds: [], createdAt: stamp, completedAt: null, completedAtEstimated: false, ...patch })!;
+const row = (patch: SyncRow = {}) => canonicalSyncRow('task', { title: '任务', description: '', status: 'todo', priority: 'none', dueDate: null, estimatedMinutes: null, scheduledStart: null, scheduledEnd: null, resultSummary: '', recurrenceRule: '', topicId: null, parentId: null, deletedAt: null, deleteBatchId: null, sortOrder: 0, tagIds: [], createdAt: stamp, completedAt: null, completedAtEstimated: false, ...patch })!;
 const initial = (scope: string): BrowserReplica => ({ scope, workspaceId: 'workspace-test', schemaVersion: 'protocol-test', actorId: 'owner', token: 'fixture-device-token', authenticatedAt: Date.now(), ready: false, cursor: 0, base: emptyReplicaRows(), rows: emptyReplicaRows(), outbox: [], receipts: {}, previews: {}, lastSuccessAt: null, lastError: null });
 
 function hub() {
@@ -136,6 +136,26 @@ describe('durable browser workspace', () => {
     await store.cache('origin:workspace:a', '/api/conversations', { data: ['private'], error: null });
     expect(await store.cached('origin:workspace:b', '/api/conversations')).toBeUndefined();
     expect(await store.cached('origin:workspace:a', '/api/conversations')).toEqual({ data: ['private'], error: null });
+  });
+
+  it('spawns the next occurrence offline when completing a recurring task and pushes both rows in one cycle', async () => {
+    const remote = hub(); remote.tasks.task = row({ dueDate: '2026-10-20', recurrenceRule: '{"unit":"week","step":1}' }); vi.stubGlobal('fetch', remote.fetcher);
+    const runtime = await replica('recurrence');
+    const input = { status: 'done' }, requestId = crypto.randomUUID();
+    const revision = (await runtime.status())!.rows.task.task.revision;
+    let commands: unknown;
+    try { await runtime.request('/api/tasks/task', { method: 'PATCH', body: JSON.stringify({ ...input, expectedRevision: revision }), headers: { 'X-Request-ID': requestId } }); } catch (error: any) { expect(error.code).toBe('PREVIEW_REQUIRED'); commands = error.details.commands; }
+    const preview = await runtime.request('/api/v1/commands/preview', { method: 'POST', body: JSON.stringify({ requestId, commands }) });
+    await runtime.request('/api/tasks/task', { method: 'PATCH', body: JSON.stringify({ ...input, expectedRevision: revision, previewToken: preview.data.previewToken }), headers: { 'X-Request-ID': requestId } });
+    const state = (await runtime.status())!;
+    expect(state.rows.task.task.row.status).toBe('done');
+    const next = Object.values(state.rows.task).find(item => item.id !== 'task')!;
+    expect(next.row).toMatchObject({ status: 'todo', dueDate: '2026-10-27', recurrenceRule: '{"unit":"week","step":1}', title: '任务' });
+    runtime.resume(); await runtime.sync();
+    expect(remote.tasks.task.status).toBe('done');
+    const hubNext = Object.entries(remote.tasks).find(([id]) => id !== 'task')!;
+    expect(hubNext[1].dueDate).toBe('2026-10-27');
+    expect((await runtime.status())!.outbox).toHaveLength(0);
   });
 
   it('never treats a preview or pending proposal as committed task data', async () => {

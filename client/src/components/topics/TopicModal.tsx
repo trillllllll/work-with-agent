@@ -36,7 +36,7 @@ export function TopicModal({ form, onChange, onClose, onSave, onDelete, busy = f
           <Label htmlFor="topic-description">{t('topicModal.descriptionLabel')}</Label>
           <Textarea id="topic-description" value={form.description ?? ''} onChange={(event) => onChange({ ...form, description: event.target.value })} placeholder={t('topicModal.descriptionPlaceholder')} />
         </div>
-        <div className="mb-4"><Label htmlFor="topic-goal">{t('topicModal.goal')}</Label><Input id="topic-goal" value={form.goal ?? ''} onChange={(event) => onChange({ ...form, goal: event.target.value })} /></div>
+        <div className="mb-4 space-y-2"><Label htmlFor="topic-goal">{t('topicModal.goal')}</Label><Textarea id="topic-goal" rows={2} value={form.goal ?? ''} onChange={(event) => onChange({ ...form, goal: event.target.value })} placeholder={t('topicModal.goalPlaceholder')} /><Label htmlFor="topic-goal-due" className="text-xs text-muted-foreground">{t('topicModal.goalDue')}</Label><Input id="topic-goal-due" type="date" value={form.goalDueDate ?? ''} onChange={(event) => onChange({ ...form, goalDueDate: event.target.value || null })} /></div>
         <Label htmlFor="topic-exploration" className="mb-5 flex items-center gap-2 font-normal">
           <Checkbox id="topic-exploration"  className="size-3.5 accent-primary" checked={form.isExploration} onChange={(event) => onChange({ ...form, isExploration: event.target.checked })} />
           {t('topicModal.stillExploring')}

@@ -61,6 +61,8 @@
   },
   "listPageHeader": {
     "workContext": "Work context",
+    "goalDue": "Goal due {{date}}",
+    "goalOverdue": "overdue",
     "inboxHint": "This category shows only tasks in the Inbox.",
     "todayDue": "{{date}} · Due tasks still open",
     "archivedReadonly": "This list is archived. Content is read-only.",
@@ -183,6 +185,7 @@
     "startChange": "Changed the start time from {{before}} to {{after}}",
     "endChange": "Changed the end time from {{before}} to {{after}}",
     "estimateChange": "Changed the estimate from {{before}} to {{after}}",
+    "recurrenceChange": "Changed repeat from {{before}} to {{after}}",
     "listChange": "Changed the list from {{before}} to {{after}}",
     "parentChange": "Changed the parent task from {{before}} to {{after}}",
     "tagsChange": "Changed the tags from {{before}} to {{after}}",
@@ -216,6 +219,7 @@
       "priority": "Priority",
       "dueDate": "Date",
       "estimatedMinutes": "Estimate",
+      "recurrenceRule": "Repeat",
       "scheduledStart": "Start time",
       "scheduledEnd": "End time",
       "resultSummary": "Result",
@@ -270,7 +274,24 @@
     "saveSchedule": "Save schedule",
     "estimate": "Estimate",
     "estimateHint": "Used the first time you schedule a time range. Existing schedules stay unchanged.",
-    "estimateMinutes": "Estimate in minutes"
+    "estimateMinutes": "Estimate in minutes",
+    "recurrence": "Repeat",
+    "recurrenceHint": "Completing creates the next occurrence from the planned date; finishing late does not push it back."
+  },
+  "recurrence": {
+    "none": "Does not repeat",
+    "invalid": "Invalid rule",
+    "biweekly": "Every 2 weeks",
+    "unit": {
+      "day": "Daily",
+      "week": "Weekly",
+      "month": "Monthly"
+    },
+    "every": {
+      "day": "Every {{step}} days",
+      "week": "Every {{step}} weeks",
+      "month": "Every {{step}} months"
+    }
   },
   "taskFilter": {
     "status": "Status",
@@ -313,6 +334,7 @@
     "empty": "No tasks",
     "completedCount": "Completed · {{count}}",
     "drag": "Drag to reorder",
+    "recurrenceAria": "Repeating task: {{label}}",
     "expandSubtasks": "Expand subtasks: {{title}}",
     "collapseSubtasks": "Collapse subtasks: {{title}}"
   },

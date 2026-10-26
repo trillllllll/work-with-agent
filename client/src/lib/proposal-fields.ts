@@ -1,4 +1,5 @@
 import { intlLocale, t } from '../i18n/index.js';
+import { recurrenceLabel } from './recurrence.js';
 
 export type ProposalKind = 'task' | 'memory' | 'skill' | 'other';
 
@@ -79,6 +80,7 @@ function scalarText(field: string, value: string): string {
   if (field === 'status' && value === 'retired') return t('proposals:value.retired');
   if (field === 'status' && value === 'superseded') return t('proposals:value.superseded');
   if (field === 'dueDate' || field === 'scheduledStart' || field === 'scheduledEnd') return formatDate(value);
+  if (field === 'recurrenceRule') return recurrenceLabel(value);
   return value;
 }
 
