@@ -9,16 +9,12 @@ import { Button } from '@/components/ui/button.js';
 import { Skeleton } from '@/components/ui/skeleton.js';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.js';
 import { GraduationCap, Map as MapIcon } from 'lucide-react';
+import { learningChartData, type LearningTreeNode } from './learning-tree.js';
 import { intlLocale } from '@/i18n/index.js';
 
 type LearningMapSummary = {
   id: string; title: string; goal: string; status: string; revision: number; updatedAt: string;
   stats: { topics: number; items: number; itemsDone: number; averageMastery: number | null };
-};
-type LearningTreeNode = {
-  id: string; mapId: string; parentId: string | null; kind: string; title: string;
-  detail: string; status: string; mastery: number; sortOrder: number; revision: number;
-  children: LearningTreeNode[];
 };
 type LearningActivityRow = { id: string; nodeId: string | null; kind: string; content: string; createdAt: string };
 type LearningMapAggregate = {
@@ -27,20 +23,6 @@ type LearningMapAggregate = {
   stats: { topics: number; items: number; itemsDone: number; itemsLearning: number; averageMastery: number | null };
   recentActivity: LearningActivityRow[];
 };
-type ChartNode = { name: string; value: number; nodeId: string; itemStyle: { color: string; borderColor: string }; label: { color: string }; children: ChartNode[] };
-
-function toChartNode(node: LearningTreeNode, dark: boolean, statusDone: string): ChartNode {
-  const hue = Math.round(node.mastery * 1.2);
-  const color = node.status === statusDone ? `hsl(150 45% ${dark ? 38 : 40}%)` : node.kind === 'item' ? `hsl(${hue} 42% ${dark ? 42 : 44}%)` : dark ? '#416e85' : '#a9c3ce';
-  return {
-    name: node.title,
-    value: node.mastery,
-    nodeId: node.id,
-    itemStyle: { color, borderColor: dark ? '#1f2937' : '#ffffff' },
-    label: { color: dark ? '#d4d4d4' : '#343434' },
-    children: node.children.map((child) => toChartNode(child, dark, statusDone)),
-  };
-}
 
 function findNode(tree: LearningTreeNode[], nodeId: string): LearningTreeNode | null {
   for (const node of tree) {
@@ -51,12 +33,12 @@ function findNode(tree: LearningTreeNode[], nodeId: string): LearningTreeNode | 
   return null;
 }
 
-function LearningTreeChart({ data, dark, onSelect, selectedNodeId }: { data: LearningTreeNode[]; dark: boolean; onSelect: (nodeId: string) => void; selectedNodeId: string }) {
+function LearningTreeChart({ data, title, dark, onSelect, selectedNodeId }: { data: LearningTreeNode[]; title: string; dark: boolean; onSelect: (nodeId: string) => void; selectedNodeId: string }) {
   const { t } = useTranslation('learning');
   const host = useRef<HTMLDivElement>(null);
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
-  const chartData = useMemo(() => data.map((node) => toChartNode(node, dark, 'done')), [data, dark]);
+  const chartData = useMemo(() => learningChartData(data, title, dark), [data, title, dark]);
   useEffect(() => {
     let disposed = false;
     let chart: EChartsType | undefined;
@@ -73,17 +55,19 @@ function LearningTreeChart({ data, dark, onSelect, selectedNodeId }: { data: Lea
       chart.setOption({
         backgroundColor: 'transparent',
         animation: !matchMedia('(prefers-reduced-motion: reduce)').matches,
-        tooltip: { trigger: 'item', renderMode: 'richText', formatter: (params: { data: ChartNode }) => `${params.data.name}<br/>${t('chart.mastery')}: ${params.data.value}` },
+        tooltip: { trigger: 'item', renderMode: 'richText', formatter: (params: { data: ReturnType<typeof learningChartData>[number] }) => params.data.nodeId ? `${params.data.name}\n${t('chart.mastery')}: ${params.data.value}` : params.data.name },
         series: [{
           type: 'tree',
           data: chartData,
           layout: 'orthogonal',
+          left: '18%',
+          right: '30%',
           orient: 'LR',
           roam: true,
           expandAndCollapse: true,
           initialTreeDepth: 2,
           symbol: 'circle',
-          symbolSize: (value: number) => 10 + Math.round(value / 12),
+          symbolSize: (value: number | undefined) => 10 + Math.round((typeof value === 'number' && Number.isFinite(value) ? value : 0) / 12),
           itemStyle: { borderWidth: 1.5 },
           lineStyle: { color: dark ? '#3f3f46' : '#d4d4d8', width: 1.5 },
           label: { position: 'top', distance: 6, fontSize: 12, color: dark ? '#d4d4d4' : '#343434' },
@@ -96,6 +80,7 @@ function LearningTreeChart({ data, dark, onSelect, selectedNodeId }: { data: Lea
     })().catch(() => { /* echarts 加载失败时详情面板仍然可用 */ });
     return () => { disposed = true; observer?.disconnect(); chart?.dispose(); };
   }, [chartData, dark, t]);
+  if (!data.length) return <div role="status" className="flex h-[min(62dvh,540px)] items-center justify-center p-4 text-sm text-muted-foreground">{t('chart.empty')}</div>;
   return <div ref={host} role="img" aria-label={t('chart.label')} data-selected={selectedNodeId || undefined} className="h-[min(62dvh,540px)] w-full" />;
 }
 
@@ -153,7 +138,7 @@ export function LearningMapPage({ onAskAssistant }: { onAskAssistant?: () => voi
     </div>}
     <div className="flex min-h-0 flex-col gap-4 lg:flex-row">
       <div className="min-w-0 flex-1 overflow-hidden rounded-xl border">
-        {mapQuery.isLoading ? <Skeleton className="h-[min(62dvh,540px)] w-full" /> : mapQuery.isError ? <p role="alert" className="p-4 text-sm text-destructive">{t('loadFailed')}</p> : <LearningTreeChart data={aggregate?.tree ?? []} dark={dark} selectedNodeId={selectedNodeId} onSelect={setSelectedNodeId} />}
+        {mapQuery.isLoading ? <Skeleton className="h-[min(62dvh,540px)] w-full" /> : mapQuery.isError ? <p role="alert" className="p-4 text-sm text-destructive">{t('loadFailed')}</p> : <LearningTreeChart key={activeMapId} title={aggregate?.map.title ?? activeSummary?.title ?? ''} data={aggregate?.tree ?? []} dark={dark} selectedNodeId={selectedNodeId} onSelect={setSelectedNodeId} />}
       </div>
       <aside className="w-full shrink-0 space-y-3 lg:w-72" aria-label={t('detail.panel')}>
         {selectedNode ? <section className="rounded-xl border p-3">

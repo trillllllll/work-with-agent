@@ -16,7 +16,8 @@
   },
   "chart": {
     "label": "Learning map structure, color encodes mastery",
-    "mastery": "Mastery"
+    "mastery": "Mastery",
+    "empty": "This map has no topics yet. Chat with the study assistant to plan what to learn."
   },
   "detail": {
     "panel": "Item details",
