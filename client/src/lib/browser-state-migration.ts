@@ -1,7 +1,9 @@
+import { DRAFT_DATABASE, DRAFT_DATABASE_VERSION, initializeDraftDatabase } from './task-draft-store.js';
+
 /** 0.3 keeps the original preferences and draft database as a recovery source. */
 const marker = 'dovun.browser-migration.v1';
 export const legacyDraftDatabase = 'wwa-task-editor';
-export const currentDraftDatabase = 'dovun-task-editor';
+export const currentDraftDatabase = DRAFT_DATABASE;
 export function dovunStorageKey(key: string) {
   return key.replace(/^agent-studio\./, 'dovun.').replace(/^todo\./, 'dovun.').replace(/^wwa([.-])/, 'dovun$1');
 }
@@ -26,12 +28,11 @@ export function migratePreferences(storage: Storage) {
 }
 function database(factory: IDBFactory, name: string, create: boolean): Promise<IDBDatabase | null> {
   return new Promise((resolve, reject) => {
-    const request = factory.open(name, 1); let absent = false;
+    // Read the legacy database at its existing version; never request a downgrade.
+    const request = create ? factory.open(name, DRAFT_DATABASE_VERSION) : factory.open(name); let absent = false;
     request.onupgradeneeded = () => {
       if (!create) { absent = true; request.transaction!.abort(); return; }
-      const store = request.result.createObjectStore('drafts', { keyPath: ['scopeKey', 'taskId', 'branchId'] });
-      store.createIndex('byScopeTask', ['scopeKey', 'taskId']);
-      store.createIndex('byScope', 'scopeKey');
+      initializeDraftDatabase(request.result);
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => absent ? resolve(null) : reject(request.error);

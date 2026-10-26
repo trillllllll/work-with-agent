@@ -1,8 +1,19 @@
 import type { TaskText, TaskTextDraftV1 } from './task-editor-types.js';
 
 export const DRAFT_DATABASE = 'dovun-task-editor';
+export const DRAFT_DATABASE_VERSION = 2;
 export const DRAFT_STORE = 'drafts';
 export const DRAFT_KEY_PATH = ['scopeKey', 'taskId', 'branchId'];
+
+/** Shared schema for startup migration and normal draft access. */
+export function initializeDraftDatabase(db: IDBDatabase) {
+  if (!db.objectStoreNames.contains('scopeMigrations')) db.createObjectStore('scopeMigrations');
+  if (!db.objectStoreNames.contains(DRAFT_STORE)) {
+    const store = db.createObjectStore(DRAFT_STORE, { keyPath: DRAFT_KEY_PATH });
+    store.createIndex('byScopeTask', ['scopeKey', 'taskId']);
+    store.createIndex('byScope', 'scopeKey');
+  }
+}
 
 export function draftKeyPath(record: { scopeKey: string; taskId: string; branchId: string }) {
   return [record.scopeKey, record.taskId, record.branchId];
@@ -44,16 +55,8 @@ export class TaskDraftStore {
   private open(): Promise<IDBDatabase> {
     if (this.database) return this.database;
     this.database = new Promise((resolve, reject) => {
-      const request = this.factory.open(DRAFT_DATABASE, 2);
-      request.onupgradeneeded = () => {
-        const db = request.result;
-        if (!db.objectStoreNames.contains('scopeMigrations')) db.createObjectStore('scopeMigrations');
-        if (!db.objectStoreNames.contains(DRAFT_STORE)) {
-          const store = db.createObjectStore(DRAFT_STORE, { keyPath: DRAFT_KEY_PATH });
-          store.createIndex('byScopeTask', ['scopeKey', 'taskId']);
-          store.createIndex('byScope', 'scopeKey');
-        }
-      };
+      const request = this.factory.open(DRAFT_DATABASE, DRAFT_DATABASE_VERSION);
+      request.onupgradeneeded = () => initializeDraftDatabase(request.result);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error ?? new Error('draft database failed to open'));
       request.onblocked = () => reject(new Error('draft database blocked by another version'));

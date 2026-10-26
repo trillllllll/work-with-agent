@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TaskDraftStore } from './task-draft-store.js';
 import { IDBFactory } from 'fake-indexeddb';
 import { migrateBrowserDrafts, migratePreferences, currentDraftDatabase, legacyDraftDatabase } from './browser-state-migration.js';
 class MemoryStorage implements Storage {
@@ -11,7 +12,7 @@ class MemoryStorage implements Storage {
   clear() { this.data.clear(); }
 }
 async function store(factory: IDBFactory, name: string, records?: any[]) {
-  const db = await new Promise<IDBDatabase>((resolve, reject) => { const req = factory.open(name, 1); req.onupgradeneeded = () => req.result.createObjectStore('drafts', { keyPath: ['scopeKey', 'taskId', 'branchId'] }); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
+  const db = await new Promise<IDBDatabase>((resolve, reject) => { const req = factory.open(name); req.onupgradeneeded = () => req.result.createObjectStore('drafts', { keyPath: ['scopeKey', 'taskId', 'branchId'] }); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
   try { return await new Promise<any[]>((resolve, reject) => { const tx = db.transaction('drafts', records ? 'readwrite' : 'readonly'), rows = tx.objectStore('drafts'); records?.forEach(row => rows.put(row)); const result = rows.getAll(); tx.oncomplete = () => resolve(result.result); tx.onerror = () => reject(tx.error); }); }
   finally { db.close(); }
 }
@@ -53,4 +54,33 @@ describe('Dovun browser transition', () => {
     await migrateBrowserDrafts(factory, storage); storage.removeItem('dovun.browser-migration.v1'); await migrateBrowserDrafts(factory, storage);
     const rows = await store(factory, currentDraftDatabase); expect(rows).toHaveLength(2); expect(rows.find(row => row.branchId === 'same-branch').text).toBe('new unsent text'); expect(rows.find(row => row.branchId.startsWith('legacy-')).text).toBe('old unsent text');
   });
+  it('reloads after the real draft store upgrades to version 2 without losing old or current drafts', async () => {
+    const factory = new IDBFactory(), storage = new MemoryStorage();
+    const key = { scopeKey: 'scope', taskId: 'task', branchId: 'branch' };
+    const original = { ...key, recordVersion: 1, text: '旧草稿' };
+    await store(factory, legacyDraftDatabase, [original]);
+    await migrateBrowserDrafts(factory, storage);
+    await new TaskDraftStore(factory).load('scope', 'task');
+    const newer = { ...key, recordVersion: 2, text: '新草稿，不能被覆盖' };
+    await store(factory, currentDraftDatabase, [newer]);
+    await expect(migrateBrowserDrafts(factory, storage)).resolves.toBeUndefined();
+    expect(await store(factory, currentDraftDatabase)).toEqual([newer]);
+    expect(await store(factory, legacyDraftDatabase)).toEqual([original]);
+    expect((await factory.databases()).find(db => db.name === currentDraftDatabase)?.version).toBe(2);
+  });
+
+  it('reads a higher-version legacy database without trying to downgrade it', async () => {
+    const factory = new IDBFactory(), storage = new MemoryStorage();
+    const records = [{ scopeKey: 'scope', taskId: 'task', branchId: 'branch', text: '保留旧库' }];
+    await store(factory, legacyDraftDatabase, records);
+    const old = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = factory.open(legacyDraftDatabase, 2);
+      request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+    });
+    old.close();
+    await expect(migrateBrowserDrafts(factory, storage)).resolves.toBeUndefined();
+    expect(await store(factory, legacyDraftDatabase)).toEqual(records);
+    expect(await store(factory, currentDraftDatabase)).toEqual(records);
+  });
+
 });
