@@ -315,6 +315,8 @@ model AgentRun {
   conversation        Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   approvals           Approval[]
   events              AgentRunEvent[]
+  webRequests         AgentWebRequest[]
+  webPages            AgentWebPage[]
 
   @@index([state, updatedAt])
   @@index([conversationId, createdAt])
@@ -1288,4 +1290,38 @@ model SyncImportArchive {
   payload String
   createdAt String @map("created_at")
   @@map("sync_import_archive")
+}
+
+// Ephemeral run-local resources, deliberately excluded from business sync.
+model AgentWebRequest {
+  id String @id @default(cuid())
+  runId String @map("run_id")
+  callKey String @map("call_key")
+  kind String
+  targetHash String @map("target_hash")
+  state String @default("reserved")
+  category String?
+  retryable Boolean @default(false)
+  resultJson String? @map("result_json")
+  chargedMs Int @map("charged_ms")
+  createdAt String @map("created_at")
+  run AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  @@unique([runId, callKey])
+  @@index([runId, kind, targetHash])
+  @@map("agent_web_requests")
+}
+
+model AgentWebPage {
+  id String @id @default(cuid())
+  runId String @map("run_id")
+  url String
+  urlHash String @map("url_hash")
+  version String
+  title String?
+  content String
+  bytes Int
+  fetchedAt String @map("fetched_at")
+  run AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  @@unique([runId, urlHash])
+  @@map("agent_web_pages")
 }

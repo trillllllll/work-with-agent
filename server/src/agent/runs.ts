@@ -26,6 +26,7 @@ import { withChatAttachments } from '../application/chat-attachments.js';
 import { builtinToolDefinitions, isBuiltinTool, CAPABILITY_UNAVAILABLE } from './capabilities.js';
 import { executeBuiltinTool, type BuiltinResult } from './builtin-tools.js';
 import { WEB_TOOL_LIMITS, webToolLimitExceeded } from './web-search.js';
+import { cleanupWebResources, executeSessionWeb, webSessionState } from './web-session.js';
 import { contextFromRequest, validateScopeAndResolveIds, type StoredChatContext } from './chat-context.js';
 import { recoverExpiredDecisions } from './decision.js';
 import { appendRunEvent } from './events.js';
@@ -52,6 +53,10 @@ export const runCursorSchema = z.object({
   loadSkill: z.boolean().optional(),
   toolGroups: z.array(toolGroupSchema).optional(),
   offeredToolGroups: z.array(toolGroupSchema).optional(),
+  webPolicy: z.literal(2).optional(),
+  webUsed: z.boolean().optional(),
+  businessAttempted: z.boolean().optional(),
+  webClosing: z.boolean().optional(),
   webSearchCalls: z.number().int().min(0).optional(),
   webFetchCalls: z.number().int().min(0).optional(),
   summaryCalls: z.array(z.object({ estimatedInputTokens: z.number(), estimatedOutputTokens: z.number(), actual: z.object({ inputTokens: z.number().optional(), outputTokens: z.number().optional(), cachedInputTokens: z.number().optional(), model: z.string().optional() }).nullable(), durationMs: z.number(), fallback: z.boolean() })).optional(),
@@ -60,7 +65,7 @@ export type RunCursor = z.infer<typeof runCursorSchema>;
 
 export type ModelStream = (messages: ModelMessage[], signal?: AbortSignal, includeTools?: boolean, tools?: ModelToolDefinition[], identityId?: string) => AsyncIterable<ModelDelta>;
 
-const initialCursor = (): RunCursor => ({ schemaVersion: 1, phase: 'model', round: 0, budgetEndRound: 16, assistantMessageId: null, nextToolIndex: 0 });
+const initialCursor = (): RunCursor => ({ schemaVersion: 1, phase: 'model', round: 0, budgetEndRound: 16, assistantMessageId: null, nextToolIndex: 0, webPolicy: 2 });
 
 let slots = 0;
 const pending: Array<{ runId: string; stream: ModelStream; contextService: ContextService }> = [];
@@ -171,6 +176,7 @@ function publicResult(result: BuiltinResult) {
     ...(result.data !== undefined ? { data: result.data } : {}),
     ...(result.error ? { error: result.error } : {}),
     ...(result.code ? { code: result.code } : {}),
+    ...(result.budget ? { budget: result.budget } : {}),
   };
 }
 
@@ -307,10 +313,20 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
   const owned = await ownsLease(runId, token);
   const cursor = readCursor(owned.cursorJson);
   const identityId = readContext(owned.contextJson).identityId ?? 'work';
-  const tools = cursor.toolGroups ? toolsForGroups(cursor.toolGroups, cursor.loadSkill, identityId) : builtinToolDefinitions({ loadSkill: cursor.loadSkill });
+  let tools = cursor.toolGroups ? toolsForGroups(cursor.toolGroups, cursor.loadSkill, identityId) : builtinToolDefinitions({ loadSkill: cursor.loadSkill });
+  if (cursor.webPolicy === 2 && (cursor.webUsed || cursor.toolGroups?.includes('web'))) {
+    const state = await webSessionState(runId);
+    if (!cursor.businessAttempted && !cursor.toolGroups?.some(group => group.endsWith('_write')) && cursor.round >= cursor.budgetEndRound - 1) {
+      cursor.webClosing = true;
+      await saveCursor(runId, token, cursor);
+      tools = tools.filter(tool => tool.function.name === 'present_reply');
+      messages.splice(1, 0, { role: 'system', content: '本次资料检索已进入最后作答轮。仅基于已获得的资料回答，给出来源并说明未核实部分；不要继续搜索或调用业务工具。' });
+    } else if (!state.budget.canSearch) tools = tools.filter(tool => tool.function.name !== 'web_search');
+    if (cursor.toolGroups?.includes('web')) messages.splice(1, 0, { role: 'system', content: `【本任务联网预算】${JSON.stringify(state)}。先少量搜索、阅读已有结果，再补查；缓存翻页与定位不消耗外部请求。不能联网时只可阅读缓存。` });
+  }
   const offered = new Set(tools.map(t => t.function.name));
   if (cursor.toolGroups?.includes('media') && !String(messages[0]?.content).includes('【富媒体表达】\nSVG')) messages.splice(1, 0, { role: 'system', content: `【按需富媒体规则】\n${mediaInstructionsFor(identityId)}\n${htmlBlockPrompt(await htmlBlockPolicy())}` });
-  await saveMessages(runId, token, messages.filter(m => !(m.role === 'system' && String(m.content).startsWith('【按需富媒体规则】'))));
+  await saveMessages(runId, token, messages.filter(m => !(m.role === 'system' && (String(m.content).startsWith('【按需富媒体规则】') || String(m.content).startsWith('【本任务联网预算】') || String(m.content).startsWith('本次资料检索已进入最后作答轮')))));
   const stats = buildContextStats({ runId, round: cursor.round, messages, tools, fullTools: identityId === 'work' ? builtinToolDefinitions({ loadSkill: cursor.loadSkill }) : toolsForGroups(scopeGroupsFor(identityId, [...toolGroupNames]), cursor.loadSkill, identityId), loadedGroups: cursor.toolGroups ?? ['legacy-all'], summaryCalls: cursor.summaryCalls });
   const publishStats = async () => {
     const earlier = await prisma.agentRunEvent.findMany({ where: { runId, type: 'context_stats' }, orderBy: { seq: 'asc' }, select: { dataJson: true } });
@@ -392,6 +408,13 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
     clearTimeout(timer);
     if (activeModelControllers.get(runId) === controller) activeModelControllers.delete(runId);
   }
+  if (cursor.webClosing && calls.length) {
+    calls.length = 0;
+    if (!text) {
+      text = '本次资料检索已结束，现有来源不足以继续核实；请以上述已取得的资料为准。';
+      await recordEvent(runId, token, { type: 'message_delta', conversationId: owned.conversationId, messageId: assistant.id, delta: text });
+    }
+  }
   calls.forEach((call, index) => { call.id ??= `call_${cursor.round}_${index}`; });
   await applyExecutorSideEffect(runId, token, assistant.id, { content: text, status: 'completed', toolCalls: calls.length ? JSON.stringify(calls.map((call) => ({ id: call.id, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.arguments ?? {}) } }))) : null });
   await appendAutoMemoryAssistant(owned.sourceUserMessageId, assistant.id);
@@ -401,7 +424,7 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
     content: text || null,
     ...(calls.length ? { tool_calls: calls.map((call) => ({ id: call.id ?? '', type: 'function' as const, function: { name: call.name, arguments: JSON.stringify(call.arguments ?? {}) } })) } : {}),
   };
-  messages.splice(0, messages.length, ...messages.filter(m => !(m.role === 'system' && String(m.content).startsWith('【按需富媒体规则】'))));
+  messages.splice(0, messages.length, ...messages.filter(m => !(m.role === 'system' && (String(m.content).startsWith('【按需富媒体规则】') || String(m.content).startsWith('【本任务联网预算】') || String(m.content).startsWith('本次资料检索已进入最后作答轮')))));
   messages.push(assistantMessage);
   await saveMessages(runId, token, messages);
   if (!calls.length) {
@@ -430,6 +453,12 @@ async function toolTurn(runId: string, token: string, contextService: ContextSer
   for (let index = cursor.nextToolIndex; index < calls.length; index += 1) {
     const call = calls[index];
     if (!call) continue;
+    if (cursor.webPolicy === 2) {
+      const informationTools = new Set(['present_reply', 'load_tools', 'read_context_source', 'load_skill', 'image_search', 'web_search', 'read_webpage', 'read_app_knowledge', 'read_page_state', 'get_time', 'learning_read', 'conversation_search', 'get_change_schema', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'orchestration_read', 'orchestration_stats']);
+      if (!informationTools.has(call.function.name) || call.function.name === 'get_change_schema') cursor.businessAttempted = true;
+      if (['web_search', 'read_webpage'].includes(call.function.name)) cursor.webUsed = true;
+      await saveCursor(runId, token, cursor);
+    }
     let args: Record<string, unknown> = {};
     let invalid = false;
     try {
@@ -451,7 +480,7 @@ async function toolTurn(runId: string, token: string, contextService: ContextSer
         else {
           cursor = { ...cursor, toolGroups: [...new Set([...(cursor.toolGroups ?? []), ...requested.data.groups])] };
           await saveCursor(runId, token, cursor);
-          result = { success: true, data: { groups: cursor.toolGroups, availableNextTurn: toolsForGroups(cursor.toolGroups!, cursor.loadSkill, identityId).map(t => t.function.name), note: '只加载定义，未修改业务数据；下一轮调用。' } };
+          result = { success: true, data: { groups: cursor.toolGroups, availableNextTurn: toolsForGroups(cursor.toolGroups!, cursor.loadSkill, identityId).map(t => t.function.name), ...(cursor.webPolicy === 2 && cursor.toolGroups!.includes('web') ? await webSessionState(runId) : {}), note: '只加载定义，未修改业务数据；下一轮调用。' } };
         }
       }
     } else if (call.function.name === 'read_context_source') {
@@ -473,7 +502,8 @@ async function toolTurn(runId: string, token: string, contextService: ContextSer
       result = { success: false, code: 'TOOL_NOT_LOADED', error: '方案包含未加载的修改类型。先加载全部所需的 *_write 组；本次未创建方案。' };
     }
     else if (call.function.name === 'propose_changes' && sawPropose) result = { success: false, code: 'INVALID_TOOL_ARGUMENTS', error: '一次回复只能提交一份修改方案' };
-    else if (webToolLimitExceeded(call.function.name, cursor)) result = { success: false, code: 'WEB_TOOL_LIMIT', error: `本次任务的${call.function.name === 'web_search' ? '联网搜索' : '网页读取'}次数已达上限（${WEB_TOOL_LIMITS[call.function.name]} 次）。请基于已有结果作答，或建议用户新开任务。` };
+    else if (cursor.webPolicy === 2 && (call.function.name === 'web_search' || call.function.name === 'read_webpage')) result = await executeSessionWeb(call.function.name, args, { runId, leaseToken: token, callKey: `${assistantMessageId}:${call.id}` });
+    else if (cursor.webPolicy !== 2 && webToolLimitExceeded(call.function.name, cursor)) result = { success: false, code: 'WEB_TOOL_LIMIT', error: `本次任务的${call.function.name === 'web_search' ? '联网搜索' : '网页读取'}次数已达上限（${WEB_TOOL_LIMITS[call.function.name]} 次）。请基于已有结果作答，或建议用户新开任务。` };
     else if (call.function.name === 'propose_changes') {
       sawPropose = true;
       await saveCursor(runId, token, { ...cursor, nextToolIndex: index });
@@ -500,6 +530,7 @@ async function toolTurn(runId: string, token: string, contextService: ContextSer
         await appendRunEvent(tx, runId, 'sources', { type: 'sources', runId, conversationId: run.conversationId, messageId: assistantMessageId, sources: parts.flatMap((part) => part.sources ?? []) });
       });
     }
+    if (cursor.webPolicy === 2 && ['web_search', 'read_webpage'].includes(call.function.name) && !result.budget) result = { ...result, budget: (await webSessionState(runId)).budget };
     const content = JSON.stringify({ toolName: call.function.name, toolCallId: call.id, sourceMessageId: builtinToolMessageId(runId, assistantMessageId, call.id), assistantMessageId, ...publicResult(result) });
     await writeToolRow(runId, run.conversationId, assistantMessageId, call.id, content);
     messages.push({ role: 'tool', tool_call_id: call.id, content });
@@ -519,8 +550,8 @@ async function toolTurn(runId: string, token: string, contextService: ContextSer
       await saveMessages(runId, token, messages);
       return 'waiting' as const;
     }
-    const webCounters = result.success && call.function.name === 'web_search' ? { webSearchCalls: (cursor.webSearchCalls ?? 0) + 1 }
-      : result.success && call.function.name === 'read_webpage' ? { webFetchCalls: (cursor.webFetchCalls ?? 0) + 1 } : {};
+    const webCounters = cursor.webPolicy !== 2 && result.success && call.function.name === 'web_search' ? { webSearchCalls: (cursor.webSearchCalls ?? 0) + 1 }
+      : cursor.webPolicy !== 2 && result.success && call.function.name === 'read_webpage' ? { webFetchCalls: (cursor.webFetchCalls ?? 0) + 1 } : {};
     if (Object.keys(webCounters).length) cursor = { ...cursor, ...webCounters };
     await saveCursor(runId, token, { ...cursor, assistantMessageId, phase: 'tools', nextToolIndex: index + 1 });
   }
@@ -757,6 +788,7 @@ export async function checkAgentRuns(stream?: ModelStream, contextService?: Cont
   if (ticking) return;
   ticking = true;
   try {
+    await cleanupWebResources();
     await recoverExpiredDecisions();
     await pauseExpiredRuns();
     await enqueueQueued();

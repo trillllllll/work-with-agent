@@ -22,10 +22,10 @@ describe('deepseek web search tool', () => {
     const result = await searchWeb({ query: '不存在的主题' });
     expect(result).toMatchObject({ provider: 'deepseek', resultCount: 0, results: [] });
   });
-  it('rejects queries over 128 characters and URLs with credentials', () => {
-    expect(searchWeb({ query: 'x'.repeat(129) })).rejects.toThrow();
-    expect(fetchWebPage({ url: 'https://user:pass@example.com/page' })).rejects.toThrow();
-    expect(fetchWebPage({ url: 'javascript:alert(1)' })).rejects.toThrow();
+  it('rejects queries over 128 characters and URLs with credentials', async () => {
+    await expect(searchWeb({ query: 'x'.repeat(129) })).rejects.toThrow();
+    await expect(fetchWebPage({ url: 'https://user:pass@example.com/page' })).rejects.toThrow();
+    await expect(fetchWebPage({ url: 'javascript:alert(1)' })).rejects.toThrow();
   });
   it('paginates fetched pages by cursor', async () => {
     const content = 'a'.repeat(WEB_PAGE_CHARS + 500);
@@ -68,5 +68,19 @@ describe('deepseek web search tool', () => {
     await expect(fetchWebPage({ url: 'https://docs.example.com/x', cursor: 'not-a-cursor' })).rejects.toMatchObject({ code: 'CURSOR_STALE' });
     const beyond = Buffer.from(JSON.stringify({ offset: 99999 })).toString('base64url');
     await expect(fetchWebPage({ url: 'https://docs.example.com/x', cursor: beyond })).rejects.toMatchObject({ code: 'CURSOR_STALE' });
+  });
+});
+
+describe('provider response body timeout', () => {
+  afterEach(() => { vi.restoreAllMocks(); delete process.env.DEEPSEEK_API_KEY; });
+  it('applies the deadline after headers arrive, while reading the body', async () => {
+    process.env.DEEPSEEK_API_KEY = 'fixture-only';
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, options) => {
+      const signal = options!.signal!;
+      return new Response(new ReadableStream({ start(controller) {
+        signal.addEventListener('abort', () => controller.error(signal.reason), { once: true });
+      } }));
+    });
+    await expect(searchWeb({ query: 'slow body' }, 20)).rejects.toMatchObject({ code: 'WEB_SEARCH_UNAVAILABLE', message: expect.stringContaining('超时') });
   });
 });

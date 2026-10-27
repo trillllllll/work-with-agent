@@ -30,7 +30,7 @@ const topics = new TopicService();
 const tags = new TagService();
 const library = new LibraryService();
 
-export type BuiltinResult = { success: boolean; data?: unknown; error?: string; code?: string; approval?: boolean; part?: unknown };
+export type BuiltinResult = { success: boolean; data?: unknown; error?: string; code?: string; approval?: boolean; part?: unknown; budget?: unknown };
 
 function fail(error: unknown): BuiltinResult {
   if (error instanceof DomainError) return { success: false, code: error.code, error: error.message };

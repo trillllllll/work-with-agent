@@ -63,6 +63,7 @@ async function requestDeepseek(url: string, body: unknown, key: string, timeoutM
 async function networkGuard<T>(promise: Promise<T>, label: string): Promise<T> {
   try { return await promise; } catch (error: unknown) {
     if (error instanceof DomainError) throw error;
+    if (error instanceof z.ZodError) throw new DomainError('WEB_SEARCH_INVALID_RESPONSE', '联网服务返回的数据格式不符合要求', 502);
     throw new DomainError('WEB_SEARCH_UNAVAILABLE', error instanceof Error && ['TimeoutError', 'AbortError'].includes(error.name) ? `${label}超时，请稍后重试` : `无法连接联网搜索服务，请检查网络或稍后重试`, 502);
   }
 }
@@ -85,12 +86,14 @@ async function readJson(response: StreamingResponse, label: string, statusErrors
 
 const pageCursor = (offset: number) => Buffer.from(JSON.stringify({ offset })).toString('base64url');
 
-export async function searchWeb(raw: unknown) {
+export async function searchWeb(raw: unknown, timeoutMs = SEARCH_TIMEOUT_MS) {
   const { query, count } = searchInput.parse(raw);
   const key = await deepseekKey();
   if (!key) throw new DomainError('WEB_SEARCH_NOT_CONFIGURED', '尚未配置联网搜索服务，无法搜索网页。可在设置中配置 DeepSeek 密钥后使用。', 409);
-  const response = await networkGuard(requestDeepseek(`${API_BASE}/search`, { query, count, need_content: false }, key, SEARCH_TIMEOUT_MS), '联网搜索');
-  const payload = searchResultSchema.parse(await readJson(response, '联网搜索'));
+  const payload = await networkGuard((async () => {
+    const response = await requestDeepseek(`${API_BASE}/search`, { query, count, need_content: false }, key, timeoutMs);
+    return searchResultSchema.parse(await readJson(response, '联网搜索'));
+  })(), '联网搜索');
   const searchedAt = new Date().toISOString();
   const results = payload.results
     .filter((row): row is typeof row & { url: string } => typeof row.url === 'string' && /^https?:\/\//i.test(row.url))
@@ -122,8 +125,7 @@ export async function fetchWebPage(raw: unknown) {
       throw new DomainError('CURSOR_STALE', '分页已失效，请从第一页重新读取', 409);
     }
   }
-  const response = await networkGuard(requestDeepseek(`${API_BASE}/fetch`, { url }, key, FETCH_TIMEOUT_MS), '网页读取');
-  const payload = fetchResultSchema.parse(await readJson(response, '网页读取', { 403: '目标网站拒绝访问，无法读取该页面', 404: '没有从该页面提取到可用正文' }));
+  const payload = await fetchWholeWebPage(url);
   const chars = [...(payload.content || '')];
   const capped = chars.slice(0, WEB_PAGE_MAX_CHARS);
   if (offset >= capped.length && (offset > 0 || capped.length > 0)) throw new DomainError('CURSOR_STALE', '分页已超出内容范围，请从第一页重新读取', 409);
@@ -140,4 +142,14 @@ export async function fetchWebPage(raw: unknown) {
     nextCursor: hasMore ? pageCursor(next) : null,
     ...(overCap && !hasMore ? { note: '原文过长，仅返回前 60000 字符。' } : {}),
   };
+}
+
+/** Full provider content for managed runs; legacy pagination above is retained for old runs. */
+export async function fetchWholeWebPage(url: string, timeoutMs = FETCH_TIMEOUT_MS) {
+  const key = await deepseekKey();
+  if (!key) throw new DomainError('WEB_SEARCH_NOT_CONFIGURED', '尚未配置联网搜索服务', 409);
+  return networkGuard((async () => {
+    const response = await requestDeepseek(`${API_BASE}/fetch`, { url }, key, timeoutMs);
+    return fetchResultSchema.parse(await readJson(response, '网页读取', { 403: '目标网站拒绝访问，无法读取该页面', 404: '没有从该页面提取到可用正文' }));
+  })(), '网页读取');
 }
