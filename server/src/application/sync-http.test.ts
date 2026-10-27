@@ -142,6 +142,19 @@ describe('task sync across independent HTTP processes', () => {
     const forbidden = await fetch(`http://127.0.0.1:${hub.port}/api/v1/sync/relay/api/v1/server/owner-key`, { headers: { authorization: `Bearer ${paired.token}` } });
     expect(forbidden.status).toBe(403);
     const localDb = new PrismaClient({datasourceUrl:`file:${join(directory,'local-shared','test.db')}`});
+    await localDb.appSetting.upsert({ where: { id: 'default' }, create: { id: 'default', deepseekApiKey: 'local-original-search-key-3333', createdAt: stamp, updatedAt: stamp }, update: { deepseekApiKey: 'local-original-search-key-3333' } });
+    await hub.request('/api/settings/web-search', { apiKey: 'hub-search-key-1111' }, 'PATCH');
+    expect(await local.request('/api/settings/web-search')).toMatchObject({ status: 200, data: { configured: true, keyMasked: '••••1111', managedBy: 'application' } });
+    const searchKey = 'shared-search-key-2222';
+    const savedSearch = await local.request('/api/settings/web-search', { apiKey: searchKey }, 'PATCH');
+    expect(savedSearch).toMatchObject({ status: 200, data: { configured: true, keyMasked: '••••2222' } });
+    expect(JSON.stringify(savedSearch)).not.toContain(searchKey);
+    expect((await database.appSetting.findUniqueOrThrow({ where: { id: 'default' } })).deepseekApiKey).toBe(searchKey);
+    expect((await localDb.appSetting.findUniqueOrThrow({ where: { id: 'default' } })).deepseekApiKey).toBe('local-original-search-key-3333');
+    expect((await local.request('/api/settings/web-search', undefined, 'DELETE')).status).toBe(200);
+    expect((await database.appSetting.findUniqueOrThrow({ where: { id: 'default' } })).deepseekApiKey).toBe('');
+    expect((await local.request('/api/settings/web-search')).data.configured).toBe(false);
+    expect((await localDb.appSetting.findUniqueOrThrow({ where: { id: 'default' } })).deepseekApiKey).toBe('local-original-search-key-3333');
     const edited = await local.request('/api/tasks/'+publicTask.id, {title:'临时本机修改',expectedRevision:(await local.request('/api/tasks/'+publicTask.id)).data.revision}, 'PATCH');
     expect(edited.status).toBe(200);
     const localChange = await localDb.changeRecord.findFirstOrThrow({where:{entityId:publicTask.id},orderBy:{createdAt:'desc'}});
@@ -165,6 +178,8 @@ describe('task sync across independent HTTP processes', () => {
     const activity=await local.request('/api/tasks/'+publicTask.id+'/activity');expect(activity.status).toBe(200);expect(JSON.stringify(activity.data)).toContain('共享活动记录');
     expect((await local.request('/api/stats/overview?from=2026-10-01&to=2026-11-01&tz=Asia%2FShanghai')).status).toBe(200);
     const connection = (await local.request('/api/v1/connections', { name: 'scope-fixture', host: 'codex', topicIds: [publicTopic.id], includeInbox: false, autoActions: [] })).data;
+    const scopedSearch = await fetch(`http://127.0.0.1:${local.port}/api/settings/web-search`, { headers: { authorization: `Bearer ${connection.token}` } });
+    expect(scopedSearch.status).toBe(401);
     expect(connection.configuration.env.DOVUN_API_URL).toBe(`http://127.0.0.1:${local.port}`);
     const mcp = new Client({ name: 'relay-scope-fixture', version: '1.0' });
     await mcp.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${local.port}/mcp`), { requestInit: { headers: { authorization: `Bearer ${connection.token}` } } }));

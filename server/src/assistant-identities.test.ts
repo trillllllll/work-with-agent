@@ -135,6 +135,13 @@ describe('assistant identities', () => {
     expect(relayPathAllowed('/api/v1/learning-other/maps')).toBe(false);
   });
 
+  it('routes web search settings without exposing adjacent or local-only settings', () => {
+    expect(relayPathAllowed('/api/settings/web-search')).toBe(true);
+    expect(relayPathAllowed('/api/settings/web-search-other')).toBe(false);
+    expect(relayPathAllowed('/api/settings/cli')).toBe(false);
+    expect(relayPathAllowed('/api/v1/server/owner-key')).toBe(false);
+  });
+
   it('offers activity kinds accepted by learning proposals', () => {
     const tool = toolsForGroups(['learning_write'], false, 'study').find((entry) => entry.function.name === 'propose_changes')!;
     const schema = tool.function.parameters as any;
