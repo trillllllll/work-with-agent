@@ -168,7 +168,7 @@ function looksLikeMarkdown(text: string) {
   return found;
 }
 
-export function DescriptionEditor({ value, taskId, readonly, fill, openDescription, onEdit, onComposeStart, onComposeEnd, onPasteImages, onZoom, onOpenLinkedTask, ref }: {
+export function DescriptionEditor({ value, taskId, readonly, fill, openDescription, onEdit, onComposeStart, onComposeEnd, onPasteImages, onZoom, onOpenLinkedTask, onAskSelection, ref }: {
   value: string;
   taskId: string;
   readonly: boolean;
@@ -180,6 +180,8 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
   onPasteImages: (files: File[]) => void;
   onZoom: (src: string) => void;
   onOpenLinkedTask?: (taskId: string) => void;
+  /** Non-task editors can attach their own domain identity to a selection. */
+  onAskSelection?: (text: string) => void;
   ref?: Ref<DescriptionHandle>;
 }) {
   const { i18n } = useTranslation('tasks');
@@ -458,7 +460,7 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
   const { t } = useTranslation('tasks');
   return <div className={cn('task-description-editor', fill && 'task-description-grow')}>
     <EditorContent editor={editor} className="task-description-input w-full" />
-    {editor && !readonly && <FormatToolbar editor={editor} composing={() => composingRef.current} taskId={taskId} />}
+    {editor && !readonly && <FormatToolbar editor={editor} composing={() => composingRef.current} taskId={taskId} onAskSelection={onAskSelection} />}
     {rawDialog && <Modal title={t('descriptionEditor.editRawTitle')} onClose={() => setRawDialog(null)}>
         <p className="task-raw-dialog-title">{t('descriptionEditor.editRawTitle')}</p>
         <Textarea className="task-raw-dialog-input" aria-label={t('descriptionEditor.rawContent')} value={rawDialog.markdown} onChange={(event) => setRawDialog({ ...rawDialog, markdown: event.target.value })} rows={8} />
@@ -506,9 +508,9 @@ function insertPlainDoc(view: EditorView, doc: JSONContent) {
   view.dispatch(view.state.tr.replaceSelection(new Slice(Fragment.fromArray(nodes), 0, 0)).scrollIntoView());
 }
 
-type ToolbarProps = { editor: Editor; composing: () => boolean; taskId: string };
+type ToolbarProps = { editor: Editor; composing: () => boolean; taskId: string; onAskSelection?: (text: string) => void };
 
-function FormatToolbar({ editor, composing, taskId }: ToolbarProps) {
+function FormatToolbar({ editor, composing, taskId, onAskSelection }: ToolbarProps) {
   const { t } = useTranslation('tasks');
   const [visible, setVisible] = useState(false);
   const [coords, setCoords] = useState<{ top: number; bottom: number; left: number } | null>(null);
@@ -577,7 +579,7 @@ function FormatToolbar({ editor, composing, taskId }: ToolbarProps) {
     node.style.top = `${top}px`;
     node.style.left = `${left}px`;
   }}>
-    <Button variant="row" size="bare" type="button" className={cn(buttonClass, 'task-format-ask')} aria-label={t('descriptionEditor.askAi')} onMouseDown={(event) => event.preventDefault()} onClick={() => { const { from, to } = editor.state.selection; askAssistant({ kind: 'selection', title: t('descriptionEditor.selectionTitle'), text: editor.state.doc.textBetween(from, to, '\n'), taskId, unsaved: true }); }}>{t('descriptionEditor.askAi')}</Button>
+    <Button variant="row" size="bare" type="button" className={cn(buttonClass, 'task-format-ask')} aria-label={t('descriptionEditor.askAi')} onMouseDown={(event) => event.preventDefault()} onClick={() => { const { from, to } = editor.state.selection; const text = editor.state.doc.textBetween(from, to, '\n'); if (onAskSelection) onAskSelection(text); else askAssistant({ kind: 'selection', title: t('descriptionEditor.selectionTitle'), text, taskId, unsaved: true }); }}>{t('descriptionEditor.askAi')}</Button>
     {touch ? <>
       <ToolbarButton className={buttonClass} label={t('descriptionEditor.bold')} icon={Bold} pressed={editor.isActive('bold')} onClick={() => run(() => editor.chain().focus().toggleBold().run())} />
       <ToolbarButton className={buttonClass} label={t('descriptionEditor.bulletList')} icon={List} pressed={editor.isActive('bulletList')} onClick={() => run(() => editor.chain().focus().toggleBulletList().run())} />

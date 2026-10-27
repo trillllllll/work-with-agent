@@ -24,7 +24,7 @@ export function parseStored<T>(value: T | string | undefined | null, fallback: T
   if (typeof value !== 'string') return value ?? fallback;
   try { return JSON.parse(value) as T; } catch { return fallback; }
 }
-export function usePlatformAction() {
+export function usePlatformAction({ undo = true }: { undo?: boolean } = {}) {
   const { t } = useTranslation('app');
   const lock = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -35,7 +35,7 @@ export function usePlatformAction() {
     try {
       const result = await work();
       await client.invalidateQueries();
-      const changeId = (result as any)?.changeId;
+      const changeId = undo ? (result as any)?.changeId : undefined;
       toast.success((result as any)?.status === 'pending_approval' ? t('action.pendingApproval') : message, changeId ? { duration: 8000, action: { label: t('action.undo'), onClick: () => { void api(`/api/changes/${changeId}/undo`, { method: 'POST', body: '{}', headers: { 'X-Request-ID': crypto.randomUUID() } }).then(() => { void client.invalidateQueries(); toast.success(t('action.undone')); }).catch((error) => toast.error(error.message)); } } } : undefined);
       return result;
     } catch (error) { toast.error(error instanceof Error ? error.message : t('action.failed')); return undefined; }

@@ -247,8 +247,10 @@ export function App() {
     chat.startNew();
   };
   const askLearningAssistant = () => {
+    if (assistantIdentity !== 'study' && chat.busy) { toast.error(t('action.studyBusy')); return false; }
     if (assistantIdentity !== 'study') switchAssistantIdentity('study');
     setChatOpen(true);
+    return true;
   };
   // Updated every render so the slot ref's cleanup (which runs after this render) sees the fallback that belongs to it.
   const assistantHostFallback = useRef<HTMLDivElement | null>(null);

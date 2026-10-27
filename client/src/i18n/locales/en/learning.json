@@ -1,43 +1,82 @@
 {
   "title": "Learning maps",
-  "defaultGoal": "Chat with the study assistant to plan what to learn.",
-  "askAssistant": "Ask study assistant",
-  "selectMap": "Learning map",
-  "loadFailed": "Failed to load learning maps",
-  "stats": {
-    "topics": "Topics",
-    "items": "Checklist items",
-    "done": "Completed",
-    "mastery": "Average mastery"
-  },
-  "empty": {
-    "title": "No learning maps yet",
-    "hint": "Open the study assistant and tell it what you want to learn. It will draft a learning map and checklist items; they appear here after you confirm."
-  },
-  "chart": {
-    "label": "Learning map structure, color encodes mastery",
-    "mastery": "Mastery",
-    "empty": "This map has no topics yet. Chat with the study assistant to plan what to learn."
-  },
-  "detail": {
-    "panel": "Item details",
-    "empty": "Click a node in the map to see details.",
-    "mastery": "Mastery"
-  },
+  "subtitle": "Organize knowledge and keep notes you can revise.",
+  "askAssistant": "Study assistant",
+  "newMap": "New topic",
+  "editMap": "Edit topic",
+  "deleteMap": "Delete topic",
+  "selectMap": "Learning topic",
+  "topic": "Learning topic",
+  "newNode": "New point / group",
+  "editGroup": "Edit group",
+  "editGroupNamed": "Edit group: {{title}}",
+  "deleteGroup": "Delete group",
+  "deleteNode": "Delete knowledge point",
+  "delete": "Confirm deletion",
+  "deleteHint": "Remove this content and {{count}} descendant nodes, including their notes, from the learning map.",
+  "deleted": "Deleted",
+  "name": "Name",
+  "goal": "Topic description",
+  "nodeKind": "Node type",
+  "parent": "Parent group",
+  "root": "Topic root",
   "kind": {
-    "topic": "Topic",
-    "item": "Checklist item"
+    "topic": "Group",
+    "item": "Knowledge point"
   },
   "status": {
-    "todo": "To learn",
+    "todo": "Not started",
     "learning": "Learning",
-    "done": "Completed"
+    "review": "Needs practice",
+    "done": "Mastered"
   },
-  "activity": {
-    "title": "Recent learning activity",
-    "session": "Session",
-    "status": "Progress",
-    "note": "Note",
-    "empty": "No activity yet"
-  }
+  "progress": "Mastered {{done}} / {{total}}",
+  "mastery": "Mastery",
+  "outline": "Outline",
+  "mapView": "Map",
+  "fit": "Fit canvas",
+  "expand": "Expand all",
+  "collapse": "Collapse all",
+  "focusGroup": "Focus group",
+  "allGroups": "All groups",
+  "manageGroups": "Manage groups",
+  "toggleGroup": "Expand or collapse group",
+  "chart": {
+    "description": "{{title}} knowledge map. Open notes by clicking points, or collapse groups. The outline supports keyboard navigation.",
+    "label": "{{title}} interactive knowledge map",
+    "empty": "No knowledge points yet. Create one or ask the study assistant to propose a structure with initial notes."
+  },
+  "chartHint": "Click points for notes · Click groups to collapse · Drag to pan, scroll to zoom",
+  "outlineHint": "Open notes from knowledge points; expand, collapse or edit groups.",
+  "addMapContext": "Add topic to chat context",
+  "addContext": "Add to chat context",
+  "empty": {
+    "title": "No learning topics yet",
+    "hint": "Create a topic or tell the study assistant what you want to learn. AI changes require your approval."
+  },
+  "loadFailed": "Could not load learning maps",
+  "retry": "Retry",
+  "openNote": "Open note",
+  "note": "Knowledge note",
+  "back": "Back to map",
+  "noteTitle": "Note title",
+  "revision": "Revision {{revision}}",
+  "save": "Save",
+  "saving": "Saving…",
+  "saved": "Saved",
+  "unsaved": "Unsaved changes",
+  "saveFailed": "Save failed. Your edits remain here.",
+  "savePending": "Changes have not been applied. Check the pending proposal.",
+  "retrySave": "Retry save",
+  "characters": "{{count}} characters",
+  "conflict": "This note changed elsewhere. Your draft is preserved. Load the latest content, or merge the fields you edited onto the latest revision and review before saving.",
+  "loadLatest": "Load latest content",
+  "rebase": "Merge my edited fields",
+  "discard": "Discard local edits",
+  "discardHint": "Discard this draft and load the latest saved content.",
+  "uncertain": "The last save is unconfirmed. Retry the same save before continuing to edit.",
+  "storageFailed": "Draft storage failed. Save before leaving this page.",
+  "imagesUnsupported": "Image uploads are not supported for knowledge notes yet. Paste text or image links instead.",
+  "tooLong": "The note exceeds 20,000 characters. Shorten it before saving.",
+  "cancel": "Cancel"
 }

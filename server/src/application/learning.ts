@@ -3,7 +3,7 @@ import { DomainError } from '../domain/task.js';
 import { prisma } from '../infrastructure/prisma.js';
 
 // 学习域读取服务：学习地图（learning_maps）、地图树与清单条目（learning_nodes）、
-// 学习动态（learning_activity，只追加）。写入只经 propose_changes → learning.* 命令。
+// 学习动态（learning_activity，只追加）。写入统一经 learning.* 命令；AI 修改须先经 propose_changes 待确认。
 
 export const learningReadInput = z.object({
   action: z.enum(['list', 'get', 'node', 'activity']),
@@ -100,7 +100,7 @@ export async function learningRead(args: Record<string, unknown>) {
   if (input.action === 'get') {
     if (!input.mapId) throw new DomainError('INVALID_TOOL_ARGUMENTS', 'get 需要 mapId', 400);
     const map = await prisma.learningMap.findUnique({ where: { id: input.mapId } });
-    if (!map) throw new DomainError('NOT_FOUND', '学习地图不存在', 404);
+    if (!map || map.deletedAt && !input.includeArchived) throw new DomainError('NOT_FOUND', '学习地图不存在', 404);
     const rows = (await prisma.learningNode.findMany({
       where: { mapId: map.id, ...(input.includeArchived === true ? {} : { deletedAt: null }) },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
@@ -110,13 +110,15 @@ export async function learningRead(args: Record<string, unknown>) {
       tree: buildTree(rows),
       stats: statsOf(rows),
       complete: true,
-      note: '完整节点树。kind=topic 是结构节点，kind=item 是清单条目；mastery 为 0-100 掌握度。',
+      note: '完整节点树。kind=topic 是结构分组，kind=item 是知识点；detail 为持久笔记。status 为 todo/learning/review/done，分别表示未开始/学习中/需巩固/已掌握；mastery 仅为兼容历史数值。',
     };
   }
   if (input.action === 'node') {
     if (!input.nodeId) throw new DomainError('INVALID_TOOL_ARGUMENTS', 'node 需要 nodeId', 400);
     const node = await prisma.learningNode.findUnique({ where: { id: input.nodeId } });
-    if (!node) throw new DomainError('NOT_FOUND', '学习条目不存在', 404);
+    if (!node || node.deletedAt && !input.includeArchived) throw new DomainError('NOT_FOUND', '学习条目不存在', 404);
+    const map = await prisma.learningMap.findUnique({ where: { id: node.mapId } });
+    if (!map || map.deletedAt && !input.includeArchived) throw new DomainError('NOT_FOUND', '学习地图不存在', 404);
     const children = (await prisma.learningNode.findMany({
       where: { parentId: node.id, deletedAt: null },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
@@ -177,7 +179,7 @@ export async function learningOverview() {
   const lines = ['# 学习域概况', ''];
   if (maps.length) {
     lines.push('进行中的学习地图：');
-    for (const map of maps) lines.push(`- ${map.id} ${map.title}：${map.stats.topics} 个主题、${map.stats.items} 条清单，完成 ${map.stats.itemsDone}${map.stats.averageMastery === null ? '' : `，平均掌握度 ${map.stats.averageMastery}`}`);
+    for (const map of maps) lines.push(`- ${map.id} ${map.title}：${map.stats.topics} 个主题、${map.stats.items} 条清单，完成 ${map.stats.itemsDone}`);
   } else lines.push('没有进行中的学习地图。');
   lines.push('', '最近学习动态（最多 5 条，完整记录用 learning_read 的 action=activity）：');
   if (recent.length) for (const item of recent) lines.push(`- ${item.createdAt} [${item.kind}] ${item.content.slice(0, 120)}${item.content.length > 120 ? '…' : ''}`);

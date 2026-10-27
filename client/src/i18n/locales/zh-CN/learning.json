@@ -1,43 +1,82 @@
 {
   "title": "学习地图",
-  "defaultGoal": "和学习助手聊聊，规划要学什么。",
+  "subtitle": "组织知识，留下可以持续修订的笔记。",
   "askAssistant": "问学习助手",
-  "selectMap": "学习地图",
-  "loadFailed": "学习地图加载失败",
-  "stats": {
-    "topics": "主题",
-    "items": "清单条目",
-    "done": "已完成",
-    "mastery": "平均掌握度"
-  },
-  "empty": {
-    "title": "还没有学习地图",
-    "hint": "打开学习助手，告诉它你想学什么。它会起草一张学习地图和清单条目，你确认后就会出现在这里。"
-  },
-  "chart": {
-    "label": "学习地图结构图，颜色代表掌握度",
-    "mastery": "掌握度",
-    "empty": "这张地图还没有主题，和学习助手聊聊要学什么。"
-  },
-  "detail": {
-    "panel": "条目详情",
-    "empty": "点击图谱中的节点查看详情。",
-    "mastery": "掌握度"
-  },
+  "newMap": "新建主题",
+  "editMap": "编辑主题",
+  "deleteMap": "删除主题",
+  "selectMap": "学习主题",
+  "topic": "学习主题",
+  "newNode": "新建知识点 / 分组",
+  "editGroup": "编辑分组",
+  "editGroupNamed": "编辑分组：{{title}}",
+  "deleteGroup": "删除分组",
+  "deleteNode": "删除知识点",
+  "delete": "确认删除",
+  "deleteHint": "将移除该内容及其下级 {{count}} 个节点。笔记也会从学习地图中移除。",
+  "deleted": "已删除",
+  "name": "名称",
+  "goal": "主题说明",
+  "nodeKind": "节点类型",
+  "parent": "所属分组",
+  "root": "主题根目录",
   "kind": {
-    "topic": "主题",
-    "item": "清单条目"
+    "topic": "结构分组",
+    "item": "知识点"
   },
   "status": {
-    "todo": "待学习",
+    "todo": "未开始",
     "learning": "学习中",
-    "done": "已完成"
+    "review": "需巩固",
+    "done": "已掌握"
   },
-  "activity": {
-    "title": "最近学习动态",
-    "session": "陪学",
-    "status": "进度",
-    "note": "笔记",
-    "empty": "暂无动态"
-  }
+  "progress": "已掌握 {{done}} / {{total}}",
+  "mastery": "掌握情况",
+  "outline": "知识目录",
+  "mapView": "地图",
+  "fit": "适应画布",
+  "expand": "全部展开",
+  "collapse": "全部收起",
+  "focusGroup": "查看分组",
+  "allGroups": "全部分组",
+  "manageGroups": "管理分组",
+  "toggleGroup": "展开或收起分组",
+  "chart": {
+    "description": "{{title}}知识地图。点击知识点打开笔记，点击分组展开或收起。也可切换到可用键盘操作的目录。",
+    "label": "{{title}}交互式知识地图",
+    "empty": "主题下还没有知识点。可以手动创建，或者让学习助手生成结构和初始笔记。"
+  },
+  "chartHint": "点击知识点打开笔记 · 点击分组折叠 · 拖动画布，滚轮缩放",
+  "outlineHint": "点击知识点打开笔记，分组支持展开、收起和编辑。",
+  "addMapContext": "将主题加入对话上下文",
+  "addContext": "加入对话上下文",
+  "empty": {
+    "title": "还没有学习主题",
+    "hint": "新建一个主题，或在对话里告诉学习助手你想学什么。AI 的修改会先交给你确认。"
+  },
+  "loadFailed": "学习地图加载失败",
+  "retry": "重试",
+  "openNote": "打开笔记",
+  "note": "知识笔记",
+  "back": "返回地图",
+  "noteTitle": "笔记标题",
+  "revision": "版本 {{revision}}",
+  "save": "保存",
+  "saving": "保存中…",
+  "saved": "已保存",
+  "unsaved": "有未保存修改",
+  "saveFailed": "保存失败，修改仍保留在本页",
+  "savePending": "修改尚未执行，请在待确认方案中处理。",
+  "retrySave": "重试保存",
+  "characters": "{{count}} 字符",
+  "conflict": "这篇笔记已被其他操作更新。你的草稿仍保留；可以载入最新内容，或把自己改过的字段合并到最新版本，检查后再保存。",
+  "loadLatest": "载入最新内容",
+  "rebase": "保留我的修改并合并",
+  "discard": "放弃本地修改",
+  "discardHint": "放弃当前草稿并载入已保存的最新内容。",
+  "uncertain": "上次保存的结果尚未确认。请重试同一次保存，成功后可继续编辑。",
+  "storageFailed": "本地草稿暂存失败，请保存后再离开本页。",
+  "imagesUnsupported": "知识笔记暂不支持上传图片，可以粘贴文字或图片链接。",
+  "tooLong": "正文超过 20,000 字符，请缩短后保存。",
+  "cancel": "取消"
 }

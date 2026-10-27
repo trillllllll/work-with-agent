@@ -285,6 +285,14 @@ document.getElementById('probe-out').textContent=JSON.stringify({html:html,scrip
     { choices: [{ delta: { content: text }, finish_reason: null }] },
     { choices: [{ delta: { tool_calls: [{ index: 0, id, function: { name, arguments: JSON.stringify(args) } }] }, finish_reason: 'tool_calls' }] },
   ]);
+  if (latestUser.includes('笔记真实编辑验收')) {
+    if (toolSince('propose_changes')) return stream(res, [{ choices: [{ delta: { content: '知识笔记已更新。' }, finish_reason: 'stop' }] }]);
+    const nodeId = latestUser.match(/"learningNodeId":"([^"]+)"/)?.[1];
+    if (!toolSince('learning_read')) return callTool('e2e_note_read', 'learning_read', { action: 'node', nodeId }, '我先读取这篇真实笔记。');
+    const node = sinceUser.filter(message => message.role === 'tool').map(toolData).find(data => data?.node)?.node;
+    if (!node) return stream(res, [{ choices: [{ delta: { content: '没有读到笔记。' }, finish_reason: 'stop' }] }]);
+    return callTool('e2e_note_edit', 'propose_changes', { summary: '补充知识笔记和掌握情况', operations: [{ family: 'learning', args: { action: 'node_update', nodeId: node.id, expectedNodeRevision: node.revision, detail: node.detail + '\n\nAI 补充：模型需要通过独立场景验证应用边界。', nodeStatus: 'review' } }] }, '请确认这次笔记修改。');
+  }
   if (latestUser.includes('学习地图验收')) {
     if (toolSince('propose_changes')) return stream(res, [{ choices: [{ delta: { content: '学习地图已创建，可以到学习地图页查看。' }, finish_reason: 'stop' }] }]);
     if (!toolSince('learning_read')) return callTool('e2e_learning_read', 'learning_read', { action: 'list' }, '我先读取学习域。');

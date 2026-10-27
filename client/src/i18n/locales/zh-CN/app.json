@@ -155,7 +155,8 @@
     "undone": "已撤销",
     "cancelled": "已取消操作",
     "saved": "已保存",
-    "pendingApproval": "已加入待确认"
+    "pendingApproval": "已加入待确认",
+    "studyBusy": "请先结束当前助手的运行，再切换到学习助手。"
   },
   "todo": {
     "taskUpdated": "任务已更新",

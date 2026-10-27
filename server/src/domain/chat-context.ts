@@ -33,6 +33,8 @@ export const chatAttachment = z.object({
   id: short.min(1), kind: z.enum(['draft', 'selection']), title: short,
   text: z.string().refine((value) => [...value].length <= 20000, '单个附件最多 20,000 字符'),
   taskId: short.optional(), materialId: short.optional(), unsaved: z.boolean(),
+  learningNodeId: short.optional(), learningMapId: short.optional(),
+  learningRevision: z.number().int().positive().optional(),
 }).strict();
 export const chatContextV3 = chatContextV2.extend({
   schemaVersion: z.literal(3),
