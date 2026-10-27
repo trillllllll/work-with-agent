@@ -27,7 +27,7 @@ test('study assistant keeps its own session and writes learning maps through app
   // 手机上助手全屏；先收起再看学习地图空态。
   if (isMobile) await panel(page).getByRole('button', { name: '返回当前页面', exact: true }).click();
   await page.evaluate(() => { location.hash = '/learning'; });
-  await expect(page.getByRole('heading', { name: '还没有学习地图' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '还没有学习主题' })).toBeVisible();
   await page.getByRole('button', { name: '问学习助手', exact: true }).click();
   await expect(panel(page)).toBeVisible();
 
@@ -47,8 +47,9 @@ test('study assistant keeps its own session and writes learning maps through app
   if (isMobile) await panel(page).getByRole('button', { name: '返回当前页面', exact: true }).click();
   await expect(page.getByRole('heading', { name: '学习地图', exact: true })).toBeVisible();
   await expect(page.getByText('掌握 Rust 基础')).toBeVisible();
-  await expect(page.getByText('主题: 1')).toBeVisible();
-  await expect(page.getByRole('img', { name: '学习地图结构图，颜色代表掌握度' })).toBeVisible();
+  await expect(page.getByText('已掌握 0 / 1',{ exact: true }).first()).toBeVisible();
+  if (isMobile) await expect(page.getByRole('button', { name: /读第 4 章/ })).toBeVisible();
+  else await expect(page.getByTestId('echarts-tree')).toBeVisible();
 
   // 会话历史按身份隔离：列表请求带上 identityId=study，且能看到本会话。
   if (isMobile) await open(page);

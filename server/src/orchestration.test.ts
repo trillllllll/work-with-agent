@@ -77,7 +77,7 @@ afterAll(async () => {
   await prisma.task.deleteMany({ where: { parentId: { in: created.tasks } } });
   await prisma.task.deleteMany({ where: { id: { in: created.tasks } } });
   for (const [key, value] of Object.entries({ DOVUN_RUNNER_DIR: previous.runner, DOVUN_CODEX_BIN: previous.codex, STUB_LOG: previous.log })) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
-  await rm(root, { recursive: true, force: true });
+  await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
 describe('orchestration through a local executor', () => {

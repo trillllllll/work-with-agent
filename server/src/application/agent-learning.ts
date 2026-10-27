@@ -1,3 +1,4 @@
+import { learningNodeStatuses } from '../domain/learning.js';
 import type { Command } from './commands.js';
 
 // propose_changes 的 learning 族参数校验与命令映射。
@@ -9,11 +10,11 @@ export type LearningAction = (typeof learningActions)[number];
 const allowedKeys: Record<LearningAction, readonly string[]> = {
   map_create: ['action', 'title', 'goal'],
   map_update: ['action', 'mapId', 'expectedRevision', 'title', 'goal', 'status'],
-  map_archive: ['action', 'mapId', 'expectedRevision'],
-  node_create: ['action', 'mapId', 'parentId', 'kind', 'title', 'detail', 'sortOrder'],
+  map_archive: ['action', 'mapId', 'expectedRevision', 'expectedNodeRevisions'],
+  node_create: ['action', 'mapId', 'parentId', 'kind', 'title', 'detail', 'sortOrder', 'nodeStatus'],
   node_update: ['action', 'nodeId', 'expectedNodeRevision', 'title', 'detail', 'nodeStatus', 'mastery', 'sortOrder'],
   node_move: ['action', 'nodeId', 'expectedNodeRevision', 'parentId'],
-  node_archive: ['action', 'nodeId', 'expectedNodeRevision'],
+  node_archive: ['action', 'nodeId', 'expectedNodeRevision', 'cascade', 'expectedDescendantRevisions'],
   activity_append: ['action', 'mapId', 'nodeId', 'kind', 'content', 'meta'],
 };
 
@@ -88,7 +89,7 @@ export function validateLearningArguments(args: Record<string, unknown>): string
   if (action === 'node_update') {
     if (args.title !== undefined && (!text(args.title) || [...text(args.title)!].length > 300)) return '标题需要 1 到 300 个字符';
     if (args.detail !== undefined && (typeof args.detail !== 'string' || [...args.detail].length > 20000)) return 'detail 不能超过 20000 字';
-    if (args.nodeStatus !== undefined && !['todo', 'learning', 'done'].includes(String(args.nodeStatus))) return 'nodeStatus 只能是 todo、learning 或 done';
+    if (args.nodeStatus !== undefined && !learningNodeStatuses.includes(args.nodeStatus as never)) return 'nodeStatus 只能是 todo、learning、review 或 done';
     if (args.mastery !== undefined && !integer(args.mastery, 0, 100)) return 'mastery 是 0 到 100 的整数';
     if (args.sortOrder !== undefined && !integer(args.sortOrder, 0, 100000)) return 'sortOrder 无效';
     if (['title', 'detail', 'nodeStatus', 'mastery', 'sortOrder'].every((key) => args[key] === undefined)) return 'node_update 需要至少一个修改字段';
@@ -105,6 +106,12 @@ export function validateLearningArguments(args: Record<string, unknown>): string
     const content = text(args.content);
     if (!content || [...content].length > 5000) return '内容需要 1 到 5000 个字符';
     if (args.meta !== undefined && (typeof args.meta !== 'object' || Array.isArray(args.meta))) return 'meta 无效';
+  }
+  if (args.nodeStatus !== undefined && !learningNodeStatuses.includes(args.nodeStatus as never)) return 'nodeStatus 只能是 todo、learning、review 或 done';
+  if (args.cascade !== undefined && typeof args.cascade !== 'boolean') return 'cascade 必须为布尔值';
+  for (const key of ['expectedNodeRevisions', 'expectedDescendantRevisions']) {
+    const value = args[key];
+    if (value !== undefined && (!value || typeof value !== 'object' || Array.isArray(value) || Object.entries(value).some(([id, revision]) => !id || !integer(revision, 1)))) return `${key} 必须为节点 ID 到版本号的映射`;
   }
   return null;
 }
@@ -126,7 +133,7 @@ export function commandForLearning(action: LearningAction, args: Record<string, 
     return { kind: 'learning.map.update', targetId: mapTargetId!, expectedRevision: Number(args.expectedRevision), input };
   }
   if (action === 'map_archive') {
-    return { kind: 'learning.map.archive', targetId: mapTargetId!, expectedRevision: Number(args.expectedRevision), input: {} };
+    return { kind: 'learning.map.archive', targetId: mapTargetId!, expectedRevision: Number(args.expectedRevision), input: { ...(args.expectedNodeRevisions !== undefined ? { expectedNodeRevisions: args.expectedNodeRevisions } : {}) } };
   }
   if (action === 'node_create') {
     return {
@@ -138,6 +145,7 @@ export function commandForLearning(action: LearningAction, args: Record<string, 
         title: text(args.title),
         detail: typeof args.detail === 'string' ? args.detail : '',
         sortOrder: typeof args.sortOrder === 'number' ? args.sortOrder : 0,
+        ...(args.nodeStatus !== undefined ? { status: args.nodeStatus } : {}),
       },
     };
   }
@@ -154,7 +162,7 @@ export function commandForLearning(action: LearningAction, args: Record<string, 
     return { kind: 'learning.node.move', targetId: nodeId!, expectedRevision: Number(args.expectedNodeRevision), input: { parentId: args.parentId === undefined ? null : args.parentId } };
   }
   if (action === 'node_archive') {
-    return { kind: 'learning.node.archive', targetId: nodeId!, expectedRevision: Number(args.expectedNodeRevision), input: {} };
+    return { kind: 'learning.node.archive', targetId: nodeId!, expectedRevision: Number(args.expectedNodeRevision), input: { ...(args.cascade !== undefined ? { cascade: args.cascade } : {}), ...(args.expectedDescendantRevisions !== undefined ? { expectedDescendantRevisions: args.expectedDescendantRevisions } : {}) } };
   }
   return {
     kind: 'learning.activity.append',

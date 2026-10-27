@@ -13,6 +13,8 @@ export const en: Record<string, string> = {
   "未知的助手身份": "Unknown assistant identity",
   "至少修改一个字段": "Change at least one field",
   "get 需要 mapId": "get requires mapId",
+  "知识点或笔记已经变化，请刷新后重新确认": "Knowledge points or notes have changed. Refresh and confirm again.",
+  "该节点还有子节点，请明确确认同时删除下级知识点": "This node has children. Explicitly confirm deleting its descendant knowledge points.",
   "学习地图不存在": "Learning map does not exist",
   "node 需要 nodeId": "node requires nodeId",
   "学习条目不存在": "Learning item does not exist",
@@ -648,6 +650,7 @@ export const en: Record<string, string> = {
   "清单已有后续任务，无法撤销": "Cannot undo because the list already has subsequent tasks",
   "任务已有子任务，无法撤销": "Cannot undo because the task already has subtasks",
   "历史对象已不存在，无法安全恢复": "Cannot safely restore because the history object no longer exists",
+  "重复规则无效": "Recurrence rule is invalid",
   "安排日期无效": "Scheduled date is invalid",
   "安排时间无效": "Scheduled time is invalid",
   "结束时间不能脱离开始时间": "End time cannot be separated from the start time",
@@ -874,5 +877,11 @@ export const en: Record<string, string> = {
   "记录已发生变化，请刷新": "The record has changed. Refresh and try again.",
   "请等待本机修改同步完成后重试": "Wait until local changes finish syncing, then retry.",
   "工作区身份已变化，本机待同步修改已保留": "The workspace identity changed. Pending local changes have been retained.",
-  "本机聊天和资料尚未迁入共享工作区，请先合并完整备份，原数据已保留": "Local conversations and materials have not been imported. Merge a full backup first; the original data is preserved."
+  "本机聊天和资料尚未迁入共享工作区，请先合并完整备份，原数据已保留": "Local conversations and materials have not been imported. Merge a full backup first; the original data is preserved.",
+  "需要{0}": "Requires {0}",
+  "父节点必须在同一张学习地图里": "The parent must belong to the same learning map.",
+  "清单条目下不能再建节点": "Knowledge points cannot contain child nodes.",
+  "节点不能做自己的父节点": "A node cannot be its own parent.",
+  "不能把节点移到它自己的子树里": "A node cannot be moved into its own subtree.",
+  "条目不属于这张学习地图": "This knowledge point does not belong to this learning map."
 };

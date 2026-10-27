@@ -626,6 +626,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     setInterrupted(false);
     setInput('');
     setPinnedContext(null);
+    attachmentsRef.current = [];
     setAttachments([]);
     setReferencedApproval(null);
     setPausedRun(null);

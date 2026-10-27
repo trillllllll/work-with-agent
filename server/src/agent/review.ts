@@ -61,10 +61,10 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
-function show(key: string, value: unknown): string {
+function show(key: string, value: unknown, entityType?: string): string {
   if (value === null || value === undefined) return '未设置';
   if (value === '' || (Array.isArray(value) && value.length === 0)) return '清空';
-  if (key === 'status' && typeof value === 'string') return statusText[value] ?? value;
+  if (key === 'status' && typeof value === 'string') return entityType === 'learning_node' ? ({ todo: '未开始', learning: '学习中', review: '需巩固', done: '已掌握' } as Record<string,string>)[value] ?? value : statusText[value] ?? value;
   if (key === 'color' && typeof value === 'string') return colorText[value] ?? value;
   if (key === 'priority' && typeof value === 'string') return priorityText[value] ?? value;
   if (key === 'deletedAt') return value ? '已删除' : '未删除';
@@ -135,7 +135,7 @@ function fieldsFor(entityType: ReviewEntityChange['entityType'], before: Record<
     const right = after?.[key] ?? null;
     if (canonical(left) === canonical(right)) continue;
     if (!before && (right === '' || (Array.isArray(right) && right.length === 0))) continue;
-    fields.push({ key, label: entityType === 'skill' ? skillLabels[key] ?? key : labels[key] ?? key, before: jsonValue(left), after: jsonValue(right), beforeText: show(key, left), afterText: show(key, right) });
+    fields.push({ key, label: entityType === 'learning_node' && key === 'detail' ? '笔记正文' : entityType === 'learning_node' && key === 'status' ? '掌握情况' : entityType === 'skill' ? skillLabels[key] ?? key : labels[key] ?? key, before: jsonValue(left), after: jsonValue(right), beforeText: show(key, left, entityType), afterText: show(key, right, entityType) });
   }
   return fields;
 }

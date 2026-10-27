@@ -3,6 +3,8 @@ import { registerCommandHandler } from './commands.js';
 import { jsonSchema } from './command-catalog.js';
 import { recordChange } from './workspace-store.js';
 import { DomainError } from '../domain/task.js';
+import type { Prisma } from '@prisma/client';
+import { learningNodeStatuses } from '../domain/learning.js';
 
 // 学习域命令处理器。全部 forceProposal：内置助手和外部连接都只能先生成
 // 待确认方案，用户批准后经 executeBatch 执行并写入变更历史。
@@ -16,7 +18,9 @@ const mapUpdate = z.object({
   goal: z.string().max(2000).optional(),
   status: z.enum(['active', 'paused']).optional(),
 }).strict().refine((value) => Object.keys(value).some((key) => value[key as keyof typeof value] !== undefined), { message: '至少修改一个字段' });
-const empty = z.object({}).strict();
+const revisions = z.record(z.number().int().positive());
+const mapArchive = z.object({ expectedNodeRevisions: revisions.optional() }).strict();
+const nodeArchive = z.object({ cascade: z.boolean().optional(), expectedDescendantRevisions: revisions.optional() }).strict();
 const nodeCreate = z.object({
   mapId: z.string().min(1),
   parentId: z.string().min(1).nullable(),
@@ -24,11 +28,12 @@ const nodeCreate = z.object({
   title: z.string().min(1).max(300),
   detail: z.string().max(20000),
   sortOrder: z.number().int().min(0).max(100000),
+  status: z.enum(learningNodeStatuses).optional(),
 }).strict();
 const nodeUpdate = z.object({
   title: z.string().min(1).max(300).optional(),
   detail: z.string().max(20000).optional(),
-  status: z.enum(['todo', 'learning', 'done']).optional(),
+  status: z.enum(learningNodeStatuses).optional(),
   mastery: z.number().int().min(0).max(100).optional(),
   sortOrder: z.number().int().min(0).max(100000).optional(),
 }).strict().refine((value) => Object.keys(value).some((key) => value[key as keyof typeof value] !== undefined), { message: '至少修改一个字段' });
@@ -41,16 +46,18 @@ const activityAppend = z.object({
   meta: z.record(z.unknown()).optional(),
 }).strict();
 
-async function requireMap(tx: { learningMap: { findUnique: Function } }, mapId: string) {
+type LearningDb = Pick<Prisma.TransactionClient, 'learningMap' | 'learningNode'>;
+async function requireMap(tx: Pick<LearningDb, 'learningMap'>, mapId: string) {
   const map = await tx.learningMap.findUnique({ where: { id: mapId } });
   if (!map || map.deletedAt) throw learningFailure('NOT_FOUND', '学习地图不存在', 404);
   return map as { id: string; title: string; goal: string; status: string; revision: number; deletedAt: string | null };
 }
 
-async function requireNode(tx: { learningNode: { findUnique: Function } }, nodeId: string) {
+async function requireNode(tx: LearningDb, nodeId: string) {
   const node = await tx.learningNode.findUnique({ where: { id: nodeId } });
   if (!node || node.deletedAt) throw learningFailure('NOT_FOUND', '学习条目不存在', 404);
-  return node as { id: string; mapId: string; parentId: string | null; kind: string; title: string; revision: number };
+  await requireMap(tx, node.mapId);
+  return node;
 }
 
 async function assertRevision(current: number | undefined, expected: number | undefined, label: string) {
@@ -58,12 +65,32 @@ async function assertRevision(current: number | undefined, expected: number | un
   if (current !== expected) throw learningFailure('VERSION_CONFLICT', '内容已经变化，请刷新后重试', 428);
 }
 
-async function requireParent(tx: { learningNode: { findUnique: Function } }, mapId: string, parentId: string | null) {
+async function requireParent(tx: LearningDb, mapId: string, parentId: string | null) {
   if (!parentId) return null;
   const parent = await requireNode(tx, parentId);
   if (parent.mapId !== mapId) throw learningFailure('INVALID_PARENT', '父节点必须在同一张学习地图里', 400);
   if (parent.kind === 'item') throw learningFailure('INVALID_PARENT', '清单条目下不能再建节点', 400);
   return parent;
+}
+
+async function liveMapNodes(tx: LearningDb, mapId: string) {
+  return tx.learningNode.findMany({ where: { mapId, deletedAt: null }, orderBy: { id: 'asc' } });
+}
+function assertExpectedRows(rows: Array<{ id: string; revision: number }>, expected?: Record<string, number>) {
+  if (expected && (Object.keys(expected).length !== rows.length || rows.some(row => expected[row.id] !== row.revision))) {
+    throw learningFailure('VERSION_CONFLICT', '知识点或笔记已经变化，请刷新后重新确认', 428);
+  }
+}
+async function archiveScope(tx: LearningDb, nodeId: string, input: z.infer<typeof nodeArchive>) {
+  const node = await requireNode(tx, nodeId);
+  const rows = await liveMapNodes(tx, node.mapId);
+  const ids = new Set([node.id]);
+  let changed = true;
+  while (changed) { changed = false; for (const row of rows) if (row.parentId && ids.has(row.parentId) && !ids.has(row.id)) { ids.add(row.id); changed = true; } }
+  const descendants = rows.filter(row => row.id !== node.id && ids.has(row.id));
+  if (descendants.length && !input.cascade) throw learningFailure('NODE_HAS_CHILDREN', '该节点还有子节点，请明确确认同时删除下级知识点', 400);
+  assertExpectedRows(descendants, input.expectedDescendantRevisions);
+  return { node, descendants };
 }
 
 export function registerLearningCommands() {
@@ -105,23 +132,33 @@ export function registerLearningCommands() {
   registerCommandHandler('learning.map.archive', {
     forceProposal: true,
     description: '归档（软删除）一张学习地图。',
-    inputSchema: jsonSchema(empty),
+    inputSchema: jsonSchema(mapArchive),
     inspect: async (tx, _actor, command) => {
+      const input = mapArchive.parse(command.input ?? {});
       const map = await requireMap(tx, command.targetId ?? '');
       await assertRevision(map.revision, command.expectedRevision, '地图版本');
-      return { preconditions: { id: map.id, revision: map.revision }, preview: { archived: true, title: map.title } };
+      const nodes = await liveMapNodes(tx, map.id);
+      assertExpectedRows(nodes, input.expectedNodeRevisions);
+      return { preconditions: { id: map.id, revision: map.revision, nodes: nodes.map(({ id, revision }) => ({ id, revision })) }, preview: { archived: true, title: map.title, nodeCount: nodes.length } };
     },
     execute: async (tx, _actor, command, context) => {
+      const input = mapArchive.parse(command.input ?? {});
       const map = await requireMap(tx, command.targetId ?? '');
       await assertRevision(map.revision, command.expectedRevision, '地图版本');
+      const nodes = await liveMapNodes(tx, map.id);
+      assertExpectedRows(nodes, input.expectedNodeRevisions);
       const updated = await tx.learningMap.update({ where: { id: map.id, revision: map.revision }, data: { deletedAt: now(), revision: { increment: 1 }, updatedAt: now() } });
       await recordChange(tx, 'learning_map', updated.id, 'archive', map, updated, context);
+      for (const node of nodes) {
+        const archived = await tx.learningNode.update({ where: { id: node.id, revision: node.revision }, data: { deletedAt: now(), revision: { increment: 1 }, updatedAt: now() } });
+        await recordChange(tx, 'learning_node', node.id, 'archive', node, archived, context);
+      }
       return updated;
     },
   });
   registerCommandHandler('learning.node.create', {
     forceProposal: true,
-    description: '在学习地图里创建节点：kind=topic 是结构节点，kind=item 是清单条目。',
+    description: '在学习地图里创建节点：kind=topic 是结构节点，kind=item 是带持久笔记的知识点。',
     inputSchema: jsonSchema(nodeCreate),
     inspect: async (tx, _actor, command) => {
       const input = nodeCreate.parse(command.input ?? {});
@@ -134,14 +171,14 @@ export function registerLearningCommands() {
       await requireMap(tx, input.mapId);
       await requireParent(tx, input.mapId, input.parentId);
       const timestamp = now();
-      const node = await tx.learningNode.create({ data: { ...(context.entityId || command.entityId ? { id: context.entityId ?? command.entityId } : {}), mapId: input.mapId, parentId: input.parentId, kind: input.kind, title: input.title, detail: input.detail, sortOrder: input.sortOrder, createdAt: timestamp, updatedAt: timestamp } });
+      const node = await tx.learningNode.create({ data: { ...(context.entityId || command.entityId ? { id: context.entityId ?? command.entityId } : {}), mapId: input.mapId, parentId: input.parentId, kind: input.kind, title: input.title, detail: input.detail, sortOrder: input.sortOrder, ...(input.status ? { status: input.status } : {}), createdAt: timestamp, updatedAt: timestamp } });
       await recordChange(tx, 'learning_node', node.id, 'create', null, node, context);
       return node;
     },
   });
   registerCommandHandler('learning.node.update', {
     forceProposal: true,
-    description: '修改学习条目的标题、说明、状态、掌握度（0-100）或排序。',
+    description: '修改知识点标题、持久笔记正文 detail、四档状态 todo/learning/review/done 或排序。mastery 数值保留兼容，不参与四档状态判断。',
     inputSchema: jsonSchema(nodeUpdate),
     inspect: async (tx, _actor, command) => {
       const input = nodeUpdate.parse(command.input ?? {});
@@ -200,23 +237,26 @@ export function registerLearningCommands() {
   });
   registerCommandHandler('learning.node.archive', {
     forceProposal: true,
-    description: '归档（软删除）学习条目。有子节点时需要先处理子节点。',
-    inputSchema: jsonSchema(empty),
+    description: '软删除知识点。分组含下级时须明确 cascade=true；可带 expectedDescendantRevisions 防止删除新改动。',
+    inputSchema: jsonSchema(nodeArchive),
     inspect: async (tx, _actor, command) => {
-      const node = await requireNode(tx, command.targetId ?? '');
+      const input = nodeArchive.parse(command.input ?? {});
+      const { node, descendants } = await archiveScope(tx, command.targetId ?? '', input);
       await assertRevision(node.revision, command.expectedRevision, '条目版本');
-      const children = await tx.learningNode.count({ where: { parentId: node.id, deletedAt: null } });
-      if (children > 0) throw learningFailure('NODE_HAS_CHILDREN', '该节点还有子节点，先归档或移走子节点', 400);
-      return { preconditions: { id: node.id, revision: node.revision }, preview: { archived: true, title: node.title } };
+      return { preconditions: { id: node.id, revision: node.revision, descendants: descendants.map(({ id, revision }) => ({ id, revision })) }, preview: { archived: true, title: node.title, descendants: descendants.map(({ id, title }) => ({ id, title })) } };
     },
     execute: async (tx, _actor, command, context) => {
-      const node = await requireNode(tx, command.targetId ?? '');
+      const input = nodeArchive.parse(command.input ?? {});
+      const { node, descendants } = await archiveScope(tx, command.targetId ?? '', input);
       await assertRevision(node.revision, command.expectedRevision, '条目版本');
-      const children = await tx.learningNode.count({ where: { parentId: node.id, deletedAt: null } });
-      if (children > 0) throw learningFailure('NODE_HAS_CHILDREN', '该节点还有子节点，先归档或移走子节点', 400);
-      const updated = await tx.learningNode.update({ where: { id: node.id, revision: node.revision }, data: { deletedAt: now(), revision: { increment: 1 }, updatedAt: now() } });
-      await recordChange(tx, 'learning_node', updated.id, 'archive', node, updated, context);
-      return updated;
+      const timestamp = now();
+      let result;
+      for (const previous of [...descendants, node]) {
+        const updated = await tx.learningNode.update({ where: { id: previous.id, revision: previous.revision }, data: { deletedAt: timestamp, revision: { increment: 1 }, updatedAt: timestamp } });
+        await recordChange(tx, 'learning_node', updated.id, 'archive', previous, updated, context);
+        if (previous.id === node.id) result = updated;
+      }
+      return result;
     },
   });
   registerCommandHandler('learning.activity.append', {
