@@ -78,6 +78,61 @@ test('详情显示所属清单，无清单时显示收集箱', async ({ page, re
   await expect(page.getByRole('dialog', { name: '任务详情', exact: true }).getByTestId('task-topic-row').locator('.task-place-chip')).toHaveText('收集箱');
 });
 
+test('详情里修改所属清单，子任务一同移动', async ({ page, request }) => {
+  const listA = (await (await request.post(`${apiUrl}/api/topics`, { data: { name: '清单甲' } })).json()).data as { id: string };
+  const listB = (await (await request.post(`${apiUrl}/api/topics`, { data: { name: '清单乙' } })).json()).data as { id: string };
+  const task = (await (await request.post(`${apiUrl}/api/tasks`, { data: { title: '搬家的任务' } })).json()).data as { id: string };
+  const sub = (await (await request.post(`${apiUrl}/api/tasks`, { data: { title: '跟随的子任务', parentId: task.id } })).json()).data as { id: string };
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await page.goto('/#/inbox');
+  await page.getByTestId(`task-row-${task.id}`).getByRole('button', { name: '搬家的任务', exact: true }).click();
+  const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
+  await detail.getByTestId('task-topic-row').click();
+  const picker = page.getByRole('dialog', { name: '移动到清单', exact: true });
+  await expect(picker.getByRole('button', { name: '收集箱', exact: true })).toBeDisabled();
+  await picker.getByRole('button', { name: '清单乙', exact: true }).click();
+  await page.getByRole('button', { name: '确认影响并执行', exact: true }).click();
+  await expect(detail.getByTestId('task-topic-row').locator('.task-place-chip')).toHaveText('清单乙');
+  await expect.poll(async () => ((await (await request.get(`${apiUrl}/api/tasks/${task.id}`)).json()).data as { topicId: string | null }).topicId).toBe(listB.id);
+  await expect.poll(async () => ((await (await request.get(`${apiUrl}/api/tasks/${sub.id}`)).json()).data as { topicId: string | null }).topicId).toBe(listB.id);
+  await detail.getByTestId('task-topic-row').click();
+  await picker.getByRole('button', { name: '清单甲', exact: true }).click();
+  await page.getByRole('button', { name: '确认影响并执行', exact: true }).click();
+  await expect(detail.getByTestId('task-topic-row').locator('.task-place-chip')).toHaveText('清单甲');
+  await expect.poll(async () => ((await (await request.get(`${apiUrl}/api/tasks/${task.id}`)).json()).data as { topicId: string | null }).topicId).toBe(listA.id);
+  await detail.getByTestId('task-topic-row').click();
+  await picker.getByRole('button', { name: '收集箱', exact: true }).click();
+  await page.getByRole('button', { name: '确认影响并执行', exact: true }).click();
+  await expect(detail.getByTestId('task-topic-row').locator('.task-place-chip')).toHaveText('收集箱');
+  await expect.poll(async () => ((await (await request.get(`${apiUrl}/api/tasks/${task.id}`)).json()).data as { topicId: string | null }).topicId).toBeNull();
+});
+
+test('窄屏多清单选择器保持在视口内，末尾清单可滚动选择', async ({ page, request }) => {
+  let lastTopicId = '';
+  for (let index = 1; index <= 30; index += 1) {
+    const response = await request.post(`${apiUrl}/api/topics`, { data: { name: `目录清单${index}` } });
+    expect(response.ok(), await response.text()).toBe(true);
+    lastTopicId = ((await response.json()).data as { id: string }).id;
+  }
+  const task = (await (await request.post(`${apiUrl}/api/tasks`, { data: { title: '选择末尾清单' } })).json()).data as { id: string };
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/#/inbox');
+  await page.getByTestId(`task-row-${task.id}`).getByRole('button', { name: '选择末尾清单', exact: true }).click();
+  const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
+  await detail.getByTestId('task-topic-row').click();
+  const picker = page.getByRole('dialog', { name: '移动到清单', exact: true });
+  await expect(picker).toBeVisible();
+  await expect.poll(async () => picker.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return rect.top >= 0 && rect.bottom <= window.innerHeight;
+  })).toBe(true);
+  const last = picker.getByRole('button', { name: '目录清单30', exact: true });
+  await last.scrollIntoViewIfNeeded();
+  await last.click();
+  await expect(detail.getByTestId('task-topic-row').locator('.task-place-chip')).toHaveText('目录清单30');
+  await expect.poll(async () => ((await (await request.get(`${apiUrl}/api/tasks/${task.id}`)).json()).data as { topicId: string | null }).topicId).toBe(lastTopicId);
+});
+
 test('选中文本浮出格式条，加粗后立即保持格式', async ({ page, request }) => {
   const created = await request.post(`${apiUrl}/api/tasks`, { data: { title: '写一句' } });
   expect(created.ok(), await created.text()).toBe(true);

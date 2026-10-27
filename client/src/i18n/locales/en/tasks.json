@@ -244,6 +244,8 @@
     "emptyValue": "(Empty)",
     "emptyTitleBlocked": "The title can't be empty, so autosave is paused. Add a title to continue.",
     "listLabel": "List",
+    "moveToList": "Move to list",
+    "moveToListHint": "Pick the list for this task; subtasks move with it.",
     "flag": "Flag",
     "flagOption": "Flag: {{label}}",
     "tags": "Tags",

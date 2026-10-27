@@ -8,7 +8,7 @@ import { BodyText } from '@/components/shared/BodyText.js';
 import { intlLocale, t as translate } from '../../i18n/index.js';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, CalendarDays,  ChevronRight, Clock, Flag, FolderKanban, Hash, Repeat, Timer, X } from 'lucide-react';
-import { api, ApiError, priorities, type Status, type Tag, type Task, type TaskPriority } from '@/lib/api.js';
+import { api, ApiError, priorities, type Status, type Tag, type Task, type TaskPriority, type Topic } from '@/lib/api.js';
 import { isCompositionKey, sameField, taskDraft, queryKeys, type TaskDraft } from '@/lib/todo.js';
 import { scheduleLabel } from '@/lib/schedule.js';
 import { recurrenceLabel, recurrencePresets } from '@/lib/recurrence.js';
@@ -58,6 +58,7 @@ type EditContext = {
   base: TaskDraft;
   readonly: boolean;
   tags: Tag[];
+  topics: Topic[];
   conflicts: string[];
   acknowledge: boolean;
   setAcknowledge: (value: boolean) => void;
@@ -77,6 +78,7 @@ type EditContext = {
   setSchedule: (schedule: ScheduleValue, task: Task) => Promise<boolean>;
   setEstimate: (estimatedMinutes: number | null, task: Task) => Promise<boolean>;
   setRecurrence: (recurrenceRule: string, task: Task) => Promise<boolean>;
+  setTopic: (topicId: string | null) => void;
   toggleTag: (id: string, checked: boolean) => void;
   resetDraft: () => void;
   requestClose: () => void;
@@ -98,6 +100,7 @@ type Props = {
   id: string;
   fallback: Task;
   tags: Tag[];
+  topics: Topic[];
   readonly?: boolean;
   onSave: (task: Task, patch: Partial<TaskDraft>) => Promise<Task | undefined>;
   onClose: () => void;
@@ -108,7 +111,7 @@ type Props = {
   children: ReactNode;
 };
 
-export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpand({ id, fallback, tags, readonly = false, onSave, onClose, onDirtyChange, onToggleTask, onCreateTask, onOpenTask, children }, ref) {
+export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpand({ id, fallback, tags, topics, readonly = false, onSave, onClose, onDirtyChange, onToggleTask, onCreateTask, onOpenTask, children }, ref) {
   useTranslation('tasks');
   const query = useTask(id);
   const coordinator = useEditorRuntime()?.coordinator ?? null;
@@ -342,7 +345,7 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
   const fullBase: TaskDraft = { ...editing?.base, title: textBase.title, description: textBase.description } as TaskDraft;
   const textConflicts = textRecord?.conflicts ?? {};
   const value: EditContext = {
-    draft: fullDraft, base: fullBase, readonly, tags, conflicts: [...(editing?.conflicts ?? []), ...Object.keys(textConflicts)], acknowledge: acknowledgeConflict, setAcknowledge: setAcknowledgeConflict,
+    draft: fullDraft, base: fullBase, readonly, tags, topics, conflicts: [...(editing?.conflicts ?? []), ...Object.keys(textConflicts)], acknowledge: acknowledgeConflict, setAcknowledge: setAcknowledgeConflict,
     updateText, onComposeStart, onComposeEnd, onTitleKeyDown: (event) => {
       if (event.key !== 'Enter' || isCompositionKey(event.nativeEvent)) return;
       event.preventDefault();
@@ -361,6 +364,7 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
     setSchedule: (schedule, task) => applyImmediate(schedule, task),
     setEstimate: (estimatedMinutes, task) => applyImmediate({ estimatedMinutes }, task),
     setRecurrence: (recurrenceRule, task) => applyImmediate({ recurrenceRule }, task),
+    setTopic: (topicId) => { void applyImmediate({ topicId }); },
     toggleTag: (tagId, checked) => {
       const current = editingRef.current?.draft.tagIds ?? [];
       void applyImmediate({ tagIds: checked ? [...current, tagId] : current.filter((item) => item !== tagId) });
@@ -521,12 +525,27 @@ export function TaskExpandBody({ fill = false, section = 'details' }: { fill?: b
 function TopicRow() {
   const { t } = useTranslation('tasks');
   const edit = useEdit();
-  const name = edit.task.topic?.name ?? t('shared.inbox');
-  return <div data-testid="task-topic-row" className="task-info-row">
-    <FolderKanban className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-    <span className="w-20 shrink-0 text-left text-muted-foreground">{t('taskExpand.listLabel')}</span>
-    <span className="min-w-0 flex-1 truncate text-right"><span className="task-place-chip">{name}</span></span>
-  </div>;
+  const [open, setOpen] = useState(false);
+  const topicId = edit.draft.topicId ?? null;
+  const name = topicId === null ? t('shared.inbox') : edit.topics.find((topic) => topic.id === topicId)?.name ?? edit.task.topic?.name ?? t('shared.inbox');
+  const pick = (next: string | null) => {
+    setOpen(false);
+    if (next !== topicId) edit.setTopic(next);
+  };
+  return <Popover open={open} onOpenChange={setOpen}>
+    <PopoverTrigger asChild>
+      <Button variant="row" size="bare" type="button" data-testid="task-topic-row" className={cn('task-info-row', edit.readonly && 'opacity-50')} aria-label={t('taskExpand.moveToList')} disabled={edit.readonly}>
+        <FolderKanban className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        <span className="w-20 shrink-0 text-left text-muted-foreground">{t('taskExpand.listLabel')}</span>
+        <span className="min-w-0 flex-1 truncate text-right"><span className="task-place-chip">{name}</span></span>
+      </Button>
+    </PopoverTrigger>
+    <PopoverContent data-task-editor aria-label={t('taskExpand.moveToList')} collisionPadding={8} className="max-h-[min(24rem,var(--radix-popover-content-available-height))] w-52 space-y-1 overflow-y-auto overscroll-contain">
+      <p className="px-1 pb-1 text-xs text-muted-foreground">{t('taskExpand.moveToListHint')}</p>
+      <Button type="button" variant="ghost" size="sm" className="w-full justify-start" aria-pressed={topicId === null} disabled={topicId === null} onClick={() => pick(null)}>{t('shared.inbox')}</Button>
+      {edit.topics.map((topic) => <Button key={topic.id} type="button" variant="ghost" size="sm" className="w-full justify-start" aria-pressed={topicId === topic.id} disabled={topicId === topic.id} onClick={() => pick(topic.id)}>{topic.name}</Button>)}
+    </PopoverContent>
+  </Popover>;
 }
 
 function FlagRow() {

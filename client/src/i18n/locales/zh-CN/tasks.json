@@ -242,6 +242,8 @@
     "emptyValue": "（空）",
     "emptyTitleBlocked": "标题不能为空，自动保存已暂停；补齐标题后继续。",
     "listLabel": "所属清单",
+    "moveToList": "移动到清单",
+    "moveToListHint": "选择任务所属的清单，子任务会一同移动。",
     "flag": "旗标",
     "flagOption": "旗标：{{label}}",
     "tags": "标签",
