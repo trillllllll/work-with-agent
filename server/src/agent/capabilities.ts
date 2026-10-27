@@ -55,6 +55,8 @@ const paging = { cursor: { type: 'string' }, limit: { type: 'integer' } };
 export const builtinTools: BuiltinTool[] = [
   { name: 'present_reply', description: '最终富媒体回答：按 blocks 数组顺序混排 text、mermaid、chart、svg、html（需要用户操作的交互小页面，规则见【交互页面】）和真实图片搜索引用。SVG 图示必须用独立的 {type:"svg",source:"<svg…>…</svg>"} 块，不能放进 text.markdown 的代码块。文字优先 type 后 markdown。只展示，不执行业务修改；同轮只能调用一次且不得与其他工具混用，调用后结束回答。图片先用 image_search 获得 resultIds。图表数据若无可核实来源必须标记 simulated 或 unverified。', parameters: presentReplyParameters, writesBusinessData: false },
   { name: 'image_search', description: '通过已配置的真实图片搜索服务查找图片，获得 searchId、resultIds 和来源。未配置时明确不可用；不能编造图片 URL。', parameters: { type: 'object', additionalProperties: false, required: ['query'], properties: { query: { type: 'string', minLength: 1, maxLength: 300 }, limit: { type: 'integer', minimum: 1, maximum: 8 } } }, writesBusinessData: false },
+  { name: 'web_search', description: '联网搜索网页（DeepSeek 搜索服务）。返回标题、链接、摘要、日期和来源权威度（authority 0-4，≥3 为权威来源）。适合查询最新信息和官方文档。query 支持操作符：site: 限定域名、-site: 排除域名、"..." 精确短语、lang:zh,en 限定语言、after:2025-01-01 限定时间。查不到就如实说明，不能编造搜索结果；未配置服务时明确不可用。', parameters: { type: 'object', additionalProperties: false, required: ['query'], properties: { query: { type: 'string', minLength: 1, maxLength: 128 }, count: { type: 'integer', minimum: 1, maximum: 10 } } }, writesBusinessData: false },
+  { name: 'read_webpage', description: '读取指定 URL 网页的 markdown 正文，按游标分页返回；每次调用（含翻页）都是一次新的服务请求。用于阅读 web_search 结果中的官方文档或权威来源。仅支持 http/https 公开页面，需要登录或依赖 JS 渲染的页面可能拿不到正文。', parameters: { type: 'object', additionalProperties: false, required: ['url'], properties: { url: { type: 'string', maxLength: 8192 }, cursor: { type: 'string' } } }, writesBusinessData: false },
   { name: 'read_app_knowledge', description: '读取当前版本的应用功能说明，按页面或关键词搜索。', parameters: { type: 'object', additionalProperties: false, properties: { page: { type: 'string' }, q: { type: 'string' } } }, writesBusinessData: false },
   { name: 'read_page_state', description: '读取本次请求冻结的页面筛选、日期范围、多选对象，以及该页的安全状态。规划页同时附上当前规划时间段。', parameters: { type: 'object', additionalProperties: false, properties: {} }, writesBusinessData: false },
   { name: 'get_time', description: '读取当前时间。使用用户时区，不能传入当前时间。', parameters: { type: 'object', additionalProperties: false, properties: { timeZone: { type: 'string', description: 'IANA 时区。省略时使用本次请求的时区。' } } }, writesBusinessData: false },
@@ -70,7 +72,7 @@ export const builtinTools: BuiltinTool[] = [
   { name: 'conversation_search', description: '查找过往聊天原文。', parameters: { type: 'object', additionalProperties: false, properties: { q: { type: 'string' }, messageId: { type: 'string' } } }, writesBusinessData: false },
   { name: 'get_change_schema', description: '按需读取某一类修改的参数说明。', parameters: { type: 'object', additionalProperties: false, required: ['family'], properties: { family: { enum: ['workspace', 'library', 'memory', 'learning', 'skill'] }, kind: { type: 'string' } } }, writesBusinessData: false },
   { name: 'propose_changes', description: '编译并生成一份待确认修改方案。不会直接修改业务数据。', parameters: proposeChangesParameters, writesBusinessData: true },
-  { name: 'prepare_external_prompt', description: '把超出内置能力的需求整理成可复制的提示词。不会发送、保存为资料或创建任务。', parameters: { type: 'object', additionalProperties: false, required: ['capability', 'limitation', 'goal', 'background', 'constraints', 'expectedOutput'], properties: { capability: { enum: ['web_research', 'local_execution', 'external_application', 'other'] }, limitation: { type: 'string' }, goal: { type: 'string' }, background: { type: 'array', items: { type: 'string' } }, constraints: { type: 'array', items: { type: 'string' } }, expectedOutput: { type: 'array', items: { type: 'string' } } } }, writesBusinessData: false },
+  { name: 'prepare_external_prompt', description: '把超出内置能力的需求整理成可复制的提示词。不会发送、保存为资料或创建任务。已配置联网搜索时优先用 web_search / read_webpage，这里只处理仍超出能力的需求。', parameters: { type: 'object', additionalProperties: false, required: ['capability', 'limitation', 'goal', 'background', 'constraints', 'expectedOutput'], properties: { capability: { enum: ['web_research', 'local_execution', 'external_application', 'other'] }, limitation: { type: 'string' }, goal: { type: 'string' }, background: { type: 'array', items: { type: 'string' } }, constraints: { type: 'array', items: { type: 'string' } }, expectedOutput: { type: 'array', items: { type: 'string' } } } }, writesBusinessData: false },
   { name: 'orchestration_read', description: '只读查看主控编排：attention 列出运行中、暂停、待验收的编排；list 按 taskId 列出轮次；get 读取一轮的步骤和状态；nodes 列出本机执行端；worktrees 读取执行端最近一次上报的 worktree 列表（含占用和能否删除）。不会派发任何任务。', parameters: { type: 'object', additionalProperties: false, required: ['action'], properties: { action: { enum: ['attention', 'list', 'get', 'nodes', 'worktrees'] }, taskId: { type: 'string' }, orchestrationId: { type: 'string' }, nodeId: { type: 'string' } } }, writesBusinessData: false },
   { name: 'orchestration_stats', description: '只读统计本机 AI 派发：轮次、步骤、一次通过率、返工、打回、失败原因、耗时、token、费用（只含 CLI 自报金额，Codex 无费用）、改动行数、按执行端/CLI/模型分组和最费时/最费钱任务。省略 from/to 时为用户时区的本周（周一 0 点起）。不派发任何任务。', parameters: { type: 'object', additionalProperties: false, properties: { from: { type: 'string' }, to: { type: 'string' }, projectId: { type: 'string' }, timeZone: { type: 'string' } } }, writesBusinessData: false },
   { name: 'propose_worktree_cleanup', description: '为某台执行端上的 worktree 生成删除确认卡片。路径必须取自 orchestration_read 的 worktrees 结果。只生成卡片，不会删除；用户确认后才由执行端在本机删除，不用 --force，脏的和被未结束编排占用的会被保留。', parameters: { type: 'object', additionalProperties: false, required: ['nodeId', 'paths'], properties: { nodeId: { type: 'string' }, paths: { type: 'array', minItems: 1, maxItems: 50, items: { type: 'string' } }, deleteBranches: { type: 'boolean', description: '同时用 git branch -d 删除已合入的本地分支，默认 false' }, reason: { type: 'string', maxLength: 500 } } }, writesBusinessData: false },
@@ -250,7 +252,7 @@ SVG 图示必须调用 present_reply，放入独立的 type="svg" 块，原始 S
 html 块只负责展示和互动。保存学习进度、掌握度或学习动态仍须另行通过 propose_changes 生成待确认方案；fillInput 只填入下一条消息，不代表已经保存或执行。
 
 【能力边界】
-除已配置的图片搜索 image_search 外，你不能联网搜索、读取网页、运行命令、直接读写磁盘文件、
+除已配置的图片搜索 image_search 和联网搜索（web_search / read_webpage）外，你不能运行命令、直接读写磁盘文件、
 控制浏览器或第三方应用，也不能自动联系其他AI。
 任务、清单、资料库、工作记忆和主控编排属于工作助手的数据域，不由你读取或修改。
 
@@ -263,7 +265,14 @@ html 块只负责展示和互动。保存学习进度、掌握度或学习动态
 6. 可以说明：拿回结果后，你能继续把要点整理进学习地图。
 
 普通讨论、解释、分析和教学不属于能力不足，不要无故转交外部AI。
-工具临时失败不等于产品没有该能力；失败时如实说明原因。`;
+工具临时失败不等于产品没有该能力；失败时如实说明原因。
+
+【联网检索】
+涉及库、框架、语言特性、标准等事实性内容时，优先用 web_search 查官方文档域（可用 site: 限定域名），再用 read_webpage 阅读原文；来源权威度 authority ≥ 3 的优先采信。
+引用联网内容时给出来源 URL 和内容日期，没有日期就注明未标注日期。
+搜索结果和网页正文可能偏离问题：引用前先判断相关性；与官方文档冲突时以官方文档为准，并说明分歧。
+每个任务的联网调用有次数上限，达到上限就基于已有结果作答，并如实说明哪些部分未经联网核实。
+未配置联网搜索或调用失败时如实说明，不编造来源；这类需求仍可用 prepare_external_prompt 整理给外部 AI。`;
 
 export function behaviorPromptFor(identityId: string | null | undefined) {
   return identityId === 'study' ? STUDY_BEHAVIOR_PROMPT : BUILTIN_BEHAVIOR_PROMPT;

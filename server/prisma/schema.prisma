@@ -9,6 +9,7 @@ datasource db {
 
 model AppSetting {
   braveImageApiKey String @default("") @map("brave_image_api_key")
+  deepseekApiKey String @default("") @map("deepseek_api_key")
   id            String   @id
   openaiBaseUrl String   @default("") @map("openai_base_url")
   openaiApiKey  String   @default("") @map("openai_api_key")

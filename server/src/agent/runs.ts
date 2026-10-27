@@ -25,6 +25,7 @@ import { htmlBlockPolicy } from '../application/html-block-settings.js';
 import { withChatAttachments } from '../application/chat-attachments.js';
 import { builtinToolDefinitions, isBuiltinTool, CAPABILITY_UNAVAILABLE } from './capabilities.js';
 import { executeBuiltinTool, type BuiltinResult } from './builtin-tools.js';
+import { WEB_TOOL_LIMITS, webToolLimitExceeded } from './web-search.js';
 import { contextFromRequest, validateScopeAndResolveIds, type StoredChatContext } from './chat-context.js';
 import { recoverExpiredDecisions } from './decision.js';
 import { appendRunEvent } from './events.js';
@@ -51,6 +52,8 @@ export const runCursorSchema = z.object({
   loadSkill: z.boolean().optional(),
   toolGroups: z.array(toolGroupSchema).optional(),
   offeredToolGroups: z.array(toolGroupSchema).optional(),
+  webSearchCalls: z.number().int().min(0).optional(),
+  webFetchCalls: z.number().int().min(0).optional(),
   summaryCalls: z.array(z.object({ estimatedInputTokens: z.number(), estimatedOutputTokens: z.number(), actual: z.object({ inputTokens: z.number().optional(), outputTokens: z.number().optional(), cachedInputTokens: z.number().optional(), model: z.string().optional() }).nullable(), durationMs: z.number(), fallback: z.boolean() })).optional(),
 });
 export type RunCursor = z.infer<typeof runCursorSchema>;
@@ -470,6 +473,7 @@ async function toolTurn(runId: string, token: string, contextService: ContextSer
       result = { success: false, code: 'TOOL_NOT_LOADED', error: '方案包含未加载的修改类型。先加载全部所需的 *_write 组；本次未创建方案。' };
     }
     else if (call.function.name === 'propose_changes' && sawPropose) result = { success: false, code: 'INVALID_TOOL_ARGUMENTS', error: '一次回复只能提交一份修改方案' };
+    else if (webToolLimitExceeded(call.function.name, cursor)) result = { success: false, code: 'WEB_TOOL_LIMIT', error: `本次任务的${call.function.name === 'web_search' ? '联网搜索' : '网页读取'}次数已达上限（${WEB_TOOL_LIMITS[call.function.name]} 次）。请基于已有结果作答，或建议用户新开任务。` };
     else if (call.function.name === 'propose_changes') {
       sawPropose = true;
       await saveCursor(runId, token, { ...cursor, nextToolIndex: index });
@@ -515,6 +519,9 @@ async function toolTurn(runId: string, token: string, contextService: ContextSer
       await saveMessages(runId, token, messages);
       return 'waiting' as const;
     }
+    const webCounters = result.success && call.function.name === 'web_search' ? { webSearchCalls: (cursor.webSearchCalls ?? 0) + 1 }
+      : result.success && call.function.name === 'read_webpage' ? { webFetchCalls: (cursor.webFetchCalls ?? 0) + 1 } : {};
+    if (Object.keys(webCounters).length) cursor = { ...cursor, ...webCounters };
     await saveCursor(runId, token, { ...cursor, assistantMessageId, phase: 'tools', nextToolIndex: index + 1 });
   }
   if (sawPropose && calls.filter((call) => call.function.name === 'propose_changes').length > 1) {

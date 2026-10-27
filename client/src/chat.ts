@@ -124,7 +124,7 @@ export type SseEvent = {
   supersedesApprovalId?: string;
 };
 
-const READ_ONLY_TOOLS = new Set(['load_tools', 'read_context_source', 'image_search', 'present_reply', 'read_app_knowledge', 'read_page_state', 'list_topics', 'get_topic', 'get_topic_progress', 'list_tasks', 'get_task', 'conversation_search', 'get_time', 'list_plan_time_bands', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'get_change_schema', 'orchestration_read', 'orchestration_stats']);
+const READ_ONLY_TOOLS = new Set(['load_tools', 'read_context_source', 'image_search', 'web_search', 'read_webpage', 'present_reply', 'read_app_knowledge', 'read_page_state', 'list_topics', 'get_topic', 'get_topic_progress', 'list_tasks', 'get_task', 'conversation_search', 'get_time', 'list_plan_time_bands', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'get_change_schema', 'orchestration_read', 'orchestration_stats']);
 const PREVIEW_MAX = 80;
 
 const LIBRARY_READS = new Set(['list', 'search', 'read', 'content', 'linked_tasks', 'task_materials', 'folders', 'tags', 'ask']);
@@ -189,6 +189,8 @@ export function toolPreview(name: string, args: Record<string, unknown> = {}, re
   if (status === 'error' || result?.success === false) return clip(result?.error || t('chat:toolPreview.runFailed'));
   if (name === 'propose_changes') return clip(typeof args.summary === 'string' && args.summary.trim() ? args.summary : t('chat:toolPreview.waitingConfirm'));
   if (name === 'prepare_external_prompt') return t('chat:toolPreview.promptReady');
+  if (name === 'web_search') return clip(typeof args.query === 'string' && args.query.trim() ? args.query : (status === 'running' ? t('chat:toolPreview.searchingWeb') : t('chat:toolPreview.read')));
+  if (name === 'read_webpage') return clip(typeof args.url === 'string' && args.url.trim() ? args.url : (status === 'running' ? t('chat:toolPreview.readingWebpage') : t('chat:toolPreview.read')));
   if (name === 'propose_worktree_cleanup') return t('chat:toolPreview.waitingCleanup');
   if (name === 'orchestration_read') return orchestrationReadPreview(args, status);
   if (name === 'orchestration_stats') return t('chat:toolPreview.orchestration.stats');

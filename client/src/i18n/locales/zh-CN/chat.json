@@ -135,7 +135,9 @@
     "tasksWithTitle_other": "{{count}} 条任务 · {{title}}",
     "lists_other": "{{count}} 个清单",
     "loadingTools": "按需加载能力",
-    "readingSource": "回读对话原文"
+    "readingSource": "回读对话原文",
+    "searchingWeb": "正在联网搜索",
+    "readingWebpage": "正在读取网页"
   },
   "toolActivity": {
     "noResult": "没有返回结果"

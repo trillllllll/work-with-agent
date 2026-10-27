@@ -25,7 +25,7 @@ describe('builtin capability boundary', () => {
   it('offers the explicit builtin tools including read-only presentation and image search', () => {
     const toolNames = builtinToolDefinitions().map((tool) => tool.function.name);
     expect(toolNames).toEqual([
-      'present_reply', 'image_search', 'read_app_knowledge', 'read_page_state', 'get_time', 'list_plan_time_bands', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace',
+      'present_reply', 'image_search', 'web_search', 'read_webpage', 'read_app_knowledge', 'read_page_state', 'get_time', 'list_plan_time_bands', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace',
       'library_read', 'memory_read', 'learning_read', 'conversation_search', 'get_change_schema', 'propose_changes', 'prepare_external_prompt', 'orchestration_read', 'orchestration_stats', 'propose_worktree_cleanup',
     ]);
     expect(toolNames).not.toEqual(expect.arrayContaining(['execute_shell', 'execute_file', 'execute_http', 'delete_topic']));

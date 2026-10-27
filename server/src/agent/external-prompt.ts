@@ -18,7 +18,7 @@ export const externalPromptInput = z.object({
 export type ExternalPromptInput = z.infer<typeof externalPromptInput>;
 
 const titles: Record<ExternalPromptInput['capability'], string> = {
-  web_research: '需要具备联网能力的 AI',
+  web_research: '需要联网能力或配置联网搜索',
   local_execution: '需要具备本机执行能力的 AI',
   external_application: '需要能操作外部应用的 AI',
   other: '需要其他工具能力的 AI',

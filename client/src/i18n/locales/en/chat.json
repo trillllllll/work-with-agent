@@ -138,7 +138,9 @@
     "lists_one": "{{count}} list",
     "lists_other": "{{count}} lists",
     "loadingTools": "Load capabilities on demand",
-    "readingSource": "Read original conversation content"
+    "readingSource": "Read original conversation content",
+    "searchingWeb": "Searching the web",
+    "readingWebpage": "Reading the webpage"
   },
   "toolActivity": {
     "noResult": "No result was returned"

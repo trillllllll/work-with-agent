@@ -472,7 +472,9 @@
       "projectCount_one": "{{count}} 个项目",
       "projectCount_other": "{{count}} 个项目",
       "pendingLocations_one": "{{count}} 个项目位置待验证",
-      "pendingLocations_other": "{{count}} 个项目位置待验证"
+      "pendingLocations_other": "{{count}} 个项目位置待验证",
+      "webSearchOn": "联网搜索已配置",
+      "webSearchOff": "联网搜索未配置"
     },
     "worktreesEntry": {
       "title": "Worktree",
@@ -719,5 +721,21 @@
     "saving": "正在保存…",
     "saved": "回复风格已保存",
     "restoreDefault": "恢复默认"
+  },
+  "webSearch": {
+    "region": "联网搜索设置",
+    "title": "联网搜索",
+    "description": "配置 DeepSeek 密钥后，学习助手可联网搜索网页并阅读官方文档。密钥保存在当前工作区的服务端。",
+    "loadFailed": "配置读取失败。",
+    "apiKey": "DeepSeek API Key",
+    "configuredPlaceholder": "已配置：{{masked}}",
+    "enterKey": "请输入 DeepSeek API Key",
+    "managedByEnvironment": "当前密钥由环境变量管理，请修改对应服务配置。",
+    "currentKey": "当前密钥：{{masked}}",
+    "unavailable": "未配置时学习助手会明确说明联网搜索不可用；也复用模型配置中的 DeepSeek 密钥。",
+    "save": "保存联网搜索密钥",
+    "clear": "清除联网搜索密钥",
+    "saved": "联网搜索密钥已保存",
+    "cleared": "联网搜索密钥已清除"
   }
 }

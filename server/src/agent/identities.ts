@@ -36,7 +36,7 @@ const identities: Record<AssistantIdentityId, AssistantIdentity> = {
     name: '学习助手',
     contextPolicy: 'domain',
     baseTools: ['get_time', 'read_page_state', 'read_app_knowledge', 'conversation_search', 'get_change_schema'],
-    allowedGroups: ['learning', 'learning_write', 'media', 'external'],
+    allowedGroups: ['learning', 'learning_write', 'media', 'external', 'web'],
     writeFamilies: ['learning'],
     autoMemory: false,
   },

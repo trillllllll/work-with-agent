@@ -98,7 +98,9 @@
     "loadSkill": "Use skill",
     "orchestrationRead": "View orchestration",
     "orchestrationStats": "Dispatch stats",
-    "proposeWorktreeCleanup": "Delete worktree"
+    "proposeWorktreeCleanup": "Delete worktree",
+    "webSearch": "Web search",
+    "readWebpage": "Read webpage"
   },
   "operation": {
     "taskCreate": "Create task",

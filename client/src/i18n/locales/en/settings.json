@@ -474,7 +474,9 @@
       "projectCount_one": "{{count}} project",
       "projectCount_other": "{{count}} projects",
       "pendingLocations_one": "{{count}} project location to verify",
-      "pendingLocations_other": "{{count}} project locations to verify"
+      "pendingLocations_other": "{{count}} project locations to verify",
+      "webSearchOn": "Web search configured",
+      "webSearchOff": "Web search not configured"
     },
     "worktreesEntry": {
       "title": "Worktrees",
@@ -722,5 +724,21 @@
     "saving": "Saving…",
     "saved": "Reply style saved",
     "restoreDefault": "Restore default"
+  },
+  "webSearch": {
+    "region": "Web search settings",
+    "title": "Web search",
+    "description": "With a DeepSeek key, the study assistant can search the web and read official docs. The key is stored on this workspace's server.",
+    "loadFailed": "Failed to load the configuration.",
+    "apiKey": "DeepSeek API Key",
+    "configuredPlaceholder": "Configured: {{masked}}",
+    "enterKey": "Enter your DeepSeek API Key",
+    "managedByEnvironment": "The key is managed by an environment variable; edit the server configuration instead.",
+    "currentKey": "Current key: {{masked}}",
+    "unavailable": "Until configured, the study assistant says web search is unavailable; a DeepSeek key from the model config is reused when present.",
+    "save": "Save web search key",
+    "clear": "Clear web search key",
+    "saved": "Web search key saved",
+    "cleared": "Web search key cleared"
   }
 }

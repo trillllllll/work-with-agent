@@ -10,6 +10,7 @@ import type { SettingsCategory, SettingsSectionId } from './settings-categories.
 import { ModelSettings, useSettingsQuery } from './ModelSettings.js';
 import { ReplyStyleSettings } from './ReplyStyleSettings.js';
 import { ImageSearchSettings } from './ImageSearchSettings.js';
+import { WebSearchSettings } from './WebSearchSettings.js';
 import { HtmlBlockSettings } from './HtmlBlockSettings.js';
 import { WorktreesEntry } from './WorktreesEntry.js';
 import { ComputersSettings } from './runner/ComputersSettings.js';
@@ -29,6 +30,7 @@ export const SETTINGS_SECTION_COMPONENTS: Record<SettingsSectionId, ComponentTyp
   model: ModelSettings,
   'reply-style': ReplyStyleSettings,
   'image-search': ImageSearchSettings,
+  'web-search': WebSearchSettings,
   'html-blocks': HtmlBlockSettings,
   computers: ComputersSettings,
   worktrees: ({ onNavigate }) => <WorktreesEntry onOpenWorktrees={() => onNavigate('worktrees')} />,
@@ -53,6 +55,7 @@ export const SETTINGS_CATEGORY_ICONS: Record<SettingsCategory, LucideIcon> = {
 };
 
 type ImageSearchState = { configured: boolean };
+type WebSearchState = { configured: boolean };
 type NodeRow = { status: string; online: boolean };
 type ProjectHint = { locations?: Array<{ status: string }> };
 
@@ -61,6 +64,7 @@ export function useSettingsCategoryHints(): Record<SettingsCategory, string> {
   const { t } = useTranslation('settings');
   const settings = useSettingsQuery();
   const imageSearch = useQuery({ queryKey: ['image-search-settings'], queryFn: () => api<ImageSearchState>('/api/settings/image-search') });
+  const webSearch = useQuery({ queryKey: ['web-search-settings'], queryFn: () => api<WebSearchState>('/api/settings/web-search') });
   const nodes = useQuery({ queryKey: ['nodes'], queryFn: () => api<NodeRow[]>('/api/nodes') });
   const projects = useQuery({ queryKey: ['projects'], queryFn: () => api<ProjectHint[]>('/api/projects') });
   const skills = useQuery(skillsQueryOptions);
@@ -85,6 +89,7 @@ export function useSettingsCategoryHints(): Record<SettingsCategory, string> {
     model: join([
       data ? (configured ? data.model : t('layout.hints.noModel')) : null,
       imageSearch.data ? (imageSearch.data.configured ? t('layout.hints.imageSearchOn') : t('layout.hints.imageSearchOff')) : null,
+      webSearch.data ? (webSearch.data.configured ? t('layout.hints.webSearchOn') : t('layout.hints.webSearchOff')) : null,
     ]),
     local: nodes.data ? join([t('layout.hints.online', { count: online }), t('layout.hints.offline', { count: offline })]) : loading,
     skills: skills.data ? t('layout.hints.skills', skillCounts(skills.data)) : loading,

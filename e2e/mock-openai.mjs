@@ -16,7 +16,7 @@ const stream = (res, chunks) => {
       calls.set(part.index, { name: part.function?.name || old.name, arguments: old.arguments + (part.function?.arguments ?? '') });
     }
     const required = new Set();
-    const groupFor = { present_reply: 'media', image_search: 'media', library_read: 'library', memory_read: 'memory', get_work_context: 'memory', orchestration_read: 'orchestration', orchestration_stats: 'orchestration', propose_worktree_cleanup: 'orchestration', prepare_external_prompt: 'external', query_tasks: 'tasks', query_topics: 'tasks', get_task_activity: 'tasks', list_plan_time_bands: 'tasks' };
+    const groupFor = { present_reply: 'media', image_search: 'media', web_search: 'web', read_webpage: 'web', library_read: 'library', memory_read: 'memory', get_work_context: 'memory', orchestration_read: 'orchestration', orchestration_stats: 'orchestration', propose_worktree_cleanup: 'orchestration', prepare_external_prompt: 'external', query_tasks: 'tasks', query_topics: 'tasks', get_task_activity: 'tasks', list_plan_time_bands: 'tasks' };
     for (const call of calls.values()) {
       if (call.name === 'propose_changes') {
         let args = {}; try { args = JSON.parse(call.arguments); } catch {}

@@ -1,4 +1,5 @@
 import { searchImages } from './image-search.js';
+import { fetchWebPage, searchWeb } from './web-search.js';
 import { withChatAttachments } from '../application/chat-attachments.js';
 import { KnowledgeService } from '../application/knowledge.js';
 import { assertTopicAccess } from '../application/security.js';
@@ -239,6 +240,8 @@ export async function executeBuiltinTool(input: {
     if (!isBuiltinTool(input.name)) return CAPABILITY_UNAVAILABLE;
     const args = input.args;
     if (input.name === 'image_search') return { success: true, data: await searchImages(args) };
+    if (input.name === 'web_search') return { success: true, data: await searchWeb(args) };
+    if (input.name === 'read_webpage') return { success: true, data: await fetchWebPage(args) };
     if (input.name === 'present_reply') return { success: false, code: 'PRESENT_REPLY_CHANNEL_REQUIRED', error: '富媒体回答必须通过独立展示流提交，不能作为业务工具执行' };
     if (input.name === 'read_app_knowledge') return { success: true, data: readAppKnowledge(args, input.context.identityId ?? 'work') };
     if (input.name === 'read_page_state') {

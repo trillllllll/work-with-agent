@@ -6,7 +6,7 @@
 export const SETTINGS_CATEGORIES = ['model', 'local', 'skills', 'projects', 'ui', 'data', 'about'] as const;
 export type SettingsCategory = (typeof SETTINGS_CATEGORIES)[number];
 
-export const SETTINGS_SECTIONS = ['model', 'reply-style', 'image-search', 'html-blocks', 'computers', 'worktrees', 'notifications', 'skills', 'projects', 'language', 'mobile-navigation', 'backup', 'sync', 'server'] as const;
+export const SETTINGS_SECTIONS = ['model', 'reply-style', 'image-search', 'web-search', 'html-blocks', 'computers', 'worktrees', 'notifications', 'skills', 'projects', 'language', 'mobile-navigation', 'backup', 'sync', 'server'] as const;
 export type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number];
 
 export type SettingsGroup = 'ai' | 'workspace';
@@ -19,7 +19,7 @@ export type SettingsCategoryDef = {
 };
 
 export const SETTINGS_CATEGORY_DEFS: readonly SettingsCategoryDef[] = [
-  { id: 'model', group: 'ai', sections: ['model', 'reply-style', 'image-search', 'html-blocks'] },
+  { id: 'model', group: 'ai', sections: ['model', 'reply-style', 'image-search', 'web-search', 'html-blocks'] },
   { id: 'local', group: 'ai', sections: ['computers', 'worktrees', 'notifications'] },
   { id: 'skills', group: 'ai', sections: ['skills'] },
   { id: 'projects', group: 'workspace', sections: ['projects'] },

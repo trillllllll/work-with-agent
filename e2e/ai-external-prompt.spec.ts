@@ -64,7 +64,7 @@ test.afterAll(() => e2eDatabase.$disconnect());
 async function expectPromptCard(page: Page) {
   const card = page.getByTestId('external-prompt-card');
   await expect(card).toHaveCount(1);
-  await expect(card.getByRole('heading', { name: '需要具备联网能力的 AI' })).toBeVisible();
+  await expect(card.getByRole('heading', { name: '需要联网能力或配置联网搜索' })).toBeVisible();
   await expect(card).toContainText('我目前不能联网查资料。');
   await expect(card).not.toContainText('已查询');
   await expect(card).not.toContainText('已发送');
