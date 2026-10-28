@@ -385,6 +385,8 @@ async function executeBatch(tx: Db, actor: Actor, commands: Command[], proposalI
 
 async function inspectBatch(tx: Db, actor: Actor, commands: Command[], batch?: BatchRevisionMode, auditRecords?: ChangeRecord[], recordActor?: Actor) {
   const inspections: Inspection[] = [];
+  const previewRecords = auditRecords ?? [];
+  const generatedCompletionTimes = new Map<string, string>();
   const evidenceReadsets: unknown[] = [];
   for (const command of commands) {
     if (command.evidence?.length && !evidenceValidator) throw new DomainError('EVIDENCE_UNAVAILABLE', '证据校验模块不可用', 503);
@@ -403,8 +405,20 @@ async function inspectBatch(tx: Db, actor: Actor, commands: Command[], batch?: B
       const inspected = await handler.inspect(tx, actor, effective);
       const evidence = evidenceReadsets[index];
       const recording = recordActor ?? actor;
-      const after = await handler.execute(tx, actor, effective, { source: recordActor ? 'agent' : actor.kind === 'user' ? 'user' : 'agent', actor: recording, db: tx, entityId: effective.entityId, preview: true, auditRecords });
-      inspections.push({ preconditions: stablePreconditions({ command: inspected.preconditions, evidence }), preview: { detail: inspected.preview, after } });
+      const preconditions = stablePreconditions({ command: inspected.preconditions, evidence }, generatedCompletionTimes);
+      const recordStart = previewRecords.length;
+      const after = await handler.execute(tx, actor, effective, { source: recordActor ? 'agent' : actor.kind === 'user' ? 'user' : 'agent', actor: recording, db: tx, entityId: effective.entityId, preview: true, auditRecords: previewRecords });
+      // Later commands read earlier simulated writes. Only their generated completion
+      // times are unstable; completion times read from persisted tasks remain guarded.
+      for (const record of previewRecords.slice(recordStart)) {
+        const beforeSnapshot = record.beforeSnapshot ? JSON.parse(record.beforeSnapshot) : null;
+        const afterSnapshot = record.afterSnapshot ? JSON.parse(record.afterSnapshot) : null;
+        if (!isGroup(beforeSnapshot) || !isGroup(afterSnapshot)) continue;
+        for (const [id, task] of Object.entries(afterSnapshot.entities.tasks)) {
+          if (task?.completedAt && task.completedAt !== beforeSnapshot.entities.tasks[id]?.completedAt) generatedCompletionTimes.set(id, task.completedAt);
+        }
+      }
+      inspections.push({ preconditions, preview: { detail: inspected.preview, after } });
     }
     if (batch?.onPreview) await batch.onPreview(tx);
     return inspections;
@@ -427,9 +441,13 @@ function needsPreview(commands: Command[], inspections: Inspection[]) {
     return false;
   });
 }
-function stablePreconditions(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stablePreconditions);
-  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).filter(([key]) => !['createdAt', 'updatedAt', 'deleteBatchId'].includes(key)).map(([key, entry]) => [key, stablePreconditions(entry)]));
+function stablePreconditions(value: unknown, generatedCompletionTimes: ReadonlyMap<string, string>): unknown {
+  if (Array.isArray(value)) return value.map((entry) => stablePreconditions(entry, generatedCompletionTimes));
+  if (value && typeof value === 'object') {
+    const row = value as Record<string, unknown>;
+    const generatedCompletion = typeof row.id === 'string' && generatedCompletionTimes.has(row.id) && generatedCompletionTimes.get(row.id) === row.completedAt;
+    return Object.fromEntries(Object.entries(row).filter(([key]) => !['createdAt', 'updatedAt', 'deleteBatchId'].includes(key)).map(([key, entry]) => [key, key === 'completedAt' && generatedCompletion ? 'preview-generated' : stablePreconditions(entry, generatedCompletionTimes)]));
+  }
   return value;
 }
 function batchPreconditions(value: string): { revisionMode: 'batch-base-v1'; chatBatch: { approvalId: string } } | null {
