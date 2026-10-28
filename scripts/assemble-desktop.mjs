@@ -10,7 +10,7 @@ const nodeVersion = '22.13.0';
 const root = resolve(import.meta.dirname, '..');
 const resources = resolve(root, 'desktop/resources');
 const serverDir = resolve(resources, 'server');
-const runtimePackages = ['@modelcontextprotocol/sdk', '@napi-rs/canvas', '@prisma/client', '@streamparser/json', '@xmldom/xmldom', 'cors', 'dotenv', 'exceljs', 'express', 'jszip', 'mdast-util-from-markdown', 'pdfjs-dist', 'prisma', 'sharp', 'undici', 'zod', 'zod-to-json-schema'];
+const runtimePackages = ['@modelcontextprotocol/sdk', '@napi-rs/canvas', '@prisma/client', '@streamparser/json', '@xmldom/xmldom', 'cors', 'dotenv', 'exceljs', 'express', 'jszip', 'mdast-util-from-markdown', 'pdfjs-dist', 'prisma', 'sharp', 'undici', 'web-push', 'zod', 'zod-to-json-schema'];
 const platform = process.platform;
 const arch = process.arch;
 const target = platform === 'darwin' && arch === 'arm64'
