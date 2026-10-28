@@ -1,11 +1,12 @@
 import { withTestToolLoading } from './agent/test-model-tools.js';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { prisma } from './infrastructure/prisma.js';
 import { AgentService, type ModelMessage } from './agent.js';
 import type { ToolCall } from './application/workspace.js';
-import { approveAppChanges, repreviewApproval } from './agent/decision.js';
+import { approveAppChanges, readEnvelope, repreviewApproval } from './agent/decision.js';
 import { compileChangeOperations } from './agent/propose.js';
 import type { ChangeOperation } from './agent/capabilities.js';
+import { TaskService } from './application/workspace.js';
 
 const now = () => new Date().toISOString();
 const baseContext = {
@@ -34,6 +35,76 @@ async function proposalFor(taskId: string, revision: number, title: string, key:
 }
 
 describe('repreview and adjustment', () => {
+  async function completionProposal(parentFirst = false, completeChildren = false) {
+    const tasks = new TaskService();
+    const parent = await tasks.create({ title: '批量完成父任务' });
+    const child = await tasks.create({ title: '批量完成子任务', parentId: parent.id });
+    const sibling = await tasks.create({ title: '已完成的兄弟任务', parentId: parent.id });
+    await tasks.update(sibling.id, { status: 'done' });
+    const freshParent = await prisma.task.findUniqueOrThrow({ where: { id: parent.id } });
+    const operations: ChangeOperation[] = [
+      { family: 'workspace', command: { kind: 'task.update', targetId: child.id, expectedRevision: child.revision, input: { status: 'done' } } },
+      { family: 'workspace', command: { kind: 'task.update', targetId: parent.id, expectedRevision: freshParent.revision, input: { status: 'done', ...(completeChildren ? { completeChildren: true } : {}) } } },
+    ];
+    if (parentFirst) operations.reverse();
+    const service = agent(async function* (messages) {
+      if (messages.some((message) => message.role === 'tool')) { yield { text: '等待确认。' }; return; }
+      yield { toolCalls: [{ id: 'complete-family', name: 'propose_changes', arguments: { summary: '父子任务一起完成', operations } }] };
+    });
+    const previewTime = new Date();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(previewTime.getTime());
+    let chat;
+    try { chat = await service.chat({ message: '父子任务一起完成', pageContext: { page: 'inbox' }, requestKey: `complete-${parent.id}` }); }
+    finally { clock.mockRestore(); }
+    const approvalId = chat.events.find((event) => event.type === 'approval_required')?.approvalId;
+    expect(approvalId).toBeTruthy();
+    const approval = await prisma.approval.findUniqueOrThrow({ where: { id: approvalId! } });
+    const envelope = readEnvelope(approval.result)!;
+    return { parent: freshParent, child, sibling, approval, envelope, previewTime };
+  }
+
+  it.each([
+    { parentFirst: false, completeChildren: false },
+    { parentFirst: false, completeChildren: true },
+    { parentFirst: true, completeChildren: true },
+  ])('approves parent/child completion across preview times: %j', async ({ parentFirst, completeChildren }) => {
+    const f = await completionProposal(parentFirst, completeChildren);
+    expect(await prisma.task.findUniqueOrThrow({ where: { id: f.parent.id } })).toMatchObject({ status: 'todo', revision: f.parent.revision, completedAt: null });
+    expect(await prisma.task.findUniqueOrThrow({ where: { id: f.child.id } })).toMatchObject({ status: 'todo', revision: f.child.revision, completedAt: null });
+    const approvedTime = f.previewTime.getTime() + 60_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(approvedTime);
+    try {
+      const input = { expectedProposalRevision: f.envelope.proposalRevision, previewHash: f.envelope.review.previewHash };
+      const result = await approveAppChanges(f.approval.id, input);
+      expect(result.outcome).toMatchObject({ status: 'executed', appliedOperationCount: 2 });
+      const parent = await prisma.task.findUniqueOrThrow({ where: { id: f.parent.id } });
+      const child = await prisma.task.findUniqueOrThrow({ where: { id: f.child.id } });
+      expect(parent.status).toBe('done');
+      expect(child.status).toBe('done');
+      expect(Date.parse(parent.completedAt!)).toBeGreaterThanOrEqual(approvedTime);
+      expect(Date.parse(child.completedAt!)).toBeGreaterThanOrEqual(approvedTime);
+      expect(parent.revision).toBeGreaterThan(f.parent.revision);
+      expect(child.revision).toBeGreaterThan(f.child.revision);
+      const replay = await approveAppChanges(f.approval.id, input);
+      expect(replay).toEqual(result);
+      expect(await prisma.task.findUniqueOrThrow({ where: { id: f.parent.id } })).toEqual(parent);
+      expect(await prisma.task.findUniqueOrThrow({ where: { id: f.child.id } })).toEqual(child);
+    } finally { clock.mockRestore(); }
+  });
+
+  it.each(['revision', 'existing completion time', 'child membership'])('still rejects real changes to %s and applies none of the batch', async (change) => {
+    const f = await completionProposal();
+    if (change === 'revision') await new TaskService().update(f.child.id, { title: '确认前被编辑' });
+    // Deliberately leave revision unchanged: completion-time read-set checks must remain intact.
+    if (change === 'existing completion time') await prisma.task.update({ where: { id: f.sibling.id }, data: { completedAt: '2025-01-01T00:00:00.000Z' } });
+    if (change === 'child membership') await prisma.task.create({ data: { title: '新加入的子任务', parentId: f.parent.id, status: 'done', completedAt: now() } });
+    const result = await approveAppChanges(f.approval.id, { expectedProposalRevision: f.envelope.proposalRevision, previewHash: f.envelope.review.previewHash });
+    expect(result.outcome).toMatchObject({ status: 'failed', code: 'VERSION_CONFLICT', appliedOperationCount: 0 });
+    expect(await prisma.task.findUniqueOrThrow({ where: { id: f.parent.id } })).toMatchObject({ status: 'todo', completedAt: null });
+    expect(await prisma.task.findUniqueOrThrow({ where: { id: f.child.id } })).toMatchObject({ status: 'todo', completedAt: null });
+    expect(await prisma.changeRecord.count({ where: { proposalId: f.envelope.proposalId } })).toBe(0);
+  });
+
   it('compiles memory evidence and chat excerpts using the existing transaction connection', async () => {
     const task = await prisma.task.create({ data: { title: '事务证据', createdAt: now(), updatedAt: now() } });
     const conversation = await prisma.conversation.create({ data: { createdAt: now(), updatedAt: now() } });
