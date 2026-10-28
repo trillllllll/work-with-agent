@@ -323,14 +323,33 @@
       "assistant": "Agent",
       "tool": "Tool",
       "system": "系统"
-    }
+    },
+    "lookupRunning": "正在查询 {{count}} 项",
+    "lookupFailed": "{{count}} 项查询 · 部分失败"
   },
   "messageList": {
     "empty": "告诉 Agent 你想推进什么。只读操作会直接执行，修改任务前会请求审核。",
     "jumpToBottom": "回到底部"
   },
   "sourceLinks": {
-    "label": "本次查阅的来源"
+    "label": "本次查阅的来源",
+    "count": "{{count}} 个参考来源",
+    "conversation": "历史对话",
+    "citation": "查看来源 {{number}}：{{title}}",
+    "preview": "参考来源",
+    "close": "关闭来源",
+    "unavailable": "来源暂时无法读取",
+    "loading": "正在读取原文…",
+    "empty": "这条来源没有正文。",
+    "kinds": {
+      "task": "任务",
+      "material": "资料",
+      "memory": "记忆",
+      "conversation": "历史对话",
+      "help": "功能说明",
+      "learning_node": "学习节点",
+      "learning_map": "学习地图"
+    }
   },
   "review": {
     "collapseDiff": "收起差异",
@@ -505,5 +524,16 @@
     "summaries": "其中摘要请求次数",
     "unknown": "未返回",
     "partial": "供应商用量尚未返回或不完整；已知值可能只覆盖部分请求。累计包含按需加载后的调用与摘要请求。"
+  },
+  "reasoning": {
+    "active": "正在思考",
+    "completed": "已思考",
+    "interrupted": "思考已中断",
+    "seconds": "{{count}} 秒",
+    "expand": "查看过程",
+    "collapse": "收起",
+    "providerContent": "模型返回的思考内容",
+    "truncated": "内容较长，仅保留前 65536 个字符。",
+    "incomplete": "本次思考未完成，已保留收到的内容。"
   }
 }

@@ -135,7 +135,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
         else setPausedRun(null);
       }
       let nextApprovals = snapshot.approvals.map(parseApproval);
-      let restored = pairToolMessages(history.map((message: ChatMessage) => ({ id: message.id, role: message.role, content: message.content, status: message.status, toolCalls: message.toolCalls, toolCallId: message.toolCallId, parts: parseExternalParts(message.partsJson), context: message.context, sources: message.sources, blocks: readMessageBlocks(message.blocksJson) })), nextApprovals);
+      let restored = pairToolMessages(history.map((message: ChatMessage) => ({ id: message.id, runId: message.runId, citationSources: message.citationSources, role: message.role, content: message.content, status: message.status, toolCalls: message.toolCalls, toolCallId: message.toolCallId, parts: parseExternalParts(message.partsJson), context: message.context, sources: message.sources, reasoning: message.reasoning, blocks: readMessageBlocks(message.blocksJson) })), nextApprovals);
       for (const event of seenEvents.current.values()) if (event.conversationId === id && event.runId && (event.seq ?? 0) > (snapshot.watermarks[event.runId] ?? 0)) { restored = applyMessageEvent(restored, event); nextApprovals = applyApprovalEvent(nextApprovals, event); }
       let restoredStats = snapshot.contextStats ?? null;
       for (const event of seenEvents.current.values()) if (event.conversationId === id && event.runId && (event.seq ?? 0) > (snapshot.watermarks[event.runId] ?? 0) && event.contextStats) restoredStats = event.contextStats;

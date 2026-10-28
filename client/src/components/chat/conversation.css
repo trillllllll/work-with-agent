@@ -1,0 +1,20 @@
+/* The existing material tokens supply light/dark colors; this file owns chat geometry. */
+.assistant-header h2 { min-width: 0; }
+.assistant-thread { gap: 12px; }
+.assistant-message:has(.assistant-tool-run):not(:has(.markdown-body)):not(:has(.assistant-reasoning)) { padding-block: 2px; }
+.assistant-tool-run { margin-bottom: 12px; color: var(--muted-foreground); }
+.assistant-tool-run > button { min-height: 36px; }
+.assistant-reasoning { margin-bottom: 10px; color: var(--muted-foreground); }
+.assistant-reasoning-trigger { display: flex; align-items: center; gap: 7px; min-height: 32px; padding: 4px 1px; font-size: 11px; list-style: none; }
+.assistant-reasoning-trigger small { font-size: 10px; }
+.assistant-reasoning-body { margin: 5px 0 12px 8px; padding: 8px 12px; border-left: 1px solid var(--border); max-height: 240px; overflow: auto; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.assistant-sources { margin-top: 14px; border-top: 1px solid var(--border); color: var(--muted-foreground); }
+.assistant-sources-trigger { display: flex; align-items: center; gap: 7px; min-height: 36px; padding: 8px 0; list-style: none; font-size: 11px; }
+.assistant-reasoning-trigger::-webkit-details-marker, .assistant-sources-trigger::-webkit-details-marker { display: none; }
+.assistant-source-row { display: flex; width: 100%; min-width: 0; align-items: center; gap: 8px; padding: 9px 4px; text-align: left; font-size: 12px; }
+.assistant-source-row small { font-size: 10px; margin-top: 3px; }
+.assistant-source-number { width: 18px; flex-shrink: 0; font-size: 10px; text-align: center; }
+.assistant-inline-citation { display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-inline: 3px; padding-inline: 4px; position: relative; top: -2px; border-radius: 4px; background: var(--muted); color: var(--link); font-size: 10px; line-height: 1; vertical-align: baseline; }
+.assistant-source-preview { overflow-wrap: anywhere; }
+.assistant-message:has(.assistant-tool-run) > .flex.flex-col { margin-top: 0; }
+@media (prefers-reduced-motion: reduce) { .assistant-reasoning svg, .assistant-tool-run svg { animation: none; transition: none; } }

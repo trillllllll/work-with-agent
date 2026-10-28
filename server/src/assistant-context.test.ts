@@ -147,3 +147,17 @@ describe('global assistant context', () => {
   });
 
 });
+
+it('references the actual learning node revision and displays the read status and notes', async () => {
+  const at = new Date().toISOString();
+  const map = await prisma.learningMap.create({ data: { title: '来源地图', goal: '', createdAt: at, updatedAt: at } });
+  const node = await prisma.learningNode.create({ data: { mapId: map.id, kind: 'item', title: '闭包', detail: '计数器练习', status: 'review', createdAt: at, updatedAt: at } });
+  try {
+    const sources = await sourcesFromTool('learning_read', { action: 'get', mapId: map.id }, { success: true, data: { map, tree: [{ ...node, children: [] }] } });
+    expect(sources).toEqual([{ kind: 'learning_node', id: node.id, title: node.title, revision: node.revision }]);
+    const resolved = await resolveAssistantSource('learning_node', node.id, node.revision);
+    expect(resolved.content).toContain('review'); expect(resolved.content).toContain('计数器练习');
+    await prisma.learningNode.update({ where: { id: node.id }, data: { revision: { increment: 1 }, status: 'done' } });
+    await expect(resolveAssistantSource('learning_node', node.id, node.revision)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  } finally { await prisma.learningNode.delete({ where: { id: node.id } }); await prisma.learningMap.delete({ where: { id: map.id } }); }
+});

@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowDown, Sparkles } from 'lucide-react';
-import { unplacedApprovals, type Approval, type ChatMessage } from '@/chat.js';
+import { presentChatMessages, unplacedApprovals, type Approval, type ChatMessage } from '@/chat.js';
 import { Button } from '@/components/ui/button.js';
 import { MessageItem } from './MessageItem.js';
 import { ApprovalCard } from './ApprovalCard.js';
@@ -104,7 +104,7 @@ export function MessageList({ messages, emptyState, approvals, approvalPending, 
           </div>
         ))}
         <div ref={threadRef} className="assistant-thread flex min-w-0 max-w-full flex-col gap-5">
-          {messages.map((message, index) => <MessageItem key={`${message.id ?? index}-${index}`} message={message} approvals={approvals} approvalPending={approvalPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} unresolvedApprovalIds={unresolvedApprovalIds} phase={phase} onApprove={onApprove} onReject={onReject} onChanged={onChanged} onRepreviewed={onRepreviewed} />)}
+          {presentChatMessages(messages).map((message, index) => <MessageItem key={`${message.id ?? index}-${index}`} message={message} approvals={approvals} approvalPending={approvalPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} unresolvedApprovalIds={unresolvedApprovalIds} phase={phase} onApprove={onApprove} onReject={onReject} onChanged={onChanged} onRepreviewed={onRepreviewed} />)}
           {unplacedApprovals(messages, approvals).filter((approval) => isTaskBatchApproval(approval) || isAppChangeApproval(approval) || !approval.status || approval.status === 'pending').map((approval) => isAppChangeApproval(approval) ? <ReviewCard key={approval.approvalId} approval={approval} phase={approval.approvalId === executingApprovalId ? phase : ''} unknown={unknownApprovalIds.includes(approval.approvalId)} unresolved={unresolvedApprovalIds.includes(approval.approvalId)} onApprove={onApprove} onReject={onReject} onChanged={onChanged} onRepreviewed={onRepreviewed} /> : isTaskBatchApproval(approval) ? <TaskBatchCard key={approval.approvalId} approval={approval} executing={approval.approvalId === executingApprovalId} unknown={unknownApprovalIds.includes(approval.approvalId)} onApprove={onApprove} onReject={onReject} /> : <ApprovalCard key={approval.approvalId} approval={approval} pending={approvalPending} onApprove={onApprove} onReject={onReject} />)}
         </div>
       </div>

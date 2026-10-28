@@ -3,7 +3,7 @@ import { prisma } from '../infrastructure/prisma.js';
 import { DomainError } from '../domain/task.js';
 import { ownerActor, assertTopicAccess } from '../application/security.js';
 import { appKnowledge, applicationVersion } from './app-knowledge.js';
-export const sourceReadTools = new Set(['read_app_knowledge', 'query_tasks', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'conversation_search']);
+export const sourceReadTools = new Set(['read_app_knowledge', 'query_tasks', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'conversation_search', 'learning_read']);
 export type { AssistantSource } from '../domain/assistant-source.js';
 import type { AssistantSource } from '../domain/assistant-source.js';
 export async function resolveAssistantSource(kind: string, id: string, revision?: number) {
@@ -32,9 +32,18 @@ export async function resolveAssistantSource(kind: string, id: string, revision?
       if (version) return { kind, id, title: version.title, topicId: row.topicId, revision: version.revision, content: version.content };
     }
   }
+  if (kind === 'learning_node' || kind === 'learning_map') {
+    const row = kind === 'learning_node' ? await prisma.learningNode.findUnique({ where: { id } }) : await prisma.learningMap.findUnique({ where: { id } });
+    const map = kind === 'learning_node' && row ? await prisma.learningMap.findUnique({ where: { id: (row as { mapId: string }).mapId } }) : row;
+    if (row && !row.deletedAt && map && !map.deletedAt && (revision === undefined || revision === row.revision)) return { kind, id, title: row.title, revision: row.revision, content: `# ${row.title}\n\n状态：${row.status}\n\n${'detail' in row ? row.detail : row.goal}` };
+  }
   if (kind === 'conversation') {
     const row = await prisma.message.findUnique({ where: { id } });
-    if (row && ['user', 'assistant'].includes(row.role)) return { kind, id, title: `历史对话 · ${row.createdAt}`, content: (await withChatAttachments([row]))[0].content, conversationId: row.conversationId };
+    if (row && ['user', 'assistant'].includes(row.role)) {
+      const content = (await withChatAttachments([row]))[0].content;
+      const title = content.replace(/[#*`>\[\]\n\r]+/g, ' ').trim().slice(0, 60) || '历史对话';
+      return { kind, id, title, createdAt: row.createdAt, content, conversationId: row.conversationId };
+    }
   }
   throw new DomainError('NOT_FOUND', '来源已删除、不可访问或版本不存在', 404);
 }
@@ -60,6 +69,17 @@ export async function sourcesFromTool(name: string, args: Record<string, unknown
     if (args.action === 'read') add('memory', data.id, data.revision);
     for (const row of data.matches ?? data.memories ?? data.items ?? []) add('memory', row.id, row.revision);
   }
+  if (name === 'learning_read') {
+    if (args.action === 'node') add('learning_node', args.nodeId, data.node?.revision);
+    if (args.action === 'get') {
+      if (data.map?.goal) add('learning_map', args.mapId, data.map?.revision);
+      const pending = [...(data.tree ?? [])];
+      while (pending.length && candidates.length < 30) {
+        const node = pending.shift(); add('learning_node', node?.id, node?.revision);
+        if (Array.isArray(node?.children)) pending.push(...node.children);
+      }
+    }
+  }
   if (name === 'conversation_search') for (const row of data.messages ?? data.matches ?? []) add('conversation', row.messageId);
   const sources: AssistantSource[] = [];
   const seen = new Set<string>();
@@ -67,7 +87,7 @@ export async function sourcesFromTool(name: string, args: Record<string, unknown
     const key = `${item.kind}:${item.id}:${item.revision ?? ''}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    try { const resolved = await resolveAssistantSource(item.kind, item.id, item.revision); sources.push({ ...item, title: resolved.title }); }
+    try { const resolved = await resolveAssistantSource(item.kind, item.id, item.revision); sources.push({ ...item, title: resolved.title, ...('createdAt' in resolved && resolved.createdAt ? { createdAt: resolved.createdAt } : {}) }); }
     catch (error) { if (!(error instanceof DomainError) || error.code !== 'NOT_FOUND') throw error; }
   }
   return sources;

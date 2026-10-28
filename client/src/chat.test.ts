@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyApprovalEvent, reviewStatusCopy, applyMessageEvent, approvalsOnMessage, groupToolActivities, isReadOnlyTool, pairToolMessages, parseSseFrame, toolPreview, unplacedApprovals, type ToolActivity } from './chat.js';
+import { presentChatMessages, applyApprovalEvent, reviewStatusCopy, applyMessageEvent, approvalsOnMessage, groupToolActivities, isReadOnlyTool, pairToolMessages, parseSseFrame, toolPreview, unplacedApprovals, type ToolActivity } from './chat.js';
 
 describe('chat SSE state', () => {
   it('parses a framed SSE delta and incrementally completes an assistant message', () => {
@@ -139,4 +139,39 @@ describe('load_skill rows', () => {
     const approval = { approvalId: 'a', toolName: 'propose_changes', arguments: {}, status: 'rejected', appOutcome: { status: 'rejected' as const, appliedOperationCount: 0 as const, code: 'SAVED_IN_EDITOR', message: '已在编辑器中修改并保存为 v1', completedAt: '' } };
     expect(reviewStatusCopy('rejected', approval)).toBe('已在编辑器中修改并保存为 v1');
   });
+});
+
+
+describe('thinking and source presentation', () => {
+  it('replays thinking deltas idempotently, detects missing offsets, and keeps answers separate', () => {
+    const reasoning = { startedAt: '2026-10-28T00:00:00Z', status: 'streaming' as const };
+    let messages = applyMessageEvent([], { type: 'message_start', messageId: 'm' });
+    const event = { type: 'reasoning_delta', messageId: 'm', reasoning, offset: 0, delta: '已有内容' };
+    messages = applyMessageEvent(messages, event); messages = applyMessageEvent(messages, event);
+    expect(messages[0].reasoning?.text).toBe('已有内容'); expect(messages[0].content).toBe('');
+    expect(applyMessageEvent(messages, { ...event, offset: 20 })[0].needsSnapshot).toBe(true);
+    messages = applyMessageEvent(messages, { type: 'reasoning_end', messageId: 'm', reasoning: { ...reasoning, status: 'completed', endedAt: '2026-10-28T00:00:03Z' } });
+    messages = applyMessageEvent(messages, { type: 'message_delta', messageId: 'm', delta: '实际回答' });
+    expect(messages[0].reasoning).toMatchObject({ text: '已有内容', status: 'completed' });
+    expect(messages[0].content).toBe('实际回答');
+  });
+  it('deduplicates sources within a user turn and preserves original message identities', () => {
+    const source = { kind: 'conversation' as const, id: 's', title: '闭包讨论' };
+    const original = [{ id: 'u', role: 'user' as const, content: '问题' }, { id: 'a', role: 'assistant' as const, content: '', sources: [source, source] }, { id: 'b', role: 'assistant' as const, content: '回答' }, { id: 'u2', role: 'user' as const, content: '新问题' }, { id: 'c', role: 'assistant' as const, content: '新回答' }];
+    const shown = presentChatMessages(original);
+    expect(shown[1].sources).toEqual([]); expect(shown[2].sources).toEqual([source]);
+    expect(shown[2].citationSources).toEqual([source]); expect(shown[4].sources).toEqual([]);
+    expect(original[1].sources).toHaveLength(2); expect(shown.map(item => item.id)).toEqual(original.map(item => item.id));
+  });
+});
+
+it('keeps a resumed request citation mapping separate from a later user request', () => {
+  const a = { kind: 'conversation' as const, id: 'A', title: 'A 的来源' }, b = { kind: 'conversation' as const, id: 'B', title: 'B 的来源' };
+  const shown = presentChatMessages([
+    { role: 'user', content: 'A' }, { id: 'a', role: 'assistant', runId: 'A', content: '', sources: [a] },
+    { role: 'user', content: 'B' }, { id: 'b', role: 'assistant', runId: 'B', content: 'B 回答', sources: [b], citationSources: [b] },
+    { id: 'resume-a', role: 'assistant', runId: 'A', content: 'A 回答 [1](#source-1)', citationSources: [a] },
+  ]);
+  expect(shown[3].sources).toEqual([b]);
+  expect(shown[4].sources).toEqual([a]); expect(shown[4].citationSources).toEqual([a]);
 });

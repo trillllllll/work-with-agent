@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { readAssistantReasoning, REASONING_LIMIT } from '../domain/assistant-reasoning.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../infrastructure/prisma.js';
 import { AgentService, ModelAdapter, type ModelDelta } from '../agent.js';
@@ -98,5 +99,59 @@ describe('persisted incremental presentation', () => {
     });
     await until(async () => (await prisma.agentRun.findUniqueOrThrow({ where: { id: mixed.runId } })).state === 'failed');
     expect(await prisma.approval.count({ where: { conversationId: mixed.conversationId } })).toBe(0);
+  });
+});
+
+
+describe('provider reasoning display and replay', () => {
+  it('persists batched thinking with snapshot watermarks and keeps the answer separate', async () => {
+    const held = barrier();
+    const { conversationId, runId } = await fixture(async function* () { yield { reasoning: '先核对已有记录。' }; await held.promise; yield { reasoning: '再给出建议。' }; yield { text: '这是回答。' }; });
+    try {
+      await until(async () => Boolean(await prisma.agentRunEvent.findFirst({ where: { runId, type: 'reasoning_delta' } })));
+      const live = await new AgentService().snapshot(conversationId);
+      expect(live.messages.at(-1)?.reasoning).toMatchObject({ text: '先核对已有记录。', status: 'streaming' });
+      expect(live.messages.at(-1)?.content).toBe('');
+      held.release();
+      await until(async () => (await prisma.agentRun.findUniqueOrThrow({ where: { id: runId } })).state === 'completed');
+      const final = await new AgentService().snapshot(conversationId);
+      expect(final.messages.at(-1)?.reasoning).toMatchObject({ text: '先核对已有记录。再给出建议。', status: 'completed' });
+      expect(final.messages.at(-1)?.reasoning?.endedAt).toBeTruthy();
+      expect(final.messages.at(-1)?.content).toBe('这是回答。');
+      const run = await prisma.agentRun.findUniqueOrThrow({ where: { id: runId } });
+      expect(run.modelMessagesJson).not.toContain('先核对已有记录');
+    } finally { held.release(); }
+  });
+  it('retains received thinking on stop and rejects late chunks', async () => {
+    const held = barrier();
+    const { conversationId, runId } = await fixture(async function* () { yield { reasoning: '已收到内容。' }; await held.promise; yield { reasoning: '迟到内容。' }; });
+    try {
+      await until(async () => Boolean(await prisma.agentRunEvent.findFirst({ where: { runId, type: 'reasoning_delta' } })));
+      await stopRun(runId);
+      const stopped = await new AgentService().snapshot(conversationId);
+      expect(stopped.messages.at(-1)?.reasoning).toMatchObject({ text: '已收到内容。', status: 'interrupted' });
+      expect(stopped.messages.at(-1)?.reasoning?.endedAt).toBeTruthy();
+    } finally { held.release(); }
+  });
+  it('bounds long thinking and records truncation without truncating the answer', async () => {
+    const { conversationId, runId } = await fixture(async function* () { yield { reasoning: '想'.repeat(REASONING_LIMIT + 1) }; yield { text: '完整回答' }; });
+    await until(async () => (await prisma.agentRun.findUniqueOrThrow({ where: { id: runId } })).state === 'completed');
+    const final = await new AgentService().snapshot(conversationId);
+    expect(final.messages.at(-1)?.reasoning?.text).toHaveLength(REASONING_LIMIT);
+    expect(final.messages.at(-1)?.reasoning?.truncated).toBe(true);
+    expect(final.messages.at(-1)?.content).toBe('完整回答');
+  });
+  it('parses provider reasoning fields independently from text, and ignores absent content', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response([
+      { choices: [{ delta: { reasoning_content: '第一段' } }] },
+      { choices: [{ delta: { reasoning: '第二段' } }] },
+      { choices: [{ delta: { content: '正文' } }] },
+    ].map(chunk => `data: ${JSON.stringify(chunk)}\n\n`).join('') + 'data: [DONE]\n\n'));
+    try {
+      const adapter = new ModelAdapter({ credentials: async () => ({ baseUrl: 'https://model.invalid', model: 'fixture', apiKey: 'fixture' }) } as any);
+      const chunks = []; for await (const chunk of adapter.stream([])) chunks.push(chunk);
+      expect(chunks).toEqual([{ reasoning: '第一段' }, { reasoning: '第二段' }, { text: '正文' }]);
+      expect(readAssistantReasoning('[]')).toBeUndefined();
+    } finally { fetchMock.mockRestore(); }
   });
 });

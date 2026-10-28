@@ -1,3 +1,4 @@
+import { useCitations } from '@/components/chat/citation-context.js';
 import { Button } from '@/components/ui/button.js';
 import { Children, isValidElement, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -89,13 +90,24 @@ function markdownComponents(diagrams: boolean): Components {
 }
 
 export function MarkdownView({ content, components, allowMaterialLinks = false, diagrams = false, className }: { content: string; components?: Components; allowMaterialLinks?: boolean; diagrams?: boolean; className?: string }) {
+  const citations = useCitations();
+  const citationComponents: Components = citations ? { a: ({ children, href }) => {
+    const match = /^#source-(\d+)$/.exec(href ?? '');
+    if (match) {
+      const source = citations.sources[Number(match[1]) - 1];
+      return source ? <Button variant="chip" size="bare" className="assistant-inline-citation" aria-label={tCitation(Number(match[1]), source.title)} onClick={() => citations.onSelect(source)}>{match[1]}</Button> : <span>{children}</span>;
+    }
+    return <a href={href} target="_blank" rel="noreferrer" className="text-brand-link underline underline-offset-2">{children}</a>;
+  } } : {};
+  const { t } = useTranslation('chat');
+  const tCitation = (number: number, title: string) => t('sourceLinks.citation', { number, title });
   const urlTransform = allowMaterialLinks
     ? (url: string) => url.startsWith('wwa-material:') ? url : defaultUrlTransform(url)
     : undefined;
   const rendered = useMemo(() => markdownComponents(diagrams), [diagrams]);
   return (
     <div className={cn('markdown-body min-w-0 max-w-full break-words', className ?? 'text-[13.5px] leading-relaxed')}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ ...rendered, ...components }} urlTransform={urlTransform}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ ...rendered, ...components, ...citationComponents }} urlTransform={urlTransform}>
         {content}
       </ReactMarkdown>
     </div>

@@ -1,3 +1,4 @@
+import { readAssistantReasoning, type AssistantReasoning } from './domain/assistant-reasoning.js';
 import { parseMessageBlocks, projectBlocks } from './agent/content-blocks.js';
 import type { ChatContextV2, ChatContextV3 } from './agent/chat-context.js';
 import type { AssistantSource } from './agent/assistant-sources.js';
@@ -23,10 +24,12 @@ import { approvalView } from './agent/views.js';
 
 export type PageContext = { topicId?: string | null; taskId?: string | null; page?: string | null };
 export type ChatEvent = {
+  citationSources?: AssistantSource[];
+  reasoning?: Omit<AssistantReasoning, 'text'>;
   contextStats?: import('./agent/context-stats.js').ContextStats;
   context?: ChatContextV2 | ChatContextV3;
   sources?: AssistantSource[];
-  type: 'context_stats' | 'block_start' | 'block_delta' | 'block_commit' | 'block_error' | 'user_context' | 'sources' | 'message_start' | 'message_delta' | 'message_end' | 'tool_call' | 'tool_result' | 'approval_required' | 'approval_resolved' | 'run_state' | 'external_prompt' | 'error' | 'done';
+  type: 'reasoning_delta' | 'reasoning_end' | 'context_stats' | 'block_start' | 'block_delta' | 'block_commit' | 'block_error' | 'user_context' | 'sources' | 'message_start' | 'message_delta' | 'message_end' | 'tool_call' | 'tool_result' | 'approval_required' | 'approval_resolved' | 'run_state' | 'external_prompt' | 'error' | 'done';
   conversationId?: string;
   messageId?: string;
   delta?: string;
@@ -63,7 +66,7 @@ function serializeToolCalls(calls: ToolCall[]) {
 }
 export type ModelToolDelta = { index: number; id: string; name: string; argumentsDelta: string };
 export type ModelUsage = { inputTokens?: number; cachedInputTokens?: number; outputTokens?: number; model?: string };
-export type ModelDelta = { text?: string; toolCalls?: ToolCall[]; toolDelta?: ModelToolDelta; usage?: ModelUsage };
+export type ModelDelta = { reasoning?: string; text?: string; toolCalls?: ToolCall[]; toolDelta?: ModelToolDelta; usage?: ModelUsage };
 
 function readUsage(chunk: any, model: string): ModelUsage | undefined {
   const usage = chunk?.usage;
@@ -138,6 +141,8 @@ export class ModelAdapter {
         try { chunk = JSON.parse(payload); } catch { throw modelError('模型返回了无效 SSE JSON', 'MODEL_INVALID_STREAM'); }
         if ((chunk.choices ?? []).some((choice: any) => choice.index !== undefined && choice.index !== 0)) throw modelError('不支持多 choice 交错的回复', 'MODEL_INVALID_STREAM');
         const delta = chunk.choices?.[0]?.delta;
+        if (typeof delta?.reasoning_content === 'string') yield { reasoning: delta.reasoning_content };
+        else if (typeof delta?.reasoning === 'string') yield { reasoning: delta.reasoning };
         if (typeof delta?.content === 'string') yield { text: delta.content };
         for (const item of delta?.tool_calls ?? []) {
           const index = Number(item.index ?? 0);
@@ -332,7 +337,12 @@ export class AgentService {
         messages: messages.map((message) => {
           const stale = message.status !== 'streaming' || message.id !== liveMessageId;
           const blocks = parseMessageBlocks(message.blocksJson).map((block) => stale && block.status === 'pending' ? { ...block, status: 'error' as const, error: '回复已中断，内容未完成' } : block);
+          const citationPart = (JSON.parse(message.partsJson || '[]') as Array<{ type: string; runId?: string; sources?: AssistantSource[] }>).find(part => part.type === 'assistant_citations');
+          const reasoning = readAssistantReasoning(message.partsJson);
+          if (reasoning?.status === 'streaming' && stale) { reasoning.status = 'interrupted'; }
           return ({ ...message,
+          ...(reasoning ? { reasoning } : {}),
+          ...(citationPart ? { runId: citationPart.runId, citationSources: citationPart.sources ?? [] } : {}),
           ...(blocks.length ? { blocksJson: JSON.stringify({ schemaVersion: 1, blocks }), content: projectBlocks(blocks) } : {}),
           status: message.status === 'streaming' && message.id !== liveMessageId ? 'completed' : message.status,
           ...(message.role === 'user' ? { context: contexts.get(message.id) ?? null } : {}),

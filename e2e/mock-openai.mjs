@@ -270,6 +270,15 @@ document.getElementById('probe-out').textContent=JSON.stringify({html:html,scrip
     const query = [...latestUser].slice(0, 80).join('');
     return stream(res, [{ choices: [{ delta: { content: JSON.stringify({ queries: query ? [query] : [] }) }, finish_reason: 'stop' }] }]);
   }
+  if (latestUser.includes('对话思考验收')) {
+    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+    const emit = delta => res.write(`data: ${JSON.stringify({ choices: [{ delta, finish_reason: null }] })}\n\n`);
+    emit({ reasoning_content: '核对已经掌握的内容。' });
+    const second = setTimeout(() => emit({ reasoning_content: '再安排一项练习。' }), 1200);
+    const final = setTimeout(() => { emit({ content: '先完成计数器练习。' }); res.end('data: [DONE]\n\n'); }, 3500);
+    res.on('close', () => { clearTimeout(second); clearTimeout(final); });
+    return;
+  }
   if (latestUser.includes('无效响应')) {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
     res.end('data: {invalid-json}\n\ndata: [DONE]\n\n');

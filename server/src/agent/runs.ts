@@ -1,3 +1,6 @@
+import type { Db } from '../application/workspace-store.js';
+import { uniqueAssistantSources, type AssistantSource } from '../domain/assistant-source.js';
+import { readAssistantReasoning, REASONING_LIMIT, type AssistantReasoning } from '../domain/assistant-reasoning.js';
 import { coordinatorWork } from '../application/coordinator-work.js';
 import { ReplyStream } from './reply-stream.js';
 import { resolveImages } from './image-search.js';
@@ -85,10 +88,21 @@ function readCursor(raw: string): RunCursor {
   return runCursorSchema.parse(JSON.parse(raw));
 }
 
-async function completeOpenAssistant(tx: { message: { updateMany(args: { where: { id: string; status: 'streaming' }; data: { status: 'completed' } }): Promise<unknown> } }, cursorJson: string) {
+async function interruptReasoning(tx: Db, runId: string, messageId: string, endedAt: string) {
+  const message = await tx.message.findUnique({ where: { id: messageId } });
+  const reasoning = readAssistantReasoning(message?.partsJson);
+  if (!message || reasoning?.status !== 'streaming') return;
+  const { text, ...metadata } = { ...reasoning, status: 'interrupted' as const, endedAt };
+  const parts = (JSON.parse(message.partsJson) as Array<{ type: string }>).filter(part => part.type !== 'assistant_reasoning');
+  parts.push({ type: 'assistant_reasoning', ...metadata, text } as { type: string });
+  await tx.message.update({ where: { id: messageId }, data: { partsJson: JSON.stringify(parts) } });
+  await appendRunEvent(tx, runId, 'reasoning_end', { type: 'reasoning_end', runId, conversationId: message.conversationId, messageId, reasoning: metadata });
+}
+async function completeOpenAssistant(tx: Db, cursorJson: string, runId: string) {
   let assistantMessageId: string | null = null;
   try { assistantMessageId = readCursor(cursorJson).assistantMessageId; } catch { return; }
   if (!assistantMessageId) return;
+  await interruptReasoning(tx, runId, assistantMessageId, nowIso());
   await tx.message.updateMany({ where: { id: assistantMessageId, status: 'streaming' }, data: { status: 'completed' } });
 }
 
@@ -126,6 +140,14 @@ async function recordEvent(runId: string, token: string, data: ChatEvent) {
     const run = await tx.agentRun.findUnique({ where: { id: runId } });
     if (!run || run.leaseToken !== token || run.state !== 'running' || !run.leaseExpiresAt || run.leaseExpiresAt <= nowIso()) {
       throw new DomainError('LEASE_LOST', '这次请求已经失去执行权', 409);
+    }
+    if ((data.type === 'reasoning_delta' || data.type === 'reasoning_end') && data.messageId && data.reasoning) {
+      const message = await tx.message.findUniqueOrThrow({ where: { id: data.messageId } });
+      const previous = readAssistantReasoning(message.partsJson);
+      const text = (previous?.text ?? '') + (data.delta ?? '');
+      const parts = (JSON.parse(message.partsJson || '[]') as Array<{ type: string }>).filter(part => part.type !== 'assistant_reasoning');
+      parts.push({ type: 'assistant_reasoning', ...data.reasoning, text } as { type: string });
+      await tx.message.update({ where: { id: message.id }, data: { partsJson: JSON.stringify(parts) } });
     }
     if (data.type === 'message_delta' && !data.compatibilityProjection && data.messageId && data.delta) {
       const message = await tx.message.findUniqueOrThrow({ where: { id: data.messageId } });
@@ -245,7 +267,7 @@ async function failOwned(runId: string, token: string, error: unknown) {
     if (!run || run.leaseToken !== token || run.state !== 'running') return null;
     const timestamp = nowIso();
     const cursor = readCursor(run.cursorJson);
-    if (cursor.assistantMessageId) await tx.message.updateMany({ where: { id: cursor.assistantMessageId, status: 'streaming' }, data: { status: 'failed' } });
+    if (cursor.assistantMessageId) { await interruptReasoning(tx, run.id, cursor.assistantMessageId, timestamp); await tx.message.updateMany({ where: { id: cursor.assistantMessageId, status: 'streaming' }, data: { status: 'failed' } }); }
     const executed = await tx.approval.findFirst({ where: { runId, status: 'executed' }, select: { id: true } });
     const visible = executed ? `后续回答未完成。${message}` : message;
     await tx.agentRun.update({ where: { id: runId }, data: { state: 'failed', errorCode: code, errorMessage: visible, leaseToken: null, leaseExpiresAt: null, completedAt: timestamp, updatedAt: timestamp } });
@@ -324,9 +346,16 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
     } else if (!state.budget.canSearch) tools = tools.filter(tool => tool.function.name !== 'web_search');
     if (cursor.toolGroups?.includes('web')) messages.splice(1, 0, { role: 'system', content: `【本任务联网预算】${JSON.stringify(state)}。先少量搜索、阅读已有结果，再补查；缓存翻页与定位不消耗外部请求。不能联网时只可阅读缓存。` });
   }
+  // Only this request's sources are numbered; old conversation sources never leak in.
+  const sourceEvents = await prisma.agentRunEvent.findMany({ where: { runId, type: 'message_start' }, orderBy: { seq: 'asc' }, select: { dataJson: true } });
+  const sourceIds = sourceEvents.map(event => (JSON.parse(event.dataJson) as { messageId: string }).messageId);
+  const sourceRows = await prisma.message.findMany({ where: { id: { in: sourceIds }, conversationId: run.conversationId }, select: { id: true, partsJson: true } });
+  const byId = new Map(sourceRows.map(row => [row.id, row]));
+  const citationSources = uniqueAssistantSources(sourceIds.flatMap(id => (JSON.parse(byId.get(id)?.partsJson || '[]') as Array<{ type: string; sources?: AssistantSource[] }>).filter(part => part.type === 'assistant_sources').flatMap(part => part.sources ?? [])));
+  if (citationSources.length) messages.splice(1, 0, { role: 'system', content: `【本次可引用来源】${JSON.stringify(citationSources.map((source, index) => ({ number: index + 1, title: source.title, kind: source.kind, id: source.id })))}。仅当来源确实支撑结论时，在结论旁用 [编号](#source-编号) 引用对应条目。不编造编号，不为没有依据的结论加引用。` });
   const offered = new Set(tools.map(t => t.function.name));
   if (cursor.toolGroups?.includes('media') && !String(messages[0]?.content).includes('【富媒体表达】\nSVG')) messages.splice(1, 0, { role: 'system', content: `【按需富媒体规则】\n${mediaInstructionsFor(identityId)}\n${htmlBlockPrompt(await htmlBlockPolicy())}` });
-  await saveMessages(runId, token, messages.filter(m => !(m.role === 'system' && (String(m.content).startsWith('【按需富媒体规则】') || String(m.content).startsWith('【本任务联网预算】') || String(m.content).startsWith('本次资料检索已进入最后作答轮')))));
+  await saveMessages(runId, token, messages.filter(m => !(m.role === 'system' && (String(m.content).startsWith('【本次可引用来源】') || String(m.content).startsWith('【按需富媒体规则】') || String(m.content).startsWith('【本任务联网预算】') || String(m.content).startsWith('本次资料检索已进入最后作答轮')))));
   const stats = buildContextStats({ runId, round: cursor.round, messages, tools, fullTools: identityId === 'work' ? builtinToolDefinitions({ loadSkill: cursor.loadSkill }) : toolsForGroups(scopeGroupsFor(identityId, [...toolGroupNames]), cursor.loadSkill, identityId), loadedGroups: cursor.toolGroups ?? ['legacy-all'], summaryCalls: cursor.summaryCalls });
   const publishStats = async () => {
     const earlier = await prisma.agentRunEvent.findMany({ where: { runId, type: 'context_stats' }, orderBy: { seq: 'asc' }, select: { dataJson: true } });
@@ -335,10 +364,10 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
   };
   await publishStats();
   const modelStarted = Date.now();
-  const assistant = await prisma.message.create({ data: { conversationId: owned.conversationId, role: 'assistant', content: '', status: 'streaming', createdAt: nowIso() } });
+  const assistant = await prisma.message.create({ data: { conversationId: owned.conversationId, role: 'assistant', content: '', status: 'streaming', partsJson: JSON.stringify([{ type: 'assistant_citations', runId, sources: citationSources }]), createdAt: nowIso() } });
   const nextCursor = { ...cursor, assistantMessageId: assistant.id, offeredToolGroups: cursor.toolGroups };
   await saveCursor(runId, token, nextCursor);
-  await recordEvent(runId, token, { type: 'message_start', conversationId: owned.conversationId, messageId: assistant.id });
+  await recordEvent(runId, token, { type: 'message_start', conversationId: owned.conversationId, messageId: assistant.id, citationSources });
   const controller = new AbortController();
   activeModelControllers.set(runId, controller);
   let reply: ReplyStream | undefined;
@@ -349,6 +378,16 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
   timer.unref?.();
   let text = '';
   let rawText = '';
+  let reasoning: AssistantReasoning | undefined;
+  let reasoningOffset = 0;
+  let reasoningBatcher: TextBatcher | undefined;
+  const finishReasoning = async (status: 'completed' | 'interrupted') => {
+    await reasoningBatcher?.finish(); reasoningBatcher = undefined;
+    if (!reasoning || reasoning.status !== 'streaming') return;
+    reasoning = { ...reasoning, status, endedAt: nowIso() };
+    const { text: _text, ...metadata } = reasoning;
+    await recordEvent(runId, token, { type: 'reasoning_end', messageId: assistant.id, reasoning: metadata });
+  };
   const calls: ToolCall[] = [];
   const batcher = new TextBatcher(
     (delta) => recordEvent(runId, token, { type: 'message_delta', conversationId: run.conversationId, messageId: assistant.id, delta }),
@@ -357,6 +396,20 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
   try {
     for await (const chunk of stream(messages, controller.signal, true, tools, identityId)) {
       if (controller.signal.aborted) throw new DomainError('LEASE_LOST', '请求已停止', 409);
+      if (chunk.reasoning) {
+        reasoning ??= { text: '', startedAt: nowIso(), status: 'streaming' };
+        reasoning.status = 'streaming'; delete reasoning.endedAt;
+        const accepted = chunk.reasoning.slice(0, REASONING_LIMIT - reasoning.text.length);
+        reasoning.truncated ||= accepted.length < chunk.reasoning.length;
+        reasoning.text += accepted;
+        reasoningBatcher ??= new TextBatcher(async delta => {
+          const { text: _text, ...metadata } = reasoning!;
+          await recordEvent(runId, token, { type: 'reasoning_delta', messageId: assistant.id, delta, offset: reasoningOffset, reasoning: metadata });
+          reasoningOffset += delta.length;
+        }, () => controller.abort());
+        if (accepted) await reasoningBatcher.add(accepted);
+      }
+      if (chunk.text || chunk.toolDelta || chunk.toolCalls) await finishReasoning('completed');
       if (chunk.toolDelta) {
         const delta = chunk.toolDelta;
         const prior = partialCalls.get(delta.index);
@@ -386,6 +439,7 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
         if (chunk.usage.model) stats.actual.model = chunk.usage.model;
       }
     }
+    await finishReasoning('completed');
     await batcher.finish();
     if (reply) {
       if (calls.length !== 1 || calls[0].name !== 'present_reply') throw new Error('富媒体回答必须单独提交；业务修改继续走原有审批');
@@ -396,6 +450,7 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
   } catch (error) {
     clearTimeout(timer);
     let failure = error;
+    try { await finishReasoning('interrupted'); } catch (writeError) { if (!isLeaseLoss(writeError)) failure = writeError; }
     try { if (reply) text = await reply.fail('回复未完成'); await batcher.finish(); } catch (writeError) { failure = writeError; }
     try { await applyExecutorSideEffect(runId, token, assistant.id, { content: text, status: 'failed' }); }
     catch (leaseError) { if (!isLeaseLoss(leaseError)) throw leaseError; }
@@ -424,7 +479,7 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
     content: text || null,
     ...(calls.length ? { tool_calls: calls.map((call) => ({ id: call.id ?? '', type: 'function' as const, function: { name: call.name, arguments: JSON.stringify(call.arguments ?? {}) } })) } : {}),
   };
-  messages.splice(0, messages.length, ...messages.filter(m => !(m.role === 'system' && (String(m.content).startsWith('【按需富媒体规则】') || String(m.content).startsWith('【本任务联网预算】') || String(m.content).startsWith('本次资料检索已进入最后作答轮')))));
+  messages.splice(0, messages.length, ...messages.filter(m => !(m.role === 'system' && (String(m.content).startsWith('【本次可引用来源】') || String(m.content).startsWith('【按需富媒体规则】') || String(m.content).startsWith('【本任务联网预算】') || String(m.content).startsWith('本次资料检索已进入最后作答轮')))));
   messages.push(assistantMessage);
   await saveMessages(runId, token, messages);
   if (!calls.length) {
@@ -527,7 +582,7 @@ async function toolTurn(runId: string, token: string, contextService: ContextSer
         const parts = (JSON.parse(row.partsJson || '[]') as Array<{ type: string; id?: string; sources?: typeof sources }>).filter((part) => part.id !== partId);
         parts.push({ type: 'assistant_sources', id: partId, sources });
         await tx.message.update({ where: { id: assistantMessageId }, data: { partsJson: JSON.stringify(parts) } });
-        await appendRunEvent(tx, runId, 'sources', { type: 'sources', runId, conversationId: run.conversationId, messageId: assistantMessageId, sources: parts.flatMap((part) => part.sources ?? []) });
+        await appendRunEvent(tx, runId, 'sources', { type: 'sources', runId, conversationId: run.conversationId, messageId: assistantMessageId, sources: parts.filter(part => part.type === 'assistant_sources').flatMap((part) => part.sources ?? []) });
       });
     }
     if (cursor.webPolicy === 2 && ['web_search', 'read_webpage'].includes(call.function.name) && !result.budget) result = { ...result, budget: (await webSessionState(runId)).budget };
@@ -650,7 +705,7 @@ export async function startChat(input: { conversationId?: string; message: strin
       const old = await tx.agentRun.findUnique({ where: { id: conversation.activeRunId } });
       if (old && (old.state === 'queued' || old.state === 'running' || old.state === 'waiting_approval')) {
         const timestamp = nowIso();
-        await completeOpenAssistant(tx, old.cursorJson);
+        await completeOpenAssistant(tx, old.cursorJson, old.id);
         await tx.agentRun.update({ where: { id: old.id }, data: { state: 'paused', pauseReason: 'new_user_message', leaseToken: null, leaseExpiresAt: null, updatedAt: timestamp } });
         await appendRunEvent(tx, old.id, 'run_state', { type: 'run_state', runId: old.id, conversationId, state: 'paused', pauseReason: 'new_user_message', message: '已暂停后续处理' });
       }
@@ -729,7 +784,7 @@ export async function stopRun(runId: string) {
       const blocks = parseMessageBlocks(message?.blocksJson).map((block) => block.status === 'pending' ? { ...block, status: 'error' as const, error: '已停止，内容未完成' } : block);
       if (blocks.length) await tx.message.update({ where: { id: cursor.assistantMessageId }, data: { blocksJson: JSON.stringify({ schemaVersion: 1, blocks }), content: projectBlocks(blocks), status: 'failed' } });
     }
-    await completeOpenAssistant(tx, run.cursorJson);
+    await completeOpenAssistant(tx, run.cursorJson, run.id);
     await tx.agentRun.update({ where: { id: run.id }, data: { state: 'paused', pauseReason: 'user_stopped', leaseToken: null, leaseExpiresAt: null, updatedAt: timestamp } });
     await appendRunEvent(tx, run.id, 'run_state', { type: 'run_state', runId: run.id, conversationId: run.conversationId, state: 'paused', pauseReason: 'user_stopped', message: '已暂停后续处理' });
     return run;
@@ -757,7 +812,7 @@ async function pauseExpiredRuns() {
       if (fresh.leaseExpiresAt && fresh.leaseExpiresAt > nowIso()) return;
       const timestamp = nowIso();
       const cursor = readCursor(fresh.cursorJson);
-      if (cursor.assistantMessageId) await tx.message.updateMany({ where: { id: cursor.assistantMessageId, status: 'streaming' }, data: { status: 'failed' } });
+      if (cursor.assistantMessageId) { await interruptReasoning(tx, run.id, cursor.assistantMessageId, timestamp); await tx.message.updateMany({ where: { id: cursor.assistantMessageId, status: 'streaming' }, data: { status: 'failed' } }); }
       await tx.agentRun.update({ where: { id: fresh.id }, data: { state: 'paused', pauseReason: 'interrupted', leaseToken: null, leaseExpiresAt: null, updatedAt: timestamp } });
       await appendRunEvent(tx, fresh.id, 'run_state', { type: 'run_state', runId: fresh.id, conversationId: fresh.conversationId, state: 'paused', pauseReason: 'interrupted', message: '处理被中断。可以继续此请求。' });
     });

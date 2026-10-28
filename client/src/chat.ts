@@ -1,3 +1,5 @@
+import type { AssistantReasoning } from '../../server/src/domain/assistant-reasoning.js';
+import { uniqueAssistantSources } from '../../server/src/domain/assistant-source.js';
 import { projectBlocks } from '../../server/src/agent/content-projection.js';
 import type { ContentBlock } from './lib/message-blocks.js';
 import type { ChatContextV2, ChatContextV3 } from '../../server/src/domain/chat-context.js';
@@ -35,11 +37,14 @@ export type WorktreeCleanupPart = {
 export type ChatPart = ExternalPromptPart | WorktreeCleanupPart;
 
 export type ChatMessage = {
+  runId?: string;
+  reasoning?: AssistantReasoning;
   blocks?: ContentBlock[];
   blocksJson?: string | null;
   needsSnapshot?: boolean;
   context?: ChatContextV2 | ChatContextV3 | null;
   sources?: AssistantSource[];
+  citationSources?: AssistantSource[];
   id?: string;
   role: 'user' | 'assistant' | 'tool' | 'system';
   content: string;
@@ -90,6 +95,8 @@ export type Approval = {
 export type ToolResult = { success: boolean; data?: unknown; error?: string; code?: string };
 
 export type SseEvent = {
+  citationSources?: AssistantSource[];
+  reasoning?: Omit<AssistantReasoning, 'text'>;
   contextStats?: import('./lib/context-usage.js').ContextUsage;
   blockId?: string;
   blockType?: ContentBlock['type'];
@@ -124,7 +131,7 @@ export type SseEvent = {
   supersedesApprovalId?: string;
 };
 
-const READ_ONLY_TOOLS = new Set(['load_tools', 'read_context_source', 'image_search', 'web_search', 'read_webpage', 'present_reply', 'read_app_knowledge', 'read_page_state', 'list_topics', 'get_topic', 'get_topic_progress', 'list_tasks', 'get_task', 'conversation_search', 'get_time', 'list_plan_time_bands', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'get_change_schema', 'orchestration_read', 'orchestration_stats']);
+const READ_ONLY_TOOLS = new Set(['learning_read', 'load_tools', 'read_context_source', 'image_search', 'web_search', 'read_webpage', 'present_reply', 'read_app_knowledge', 'read_page_state', 'list_topics', 'get_topic', 'get_topic_progress', 'list_tasks', 'get_task', 'conversation_search', 'get_time', 'list_plan_time_bands', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'get_change_schema', 'orchestration_read', 'orchestration_stats']);
 const PREVIEW_MAX = 80;
 
 const LIBRARY_READS = new Set(['list', 'search', 'read', 'content', 'linked_tasks', 'task_materials', 'folders', 'tags', 'ask']);
@@ -235,7 +242,7 @@ export function groupToolActivities(tools: ToolActivity[]): ToolGroup[] {
     run = [];
   };
   for (const activity of tools) {
-    if (activity.status === 'done' && isReadOnlyTool(activity.name, activity.arguments)) run.push(activity);
+    if (['done', 'running', 'error'].includes(activity.status) && !activity.approvalId && isReadOnlyTool(activity.name, activity.arguments)) run.push(activity);
     else { flush(); groups.push({ kind: 'call', activity }); }
   }
   flush();
@@ -460,10 +467,25 @@ export function applyMessageEvent(messages: ChatMessage[], event: SseEvent): Cha
       return { ...message, blocks, content: projectBlocks(blocks) };
     });
   }
+  if ((event.type === 'reasoning_delta' || event.type === 'reasoning_end') && event.reasoning) {
+    return messages.map(item => {
+      if (item.id !== event.messageId) return item;
+      const previous = item.reasoning;
+      let text = previous?.text ?? '';
+      if (event.type === 'reasoning_delta') {
+        if (item.status !== 'streaming') return item;
+        const offset = event.offset ?? -1, delta = event.delta ?? '';
+        if (offset < text.length && text.slice(offset, offset + delta.length) === delta) return item;
+        if (offset !== text.length) return { ...item, needsSnapshot: true };
+        text += delta;
+      }
+      return { ...item, reasoning: { ...event.reasoning!, text } };
+    });
+  }
   if (event.type === 'message_start') {
     const index = event.messageId ? messages.findIndex((item) => item.id === event.messageId) : -1;
     if (index >= 0) return messages;
-    return [...messages, { id: event.messageId, role: 'assistant', content: '', status: 'streaming' }];
+    return [...messages, { id: event.messageId, role: 'assistant', content: '', status: 'streaming', ...(event.runId ? { runId: event.runId } : {}), ...(event.citationSources ? { citationSources: event.citationSources } : {}) }];
   }
   if (event.type === 'message_delta') {
     const index = event.messageId ? messages.findIndex((item) => item.id === event.messageId) : messages.length - 1;
@@ -629,4 +651,25 @@ export function applyApprovalEvent(approvals: Approval[], event: SseEvent): Appr
     supersedes && item.approvalId === supersedes ? { ...item, status: 'rejected', supersededByApprovalId: next.approvalId } : item
   ));
   return [...kept, next];
+}
+
+/** New messages group by request; legacy messages retain their user-turn fallback. */
+export function presentChatMessages(messages: ChatMessage[]) {
+  const result = messages.map(message => ({ ...message }));
+  const groups = new Map<string, number[]>(); let legacyTurn = 0;
+  result.forEach((message, index) => {
+    if (message.role === 'user') legacyTurn += 1;
+    if (message.role !== 'assistant') return;
+    const key = message.runId ? `run:${message.runId}` : `legacy:${legacyTurn}`;
+    groups.set(key, [...(groups.get(key) ?? []), index]);
+  });
+  for (const indices of groups.values()) {
+    const sources = uniqueAssistantSources(indices.flatMap(index => messages[index].sources ?? []));
+    for (const index of indices) {
+      result[index].sources = [];
+      result[index].citationSources ??= sources;
+    }
+    result[indices[indices.length - 1]].sources = sources;
+  }
+  return result;
 }

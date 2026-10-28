@@ -334,14 +334,33 @@
       "assistant": "Agent",
       "tool": "Tool",
       "system": "System"
-    }
+    },
+    "lookupRunning": "Querying {{count}} items",
+    "lookupFailed": "{{count}} queries · some failed"
   },
   "messageList": {
     "empty": "Tell the agent what you want to move forward. Read-only actions run immediately. Task changes ask for approval first.",
     "jumpToBottom": "Back to bottom"
   },
   "sourceLinks": {
-    "label": "Sources for this reply"
+    "label": "Sources for this reply",
+    "count": "{{count}} reference sources",
+    "conversation": "Past conversation",
+    "citation": "View source {{number}}: {{title}}",
+    "preview": "Reference source",
+    "close": "Close source",
+    "unavailable": "Source unavailable",
+    "loading": "Loading source…",
+    "empty": "This source has no body.",
+    "kinds": {
+      "task": "Task",
+      "material": "Material",
+      "memory": "Memory",
+      "conversation": "Conversation",
+      "help": "App guide",
+      "learning_node": "Learning node",
+      "learning_map": "Learning map"
+    }
   },
   "review": {
     "collapseDiff": "Hide diff",
@@ -524,5 +543,16 @@
     "summaries": "Summary requests included",
     "unknown": "Not reported",
     "partial": "Provider usage is pending or incomplete. Known values may cover only part of this run. Totals include tool-loading and summary requests."
+  },
+  "reasoning": {
+    "active": "Thinking",
+    "completed": "Thought",
+    "interrupted": "Thinking interrupted",
+    "seconds": "{{count}}s",
+    "expand": "View process",
+    "collapse": "Collapse",
+    "providerContent": "Thinking content returned by the model",
+    "truncated": "Long content: the first 65536 characters are retained.",
+    "incomplete": "Thinking stopped early. Received content is retained."
   }
 }

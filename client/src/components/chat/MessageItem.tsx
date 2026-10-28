@@ -1,10 +1,13 @@
+import { ReasoningDisclosure } from './ReasoningDisclosure.js';
+import { CitationContext } from './citation-context.js';
+import type { AssistantSource } from '../../../../server/src/domain/assistant-source.js';
 import { Surface } from '@/components/ui/surface.js';
 import { MessageBlocks } from './MessageBlocks.js';
 import { ContextSummary } from './ContextSummary.js';
-import { SourceLinks } from './SourceLinks.js';
+import { SourceLinks, SourcePreview } from './SourceLinks.js';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronRight, Copy } from 'lucide-react';
+import { CheckCheck, LoaderCircle, CircleAlert, ChevronRight, Copy } from 'lucide-react';
 import type { Approval, ChatMessage, ToolActivity } from '@/chat.js';
 import { approvalsOnMessage, groupToolActivities, isReadOnlyTool } from '@/chat.js';
 import { toolLabels } from '@/lib/api.js';
@@ -97,11 +100,14 @@ function SkillUsageRow({ activity }: { activity: ToolActivity }) {
 function ToolRun({ activities, approvalFor, pending, executingApprovalId, unknownApprovalIds, unresolvedApprovalIds, phase, onApprove, onReject, onChanged }: { activities: ToolActivity[]; approvalFor: (activity: ToolActivity) => Approval | undefined; pending: boolean; executingApprovalId: string; unknownApprovalIds: string[]; unresolvedApprovalIds: string[]; phase: '' | 'approve' | 'reject'; onApprove: (id: string) => void; onReject: (id: string) => void; onChanged: () => void }) {
   const { t } = useTranslation('chat');
   const [open, setOpen] = useState(false);
+  const running = activities.some(activity => activity.status === 'running');
+  const failed = activities.some(activity => activity.status === 'error');
   return (
-    <Surface as="div" tone="subtle" className="rounded-lg">
+    <Surface as="div" tone="subtle" className="assistant-tool-run rounded-lg">
       <Button variant="row" size="bare" type="button" aria-expanded={open} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px]" onClick={() => setOpen((value) => !value)}>
-        <ChevronRight className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')} />
-        <span className="font-medium">{t('messageItem.lookupCount', { count: activities.length })}</span>
+        {running ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" /> : failed ? <CircleAlert className="size-3.5 text-destructive" /> : <CheckCheck className="size-3.5" />}
+        <span className="min-w-0 flex-1 font-medium">{t(running ? 'messageItem.lookupRunning' : failed ? 'messageItem.lookupFailed' : 'messageItem.lookupCount', { count: activities.length })}</span>
+        <ChevronRight className={cn('size-3 shrink-0', open && 'rotate-90')} />
       </Button>
       {open && (
         <div className="flex flex-col gap-1 border-t border-border/70 p-1.5">
@@ -122,21 +128,22 @@ function looksLikeJson(content: string) {
 
 export function MessageItem({ message, approvals = [], approvalPending = false, executingApprovalId = '', unknownApprovalIds = [], unresolvedApprovalIds = [], phase = '', onApprove = () => undefined, onReject = () => undefined, onChanged = () => undefined, onRepreviewed }: { message: ChatMessage; approvals?: Approval[]; approvalPending?: boolean; executingApprovalId?: string; unknownApprovalIds?: string[]; unresolvedApprovalIds?: string[]; phase?: '' | 'approve' | 'reject'; onApprove?: (id: string) => void; onReject?: (id: string) => void; onChanged?: () => void; onRepreviewed?: (body: { approvalId?: string; previewHash?: string; supersedesApprovalId?: string; approval?: { id: string; status: string; toolName: string; conversationId?: string | null; envelope?: unknown } }) => void }) {
   const { t } = useTranslation('chat');
+  const [selectedSource, setSelectedSource] = useState<AssistantSource | null>(null);
   const role = message.role;
   if (role === 'tool') return null;
   const roleLabels: Record<string, string> = { user: t('messageItem.role.user'), assistant: t('messageItem.role.assistant'), tool: t('messageItem.role.tool'), system: t('messageItem.role.system') };
   const label = roleLabels[role] ?? role;
   const streaming = message.status === 'streaming';
   const failed = message.status === 'failed';
-  const content = message.content || (streaming ? t('messageItem.streaming') : '');
+  const content = message.content || (streaming && !message.reasoning?.text && !message.tools?.length ? t('messageItem.streaming') : '');
   const approvalFor = (activity: ToolActivity) => approvals.find((item) => item.approvalId === activity.approvalId || item.toolCallId === activity.toolCallId);
   const groups = groupToolActivities(message.tools ?? []);
-  if (role === 'assistant' && !content && !failed && groups.length === 0 && !message.parts?.length && !message.blocks?.length) return null;
+  if (role === 'assistant' && !content && !failed && groups.length === 0 && !message.parts?.length && !message.blocks?.length && !message.reasoning?.text && !message.sources?.length) return null;
 
   return (
-    <div
+    <CitationContext.Provider value={{ sources: message.citationSources ?? message.sources ?? [], onSelect: setSelectedSource }}><div
       className={cn(
-        'rounded-xl px-3 py-2.5',
+        'assistant-message min-w-0 rounded-xl px-3 py-2.5',
         role === 'user' && 'ml-auto max-w-[90%] rounded-2xl bg-muted/70',
         failed && 'border-2 border-destructive/50 bg-destructive/10',
         role === 'system' && 'bg-transparent px-1 py-1.5'
@@ -146,6 +153,16 @@ export function MessageItem({ message, approvals = [], approvalPending = false, 
         <span className={cn('mb-1 block text-[11px] font-bold tracking-wide', failed ? 'text-destructive' : 'text-muted-foreground')}>
           {label}{failed ? t('messageItem.outputFailed') : ''}
         </span>
+      )}
+      {message.reasoning && <ReasoningDisclosure reasoning={message.reasoning} streaming={streaming} />}
+      {groups.length > 0 && (
+        <div className={cn('flex flex-col gap-1.5', content && 'mt-2')}>
+          {groups.map((group) => group.kind === 'run' ? (
+            <ToolRun key={group.activities.map((item) => item.toolCallId).join('-')} activities={group.activities} approvalFor={approvalFor} pending={approvalPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} unresolvedApprovalIds={unresolvedApprovalIds} phase={phase} onApprove={onApprove} onReject={onReject} onChanged={onChanged} />
+          ) : (
+            <ToolCallRow key={group.activity.toolCallId} activity={group.activity} approval={approvalFor(group.activity)} pending={approvalPending} executing={approvalFor(group.activity)?.approvalId === executingApprovalId} unknown={Boolean(approvalFor(group.activity) && unknownApprovalIds.includes(approvalFor(group.activity)!.approvalId))} unresolved={Boolean(approvalFor(group.activity) && unresolvedApprovalIds.includes(approvalFor(group.activity)!.approvalId))} phase={phase} onApprove={onApprove} onReject={onReject} onChanged={onChanged} />
+          ))}
+        </div>
       )}
       {message.blocks?.length ? <MessageBlocks blocks={message.blocks} /> : content && (role === 'system' && !streaming ? (
         looksLikeJson(content) ? (
@@ -160,18 +177,10 @@ export function MessageItem({ message, approvals = [], approvalPending = false, 
       ))}
       {message.role === 'assistant' && content && !streaming && <Button variant="ghost" size="icon-xs" className="mt-2 text-muted-foreground" aria-label={t('messageItem.copyReply')} onClick={() => void navigator.clipboard.writeText(message.content).then(() => toast.success(t('messageItem.replyCopied')), () => toast.error(t('clipboard.copyFailed')))}><Copy /></Button>}
       {message.role === 'user' && <ContextSummary context={message.context} />}
-      <SourceLinks sources={message.sources ?? []} />
-      {groups.length > 0 && (
-        <div className={cn('flex flex-col gap-1.5', content && 'mt-2')}>
-          {groups.map((group) => group.kind === 'run' ? (
-            <ToolRun key={group.activities.map((item) => item.toolCallId).join('-')} activities={group.activities} approvalFor={approvalFor} pending={approvalPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} unresolvedApprovalIds={unresolvedApprovalIds} phase={phase} onApprove={onApprove} onReject={onReject} onChanged={onChanged} />
-          ) : (
-            <ToolCallRow key={group.activity.toolCallId} activity={group.activity} approval={approvalFor(group.activity)} pending={approvalPending} executing={approvalFor(group.activity)?.approvalId === executingApprovalId} unknown={Boolean(approvalFor(group.activity) && unknownApprovalIds.includes(approvalFor(group.activity)!.approvalId))} unresolved={Boolean(approvalFor(group.activity) && unresolvedApprovalIds.includes(approvalFor(group.activity)!.approvalId))} phase={phase} onApprove={onApprove} onReject={onReject} onChanged={onChanged} />
-          ))}
-        </div>
-      )}
+      <SourceLinks sources={message.sources ?? []} onSelect={setSelectedSource} />
       {approvalsOnMessage(message, approvals).filter(isAppChangeApproval).map((approval) => <ReviewCard key={approval.approvalId} approval={approval} phase={approval.approvalId === executingApprovalId ? phase : ''} unknown={unknownApprovalIds.includes(approval.approvalId)} unresolved={unresolvedApprovalIds.includes(approval.approvalId)} onApprove={onApprove} onReject={onReject} onChanged={onChanged} onRepreviewed={onRepreviewed} />)}
       {message.parts?.map((part) => part.type === 'worktree_cleanup' ? <WorktreeCleanupChatCard key={part.id} cleanupId={part.cleanupId} /> : <ExternalPromptCard key={part.id} part={part} />)}
-    </div>
+    {selectedSource && <SourcePreview source={selectedSource} onClose={() => setSelectedSource(null)} />}
+    </div></CitationContext.Provider>
   );
 }
