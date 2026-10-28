@@ -195,7 +195,7 @@
     "configureModel": "请在设置中配置模型连接后发送消息。",
     "requestPaused": "这个请求已暂停。",
     "continueRequest": "继续此请求",
-    "connectionDropped": "聊天连接中断，已保留收到的内容。",
+    "connectionDropped": "聊天连接中断，可重试恢复本次请求。",
     "referenceScope": "本次参考范围",
     "followPage": "跟随页面",
     "pinContext": "固定当前上下文",

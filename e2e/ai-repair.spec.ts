@@ -88,7 +88,7 @@ for (const surface of surfaces) {
     await input.fill('调整时生成失败');
     await page.getByRole('button', { name: '发送', exact: true }).click();
     await expect(page.getByText('正在调整：修改 1 个任务')).toBeVisible();
-    await expect(input).toHaveValue('调整时生成失败');
+    await expect(input).toHaveValue('');
     await expect(card.getByRole('button', { name: '确认修改', exact: true })).toBeEnabled();
     await input.fill('请把方案改短');
     await page.getByRole('button', { name: '发送', exact: true }).click();

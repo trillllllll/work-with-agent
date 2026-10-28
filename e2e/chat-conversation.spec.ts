@@ -65,3 +65,36 @@ test('旧对话来源去重、正文编号打开原文、查询分组和窄屏�
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test('上翻后发送回到底部，随后上翻流式输出不抢滚动', async ({ page }) => {
+  const id = randomUUID();
+  const stamp = '2026-10-28T01:00:00.000Z';
+  const filler = '这段较长的历史内容用于把会话撑出足够的滚动高度，确保列表在发送前后都明显超出可视区域。';
+  await db.conversation.create({ data: { id, createdAt: stamp, updatedAt: stamp } });
+  await db.message.createMany({ data: Array.from({ length: 24 }, (_, index) => ({
+    id: `${id}-m${index}`,
+    conversationId: id,
+    role: index % 2 === 0 ? 'user' : 'assistant',
+    content: `历史消息 ${index}：${filler}`,
+    createdAt: stamp,
+  })) });
+  await page.addInitScript(id => localStorage.setItem('dovun.conversationId', id), id);
+  await page.goto('/#/chat');
+  const panel = page.getByTestId('ai-assistant');
+  const scroller = panel.locator('[data-chat-scroll]');
+  await expect(scroller).toBeVisible();
+  const distance = () => scroller.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
+  // The seeded thread must overflow; the initial view is already pinned to the bottom.
+  expect(await scroller.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeGreaterThan(200);
+  expect(await distance()).toBeLessThanOrEqual(2);
+  await scroller.evaluate((el) => { el.scrollTop = 0; });
+  await panel.getByLabel('向 AI 提问').fill('对话思考验收：开始');
+  await panel.getByRole('button', { name: '发送', exact: true }).click();
+  // 发送即重新钉住底部：用户消息渲染后立即贴底。
+  await expect.poll(async () => distance(), { timeout: 5_000 }).toBeLessThanOrEqual(2);
+  await expect(panel.getByTestId('assistant-reasoning')).toHaveAttribute('data-state', 'streaming');
+  // 流式期间再次上翻：脱钉后新增内容不再抢滚动。
+  await scroller.evaluate((el) => { el.scrollTop = 0; });
+  await expect(panel.getByText('先完成计数器练习。', { exact: true })).toBeVisible({ timeout: 15_000 });
+  expect(await distance()).toBeGreaterThan(100);
+});

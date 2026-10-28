@@ -55,7 +55,7 @@ export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose
       toast.error(error instanceof Error ? error.message : t('chatPanel.draftSkillFailed'));
     } finally { setDrafting(false); }
   };
-  const { messages, approvals, busy, interrupted, input, setInput, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference, showRepreview } = chat;
+  const { messages, approvals, busy, interrupted, input, setInput, sendSeq, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference, showRepreview } = chat;
   const materialCount = chat.context?.selectedMaterialIds.length ?? 0;
   return (
     <div className="dovun-assistant flex h-full min-h-0 min-w-0 flex-col" data-testid="ai-assistant" data-presentation={presentation}>
@@ -81,7 +81,7 @@ export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose
       <AssistantInputProvider setInput={setInput}><MessageList emptyState={<>
       <div className="dovun-assistant-welcome"><img src={mark} alt="" /><h3>{t('chatPanel.title')}</h3><p>{t('chatPanel.greeting')}</p></div>
       <div className="dovun-assistant-suggestions flex flex-wrap gap-2 px-3 pt-3">{(identityId === 'study' ? studySuggestions() : suggestions(chat.context?.page ?? '')).map((item) => <Button key={item} size="sm" variant="outline" className="h-auto whitespace-normal text-left" onClick={() => setInput(input.trim() ? `${input}\n\n${item}` : item)}>{item}</Button>)}</div>
-      </>} messages={messages} approvals={approvals} approvalPending={approve.isPending || reject.isPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} unresolvedApprovalIds={unresolvedApprovalIds} phase={decisionPhase} onApprove={(id) => approve.mutate(id)} onReject={(id) => reject.mutate(id)} onChanged={refreshApprovals} onRepreviewed={showRepreview} /></AssistantInputProvider>
+      </>} messages={messages} approvals={approvals} approvalPending={approve.isPending || reject.isPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} unresolvedApprovalIds={unresolvedApprovalIds} phase={decisionPhase} onApprove={(id) => approve.mutate(id)} onReject={(id) => reject.mutate(id)} onChanged={refreshApprovals} onRepreviewed={showRepreview} sendSeq={sendSeq} /></AssistantInputProvider>
       {pausedRun && ['new_user_message', 'interrupted', 'round_limit'].includes(pausedRun.reason) && (
         <div className="mx-3 mb-2 flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-xs">
           <span>{pausedRun.reason === 'new_user_message' ? t('system.pausedFollowUp') : t('chatPanel.requestPaused')}</span>

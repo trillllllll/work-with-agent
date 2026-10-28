@@ -200,7 +200,7 @@
     "configureModel": "Configure a model connection in Settings before sending a message.",
     "requestPaused": "This request is paused.",
     "continueRequest": "Continue this request",
-    "connectionDropped": "The chat connection dropped. Content received so far was kept.",
+    "connectionDropped": "The chat connection dropped. Retry to recover this request.",
     "referenceScope": "Reference scope",
     "followPage": "Follow the page",
     "pinContext": "Pin current context",

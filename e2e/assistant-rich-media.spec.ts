@@ -102,7 +102,7 @@ test('刷新进行中的流，恢复轮询失败后重连同一请求，不丢�
   await page.route('**/api/agent/runs/*/events?*', (route) => route.abort('internetdisconnected'));
   await page.reload();
   await expect(page.locator('[data-block-type=text]').first()).toContainText('文字流式前缀😀');
-  await expect(page.getByText('聊天连接中断，已保留收到的内容。', { exact: true })).toBeVisible();
+  await expect(page.getByText('聊天连接中断，可重试恢复本次请求。', { exact: true })).toBeVisible();
   await page.unroute('**/api/agent/runs/*/events?*');
   await page.getByRole('button', { name: '重试', exact: true }).click();
   await expect(page.locator('[data-block-type=text]').last()).toContainText('最后一段', { timeout: 10000 });
@@ -161,7 +161,7 @@ test('未确认的离线请求阻止切换历史和跨会话调整，不把新�
   await page.route('**/api/agent/requests/*', (route) => route.abort('internetdisconnected'));
   await page.goto('/#/chat');
   await page.getByLabel('向 AI 提问').fill('尚未到达服务器'); await page.getByRole('button', { name: '发送', exact: true }).click();
-  await expect(page.getByText('聊天连接中断，已保留收到的内容。', { exact: true })).toBeVisible();
+  await expect(page.getByText('聊天连接中断，可重试恢复本次请求。', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '历史对话', exact: true }).click();
   await page.getByRole('button', { name: /另一段历史对话/ }).click();
   expect(await page.evaluate(() => localStorage.getItem('dovun.conversationId'))).toBeNull();

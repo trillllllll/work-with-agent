@@ -24,9 +24,11 @@ type MessageListProps = {
   onReject: (id: string) => void;
   onChanged: () => void;
   onRepreviewed?: (body: { approvalId?: string; previewHash?: string; supersedesApprovalId?: string; approval?: { id: string; status: string; toolName: string; conversationId?: string | null; envelope?: unknown } }) => void;
+  /** Bumped by each send so the list re-pins and jumps to the just-appended message. */
+  sendSeq?: number;
 };
 
-export function MessageList({ messages, emptyState, approvals, approvalPending, executingApprovalId, unknownApprovalIds, unresolvedApprovalIds, phase, onApprove, onReject, onChanged, onRepreviewed }: MessageListProps) {
+export function MessageList({ messages, emptyState, approvals, approvalPending, executingApprovalId, unknownApprovalIds, unresolvedApprovalIds, phase, onApprove, onReject, onChanged, onRepreviewed, sendSeq = 0 }: MessageListProps) {
   const { t } = useTranslation('chat');
   const scrollRef = useRef<HTMLDivElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
@@ -88,6 +90,15 @@ export function MessageList({ messages, emptyState, approvals, approvalPending, 
     if (el) el.scrollTop = el.scrollHeight;
     setShowJump(false);
   };
+
+  const prevSendSeq = useRef(sendSeq);
+  useEffect(() => {
+    // Sending implies watching the new exchange, so re-pin even if the user had scrolled up.
+    // The effect runs after the commit that appended the sent message, so the scroller measures the real bottom.
+    if (sendSeq === prevSendSeq.current) return;
+    prevSendSeq.current = sendSeq;
+    jumpToBottom();
+  }, [sendSeq]);
 
   return (
     <div className="relative min-h-0 min-w-0 flex-1">

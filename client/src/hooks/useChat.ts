@@ -1,7 +1,7 @@
 import type { ContextUsage } from '@/lib/context-usage.js';
 import { readMessageBlocks } from '@/lib/message-blocks.js';
 import { contextLabel, attachmentError, type ChatAttachment, type ChatContextV3 } from '@/lib/assistant-context.js';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type SetStateAction } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { applyApprovalEvent, applyMessageEvent, pairToolMessages, parseExternalParts, replyIncompleteMarker, toolPreview, userRejectedError, type Approval, type ChatMessage, type SseEvent, type ToolActivityStatus, type ToolResult } from '../chat.js';
@@ -43,7 +43,15 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
   const onErrorRef = useRef(onError);
   const newConversationRef = useRef('');
   onErrorRef.current = onError;
-  const [input, setInput] = useState('');
+  const [input, setInputState] = useState('');
+  // Failure paths must read the live draft (not the send-time closure) to decide restore-vs-keep,
+  // so the exposed setter keeps this ref in sync for both string and functional updates.
+  const inputRef = useRef('');
+  const setInput = ((action: SetStateAction<string>) => {
+    inputRef.current = typeof action === 'function' ? (action as (current: string) => string)(inputRef.current) : action;
+    return setInputState(action);
+  }) as typeof setInputState;
+  const [sendSeq, setSendSeq] = useState(0);
   const [conversationId, setConversationId] = useState<string>(() => localStorage.getItem('dovun.conversationId') ?? '');
   const identityIdRef = useRef(identityId ?? 'work');
   identityIdRef.current = identityId ?? 'work';
@@ -363,6 +371,10 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     activeRunId.current = ''; loadGeneration.current++; busyRef.current = true;
     onErrorRef.current(''); setInterrupted(false); setBusy(true); setPausedRun(null);
     setMessages((current) => [...current, { role: 'user', content: message, context: requestContext }]);
+    // The draft is cleared exactly once, here. Later completion/recovery paths never compare by text,
+    // so a draft retyped while waiting (even identical text) always survives.
+    setInput('');
+    setSendSeq((seq) => seq + 1);
     let accepted = false;
     let receivedDone = false;
     let receivedError = false;
@@ -385,7 +397,6 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
       }
       clearPendingRequest();
       if (accepted && !receivedError) {
-        setInput((current) => current.trim() === message ? '' : current);
         const sentIds = new Set(requestContext.schemaVersion === 3 ? requestContext.attachments.map((item) => item.id) : []);
         setAttachments((current) => current.filter((item) => !sentIds.has(item.id)));
         setReferencedApproval((current) => current?.id === reference?.id ? null : current);
@@ -400,7 +411,6 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
           await reloadConversation(conversationRef.current, true);
           clearPendingRequest();
           setInterrupted(false);
-          setInput((current) => current.trim() === message ? '' : current);
           const sentIds = new Set(requestContext.schemaVersion === 3 ? requestContext.attachments.map((item) => item.id) : []);
           setAttachments((current) => current.filter((item) => !sentIds.has(item.id)));
           setReferencedApproval((current) => current?.id === reference?.id ? null : current);
@@ -408,14 +418,25 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
         } catch { /* Fall through to an explicit reconnect state, never resend. */ }
       }
       if (!accepted) {
-        setMessages((current) => {
+        const popOptimistic = () => setMessages((current) => {
           const next = [...current];
           const last = next[next.length - 1];
           if (last?.role === 'user' && last.content === message && !last.id) next.pop();
           return next;
         });
+        if (rejected) {
+          // The server explicitly refused the request (pending state already cleared), so the
+          // original is known-unsent: restore it for an immediate resend. With a newer draft
+          // typed meanwhile, keep the optimistic message in the thread instead as the original's
+          // recovery entry; retry only refills the input once that draft is cleared.
+          if (!inputRef.current.trim()) { setInput(message); popOptimistic(); }
+        } else {
+          // Outcome unknown: the request may have reached the server. The retained pending key
+          // replays idempotently via retry; never restore the text here (duplicate-send risk).
+          popOptimistic();
+        }
       }
-      setInterrupted(!rejected);
+      setInterrupted(true);
       onErrorRef.current(reason instanceof Error ? reason.message : tRef.current('errors.chatInterrupted'));
     }
     finally { if (accepted) await reloadConversation(conversationRef.current, true); busyRef.current = false; setBusy(false); }
@@ -596,7 +617,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     if (busyRef.current || mutatingRef.current) return;
     if (pendingRequestKey.current) {
       setBusy(true); busyRef.current = true; setInterrupted(false);
-      try { const found = await findRequest(pendingRequestKey.current); adoptRequest(found); await reloadConversation(found.conversationId, true); await trackRun(found.id, snapshotWatermarks.current[found.id] ?? 0); clearPendingRequest(); setInput((current) => current.trim() === found.message ? '' : current); setAttachments((current) => current.filter((item) => !found.attachmentIds.includes(item.id))); }
+      try { const found = await findRequest(pendingRequestKey.current); adoptRequest(found); await reloadConversation(found.conversationId, true); await trackRun(found.id, snapshotWatermarks.current[found.id] ?? 0); clearPendingRequest(); setAttachments((current) => current.filter((item) => !found.attachmentIds.includes(item.id))); }
       catch (reason) { setInterrupted(true); onErrorRef.current(reason instanceof Error ? reason.message : tRef.current('errors.restoreFailed')); }
       finally { busyRef.current = false; setBusy(false); }
       return;
@@ -609,7 +630,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
       return;
     }
     const last = [...messages].reverse().find((item) => item.role === 'user');
-    if (last) { setInput(last.content); if (last.context?.schemaVersion === 3) { setPinnedContext(structuredClone(last.context)); setAttachments(structuredClone(last.context.attachments)); } setInterrupted(false); }
+    if (last) { setInput((current) => current.trim() ? current : last.content); if (last.context?.schemaVersion === 3) { setPinnedContext(structuredClone(last.context)); setAttachments(structuredClone(last.context.attachments)); } setInterrupted(false); }
   };
   const startNew = () => {
     if (busyRef.current || mutatingRef.current) return;
@@ -632,5 +653,5 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     setPausedRun(null);
   };
 
-  return { contextStats, stop, stopping, selectConversation, addMaterial, context, pinned: Boolean(pinnedContext), togglePin: () => setPinnedContext((current) => current ? null : structuredClone(pageContext ?? null)), attachments, removeAttachment: (id: string) => setAttachments((current) => current.filter((item) => item.id !== id)), conversationId, selectedTopicId, messages, approvals, busy, interrupted, input, setInput, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference: () => setReferencedApproval(null), showRepreview };
+  return { contextStats, stop, stopping, selectConversation, addMaterial, context, pinned: Boolean(pinnedContext), togglePin: () => setPinnedContext((current) => current ? null : structuredClone(pageContext ?? null)), attachments, removeAttachment: (id: string) => setAttachments((current) => current.filter((item) => item.id !== id)), conversationId, selectedTopicId, messages, approvals, busy, interrupted, input, setInput, sendSeq, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference: () => setReferencedApproval(null), showRepreview };
 }
