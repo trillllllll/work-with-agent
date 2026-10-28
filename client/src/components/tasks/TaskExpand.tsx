@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { Textarea } from '@/components/ui/textarea.js';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.js';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { TaskActivityDialog } from './TaskActivityDialog.js';
 import { OrchestrationButton } from '@/components/orchestration/OrchestrationPanel.js';
@@ -536,20 +537,20 @@ function TopicRow() {
     setOpen(false);
     if (next !== topicId) edit.setTopic(next);
   };
-  return <Popover open={open} onOpenChange={setOpen}>
-    <PopoverTrigger asChild>
-      <Button variant="row" size="bare" type="button" data-testid="task-topic-row" className={cn('task-info-row', edit.readonly && 'opacity-50')} aria-label={t('taskExpand.moveToList')} disabled={edit.readonly}>
-        <FolderKanban className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <span className="w-20 shrink-0 text-left text-muted-foreground">{t('taskExpand.listLabel')}</span>
-        <span className="min-w-0 flex-1 truncate text-right"><span className="task-place-chip">{name}</span></span>
-      </Button>
-    </PopoverTrigger>
-    <PopoverContent data-task-editor aria-label={t('taskExpand.moveToList')} collisionPadding={8} className="max-h-[min(24rem,var(--radix-popover-content-available-height))] w-52 space-y-1 overflow-y-auto overscroll-contain">
-      <p className="px-1 pb-1 text-xs text-muted-foreground">{t('taskExpand.moveToListHint')}</p>
-      <Button type="button" variant="ghost" size="sm" className="w-full justify-start" aria-pressed={topicId === null} disabled={topicId === null} onClick={() => pick(null)}>{t('shared.inbox')}</Button>
-      {edit.topics.map((topic) => <Button key={topic.id} type="button" variant="ghost" size="sm" className="w-full justify-start" aria-pressed={topicId === topic.id} disabled={topicId === topic.id} onClick={() => pick(topic.id)}>{topic.name}</Button>)}
-    </PopoverContent>
-  </Popover>;
+  return <Select open={open} onOpenChange={setOpen} value={topicId ?? 'inbox'} onValueChange={(value) => pick(value === 'inbox' ? null : value)} disabled={edit.readonly}>
+    <SelectTrigger data-testid="task-topic-row" className={cn('task-info-row h-auto w-full border-0 bg-transparent p-0 shadow-none', edit.readonly && 'opacity-50')} aria-label={t('taskExpand.moveToList')}>
+      <FolderKanban className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+      <span className="w-20 shrink-0 text-left text-muted-foreground">{t('taskExpand.listLabel')}</span>
+      <SelectValue className="min-w-0 flex-1 justify-end overflow-hidden text-right"><span className="task-place-chip max-w-full truncate">{name}</span></SelectValue>
+    </SelectTrigger>
+    <SelectContent data-task-editor aria-label={t('taskExpand.moveToList')} position="popper" align="start" collisionPadding={8} className="max-h-[min(24rem,var(--radix-select-content-available-height))] w-[var(--radix-select-trigger-width)] min-w-0 max-w-[calc(100vw-1rem)] [&_[data-radix-select-viewport]]:min-w-0 [&_[data-radix-select-viewport]>div]:block!">
+      <SelectGroup>
+        <SelectLabel className="whitespace-normal font-normal">{t('taskExpand.moveToListHint')}</SelectLabel>
+        <SelectItem value="inbox" disabled={topicId === null} className="whitespace-normal [&>span:last-child]:min-w-0 [&>span:last-child]:[overflow-wrap:anywhere]">{t('shared.inbox')}</SelectItem>
+        {edit.topics.map((topic) => <SelectItem key={topic.id} value={topic.id} disabled={topicId === topic.id} className="whitespace-normal [&>span:last-child]:min-w-0 [&>span:last-child]:[overflow-wrap:anywhere]">{topic.name}</SelectItem>)}
+      </SelectGroup>
+    </SelectContent>
+  </Select>;
 }
 
 function FlagRow() {
