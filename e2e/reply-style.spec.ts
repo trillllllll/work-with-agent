@@ -9,8 +9,10 @@ test('reply style saves without a model, survives reload, and can be cleared or 
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/#/settings/model');
+  // 默认文案以服务端返回为准，避免改默认值时再破此断言。
+  const defaultStyle = (await (await request.get(`${api}/api/settings/reply-style`)).json()).data.defaultReplyStyle;
   const field = page.getByLabel('风格要求', { exact: true });
-  await expect(field).toHaveValue('结论先行，多用短句。');
+  await expect(field).toHaveValue(defaultStyle);
   await field.fill('先给结论。\n每句只说一件事。');
   await page.getByRole('button', { name: '保存回复风格', exact: true }).click();
   await expect(page.getByText('回复风格已保存', { exact: true })).toBeVisible();
@@ -27,9 +29,9 @@ test('reply style saves without a model, survives reload, and can be cleared or 
   await page.reload();
   await expect(field).toHaveValue('');
   await page.getByRole('region', { name: '回复风格', exact: true }).getByRole('button', { name: '恢复默认', exact: true }).click();
-  await expect(field).toHaveValue('结论先行，多用短句。');
+  await expect(field).toHaveValue(defaultStyle);
   await page.getByRole('button', { name: '保存回复风格', exact: true }).click();
-  await expect.poll(async () => (await (await request.get(`${api}/api/settings/reply-style`)).json()).data.replyStyle).toBe('结论先行，多用短句。');
+  await expect.poll(async () => (await (await request.get(`${api}/api/settings/reply-style`)).json()).data.replyStyle).toBe(defaultStyle);
   for (const theme of ['light', 'dark']) {
     await page.evaluate(theme => { document.documentElement.className = theme; }, theme);
     await field.scrollIntoViewIfNeeded();
@@ -38,6 +40,6 @@ test('reply style saves without a model, survives reload, and can be cleared or 
   }
   await page.evaluate(() => localStorage.setItem('dovun.language', 'en'));
   await page.reload();
-  await expect(page.getByLabel('Style instructions', { exact: true })).toHaveValue('结论先行，多用短句。');
+  await expect(page.getByLabel('Style instructions', { exact: true })).toHaveValue(defaultStyle);
   expect(errors).toEqual([]);
 });

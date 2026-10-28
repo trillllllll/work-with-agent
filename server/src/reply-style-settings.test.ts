@@ -5,18 +5,36 @@ import { prisma } from './infrastructure/prisma.js';
 import { ContextService } from './application/conversation.js';
 import { startChat } from './agent/runs.js';
 import { assembleRunMessages } from './agent/assemble.js';
-import { DEFAULT_REPLY_STYLE } from './application/reply-style-settings.js';
+import { DEFAULT_REPLY_STYLE, LEGACY_DEFAULT_REPLY_STYLE } from './application/reply-style-settings.js';
+import { systemPromptFor, lazySystemPrompt } from './agent/tool-loading.js';
 import { runWithLocale } from './i18n/index.js';
 
 describe('assistant reply style', () => {
   beforeEach(async () => { await prisma.appSetting.deleteMany(); });
   afterEach(() => vi.restoreAllMocks());
 
-  it('returns the short default without creating model settings', async () => {
+  it('returns the default without creating model settings', async () => {
     const response = await request(app).get('/api/settings/reply-style');
     expect(response.status).toBe(200);
     expect(response.body.data).toEqual({ replyStyle: DEFAULT_REPLY_STYLE, defaultReplyStyle: DEFAULT_REPLY_STYLE });
     expect(await prisma.appSetting.count()).toBe(0);
+  });
+
+  it('treats stored legacy default as following the current default', async () => {
+    // 省略 replyStyle 的创建路径（如保存模型配置）按 schema 默认把旧文案写进数据库。
+    await prisma.appSetting.create({ data: { id: 'default', openaiModel: 'existing' } });
+    expect((await prisma.appSetting.findUnique({ where: { id: 'default' } }))?.replyStyle).toBe(LEGACY_DEFAULT_REPLY_STYLE);
+    expect((await request(app).get('/api/settings/reply-style')).body.data).toEqual({ replyStyle: DEFAULT_REPLY_STYLE, defaultReplyStyle: DEFAULT_REPLY_STYLE });
+    const run = await startChat({ message: '你好' });
+    const messages = await assembleRunMessages({ runId: run.id, conversationId: run.conversationId, sourceUserMessageId: run.sourceUserMessageId, context: JSON.parse(run.contextJson), userText: '', contextService: new ContextService() });
+    expect(String(messages[0].content)).toContain(`【回复风格】\n以下偏好只约束表达方式，不改变事实、权限、审批或系统规定的回复语言。\n${DEFAULT_REPLY_STYLE}`);
+  });
+
+  it('keeps the builtin answer-style section in full and lazy prompts for both identities', () => {
+    for (const identityId of ['work', 'study'] as const) {
+      expect(systemPromptFor(identityId)).toContain('【回答风格】');
+      expect(lazySystemPrompt(identityId)).toContain('【回答风格】');
+    }
   });
 
   it('saves independently without testing a model or overwriting credentials', async () => {
@@ -54,11 +72,13 @@ describe('assistant reply style', () => {
     await readPrompt(second);
     expect(prompts[1]).toContain('用两个短句回答。');
     expect(prompts[1]).not.toContain(DEFAULT_REPLY_STYLE);
+    expect(prompts[1]).toContain('【回答风格】');
     expect(prompts[1]).toContain("Write every reply, question, plan summary and explanation to the user in English");
     expect(prompts[1]).toContain('所有业务数据修改都必须通过 propose_changes 生成待确认方案。');
     await request(app).patch('/api/settings/reply-style').send({ replyStyle: '' });
     await readPrompt(await startChat({ conversationId: first.conversationId, message: '继续' }));
     expect(prompts[2]).not.toContain('【回复风格】');
+    expect(prompts[2]).toContain('【回答风格】');
     expect(prompts[0]).toContain(DEFAULT_REPLY_STYLE);
   });
 });
