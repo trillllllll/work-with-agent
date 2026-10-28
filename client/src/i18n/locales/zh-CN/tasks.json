@@ -198,7 +198,8 @@
     "description": "这条任务从创建到现在的改动。",
     "loadError": "暂时无法加载任务动态。",
     "emptyHistory": "还没有改动记录。",
-    "actorAt": "{{name}} · {{time}}"
+    "actorAt": "{{name}} · {{time}}",
+    "reminderChange": "把提醒从{{before}}改成{{after}}"
   },
   "taskDescription": {
     "imagesOnly": "只支持图片",
@@ -223,7 +224,8 @@
       "resultSummary": "结果摘要",
       "topicId": "所属清单",
       "parentId": "父任务",
-      "tagIds": "标签"
+      "tagIds": "标签",
+      "reminderMinutesBefore": "提醒"
     },
     "saveChangesTitle": "保存未完成的编辑？",
     "saveChangesDescription": "任务有未保存的更改。",
@@ -276,7 +278,9 @@
     "estimateHint": "用于首次安排时间段，不改变已有安排。",
     "estimateMinutes": "预计时长分钟",
     "recurrence": "重复",
-    "recurrenceHint": "完成后按原计划日期自动生成下一次，晚完成不顺延。"
+    "recurrenceHint": "完成后按原计划日期自动生成下一次，晚完成不顺延。",
+    "reminder": "提醒",
+    "reminderHint": "到点提醒：跟随默认用设置里的提前量，也可以单独选择或关闭。"
   },
   "recurrence": {
     "none": "不重复",
@@ -355,5 +359,12 @@
     "unsyncedList": "未同步列表",
     "unsynced": "未同步",
     "compressing": "正在压缩"
+  },
+  "reminder": {
+    "follow": "跟随默认",
+    "off": "不提醒",
+    "atTime": "准时",
+    "minuteCount": "提前 {{count}} 分钟",
+    "dayCount": "提前 {{count}} 天"
   }
 }

@@ -71,7 +71,7 @@ export function isGroup(value: any): value is GroupSnapshot { return value?.vers
  * introduced them. A group is detected by its first key: a snapshot that knows
  * completedAt also knows completedAtEstimated, so the pair is kept or dropped together.
  */
-const legacyTaskColumnGroups: readonly (readonly string[])[] = [['completedAt', 'completedAtEstimated'], ['recurrenceRule']];
+const legacyTaskColumnGroups: readonly (readonly string[])[] = [['completedAt', 'completedAtEstimated'], ['recurrenceRule'], ['reminderMinutesBefore']];
 const legacyTopicColumnGroups: readonly (readonly string[])[] = [['goalDueDate']];
 
 export function withoutLegacyTaskKeys<T extends Record<string, unknown>>(row: T): T {

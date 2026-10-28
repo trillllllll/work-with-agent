@@ -15,7 +15,7 @@ import { CHANGE_ENTITY_TYPES, changeTimeLabel, groupChangesByDay, type ChangeDay
 
 const OPERATION_IDS = ['create', 'update', 'delete', 'archive', 'archive_preserve', 'reorder', 'move_tasks_to_inbox', 'restore', 'permanent_delete', 'confirm_summary', 'discard_summary', 'execute', 'undo'] as const;
 const FIELD_KEYS: Record<string, string> = {
-  title: 'title', status: 'status', priority: 'priority', dueDate: 'dueDate', scheduledStart: 'schedule', topicId: 'list', parentId: 'parent',
+  title: 'title', status: 'status', priority: 'priority', dueDate: 'dueDate', scheduledStart: 'schedule', reminderMinutesBefore: 'reminder', topicId: 'list', parentId: 'parent',
   name: 'name', color: 'color', description: 'description', goal: 'goal', enabled: 'enabled', tagIds: 'tags',
 };
 const TONE_CLASS = {

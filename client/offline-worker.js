@@ -4,6 +4,33 @@ self.addEventListener('install', event => {
   event.waitUntil(caches.open(SHELL).then(cache => cache.addAll(ASSETS)));
 });
 self.addEventListener('activate', event => { event.waitUntil(self.clients.claim()); });
+// Task reminders reach installed browsers here even with every tab closed.
+self.addEventListener('push', event => {
+  let payload = {};
+  try { payload = event.data ? event.data.json() : {}; } catch { payload = { body: event.data?.text() }; }
+  const title = typeof payload.title === 'string' && payload.title ? payload.title : 'Dovun';
+  const url = typeof payload.url === 'string' && payload.url.startsWith('/') ? payload.url : '/';
+  event.waitUntil(self.registration.showNotification(title, {
+    body: typeof payload.body === 'string' ? payload.body : '',
+    tag: typeof payload.tag === 'string' && payload.tag ? payload.tag : 'dovun',
+    icon: '/push-icon-192.png', badge: '/push-icon-192.png',
+    data: { url },
+  }));
+});
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const target = event.notification.data?.url || '/';
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of windows) {
+      if (!client.url.startsWith(self.location.origin)) continue;
+      await client.focus();
+      if (target !== '/') client.postMessage({ type: 'dovun-push-open', url: target });
+      return;
+    }
+    await self.clients.openWindow(new URL(target, self.location.origin).href);
+  })());
+});
 const META = 'dovun-offline-client-scopes';
 const scopeKey = id => new URL('/__dovun_client_scope/' + id, self.location.origin).href;
 self.addEventListener('message', event => {

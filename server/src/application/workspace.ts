@@ -126,7 +126,7 @@ export function reversibleChange(entityType: string, operation: string) {
   return reversibleOp(entityType, operation);
 }
 
-const taskFields = ['id', 'topicId', 'title', 'description', 'status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'recurrenceRule', 'deletedAt', 'createdAt', 'updatedAt', 'parentId', 'sortOrder', 'revision', 'deleteBatchId', 'tagIds'];
+const taskFields = ['id', 'topicId', 'title', 'description', 'status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'recurrenceRule', 'reminderMinutesBefore', 'deletedAt', 'createdAt', 'updatedAt', 'parentId', 'sortOrder', 'revision', 'deleteBatchId', 'tagIds'];
 const topicFields = ['id', 'name', 'description', 'color', 'isExploration', 'goal', 'goalDueDate', 'draftSummary', 'finalSummary', 'summaryStatus', 'summaryUpdatedAt', 'archivedAt', 'createdAt', 'updatedAt', 'revision'];
 function pickFields(value: Record<string, unknown>, fields: string[]) {
   return Object.fromEntries(fields.filter((key) => value[key] !== undefined).map((key) => [key, value[key]]));
@@ -154,6 +154,7 @@ const legacyTaskSchema = taskFieldObject.extend({
   completedAt: z.string().nullable().default(null),
   completedAtEstimated: z.boolean().default(false),
   recurrenceRule: taskFieldObject.shape.recurrenceRule.default(''),
+  reminderMinutesBefore: taskFieldObject.shape.reminderMinutesBefore.default(null),
 });
 const legacyTopicSchema = topicCreateSchema.extend({
   id: z.string().min(1),

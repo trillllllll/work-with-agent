@@ -200,7 +200,8 @@
     "description": "Changes to this task since it was created.",
     "loadError": "Couldn't load activity.",
     "emptyHistory": "No changes yet.",
-    "actorAt": "{{name}} · {{time}}"
+    "actorAt": "{{name}} · {{time}}",
+    "reminderChange": "Changed the reminder from {{before}} to {{after}}"
   },
   "taskDescription": {
     "imagesOnly": "Images only",
@@ -225,7 +226,8 @@
       "resultSummary": "Result",
       "topicId": "List",
       "parentId": "Parent task",
-      "tagIds": "Tags"
+      "tagIds": "Tags",
+      "reminderMinutesBefore": "Reminder"
     },
     "saveChangesTitle": "Save unfinished edits?",
     "saveChangesDescription": "This task has unsaved changes.",
@@ -278,7 +280,9 @@
     "estimateHint": "Used the first time you schedule a time range. Existing schedules stay unchanged.",
     "estimateMinutes": "Estimate in minutes",
     "recurrence": "Repeat",
-    "recurrenceHint": "Completing creates the next occurrence from the planned date; finishing late does not push it back."
+    "recurrenceHint": "Completing creates the next occurrence from the planned date; finishing late does not push it back.",
+    "reminder": "Reminder",
+    "reminderHint": "Remind at the scheduled time: follow the default lead from settings, pick a tier, or turn it off."
   },
   "recurrence": {
     "none": "Does not repeat",
@@ -359,5 +363,12 @@
     "unsyncedList": "Not synced",
     "unsynced": "Not synced",
     "compressing": "Compressing"
+  },
+  "reminder": {
+    "follow": "Follow default",
+    "off": "Off",
+    "atTime": "On time",
+    "minuteCount": "{{count}} min early",
+    "dayCount": "{{count}} day(s) early"
   }
 }

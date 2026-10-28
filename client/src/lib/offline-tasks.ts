@@ -122,7 +122,7 @@ export function mutateReplica(rows: ReplicaRows, path: string, method: string, r
       if (p && p.row.topicId !== topicId) fail('INVALID_PARENT', t('workspace:offline.errors.topicRelation'), 400);
       activeTopic(topicId);
       if ((input.tagIds ?? []).some(tag => !rows.tag[tag])) fail('NOT_FOUND', t('workspace:offline.errors.tags'), 404);
-      row = { description: '', status: 'todo', priority: 'none', estimatedMinutes: null, resultSummary: '', recurrenceRule: '', deletedAt: null, deleteBatchId: null, tagIds: [], ...input, ...normalizeSchedule(emptySchedule, input), topicId, parentId: p?.id ?? null, sortOrder: order(topicId, p?.id ?? null), completedAt: null, completedAtEstimated: false, createdAt: stamp };
+      row = { description: '', status: 'todo', priority: 'none', estimatedMinutes: null, resultSummary: '', recurrenceRule: '', reminderMinutesBefore: null, deletedAt: null, deleteBatchId: null, tagIds: [], ...input, ...normalizeSchedule(emptySchedule, input), topicId, parentId: p?.id ?? null, sortOrder: order(topicId, p?.id ?? null), completedAt: null, completedAtEstimated: false, createdAt: stamp };
       parent(p?.id, true);
     } else if (entity === 'topic') row = { description: '', color: 'slate', isExploration: false, goal: '', goalDueDate: null, draftSummary: '', finalSummary: '', summaryStatus: 'empty', summaryUpdatedAt: null, archivedAt: null, ...parseInput(topicCreateSchema, raw) };
     else row = { color: 'violet', ...parseInput(tagCreateSchema, raw) };
@@ -157,7 +157,7 @@ export function mutateReplica(rows: ReplicaRows, path: string, method: string, r
         if (rule) {
           const schedule = normalizeSchedule({ dueDate: done.dueDate as string | null, scheduledStart: done.scheduledStart as string | null, scheduledEnd: done.scheduledEnd as string | null }, { dueDate: nextRecurrenceDate(rule, recurrenceAnchor(done.dueDate as string | null, done.scheduledStart as string | null)) });
           const nextId = crypto.randomUUID();
-          rows.task[nextId] = { id: nextId, revision: 1, createdAt: stamp, updatedAt: stamp, row: { title: done.title, description: done.description, status: 'todo', priority: done.priority, estimatedMinutes: done.estimatedMinutes, resultSummary: '', recurrenceRule: recurrenceRuleText(rule), deletedAt: null, deleteBatchId: null, tagIds: [...(done.tagIds as string[])], ...schedule, topicId, parentId, sortOrder: order(topicId, parentId), completedAt: null, completedAtEstimated: false, createdAt: stamp } };
+          rows.task[nextId] = { id: nextId, revision: 1, createdAt: stamp, updatedAt: stamp, row: { title: done.title, description: done.description, status: 'todo', priority: done.priority, estimatedMinutes: done.estimatedMinutes, resultSummary: '', recurrenceRule: recurrenceRuleText(rule), reminderMinutesBefore: done.reminderMinutesBefore ?? null, deletedAt: null, deleteBatchId: null, tagIds: [...(done.tagIds as string[])], ...schedule, topicId, parentId, sortOrder: order(topicId, parentId), completedAt: null, completedAtEstimated: false, createdAt: stamp } };
           parent(parentId, true);
         }
       }

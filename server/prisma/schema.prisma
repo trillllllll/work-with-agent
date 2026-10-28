@@ -29,6 +29,12 @@ model AppSetting {
   htmlBlocksEnabled Boolean @default(true) @map("html_blocks_enabled")
   htmlCdnAllowlist String @default("[\"https://cdn.jsdelivr.net\",\"https://cdnjs.cloudflare.com\",\"https://unpkg.com\"]") @map("html_cdn_allowlist")
   assistantIdentityJson String @default("{}") @map("assistant_identity_json")
+  reminderLeadMinutes Int @default(10) @map("reminder_lead_minutes")
+  reminderAllDayTime String @default("09:00") @map("reminder_all_day_time")
+  reminderTimeZone String @default("Asia/Shanghai") @map("reminder_time_zone")
+  vapidPublicKey String @default("") @map("vapid_public_key")
+  vapidPrivateKey String @default("") @map("vapid_private_key")
+  vapidSubject String @default("") @map("vapid_subject")
   createdAt     String   @default("") @map("created_at")
   updatedAt     String   @default("") @map("updated_at")
 
@@ -89,6 +95,7 @@ model Task {
   scheduledEnd   String?   @map("scheduled_end")
   resultSummary String     @default("") @map("result_summary")
   recurrenceRule String    @default("") @map("recurrence_rule")
+  reminderMinutesBefore Int? @map("reminder_minutes_before")
   deletedAt String? @map("deleted_at")
   createdAt     String     @default("") @map("created_at")
   updatedAt     String     @default("") @map("updated_at")
@@ -111,6 +118,32 @@ model Task {
   @@index([completedAt])
   @@index([createdAt])
   @@map("tasks")
+}
+
+/// One row per reminder actually delivered. The key carries the anchor instant and lead so
+/// a rescheduled or re-tiered task arms again while a repeated tick stays idempotent.
+model ReminderFire {
+  id      String @id @default(cuid())
+  taskId  String @map("task_id")
+  fireKey String @map("fire_key")
+  firedAt String @map("fired_at")
+
+  @@unique([taskId, fireKey])
+  @@index([firedAt])
+  @@map("reminder_fires")
+}
+
+model PushSubscription {
+  id         String @id @default(cuid())
+  endpoint   String @unique
+  p256dh     String
+  auth       String
+  label      String @default("")
+  timeZone   String @default("Asia/Shanghai") @map("time_zone")
+  createdAt  String @default("") @map("created_at")
+  lastUsedAt String @default("") @map("last_used_at")
+
+  @@map("push_subscriptions")
 }
 
 model Tag {

@@ -737,5 +737,43 @@
     "clear": "清除联网搜索密钥",
     "saved": "联网搜索密钥已保存",
     "cleared": "联网搜索密钥已清除"
+  },
+  "reminders": {
+    "title": "提醒",
+    "description": "任务可以按安排时间提醒。这里设置默认提前量、全天任务的提醒时刻和提醒用的时区。",
+    "lead": "默认提前量",
+    "leadAtTime": "准时",
+    "leadMinutes": "提前 {{count}} 分钟",
+    "leadDays": "提前 {{count}} 天",
+    "leadCustom": "自定义…",
+    "leadHint": "任务详情里选「跟随默认」的任务按这个提前量提醒。",
+    "allDayTime": "全天任务提醒时刻",
+    "timeZone": "提醒时区",
+    "save": "保存提醒设置",
+    "saving": "正在保存…",
+    "saved": "提醒设置已保存",
+    "cancel": "放弃修改",
+    "push": {
+      "title": "本设备推送",
+      "description": "把此浏览器加入提醒推送。订阅后即使页面全部关闭，到点也会收到系统通知。",
+      "subscribe": "开启推送",
+      "stop": "停止推送",
+      "test": "发送测试",
+      "desktop": "桌面应用自带系统通知，无需浏览器推送订阅；提醒在 Dovun 运行期间送达。",
+      "hintIos": "iPhone/iPad 需先用 Safari「添加到主屏幕」，再从主屏幕打开本页开启推送。",
+      "hintUnsupported": "此浏览器不支持网页推送。",
+      "hintInsecure": "网页推送需要 HTTPS。",
+      "hintDenied": "通知权限已被拒绝；请在浏览器站点设置里允许后重试。",
+      "subscribed": "已开启推送，共 {{count}} 台设备。",
+      "unsubscribed": "已停止推送，剩余 {{count}} 台设备。",
+      "sent": "测试推送已发送（送达 {{count}} 台设备）。",
+      "noSubscriptions": "还没有已订阅的设备。",
+      "denied": {
+        "denied": "未授予通知权限。",
+        "unavailable": "服务器未配置推送密钥。",
+        "noWorker": "当前页面没有可用的 Service Worker（请使用打包后的应用或已部署的站点）。",
+        "generic": "开启推送失败，请重试。"
+      }
+    }
   }
 }

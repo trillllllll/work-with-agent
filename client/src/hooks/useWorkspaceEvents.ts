@@ -72,6 +72,20 @@ export function useWorkspaceEvents() {
           const message = event.status === 'ready' ? tRef.current('review.ready') : event.status === 'failed' ? tRef.current('review.failed') : tRef.current('review.partial');
           toast.info(message, { action: { label: tRef.current('review.view'), onClick: () => { window.location.hash = event.batchId ? `/reviews?batch=${encodeURIComponent(event.batchId)}` : '/reviews'; } } });
         }
+        if (event.kind === 'reminder' && Array.isArray(event.tasks)) {
+          for (const reminder of event.tasks) {
+            if (typeof reminder?.taskId !== 'string' || typeof reminder?.title !== 'string') continue;
+            const reminderKey = `rem:${reminder.taskId}:${reminder.scheduledAt ?? ''}`;
+            if (notified.has(reminderKey)) continue;
+            notified.add(reminderKey);
+            const time = typeof reminder.scheduledAt === 'string' && Number.isFinite(Date.parse(reminder.scheduledAt))
+              ? new Date(reminder.scheduledAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '';
+            toast.info(time ? tRef.current('app:notify.reminderToastWithTime', { title: reminder.title, time }) : tRef.current('app:notify.reminderToast', { title: reminder.title }), {
+              action: { label: tRef.current('app:notify.reminderView'), onClick: () => window.dispatchEvent(new CustomEvent('dovun-open-task', { detail: { taskId: reminder.taskId } })) },
+            });
+            void systemNotify(tRef.current('app:notify.reminderTitle'), time ? `${reminder.title} · ${time}` : reminder.title, `rem:${reminder.taskId}`);
+          }
+        }
       } catch { /* Other invalidation events carry no user notification. */ }
     };
     events.onmessage = refresh;

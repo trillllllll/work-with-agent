@@ -19,6 +19,7 @@ type Snap = {
   scheduledStart: string | null;
   scheduledEnd: string | null;
   estimatedMinutes: number | null;
+  reminderMinutesBefore: number | null;
   resultSummary: string;
   recurrenceRule: string;
   topicId: string | null;
@@ -33,6 +34,7 @@ type RawChange =
   | { field: 'dueDate' | 'scheduledStart' | 'scheduledEnd'; before: string | null; after: string | null }
   | { field: 'topicId'; before: string | null; after: string | null }
   | { field: 'estimatedMinutes'; before: number | null; after: number | null }
+  | { field: 'reminderMinutesBefore'; before: number | null; after: number | null }
   | { field: 'parentId'; before: string | null; after: string | null }
   | { field: 'tagIds'; before: string[]; after: string[] }
   | { field: 'deleted'; before: boolean; after: boolean };
@@ -63,6 +65,7 @@ export type TaskActivityEvent = {
     | { field: 'dueDate' | 'scheduledStart' | 'scheduledEnd'; before: string | null; after: string | null }
     | { field: 'topicId'; before: { id: string | null; name: string }; after: { id: string | null; name: string } }
     | { field: 'estimatedMinutes'; before: number | null; after: number | null }
+    | { field: 'reminderMinutesBefore'; before: number | null; after: number | null }
   | { field: 'parentId'; before: { id: string | null; title: string }; after: { id: string | null; title: string } }
     | { field: 'tagIds'; before: string[]; after: string[] }
     | { field: 'deleted'; before: boolean; after: boolean }
@@ -84,6 +87,7 @@ function snap(value: unknown): Snap | null {
     scheduledStart: typeof raw.scheduledStart === 'string' ? raw.scheduledStart : null,
     scheduledEnd: typeof raw.scheduledEnd === 'string' ? raw.scheduledEnd : null,
     estimatedMinutes: typeof raw.estimatedMinutes === 'number' ? raw.estimatedMinutes : null,
+    reminderMinutesBefore: typeof raw.reminderMinutesBefore === 'number' ? raw.reminderMinutesBefore : null,
     resultSummary: typeof raw.resultSummary === 'string' ? raw.resultSummary : '',
     recurrenceRule: typeof raw.recurrenceRule === 'string' ? raw.recurrenceRule : '',
     topicId: typeof raw.topicId === 'string' ? raw.topicId : null,
@@ -185,6 +189,7 @@ function diff(before: Snap | null, after: Snap | null, operation: string): { act
   if (before.dueDate !== after.dueDate) changes.push({ field: 'dueDate', before: before.dueDate, after: after.dueDate });
   for (const field of ['scheduledStart', 'scheduledEnd'] as const) if (before[field] !== after[field]) changes.push({ field, before: before[field], after: after[field] });
   if (before.estimatedMinutes !== after.estimatedMinutes) changes.push({ field: 'estimatedMinutes', before: before.estimatedMinutes, after: after.estimatedMinutes });
+  if (before.reminderMinutesBefore !== after.reminderMinutesBefore) changes.push({ field: 'reminderMinutesBefore', before: before.reminderMinutesBefore, after: after.reminderMinutesBefore });
   if (before.topicId !== after.topicId) changes.push({ field: 'topicId', before: before.topicId, after: after.topicId });
   if (before.parentId !== after.parentId) changes.push({ field: 'parentId', before: before.parentId, after: after.parentId });
   if (!sameTags(before.tagIds, after.tagIds)) changes.push({ field: 'tagIds', before: before.tagIds, after: after.tagIds });
@@ -318,7 +323,7 @@ function presentEvent(event: RawEvent, present: (change: RawChange) => TaskActiv
   };
 }
 
-const activityFields = ['title', 'description', 'resultSummary', 'recurrenceRule', 'status', 'priority', 'dueDate', 'scheduledStart', 'scheduledEnd', 'estimatedMinutes', 'topicId', 'parentId', 'tagIds', 'deleted'] as const;
+const activityFields = ['title', 'description', 'resultSummary', 'recurrenceRule', 'status', 'priority', 'dueDate', 'scheduledStart', 'scheduledEnd', 'estimatedMinutes', 'reminderMinutesBefore', 'topicId', 'parentId', 'tagIds', 'deleted'] as const;
 
 export async function queryTaskActivity(actor: Actor, query: {
   taskId: string;

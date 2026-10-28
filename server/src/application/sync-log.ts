@@ -213,6 +213,7 @@ export async function writeLive(tx: Tx, entityType: SyncEntityType, entityId: st
     scheduledEnd: row.scheduledEnd == null ? null : String(row.scheduledEnd),
     resultSummary: String(row.resultSummary ?? ''),
     recurrenceRule: String(row.recurrenceRule ?? ''),
+    reminderMinutesBefore: typeof row.reminderMinutesBefore === 'number' ? row.reminderMinutesBefore : null,
     topicId: row.topicId == null ? null : String(row.topicId),
     parentId: row.parentId == null ? null : String(row.parentId),
     deletedAt: row.deletedAt == null ? null : String(row.deletedAt),
@@ -346,7 +347,7 @@ export async function pushSyncOps(deviceId: string, body: z.infer<typeof pushBod
 /** Only known column additions may be recovered through a fresh baseline. */
 function isKnownLegacyLogRow(entity: SyncEntityType, row: SyncRow | null) {
   if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
-  const defaults: Record<string, unknown> = entity === 'task' ? { recurrenceRule: '' } : entity === 'topic' ? { goalDueDate: null } : {};
+  const defaults: Record<string, unknown> = entity === 'task' ? { recurrenceRule: '', reminderMinutesBefore: null } : entity === 'topic' ? { goalDueDate: null } : {};
   const missing = syncFields[entity].filter(field => !Object.prototype.hasOwnProperty.call(row, field));
   return missing.length > 0 && missing.every(field => Object.prototype.hasOwnProperty.call(defaults, field)) && isCompleteSyncRow(entity, { ...defaults, ...row });
 }

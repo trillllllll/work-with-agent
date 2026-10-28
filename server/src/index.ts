@@ -7,6 +7,7 @@ import { DESKTOP_PORT, isDesktopPackage, isServerMode, publicWorkspaceUrl, deskt
 import { createOwnerBootstrapToken, resolveOwnerKeyHash } from './application/security.js';
 import { reconcileLocalRuns } from './application/runs.js';
 import { startReviewScheduler } from './application/reviews.js';
+import { startReminderScheduler } from './application/reminders.js';
 import { sharedAutoMemoryService, startAutoMemoryScheduler } from './application/auto-memory.js';
 import { recoverInterruptedUploads } from './application/library/uploads.js';
 import { startLibraryWorker } from './application/library/worker.js';
@@ -70,16 +71,17 @@ async function start() {
   timer.unref();
   const stopOrchestrations = replica ? () => {} : startOrchestrationScheduler();
   const stopReviews = replica ? () => {} : startReviewScheduler(reviewService);
+  const stopReminders = replica ? () => {} : startReminderScheduler();
   const stopAutoMemory = replica ? () => {} : startAutoMemoryScheduler(autoMemory);
   if (!replica) void coordinatorWork(() => recoverInterruptedUploads());
   const stopLibrary = replica ? () => {} : startLibraryWorker();
-  const bound = () => { replica = true; stopOrchestrations(); stopReviews(); stopAutoMemory(); stopLibrary(); agent.stopScheduler(); };
+  const bound = () => { replica = true; stopOrchestrations(); stopReviews(); stopReminders(); stopAutoMemory(); stopLibrary(); agent.stopScheduler(); };
   workspaceEvents.on('sync-bound', bound);
   const { startSnapshotScheduler } = await import('./application/snapshots.js');
   const stopSnapshots = startSnapshotScheduler();
   const { startReplicaSync } = await import('./application/sync-replica.js');
   const stopSync = startReplicaSync();
-  server.on('close', () => { workspaceEvents.off('sync-bound', bound); clearInterval(timer); stopOrchestrations(); stopReviews(); stopAutoMemory(); stopLibrary(); stopSnapshots(); stopSync(); agent.stopScheduler(); });
+  server.on('close', () => { workspaceEvents.off('sync-bound', bound); clearInterval(timer); stopOrchestrations(); stopReviews(); stopReminders(); stopAutoMemory(); stopLibrary(); stopSnapshots(); stopSync(); agent.stopScheduler(); });
 }
 
 start().catch((error) => {

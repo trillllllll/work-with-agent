@@ -270,5 +270,11 @@
     "blocked": "Local drafts could not be restored",
     "retained": "Your original data is preserved. Close other workspace tabs and check browser storage before retrying.",
     "retry": "Reload"
+  },
+  "notify": {
+    "reminderTitle": "Task reminder",
+    "reminderToast": "Time to act: {{title}}",
+    "reminderToastWithTime": "{{title}} starts at {{time}}",
+    "reminderView": "View"
   }
 }

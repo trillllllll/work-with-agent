@@ -1,6 +1,6 @@
 /** Field-level three-way merge for hub sync. Ancestor is the op's before row. */
 export const syncFields = {
-  task: ['title', 'description', 'status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'recurrenceRule', 'topicId', 'parentId', 'deletedAt', 'deleteBatchId', 'sortOrder', 'tagIds', 'createdAt', 'completedAt', 'completedAtEstimated'],
+  task: ['title', 'description', 'status', 'priority', 'dueDate', 'estimatedMinutes', 'scheduledStart', 'scheduledEnd', 'resultSummary', 'recurrenceRule', 'reminderMinutesBefore', 'topicId', 'parentId', 'deletedAt', 'deleteBatchId', 'sortOrder', 'tagIds', 'createdAt', 'completedAt', 'completedAtEstimated'],
   topic: ['name', 'description', 'color', 'isExploration', 'goal', 'goalDueDate', 'draftSummary', 'finalSummary', 'summaryStatus', 'summaryUpdatedAt', 'archivedAt'],
   tag: ['name', 'color'],
 } as const;
@@ -23,6 +23,7 @@ export function isCompleteSyncRow(entity: SyncEntityType, value: unknown): value
     if (field === 'isExploration' || field === 'completedAtEstimated') return typeof item === 'boolean';
     if (field === 'sortOrder') return typeof item === 'number' && Number.isFinite(item);
     if (field === 'estimatedMinutes') return item === null || (typeof item === 'number' && Number.isSafeInteger(item) && item >= 0);
+    if (field === 'reminderMinutesBefore') return item === null || (typeof item === 'number' && Number.isSafeInteger(item) && item >= -1 && item <= 43200);
     if (item === null) return nullable.has(field);
     return typeof item === 'string' && item.length <= 2_000_000;
   });

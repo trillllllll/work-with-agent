@@ -172,7 +172,7 @@ export class TaskService {
           const nextId = randomUUID();
           await group.capture('tasks', nextId);
           const timestamp = now();
-          await tx.task.create({ data: { id: nextId, topicId, parentId, title: completed.title, description: completed.description, status: 'todo', priority: completed.priority, dueDate: schedule.dueDate, estimatedMinutes: completed.estimatedMinutes, scheduledStart: schedule.scheduledStart, scheduledEnd: schedule.scheduledEnd, recurrenceRule: recurrenceRuleText(rule), sortOrder: await nextOrder(tx, topicId, parentId), createdAt: timestamp, updatedAt: timestamp } });
+          await tx.task.create({ data: { id: nextId, topicId, parentId, title: completed.title, description: completed.description, status: 'todo', priority: completed.priority, dueDate: schedule.dueDate, estimatedMinutes: completed.estimatedMinutes, scheduledStart: schedule.scheduledStart, scheduledEnd: schedule.scheduledEnd, recurrenceRule: recurrenceRuleText(rule), reminderMinutesBefore: completed.reminderMinutesBefore, sortOrder: await nextOrder(tx, topicId, parentId), createdAt: timestamp, updatedAt: timestamp } });
           await setTags(tx, nextId, completed.tags.map(({ tagId }) => tagId));
           if (topicId) await tx.taskTopicAssignment.create({ data: assignmentData(nextId, null, topicId, 'created', group.context) });
           // 新一次是待办，已完成的父任务要重新打开。

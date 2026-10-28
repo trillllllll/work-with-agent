@@ -12,6 +12,7 @@ import { ReplyStyleSettings } from './ReplyStyleSettings.js';
 import { ImageSearchSettings } from './ImageSearchSettings.js';
 import { WebSearchSettings } from './WebSearchSettings.js';
 import { HtmlBlockSettings } from './HtmlBlockSettings.js';
+import { RemindersSettings } from './RemindersSettings.js';
 import { WorktreesEntry } from './WorktreesEntry.js';
 import { ComputersSettings } from './runner/ComputersSettings.js';
 import { NotificationsSection } from './runner/NotificationsSection.js';
@@ -32,6 +33,7 @@ export const SETTINGS_SECTION_COMPONENTS: Record<SettingsSectionId, ComponentTyp
   'image-search': ImageSearchSettings,
   'web-search': WebSearchSettings,
   'html-blocks': HtmlBlockSettings,
+  reminders: RemindersSettings,
   computers: ComputersSettings,
   worktrees: ({ onNavigate }) => <WorktreesEntry onOpenWorktrees={() => onNavigate('worktrees')} />,
   notifications: NotificationsSection,

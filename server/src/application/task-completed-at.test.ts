@@ -63,16 +63,23 @@ describe('task completedAt', () => {
   afterAll(clean);
 
   it('drops completion keys only when the expected snapshot never had them', () => {
-    const current = { id: 't', status: 'done', updatedAt: 'u', completedAt: 'c', completedAtEstimated: false, recurrenceRule: '', tagIds: [] as string[] };
+    const current = { id: 't', status: 'done', updatedAt: 'u', completedAt: 'c', completedAtEstimated: false, recurrenceRule: '', reminderMinutesBefore: null, tagIds: [] as string[] };
     const expected = { id: 't', status: 'done', updatedAt: 'u', tagIds: [] as string[] };
     expect(withoutLegacyTaskKeys(current)).not.toHaveProperty('completedAt');
     expect(withoutLegacyTaskKeys(current)).not.toHaveProperty('recurrenceRule');
+    expect(withoutLegacyTaskKeys(current)).not.toHaveProperty('reminderMinutesBefore');
     expect(JSON.stringify(legacyTaskSnapshot(expected, current))).toBe(JSON.stringify(expected));
     // A snapshot from the completedAt era but before recurrenceRule keeps the completion pair and drops only the newer column.
     const midEra = legacyTaskSnapshot({ ...expected, completedAt: null }, current)!;
     expect(midEra).toMatchObject({ completedAt: 'c', completedAtEstimated: false });
     expect(midEra).not.toHaveProperty('recurrenceRule');
-    expect(legacyTaskSnapshot({ ...expected, completedAt: null, recurrenceRule: '' }, current)).toBe(current);
+    // A snapshot that knows every existing column matches the live row as-is.
+    expect(legacyTaskSnapshot({ ...expected, completedAt: null, recurrenceRule: '', reminderMinutesBefore: null }, current)).toBe(current);
+    // A snapshot from before the reminder column drops only that column and keeps the completion pair.
+    const reminderEra = legacyTaskSnapshot({ ...expected, completedAt: null, recurrenceRule: '' }, current)!;
+    expect(reminderEra).toMatchObject({ completedAt: 'c', completedAtEstimated: false, recurrenceRule: '' });
+    expect(reminderEra).not.toHaveProperty('reminderMinutesBefore');
+    expect(legacyTaskSnapshot({ ...expected, completedAt: null, recurrenceRule: '' }, { ...current, reminderMinutesBefore: 10 })).not.toHaveProperty('reminderMinutesBefore');
   });
 
   it('writes completedAt when a task becomes done and keeps it across title, tag, and order edits', async () => {

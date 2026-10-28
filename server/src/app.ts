@@ -2,6 +2,8 @@ import { imageSearchSettings, saveImageSearchKey } from './application/image-sea
 import { saveDeepseekKey, webSearchSettings } from './application/deepseek-settings.js';
 import { htmlBlockSettings, saveHtmlBlockSettings } from './application/html-block-settings.js';
 import { replyStyleSettings, saveReplyStyle } from './application/reply-style-settings.js';
+import { reminderSettings, saveReminderSettings } from './application/reminder-settings.js';
+import { pushConfig, sendTestPush, subscribePush, unsubscribePush } from './application/push-subscriptions.js';
 import { resolveAssistantSource } from './agent/assistant-sources.js';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
@@ -240,8 +242,7 @@ app.delete('/api/settings/cli/:provider', async (req, res, next) => {
     send(res, await clearManual(provider));
   } catch (error) { next(error); }
 });
-const settingsBody = z.object({ baseUrl: z.string().trim().min(1), model: z.string().trim().min(1), apiKey: z.string().optional() });
-app.patch('/api/settings', schema(settingsBody), async (req, res, next) => {
+const settingsBody = z.object({ baseUrl: z.string().trim().min(1), model: z.string().trim().min(1), apiKey: z.string().optional() });app.patch('/api/settings', schema(settingsBody), async (req, res, next) => {
   try { send(res, { ...await settings.save(req.body, (config) => agent.testConnection(config)), cli: await cliSettings() }); } catch (error) { next(error); }
 });
 app.get('/api/settings/image-search', async (_req, res, next) => { try { send(res, await imageSearchSettings()); } catch (error) { next(error); } });
@@ -253,6 +254,8 @@ app.delete('/api/settings/web-search', async (_req, res, next) => { try { send(r
 app.get('/api/settings/html-blocks', async (_req, res, next) => { try { send(res, await htmlBlockSettings()); } catch (error) { next(error); } });
 app.get('/api/settings/reply-style', async (_req, res, next) => { try { send(res, await replyStyleSettings()); } catch (error) { next(error); } });
 app.patch('/api/settings/reply-style', schema(z.object({ replyStyle: z.string().trim().max(1000) }).strict()), async (req, res, next) => { try { send(res, await saveReplyStyle(req.body.replyStyle)); } catch (error) { next(error); } });
+app.get('/api/settings/reminders', async (_req, res, next) => { try { send(res, await reminderSettings()); } catch (error) { next(error); } });
+app.patch('/api/settings/reminders', schema(z.object({ leadMinutes: z.number().int().min(0).max(43200).optional(), allDayTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(), timeZone: z.string().trim().min(1).max(100).optional() }).strict()), async (req, res, next) => { try { send(res, await saveReminderSettings(req.body)); } catch (error) { next(error); } });
 app.patch('/api/settings/html-blocks', schema(z.object({ enabled: z.boolean().optional(), cdn: z.array(z.string().max(300)).max(50).optional() }).strict()), async (req, res, next) => { try { send(res, await saveHtmlBlockSettings(req.body)); } catch (error) { next(error); } });
 app.delete('/api/settings/api-key', async (_req, res, next) => { try { send(res, { ...await settings.clearApiKey(), cli: await cliSettings() }); } catch (error) { next(error); } });
 
@@ -267,6 +270,23 @@ app.put('/api/settings/mobile-navigation', async (req, res, next) => {
     if (!acceptable) return res.status(400).json({ data: null, error: '手机底栏配置无效：请选择最多 4 个不重复的有效入口。' });
     send(res, await writeMobileNavigation((body as { visibleViews: MobileNavigationView[] }).visibleViews));
   } catch (error) { next(error); }
+});
+
+// Web Push 订阅：跟随后会 cookie 与 CSRF；一台浏览器一条记录，按 endpoint 覆盖更新。
+app.get('/api/push/config', async (_req, res, next) => { try { send(res, await pushConfig()); } catch (error) { next(error); } });
+app.post('/api/push/subscribe', schema(z.object({
+  endpoint: z.string().trim().min(1).max(2000),
+  keys: z.object({ p256dh: z.string().min(1).max(500), auth: z.string().min(1).max(500) }).strict(),
+  label: z.string().trim().max(200).optional(),
+  timeZone: z.string().trim().max(100).optional(),
+}).strict()), async (req, res, next) => {
+  try { send(res, await subscribePush(req.body, req.body.label ?? '', req.body.timeZone ?? '')); } catch (error) { next(error); }
+});
+app.post('/api/push/unsubscribe', schema(z.object({ endpoint: z.string().trim().min(1).max(2000) }).strict()), async (req, res, next) => {
+  try { send(res, await unsubscribePush(req.body.endpoint)); } catch (error) { next(error); }
+});
+app.post('/api/push/test', async (_req, res, next) => {
+  try { send(res, await sendTestPush('测试推送', 'Dovun 推送通道已就绪。')); } catch (error) { next(error); }
 });
 
 const chatBody = z.object({

@@ -268,5 +268,11 @@
     "blocked": "暂时无法恢复本地草稿",
     "retained": "原来的数据已保留。请关闭其他工作台标签页，检查浏览器存储空间后重试。",
     "retry": "重新载入"
+  },
+  "notify": {
+    "reminderTitle": "任务提醒",
+    "reminderToast": "到了提醒时间：{{title}}",
+    "reminderToastWithTime": "{{title}} 将于 {{time}} 开始",
+    "reminderView": "查看"
   }
 }

@@ -23,6 +23,7 @@ const taskBase = {
   scheduledStart: localDateTime.nullable().optional(),
   scheduledEnd: localDateTime.nullable().optional(),
   resultSummary: z.string().optional(),
+  reminderMinutesBefore: z.number().int().min(-1, '提醒提前量无效').max(43200, '提醒提前量最多 30 天').nullable().optional(),
   tagIds: z.array(id).refine((ids) => new Set(ids).size === ids.length, '标签不能重复').optional(),
 };
 const taskCreateInput = z.object(taskBase).strict();
@@ -55,6 +56,7 @@ const taskProperties = {
   scheduledEnd: { anyOf: [{ type: 'null' }, { type: 'string', format: 'wwa-local-date-time' }], description: scheduledEndDescription },
   resultSummary: { type: 'string' },
   recurrenceRule: { type: 'string', description: recurrenceDescription },
+  reminderMinutesBefore: { anyOf: [{ type: 'null' }, { type: 'integer', minimum: -1, maximum: 43200 }], description: '提醒提前分钟：null 跟随全局默认，-1 不提醒，0 准时，正数提前多少分钟' },
   tagIds: { type: 'array', items: stringSchema, uniqueItems: true, description: tagIdsDescription },
 };
 

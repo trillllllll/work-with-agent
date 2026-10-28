@@ -21,7 +21,7 @@ function option<V extends string>(value: V, key: string): { value: V; label: str
 export type Topic = { id: string; name: string; description: string; color: TagColor; isExploration: boolean; goal?: string; goalDueDate?: string | null; draftSummary?: string; finalSummary?: string; summaryStatus?: string; summaryUpdatedAt?: string | null; archivedAt?: string | null; revision?: number };
 export type Status = 'todo' | 'doing' | 'blocked' | 'done';
 export type TaskPriority = 'none' | 'low' | 'medium' | 'high';
-export type Task = { id: string; topicId: string | null; title: string; description: string; status: Status; allowedTransitions: Status[]; priority: TaskPriority; dueDate: string | null; estimatedMinutes: number | null; scheduledStart: string | null; scheduledEnd: string | null; resultSummary: string; recurrenceRule?: string; createdAt?: string; updatedAt?: string; completedAt?: string | null; completedAtEstimated?: boolean; deletedAt?: string | null; parentId?: string | null; sortOrder?: number; revision?: number; deleteBatchId?: string | null; tags?: Tag[]; tagIds?: string[]; children?: Task[]; topic?: { id: string; name: string; archivedAt?: string | null } | null };
+export type Task = { id: string; topicId: string | null; title: string; description: string; status: Status; allowedTransitions: Status[]; priority: TaskPriority; dueDate: string | null; estimatedMinutes: number | null; scheduledStart: string | null; scheduledEnd: string | null; resultSummary: string; recurrenceRule?: string; reminderMinutesBefore?: number | null; createdAt?: string; updatedAt?: string; completedAt?: string | null; completedAtEstimated?: boolean; deletedAt?: string | null; parentId?: string | null; sortOrder?: number; revision?: number; deleteBatchId?: string | null; tags?: Tag[]; tagIds?: string[]; children?: Task[]; topic?: { id: string; name: string; archivedAt?: string | null } | null };
 export type TagColor = 'violet' | 'blue' | 'teal' | 'green' | 'amber' | 'rose' | 'slate';
 export const tagColors: { id: TagColor; label: string }[] = [
   labeled('violet', 'app:color.violet'), labeled('blue', 'app:color.blue'), labeled('teal', 'app:color.teal'), labeled('green', 'app:color.green'),
@@ -37,6 +37,7 @@ export type TaskActivityChange =
   | { field: 'dueDate' | 'scheduledStart' | 'scheduledEnd'; before: string | null; after: string | null }
   | { field: 'topicId'; before: { id: string | null; name: string }; after: { id: string | null; name: string } }
   | { field: 'estimatedMinutes'; before: number | null; after: number | null }
+  | { field: 'reminderMinutesBefore'; before: number | null; after: number | null }
   | { field: 'parentId'; before: { id: string | null; title: string }; after: { id: string | null; title: string } }
   | { field: 'tagIds'; before: string[]; after: string[] }
   | { field: 'deleted'; before: boolean; after: boolean };

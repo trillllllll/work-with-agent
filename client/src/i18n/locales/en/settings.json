@@ -740,5 +740,43 @@
     "clear": "Clear web search key",
     "saved": "Web search key saved",
     "cleared": "Web search key cleared"
+  },
+  "reminders": {
+    "title": "Reminders",
+    "description": "Tasks can remind at their scheduled time. Set the default lead, the all-day reminder time and the reminder time zone.",
+    "lead": "Default lead time",
+    "leadAtTime": "On time",
+    "leadMinutes": "{{count}} min early",
+    "leadDays": "{{count}} day(s) early",
+    "leadCustom": "Custom…",
+    "leadHint": "Tasks set to follow the default use this lead time.",
+    "allDayTime": "All-day reminder time",
+    "timeZone": "Reminder time zone",
+    "save": "Save reminder settings",
+    "saving": "Saving…",
+    "saved": "Reminder settings saved",
+    "cancel": "Discard changes",
+    "push": {
+      "title": "Push on this device",
+      "description": "Add this browser to reminder delivery. After subscribing, notifications arrive even with every tab closed.",
+      "subscribe": "Enable push",
+      "stop": "Stop push",
+      "test": "Send test",
+      "desktop": "The desktop app shows its own system notifications while running; no browser subscription needed.",
+      "hintIos": "iPhone/iPad: add this page to the Home Screen with Safari first, then open it from there to enable push.",
+      "hintUnsupported": "This browser does not support web push.",
+      "hintInsecure": "Web push requires HTTPS.",
+      "hintDenied": "Notifications are blocked; allow them in the browser site settings and retry.",
+      "subscribed": "Push enabled; {{count}} device(s) subscribed.",
+      "unsubscribed": "Push stopped; {{count}} device(s) remain.",
+      "sent": "Test push sent (delivered to {{count}} device(s)).",
+      "noSubscriptions": "No subscribed devices yet.",
+      "denied": {
+        "denied": "Notification permission was not granted.",
+        "unavailable": "The server has no push key configured.",
+        "noWorker": "No service worker on this page (use the packaged app or the deployed site).",
+        "generic": "Could not enable push; please retry."
+      }
+    }
   }
 }

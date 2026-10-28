@@ -36,6 +36,8 @@ export const taskFields = z.object({
   scheduledEnd: localDateTime.nullable().optional(),
   resultSummary: z.string().optional(),
   recurrenceRule: recurrenceRule.optional(),
+  // null 跟随全局默认；-1 不提醒；0 准时；正数提前分钟数（最多 30 天）。
+  reminderMinutesBefore: z.number().int().min(-1, '提醒提前量无效').max(43200, '提醒提前量最多 30 天').nullable().optional(),
   tagIds: z.array(id).refine((ids) => new Set(ids).size === ids.length, '标签不能重复').optional(),
 });
 export const taskCreateSchema = taskFields;

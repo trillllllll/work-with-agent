@@ -7,11 +7,12 @@ import { useQuery } from '@tanstack/react-query';
 import { BodyText } from '@/components/shared/BodyText.js';
 import { intlLocale, t as translate } from '../../i18n/index.js';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, CalendarDays,  ChevronRight, Clock, Flag, FolderKanban, Hash, Repeat, Timer, X } from 'lucide-react';
+import { AlertTriangle, Bell, CalendarDays,  ChevronRight, Clock, Flag, FolderKanban, Hash, Repeat, Timer, X } from 'lucide-react';
 import { api, ApiError, priorities, type Status, type Tag, type Task, type TaskPriority, type Topic } from '@/lib/api.js';
 import { isCompositionKey, sameField, taskDraft, queryKeys, type TaskDraft } from '@/lib/todo.js';
 import { scheduleLabel } from '@/lib/schedule.js';
 import { recurrenceLabel, recurrencePresets } from '@/lib/recurrence.js';
+import { reminderLabel, reminderPresets } from '@/lib/reminder.js';
 import { ScheduleFields, scheduleError, type ScheduleValue } from './ScheduleFields.js';
 import { keepSchedulePickerOpen } from './SchedulePickers.js';
 import { useTask, useTodoActions } from '@/hooks/useTodo.js';
@@ -78,6 +79,7 @@ type EditContext = {
   setSchedule: (schedule: ScheduleValue, task: Task) => Promise<boolean>;
   setEstimate: (estimatedMinutes: number | null, task: Task) => Promise<boolean>;
   setRecurrence: (recurrenceRule: string, task: Task) => Promise<boolean>;
+  setReminder: (reminderMinutesBefore: number | null, task: Task) => Promise<boolean>;
   setTopic: (topicId: string | null) => void;
   toggleTag: (id: string, checked: boolean) => void;
   resetDraft: () => void;
@@ -364,6 +366,7 @@ export const TaskExpand = forwardRef<TaskDetailHandle, Props>(function TaskExpan
     setSchedule: (schedule, task) => applyImmediate(schedule, task),
     setEstimate: (estimatedMinutes, task) => applyImmediate({ estimatedMinutes }, task),
     setRecurrence: (recurrenceRule, task) => applyImmediate({ recurrenceRule }, task),
+    setReminder: (reminderMinutesBefore, task) => applyImmediate({ reminderMinutesBefore }, task),
     setTopic: (topicId) => { void applyImmediate({ topicId }); },
     toggleTag: (tagId, checked) => {
       const current = editingRef.current?.draft.tagIds ?? [];
@@ -508,6 +511,7 @@ export function TaskExpandBody({ fill = false, section = 'details' }: { fill?: b
       <TopicRow />
       <ScheduleControl />
       <RecurrenceControl />
+      <ReminderControl />
       <EstimateControl />
       <FlagRow />
       <TagPicker />
@@ -832,6 +836,27 @@ function RecurrenceControl() {
     <PopoverContent data-task-editor className="w-60 space-y-1">
       <p className="px-1 pb-1 text-xs text-muted-foreground">{t('taskExpand.recurrenceHint')}</p>
       {recurrencePresets.map((preset) => <Button key={preset.key} type="button" variant="ghost" size="sm" className="w-full justify-start" disabled={saving} aria-pressed={current === preset.rule} onClick={() => choose(preset.rule)}>{recurrenceLabel(preset.rule)}</Button>)}
+    </PopoverContent>
+  </Popover>;
+}
+
+function ReminderControl() {
+  const { t } = useTranslation('tasks');
+  const edit = useEdit();
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const lock = useRef(false);
+  const current = edit.draft.reminderMinutesBefore ?? null;
+  const choose = (value: number | null) => {
+    if (lock.current) return;
+    lock.current = true; setSaving(true);
+    void edit.setReminder(value, edit.task).then((saved) => { if (saved) setOpen(false); }).finally(() => { lock.current = false; setSaving(false); });
+  };
+  return <Popover open={open} onOpenChange={(next) => { if (lock.current) return; setOpen(next); }}>
+    <PopoverTrigger asChild><InfoRow icon={Bell} label={t('taskExpand.reminder')} value={reminderLabel(current)} hasValue={current !== null && current !== -1} disabled={edit.readonly} aria-label={t('taskExpand.reminder')} /></PopoverTrigger>
+    <PopoverContent data-task-editor className="w-60 space-y-1">
+      <p className="px-1 pb-1 text-xs text-muted-foreground">{t('taskExpand.reminderHint')}</p>
+      {reminderPresets.map((preset) => <Button key={preset.key} type="button" variant="ghost" size="sm" className="w-full justify-start" disabled={saving} aria-pressed={current === preset.value} onClick={() => choose(preset.value)}>{reminderLabel(preset.value)}</Button>)}
     </PopoverContent>
   </Popover>;
 }
