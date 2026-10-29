@@ -33,8 +33,27 @@
 .dovun-workspace .assistant-compact-nav .sidebar-link { justify-content: center; padding: 0; position: relative; }
 .dovun-workspace .assistant-compact-nav .sidebar-footer { text-align: center; }
 .dovun-rail-badge { position: absolute; top: 8px; right: 8px; width: 5px; height: 5px; border-radius: 50%; background: var(--workbench-coral); }
-.dovun-appbar { color: var(--muted-foreground); font-size: 11px; gap: 12px; }
-.dovun-appbar-label { letter-spacing: .04em; }
+.dovun-workspace .sidebar-link[data-active='true']:not([aria-current='page']) {
+  background: var(--workbench-selected);
+  color: var(--primary-foreground);
+  box-shadow: inset 3px 0 0 var(--ring), var(--surface-button-shadow);
+}
+.mobile-global-assistant { display: none; }
+@media (max-width: 1023px) {
+  .dovun-workspace .mobile-global-assistant {
+    display: inline-flex;
+    position: absolute;
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    left: 16px;
+    z-index: 12;
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--glass-border-soft);
+    border-radius: 50%;
+    background: var(--glass-bg-strong);
+    box-shadow: var(--surface-overlay-shadow);
+  }
+}
 .dovun-main {
   margin: 0 10px 12px 0;
   background: var(--workbench-sheet);

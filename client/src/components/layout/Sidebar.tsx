@@ -14,23 +14,24 @@ import { SidebarScroll } from '@/components/layout/SidebarScroll.js';
 
 type SidebarProps = {
   compact?: boolean; route: View; page: View; topics: Topic[]; topicsLoading: boolean;
-  selectedTopicId: string; onNavigate: (view: View) => void; onSelectTopic: (id: string) => void;
-  onEditTopic: (topic: Topic) => void; onNewTopic: () => void;
+  selectedTopicId: string; onNavigate: (view: View) => void; onOpenAssistant: () => void; assistantOpen: boolean;
+  onSelectTopic: (id: string) => void; onEditTopic: (topic: Topic) => void; onNewTopic: () => void;
 };
 
-export function Sidebar({ compact, route, page, topics, topicsLoading, selectedTopicId, onNavigate, onSelectTopic, onEditTopic, onNewTopic }: SidebarProps) {
+export function Sidebar({ compact, route, page, topics, topicsLoading, selectedTopicId, onNavigate, onOpenAssistant, assistantOpen, onSelectTopic, onEditTopic, onNewTopic }: SidebarProps) {
   const { t } = useTranslation(['settings', 'app']);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const pending = usePendingProposalCount().data?.pending;
   const link = (view: View) => {
     const { label, icon: Icon } = navigationItem(view);
-    return <Button variant="row" size="bare" key={view} type="button" title={label} aria-label={label} aria-current={route === view ? 'page' : undefined} data-active={route === view || undefined} className="sidebar-link" onClick={() => onNavigate(view)}>
+    const isChat = view === 'chat';
+    return <Button variant="row" size="bare" key={view} type="button" title={label} aria-label={isChat && route !== 'chat' ? t('app:shell.openAssistant') : label} aria-current={route === view ? 'page' : undefined} aria-expanded={isChat ? assistantOpen : undefined} aria-controls={isChat && route !== 'chat' ? 'work-rail-panel-assistant' : undefined} data-active={route === view || (isChat && assistantOpen && route !== 'chat') || undefined} className="sidebar-link" onClick={() => isChat ? onOpenAssistant() : onNavigate(view)}>
       <Icon aria-hidden className="size-4" strokeWidth={1.75} />
       {!compact && <><span className="min-w-0 flex-1 truncate">{label}</span>{view === 'proposals' && <NavCount count={pending} />}</>}
       {compact && view === 'proposals' && Boolean(pending) && <span className="dovun-rail-badge" />}
     </Button>;
   };
-  return <aside className={`app-sidebar${compact ? ' assistant-compact-nav' : ''}`} style={{ gridColumn: 1, gridRow: '1 / 3' }}>
+  return <aside className={`app-sidebar${compact ? ' assistant-compact-nav' : ''}`} style={{ gridColumn: 1, gridRow: 1 }}>
     <div className="sidebar-header"><BrandMark compact={compact} />{!compact && <ThemeToggle />}</div>
     <SidebarScroll>
       <nav aria-label={t('sidebar.mainNav')} className="sidebar-nav">
