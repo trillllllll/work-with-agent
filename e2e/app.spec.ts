@@ -54,7 +54,7 @@ test.describe('Agent 工作室 MVP', () => {
     await page.goto('/#/chat');
     await send(page, '列出任务');
     await expect(page.getByText('我先读取任务。', { exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: '查询了 1 项', exact: true })).toBeVisible();
+    await expect(page.getByTestId('assistant-process').locator(':scope > summary')).toBeVisible();
     await expect(page.getByText('当前任务已读取完成。', { exact: true })).toBeVisible();
 
     expect(await taskCount(request, topic.id)).toBe(0);

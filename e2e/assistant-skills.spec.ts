@@ -60,6 +60,7 @@ test('skill loading: catalog, 使用技能 row, and old conversations keep the v
   await expect(usage).toContainText('使用技能');
   await expect(usage).toContainText('验收周报 v1');
   await expect(panel(page).getByText(/^查询了 \d+ 项$/)).toHaveCount(0);
+  await panel(page).getByTestId('assistant-process').last().locator(':scope > summary').click();
   await usage.getByRole('button').click();
   await expect(usage.getByTestId('skill-usage-body')).toContainText('第一版正文');
 
@@ -83,6 +84,7 @@ test('skill loading: catalog, 使用技能 row, and old conversations keep the v
   await openAssistant(page);
   const old = panel(page).getByTestId('skill-usage').last();
   await expect(old).toContainText('验收周报 v1');
+  await panel(page).getByTestId('assistant-process').last().locator(':scope > summary').click();
   await old.getByRole('button').click();
   await expect(old.getByTestId('skill-usage-body')).toContainText('第一版正文');
   await expect(old.getByTestId('skill-usage-body')).not.toContainText('第二版正文');

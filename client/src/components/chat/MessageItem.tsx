@@ -1,15 +1,16 @@
-import { ReasoningDisclosure } from './ReasoningDisclosure.js';
+import { AssistantProcess } from './AssistantProcess.js';
+import { isProcessTool } from './assistant-process.js';
 import { CitationContext } from './citation-context.js';
 import type { AssistantSource } from '../../../../server/src/domain/assistant-source.js';
 import { Surface } from '@/components/ui/surface.js';
 import { MessageBlocks } from './MessageBlocks.js';
 import { ContextSummary } from './ContextSummary.js';
 import { SourceLinks, SourcePreview } from './SourceLinks.js';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCheck, LoaderCircle, CircleAlert, ChevronRight, Copy } from 'lucide-react';
+import { ChevronRight, Copy } from 'lucide-react';
 import type { Approval, ChatMessage, ToolActivity } from '@/chat.js';
-import { approvalsOnMessage, groupToolActivities, isReadOnlyTool } from '@/chat.js';
+import { approvalsOnMessage, isReadOnlyTool } from '@/chat.js';
 import { toolLabels } from '@/lib/api.js';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button.js';
@@ -40,10 +41,11 @@ function statusText(activity: ToolActivity, labels: { inProgress: string; waitin
 function ToolCallRow({ activity, approval, pending, executing, unknown, unresolved, phase, onApprove, onReject, onChanged }: { activity: ToolActivity; approval?: Approval; pending: boolean; executing: boolean; unknown: boolean; unresolved: boolean; phase: '' | 'approve' | 'reject'; onApprove: (id: string) => void; onReject: (id: string) => void; onChanged: () => void }) {
   const { t } = useTranslation('chat');
   const [open, setOpen] = useState(false);
+  const argumentsLabel = t('messageItem.arguments'), resultLabel = t('messageItem.result');
+  const payload = useMemo(() => payloadText(activity, argumentsLabel, resultLabel), [activity, argumentsLabel, resultLabel]);
   if (isAppChangeApproval(approval) && approval) return null;
   if (isTaskBatchApproval(approval) && approval) return <TaskBatchCard approval={approval} executing={executing} unknown={unknown} onApprove={onApprove} onReject={onReject} />;
   if (activity.name === 'load_skill') return <SkillUsageRow activity={activity} />;
-  const payload = payloadText(activity, t('messageItem.arguments'), t('messageItem.result'));
   const label = toolLabels[activity.name] ?? activity.name;
   const failed = activity.status === 'error';
   const state = statusText(activity, { inProgress: t('messageItem.inProgress'), waitingReview: t('messageItem.waitingReview'), executed: t('messageItem.executed') });
@@ -97,36 +99,12 @@ function SkillUsageRow({ activity }: { activity: ToolActivity }) {
   );
 }
 
-function ToolRun({ activities, approvalFor, pending, executingApprovalId, unknownApprovalIds, unresolvedApprovalIds, phase, onApprove, onReject, onChanged }: { activities: ToolActivity[]; approvalFor: (activity: ToolActivity) => Approval | undefined; pending: boolean; executingApprovalId: string; unknownApprovalIds: string[]; unresolvedApprovalIds: string[]; phase: '' | 'approve' | 'reject'; onApprove: (id: string) => void; onReject: (id: string) => void; onChanged: () => void }) {
-  const { t } = useTranslation('chat');
-  const [open, setOpen] = useState(false);
-  const running = activities.some(activity => activity.status === 'running');
-  const failed = activities.some(activity => activity.status === 'error');
-  return (
-    <Surface as="div" tone="subtle" className="assistant-tool-run rounded-lg">
-      <Button variant="row" size="bare" type="button" aria-expanded={open} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px]" onClick={() => setOpen((value) => !value)}>
-        {running ? <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" /> : failed ? <CircleAlert className="size-3.5 text-destructive" /> : <CheckCheck className="size-3.5" />}
-        <span className="min-w-0 flex-1 font-medium">{t(running ? 'messageItem.lookupRunning' : failed ? 'messageItem.lookupFailed' : 'messageItem.lookupCount', { count: activities.length })}</span>
-        <ChevronRight className={cn('size-3 shrink-0', open && 'rotate-90')} />
-      </Button>
-      {open && (
-        <div className="flex flex-col gap-1 border-t border-border/70 p-1.5">
-          {activities.map((activity) => {
-            const approval = approvalFor(activity);
-            return <ToolCallRow key={activity.toolCallId} activity={activity} approval={approval} pending={pending} executing={approval?.approvalId === executingApprovalId} unknown={Boolean(approval && unknownApprovalIds.includes(approval.approvalId))} unresolved={Boolean(approval && unresolvedApprovalIds.includes(approval.approvalId))} phase={phase} onApprove={onApprove} onReject={onReject} onChanged={onChanged} />;
-          })}
-        </div>
-      )}
-    </Surface>
-  );
-}
-
 function looksLikeJson(content: string) {
   const trimmed = content.trim();
   return (trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'));
 }
 
-export function MessageItem({ message, approvals = [], approvalPending = false, executingApprovalId = '', unknownApprovalIds = [], unresolvedApprovalIds = [], phase = '', onApprove = () => undefined, onReject = () => undefined, onChanged = () => undefined, onRepreviewed }: { message: ChatMessage; approvals?: Approval[]; approvalPending?: boolean; executingApprovalId?: string; unknownApprovalIds?: string[]; unresolvedApprovalIds?: string[]; phase?: '' | 'approve' | 'reject'; onApprove?: (id: string) => void; onReject?: (id: string) => void; onChanged?: () => void; onRepreviewed?: (body: { approvalId?: string; previewHash?: string; supersedesApprovalId?: string; approval?: { id: string; status: string; toolName: string; conversationId?: string | null; envelope?: unknown } }) => void }) {
+export function MessageItem({ message, processMessages, hideProcess = false, processActive = false, approvals = [], approvalPending = false, executingApprovalId = '', unknownApprovalIds = [], unresolvedApprovalIds = [], phase = '', onApprove = () => undefined, onReject = () => undefined, onChanged = () => undefined, onRepreviewed }: { message: ChatMessage; processMessages?: ChatMessage[]; hideProcess?: boolean; processActive?: boolean; approvals?: Approval[]; approvalPending?: boolean; executingApprovalId?: string; unknownApprovalIds?: string[]; unresolvedApprovalIds?: string[]; phase?: '' | 'approve' | 'reject'; onApprove?: (id: string) => void; onReject?: (id: string) => void; onChanged?: () => void; onRepreviewed?: (body: { approvalId?: string; previewHash?: string; supersedesApprovalId?: string; approval?: { id: string; status: string; toolName: string; conversationId?: string | null; envelope?: unknown } }) => void }) {
   const { t } = useTranslation('chat');
   const [selectedSource, setSelectedSource] = useState<AssistantSource | null>(null);
   const role = message.role;
@@ -137,8 +115,10 @@ export function MessageItem({ message, approvals = [], approvalPending = false, 
   const failed = message.status === 'failed';
   const content = message.content || (streaming && !message.reasoning?.text && !message.tools?.length ? t('messageItem.streaming') : '');
   const approvalFor = (activity: ToolActivity) => approvals.find((item) => item.approvalId === activity.approvalId || item.toolCallId === activity.toolCallId);
-  const groups = groupToolActivities(message.tools ?? []);
-  if (role === 'assistant' && !content && !failed && groups.length === 0 && !message.parts?.length && !message.blocks?.length && !message.reasoning?.text && !message.sources?.length) return null;
+  const tools = (message.tools ?? []).filter(tool => !isProcessTool(tool));
+  const process = processMessages ?? [message];
+  const hasProcess = !hideProcess && process.some(item => item.reasoning?.text || item.tools?.some(isProcessTool));
+  if (role === 'assistant' && !content && !failed && tools.length === 0 && !hasProcess && !message.parts?.length && !message.blocks?.length && !message.sources?.length) return null;
 
   return (
     <CitationContext.Provider value={{ sources: message.citationSources ?? message.sources ?? [], onSelect: setSelectedSource }}><div
@@ -154,16 +134,10 @@ export function MessageItem({ message, approvals = [], approvalPending = false, 
           {label}{failed ? t('messageItem.outputFailed') : ''}
         </span>
       )}
-      {message.reasoning && <ReasoningDisclosure reasoning={message.reasoning} streaming={streaming} />}
-      {groups.length > 0 && (
-        <div className={cn('flex flex-col gap-1.5', content && 'mt-2')}>
-          {groups.map((group) => group.kind === 'run' ? (
-            <ToolRun key={group.activities.map((item) => item.toolCallId).join('-')} activities={group.activities} approvalFor={approvalFor} pending={approvalPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} unresolvedApprovalIds={unresolvedApprovalIds} phase={phase} onApprove={onApprove} onReject={onReject} onChanged={onChanged} />
-          ) : (
-            <ToolCallRow key={group.activity.toolCallId} activity={group.activity} approval={approvalFor(group.activity)} pending={approvalPending} executing={approvalFor(group.activity)?.approvalId === executingApprovalId} unknown={Boolean(approvalFor(group.activity) && unknownApprovalIds.includes(approvalFor(group.activity)!.approvalId))} unresolved={Boolean(approvalFor(group.activity) && unresolvedApprovalIds.includes(approvalFor(group.activity)!.approvalId))} phase={phase} onApprove={onApprove} onReject={onReject} onChanged={onChanged} />
-          ))}
-        </div>
-      )}
+      {!hideProcess && <AssistantProcess messages={process} runActive={processActive} renderTool={(activity) => <ToolCallRow activity={activity} pending={false} executing={false} unknown={false} unresolved={false} phase="" onApprove={onApprove} onReject={onReject} onChanged={onChanged} />} />}
+      {tools.length > 0 && <div className="flex flex-col gap-1.5">
+        {tools.map(activity => <ToolCallRow key={activity.toolCallId} activity={activity} approval={approvalFor(activity)} pending={approvalPending} executing={approvalFor(activity)?.approvalId === executingApprovalId} unknown={Boolean(approvalFor(activity) && unknownApprovalIds.includes(approvalFor(activity)!.approvalId))} unresolved={Boolean(approvalFor(activity) && unresolvedApprovalIds.includes(approvalFor(activity)!.approvalId))} phase={phase} onApprove={onApprove} onReject={onReject} onChanged={onChanged} />)}
+      </div>}
       {message.blocks?.length ? <MessageBlocks blocks={message.blocks} /> : content && (role === 'system' && !streaming ? (
         looksLikeJson(content) ? (
           <pre className="glass-subtle overflow-x-auto rounded-lg p-2.5 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap">{content}</pre>

@@ -15,12 +15,13 @@ test('思考实时追加、停止保留、完成折叠和刷新恢复', async ({
   await panel.getByRole('button', { name: '发送', exact: true }).click();
   const reasoning = panel.getByTestId('assistant-reasoning');
   await expect(reasoning).toHaveAttribute('data-state', 'streaming');
+  await panel.getByTestId('assistant-process').locator(':scope > summary').click();
   await reasoning.locator('summary').click();
   await expect(reasoning).toContainText('核对已经掌握的内容。');
   await expect(reasoning).toContainText('再安排一项练习。');
   await expect(panel.getByText('先完成计数器练习。', { exact: true })).toBeVisible();
   await expect(reasoning).not.toHaveAttribute('open');
-  await page.reload(); await reasoning.locator('summary').click();
+  await page.reload(); await panel.getByTestId('assistant-process').locator(':scope > summary').click(); await reasoning.locator('summary').click();
   await expect(reasoning).toContainText('核对已经掌握的内容。再安排一项练习。');
   await panel.getByLabel('向 AI 提问').fill('对话思考验收：停止');
   await panel.getByRole('button', { name: '发送', exact: true }).click();
@@ -28,7 +29,7 @@ test('思考实时追加、停止保留、完成折叠和刷新恢复', async ({
   await expect(last).toHaveAttribute('data-state', 'streaming');
   await panel.getByRole('button', { name: '停止生成', exact: true }).click();
   await expect(last).toHaveAttribute('data-state', 'interrupted');
-  await page.reload(); await last.locator('summary').click();
+  await page.reload(); await panel.getByTestId('assistant-process').last().locator(':scope > summary').click(); await last.locator('summary').click();
   await expect(last).toContainText('核对已经掌握的内容。');
   await expect(last).toHaveAttribute('data-state', 'interrupted');
 });
@@ -56,7 +57,7 @@ test('旧对话来源去重、正文编号打开原文、查询分组和窄屏�
   await panel.getByTestId('assistant-sources').locator('summary').click();
   await expect(panel.locator('.assistant-source-row')).toHaveCount(1);
   await expect(panel.locator('.assistant-source-row')).not.toContainText('T14:08');
-  await panel.getByRole('button', { name: /查询了 1 项/ }).click();
+  await panel.getByTestId('assistant-process').locator(':scope > summary').click();
   await expect(panel.getByRole('button', { name: /查找过往对话/ })).toBeVisible();
   await panel.getByTestId('assistant-reasoning').locator('summary').click();
   await page.screenshot({ path: `/tmp/dovun-chat-${test.info().project.name}.png`, fullPage: true });
@@ -97,4 +98,55 @@ test('上翻后发送回到底部，随后上翻流式输出不抢滚动', async
   await scroller.evaluate((el) => { el.scrollTop = 0; });
   await expect(panel.getByText('先完成计数器练习。', { exact: true })).toBeVisible({ timeout: 15_000 });
   expect(await distance()).toBeGreaterThan(100);
+});
+
+test('多轮工具与思考合为一条过程，失败收起可见且下一次请求独立', async ({ page }, info) => {
+  const reasoning = { text: '先核对任务，再核对清单。', startedAt: '2026-10-29T01:00:00Z', endedAt: '2026-10-29T01:00:01Z', status: 'completed' };
+  const round = (id: string, count: number) => ({ id, role: 'assistant', runId: 'first', content: '', status: 'completed', reasoning,
+    toolCalls: JSON.stringify(Array.from({length:count}, (_,i) => ({id:`${id}-${i}`,function:{name:'list_tasks',arguments:'{}'}}))) });
+  const results = (id: string, count: number) => Array.from({length:count},(_,i) => ({ id:`result-${id}-${i}`,role:'tool',toolCallId:`${id}-${i}`,content:JSON.stringify({assistantMessageId:id,toolName:'list_tasks',success:i !== 1,data:i !== 1 ? [] : undefined,error:i === 1 ? '查询超时' : undefined}) }));
+  await page.route('**/api/conversations/process-history/snapshot', route => route.fulfill({json:{data:{messages:[
+    {id:'u',role:'user',content:'整理今天的任务'},round('a',3),...results('a',3),round('b',2),...results('b',2),
+    {id:'answer',role:'assistant',runId:'first',content:'已整理可用结果。',status:'completed'},
+    {id:'u2',role:'user',content:'再看一下明天'},
+    {id:'next',role:'assistant',runId:'second',content:'明天没有待办。',status:'completed',reasoning},
+  ],approvals:[],watermarks:{},activeRun:null}}}));
+  await page.addInitScript(() => localStorage.setItem('dovun.conversationId','process-history'));
+  await page.goto('/#/chat');
+  const panel = page.getByTestId('ai-assistant');
+  const processes = panel.getByTestId('assistant-process');
+  await expect(processes).toHaveCount(2);
+  const first = processes.first();
+  await expect(first).not.toHaveAttribute('open');
+  await expect(first.locator(':scope > summary')).toContainText('有 2 项查询失败');
+  await expect(first.locator(':scope > summary')).toContainText('查询 5 项 · 思考 2 次');
+  await expect(panel.getByText('已整理可用结果。',{exact:true})).toBeVisible();
+  await expect(panel.getByText('明天没有待办。',{exact:true})).toBeVisible();
+  await first.locator(':scope > summary').focus(); await page.keyboard.press('Enter');
+  await expect(first).toHaveAttribute('open');
+  await expect(first.getByTestId('assistant-reasoning')).toHaveCount(2);
+  await expect(first.locator('.assistant-process-step')).toHaveCount(5);
+  await first.getByTestId('assistant-reasoning').first().locator('summary').click();
+  await expect(first.getByText(reasoning.text,{exact:true}).first()).toBeVisible();
+  await page.screenshot({path:`/tmp/dovun-process-live-${info.project.name}.png`,fullPage:true});
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.reload();
+  await expect(processes).toHaveCount(2);
+  await expect(first).not.toHaveAttribute('open');
+  await expect(first.locator(':scope > summary')).toContainText('有 2 项查询失败');
+});
+
+test('消息已完成但整轮仍在执行工具时，显示当前查询而不是中断', async ({ page }) => {
+  await page.route('**/api/conversations/process-active/snapshot', route => route.fulfill({json:{data:{
+    messages:[{id:'active-message',runId:'active-process',role:'assistant',status:'completed',content:''}],
+    approvals:[],watermarks:{},activeRun:{id:'active-process',state:'running'},
+  }}}));
+  await page.route('**/api/agent/runs/active-process/events?*', route => route.fulfill({json:{data: new URL(route.request().url()).searchParams.get('after') === '0' ? [{seq:1,type:'tool_call',data:{type:'tool_call',messageId:'active-message',toolCallId:'active-tool',toolName:'list_tasks',arguments:{}}}] : []}}));
+  await page.route('**/api/agent/runs/active-process', route => route.fulfill({json:{data:{state:'running'}}}));
+  await page.addInitScript(() => localStorage.setItem('dovun.conversationId','process-active'));
+  await page.goto('/#/chat');
+  const process = page.getByTestId('assistant-process');
+  await expect(process).toHaveAttribute('data-state','streaming');
+  await expect(process.locator(':scope > summary')).toContainText('查询任务');
+  await expect(process.locator(':scope > summary')).not.toContainText('中断');
 });

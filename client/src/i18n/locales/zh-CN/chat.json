@@ -535,5 +535,19 @@
     "providerContent": "模型返回的思考内容",
     "truncated": "内容较长，仅保留前 65536 个字符。",
     "incomplete": "本次思考未完成，已保留收到的内容。"
+  },
+  "process": {
+    "completed": "已完成查询",
+    "finished": "处理完成",
+    "failed": "有 {{count}} 项查询失败",
+    "interrupted": "执行已中断",
+    "queries": "查询 {{count}} 项",
+    "thoughts": "思考 {{count}} 次",
+    "skills": "技能 {{count}} 项",
+    "title": "执行过程",
+    "order": "按发生顺序",
+    "incomplete": "部分查询失败，回答可能不完整。展开对应记录查看原因。",
+    "stopped": "本轮执行未完成，已保留收到的内容。",
+    "responding": "正在整理回答"
   }
 }

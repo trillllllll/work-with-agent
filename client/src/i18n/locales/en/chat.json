@@ -554,5 +554,19 @@
     "providerContent": "Thinking content returned by the model",
     "truncated": "Long content: the first 65536 characters are retained.",
     "incomplete": "Thinking stopped early. Received content is retained."
+  },
+  "process": {
+    "completed": "Queries completed",
+    "finished": "Process completed",
+    "failed": "{{count}} queries failed",
+    "interrupted": "Process interrupted",
+    "queries": "{{count}} queries",
+    "thoughts": "{{count}} thoughts",
+    "skills": "{{count}} skills",
+    "title": "Execution process",
+    "order": "In chronological order",
+    "incomplete": "Some queries failed. The answer may be incomplete. Expand the corresponding record for details.",
+    "stopped": "This run was interrupted. Received content has been preserved.",
+    "responding": "Preparing response"
   }
 }
