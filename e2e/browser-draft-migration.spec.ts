@@ -57,10 +57,10 @@ for (const currentVersion of [1, 2]) {
       if (currentVersion === 2) expect(result.current.marker).toBe('existing-target');
     };
     await page.goto('/#/learning');
-    await expect(page.getByRole('heading', { name: '还没有学习地图', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '学习地图', exact: true, level: 1 })).toBeVisible();
     await checkDrafts();
     await page.reload();
-    await expect(page.getByRole('heading', { name: '还没有学习地图', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '学习地图', exact: true, level: 1 })).toBeVisible();
     await checkDrafts();
     expect(errors).toEqual([]);
   });

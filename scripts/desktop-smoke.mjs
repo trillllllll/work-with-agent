@@ -42,7 +42,7 @@ try {
   const first = await login({ bootstrapToken: firstToken });
   const styleResponse = await api(first, '/api/settings/reply-style');
   const style = (await styleResponse.json()).data;
-  if (!styleResponse.ok || style?.replyStyle !== '结论先行，多用短句。') throw new Error('桌面运行时未提供默认回复风格');
+  if (!styleResponse.ok || typeof style?.defaultReplyStyle !== 'string' || !style.defaultReplyStyle || style.replyStyle !== style.defaultReplyStyle) throw new Error('桌面运行时未提供默认回复风格');
   const savedStyle = await api(first, '/api/settings/reply-style', { method: 'PATCH', body: JSON.stringify({ replyStyle: '先给结论。使用短句。' }) });
   if (!savedStyle.ok || (await savedStyle.json()).data?.replyStyle !== '先给结论。使用短句。') throw new Error('未配置模型时保存回复风格失败');
   const imageSettings = await api(first, '/api/settings/image-search');
