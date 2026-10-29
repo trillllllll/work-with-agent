@@ -106,3 +106,68 @@ test('sending clears the box immediately and a retyped identical draft survives 
   await expect(assistant.getByText('先完成计数器练习。', { exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(input).toHaveValue('对话思考验收：开始');
 });
+
+
+test('a rejected exact replay restores the original after an initial transport failure', async ({ page }) => {
+  await page.goto('/#/inbox');
+  await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
+  const assistant = page.getByTestId('ai-assistant');
+  const input = assistant.getByRole('textbox', { name: '向 AI 提问' });
+  await page.route('**/api/agent/requests/*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: null }) }));
+  let calls = 0;
+  await page.route('**/api/chat', (route) => ++calls === 1 ? route.abort('failed') : route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: '明确拒绝重放' }) }));
+  await input.fill('重放被拒也不能丢失的原文');
+  await assistant.getByRole('button', { name: '发送', exact: true }).click();
+  await expect(assistant.getByRole('button', { name: '重试', exact: true })).toBeVisible({ timeout: 15_000 });
+  expect(calls).toBe(2);
+  await expect(input).toHaveValue('重放被拒也不能丢失的原文');
+  expect(await page.evaluate(() => localStorage.getItem('dovun.pendingRequestKey'))).toBeNull();
+});
+
+test('retry keeps a newer draft and its context until the box is cleared', async ({ page }) => {
+  await page.goto('/#/inbox');
+  await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
+  const assistant = page.getByTestId('ai-assistant');
+  const input = assistant.getByRole('textbox', { name: '向 AI 提问' });
+  let release!: () => void;
+  const responseReady = new Promise<void>((resolve) => { release = resolve; });
+  await page.route('**/api/chat', async (route) => { await responseReady; await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: '明确拒绝' }) }); });
+  await input.fill('被拒原文');
+  await assistant.getByRole('button', { name: '发送', exact: true }).click();
+  await input.fill('新的独立草稿');
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('dovun-open-assistant', { detail: { attachment: { id: 'new-draft-attachment', kind: 'draft', title: '新草稿附件', text: '只属于新稿', unsaved: true } } })));
+  release();
+  const retry = assistant.getByRole('button', { name: '重试', exact: true });
+  await expect(retry).toBeVisible();
+  const context = assistant.getByTestId('assistant-context-trigger');
+  const before = await context.innerText();
+  await retry.click();
+  await expect(input).toHaveValue('新的独立草稿');
+  await expect(context).toHaveText(before);
+  await expect(assistant.getByTestId('assistant-context').getByText('新草稿附件 · 未保存草稿', { exact: true })).toBeVisible();
+  await expect(retry).toBeVisible();
+  await input.fill('');
+  await retry.click();
+  await expect(input).toHaveValue('被拒原文');
+  await expect(assistant.locator('.assistant-thread')).not.toContainText('被拒原文');
+});
+
+
+test('retry after a rejection does not mix the restored text with historical attachments', async ({ page, request }) => {
+  expect((await request.patch('http://127.0.0.1:3015/api/settings', { data: { baseUrl: 'http://127.0.0.1:4010/v1', model: 'mock-model', apiKey: 'e2e-key' } })).ok()).toBe(true);
+  await page.goto('/#/inbox');
+  await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
+  const assistant = page.getByTestId('ai-assistant');
+  const input = assistant.getByRole('textbox', { name: '向 AI 提问' });
+  await input.fill('对话思考验收：开始');
+  await assistant.getByRole('button', { name: '发送', exact: true }).click();
+  await expect(assistant.getByText('先完成计数器练习。', { exact: true })).toBeVisible({ timeout: 15_000 });
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('dovun-open-assistant', { detail: { attachment: { id: 'refused-attachment', kind: 'draft', title: '本次被拒附件', text: '只属于本次', unsaved: true } } })));
+  await page.route('**/api/chat', (route) => route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: '明确拒绝' }) }));
+  await input.fill('本次被拒原文');
+  await assistant.getByRole('button', { name: '发送', exact: true }).click();
+  await expect(input).toHaveValue('本次被拒原文');
+  await assistant.getByRole('button', { name: '重试', exact: true }).click();
+  await expect(input).toHaveValue('本次被拒原文');
+  await expect(assistant.getByTestId('assistant-context').getByText('本次被拒附件 · 未保存草稿', { exact: true })).toBeVisible();
+});

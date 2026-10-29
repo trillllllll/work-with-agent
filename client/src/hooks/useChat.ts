@@ -81,6 +81,8 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
   const [unresolvedApprovalIds, setUnresolvedApprovalIds] = useState<string[]>([]);
   const [pausedRun, setPausedRun] = useState<{ id: string; reason: string } | null>(null);
   const [referencedApproval, setReferencedApproval] = useState<{ id: string; title: string } | null>(null);
+  const refusedRequest = useRef<{ message: string; context: NonNullable<ChatMessage['context']>; reference: typeof referencedApproval } | null>(null);
+  useEffect(() => { refusedRequest.current = null; }, [conversationId, identityId]);
   const library = useLibrarySnapshot();
   const [pinnedContext, setPinnedContext] = useState<ChatContextV3 | null>(null);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
@@ -366,6 +368,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
       onErrorRef.current(tRef.current('errors.saveSendStateFailed'));
       return;
     }
+    refusedRequest.current = null;
     pendingRequestBody.current = storedBody; pendingRequestKey.current = requestKey;
     setContextStats(null);
     activeRunId.current = ''; loadGeneration.current++; busyRef.current = true;
@@ -402,9 +405,16 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
         setReferencedApproval((current) => current?.id === reference?.id ? null : current);
       }
     } catch (reason) {
-      const rejected = reason instanceof ApiError && Boolean(reason.status && reason.status >= 400 && reason.status < 500 && ![401, 429].includes(reason.status));
+      let rejected = reason instanceof ApiError && Boolean(reason.status && reason.status >= 400 && reason.status < 500 && ![401, 429].includes(reason.status));
       if (rejected && !runId) clearPendingRequest();
-      if (!rejected && !runId) { try { const found = await findRequest(requestKey); adoptRequest(found); runId = found.id; accepted = true; } catch { /* Retain the original key and body for a later reconnect. */ } }
+      if (!rejected && !runId) {
+        try { const found = await findRequest(requestKey); adoptRequest(found); runId = found.id; accepted = true; }
+        catch (recoveryReason) {
+          // An exact replay can be explicitly refused after the original transport failure.
+          // findRequest clears its pending key only for a definitive refusal.
+          if (!pendingRequestKey.current) { rejected = true; reason = recoveryReason; }
+        }
+      }
       if (runId) {
         try {
           await trackRun(runId, lastSeq);
@@ -425,6 +435,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
           return next;
         });
         if (rejected) {
+          refusedRequest.current = { message, context: requestContext, reference };
           // The server explicitly refused the request (pending state already cleared), so the
           // original is known-unsent: restore it for an immediate resend. With a newer draft
           // typed meanwhile, keep the optimistic message in the thread instead as the original's
@@ -616,10 +627,35 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
   const retry = async () => {
     if (busyRef.current || mutatingRef.current) return;
     if (pendingRequestKey.current) {
+      const originalBody = pendingRequestBody.current;
       setBusy(true); busyRef.current = true; setInterrupted(false);
       try { const found = await findRequest(pendingRequestKey.current); adoptRequest(found); await reloadConversation(found.conversationId, true); await trackRun(found.id, snapshotWatermarks.current[found.id] ?? 0); clearPendingRequest(); setAttachments((current) => current.filter((item) => !found.attachmentIds.includes(item.id))); }
-      catch (reason) { setInterrupted(true); onErrorRef.current(reason instanceof Error ? reason.message : tRef.current('errors.restoreFailed')); }
+      catch (reason) {
+        if (!pendingRequestKey.current) {
+          // A later reconnect may also learn that the original never entered the run queue.
+          try {
+            const body = JSON.parse(originalBody);
+            refusedRequest.current = { message: body.message, context: body.context, reference: referencedApproval };
+            if (!inputRef.current.trim()) setInput(body.message);
+          } catch { /* Keep the explicit error if the saved request is malformed. */ }
+        }
+        setInterrupted(true); onErrorRef.current(reason instanceof Error ? reason.message : tRef.current('errors.restoreFailed'));
+      }
       finally { busyRef.current = false; setBusy(false); }
+      return;
+    }
+    if (refusedRequest.current) {
+      // A newer draft includes its context and attachments: leave all of it untouched.
+      if (inputRef.current.trim()) return;
+      const refused = refusedRequest.current;
+      setInput(refused.message);
+      if (refused.context.schemaVersion === 3) {
+        setPinnedContext(structuredClone(refused.context));
+        setAttachments(structuredClone(refused.context.attachments));
+      }
+      setReferencedApproval(refused.reference);
+      setMessages((current) => current.filter((item) => item.id || item.role !== 'user' || item.content !== refused.message));
+      setInterrupted(false);
       return;
     }
     if (activeRunId.current && interrupted) {
@@ -635,6 +671,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
   const startNew = () => {
     if (busyRef.current || mutatingRef.current) return;
     activeRunId.current = '';
+    refusedRequest.current = null;
     clearPendingRequest();
     loadGeneration.current++;
     localStorage.removeItem('dovun.conversationId');
