@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { versionProjection } from '../application/resources/version.js';
 import { DomainError } from '../domain/task.js';
 import { canonical } from '../application/commands.js';
 import { ownerActor } from '../application/security.js';
@@ -151,8 +152,8 @@ export async function searchWorkspace(args: Record<string, unknown>, context: St
       return { rows: rows.map((row) => ({ ...row, searchType: source })), done: rows.length < SEARCH_BATCH };
     }
     if (source === 'material') {
-      const rows = await prisma.material.findMany({ where: { ...materialFilter, ...after }, orderBy: { id: 'asc' }, take: SEARCH_BATCH, include: { versions: { orderBy: { revision: 'desc' }, take: 1 } } });
-      return { rows: rows.map((row) => ({ ...row, searchType: source, body: `${row.title}\n${row.versions[0]?.content ?? ''}` })), done: rows.length < SEARCH_BATCH };
+      const rows = await prisma.material.findMany({ where: { ...materialFilter, ...after, sourceTaskId: null }, orderBy: { id: 'asc' }, take: SEARCH_BATCH, include: { versions: { orderBy: { revision: 'desc' }, take: 1 } } });
+      return { rows: rows.map((row) => ({ ...row, searchType: source, body: `${row.title}\n${row.versions[0] ? versionProjection(row.kind, row.versions[0]) : ''}` })), done: rows.length < SEARCH_BATCH };
     }
     if (source === 'memory') {
       const rows = await prisma.memory.findMany({ where: { ...memoryWhere, ...after }, orderBy: { id: 'asc' }, take: SEARCH_BATCH });

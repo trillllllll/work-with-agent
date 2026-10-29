@@ -23,6 +23,10 @@ export async function assertWritableTopic(tx: LibraryDb, actor: Actor, topicId: 
 export async function readableMaterial(tx: LibraryDb, actor: Actor, id: string) {
   const material = await tx.material.findUnique({ where: { id } });
   if (!material) throw libraryError('NOT_FOUND', '资料不存在', 404);
+  if (material.sourceTaskId) {
+    const task = await tx.task.findUnique({ where: { id: material.sourceTaskId } });
+    if (!task || task.deletedAt || !topicVisible(actor, task.topicId)) throw libraryError('SCOPE_DENIED', '任务图片不在当前授权范围内', 403);
+  }
   if (!topicVisible(actor, material.topicId)) throw libraryError('SCOPE_DENIED', '资料不在授权范围内', 403);
   return material;
 }

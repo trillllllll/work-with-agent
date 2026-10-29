@@ -123,7 +123,7 @@ async function readMaterial(request: APIRequestContext, id: string) {
   return (await response.json()).data as { id: string; revision: number; organizationRevision: number };
 }
 
-test('任务内预览打开另一个任务，未保存正文仍在', async ({ page, request }) => {
+test('任务资料进入文档工作区再打开另一个任务，未保存正文仍在', async ({ page, request }) => {
   test.setTimeout(60_000);
   const taskA = await createTask(request, '草稿任务甲');
   const taskB = await createTask(request, '目标任务乙');
@@ -135,8 +135,10 @@ test('任务内预览打开另一个任务，未保存正文仍在', async ({ pa
   await description.click();
   await page.keyboard.insertText('还没保存的草稿甲');
   await expect(description).toContainText('还没保存的草稿甲');
-  await page.getByTestId(`task-material-${material.id}`).getByRole('button', { name: '预览', exact: true }).click();
-  await page.getByTestId('library-preview').getByRole('button', { name: '目标任务乙', exact: true }).click();
+  await page.getByTestId(`task-material-${material.id}`).getByRole('button', { name: '阅读', exact: true }).click();
+  await expect(page.getByTestId('document-pane')).toBeVisible();
+  await page.getByRole('button', { name: '文件信息', exact: true }).click();
+  await page.getByTestId('document-pane').getByRole('button', { name: '目标任务乙', exact: true }).click();
   await expect(page.getByLabel('任务标题', { exact: true })).toHaveValue('目标任务乙');
   await page.goto('/#/inbox');
   await page.getByTestId(`task-row-${taskA}`).click();

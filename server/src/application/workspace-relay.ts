@@ -22,7 +22,7 @@ const taskExtras = /^\/api\/tasks\/[^/]+\/(?:images(?:\/[^/]+)?|ai-history|activ
 const scopedFamilies = /^\/api\/v1\/(?:tasks|topics|tags|changes|commands|proposals|knowledge|library|learning|handoffs|runs|runners|artifacts|plan|identity|tools)(?:\/|$)|^\/api\/v1\/trash\/tasks(?:\/|$)/;
 const ordinaryTaskCommand = (body: any) => Array.isArray(body?.commands) && body.commands.length > 0 && body.commands.every((command: any) => /^(?:task|topic|tag)\./.test(command.kind) && command.kind !== 'task.reference_materials');
 export function relayPathAllowed(path: string) { return ownerFamilies.test(path) || taskExtras.test(path) || /^\/api\/(?:tasks|topics|tags)(?:\/|$)/.test(path); }
-const canCache = (path: string) => !/event-stream/.test(path) && /^\/api\/(?:conversations(?:\/|$)|v1\/(?:knowledge|library|artifacts)(?:\/|$)|tasks\/[^/]+\/(?:images\/|activity$|topic-history$|ai-history$))/.test(path);
+const canCache = (path: string) => !/event-stream|\/resources\/receipts\//.test(path) && /^\/api\/(?:conversations(?:\/|$)|v1\/(?:knowledge|library|artifacts)(?:\/|$)|tasks\/[^/]+\/(?:images\/|activity$|topic-history$|ai-history$))/.test(path);
 
 /** Pairing grants a full workspace replica, never a computer execution credential.
  * Only this allowlisted namespace can authenticate such a device as its owner. */
@@ -119,7 +119,7 @@ export async function relayBoundWorkspace(req: Request, res: Response, next: Nex
     const type = response.headers.get('content-type') ?? 'application/octet-stream';
     const disposition = response.headers.get('content-disposition');
     const securityHeaders: Record<string, string> = {};
-    for (const header of ['content-security-policy', 'x-content-type-options', 'x-frame-options', 'content-language']) {
+    for (const header of ['content-security-policy', 'x-content-type-options', 'x-frame-options', 'content-language', 'x-dovun-mime-type', 'x-dovun-content-format', 'x-dovun-read-only-projection']) {
       const value = response.headers.get(header); if (value) securityHeaders[header] = value;
     }
     res.status(response.status).setHeader('content-type', type);

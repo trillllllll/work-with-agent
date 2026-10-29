@@ -487,7 +487,7 @@ export async function enqueueUploads(files: Array<{ file: File; relativePath: st
     }
   }
   const pending = accepted.length + rejected.length;
-  if (!pending) return;
+  if (!pending) return [];
   let resolveBatch = () => {};
   const done = new Promise<void>((resolve) => { resolveBatch = resolve; });
   batches.set(batchId, { pending, added: 0, failed: 0, toasted: false, silent: Boolean(target.silent), resolve: resolveBatch });
@@ -496,6 +496,7 @@ export async function enqueueUploads(files: Array<{ file: File; relativePath: st
   for (const record of rejected) finishItem(record, 'failed', record.error);
   schedule();
   await done;
+  return records.filter((record) => record.batchId === batchId);
 }
 
 export async function stageUpload(file: File, relativePath = file.name) {

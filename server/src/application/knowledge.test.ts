@@ -209,18 +209,18 @@ describe('knowledge evidence and review closed loops', () => {
     expect(await prisma.materialVersion.count({ where: { materialId: row.id } })).toBe(versionsBefore);
     expect((await knowledge.materials(ownerActor, project, { linked: 'task' })).items[0]).toMatchObject({ id: row.id, taskTitle: '对接任务' });
     const titled = await write('material.update', { title: '新标题' }, row.id, linked.revision);
-    expect(titled).toMatchObject({ revision: 2, taskId: task.id, title: '新标题', organizationRevision: 2 });
+    expect(titled).toMatchObject({ revision: 1, taskId: task.id, title: '新标题', organizationRevision: 3 });
     const cleared = await write('material.update', { taskId: null }, row.id, titled.revision);
-    expect(cleared).toMatchObject({ revision: 2, taskId: null, organizationRevision: 3 });
-    expect(await prisma.materialVersion.count({ where: { materialId: row.id } })).toBe(versionsBefore + 1);
+    expect(cleared).toMatchObject({ revision: 1, taskId: null, organizationRevision: 4 });
+    expect(await prisma.materialVersion.count({ where: { materialId: row.id } })).toBe(versionsBefore);
     await commands.submit(ownerActor, { requestId: randomUUID(), commands: [{ kind: 'change.undo', targetId: cleared.changeId, input: {} }] });
     const restored = await prisma.material.findUniqueOrThrow({ where: { id: row.id } });
-    expect(restored).toMatchObject({ revision: 2, taskId: task.id, title: '新标题', organizationRevision: 4 });
-    expect(await prisma.materialVersion.count({ where: { materialId: row.id } })).toBe(versionsBefore + 1);
+    expect(restored).toMatchObject({ revision: 1, taskId: task.id, title: '新标题', organizationRevision: 5 });
+    expect(await prisma.materialVersion.count({ where: { materialId: row.id } })).toBe(versionsBefore);
     expect((await knowledge.attachment(ownerActor, row.id, restored.revision)).bytes.toString()).toBe('# 标题');
     expect((await prisma.materialTaskLink.findUniqueOrThrow({ where: { materialId_taskId: { materialId: row.id, taskId: task.id } } })).legacy).toBe(true);
     const across = await write('material.update', { taskId: foreign.id }, row.id, restored.revision);
-    expect(across).toMatchObject({ revision: 2, taskId: foreign.id });
+    expect(across).toMatchObject({ revision: 1, taskId: foreign.id });
     expect(await prisma.materialTaskLink.findUnique({ where: { materialId_taskId: { materialId: row.id, taskId: task.id } } })).toBeNull();
     expect((await prisma.materialTaskLink.findUniqueOrThrow({ where: { materialId_taskId: { materialId: row.id, taskId: foreign.id } } })).legacy).toBe(true);
 

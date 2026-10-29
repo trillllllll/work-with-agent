@@ -9,7 +9,6 @@ import { useTranslation } from 'react-i18next';
 import { intlLocale } from '../../i18n/index.js';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError, type Topic } from '@/lib/api.js';
-import { titleFromFileName } from '@/lib/attachment-title.js';
 import { json, parseStored, submitCommands, usePlatformAction, type Command } from '@/lib/platform.js';
 import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
@@ -22,6 +21,7 @@ import { ContextPicker, type Evidence } from './ContextPicker.js';
 import { KnowledgeGraph } from './KnowledgeGraph.js';
 import { KnowledgeTree } from './KnowledgeTree.js';
 import { MaterialBrowser } from './MaterialBrowser.js';
+import { openDocument, openNewDocument } from '@/components/documents/open.js';
 import { OrganizationPrompt } from './OrganizationPrompt.js';
 import { asLabels, MemorySummary, memoryKindKeys, originKeys, Stars } from './memory-view.js';
 import './work-context.css';
@@ -169,7 +169,7 @@ export function KnowledgePage({
     window.setTimeout(() => document.getElementById(`context-tab-${target}`)?.focus(), 0);
   };
   const brief = <BriefPanel key={topicId} topicId={topicId || null} draft={briefDrafts[topicId] ?? null} updateDraft={updateBriefDraft} />;
-  const materials = <MaterialBrowser topicId={topicId || null} taskId={taskId} onCreate={() => openEditor()} onEdit={(item) => openEditor(item as Resource)}>{activeEditor && <ResourceEditor key={activeEditor.id} type="materials" resource={activeEditor.resource} topicId={topicId || null} taskId={taskId} onClose={() => setEditing((current) => current?.id === activeEditor.id ? null : current)} />}</MaterialBrowser>;
+  const materials = <MaterialBrowser topicId={topicId || null} taskId={taskId} onCreate={() => openNewDocument('richdoc-v1', { topicId: topicId || null })} onEdit={(item) => openDocument({ resourceId: item.id, title: item.title })} />;
   const memories = <MemoryBrowser embedded={embedded} topicId={topicId} scope={scope} cursor={cursor} setCursor={setCursor} status={memoryStatus} setStatus={(value) => { setMemoryStatus(value); setCursor(0); }} input={memoryInput} setInput={setMemoryInput} submitted={memoryQuery.submitted} onCompositionStart={memoryQuery.onCompositionStart} onCompositionEnd={memoryQuery.onCompositionEnd} opened={opened} setOpened={setOpened} activeEditor={activeEditor} openEditor={openEditor} closeEditor={() => setEditing((current) => current?.id === activeEditor?.id ? null : current)} auto={auto.data} onShowProposals={() => locate('brief')} onShowMaterials={() => locate('materials')} onShowRecords={embedded ? undefined : () => locate('extractions')} />;
   const search = <ContextSearch topicId={topicId} scope={scope} cursor={cursor} setCursor={setCursor} input={searchInput} setInput={setSearchInput} submitted={searchQuery.submitted} history={searchHistory} setHistory={(value) => { setSearchHistory(value); setCursor(0); }} onCompositionStart={searchQuery.onCompositionStart} onCompositionEnd={searchQuery.onCompositionEnd} />;
   const listName = topicId ? knownTopics.find((topic) => topic.id === topicId)?.name ?? t('page.unknownList') : t('page.inbox');
@@ -526,7 +526,7 @@ function MemoryBrowser({ embedded, topicId, scope, cursor, setCursor, status, se
       {(list.data?.total ?? 0) > 0 && <span className="ctx-muted">{t('page.memory.results', { count: list.data?.total ?? 0 })}</span>}
       <div className="ctx-sheet-end">{records}<Button variant="default" type="button" className="ctx-btn ctx-btn-primary" onClick={() => openEditor()}>{t('page.memory.addManual')}</Button></div>
     </div>}
-    {activeEditor && <ResourceEditor key={activeEditor.id} type="memories" resource={activeEditor.resource} topicId={topicId || null} onClose={closeEditor} />}
+    {activeEditor && <MemoryEditor key={activeEditor.id} resource={activeEditor.resource} topicId={topicId || null} onClose={closeEditor} />}
     {failed && <div role="alert" className="ctx-error"><p>{(list.error ?? probe.error)?.message}</p><Button variant="outline" type="button" className="ctx-btn" onClick={() => { void list.refetch(); void probe.refetch(); }}>{t('page.memory.retry')}</Button></div>}
     {trueEmpty && <Surface as="div" tone="card" data-testid="context-memory-empty" className="ctx-card ctx-empty">
       <h2 className="ctx-empty-title">{t('page.memory.emptyTitle')}</h2>
@@ -604,75 +604,35 @@ function ContextSearch({ topicId, scope, cursor, setCursor, input, setInput, sub
     </div>
     {hits.error && <p role="alert" className="ctx-error">{hits.error.message}<Button variant="outline" type="button" className="ctx-btn" onClick={() => void hits.refetch()}>{t('page.search.retry')}</Button></p>}
     {submitted && hits.isSuccess && hits.data.total === 0 && <p>{t('page.search.noMatch')}</p>}
-    <div className="ctx-stack">{hits.data?.items.map((hit) => <Surface as="article" tone="card" key={`${hit.type}:${hit.id}:${hit.revision}`} className="ctx-card"><h2 className="ctx-section-title">{hit.title}</h2><BodyText text={hit.snippet} className="ctx-body" /><p className="ctx-muted">{t(`page.search.hit.${hit.type === 'material' ? 'material' : hit.type === 'memory' ? 'memory' : 'task'}`, { revision: hit.revision, status: hit.status })}</p></Surface>)}</div>
+    <div className="ctx-stack">{hits.data?.items.map((hit) => <Surface as="article" tone="card" key={`${hit.type}:${hit.id}:${hit.revision}`} className="ctx-card"><h2 className="ctx-section-title">{hit.type === 'material' ? <Button variant="link" size="bare" onClick={() => openDocument({ resourceId: hit.id, revision: hit.revision, title: hit.title })}>{hit.title}</Button> : hit.title}</h2><BodyText text={hit.snippet} className="ctx-body" /><p className="ctx-muted">{t(`page.search.hit.${hit.type === 'material' ? 'material' : hit.type === 'memory' ? 'memory' : 'task'}`, { revision: hit.revision, status: hit.status })}</p></Surface>)}</div>
     <Pager testId="context-pagination" cursor={cursor} nextCursor={hits.data?.nextCursor ?? null} onPrevious={() => setCursor(Math.max(0, cursor - 40))} onNext={setCursor} />
   </div>;
 }
 
-function ResourceEditor({ type, resource, topicId, taskId, onClose }: { type: 'materials' | 'memories'; resource?: Resource; topicId: string | null; taskId?: string; onClose: () => void }) {
+function MemoryEditor({ resource, topicId, onClose }: { resource?: Resource; topicId: string | null; onClose: () => void }) {
   const { t } = useTranslation('knowledge');
-  const isMaterial = type === 'materials';
   const [title, setTitle] = useState(resource?.title ?? '');
-  const [content, setContent] = useState(isMaterial ? resource?.versions?.[0]?.content ?? '' : resource?.content ?? '');
-  const [kind, setKind] = useState(resource?.kind ?? (isMaterial ? 'text' : 'fact'));
+  const [content, setContent] = useState(resource?.content ?? '');
+  const [kind, setKind] = useState(resource?.kind ?? 'fact');
   const [importance, setImportance] = useState(resource?.importance ?? 3);
   const [labels, setLabels] = useState(asLabels(resource?.labels).join(' '));
   const [origin, setOrigin] = useState(resource?.origin ?? 'manual');
-  const [uri, setUri] = useState(resource?.uri ?? '');
-  const [completeness, setCompleteness] = useState(resource?.versions?.[0]?.metadata?.completeness ?? 'excerpt');
-  const [attachment, setAttachment] = useState<{ attachmentBase64: string; fileName: string; mimeType: string } | null>(null);
   const [evidence, setEvidence] = useState<Evidence[]>(resource?.evidence ?? []);
   const [reason, setReason] = useState('');
-  const [sessionId, setSessionId] = useState(resource?.versions?.[0]?.metadata?.sessionId ?? '');
-  const [provider, setProvider] = useState(resource?.versions?.[0]?.metadata?.provider ?? 'manual');
-  const [fileError, setFileError] = useState('');
-  const autoTitle = useRef('');
-  const titleRef = useRef(title);
-  titleRef.current = title;
   const { run, busy } = usePlatformAction();
-  const existingFileName = typeof resource?.versions?.[0]?.fileName === 'string' ? resource.versions[0].fileName : '';
-  const fallbackTitle = isMaterial && kind === 'attachment' ? titleFromFileName(attachment?.fileName || existingFileName) : '';
-  const resolvedTitle = title.trim() || fallbackTitle;
-  const attachmentMissing = isMaterial && kind === 'attachment' && !attachment && !resource?.versions?.[0]?.hasAttachment;
-  async function selectFile(file?: File) {
-    if (!file) return;
-    if (file.size > 8 * 1024 * 1024) { setFileError(t('page.editor.fileTooLarge')); return; }
-    setFileError('');
-    const reader = new FileReader();
-    reader.onload = () => {
-      const fileName = file.name;
-      setAttachment({ attachmentBase64: String(reader.result).split(',')[1] ?? '', fileName, mimeType: file.type || 'application/octet-stream' });
-      const next = titleFromFileName(fileName);
-      const current = titleRef.current;
-      if (!current.trim() || current === autoTitle.current) {
-        autoTitle.current = next;
-        titleRef.current = next;
-        setTitle(next);
-      }
-    };
-    reader.onerror = () => setFileError(t('page.editor.fileReadFailed'));
-    reader.readAsDataURL(file);
-  }
-  return <Surface as="form" tone="card" className="ctx-card ctx-stack" onSubmit={(event) => { event.preventDefault(); if (!resolvedTitle.trim() || attachmentMissing) return; void run(async () => {
-    const input: Record<string, unknown> = { title: resolvedTitle, content, ...(!resource ? { topicId, kind, ...(isMaterial && taskId ? { taskId } : {}) } : {}) };
-    if (isMaterial) { if (kind === 'link') input.uri = uri; if (kind === 'thread') input.metadata = { completeness, sessionId: sessionId || undefined, provider }; if (attachment) Object.assign(input, attachment); }
-    else { input.kind = kind; input.evidence = evidence; input.reason = reason || (resource ? '用户修订' : '人工记录'); input.importance = importance; input.labels = labels.split(/[\s,，]+/).map((label) => label.trim()).filter(Boolean); input.origin = origin; } // i18n-ignore
-    const result = await submitCommands([{ kind: `${isMaterial ? 'material' : 'memory'}.${resource ? 'update' : 'create'}`, ...(resource ? { targetId: resource.id, expectedRevision: resource.revision } : {}), input }]);
+  return <Surface as="form" tone="card" className="ctx-card ctx-stack" onSubmit={(event) => { event.preventDefault(); if (!title.trim() || !content.trim()) return; void run(async () => {
+    const input = { title: title.trim(), content, kind, evidence, reason: reason || (resource ? '用户修订' : '人工记录'), importance, labels: labels.split(/[\s,，]+/).map((label) => label.trim()).filter(Boolean), origin, ...(!resource ? { topicId } : {}) }; // i18n-ignore
+    const result = await submitCommands([{ kind: `memory.${resource ? 'update' : 'create'}`, ...(resource ? { targetId: resource.id, expectedRevision: resource.revision } : {}), input }]);
     onClose(); return result;
-  }); }}>
-    <fieldset className="ctx-stack" disabled={busy}>
-    <h2 className="ctx-section-title">{t(resource ? (isMaterial ? 'page.editor.editMaterial' : 'page.editor.editMemory') : (isMaterial ? 'page.editor.createMaterial' : 'page.editor.createMemory'))}</h2>
-    <Input aria-label={isMaterial ? t('page.editor.materialTitle') : t('page.editor.memoryTitle')} className="ctx-field" placeholder={isMaterial && kind === 'attachment' ? t('page.editor.fileNamePlaceholder') : t('page.editor.titlePlaceholder')} value={title} onChange={(event) => { titleRef.current = event.target.value; setTitle(event.target.value); }} required={!(isMaterial && kind === 'attachment')} />
-    <NativeSelect aria-label={isMaterial ? t('page.editor.materialKind') : t('page.editor.memoryKind')} className="ctx-select" disabled={Boolean(resource && (isMaterial || resource.kind === 'crystal'))} value={kind} onChange={(event) => setKind(event.target.value)}>{(isMaterial ? (['text', 'markdown', 'link', 'thread', 'attachment'] as const).map((value) => [value, t(`page.editor.materialKinds.${value}`)] as const) : resource?.kind === 'crystal' ? [['crystal', t('memoryView.kinds.crystal')] as const] : memoryKindKeys.filter((value) => value !== 'crystal').map((value) => [value, t(`memoryView.kinds.${value}`)] as const)).map(([value, name]) => <option key={value} value={value}>{name}</option>)}</NativeSelect>
-    {!isMaterial && <div className="ctx-actions"><Stars value={importance} onChange={setImportance} /><NativeSelect aria-label={t('page.editor.origin')} className="ctx-select" value={origin} onChange={(event) => setOrigin(event.target.value)}>{originKeys.map((value) => <option key={value} value={value}>{t(`memoryView.origins.${value}`)}</option>)}</NativeSelect><Input aria-label={t('page.editor.tags')} className="ctx-field max-w-sm" placeholder={t('page.editor.tagsPlaceholder')} value={labels} onChange={(event) => setLabels(event.target.value)} /></div>}
-    {kind === 'link' && <Input type="url" aria-label={t('page.editor.sourceLink')} className="ctx-field" placeholder="https://…" value={uri} onChange={(event) => setUri(event.target.value)} required />}
-    {kind === 'thread' && <NativeSelect aria-label={t('page.editor.threadScope')} className="ctx-select" value={completeness} onChange={(event) => setCompleteness(event.target.value)}><option value="excerpt">{t('page.editor.threadExcerpt')}</option><option value="full">{t('page.editor.threadFull')}</option><option value="summary">{t('page.editor.threadSummary')}</option></NativeSelect>}
-    {kind === 'attachment' ? <><Input aria-label={t('page.editor.chooseFile')} type="file" onChange={(event) => void selectFile(event.target.files?.[0])} />{fileError && <p role="alert">{fileError}</p>}</> : <Textarea aria-label={isMaterial ? t('page.editor.materialBody') : t('page.editor.memoryBody')} className="ctx-field" placeholder={isMaterial ? t('page.editor.materialBodyPlaceholder') : t('page.editor.memoryBodyPlaceholder')} value={content} onChange={(event) => setContent(event.target.value)} rows={5} />}
-    {!isMaterial && <><ContextPicker topicId={topicId} selected={evidence} onChange={setEvidence} /><Input aria-label={t('page.editor.reason')} className="ctx-field" placeholder={t('page.editor.reasonPlaceholder')} value={reason} onChange={(event) => setReason(event.target.value)} /></>}
-    {kind === 'thread' && <div className="ctx-actions"><Input aria-label={t('page.editor.host')} className="ctx-field" placeholder={t('page.editor.hostPlaceholder')} value={provider} onChange={(event) => setProvider(event.target.value)} /><Input aria-label={t('page.editor.sessionId')} className="ctx-field" placeholder={t('page.editor.sessionIdPlaceholder')} value={sessionId} onChange={(event) => setSessionId(event.target.value)} /></div>}
-    <div className="ctx-actions"><Button variant="outline" type="button" className="ctx-btn" disabled={busy} onClick={onClose}>{t('page.editor.cancel')}</Button><Button variant="default" className="ctx-btn ctx-btn-primary" disabled={busy || !resolvedTitle.trim() || attachmentMissing || (!isMaterial && !content.trim())}>{isMaterial ? t('page.editor.saveMaterial') : t('page.editor.saveMemory')}</Button></div>
-    </fieldset>
-  </Surface>;
+  }); }}><fieldset className="ctx-stack" disabled={busy}>
+    <h2 className="ctx-section-title">{t(resource ? 'page.editor.editMemory' : 'page.editor.createMemory')}</h2>
+    <Input aria-label={t('page.editor.memoryTitle')} className="ctx-field" placeholder={t('page.editor.titlePlaceholder')} value={title} onChange={(event) => setTitle(event.target.value)} required />
+    <NativeSelect aria-label={t('page.editor.memoryKind')} className="ctx-select" disabled={resource?.kind === 'crystal'} value={kind} onChange={(event) => setKind(event.target.value)}>{(resource?.kind === 'crystal' ? ['crystal'] : memoryKindKeys.filter((value) => value !== 'crystal')).map((value) => <option key={value} value={value}>{t(`memoryView.kinds.${value}`)}</option>)}</NativeSelect>
+    <div className="ctx-actions"><Stars value={importance} onChange={setImportance} /><NativeSelect aria-label={t('page.editor.origin')} className="ctx-select" value={origin} onChange={(event) => setOrigin(event.target.value)}>{originKeys.map((value) => <option key={value} value={value}>{t(`memoryView.origins.${value}`)}</option>)}</NativeSelect><Input aria-label={t('page.editor.tags')} className="ctx-field max-w-sm" placeholder={t('page.editor.tagsPlaceholder')} value={labels} onChange={(event) => setLabels(event.target.value)} /></div>
+    <Textarea aria-label={t('page.editor.memoryBody')} className="ctx-field" placeholder={t('page.editor.memoryBodyPlaceholder')} value={content} onChange={(event) => setContent(event.target.value)} rows={5} />
+    <ContextPicker topicId={topicId} selected={evidence} onChange={setEvidence} /><Input aria-label={t('page.editor.reason')} className="ctx-field" placeholder={t('page.editor.reasonPlaceholder')} value={reason} onChange={(event) => setReason(event.target.value)} />
+    <div className="ctx-actions"><Button variant="outline" type="button" className="ctx-btn" disabled={busy} onClick={onClose}>{t('page.editor.cancel')}</Button><Button variant="default" className="ctx-btn ctx-btn-primary" disabled={busy || !title.trim() || !content.trim()}>{t('page.editor.saveMemory')}</Button></div>
+  </fieldset></Surface>;
 }
 
 function BriefPanel({ topicId, draft, updateDraft }: { topicId: string | null; draft: BriefDraft | null; updateDraft: (update: (current: BriefDraft | null) => BriefDraft | null) => void }) {

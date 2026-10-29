@@ -1,3 +1,4 @@
+import { assertDocumentCommandWritable } from './resources/write-policy.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -134,6 +135,7 @@ export function normalizeCommands(commands: z.infer<typeof editedCommandSchema>[
   return ordered;
 }
 function requireHandler(command: Command) {
+  assertDocumentCommandWritable(command.kind);
   const handler = handlers.get(command.kind);
   if (!handler) throw new DomainError('UNKNOWN_COMMAND', `不支持的命令: ${command.kind}`, 400);
   return handler;

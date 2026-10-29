@@ -10,6 +10,7 @@ import { isMermaidFence, mermaidSource } from '@/lib/mermaid-fence.js';
 import { MermaidBlock } from './MermaidBlock.js';
 import { isSvgFence } from '@/lib/svg-fence.js';
 import { SvgBlock } from './SvgBlock.js';
+import { HighlightedCode } from './HighlightedCode.js';
 
 function fenceText(children: ReactNode): string {
   if (typeof children === 'string' || typeof children === 'number') return String(children);
@@ -42,10 +43,11 @@ function PreBlock({ children }: { children?: React.ReactNode }) {
   );
 }
 
-function extractText(node: React.ReactNode): string {
+export function extractText(node: React.ReactNode): string {
   if (node == null || typeof node === 'boolean') return '';
   if (typeof node === 'string' || typeof node === 'number') return String(node);
   if (Array.isArray(node)) return node.map(extractText).join('');
+  if (isValidElement<{ code?: string }>(node) && node.type === HighlightedCode) return node.props.code ?? '';
   if (typeof node === 'object' && 'props' in (node as React.ReactElement)) {
     return extractText((node as React.ReactElement<{ children?: React.ReactNode }>).props.children);
   }
@@ -66,7 +68,7 @@ function markdownComponents(diagrams: boolean): Components {
     code: ({ children, className }) => {
       if (diagrams && isMermaidFence(className)) return <MermaidBlock source={mermaidSource(fenceText(children))} />;
       const isBlock = /language-/.test(className ?? '');
-      if (isBlock) return <code className="font-mono">{children}</code>;
+      if (isBlock) return <HighlightedCode code={fenceText(children)} language={(className ?? '').replace(/^language-/, '')} />;
       return <code className="rounded-md bg-muted px-1 py-0.5 font-mono text-[0.85em]">{children}</code>;
     },
     pre: ({ children }) => {

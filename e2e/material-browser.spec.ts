@@ -38,7 +38,7 @@ test('工作上下文和资料库分别打开，记忆和当前进展仍可从�
   await expect(page.getByLabel('简报固定说明', { exact: true })).toBeVisible();
 });
 
-test('一份资料可以同时关联多个任务，预览留在栏内而不是居中弹窗', async ({ page, request }) => {
+test('一份资料可以同时关联多个任务，统一工作区内关联保留原资源身份', async ({ page, request }) => {
   const topicA = await request.post(`${base}/api/topics`, { data: { name: '清单甲' } });
   const topicB = await request.post(`${base}/api/topics`, { data: { name: '清单乙' } });
   expect(topicA.ok() && topicB.ok()).toBe(true);
@@ -52,10 +52,11 @@ test('一份资料可以同时关联多个任务，预览留在栏内而不是�
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto('/#/library');
   await page.getByTestId(`library-row-${material.id}`).click();
-  const preview = page.getByTestId('library-preview');
+  const preview = page.getByTestId('document-pane');
   await expect(preview).toBeVisible();
   const box = (await preview.boundingBox())!;
-  expect(box.width).toBeLessThan(500);
+  expect(box.width).toBeGreaterThan(600);
+  await preview.getByRole('button', { name: '文件信息', exact: true }).click();
   await expect(page.getByRole('combobox', { name: '关联任务', exact: true })).toHaveCount(0);
 
   await preview.getByRole('textbox', { name: '搜索任务', exact: true }).fill('跨清单任务甲');
@@ -75,5 +76,6 @@ test('一份资料可以同时关联多个任务，预览留在栏内而不是�
   await preview.getByRole('button', { name: '关联', exact: true }).click();
   await expect(preview.getByRole('button', { name: '跨清单任务甲', exact: true })).toBeVisible();
   await expect(preview.getByRole('button', { name: '跨清单任务乙', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '返回文件列表', exact: true }).click();
   await expect(page.getByTestId(`library-row-${material.id}`).locator('td').nth(3)).toHaveText('2');
 });

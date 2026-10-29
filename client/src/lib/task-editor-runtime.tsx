@@ -58,6 +58,10 @@ export class EditorRuntime {
 }
 
 let sessionExpired = false;
+/** Shared write guard for document sessions; matching a stale runtime alone is not authentication. */
+export function isEditorRuntimeActive(scopeKey: string) {
+  return runtime?.scopeKey === scopeKey && !sessionExpired;
+}
 export function markEditorSessionExpired(expired: boolean) {
   sessionExpired = expired;
   if (!expired) runtime?.coordinator.setAuthenticated(true);

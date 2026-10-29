@@ -7,9 +7,11 @@ import { libraryFiltersSchema, type LibraryFilters } from './library/schema.js';
 import { LibraryService } from './library/service.js';
 import { codePointLength } from './library/text.js';
 import { internalActor, ownerActor } from './security.js';
+import { readResourceDocument } from './resources/agent-read.js';
+import { createResourceSchema, saveResourceSchema } from './resources/service.js';
 
-const READ_ACTIONS = ['list', 'search', 'read', 'content', 'linked_tasks', 'task_materials', 'folders', 'tags', 'ask'] as const;
-const WRITE_ACTIONS = ['create', 'update', 'archive', 'organize', 'links', 'reextract', 'folder_create', 'folder_update', 'folder_delete', 'tag_create', 'tag_update', 'tag_delete', 'reference', 'undo'] as const;
+const READ_ACTIONS = ['list', 'search', 'read', 'document', 'content', 'linked_tasks', 'task_materials', 'folders', 'tags', 'ask'] as const;
+const WRITE_ACTIONS = ['create', 'update', 'document_create', 'document_save', 'archive', 'organize', 'links', 'reextract', 'folder_create', 'folder_update', 'folder_delete', 'tag_create', 'tag_update', 'tag_delete', 'reference', 'undo'] as const;
 const ACTIONS = [...READ_ACTIONS, ...WRITE_ACTIONS] as const;
 const KINDS = ['text', 'markdown', 'link', 'thread', 'attachment'] as const;
 const CREATE_KINDS = ['text', 'markdown', 'link', 'thread'] as const;
@@ -31,6 +33,7 @@ const allowedKeys: Record<LibraryAction, string[]> = {
   search: ['action', 'q', 'folderId', 'recursive', 'tagIds', 'taskId', 'taskTopicId', 'kind', 'archived', 'view', 'cursor', 'limit'],
   read: ['action', 'materialId'],
   content: ['action', 'materialId', 'revision', 'cursor', 'limit'],
+  document: ['action', 'materialId', 'revision', 'cursor', 'limit'],
   linked_tasks: ['action', 'materialId', 'cursor', 'limit'],
   task_materials: ['action', 'taskId', 'archived', 'cursor', 'limit'],
   folders: ['action'],
@@ -38,6 +41,8 @@ const allowedKeys: Record<LibraryAction, string[]> = {
   ask: ['action', 'question', 'folderId', 'recursive', 'tagIds', 'taskId', 'taskTopicId', 'kind', 'archived', 'view'],
   create: ['action', 'topicId', 'kind', 'title', 'content', 'uri', 'metadata'],
   update: ['action', 'materialId', 'revision', 'title', 'content', 'uri', 'taskId', 'reason', 'metadata'],
+  document_create: ['action', 'topicId', 'folderId', 'title', 'format', 'schemaVersion', 'document', 'content', 'relativeReferences'],
+  document_save: ['action', 'materialId', 'revision', 'format', 'schemaVersion', 'document', 'content', 'relativeReferences'],
   archive: ['action', 'materialId', 'revision', 'archived'],
   organize: ['action', 'materialId', 'revision', 'organizationRevision', 'folderId', 'tagIds'],
   links: ['action', 'materialId', 'revision', 'organizationRevision', 'addTaskIds', 'removeTaskIds', 'removeInlineReferences', 'expectedTaskRevisions'],
@@ -52,7 +57,7 @@ const allowedKeys: Record<LibraryAction, string[]> = {
   undo: ['action', 'changeId'],
 };
 
-export const LIBRARY_TOOL_DESCRIPTION = '查和改项目资料。list、search、read、content、linked_tasks、task_materials、folders、tags、ask 立即返回。create、update、archive、organize、links、reextract、folder_create、folder_update、folder_delete、tag_create、tag_update、tag_delete、reference、undo 只生成待确认，不会立刻改数据。create 只接受 text、markdown、link、thread。上传文件不在工具里，要加文件时告诉用户到项目资料里添加。改已有资料前先 read，并带上刚才读到的 revision；organize 和 links 还要带 organizationRevision。search 搜文件名、标题、标签和提取正文。ask 按现有资料回答；模型没配置时返回模型不可用。undo 使用变更记录 id。memory 只记稳定事实，不要把资料正文抄进记忆。';
+export const LIBRARY_TOOL_DESCRIPTION = '查和改项目资料。list、search、read、document、content、linked_tasks、task_materials、folders、tags、ask 立即返回。create、update、document_create、document_save、archive、organize、links、reextract、folder_create、folder_update、folder_delete、tag_create、tag_update、tag_delete、reference、undo 只生成待确认，不会立刻改数据。create 只接受 text、markdown、link、thread。上传文件不在工具里，要加文件时告诉用户到项目资料里添加。改已有资料前先 read，并带上刚才读到的 revision；organize 和 links 还要带 organizationRevision。search 搜文件名、标题、标签和提取正文。ask 按现有资料回答；模型没配置时返回模型不可用。undo 使用变更记录 id。memory 只记稳定事实，不要把资料正文抄进记忆。';
 
 const string = { type: 'string' };
 const nullableString = { type: ['string', 'null'] };
@@ -75,6 +80,10 @@ export const libraryToolParameters = {
     organizationRevision: { type: 'number', description: '刚才 read 到的整理版本' },
     title: string,
     content: string,
+    document: { type: 'object', description: 'Complete richdoc-v1 product JSON; schemaVersion=1 and stable blocks. Do not supply extracted text.' },
+    format: { type: 'string', enum: ['richdoc-v1', 'markdown', 'text'] },
+    schemaVersion: { type: ['number', 'null'] },
+    relativeReferences: { type: 'array', items: { type: 'object', required: ['path', 'resourceId', 'revision'], properties: { path: string, resourceId: string, revision: revisionField } } },
     uri: string,
     reason: string,
     question: string,
@@ -189,6 +198,22 @@ export function validateLibraryArguments(args: Record<string, unknown>) {
   if (typeof action !== 'string' || !(ACTIONS as readonly string[]).includes(action)) return '未知动作';
   const unknown = Object.keys(args).find((key) => !allowedKeys[action as LibraryAction].includes(key));
   if (unknown) return `未知参数: ${unknown}`;
+  if (action === 'document_create' || action === 'document_save') {
+    if (args.document !== undefined && args.content !== undefined) return 'document and content are mutually exclusive';
+    const input = { requestId: 'validation', format: args.format, schemaVersion: args.schemaVersion, content: args.document ?? args.content, relativeReferences: args.relativeReferences };
+    const result = action === 'document_create'
+      ? createResourceSchema.safeParse({ ...input, title: args.title, topicId: args.topicId, folderId: args.folderId })
+      : saveResourceSchema.safeParse({ ...input, expectedRevision: args.revision });
+    if (!result.success) return result.error.issues.map((issue) => issue.message).join('; ');
+    if (action === 'document_save' && !text(args.materialId)) return 'materialId is required';
+    return null;
+  }
+  if (action === 'document') {
+    if (!text(args.materialId) || !integer(args.revision, 1)) return 'materialId and revision are required';
+    if (args.cursor !== undefined && !integer(Number(args.cursor), 0)) return 'cursor is invalid';
+    if (args.limit !== undefined && (!integer(args.limit, 1) || Number(args.limit) > 20000)) return 'limit must be between 1 and 20000';
+    return null;
+  }
   if (args.cursor !== undefined && !integer(args.cursor, 0)) return 'cursor 无效';
   if (args.limit !== undefined && (!integer(args.limit, 1) || Number(args.limit) > CONTENT_PAGE)) return 'limit 必须是 1 到 40 的整数';
   if (args.tagIds !== undefined && !idList(args.tagIds, 50)) return 'tagIds 无效';
@@ -298,6 +323,7 @@ function brief(item: { id: string; title: string; kind: string; revision: number
 }
 
 async function readLibrary(action: LibraryAction, args: Record<string, unknown>) {
+  if (action === 'document') return readResourceDocument(ownerActor, args);
   if (action === 'folders') return library.folders(ownerActor);
   if (action === 'tags') return library.tags(ownerActor);
   if (action === 'list' || action === 'search' || action === 'task_materials' || action === 'linked_tasks' || action === 'content') {
@@ -351,6 +377,12 @@ async function readLibrary(action: LibraryAction, args: Record<string, unknown>)
 export function commandFor(action: LibraryAction, args: Record<string, unknown>): Command {
   const materialId = text(args.materialId);
   const revision = Number(args.revision);
+  if (action === 'document_create' || action === 'document_save') {
+    const input = { format: args.format, schemaVersion: args.schemaVersion, content: args.document ?? args.content, relativeReferences: args.relativeReferences };
+    return action === 'document_create'
+      ? { kind: 'resource.create', input: { ...input, title: args.title, topicId: args.topicId ?? null, folderId: args.folderId ?? null } }
+      : { kind: 'resource.save', targetId: materialId, expectedRevision: revision, input };
+  }
   if (action === 'create') {
     return { kind: 'material.create', input: { topicId: args.topicId === undefined ? null : args.topicId, kind: args.kind, title: text(args.title), content: typeof args.content === 'string' ? args.content : '', ...(args.uri !== undefined ? { uri: args.uri } : {}), ...(args.metadata !== undefined ? { metadata: args.metadata } : {}) } };
   }

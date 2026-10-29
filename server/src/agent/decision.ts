@@ -239,6 +239,9 @@ async function refreshOperationRevisions(db: Db, operations: ChangeOperation[]) 
     }
     if (operation.family === 'library') {
       const args = operation.args as Record<string, unknown>;
+      // A whole product document is based on a specific revision; rebasing only
+      // the version number would silently overwrite another device's content.
+      if (args.action === 'document_save') continue;
       if (typeof args.materialId === 'string' && ('revision' in args || 'organizationRevision' in args)) {
         const row = await db.material.findUnique({ where: { id: args.materialId }, select: { revision: true, organizationRevision: true } });
         if (row && 'revision' in args) args.revision = row.revision;

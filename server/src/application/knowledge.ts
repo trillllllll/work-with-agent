@@ -1,3 +1,4 @@
+import { assertDocumentWritable } from './resources/write-policy.js';
 import { z } from 'zod';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../infrastructure/prisma.js';
@@ -8,9 +9,12 @@ import { registerCommandHandler, registerEvidenceValidator, runSerializedCommand
 import { registerUndoHandler, type UndoRecord } from './undo-registry.js';
 import { jsonSchema } from './command-catalog.js';
 import { knowledgeHash, knowledgeStorageRoot, readKnowledgeBlob, storeKnowledgeBlob } from './knowledge-blobs.js';
-import { topicVisible } from './library/access.js';
+import { readableMaterial, topicVisible } from './library/access.js';
 import { applyLegacyPointer, materialSnapshot, replaceOrganization, restoreOrganization, seedLegacyLink } from './library/links.js';
-import { afterMaterialVersion, applyTaskPointer, createMaterialFromUpload, isTaskOnlyUpdate, isUploadCreate, uploadMaterialInput } from './library/material-write.js';
+import { afterMaterialVersion, applyTaskPointer, createMaterialFromUpload, importedUtf8, isTaskOnlyUpdate, isUploadCreate, uploadMaterialInput, uploadPresentation } from './library/material-write.js';
+import { versionContent, versionFormat, versionProjection } from './resources/version.js';
+import { recordReferences, referencesForVersion } from './resources/service.js';
+import { indexCurrentVersion } from './library/links.js';
 
 export { knowledgeHash, knowledgeStorageRoot };
 
@@ -132,18 +136,22 @@ function validateMaterialInput(input: z.infer<typeof materialSchema>) {
 async function storeAttachment(bytes: Uint8Array) {
   return storeKnowledgeBlob(bytes);
 }
-function publicVersion<T extends { attachmentPath: string | null }>(row: T) {
-  const { attachmentPath, ...rest } = row;
-  return { ...rest, hasAttachment: Boolean(attachmentPath) };
+function publicVersion<T extends { attachmentPath: string | null; sourceOriginalPath: string | null }>(row: T) {
+  const { attachmentPath, sourceOriginalPath, ...rest } = row;
+  return { ...rest, hasAttachment: Boolean(attachmentPath), hasSourceOriginal: Boolean(sourceOriginalPath) };
+}
+function versionReadCapability(kind: string, version: { format: string | null; schemaVersion: number | null; attachmentPath: string | null }) {
+  const format = versionFormat(kind, version);
+  return { format, schemaVersion: version.schemaVersion, readOnlyProjection: format === 'richdoc-v1' };
 }
 
 export async function knowledgeSource(tx: KnowledgeDb, actor: Actor, ref: Pick<EvidenceRef, 'type' | 'id'>): Promise<KnowledgeSource & { topicId: string | null; unavailable?: boolean; status?: string }> {
   if (ref.type === 'material') {
-    const material = await tx.material.findUnique({ where: { id: ref.id } });
+    const material = await readableMaterial(tx, actor, ref.id);
     if (!material) throw knowledgeFailure('NOT_FOUND', '来源材料不存在', 404);
     await checkKnowledgeScope(tx, actor, material.topicId);
     const version = await tx.materialVersion.findUniqueOrThrow({ where: { materialId_revision: { materialId: material.id, revision: material.revision } } });
-    return { type: 'material', id: material.id, topicId: material.topicId, revision: material.revision, hash: version.contentHash, title: material.title, content: version.content, unavailable: Boolean(material.archivedAt) };
+    return { type: 'material', id: material.id, topicId: material.topicId, revision: material.revision, hash: version.contentHash, title: material.title, content: versionProjection(material.kind, version), unavailable: Boolean(material.archivedAt), ...versionReadCapability(material.kind, version) };
   }
   if (ref.type === 'memory') {
     const memory = await tx.memory.findUnique({ where: { id: ref.id } });
@@ -275,6 +283,9 @@ async function inspectKnowledgeCommand(tx: KnowledgeDb, actor: Actor, command: C
     if (command.kind === 'material.update') {
       const data = materialUpdateSchema.parse(input);
       const version = await tx.materialVersion.findUniqueOrThrow({ where: { materialId_revision: { materialId: material.id, revision: material.revision } } });
+      if (versionFormat(material.kind, version) === 'richdoc-v1' && ['content', 'metadata', 'attachmentBase64', 'fileName', 'mimeType', 'uri'].some((key) => Object.prototype.hasOwnProperty.call(data, key))) {
+        throw knowledgeFailure('UNSUPPORTED_FORMAT_WRITE', '富文档不支持旧文本写入，请使用文档工作区的版本化编辑入口');
+      }
       validateMaterialInput({ topicId: material.topicId, kind: material.kind as z.infer<typeof materialSchema>['kind'], title: data.title ?? material.title, content: data.content ?? version.content, uri: data.uri === undefined ? material.uri : data.uri, metadata: data.metadata ?? parseJson(version.metadata, {}), attachmentBase64: data.attachmentBase64 ?? (material.kind === 'attachment' ? 'AA==' : undefined), fileName: data.fileName, mimeType: data.mimeType });
       if (data.taskId) {
         const source = await knowledgeSource(tx, actor, { type: 'task', id: data.taskId });
@@ -308,14 +319,34 @@ async function executeKnowledgeCommand(tx: KnowledgeDb, actor: Actor, command: C
     if (existing && isTaskOnlyUpdate(command.input)) return applyTaskPointer(tx, actor, existing, materialUpdateSchema.parse(command.input).taskId ?? null, context);
     const previous = existing ? await tx.materialVersion.findUniqueOrThrow({ where: { materialId_revision: { materialId: existing.id, revision: existing.revision } } }) : null;
     const data = existing ? materialUpdateSchema.parse(command.input) : materialSchema.parse(command.input);
+    if (existing && Object.keys(data).every((key) => ['title', 'taskId', 'reason'].includes(key))) {
+      const before = await materialSnapshot(tx, existing);
+      const title = data.title ?? existing.title;
+      const taskId = data.taskId === undefined ? existing.taskId : data.taskId;
+      const linkChanged = await applyLegacyPointer(tx, existing, taskId ?? null, actor);
+      if (title === existing.title && !linkChanged) return existing;
+      const updated = await tx.material.update({ where: { id: existing.id }, data: { title, taskId, organizationRevision: { increment: 1 }, updatedAt: timestamp } });
+      await indexCurrentVersion(tx, updated);
+      await recordChange(tx, 'material', existing.id, 'update', before, await materialSnapshot(tx, updated), context);
+      return updated;
+    }
     const beforeSnap = existing ? await materialSnapshot(tx, existing) : null;
     const linkChanged = Boolean(existing && data.taskId !== undefined && data.taskId !== existing.taskId && await applyLegacyPointer(tx, existing, data.taskId ?? null, actor));
     const bytes = materialBytes(data.attachmentBase64);
-    const attachmentPath = bytes ? context.preview ? knowledgeHash(bytes) : await storeAttachment(bytes) : previous?.attachmentPath ?? null;
     const content = data.content ?? previous?.content ?? '';
+    const changedImportedText = Boolean(existing && previous?.attachmentPath && data.content !== undefined && ['text', 'markdown'].includes(versionFormat(existing.kind, previous)));
+    const bodyBytes = changedImportedText ? Buffer.from(content, 'utf8') : undefined;
+    const attachmentPath = bytes ? context.preview ? knowledgeHash(bytes) : await storeAttachment(bytes) : bodyBytes ? context.preview ? knowledgeHash(bodyBytes) : await storeAttachment(bodyBytes) : previous?.attachmentPath ?? null;
     const contentHash = knowledgeHash(`${content}\0${attachmentPath ?? ''}`);
+    const fileName = data.fileName ?? previous?.fileName;
+    const mimeType = data.mimeType ?? previous?.mimeType;
+    const importedKind = bytes ? uploadPresentation(fileName ?? '', mimeType ?? '').kind : null;
+    const importedText = bytes && importedKind !== 'attachment' ? importedUtf8(bytes) : null;
+    const format = bytes ? importedText === null ? 'binary' : importedKind : previous?.format;
+    const authoritativeContent = bytes ? importedText : data.content === undefined ? previous?.authoritativeContent : null;
+    const supplementalContent = bytes ? content && importedText !== null && content !== importedText ? content : null : previous?.supplementalContent;
     const material = existing ? await tx.material.update({ where: { id: existing.id, revision: command.expectedRevision }, data: { title: data.title ?? existing.title, ...(data.uri !== undefined ? { uri: data.uri } : {}), ...(data.taskId !== undefined ? { taskId: data.taskId } : {}), ...(linkChanged ? { organizationRevision: { increment: 1 } } : {}), revision: { increment: 1 }, updatedAt: timestamp } }) : await tx.material.create({ data: { id: context.entityId ?? command.entityId, topicId: 'topicId' in data ? data.topicId : null, taskId: 'taskId' in data ? data.taskId : null, kind: 'kind' in data ? data.kind : 'text', title: data.title!, uri: data.uri, createdAt: timestamp, updatedAt: timestamp } });
-    await tx.materialVersion.create({ data: { materialId: material.id, revision: material.revision, content, contentHash, metadata: JSON.stringify(data.metadata ?? (previous ? parseJson(previous.metadata, {}) : {})), attachmentPath, fileName: data.fileName ?? previous?.fileName, mimeType: data.mimeType ?? previous?.mimeType, createdAt: timestamp } });
+    await tx.materialVersion.create({ data: { materialId: material.id, revision: material.revision, content, contentHash, metadata: JSON.stringify(data.metadata ?? (previous ? parseJson(previous.metadata, {}) : {})), attachmentPath, sourceOriginalPath: bytes ? attachmentPath : previous?.sourceOriginalPath ?? previous?.attachmentPath, format, authoritativeContent, supplementalContent, schemaVersion: previous?.schemaVersion, fileName, mimeType, createdAt: timestamp } });
     if (!existing && material.taskId) await seedLegacyLink(tx, material.id, material.taskId, actor);
     await afterMaterialVersion(tx, material);
     await recordChange(tx, 'material', material.id, existing ? 'update' : 'create', beforeSnap ? { ...beforeSnap, content: previous?.content ?? '' } : null, { ...await materialSnapshot(tx, material), content, contentHash }, context);
@@ -325,11 +356,8 @@ async function executeKnowledgeCommand(tx: KnowledgeDb, actor: Actor, command: C
     const before = await tx.material.findUniqueOrThrow({ where: { id: command.targetId } });
     const beforeSnap = await materialSnapshot(tx, before);
     const data = z.object({ archived: z.boolean() }).parse(command.input);
-    const result = await tx.material.update({ where: { id: before.id, revision: command.expectedRevision }, data: { archivedAt: data.archived ? timestamp : null, revision: { increment: 1 }, updatedAt: timestamp } });
-    const latest = await tx.materialVersion.findUniqueOrThrow({ where: { materialId_revision: { materialId: before.id, revision: before.revision } } });
-    const { id: _id, ...version } = latest;
-    await tx.materialVersion.create({ data: { ...version, revision: result.revision, createdAt: timestamp } });
-    await afterMaterialVersion(tx, result);
+    const result = await tx.material.update({ where: { id: before.id, revision: command.expectedRevision }, data: { archivedAt: data.archived ? timestamp : null, organizationRevision: { increment: 1 }, updatedAt: timestamp } });
+    await indexCurrentVersion(tx, result);
     await recordChange(tx, 'material', before.id, data.archived ? 'archive' : 'restore', beforeSnap, await materialSnapshot(tx, result), context);
     return result;
   }
@@ -342,6 +370,7 @@ async function executeKnowledgeCommand(tx: KnowledgeDb, actor: Actor, command: C
 
 /** Private archive of one completed built-in chat excerpt. Callers cannot choose an arbitrary id. */
 export async function createAutoChatMaterial(spec: { materialId: string; topicId: string | null; title: string; content: string; metadata: Record<string, unknown> }) {
+  assertDocumentWritable();
   if (!spec.materialId.startsWith('auto-chat:')) throw knowledgeFailure('INVALID_CONTENT', '自动聊天摘录标识无效', 400);
   const actor: Actor = { id: 'auto-memory-archive', kind: 'internal', topicIds: spec.topicId ? [spec.topicId] : [], includeInbox: spec.topicId === null, autoActions: [], revision: 1 };
   const existing = await prisma.material.findUnique({ where: { id: spec.materialId } });
@@ -364,6 +393,7 @@ export function registerKnowledgeCommands() {
 
 export async function undoKnowledgeChange(tx: KnowledgeDb, actor: Actor, record: UndoRecord, _context: MutationContext) {
   assertOwner(actor);
+  if (record.entityType === 'material') assertDocumentWritable();
   const before = record.beforeSnapshot ? JSON.parse(record.beforeSnapshot) : null;
   const after = record.afterSnapshot ? JSON.parse(record.afterSnapshot) : null;
   if (!after) throw knowledgeFailure('UNDO_CONFLICT', '缺少可验证的知识版本');
@@ -381,9 +411,11 @@ export async function undoKnowledgeChange(tx: KnowledgeDb, actor: Actor, record:
     if (!current || current.revision !== after.revision) throw knowledgeFailure('UNDO_CONFLICT', '材料已有后续修改');
     await checkKnowledgeScope(tx, actor, current.topicId, true);
     const source = await tx.materialVersion.findUniqueOrThrow({ where: { materialId_revision: { materialId: current.id, revision: before?.revision ?? current.revision } } });
+    const references = await referencesForVersion(tx, actor, current.kind, source);
     const result = await tx.material.update({ where: { id: current.id, revision: current.revision }, data: { title: before?.title ?? current.title, uri: before ? before.uri : current.uri, archivedAt: before ? before.archivedAt : timestamp, ...(before ? { taskId: before.taskId ?? null } : {}), revision: { increment: 1 }, updatedAt: timestamp } });
     const { id: _id, ...version } = source;
     await tx.materialVersion.create({ data: { ...version, revision: result.revision, createdAt: timestamp } });
+    await recordReferences(tx, result.id, result.revision, references);
     await afterMaterialVersion(tx, result);
     if (before?.links) {
       if (current.organizationRevision !== after.organizationRevision) throw knowledgeFailure('UNDO_CONFLICT', '材料整理已有后续修改');
@@ -419,25 +451,26 @@ export class KnowledgeService {
     const since = normalizedSince(options.since);
     const direction = options.dir === 'asc' ? 'asc' as const : 'desc' as const;
     const orderBy = options.sort === 'title' ? [{ title: direction }, { id: 'asc' as const }] : options.sort === 'kind' ? [{ kind: direction }, { id: 'asc' as const }] : [{ updatedAt: direction }, { id: 'asc' as const }];
-    const where = { topicId, ...(options.taskId ? { taskId: options.taskId } : options.linked === 'task' ? { taskId: { not: null } } : {}), ...(options.kind ? { kind: options.kind } : {}), ...(since ? { createdAt: { gte: since } } : {}), ...(options.archived === 'only' ? { archivedAt: { not: null } } : options.includeArchived ? {} : { archivedAt: null }) };
+    const where = { topicId, sourceTaskId: null, ...(options.taskId ? { taskId: options.taskId } : options.linked === 'task' ? { taskId: { not: null } } : {}), ...(options.kind ? { kind: options.kind } : {}), ...(since ? { createdAt: { gte: since } } : {}), ...(options.archived === 'only' ? { archivedAt: { not: null } } : options.includeArchived ? {} : { archivedAt: null }) };
     const [rows, total] = await Promise.all([prisma.material.findMany({ where, orderBy, take: limit, skip: offset }), prisma.material.count({ where })]);
     const items = await withCurrentFiles(actor, rows);
     return { items, total, nextCursor: offset + items.length < total ? offset + items.length : null, hasMore: offset + items.length < total };
   }
   async material(actor: Actor, id: string) {
-    const material = await prisma.material.findUnique({ where: { id } });
+    const material = await readableMaterial(prisma, actor, id);
     if (!material) throw knowledgeFailure('NOT_FOUND', '材料不存在', 404);
     await checkKnowledgeScope(prisma, actor, material.topicId);
     const versions = await prisma.materialVersion.findMany({ where: { materialId: id }, orderBy: { revision: 'desc' } });
     const [visible] = await withCurrentFiles(actor, [material]);
-    return { ...material, taskId: visible.taskId, taskTitle: visible.taskTitle, versions: versions.map((value) => ({ ...publicVersion(value), metadata: parseJson(value.metadata, {}) })) };
+    return { ...material, taskId: visible.taskId, taskTitle: visible.taskTitle, versions: versions.map((value) => ({ ...publicVersion(value), content: versionProjection(material.kind, value), ...versionReadCapability(material.kind, value), metadata: parseJson(value.metadata, {}) })) };
   }
   async attachment(actor: Actor, id: string, revision: number) {
-    const material = await prisma.material.findUnique({ where: { id } });
+    const material = await readableMaterial(prisma, actor, id);
     if (!material) throw knowledgeFailure('NOT_FOUND', '材料不存在', 404);
     await checkKnowledgeScope(prisma, actor, material.topicId);
     const version = await prisma.materialVersion.findUnique({ where: { materialId_revision: { materialId: id, revision } } });
     if (!version?.attachmentPath) throw knowledgeFailure('NOT_FOUND', '附件不存在', 404);
+    await referencesForVersion(prisma, actor, material.kind, version);
     const bytes = await readKnowledgeBlob(version.attachmentPath);
     return { bytes, fileName: version.fileName ?? 'attachment', mimeType: version.mimeType ?? 'application/octet-stream' };
   }
@@ -503,10 +536,10 @@ export class KnowledgeService {
     const rows: Array<{ type: string; id: string; revision: number; title: string; content: string; status: string; updatedAt: string }> = [];
     const tasks = await prisma.task.findMany({ where: { topicId: input.topicId, ...(input.includeHistory ? {} : { deletedAt: null }) } });
     for (const task of tasks) rows.push({ type: 'task', id: task.id, revision: task.revision, title: task.title, content: `${task.description}\n${task.resultSummary}`, status: task.deletedAt ? 'deleted' : task.status, updatedAt: task.updatedAt });
-    const materials = await prisma.material.findMany({ where: { topicId: input.topicId, ...(input.includeHistory ? {} : { archivedAt: null }) }, include: { versions: true } });
+    const materials = await prisma.material.findMany({ where: { topicId: input.topicId, sourceTaskId: null, ...(input.includeHistory ? {} : { archivedAt: null }) }, include: { versions: true } });
     for (const material of materials) for (const version of material.versions) {
       if (!input.includeHistory && version.revision !== material.revision) continue;
-      rows.push({ type: 'material', id: material.id, revision: version.revision, title: material.title, content: version.content, status: material.archivedAt ? 'archived' : version.revision === material.revision ? 'current' : 'historical', updatedAt: version.createdAt });
+      rows.push({ type: 'material', id: material.id, revision: version.revision, title: material.title, content: versionProjection(material.kind, version), status: material.archivedAt ? 'archived' : version.revision === material.revision ? 'current' : 'historical', updatedAt: version.createdAt });
     }
     const memories = await prisma.memory.findMany({ where: { topicId: input.topicId, ...(input.includeHistory ? {} : { status: 'active' }) }, include: { versions: true } });
     for (const memory of memories) {

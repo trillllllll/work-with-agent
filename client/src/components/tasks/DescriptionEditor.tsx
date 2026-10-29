@@ -1,3 +1,4 @@
+import { createEditorCore, guardMarkdownRules, insertionFiles } from '../documents/editor-core.js';
 import { Surface } from '@/components/ui/surface.js';
 import { Modal } from '@/components/ui/modal.js';
 import { Textarea } from '@/components/ui/textarea.js';
@@ -7,15 +8,12 @@ import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, u
 import { useTranslation } from 'react-i18next';
 import { t as translate } from '../../i18n/index.js';
 import { createPortal } from 'react-dom';
-import { Editor, type Extensions, type JSONContent } from '@tiptap/core';
-import { NodeSelection, type EditorState } from '@tiptap/pm/state';
+import { Editor, type JSONContent } from '@tiptap/core';
+import { NodeSelection } from '@tiptap/pm/state';
 import { Fragment, Slice, type Node as PMNode } from '@tiptap/pm/model';
 import type { EditorView } from '@tiptap/pm/view';
 import { EditorContent, useEditor } from '@tiptap/react';
-import { StarterKit } from '@tiptap/starter-kit';
-import { Link } from '@tiptap/extension-link';
 import { Placeholder } from '@tiptap/extension-placeholder';
-import { ListKit } from '@tiptap/extension-list';
 import { TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
 import { Bold, Code, Italic, Link2, List, ListOrdered, ListTodo, MoreHorizontal, Quote, Strikethrough } from 'lucide-react';
 import { parseDescription, serializeDescription, type DescriptionModel } from '@/lib/description-codec.js';
@@ -126,32 +124,6 @@ export function placeDescriptionCaret(node: HTMLElement | null, start: number, e
   return false;
 }
 
-/** 代码块、行内代码和原文片段中禁用 Markdown 输入规则。 */
-function guardMarkdownRules(extensions: Extensions): Extensions {
-  for (const extension of extensions) {
-    const holder = extension as unknown as { config?: { addInputRules?: (...args: unknown[]) => unknown[] } };
-    const original = holder.config?.addInputRules;
-    if (!holder.config || typeof original !== 'function') continue;
-    holder.config.addInputRules = function (this: unknown, ...args: unknown[]) {
-      const rules = (original.apply(this, args) ?? []) as Array<{ handler?: (state: EditorState, match: RegExpMatchArray, start: number, end: number) => unknown }>;
-      return rules.map((rule) => {
-        const handler = rule.handler;
-        if (typeof handler !== 'function') return rule;
-        return {
-          ...rule,
-          handler(state: EditorState, match: RegExpMatchArray, start: number, end: number) {
-            const $from = state.doc.resolve(start);
-            if ($from.parent.type.spec.code) return false;
-            if ($from.marks().some((mark: { type: { name: string } }) => mark.type.name === 'code')) return false;
-            return handler(state, match, start, end);
-          },
-        };
-      });
-    };
-  }
-  return extensions;
-}
-
 // 剪贴板文本是否包含完整、可识别的 Markdown 结构。
 function looksLikeMarkdown(text: string) {
   const { doc } = parseDescription(text, 'clipboard');
@@ -205,25 +177,7 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
 
   const editor = useEditor({
     extensions: guardMarkdownRules([
-      StarterKit.configure({
-        horizontalRule: false,
-        underline: false,
-        link: false,
-        heading: { levels: [1, 2, 3, 4, 5, 6] },
-        // 列表只从 ListKit 注册一次。StarterKit 再带一份时，重复的 appendTransaction 会抛出 mismatched transaction。
-        bulletList: false,
-        orderedList: false,
-        listItem: false,
-        listKeymap: false,
-      }),
-      Link.configure({
-        openOnClick: false,
-        autolink: true,
-        linkOnPaste: true,
-        protocols: ['http', 'https', 'mailto'],
-        HTMLAttributes: { rel: 'noreferrer', target: '_blank' },
-      }),
-      ListKit.configure({ taskItem: { nested: true } }),
+      ...createEditorCore({ horizontalRule: false }),
       Placeholder.configure({ placeholder: () => translate('tasks:descriptionEditor.addDetails'), showOnlyWhenEditable: true }),
       UploadDecorations,
       AlignedTable.configure({ resizable: false }),
@@ -252,7 +206,7 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
       handlePaste: (view, event) => {
         if (readonly) return false;
         const clipboard = event.clipboardData;
-        const images = [...(clipboard?.files ?? [])].filter((file) => file.type.startsWith('image/') && file.type !== 'image/svg+xml');
+        const images = insertionFiles(clipboard, 'images');
         if (images.length) {
           event.preventDefault();
           event.stopPropagation();
@@ -285,7 +239,7 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
       },
       handleDrop: (view, event, _drag, moved) => {
         if (readonly || moved) return false;
-        const files = [...(event.dataTransfer?.files ?? [])].filter((file) => file.type.startsWith('image/') && file.type !== 'image/svg+xml');
+        const files = insertionFiles(event.dataTransfer, 'images');
         if (!files.length) return false;
         event.preventDefault();
         event.stopPropagation();

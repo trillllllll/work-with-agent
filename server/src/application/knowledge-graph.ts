@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { versionProjection } from './resources/version.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { registerCommandHandler } from './commands.js';
 import { jsonSchema } from './command-catalog.js';
@@ -106,7 +107,7 @@ export class KnowledgeGraph {
     const topicId = input.topicId;
     const [memories, materials, tasks, entities, links] = await Promise.all([
       prisma.memory.findMany({ where: { topicId, ...(query.includeHistory ? {} : { status: 'active' }) } }),
-      prisma.material.findMany({ where: { topicId, ...(query.includeHistory ? {} : { archivedAt: null }) }, include: { versions: { orderBy: { revision: 'desc' }, take: 1 } } }),
+      prisma.material.findMany({ where: { topicId, sourceTaskId: null, ...(query.includeHistory ? {} : { archivedAt: null }) }, include: { versions: { orderBy: { revision: 'desc' }, take: 1 } } }),
       prisma.task.findMany({ where: { topicId, ...(query.includeHistory ? {} : { deletedAt: null }) } }),
       prisma.entity.findMany({ where: { topicId } }),
       prisma.graphLink.findMany({ where: { topicId } }),
@@ -117,7 +118,7 @@ export class KnowledgeGraph {
     const nodes = new Map<string, GraphNode & { text: string }>();
     const add = (node: GraphNode & { text: string }) => nodes.set(node.id, node);
     for (const memory of memories) add({ id: nodeKey('memory', memory.id), rawId: memory.id, type: 'memory', title: memory.title, kind: memory.kind, status: memory.status, excerpt: excerpt(memory.content), importance: memory.importance, labels: readLabels(memory.labels), origin: memory.origin, revision: memory.revision, createdAt: memory.createdAt, text: `${memory.title}\n${memory.content}\n${readLabels(memory.labels).join(' ')}` });
-    for (const material of materials) { const content = material.versions[0]?.content ?? ''; add({ id: nodeKey('material', material.id), rawId: material.id, type: 'material', title: material.title, kind: material.kind, status: material.archivedAt ? 'archived' : 'active', excerpt: excerpt(content), revision: material.revision, createdAt: material.createdAt, text: `${material.title}\n${content}` }); }
+    for (const material of materials) { const content = material.versions[0] ? versionProjection(material.kind, material.versions[0]) : ''; add({ id: nodeKey('material', material.id), rawId: material.id, type: 'material', title: material.title, kind: material.kind, status: material.archivedAt ? 'archived' : 'active', excerpt: excerpt(content), revision: material.revision, createdAt: material.createdAt, text: `${material.title}\n${content}` }); }
     for (const task of tasks) add({ id: nodeKey('task', task.id), rawId: task.id, type: 'task', title: task.title, kind: task.status, status: task.deletedAt ? 'deleted' : task.status, excerpt: excerpt(`${task.description}\n${task.resultSummary}`), revision: task.revision, text: `${task.title}\n${task.description}\n${task.resultSummary}` });
     for (const item of artifacts) add({ id: nodeKey('artifact', item.artifact.id), rawId: item.artifact.id, type: 'artifact', title: item.artifact.name, kind: item.artifact.kind, excerpt: excerpt(item.artifact.content ?? item.artifact.path ?? ''), createdAt: item.artifact.createdAt, text: `${item.artifact.name}\n${item.artifact.content ?? ''}` });
     for (const entity of entities) add({ id: nodeKey('entity', entity.id), rawId: entity.id, type: 'entity', title: entity.name, kind: entity.kind, description: entity.description, excerpt: excerpt(entity.description), revision: entity.revision, text: `${entity.name}\n${entity.description}` });

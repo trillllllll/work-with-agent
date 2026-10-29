@@ -1,4 +1,5 @@
 import { coordinatorWork } from './coordinator-work.js';
+import { versionProjection } from './resources/version.js';
 import { randomBytes } from 'node:crypto';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { MemoryModelAdapter, type MemoryModel } from './auto-memory-model.js';
@@ -387,7 +388,7 @@ export class AutoMemoryService {
       }
       return splitSource(chunks.map((chunk) => chunk.text).join(''), material.revision, version.contentHash, extractionHash, material.title);
     }
-    return splitSource(version.content, material.revision, version.contentHash, null, material.title);
+    return splitSource(versionProjection(material.kind, version), material.revision, version.contentHash, null, material.title);
   }
 
   private async recoverExpired() {

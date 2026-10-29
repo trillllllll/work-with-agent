@@ -91,7 +91,7 @@ export async function librarySearch(actor: Actor, q: string, filters: LibraryFil
   if (!plan) throw libraryError('INVALID_QUERY', '请输入 1 至 200 个字符的检索内容', 400);
   const archived = filters.archived ?? (filters.view === 'archived' ? 'only' : 'exclude');
   const recursive = filters.recursive !== false;
-  const materialClauses: Prisma.Sql[] = [materialAuth(actor)];
+  const materialClauses: Prisma.Sql[] = [materialAuth(actor), Prisma.sql`m.sourceTaskId IS NULL`];
   if (archived === 'exclude') materialClauses.push(Prisma.sql`m.archivedAt IS NULL`);
   if (archived === 'only') materialClauses.push(Prisma.sql`m.archivedAt IS NOT NULL`);
   if (filters.view === 'recent') materialClauses.push(Prisma.sql`m.createdAt >= ${new Date(Date.now() - week).toISOString()}`);

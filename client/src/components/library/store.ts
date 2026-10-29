@@ -23,7 +23,7 @@ const defaults: LibrarySnapshot = {
   query: '', kind: '', taskTopicId: '', taskId: '', folderId: '', tagIds: [], view: 'all', cursor: 0, pageSize: libraryPageSize, selectedIds: [], preview: null, scrollTop: 0,
 };
 
-const kindValues = new Set(['', 'text', 'markdown', 'link', 'thread', 'attachment']);
+const kindValues = new Set(['', 'document', 'text', 'markdown', 'link', 'thread', 'attachment']);
 const viewValues = new Set<LibraryViewName>(['all', 'recent', 'unfiled', 'archived']);
 const filterKeys = ['query', 'kind', 'taskTopicId', 'taskId', 'folderId', 'tagIds', 'view'] as const;
 

@@ -25,6 +25,7 @@ import { ConnectionsPage } from './components/workspace/ConnectionsPage.js';
 import { ProposalsPage } from './components/workspace/ProposalsPage.js';
 import { KnowledgePage } from './components/workspace/KnowledgePage.js';
 import { LibraryPage } from './components/library/LibraryPage.js';
+import { openDocument } from './components/documents/open.js';
 import { SkillsPage } from './components/skills/SkillsPage.js';
 import { SkillEditorHost } from './components/skills/SkillEditor.js';
 import { UploadQueue } from './components/library/UploadQueue.js';
@@ -357,7 +358,7 @@ export function App() {
     void api<{ title: string; content: string; kind: string; id: string; topicId?: string | null }>(`/api/v1/assistant/sources/${source.kind}/${encodeURIComponent(source.id)}${source.revision ? `?revision=${source.revision}` : ''}`).then((resolved) => {
       transitionFromDetail(() => {
         if (source.kind === 'task') { setSourceView(null); setTaskId(source.id); setFocusOpen(false); }
-        else if (source.kind === 'material') { setSourceView(null); setTaskId(''); patchLibrary({ preview: { materialId: source.id, revision: source.revision ?? null, chunkId: null } }); navigate('library'); }
+        else if (source.kind === 'material') { setSourceView(null); setTaskId(''); patchLibrary({ preview: { materialId: source.id, revision: source.revision ?? null, chunkId: null } }); openDocument({ resourceId: source.id, revision: source.revision ?? null, title: resolved.title }); }
         else { setTaskId(''); setSourceView(resolved); }
         if ((workspaceView || isAssistantPage) && source.kind !== 'material') {
           setAssistantOrigin(null);

@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { MaterialChunk } from '@prisma/client';
 import { prisma } from '../../infrastructure/prisma.js';
 import { knowledgeHash, readKnowledgeBlob } from '../knowledge-blobs.js';
 import { publishWorkspaceChange } from '../commands.js';
@@ -12,8 +13,9 @@ import { ModelAdapter, type ModelContentPart } from '../../agent.js';
 import { SettingsService } from '../settings.js';
 import { libraryNow, type LibraryDb } from './access.js';
 import { extractionErrorsSchema, locatorSchema, writeJson } from './schema.js';
-import { replaceActiveDocuments, tagNames } from './index-docs.js';
-import { splitSegment } from './text.js';
+import { insertChunkDocuments, prepareChunkDocuments, tagNames, writeMetaDocument } from './index-docs.js';
+import { splitSegment, textLineSegments } from './text.js';
+import { versionFormat, versionProjection } from '../resources/version.js';
 
 type Segment = { text: string; method: 'native' | 'ocr'; locator: Record<string, unknown>; imagePath?: string };
 type Extracted = { status: 'ready' | 'partial' | 'failed' | 'unsupported'; errorCode: string | null; errors: Array<{ locator: Record<string, unknown> | null; code: string; message: string }>; segments: Segment[] };
@@ -41,11 +43,23 @@ export async function requeueUnsupportedThreads() {
 
 export function startLibraryWorker() {
   if (timer) return () => undefined;
-  const pump = () => { while (running < 2) { running += 1; void coordinatorWork(() => runLibraryWorkerOnce()).catch(() => undefined).finally(() => { running -= 1; }); } };
-  timer = setInterval(pump, 1000);
-  timer.unref();
-  void coordinatorWork(() => requeueUnsupportedThreads()).catch(() => undefined).finally(() => { if (timer) pump(); });
-  return () => { if (timer) clearInterval(timer); timer = null; };
+  let stopped = false;
+  const pump = () => {
+    if (stopped) return;
+    while (running < 2) {
+      running += 1;
+      void coordinatorWork(() => runLibraryWorkerOnce()).then((result) => {
+        // Continue a non-empty queue without imposing a two-documents/second cap.
+        // Empty queues still use the idle timer, and concurrency remains bounded.
+        if (result?.claimed && !stopped) setImmediate(() => { if (!stopped) pump(); });
+      }).catch(() => undefined).finally(() => { running -= 1; });
+    }
+  };
+  const instanceTimer = setInterval(pump, 1000);
+  timer = instanceTimer;
+  instanceTimer.unref();
+  void coordinatorWork(() => requeueUnsupportedThreads()).catch(() => undefined).finally(() => { if (!stopped) pump(); });
+  return () => { stopped = true; clearInterval(instanceTimer); if (timer === instanceTimer) timer = null; };
 }
 
 export async function runLibraryWorkerOnce() {
@@ -106,6 +120,16 @@ async function parseClaim(claimed: { id: string; materialId: string; revision: n
   const version = await prisma.materialVersion.findUnique({ where: { materialId_revision: { materialId: claimed.materialId, revision: claimed.revision } } });
   const material = await prisma.material.findUnique({ where: { id: claimed.materialId } });
   if (!version || !material) return { kind: 'publish', status: 'failed', errorCode: 'FILE_CORRUPT', errors: [{ locator: null, code: 'FILE_CORRUPT', message: '版本已不存在' }], segments: [] };
+  if (versionFormat(material.kind, version) === 'richdoc-v1') {
+    const text = versionProjection(material.kind, version);
+    return { kind: 'publish', status: 'ready', errorCode: null, errors: [], segments: [{ text, method: 'native', locator: { kind: 'paragraph', paragraph: 1, start: 0, end: text.length } }] };
+  }
+  if (versionFormat(material.kind, version) === 'text' && !version.attachmentPath) {
+    const text = versionProjection(material.kind, version);
+    if (text.includes('\u0000')) return { kind: 'publish', status: 'failed', errorCode: 'FILE_CORRUPT', errors: [{ locator: null, code: 'FILE_CORRUPT', message: '文本不是 UTF-8' }], segments: [] };
+    const segments: Segment[] = textLineSegments(text).filter((segment) => segment.text.trim()).map(({ text, startLine, endLine }) => ({ text, method: 'native', locator: { kind: 'line', startLine, endLine } }));
+    return { kind: 'publish', status: 'ready', errorCode: null, errors: [], segments };
+  }
   const bytesPath = join(directory, 'original');
   let bytes: Buffer;
   if (version.attachmentPath) {
@@ -211,38 +235,97 @@ async function scheduleRetry(id: string, token: string | null, generation: numbe
 }
 
 async function publishExtraction(id: string, token: string | null, generation: number, outcome: { status: 'ready' | 'partial' | 'failed' | 'unsupported' | 'blocked'; errorCode: string | null; errors: Extracted['errors']; segments: Segment[] }) {
-  return prisma.$transaction(async (tx) => {
-    const current = await tx.materialExtraction.findUnique({ where: { id } });
-    if (!current || current.leaseToken !== token || current.generation !== generation) return false;
-    const errors = outcome.errors.map((error) => ({ locator: locatorOrNull(error.locator ?? {}) ?? error.locator, code: error.code, message: error.message }));
-    const terminal = outcome.status === 'failed' || outcome.status === 'unsupported' || outcome.status === 'blocked';
+  const initial = await prisma.materialExtraction.findUnique({ where: { id } });
+  if (!initial || initial.leaseToken !== token || initial.generation !== generation) return false;
+  const terminal = outcome.status === 'failed' || outcome.status === 'unsupported' || outcome.status === 'blocked';
+  const material = await prisma.material.findUniqueOrThrow({ where: { id: initial.materialId } });
+  const version = await prisma.materialVersion.findUniqueOrThrow({ where: { materialId_revision: { materialId: initial.materialId, revision: initial.revision } } });
+  const names = await tagNames(prisma, material.id);
+  let published = false;
+  try {
     if (!terminal) {
-      const material = await tx.material.findUniqueOrThrow({ where: { id: current.materialId } });
-      const version = await tx.materialVersion.findUniqueOrThrow({ where: { materialId_revision: { materialId: current.materialId, revision: current.revision } } });
-      const created = [];
+      // Search and content readers only see indexedGeneration. Stage each bounded batch
+      // under the lease, then atomically switch that pointer after every batch is durable.
+      // Neither normalization nor n-gram generation holds SQLite's write lock.
       let ordinal = 0;
       const timestamp = libraryNow();
-      for (const segment of outcome.segments) {
-        const pieces = splitSegment(segment.text);
-        for (const piece of pieces) {
-          const locator = locatorSchema.parse({ ...segment.locator, start: piece.start, end: piece.end });
-          created.push({ id: randomUUID(), extractionId: current.id, generation, ordinal, text: piece.text, textHash: knowledgeHash(piece.text), locatorJson: JSON.stringify(locator), method: segment.method, createdAt: timestamp });
-          ordinal += 1;
+      const chunks = function* () {
+        for (const segment of outcome.segments) {
+          for (const piece of splitSegment(segment.text)) {
+            const locator = locatorSchema.parse({ ...segment.locator, start: piece.start, end: piece.end });
+            yield { id: randomUUID(), extractionId: id, generation, ordinal: ordinal++, text: piece.text, textHash: knowledgeHash(piece.text), locatorJson: JSON.stringify(locator), method: segment.method, createdAt: timestamp };
+          }
         }
+      };
+      let batch: MaterialChunk[] = [];
+      const stage = async () => {
+        const rows = batch;
+        const prepared = prepareChunkDocuments(material, version, names, rows);
+        const accepted = await prisma.$transaction(async (tx) => {
+          const current = await tx.materialExtraction.findUnique({ where: { id } });
+          if (!current || current.leaseToken !== token || current.generation !== generation) return false;
+          await tx.materialChunk.createMany({ data: rows });
+          await insertChunkDocuments(tx, prepared);
+          return true;
+        }, { maxWait: 10_000, timeout: 10_000 });
+        batch = [];
+        // Yield between batches so incoming HTTP work does not wait behind CPU work.
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        return accepted;
+      };
+      for (const chunk of chunks()) {
+        batch.push(chunk);
+        if (batch.length === 8 && !await stage()) return false;
       }
-      for (let index = 0; index < created.length; index += 200) await tx.materialChunk.createMany({ data: created.slice(index, index + 200) });
-      await replaceActiveDocuments(tx, material, version, await tagNames(tx, material.id), created);
+      if (batch.length && !await stage()) return false;
     }
-    await tx.materialExtraction.update({ where: { id }, data: {
-      status: outcome.status, errorCode: outcome.errorCode, errorsJson: writeJson(extractionErrorsSchema, errors.flatMap((error) => {
-        const locator = error.locator ? locatorSchema.safeParse(error.locator) : null;
-        return [{ locator: locator && locator.success ? locator.data : null, code: error.code, message: error.message }];
-      })),
-      ...(terminal ? {} : { indexedGeneration: generation }),
-      leaseToken: null, leaseUntil: null, updatedAt: libraryNow(),
-    } });
-    return true;
-  }, { maxWait: 10_000, timeout: 60_000 });
+    published = await prisma.$transaction(async (tx) => {
+      const current = await tx.materialExtraction.findUnique({ where: { id } });
+      if (!current || current.leaseToken !== token || current.generation !== generation) return false;
+      const errors = outcome.errors.map((error) => ({ locator: locatorOrNull(error.locator ?? {}) ?? error.locator, code: error.code, message: error.message }));
+      if (!terminal) {
+        const latest = await tx.material.findUniqueOrThrow({ where: { id: current.materialId } });
+        const latestNames = await tagNames(tx, material.id);
+        if (latest.organizationRevision !== material.organizationRevision || latest.title !== material.title || JSON.stringify(latestNames) !== JSON.stringify(names)) {
+          // A rename/retag during staging must not publish stale metadata postings.
+          await tx.materialExtraction.update({ where: { id }, data: { status: 'queued', leaseToken: null, leaseUntil: null, nextAttemptAt: libraryNow(), updatedAt: libraryNow() } });
+          return false;
+        }
+        await writeMetaDocument(tx, material, version, names);
+      }
+      await tx.materialExtraction.update({ where: { id }, data: {
+        status: outcome.status, errorCode: outcome.errorCode, errorsJson: writeJson(extractionErrorsSchema, errors.flatMap((error) => {
+          const locator = error.locator ? locatorSchema.safeParse(error.locator) : null;
+          return [{ locator: locator && locator.success ? locator.data : null, code: error.code, message: error.message }];
+        })),
+        ...(terminal ? {} : { indexedGeneration: generation }),
+        leaseToken: null, leaseUntil: null, updatedAt: libraryNow(),
+      } });
+      return true;
+    }, { maxWait: 10_000, timeout: 10_000 });
+    return published;
+  } finally {
+    // Keep old chunks for existing citations; only their obsolete search rows expire.
+    // Aborted staged chunks were never published and can be removed completely.
+    if (!terminal) await cleanExtractionIndex(id, generation, published).catch(() => undefined);
+  }
+}
+
+async function cleanExtractionIndex(extractionId: string, generation: number, published: boolean) {
+  while (true) {
+    const current = await prisma.materialExtraction.findUnique({ where: { id: extractionId } });
+    if (!current || (!published && current.indexedGeneration === generation)) return;
+    if (published) {
+      const rows = await prisma.librarySearchDocument.findMany({ where: { chunk: { extractionId, generation: { lt: generation } } }, select: { id: true }, take: 8 });
+      if (!rows.length) return;
+      await prisma.librarySearchDocument.deleteMany({ where: { id: { in: rows.map((row) => row.id) } } });
+    } else {
+      const rows = await prisma.materialChunk.findMany({ where: { extractionId, generation }, select: { id: true }, take: 8 });
+      if (!rows.length) return;
+      await prisma.materialChunk.deleteMany({ where: { id: { in: rows.map((row) => row.id) } } });
+    }
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
 }
 
 export async function publishLibraryExtraction(id: string, token: string | null, generation: number, outcome: { status: 'ready' | 'partial' | 'failed' | 'unsupported' | 'blocked'; errorCode: string | null; errors: Extracted['errors']; segments: Segment[] }) {

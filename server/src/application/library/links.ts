@@ -1,3 +1,4 @@
+import { assertDocumentWritable } from '../resources/write-policy.js';
 import { randomUUID } from 'node:crypto';
 import type { Material, MaterialTaskLink } from '@prisma/client';
 import { recordChange, type MutationContext } from '../workspace-store.js';
@@ -12,6 +13,7 @@ export type OrganizationSnapshot = {
   id: string;
   revision: number;
   organizationRevision: number;
+  managed?: boolean;
   folderId: string | null;
   taskId: string | null;
   title: string;
@@ -37,7 +39,7 @@ export async function readTagIds(tx: LibraryDb, materialId: string) {
 
 export async function materialSnapshot(tx: LibraryDb, material: Material): Promise<OrganizationSnapshot> {
   return {
-    id: material.id, revision: material.revision, organizationRevision: material.organizationRevision,
+    id: material.id, revision: material.revision, organizationRevision: material.organizationRevision, managed: material.managed,
     folderId: material.folderId, taskId: material.taskId, title: material.title, uri: material.uri,
     archivedAt: material.archivedAt, topicId: material.topicId,
     tagIds: await readTagIds(tx, material.id), links: await readLinks(tx, material.id),
@@ -152,11 +154,11 @@ export async function organizeMaterial(tx: LibraryDb, actor: Actor, materialId: 
   const before = await materialSnapshot(tx, material);
   if (input.folderId !== undefined) await assertFolder(tx, input.folderId);
   if (input.tagIds) await setTags(tx, material.id, input.tagIds);
-  if (input.folderId !== undefined && input.folderId !== material.folderId) {
-    await tx.material.update({ where: { id: material.id }, data: { folderId: input.folderId } });
+  if (input.folderId !== undefined && (input.folderId !== material.folderId || material.managed)) {
+    await tx.material.update({ where: { id: material.id }, data: { folderId: input.folderId, managed: false } });
   }
   const tagsChanged = input.tagIds !== undefined && JSON.stringify([...input.tagIds].sort()) !== JSON.stringify(before.tagIds);
-  const folderChanged = input.folderId !== undefined && input.folderId !== before.folderId;
+  const folderChanged = input.folderId !== undefined && (input.folderId !== before.folderId || material.managed);
   if (tagsChanged) await retagMaterialDocuments(tx, material.id, await tagNames(tx, material.id));
   if (!tagsChanged && !folderChanged) return tx.material.findUniqueOrThrow({ where: { id: material.id } });
   return bumpOrganization(tx, material, context, before);
@@ -225,7 +227,9 @@ export async function replaceOrganization(tx: LibraryDb, materialId: string, bef
   await tx.materialTaskLink.deleteMany({ where: { materialId } });
   if (before.links.length) await tx.materialTaskLink.createMany({ data: before.links.map((link) => ({ materialId, taskId: link.taskId, manual: link.manual, legacy: link.legacy, createdAt: timestamp, createdBy: 'undo' })) });
   await retagMaterialDocuments(tx, materialId, await tagNames(tx, materialId));
-  return tx.material.update({ where: { id: materialId }, data: { folderId: before.folderId, taskId: before.taskId, organizationRevision: { increment: 1 }, updatedAt: timestamp } });
+  const updated = await tx.material.update({ where: { id: materialId }, data: { title: before.title, uri: before.uri, archivedAt: before.archivedAt, folderId: before.folderId, taskId: before.taskId, ...(before.managed === undefined ? {} : { managed: before.managed }), organizationRevision: { increment: 1 }, updatedAt: timestamp } });
+  await indexCurrentVersion(tx, updated);
+  return updated;
 }
 
 export async function restoreOrganization(tx: LibraryDb, current: Material, before: OrganizationSnapshot, after: OrganizationSnapshot, context?: MutationContext) {
@@ -368,6 +372,7 @@ export async function deleteTag(tx: LibraryDb, actor: Actor, id: string, expecte
 }
 
 export async function undoLibraryFolder(tx: LibraryDb, actor: Actor, record: { entityId: string; operation: string; beforeSnapshot: string | null; afterSnapshot: string | null }) {
+  assertDocumentWritable();
   if (actor.kind !== 'user') throw libraryError('OWNER_REQUIRED', '只有本机用户可以管理文件夹', 403);
   const before = record.beforeSnapshot ? JSON.parse(record.beforeSnapshot) as FolderSnapshot | null : null;
   const after = record.afterSnapshot ? JSON.parse(record.afterSnapshot) as FolderSnapshot & { deleted?: boolean } : null;
@@ -393,6 +398,7 @@ export async function undoLibraryFolder(tx: LibraryDb, actor: Actor, record: { e
 }
 
 export async function undoLibraryTag(tx: LibraryDb, actor: Actor, record: { entityId: string; operation: string; beforeSnapshot: string | null; afterSnapshot: string | null }) {
+  assertDocumentWritable();
   if (actor.kind !== 'user') throw libraryError('OWNER_REQUIRED', '只有本机用户可以管理标签', 403);
   const before = record.beforeSnapshot ? JSON.parse(record.beforeSnapshot) as TagSnapshot | null : null;
   const after = record.afterSnapshot ? JSON.parse(record.afterSnapshot) as TagSnapshot & { deleted?: boolean } : null;

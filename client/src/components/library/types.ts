@@ -1,6 +1,6 @@
 import { intlLocale, t } from '../../i18n/index.js';
 
-export type MaterialKind = 'text' | 'markdown' | 'link' | 'thread' | 'attachment';
+export type MaterialKind = 'document' | 'text' | 'markdown' | 'link' | 'thread' | 'attachment';
 export type ExtractionStatus = 'queued' | 'running' | 'ready' | 'partial' | 'blocked' | 'failed' | 'unsupported';
 export type LibraryViewName = 'all' | 'recent' | 'unfiled' | 'archived';
 
@@ -110,7 +110,7 @@ export type LibraryFilters = {
   view?: LibraryViewName;
 };
 
-export const materialKinds: MaterialKind[] = ['text', 'markdown', 'link', 'thread', 'attachment'];
+export const materialKinds: MaterialKind[] = ['document', 'text', 'markdown', 'link', 'thread', 'attachment'];
 
 export function extractionLabel(status: ExtractionStatus) {
   return t(`library:extraction.${status}`);
@@ -142,7 +142,7 @@ export function formatUpdated(value: string) {
   });
 }
 
-const kinds = new Set<MaterialKind>(['text', 'markdown', 'link', 'thread', 'attachment']);
+const kinds = new Set<MaterialKind>(['document', 'text', 'markdown', 'link', 'thread', 'attachment']);
 
 export function normalizeRow(item: Partial<LibraryRow> & Pick<LibraryRow, 'id' | 'title'>): LibraryRow {
   const kind = item.kind && kinds.has(item.kind) ? item.kind : 'text';
