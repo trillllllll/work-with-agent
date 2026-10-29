@@ -12,6 +12,7 @@ import { addDays, addMinutes, applyDrop, eachDate, formatTime, isOverdue, layout
 import { intlLocale } from '@/i18n/index.js';
 import { cn } from '@/lib/utils.js';
 import { Button } from '@/components/ui/button.js';
+import { Tooltip } from '@/components/ui/tooltip.js';
 import { Input } from '@/components/ui/input.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { ScheduleFields, scheduleError, type ScheduleValue } from '@/components/tasks/ScheduleFields.js';
@@ -97,17 +98,20 @@ function TimedTask({ block, dateKey, busy, left, width, lane, laneCount, groupKe
   const range = timedRange(block);
   const showInline = !block.point && height < 44;
   const title = <>{block.point && <span>● {formatTime(task.scheduledStart!)} </span>}{!block.startsHere && '↳ '}{task.title}</>;
+  const blockTitle = t('plan.blockTitle', { title: task.title, schedule: scheduleLabel(task) });
   const dropping = laneDrop?.targetTaskId === task.id && laneDrop.groupKey === groupKey ? laneDrop : null;
   return <DragTask task={task} instance={dateKey} offset={offset} busy={busy} lane={lane} laneCount={laneCount} laneGroup={{ groupKey, dateKey }} className="plan-lane-card pointer-events-auto absolute z-[2]" style={{ top, height, left: `calc(${left * 100}% + 2px)`, width: `calc(${width * 100}% - 4px)` }}>
-    <article ref={setDropRef} data-testid="task-block" data-task-id={task.id} data-date={dateKey} data-point={block.point} data-lane-drop={dropping?.side} title={t('plan.blockTitle', { title: task.title, schedule: scheduleLabel(task) })} style={dropping ? { boxShadow: dropping.side === 'before' ? 'inset 3px 0 0 var(--primary)' : 'inset -3px 0 0 var(--primary)' } : undefined} className={cn('plan-timed-task relative h-full overflow-hidden rounded-md border px-1.5 text-xs leading-tight', block.point ? 'flex items-center border-dashed' : 'pt-2 pb-1', task.status === 'done' && 'opacity-55 line-through')}>
+    <article ref={setDropRef} data-testid="task-block" data-task-id={task.id} data-date={dateKey} data-point={block.point} data-lane-drop={dropping?.side} style={dropping ? { boxShadow: dropping.side === 'before' ? 'inset 3px 0 0 var(--primary)' : 'inset -3px 0 0 var(--primary)' } : undefined} className={cn('plan-timed-task relative h-full overflow-hidden rounded-md border px-1.5 text-xs leading-tight', block.point ? 'flex items-center border-dashed' : 'pt-2 pb-1', task.status === 'done' && 'opacity-55 line-through')}>
       {!block.point && block.startsHere && <ResizeHandle task={task} edge="start" busy={busy} onOpen={onOpen} />}
-      <div className="flex min-w-0 items-start gap-1">
-        <Check task={task} busy={busy} onToggle={onToggle} />
-        <Button variant="row" size="bare" type="button" className="min-w-0 flex-1 text-left" aria-label={t('plan.openTask', { title: task.title })} onClick={() => { if (!skipClick.current) onOpen(task.id); }}>
-          {showInline ? <span className="flex w-full min-w-0 items-start gap-1"><span className="plan-task-title min-w-0 flex-1">{title}</span><span className="plan-timed-when-inline shrink-0 whitespace-nowrap text-[10px] text-muted-foreground tabular-nums">{range}</span></span> : <span className="plan-task-title block">{title}</span>}
-          {height >= 44 && <span className="plan-timed-when block truncate text-[10px] text-muted-foreground tabular-nums">{range}</span>}
-        </Button>
-      </div>
+      <Tooltip content={blockTitle} side="bottom">
+        <div className={cn('flex min-w-0 gap-1', block.point ? 'items-center' : 'h-full items-start')}>
+          <Check task={task} busy={busy} onToggle={onToggle} />
+          <Button variant="row" size="bare" type="button" className="min-w-0 flex-1 text-left" aria-label={t('plan.openTask', { title: task.title })} onClick={() => { if (!skipClick.current) onOpen(task.id); }}>
+            {showInline ? <span className="flex w-full min-w-0 items-start gap-1"><span className="plan-task-title min-w-0 flex-1">{title}</span><span className="plan-timed-when-inline shrink-0 whitespace-nowrap text-[10px] text-muted-foreground tabular-nums">{range}</span></span> : <span className="plan-task-title block">{title}</span>}
+            {height >= 44 && <span className="plan-timed-when block truncate text-[10px] text-muted-foreground tabular-nums">{range}</span>}
+          </Button>
+        </div>
+      </Tooltip>
       {!block.point && block.endsHere && <ResizeHandle task={task} edge="end" busy={busy} onOpen={onOpen} />}
     </article>
   </DragTask>;
