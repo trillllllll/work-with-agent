@@ -300,6 +300,13 @@ export class AgentService {
   async stop(runId: string) { const run = await stopRun(runId); return runView(run.id); }
   async getApproval(approvalId: string) { const approval = await approvalView(approvalId); if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 }); return { approval, run: approval.runId ? await runView(approval.runId) : null }; }
   async repreview(approvalId: string, input: { requestKey?: string } = {}) { return repreviewApproval(approvalId, input); }
+  async setConversationWebSearch(conversationId: string, input: { webSearchEnabled?: unknown }) {
+    if (typeof input?.webSearchEnabled !== 'boolean') throw new DomainError('INVALID_CONVERSATION_PATCH', 'webSearchEnabled 必须是布尔值', 400);
+    const existing = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { id: true } });
+    if (!existing) throw Object.assign(new Error('会话不存在'), { status: 404 });
+    await prisma.conversation.update({ where: { id: conversationId }, data: { webSearchEnabled: input.webSearchEnabled, updatedAt: new Date().toISOString() } });
+    return { id: conversationId, webSearchEnabled: input.webSearchEnabled };
+  }
   async activeRun(conversationId: string) { return activeRunView(conversationId); }
   async prepareUndo(approvalId: string) { return undoPreview(approvalId); }
   async requestByKey(requestKey: string) {
@@ -334,6 +341,7 @@ export class AgentService {
       const contexts = new Map(runs.map((run) => [run.sourceUserMessageId, (() => { const { timeZoneSource, ...context } = JSON.parse(run.contextJson); return context; })()]));
       return {
         identityId: conversation.identityId,
+        webSearchEnabled: conversation.webSearchEnabled,
         messages: messages.map((message) => {
           const stale = message.status !== 'streaming' || message.id !== liveMessageId;
           const blocks = parseMessageBlocks(message.blocksJson).map((block) => stale && block.status === 'pending' ? { ...block, status: 'error' as const, error: '回复已中断，内容未完成' } : block);

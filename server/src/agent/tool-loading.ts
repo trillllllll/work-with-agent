@@ -79,14 +79,15 @@ export function loadedFamilies(selected: readonly ToolGroup[]) {
   return selected.filter((g) => g.endsWith('_write')).map((g) => g.slice(0, -6));
 }
 
-/** 按身份收敛已加载的组：身份不允许的组在这里被剔除，历史游标里残留也不生效。 */
-export function scopeGroupsFor(identityId: string | null | undefined, selected: readonly ToolGroup[]): ToolGroup[] {
+/** 按身份收敛已加载的组：身份不允许的组在这里被剔除，历史游标里残留也不生效。
+ *  webEnabled 为用户在会话上显式开启的联网开关：仅此一个组可以越过身份白名单。 */
+export function scopeGroupsFor(identityId: string | null | undefined, selected: readonly ToolGroup[], webEnabled = false): ToolGroup[] {
   const allowed = new Set(allowedGroupsFor(identityId));
-  return selected.filter((group) => allowed.has(group));
+  return selected.filter((group) => allowed.has(group) || (webEnabled && group === 'web'));
 }
 
-export function toolsForGroups(selected: readonly ToolGroup[], loadSkill = false, identityId: AssistantIdentityId | string = 'work'): ModelToolDefinition[] {
-  const effective = scopeGroupsFor(identityId, selected);
+export function toolsForGroups(selected: readonly ToolGroup[], loadSkill = false, identityId: AssistantIdentityId | string = 'work', webEnabled = false): ModelToolDefinition[] {
+  const effective = scopeGroupsFor(identityId, selected, webEnabled);
   const names = new Set([...baseToolsFor(identityId), ...effective.flatMap((g) => groups[g].tools)]);
   if (loadSkill) names.add('load_skill');
   const families = loadedFamilies(effective);

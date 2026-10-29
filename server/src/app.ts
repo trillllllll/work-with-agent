@@ -297,6 +297,9 @@ const chatBody = z.object({
   pageContext: z.object({ topicId: z.string().nullable().optional(), taskId: z.string().nullable().optional(), page: z.string().nullable().optional() }).optional(),
   context: z.unknown().optional(),
 });
+const conversationPatchBody = z.object({
+  webSearchEnabled: z.boolean(),
+});
 const sse = (res: Response, event: string, data: unknown) => {
   if (!res.destroyed && !res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(translatePayload(data, res.locals.locale))}\n\n`);
 };
@@ -330,6 +333,7 @@ app.get('/api/conversations', async (req, res, next) => { try { const identity =
 app.get('/api/conversations/:id/messages', async (req, res, next) => { try { send(res, await agent.messages(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/conversations/:id/snapshot', async (req, res, next) => { try { send(res, await agent.snapshot(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/conversations/:id/active-run', async (req, res, next) => { try { send(res, await agent.activeRun(String(req.params.id))); } catch (error) { next(error); } });
+app.patch('/api/conversations/:id', schema(conversationPatchBody), async (req, res, next) => { try { send(res, await agent.setConversationWebSearch(String(req.params.id), req.body)); } catch (error) { next(error); } });
 app.get('/api/agent/approvals', async (req, res, next) => { try { send(res, await agent.approvalList(typeof req.query.status === 'string' ? req.query.status : undefined)); } catch (error) { next(error); } });
 app.get('/api/agent/approvals/:id', async (req, res, next) => { try { send(res, await agent.getApproval(String(req.params.id))); } catch (error) { next(error); } });
 app.post('/api/agent/approvals/:id/approve', async (req, res, next) => { try { send(res, await agent.approve(String(req.params.id), req.body ?? {})); } catch (error) { next(error); } });

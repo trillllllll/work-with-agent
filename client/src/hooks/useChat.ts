@@ -109,6 +109,25 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
   }, []);
   const approvalsRef = useRef(approvals);
   const conversationRef = useRef(conversationId);
+  // 会话级联网搜索开关：状态存服务端（跟随同步），新会话未创建时先记本地待写。
+  const [webSearchEnabled, setWebSearchEnabledState] = useState(false);
+  const webSearchEnabledRef = useRef(false);
+  const webSearchPendingRef = useRef(false);
+  const setWebSearchEnabled = (enabled: boolean) => { webSearchEnabledRef.current = enabled; setWebSearchEnabledState(enabled); };
+  const persistWebSearch = async (enabled: boolean, id: string) => {
+    await api<{ id: string; webSearchEnabled: boolean }>(`/api/conversations/${id}`, { method: 'PATCH', body: JSON.stringify({ webSearchEnabled: enabled }) });
+  };
+  const setWebSearch = async (enabled: boolean) => {
+    setWebSearchEnabled(enabled);
+    const id = conversationRef.current;
+    if (!id) { webSearchPendingRef.current = true; return; }
+    try { await persistWebSearch(enabled, id); } catch (reason) { setWebSearchEnabled(!enabled); onErrorRef.current(reason instanceof Error ? reason.message : tRef.current('errors.webSearchToggleFailed')); }
+  };
+  useEffect(() => {
+    if (!conversationId || !webSearchPendingRef.current) return;
+    webSearchPendingRef.current = false;
+    void persistWebSearch(webSearchEnabledRef.current, conversationId).catch((reason) => onErrorRef.current(reason instanceof Error ? reason.message : tRef.current('errors.webSearchToggleFailed')));
+  }, [conversationId]);
   const busyRef = useRef(busy);
   const mutatingRef = useRef(false);
   const loadGeneration = useRef(0);
@@ -133,11 +152,13 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     if (!force && (mutatingRef.current || newConversationRef.current === id)) return;
     const generation = ++loadGeneration.current;
     try {
-      const snapshot = await api<{ identityId?: 'work' | 'study'; contextStats?: ContextUsage | null; messages: ChatMessage[]; approvals: Array<Parameters<typeof parseApproval>[0]>; watermarks: Record<string, number>; activeRun: { id: string; state: string; pauseReason?: string | null } | null }>(`/api/conversations/${id}/snapshot`);
+      const snapshot = await api<{ identityId?: 'work' | 'study'; webSearchEnabled?: boolean; contextStats?: ContextUsage | null; messages: ChatMessage[]; approvals: Array<Parameters<typeof parseApproval>[0]>; watermarks: Record<string, number>; activeRun: { id: string; state: string; pauseReason?: string | null } | null }>(`/api/conversations/${id}/snapshot`);
       const history = snapshot.messages; const active = snapshot.activeRun;
       if (generation !== loadGeneration.current || conversationRef.current !== id) return;
       if (!force && busyRef.current) return;
       adoptIdentity(snapshot.identityId);
+      setWebSearchEnabled(snapshot.webSearchEnabled ?? false);
+      webSearchPendingRef.current = false;
       snapshotWatermarks.current = snapshot.watermarks;
       activeRunId.current = active?.id ?? '';
       if (!busyRef.current) {
@@ -168,6 +189,8 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
         setConversationId('');
         setContextStats(null); setMessages([]);
         setApprovals([]);
+        setWebSearchEnabled(false);
+        webSearchPendingRef.current = false;
         return;
       }
       onErrorRef.current(reason instanceof Error ? reason.message : tRef.current('errors.loadConversationFailed'));
@@ -679,6 +702,8 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     setConversationId('');
     setContextStats(null); setMessages([]);
     setApprovals([]);
+    setWebSearchEnabled(false);
+    webSearchPendingRef.current = false;
     setExecutingApprovalId('');
     setUnknownApprovalIds([]);
     setInterrupted(false);
@@ -690,5 +715,5 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     setPausedRun(null);
   };
 
-  return { activeRunId: busy ? activeRunId.current : undefined, contextStats, stop, stopping, selectConversation, addMaterial, context, pinned: Boolean(pinnedContext), togglePin: () => setPinnedContext((current) => current ? null : structuredClone(pageContext ?? null)), attachments, removeAttachment: (id: string) => setAttachments((current) => current.filter((item) => item.id !== id)), conversationId, selectedTopicId, messages, approvals, busy, interrupted, input, setInput, sendSeq, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference: () => setReferencedApproval(null), showRepreview };
+  return { activeRunId: busy ? activeRunId.current : undefined, contextStats, stop, stopping, selectConversation, addMaterial, context, pinned: Boolean(pinnedContext), togglePin: () => setPinnedContext((current) => current ? null : structuredClone(pageContext ?? null)), attachments, removeAttachment: (id: string) => setAttachments((current) => current.filter((item) => item.id !== id)), conversationId, selectedTopicId, messages, approvals, busy, interrupted, input, setInput, sendSeq, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference: () => setReferencedApproval(null), showRepreview, webSearchEnabled, setWebSearch };
 }

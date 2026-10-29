@@ -102,7 +102,8 @@
     "requestIncomplete": "The saved request on this device is incomplete. Start a new conversation and send it again.",
     "chatRequestFailed": "Chat request failed",
     "requestUnconfirmed": "The original request isn't confirmed yet. Restore the connection and try again.",
-    "parseEventFailed": "Couldn't parse the chat event"
+    "parseEventFailed": "Couldn't parse the chat event",
+    "webSearchToggleFailed": "Failed to save the web search toggle. Please retry."
   },
   "toolPreview": {
     "rejected": "Rejected",
@@ -217,7 +218,11 @@
     "greeting": "Move your work forward.",
     "identityWork": "Work assistant",
     "identityStudy": "Study assistant",
-    "switchIdentity": "Switch assistant"
+    "switchIdentity": "Switch assistant",
+    "webSearch": "Web search",
+    "webSearchOn": "Web search on for this conversation",
+    "webSearchOff": "Enable web search",
+    "webSearchUnavailable": "Web search is not configured. Add a DeepSeek key in Settings."
   },
   "chatPickers": {
     "history": "Conversation history",

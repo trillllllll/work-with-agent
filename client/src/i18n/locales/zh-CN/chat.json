@@ -102,7 +102,8 @@
     "requestIncomplete": "本机原请求内容不完整，请新建对话后重新发送",
     "chatRequestFailed": "聊天请求失败",
     "requestUnconfirmed": "尚未收到原请求的确认，请恢复连接后重试",
-    "parseEventFailed": "无法解析聊天事件"
+    "parseEventFailed": "无法解析聊天事件",
+    "webSearchToggleFailed": "联网搜索开关保存失败，请重试"
   },
   "toolPreview": {
     "rejected": "已拒绝",
@@ -210,7 +211,11 @@
     "greeting": "一起把工作往前推。",
     "identityWork": "工作助手",
     "identityStudy": "学习助手",
-    "switchIdentity": "切换助手"
+    "switchIdentity": "切换助手",
+    "webSearch": "联网搜索",
+    "webSearchOn": "联网搜索已开启，本会话内有效",
+    "webSearchOff": "开启联网搜索",
+    "webSearchUnavailable": "未配置联网搜索服务，请在设置里配置 DeepSeek 密钥"
   },
   "chatPickers": {
     "history": "历史对话",

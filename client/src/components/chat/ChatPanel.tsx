@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import { openSkillEditor } from '@/components/skills/skill-format.js';
 import { ContextUsagePopover } from './ContextUsagePopover.js';
 import { ChatComposer } from './ChatComposer.js';
+import { WebSearchToggle } from './WebSearchToggle.js';
 import { AssistantInputProvider } from './assistant-input.js';
 
 type ChatPanelProps = {
@@ -102,7 +103,7 @@ export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose
         {chat.context && <Popover><PopoverTrigger asChild><Button variant="row" size="bare" type="button" className="flex w-full min-w-0 items-center gap-1.5 py-1 text-left text-[11px] text-muted-foreground" data-testid="assistant-context-trigger"><span className="truncate">{materialCount ? t(chat.pinned ? 'chatPanel.contextPinnedWithMaterials' : 'chatPanel.contextReferenceWithMaterials', { label: chat.context.label, count: materialCount }) : t(chat.pinned ? 'chatPanel.contextPinned' : 'chatPanel.contextReference', { label: chat.context.label })}</span><ChevronDown className="size-3 shrink-0" /></Button></PopoverTrigger><PopoverContent data-assistant-floating side="top" onEscapeKeyDown={(event) => event.stopPropagation()} className="w-80 max-w-[calc(100vw-2rem)] p-3"><h3 className="mb-2 text-sm font-semibold">{t('chatPanel.referenceScope')}</h3><ContextSummary context={chat.context} /><Button size="sm" variant="ghost" onClick={chat.togglePin}>{chat.pinned ? t('chatPanel.followPage') : t('chatPanel.pinContext')}</Button></PopoverContent></Popover>}
         {chat.attachments.map((item) => <div className="mb-1 flex items-center gap-2 text-xs" key={item.id}><span className="min-w-0 flex-1 truncate">{t(item.unsaved ? 'chatPanel.unsavedAttachment' : 'chatPanel.selectedAttachment', { title: item.title })}</span><Button variant="ghost" size="icon-xs" onClick={() => chat.removeAttachment(item.id)} aria-label={t('chatPanel.removeAttachment', { title: item.title })}><X /></Button></div>)}
       </div>
-      <ChatComposer contextUsage={<ContextUsagePopover stats={chat.contextStats} />} input={input} busy={busy} reference={referencedApproval} onChange={setInput} onSend={send} onCancelReference={clearReference} model={settings.data?.model} onStop={() => void chat.stop()} stopping={chat.stopping} toolbar={<ChatReferencePicker selectedIds={chat.context?.selectedMaterialIds ?? []} onSelect={chat.addMaterial} />} />
+      <ChatComposer contextUsage={<ContextUsagePopover stats={chat.contextStats} />} input={input} busy={busy} reference={referencedApproval} onChange={setInput} onSend={send} onCancelReference={clearReference} model={settings.data?.model} onStop={() => void chat.stop()} stopping={chat.stopping} toolbar={<><ChatReferencePicker selectedIds={chat.context?.selectedMaterialIds ?? []} onSelect={chat.addMaterial} /><WebSearchToggle enabled={chat.webSearchEnabled} busy={busy} onToggle={chat.setWebSearch} /></>} />
     </div>
   );
 }

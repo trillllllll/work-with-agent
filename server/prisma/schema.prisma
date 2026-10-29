@@ -242,6 +242,7 @@ enum ApprovalStatus {
 model Conversation {
   id        String    @id @default(cuid())
   identityId String   @default("work") @map("identity_id")
+  webSearchEnabled Boolean @default(false) @map("web_search_enabled")
   summary   String    @default("")
   summaryVersion Int   @default(0) @map("summary_version")
   lastCompactedAt String? @map("last_compacted_at")

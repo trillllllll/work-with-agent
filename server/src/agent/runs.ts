@@ -60,6 +60,7 @@ export const runCursorSchema = z.object({
   webUsed: z.boolean().optional(),
   businessAttempted: z.boolean().optional(),
   webClosing: z.boolean().optional(),
+  webEnabled: z.boolean().optional(),
   webSearchCalls: z.number().int().min(0).optional(),
   webFetchCalls: z.number().int().min(0).optional(),
   summaryCalls: z.array(z.object({ estimatedInputTokens: z.number(), estimatedOutputTokens: z.number(), actual: z.object({ inputTokens: z.number().optional(), outputTokens: z.number().optional(), cachedInputTokens: z.number().optional(), model: z.string().optional() }).nullable(), durationMs: z.number(), fallback: z.boolean() })).optional(),
@@ -300,7 +301,7 @@ async function ensureMessages(runId: string, token: string, contextService: Cont
   if (stored.length) {
     // Existing in-flight runs keep their full capability set. New user turns
     // start with lazy groups; source recovery is available to both generations.
-    if (!cursor.toolGroups) await saveCursor(runId, token, { ...cursor, toolGroups: scopeGroupsFor(identityId, [...toolGroupNames]) });
+    if (!cursor.toolGroups) await saveCursor(runId, token, { ...cursor, toolGroups: scopeGroupsFor(identityId, [...toolGroupNames], cursor.webEnabled ?? false) });
     return stored;
   }
   const skills = await enabledSkillCatalog(identityId);
@@ -320,7 +321,10 @@ async function ensureMessages(runId: string, token: string, contextService: Cont
   await ownsLease(runId, token);
   for (const metric of summaryCalls) if (metric.actual) await addRunUsage(runId, token, metric.actual);
   await saveMessages(runId, token, messages);
-  await saveCursor(runId, token, { ...cursor, loadSkill: skills.length > 0, toolGroups: initialToolGroups(source?.content ?? '', readContext(run.contextJson).page, identityId), summaryCalls });
+  const initialGroups = initialToolGroups(source?.content ?? '', readContext(run.contextJson).page, identityId);
+  // 会话级联网开关：用户显式开启时 web 组随本轮初始加载，越过身份白名单。
+  if (cursor.webEnabled && !initialGroups.includes('web')) initialGroups.push('web');
+  await saveCursor(runId, token, { ...cursor, loadSkill: skills.length > 0, toolGroups: initialGroups, summaryCalls });
   return messages;
 }
 
@@ -335,7 +339,9 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
   const owned = await ownsLease(runId, token);
   const cursor = readCursor(owned.cursorJson);
   const identityId = readContext(owned.contextJson).identityId ?? 'work';
-  let tools = cursor.toolGroups ? toolsForGroups(cursor.toolGroups, cursor.loadSkill, identityId) : builtinToolDefinitions({ loadSkill: cursor.loadSkill });
+  let tools = cursor.toolGroups ? toolsForGroups(cursor.toolGroups, cursor.loadSkill, identityId, cursor.webEnabled ?? false) : builtinToolDefinitions({ loadSkill: cursor.loadSkill });
+  // 工作助手的能力边界写死了“不能联网”；会话开关开启时在这里显式覆盖，避免工具与提示词自相矛盾。
+  if (cursor.webEnabled && identityId === 'work') messages.splice(1, 0, { role: 'system', content: '【本会话联网搜索已开启】用户已为当前会话开启联网搜索，能力边界中“不能联网搜索、读取网页”的限制本轮起不成立：可直接调用 web_search 与 read_webpage，配额见【本任务联网预算】。检索策略：先用少量搜索定位权威来源（优先 authority≥3、官方文档域，可用 site: 限定），再 read_webpage 阅读原文；引用结论附 URL 与日期。服务未配置或失败时如实说明，不要反复重试。' });
   if (cursor.webPolicy === 2 && (cursor.webUsed || cursor.toolGroups?.includes('web'))) {
     const state = await webSessionState(runId);
     if (!cursor.businessAttempted && !cursor.toolGroups?.some(group => group.endsWith('_write')) && cursor.round >= cursor.budgetEndRound - 1) {
@@ -355,7 +361,7 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
   if (citationSources.length) messages.splice(1, 0, { role: 'system', content: `【本次可引用来源】${JSON.stringify(citationSources.map((source, index) => ({ number: index + 1, title: source.title, kind: source.kind, id: source.id })))}。仅当来源确实支撑结论时，在结论旁用 [编号](#source-编号) 引用对应条目。不编造编号，不为没有依据的结论加引用。` });
   const offered = new Set(tools.map(t => t.function.name));
   if (cursor.toolGroups?.includes('media') && !String(messages[0]?.content).includes('【富媒体表达】\nSVG')) messages.splice(1, 0, { role: 'system', content: `【按需富媒体规则】\n${mediaInstructionsFor(identityId)}\n${htmlBlockPrompt(await htmlBlockPolicy())}` });
-  await saveMessages(runId, token, messages.filter(m => !(m.role === 'system' && (String(m.content).startsWith('【本次可引用来源】') || String(m.content).startsWith('【按需富媒体规则】') || String(m.content).startsWith('【本任务联网预算】') || String(m.content).startsWith('本次资料检索已进入最后作答轮')))));
+  await saveMessages(runId, token, messages.filter(m => !(m.role === 'system' && (String(m.content).startsWith('【本次可引用来源】') || String(m.content).startsWith('【按需富媒体规则】') || String(m.content).startsWith('【本任务联网预算】') || String(m.content).startsWith('【本会话联网搜索已开启】') || String(m.content).startsWith('本次资料检索已进入最后作答轮')))));
   const stats = buildContextStats({ runId, round: cursor.round, messages, tools, fullTools: identityId === 'work' ? builtinToolDefinitions({ loadSkill: cursor.loadSkill }) : toolsForGroups(scopeGroupsFor(identityId, [...toolGroupNames]), cursor.loadSkill, identityId), loadedGroups: cursor.toolGroups ?? ['legacy-all'], summaryCalls: cursor.summaryCalls });
   const publishStats = async () => {
     const earlier = await prisma.agentRunEvent.findMany({ where: { runId, type: 'context_stats' }, orderBy: { seq: 'asc' }, select: { dataJson: true } });
@@ -479,7 +485,7 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
     content: text || null,
     ...(calls.length ? { tool_calls: calls.map((call) => ({ id: call.id ?? '', type: 'function' as const, function: { name: call.name, arguments: JSON.stringify(call.arguments ?? {}) } })) } : {}),
   };
-  messages.splice(0, messages.length, ...messages.filter(m => !(m.role === 'system' && (String(m.content).startsWith('【本次可引用来源】') || String(m.content).startsWith('【按需富媒体规则】') || String(m.content).startsWith('【本任务联网预算】') || String(m.content).startsWith('本次资料检索已进入最后作答轮')))));
+  messages.splice(0, messages.length, ...messages.filter(m => !(m.role === 'system' && (String(m.content).startsWith('【本次可引用来源】') || String(m.content).startsWith('【按需富媒体规则】') || String(m.content).startsWith('【本任务联网预算】') || String(m.content).startsWith('【本会话联网搜索已开启】') || String(m.content).startsWith('本次资料检索已进入最后作答轮')))));
   messages.push(assistantMessage);
   await saveMessages(runId, token, messages);
   if (!calls.length) {
@@ -496,8 +502,8 @@ async function toolTurn(runId: string, token: string, contextService: ContextSer
   const context = readContext(run.contextJson);
   const identityId = context.identityId ?? 'work';
   const offeredGroups = cursor.offeredToolGroups ?? cursor.toolGroups;
-  const offeredFamilies = offeredGroups ? loadedFamilies(scopeGroupsFor(identityId, offeredGroups)) : null;
-  const offered = new Set((offeredGroups ? toolsForGroups(offeredGroups, cursor.loadSkill, identityId) : builtinToolDefinitions({ loadSkill: cursor.loadSkill })).map(t => t.function.name));
+  const offeredFamilies = offeredGroups ? loadedFamilies(scopeGroupsFor(identityId, offeredGroups, cursor.webEnabled ?? false)) : null;
+  const offered = new Set((offeredGroups ? toolsForGroups(offeredGroups, cursor.loadSkill, identityId, cursor.webEnabled ?? false) : builtinToolDefinitions({ loadSkill: cursor.loadSkill })).map(t => t.function.name));
   const assistantMessageId = cursor.assistantMessageId;
   if (!assistantMessageId) throw new DomainError('RUN_FAILED', '工具阶段缺少助手消息', 500);
   const assistant = await prisma.message.findUnique({ where: { id: assistantMessageId } });
@@ -535,7 +541,7 @@ async function toolTurn(runId: string, token: string, contextService: ContextSer
         else {
           cursor = { ...cursor, toolGroups: [...new Set([...(cursor.toolGroups ?? []), ...requested.data.groups])] };
           await saveCursor(runId, token, cursor);
-          result = { success: true, data: { groups: cursor.toolGroups, availableNextTurn: toolsForGroups(cursor.toolGroups!, cursor.loadSkill, identityId).map(t => t.function.name), ...(cursor.webPolicy === 2 && cursor.toolGroups!.includes('web') ? await webSessionState(runId) : {}), note: '只加载定义，未修改业务数据；下一轮调用。' } };
+          result = { success: true, data: { groups: cursor.toolGroups, availableNextTurn: toolsForGroups(cursor.toolGroups!, cursor.loadSkill, identityId, cursor.webEnabled ?? false).map(t => t.function.name), ...(cursor.webPolicy === 2 && cursor.toolGroups!.includes('web') ? await webSessionState(runId) : {}), note: '只加载定义，未修改业务数据；下一轮调用。' } };
         }
       }
     } else if (call.function.name === 'read_context_source') {
@@ -715,7 +721,7 @@ export async function startChat(input: { conversationId?: string; message: strin
     const created = await tx.agentRun.create({
       data: {
         conversationId, sourceUserMessageId: user.id, requestKey, requestHash, state: 'queued',
-        contextJson: JSON.stringify(stored), modelMessagesJson: '[]', cursorJson: JSON.stringify(initialCursor()),
+        contextJson: JSON.stringify(stored), modelMessagesJson: '[]', cursorJson: JSON.stringify({ ...initialCursor(), ...(conversation.webSearchEnabled ? { webEnabled: true } : {}) }),
         createdAt: timestamp, updatedAt: timestamp,
       },
     });
