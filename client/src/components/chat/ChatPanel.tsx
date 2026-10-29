@@ -4,7 +4,7 @@ import mark from '@/assets/dovun-mark.svg';
 import { settingsHash } from '@/components/settings/settings-categories.js';
 import { ContextSummary } from './ContextSummary.js';
 import { suggestions, studySuggestions } from '@/lib/assistant-context.js';
-import { ChevronDown, Ellipsis, Maximize2, Minimize2, RotateCcw, Sparkles, SquarePen, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Ellipsis, Maximize2, Minimize2, RotateCcw, Sparkles, SquarePen, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChat } from '@/hooks/useChat.js';
 import { api, type Settings } from '@/lib/api.js';
@@ -35,9 +35,10 @@ type ChatPanelProps = {
   onExpand?: () => void;
   onShrink?: () => void;
   showClose?: boolean;
+  onReturnToLearning?: () => void;
 };
 
-export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose, mobile, presentation = 'side', onExpand, onShrink, showClose = true }: ChatPanelProps) {
+export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose, mobile, presentation = 'side', onExpand, onShrink, showClose = true, onReturnToLearning }: ChatPanelProps) {
   const { t } = useTranslation('chat');
   const action = usePlatformAction();
   const settings = useQuery<Settings>({ queryKey: ['settings'], queryFn: () => api('/api/settings') });
@@ -58,17 +59,21 @@ export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose
   };
   const { messages, approvals, busy, interrupted, input, setInput, sendSeq, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference, showRepreview } = chat;
   const materialCount = chat.context?.selectedMaterialIds.length ?? 0;
+  const latestLearningTurn = [...messages].reverse().find(message => message.role === 'user' && message.context?.schemaVersion === 3 && message.context.attachments.some(item => item.learningMapId || item.learningSessionId));
+  const learningReferences = chat.attachments.filter(item => item.learningMapId || item.learningSessionId);
+  const savedReferences = latestLearningTurn?.context?.schemaVersion === 3 ? latestLearningTurn.context.attachments.filter(item => item.learningMapId || item.learningSessionId) : [];
+  const learningReference = learningReferences[learningReferences.length - 1] ?? savedReferences[savedReferences.length - 1];
   return (
     <div className="dovun-assistant flex h-full min-h-0 min-w-0 flex-col" data-testid="ai-assistant" data-presentation={presentation}>
       <header className="assistant-header flex shrink-0 items-center gap-1 border-b px-3 py-3">
         <Sparkles className="size-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1"><h2 className="truncate whitespace-nowrap text-sm font-semibold">{identityId === 'study' ? t('chatPanel.identityStudy') : t('chatPanel.title')}</h2><span className="text-[10px] text-muted-foreground" role="status">{busy ? t('status.working') : interrupted ? t('status.interrupted') : settings.isLoading ? t('status.checking') : settings.error ? t('status.unknown') : configured ? t('status.available') : t('status.noModel')}</span></div>
-        {onSwitchIdentity && <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="h-7 gap-1 px-1 text-xs" disabled={busy || Boolean(executingApprovalId)} aria-label={t('chatPanel.switchIdentity')} title={t('chatPanel.switchIdentity')}><ChevronDown className="size-3" /></Button></DropdownMenuTrigger><DropdownMenuContent data-assistant-floating align="end">
+        {onSwitchIdentity && <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="h-7 gap-1 px-1 text-xs" disabled={chat.switchingBlocked} aria-label={t('chatPanel.switchIdentity')} title={t('chatPanel.switchIdentity')}><ChevronDown className="size-3" /></Button></DropdownMenuTrigger><DropdownMenuContent data-assistant-floating align="end">
           <DropdownMenuItem disabled={identityId === 'work'} onSelect={() => onSwitchIdentity('work')}>{t('chatPanel.identityWork')}</DropdownMenuItem>
           <DropdownMenuItem disabled={identityId === 'study'} onSelect={() => onSwitchIdentity('study')}>{t('chatPanel.identityStudy')}</DropdownMenuItem>
         </DropdownMenuContent></DropdownMenu>}
-        <ChatHistory busy={busy || action.busy || Boolean(executingApprovalId)} currentId={chat.conversationId} identityId={identityId} onSelect={chat.selectConversation} />
-        <Button variant="ghost" size="icon-sm" disabled={busy || Boolean(executingApprovalId)} onClick={startNew} aria-label={t('chatPanel.newConversation')} title={t('chatPanel.newConversation')}><SquarePen /></Button>
+        <ChatHistory busy={chat.switchingBlocked || action.busy} currentId={chat.conversationId} identityId={identityId} onSelect={chat.selectConversation} />
+        <Button variant="ghost" size="icon-sm" disabled={chat.switchingBlocked} onClick={startNew} aria-label={t('chatPanel.newConversation')} title={t('chatPanel.newConversation')}><SquarePen /></Button>
         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={t('chatPanel.moreActions')} title={t('chatPanel.moreActions')}><Ellipsis /></Button></DropdownMenuTrigger><DropdownMenuContent data-assistant-floating align="end">
           <DropdownMenuItem disabled={busy || action.busy || !chat.conversationId || !messages.length} onSelect={() => void action.run(() => api('/api/v1/knowledge/materials/from-conversation', { method: 'POST', body: json({ conversationId: chat.conversationId, topicId: chat.selectedTopicId || null, title: t('chatPanel.sessionMaterialTitle', { time: new Date().toLocaleString(intlLocale()) }) }) }), t('chatPanel.sessionSaved'))}>{t('chatPanel.saveSession')}</DropdownMenuItem>
           <DropdownMenuItem disabled={busy || drafting || !chat.conversationId || !messages.length} onSelect={() => void saveAsSkill()}>{t('chatPanel.saveAsSkill')}</DropdownMenuItem>
@@ -78,7 +83,14 @@ export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose
         {presentation === 'side' && showClose && <Button variant="ghost" size="icon-sm" title={t('chatPanel.hideAssistant')} aria-label={mobile ? t('chatPanel.backToPage') : t('chatPanel.closeChat')} onClick={onClose}><X /></Button>}
       </header>
 
+      {onReturnToLearning && <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1">
+        <Button variant="ghost" className="min-h-11 shrink-0 px-2" onClick={onReturnToLearning}><ArrowLeft className="size-4" />{t('chatPanel.backToLearning')}</Button>
+        {identityId === 'study' && learningReference && <span className="min-w-0 truncate text-xs text-muted-foreground" title={learningReference.title}>{t('chatPanel.learningReference', { title: learningReference.title })}</span>}
+      </div>}
+
       {!settings.isLoading && !settings.error && !configured && <p className="shrink-0 px-4 py-2 text-xs text-muted-foreground">{t('chatPanel.configureModel')} <a className="font-medium text-brand-link underline-offset-4 hover:underline" href={`#${settingsHash('model')}`}>{t('chatPanel.configureModelAction')}</a></p>}
+      {chat.draftStorageFailed&&<p role="alert" className="mx-3 shrink-0 rounded-lg border border-destructive/30 p-3 text-xs text-destructive">{t('errors.draftStorageFailed')}</p>}
+      {chat.hasLegacyPending&&<p role="status" className="mx-3 shrink-0 rounded-lg border p-3 text-xs text-muted-foreground">{t('chatPanel.legacyPendingHint')}</p>}
       <AssistantInputProvider setInput={setInput}><MessageList emptyState={<>
       <div className="dovun-assistant-welcome"><img src={mark} alt="" /><h3>{t('chatPanel.title')}</h3><p>{t('chatPanel.greeting')}</p></div>
       <div className="dovun-assistant-suggestions flex flex-wrap gap-2 px-3 pt-3">{(identityId === 'study' ? studySuggestions() : suggestions(chat.context?.page ?? '')).map((item) => <Button key={item} size="sm" variant="outline" className="h-auto whitespace-normal text-left" onClick={() => setInput(input.trim() ? `${input}\n\n${item}` : item)}>{item}</Button>)}</div>

@@ -57,7 +57,7 @@ export class ReplyStream {
           batcher = new TextBatcher(async (text) => {
             const block = this.blocks[index];
             const offset = block.markdown?.length ?? 0;
-            await this.persist({ type: 'block_delta', blockId: id, offset, delta: text }, () => { block.type = 'text'; block.markdown = (block.markdown ?? '') + text; });
+            await this.persist({ type: 'block_delta', blockId: id, offset, delta: text, ...(event.studySupport ? { studySupport: event.studySupport } : {}) }, () => { block.type = 'text'; block.markdown = (block.markdown ?? '') + text; if (event.studySupport) block.studySupport = event.studySupport; });
           }, this.abort);
           this.batchers.set(index, batcher);
         }

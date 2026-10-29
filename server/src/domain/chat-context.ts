@@ -35,7 +35,12 @@ export const chatAttachment = z.object({
   taskId: short.optional(), materialId: short.optional(), unsaved: z.boolean(),
   learningNodeId: short.optional(), learningMapId: short.optional(),
   learningRevision: z.number().int().positive().optional(),
-}).strict();
+  learningSessionId: short.min(1).optional(), learningItemId: short.min(1).optional(), learningAttemptId: short.min(1).optional(),
+  learningIntent: z.enum(['explain', 'example', 'practice', 'review', 'summarize', 'hint', 'solution']).optional(),
+}).strict().superRefine((attachment, ctx) => {
+  const references = [attachment.learningSessionId, attachment.learningItemId, attachment.learningAttemptId];
+  if (references.some(Boolean) && !references.every(Boolean)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: '练习引用需要完整的会话、题目和作答标识' });
+});
 export const chatContextV3 = chatContextV2.extend({
   schemaVersion: z.literal(3),
   label: short,

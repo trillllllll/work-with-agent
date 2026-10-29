@@ -688,8 +688,7 @@ export async function startChat(input: { conversationId?: string; message: strin
     const timestamp = nowIso();
     conversationId = (await prisma.conversation.create({ data: { identityId, createdAt: timestamp, updatedAt: timestamp } })).id;
   }
-  const stored = await validateScopeAndResolveIds(requestedContext);
-  stored.identityId = identityId;
+  const stored = await validateScopeAndResolveIds({ ...requestedContext, identityId });
   // The request's UI language (X-WWA-Language / Accept-Language) decides the reply language.
   if (currentLocale() === 'en') stored.language = 'en';
   if (stored.referencedApprovalId) {

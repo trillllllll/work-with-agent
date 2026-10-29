@@ -1,7 +1,7 @@
 import type { ContextUsage } from '@/lib/context-usage.js';
 import { readMessageBlocks } from '@/lib/message-blocks.js';
-import { contextLabel, attachmentError, type ChatAttachment, type ChatContextV3 } from '@/lib/assistant-context.js';
-import { useEffect, useRef, useState, type FormEvent, type SetStateAction } from 'react';
+import { contextLabel, attachmentError, appendAssistantPrompt, type ChatAttachment, type ChatContextV3 } from '@/lib/assistant-context.js';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type SetStateAction } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { applyApprovalEvent, applyMessageEvent, pairToolMessages, parseExternalParts, replyIncompleteMarker, toolPreview, userRejectedError, type Approval, type ChatMessage, type SseEvent, type ToolActivityStatus, type ToolResult } from '../chat.js';
@@ -13,11 +13,13 @@ type ApprovalLookup = {
     supersededByApprovalId?: string | null;
   } | null;
 };
-import { ApiError, api, parseApproval, streamChat, type ApprovalResponse, type View } from '../lib/api.js';
+import { ApiError, api as networkApi, parseApproval, streamChat as networkStreamChat, type ApprovalResponse, type View } from '../lib/api.js';
 import { buildChatContext } from '../lib/chat-context.js';
 import type { TaskFilters } from '../components/tasks/TaskFilterBar.js';
 import { useLibrarySnapshot } from '../components/library/store.js';
 import { invalidateTodo } from './useTodo.js';
+import { EditorRuntime, useEditorRuntime } from '../lib/task-editor-runtime.js';
+import { createChatStorage, type ChatComposerSnapshot } from '../lib/chat-storage.js';
 
 export type { View };
 
@@ -40,19 +42,30 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
   const tRef = useRef(t);
   tRef.current = t;
   const queryClient = useQueryClient();
+  const editorRuntime=useEditorRuntime();
+  const [chatStorage]=useState(()=>createChatStorage(editorRuntime?.scopeKey));
+  const [restoredComposer]=useState(()=>chatStorage.readComposer(identityId==='study'?'study':'work'));
+  const [draftStorageFailed,setDraftStorageFailed]=useState(restoredComposer.unavailable);
+  const composerWarning=useRef(false);
+  const instanceScope=useRef(editorRuntime?.scopeKey);
+  const alive=useRef(true);
+  useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
+  const scopeCurrent=()=>alive.current&&Boolean(instanceScope.current)&&EditorRuntime.current()?.scopeKey===instanceScope.current;
+  const api=async<T=any>(path:string,init?:RequestInit):Promise<T>=>{if(!scopeCurrent())throw new Error(tRef.current('errors.workspaceChanged'));const result=await networkApi<T>(path,init);if(!scopeCurrent())throw new Error(tRef.current('errors.workspaceChanged'));return result;};
+  const streamChat:typeof networkStreamChat=async(body,onEvent,options)=>{if(!scopeCurrent())throw new Error(tRef.current('errors.workspaceChanged'));await networkStreamChat(body,event=>{if(scopeCurrent())onEvent(event);},{onAccepted:()=>{if(scopeCurrent())options?.onAccepted?.();}});if(!scopeCurrent())throw new Error(tRef.current('errors.workspaceChanged'));};
   const onErrorRef = useRef(onError);
   const newConversationRef = useRef('');
-  onErrorRef.current = onError;
-  const [input, setInputState] = useState('');
+  onErrorRef.current = message=>{if(scopeCurrent())onError(message);};
+  const [input, setInputState] = useState(restoredComposer.snapshot?.input??'');
   // Failure paths must read the live draft (not the send-time closure) to decide restore-vs-keep,
   // so the exposed setter keeps this ref in sync for both string and functional updates.
-  const inputRef = useRef('');
+  const inputRef = useRef(restoredComposer.snapshot?.input??'');
   const setInput = ((action: SetStateAction<string>) => {
     inputRef.current = typeof action === 'function' ? (action as (current: string) => string)(inputRef.current) : action;
     return setInputState(action);
   }) as typeof setInputState;
   const [sendSeq, setSendSeq] = useState(0);
-  const [conversationId, setConversationId] = useState<string>(() => localStorage.getItem('dovun.conversationId') ?? '');
+  const [conversationId, setConversationId] = useState<string>(() => restoredComposer.snapshot?.conversationId ?? chatStorage.get('conversationId') ?? '');
   const identityIdRef = useRef(identityId ?? 'work');
   identityIdRef.current = identityId ?? 'work';
   const onIdentityResolvedRef = useRef(onIdentityResolved);
@@ -67,25 +80,24 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [busy, setBusy] = useState(false);
   const activeRunId = useRef('');
-  const pendingRequestKey = useRef(localStorage.getItem('dovun.pendingRequestKey') || '');
-  const pendingRequestBody = useRef(localStorage.getItem('dovun.pendingRequestBody') || '');
+  const pendingRequestKey = useRef(chatStorage.get('pendingRequestKey') || '');
+  const pendingRequestBody = useRef(chatStorage.get('pendingRequestBody') || '');
   const clearPendingRequest = () => {
     pendingRequestKey.current = ''; pendingRequestBody.current = '';
-    localStorage.removeItem('dovun.pendingRequestKey'); localStorage.removeItem('dovun.pendingRequestBody');
+    chatStorage.remove('pendingRequestKey'); chatStorage.remove('pendingRequestBody');
   };
   const [stopping, setStopping] = useState(false);
-  const [interrupted, setInterrupted] = useState(false);
+  const [interrupted, setInterrupted] = useState(Boolean(restoredComposer.snapshot?.refusedRequest));
   const [executingApprovalId, setExecutingApprovalId] = useState('');
   const [decisionPhase, setDecisionPhase] = useState<'' | 'approve' | 'reject'>('');
   const [unknownApprovalIds, setUnknownApprovalIds] = useState<string[]>([]);
   const [unresolvedApprovalIds, setUnresolvedApprovalIds] = useState<string[]>([]);
   const [pausedRun, setPausedRun] = useState<{ id: string; reason: string } | null>(null);
-  const [referencedApproval, setReferencedApproval] = useState<{ id: string; title: string } | null>(null);
-  const refusedRequest = useRef<{ message: string; context: NonNullable<ChatMessage['context']>; reference: typeof referencedApproval } | null>(null);
-  useEffect(() => { refusedRequest.current = null; }, [conversationId, identityId]);
+  const [referencedApproval, setReferencedApproval] = useState<{ id: string; title: string } | null>(restoredComposer.snapshot?.referencedApproval??null);
+  const refusedRequest = useRef<{ message: string; context: NonNullable<ChatMessage['context']>; reference: typeof referencedApproval } | null>(restoredComposer.snapshot?.refusedRequest??null);
   const library = useLibrarySnapshot();
-  const [pinnedContext, setPinnedContext] = useState<ChatContextV3 | null>(null);
-  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [pinnedContext, setPinnedContext] = useState<ChatContextV3 | null>(restoredComposer.snapshot?.pinnedContext??null);
+  const [attachments, setAttachments] = useState<ChatAttachment[]>(restoredComposer.snapshot?.attachments??[]);
   const activeContext = pinnedContext ?? pageContext;
   const context = activeContext ? { ...activeContext, label: contextLabel(activeContext.label), mode: pinnedContext ? 'pinned' as const : 'follow' as const, attachments } : undefined;
   const contextRef = useRef(context);
@@ -95,14 +107,16 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
   const addAttachment = (item: ChatAttachment) => {
     const next = [...attachmentsRef.current, item];
     const error = attachmentError(next);
-    if (error) { onErrorRef.current(error); return; }
+    if (error) { onErrorRef.current(error); return false; }
     attachmentsRef.current = next;
     setAttachments(next);
+    return true;
   };
   useEffect(() => {
     const handle = (event: Event) => {
-      const item = (event as CustomEvent<{ attachment?: ChatAttachment }>).detail?.attachment;
-      if (item) addAttachment(item);
+      const detail = (event as CustomEvent<{ attachment?: ChatAttachment; prompt?: string }>).detail;
+      if (detail?.attachment && !addAttachment(detail.attachment)) return;
+      if (detail?.prompt) setInput(current => appendAssistantPrompt(current, detail.prompt!));
     };
     window.addEventListener('dovun-open-assistant', handle);
     return () => window.removeEventListener('dovun-open-assistant', handle);
@@ -110,9 +124,9 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
   const approvalsRef = useRef(approvals);
   const conversationRef = useRef(conversationId);
   // 会话级联网搜索开关：状态存服务端（跟随同步），新会话未创建时先记本地待写。
-  const [webSearchEnabled, setWebSearchEnabledState] = useState(false);
-  const webSearchEnabledRef = useRef(false);
-  const webSearchPendingRef = useRef(false);
+  const [webSearchEnabled, setWebSearchEnabledState] = useState(restoredComposer.snapshot?.webSearchEnabled??false);
+  const webSearchEnabledRef = useRef(restoredComposer.snapshot?.webSearchEnabled??false);
+  const webSearchPendingRef = useRef(restoredComposer.snapshot?.webSearchPending??false);
   const setWebSearchEnabled = (enabled: boolean) => { webSearchEnabledRef.current = enabled; setWebSearchEnabledState(enabled); };
   const persistWebSearch = async (enabled: boolean, id: string) => {
     await api<{ id: string; webSearchEnabled: boolean }>(`/api/conversations/${id}`, { method: 'PATCH', body: JSON.stringify({ webSearchEnabled: enabled }) });
@@ -120,8 +134,9 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
   const setWebSearch = async (enabled: boolean) => {
     setWebSearchEnabled(enabled);
     const id = conversationRef.current;
+    if (!scopeCurrent())return;
     if (!id) { webSearchPendingRef.current = true; return; }
-    try { await persistWebSearch(enabled, id); } catch (reason) { setWebSearchEnabled(!enabled); onErrorRef.current(reason instanceof Error ? reason.message : tRef.current('errors.webSearchToggleFailed')); }
+    try { await persistWebSearch(enabled, id); } catch (reason) { if(conversationRef.current!==id||!scopeCurrent())return;setWebSearchEnabled(!enabled); onErrorRef.current(reason instanceof Error ? reason.message : tRef.current('errors.webSearchToggleFailed')); }
   };
   useEffect(() => {
     if (!conversationId || !webSearchPendingRef.current) return;
@@ -136,6 +151,40 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
   approvalsRef.current = approvals;
   conversationRef.current = conversationId;
   busyRef.current = busy;
+  type IdentitySnapshot={conversationId:string;input:string;attachments:ChatAttachment[];pinnedContext:ChatContextV3|null;referencedApproval:typeof referencedApproval;webSearchEnabled:boolean;webSearchPending:boolean;messages:ChatMessage[];approvals:Approval[];contextStats:ContextUsage|null;pausedRun:typeof pausedRun;interrupted:boolean;activeRunId:string;refusedRequest:typeof refusedRequest.current};
+  const identitySnapshots=useRef(new Map<string,IdentitySnapshot>());
+  const composerSnapshot=():ChatComposerSnapshot=>({schemaVersion:1,conversationId:conversationRef.current,input:inputRef.current,attachments:attachmentsRef.current,pinnedContext,referencedApproval,webSearchEnabled:webSearchEnabledRef.current,webSearchPending:webSearchPendingRef.current,refusedRequest:refusedRequest.current});
+  const persistComposer=(identity:string,snapshot:ChatComposerSnapshot)=>{try{chatStorage.writeComposer(identity==='study'?'study':'work',snapshot);setDraftStorageFailed(false);composerWarning.current=false;return true;}catch{setDraftStorageFailed(true);if(!composerWarning.current){composerWarning.current=true;onErrorRef.current(tRef.current('errors.draftStorageFailed'));}return false;}};
+  useLayoutEffect(()=>{if(scopeCurrent())persistComposer(identityIdRef.current,composerSnapshot());},[input,attachments,pinnedContext,referencedApproval,conversationId,webSearchEnabled,interrupted,identityId]);
+  useEffect(()=>{if(restoredComposer.incomplete)onErrorRef.current(tRef.current('errors.draftReferencesIncomplete'));},[restoredComposer]);
+  const snapshotScope=useRef(editorRuntime?.scopeKey);
+  useEffect(()=>{if(snapshotScope.current!==editorRuntime?.scopeKey){identitySnapshots.current.clear();snapshotScope.current=editorRuntime?.scopeKey;}},[editorRuntime?.scopeKey]);
+  const switchingBlocked=busy||stopping||Boolean(executingApprovalId)||Boolean(pendingRequestKey.current)||unknownApprovalIds.length>0||unresolvedApprovalIds.length>0;
+  const switchIdentity=(next:'work'|'study',selectedConversationId?:string)=>{
+    if(!scopeCurrent())return false;
+    if(next===identityIdRef.current)return true;
+    if(busyRef.current||mutatingRef.current||stopping||pendingRequestKey.current||unknownApprovalIds.length||unresolvedApprovalIds.length){onErrorRef.current(tRef.current('errors.retryBeforeSwitch'));return false;}
+    if(!persistComposer(identityIdRef.current,composerSnapshot()))return false;
+    if(snapshotScope.current!==editorRuntime?.scopeKey){identitySnapshots.current.clear();snapshotScope.current=editorRuntime?.scopeKey;}
+    identitySnapshots.current.set(identityIdRef.current,{conversationId:conversationRef.current,input:inputRef.current,attachments:structuredClone(attachmentsRef.current),pinnedContext,referencedApproval,webSearchEnabled:webSearchEnabledRef.current,webSearchPending:webSearchPendingRef.current,messages,approvals,contextStats,pausedRun,interrupted,activeRunId:activeRunId.current,refusedRequest:refusedRequest.current});
+    const cached=identitySnapshots.current.get(next);
+    const stored=cached?null:chatStorage.readComposer(next);
+    if(stored?.unavailable){setDraftStorageFailed(true);onErrorRef.current(tRef.current('errors.draftStorageFailed'));return false;}
+    if(stored?.incomplete)onErrorRef.current(tRef.current('errors.draftReferencesIncomplete'));
+    const saved=cached??(stored?.snapshot?{...stored.snapshot,messages:[],approvals:[],contextStats:null,pausedRun:null,interrupted:Boolean(stored.snapshot.refusedRequest),activeRunId:''}:undefined);
+    const nextConversationId=selectedConversationId??saved?.conversationId??'';
+    try{if(nextConversationId)chatStorage.set('conversationId',nextConversationId);else chatStorage.remove('conversationId');chatStorage.set('assistantIdentity',next);}catch{setDraftStorageFailed(true);onErrorRef.current(tRef.current('errors.draftStorageFailed'));return false;}
+    // Restore synchronously. A following askAssistant event appends to this identity's
+    // composer and cannot be erased later by an asynchronous history response.
+    loadGeneration.current++;newConversationRef.current='';seenEvents.current.clear();snapshotWatermarks.current={};
+    conversationRef.current=nextConversationId;setConversationId(conversationRef.current);
+    setInput(saved?.input??'');attachmentsRef.current=saved?.attachments??[];setAttachments(attachmentsRef.current);setPinnedContext(saved?.pinnedContext??null);setReferencedApproval(saved?.referencedApproval??null);
+    setMessages(saved?.messages??[]);setApprovals(saved?.approvals??[]);setContextStats(saved?.contextStats??null);setPausedRun(saved?.pausedRun??null);setInterrupted(saved?.interrupted??false);activeRunId.current=saved?.activeRunId??'';refusedRequest.current=saved?.refusedRequest??null;
+    setUnknownApprovalIds([]);setUnresolvedApprovalIds([]);setExecutingApprovalId('');setDecisionPhase('');setWebSearchEnabled(saved?.webSearchEnabled??false);webSearchPendingRef.current=saved?.webSearchPending??false;
+    adoptIdentity(next);return true;
+  };
+  const switchIdentityRef=useRef(switchIdentity);
+  switchIdentityRef.current=switchIdentity;
 
   const invalidate = () => {
     void invalidateTodo(queryClient);
@@ -156,7 +205,10 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
       const history = snapshot.messages; const active = snapshot.activeRun;
       if (generation !== loadGeneration.current || conversationRef.current !== id) return;
       if (!force && busyRef.current) return;
-      adoptIdentity(snapshot.identityId);
+      // Server-owned history can resolve another identity (for example an old
+      // approval link). It must use the same isolated composer restoration as
+      // the identity menu, never relabel the current draft in place.
+      if(snapshot.identityId&&snapshot.identityId!==identityIdRef.current&&!switchIdentityRef.current(snapshot.identityId,id))return;
       setWebSearchEnabled(snapshot.webSearchEnabled ?? false);
       webSearchPendingRef.current = false;
       snapshotWatermarks.current = snapshot.watermarks;
@@ -185,7 +237,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     } catch (reason) {
       if (generation !== loadGeneration.current) return;
       if (reason instanceof ApiError && reason.status === 404) {
-        localStorage.removeItem('dovun.conversationId');
+        chatStorage.remove('conversationId');
         setConversationId('');
         setContextStats(null); setMessages([]);
         setApprovals([]);
@@ -199,7 +251,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
 
   useEffect(() => {
     if (!conversationId) return;
-    localStorage.setItem('dovun.conversationId', conversationId);
+    chatStorage.set('conversationId', conversationId);
     if (newConversationRef.current === conversationId) {
       newConversationRef.current = '';
       return;
@@ -233,7 +285,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
         try {
           const snapshot = await api<{ identityId?: 'work' | 'study' }>(`/api/conversations/${detail.conversationId}/snapshot`);
           if (conversationRef.current !== previousId || busyRef.current || mutatingRef.current || pendingRequestKey.current) return;
-          adoptIdentity(snapshot.identityId);
+          if(snapshot.identityId&&snapshot.identityId!==identityIdRef.current&&!switchIdentityRef.current(snapshot.identityId,detail.conversationId))return;
           loadGeneration.current++;
           conversationRef.current = detail.conversationId;
           setConversationId(detail.conversationId);
@@ -375,7 +427,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     event.preventDefault();
     const message = input.trim();
     const reference = referencedApproval;
-    if (!message || busyRef.current || mutatingRef.current) return;
+    if (!scopeCurrent() || !message || busyRef.current || mutatingRef.current) return;
     if (pendingRequestKey.current) { setInterrupted(true); onErrorRef.current(tRef.current('errors.pendingRequest')); return; }
     const requestKey = crypto.randomUUID();
     const requestContext = structuredClone(contextRef.current ?? buildChatContext({ page: view, topicId: selectedTopicId, taskId, materialId: view === 'library' ? library.preview?.materialId ?? null : null, filters, sort, includeArchived, today }));
@@ -384,10 +436,10 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     // Store the exact body before sending. Replays must retain both the key and its original context.
     const storedBody = JSON.stringify(requestBody);
     try {
-      localStorage.setItem('dovun.pendingRequestBody', storedBody); localStorage.setItem('dovun.pendingRequestKey', requestKey);
+      chatStorage.set('pendingRequestBody', storedBody); chatStorage.set('pendingRequestKey', requestKey);
     } catch {
       // Do not start an untraceable request when the browser cannot save its recovery data.
-      try { localStorage.removeItem('dovun.pendingRequestBody'); localStorage.removeItem('dovun.pendingRequestKey'); } catch { /* Storage may be unavailable entirely. */ }
+      try { chatStorage.remove('pendingRequestBody'); chatStorage.remove('pendingRequestKey'); } catch { /* Storage may be unavailable entirely. */ }
       onErrorRef.current(tRef.current('errors.saveSendStateFailed'));
       return;
     }
@@ -404,10 +456,12 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     let accepted = false;
     let receivedDone = false;
     let receivedError = false;
+    let preRunRejection:SseEvent|null=null;
     let runId = '';
     let lastSeq = 0;
     const consume = (serverEvent: SseEvent) => {
       if (serverEvent.runId) runId = serverEvent.runId;
+      if(serverEvent.type==='error'&&!runId){receivedError=true;preRunRejection=serverEvent;return;}
       if (typeof serverEvent.seq === 'number') lastSeq = Math.max(lastSeq, serverEvent.seq);
       const applied = applyLiveEvent(serverEvent);
       if (!applied) return;
@@ -416,6 +470,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     };
     try {
       await streamChat(requestBody, consume, { onAccepted: () => { accepted = true; } });
+      if(preRunRejection&&!runId){accepted=false;const rejection=preRunRejection as SseEvent;throw new ApiError(rejection.message??tRef.current('errors.chatRequestFailed'),rejection.code,400);}
       if (!receivedDone && !receivedError && runId) await trackRun(runId, lastSeq);
       if (!receivedDone && !receivedError && !runId) {
         const found = await findRequest(requestKey); adoptRequest(found); runId = found.id;
@@ -428,6 +483,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
         setReferencedApproval((current) => current?.id === reference?.id ? null : current);
       }
     } catch (reason) {
+      if(!scopeCurrent())return;
       let rejected = reason instanceof ApiError && Boolean(reason.status && reason.status >= 400 && reason.status < 500 && ![401, 429].includes(reason.status));
       if (rejected && !runId) clearPendingRequest();
       if (!rejected && !runId) {
@@ -491,6 +547,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     finally { setBusy(false); }
   };
   const applyLiveEvent = (event: SseEvent) => {
+    if(!scopeCurrent())return false;
     if (event.runId) activeRunId.current = event.runId;
     if (event.runId && typeof event.seq === 'number') {
       if (event.seq <= (snapshotWatermarks.current[event.runId] ?? 0)) return false;
@@ -508,7 +565,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
       if (!conversationRef.current) newConversationRef.current = event.conversationId;
       conversationRef.current = event.conversationId;
       setConversationId(event.conversationId);
-      localStorage.setItem('dovun.conversationId', event.conversationId);
+      chatStorage.set('conversationId', event.conversationId);
     }
     setMessages((current) => applyMessageEvent(current, event));
     setApprovals((current) => applyApprovalEvent(current, event));
@@ -594,6 +651,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     if (busyRef.current || mutatingRef.current || id === conversationRef.current) return;
     if (pendingRequestKey.current) { onErrorRef.current(tRef.current('errors.retryBeforeSwitch')); return; }
     // Keep the current composer draft and explicit references when browsing history.
+    refusedRequest.current=null;
     activeRunId.current = '';
     loadGeneration.current++;
     newConversationRef.current = '';
@@ -640,11 +698,12 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     throw new Error(tRef.current('errors.requestUnconfirmed'));
   };
   const adoptRequest = (found: { id: string; conversationId: string }) => {
+    if(!scopeCurrent())return;
     activeRunId.current = found.id;
     if (conversationRef.current !== found.conversationId) {
       loadGeneration.current++; conversationRef.current = found.conversationId;
       newConversationRef.current = found.conversationId; setConversationId(found.conversationId);
-      localStorage.setItem('dovun.conversationId', found.conversationId);
+      chatStorage.set('conversationId', found.conversationId);
     }
   };
   const retry = async () => {
@@ -693,11 +752,12 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
   };
   const startNew = () => {
     if (busyRef.current || mutatingRef.current) return;
+    if(pendingRequestKey.current||unknownApprovalIds.length||unresolvedApprovalIds.length){onErrorRef.current(tRef.current('errors.retryBeforeSwitch'));return;}
     activeRunId.current = '';
     refusedRequest.current = null;
     clearPendingRequest();
     loadGeneration.current++;
-    localStorage.removeItem('dovun.conversationId');
+    chatStorage.remove('conversationId');
     newConversationRef.current = '';
     setConversationId('');
     setContextStats(null); setMessages([]);
@@ -715,5 +775,5 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     setPausedRun(null);
   };
 
-  return { activeRunId: busy ? activeRunId.current : undefined, contextStats, stop, stopping, selectConversation, addMaterial, context, pinned: Boolean(pinnedContext), togglePin: () => setPinnedContext((current) => current ? null : structuredClone(pageContext ?? null)), attachments, removeAttachment: (id: string) => setAttachments((current) => current.filter((item) => item.id !== id)), conversationId, selectedTopicId, messages, approvals, busy, interrupted, input, setInput, sendSeq, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference: () => setReferencedApproval(null), showRepreview, webSearchEnabled, setWebSearch };
+  return { draftStorageFailed, hasLegacyPending:chatStorage.hasLegacyPending(), legacyPendingMessage:chatStorage.legacyPending(), activeRunId: busy ? activeRunId.current : undefined, contextStats, stop, stopping, switchIdentity, switchingBlocked, selectConversation, addMaterial, context, pinned: Boolean(pinnedContext), togglePin: () => setPinnedContext((current) => current ? null : structuredClone(pageContext ?? null)), attachments, removeAttachment: (id: string) => setAttachments((current) => current.filter((item) => item.id !== id)), conversationId, selectedTopicId, messages, approvals, busy, interrupted, input, setInput, sendSeq, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference: () => setReferencedApproval(null), showRepreview, webSearchEnabled, setWebSearch };
 }

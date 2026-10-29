@@ -18,7 +18,7 @@ export const chartSpecSchema = z.discriminatedUnion('kind', [
 ]);
 const common = { title: label.optional(), alt: z.string().max(2000).optional() };
 export const replyBlockSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('text'), markdown: z.string().max(65536), ...common }).strict(),
+  z.object({ type: z.literal('text'), studySupport: z.enum(['hint', 'solution']).optional(), markdown: z.string().max(65536), ...common }).strict(),
   z.object({ type: z.literal('mermaid'), source: z.string().min(1).max(16384), ...common }).strict(),
   z.object({ type: z.literal('svg'), source: z.string().min(1).max(65536), ...common }).strict(),
   z.object({ type: z.literal('html'), source: z.string().min(1).max(HTML_SOURCE_LIMIT), title: label.optional(), alt: z.string().min(1).max(2000), height: z.number().int().min(HTML_HEIGHT_MIN).max(HTML_HEIGHT_MAX).optional() }).strict(),
@@ -34,9 +34,10 @@ export type ContentBlock = {
   id: string; index: number; type: ReplyBlock['type'] | 'pending'; status: 'pending' | 'ready' | 'error';
   title?: string; alt?: string; error?: string; markdown?: string; source?: string; spec?: ChartSpec;
   searchId?: string; items?: ImageResult[]; layout?: 'single' | 'grid' | 'carousel'; height?: number;
+  studySupport?: 'hint' | 'solution';
 };
 export type MessageBlocks = { schemaVersion: 1; blocks: ContentBlock[] };
-export type BlockEvent = { type: 'block_start' | 'block_delta' | 'block_commit' | 'block_error'; blockId: string; index?: number; blockType?: ContentBlock['type']; block?: ContentBlock; offset?: number; delta?: string; code?: string; message?: string };
+export type BlockEvent = { type: 'block_start' | 'block_delta' | 'block_commit' | 'block_error'; blockId: string; index?: number; blockType?: ContentBlock['type']; block?: ContentBlock; offset?: number; delta?: string; studySupport?: 'hint' | 'solution'; code?: string; message?: string };
 
 export function validateMermaid(source: string) {
   if (!/^\s*(flowchart|graph|sequenceDiagram|stateDiagram(?:-v2)?|classDiagram)\b/.test(source)) throw new Error('仅支持流程、时序、状态和类图');

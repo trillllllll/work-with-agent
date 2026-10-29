@@ -14,6 +14,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError, statuses, type Status, type Tag, type Task, type TaskPriority, type Topic, type TrashTask, type View } from './lib/api.js';
 import { queryKeys, type TaskDraft } from './lib/todo.js';
 import { useChat } from './hooks/useChat.js';
+import { useEditorRuntime } from './lib/task-editor-runtime.js';
+import { createChatStorage } from './lib/chat-storage.js';
 import { useHashRoute } from './hooks/useHashRoute.js';
 import { useMediaQuery } from './hooks/useMediaQuery.js';
 import { useLocalDate, useTasks, useTodoActions } from './hooks/useTodo.js';
@@ -113,7 +115,12 @@ function classificationSections(tasks: Task[], topics: Topic[]) {
   return [...sections, ...leftovers.values()];
 }
 
-export function App() {
+export function App(){
+  const runtime=useEditorRuntime();
+  return <ScopedApp key={runtime?.scopeKey??'unavailable'} scope={runtime?.scopeKey}/>;
+}
+function ScopedApp({scope}:{scope:string|undefined}) {
+  const [chatStorage]=useState(()=>createChatStorage(scope));
   const { t } = useTranslation('app');
   useWorkspaceEvents();
   useEffect(() => {
@@ -124,7 +131,7 @@ export function App() {
     window.addEventListener('resize', update);
     return () => { viewport?.removeEventListener('resize', update); window.removeEventListener('resize', update); document.documentElement.style.removeProperty('--assistant-viewport-height'); };
   }, []);
-  const { route, knowledgeSection: liveKnowledgeSection, knowledgeTopicId: liveKnowledgeTopicId, knowledgeTopicExplicit: liveKnowledgeTopicExplicit, settingsCategory: liveSettingsCategory, navigate, openKnowledge, openSettings } = useHashRoute();
+  const { route, query: routeQuery, knowledgeSection: liveKnowledgeSection, knowledgeTopicId: liveKnowledgeTopicId, knowledgeTopicExplicit: liveKnowledgeTopicExplicit, settingsCategory: liveSettingsCategory, navigate, openKnowledge, openSettings } = useHashRoute();
   const isDesktop = useMediaQuery('(min-width: 1024px)');
   const wide = useMediaQuery('(min-width: 1280px)');
   const librarySnapshot = useLibrarySnapshot();
@@ -136,7 +143,7 @@ export function App() {
   const mobileNavigation = useMobileNavigation();
   const [selectedTopicId, setSelectedTopicId] = useState(() => localStorage.getItem('dovun.selectedTopic') ?? '');
   const [chatOpen, setChatOpen] = useState(false);
-  const [assistantIdentity, setAssistantIdentity] = useState<'work' | 'study'>(() => (localStorage.getItem('dovun.assistantIdentity') === 'study' ? 'study' : 'work'));
+  const [assistantIdentity, setAssistantIdentity] = useState<'work' | 'study'>(() => (chatStorage.get('assistantIdentity') === 'study' ? 'study' : 'work'));
   const [focusOpen, setFocusOpen] = useState(false);
   const [focusOrigin, setFocusOrigin] = useState<{ hash: string } | null>(null);
   const [assistantOrigin, setAssistantOrigin] = useState<{ route: View; hash: string; context: ChatContextV3; knowledgeSection: ReturnType<typeof useHashRoute>['knowledgeSection']; knowledgeTopicId: string | null; knowledgeTopicExplicit: boolean; settingsCategory: SettingsCategory | null } | null>(null);
@@ -237,18 +244,14 @@ export function App() {
   const assistantContext: ChatContextV3 = isAssistantPage
     ? assistantOrigin?.context ?? { ...buildChatContext({ page: 'chat', topicId: '', taskId: '', today }), schemaVersion: 3, label: t('shell.assistant'), section: null, mode: 'follow', taskRevision: null, materialRevision: null, selectedMaterialIds: [], pageState: {}, attachments: [] }
     : pageContext;
-  const chat = useChat({ pageContext: assistantContext, selectedTopicId: assistantContext.scope.kind === 'topic' ? assistantContext.scope.topicId : '', taskId, view: isAssistantPage ? 'chat' : page, identityId: assistantIdentity, onIdentityResolved: (identity) => { localStorage.setItem('dovun.assistantIdentity', identity); setAssistantIdentity(identity); }, onError: (message) => { if (message) toast.error(message); } });
-  // 会话按身份隔离：切换即开新会话；运行中不允许切换。
+  const chat = useChat({ pageContext: assistantContext, selectedTopicId: assistantContext.scope.kind === 'topic' ? assistantContext.scope.topicId : '', taskId, view: isAssistantPage ? 'chat' : page, identityId: assistantIdentity, onIdentityResolved: (identity) => { setAssistantIdentity(identity); }, onError: (message) => { if (message) toast.error(message); } });
+  // Keep each identity's current conversation and composer in this authenticated session.
   const switchAssistantIdentity = (identity: string) => {
     const next = identity === 'study' ? 'study' : 'work';
-    if (next === assistantIdentity || chat.busy) return;
-    localStorage.setItem('dovun.assistantIdentity', next);
-    setAssistantIdentity(next);
-    chat.startNew();
+    return chat.switchIdentity(next);
   };
   const askLearningAssistant = () => {
-    if (assistantIdentity !== 'study' && chat.busy) { toast.error(t('action.studyBusy')); return false; }
-    if (assistantIdentity !== 'study') switchAssistantIdentity('study');
+    if (assistantIdentity !== 'study' && !switchAssistantIdentity('study')) return false;
     setChatOpen(true);
     return true;
   };
@@ -309,6 +312,12 @@ export function App() {
     if (hashRouteHead(window.location.hash) !== 'chat') setChatOpen(true);
     requestAnimationFrame(() => window.dispatchEvent(new Event('dovun-focus-assistant')));
   };
+  const openContextAssistant = () => {
+    if (hashRouteHead(window.location.hash) === 'learning' && !askLearningAssistant()) return;
+    openChat();
+  };
+  const contextAssistantRef = useRef(openContextAssistant);
+  contextAssistantRef.current = openContextAssistant;
   const expandAssistant = () => {
     setAssistantOrigin({ route, hash: window.location.hash, context: structuredClone(pageContext), knowledgeSection, knowledgeTopicId, knowledgeTopicExplicit, settingsCategory });
     navigate('chat');
@@ -341,16 +350,19 @@ export function App() {
     navigate('focus');
   };
   useEffect(() => {
+    // Learning actions switch identity before attaching their reference. Opening
+    // the panel must not start a second conversation and clear that attachment.
     const open = () => openChat();
+    const openApproval = () => openChat();
     const focus = () => openFocus();
     const shortcut = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'l') { event.preventDefault(); openChat(); }
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'l') { event.preventDefault(); contextAssistantRef.current(); }
     };
-    window.addEventListener('dovun-adjust-approval', open);
+    window.addEventListener('dovun-adjust-approval', openApproval);
     window.addEventListener('dovun-open-assistant', open);
     window.addEventListener('dovun-open-focus', focus);
     window.addEventListener('keydown', shortcut);
-    return () => { window.removeEventListener('dovun-adjust-approval', open); window.removeEventListener('dovun-open-assistant', open); window.removeEventListener('dovun-open-focus', focus); window.removeEventListener('keydown', shortcut); };
+    return () => { window.removeEventListener('dovun-adjust-approval', openApproval); window.removeEventListener('dovun-open-assistant', open); window.removeEventListener('dovun-open-focus', focus); window.removeEventListener('keydown', shortcut); };
   }, []);
   const sourceHandler = useRef((source: AssistantSource) => {});
   sourceHandler.current = (source) => {
@@ -526,7 +538,7 @@ export function App() {
   const chatAccessory = showChat && !workspaceView && !isAssistantPage;
   const focusAccessory = focusSide && !workspaceView && !chatAccessory;
   const taskRail = Boolean(taskId) && !workspaceView && !isAssistantPage && !sourceView && !focusAccessory;
-  const chatPanel = <ChatPanel chat={chat} identityId={assistantIdentity} onSwitchIdentity={switchAssistantIdentity} presentation={isAssistantPage ? assistantOrigin ? 'expanded' : 'direct' : 'side'} onExpand={expandAssistant} onShrink={shrinkAssistant} mobile={!isDesktop} showClose={!taskRail} onClose={() => setChatOpen(false)} />;
+  const chatPanel = <ChatPanel chat={chat} identityId={assistantIdentity} onSwitchIdentity={switchAssistantIdentity} presentation={isAssistantPage ? assistantOrigin ? 'expanded' : 'direct' : 'side'} onExpand={expandAssistant} onShrink={shrinkAssistant} mobile={!isDesktop} showClose={!taskRail} onReturnToLearning={page === 'learning' ? () => setChatOpen(false) : assistantOrigin?.route === 'learning' ? shrinkAssistant : undefined} onClose={() => setChatOpen(false)} />;
   const focusPageVisible = isFocusPage && (isDesktop || !showChat);
   const closeTask = () => { setDetailDirty(false); setTaskId(''); };
   const taskIdRef = useRef(taskId);
@@ -556,8 +568,8 @@ export function App() {
   return <FocusProvider>
     <div data-assistant-open={showChat || undefined} className="app-backdrop h-dvh overflow-hidden bg-background p-0 xl:p-4">
       <div className={cn('app-frame dovun-workspace relative h-full overflow-hidden', isDesktop ? 'grid' : 'flex flex-col')} style={isDesktop ? { gridTemplateColumns: hasAccessory ? 'var(--dovun-nav-width) minmax(0, 1fr) var(--dovun-work-width)' : 'var(--dovun-nav-width) minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1fr)' } : undefined}>
-        {isDesktop ? <Sidebar compact={!wide} key="sidebar" route={route} page={isAssistantPage ? 'chat' : page} topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onNavigate={navigateSafely} onOpenAssistant={openChat} assistantOpen={showChat} onSelectTopic={selectTopic} onEditTopic={setTopicForm} onNewTopic={newTopic} /> : <div key="sidebar" className="hidden" />}
-        {!isDesktop && !isAssistantPage && !showChat && !taskRail && !workspaceView && <Button variant="ghost" size="icon" className="mobile-global-assistant" onClick={openChat} aria-label={t('shell.openAssistant')}><Sparkles className="size-4" /></Button>}
+        {isDesktop ? <Sidebar compact={!wide} key="sidebar" route={route} page={isAssistantPage ? 'chat' : page} topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onNavigate={navigateSafely} onOpenAssistant={openContextAssistant} assistantOpen={showChat} onSelectTopic={selectTopic} onEditTopic={setTopicForm} onNewTopic={newTopic} /> : <div key="sidebar" className="hidden" />}
+        {!isDesktop && !isAssistantPage && !showChat && !taskRail && !workspaceView && !(page === 'learning' && routeQuery.session) && <Button variant="ghost" size="icon" className="mobile-global-assistant" onClick={openContextAssistant} aria-label={t('shell.openAssistant')}><Sparkles className="size-4" /></Button>}
         <main key="main" className={cn('app-main dovun-main glass-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto bg-[var(--glass-bg-strong)]', ((!isDesktop && (showChat || taskRail)) || sourceView || isAssistantPage) && 'hidden')} style={isDesktop ? { gridColumn: 2, gridRow: 1 } : undefined}>{content}</main>
         {sourceView && <section className={cn('min-h-0 overflow-auto p-5', (isAssistantPage || (!isDesktop && showChat)) && 'hidden')} style={isDesktop ? { gridColumn: 2, gridRow: 1 } : undefined} aria-label={t('shell.sourceText')}><Button variant="ghost" onClick={() => setSourceView(null)}>{t('shell.backToPage')}</Button><h2 className="my-3 text-lg font-semibold">{sourceView.title}</h2><BodyText text={sourceView.content} /></section>}
         <aside className={cn('dovun-work-rail', !isDesktop && (taskRail ? 'dovun-mobile-task-rail' : 'contents'), isDesktop && !hasAccessory && 'hidden')} data-tabbed={taskRail || undefined} data-chat={chatAccessory || undefined} data-task={Boolean(taskId) || undefined} aria-label={t('shell.workspace')} style={isDesktop ? { gridColumn: 3, gridRow: 1 } : undefined}>

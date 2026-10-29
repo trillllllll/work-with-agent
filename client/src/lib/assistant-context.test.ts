@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { contextLabel, attachmentError, suggestions, type ChatAttachment } from './assistant-context.js';
+import { contextLabel, attachmentError, appendAssistantPrompt, suggestions, type ChatAttachment } from './assistant-context.js';
 import { buildChatContext } from './chat-context.js';
 import { applyMessageEvent } from '../chat.js';
 describe('assistant context', () => {
+  it('adds an explicit learning prompt without replacing the current draft', () => {
+    expect(appendAssistantPrompt('', '  举个例子  ')).toBe('举个例子');
+    expect(appendAssistantPrompt('我原来的问题', '考考我')).toBe('我原来的问题\n\n考考我');
+    expect(appendAssistantPrompt('  保留原稿  ', ' ')).toBe('  保留原稿  ');
+  });
   it('does not inherit a stale topic on workspace pages', () => {
     for (const page of ['settings', 'connections', 'runs', 'reviews', 'plan']) expect(buildChatContext({ page, topicId: 'stale', taskId: '' }).scope).toEqual({ kind: 'all' });
   });

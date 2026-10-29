@@ -33,8 +33,15 @@ export function attachmentError(items: ChatAttachment[]) {
   if (items.reduce((sum, item) => sum + [...item.text].length, 0) > 40000) return t('chat:attachments.totalTooLong');
   return '';
 }
-export function askAssistant(attachment?: Omit<ChatAttachment, 'id'>) {
-  window.dispatchEvent(new CustomEvent('dovun-open-assistant', { detail: attachment ? { attachment: { ...attachment, id: crypto.randomUUID() } } : {} }));
+export function appendAssistantPrompt(current: string, prompt: string) {
+  if (!prompt.trim()) return current;
+  return current.trim() ? `${current}\n\n${prompt.trim()}` : prompt.trim();
+}
+export function askAssistant(attachment?: Omit<ChatAttachment, 'id'>, options?: { prompt?: string }) {
+  window.dispatchEvent(new CustomEvent('dovun-open-assistant', { detail: {
+    ...(attachment ? { attachment: { ...attachment, id: crypto.randomUUID() } } : {}),
+    ...(options?.prompt ? { prompt: options.prompt } : {}),
+  } }));
 }
 export function suggestions(page: string): string[] {
   const group = page === 'plan' ? 'plan' : page === 'library' ? 'library' : page === 'settings' || page === 'connections' ? 'settings' : 'default';

@@ -13,6 +13,7 @@ import { redact } from '../infrastructure/controlled-execution.js';
 import { LibraryService } from '../application/library/service.js';
 import { runAgentMemoryTool, validateConversationSearchArguments, validateMemoryArguments } from '../application/agent-memory.js';
 import { learningRead } from '../application/learning.js';
+import { practiceRead } from '../application/learning-practice/read.js';
 import { ownerActor } from '../application/security.js';
 import { TaskService, TopicService, TagService } from '../application/workspace.js';
 import { queryTaskActivity } from '../application/task-activity.js';
@@ -275,7 +276,11 @@ export async function executeBuiltinTool(input: {
       return { success: true, data: redact({ ...data, ...(revision && args.action === 'read' ? { viewedRevision: revision, note: '正文使用本次发送时的 viewedRevision；revision 是资料当前最新版本。' } : {}) }) };
     }
     if (input.name === 'memory_read') return redact(await memoryRead(args, input.context)) as BuiltinResult;
-    if (input.name === 'learning_read') return { success: true, data: redact(await learningRead(args)) };
+    if (input.name === 'learning_read') {
+      if (input.context.identityId !== 'study') return CAPABILITY_UNAVAILABLE;
+      const extended = ['overview', 'practice_session', 'practice_item', 'practice_history', 'practice_grades', 'reviews', 'practice_job', 'search'].includes(String(args.action));
+      return { success: true, data: redact(await (extended ? practiceRead(args) : learningRead(args))) };
+    }
     if (input.name === 'conversation_search') {
       const invalid = validateConversationSearchArguments(args);
       if (invalid) throw new DomainError('INVALID_TOOL_ARGUMENTS', invalid, 400);

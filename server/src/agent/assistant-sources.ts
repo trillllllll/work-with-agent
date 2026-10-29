@@ -3,6 +3,7 @@ import { prisma } from '../infrastructure/prisma.js';
 import { DomainError } from '../domain/task.js';
 import { ownerActor, assertTopicAccess } from '../application/security.js';
 import { appKnowledge, applicationVersion } from './app-knowledge.js';
+import { readPracticeItem } from '../application/learning-practice/read.js';
 export const sourceReadTools = new Set(['read_app_knowledge', 'query_tasks', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'conversation_search', 'learning_read']);
 export type { AssistantSource } from '../domain/assistant-source.js';
 import type { AssistantSource } from '../domain/assistant-source.js';
@@ -37,6 +38,16 @@ export async function resolveAssistantSource(kind: string, id: string, revision?
     const map = kind === 'learning_node' && row ? await prisma.learningMap.findUnique({ where: { id: (row as { mapId: string }).mapId } }) : row;
     if (row && !row.deletedAt && map && !map.deletedAt && (revision === undefined || revision === row.revision)) return { kind, id, title: row.title, revision: row.revision, content: `# ${row.title}\n\n状态：${row.status}\n\n${'detail' in row ? row.detail : row.goal}` };
   }
+  if (kind === 'learning_item') {
+    const item = await readPracticeItem(id);
+    // A citation identifies the frozen public question, never the private answer,
+    // rubric, live draft or model job input, even after the learner has submitted.
+    return { kind, id, title: item.question.objective || item.question.prompt.slice(0, 100), content: [
+      item.question.prompt,
+      ...item.question.options.map(option => `${option.id}. ${option.text}`),
+      `来源：${item.question.source.label}`,
+    ].join('\n\n'), questionVersionId: item.question.versionId };
+  }
   if (kind === 'conversation') {
     const row = await prisma.message.findUnique({ where: { id } });
     if (row && ['user', 'assistant'].includes(row.role)) {
@@ -70,6 +81,10 @@ export async function sourcesFromTool(name: string, args: Record<string, unknown
     for (const row of data.matches ?? data.memories ?? data.items ?? []) add('memory', row.id, row.revision);
   }
   if (name === 'learning_read') {
+    if (args.action === 'practice_item') add('learning_item', args.itemId);
+    if (args.action === 'practice_session') for (const item of data.items ?? []) add('learning_item', item.id);
+    if (args.action === 'practice_history') for (const item of data.items ?? []) add('learning_item', item.itemId);
+    if (args.action === 'search') for (const node of data.items ?? []) add('learning_node', node.id, node.revision);
     if (args.action === 'node') add('learning_node', args.nodeId, data.node?.revision);
     if (args.action === 'get') {
       if (data.map?.goal) add('learning_map', args.mapId, data.map?.revision);

@@ -19,6 +19,7 @@ const skillKeys = ['name', 'description', 'instructions', 'enabled'] as const;
 const learningMapKeys = ['title', 'goal', 'status', 'deletedAt'] as const;
 const learningNodeKeys = ['title', 'detail', 'kind', 'status', 'mastery', 'parentId', 'sortOrder', 'deletedAt'] as const;
 const learningActivityKeys = ['kind', 'content', 'nodeId'] as const;
+const learningPracticeKeys = ['title', 'scope', 'mode', 'goal', 'count', 'types', 'difficulty', 'language'] as const;
 const skillLabels: Record<string, string> = { name: '名称', description: '描述', instructions: '正文', enabled: '启用' };
 
 const labels: Record<string, string> = {
@@ -27,10 +28,11 @@ const labels: Record<string, string> = {
   name: '名称', goal: '目标', isExploration: '探索标记', draftSummary: '成果草稿', archivedAt: '归档状态', kind: '类型', content: '正文', uri: '链接',
   folderId: '文件夹', taskIds: '关联任务', importance: '重要度', labels: '标签', evidence: '证据', color: '颜色',
   mastery: '掌握度', detail: '详情', nodeId: '条目',
+  scope: '知识范围', mode: '练习方式', count: '题量', types: '题型', difficulty: '难度', language: '语言',
 };
 
 export type ReviewEntityChange = {
-  entityType: 'task' | 'topic' | 'tag' | 'material' | 'memory' | 'libraryFolder' | 'libraryTag' | 'skill' | 'learning_map' | 'learning_node' | 'learning_activity';
+  entityType: 'task' | 'topic' | 'tag' | 'material' | 'memory' | 'libraryFolder' | 'libraryTag' | 'skill' | 'learning_map' | 'learning_node' | 'learning_activity' | 'learning_practice_job';
   entityId: string;
   titleBefore: string | null;
   titleAfter: string | null;
@@ -64,6 +66,11 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 function show(key: string, value: unknown, entityType?: string): string {
   if (value === null || value === undefined) return '未设置';
   if (value === '' || (Array.isArray(value) && value.length === 0)) return '清空';
+  if (entityType === 'learning_practice_job') {
+    const terms: Record<string, string> = { knowledge: '知识点练习', wrong: '错题重练', review: '复习', mixed: '混合练习', easy: '基础', medium: '适中', hard: '进阶', single: '单选', multiple: '多选', boolean: '判断', short: '简答', 'zh-CN': '中文', en: 'English' };
+    if (['mode', 'difficulty', 'language'].includes(key) && typeof value === 'string') return terms[value] ?? value;
+    if (key === 'types' && Array.isArray(value)) return value.map(item => terms[String(item)] ?? String(item)).join('、');
+  }
   if (key === 'status' && typeof value === 'string') return entityType === 'learning_node' ? ({ todo: '未开始', learning: '学习中', review: '需巩固', done: '已掌握' } as Record<string,string>)[value] ?? value : statusText[value] ?? value;
   if (key === 'color' && typeof value === 'string') return colorText[value] ?? value;
   if (key === 'priority' && typeof value === 'string') return priorityText[value] ?? value;
@@ -128,7 +135,7 @@ function fieldsFor(entityType: ReviewEntityChange['entityType'], before: Record<
     before = projectMaterialLinks(before, leftIds, includeEmpty);
     after = projectMaterialLinks(after, rightIds, includeEmpty);
   }
-  const keys = entityType === 'task' ? taskKeys : entityType === 'topic' ? topicKeys : entityType === 'material' ? materialKeys : entityType === 'memory' ? memoryKeys : entityType === 'libraryFolder' ? folderKeys : entityType === 'skill' ? skillKeys : entityType === 'learning_map' ? learningMapKeys : entityType === 'learning_node' ? learningNodeKeys : entityType === 'learning_activity' ? learningActivityKeys : tagKeys;
+  const keys = entityType === 'task' ? taskKeys : entityType === 'topic' ? topicKeys : entityType === 'material' ? materialKeys : entityType === 'memory' ? memoryKeys : entityType === 'libraryFolder' ? folderKeys : entityType === 'skill' ? skillKeys : entityType === 'learning_map' ? learningMapKeys : entityType === 'learning_node' ? learningNodeKeys : entityType === 'learning_activity' ? learningActivityKeys : entityType === 'learning_practice_job' ? learningPracticeKeys : tagKeys;
   const fields = [];
   for (const key of keys) {
     const left = before?.[key] ?? null;
@@ -165,7 +172,7 @@ function absorb(slots: Map<string, Slot>, record: ChangeRecord) {
     return;
   }
   const entityType = record.entityType as Slot['entityType'];
-  if (!['task', 'topic', 'tag', 'material', 'memory', 'libraryFolder', 'libraryTag', 'skill', 'learning_map', 'learning_node', 'learning_activity'].includes(entityType)) return;
+  if (!['task', 'topic', 'tag', 'material', 'memory', 'libraryFolder', 'libraryTag', 'skill', 'learning_map', 'learning_node', 'learning_activity', 'learning_practice_job'].includes(entityType)) return;
   remember(slots, entityType, record.entityId, before, after);
 }
 
@@ -214,6 +221,7 @@ export function buildReview(input: { intent: string; requestedOperationCount: nu
 
 function consequenceLines(entities: ReviewEntityChange[]) {
   const lines: string[] = [];
+  if (entities.some(entity => entity.entityType === 'learning_practice_job')) lines.push('确认后开始生成候选练习；采用题集后才开始作答。不会提交答案或修改掌握状态。');
   const schedule = entities.filter((entity) => entity.fields.some((field) => ['dueDate', 'scheduledStart', 'scheduledEnd'].includes(field.key)));
   if (schedule.length) {
     const dates = [...new Set(schedule.flatMap((entity) => entity.fields.filter((field) => field.key === 'dueDate').map((field) => `${field.beforeText} → ${field.afterText}`)))];

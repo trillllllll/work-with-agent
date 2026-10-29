@@ -10,7 +10,7 @@ async function command(request: APIRequestContext, commands: unknown[]) {
   return (await response.json()).data.results;
 }
 async function outline(page: Page) { await page.getByRole('button', { name: '知识目录',exact: true }).click(); }
-async function openNote(page: Page) { await outline(page); await page.getByRole('button', { name: new RegExp(title) }).click(); await expect(page.getByTestId('learning-note-editor').getByRole('textbox')).toBeVisible(); }
+async function openNote(page: Page) { await outline(page); await page.getByRole('button', { name: new RegExp(title) }).click(); await expect(page.getByTestId('learning-note-reading').or(page.getByTestId('learning-note-editor'))).toBeVisible(); if (await page.getByTestId('learning-note-reading').isVisible()) await page.getByRole('button', { name: '编辑笔记', exact: true }).click(); await expect(page.getByTestId('learning-note-editor').getByRole('textbox')).toBeVisible(); }
 async function closeAssistant(page: Page,isMobile: boolean) { if (isMobile) await page.getByTestId('ai-assistant').getByRole('button',{ name: '返回当前页面',exact: true }).click(); }
 test.beforeEach(async ({ page,request }) => {
   await resetE2eDatabase();
@@ -76,7 +76,7 @@ test('ECharts tiles really collapse, zoom, open notes and preserve the view; bot
   }
   const zoom = await graph.getAttribute('data-zoom');
   await graph.locator('text').filter({ hasText: title.slice(0,5) }).first().click();
-  await expect(page.getByRole('textbox',{ name: '笔记标题',exact: true })).toHaveValue(title);
+  await expect(page.getByRole('heading',{ name: title,exact: true })).toBeVisible();
   await page.getByRole('button',{ name: '返回地图',exact: true }).click();
   await expect(graph).toHaveAttribute('data-zoom',zoom!);
   await page.getByRole('button',{ name: '适应画布',exact: true }).click();

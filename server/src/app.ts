@@ -42,6 +42,8 @@ import { learningRead, learningMapAggregate } from './application/learning.js';
 import { createNodeRouter, createOrchestrationRouter } from './routes/orchestration.js';
 import { createSyncRouter } from './routes/sync.js';
 import { acceptReplicaRelay, relayBoundWorkspace } from './application/workspace-relay.js';
+import { createLearningPracticeRouter } from './routes/learning-practice.js';
+import { registerPracticeCommands } from './application/learning-practice/commands.js';
 
 export const app = express();
 app.use(cors(corsOptions));
@@ -54,6 +56,7 @@ registerGraphCommands();
 registerLibraryCommands();
 registerSkillCommands();
 registerLearningCommands();
+registerPracticeCommands();
 app.use('/api/v1', securityRouter);
 // Local executors (wwa-node) use their own token; they never get owner or MCP access.
 app.use('/api/v1/node', createNodeRouter());
@@ -69,6 +72,7 @@ export const reviewService = new ReviewService(new OrganizationService(), genera
 app.use('/api/v1/reviews', createReviewsRouter(reviewService));
 // Existing browser endpoints remain available only to authenticated owner sessions.
 app.use('/api', identityMiddleware, ownerMiddleware, legacyMutationMiddleware);
+app.use('/api/v1/learning', createLearningPracticeRouter());
 app.use('/api', createOrchestrationRouter());
 
 const queryText = (value: unknown) => typeof value === 'string' ? value : undefined;

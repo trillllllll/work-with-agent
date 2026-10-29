@@ -1359,3 +1359,202 @@ model AgentWebPage {
   @@unique([runId, urlHash])
   @@map("agent_web_pages")
 }
+
+// Learning practice is owned by the authoritative workspace. Historical snapshots
+// deliberately retain scalar map/node IDs when source learning content is archived.
+model LearningQuestion {
+  id String @id @default(cuid())
+  mapId String
+  nodeId String
+  currentVersionId String
+  archived Boolean @default(false)
+  createdAt String
+  @@index([mapId, nodeId, archived])
+  @@map("learning_questions")
+}
+
+model LearningQuestionVersion {
+  id String @id @default(cuid())
+  questionId String
+  nodeId String
+  nodeTitle String
+  contentJson String
+  model String?
+  promptVersion String
+  createdAt String
+  @@index([questionId, createdAt])
+  @@map("learning_question_versions")
+}
+
+model LearningPracticeSession {
+  id String @id @default(cuid())
+  ownerId String
+  mapId String
+  mapTitle String
+  generationJobId String @unique
+  mode String
+  configJson String
+  state String @default("active")
+  currentPosition Int @default(0)
+  revision Int @default(1)
+  createdAt String
+  updatedAt String
+  finishedAt String?
+  @@index([ownerId, state, updatedAt])
+  @@index([mapId, updatedAt])
+  @@map("learning_practice_sessions")
+}
+
+model LearningPracticeItem {
+  id String @id @default(cuid())
+  sessionId String
+  questionVersionId String
+  position Int
+  selectionReason String
+  skipped Boolean @default(false)
+  @@unique([sessionId, position])
+  @@index([questionVersionId])
+  @@map("learning_practice_items")
+}
+
+model LearningAnswerDraft {
+  id String @id @default(cuid())
+  itemId String @unique
+  activeAttemptId String @unique
+  attemptNo Int @default(1)
+  answerJson String @default("\"\"")
+  revision Int @default(1)
+  submitted Boolean @default(false)
+  updatedAt String
+  @@map("learning_answer_drafts")
+}
+
+model LearningAttempt {
+  id String @id
+  ownerId String
+  itemId String
+  questionVersionId String
+  attemptNo Int
+  clientAttemptId String
+  answerJson String
+  submittedAt String
+  assisted Boolean @default(false)
+  solutionViewed Boolean @default(false)
+  assistanceUncertain Boolean @default(false)
+  gradingVersion Int @default(1)
+  gradingState String @default("queued")
+  currentGradeId String?
+  error String?
+  @@unique([itemId, attemptNo])
+  @@unique([ownerId, clientAttemptId])
+  @@index([ownerId, submittedAt, id])
+  @@index([ownerId, questionVersionId, submittedAt, id])
+  @@map("learning_attempts")
+}
+
+model LearningGrade {
+  id String @id @default(cuid())
+  attemptId String
+  version Int
+  method String
+  state String
+  result String
+  score Float?
+  maxScore Float
+  explanation String
+  strengths String
+  mistakesJson String
+  model String?
+  promptVersion String
+  createdAt String
+  @@unique([attemptId, version])
+  @@map("learning_grades")
+}
+
+model LearningPracticeEvent {
+  id String @id @default(cuid())
+  ownerId String
+  itemId String
+  activeAttemptId String
+  type String
+  sourceMessageId String?
+  payloadJson String @default("{}")
+  eventKey String @unique
+  createdAt String
+  @@index([itemId, activeAttemptId, createdAt])
+  @@map("learning_practice_events")
+}
+
+model LearningJob {
+  id String @id @default(cuid())
+  ownerId String
+  kind String
+  mapId String
+  sessionId String?
+  attemptId String?
+  gradingVersion Int?
+  state String @default("queued")
+  inputJson String
+  outputJson String?
+  candidateRevision String?
+  adoptedSessionId String?
+  leaseToken String?
+  leaseExpiresAt String?
+  retries Int @default(0)
+  error String?
+  model String?
+  createdAt String
+  updatedAt String
+  @@unique([attemptId, gradingVersion])
+  @@index([state, leaseExpiresAt, createdAt])
+  @@index([ownerId, kind, updatedAt])
+  @@map("learning_jobs")
+}
+
+model LearningReviewItem {
+  id String @id @default(cuid())
+  ownerId String
+  scopeKey String
+  mapId String
+  nodeId String
+  questionId String?
+  title String
+  reasonsJson String @default("[]")
+  dueAt String?
+  paused Boolean @default(false)
+  policy String @default("manual")
+  policyVersion String @default("manual-v1")
+  manualSchedule Boolean @default(false)
+  revision Int @default(1)
+  streak Int @default(0)
+  lastAttemptId String?
+  lastGradeId String?
+  updatedAt String
+  @@unique([ownerId, scopeKey])
+  @@index([ownerId, paused, dueAt])
+  @@index([mapId, nodeId])
+  @@map("learning_review_items")
+}
+
+model LearningReviewEvent {
+  id String @id @default(cuid())
+  reviewId String
+  eventKey String @unique
+  kind String
+  beforeJson String
+  afterJson String
+  attemptId String?
+  gradeId String?
+  createdAt String
+  @@index([reviewId, createdAt])
+  @@map("learning_review_events")
+}
+
+model LearningResumeState {
+  ownerId String @id
+  nodeId String?
+  mapId String?
+  nodeTitle String?
+  updatedAt String
+  @@map("learning_resume_state")
+}

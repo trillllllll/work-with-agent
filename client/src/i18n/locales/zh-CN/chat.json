@@ -103,7 +103,10 @@
     "chatRequestFailed": "聊天请求失败",
     "requestUnconfirmed": "尚未收到原请求的确认，请恢复连接后重试",
     "parseEventFailed": "无法解析聊天事件",
-    "webSearchToggleFailed": "联网搜索开关保存失败，请重试"
+    "webSearchToggleFailed": "联网搜索开关保存失败，请重试",
+    "workspaceChanged": "工作区已切换，这次请求仍保留在原工作区。",
+    "draftStorageFailed": "本机草稿保存失败。请保留页面，离开前复制输入内容；保存恢复前暂不能切换助手。",
+    "draftReferencesIncomplete": "草稿恢复不完整，原始记录已保留在本机。请核对输入内容与引用，补齐后再发送。"
   },
   "toolPreview": {
     "rejected": "已拒绝",
@@ -192,6 +195,8 @@
     "shrink": "缩小回原页面",
     "hideAssistant": "收起助手",
     "backToPage": "返回当前页面",
+    "backToLearning": "返回学习",
+    "learningReference": "对话引用：{{title}}",
     "closeChat": "关闭聊天",
     "configureModel": "请在设置中配置模型连接后发送消息。",
     "requestPaused": "这个请求已暂停。",
@@ -215,7 +220,8 @@
     "webSearch": "联网搜索",
     "webSearchOn": "联网搜索已开启，本会话内有效",
     "webSearchOff": "开启联网搜索",
-    "webSearchUnavailable": "未配置联网搜索服务，请在设置里配置 DeepSeek 密钥"
+    "webSearchUnavailable": "未配置联网搜索服务，请在设置里配置 DeepSeek 密钥",
+    "legacyPendingHint": "本机仍保留旧版未确认发送，但记录没有工作区标识。它未被归入当前工作区，也未自动重放；再次发送前请到原对话核对结果。"
   },
   "chatPickers": {
     "history": "历史对话",
@@ -353,7 +359,8 @@
       "conversation": "历史对话",
       "help": "功能说明",
       "learning_node": "学习节点",
-      "learning_map": "学习地图"
+      "learning_map": "学习地图",
+      "learning_item": "练习题目"
     }
   },
   "review": {

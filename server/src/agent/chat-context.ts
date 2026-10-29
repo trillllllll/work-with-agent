@@ -2,6 +2,7 @@ import { DomainError } from '../domain/task.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { ownerActor, assertTopicAccess } from '../application/security.js';
 import { assertTimeZone } from './time.js';
+import { validatePracticeReference } from '../application/learning-practice/read.js';
 
 const allPages = new Set(['today', 'plan', 'search', 'tags', 'library', 'topics', 'quadrant', 'archived', 'trash', 'focus', 'stats', 'learning']);
 
@@ -64,6 +65,24 @@ export async function validateScopeAndResolveIds(context: StoredChatContext): Pr
     if (context.schemaVersion === 3 && (context.materialRevision === null || context.materialVersionMode === 'latest')) context = { ...context, materialRevision: material.revision };
   }
   if (context.schemaVersion === 3) {
+    for (const attachment of context.attachments) {
+      if (!attachment.learningNodeId && !attachment.learningMapId && !attachment.learningItemId) continue;
+      if (context.identityId !== 'study') throw new DomainError('INVALID_REFERENCE', '学习引用只能发送给学习助手', 400);
+      if (attachment.learningMapId) {
+        const map = await prisma.learningMap.findUnique({ where: { id: attachment.learningMapId } });
+        if (!map || map.deletedAt) throw new DomainError('NOT_FOUND', '学习主题不存在或已归档', 404);
+      }
+      if (attachment.learningNodeId) {
+        const node = await prisma.learningNode.findUnique({ where: { id: attachment.learningNodeId }, include: { map: true } });
+        if (!node || node.deletedAt || node.map.deletedAt) throw new DomainError('NOT_FOUND', '知识点不存在或已归档', 404);
+        if (attachment.learningMapId && attachment.learningMapId !== node.mapId) throw new DomainError('INVALID_REFERENCE', '知识点不属于所引用主题', 400);
+      }
+      if (attachment.learningItemId) {
+        const reference = await validatePracticeReference({ sessionId: attachment.learningSessionId!, itemId: attachment.learningItemId, activeAttemptId: attachment.learningAttemptId! });
+        if (attachment.learningNodeId && attachment.learningNodeId !== reference.question.nodeId) throw new DomainError('INVALID_REFERENCE', '题目不属于所引用知识点', 400);
+        if (attachment.learningMapId && attachment.learningMapId !== reference.mapId) throw new DomainError('INVALID_REFERENCE', '题目不属于所引用主题', 400);
+      }
+    }
     if (context.materialId && context.materialRevision) {
       const version = await prisma.materialVersion.findUnique({ where: { materialId_revision: { materialId: context.materialId, revision: context.materialRevision } }, select: { id: true } });
       if (!version) throw new DomainError('NOT_FOUND', '资料版本不存在', 404);

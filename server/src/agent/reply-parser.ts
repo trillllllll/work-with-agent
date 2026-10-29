@@ -1,6 +1,6 @@
 import { Tokenizer, TokenType } from '@streamparser/json';
 
-export type ReplyParseEvent = { kind: 'start'; index: number } | { kind: 'text'; index: number; text: string } | { kind: 'block'; index: number; value: unknown };
+export type ReplyParseEvent = { kind: 'start'; index: number } | { kind: 'text'; index: number; text: string; studySupport?: 'hint' | 'solution' } | { kind: 'block'; index: number; value: unknown };
 type Frame = { value: Record<string, unknown> | unknown[]; path: Array<string | number>; state: 'keyOrEnd' | 'key' | 'colon' | 'valueOrEnd' | 'value' | 'commaOrEnd'; key?: string; keys: Set<string>; partialText?: string };
 const invalid = (message: string) => Object.assign(new Error(message), { code: 'INVALID_REPLY_STREAM' });
 
@@ -23,7 +23,8 @@ export class ReplyParser {
     if (index === null || (frame.value as Record<string, unknown>).type !== 'text') return;
     // Never publish half a surrogate pair, even if the upstream string is split there.
     const safe = /[\uD800-\uDBFF]$/.test(text) ? text.slice(0, -1) : text;
-    this.events.push({ kind: 'text', index, text: safe });
+    const support = (frame.value as Record<string, unknown>).studySupport;
+    this.events.push({ kind: 'text', index, text: safe, ...(support === 'hint' || support === 'solution' ? { studySupport: support } : {}) });
   }
   private accept(value: unknown) {
     const parent = this.stack.at(-1);

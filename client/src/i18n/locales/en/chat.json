@@ -103,7 +103,10 @@
     "chatRequestFailed": "Chat request failed",
     "requestUnconfirmed": "The original request isn't confirmed yet. Restore the connection and try again.",
     "parseEventFailed": "Couldn't parse the chat event",
-    "webSearchToggleFailed": "Failed to save the web search toggle. Please retry."
+    "webSearchToggleFailed": "Failed to save the web search toggle. Please retry.",
+    "workspaceChanged": "The workspace changed. This request remains saved in its original workspace.",
+    "draftStorageFailed": "Device storage could not save this draft. Keep this page open and copy your text before leaving. Switching assistants is blocked until the draft can be saved.",
+    "draftReferencesIncomplete": "This draft was only partially restored; its original record remains on this device. Check the text and reattach any missing references before sending."
   },
   "toolPreview": {
     "rejected": "Rejected",
@@ -197,6 +200,8 @@
     "shrink": "Shrink back to the page",
     "hideAssistant": "Hide assistant",
     "backToPage": "Back to the current page",
+    "backToLearning": "Back to learning",
+    "learningReference": "Referenced: {{title}}",
     "closeChat": "Close chat",
     "configureModel": "Configure a model connection in Settings before sending a message.",
     "requestPaused": "This request is paused.",
@@ -222,7 +227,8 @@
     "webSearch": "Web search",
     "webSearchOn": "Web search on for this conversation",
     "webSearchOff": "Enable web search",
-    "webSearchUnavailable": "Web search is not configured. Add a DeepSeek key in Settings."
+    "webSearchUnavailable": "Web search is not configured. Add a DeepSeek key in Settings.",
+    "legacyPendingHint": "An older unconfirmed send remains preserved on this device without a workspace identity. It has not been assigned to this workspace or replayed. Check the original conversation before sending again."
   },
   "chatPickers": {
     "history": "Conversation history",
@@ -364,7 +370,8 @@
       "conversation": "Conversation",
       "help": "App guide",
       "learning_node": "Learning node",
-      "learning_map": "Learning map"
+      "learning_map": "Learning map",
+      "learning_item": "Practice question"
     }
   },
   "review": {

@@ -49,6 +49,7 @@ export type ChatEvent = {
   index?: number;
   blockType?: import('./agent/content-blocks.js').ContentBlock['type'];
   block?: import('./agent/content-blocks.js').ContentBlock;
+  studySupport?: 'hint' | 'solution';
   offset?: number;
   compatibilityProjection?: boolean;
   status?: 'completed' | 'failed';
@@ -179,12 +180,12 @@ export class ModelAdapter {
     if (calls.length) yield { toolCalls: calls };
   }
 
-  async complete(messages: ModelMessage[], signal?: AbortSignal, includeTools = false, tools?: ModelToolDefinition[]) {
+  async complete(messages: ModelMessage[], signal?: AbortSignal, includeTools = false, tools?: ModelToolDefinition[], identityId?: string) {
     let text = '';
     const toolCalls: ToolCall[] = [];
     const usage: ModelUsage = {};
     let sawUsage = false;
-    for await (const delta of this.stream(messages, signal, includeTools, tools)) {
+    for await (const delta of this.stream(messages, signal, includeTools, tools, identityId)) {
       text += delta.text ?? '';
       if (delta.toolCalls) toolCalls.push(...delta.toolCalls);
       if (delta.usage) {

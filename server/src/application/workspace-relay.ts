@@ -22,6 +22,12 @@ const taskExtras = /^\/api\/tasks\/[^/]+\/(?:images(?:\/[^/]+)?|ai-history|activ
 const scopedFamilies = /^\/api\/v1\/(?:tasks|topics|tags|changes|commands|proposals|knowledge|library|learning|handoffs|runs|runners|artifacts|plan|identity|tools)(?:\/|$)|^\/api\/v1\/trash\/tasks(?:\/|$)/;
 const ordinaryTaskCommand = (body: any) => Array.isArray(body?.commands) && body.commands.length > 0 && body.commands.every((command: any) => /^(?:task|topic|tag)\./.test(command.kind) && command.kind !== 'task.reference_materials');
 export function relayPathAllowed(path: string) { return ownerFamilies.test(path) || taskExtras.test(path) || /^\/api\/(?:tasks|topics|tags)(?:\/|$)/.test(path); }
+/** These owner-only endpoints operate exclusively on the shared learning store.
+ * Generic commands, proposals and chat still wait for local task synchronization. */
+export function isIndependentLearningWrite(method: string, path: string) {
+  if (method !== 'POST') return false;
+  return /^\/api\/v1\/learning\/(?:practice\/(?:generate|start|items\/[^/%]+\/(?:draft|submit|retry|events|archive)|sessions\/[^/%]+\/update|attempts\/[^/%]+\/regrade)|reviews\/update|jobs\/[^/%]+\/(?:retry|cancel)|resume)$/.test(path);
+}
 const canCache = (path: string) => !/event-stream/.test(path) && /^\/api\/(?:conversations(?:\/|$)|v1\/(?:knowledge|library|artifacts)(?:\/|$)|tasks\/[^/]+\/(?:images\/|activity$|topic-history$|ai-history$))/.test(path);
 
 /** Pairing grants a full workspace replica, never a computer execution credential.
@@ -96,7 +102,7 @@ export async function relayBoundWorkspace(req: Request, res: Response, next: Nex
   try {
     if (!bearer) { await requireOwner(req); ownerAuthenticated = true; }
     const writing = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
-    if (writing && !bearer) {
+    if (writing && !bearer && !isIndependentLearningWrite(req.method, path)) {
       await syncBoundReplicaNow();
       if (await prisma.syncOutbox.count({ where: { state: 'pending' } })) throw new DomainError('SYNC_PENDING', '请等待本机修改同步完成后重试', 409);
     }
@@ -152,7 +158,7 @@ export async function relayBoundWorkspace(req: Request, res: Response, next: Nex
       await writeFile(temp, JSON.stringify(entry), { mode: 0o600 }); await rename(temp, file);
       res.setHeader('X-Dovun-Offline-Available', '1'); res.end(Buffer.concat(chunks));
     } else res.end();
-    if (writing && !bearer && response.ok && !path.includes('/preview')) await syncBoundReplicaNow().catch(() => {});
+    if (writing && !bearer && response.ok && !path.includes('/preview') && !isIndependentLearningWrite(req.method, path)) await syncBoundReplicaNow().catch(() => {});
   } catch (error) {
     if (res.headersSent) { if (!res.writableEnded) res.end(); return; }
     if (ownerAuthenticated && !bearer && req.method === 'GET' && canCache(path) && !(error instanceof DomainError && error.code === 'SYNC_AUTH_FAILED') && !await cacheIsDenied(binding)) {

@@ -5,6 +5,7 @@ import { recordChange } from './workspace-store.js';
 import { DomainError } from '../domain/task.js';
 import type { Prisma } from '@prisma/client';
 import { learningNodeStatuses } from '../domain/learning.js';
+import { checkedCheckpoint, confirmedCheckpoint } from './learning-checkpoint.js';
 
 // 学习域命令处理器。全部 forceProposal：内置助手和外部连接都只能先生成
 // 待确认方案，用户批准后经 executeBatch 执行并写入变更历史。
@@ -270,6 +271,7 @@ export function registerLearningCommands() {
         const node = await requireNode(tx, input.nodeId);
         if (node.mapId !== input.mapId) throw learningFailure('INVALID_PARENT', '条目不属于这张学习地图', 400);
       }
+      await checkedCheckpoint(tx, input);
       return { preconditions: { mapId: input.mapId }, preview: { kind: input.kind, content: input.content.slice(0, 200) } };
     },
     execute: async (tx, _actor, command, context) => {
@@ -279,7 +281,10 @@ export function registerLearningCommands() {
         const node = await requireNode(tx, input.nodeId);
         if (node.mapId !== input.mapId) throw learningFailure('INVALID_PARENT', '条目不属于这张学习地图', 400);
       }
-      const activity = await tx.learningActivity.create({ data: { mapId: input.mapId, nodeId: input.nodeId, kind: input.kind, content: input.content, metaJson: JSON.stringify(input.meta ?? {}), createdAt: now() } });
+      const checkpoint = await checkedCheckpoint(tx, input);
+      const timestamp = now();
+      const meta = checkpoint ? confirmedCheckpoint(checkpoint, context, timestamp) : input.meta ?? {};
+      const activity = await tx.learningActivity.create({ data: { mapId: input.mapId, nodeId: input.nodeId, kind: input.kind, content: input.content, metaJson: JSON.stringify(meta), createdAt: timestamp } });
       await recordChange(tx, 'learning_activity', activity.id, 'append', null, activity, context);
       return activity;
     },

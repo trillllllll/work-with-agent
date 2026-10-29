@@ -13,14 +13,14 @@ const groups: Record<ToolGroup, { description: string; tools: string[] }> = {
   tasks: { description: '任务、清单、标签、动态和规划时间段查询', tools: ['query_tasks', 'query_topics', 'get_task_activity', 'list_plan_time_bands'] },
   library: { description: '资料原文、历史版本、关联任务、文件夹和标签查询', tools: ['library_read'] },
   memory: { description: '已确认记忆和当前工作简报查询', tools: ['memory_read', 'get_work_context'] },
-  learning: { description: '学习地图、清单条目、掌握度和学习动态查询', tools: ['learning_read'] },
+  learning: { description: '学习地图、知识笔记、练习记录、复习队列和学习动态查询', tools: ['learning_read'] },
   orchestration: { description: '编排、执行端、worktree、用量统计及删除确认卡片', tools: ['orchestration_read', 'orchestration_stats', 'propose_worktree_cleanup'] },
   external: { description: '把超出能力的需求整理为外部提示词', tools: ['prepare_external_prompt'] },
   web: { description: '联网搜索与网页阅读（需要已配置 DeepSeek 联网搜索服务）', tools: ['web_search', 'read_webpage'] },
   workspace_write: { description: '任务、清单、标签修改提议（须确认）', tools: ['propose_changes'] },
   library_write: { description: '资料及其组织、关联修改提议（须确认）', tools: ['propose_changes'] },
   memory_write: { description: '记忆修改提议（须确认）', tools: ['propose_changes'] },
-  learning_write: { description: '学习地图与清单条目修改提议（须确认）', tools: ['propose_changes'] },
+  learning_write: { description: '学习地图、知识笔记、练习创建和收尾记录提议（须确认）', tools: ['propose_changes'] },
   skill_write: { description: '技能创建、修改提议（须确认）', tools: ['propose_changes'] },
   media: { description: '图表、SVG、HTML、Mermaid 和真实图片展示', tools: ['present_reply', 'image_search'] },
 };
@@ -57,7 +57,7 @@ export function initialToolGroups(text: string, page: string, identityId: Assist
     if (/外部|联网|网页搜索|external/i.test(text)) selected.add('external');
     if (/联网|搜索|网页|官网|官方文档|文档|最新|latest|查一?下|web|search/i.test(text)) selected.add('web');
     if (/svg|html|mermaid|富媒体|图表|可视化|画图|绘图|图片|流程图|结构图|时序图|模拟器|仿真|互动|交互|演示|实验|widget|diagram|chart/i.test(text)) selected.add('media');
-    if (/创建|新建|修改|更新|补充|添加|标记|掌握|归档|记录|整理|规划|待确认|提议|create|update|remember/i.test(text)) selected.add('learning_write');
+    if (/创建|新建|修改|更新|补充|添加|标记|掌握|归档|记录|整理|规划|待确认|提议|出题|做题|刷题|复习|考考|create|update|remember|practice|quiz|exercise|review/i.test(text)) selected.add('learning_write');
     return [...selected];
   }
   const selected = new Set<ToolGroup>(['tasks']);

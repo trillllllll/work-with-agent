@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "syntheticOnly": true,
+  "realProcessTermination": true,
+  "leaseEdited": false,
+  "model": "injected controlled fixture only",
+  "runId": "d24c48aa-4eb0-4c19-80be-1cbbf7f08cc5",
+  "startedAt": "2026-10-29T18:12:52.187Z",
+  "completedAt": "2026-10-29T18:14:53.475Z",
+  "elapsedMs": 121286,
+  "waitedMs": 120087,
+  "database": "/tmp/learning-worker-recovery-20261030-real-lease.db",
+  "databaseRetained": false,
+  "sourceHashes": {
+    "server/src/application/learning-practice/worker.ts": "2086b1b264df70f0587c583c041de4908dfd4b969f826542377927dfe9e0c733",
+    "server/src/application/learning-practice/reviews.ts": "8d0f013aa68d1e2bd5824afb1821ee01dcc5016750240748e850df6c3e6d0b23",
+    "scripts/learning-worker-recovery.mts": "f2c554a736ea793d36d60fa7163eaddb88bd67580e13070cdc2865248be579f2"
+  },
+  "children": {
+    "killedPid": 40762,
+    "recoveredPid": 46513,
+    "repeatedPid": 46533,
+    "entered": {
+      "event": "model-entered",
+      "pid": 40762,
+      "at": "2026-10-29T18:12:52.679Z"
+    },
+    "killed": {
+      "code": null,
+      "signal": "SIGKILL"
+    },
+    "recoveredEvent": {
+      "event": "worker-finished",
+      "pid": 46513,
+      "processed": 1,
+      "at": "2026-10-29T18:14:53.245Z"
+    },
+    "repeatedEvent": {
+      "event": "worker-finished",
+      "pid": 46533,
+      "processed": 0,
+      "at": "2026-10-29T18:14:53.466Z"
+    }
+  },
+  "before": {
+    "job": {
+      "state": "queued",
+      "retries": 0,
+      "leaseToken": null,
+      "leaseExpiresAt": null,
+      "gradingVersion": 1
+    },
+    "attempt": {
+      "answerJson": "\"合成原始答案：我认为条件 A 足够，不需要条件 B。\"",
+      "gradingState": "queued",
+      "currentGradeId": null,
+      "gradingVersion": 1
+    },
+    "answerHash": "d29c4ed459355d0bb19652dc64295d8dbf5b908442315720fae9172615b62b55",
+    "grades": 0,
+    "reviews": 0,
+    "reviewEvents": 0
+  },
+  "claimed": {
+    "job": {
+      "state": "running",
+      "retries": 1,
+      "leaseToken": "c500c527-dd8b-46df-8189-e7f5b1136d21",
+      "leaseExpiresAt": "2026-10-29T18:14:52.677Z",
+      "gradingVersion": 1
+    },
+    "attempt": {
+      "answerJson": "\"合成原始答案：我认为条件 A 足够，不需要条件 B。\"",
+      "gradingState": "running",
+      "currentGradeId": null,
+      "gradingVersion": 1
+    },
+    "answerHash": "d29c4ed459355d0bb19652dc64295d8dbf5b908442315720fae9172615b62b55",
+    "grades": 0,
+    "reviews": 0,
+    "reviewEvents": 0
+  },
+  "afterKill": {
+    "job": {
+      "state": "running",
+      "retries": 1,
+      "leaseToken": "c500c527-dd8b-46df-8189-e7f5b1136d21",
+      "leaseExpiresAt": "2026-10-29T18:14:52.677Z",
+      "gradingVersion": 1
+    },
+    "attempt": {
+      "answerJson": "\"合成原始答案：我认为条件 A 足够，不需要条件 B。\"",
+      "gradingState": "running",
+      "currentGradeId": null,
+      "gradingVersion": 1
+    },
+    "answerHash": "d29c4ed459355d0bb19652dc64295d8dbf5b908442315720fae9172615b62b55",
+    "grades": 0,
+    "reviews": 0,
+    "reviewEvents": 0
+  },
+  "recovered": {
+    "job": {
+      "state": "succeeded",
+      "retries": 2,
+      "leaseToken": null,
+      "leaseExpiresAt": null,
+      "gradingVersion": 1
+    },
+    "attempt": {
+      "answerJson": "\"合成原始答案：我认为条件 A 足够，不需要条件 B。\"",
+      "gradingState": "succeeded",
+      "currentGradeId": "5f609b7b-1064-45f8-9cc2-f7ef1c019dc9",
+      "gradingVersion": 1
+    },
+    "answerHash": "d29c4ed459355d0bb19652dc64295d8dbf5b908442315720fae9172615b62b55",
+    "grades": 1,
+    "reviews": 1,
+    "reviewEvents": 1
+  },
+  "repeated": {
+    "job": {
+      "state": "succeeded",
+      "retries": 2,
+      "leaseToken": null,
+      "leaseExpiresAt": null,
+      "gradingVersion": 1
+    },
+    "attempt": {
+      "answerJson": "\"合成原始答案：我认为条件 A 足够，不需要条件 B。\"",
+      "gradingState": "succeeded",
+      "currentGradeId": "5f609b7b-1064-45f8-9cc2-f7ef1c019dc9",
+      "gradingVersion": 1
+    },
+    "answerHash": "d29c4ed459355d0bb19652dc64295d8dbf5b908442315720fae9172615b62b55",
+    "grades": 1,
+    "reviews": 1,
+    "reviewEvents": 1
+  }
+}

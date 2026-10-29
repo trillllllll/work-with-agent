@@ -23,3 +23,10 @@ export function masterySummary(nodes: LearningNode[], parentId?: string) {
   const items = own.filter(n => n.kind === 'item');
   return { total: items.length, done: items.filter(n => n.status === 'done').length };
 }
+/** Recommendations use saved learning states across groups; tree order only breaks ties. */
+export function learningRecommendations(nodes: LearningNode[], current: Pick<LearningNode, 'id' | 'mapId'>) {
+  const available = nodes.filter(node => node.kind === 'item' && node.mapId === current.mapId && node.id !== current.id);
+  const review = available.find(node => node.status === 'review');
+  const next = available.find(node => node.status === 'learning') ?? available.find(node => node.status === 'todo');
+  return [review, next].filter((node): node is LearningNode => Boolean(node));
+}

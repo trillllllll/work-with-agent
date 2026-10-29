@@ -15,6 +15,7 @@ import { mountDesktopStatic } from './desktop-static.js';
 import { startOrchestrationScheduler } from './application/orchestration/service.js';
 import { activeSyncBinding } from './application/sync-replica.js';
 import { workspaceEvents } from './application/workspace-events.js';
+import { startPracticeWorker } from './application/learning-practice/worker.js';
 
 async function start() {
   process.title = 'dovun-server';
@@ -75,13 +76,14 @@ async function start() {
   const stopAutoMemory = replica ? () => {} : startAutoMemoryScheduler(autoMemory);
   if (!replica) void coordinatorWork(() => recoverInterruptedUploads());
   const stopLibrary = replica ? () => {} : startLibraryWorker();
-  const bound = () => { replica = true; stopOrchestrations(); stopReviews(); stopReminders(); stopAutoMemory(); stopLibrary(); agent.stopScheduler(); };
+  const stopPractice = replica ? () => {} : startPracticeWorker();
+  const bound = () => { replica = true; stopOrchestrations(); stopReviews(); stopReminders(); stopAutoMemory(); stopLibrary(); stopPractice(); agent.stopScheduler(); };
   workspaceEvents.on('sync-bound', bound);
   const { startSnapshotScheduler } = await import('./application/snapshots.js');
   const stopSnapshots = startSnapshotScheduler();
   const { startReplicaSync } = await import('./application/sync-replica.js');
   const stopSync = startReplicaSync();
-  server.on('close', () => { workspaceEvents.off('sync-bound', bound); clearInterval(timer); stopOrchestrations(); stopReviews(); stopReminders(); stopAutoMemory(); stopLibrary(); stopSnapshots(); stopSync(); agent.stopScheduler(); });
+  server.on('close', () => { workspaceEvents.off('sync-bound', bound); clearInterval(timer); stopOrchestrations(); stopReviews(); stopReminders(); stopAutoMemory(); stopLibrary(); stopPractice(); stopSnapshots(); stopSync(); agent.stopScheduler(); });
 }
 
 start().catch((error) => {

@@ -1,10 +1,13 @@
 import { learningNodeStatuses } from '../domain/learning.js';
 import type { Command } from './commands.js';
+import { configSchema } from './learning-practice/input.js';
 
 // propose_changes 的 learning 族参数校验与命令映射。
 // 执行与版本检查由 learning-commands.ts 注册的 learning.* 命令处理器完成。
 
-export const learningActions = ['map_create', 'map_update', 'map_archive', 'node_create', 'node_update', 'node_move', 'node_archive', 'activity_append'] as const;
+import { checkpointMeta } from './learning-checkpoint.js';
+
+export const learningActions = ['map_create', 'map_update', 'map_archive', 'node_create', 'node_update', 'node_move', 'node_archive', 'activity_append', 'practice_generate'] as const;
 export type LearningAction = (typeof learningActions)[number];
 
 const allowedKeys: Record<LearningAction, readonly string[]> = {
@@ -16,6 +19,7 @@ const allowedKeys: Record<LearningAction, readonly string[]> = {
   node_move: ['action', 'nodeId', 'expectedNodeRevision', 'parentId'],
   node_archive: ['action', 'nodeId', 'expectedNodeRevision', 'cascade', 'expectedDescendantRevisions'],
   activity_append: ['action', 'mapId', 'nodeId', 'kind', 'content', 'meta'],
+  practice_generate: ['action', 'mapId', 'nodeIds', 'mode', 'goal', 'count', 'types', 'difficulty', 'language'],
 };
 
 function text(value: unknown): string | null {
@@ -48,6 +52,11 @@ export function validateLearningArguments(args: Record<string, unknown>): string
   if (typeof action !== 'string' || !(learningActions as readonly string[]).includes(action)) return '未知动作';
   const unknown = Object.keys(args).find((key) => !allowedKeys[action as LearningAction].includes(key));
   if (unknown) return `未知参数: ${unknown}`;
+  if (action === 'practice_generate') {
+    const { action: _action, ...config } = args;
+    const parsed = configSchema.safeParse(config);
+    return parsed.success ? null : parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('；');
+  }
   if (action === 'map_create') {
     const title = text(args.title);
     if (!title || [...title].length > 200) return '标题需要 1 到 200 个字符';
@@ -105,7 +114,8 @@ export function validateLearningArguments(args: Record<string, unknown>): string
     if (!['session', 'status', 'note'].includes(String(args.kind))) return 'kind 只能是 session、status 或 note';
     const content = text(args.content);
     if (!content || [...content].length > 5000) return '内容需要 1 到 5000 个字符';
-    if (args.meta !== undefined && (typeof args.meta !== 'object' || Array.isArray(args.meta))) return 'meta 无效';
+    if (args.meta !== undefined && (!args.meta || typeof args.meta !== 'object' || Array.isArray(args.meta))) return 'meta 无效';
+    if (args.meta && (args.meta as Record<string, unknown>).type === 'checkpoint' && (args.kind !== 'session' || !checkpointMeta.safeParse(args.meta).success)) return '学习收尾元数据无效，请核对版本、卡点、下一步和来源';
   }
   if (args.nodeStatus !== undefined && !learningNodeStatuses.includes(args.nodeStatus as never)) return 'nodeStatus 只能是 todo、learning、review 或 done';
   if (args.cascade !== undefined && typeof args.cascade !== 'boolean') return 'cascade 必须为布尔值';
@@ -117,6 +127,10 @@ export function validateLearningArguments(args: Record<string, unknown>): string
 }
 
 export function commandForLearning(action: LearningAction, args: Record<string, unknown>): Command {
+  if (action === 'practice_generate') {
+    const { action: _action, ...config } = args;
+    return { kind: 'learning.practice.request', input: configSchema.parse(config) };
+  }
   // node_create/activity_append 的 mapId 允许是批次内引用（{ $ref }），由 normalizeCommands 解析；
   // 修改已有对象的 targetId 必须是真实 ID。
   const mapId = args.mapId as string | { $ref: string };
