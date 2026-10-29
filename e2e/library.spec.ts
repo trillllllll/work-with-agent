@@ -1,6 +1,7 @@
 import { mkdir, readFile } from 'node:fs/promises';
 import { test, expect, type APIRequestContext, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
+import ExcelJS from 'exceljs';
 
 const base = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const shots = '/tmp/wwa-library-shots';
@@ -28,9 +29,25 @@ test.afterAll(() => e2eDatabase.$disconnect());
 async function openLibrary(page: Page) {
   await page.goto('/#/library');
   await expect(page.getByRole('heading', { name: '资料库', exact: true })).toBeVisible();
+  const back = page.getByRole('button', { name: '返回文件列表', exact: true });
+  if (await back.isVisible()) await back.click();
 }
 
-test('桌面三栏按资料模块宽度测量，窄屏收起文件夹', async ({ page, request }) => {
+async function readDocument(page: Page) {
+  const pane = page.getByTestId('document-pane').first();
+  await expect(pane).toBeVisible();
+  const read = pane.getByRole('button', { name: '阅读', exact: true });
+  if (await read.isVisible()) await read.click();
+  return pane;
+}
+
+async function downloadDocument(page: Page) {
+  const pane = page.getByTestId('document-pane').first();
+  await pane.getByRole('button', { name: '导出', exact: true }).click();
+  await page.getByRole('menuitem', { name: '下载当前版本', exact: true }).click();
+}
+
+test('桌面文档占据主工作面，手机返回列表后访问文件夹', async ({ page, request }) => {
   const material = await createMaterial(request, '布局合同', '用于测量三栏宽度的正文');
   await page.setViewportSize({ width: 1600, height: 1000 });
   await openLibrary(page);
@@ -38,18 +55,21 @@ test('桌面三栏按资料模块宽度测量，窄屏收起文件夹', async ({
 
   const surface = page.getByTestId('library-surface');
   const folders = page.getByTestId('library-folders');
-  const preview = page.getByTestId('library-preview');
+  const preview = page.getByTestId('document-pane').first();
   await expect(folders).toBeVisible();
   await expect(preview).toBeVisible();
   const fw = (await folders.boundingBox())!.width;
   const pw = (await preview.boundingBox())!.width;
-  expect(Math.abs(fw - 208)).toBeLessThanOrEqual(1);
-  expect(Math.abs(pw - 360)).toBeLessThanOrEqual(1);
+  expect(Math.abs(fw - 190)).toBeLessThanOrEqual(1);
+  expect(pw).toBeGreaterThan(600);
+  await expect(page.getByTestId('library-list')).toBeHidden();
   await expect(surface).toHaveCSS('background-color', 'rgb(250, 249, 245)');
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByTestId('library-folders')).toBeHidden();
+  await expect(preview).toBeVisible();
+  await page.getByRole('button', { name: '返回文件列表', exact: true }).click();
   await expect(page.getByRole('button', { name: '文件夹', exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
 });
@@ -112,22 +132,24 @@ test('关闭预览后焦点回到资料行，离开任务后保留搜索和选�
   await openLibrary(page);
   const row = page.getByTestId(`library-row-${material.id}`);
   await row.click();
-  await expect(page.getByTestId('library-preview')).toBeVisible();
+  await expect(page.getByTestId('document-pane').first()).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(page.getByTestId('library-preview')).toBeHidden();
+  await expect(page.getByTestId('document-pane').first()).toBeHidden();
   await expect(row).toBeFocused();
-
-  await row.click();
   const search = page.getByLabel('搜索资料', { exact: true });
   await search.fill('可返回的资料');
   await page.getByLabel('类型筛选', { exact: true }).selectOption('text');
+  await row.getByRole('checkbox', { name: '选择 可返回的资料', exact: true }).check();
+  await row.click();
+  await page.getByRole('button', { name: '文件信息', exact: true }).click();
   await page.getByRole('button', { name: '从资料打开的任务', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '任务详情', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
   await expect(search).toHaveValue('可返回的资料');
   await expect(page.getByLabel('类型筛选', { exact: true })).toHaveValue('text');
-  await expect(page.getByTestId('library-preview')).toBeVisible();
-  await expect(row).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('document-pane').first()).toBeVisible();
+  await page.getByRole('button', { name: '返回文件列表', exact: true }).click();
+  await expect(row.getByRole('checkbox', { name: '选择 可返回的资料', exact: true })).toBeChecked();
 });
 
 test('亮色和暗色在三种宽度下都没有横向溢出', async ({ page, request }) => {
@@ -140,7 +162,7 @@ test('亮色和暗色在三种宽度下都没有横向溢出', async ({ page, re
     await page.reload();
     await expect(page.getByRole('heading', { name: '资料库', exact: true })).toBeVisible();
     await page.getByTestId(`library-row-${material.id}`).click();
-    await expect(page.getByTestId('library-preview')).toBeVisible();
+    await expect(page.getByTestId('document-pane').first()).toBeVisible();
     for (const width of [1600, 1024, 390]) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
       if (width !== 1600) await page.keyboard.press('Escape');
@@ -299,7 +321,7 @@ test('引用打开旧版本，而不是替换后的最新版', async ({ page, re
   const current = await readMaterial(request, material.id);
   await command(request, [{ kind: 'material.update', targetId: material.id, expectedRevision: current.revision, input: { content: '第二版正文已经换掉' } }]);
   await ask.getByRole('button', { name: /^C1 ·/ }).click();
-  await expect(page.getByTestId('library-preview-version')).toHaveText('版本 1');
+  await expect(page.getByTestId('document-save-state')).toHaveText('第 1 版 · 只读');
   const chunk = page.getByTestId(`library-chunk-${citation.chunkId}`);
   await expect(chunk).toBeVisible();
   await expect(chunk).toHaveAttribute('data-highlighted', 'true');
@@ -368,7 +390,7 @@ test('文本资料预览显示原件正文', async ({ page, request }) => {
   await page.setViewportSize({ width: 1400, height: 900 });
   await openLibrary(page);
   await page.getByTestId(`library-row-${material.id}`).click();
-  await expect(page.getByTestId('library-preview')).toContainText('原件正文可见甲');
+  await expect(await readDocument(page)).toContainText('原件正文可见甲');
 });
 
 test('会话资料带着空解析位置时预览仍显示正文', async ({ page, request }) => {
@@ -390,10 +412,9 @@ test('会话资料带着空解析位置时预览仍显示正文', async ({ page,
   await page.setViewportSize({ width: 1400, height: 900 });
   await openLibrary(page);
   await page.getByTestId(`library-row-${created.id}`).click();
-  const preview = page.getByTestId('library-preview');
-  await expect(preview).toBeVisible();
-  await expect(preview.getByRole('heading', { name: '会话摘录可见' })).toBeVisible();
-  await expect(preview.getByRole('button', { name: '关闭', exact: true })).toBeVisible();
+  const preview = await readDocument(page);
+  await expect(preview.getByRole('textbox', { name: '文档标题', exact: true })).toHaveValue('会话摘录可见');
+  await preview.getByRole('button', { name: '文件信息', exact: true }).click();
   await expect(preview).toContainText('会话正文可见乙');
   await expect(preview).toContainText('暂不支持此格式的正文解析');
   await expect(page.getByRole('heading', { name: '资料库', exact: true })).toBeVisible();
@@ -402,15 +423,15 @@ test('会话资料带着空解析位置时预览仍显示正文', async ({ page,
   await page.setViewportSize({ width: 700, height: 800 });
   await expect(preview).toBeVisible();
   await expect(preview).toContainText('会话正文可见乙');
-  await preview.getByRole('button', { name: '关闭', exact: true }).click();
+  await page.getByRole('button', { name: '返回文件列表', exact: true }).click();
   await expect(preview).toBeHidden();
 
   const text = await createMaterial(request, '文本仍可预览', '文本正文仍在');
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.getByTestId(`library-row-${text.id}`).click();
-  await expect(page.getByTestId('library-preview')).toContainText('文本正文仍在');
-  await page.getByTestId('library-preview').getByRole('button', { name: '关闭', exact: true }).click();
-  await expect(page.getByTestId('library-preview')).toBeHidden();
+  await expect(await readDocument(page)).toContainText('文本正文仍在');
+  await page.getByRole('button', { name: '返回文件列表', exact: true }).click();
+  await expect(page.getByTestId('document-pane').first()).toBeHidden();
 });
 
 test('搜索失败时显示重试，而不是空列表文案', async ({ page, request }) => {
@@ -450,11 +471,11 @@ test('第101个片段可以显示，下载原文与原件字节一致', async ({
   await page.setViewportSize({ width: 1400, height: 900 });
   await openLibrary(page);
   await page.getByTestId(`library-row-${material.id}`).click();
-  const preview = page.getByTestId('library-preview');
+  const preview = page.getByTestId('document-pane').first();
   const downloaded = page.waitForEvent('download');
-  await preview.getByRole('button', { name: '下载', exact: true }).click();
+  await downloadDocument(page);
   expect(await readFile(await (await downloaded).path(), 'utf8')).toBe(content);
-  await preview.getByRole('tab', { name: '提取文字', exact: true }).click();
+  await preview.getByRole('button', { name: '提取文字', exact: true }).click();
   const chunk = preview.getByTestId(`library-chunk-${chunkId}`);
   for (let step = 0; step < 4 && await chunk.count() === 0; step += 1) {
     const more = preview.getByRole('button', { name: '继续加载', exact: true });
@@ -487,23 +508,140 @@ test('历史版本使用自己的类型预览和下载', async ({ page, request 
   await page.setViewportSize({ width: 1400, height: 900 });
   await openLibrary(page);
   await page.getByTestId(`library-row-${material.id}`).click();
-  const preview = page.getByTestId('library-preview');
-  await expect(preview.getByTestId('library-preview-version')).toHaveText('版本 2');
+  const preview = page.getByTestId('document-pane').first();
+  await expect(preview.getByTestId('document-save-state')).toHaveText(/已保存到 Dovun|只读/);
   await expect(preview.getByRole('img', { name: '第二版.png', exact: true })).toBeVisible();
   const imageDownload = page.waitForEvent('download');
-  await preview.getByRole('button', { name: '下载', exact: true }).click();
+  await downloadDocument(page);
   const imageFile = await imageDownload;
   expect(Buffer.compare(await readFile(await imageFile.path()), png)).toBe(0);
   expect(imageFile.suggestedFilename()).toBe('第二版.png');
 
+  await preview.getByRole('button', { name: '文件信息', exact: true }).click();
   await preview.getByRole('button', { name: /^版本 1/ }).click();
-  await expect(preview.getByTestId('library-preview-version')).toHaveText('版本 1');
+  await expect(preview.getByTestId('document-save-state')).toHaveText('第 1 版 · 只读');
   await expect(preview.getByText(original, { exact: true })).toBeVisible();
   await expect(preview.getByRole('img')).toHaveCount(0);
   const textDownload = page.waitForEvent('download');
-  await preview.getByRole('button', { name: '下载', exact: true }).click();
+  await downloadDocument(page);
   const textFile = await textDownload;
   expect(await readFile(await textFile.path(), 'utf8')).toBe(original);
+
+  await preview.getByRole('button', { name: '将此版本恢复为新版', exact: true }).click();
+  await expect(page.locator('textarea.document-source')).toHaveValue(original);
+  await expect.poll(async () => (await readMaterial(request, material.id)).revision).toBe(3);
+  await page.goto(`/#/library?resource=${material.id}&revision=2`);
+  await expect(preview.getByRole('img', { name: '第二版.png', exact: true })).toBeVisible();
+  await preview.getByRole('button', { name: '将此版本恢复为新版', exact: true }).click();
+  await expect.poll(async () => (await readMaterial(request, material.id)).revision).toBe(4);
+  await expect(preview.getByRole('img', { name: '第二版.png', exact: true })).toBeVisible();
+  const restoredDownload = page.waitForEvent('download');
+  await downloadDocument(page);
+  expect(Buffer.compare(await readFile(await (await restoredDownload).path()), png)).toBe(0);
+});
+
+test('历史正文恢复为新版本，保留原来的两个版本', async ({ page, request }) => {
+  const created = await request.post(`${base}/api/v1/library/resources`, { data: { requestId: crypto.randomUUID(), title: '可恢复版本', format: 'text', content: '第一版保留的正文' } });
+  expect(created.ok(), await created.text()).toBe(true);
+  const resource = (await created.json()).data;
+  const revised = await request.put(`${base}/api/v1/library/resources/${resource.id}/content`, { data: { requestId: crypto.randomUUID(), expectedRevision: 1, format: 'text', content: '第二版后来的正文' } });
+  expect(revised.ok(), await revised.text()).toBe(true);
+  await page.goto(`/#/library?resource=${resource.id}&revision=1`);
+  await expect(page.getByTestId('document-save-state')).toHaveText('第 1 版 · 只读');
+  await page.getByRole('button', { name: '将此版本恢复为新版', exact: true }).click();
+  await expect(page.locator('textarea.document-source')).toHaveValue('第一版保留的正文');
+  await expect.poll(async () => (await (await request.get(`${base}/api/v1/library/resources/${resource.id}`)).json()).data.revision).toBe(3);
+  const first = (await (await request.get(`${base}/api/v1/library/resources/${resource.id}?revision=1`)).json()).data;
+  const second = (await (await request.get(`${base}/api/v1/library/resources/${resource.id}?revision=2`)).json()).data;
+  const current = (await (await request.get(`${base}/api/v1/library/resources/${resource.id}`)).json()).data;
+  expect(first.content).toBe('第一版保留的正文');
+  expect(second.content).toBe('第二版后来的正文');
+  expect(current.content).toBe(first.content);
+  expect(current.versions.map((entry: { revision: number }) => entry.revision)).toEqual([3, 2, 1]);
+});
+
+test('引用已有资料固定所选版本，资料随后更新不改变正文引用', async ({ page, request }) => {
+  const source = await request.post(`${base}/api/v1/library/resources`, { data: { requestId: crypto.randomUUID(), title: '已有证据原件', format: 'text', content: '引用时的证据' } });
+  expect(source.ok(), await source.text()).toBe(true);
+  const evidence = (await source.json()).data;
+  const created = await request.post(`${base}/api/v1/library/resources`, { data: { requestId: crypto.randomUUID(), title: '引用证据的文档', format: 'richdoc-v1', content: { schemaVersion: 1, blocks: [{ id: crypto.randomUUID(), kind: 'paragraph', text: [{ text: '结论依赖以下证据' }] }] } } });
+  expect(created.ok(), await created.text()).toBe(true);
+  const resource = (await created.json()).data;
+  await page.goto(`/#/library?resource=${resource.id}`);
+  const editor = page.getByRole('textbox', { name: '文档正文', exact: true });
+  await editor.click();
+  await page.getByRole('button', { name: '引用已有文件', exact: true }).click();
+  const picker = page.getByRole('dialog', { name: '引用已有文件', exact: true });
+  await picker.getByRole('button', { name: /已有证据原件/ }).click();
+  await expect(picker).toBeHidden();
+  await expect(page.locator('.document-resource-file')).toContainText('已有证据原件');
+  await expect.poll(async () => (await (await request.get(`${base}/api/v1/library/resources/${resource.id}`)).json()).data.revision).toBe(2);
+  const revised = await request.put(`${base}/api/v1/library/resources/${evidence.id}/content`, { data: { requestId: crypto.randomUUID(), expectedRevision: 1, format: 'text', content: '引用之后的新证据' } });
+  expect(revised.ok(), await revised.text()).toBe(true);
+  await page.reload();
+  await expect(page.locator('.document-resource-file')).toContainText('已有证据原件');
+  const current = (await (await request.get(`${base}/api/v1/library/resources/${resource.id}`)).json()).data;
+  expect(current.content.blocks.find((block: { kind: string }) => block.kind === 'file').target).toEqual({ resourceId: evidence.id, revision: 1 });
+});
+
+test('Markdown 批次导入映射配图，缺少文件可补充且保留源码字节', async ({ page, request }) => {
+  const evidence = await createMaterial(request, '可补充的附件', '补充证据正文');
+  const markdown = '# 原始方案\r\n\r\n![批次配图](proof.png)\r\n\r\n[补充证据](missing.txt)\r\n';
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  await openLibrary(page);
+  await page.locator('input[aria-label="选择文件"]').setInputFiles([
+    { name: 'mapping-plan.md', mimeType: 'text/markdown', buffer: Buffer.from(markdown) },
+    { name: 'proof.png', mimeType: 'image/png', buffer: png },
+  ]);
+  await expect(page.getByText('有 1 处相对文件未找到，可在阅读模式补充原件。', { exact: true })).toBeVisible();
+  const rows = (await (await request.get(`${base}/api/v1/library/materials`)).json()).data.items;
+  const resource = rows.find((row: { kind: string }) => row.kind === 'markdown');
+  expect(resource).toBeTruthy();
+  await page.getByTestId(`library-row-${resource.id}`).click();
+  const pane = await readDocument(page);
+  await expect(pane.getByRole('img', { name: '批次配图', exact: true })).toBeVisible();
+  await expect(pane.locator('.document-missing-reference')).toContainText('未找到关联文件：missing.txt');
+  await pane.getByRole('button', { name: '补充原件', exact: true }).click();
+  await page.getByRole('dialog', { name: '引用已有文件', exact: true }).getByRole('button', { name: /可补充的附件/ }).click();
+  await expect(pane.getByRole('button', { name: '补充证据', exact: true })).toBeVisible();
+  await expect.poll(async () => (await (await request.get(`${base}/api/v1/library/resources/${resource.id}`)).json()).data.relativeReferences.length).toBe(2);
+  const saved = (await (await request.get(`${base}/api/v1/library/resources/${resource.id}`)).json()).data;
+  expect(saved.content).toBe(markdown);
+  expect(saved.relativeReferences).toContainEqual(expect.objectContaining({ path: 'missing.txt', resourceId: evidence.id, revision: 1 }));
+  await page.reload(); await readDocument(page);
+  await expect(pane.getByRole('img', { name: '批次配图', exact: true })).toBeVisible();
+  await pane.getByRole('button', { name: '文件信息', exact: true }).click();
+  const usedFiles = pane.getByTestId('document-used-files');
+  await expect(usedFiles).toContainText('可补充的附件');
+  await usedFiles.getByRole('button', { name: /可补充的附件/ }).click();
+  await expect(page.getByTestId('document-save-state')).toHaveText('第 1 版 · 只读');
+  await expect(page.getByTestId('document-pane')).toContainText('补充证据正文');
+});
+
+test('工作簿定位拒绝越界坐标，访问空位置不扩张原表', async ({ page, request }) => {
+  const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message));
+  const workbook = new ExcelJS.Workbook(); const worksheet = workbook.addWorksheet('原表'); worksheet.getCell('B2').value = '可返回的原单元格';
+  await openLibrary(page);
+  await page.locator('input[aria-label="选择文件"]').setInputFiles({ name: 'range-budget.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: Buffer.from(await workbook.xlsx.writeBuffer()) });
+  await expect(page.getByRole('row', { name: /range-budget/ })).toBeVisible();
+  const rows = (await (await request.get(`${base}/api/v1/library/materials`)).json()).data.items;
+  const resource = rows.find((row: { title: string }) => row.title.includes('range-budget'));
+  await page.getByTestId(`library-row-${resource.id}`).click();
+  const pane = page.getByTestId('document-pane');
+  await expect(pane.locator('.document-workbook-grid')).toContainText('可返回的原单元格');
+  const address = pane.getByRole('textbox', { name: '单元格或范围（如 A1:B10）', exact: true });
+  for (const invalid of ['ZZZ1', 'A1048577']) {
+    await address.fill(invalid); await pane.getByRole('button', { name: '定位', exact: true }).click();
+    await expect(address).toHaveAttribute('aria-invalid', 'true');
+    await expect(pane.getByRole('alert')).toContainText('A1 至 XFD1048576');
+    await expect(pane.locator('.document-workbook-grid')).toContainText('可返回的原单元格');
+  }
+  await address.fill('XFD1048576'); await pane.getByRole('button', { name: '定位', exact: true }).click();
+  await expect(pane.getByText('此位置没有已使用的单元格。', { exact: true })).toBeVisible();
+  await address.fill('B2'); await pane.getByRole('button', { name: '定位', exact: true }).click();
+  await expect(pane.locator('.document-workbook-grid')).toContainText('可返回的原单元格');
+  await expect(pane.getByText('2–2 / 2', { exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
 });
 
 test('第41个关联任务要通过下一页才能看到', async ({ page, request }) => {
@@ -543,7 +681,8 @@ test('第41个关联任务要通过下一页才能看到', async ({ page, reques
   await page.setViewportSize({ width: 1400, height: 900 });
   await openLibrary(page);
   await page.getByTestId(`library-row-${material.id}`).click();
-  const preview = page.getByTestId('library-preview');
+  const preview = page.getByTestId('document-pane').first();
+  await preview.getByRole('button', { name: '文件信息', exact: true }).click();
   const pager = preview.getByTestId('library-linked-tasks-pagination');
   await expect(pager).toContainText('共 41 个任务');
   await expect(preview.getByTestId(`library-linked-task-${shown.id}`)).toBeVisible();
@@ -623,7 +762,8 @@ test('预览里可以一次关联多个任务', async ({ page, request }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
   await openLibrary(page);
   await page.getByTestId(`library-row-${material.id}`).click();
-  const preview = page.getByTestId('library-preview');
+  const preview = page.getByTestId('document-pane').first();
+  await preview.getByRole('button', { name: '文件信息', exact: true }).click();
   await preview.getByRole('textbox', { name: '搜索任务', exact: true }).fill('预览关联');
   const rowB = preview.getByTestId(`task-picker-row-${secondId}`);
   await expect(rowB).toBeVisible();

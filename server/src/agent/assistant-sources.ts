@@ -4,6 +4,8 @@ import { DomainError } from '../domain/task.js';
 import { ownerActor, assertTopicAccess } from '../application/security.js';
 import { appKnowledge, applicationVersion } from './app-knowledge.js';
 import { readPracticeItem } from '../application/learning-practice/read.js';
+import { readableMaterial } from '../application/library/access.js';
+import { versionFormat, versionProjection } from '../application/resources/version.js';
 export const sourceReadTools = new Set(['read_app_knowledge', 'query_tasks', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'conversation_search', 'learning_read']);
 export type { AssistantSource } from '../domain/assistant-source.js';
 import type { AssistantSource } from '../domain/assistant-source.js';
@@ -18,11 +20,11 @@ export async function resolveAssistantSource(kind: string, id: string, revision?
     if (row && !row.deletedAt) { assertTopicAccess(ownerActor, row.topicId); return { kind, id, title: row.title, topicId: row.topicId, content: row.description }; }
   }
   if (kind === 'material') {
-    const row = await prisma.material.findUnique({ where: { id } });
+    const row = await readableMaterial(prisma, ownerActor, id);
     if (row) {
       assertTopicAccess(ownerActor, row.topicId);
       const version = await prisma.materialVersion.findUnique({ where: { materialId_revision: { materialId: id, revision: revision ?? row.revision } } });
-      if (version) return { kind, id, title: row.title, topicId: row.topicId, revision: version.revision, content: version.content };
+      if (version) return { kind, id, title: row.title, topicId: row.topicId, revision: version.revision, content: versionProjection(row.kind, version), format: versionFormat(row.kind, version), contentHash: version.contentHash, readOnlyProjection: versionFormat(row.kind, version) === 'richdoc-v1' };
     }
   }
   if (kind === 'memory') {
@@ -73,7 +75,7 @@ export async function sourcesFromTool(name: string, args: Record<string, unknown
   if (name === 'library_read') {
     if (args.action === 'linked_tasks') for (const row of data.items ?? []) add('task', row.id);
 
-    if (['read', 'content'].includes(String(args.action))) add('material', args.materialId, data.viewedRevision ?? data.revision ?? args.revision);
+    if (['read', 'document', 'content'].includes(String(args.action))) add('material', args.materialId, data.viewedRevision ?? data.revision ?? args.revision);
     if (['list', 'search', 'task_materials'].includes(String(args.action))) for (const row of data.items ?? []) add('material', row.id, row.revision);
   }
   if (name === 'memory_read') {

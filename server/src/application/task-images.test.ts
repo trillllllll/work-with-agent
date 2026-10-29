@@ -27,6 +27,9 @@ function webp(payload: string) {
   return Buffer.concat([header, body]);
 }
 async function clean() {
+  await prisma.resourceReference.deleteMany();
+  await prisma.resourceWriteReceipt.deleteMany();
+  await prisma.resourceLegacyAlias.deleteMany();
   await prisma.librarySearchPosting.deleteMany();
   await prisma.librarySearchDocument.deleteMany();
   await prisma.materialChunk.deleteMany();
@@ -73,7 +76,7 @@ describe('task detail images', () => {
     }
   });
 
-  it('stores compressed bytes outside the description and keeps unreferenced images until permanent delete', async () => {
+  it('stores compressed bytes outside the description and preserves managed originals after task deletion', async () => {
     const item = await task();
     const other = await task('另一任务');
     const kept = jpeg('TASK_IMAGE_MARKER_KEEP');
@@ -112,13 +115,13 @@ describe('task detail images', () => {
     expect(undone.status, JSON.stringify(undone.body)).toBe(200);
     expect((await request(app).get(uploaded.body.data.url)).status).toBe(200);
 
-    // 永久删除任务后：该任务图片记录清零；未被资料使用的 blob 被回收。
+    // 永久删除任务后：旧任务图片记录清零；已提交资源原件仍保留，不能推断离线草稿不再引用。
     await request(app).delete(`/api/tasks/${item.id}`).send({});
     const purge = await request(app).post(`/api/trash/tasks/${item.id}/permanent`).send({});
     expect(purge.status, JSON.stringify(purge.body)).toBe(200);
     expect(await prisma.taskImage.count({ where: { taskId: item.id } })).toBe(0);
-    await expect(readFile(resolve(knowledgeStorageRoot(), knowledgeHash(dropped)))).rejects.toThrow();
-    await expect(readFile(resolve(knowledgeStorageRoot(), knowledgeHash(kept)))).rejects.toThrow();
+    await expect(readFile(resolve(knowledgeStorageRoot(), knowledgeHash(dropped)))).resolves.toEqual(dropped);
+    await expect(readFile(resolve(knowledgeStorageRoot(), knowledgeHash(kept)))).resolves.toEqual(kept);
 
     const records = await prisma.changeRecord.findMany();
     const snapshot = JSON.stringify(records);

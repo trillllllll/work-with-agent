@@ -5,6 +5,7 @@ import { assertOwner } from '../security.js';
 import { libraryError, libraryNow, readableMaterial, topicVisible } from './access.js';
 import { locatorSchema, type LibraryFilters } from './schema.js';
 import { librarySearch } from './search.js';
+import { versionFormat, versionProjection } from '../resources/version.js';
 
 const week = 7 * 24 * 60 * 60 * 1000;
 type ExtractionStatus = 'queued' | 'running' | 'ready' | 'partial' | 'blocked' | 'failed' | 'unsupported';
@@ -40,6 +41,9 @@ export async function materialWhere(actor: Actor, filters: LibraryFilters) {
   const archived = archivedMode(filters);
   const recursive = filters.recursive !== false;
   const where: Record<string, unknown> = {};
+  // Task images remain discoverable from their document/task references, not as root uploads.
+  where.sourceTaskId = null;
+  where.managed = false;
   if (actor.topicIds === 'all') {
     if (!actor.includeInbox) where.topicId = { not: null };
   } else {
@@ -85,7 +89,7 @@ async function summaries(actor: Actor, rows: Material[]) {
 
 function summarize(actor: Actor, row: Material, tags: Array<{ id: string; name: string }>, extraction: MaterialExtraction | undefined, linkedTaskCount: number, file: { fileName: string | null; mimeType: string | null } | null) {
   return {
-    id: row.id, title: row.title, kind: row.kind as 'text' | 'markdown' | 'link' | 'thread' | 'attachment',
+    id: row.id, title: row.title, kind: row.kind as 'text' | 'markdown' | 'document' | 'link' | 'thread' | 'attachment',
     revision: row.revision, organizationRevision: row.organizationRevision, topicId: row.topicId,
     folderId: row.folderId, fileName: file?.fileName ?? null, mimeType: file?.mimeType ?? null,
     archivedAt: row.archivedAt, createdAt: row.createdAt, updatedAt: row.updatedAt,
@@ -208,11 +212,11 @@ export class LibraryService {
   }
 
   async source(actor: Actor, id: string, revision: number) {
-    await readableMaterial(prisma, actor, id);
+    const material = await readableMaterial(prisma, actor, id);
     const version = await prisma.materialVersion.findUnique({ where: { materialId_revision: { materialId: id, revision } } });
     if (!version) throw libraryError('NOT_FOUND', '资料版本不存在', 404);
     if (version.attachmentPath) return { kind: 'attachment' as const, materialId: id, revision: version.revision, fileName: version.fileName, mimeType: version.mimeType };
-    return { kind: 'text' as const, content: version.content, revision: version.revision };
+    return { kind: 'text' as const, content: versionProjection(material.kind, version), revision: version.revision, format: versionFormat(material.kind, version), readOnlyProjection: versionFormat(material.kind, version) === 'richdoc-v1' };
   }
 
   async duplicates(actor: Actor, sha256: string) {

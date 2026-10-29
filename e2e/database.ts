@@ -4,6 +4,9 @@ import { createHash } from 'node:crypto';
 export const e2eDatabase = new PrismaClient({ datasourceUrl: process.env.E2E_DATABASE_URL ?? 'file:../../e2e/.data/agent-studio-e2e.db' });
 
 export async function resetE2eDatabase() {
+  await e2eDatabase.resourceReference.deleteMany();
+  await e2eDatabase.resourceWriteReceipt.deleteMany();
+  await e2eDatabase.resourceLegacyAlias.deleteMany();
   await e2eDatabase.planTimeBand.deleteMany();
   // 学习域：先动态后节点再地图，遵守外键顺序。
   await e2eDatabase.learningActivity.deleteMany();

@@ -6,6 +6,7 @@ import { libraryFiltersSchema } from '../application/library/schema.js';
 import { askLibrary } from '../application/library/ask.js';
 import { beginReceive, cancelUpload, failReceive, finishReceive, openUpload, readOwnUpload, uploadByteLimit, writeUploadBody } from '../application/library/uploads.js';
 import { libraryError } from '../application/library/access.js';
+import { createResourceRouter } from '../application/resources/routes.js';
 
 const page = z.object({ cursor: z.coerce.number().int().min(0).default(0), limit: z.coerce.number().int().min(1).max(100).default(40) });
 
@@ -31,6 +32,7 @@ function filtersOf(query: Request['query']) {
 
 export function createLibraryRouter(service = new LibraryService()) {
   const router = Router();
+  router.use('/resources', createResourceRouter());
   router.get('/materials', async (req, res, next) => {
     try {
       const paging = page.parse(req.query);
@@ -61,6 +63,8 @@ export function createLibraryRouter(service = new LibraryService()) {
       const source = await service.source(getActor(req), String(req.params.id), z.coerce.number().int().positive().parse(req.params.revision));
       if (source.kind === 'text') {
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('X-Dovun-Content-Format', source.format);
+        res.setHeader('X-Dovun-Read-Only-Projection', String(source.readOnlyProjection));
         res.send(source.content);
         return;
       }

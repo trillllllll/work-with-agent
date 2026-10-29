@@ -2,6 +2,9 @@ import type { PrismaClient } from '@prisma/client';
 
 /** Rows that reference materials or versions. Call this before deleting those parents. */
 export async function clearLibraryData(prisma: PrismaClient) {
+  await prisma.resourceReference.deleteMany();
+  await prisma.resourceWriteReceipt.deleteMany();
+  await prisma.resourceLegacyAlias.deleteMany();
   await prisma.librarySearchPosting.deleteMany();
   await prisma.librarySearchDocument.deleteMany();
   await prisma.materialChunk.deleteMany();

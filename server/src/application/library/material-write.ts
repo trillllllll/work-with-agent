@@ -17,6 +17,7 @@ export const uploadMaterialInput = z.object({
   topicId: z.string().min(1).nullable(),
   folderId: z.string().min(1).nullable(),
   taskIds: z.array(z.string().min(1)).default([]),
+  managed: z.boolean().default(false),
 }).strict();
 
 export function isUploadCreate(input: unknown) {
@@ -35,9 +36,16 @@ export function uploadPresentation(fileName: string, mimeType: string) {
   const bare = (dot > 0 ? fileName.slice(0, dot) : fileName).trim();
   const title = (bare || fileName).slice(0, 300);
   const markdown = extension === 'md' || extension === 'markdown' || mimeType === 'text/markdown';
-  const text = !markdown && (['txt', 'csv', 'json', 'log'].includes(extension) || mimeType.startsWith('text/'));
+  const text = !markdown && (['txt', 'csv', 'json', 'log', 'js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs', 'py', 'go', 'rs', 'java', 'c', 'h', 'cpp', 'css', 'html', 'xml', 'yaml', 'yml', 'toml', 'sql', 'sh', 'rb', 'php', 'swift', 'kt'].includes(extension) || mimeType.startsWith('text/'));
   const kind = markdown ? 'markdown' as const : text ? 'text' as const : 'attachment' as const;
   return { title, kind, extension };
+}
+
+export function importedUtf8(bytes: Uint8Array) {
+  try {
+    const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+    return text.includes('\u0000') ? null : text;
+  } catch { return null; }
 }
 
 export async function afterMaterialVersion(tx: LibraryDb, material: Material) {
@@ -93,12 +101,13 @@ export async function createMaterialFromUpload(tx: LibraryDb, actor: Actor, inpu
   topicId: string | null;
   folderId: string | null;
   taskIds: string[];
+  managed?: boolean;
 }, context: MutationContext) {
   const upload = await tx.libraryUpload.findUnique({ where: { id: input.uploadId } });
   if (!upload || upload.actorId !== actor.id) throw libraryError('NOT_FOUND', '上传不存在', 404);
   const hash = commitHash({
     operation: 'create', uploadId: input.uploadId, duplicateAction: input.duplicateAction, reuseMaterialId: input.reuseMaterialId ?? null,
-    topicId: input.topicId, folderId: input.folderId, taskIds: [...new Set(input.taskIds)].sort(),
+    topicId: input.topicId, folderId: input.folderId, taskIds: [...new Set(input.taskIds)].sort(), ...(input.managed ? { managed: true } : {}),
   });
   if (upload.state === 'committed') return replayCommit(tx, upload, hash);
   if (upload.expiresAt < libraryNow()) throw libraryError('UPLOAD_EXPIRED', '上传已过期');
@@ -122,17 +131,18 @@ export async function createMaterialFromUpload(tx: LibraryDb, actor: Actor, inpu
   const attachmentPath = bytes ? await storeKnowledgeBlob(bytes) : upload.sha256;
   const presentation = uploadPresentation(upload.fileName, upload.mimeType);
   let content = '';
+  let format = presentation.kind === 'attachment' ? 'binary' : presentation.kind;
   if (bytes && (presentation.kind === 'text' || presentation.kind === 'markdown')) {
-    const text = bytes.toString('utf8');
-    if (!text.includes('\u0000')) content = text;
+    const text = importedUtf8(bytes);
+    if (text !== null) content = text; else format = 'binary';
   }
   const material = await tx.material.create({ data: {
-    id: context.entityId ?? upload.id, topicId: input.topicId, folderId: input.folderId, taskId: null,
+    id: context.entityId ?? upload.id, topicId: input.topicId, folderId: input.folderId, taskId: null, managed: input.managed ?? false,
     kind: presentation.kind, title: presentation.title, createdAt: timestamp, updatedAt: timestamp,
   } });
   await tx.materialVersion.create({ data: {
     materialId: material.id, revision: material.revision, content, contentHash: knowledgeHash(`${content}\0${attachmentPath}`),
-    metadata: '{}', attachmentPath, fileName: upload.fileName, mimeType: upload.mimeType, createdAt: timestamp,
+    metadata: '{}', attachmentPath, sourceOriginalPath: attachmentPath, format, fileName: upload.fileName, mimeType: upload.mimeType, createdAt: timestamp,
   } });
   await addManualLinks(tx, material.id, input.taskIds, actor);
   await afterMaterialVersion(tx, material);
@@ -148,6 +158,7 @@ export async function replaceMaterialFromUpload(tx: LibraryDb, actor: Actor, mat
   const hash = commitHash({ operation: 'replace', uploadId, materialId, expectedRevision: expectedRevision ?? 0 });
   if (upload.state === 'committed') return replayCommit(tx, upload, hash);
   const material = await writableMaterial(tx, actor, materialId);
+  if (material.kind === 'document') throw libraryError('UNSUPPORTED_FORMAT_WRITE', '富文档不能用文件替换，请另存为新资源');
   const { assertExpected } = await import('./access.js');
   assertExpected(material.revision, expectedRevision);
   if (upload.state !== 'ready' || !upload.sha256) throw libraryError('UPLOAD_NOT_READY', '文件尚未上传完成', 409);
@@ -158,15 +169,16 @@ export async function replaceMaterialFromUpload(tx: LibraryDb, actor: Actor, mat
   const attachmentPath = bytes ? await storeKnowledgeBlob(bytes) : upload.sha256;
   const presentation = uploadPresentation(upload.fileName, upload.mimeType);
   let content = previous.content;
+  let format = presentation.kind === 'attachment' ? 'binary' : presentation.kind;
   if (bytes && (presentation.kind === 'text' || presentation.kind === 'markdown')) {
-    const text = bytes.toString('utf8');
-    if (!text.includes('\u0000')) content = text;
+    const text = importedUtf8(bytes);
+    if (text !== null) content = text; else format = 'binary';
   }
   const timestamp = libraryNow();
   const updated = await tx.material.update({ where: { id: material.id, revision: material.revision }, data: { title: presentation.title, kind: presentation.kind, revision: { increment: 1 }, updatedAt: timestamp } });
   await tx.materialVersion.create({ data: {
     materialId: material.id, revision: updated.revision, content, contentHash: knowledgeHash(`${content}\0${attachmentPath}`),
-    metadata: previous.metadata, attachmentPath, fileName: upload.fileName, mimeType: upload.mimeType, createdAt: timestamp,
+    metadata: previous.metadata, attachmentPath, sourceOriginalPath: attachmentPath, format, fileName: upload.fileName, mimeType: upload.mimeType, createdAt: timestamp,
   } });
   await afterMaterialVersion(tx, updated);
   if (!context.preview) await tx.libraryUpload.update({ where: { id: upload.id }, data: commitData(hash, { id: updated.id, revision: updated.revision, organizationRevision: updated.organizationRevision }, timestamp) });

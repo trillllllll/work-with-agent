@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import JSZip from 'jszip';
 import ExcelJS from 'exceljs';
 import sharp from 'sharp';
+import { textLineSegments } from './text.js';
 
 const xmlLimit = 256 * 1024 * 1024;
 const pageLimit = 1000;
@@ -199,12 +200,9 @@ async function readImage(bytes: Buffer, outDir: string, fileName: string): Promi
 function readText(bytes: Buffer): Result {
   const text = bytes.toString('utf8');
   if (text.includes('\u0000')) return finish('failed', [], [{ locator: null, code: 'FILE_CORRUPT', message: '文本不是 UTF-8' }], 'FILE_CORRUPT');
-  const segments: Segment[] = [];
-  const lines = text.split('\n');
-  lines.forEach((line, index) => {
-    if (!line && index === lines.length - 1) return;
-    segments.push({ text: line, method: 'native', locator: { kind: 'line', startLine: index + 1, endLine: index + 1 } });
-  });
+  const segments: Segment[] = textLineSegments(text).map(({ text, startLine, endLine }) => ({
+    text, method: 'native', locator: { kind: 'line', startLine, endLine },
+  }));
   return finish('ready', segments, []);
 }
 

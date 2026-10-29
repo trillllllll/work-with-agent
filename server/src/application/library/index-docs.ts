@@ -49,9 +49,8 @@ async function insertInBatches<T>(rows: T[], write: (batch: T[]) => Promise<unkn
   for (let index = 0; index < rows.length; index += 200) await write(rows.slice(index, index + 200));
 }
 
-export async function replaceActiveDocuments(tx: LibraryDb, material: IndexedMaterial, version: IndexedVersion, names: string[], chunks: Array<{ id: string; text: string }>) {
-  await tx.librarySearchDocument.deleteMany({ where: { materialId: version.materialId, revision: version.revision } });
-  await writeMetaDocument(tx, material, version, names);
+/** CPU work runs before opening the bounded write transaction. */
+export function prepareChunkDocuments(material: IndexedMaterial, version: IndexedVersion, names: string[], chunks: Array<{ id: string; text: string }>) {
   const title = fieldNorm(material.title).normalized;
   const fileName = fieldNorm(version.fileName ?? '').normalized;
   const tags = fieldNorm(names.join(' ')).normalized;
@@ -70,6 +69,10 @@ export async function replaceActiveDocuments(tx: LibraryDb, material: IndexedMat
     for (const field of [title, fileName, tags, body.normalized]) for (const token of indexTokens(field)) tokens.add(token);
     for (const token of tokens) postings.push({ token, documentId: id, materialId: version.materialId });
   }
+  return { documents, maps, postings };
+}
+
+export async function insertChunkDocuments(tx: LibraryDb, { documents, maps, postings }: ReturnType<typeof prepareChunkDocuments>) {
   await insertInBatches(documents, (batch) => tx.librarySearchDocument.createMany({ data: batch }));
   await insertInBatches(maps, (batch) => tx.librarySearchNormMap.createMany({ data: batch }));
   await insertInBatches(postings, (batch) => tx.librarySearchPosting.createMany({ data: batch }));

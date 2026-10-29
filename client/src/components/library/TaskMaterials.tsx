@@ -6,7 +6,6 @@ import { Checkbox } from '@/components/ui/checkbox.js';
 import './library.css';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileText } from 'lucide-react';
 import { toast } from 'sonner';
@@ -17,6 +16,7 @@ import { descriptionCitesMaterial } from '@/lib/material-citation.js';
 import { insertMaterialReferencesIntoTask, readTaskBookmark } from '@/components/tasks/DescriptionEditor.js';
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from '@/components/ui/dialog.js';
 import { LibraryPreview } from './LibraryPreview.js';
+import { openDocument } from '@/components/documents/open.js';
 import { enqueueUploads } from './upload.js';
 import { kindLabel, materialKinds, normalizeRow, type LibraryPreviewTarget, type LibraryRow, type MaterialDetail, type MaterialKind, type MaterialSummary, type Page } from './types.js';
 
@@ -161,7 +161,7 @@ export function TaskMaterials({ taskId, topicId, description, readonly, saveText
     const onPreview = (event: Event) => {
       const detail = (event as CustomEvent<{ taskId: string; materialId: string }>).detail;
       if (!detail || detail.taskId !== taskId) return;
-      setPreview({ materialId: detail.materialId, revision: null, chunkId: null });
+      openDocument({ resourceId: detail.materialId });
     };
     window.addEventListener('dovun-preview-material', onPreview);
     return () => window.removeEventListener('dovun-preview-material', onPreview);
@@ -208,7 +208,7 @@ export function TaskMaterials({ taskId, topicId, description, readonly, saveText
       {items.map((item) => <div key={item.id} className="task-material-row" data-testid={`task-material-${item.id}`}>
         <FileText className="library-icon" aria-hidden />
         <span className="library-name min-w-0 flex-1 truncate" title={item.title}>{item.title}</span>
-        <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => setPreview({ materialId: item.id, revision: null, chunkId: null })}>{t('shared.preview')}</Button>
+        <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => openDocument({ resourceId: item.id, title: item.title })}>{t('document.read')}</Button>
         {!readonly && <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => { if (descriptionCitesMaterial(description, item.id)) setUnlink(item); else void remove(item, false).catch((error) => toast.error(error instanceof Error ? error.message : t('taskMaterials.unlinkFailed'))); }}>{t('shared.unlink')}</Button>}
       </div>)}
     </div>
@@ -222,7 +222,6 @@ export function TaskMaterials({ taskId, topicId, description, readonly, saveText
         </div>
       </section>
     </Modal>}
-    {preview && !picking && createPortal(<div className="library-preview-host library-surface"><LibraryPreview target={preview} onTargetChange={setPreview} onClose={() => setPreview(null)} onOpenTask={(linkedId) => { void onOpenLinkedTask?.(linkedId); }} /></div>, document.body)}
   </section>;
 }
 

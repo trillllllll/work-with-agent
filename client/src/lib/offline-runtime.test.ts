@@ -1,10 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
-import { BrowserOfflineRuntime, browserReplica, enableBrowserReplica } from './offline-runtime.js';
+import { BrowserOfflineRuntime, browserReplica, enableBrowserReplica, cacheableOfflineRead } from './offline-runtime.js';
 import { emptyReplicaRows, OfflineStore, type BrowserReplica } from './offline-store.js';
 import { canonicalSyncRow, mergeSyncRow, syncRowsEqual, type SyncRow } from '../../../server/src/application/sync-merge.js';
 
 const stamp = '2026-10-25T10:00:00.000Z';
+it('does not use the JSON offline cache for document commit receipts or binary originals', () => {
+  expect(cacheableOfflineRead('/api/v1/library/resources/doc')).toBe(true);
+  expect(cacheableOfflineRead('/api/v1/library/resources/doc?revision=2')).toBe(true);
+  expect(cacheableOfflineRead('/api/v1/library/resources/receipts/request-id')).toBe(false);
+  expect(cacheableOfflineRead('/api/v1/library/resources/doc/versions/2/original')).toBe(false);
+  expect(cacheableOfflineRead('/api/v1/library/resources/doc/versions/2/source-original?download=true')).toBe(false);
+});
 const row = (patch: SyncRow = {}) => canonicalSyncRow('task', { title: '任务', description: '', status: 'todo', priority: 'none', dueDate: null, estimatedMinutes: null, scheduledStart: null, scheduledEnd: null, resultSummary: '', recurrenceRule: '', topicId: null, parentId: null, deletedAt: null, deleteBatchId: null, sortOrder: 0, tagIds: [], createdAt: stamp, completedAt: null, completedAtEstimated: false, ...patch })!;
 const initial = (scope: string): BrowserReplica => ({ scope, workspaceId: 'workspace-test', schemaVersion: 'protocol-test', actorId: 'owner', token: 'fixture-device-token', authenticatedAt: Date.now(), ready: false, cursor: 0, base: emptyReplicaRows(), rows: emptyReplicaRows(), outbox: [], receipts: {}, previews: {}, lastSuccessAt: null, lastError: null });
 

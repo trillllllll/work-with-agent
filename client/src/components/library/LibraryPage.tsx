@@ -15,11 +15,16 @@ import { intlLocale, t as translate } from '../../i18n/index.js';
 import { submitCommands, type Command } from '@/lib/platform.js';
 import { BodyText } from '@/components/shared/BodyText.js';
 import { Button } from '@/components/ui/button.js';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogPortal, DialogTitle } from '@/components/ui/dialog.js';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { Input } from '@/components/ui/input.js';
 import { Textarea } from '@/components/ui/textarea.js';
 import { Highlighted } from './highlight.js';
-import { LibraryPreview } from './LibraryPreview.js';
+import { DocumentWorkspace } from '@/components/documents/DocumentWorkspace.js';
+import { LocalDocumentDrafts } from '@/components/documents/LocalDocumentDrafts.js';
+import { documentTabs, openDocument, openNewDocument, useOpenDocuments } from '@/components/documents/open.js';
+import { useEditorRuntime } from '@/lib/task-editor-runtime.js';
+import { associateMarkdownImports } from '@/lib/documents/markdown-import.js';
+import { getDocumentRegistry } from '@/lib/documents/runtime.js';
 import { TaskLinkPicker } from './TaskLinkPicker.js';
 import { clearLibraryFilters, libraryFilters, libraryPageSize, librarySearchParams, patchLibrary, useLibrarySnapshot } from './store.js';
 import { extractionLabel, formatUpdated, kindLabel, materialKinds, normalizeRow, type AnswerResult, type LibraryFolder, type LibraryPreviewTarget, type LibraryRow, type LibraryTag, type MaterialDetail, type Page } from './types.js';
@@ -36,12 +41,18 @@ type Editor =
 export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topics: Topic[]; selectedTopicId?: string; onOpenTask: (taskId: string) => void | Promise<void> }) {
   const { t } = useTranslation('library');
   const snapshot = useLibrarySnapshot();
+  const runtime = useEditorRuntime();
+  const documentScope = runtime?.scopeKey ?? '';
+  const documents = useOpenDocuments(documentScope);
+  const documentOpen = Boolean(documents.active || documents.create);
   const client = useQueryClient();
   const surfaceRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const restored = useRef(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const directoryRef = useRef<HTMLInputElement>(null);
+  const bundleRef = useRef<HTMLInputElement>(null);
+  const [importingBundle, setImportingBundle] = useState(false);
   const [composing, setComposing] = useState(false);
   const [debounced, setDebounced] = useState(snapshot.query);
   const [narrow, setNarrow] = useState(false);
@@ -49,7 +60,7 @@ export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topi
   const [dragging, setDragging] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [dialog, setDialog] = useState<'move' | 'tags' | 'tasks' | 'ask' | null>(null);
-  const [composer, setComposer] = useState<'text' | 'link' | null>(null);
+  const [composer, setComposer] = useState<'link' | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [rowMenu, setRowMenu] = useState<string | null>(null);
   const [pageNotice, setPageNotice] = useState('');
@@ -96,15 +107,35 @@ export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topi
   const target = { topicId: null, folderId: snapshot.folderId || null, taskIds: [] as string[] };
   const takeFiles = async (files: Array<{ file: File; relativePath: string }>) => {
     if (!files.length) return;
-    await enqueueUploads(files, target);
+    const records = await enqueueUploads(files, target);
+    if (documentScope && files.some(({ file }) => /\.md(?:own|arkdown)?$/i.test(file.name))) {
+      try {
+        const result = await associateMarkdownImports(records, documentScope);
+        if (result.missing) toast.message(t('document.missingAssets', { count: result.missing }));
+      } catch (error) { toast.error(error instanceof Error ? error.message : t('shared.actionFailed')); }
+    }
     await refresh();
   };
+  const importBundle = async (file: File) => {
+    if (!documentScope || importingBundle) return;
+    setImportingBundle(true);
+    try { const { importResourceBundle } = await import('@/lib/documents/bundle.js'); const imported = await importResourceBundle(file, documentScope, { folderId: snapshot.folderId || null }); await refresh(); openDocument({ resourceId: imported.resourceId }); }
+    catch (error) { toast.error(error instanceof Error ? error.message : t('shared.actionFailed')); }
+    finally { setImportingBundle(false); }
+  };
   const onDrop = async (event: DragEvent) => {
+    if (event.defaultPrevented || (event.target instanceof Element && event.target.closest('[data-testid="document-workspace"]'))) return;
     event.preventDefault();
     setDragging(false);
     await takeFiles(await filesFromTransfer(event.dataTransfer));
   };
-  const closePreview = () => {
+  const closePreview = async () => {
+    const registry = documentScope ? getDocumentRegistry(documentScope) : null;
+    const sessions = new Set(documents.tabs.filter((tab) => tab.key === documents.active || tab.key === documents.secondary).flatMap((tab) => { const session = registry?.get(tab.resourceId); return session ? [session] : []; }));
+    try {
+      if ((await Promise.all([...sessions].map((session) => session.flushLocal()))).some((saved) => !saved)) { toast.error(t('document.storageFailed')); return; }
+    } catch (error) { toast.error(error instanceof Error ? error.message : t('document.storageFailed')); return; }
+    documentTabs.showList(documentScope);
     const selected = snapshot.preview?.materialId ?? '';
     patchLibrary({ preview: null });
     if (!selected) return;
@@ -145,9 +176,9 @@ export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topi
       if (addOpen) { setAddOpen(false); return; }
       if (foldersOpen) { setFoldersOpen(false); return; }
       if (dialog || composer || editor) return;
-      if (!snapshot.preview) return;
+      if (!documentOpen) return;
       event.preventDefault();
-      closePreview();
+      void closePreview();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -158,7 +189,14 @@ export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topi
       ? { materialId: row.id, revision: typeof hit.revision === 'number' ? hit.revision : null, chunkId: hit.chunkId }
       : { materialId: row.id, revision: null, chunkId: null };
     patchLibrary({ preview });
+    openDocument({ resourceId: preview.materialId, revision: preview.revision, chunkId: preview.chunkId, title: row.title });
   };
+  useEffect(() => {
+    if (!documentScope || !snapshot.preview) return;
+    const params = new URLSearchParams(window.location.hash.split('?')[1] ?? '');
+    if (params.has('resource') || params.has('create')) return;
+    documentTabs.open(documentScope, { resourceId: snapshot.preview.materialId, revision: snapshot.preview.revision, chunkId: snapshot.preview.chunkId });
+  }, [documentScope, snapshot.preview?.materialId, snapshot.preview?.revision, snapshot.preview?.chunkId]);
   const saveEditor = async (value: string) => {
     if (!editor) return;
     try {
@@ -178,7 +216,7 @@ export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topi
   const pageNumber = Math.floor(snapshot.cursor / libraryPageSize) + 1;
   const cancelled = list.error instanceof DOMException && list.error.name === 'AbortError';
   const showError = list.isError && !cancelled;
-  return <section ref={surfaceRef} className="library-surface library-page" data-testid="library-surface" data-narrow={narrow ? 'true' : 'false'} onDragOver={(event) => { if ([...event.dataTransfer.items].some((item) => item.kind === 'file')) { event.preventDefault(); setDragging(true); } }} onDragLeave={() => setDragging(false)} onDrop={(event) => { void onDrop(event); }} onPaste={(event) => {
+  return <section ref={surfaceRef} className="library-surface library-page" data-testid="library-surface" data-narrow={narrow ? 'true' : 'false'} data-document-open={documentOpen ? 'true' : 'false'} onDragOver={(event) => { if ([...event.dataTransfer.items].some((item) => item.kind === 'file')) { event.preventDefault(); setDragging(true); } }} onDragLeave={() => setDragging(false)} onDrop={(event) => { void onDrop(event); }} onPaste={(event) => {
     const node = event.target;
     if (node instanceof HTMLElement && node.closest('input, textarea, [contenteditable="true"]')) return;
     const files = [...event.clipboardData.files];
@@ -190,6 +228,8 @@ export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topi
       <header className="library-titlebar">
         <h1 className="library-title">{t('shared.library')}</h1>
         <div className="library-title-links">
+          <LocalDocumentDrafts scopeKey={documentScope} />
+          {documents.tabs.length > 0 && !documentOpen && <Button size="sm" variant="outline" onClick={() => documentTabs.activate(documentScope, documents.tabs[documents.tabs.length - 1].key)}>{t('document.opened')} ({documents.tabs.length})</Button>}
           <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => { window.location.hash = knowledgeHash('memories', selectedTopicId); }}>{t('libraryPage.memory')}</Button>
           <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => { window.location.hash = knowledgeHash('brief', selectedTopicId); }}>{t('libraryPage.currentProgress')}</Button>
         </div>
@@ -212,12 +252,16 @@ export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topi
         </div>
         <div className="library-toolbar-group library-toolbar-actions">
           <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => setDialog('ask')}>{t('libraryPage.askMaterials')}</Button>
+          <Button variant="default" size="bare" type="button" className="library-btn library-btn-primary" onClick={() => openNewDocument('richdoc-v1', { folderId: snapshot.folderId || null })}>{t('document.new')}</Button>
           <ActionMenu open={addOpen} onOpenChange={setAddOpen} trigger={<Button variant="default" size="bare" type="button" className="library-btn library-btn-primary">{t('libraryPage.add')}</Button>}>
+              <ActionMenuItem disabled={importingBundle || !documentScope} onSelect={() => { setAddOpen(false); bundleRef.current?.click(); }}>{t('document.bundleImport')}</ActionMenuItem>
               <ActionMenuItem onSelect={() => { setAddOpen(false); fileRef.current?.click(); }}>{t('libraryPage.addFile')}</ActionMenuItem>
               <ActionMenuItem onSelect={() => { setAddOpen(false); directoryRef.current?.click(); }}>{t('libraryPage.importFolder')}</ActionMenuItem>
-              <ActionMenuItem onSelect={() => { setAddOpen(false); setComposer('text'); }}>{t('kind.text')}</ActionMenuItem>
+              <ActionMenuItem onSelect={() => { setAddOpen(false); openNewDocument('markdown', { folderId: snapshot.folderId || null }); }}>{t('document.newMarkdown')}</ActionMenuItem>
+              <ActionMenuItem onSelect={() => { setAddOpen(false); openNewDocument('text', { folderId: snapshot.folderId || null }); }}>{t('document.newText')}</ActionMenuItem>
               <ActionMenuItem onSelect={() => { setAddOpen(false); setComposer('link'); }}>{t('kind.link')}</ActionMenuItem>
           </ActionMenu>
+          <Input variant="inline" ref={bundleRef} className="sr-only" type="file" accept=".zip" aria-label={t('document.bundleImport')} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void importBundle(file); }} />
           <Input variant="inline" ref={fileRef} className="sr-only" type="file" multiple aria-label={t('libraryPage.chooseFiles')} onChange={(event) => { const files = [...(event.target.files ?? [])]; event.target.value = ''; if (files.length) void filesFromList(files).then(takeFiles); }} />
           <Input variant="inline" ref={(node) => { directoryRef.current = node; node?.setAttribute('webkitdirectory', ''); }} className="sr-only" type="file" multiple aria-label={t('libraryPage.chooseFolder')} onChange={(event) => { const files = [...(event.target.files ?? [])]; event.target.value = ''; if (files.length) void filesFromList(files).then(takeFiles); }} />
         </div>
@@ -230,9 +274,9 @@ export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topi
         <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => patchLibrary({ selectedIds: [] })}>{t('libraryPage.clearSelection')}</Button>
       </div>}
       {pageNotice && <p className="library-meta" role="alert">{pageNotice}</p>}
-      <div className={`library-body ${snapshot.preview ? 'has-preview' : 'no-preview'}`}>
+      <div className={`library-body ${documentOpen ? 'has-document' : 'no-preview'}`}>
         <FolderNav folders={folders.data?.items ?? []} tags={tags.data?.items ?? []} open={foldersOpen} onClose={() => setFoldersOpen(false)} onEdit={setEditor} onRefresh={refresh} />
-        <Surface as="div" tone="card" ref={listRef} className="library-panel" data-testid="library-list" onScroll={(event) => patchLibrary({ scrollTop: event.currentTarget.scrollTop })}>
+        <Surface as="div" tone="card" ref={listRef} className="library-panel library-document-list" hidden={documentOpen} data-testid="library-list" onScroll={(event) => patchLibrary({ scrollTop: event.currentTarget.scrollTop })}>
           {showError && <div className="library-error" role="alert"><p>{list.error instanceof Error ? list.error.message : t('shared.materialsLoadFailed')}</p><Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => { void list.refetch(); }}>{t('shared.retry')}</Button></div>}
           {!showError && list.isLoading && !list.data && <p className="library-meta p-3">{t('shared.loadingMaterials')}</p>}
           {!showError && !rows.length && !list.isLoading && <div className="p-6"><p>{t('shared.noMatchingMaterials')}</p><Button variant="outline" size="bare" type="button" className="library-btn mt-3" onClick={() => { clearLibraryFilters(); setDebounced(''); }}>{t('libraryPage.clearFilters')}</Button></div>}
@@ -241,7 +285,7 @@ export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topi
             <tbody>
               {rows.map((row) => {
                 const hit = row.hits[0];
-                return <TableRow key={row.id} data-testid={`library-row-${row.id}`} aria-selected={snapshot.preview?.materialId === row.id} tabIndex={-1} className={`library-row library-color ${hit ? 'has-snippet' : ''}`} onClick={() => openPreview(row)}>
+                return <TableRow key={row.id} data-testid={`library-row-${row.id}`} aria-selected={snapshot.preview?.materialId === row.id} tabIndex={0} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openPreview(row); } }} className={`library-row library-color ${hit ? 'has-snippet' : ''}`} onClick={() => openPreview(row)}>
                   <td><label className="library-check-hit" onClick={(event) => event.stopPropagation()}><Checkbox className="library-check"  aria-label={t('shared.selectNamed', { name: row.title })} checked={snapshot.selectedIds.includes(row.id)} onClick={(event) => event.stopPropagation()} onChange={(event) => { const selected = snapshot.selectedIds; patchLibrary({ selectedIds: event.target.checked ? [...selected, row.id] : selected.filter((item) => item !== row.id) }); }} /></label></td>
                   <td><div className="library-name truncate">{row.title}</div><div className="library-meta truncate">{hit ? <Highlighted text={hit.snippet} start={hit.highlightStart} end={hit.highlightEnd} /> : t('libraryPage.rowMeta', { folder: folderName(folders.data?.items ?? [], row.folderId), tags: row.tags.map((tag) => tag.name).join(' '), status: extractionLabel(row.extraction.status) })}</div></td>
                   <td className="library-col-optional library-meta">{kindLabel(row.kind)}</td>
@@ -260,11 +304,11 @@ export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topi
             <Button variant="outline" size="bare" type="button" className="library-btn" disabled={list.data.nextCursor == null || list.isPlaceholderData} onClick={() => { if (list.data?.nextCursor != null) patchLibrary({ cursor: list.data.nextCursor }); }}>{t('shared.nextPage')}</Button>
           </footer>}
         </Surface>
-        {snapshot.preview && <LibraryPreview target={snapshot.preview} onTargetChange={(preview) => patchLibrary({ preview })} onClose={closePreview} onOpenTask={onOpenTask} />}
+        <div className="document-workspace-host" hidden={!documentOpen}>{documentScope ? <DocumentWorkspace scopeKey={documentScope} onOpenTask={onOpenTask} /> : <p role="status">{t('document.noRuntime')}</p>}</div>
       </div>
     </div>
     {dialog && <BatchDialog mode={dialog} ids={snapshot.selectedIds} topics={topics} folders={folders.data?.items ?? []} tags={tags.data?.items ?? []} onClose={() => setDialog(null)} applyBatch={applyBatch} />}
-    {composer && <Composer kind={composer} container={surfaceRef.current} onClose={() => setComposer(null)} onRefresh={refresh} />}
+    {composer && <LinkComposer container={surfaceRef.current} onClose={() => setComposer(null)} onRefresh={refresh} />}
     {editor && <NameDialog editor={editor} folders={folders.data?.items ?? []} onClose={() => setEditor(null)} onSave={saveEditor} />}
   </section>;
 }
@@ -377,75 +421,20 @@ function FolderNav({ folders, tags, open, onClose, onEdit, onRefresh }: { folder
   </>;
 }
 
-function Composer({ kind, container, onClose, onRefresh }: { kind: 'text' | 'link'; container: HTMLElement | null; onClose: () => void; onRefresh: () => Promise<void> }) {
+function LinkComposer({ container, onClose, onRefresh }: { container: HTMLElement | null; onClose: () => void; onRefresh: () => Promise<void> }) {
   const { t } = useTranslation('library');
   const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
-  const [mode, setMode] = useState<'edit' | 'preview'>('edit');
-  const text = kind === 'text';
-  const label = text ? t('libraryPage.addText') : t('libraryPage.addLink');
+  const [url, setUrl] = useState('');
+  const [saving, setSaving] = useState(false);
+  const requestId = useRef(crypto.randomUUID());
   const save = async () => {
-    const name = title.trim();
-    if (!name) return;
-    if (kind === 'link') await submitCommands([{ kind: 'material.create', input: { topicId: null, kind: 'link', title: name, uri: body.trim(), content: '' } }]);
-    else await submitCommands([{ kind: 'material.create', input: { topicId: null, kind: 'text', title: name, content: body } }]);
-    await onRefresh();
-    onClose();
+    if (!title.trim() || !url.trim() || saving) return;
+    setSaving(true);
+    try { await submitCommands([{ kind: 'material.create', input: { topicId: null, kind: 'link', title: title.trim(), uri: url.trim(), content: '' } }], requestId.current); await onRefresh(); onClose(); }
+    catch (error) { toast.error(error instanceof Error ? error.message : t('libraryPage.saveFailed')); }
+    finally { setSaving(false); }
   };
-  const keepOpen = (event: { preventDefault(): void }) => event.preventDefault();
-  return (
-    <Dialog open modal={false} onOpenChange={(open) => { if (!open) onClose(); }}>
-      {/* Radix omits its overlay in non-modal mode; keep the backdrop local to this page. */}
-      <DialogPortal container={container ?? undefined}>
-        <div data-library-composer-overlay="" aria-hidden="true" />
-      </DialogPortal>
-      <DialogContent
-        container={container}
-        surface="glass"
-        data-library-composer=""
-        aria-describedby={undefined}
-        className={`z-[80] flex w-[min(760px,calc(100vw-3rem))] max-w-none flex-col gap-4 overflow-hidden p-5 ${text ? 'h-[min(40rem,calc(100dvh-3rem))]' : ''}`}
-        onEscapeKeyDown={keepOpen}
-        onInteractOutside={keepOpen}
-        onPointerDownOutside={keepOpen}
-      >
-        <DialogHeader className="shrink-0 flex-row flex-wrap items-center justify-between gap-2 pr-8 text-left">
-          <DialogTitle className="shrink-0">{label}</DialogTitle>
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => askAssistant()}>{t('shared.aiAssistant')}</Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => askAssistant({ kind: 'draft', title: title || t('libraryPage.draftTitle'), text: `${title}\n\n${body}`, unsaved: true })}>{t('libraryPage.includeDraft')}</Button>
-          </div>
-        </DialogHeader>
-        <form className="flex min-h-0 flex-1 flex-col gap-3" onSubmit={(event) => { event.preventDefault(); void save().catch((error) => toast.error(error instanceof Error ? error.message : t('libraryPage.saveFailed'))); }}>
-          <Input autoFocus className="shrink-0" aria-label={text ? t('libraryPage.textTitle') : t('libraryPage.linkTitle')} placeholder={text ? t('libraryPage.textTitle') : t('libraryPage.linkTitle')} value={title} onChange={(event) => setTitle(event.target.value)} />
-          {text ? (
-            <div className="flex min-h-0 flex-1 flex-col gap-2">
-              <div className="flex items-center gap-2">
-                <span className="flex-1 text-sm">{t('libraryPage.textBody')}</span>
-                <div role="group" aria-label={t('libraryPage.bodyMode')} className="flex gap-1">
-                  <Button type="button" size="xs" variant={mode === 'edit' ? 'secondary' : 'ghost'} aria-pressed={mode === 'edit'} onClick={() => setMode('edit')}>{t('libraryPage.edit')}</Button>
-                  <Button type="button" size="xs" variant={mode === 'preview' ? 'secondary' : 'ghost'} aria-pressed={mode === 'preview'} onClick={() => setMode('preview')}>{t('shared.preview')}</Button>
-                </div>
-              </div>
-              {mode === 'edit' ? (
-                <Textarea aria-label={t('libraryPage.textBody')} value={body} onChange={(event) => setBody(event.target.value)} className="field-sizing-fixed min-h-0 flex-1 resize-none overflow-auto font-mono md:text-[13px]" style={{ fieldSizing: 'fixed' }} />
-              ) : (
-                <div className="min-h-0 flex-1 overflow-auto rounded-lg border p-3" data-testid="library-composer-preview">
-                  {body.trim() ? <BodyText text={body} format="markdown" /> : <p className="text-sm text-muted-foreground">{t('libraryPage.emptyBody')}</p>}
-                </div>
-              )}
-            </div>
-          ) : (
-            <Input aria-label={t('libraryPage.linkUrl')} placeholder={t('libraryPage.linkUrl')} value={body} onChange={(event) => setBody(event.target.value)} />
-          )}
-          <DialogFooter className="shrink-0 sm:justify-end">
-            <Button type="button" variant="outline" onClick={onClose}>{t('shared.cancel')}</Button>
-            <Button type="submit" disabled={!title.trim()}>{t('shared.save')}</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
+  return <Dialog open onOpenChange={(open) => { if (!open && !saving) onClose(); }}><DialogContent container={container} aria-describedby={undefined} className="max-w-lg"><DialogHeader><DialogTitle>{t('libraryPage.addLink')}</DialogTitle></DialogHeader><form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); void save(); }}><Input autoFocus required aria-label={t('libraryPage.linkTitle')} placeholder={t('libraryPage.linkTitle')} value={title} onChange={(event) => { setTitle(event.target.value); requestId.current = crypto.randomUUID(); }} /><Input type="url" required aria-label={t('libraryPage.linkUrl')} placeholder={t('libraryPage.linkUrl')} value={url} onChange={(event) => { setUrl(event.target.value); requestId.current = crypto.randomUUID(); }} /><DialogFooter><Button type="button" variant="outline" disabled={saving} onClick={onClose}>{t('shared.cancel')}</Button><Button type="submit" disabled={saving || !title.trim() || !url.trim()}>{t('shared.save')}</Button></DialogFooter></form></DialogContent></Dialog>;
 }
 
 function NameDialog({ editor, folders, onClose, onSave }: { editor: Editor; folders: LibraryFolder[]; onClose: () => void; onSave: (value: string) => Promise<void> }) {

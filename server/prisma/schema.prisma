@@ -433,6 +433,8 @@ model Material {
   updatedAt String
   folderId String?
   organizationRevision Int @default(1)
+  sourceTaskId String?
+  managed Boolean @default(false)
   versions MaterialVersion[]
   folder LibraryFolder? @relation(fields: [folderId], references: [id], onDelete: Restrict)
   tags MaterialTag[]
@@ -440,6 +442,7 @@ model Material {
   @@index([topicId, archivedAt, updatedAt])
   @@index([taskId])
   @@index([folderId, archivedAt, updatedAt])
+  @@index([sourceTaskId])
 }
 model MaterialVersion {
   id String @id @default(cuid())
@@ -452,10 +455,52 @@ model MaterialVersion {
   mimeType String?
   fileName String?
   createdAt String
+  format String?
+  schemaVersion Int?
+  sourceOriginalPath String?
+  authoritativeContent String?
+  supplementalContent String?
   material Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  outgoingResourceReferences ResourceReference[] @relation("ResourceReferenceSource")
+  incomingResourceReferences ResourceReference[] @relation("ResourceReferenceTarget")
   extractions MaterialExtraction[]
   searchDocuments LibrarySearchDocument[]
   @@unique([materialId, revision])
+}
+
+// Fixed references belong to immutable document versions, including historical ones.
+model ResourceReference {
+  id String @id @default(cuid())
+  sourceResourceId String
+  sourceRevision Int
+  nodeId String
+  targetResourceId String
+  targetRevision Int
+  source MaterialVersion @relation("ResourceReferenceSource", fields: [sourceResourceId, sourceRevision], references: [materialId, revision], onDelete: Restrict)
+  target MaterialVersion @relation("ResourceReferenceTarget", fields: [targetResourceId, targetRevision], references: [materialId, revision], onDelete: Restrict)
+  @@unique([sourceResourceId, sourceRevision, nodeId])
+  @@index([targetResourceId, targetRevision])
+}
+
+model ResourceWriteReceipt {
+  id String @id @default(cuid())
+  actorId String
+  requestId String
+  requestHash String
+  resourceId String
+  revision Int
+  resultJson String
+  createdAt String
+  @@unique([actorId, requestId])
+}
+
+model ResourceLegacyAlias {
+  sourceKind String
+  sourceId String
+  resourceId String
+  createdAt String
+  @@id([sourceKind, sourceId])
+  @@index([resourceId])
 }
 model Memory {
   id String @id @default(cuid())

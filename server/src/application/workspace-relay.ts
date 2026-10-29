@@ -28,7 +28,7 @@ export function isIndependentLearningWrite(method: string, path: string) {
   if (method !== 'POST') return false;
   return /^\/api\/v1\/learning\/(?:practice\/(?:generate|start|items\/[^/%]+\/(?:draft|submit|retry|events|archive)|sessions\/[^/%]+\/update|attempts\/[^/%]+\/regrade)|reviews\/update|jobs\/[^/%]+\/(?:retry|cancel)|resume)$/.test(path);
 }
-const canCache = (path: string) => !/event-stream/.test(path) && /^\/api\/(?:conversations(?:\/|$)|v1\/(?:knowledge|library|artifacts)(?:\/|$)|tasks\/[^/]+\/(?:images\/|activity$|topic-history$|ai-history$))/.test(path);
+const canCache = (path: string) => !/event-stream|\/resources\/receipts\//.test(path) && /^\/api\/(?:conversations(?:\/|$)|v1\/(?:knowledge|library|artifacts)(?:\/|$)|tasks\/[^/]+\/(?:images\/|activity$|topic-history$|ai-history$))/.test(path);
 
 /** Pairing grants a full workspace replica, never a computer execution credential.
  * Only this allowlisted namespace can authenticate such a device as its owner. */
@@ -125,7 +125,7 @@ export async function relayBoundWorkspace(req: Request, res: Response, next: Nex
     const type = response.headers.get('content-type') ?? 'application/octet-stream';
     const disposition = response.headers.get('content-disposition');
     const securityHeaders: Record<string, string> = {};
-    for (const header of ['content-security-policy', 'x-content-type-options', 'x-frame-options', 'content-language']) {
+    for (const header of ['content-security-policy', 'x-content-type-options', 'x-frame-options', 'content-language', 'x-dovun-mime-type', 'x-dovun-content-format', 'x-dovun-read-only-projection']) {
       const value = response.headers.get(header); if (value) securityHeaders[header] = value;
     }
     res.status(response.status).setHeader('content-type', type);

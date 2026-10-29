@@ -92,6 +92,33 @@ export function sliceCodePoints(value: string, start: number, end: number) {
 
 export type LocatedText = { text: string; start: number; end: number };
 
+/** Keep line locators while avoiding one database/index record for every short line. */
+export function textLineSegments(text: string) {
+  const segments: Array<{ text: string; startLine: number; endLine: number }> = [];
+  const lines = text.split('\n');
+  let pending: string[] = [];
+  let size = 0;
+  let startLine = 1;
+  const flush = () => {
+    if (!pending.length) return;
+    segments.push({ text: pending.join('\n'), startLine, endLine: startLine + pending.length - 1 });
+    pending = [];
+    size = 0;
+  };
+  lines.forEach((line, index) => {
+    if (!line && index === lines.length - 1) return;
+    const length = codePointLength(line);
+    if (pending.length && size + 1 + length > 1200) flush();
+    if (!pending.length) startLine = index + 1;
+    size += (pending.length ? 1 : 0) + length;
+    pending.push(line);
+    // A long single line is split by splitSegment with offsets in that line.
+    if (size >= 1200) flush();
+  });
+  flush();
+  return segments;
+}
+
 /** Split one extracted segment. Offsets are code points in that segment, half-open. */
 export function splitSegment(text: string): LocatedText[] {
   const units = Array.from(text);

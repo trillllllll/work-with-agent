@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto';
 import { DomainError } from '../domain/task.js';
 import { canonical } from '../application/commands.js';
 import { redact } from '../infrastructure/controlled-execution.js';
+import { readResourceDocument } from '../application/resources/agent-read.js';
 import { LibraryService } from '../application/library/service.js';
 import { runAgentMemoryTool, validateConversationSearchArguments, validateMemoryArguments } from '../application/agent-memory.js';
 import { learningRead } from '../application/learning.js';
@@ -155,7 +156,8 @@ async function queryTopics(args: Record<string, unknown>) {
 async function libraryRead(args: Record<string, unknown>) {
   const action = String(args.action ?? '');
   if (action === 'ask' || action === 'undo') throw new DomainError('CAPABILITY_UNAVAILABLE', CAPABILITY_UNAVAILABLE.error, 400);
-  if (!['list', 'search', 'read', 'content', 'linked_tasks', 'task_materials', 'folders', 'tags'].includes(action)) throw new DomainError('INVALID_TOOL_ARGUMENTS', 'library_read 的动作无效', 400);
+  if (!['list', 'search', 'read', 'document', 'content', 'linked_tasks', 'task_materials', 'folders', 'tags'].includes(action)) throw new DomainError('INVALID_TOOL_ARGUMENTS', 'library_read 的动作无效', 400);
+  if (action === 'document') return readResourceDocument(ownerActor, args);
   if (action === 'folders') return library.folders(ownerActor);
   if (action === 'tags') return library.tags(ownerActor);
   if (action === 'read') {

@@ -27,7 +27,7 @@ export const libraryFiltersSchema = z.object({
   tagIds: z.array(z.string().min(1)).optional(),
   taskId: z.string().min(1).optional(),
   taskTopicId: z.union([z.string().min(1), z.literal('inbox')]).optional(),
-  kind: z.enum(['text', 'markdown', 'link', 'thread', 'attachment']).optional(),
+  kind: z.enum(['text', 'markdown', 'document', 'link', 'thread', 'attachment']).optional(),
   archived: z.enum(['exclude', 'only', 'include']).optional(),
   view: z.enum(['all', 'recent', 'unfiled', 'archived']).optional(),
 }).strict();

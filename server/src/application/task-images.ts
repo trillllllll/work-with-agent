@@ -1,9 +1,11 @@
+import { assertDocumentWritable } from './resources/write-policy.js';
 import { unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { DomainError } from '../domain/task.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { knowledgeStorageRoot, readKnowledgeBlob, storeKnowledgeBlob } from './knowledge-blobs.js';
 import { editableTask, now, type Db } from './workspace-store.js';
+import { ensureTaskImageResource } from './resources/task-images.js';
 
 const imageLimit = 8 * 1024 * 1024;
 
@@ -32,17 +34,29 @@ function matchesMime(bytes: Buffer, mimeType: 'image/webp' | 'image/jpeg') {
 }
 
 export async function addTaskImage(taskId: string, input: { attachmentBase64: string; mimeType: 'image/webp' | 'image/jpeg' }) {
+  assertDocumentWritable();
   const bytes = imageBytes(input.attachmentBase64);
   if (!matchesMime(bytes, input.mimeType)) throw new DomainError('INVALID_IMAGE', '只接受 WebP 或 JPEG 图片', 400);
   await prisma.$transaction(async (tx) => { await editableTask(tx, taskId); });
   const path = await storeKnowledgeBlob(bytes);
-  const row = await prisma.taskImage.create({ data: { taskId, mimeType: input.mimeType, byteSize: bytes.byteLength, path, createdAt: now() } });
+  const row = await prisma.$transaction(async (tx) => {
+    await editableTask(tx, taskId);
+    const image = await tx.taskImage.create({ data: { taskId, mimeType: input.mimeType, byteSize: bytes.byteLength, path, createdAt: now() } });
+    await ensureTaskImageResource(tx, image);
+    return image;
+  });
   return { id: row.id, url: taskImageUrl(taskId, row.id) };
 }
 
 export async function readTaskImage(taskId: string, imageId: string) {
   const row = await prisma.taskImage.findFirst({ where: { id: imageId, taskId } });
-  if (!row) throw new DomainError('NOT_FOUND', '图片不存在', 404);
+  if (!row) {
+    const alias = await prisma.resourceLegacyAlias.findUnique({ where: { sourceKind_sourceId: { sourceKind: 'task-image', sourceId: imageId } } });
+    const resource = alias ? await prisma.material.findUnique({ where: { id: alias.resourceId }, include: { versions: { where: { revision: 1 }, take: 1 } } }) : null;
+    const original = resource?.versions[0];
+    if (resource?.sourceTaskId !== taskId || !original?.attachmentPath) throw new DomainError('NOT_FOUND', '图片不存在', 404);
+    return { bytes: await readKnowledgeBlob(original.attachmentPath), mimeType: original.mimeType ?? 'application/octet-stream' };
+  }
   return { bytes: await readKnowledgeBlob(row.path), mimeType: row.mimeType };
 }
 
@@ -86,7 +100,7 @@ export async function releaseUnreferencedBlobs(paths: string[]) {
     if (!/^[a-f0-9]{64}$/.test(path)) continue;
     const [images, materials] = await Promise.all([
       prisma.taskImage.count({ where: { path } }),
-      prisma.materialVersion.count({ where: { attachmentPath: path } }),
+      prisma.materialVersion.count({ where: { OR: [{ attachmentPath: path }, { sourceOriginalPath: path }] } }),
     ]);
     if (images + materials > 0) continue;
     await unlink(resolve(knowledgeStorageRoot(), path)).catch(() => {});
