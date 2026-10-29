@@ -43,7 +43,7 @@ test('读取项目资料不出现审核卡', async ({ page, isMobile }) => {
   await page.goto('/#/inbox');
   await ask(page, '读取项目资料');
   await expect(page.getByText('我先查看项目资料。', { exact: true })).toBeVisible();
-  await expect(page.getByText('查询了 1 项', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('assistant-process').getByText('查询 1 项', { exact: true })).toBeVisible();
   await expect(page.getByText('当前任务已读取完成。', { exact: true })).toBeVisible();
   await expect(page.getByText('需要审核')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '批准执行' })).toHaveCount(0);

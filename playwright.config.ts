@@ -38,6 +38,7 @@ export default defineConfig({
     { name: 'webkit-html', use: { ...devices['Desktop Safari'], locale: 'zh-CN' }, testMatch: /assistant-html-blocks/ },
     // The macOS desktop app uses WebKit; keep SVG parser/filter parity covered.
     { name: 'webkit-svg', use: { ...devices['Desktop Safari'], locale: 'zh-CN' }, testMatch: /svg-chat/ },
+    { name: 'webkit-chat', use: { ...devices['Desktop Safari'], locale: 'zh-CN' }, testMatch: /chat-conversation/ },
     { name: 'webkit-controls', use: { ...devices['Desktop Safari'], locale: 'zh-CN' }, testMatch: /control-surfaces|control-reuse|task-inline|task-save-version|mobile-navigation|context-usage|reply-style/ },
   ],
   webServer: [

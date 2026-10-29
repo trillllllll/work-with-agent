@@ -1,6 +1,24 @@
 /* The existing material tokens supply light/dark colors; this file owns chat geometry. */
 .assistant-header h2 { min-width: 0; }
 .assistant-thread { gap: 12px; }
+.assistant-turn { min-width: 0; }
+.assistant-process { margin-bottom: 12px; color: var(--muted-foreground); }
+.assistant-process-trigger { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 7px 5px; border-radius: 6px; font-size: 12px; list-style: none; }
+.assistant-process-trigger::-webkit-details-marker { display: none; }
+.assistant-process-trigger small { min-width: 0; font-size: 10px; overflow-wrap: anywhere; }
+.assistant-process-title { min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
+.assistant-process-chevron { width: 12px; height: 12px; flex-shrink: 0; margin-left: auto; }
+.assistant-process[data-state="interrupted"] > summary { color: var(--warning); background: var(--warning-bg); }
+.assistant-process-body { margin: 3px 0 0 12px; padding: 12px 0 4px 12px; border-left: 1px solid var(--border); }
+.assistant-process-caption { display: flex; justify-content: space-between; gap: 8px; font-size: 10px; margin-bottom: 10px; }
+.assistant-process-steps { list-style: none; padding: 0; margin: 0; }
+.assistant-process-step { display: flex; align-items: flex-start; gap: 6px; margin-bottom: 6px; }
+.assistant-process-step-icon { padding-top: 8px; flex-shrink: 0; }
+.assistant-process-step-icon svg { width: 12px; height: 12px; }
+.assistant-process-step > [data-slot="surface"] { flex: 1; min-width: 0; border: 0; background: transparent; box-shadow: none; }
+.assistant-process .assistant-reasoning { margin-bottom: 6px; }
+.assistant-process .assistant-reasoning-trigger { padding-left: 0; }
+.assistant-process-warning { margin: 10px 0 4px; font-size: 11px; color: var(--warning); }
 .assistant-message:has(.assistant-tool-run):not(:has(.markdown-body)):not(:has(.assistant-reasoning)) { padding-block: 2px; }
 .assistant-tool-run { margin-bottom: 12px; color: var(--muted-foreground); }
 .assistant-tool-run > button { min-height: 36px; }
