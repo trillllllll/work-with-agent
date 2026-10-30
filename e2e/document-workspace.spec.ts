@@ -161,7 +161,11 @@ test('复制混合正文保留附件并分配新的块身份', async ({ page, re
   await editor.locator('p').first().click(); await editor.press('ControlOrMeta+a');
   const copied = await editor.evaluate((node) => { const clipboard = new DataTransfer(); node.dispatchEvent(new ClipboardEvent('copy', { clipboardData: clipboard, bubbles: true, cancelable: true })); return { html: clipboard.getData('text/html'), text: clipboard.getData('text/plain'), selection: window.getSelection()?.toString() }; });
   expect(copied.html, JSON.stringify(copied)).toContain('data-document-resource="file"');
-  await editor.press('ArrowRight'); await editor.press('Enter');
+  await editor.press('ArrowRight');
+  // ArrowRight on a full selection is resolved by the browser and reaches ProseMirror through an asynchronous
+  // selectionchange; pressing Enter before that would replace the whole document.
+  await expect.poll(() => editor.evaluate((node) => (node as HTMLElement & { editor: { state: { selection: { empty: boolean } } } }).editor.state.selection.empty)).toBe(true);
+  await editor.press('Enter');
   await editor.evaluate((node, data) => { const clipboard = new DataTransfer(); clipboard.setData('text/html', data.html); clipboard.setData('text/plain', data.text); node.dispatchEvent(new ClipboardEvent('paste', { clipboardData: clipboard, bubbles: true, cancelable: true })); }, copied);
   await expect(editor.locator('.document-resource-file')).toHaveCount(2);
   const ids = await editor.locator('.document-resource-file').evaluateAll((nodes) => nodes.map((node) => (node as HTMLElement).dataset.blockId));
