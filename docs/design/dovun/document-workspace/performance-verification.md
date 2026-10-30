@@ -177,3 +177,36 @@ DOCUMENT_BUDGET_ONLY=1 PATH="/Users/byc/.volta/tools/image/node/22.13.0/bin:$PAT
 `playwright.documents-ui.config.ts`整套31项在冻结后的源码上全部通过（1.7分钟），日志`/tmp/dovun-document-legacy-verified.log`。此前第101份正文搜索的60秒等待失败已闭环；相同整个浏览器场景现8.9秒通过。第41个关联任务分页也通过。
 
 最新服务端下另外重跑三浏览器长文本分页与组词跨预算6项，全部通过（`/tmp/dovun-document-text-verified.log`）。没有放宽测试断言或超时，也未把源正文截断来缩小样本。
+
+
+## 编辑体验修复：编辑性能基线与归因（2026-10-30，分支 `codex/document-editing-fixes`）
+
+本节记录修复长文档编辑体验时的重新测量。测量代码为 `e2e/document-editing-performance.spec.ts`，用 `DOCUMENT_EDIT_MEASURE=1` 在 `playwright.documents-ui.config.ts` 下运行（API 3047、Vite 5197、`/tmp/dovun-document-browser-performance` 隔离库）。所有样本都通过开发构建的预算覆盖值（`dovun.documents.editBudget`，生产构建不包含）直接进入编辑器，所以能测量当前预算以上的文档。
+
+- 环境：同机 Chromium 153.0.8010.12，桌面窗口 1440×1000，无 CPU 节流，Vite 开发模式（React 开发版，比生产构建慢）。结果是桌面基线，不代表手机或低端设备。
+- 每个样本：重新载入页面后打开文档，点击后等 800ms，每 90ms 输入一个字符，共 15 次；记录 keydown 到下一帧的耗时、输入期间和保存完成后 2 秒内的 Long Task，以及正文 PUT 的状态。门槛沿用本文件：输入 p95 ≤50ms，输入和保存阶段都没有超过 50ms 的 Long Task，保存无服务端错误。
+- 测量时关闭 Playwright trace：trace 在每次操作前后序列化整个 DOM，5000 段文档上单这一项就占了约 425ms 主线程时间，曾让 5000 段样本出现 52ms 的假 Long Task。前一节作者的 1,000 段“首键 81ms”也是在点击后立即输入、且在输入快路径加入之前测得的；本次 1,000 段在两轮里都通过。
+- CPU 归因用 CDP `Profiler`（采样间隔 200µs）记录输入加保存窗口，`.cpuprofile` 存在同一目录，可直接在 DevTools 打开；汇总脚本为 `scripts/cpuprofile-summary.mjs`。
+
+### 改动前基线（Task 1–8 已提交，性能优化之前）
+
+两轮结果一致，下表为第 1 轮（第 2 轮见 `edit-measurements-baseline-2.json`）：
+
+| 样本 | 结构块 | JSON KiB | 输入 p95 ms | 输入阶段 Long Task（最长 ms） | 保存阶段 Long Task（最长 ms） | 门槛 |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 段落 500 / 1000 / 2000 | 500 / 1000 / 2000 | 165 / 331 / 664 | 20.6 / 7.3 / 8.2 | 0 | 0 | 通过 |
+| 段落 5000 | 5000 | 1663 | 15.6 | 0 | 0 | 通过（第 2 轮同） |
+| 段落 10000 | 10000 | 3328 | 22.5 | 6（98） | 3（93） | 未通过（第 2 轮 88/83ms） |
+| 列表 250 / 500 / 1000 项 | 501 / 1001 / 2001 | 50 / 100 / 201 | 10.9 / 15.9 / 8.0 | 0 | 0 | 通过 |
+| 表格 2 / 4 / 9 个 20×5 | 444 / 888 / 1998 | 27 / 54 / 121 | 16.9 / 13.7 / 20.6 | 0 | 0 | 通过 |
+| Markdown 256 KiB / 1 MiB 源码 | - | 256 / 1024 | 18.8 / 15.0 | 0 | 0 | 通过 |
+| Markdown 256 KiB 分屏 | - | 256 | 180.6 | 25（177） | 8（253） | 未通过 |
+| Markdown 1 MiB 分屏 | - | 1024 | 570.2 | 31（803） | 9（1197） | 未通过 |
+
+### 卡顿来源
+
+- **段落 10000（3.3 MB）**：窗口内主线程忙 1104ms。本机草稿落盘约 380ms：`flushLocal` 的 `structuredClone`（106ms）、`draft-store` 写入前的第二次 `structuredClone`（102ms），以及 IndexedDB `put` 的序列化（170ms）；每次落盘要把正文和基准正文（各 3.3 MB）复制三遍，每 250ms 一次。其余是 React 渲染（约 460ms，含开发版开销）和整篇计算：`inspectRichDocument` 约 128ms、`canonicalContent` 约 84ms，分别来自编辑器每批输入的转换（`emit`）、渲染时重复的整篇校验/规范化/初始内容生成，以及保存时的校验和摘要。
+- **Markdown 分屏**：`react-markdown` 在每次输入后重新解析并渲染整个预览，窗口内约 2578ms；256 KiB 每次约 150–250ms。
+- **段落 1000**：窗口内主线程只忙 252ms，没有 Long Task。
+
+据此，后续优化依次处理：编辑器按块增量转换和校验（Task 10），去掉渲染、会话和刷新路径里的整篇重复计算、本机落盘只复制一次、分屏预览延后渲染（Task 11），再按两轮实测决定上限（Task 12）。

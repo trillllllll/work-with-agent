@@ -2,7 +2,8 @@ import { defineConfig, devices } from '@playwright/test';
 import { createHash } from 'node:crypto';
 
 // These suites intentionally share ports and must run sequentially. No installed app or real database is reused.
-const performanceSuite = process.env.DOCUMENT_PERFORMANCE === '1' || process.env.DOCUMENT_BUDGET_ONLY === '1' || process.env.DOCUMENT_LAYOUT_ONLY === '1';
+const editMeasure = process.env.DOCUMENT_EDIT_MEASURE === '1';
+const performanceSuite = editMeasure || process.env.DOCUMENT_PERFORMANCE === '1' || process.env.DOCUMENT_BUDGET_ONLY === '1' || process.env.DOCUMENT_LAYOUT_ONLY === '1';
 const saveAsSuite = process.env.DOCUMENT_SAVE_AS_ONLY === '1';
 const root = process.cwd();
 const testRoot = saveAsSuite ? '/tmp/dovun-document-save-as-e2e' : performanceSuite ? '/tmp/dovun-document-browser-performance' : '/tmp/dovun-document-legacy-e2e';
@@ -15,7 +16,7 @@ process.env.E2E_UI_URL = `http://127.0.0.1:${uiPort}`;
 
 export default defineConfig({
   testDir: './e2e',
-  testMatch: saveAsSuite ? /document-save-as\.spec\.ts$/ : performanceSuite ? /document-workspace-performance\.spec\.ts$/ : /\/(library|task-materials|material-browser)\.spec\.ts$/,
+  testMatch: saveAsSuite ? /document-save-as\.spec\.ts$/ : editMeasure ? /document-editing-performance\.spec\.ts$/ : performanceSuite ? /document-workspace-performance\.spec\.ts$/ : /\/(library|task-materials|material-browser)\.spec\.ts$/,
   outputDir: `${testRoot}/results`, fullyParallel: false, workers: 1,
   timeout: 60_000, expect: { timeout: 10_000 }, retries: 0, reporter: 'list',
   use: {
