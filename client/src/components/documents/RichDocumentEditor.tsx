@@ -15,6 +15,7 @@ import { t as translate } from '../../i18n/index.js';
 import { canonicalContent, safeDocumentLink } from '../../../../server/src/domain/document-content.js';
 import { editorToRichDocument, inspectLocalDocument, richDocumentToEditor, type LocalRichDocument } from './richdoc-codec.js';
 import { createEditorCore, guardMarkdownRules, insertionFiles } from './editor-core.js';
+import { insertPlainText, markdownPasteSlice } from '@/lib/markdown-paste.js';
 import { readResourceBytes } from './readers/bytes.js';
 import { RichDocumentBoundary } from './RichDocumentBoundary.js';
 import './rich-document-editor.css';
@@ -160,6 +161,14 @@ function toolbarState(editor: Editor | null): ToolbarState {
   };
 }
 
+/** The rich document editor's schema-defining extensions; tests build the same schema from this list. */
+export function documentEditorExtensions() {
+  return guardMarkdownRules([
+    ...createEditorCore({ isAllowedUri: (url) => safeDocumentLink(url) }), Table.configure({ resizable: false }), TableRow, TableCell, TableHeader,
+    StableBlockIds, Alignment, resourceNode('image'), resourceNode('file'), resourceNode('upload'),
+  ]);
+}
+
 type RichDocumentEditorProps = {
   value: LocalRichDocument; onChange: (value: LocalRichDocument) => void; readOnly?: boolean;
   onCompositionChange?: (composing: boolean) => void;
@@ -188,27 +197,40 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
   const serializeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pending = useRef(false);
   const historyJump = useRef(0);
+  const plainPaste = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null); const [link, setLink] = useState(''); const [error, setError] = useState('');
   const supported = useMemo(() => inspectLocalDocument(value).supported, [value]);
   const editorContent = useMemo(() => supported ? richDocumentToEditor(value) : { type: 'doc', content: [{ type: 'paragraph' }] }, [value, supported]);
   const editor = useEditor({
-    extensions: guardMarkdownRules([
-      ...createEditorCore({ isAllowedUri: (url) => safeDocumentLink(url) }), Table.configure({ resizable: false }), TableRow, TableCell, TableHeader,
-      StableBlockIds, Alignment, resourceNode('image'), resourceNode('file'), resourceNode('upload'),
-    ]),
+    extensions: documentEditorExtensions(),
     content: editorContent,
     editable: supported && !readOnly,
     editorProps: {
       attributes: { class: 'document-prose', role: 'textbox', 'aria-multiline': 'true', 'aria-label': t('docsEditor.label') },
       handleKeyDown: (_view, event) => {
+        // Mod+Shift+V pastes plain text, so Markdown characters stay as typed.
+        if (event.key.toLowerCase() === 'v' && event.shiftKey && (event.metaKey || event.ctrlKey)) plainPaste.current = true;
         if (composing.current || current.current.readOnly || !(event.metaKey || event.ctrlKey)) return false;
         const action = event.key.toLowerCase() === 'z' ? event.shiftKey ? current.current.onRedo : current.current.onUndo : event.key.toLowerCase() === 'y' ? current.current.onRedo : undefined;
         if (!action) return false; event.preventDefault(); travel(action); return true;
       },
-      handlePaste: (_view, event) => {
+      handlePaste: (view, event) => {
+        const plain = plainPaste.current; plainPaste.current = false;
         if (current.current.readOnly) return false;
-        const files = insertionFiles(event.clipboardData, 'all'); if (!files.length) return false;
-        event.preventDefault(); event.stopPropagation(); insert(files); return true;
+        const files = insertionFiles(event.clipboardData, 'all');
+        if (files.length) { event.preventDefault(); event.stopPropagation(); insert(files); return true; }
+        const text = event.clipboardData?.getData('text/plain') ?? '';
+        const { $from } = view.state.selection;
+        // Code keeps pasted characters exactly; ProseMirror's own paste already does that there.
+        if (!text || $from.parent.type.spec.code || $from.marks().some((mark) => mark.type.name === 'code')) return false;
+        if (plain) { event.preventDefault(); insertPlainText(view, text); return true; }
+        // HTML goes through the schema's parse rules; Markdown text (e.g. a copied assistant reply) becomes formatting.
+        if (event.clipboardData?.getData('text/html')) return false;
+        const slice = markdownPasteSlice(text, view.state.schema, { isAllowedLink: safeDocumentLink });
+        if (!slice) return false;
+        event.preventDefault();
+        view.dispatch(view.state.tr.replaceSelection(slice).scrollIntoView());
+        return true;
       },
       handleDrop: (_view, event, _slice, moved) => {
         if (current.current.readOnly || moved) return false;

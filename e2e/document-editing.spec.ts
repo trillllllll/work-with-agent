@@ -177,3 +177,37 @@ test('新建后直接输入标题，回车进入正文，标题和正文一起�
   expect(JSON.stringify(saved.content)).toContain('第一段正文');
   expect(saved.title).toBe('支付方案');
 });
+
+const assistantReply = '## 会议结论\n\n- 第一项\n- 第二项\n\n**重点**：上线前回归\n\n```js\nconsole.log(1)\n```\n\n| 列A | 列B |\n| --- | --- |\n| 1 | 2 |';
+async function pasteText(page: Page, text: string, options: { plainShortcut?: boolean } = {}) {
+  await richEditor(page).evaluate((node, { text, plainShortcut }) => {
+    if (plainShortcut) node.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', code: 'KeyV', shiftKey: true, metaKey: navigator.platform.startsWith('Mac'), ctrlKey: !navigator.platform.startsWith('Mac'), bubbles: true, cancelable: true }));
+    const clipboard = new DataTransfer(); clipboard.setData('text/plain', text);
+    node.dispatchEvent(new ClipboardEvent('paste', { clipboardData: clipboard, bubbles: true, cancelable: true }));
+  }, { text, plainShortcut: options.plainShortcut === true });
+}
+
+test('粘贴助手回复的 Markdown 变成格式，Ctrl/Cmd+Shift+V 保留原文字符', async ({ page, request }) => {
+  const doc = await createRich(request, 'Markdown 粘贴', [paragraph('first', '开头')]);
+  await open(page, doc.id);
+  const editor = richEditor(page);
+  await editor.locator('p').first().click(); await page.keyboard.press('End'); await page.keyboard.press('Enter');
+  await pasteText(page, assistantReply);
+  await expect(editor.locator('h2')).toHaveText('会议结论');
+  await expect(editor.locator('ul > li')).toHaveCount(2);
+  await expect(editor.locator('strong')).toHaveText('重点');
+  await expect(editor.locator('pre')).toContainText('console.log(1)');
+  await expect(editor.locator('table th')).toHaveCount(2);
+  await expect(editor.locator('table td')).toHaveCount(2);
+  await expect(editor).not.toContainText('##');
+  await expect(page.getByTestId('document-save-state')).toHaveText('已保存到 Dovun', { timeout: 20_000 });
+  const saved = (await bodyOf(request, doc.id)).content as { blocks: Array<{ kind: string; level?: number; language?: string }> };
+  expect(saved.blocks.map((block) => block.kind)).toEqual(['paragraph', 'heading', 'bulletList', 'paragraph', 'codeBlock', 'table', 'paragraph']);
+  expect(saved.blocks[1].level).toBe(2); expect(saved.blocks[4].language).toBe('js');
+
+  await editor.locator('p').last().click(); await page.keyboard.press('End');
+  await pasteText(page, '## 原样\n\n- 星号 **不转换**', { plainShortcut: true });
+  await expect(editor).toContainText('## 原样');
+  await expect(editor).toContainText('- 星号 **不转换**');
+  await expect(editor.locator('h2')).toHaveCount(1);
+});
