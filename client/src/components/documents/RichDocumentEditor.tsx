@@ -12,8 +12,9 @@ import { Input } from '@/components/ui/input.js';
 import { NativeSelect } from '@/components/ui/native-select.js';
 import { authHeaders } from '@/lib/api.js';
 import { t as translate } from '../../i18n/index.js';
-import { canonicalContent, safeDocumentLink } from '../../../../server/src/domain/document-content.js';
-import { editorToRichDocument, inspectLocalDocument, richDocumentToEditor, type LocalRichDocument } from './richdoc-codec.js';
+import { safeDocumentLink } from '../../../../server/src/domain/document-content.js';
+import { inspectLocalDocument, richDocumentToEditor, type LocalRichDocument } from './richdoc-codec.js';
+import { canonicalDocument, richDocumentFromEditorDoc, sameDocument } from '@/lib/documents/content-cache.js';
 import { createEditorCore, guardMarkdownRules, insertionFiles } from './editor-core.js';
 import { insertPlainText, markdownPasteSlice } from '@/lib/markdown-paste.js';
 import { readResourceBytes } from './readers/bytes.js';
@@ -194,8 +195,8 @@ export function RichDocumentEditor(props: RichDocumentEditorProps) {
 function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositionChange, onInsertFiles, onInsertExisting, onUndo, onRedo, onPendingChange, onSerializationFailure, registerFlush, sessionKey }: RichDocumentEditorProps) {
   const { t } = useTranslation('library');
   const current = useRef({ value, onChange, readOnly, onCompositionChange, onInsertFiles, onUndo, onRedo, onPendingChange, onSerializationFailure }); current.current = { value, onChange, readOnly, onCompositionChange, onInsertFiles, onUndo, onRedo, onPendingChange, onSerializationFailure };
-  const serializedValue = useMemo(() => canonicalContent(value), [value]);
-  const composing = useRef(false); const lastEmitted = useRef(serializedValue);
+  const serializedValue = useMemo(() => canonicalDocument(value), [value]);
+  const composing = useRef(false); const lastEmitted = useRef(serializedValue); const lastContent = useRef<LocalRichDocument | null>(value);
   const serializeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pending = useRef(false);
   const historyJump = useRef(0);
@@ -278,15 +279,16 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
   function emit() {
     if (serializeTimer.current) { clearTimeout(serializeTimer.current); serializeTimer.current = null; }
     if (!editor || editor.isDestroyed || current.current.readOnly) return false;
-    const editorJson = editor.getJSON();
     try {
-      const content = editorToRichDocument(editorJson); const serialized = canonicalContent(content);
-      const changed = serialized !== lastEmitted.current;
-      if (changed) { lastEmitted.current = serialized; current.current.onChange(content); }
+      // Only top-level blocks whose editor node changed are converted and validated again.
+      const content = richDocumentFromEditorDoc(editor.state.doc);
+      const changed = !sameDocument(content, lastContent.current);
+      if (changed) { lastContent.current = content; lastEmitted.current = canonicalDocument(content); current.current.onChange(content); }
       pending.current = false; current.current.onPendingChange?.(false);
       setError('');
       return changed;
     } catch {
+      const editorJson = editor.getJSON();
       const message = t('docsEditor.unknown'); setError(message);
       if (current.current.onSerializationFailure) {
         try { current.current.onSerializationFailure(editorJson, message); pending.current = false; current.current.onPendingChange?.(false); }
@@ -337,7 +339,7 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
     if (serializeTimer.current && emit()) return;
     const incoming = editor.schema.nodeFromJSON(richDocumentToEditor(value));
     const change = externalDocumentChange(editor.state, incoming);
-    lastEmitted.current = serialized;
+    lastEmitted.current = serialized; lastContent.current = value;
     if (!change) return;
     if (jumped) change.transaction.setSelection(Selection.near(change.transaction.doc.resolve(change.to), -1)).scrollIntoView();
     editor.view.dispatch(change.transaction);

@@ -32,26 +32,31 @@ export function richDocumentToEditor(value: LocalRichDocument): JSONContent {
   return { type: 'doc', content: value.blocks.map(block) };
 }
 
-export function editorToRichDocument(value: JSONContent, newId: () => string = () => crypto.randomUUID()): LocalRichDocument {
-  const seen = new Set<string>();
-  const inline = (node: JSONContent): RichText => {
-    if (node.type === 'hardBreak') return { text: '', break: true };
-    if (node.type !== 'text') throw new Error(`UNSUPPORTED_INLINE_NODE: ${node.type}`);
-    return { text: node.text ?? '', ...(node.marks?.length ? { marks: node.marks.map((mark): RichMark => ({ kind: mark.type as RichMark['kind'], ...(mark.type === 'link' ? { href: String(mark.attrs?.href ?? '') } : {}) })) } : {}) };
+/** Convert one editor block (and its children) to the product shape. Identities repeated within `seen` get fresh ids. */
+export function editorBlockToLocal(node: JSONContent, seen: Set<string> = new Set(), newId: () => string = () => crypto.randomUUID()): LocalRichBlock {
+  const inline = (child: JSONContent): RichText => {
+    if (child.type === 'hardBreak') return { text: '', break: true };
+    if (child.type !== 'text') throw new Error(`UNSUPPORTED_INLINE_NODE: ${child.type}`);
+    return { text: child.text ?? '', ...(child.marks?.length ? { marks: child.marks.map((mark): RichMark => ({ kind: mark.type as RichMark['kind'], ...(mark.type === 'link' ? { href: String(mark.attrs?.href ?? '') } : {}) })) } : {}) };
   };
-  const block = (node: JSONContent): LocalRichBlock => {
-    let id = String(node.attrs?.blockId ?? '');
+  const block = (entry: JSONContent): LocalRichBlock => {
+    let id = String(entry.attrs?.blockId ?? '');
     if (!id || seen.has(id)) id = newId();
     seen.add(id);
-    if (node.type === 'upload') return { id, kind: 'upload', uploadId: String(node.attrs?.uploadId ?? ''), label: String(node.attrs?.label ?? '') };
-    const result: RichBlock = { id, kind: node.type as RichBlock['kind'] };
-    for (const name of attributeNames) if (node.attrs?.[name] !== undefined && node.attrs[name] !== null) Object.assign(result, { [name]: node.attrs[name] });
-    if (node.type === 'image' || node.type === 'file') result.target = { resourceId: String(node.attrs?.resourceId ?? ''), revision: Number(node.attrs?.revision) };
-    if (['paragraph', 'heading', 'codeBlock'].includes(node.type ?? '')) result.text = (node.content ?? []).map(inline);
-    else if (node.content) return { ...result, children: node.content.map(block) };
+    if (entry.type === 'upload') return { id, kind: 'upload', uploadId: String(entry.attrs?.uploadId ?? ''), label: String(entry.attrs?.label ?? '') };
+    const result: RichBlock = { id, kind: entry.type as RichBlock['kind'] };
+    for (const name of attributeNames) if (entry.attrs?.[name] !== undefined && entry.attrs[name] !== null) Object.assign(result, { [name]: entry.attrs[name] });
+    if (entry.type === 'image' || entry.type === 'file') result.target = { resourceId: String(entry.attrs?.resourceId ?? ''), revision: Number(entry.attrs?.revision) };
+    if (['paragraph', 'heading', 'codeBlock'].includes(entry.type ?? '')) result.text = (entry.content ?? []).map(inline);
+    else if (entry.content) return { ...result, children: entry.content.map(block) };
     return result;
   };
-  const result: LocalRichDocument = { schemaVersion: 1, blocks: (value.content ?? []).map(block) };
+  return block(node);
+}
+
+export function editorToRichDocument(value: JSONContent, newId: () => string = () => crypto.randomUUID()): LocalRichDocument {
+  const seen = new Set<string>();
+  const result: LocalRichDocument = { schemaVersion: 1, blocks: (value.content ?? []).map((node) => editorBlockToLocal(node, seen, newId)) };
   if (!inspectLocalDocument(result).supported) throw new Error('UNSUPPORTED_DOCUMENT_SCHEMA');
   return result;
 }
