@@ -2,8 +2,10 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button.js';
 import type { LocalRichBlock, LocalRichDocument } from './richdoc-codec.js';
+import { defaultEditBudgets, editBudgets, formatBudgetBytes } from './edit-budget.js';
 
-export const richDocumentEditBudget = { blocks: 500, bytes: 256 * 1024 };
+/** The shipped soft budget; the effective value comes from editBudgets(). */
+export const richDocumentEditBudget = defaultEditBudgets.rich;
 const blockPageSize = 100;
 const textPageSize = 10_000;
 
@@ -23,7 +25,7 @@ function stringBytes(text: string, remaining: number) {
 }
 
 /** Iterative and early-exit: an oversized document must not reach the interactive editor. */
-export function measureRichDocument(value: LocalRichDocument, budget = richDocumentEditBudget) {
+export function measureRichDocument(value: LocalRichDocument, budget: { blocks: number; bytes: number } = editBudgets().rich) {
   let blocks = 0; let bytes = 0;
   const pending: unknown[] = [value];
   while (pending.length && blocks <= budget.blocks && bytes <= budget.bytes) {
@@ -78,10 +80,13 @@ export function richDocumentBlockPage(blocks: LocalRichBlock[], blockId: string)
   return null;
 }
 
-export function RichDocumentBoundary({ value, renderEditor, deferPagination = false }: { value: LocalRichDocument; renderEditor: (page: LocalRichDocument, readOnly: boolean) => ReactNode; deferPagination?: boolean }) {
+/**
+ * Paginated reading for a document the user has not opened for editing because it exceeds the
+ * interactive budget. `paginate` is decided by the caller once; growth while editing never paginates.
+ */
+export function RichDocumentBoundary({ value, renderEditor, paginate, onEditAnyway }: { value: LocalRichDocument; renderEditor: (page: LocalRichDocument, readOnly: boolean) => ReactNode; paginate: boolean; onEditAnyway?: () => void }) {
   const { t } = useTranslation('library');
   const container = useRef<HTMLDivElement>(null);
-  const measurement = useMemo(() => measureRichDocument(value), [value]);
   const [page, setPage] = useState(0); const [textPage, setTextPage] = useState(0);
   const pageCount = Math.max(1, Math.ceil(value.blocks.length / blockPageSize));
   const current = Math.min(page, pageCount - 1);
@@ -102,17 +107,24 @@ export function RichDocumentBoundary({ value, renderEditor, deferPagination = fa
     };
     scroll.addEventListener('dovun-document-reveal', reveal);
     return () => scroll.removeEventListener('dovun-document-reveal', reveal);
-  }, [value, measurement.withinBudget]);
+  }, [value, paginate]);
   const reading = useMemo<LocalRichDocument>(() => ({ ...value, blocks: value.blocks.slice(current * blockPageSize, (current + 1) * blockPageSize) }), [value, current]);
-  const pageMeasurement = useMemo(() => measurement.withinBudget || deferPagination ? measurement : measureRichDocument(reading), [measurement, reading, deferPagination]);
-  const excerpt = useMemo(() => pageMeasurement.withinBudget || deferPagination ? null : richDocumentTextPage(reading.blocks, textPage), [pageMeasurement, reading, textPage, deferPagination]);
-  if (measurement.withinBudget || deferPagination) return <>{renderEditor(value, false)}</>;
+  // One reading page can still exceed the budget (a single huge block); that page falls back to text.
+  const pageMeasurement = useMemo(() => paginate ? measureRichDocument(reading) : null, [reading, paginate]);
+  const excerpt = useMemo(() => !pageMeasurement || pageMeasurement.withinBudget ? null : richDocumentTextPage(reading.blocks, textPage), [pageMeasurement, reading, textPage]);
+  if (!paginate) return <>{renderEditor(value, false)}</>;
+  const budgets = editBudgets();
   const scrollToPage = () => requestAnimationFrame(() => container.current?.scrollIntoView({ block: 'start' }));
   const navigate = (next: number) => { setPage(next); setTextPage(0); scrollToPage(); };
   const navigateText = (next: number) => { setTextPage(next); scrollToPage(); };
   const navigation = <div className="flex flex-wrap items-center gap-2 py-2" aria-label={t('document.largePageNavigation')}><Button size="sm" variant="outline" disabled={current === 0} onClick={() => navigate(current - 1)}>{t('shared.previousPage')}</Button><span className="library-meta">{t('document.largePage', { page: current + 1, total: pageCount })}</span><Button size="sm" variant="outline" disabled={current + 1 >= pageCount} onClick={() => navigate(current + 1)}>{t('shared.nextPage')}</Button></div>;
   return <div ref={container} className="document-large-reading" data-testid="document-large-reading">
-    <p className="document-notice" role="status">{t('document.largeReadOnly')}</p>
+    <div className="document-notice" role="status">
+      <p>{onEditAnyway
+        ? t('document.largeReadOnly', { blocks: budgets.rich.blocks, size: formatBudgetBytes(budgets.rich.bytes) })
+        : t('document.largeHardReadOnly', { blocks: budgets.richHard.blocks, size: formatBudgetBytes(budgets.richHard.bytes) })}</p>
+      {onEditAnyway && <Button size="sm" variant="outline" onClick={onEditAnyway}>{t('document.editAnyway')}</Button>}
+    </div>
     {navigation}
     {excerpt ? <section><p className="library-meta">{t('document.largeTextFallback')}</p><div className="flex items-center gap-2 py-2"><Button size="sm" variant="outline" disabled={textPage === 0} onClick={() => navigateText(textPage - 1)}>{t('document.previousText')}</Button><span className="library-meta">{t('document.textPage', { page: textPage + 1 })}</span><Button size="sm" variant="outline" disabled={!excerpt.hasNext} onClick={() => navigateText(textPage + 1)}>{t('document.nextText')}</Button></div><pre className="whitespace-pre-wrap break-words text-sm">{excerpt.text}</pre></section> : renderEditor(reading, true)}
     {pageCount > 1 && navigation}

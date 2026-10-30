@@ -171,6 +171,10 @@ export function documentEditorExtensions() {
 
 type RichDocumentEditorProps = {
   value: LocalRichDocument; onChange: (value: LocalRichDocument) => void; readOnly?: boolean;
+  /** Show paginated reading instead of the editor (the document was opened above the editing budget). */
+  paginate?: boolean;
+  /** Offered while paginated when the document is within the hard budget. */
+  onEditAnyway?: () => void;
   onCompositionChange?: (composing: boolean) => void;
   onInsertFiles?: (files: File[], bookmark?: { blockId: string }) => void;
   onInsertExisting?: (bookmark?: { blockId: string }) => void;
@@ -182,11 +186,9 @@ type RichDocumentEditorProps = {
 };
 
 export function RichDocumentEditor(props: RichDocumentEditorProps) {
-  const [composing, setComposing] = useState(false);
-  const compositionChanged = (value: boolean) => { setComposing(value); props.onCompositionChange?.(value); };
   const supported = useMemo(() => inspectLocalDocument(props.value).supported, [props.value]);
-  if (!supported) return <RichDocumentEditorCore {...props} onCompositionChange={compositionChanged} />;
-  return <RichDocumentBoundary value={props.value} deferPagination={composing} renderEditor={(value, paginated) => <RichDocumentEditorCore {...props} key={paginated ? value.blocks[0]?.id ?? 'empty' : 'editing'} value={value} readOnly={props.readOnly || paginated} onCompositionChange={paginated ? undefined : compositionChanged} {...(paginated ? { registerFlush: undefined, onPendingChange: undefined } : {})} />} />;
+  if (!supported) return <RichDocumentEditorCore {...props} />;
+  return <RichDocumentBoundary value={props.value} paginate={props.paginate === true} onEditAnyway={props.onEditAnyway} renderEditor={(value, paginated) => <RichDocumentEditorCore {...props} key={paginated ? value.blocks[0]?.id ?? 'empty' : 'editing'} value={value} readOnly={props.readOnly || paginated} {...(paginated ? { registerFlush: undefined, onPendingChange: undefined, onCompositionChange: undefined } : {})} />} />;
 }
 
 function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositionChange, onInsertFiles, onInsertExisting, onUndo, onRedo, onPendingChange, onSerializationFailure, registerFlush, sessionKey }: RichDocumentEditorProps) {
@@ -198,6 +200,7 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
   const pending = useRef(false);
   const historyJump = useRef(0);
   const plainPaste = useRef(false);
+  const deferredEditable = useRef<boolean | null>(null);
   const fileInput = useRef<HTMLInputElement>(null); const [link, setLink] = useState(''); const [error, setError] = useState('');
   const supported = useMemo(() => inspectLocalDocument(value).supported, [value]);
   const editorContent = useMemo(() => supported ? richDocumentToEditor(value) : { type: 'doc', content: [{ type: 'paragraph' }] }, [value, supported]);
@@ -248,7 +251,15 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
         },
         blur: () => { emit(); return false; },
         compositionstart: () => { composing.current = true; current.current.onCompositionChange?.(true); return false; },
-        compositionend: () => { composing.current = false; queueMicrotask(() => { flushEditor(); current.current.onCompositionChange?.(false); }); return false; },
+        compositionend: () => {
+          composing.current = false;
+          queueMicrotask(() => {
+            flushEditor(); current.current.onCompositionChange?.(false);
+            // An editability change that arrived during composition is applied once the candidate text is committed.
+            if (deferredEditable.current !== null && editor && !editor.isDestroyed) { editor.setEditable(deferredEditable.current); deferredEditable.current = null; }
+          });
+          return false;
+        },
       },
     },
     // Batch full serialization; ProseMirror handles keystrokes without scanning the whole product document.
@@ -306,7 +317,13 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
     if (pending.current) emit();
     return !pending.current;
   }
-  useEffect(() => { editor?.setEditable(supported && !readOnly); }, [editor, supported, readOnly]);
+  useEffect(() => {
+    const editable = supported && !readOnly;
+    // Changing editability during IME composition would cancel the candidate text.
+    if (composing.current) { deferredEditable.current = editable; return; }
+    deferredEditable.current = null;
+    editor?.setEditable(editable);
+  }, [editor, supported, readOnly]);
   useLayoutEffect(() => {
     const flush = () => flushEditor();
     const unregister = registerFlush?.(flush);

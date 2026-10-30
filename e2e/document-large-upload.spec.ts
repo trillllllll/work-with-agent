@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import JSZip from 'jszip';
 import { randomUUID } from 'node:crypto';
+import { defaultEditBudgets } from '../client/src/components/documents/edit-budget.js';
 const api = process.env.E2E_API_URL!;
 test.beforeEach(async ({ page }) => { await resetE2eDatabase(); await page.addInitScript(() => { (window as unknown as { __REACT_GRAB_DISABLED__: boolean }).__REACT_GRAB_DISABLED__ = true; }); });
 test.afterAll(async () => { await e2eDatabase.$disconnect(); });
@@ -92,8 +93,9 @@ test('另一视图在前方插入和删除块时保留独立光标', async ({ pa
   await expect.poll(() => editors.nth(1).evaluate((node) => { const selection = (node as HTMLElement & { editor: any }).editor.state.selection; return { from: selection.from, blockId: selection.$from.parent.attrs.blockId }; })).toEqual({ from: original, blockId: 'target' });
 });
 
-test('富文档组词跨越块预算时保持编辑器，结束后再只读分页并保存', async ({ page, request }) => {
-  const content = { schemaVersion: 1, blocks: Array.from({ length: 499 }, (_, index) => ({ id: `p-${index}`, kind: 'paragraph', text: [{ text: `段落 ${index}` }] })) };
+test('富文档编辑中越过块预算时保持可编辑，组词结束后也不转只读并完整保存', async ({ page, request }) => {
+  const limit = defaultEditBudgets.rich.blocks;
+  const content = { schemaVersion: 1, blocks: Array.from({ length: limit - 1 }, (_, index) => ({ id: `p-${index}`, kind: 'paragraph', text: [{ text: `段落 ${index}` }] })) };
   const response = await request.post(`${api}/api/v1/library/resources`, { data: { requestId: randomUUID(), title: '富文档组词预算', format: 'richdoc-v1', schemaVersion: 1, content } });
   expect(response.ok(), await response.text()).toBe(true); const resource = (await response.json()).data;
   await page.goto(`/#/library?resource=${resource.id}`);
@@ -112,8 +114,13 @@ test('富文档组词跨越块预算时保持编辑器，结束后再只读分�
   await page.getByRole('button', { name: '立即保存', exact: true }).click();
   expect((await (await request.get(`${api}/api/v1/library/resources/${resource.id}`)).json()).data.revision).toBe(1);
   await editor.dispatchEvent('compositionend', { data: '中文组词' });
-  await expect(page.getByTestId('document-large-reading')).toBeVisible();
+  await expect(page.getByTestId('document-save-state')).toHaveText('已保存到 Dovun');
+  // Growing past the budget never takes the open editor away; a quiet hint explains possible slowness.
+  await expect(editor).toHaveAttribute('contenteditable', 'true');
+  await expect(page.getByTestId('document-large-reading')).toHaveCount(0);
+  await expect(page.getByTestId('document-large-editing')).toBeVisible();
+  await editor.locator('p').last().click(); await page.keyboard.press('End'); await page.keyboard.type('，继续写');
   await expect(page.getByTestId('document-save-state')).toHaveText('已保存到 Dovun');
   const saved = (await (await request.get(`${api}/api/v1/library/resources/${resource.id}`)).json()).data;
-  expect(saved.content.blocks).toHaveLength(501); expect(JSON.stringify(saved.content)).toContain('最后的内容');
+  expect(saved.content.blocks).toHaveLength(limit + 1); expect(JSON.stringify(saved.content)).toContain('最后的内容，继续写');
 });

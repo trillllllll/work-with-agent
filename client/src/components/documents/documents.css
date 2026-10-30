@@ -13,6 +13,7 @@
 .document-title { width: 100%; min-width: 0; font-size: 24px; line-height: 1.4; font-weight: 600; background: transparent; border: none; padding: 2px 0; }
 .document-title:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
 .document-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; padding-top: 5px; font-size: 12px; color: var(--muted-foreground); }
+.document-large-editing { color: var(--warning); }
 .document-toolbar { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--border); }
 .document-mode-buttons { display: flex; gap: 2px; }
 .document-toolbar-end { margin-left: auto; display: flex; gap: 2px; }

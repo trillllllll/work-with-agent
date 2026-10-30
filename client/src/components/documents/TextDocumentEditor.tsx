@@ -7,16 +7,21 @@ import { BodyText } from '@/components/shared/BodyText.js';
 import { HighlightedCode, languageForFile } from '@/components/shared/HighlightedCode.js';
 import { DocumentMarkdown } from './DocumentMarkdown.js';
 import type { RelativeReference } from '@/lib/documents/markdown-assets.js';
-import { textPageOffsets, withinTextEditBudget } from './text-budget.js';
+import { textPageOffsets } from './text-budget.js';
+import { editBudgets, formatBudgetBytes } from './edit-budget.js';
 import { changedRange, revealTextareaCaret } from './caret.js';
 
 export type TextViewMode = 'edit' | 'read' | 'split';
 const carets = new Map<string, { start: number; end: number }>();
-export function TextDocumentEditor({ value, onChange, format, mode, readOnly, onCompositionChange, viewKey, onUndo, onRedo, fileName, references, onResolveMissing }: {
+export function TextDocumentEditor({ value, onChange, format, mode, readOnly, onCompositionChange, viewKey, onUndo, onRedo, fileName, references, onResolveMissing, paginate = false, onEditAnyway }: {
   value: string; onChange: (value: string) => void; format: string; mode: TextViewMode; readOnly: boolean; onCompositionChange: (value: boolean) => void;
   viewKey: string; onUndo: () => boolean | void; onRedo: () => boolean | void;
   fileName?: string;
   references?: RelativeReference[]; onResolveMissing?: (path: string) => void;
+  /** Show paginated reading instead of the source (the text was opened above the editing budget). */
+  paginate?: boolean;
+  /** Offered while paginated when the text is within the hard budget. */
+  onEditAnyway?: () => void;
 }) {
   const { t } = useTranslation('library');
   const editor = useRef<HTMLTextAreaElement>(null);
@@ -24,12 +29,10 @@ export function TextDocumentEditor({ value, onChange, format, mode, readOnly, on
   const [find, setFind] = useState('');
   const [replacement, setReplacement] = useState('');
   const [match, setMatch] = useState<number | null>(null);
-  const [composing, setComposing] = useState(false);
   const composingRef = useRef(false);
   const compositionCallback = useRef(onCompositionChange); compositionCallback.current = onCompositionChange;
   const [page, setPage] = useState(0);
-  const withinBudget = useMemo(() => withinTextEditBudget(value), [value]);
-  const offsets = useMemo(() => withinBudget ? [0] : textPageOffsets(value), [value, withinBudget]);
+  const offsets = useMemo(() => paginate ? textPageOffsets(value) : [0], [value, paginate]);
   const pageCount = Math.max(1, offsets.length - 1);
   const currentPage = Math.min(page, pageCount - 1);
   const language = format === 'markdown' ? 'markdown' : languageForFile(fileName);
@@ -51,15 +54,21 @@ export function TextDocumentEditor({ value, onChange, format, mode, readOnly, on
     revealTextareaCaret(field, to);
     carets.set(viewKey, { start: to, end: to });
   }, [value, viewKey]);
-  if (!withinBudget && !composing) return <div className="document-large-reading" data-testid="document-large-text-reading">
-    <p className="document-notice" role="status">{t('document.largeTextReadOnly')}</p>
-    <div className="flex flex-wrap items-center gap-2 py-2" aria-label={t('document.largePageNavigation')}>
-      <Button size="sm" variant="outline" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>{t('shared.previousPage')}</Button>
-      <span className="library-meta">{t('document.largePage', { page: currentPage + 1, total: pageCount })}</span>
-      <Button size="sm" variant="outline" disabled={currentPage + 1 >= pageCount} onClick={() => setPage(currentPage + 1)}>{t('shared.nextPage')}</Button>
-    </div>
-    <pre className="whitespace-pre-wrap break-words text-sm">{value.slice(offsets[currentPage], offsets[currentPage + 1])}</pre>
-  </div>;
+  if (paginate) {
+    const budgets = editBudgets();
+    return <div className="document-large-reading" data-testid="document-large-text-reading">
+      <div className="document-notice" role="status">
+        <p>{onEditAnyway ? t('document.largeTextReadOnly', { size: formatBudgetBytes(budgets.text) }) : t('document.largeTextHardReadOnly', { size: formatBudgetBytes(budgets.textHard) })}</p>
+        {onEditAnyway && <Button size="sm" variant="outline" onClick={onEditAnyway}>{t('document.editAnyway')}</Button>}
+      </div>
+      <div className="flex flex-wrap items-center gap-2 py-2" aria-label={t('document.largePageNavigation')}>
+        <Button size="sm" variant="outline" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>{t('shared.previousPage')}</Button>
+        <span className="library-meta">{t('document.largePage', { page: currentPage + 1, total: pageCount })}</span>
+        <Button size="sm" variant="outline" disabled={currentPage + 1 >= pageCount} onClick={() => setPage(currentPage + 1)}>{t('shared.nextPage')}</Button>
+      </div>
+      <pre className="whitespace-pre-wrap break-words text-sm">{value.slice(offsets[currentPage], offsets[currentPage + 1])}</pre>
+    </div>;
+  }
   const findNext = () => {
     if (!find) return;
     const from = editor.current?.selectionEnd ?? 0;
@@ -78,7 +87,7 @@ export function TextDocumentEditor({ value, onChange, format, mode, readOnly, on
     requestAnimationFrame(() => { field.focus(); field.setSelectionRange(index, index + replacement.length); });
   };
   const text = <Textarea ref={editor} variant="inline" className="document-source" aria-label={t('document.body')} spellCheck={!language} value={value} readOnly={readOnly}
-    onChange={(event) => onChange(event.target.value)} onSelect={(event) => carets.set(viewKey, { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd })} onCompositionStart={() => { composingRef.current = true; setComposing(true); onCompositionChange(true); }} onCompositionEnd={(event) => { onChange(event.currentTarget.value); composingRef.current = false; setComposing(false); onCompositionChange(false); }}
+    onChange={(event) => onChange(event.target.value)} onSelect={(event) => carets.set(viewKey, { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd })} onCompositionStart={() => { composingRef.current = true; onCompositionChange(true); }} onCompositionEnd={(event) => { onChange(event.currentTarget.value); composingRef.current = false; onCompositionChange(false); }}
     onKeyDown={(event) => {
       if (event.nativeEvent.isComposing) return;
       if ((event.metaKey || event.ctrlKey) && event.key === 'f') { event.preventDefault(); setFindOpen(true); }

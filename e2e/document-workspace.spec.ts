@@ -6,6 +6,7 @@ import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import { readFile } from 'node:fs/promises';
 import { cjkPdf } from './fixtures/cjk-pdf.js';
+import { defaultEditBudgets } from '../client/src/components/documents/edit-budget.js';
 
 const api = process.env.E2E_API_URL!;
 test.beforeEach(async ({ page }) => { await resetE2eDatabase(); await page.addInitScript(() => { (window as unknown as { __REACT_GRAB_DISABLED__: boolean }).__REACT_GRAB_DISABLED__ = true; }); });
@@ -23,6 +24,7 @@ test('超预算文本以只读源码分页显示，翻页不截断或改写权�
   await open(page, resource.id);
   const reader = page.getByTestId('document-large-text-reading');
   await expect(reader).toBeVisible(); await expect(page.locator('textarea.document-source')).toHaveCount(0);
+  await expect(reader.getByRole('button', { name: '仍要编辑', exact: true })).toBeVisible();
   await expect(reader.locator('pre')).toContainText('# 源文件');
   await reader.getByRole('button', { name: '下一页', exact: true }).click();
   await expect(reader.getByText(/^第 2 \/ /)).toBeVisible();
@@ -31,16 +33,48 @@ test('超预算文本以只读源码分页显示，翻页不截断或改写权�
   expect(unchanged.content).toBe(content); expect(unchanged.revision).toBe(1);
 });
 
-test('组词跨过文本预算时保留输入框，结束后才转只读并保存完整正文', async ({ page, request }) => {
+test('文本编辑中越过预算时保留输入框，组词结束后也不转只读并保存完整正文', async ({ page, request }) => {
   const resource = await create(request, '组词预算'); await open(page, resource.id);
   const field = page.locator('textarea.document-source');
   await field.dispatchEvent('compositionstart', { data: '中' });
-  const content = 'a'.repeat(256 * 1024) + '中文'; await field.fill(content);
+  const content = 'a'.repeat(defaultEditBudgets.text) + '中文'; await field.fill(content);
   await expect(field).toBeVisible(); await expect(page.getByTestId('document-large-text-reading')).toHaveCount(0);
   await field.dispatchEvent('compositionend', { data: '中文' });
-  await expect(page.getByTestId('document-large-text-reading')).toBeVisible();
   await expect(page.getByTestId('document-save-state')).toHaveText('已保存到 Dovun');
+  await expect(field).toBeVisible(); await expect(page.getByTestId('document-large-text-reading')).toHaveCount(0);
+  await expect(page.getByTestId('document-large-editing')).toBeVisible();
   expect((await bodyOf(request, resource.id)).content).toBe(content);
+});
+
+test('打开超预算文档先分页阅读，仍要编辑后可写入保存，超过硬上限只读', async ({ page, request }) => {
+  const over = defaultEditBudgets.rich.blocks + 20;
+  const blocks = Array.from({ length: over }, (_, index) => ({ id: `p-${index}`, kind: 'paragraph', text: [{ text: `段落 ${index}` }] }));
+  const made = await request.post(`${api}/api/v1/library/resources`, { data: { requestId: randomUUID(), title: '超预算富文档', format: 'richdoc-v1', schemaVersion: 1, content: { schemaVersion: 1, blocks } } });
+  expect(made.ok(), await made.text()).toBe(true); const resource = (await made.json()).data;
+  await open(page, resource.id);
+  const reading = page.getByTestId('document-large-reading');
+  await expect(reading).toBeVisible();
+  await expect(page.locator('.document-prose').first()).toHaveAttribute('contenteditable', 'false');
+  await reading.getByRole('button', { name: '仍要编辑', exact: true }).click();
+  await expect(reading).toHaveCount(0);
+  const editor = page.getByRole('textbox', { name: '文档正文', exact: true });
+  await expect(editor).toHaveAttribute('contenteditable', 'true');
+  await expect(editor.locator('p')).toHaveCount(over);
+  await expect(page.getByTestId('document-large-editing')).toBeVisible();
+  await editor.locator('p').last().click(); await page.keyboard.press('End'); await page.keyboard.type('续写');
+  await expect(page.getByTestId('document-save-state')).toHaveText('已保存到 Dovun', { timeout: 20_000 });
+  const saved = await bodyOf(request, resource.id);
+  expect(saved.content.blocks).toHaveLength(over); expect(saved.content.blocks[over - 1].text[0].text).toBe(`段落 ${over - 1}续写`);
+  // A new page load decides again: the document opens as paged reading.
+  await page.reload();
+  await expect(page.getByTestId('document-large-reading')).toBeVisible();
+
+  const huge = defaultEditBudgets.richHard.blocks + 10;
+  const hard = await request.post(`${api}/api/v1/library/resources`, { data: { requestId: randomUUID(), title: '超硬上限富文档', format: 'richdoc-v1', schemaVersion: 1, content: { schemaVersion: 1, blocks: Array.from({ length: huge }, (_, index) => ({ id: `h-${index}`, kind: 'paragraph', text: [{ text: `段 ${index}` }] })) } } });
+  expect(hard.ok(), await hard.text()).toBe(true);
+  await open(page, (await hard.json()).data.id);
+  await expect(page.getByTestId('document-large-reading')).toBeVisible();
+  await expect(page.getByRole('button', { name: '仍要编辑', exact: true })).toHaveCount(0);
 });
 
 test('旧文本附件的补充说明单独可读，不覆盖原件正文', async ({ page, request }) => {
