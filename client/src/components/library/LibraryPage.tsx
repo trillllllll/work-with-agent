@@ -170,6 +170,8 @@ export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topi
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
+      // Escape cancels an IME candidate list; it is never a page command during composition.
+      if (event.isComposing || event.keyCode === 229) return;
       const node = event.target;
       if (node instanceof Element && node.closest('[role="dialog"]')) return;
       if (rowMenu) { setRowMenu(null); return; }
@@ -177,6 +179,8 @@ export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topi
       if (foldersOpen) { setFoldersOpen(false); return; }
       if (dialog || composer || editor) return;
       if (!documentOpen) return;
+      // Escape inside an editing surface or an open popup belongs to that control and must not close the document.
+      if (node instanceof Element && node.closest('input, textarea, select, [contenteditable="true"], [role="menu"], [role="listbox"], [data-radix-popper-content-wrapper]')) return;
       event.preventDefault();
       void closePreview();
     };

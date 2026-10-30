@@ -10,7 +10,7 @@ process.env.E2E_API_URL = `http://127.0.0.1:${apiPort}`;
 process.env.E2E_DATABASE_URL = databaseUrl;
 process.env.E2E_UI_URL = `http://127.0.0.1:${uiPort}`;
 export default defineConfig({
-  testDir: './e2e', testMatch: /document-(workspace|large-upload)\.spec\.ts$/, outputDir: `${testRoot}/results`,
+  testDir: './e2e', testMatch: /document-(workspace|large-upload|editing)\.spec\.ts$/, outputDir: `${testRoot}/results`,
   fullyParallel: false, workers: 1, timeout: 60_000, expect: { timeout: 10_000 }, retries: 0, reporter: 'list',
   use: {
     baseURL: `http://127.0.0.1:${uiPort}`, locale: 'zh-CN', trace: 'retain-on-failure', screenshot: 'only-on-failure',
