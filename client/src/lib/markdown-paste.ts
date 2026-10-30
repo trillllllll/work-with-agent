@@ -1,5 +1,6 @@
 import type { JSONContent } from '@tiptap/core';
 import { Fragment, Slice, type Node as PMNode, type Schema } from '@tiptap/pm/model';
+import { Selection, type EditorState } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
 import { parseDescription } from './description-codec.js';
 
@@ -34,6 +35,23 @@ export function insertPlainText(view: EditorView, text: string) {
   });
   const paragraph = schema.nodes.paragraph.create(null, nodes.length ? nodes : undefined);
   view.dispatch(view.state.tr.replaceSelection(new Slice(Fragment.fromArray([paragraph]), 0, 0)).scrollIntoView());
+}
+
+/**
+ * Insert a pasted slice for an editor whose storage keeps only paragraphs and lists inside list items
+ * (the task description Markdown). Other blocks pasted inside a list go after the list instead of being
+ * nested where the Markdown could not keep them.
+ */
+export function pasteTransaction(state: EditorState, slice: Slice, options: { nestOnlyListContent?: boolean } = {}) {
+  const { $from } = state.selection;
+  let inList = false;
+  for (let depth = $from.depth; depth > 0; depth--) if (['listItem', 'taskItem'].includes($from.node(depth).type.name)) inList = true;
+  let other = false;
+  slice.content.forEach((node) => { if (!['paragraph', 'bulletList', 'orderedList', 'taskList'].includes(node.type.name)) other = true; });
+  if (!options.nestOnlyListContent || !inList || !other) return state.tr.replaceSelection(slice).scrollIntoView();
+  const at = $from.after(1);
+  const tr = state.tr.insert(at, slice.content);
+  return tr.setSelection(Selection.near(tr.doc.resolve(at + slice.content.size), -1)).scrollIntoView();
 }
 
 export type MarkdownPasteOptions = {

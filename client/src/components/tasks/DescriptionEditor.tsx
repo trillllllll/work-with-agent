@@ -1,4 +1,5 @@
 import { createEditorCore, guardMarkdownRules, insertionFiles } from '../documents/editor-core.js';
+import { insertPlainText, markdownPasteSlice, pasteTransaction } from '@/lib/markdown-paste.js';
 import { Surface } from '@/components/ui/surface.js';
 import { Modal } from '@/components/ui/modal.js';
 import { Textarea } from '@/components/ui/textarea.js';
@@ -8,10 +9,8 @@ import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, u
 import { useTranslation } from 'react-i18next';
 import { t as translate } from '../../i18n/index.js';
 import { createPortal } from 'react-dom';
-import { Editor, type JSONContent } from '@tiptap/core';
+import { Editor } from '@tiptap/core';
 import { NodeSelection } from '@tiptap/pm/state';
-import { Fragment, Slice, type Node as PMNode } from '@tiptap/pm/model';
-import type { EditorView } from '@tiptap/pm/view';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { Placeholder } from '@tiptap/extension-placeholder';
 import { TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
@@ -124,22 +123,6 @@ export function placeDescriptionCaret(node: HTMLElement | null, start: number, e
   return false;
 }
 
-// 剪贴板文本是否包含完整、可识别的 Markdown 结构。
-function looksLikeMarkdown(text: string) {
-  const { doc } = parseDescription(text, 'clipboard');
-  const structural = new Set(['heading', 'codeBlock', 'bulletList', 'orderedList', 'taskList', 'blockquote', 'table', 'rawMarkdown']);
-  let found = false;
-  const visit = (node: JSONContent) => {
-    if (typeof node.type === 'string' && structural.has(node.type)) found = true;
-    for (const mark of node.marks ?? []) {
-      if (mark.type === 'link' || mark.type === 'code') found = true;
-    }
-    for (const child of node.content ?? []) visit(child);
-  };
-  visit(doc);
-  return found;
-}
-
 export function DescriptionEditor({ value, taskId, readonly, fill, openDescription, onEdit, onComposeStart, onComposeEnd, onPasteImages, onZoom, onOpenLinkedTask, onAskSelection, ref }: {
   value: string;
   taskId: string;
@@ -215,13 +198,16 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
         }
         const plain = clipboard?.getData('text/plain') ?? '';
         const html = clipboard?.getData('text/html');
-        if (plainPasteRef.current) {
-          plainPasteRef.current = false;
+        const plainShortcut = plainPasteRef.current;
+        plainPasteRef.current = false;
+        // Code keeps pasted characters exactly; ProseMirror's own paste already does that there.
+        const { $from } = view.state.selection;
+        if ($from.parent.type.spec.code || $from.marks().some((mark) => mark.type.name === 'code')) return false;
+        if (plainShortcut) {
           event.preventDefault();
           insertPlainText(view, plain);
           return true;
         }
-        plainPasteRef.current = false;
         if (html) {
           // 交给 schema 白名单解析：脚本、事件属性与不支持嵌入会被丢弃；
           // 图片地址由 TaskImageNode 校验，只接受当前任务的图片。
@@ -229,12 +215,10 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
         }
         if (!plain) return false;
         event.preventDefault();
-        if (looksLikeMarkdown(plain)) {
-          const { doc } = parseDescription(plain, taskIdRef.current);
-          insertPlainDoc(view, doc);
-          return true;
-        }
-        insertPlainText(view, plain);
+        // Same conversion as loading this Markdown as a description; unsupported fragments stay as raw blocks.
+        const slice = markdownPasteSlice(plain, view.state.schema);
+        if (slice) view.dispatch(pasteTransaction(view.state, slice, { nestOnlyListContent: true }));
+        else insertPlainText(view, plain);
         return true;
       },
       handleDrop: (view, event, _drag, moved) => {
@@ -424,42 +408,6 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
         </div>
     </Modal>}
   </div>;
-}
-
-/** 把纯文本插入为普通文字；换行转换为硬换行，不触发 Markdown 格式识别。 */
-function insertPlainText(view: EditorView, text: string) {
-  const schema = view.state.schema;
-  const nodes: PMNode[] = [];
-  text.split('\n').forEach((line, index) => {
-    if (index > 0) nodes.push(schema.nodes.hardBreak.create());
-    if (line) nodes.push(schema.text(line));
-  });
-  const paragraph = schema.nodes.paragraph.create(null, nodes.length ? nodes : undefined);
-  view.dispatch(view.state.tr.replaceSelection(new Slice(Fragment.fromArray([paragraph]), 0, 0)).scrollIntoView());
-}
-
-/** 通过适配层插入剪贴板里可识别的 Markdown 文档。 */
-function insertPlainDoc(view: EditorView, doc: JSONContent) {
-  const schema = view.state.schema;
-  const nodes: PMNode[] = [];
-  for (const block of doc.content ?? []) {
-    if (block.type === 'paragraph') {
-      const inline: PMNode[] = [];
-      for (const child of block.content ?? []) {
-        if (child.type === 'text') inline.push(schema.text(child.text ?? ''));
-        else if (child.type === 'hardBreak') inline.push(schema.nodes.hardBreak.create());
-        else if (child.type === 'image') inline.push(schema.nodes.image.create({ src: child.attrs?.src ?? '', alt: child.attrs?.alt ?? '' }));
-      }
-      nodes.push(schema.nodes.paragraph.create(null, inline.length ? inline : undefined));
-    } else if (block.type === 'heading') {
-      const inline: PMNode[] = (block.content ?? []).map((child) => schema.text(child.text ?? ''));
-      nodes.push(schema.nodes.heading.create({ level: block.attrs?.level ?? 1 }, inline));
-    } else if (block.type === 'codeBlock') {
-      nodes.push(schema.nodes.codeBlock.create(block.attrs?.language ? { language: block.attrs.language } : null, block.text ? schema.text(block.text) : undefined));
-    }
-  }
-  if (!nodes.length) return;
-  view.dispatch(view.state.tr.replaceSelection(new Slice(Fragment.fromArray(nodes), 0, 0)).scrollIntoView());
 }
 
 type ToolbarProps = { editor: Editor; composing: () => boolean; taskId: string; onAskSelection?: (text: string) => void };

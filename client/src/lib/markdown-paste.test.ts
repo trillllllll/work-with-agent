@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { getSchema } from '@tiptap/core';
-import type { Node as PMNode, Slice } from '@tiptap/pm/model';
+import { Slice, type Node as PMNode } from '@tiptap/pm/model';
+import { EditorState, TextSelection } from '@tiptap/pm/state';
 import { safeDocumentLink } from '../../../server/src/domain/document-content.js';
 import { documentEditorExtensions } from '../components/documents/RichDocumentEditor.js';
-import { MARKDOWN_PASTE_LIMIT, looksLikeMarkdown, markdownPasteSlice } from './markdown-paste.js';
+import { createEditorCore } from '../components/documents/editor-core.js';
+import { AlignedTable, MaterialReferenceNode, RawMarkdownNode, TaskImageNode } from '../components/tasks/description-extensions.js';
+import { TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
+import { MARKDOWN_PASTE_LIMIT, looksLikeMarkdown, markdownPasteSlice, pasteTransaction } from './markdown-paste.js';
 
 const documentSchema = getSchema(documentEditorExtensions());
 const paste = (text: string) => markdownPasteSlice(text, documentSchema, { isAllowedLink: safeDocumentLink });
@@ -62,5 +66,36 @@ describe('Markdown paste into rich documents', () => {
     expect(looksLikeMarkdown('普通文字')).toBe(false);
     expect(looksLikeMarkdown('## 标题')).toBe(true);
     expect(paste(`# 大\n\n${'x'.repeat(MARKDOWN_PASTE_LIMIT)}`)).toBeNull();
+  });
+});
+
+describe('Markdown paste into task descriptions', () => {
+  const taskSchema = getSchema([
+    ...createEditorCore({ horizontalRule: false }), AlignedTable.configure({ resizable: false }), TableRow, TableCell, TableHeader,
+    TaskImageNode(() => 'task-1', { zoom: () => {} }), MaterialReferenceNode({ openMaterial: () => {} }), RawMarkdownNode({ editRaw: () => {} }),
+  ]);
+  const pasteTask = (text: string) => markdownPasteSlice(text, taskSchema);
+
+  it('keeps lists, quotes, tables with alignment and code content that the old insertion dropped', () => {
+    const list = pasteTask('- 第一项\n- 第二项')!;
+    expect(nodes(list).map((node) => node.type.name)).toEqual(['bulletList']);
+    const mixed = pasteTask('> 引用\n\n| A | B |\n| :-- | --: |\n| 1 | 2 |\n\n```ts\nconst answer = 42\n```')!;
+    expect(nodes(mixed).map((node) => node.type.name)).toEqual(['blockquote', 'table', 'codeBlock']);
+    expect(nodes(mixed)[1].attrs.alignments).toEqual(['left', 'right']);
+    expect(nodes(mixed)[2].textContent).toBe('const answer = 42');
+  });
+
+  it('keeps raw fragments, task images and material citations as the description editor loads them', () => {
+    const slice = pasteTask('# 来源\n\n[方案](wwa-material:abc123) ![图](https://img.example/a.png)\n\n<details>原样</details>')!;
+    expect(types(slice)).toEqual(expect.arrayContaining(['heading', 'materialReference', 'image', 'rawMarkdown']));
+  });
+
+  it('places quotes, tables and code pasted inside a list after the list, where the description Markdown can keep them', () => {
+    const list = taskSchema.nodeFromJSON({ type: 'doc', content: [{ type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: '第一项' }] }] }] }] });
+    const state = EditorState.create({ schema: taskSchema, doc: list, selection: TextSelection.create(list, 6) });
+    const blocks = pasteTransaction(state, pasteTask('> 引用\n\n```ts\nx\n```')!, { nestOnlyListContent: true }).doc;
+    expect(nodes(new Slice(blocks.content, 0, 0)).map((node) => node.type.name)).toEqual(['bulletList', 'blockquote', 'codeBlock']);
+    const nested = pasteTransaction(state, pasteTask('- 子项甲\n- 子项乙')!, { nestOnlyListContent: true }).doc;
+    expect(nested.childCount).toBe(1); expect(nested.textContent).toContain('子项甲');
   });
 });

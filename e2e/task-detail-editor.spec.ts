@@ -192,3 +192,29 @@ test('连续输入逐字回显，停顿后才提交一次', async ({ page, reque
   expect(payload.title).toBe('TABCD');
   expect(payload.description).toContain('EFGH');
 });
+
+test('粘贴 Markdown 列表、表格和代码块时内容完整', async ({ page, request }) => {
+  const created = await request.post(`${apiUrl}/api/tasks`, { data: { title: '粘贴说明' } });
+  expect(created.ok(), await created.text()).toBe(true);
+  const task = (await created.json()).data as { id: string };
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await page.goto('/#/inbox');
+  await page.getByTestId(`task-row-${task.id}`).getByRole('button', { name: '粘贴说明', exact: true }).click();
+  const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
+  const body = detail.getByLabel('详情', { exact: true });
+  await body.click();
+  const paste = (text: string) => body.evaluate((node, value) => {
+    const clipboard = new DataTransfer(); clipboard.setData('text/plain', value);
+    node.dispatchEvent(new ClipboardEvent('paste', { clipboardData: clipboard, bubbles: true, cancelable: true }));
+  }, text);
+  // A paste made only of a list used to insert nothing.
+  await paste('- 第一项\n- 第二项');
+  await expect(body.locator('ul > li')).toHaveCount(2);
+  await paste('\n\n> 引用的话\n\n| 列A | 列B |\n| --- | --- |\n| 1 | 2 |\n\n```ts\nconst answer = 42\n```');
+  await expect(body.locator('blockquote')).toContainText('引用的话');
+  await expect(body.locator('table td')).toHaveCount(2);
+  await expect(body.locator('pre')).toContainText('const answer = 42');
+  await expect.poll(async () => ((await (await request.get(`${apiUrl}/api/tasks/${task.id}`)).json()).data as { description: string }).description, { timeout: 15_000 }).toContain('const answer = 42');
+  const description = ((await (await request.get(`${apiUrl}/api/tasks/${task.id}`)).json()).data as { description: string }).description;
+  expect(description).toContain('- 第一项'); expect(description).toContain('> 引用的话'); expect(description).toContain('| 列A | 列B |'); expect(description).toContain('```ts');
+});
