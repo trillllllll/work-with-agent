@@ -54,3 +54,42 @@ test('在正文、标题和源码里按 Esc 不关闭文档，焦点离开后 Es
   await expect(page.getByTestId('document-pane')).toBeHidden();
   await expect.poll(async () => JSON.stringify((await bodyOf(request, rich.id)).content)).toContain('已有正文，继续写');
 });
+
+const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+const firstBlock = (content: { blocks: Array<Record<string, unknown>> }, kind: string) => content.blocks.find((block) => block.kind === kind) as Record<string, unknown> | undefined;
+
+test('快速输入图片说明和代码语言不丢字，改说明时不重新读取图片', async ({ page, request }) => {
+  const doc = await createRich(request, '属性输入', [paragraph('first', '正文')]);
+  await open(page, doc.id);
+  const editor = richEditor(page);
+  await editor.locator('p').first().click(); await page.keyboard.press('End');
+  await page.locator('.document-editor-toolbar input[type=file]').setInputFiles({ name: 'shot.png', mimeType: 'image/png', buffer: png });
+  await expect(editor.locator('figure img')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('document-save-state')).toHaveText('已保存到 Dovun', { timeout: 30_000 });
+  const image = firstBlock((await bodyOf(request, doc.id)).content, 'image')!;
+  const imageId = (image.target as { resourceId: string }).resourceId;
+  const reads: string[] = [];
+  page.on('request', (entry) => {
+    const url = new URL(entry.url());
+    if (url.pathname.includes(`/resources/${imageId}/versions/`) || url.pathname.endsWith(`/resources/${imageId}`) && url.searchParams.has('revision')) reads.push(entry.url());
+  });
+  await editor.locator('figure').click();
+  const caption = page.getByRole('textbox', { name: '图片说明', exact: true });
+  await expect(caption).toBeVisible();
+  await caption.pressSequentially('截图说明文字', { delay: 50 });
+  await expect(caption).toHaveValue('截图说明文字');
+  await expect(editor.locator('figure figcaption')).toHaveText('截图说明文字');
+  await expect(page.getByTestId('document-save-state')).toHaveText('已保存到 Dovun', { timeout: 20_000 });
+  expect(firstBlock((await bodyOf(request, doc.id)).content, 'image')!.caption).toBe('截图说明文字');
+  expect(reads).toEqual([]);
+  await expect(editor.locator('figure img')).toBeVisible();
+
+  await editor.locator('p').first().click(); await page.keyboard.press('End'); await page.keyboard.press('Enter');
+  await page.getByRole('toolbar', { name: '格式工具', exact: true }).getByRole('button', { name: '代码块', exact: true }).click();
+  const language = page.getByRole('textbox', { name: '代码语言', exact: true });
+  await expect(language).toBeVisible();
+  await language.pressSequentially('typescript', { delay: 50 });
+  await expect(language).toHaveValue('typescript');
+  await expect(page.getByTestId('document-save-state')).toHaveText('已保存到 Dovun', { timeout: 20_000 });
+  expect(firstBlock((await bodyOf(request, doc.id)).content, 'codeBlock')!.language).toBe('typescript');
+});

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { externalDocumentTransaction } from './editor-sync.js';
-import { Extension, Node, mergeAttributes } from '@tiptap/core';
-import { EditorContent, useEditor } from '@tiptap/react';
+import { Extension, Node, mergeAttributes, type Editor } from '@tiptap/core';
+import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
 import { Plugin } from '@tiptap/pm/state';
 import { Fragment, Slice, type Node as PMNode } from '@tiptap/pm/model';
@@ -79,10 +79,21 @@ function resourceNode(kind: 'image' | 'file' | 'upload') {
         const host = document.createElement(kind === 'image' ? 'figure' : 'div');
         host.className = `document-resource document-resource-${kind}`;
         let current = node; let controller: AbortController | null = null; let objectUrl: string | null = null; let observer: IntersectionObserver | null = null;
+        let image: HTMLImageElement | null = null; let caption: HTMLElement | null = null; let link: HTMLAnchorElement | null = null;
+        const target = (value: PMNode) => kind === 'upload' ? String(value.attrs.uploadId ?? '') : `${String(value.attrs.resourceId ?? '')}@${Number(value.attrs.revision)}`;
+        // Display attributes update the already authorized elements in place; only a new target re-reads bytes.
+        const decorate = () => {
+          host.id = `document-block-${current.attrs.blockId}`; host.dataset.blockId = String(current.attrs.blockId ?? '');
+          if (kind === 'upload') { host.textContent = `${translate('library:docsEditor.uploading')}: ${current.attrs.label}`; return; }
+          if (image) { image.alt = String(current.attrs.alt ?? ''); image.style.width = current.attrs.width ? `${Math.min(1600, Math.max(64, Number(current.attrs.width)))}px` : 'auto'; }
+          if (caption) caption.textContent = String(current.attrs.caption ?? '');
+          if (link) { link.download = String(current.attrs.label || 'attachment'); link.textContent = String(current.attrs.label || translate('library:docsEditor.file')); }
+        };
         const paint = () => {
           observer?.disconnect(); observer = null; controller?.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); objectUrl = null;
-          host.replaceChildren(); host.id = `document-block-${current.attrs.blockId}`; host.dataset.blockId = String(current.attrs.blockId ?? '');
-          if (kind === 'upload') { host.textContent = `${translate('library:docsEditor.uploading')}: ${current.attrs.label}`; return; }
+          image = null; caption = null; link = null;
+          host.replaceChildren(); decorate();
+          if (kind === 'upload') return;
           const resourceId = String(current.attrs.resourceId); const revision = Number(current.attrs.revision);
           host.textContent = translate('library:docsEditor.file');
           if (!/^[a-zA-Z0-9_-]+$/.test(resourceId) || !Number.isSafeInteger(revision) || revision < 1) return;
@@ -95,15 +106,14 @@ function resourceNode(kind: 'image' | 'file' | 'upload') {
             const mime = result.data?.attachment?.mimeType || '';
             if (signal.aborted) return;
             if (kind === 'file') {
-              host.replaceChildren(); const link = document.createElement('a'); link.href = path; link.download = String(current.attrs.label || 'attachment'); link.textContent = String(current.attrs.label || translate('library:docsEditor.file')); host.append(link); return;
+              host.replaceChildren(); link = document.createElement('a'); link.href = path; host.append(link); decorate(); return;
             }
             if (kind === 'image' && !/^image\/(png|jpeg|gif|webp|avif|bmp)(;|$)/i.test(mime)) throw new Error('UNSUPPORTED_IMAGE');
             const bytes = await readResourceBytes(path, signal); if (signal.aborted) return;
             objectUrl = URL.createObjectURL(new Blob([bytes], { type: mime })); host.replaceChildren();
             if (kind === 'image') {
-              const img = document.createElement('img'); img.src = objectUrl; img.alt = String(current.attrs.alt ?? ''); img.loading = 'lazy';
-              img.style.width = current.attrs.width ? `${Math.min(1600, Math.max(64, Number(current.attrs.width)))}px` : 'auto';
-              host.append(img); const caption = document.createElement('figcaption'); caption.textContent = String(current.attrs.caption ?? ''); host.append(caption);
+              image = document.createElement('img'); image.src = objectUrl; image.loading = 'lazy';
+              caption = document.createElement('figcaption'); host.append(image, caption); decorate();
             }
           }).catch(() => { if (!signal.aborted) host.textContent = translate('library:docsEditor.unavailable'); });
           };
@@ -111,10 +121,43 @@ function resourceNode(kind: 'image' | 'file' | 'upload') {
           else { observer = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting)) { observer?.disconnect(); observer = null; load(); } }, { rootMargin: '400px' }); observer.observe(host); }
         };
         paint();
-        return { dom: host, ignoreMutation: () => true, update(next: PMNode) { if (next.type.name !== kind) return false; if (canonicalContent(next.attrs) !== canonicalContent(current.attrs)) { current = next; paint(); } return true; }, destroy() { observer?.disconnect(); controller?.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); } };
+        return {
+          dom: host, ignoreMutation: () => true,
+          update(next: PMNode) {
+            if (next.type.name !== kind) return false;
+            const retarget = target(next) !== target(current);
+            current = next;
+            if (retarget) paint(); else decorate();
+            return true;
+          },
+          destroy() { observer?.disconnect(); controller?.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); },
+        };
       };
     },
   });
+}
+
+/** Everything the format controls display. Read per transaction; cheap selection-local queries only. */
+export type ToolbarState = {
+  bold: boolean; italic: boolean; strike: boolean; code: boolean; link: boolean; linkHref: string; heading: number;
+  bulletList: boolean; orderedList: boolean; taskList: boolean; blockquote: boolean; codeBlock: boolean; table: boolean; language: string;
+  image: boolean; alt: string; caption: string; width: number; resource: boolean;
+};
+const idleToolbar: ToolbarState = { bold: false, italic: false, strike: false, code: false, link: false, linkHref: '', heading: 0, bulletList: false, orderedList: false, taskList: false, blockquote: false, codeBlock: false, table: false, language: '', image: false, alt: '', caption: '', width: 640, resource: false };
+function toolbarState(editor: Editor | null): ToolbarState {
+  if (!editor || editor.isDestroyed) return idleToolbar;
+  const image = editor.isActive('image'); const codeBlock = editor.isActive('codeBlock'); const link = editor.isActive('link');
+  const imageAttrs = image ? editor.getAttributes('image') : null;
+  return {
+    bold: editor.isActive('bold'), italic: editor.isActive('italic'), strike: editor.isActive('strike'), code: editor.isActive('code'),
+    link, linkHref: link ? String(editor.getAttributes('link').href ?? '') : '',
+    heading: editor.isActive('heading') ? Number(editor.getAttributes('heading').level) || 1 : 0,
+    bulletList: editor.isActive('bulletList'), orderedList: editor.isActive('orderedList'), taskList: editor.isActive('taskList'),
+    blockquote: editor.isActive('blockquote'), codeBlock, table: editor.isActive('table'),
+    language: codeBlock ? String(editor.getAttributes('codeBlock').language ?? '') : '',
+    image, alt: String(imageAttrs?.alt ?? ''), caption: String(imageAttrs?.caption ?? ''), width: Number(imageAttrs?.width ?? 640) || 640,
+    resource: image || editor.isActive('file') || editor.isActive('upload'),
+  };
 }
 
 type RichDocumentEditorProps = {
@@ -145,7 +188,6 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
   const serializeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pending = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null); const [link, setLink] = useState(''); const [error, setError] = useState('');
-  const [, refreshToolbar] = useState(0);
   const supported = useMemo(() => inspectLocalDocument(value).supported, [value]);
   const editorContent = useMemo(() => supported ? richDocumentToEditor(value) : { type: 'doc', content: [{ type: 'paragraph' }] }, [value, supported]);
   const editor = useEditor({
@@ -195,8 +237,10 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
       if (!serializeTimer.current) serializeTimer.current = setTimeout(emit, 250);
     },
     onCreate: ({ editor }) => { const selection = selections.get(sessionKey); if (selection) { const size = editor.state.doc.content.size; editor.commands.setTextSelection({ from: Math.min(size, selection.from), to: Math.min(size, selection.to) }); } },
-    onSelectionUpdate: ({ editor }) => { selections.set(sessionKey, { from: editor.state.selection.from, to: editor.state.selection.to }); refreshToolbar((value) => value + 1); },
+    onSelectionUpdate: ({ editor }) => { selections.set(sessionKey, { from: editor.state.selection.from, to: editor.state.selection.to }); },
   }, [sessionKey]);
+  // Attribute edits keep the same selection, so toolbar controls follow every transaction instead of selection changes.
+  const tools = useEditorState({ editor, selector: ({ editor: live }) => toolbarState(live) }) ?? idleToolbar;
   function emit() {
     if (serializeTimer.current) { clearTimeout(serializeTimer.current); serializeTimer.current = null; }
     if (!editor || editor.isDestroyed || current.current.readOnly) return false;
@@ -253,15 +297,15 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
   const action = (key: string, run: () => void, active = false) => <Button key={key} type="button" size="sm" variant={active ? 'secondary' : 'ghost'} aria-pressed={active} disabled={!editor || composing.current} onMouseDown={(event) => event.preventDefault()} onClick={run}>{t(`docsEditor.${key}`)}</Button>;
   return <div className="document-editor">
     {!readOnly && <div className="document-editor-toolbar" role="toolbar" aria-label={t('docsEditor.toolbar')}>
-      {action('bold', () => { editor?.chain().focus().toggleBold().run(); }, editor?.isActive('bold'))}
-      {action('italic', () => { editor?.chain().focus().toggleItalic().run(); }, editor?.isActive('italic'))}
-      {action('strike', () => { editor?.chain().focus().toggleStrike().run(); }, editor?.isActive('strike'))}
-      <NativeSelect aria-label={t('docsEditor.heading')} value={editor?.isActive('heading') ? String(editor.getAttributes('heading').level) : '0'} onChange={(event) => { const level = Number(event.target.value); if (level) editor?.chain().focus().setHeading({ level: level as 1 | 2 | 3 | 4 | 5 | 6 }).run(); else editor?.chain().focus().setParagraph().run(); }}><option value="0">{t('docsEditor.paragraph')}</option>{[1, 2, 3, 4, 5, 6].map((level) => <option value={level} key={level}>{t('docsEditor.heading')} {level}</option>)}</NativeSelect>
-      {action('bulletList', () => { editor?.chain().focus().toggleBulletList().run(); }, editor?.isActive('bulletList'))}
-      {action('orderedList', () => { editor?.chain().focus().toggleOrderedList().run(); }, editor?.isActive('orderedList'))}
-      {action('taskList', () => { editor?.chain().focus().toggleTaskList().run(); }, editor?.isActive('taskList'))}
-      {action('quote', () => { editor?.chain().focus().toggleBlockquote().run(); }, editor?.isActive('blockquote'))}
-      {action('code', () => { editor?.chain().focus().toggleCodeBlock().run(); }, editor?.isActive('codeBlock'))}
+      {action('bold', () => { editor?.chain().focus().toggleBold().run(); }, tools.bold)}
+      {action('italic', () => { editor?.chain().focus().toggleItalic().run(); }, tools.italic)}
+      {action('strike', () => { editor?.chain().focus().toggleStrike().run(); }, tools.strike)}
+      <NativeSelect aria-label={t('docsEditor.heading')} value={String(tools.heading)} onChange={(event) => { const level = Number(event.target.value); if (level) editor?.chain().focus().setHeading({ level: level as 1 | 2 | 3 | 4 | 5 | 6 }).run(); else editor?.chain().focus().setParagraph().run(); }}><option value="0">{t('docsEditor.paragraph')}</option>{[1, 2, 3, 4, 5, 6].map((level) => <option value={level} key={level}>{t('docsEditor.heading')} {level}</option>)}</NativeSelect>
+      {action('bulletList', () => { editor?.chain().focus().toggleBulletList().run(); }, tools.bulletList)}
+      {action('orderedList', () => { editor?.chain().focus().toggleOrderedList().run(); }, tools.orderedList)}
+      {action('taskList', () => { editor?.chain().focus().toggleTaskList().run(); }, tools.taskList)}
+      {action('quote', () => { editor?.chain().focus().toggleBlockquote().run(); }, tools.blockquote)}
+      {action('code', () => { editor?.chain().focus().toggleCodeBlock().run(); }, tools.codeBlock)}
       {action('table', () => { editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(); })}
       {action('rule', () => { editor?.chain().focus().setHorizontalRule().run(); })}
       {action('insert', () => fileInput.current?.click())}
@@ -271,13 +315,13 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
       <Input variant="inline" ref={fileInput} className="sr-only" type="file" multiple aria-label={t('docsEditor.insert')} onChange={(event) => { insert([...(event.target.files ?? [])]); event.target.value = ''; }} />
       <Input aria-label={t('docsEditor.link')} placeholder="https://" value={link} onChange={(event) => setLink(event.target.value)} className="document-link-input" />
       <Button type="button" size="sm" variant="ghost" disabled={!safeDocumentLink(link)} onClick={() => { editor?.chain().focus().setLink({ href: link }).run(); setLink(''); }}>{t('docsEditor.applyLink')}</Button>
-      {editor?.isActive('codeBlock') && <Input aria-label={t('docsEditor.language')} placeholder={t('docsEditor.language')} value={String(editor.getAttributes('codeBlock').language ?? '')} onChange={(event) => editor.commands.updateAttributes('codeBlock', { language: event.target.value })} />}
-      {editor?.isActive('image') && <>
-        <Input aria-label={t('docsEditor.alt')} placeholder={t('docsEditor.alt')} value={String(editor.getAttributes('image').alt ?? '')} onChange={(event) => editor.commands.updateAttributes('image', { alt: event.target.value })} />
-        <Input aria-label={t('docsEditor.caption')} placeholder={t('docsEditor.caption')} value={String(editor.getAttributes('image').caption ?? '')} onChange={(event) => editor.commands.updateAttributes('image', { caption: event.target.value })} />
-        <Input aria-label={t('docsEditor.width')} type="range" min="64" max="1600" value={Number(editor.getAttributes('image').width ?? 640)} onChange={(event) => editor.commands.updateAttributes('image', { width: Number(event.target.value) })} />
+      {tools.codeBlock && <Input aria-label={t('docsEditor.language')} placeholder={t('docsEditor.language')} value={tools.language} onChange={(event) => editor?.commands.updateAttributes('codeBlock', { language: event.target.value })} />}
+      {tools.image && <>
+        <Input aria-label={t('docsEditor.alt')} placeholder={t('docsEditor.alt')} value={tools.alt} onChange={(event) => editor?.commands.updateAttributes('image', { alt: event.target.value })} />
+        <Input aria-label={t('docsEditor.caption')} placeholder={t('docsEditor.caption')} value={tools.caption} onChange={(event) => editor?.commands.updateAttributes('image', { caption: event.target.value })} />
+        <Input aria-label={t('docsEditor.width')} type="range" min="64" max="1600" value={tools.width} onChange={(event) => editor?.commands.updateAttributes('image', { width: Number(event.target.value) })} />
       </>}
-      {(editor?.isActive('image') || editor?.isActive('file') || editor?.isActive('upload')) && action('remove', () => { editor?.chain().focus().deleteSelection().run(); })}
+      {tools.resource && action('remove', () => { editor?.chain().focus().deleteSelection().run(); })}
     </div>}
     {error && <p role="alert">{error}</p>}
     <EditorContent editor={editor} />
