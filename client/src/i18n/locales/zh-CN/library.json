@@ -291,6 +291,7 @@
     "localDrafts": "本机草稿",
     "recover": "恢复草稿",
     "status": {
+      "new": "输入内容后开始保存",
       "saved": "已保存到 Dovun",
       "local-pending": "正在存入本机",
       "saving": "保存中",

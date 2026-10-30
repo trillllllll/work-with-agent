@@ -30,7 +30,7 @@ describe('local document recovery package', () => {
   it('can retrieve three 100 MiB attachments separately without the recovery ZIP budget', async () => {
     const backing = new DocumentDraftStore(new IDBFactory());
     const blob = new Blob([new Uint8Array(100 * 1024 * 1024)], { type: 'application/octet-stream' });
-    const h = setup({ load: backing.load.bind(backing), listScope: backing.listScope.bind(backing), put: backing.put.bind(backing), putWithFile: backing.putWithFile.bind(backing), adopt: backing.adopt.bind(backing), readFile: async () => blob });
+    const h = setup({ load: backing.load.bind(backing), listScope: backing.listScope.bind(backing), put: backing.put.bind(backing), putWithFile: backing.putWithFile.bind(backing), adopt: backing.adopt.bind(backing), discard: backing.discard.bind(backing), readFile: async () => blob });
     const session = await DocumentSession.create(h.deps, { title: 'Large individual rescue', format: 'richdoc-v1', content: emptyRichDocument() });
     const draft = (await session.recoverySnapshot()).draft;
     draft.uploads = Array.from({ length: 3 }, (_, index) => ({ id: `large-${index}`, nodeId: `large-node-${index}`, fileName: `${index}.bin`, size: blob.size, mimeType: blob.type, kind: 'file', requestId: `pending-${index}`, state: 'queued', durable: true }));
@@ -88,7 +88,7 @@ describe('local document recovery package', () => {
 
   it('exports in-memory attachment bytes when IndexedDB writes fail', async () => {
     const backing = new DocumentDraftStore(new IDBFactory());
-    const h = setup({ load: backing.load.bind(backing), listScope: backing.listScope.bind(backing), readFile: backing.readFile.bind(backing), adopt: backing.adopt.bind(backing), put: async () => { throw new Error('Quota'); }, putWithFile: async () => { throw new Error('Quota'); } });
+    const h = setup({ load: backing.load.bind(backing), listScope: backing.listScope.bind(backing), readFile: backing.readFile.bind(backing), adopt: backing.adopt.bind(backing), discard: backing.discard.bind(backing), put: async () => { throw new Error('Quota'); }, putWithFile: async () => { throw new Error('Quota'); } });
     const session = await DocumentSession.create(h.deps, { title: 'Quota rescue', format: 'richdoc-v1', content: emptyRichDocument() });
     await session.addUpload(new File(['memory-only'], 'a.txt'), { kind: 'file' });
     expect(session.getSnapshot().status).toBe('storage-error');

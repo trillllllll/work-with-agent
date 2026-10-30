@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import { canonicalContent, emptyRichDocument } from '../../../../server/src/domain/document-content.js';
 import { DocumentDraftStore } from './draft-store.js';
-import { DocumentSession, DocumentSessionRegistry, HISTORY_BYTE_LIMIT, HISTORY_GROUP_MAX_MS, HISTORY_PAUSE_MS, HISTORY_STEP_LIMIT, uploadIds, type DocumentSessionDeps } from './session.js';
-import type { DocumentDraftStorage, DocumentReceipt, DocumentTransport, DocumentWrite, ReceiptOutcome, ResourceDocument, WriteOutcome } from './types.js';
+import { DocumentSession, DocumentSessionRegistry, HISTORY_BYTE_LIMIT, HISTORY_GROUP_MAX_MS, HISTORY_PAUSE_MS, HISTORY_STEP_LIMIT, isPristineDraft, uploadIds, type DocumentSessionDeps } from './session.js';
+import type { DocumentDraft, DocumentDraftStorage, DocumentReceipt, DocumentTransport, DocumentWrite, ReceiptOutcome, ResourceDocument, WriteOutcome } from './types.js';
 
 const drain = async () => { for (let i = 0; i < 15; i += 1) await new Promise<void>((resolve) => setImmediate(resolve)); };
 const hash = async (content: unknown) => `hash:${canonicalContent(content)}`;
@@ -376,7 +376,7 @@ describe('document session durability and version protocol', () => {
 
   it('does not claim local success or send data after quota failure', async () => {
     const base = setup();
-    const store: DocumentDraftStorage = { load: base.store.load.bind(base.store), listScope: base.store.listScope.bind(base.store), readFile: base.store.readFile.bind(base.store), adopt: base.store.adopt.bind(base.store), put: async () => { throw new DOMException('quota', 'QuotaExceededError'); }, putWithFile: async () => { throw new DOMException('quota', 'QuotaExceededError'); } };
+    const store: DocumentDraftStorage = { load: base.store.load.bind(base.store), listScope: base.store.listScope.bind(base.store), readFile: base.store.readFile.bind(base.store), adopt: base.store.adopt.bind(base.store), discard: base.store.discard.bind(base.store), put: async () => { throw new DOMException('quota', 'QuotaExceededError'); }, putWithFile: async () => { throw new DOMException('quota', 'QuotaExceededError'); } };
     const h = setup({ store }); const session = await DocumentSession.open(h.deps, resource()); session.edit('must survive in memory');
     await session.flushRemote(); expect(h.sent).toHaveLength(0); expect(session.getSnapshot().status).toBe('storage-error');
   });
@@ -500,5 +500,78 @@ describe('session undo history', () => {
     expect(session.getSnapshot().conflict).not.toBeNull();
     await session.resolveConflict('remote');
     session.undo(); expect(session.getSnapshot().content).toBe('remote draft');
+  });
+});
+
+describe('blank new documents', () => {
+  const blank = { title: 'Untitled', format: 'richdoc-v1' as const, content: emptyRichDocument('start'), blank: true };
+
+  it('creates nothing in Dovun until the body changes, then creates exactly once', async () => {
+    const h = setup(); const session = await DocumentSession.create(h.deps, blank);
+    expect(session.getSnapshot().status).toBe('new');
+    h.clock.advance(10_000); await drain(); await session.flushRemote(); await session.reconnect();
+    expect(h.sent).toHaveLength(0);
+    session.edit({ schemaVersion: 1, blocks: [{ id: 'start', kind: 'paragraph', text: [{ text: 'first words' }] }] });
+    expect(session.getSnapshot().status).not.toBe('new');
+    h.clock.advance(2_000); await drain();
+    expect(h.sent).toHaveLength(1);
+    expect(JSON.parse(h.sent[0].bodyJson)).toMatchObject({ title: 'Untitled', content: { blocks: [{ text: [{ text: 'first words' }] }] } });
+    h.pending[0]({ kind: 'success', receipt: h.receipt(0, 1) }); await drain();
+    h.clock.advance(20_000); await drain();
+    expect(h.sent).toHaveLength(1);
+  });
+
+  it('a title change alone creates the document', async () => {
+    const h = setup(); const session = await DocumentSession.create(h.deps, blank);
+    session.setTitle('Payment plan'); h.clock.advance(2_000); await drain();
+    expect(h.sent).toHaveLength(1);
+    expect(JSON.parse(h.sent[0].bodyJson).title).toBe('Payment plan');
+  });
+
+  it('typing and deleting everything returns to the untouched state', async () => {
+    const h = setup(); const session = await DocumentSession.create(h.deps, { title: 'Untitled', format: 'markdown', content: '', blank: true });
+    session.edit('x'); session.edit('');
+    expect(session.getSnapshot().status === 'new' || session.getSnapshot().status === 'local-pending').toBe(true);
+    h.clock.advance(10_000); await drain();
+    expect(h.sent).toHaveLength(0);
+  });
+
+  it('copies and other non-blank creations still save right away', async () => {
+    const h = setup(); await DocumentSession.create(h.deps, { title: 'Copy', format: 'richdoc-v1', content: emptyRichDocument('copy') });
+    h.clock.advance(2_000); await drain();
+    expect(h.sent).toHaveLength(1);
+  });
+
+  it('discards an untouched draft so it never reappears, even if a closing view flushes afterwards', async () => {
+    const h = setup(); const registry = new DocumentSessionRegistry(h.deps);
+    const session = await registry.create(blank);
+    const localId = session.getSnapshot().localId;
+    expect((await h.store.listScope(h.deps.scopeKey)).map((draft) => draft.localId)).toEqual([localId]);
+    expect(await registry.discardIfPristine(session)).toBe(true);
+    await session.flushLocal(); session.deactivate(); await drain();
+    expect(await h.store.listScope(h.deps.scopeKey)).toEqual([]);
+    expect(registry.get(localId)).toBeUndefined();
+    h.clock.advance(20_000); await drain();
+    expect(h.sent).toHaveLength(0);
+  });
+
+  it('keeps a draft that is no longer blank', async () => {
+    const h = setup(); const registry = new DocumentSessionRegistry(h.deps);
+    const session = await registry.create(blank);
+    session.edit({ schemaVersion: 1, blocks: [{ id: 'start', kind: 'paragraph', text: [{ text: 'keep me' }] }] });
+    expect(await registry.discardIfPristine(session)).toBe(false);
+    await session.flushLocal();
+    expect((await h.store.listScope(h.deps.scopeKey))[0].content).toMatchObject({ blocks: [{ text: [{ text: 'keep me' }] }] });
+  });
+
+  it('recognises untouched blank drafts only', () => {
+    const draft = { blank: true, resourceId: null, pending: null, organizationPending: null, conflict: null, blocked: null, uploads: [], title: 'Untitled', confirmedTitle: 'Untitled', content: emptyRichDocument() } as unknown as DocumentDraft;
+    expect(isPristineDraft(draft)).toBe(true);
+    expect(isPristineDraft({ ...draft, blank: undefined })).toBe(false);
+    expect(isPristineDraft({ ...draft, title: 'Renamed' })).toBe(false);
+    expect(isPristineDraft({ ...draft, resourceId: 'saved' })).toBe(false);
+    expect(isPristineDraft({ ...draft, content: { schemaVersion: 1, blocks: [{ id: 'a', kind: 'paragraph', text: [{ text: 'x' }] }] } })).toBe(false);
+    expect(isPristineDraft({ ...draft, content: { schemaVersion: 1, blocks: [{ id: 'a', kind: 'heading', level: 1, text: [] }] } })).toBe(false);
+    expect(isPristineDraft({ ...draft, content: '' })).toBe(true);
   });
 });

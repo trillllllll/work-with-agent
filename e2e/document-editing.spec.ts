@@ -128,3 +128,52 @@ test('富文档撤销后光标回到改动处，即使撤销前光标已移到�
   await expect(editor.locator('p').first()).toHaveText('第一段ABCX');
   await expect(editor.locator('p').nth(1)).toHaveText('第二段');
 });
+
+async function documentItems(request: APIRequestContext) {
+  return ((await (await request.get(`${api}/api/v1/library/materials`)).json()).data.items as Array<{ kind: string; title: string }>).filter((item) => item.kind === 'document');
+}
+
+test('只点新建文档不写内容，不会在 Dovun 建出空文档，关闭后也不留本机草稿', async ({ page, request }, info) => {
+  await page.goto('/#/library');
+  await page.getByRole('button', { name: '新建文档', exact: true }).click();
+  await expect(richEditor(page)).toBeVisible();
+  await expect(page.getByTestId('document-save-state')).toHaveText('输入内容后开始保存');
+  await page.waitForTimeout(3_000);
+  expect(await documentItems(request)).toEqual([]);
+  // Narrow layouts have no tab strip; there "返回文件列表" is the only way out and is covered below.
+  if (info.project.name !== 'mobile') {
+    await page.getByRole('button', { name: '关闭 未命名文档', exact: true }).click();
+    await expect(page.getByTestId('document-pane')).toHaveCount(0);
+    await page.getByRole('button', { name: '本机草稿', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: '本机草稿', exact: true }).getByText('此设备没有待恢复的文档草稿。', { exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: '新建文档', exact: true }).click();
+    await expect(richEditor(page)).toBeVisible();
+  }
+  // Returning to the list discards an untouched blank document too.
+  await page.getByRole('button', { name: '返回文件列表', exact: true }).click();
+  await expect(page.getByTestId('document-pane')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^已打开/ })).toHaveCount(0);
+  await page.getByRole('button', { name: '本机草稿', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '本机草稿', exact: true }).getByText('此设备没有待恢复的文档草稿。', { exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(2_500);
+  expect(await documentItems(request)).toEqual([]);
+});
+
+test('新建后直接输入标题，回车进入正文，标题和正文一起保存', async ({ page, request }) => {
+  await page.goto('/#/library');
+  await page.getByRole('button', { name: '新建文档', exact: true }).click();
+  const title = page.getByRole('textbox', { name: '文档标题', exact: true });
+  await expect(title).toBeFocused();
+  await page.keyboard.type('支付方案');
+  await page.keyboard.press('Enter');
+  await expect(richEditor(page)).toBeFocused();
+  await page.keyboard.type('第一段正文');
+  await expect(page.getByTestId('document-save-state')).toHaveText('已保存到 Dovun', { timeout: 20_000 });
+  const [item] = await documentItems(request);
+  expect(item?.title).toBe('支付方案');
+  const saved = await bodyOf(request, (item as unknown as { id: string }).id);
+  expect(JSON.stringify(saved.content)).toContain('第一段正文');
+  expect(saved.title).toBe('支付方案');
+});

@@ -30,7 +30,8 @@ async function openLibrary(page: Page) {
   await page.goto('/#/library');
   await expect(page.getByRole('heading', { name: '资料库', exact: true })).toBeVisible();
   const back = page.getByRole('button', { name: '返回文件列表', exact: true });
-  if (await back.isVisible()) await back.click();
+  // Leaving a document first persists its local draft, so the list appears asynchronously.
+  if (await back.isVisible()) { await back.click(); await expect(page.getByTestId('library-list')).toBeVisible(); }
 }
 
 async function readDocument(page: Page) {

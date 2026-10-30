@@ -24,7 +24,7 @@ import { LocalDocumentDrafts } from '@/components/documents/LocalDocumentDrafts.
 import { documentTabs, openDocument, openNewDocument, useOpenDocuments } from '@/components/documents/open.js';
 import { useEditorRuntime } from '@/lib/task-editor-runtime.js';
 import { associateMarkdownImports } from '@/lib/documents/markdown-import.js';
-import { getDocumentRegistry } from '@/lib/documents/runtime.js';
+import { leaveDocumentViews } from '@/components/documents/leave.js';
 import { TaskLinkPicker } from './TaskLinkPicker.js';
 import { clearLibraryFilters, libraryFilters, libraryPageSize, librarySearchParams, patchLibrary, useLibrarySnapshot } from './store.js';
 import { extractionLabel, formatUpdated, kindLabel, materialKinds, normalizeRow, type AnswerResult, type LibraryFolder, type LibraryPreviewTarget, type LibraryRow, type LibraryTag, type MaterialDetail, type Page } from './types.js';
@@ -130,10 +130,9 @@ export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topi
     await takeFiles(await filesFromTransfer(event.dataTransfer));
   };
   const closePreview = async () => {
-    const registry = documentScope ? getDocumentRegistry(documentScope) : null;
-    const sessions = new Set(documents.tabs.filter((tab) => tab.key === documents.active || tab.key === documents.secondary).flatMap((tab) => { const session = registry?.get(tab.resourceId); return session ? [session] : []; }));
+    const visible = documents.tabs.filter((tab) => tab.key === documents.active || tab.key === documents.secondary);
     try {
-      if ((await Promise.all([...sessions].map((session) => session.flushLocal()))).some((saved) => !saved)) { toast.error(t('document.storageFailed')); return; }
+      if (!await leaveDocumentViews(documentScope, visible, visible)) { toast.error(t('document.storageFailed')); return; }
     } catch (error) { toast.error(error instanceof Error ? error.message : t('document.storageFailed')); return; }
     documentTabs.showList(documentScope);
     const selected = snapshot.preview?.materialId ?? '';

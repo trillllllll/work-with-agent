@@ -296,6 +296,7 @@
     "localDrafts": "Local drafts",
     "recover": "Recover draft",
     "status": {
+      "new": "Saves once you start writing",
       "saved": "Saved to Dovun",
       "local-pending": "Saving locally",
       "saving": "Saving",

@@ -52,6 +52,18 @@ export function uploadIds(content: DraftContent) {
   if (typeof content !== 'string') walkBlocks(content.blocks, (block) => { if (block.kind === 'upload') ids.add(block.uploadId); return block; });
   return ids;
 }
+function emptyBody(content: DraftContent) {
+  if (typeof content === 'string') return content === '';
+  if (content.blocks.length !== 1) return false;
+  const [block] = content.blocks;
+  return block.kind === 'paragraph' && Object.keys(block).every((key) => key === 'id' || key === 'kind' || key === 'text')
+    && (block.text ?? []).every((run) => run.text === '' && !run.break);
+}
+/** A "new document" draft the user has not touched yet: nothing exists in Dovun and closing it loses nothing. */
+export function isPristineDraft(record: DocumentDraft) {
+  return record.blank === true && !record.resourceId && !record.pending && !record.organizationPending && !record.conflict && !record.blocked
+    && !record.editorRecovery?.length && record.uploads.length === 0 && record.title === record.confirmedTitle && emptyBody(record.content);
+}
 function insertBlock(content: Exclude<DraftContent, string>, node: UploadBlock, bookmark?: string): DraftContent {
   let inserted = false;
   const insert = (blocks: DraftBlock[]): DraftBlock[] => blocks.flatMap((block) => {
@@ -80,6 +92,7 @@ export class DocumentSession {
   private pendingEditors = new Set<string>();
   private orphanedEditors = new Set<string>();
   private flushingEditors = false;
+  private discarded = false;
   private persistChain: Promise<void> = Promise.resolve();
   private pumping: Promise<void> | null = null;
   private uploading = new Set<string>();
@@ -135,12 +148,13 @@ export class DocumentSession {
       contentSchemaVersion: input.schemaVersion ?? (input.format === 'richdoc-v1' ? 1 : null),
       topicId: input.topicId ?? null, folderId: input.folderId ?? null, content: structuredClone(input.content), relativeReferences: copyReferences(input.relativeReferences),
       base: { revision: 0, content: structuredClone(input.content), contentHash: '' }, readOnly: false,
-      pending: null, conflict: null, blocked: null, uploads: [],
+      pending: null, conflict: null, blocked: null, uploads: [], ...(input.blank ? { blank: true } : {}),
     };
     const session = new DocumentSession(deps, record);
     if (deps.holdBranch) await deps.holdBranch(session.branchKey(record));
     await session.flushLocal();
-    session.scheduleSave();
+    // An untouched blank document starts saving on the first title or body change.
+    if (!session.isPristine()) session.scheduleSave();
     return session;
   }
 
@@ -172,6 +186,7 @@ export class DocumentSession {
   private dirty() { return !this.record.resourceId || this.record.editSeq !== this.record.confirmedSeq; }
   private titleDirty() { return this.record.title !== this.record.confirmedTitle; }
   private changed() { this.record.recordVersion += 1; this.record.updatedAt = this.now(); }
+  isPristine() { return isPristineDraft(this.record); }
 
   getSnapshot = () => this.snapshot;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
@@ -258,6 +273,7 @@ export class DocumentSession {
       : this.durableVersion < record.recordVersion ? 'local-pending'
       : pendingUploads ? 'uploading'
       : record.pending || record.organizationPending ? this.networkUnavailable || !this.canWork() ? 'local-only' : 'saving'
+      : isPristineDraft(record) ? 'new'
       : this.dirty() || this.titleDirty() ? 'local-only' : 'saved';
     // Content snapshots are immutable references. Network status changes must not clone a long document.
     this.snapshot = {
@@ -378,12 +394,14 @@ export class DocumentSession {
     if (!this.cancelCheckpoint) this.cancelCheckpoint = this.schedule(() => {
       this.cancelCheckpoint = undefined;
       void this.flushRemote();
-      if (this.dirty()) this.scheduleSave();
+      if (this.dirty() && !this.isPristine()) this.scheduleSave();
     }, DOCUMENT_CHECKPOINT_MS);
   }
 
   /** Navigation only waits for this local transaction, never for the network. */
   async flushLocal(): Promise<boolean> {
+    // A discarded blank draft must not be written back by a closing view's cleanup.
+    if (this.discarded) return true;
     const editorsFlushed = this.flushEditors();
     this.cancelPersist?.(); this.cancelPersist = undefined;
     const record = structuredClone(this.record);
@@ -407,6 +425,8 @@ export class DocumentSession {
   private async pump() {
     if (!this.canPublish()) return;
     if (!await this.flushLocal() || !this.canPublish()) return;
+    // Opening "new document" alone must not create an empty resource in Dovun.
+    if (this.isPristine()) return;
     if (!this.record.pending && this.record.resourceId && (this.record.organizationPending || this.titleDirty())) {
       await this.saveOrganization();
       if (this.record.organizationPending || !this.canPublish()) return;
@@ -734,6 +754,22 @@ export class DocumentSession {
     this.cancelSave?.(); this.cancelCheckpoint?.(); this.cancelPersist?.();
     void this.flushLocal(); this.emit();
   }
+
+  /**
+   * Drop a blank draft the user never touched. Returns false, and keeps everything, when the
+   * latest editor input makes it non-empty or the local branch cannot be removed.
+   */
+  async discardIfPristine() {
+    if (this.discarded) return true;
+    if (!this.flushEditors() || !this.isPristine() || this.pendingEditors.size) return false;
+    this.active = false;
+    this.cancelSave?.(); this.cancelSave = undefined; this.cancelCheckpoint?.(); this.cancelCheckpoint = undefined; this.cancelPersist?.(); this.cancelPersist = undefined;
+    await this.persistChain.catch(() => {});
+    try { await this.deps.store.discard(structuredClone(this.record)); }
+    catch (error) { this.active = true; this.storageError = failure(error, 'STORAGE_ERROR'); this.emit(); return false; }
+    this.discarded = true; this.emit();
+    return true;
+  }
 }
 
 /** A registry is scoped to one authenticated workspace. Historical versions never enter this map. */
@@ -770,6 +806,12 @@ export class DocumentSessionRegistry {
     const session = await DocumentSession.create(this.sessionDeps(), input);
     this.sessions.set(session.getSnapshot().localId, session);
     return session;
+  }
+  /** Close an untouched blank document without leaving a draft or creating a resource. */
+  async discardIfPristine(session: DocumentSession) {
+    if (!await session.discardIfPristine()) return false;
+    for (const [key, value] of this.sessions) if (value === session) this.sessions.delete(key);
+    return true;
   }
   private sessionDeps(): DocumentSessionDeps {
     return { ...this.deps, onIdentity: (session, resourceId) => { this.sessions.set(resourceId, session); this.deps.onIdentity?.(session, resourceId); } };

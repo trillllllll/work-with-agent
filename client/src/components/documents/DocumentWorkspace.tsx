@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -16,7 +16,8 @@ import { restoreResourceVersion } from '@/lib/documents/restore.js';
 import { uploadIds, type DocumentSession } from '@/lib/documents/session.js';
 import type { DocumentDraft, DocumentSnapshot, DraftContent, ResourceDocument } from '@/lib/documents/types.js';
 import { contentText, emptyRichDocument } from '../../../../server/src/domain/document-content.js';
-import { documentTabs, openDocument, useOpenDocuments, type OpenDocumentTab } from './open.js';
+import { documentTabs, openDocument, takeTitleFocus, useOpenDocuments, type OpenDocumentTab } from './open.js';
+import { leaveDocumentViews } from './leave.js';
 import { DocumentSupplement } from './DocumentSupplement.js';
 import { TextDocumentEditor, type TextViewMode } from './TextDocumentEditor.js';
 import { SaveDocumentAs } from './SaveDocumentAs.js';
@@ -47,7 +48,7 @@ export function DocumentWorkspace({ scopeKey, onOpenTask }: { scopeKey: string; 
     const key = `${scopeKey}:${target.requestId}`;
     let promise = creations.get(key);
     if (!promise) {
-      promise = registry.create({ title: t('document.untitled'), format: target.format, content: target.format === 'richdoc-v1' ? emptyRichDocument(crypto.randomUUID()) : '', topicId: target.topicId, folderId: target.folderId });
+      promise = registry.create({ title: t('document.untitled'), format: target.format, content: target.format === 'richdoc-v1' ? emptyRichDocument(crypto.randomUUID()) : '', topicId: target.topicId, folderId: target.folderId, blank: true });
       creations.set(key, promise);
     }
     let alive = true;
@@ -56,10 +57,9 @@ export function DocumentWorkspace({ scopeKey, onOpenTask }: { scopeKey: string; 
   }, [state.create?.requestId, registry, scopeKey, t]);
   const active = state.tabs.find((tab) => tab.key === state.active);
   const secondary = state.tabs.find((tab) => tab.key === state.secondary);
-  const leaveCurrent = async (action: () => void) => {
-    const sessions = new Set([active, secondary].flatMap((tab) => { const session = tab && registry?.get(tab.resourceId); return session ? [session] : []; }));
+  const leaveCurrent = async (action: () => void, closing: Array<OpenDocumentTab | undefined> = []) => {
     try {
-      if ((await Promise.all([...sessions].map((session) => session.flushLocal()))).some((saved) => !saved)) { toast.error(t('document.storageFailed')); return; }
+      if (!await leaveDocumentViews(scopeKey, [active, secondary], closing)) { toast.error(t('document.storageFailed')); return; }
       action();
     } catch (error) { toast.error(error instanceof Error ? error.message : t('document.storageFailed')); }
   };
@@ -74,11 +74,11 @@ export function DocumentWorkspace({ scopeKey, onOpenTask }: { scopeKey: string; 
   };
   return <section className="document-workspace" data-testid="document-workspace" aria-label={t('document.workspace')}>
     <div className="document-workspace-bar">
-      <Button size="sm" variant="ghost" onClick={() => { void leaveCurrent(() => documentTabs.showList(scopeKey)); }}>{t('document.back')}</Button>
+      <Button size="sm" variant="ghost" onClick={() => { void leaveCurrent(() => documentTabs.showList(scopeKey), [active, secondary]); }}>{t('document.back')}</Button>
       <div className="document-open-tabs" role="tablist" aria-label={t('document.opened')}>
         {state.tabs.map((tab) => <div className="document-tab-wrap" key={tab.key}>
           <Button size="sm" variant="tab" role="tab" tabIndex={state.active === tab.key ? 0 : -1} aria-selected={state.active === tab.key} data-document-tab={tab.key} onKeyDown={(event) => activateByKey(event, tab.key)} onClick={() => { void leaveCurrent(() => documentTabs.activate(scopeKey, tab.key)); }} title={tab.title || t('document.untitled')}><span className="truncate">{tab.title || t('document.untitled')}</span>{tab.revision != null && <span className="library-meta">v{tab.revision}</span>}</Button>
-          <Button size="icon-xs" variant="ghost" aria-label={t('document.closeTab', { title: tab.title || t('document.untitled') })} onClick={() => { void leaveCurrent(() => documentTabs.close(scopeKey, tab.key)); }}>×</Button>
+          <Button size="icon-xs" variant="ghost" aria-label={t('document.closeTab', { title: tab.title || t('document.untitled') })} onClick={() => { void leaveCurrent(() => documentTabs.close(scopeKey, tab.key), [tab]); }}>×</Button>
         </div>)}
       </div>
       <NativeSelect className="document-mobile-tabs" aria-label={t('document.opened')} value={state.active ?? ''} onChange={(event) => { const key = event.target.value; void leaveCurrent(() => documentTabs.activate(scopeKey, key)); }}><option value="" disabled>{t('document.opened')}</option>{state.tabs.map((tab) => <option key={tab.key} value={tab.key}>{tab.title || t('document.untitled')}{tab.revision != null ? ` · v${tab.revision}` : ''}</option>)}</NativeSelect>
@@ -134,8 +134,14 @@ function DocumentSurface({ scopeKey, target, viewId, resource, session, snapshot
   const { t } = useTranslation('library');
   const queryClient = useQueryClient();
   const scroll = useRef<HTMLDivElement>(null);
+  const titleField = useRef<HTMLInputElement>(null);
   const file = useRef<HTMLInputElement>(null);
   const viewKey = `${scopeKey}:${target.key}:${viewId}`;
+  // A freshly created document starts with its title selected, so typing names it right away.
+  useLayoutEffect(() => {
+    if (!session || !takeTitleFocus(scopeKey, target.key)) return;
+    titleField.current?.focus(); titleField.current?.select();
+  }, [scopeKey, target.key, session]);
   const editorBridge = useMemo(() => session ? {
     registerFlush: (flush: () => boolean) => session.registerEditor(viewKey, flush),
     onPendingChange: (pending: boolean) => session.setEditorPending(viewKey, pending),
@@ -220,7 +226,16 @@ function DocumentSurface({ scopeKey, target, viewId, resource, session, snapshot
   };
   return <Surface tone="card" className="document-pane" data-testid="document-pane" onDragOver={(event) => { if (format === 'richdoc-v1' && [...event.dataTransfer.items].some((item) => item.kind === 'file')) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = bodyReadOnly ? 'none' : 'copy'; } }} onDrop={(event) => { if (event.defaultPrevented || format !== 'richdoc-v1') return; const files = [...event.dataTransfer.files]; if (!files.length) return; event.preventDefault(); event.stopPropagation(); if (!bodyReadOnly) insert(files); }}>
     <header className="document-header">
-      <Input variant="inline" className="document-title" aria-label={t('document.title')} value={title} readOnly={readOnly} onFocus={() => setTitleEditing(true)} onChange={(event) => setTitle(event.target.value)} onBlur={() => { void rename(); }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) event.currentTarget.blur(); }} />
+      <Input ref={titleField} variant="inline" className="document-title" aria-label={t('document.title')} value={title} readOnly={readOnly} onFocus={() => setTitleEditing(true)} onChange={(event) => setTitle(event.target.value)} onBlur={() => { void rename(); }} onKeyDown={(event) => {
+        if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+        event.preventDefault();
+        // Enter commits the title (on blur) and continues in the body at its start.
+        const body = scroll.current?.querySelector<HTMLElement>('.document-prose[contenteditable="true"], textarea.document-source:not([readonly])');
+        if (!body) { event.currentTarget.blur(); return; }
+        const editor = (body as HTMLElement & { editor?: { commands: { focus: (position: 'start') => boolean } } }).editor;
+        if (editor) editor.commands.focus('start');
+        else { body.focus(); if (body instanceof HTMLTextAreaElement) body.setSelectionRange(0, 0); }
+      }} />
       <div className="document-meta"><span>{format === 'richdoc-v1' ? t('kind.document') : format === 'markdown' ? 'Markdown' : format === 'text' ? t('kind.text') : resource?.attachment?.fileName ?? t('kind.attachment')}</span><span role="status" aria-live="polite" data-testid="document-save-state">{target.revision != null ? t('document.version', { revision }) : t(`document.status.${snapshot?.status ?? 'read-only'}`)}</span></div>
     </header>
     <div className="document-toolbar">

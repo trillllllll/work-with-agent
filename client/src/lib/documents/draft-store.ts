@@ -122,4 +122,15 @@ export class DocumentDraftStore implements DocumentDraftStorage {
       this.watch(tx, () => undefined, resolve, reject, 'Document branch could not be restored');
     });
   }
+
+  async discard(record: DocumentDraft) {
+    const db = await this.open();
+    return new Promise<void>((resolve, reject) => {
+      const tx = db.transaction([draftStore, fileStore], 'readwrite');
+      const files = tx.objectStore(fileStore);
+      for (const upload of record.uploads) files.delete([...key(record), upload.id]);
+      tx.objectStore(draftStore).delete(key(record));
+      this.watch(tx, () => undefined, resolve, reject, 'Document draft could not be discarded');
+    });
+  }
 }
