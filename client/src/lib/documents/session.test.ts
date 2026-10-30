@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import { canonicalContent, emptyRichDocument } from '../../../../server/src/domain/document-content.js';
 import { DocumentDraftStore } from './draft-store.js';
-import { DocumentSession, DocumentSessionRegistry, uploadIds, type DocumentSessionDeps } from './session.js';
+import { DocumentSession, DocumentSessionRegistry, HISTORY_BYTE_LIMIT, HISTORY_GROUP_MAX_MS, HISTORY_PAUSE_MS, HISTORY_STEP_LIMIT, uploadIds, type DocumentSessionDeps } from './session.js';
 import type { DocumentDraftStorage, DocumentReceipt, DocumentTransport, DocumentWrite, ReceiptOutcome, ResourceDocument, WriteOutcome } from './types.js';
 
 const drain = async () => { for (let i = 0; i < 15; i += 1) await new Promise<void>((resolve) => setImmediate(resolve)); };
@@ -445,5 +445,60 @@ describe('attachment drafts remain tied to the original document session', () =>
     await session.retryUpload(id);
     expect(requests[1]).not.toBe(requests[0]);
     expect(session.getSnapshot().uploads[0]).toMatchObject({ id, state: 'ready', result: { resourceId: 'recovered-file', revision: 1 } });
+  });
+});
+
+describe('session undo history', () => {
+  it('starts a new step only after a typing pause, so continuous typing undoes as one step', async () => {
+    const h = setup(); const session = await DocumentSession.open(h.deps, resource());
+    for (let index = 0; index < 6; index += 1) { session.edit(`typing ${index}`); h.clock.advance(HISTORY_PAUSE_MS - 200); }
+    h.clock.advance(HISTORY_PAUSE_MS); session.edit('after pause');
+    session.undo(); expect(session.getSnapshot().content).toBe('typing 5');
+    session.undo(); expect(session.getSnapshot().content).toBe('base');
+    session.redo(); session.redo(); expect(session.getSnapshot().content).toBe('after pause');
+  });
+
+  it('splits uninterrupted typing into steps of at most the group duration', async () => {
+    const h = setup(); const session = await DocumentSession.open(h.deps, resource());
+    const interval = 300; const boundary = Math.ceil(HISTORY_GROUP_MAX_MS / interval);
+    for (let index = 0; index <= boundary + 3; index += 1) { session.edit(`v${index}`); h.clock.advance(interval); }
+    session.undo(); expect(session.getSnapshot().content).toBe(`v${boundary - 1}`);
+    session.undo(); expect(session.getSnapshot().content).toBe('base');
+  });
+
+  it('keeps at most the step limit', async () => {
+    const h = setup(); const session = await DocumentSession.open(h.deps, resource());
+    const edits = HISTORY_STEP_LIMIT + 20;
+    for (let index = 0; index < edits; index += 1) { session.edit(`step ${index}`); h.clock.advance(HISTORY_PAUSE_MS + 1); }
+    for (let index = 0; index < HISTORY_STEP_LIMIT + 5; index += 1) session.undo();
+    expect(session.getSnapshot().content).toBe(`step ${edits - HISTORY_STEP_LIMIT - 1}`);
+  });
+
+  it('keeps retained history within the byte limit', async () => {
+    const h = setup(); const session = await DocumentSession.open(h.deps, resource());
+    const characters = Math.floor(HISTORY_BYTE_LIMIT * 0.2);
+    for (const letter of ['x', 'y', 'z', 'w']) { session.edit(letter.repeat(characters)); h.clock.advance(HISTORY_PAUSE_MS + 1); }
+    session.undo(); session.undo(); session.undo(); session.undo();
+    expect(session.getSnapshot().content).toBe('y'.repeat(characters));
+  });
+
+  it('drops local history when a remote version replaces the body, so undo cannot revert the other device', async () => {
+    const h = setup(); const session = await DocumentSession.open(h.deps, resource());
+    session.edit('local edit'); const saving = session.flushRemote(); await drain();
+    h.pending[0]({ kind: 'success', receipt: h.receipt(0) }); await saving;
+    session.receiveRemote(resource('doc-1', 'remote text', 3));
+    expect(session.getSnapshot().content).toBe('remote text');
+    session.undo(); expect(session.getSnapshot().content).toBe('remote text');
+    session.edit('remote text, then mine'); h.clock.advance(HISTORY_PAUSE_MS + 1);
+    session.undo(); expect(session.getSnapshot().content).toBe('remote text');
+  });
+
+  it('drops local history after a conflict is resolved', async () => {
+    const h = setup(); const session = await DocumentSession.open(h.deps, resource());
+    session.edit('local draft');
+    session.receiveRemote(resource('doc-1', 'remote draft', 2));
+    expect(session.getSnapshot().conflict).not.toBeNull();
+    await session.resolveConflict('remote');
+    session.undo(); expect(session.getSnapshot().content).toBe('remote draft');
   });
 });

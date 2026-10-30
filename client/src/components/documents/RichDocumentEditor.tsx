@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { externalDocumentTransaction } from './editor-sync.js';
+import { externalDocumentChange } from './editor-sync.js';
 import { Extension, Node, mergeAttributes, type Editor } from '@tiptap/core';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
-import { Plugin } from '@tiptap/pm/state';
+import { Plugin, Selection } from '@tiptap/pm/state';
 import { Fragment, Slice, type Node as PMNode } from '@tiptap/pm/model';
 import { AddMarkStep, RemoveMarkStep, ReplaceStep } from '@tiptap/pm/transform';
 import { useTranslation } from 'react-i18next';
@@ -165,7 +165,7 @@ type RichDocumentEditorProps = {
   onCompositionChange?: (composing: boolean) => void;
   onInsertFiles?: (files: File[], bookmark?: { blockId: string }) => void;
   onInsertExisting?: (bookmark?: { blockId: string }) => void;
-  onUndo?: () => void; onRedo?: () => void;
+  onUndo?: () => boolean | void; onRedo?: () => boolean | void;
   onPendingChange?: (pending: boolean) => void;
   onSerializationFailure?: (editorJson: unknown, message: string) => void;
   registerFlush?: (flush: () => boolean) => () => void;
@@ -187,6 +187,7 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
   const composing = useRef(false); const lastEmitted = useRef(serializedValue);
   const serializeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pending = useRef(false);
+  const historyJump = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null); const [link, setLink] = useState(''); const [error, setError] = useState('');
   const supported = useMemo(() => inspectLocalDocument(value).supported, [value]);
   const editorContent = useMemo(() => supported ? richDocumentToEditor(value) : { type: 'doc', content: [{ type: 'paragraph' }] }, [value, supported]);
@@ -202,7 +203,7 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
       handleKeyDown: (_view, event) => {
         if (composing.current || current.current.readOnly || !(event.metaKey || event.ctrlKey)) return false;
         const action = event.key.toLowerCase() === 'z' ? event.shiftKey ? current.current.onRedo : current.current.onUndo : event.key.toLowerCase() === 'y' ? current.current.onRedo : undefined;
-        if (!action) return false; event.preventDefault(); emit(); action(); return true;
+        if (!action) return false; event.preventDefault(); travel(action); return true;
       },
       handlePaste: (_view, event) => {
         if (current.current.readOnly) return false;
@@ -265,6 +266,11 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
     emit();
     current.current.onInsertFiles?.(files, bookmark());
   }
+  /** Session undo/redo arrives as an external body; remember it so the caret follows the change. */
+  function travel(action: (() => boolean | void) | undefined) {
+    emit(); historyJump.current = Date.now();
+    if (action?.() === false) historyJump.current = 0;
+  }
   function bookmark() {
     const selection = editor?.state.selection.$from;
     const blockId = selection?.depth ? String(selection.node(1).attrs.blockId ?? '') : '';
@@ -285,13 +291,17 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
     return () => { flush(); unregister?.(); if (composing.current) { composing.current = false; current.current.onCompositionChange?.(false); } };
   }, [editor, registerFlush]);
   useEffect(() => {
+    // Only an external body that answers this view's own undo/redo moves the caret; remote bodies keep mapped selections.
+    const jumped = historyJump.current > 0 && Date.now() - historyJump.current < 2_000; historyJump.current = 0;
     if (!editor || editor.isDestroyed || composing.current || !supported) return;
     const serialized = serializedValue; if (serialized === lastEmitted.current) return;
     if (serializeTimer.current && emit()) return;
     const incoming = editor.schema.nodeFromJSON(richDocumentToEditor(value));
-    const transaction = externalDocumentTransaction(editor.state, incoming);
+    const change = externalDocumentChange(editor.state, incoming);
     lastEmitted.current = serialized;
-    if (transaction) editor.view.dispatch(transaction);
+    if (!change) return;
+    if (jumped) change.transaction.setSelection(Selection.near(change.transaction.doc.resolve(change.to), -1)).scrollIntoView();
+    editor.view.dispatch(change.transaction);
   }, [editor, value, supported, serializedValue]);
   if (!supported) return <div className="document-unknown" role="status"><p>{t('docsEditor.unknown')}</p><pre>{JSON.stringify(value, null, 2)}</pre></div>;
   const action = (key: string, run: () => void, active = false) => <Button key={key} type="button" size="sm" variant={active ? 'secondary' : 'ghost'} aria-pressed={active} disabled={!editor || composing.current} onMouseDown={(event) => event.preventDefault()} onClick={run}>{t(`docsEditor.${key}`)}</Button>;
@@ -310,8 +320,8 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
       {action('rule', () => { editor?.chain().focus().setHorizontalRule().run(); })}
       {action('insert', () => fileInput.current?.click())}
       {onInsertExisting && action('reuse', () => { emit(); onInsertExisting(bookmark()); })}
-      {action('undo', () => { emit(); if (onUndo) onUndo(); else editor?.chain().focus().undo().run(); })}
-      {action('redo', () => { emit(); if (onRedo) onRedo(); else editor?.chain().focus().redo().run(); })}
+      {action('undo', () => { if (onUndo) travel(onUndo); else editor?.chain().focus().undo().run(); })}
+      {action('redo', () => { if (onRedo) travel(onRedo); else editor?.chain().focus().redo().run(); })}
       <Input variant="inline" ref={fileInput} className="sr-only" type="file" multiple aria-label={t('docsEditor.insert')} onChange={(event) => { insert([...(event.target.files ?? [])]); event.target.value = ''; }} />
       <Input aria-label={t('docsEditor.link')} placeholder="https://" value={link} onChange={(event) => setLink(event.target.value)} className="document-link-input" />
       <Button type="button" size="sm" variant="ghost" disabled={!safeDocumentLink(link)} onClick={() => { editor?.chain().focus().setLink({ href: link }).run(); setLink(''); }}>{t('docsEditor.applyLink')}</Button>

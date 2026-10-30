@@ -5,8 +5,12 @@ import { relativeAssetPath, type RelativeReference } from './markdown-assets.js'
 export const DOCUMENT_PERSIST_MS = 250;
 export const DOCUMENT_SAVE_MS = 2_000;
 export const DOCUMENT_CHECKPOINT_MS = 10_000;
-const HISTORY_BYTE_LIMIT = 16 * 1024 * 1024;
-const HISTORY_GROUP_MS = 750;
+export const HISTORY_BYTE_LIMIT = 16 * 1024 * 1024;
+export const HISTORY_STEP_LIMIT = 100;
+/** A typing pause of this length starts a new undo step. */
+export const HISTORY_PAUSE_MS = 500;
+/** Uninterrupted typing is still split so one undo never discards more than this much work. */
+export const HISTORY_GROUP_MAX_MS = 5_000;
 
 export type DocumentSessionDeps = {
   store: DocumentDraftStorage;
@@ -85,7 +89,8 @@ export class DocumentSession {
   private cancelCheckpoint?: () => void;
   private undoStack: Array<{ content: DraftContent; bytes: number }> = [];
   private redoStack: Array<{ content: DraftContent; bytes: number }> = [];
-  private lastHistoryAt = -Infinity;
+  private lastEditAt = -Infinity;
+  private groupStartedAt = -Infinity;
   private readonly now: () => number;
   private readonly newId: () => string;
   private readonly schedule: (fn: () => void, ms: number) => () => void;
@@ -269,8 +274,10 @@ export class DocumentSession {
     // Scope expiry blocks publication immediately, but a registered view must still be
     // able to hand its already-typed buffer into this old scope's local draft.
     if ((!this.canWork() && !this.flushingEditors) || this.record.readOnly || this.editorRecoveryIssue() || this.staleBranches.length) return;
-    // Group rapid typing and bound retained document bytes as well as the number of undo steps.
-    if (this.now() - this.lastHistoryAt >= HISTORY_GROUP_MS) { this.pushHistory(this.undoStack, this.record.content); this.lastHistoryAt = this.now(); }
+    // A typing pause starts a new undo step; uninterrupted typing is split at the group duration.
+    const now = this.now();
+    if (now - this.lastEditAt >= HISTORY_PAUSE_MS || now - this.groupStartedAt >= HISTORY_GROUP_MAX_MS) { this.pushHistory(this.undoStack, this.record.content); this.groupStartedAt = now; }
+    this.lastEditAt = now;
     this.redoStack = [];
     this.applyEdit(content);
   }
@@ -308,27 +315,33 @@ export class DocumentSession {
     this.emit();
   }
 
+  /** Returns whether a step was applied, so views only move the caret for a real history change. */
   undo() {
-    if (!this.canWork() || this.record.readOnly || this.editorRecoveryIssue() || !this.undoStack.length) return;
-    const previous = this.undoStack.pop();
+    if (!this.canWork() || this.record.readOnly || this.editorRecoveryIssue() || !this.undoStack.length) return false;
+    const previous = this.undoStack.pop()!;
     this.pushHistory(this.redoStack, this.record.content);
-    if (previous) this.applyEdit(previous.content);
-    this.lastHistoryAt = -Infinity;
+    this.applyEdit(previous.content);
+    this.lastEditAt = -Infinity;
+    return true;
   }
   redo() {
-    if (!this.canWork() || this.record.readOnly || this.editorRecoveryIssue() || !this.redoStack.length) return;
-    const next = this.redoStack.pop();
+    if (!this.canWork() || this.record.readOnly || this.editorRecoveryIssue() || !this.redoStack.length) return false;
+    const next = this.redoStack.pop()!;
     this.pushHistory(this.undoStack, this.record.content);
-    if (next) this.applyEdit(next.content);
-    this.lastHistoryAt = -Infinity;
+    this.applyEdit(next.content);
+    this.lastEditAt = -Infinity;
+    return true;
   }
+
+  /** Local undo steps describe this device's earlier bodies; once another body replaces them they must not be replayed. */
+  private clearHistory() { this.undoStack = []; this.redoStack = []; this.lastEditAt = -Infinity; this.groupStartedAt = -Infinity; }
 
   private pushHistory(stack: Array<{ content: DraftContent; bytes: number }>, content: DraftContent) {
     const bytes = (typeof content === 'string' ? content.length : JSON.stringify(content).length) * 2;
     if (bytes > HISTORY_BYTE_LIMIT) return;
     stack.push({ content, bytes });
     const total = () => [...this.undoStack, ...this.redoStack].reduce((sum, entry) => sum + entry.bytes, 0);
-    while (stack.length > 40 || total() > HISTORY_BYTE_LIMIT) {
+    while (stack.length > HISTORY_STEP_LIMIT || total() > HISTORY_BYTE_LIMIT) {
       if (stack.length > 1) stack.shift();
       else if (this.undoStack !== stack && this.undoStack.length) this.undoStack.shift();
       else if (this.redoStack !== stack && this.redoStack.length) this.redoStack.shift();
@@ -560,7 +573,8 @@ export class DocumentSession {
       this.record.content = structuredClone(remote.content);
       this.record.relativeReferences = copyReferences(remote.relativeReferences);
       this.record.base = documentBase(remote);
-      if (this.record.format !== remote.format || this.record.contentSchemaVersion !== remote.schemaVersion) { this.undoStack = []; this.redoStack = []; this.lastHistoryAt = -Infinity; }
+      // The other device's body replaced this one; replaying local undo steps would silently revert it.
+      this.clearHistory();
       this.record.format = remote.format; this.record.contentSchemaVersion = remote.schemaVersion;
     }
     this.changed(); void this.flushLocal(); this.emit();
@@ -574,7 +588,6 @@ export class DocumentSession {
     this.record.base = documentBase(conflict.remote);
     if (choice === 'remote') {
       this.record.relativeReferences = copyReferences(conflict.remote.relativeReferences);
-      if (this.record.format !== conflict.remote.format || this.record.contentSchemaVersion !== conflict.remote.schemaVersion) { this.undoStack = []; this.redoStack = []; this.lastHistoryAt = -Infinity; }
       this.record.format = conflict.remote.format;
       this.record.contentSchemaVersion = conflict.remote.schemaVersion;
       this.record.readOnly = conflict.remote.readOnly;
@@ -585,6 +598,8 @@ export class DocumentSession {
     this.record.content = structuredClone(content);
     this.record.editSeq += 1;
     if (choice === 'remote') this.record.confirmedSeq = this.record.editSeq;
+    // The resolved body sits on the remote base; earlier local steps no longer describe it.
+    this.clearHistory();
     this.changed();
     if (await this.flushLocal()) this.scheduleSave();
   }
@@ -604,6 +619,7 @@ export class DocumentSession {
     const next = { ...structuredClone(source), sessionId: this.deps.sessionId, recordVersion: source.recordVersion + 1, updatedAt: this.now() };
     await this.deps.store.adopt(next, source, Boolean(this.deps.holdBranch));
     this.record = next; this.durableVersion = next.recordVersion;
+    this.clearHistory();
     this.deps.onIdentity?.(this, next.resourceId ?? next.localId);
   }
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
@@ -8,12 +8,13 @@ import { HighlightedCode, languageForFile } from '@/components/shared/Highlighte
 import { DocumentMarkdown } from './DocumentMarkdown.js';
 import type { RelativeReference } from '@/lib/documents/markdown-assets.js';
 import { textPageOffsets, withinTextEditBudget } from './text-budget.js';
+import { changedRange, revealTextareaCaret } from './caret.js';
 
 export type TextViewMode = 'edit' | 'read' | 'split';
 const carets = new Map<string, { start: number; end: number }>();
 export function TextDocumentEditor({ value, onChange, format, mode, readOnly, onCompositionChange, viewKey, onUndo, onRedo, fileName, references, onResolveMissing }: {
   value: string; onChange: (value: string) => void; format: string; mode: TextViewMode; readOnly: boolean; onCompositionChange: (value: boolean) => void;
-  viewKey: string; onUndo: () => void; onRedo: () => void;
+  viewKey: string; onUndo: () => boolean | void; onRedo: () => boolean | void;
   fileName?: string;
   references?: RelativeReference[]; onResolveMissing?: (path: string) => void;
 }) {
@@ -39,6 +40,17 @@ export function TextDocumentEditor({ value, onChange, format, mode, readOnly, on
   }, [viewKey, mode]);
   useEffect(() => setPage(0), [viewKey]);
   useEffect(() => () => { if (composingRef.current) { composingRef.current = false; compositionCallback.current(false); } }, [viewKey]);
+  // Undo and redo replace the whole value. Put the caret where the text changed, not at the end of the field.
+  const historyBefore = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const before = historyBefore.current; const field = editor.current;
+    if (before === null || !field) return;
+    historyBefore.current = null;
+    if (before === value) return;
+    const { to } = changedRange(before, value);
+    revealTextareaCaret(field, to);
+    carets.set(viewKey, { start: to, end: to });
+  }, [value, viewKey]);
   if (!withinBudget && !composing) return <div className="document-large-reading" data-testid="document-large-text-reading">
     <p className="document-notice" role="status">{t('document.largeTextReadOnly')}</p>
     <div className="flex flex-wrap items-center gap-2 py-2" aria-label={t('document.largePageNavigation')}>
@@ -70,7 +82,13 @@ export function TextDocumentEditor({ value, onChange, format, mode, readOnly, on
     onKeyDown={(event) => {
       if (event.nativeEvent.isComposing) return;
       if ((event.metaKey || event.ctrlKey) && event.key === 'f') { event.preventDefault(); setFindOpen(true); }
-      if (!readOnly && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); event.shiftKey ? onRedo() : onUndo(); }
+      const key = event.key.toLowerCase();
+      const redo = (event.metaKey || event.ctrlKey) && key === 'z' && event.shiftKey || event.ctrlKey && !event.metaKey && key === 'y';
+      const undo = (event.metaKey || event.ctrlKey) && key === 'z' && !event.shiftKey;
+      if (!readOnly && (undo || redo)) {
+        event.preventDefault(); historyBefore.current = event.currentTarget.value;
+        if ((redo ? onRedo() : onUndo()) === false) historyBefore.current = null;
+      }
     }} />;
   return <div className="document-text-editor">
     {mode !== 'read' && <div className="document-text-actions">

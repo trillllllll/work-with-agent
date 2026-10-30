@@ -93,3 +93,38 @@ test('快速输入图片说明和代码语言不丢字，改说明时不重新�
   await expect(page.getByTestId('document-save-state')).toHaveText('已保存到 Dovun', { timeout: 20_000 });
   expect(firstBlock((await bodyOf(request, doc.id)).content, 'codeBlock')!.language).toBe('typescript');
 });
+
+test('Markdown 源码撤销后光标留在改动处，接着输入落在原位置', async ({ page, request }) => {
+  const lines = Array.from({ length: 30 }, (_, index) => `第${index + 1}行`);
+  const doc = await createText(request, '撤销光标.md', lines.join('\n'), 'markdown');
+  await open(page, doc.id);
+  const source = page.locator('textarea.document-source');
+  const lineEnd = lines[0].length;
+  await source.evaluate((field: HTMLTextAreaElement, offset) => { field.focus(); field.setSelectionRange(offset, offset); }, lineEnd);
+  await page.keyboard.type('ABC', { delay: 60 });
+  await page.waitForTimeout(1_000);
+  await page.keyboard.type('DEF', { delay: 60 });
+  await page.waitForTimeout(300);
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(source).toHaveValue([`${lines[0]}ABC`, ...lines.slice(1)].join('\n'));
+  expect(await source.evaluate((field: HTMLTextAreaElement) => [field.selectionStart, field.selectionEnd])).toEqual([lineEnd + 3, lineEnd + 3]);
+  await page.keyboard.type('X');
+  await expect(source).toHaveValue([`${lines[0]}ABCX`, ...lines.slice(1)].join('\n'));
+});
+
+test('富文档撤销后光标回到改动处，即使撤销前光标已移到别处', async ({ page, request }) => {
+  const doc = await createRich(request, '富文档撤销光标', [paragraph('first', '第一段'), paragraph('second', '第二段')]);
+  await open(page, doc.id);
+  const editor = richEditor(page);
+  await editor.locator('p').first().click(); await page.keyboard.press('End');
+  await page.keyboard.type('ABC', { delay: 60 });
+  await page.waitForTimeout(1_000);
+  await page.keyboard.type('DEF', { delay: 60 });
+  await page.waitForTimeout(600);
+  await editor.locator('p').nth(1).click(); await page.keyboard.press('End');
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(editor.locator('p').first()).toHaveText('第一段ABC');
+  await page.keyboard.type('X');
+  await expect(editor.locator('p').first()).toHaveText('第一段ABCX');
+  await expect(editor.locator('p').nth(1)).toHaveText('第二段');
+});

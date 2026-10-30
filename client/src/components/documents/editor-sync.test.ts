@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Schema } from '@tiptap/pm/model';
 import { EditorState, NodeSelection, TextSelection } from '@tiptap/pm/state';
-import { externalDocumentTransaction } from './editor-sync.js';
+import { externalDocumentChange, externalDocumentTransaction } from './editor-sync.js';
 
 const schema = new Schema({ nodes: { doc: { content: 'block+' }, paragraph: { group: 'block', content: 'text*', attrs: { blockId: { default: null } } }, file: { group: 'block', atom: true, attrs: { blockId: { default: null } } }, text: { group: 'inline' } } });
 const paragraph = (id: string, text: string) => schema.node('paragraph', { blockId: id }, text ? schema.text(text) : undefined);
@@ -40,5 +40,17 @@ describe('external document update selection mapping', () => {
     const transaction = externalDocumentTransaction(state, after)!;
     expect(transaction.doc.eq(after)).toBe(true); expect(transaction.selection.from).toBe(6);
     expect(externalDocumentTransaction(state, before)).toBeNull();
+    expect(externalDocumentChange(state, before)).toBeNull();
+  });
+
+  it('reports where the replaced content ends in the incoming document', () => {
+    const first = paragraph('first', 'alpha'), second = paragraph('second', 'bravo');
+    const before = document(first, second);
+    const state = EditorState.create({ schema, doc: before, selection: TextSelection.create(before, first.nodeSize + 2) });
+    const changed = externalDocumentChange(state, document(paragraph('first', 'alphaXYZ'), second))!;
+    expect(changed.transaction.doc.textBetween(1, changed.to)).toBe('alphaXYZ');
+    expect(changed.to).toBe(1 + 'alphaXYZ'.length);
+    const removed = externalDocumentChange(state, document(paragraph('first', 'alp'), second))!;
+    expect(removed.to).toBe(1 + 'alp'.length); expect(removed.from).toBe(removed.to);
   });
 });
