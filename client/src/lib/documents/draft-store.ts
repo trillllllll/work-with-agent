@@ -67,7 +67,8 @@ export class DocumentDraftStore implements DocumentDraftStorage {
   putWithFile(record: DocumentDraft, uploadId: string, file: Blob) { return this.write(record, { uploadId, file }); }
 
   private async write(record: DocumentDraft, attachment?: { uploadId: string; file: Blob }) {
-    const snapshot = structuredClone(record);
+    // Callers pass an isolated snapshot (DocumentSession.snapshotRecord); IndexedDB's put clones it once.
+    const snapshot = record;
     // WebKit can leave a transaction pending while cloning a File backed by an external
     // file handle. Materialize bytes before opening the transaction, preserving atomicity.
     const storedAttachment: StoredAttachment | undefined = attachment

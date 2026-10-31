@@ -46,6 +46,22 @@ test('文本编辑中越过预算时保留输入框，组词结束后也不转�
   expect((await bodyOf(request, resource.id)).content).toBe(content);
 });
 
+test('Markdown 分屏预览在输入停顿后刷新，组词期间不刷新', async ({ page, request }) => {
+  const created = await request.post(`${api}/api/v1/library/resources`, { data: { requestId: randomUUID(), title: '分屏预览', format: 'markdown', content: '# 初稿\n' } });
+  expect(created.ok(), await created.text()).toBe(true);
+  await open(page, (await created.json()).data.id); await page.getByRole('button', { name: '分屏', exact: true }).click();
+  const preview = page.locator('.document-reading'); const field = page.locator('textarea.document-source');
+  await expect(preview.getByRole('heading', { name: '初稿', exact: true })).toBeVisible();
+  await field.fill('# 初稿\n\n## 第二节\n');
+  await expect(preview.getByRole('heading', { name: '第二节', exact: true })).toBeVisible();
+  await field.dispatchEvent('compositionstart', { data: '组' });
+  await field.fill('# 初稿\n\n## 第二节\n\n## 组词中\n');
+  await page.waitForTimeout(600);
+  await expect(preview.getByRole('heading', { name: '组词中', exact: true })).toHaveCount(0);
+  await field.dispatchEvent('compositionend', { data: '组词中' });
+  await expect(preview.getByRole('heading', { name: '组词中', exact: true })).toBeVisible();
+});
+
 test('打开超预算文档先分页阅读，仍要编辑后可写入保存，超过硬上限只读', async ({ page, request }) => {
   const over = defaultEditBudgets.rich.blocks + 20;
   const blocks = Array.from({ length: over }, (_, index) => ({ id: `p-${index}`, kind: 'paragraph', text: [{ text: `段落 ${index}` }] }));

@@ -44,6 +44,10 @@ export type DocumentWrite = {
   content: DocumentContent;
   editSeq: number;
   state: 'prepared' | 'unknown';
+  /** Copies of fields inside bodyJson, so acknowledging a large body does not parse it again. Absent in older drafts. */
+  contentHash?: string;
+  title?: string;
+  relativeReferences?: RelativeReference[];
 };
 export type DocumentFailure = { code: string; message: string; status?: number };
 export type DocumentConflict = { base: DocumentBase; local: DraftContent; localRelativeReferences?: RelativeReference[]; remote: ResourceDocument };

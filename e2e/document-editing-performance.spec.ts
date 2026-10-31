@@ -7,7 +7,8 @@ import { editBudgetOverrideKey } from '../client/src/components/documents/edit-b
  * Editing performance samples (DOCUMENT_EDIT_MEASURE=1). Every sample opens straight into the editor through the
  * development budget override, so documents above the shipped budgets can be measured. Gate per sample, taken
  * from performance-verification.md: keydown-to-next-frame p95 <= 50 ms and no long task over 50 ms while typing
- * or saving. Chromium only, no CPU throttling; numbers are a desktop baseline, not a device guarantee.
+ * or saving. Chromium only, no CPU throttling, garbage collected before each sample; numbers are a desktop baseline,
+ * not a device guarantee.
  */
 const api = process.env.E2E_API_URL!;
 const output = '/tmp/dovun-document-browser-performance';
@@ -70,9 +71,11 @@ test('编辑性能样本：段落、列表、表格与 Markdown', async ({ page,
   const only = process.env.DOCUMENT_MEASURE_ONLY ? new RegExp(process.env.DOCUMENT_MEASURE_ONLY) : null;
   const samples: Sample[] = [
     ...[500, 1000, 2000, 5000, 10000].map((count): Sample => ({ name: `段落 ${count}`, kind: 'paragraphs', units: count, format: 'richdoc-v1', content: paragraphs(count), target: '.document-prose > p' })),
-    ...[250, 500, 1000].map((items): Sample => ({ name: `列表 ${items} 项`, kind: 'list', units: items, format: 'richdoc-v1', content: list(items), target: '.document-prose li p' })),
-    ...[2, 4, 9].map((count): Sample => ({ name: `表格 ${count} 个 20×5`, kind: 'tables', units: count, format: 'richdoc-v1', content: tables(count), target: '.document-prose td p' })),
+    ...[250, 500, 1000, 2500, 5000].map((items): Sample => ({ name: `列表 ${items} 项`, kind: 'list', units: items, format: 'richdoc-v1', content: list(items), target: '.document-prose li p' })),
+    ...[2, 4, 9, 22, 45].map((count): Sample => ({ name: `表格 ${count} 个 20×5`, kind: 'tables', units: count, format: 'richdoc-v1', content: tables(count), target: '.document-prose td p' })),
     ...[256 * 1024, 1024 * 1024].flatMap((bytes) => (['edit', 'split'] as const).map((mode): Sample => ({ name: `Markdown ${bytes / 1024} KiB ${mode === 'split' ? '分屏' : '源码'}`, kind: 'markdown', units: bytes, format: 'markdown', content: markdown(bytes), mode, target: 'textarea.document-source' }))),
+    // Above about 1 MB the split preview shows a size notice instead of rendering, so larger texts are measured in source mode only.
+    ...[2048 * 1024, 4096 * 1024].map((bytes): Sample => ({ name: `Markdown ${bytes / 1024} KiB 源码`, kind: 'markdown', units: bytes, format: 'markdown', content: markdown(bytes), mode: 'edit', target: 'textarea.document-source' })),
   ].filter((sample) => !only || only.test(sample.name));
   const profileFor = new Set((process.env.DOCUMENT_MEASURE_PROFILE ?? '段落 1000').split(',').filter(Boolean));
 
@@ -96,6 +99,9 @@ test('编辑性能样本：段落、列表、表格与 Markdown', async ({ page,
     if (sample.format === 'markdown') await page.locator(sample.target).evaluate((field: HTMLTextAreaElement) => { field.focus(); field.setSelectionRange(0, 0); });
     else { await page.locator(sample.target).first().click(); await page.keyboard.press('End'); }
     await page.waitForTimeout(800);
+    // Collect what the previous sample left behind, so its teardown is not counted against this one.
+    const gc = await page.context().newCDPSession(page); await gc.send('HeapProfiler.collectGarbage'); await gc.detach();
+    await page.waitForTimeout(200);
     const profiling = profileFor.has(sample.name);
     const cdp = profiling ? await page.context().newCDPSession(page) : null;
     if (cdp) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 200 }); await cdp.send('Profiler.start'); }

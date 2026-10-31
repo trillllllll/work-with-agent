@@ -575,3 +575,80 @@ describe('blank new documents', () => {
     expect(isPristineDraft({ ...draft, content: '' })).toBe(true);
   });
 });
+
+describe('shared immutable bodies', () => {
+  const deepFreeze = <T,>(value: T): T => { if (value && typeof value === 'object' && !Object.isFrozen(value)) { Object.freeze(value); for (const child of Object.values(value)) deepFreeze(child); } return value; };
+  const rich = (text: string) => deepFreeze({ schemaVersion: 1 as const, blocks: [{ id: 'initial', kind: 'paragraph' as const, text: [{ text }] }] });
+
+  it('never mutates a body handed to it through edits, undo, uploads, saves and conflicts', async () => {
+    const h = setup(); let finish!: (result: { resourceId: string; revision: number }) => void;
+    h.transport.upload = async () => new Promise((resolve) => { finish = resolve; });
+    const session = await DocumentSession.open(h.deps, { ...resource(), format: 'richdoc-v1', schemaVersion: 1, content: rich('base') });
+    session.edit(rich('first')); h.clock.advance(HISTORY_PAUSE_MS + 1);
+    session.edit(rich('second')); session.undo(); session.redo();
+    await session.addUpload(new File(['x'], 'a.png', { type: 'image/png' }), { kind: 'image', bookmark: 'initial' }); await drain();
+    finish({ resourceId: 'image-1', revision: 1 }); await drain();
+    const saving = session.flushRemote(); await drain();
+    h.pending[0]({ kind: 'success', receipt: h.receipt(0) }); await saving;
+    session.edit(deepFreeze(structuredClone(session.getSnapshot().content)) as never);
+    session.receiveRemote({ ...resource('doc-1', '', 5), format: 'richdoc-v1', schemaVersion: 1, content: rich('remote') as never });
+    session.edit(rich('mine'));
+    await session.resolveConflict('local');
+    expect(session.getSnapshot().content).toMatchObject({ blocks: [{ text: [{ text: 'mine' }] }] });
+  });
+
+  it('persists the state at the moment of flushing, unaffected by later changes', async () => {
+    const h = setup(); const session = await DocumentSession.open(h.deps, resource());
+    session.edit('typed before the flush');
+    const flushing = session.flushLocal();
+    session.edit('typed after the flush'); session.setTitle('Renamed later');
+    await flushing;
+    // The first write is followed by the later scheduled write; the store never holds a mixed record.
+    const [stored] = await h.store.load(h.deps.scopeKey, 'doc-1');
+    expect([['typed before the flush', 'Document'], ['typed after the flush', 'Renamed later']]).toContainEqual([stored.content, stored.title]);
+    await session.flushLocal();
+    expect((await h.store.load(h.deps.scopeKey, 'doc-1'))[0]).toMatchObject({ content: 'typed after the flush', title: 'Renamed later' });
+  });
+
+  it('acknowledges a request stored by an older draft that kept its fields only inside bodyJson', async () => {
+    const h = setup(); const created = await DocumentSession.create(h.deps, { title: 'Older', format: 'text', content: 'old body' });
+    const saving = created.flushRemote(); await drain(); h.pending[0]({ kind: 'unknown' }); await saving;
+    const [draft] = await h.store.listScope(h.deps.scopeKey);
+    const legacy = { ...draft, pending: { ...draft.pending!, contentHash: undefined, title: undefined, relativeReferences: undefined } };
+    delete legacy.pending.contentHash; delete legacy.pending.title; delete legacy.pending.relativeReferences;
+    await h.store.put(legacy);
+    const reloaded = setup({ store: h.store, sessionId: 'window-2', holdBranch: async () => true });
+    reloaded.receipts.set(h.sent[0].requestId, { kind: 'found', receipt: h.receipt(0, 1) });
+    const recovered = await new DocumentSessionRegistry(reloaded.deps).restoreLocalDraft(draft.localId, draft.sessionId);
+    await recovered.flushRemote();
+    expect(recovered.getSnapshot()).toMatchObject({ resourceId: 'created-doc', status: 'saved', title: 'Older' });
+    expect(reloaded.sent).toHaveLength(0);
+  });
+
+  it('ignores a polled copy of the version it already has without draining editor input', async () => {
+    const h = setup(); const session = await DocumentSession.open(h.deps, resource());
+    let drained = 0;
+    session.registerEditor('primary', () => { drained++; return true; });
+    session.receiveRemote(resource());
+    expect(drained).toBe(0);
+    session.receiveRemote(resource('doc-1', 'newer', 2));
+    expect(drained).toBeGreaterThan(0);
+    expect(session.getSnapshot().content).toBe('newer');
+  });
+
+  it('hands back an undone or redone body as a new object that still shares its blocks', async () => {
+    const h = setup();
+    const session = await DocumentSession.open(h.deps, { ...resource(), format: 'richdoc-v1', schemaVersion: 1, content: rich('base') });
+    const opened = session.getSnapshot().content as ReturnType<typeof rich>;
+    // A view hands over its buffered edit and undoes it in the same task, so the restored body is the only one it renders.
+    const typed = rich('typed'); session.edit(typed); session.undo();
+    const undone = session.getSnapshot().content as ReturnType<typeof rich>;
+    expect(undone).not.toBe(opened);
+    expect(undone).toEqual(opened);
+    expect(undone.blocks).toBe(opened.blocks);
+    session.redo();
+    const redone = session.getSnapshot().content as ReturnType<typeof rich>;
+    expect(redone).not.toBe(typed);
+    expect(redone.blocks).toBe(typed.blocks);
+  });
+});

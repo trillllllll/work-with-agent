@@ -13,8 +13,8 @@ import { NativeSelect } from '@/components/ui/native-select.js';
 import { authHeaders } from '@/lib/api.js';
 import { t as translate } from '../../i18n/index.js';
 import { safeDocumentLink } from '../../../../server/src/domain/document-content.js';
-import { inspectLocalDocument, richDocumentToEditor, type LocalRichDocument } from './richdoc-codec.js';
-import { canonicalDocument, richDocumentFromEditorDoc, sameDocument } from '@/lib/documents/content-cache.js';
+import { richDocumentToEditor, type LocalRichDocument } from './richdoc-codec.js';
+import { richDocumentFromEditorDoc, richDocumentSupported, sameDocument } from '@/lib/documents/content-cache.js';
 import { createEditorCore, guardMarkdownRules, insertionFiles } from './editor-core.js';
 import { insertPlainText, markdownPasteSlice } from '@/lib/markdown-paste.js';
 import { readResourceBytes } from './readers/bytes.js';
@@ -187,7 +187,7 @@ type RichDocumentEditorProps = {
 };
 
 export function RichDocumentEditor(props: RichDocumentEditorProps) {
-  const supported = useMemo(() => inspectLocalDocument(props.value).supported, [props.value]);
+  const supported = useMemo(() => richDocumentSupported(props.value), [props.value]);
   if (!supported) return <RichDocumentEditorCore {...props} />;
   return <RichDocumentBoundary value={props.value} paginate={props.paginate === true} onEditAnyway={props.onEditAnyway} renderEditor={(value, paginated) => <RichDocumentEditorCore {...props} key={paginated ? value.blocks[0]?.id ?? 'empty' : 'editing'} value={value} readOnly={props.readOnly || paginated} {...(paginated ? { registerFlush: undefined, onPendingChange: undefined, onCompositionChange: undefined } : {})} />} />;
 }
@@ -195,16 +195,16 @@ export function RichDocumentEditor(props: RichDocumentEditorProps) {
 function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositionChange, onInsertFiles, onInsertExisting, onUndo, onRedo, onPendingChange, onSerializationFailure, registerFlush, sessionKey }: RichDocumentEditorProps) {
   const { t } = useTranslation('library');
   const current = useRef({ value, onChange, readOnly, onCompositionChange, onInsertFiles, onUndo, onRedo, onPendingChange, onSerializationFailure }); current.current = { value, onChange, readOnly, onCompositionChange, onInsertFiles, onUndo, onRedo, onPendingChange, onSerializationFailure };
-  const serializedValue = useMemo(() => canonicalDocument(value), [value]);
-  const composing = useRef(false); const lastEmitted = useRef(serializedValue); const lastContent = useRef<LocalRichDocument | null>(value);
+  const composing = useRef(false); const lastContent = useRef<LocalRichDocument | null>(value);
   const serializeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pending = useRef(false);
   const historyJump = useRef(0);
   const plainPaste = useRef(false);
   const deferredEditable = useRef<boolean | null>(null);
   const fileInput = useRef<HTMLInputElement>(null); const [link, setLink] = useState(''); const [error, setError] = useState('');
-  const supported = useMemo(() => inspectLocalDocument(value).supported, [value]);
-  const editorContent = useMemo(() => supported ? richDocumentToEditor(value) : { type: 'doc', content: [{ type: 'paragraph' }] }, [value, supported]);
+  const supported = useMemo(() => richDocumentSupported(value), [value]);
+  // The editor reads its initial content only when it is created for this view; later bodies arrive as transactions.
+  const editorContent = useMemo(() => supported ? richDocumentToEditor(value) : { type: 'doc', content: [{ type: 'paragraph' }] }, [sessionKey]);
   const editor = useEditor({
     extensions: documentEditorExtensions(),
     content: editorContent,
@@ -283,7 +283,7 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
       // Only top-level blocks whose editor node changed are converted and validated again.
       const content = richDocumentFromEditorDoc(editor.state.doc);
       const changed = !sameDocument(content, lastContent.current);
-      if (changed) { lastContent.current = content; lastEmitted.current = canonicalDocument(content); current.current.onChange(content); }
+      if (changed) { lastContent.current = content; current.current.onChange(content); }
       pending.current = false; current.current.onPendingChange?.(false);
       setError('');
       return changed;
@@ -335,15 +335,17 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
     // Only an external body that answers this view's own undo/redo moves the caret; remote bodies keep mapped selections.
     const jumped = historyJump.current > 0 && Date.now() - historyJump.current < 2_000; historyJump.current = 0;
     if (!editor || editor.isDestroyed || composing.current || !supported) return;
-    const serialized = serializedValue; if (serialized === lastEmitted.current) return;
+    // The session keeps the body this view emitted, so the usual case is the same object.
+    if (value === lastContent.current) return;
+    if (lastContent.current && sameDocument(value, lastContent.current)) { lastContent.current = value; return; }
     if (serializeTimer.current && emit()) return;
     const incoming = editor.schema.nodeFromJSON(richDocumentToEditor(value));
     const change = externalDocumentChange(editor.state, incoming);
-    lastEmitted.current = serialized; lastContent.current = value;
+    lastContent.current = value;
     if (!change) return;
     if (jumped) change.transaction.setSelection(Selection.near(change.transaction.doc.resolve(change.to), -1)).scrollIntoView();
     editor.view.dispatch(change.transaction);
-  }, [editor, value, supported, serializedValue]);
+  }, [editor, value, supported]);
   if (!supported) return <div className="document-unknown" role="status"><p>{t('docsEditor.unknown')}</p><pre>{JSON.stringify(value, null, 2)}</pre></div>;
   const action = (key: string, run: () => void, active = false) => <Button key={key} type="button" size="sm" variant={active ? 'secondary' : 'ghost'} aria-pressed={active} disabled={!editor || composing.current} onMouseDown={(event) => event.preventDefault()} onClick={run}>{t(`docsEditor.${key}`)}</Button>;
   return <div className="document-editor">

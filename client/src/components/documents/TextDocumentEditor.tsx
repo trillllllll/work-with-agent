@@ -36,12 +36,40 @@ export function TextDocumentEditor({ value, onChange, format, mode, readOnly, on
   const pageCount = Math.max(1, offsets.length - 1);
   const currentPage = Math.min(page, pageCount - 1);
   const language = format === 'markdown' ? 'markdown' : languageForFile(fileName);
-  const markdownWithinBudget = value.length <= 1_000_000;
+  // The split preview re-renders the whole document, so it refreshes after a typing pause and never during composition.
+  // The pause grows with the measured cost of the last refresh, so a long text does not stall after every short pause.
+  const previewSource = useRef(value);
+  const previewCost = useRef(0); const previewStarted = useRef(0);
+  const [previewTick, refreshPreview] = useState(0);
+  const [compositionEnded, setCompositionEnded] = useState(0);
+  useEffect(() => {
+    if (mode !== 'split') { previewSource.current = value; return; }
+    if (composingRef.current || previewSource.current === value) return;
+    const delay = Math.min(3_000, Math.max(180, previewCost.current * 4));
+    const timer = window.setTimeout(() => { previewStarted.current = performance.now(); previewSource.current = value; refreshPreview((count) => count + 1); }, delay);
+    return () => window.clearTimeout(timer);
+  }, [value, mode, compositionEnded]);
+  useLayoutEffect(() => {
+    if (!previewStarted.current) return;
+    previewCost.current = performance.now() - previewStarted.current; previewStarted.current = 0;
+  }, [previewTick]);
+  const shown = mode === 'split' ? previewSource.current : value;
+  const markdownWithinBudget = shown.length <= 1_000_000;
+  // Rendering the preview parses the whole text, so it is rebuilt only when the shown text changes,
+  // not on every keystroke in the source. References are compared by value.
+  const resolveMissing = useRef(onResolveMissing); resolveMissing.current = onResolveMissing;
+  const canResolve = Boolean(onResolveMissing) && !readOnly;
+  const referenceKey = JSON.stringify(references ?? []);
+  const preview = useMemo(() => {
+    if (mode === 'edit' || paginate) return null;
+    if (format === 'markdown') return markdownWithinBudget ? <DocumentMarkdown content={shown} references={references} onResolveMissing={canResolve ? (path) => resolveMissing.current?.(path) : undefined} /> : <p role="status">{t('docsReader.budget')}</p>;
+    return language ? <pre className="overflow-auto whitespace-pre font-mono text-sm"><HighlightedCode code={shown} language={language} /></pre> : <BodyText text={shown} />;
+  }, [mode, paginate, format, markdownWithinBudget, shown, referenceKey, canResolve, language, t]);
   useEffect(() => {
     const caret = carets.get(viewKey);
     if (caret) editor.current?.setSelectionRange(Math.min(caret.start, value.length), Math.min(caret.end, value.length));
   }, [viewKey, mode]);
-  useEffect(() => setPage(0), [viewKey]);
+  useEffect(() => { setPage(0); previewCost.current = 0; }, [viewKey]);
   useEffect(() => () => { if (composingRef.current) { composingRef.current = false; compositionCallback.current(false); } }, [viewKey]);
   // Undo and redo replace the whole value. Put the caret where the text changed, not at the end of the field.
   const historyBefore = useRef<string | null>(null);
@@ -87,7 +115,7 @@ export function TextDocumentEditor({ value, onChange, format, mode, readOnly, on
     requestAnimationFrame(() => { field.focus(); field.setSelectionRange(index, index + replacement.length); });
   };
   const text = <Textarea ref={editor} variant="inline" className="document-source" aria-label={t('document.body')} spellCheck={!language} value={value} readOnly={readOnly}
-    onChange={(event) => onChange(event.target.value)} onSelect={(event) => carets.set(viewKey, { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd })} onCompositionStart={() => { composingRef.current = true; onCompositionChange(true); }} onCompositionEnd={(event) => { onChange(event.currentTarget.value); composingRef.current = false; onCompositionChange(false); }}
+    onChange={(event) => onChange(event.target.value)} onSelect={(event) => carets.set(viewKey, { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd })} onCompositionStart={() => { composingRef.current = true; onCompositionChange(true); }} onCompositionEnd={(event) => { onChange(event.currentTarget.value); composingRef.current = false; onCompositionChange(false); setCompositionEnded((count) => count + 1); }}
     onKeyDown={(event) => {
       if (event.nativeEvent.isComposing) return;
       if ((event.metaKey || event.ctrlKey) && event.key === 'f') { event.preventDefault(); setFindOpen(true); }
@@ -114,7 +142,7 @@ export function TextDocumentEditor({ value, onChange, format, mode, readOnly, on
     </div>}
     <div className={`document-text-body ${mode === 'split' ? 'document-text-split' : ''}`}>
       {mode !== 'read' && text}
-      {mode !== 'edit' && <div className="document-reading">{format === 'markdown' ? markdownWithinBudget ? <DocumentMarkdown content={value} references={references} onResolveMissing={readOnly ? undefined : onResolveMissing} /> : <p role="status">{t('docsReader.budget')}</p> : language ? <pre className="overflow-auto whitespace-pre font-mono text-sm"><HighlightedCode code={value} language={language} /></pre> : <BodyText text={value} />}</div>}
+      {mode !== 'edit' && <div className="document-reading">{preview}</div>}
     </div>
   </div>;
 }

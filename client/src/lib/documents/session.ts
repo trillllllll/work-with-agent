@@ -1,6 +1,7 @@
-import { assertWritableContent, canonicalContent, type DocumentContent } from '../../../../server/src/domain/document-content.js';
+import { assertWritableContent, documentByteLimit, type DocumentContent } from '../../../../server/src/domain/document-content.js';
 import type { DocumentDraft, DocumentDraftStorage, DocumentFailure, DocumentReceipt, DocumentSnapshot, DocumentTransport, DocumentUpload, DraftBlock, DraftContent, NewDocument, ResourceDocument, UploadBlock } from './types.js';
 import { relativeAssetPath, type RelativeReference } from './markdown-assets.js';
+import { canonicalDocument, measureDocument, richDocumentSupported } from './content-cache.js';
 
 export const DOCUMENT_PERSIST_MS = 250;
 export const DOCUMENT_SAVE_MS = 2_000;
@@ -29,10 +30,10 @@ export type DocumentSessionDeps = {
 };
 
 async function contentHash(content: DocumentContent) {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalContent(content)));
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalDocument(content)));
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('');
 }
-function equal(left: unknown, right: unknown) { return canonicalContent(left) === canonicalContent(right); }
+function equal(left: unknown, right: unknown) { return left === right || canonicalDocument(left) === canonicalDocument(right); }
 function copyReferences(references?: RelativeReference[]) { return (references ?? []).map(({ path, resourceId, revision }) => ({ path, resourceId, revision })).sort((a, b) => a.path.localeCompare(b.path)); }
 function referenceEqual(left?: RelativeReference[], right?: RelativeReference[]) { return equal(copyReferences(left), copyReferences(right)); }
 function documentBase(resource: ResourceDocument) { return { revision: resource.revision, content: structuredClone(resource.content), contentHash: resource.contentHash, relativeReferences: copyReferences(resource.relativeReferences) }; }
@@ -40,17 +41,63 @@ function failure(error: unknown, code = 'DOCUMENT_ERROR'): DocumentFailure {
   const detail = error as { code?: string; message?: string; status?: number } | null;
   return { code: detail?.code ?? code, message: detail?.message ?? String(error), ...(detail?.status ? { status: detail.status } : {}) };
 }
+/**
+ * A body taken back from undo/redo history gets a new top-level object; its blocks stay shared.
+ * A view can hand over its buffered edit and undo it in the same task, so the only body it renders
+ * is the restored one. Being the very object it rendered before, it would look unchanged and the
+ * view would keep the undone text.
+ */
+function restoredStep(content: DraftContent): DraftContent { return typeof content === 'string' ? content : { ...content }; }
+/** Map blocks depth-first; unchanged blocks and arrays keep their identity so per-block caches stay valid. */
 function walkBlocks(blocks: DraftBlock[], visit: (block: DraftBlock) => DraftBlock | null): DraftBlock[] {
-  return blocks.flatMap((block) => {
+  let changed = false;
+  const result = blocks.flatMap((block) => {
     const next = visit(block);
-    if (!next) return [];
-    return [{ ...next, ...('children' in next && next.children ? { children: walkBlocks(next.children, visit) } : {}) }];
+    if (!next) { changed = true; return []; }
+    if ('children' in next && next.children) {
+      const children = walkBlocks(next.children, visit);
+      if (children !== next.children) { changed = true; return [{ ...next, children }]; }
+    }
+    if (next !== block) changed = true;
+    return [next];
   });
+  return changed ? result : blocks;
+}
+/** Visit every upload placeholder without copying the document. */
+function forEachUpload(content: DraftContent, visit: (block: UploadBlock) => void) {
+  if (typeof content === 'string') return;
+  const pending: DraftBlock[] = [...content.blocks];
+  while (pending.length) {
+    const block = pending.pop()!;
+    if (block.kind === 'upload') visit(block);
+    else if ('children' in block && block.children) pending.push(...block.children);
+  }
 }
 export function uploadIds(content: DraftContent) {
   const ids = new Set<string>();
-  if (typeof content !== 'string') walkBlocks(content.blocks, (block) => { if (block.kind === 'upload') ids.add(block.uploadId); return block; });
+  forEachUpload(content, (block) => ids.add(block.uploadId));
   return ids;
+}
+function hasUploads(content: DraftContent) {
+  if (typeof content === 'string') return false;
+  let found = false;
+  forEachUpload(content, () => { found = true; });
+  return found;
+}
+/** Bytes retained by one undo step: string code units, or JSON characters of a rich body (cached per block). */
+function historyBytes(content: DraftContent) {
+  return (typeof content === 'string' ? content.length : measureDocument(content as never, { blocks: Number.POSITIVE_INFINITY, bytes: Number.POSITIVE_INFINITY }).bytes) * 2;
+}
+/**
+ * assertWritableContent with the rich-document checks served from the per-block caches. When the fast check
+ * fails, the original runs so the error carries the same detail.
+ */
+function assertWritable(format: DocumentDraft['format'], content: DocumentContent, schemaVersion: number | null) {
+  if (format === 'richdoc-v1' && typeof content !== 'string') {
+    const fits = measureDocument(content as never, { blocks: Number.POSITIVE_INFINITY, bytes: Number.POSITIVE_INFINITY }).bytes <= documentByteLimit;
+    if (fits && (schemaVersion === undefined || schemaVersion === null || schemaVersion === 1) && richDocumentSupported(content)) return;
+  }
+  assertWritableContent(format, content, schemaVersion);
 }
 function emptyBody(content: DraftContent) {
   if (typeof content === 'string') return content === '';
@@ -187,6 +234,18 @@ export class DocumentSession {
   private titleDirty() { return this.record.title !== this.record.confirmedTitle; }
   private changed() { this.record.recordVersion += 1; this.record.updatedAt = this.now(); }
   isPristine() { return isPristineDraft(this.record); }
+  /**
+   * A copy for local persistence. Bodies are immutable and shared; everything the session mutates in place
+   * (uploads, pending request state, conflict and organisation fields) is copied.
+   */
+  private snapshotRecord(): DocumentDraft {
+    const { content, base, pending, conflict, editorRecovery, ...rest } = this.record;
+    return {
+      ...structuredClone(rest), content, base: { ...base },
+      pending: pending ? { ...pending } : null, conflict: conflict ? { ...conflict } : null,
+      ...(editorRecovery ? { editorRecovery: [...editorRecovery] } : {}),
+    };
+  }
 
   getSnapshot = () => this.snapshot;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
@@ -259,7 +318,7 @@ export class DocumentSession {
 
   private emit() {
     const record = this.record;
-    const pendingUploads = uploadIds(record.content).size > 0;
+    const pendingUploads = hasUploads(record.content);
     const unpersistedUpload = record.uploads.some((upload) => upload.state !== 'removed' && !upload.durable);
     const editorRecoveryIssue = this.editorRecoveryIssue();
     const status = editorRecoveryIssue ? 'storage-error'
@@ -319,12 +378,18 @@ export class DocumentSession {
     return true;
   }
 
+  /**
+   * Bodies are immutable once handed to the session: views, undo history and local snapshots share them,
+   * so an edit stores the given object instead of copying the whole document.
+   */
   private applyEdit(content: DraftContent) {
-    this.record.content = structuredClone(this.composing ? content : this.withReadyUploads(content));
+    this.record.content = this.composing ? content : this.withReadyUploads(content);
     this.record.editSeq += 1;
-    const present = uploadIds(content);
-    for (const upload of this.record.uploads) if (!present.has(upload.id) && upload.state !== 'ready') upload.state = 'removed';
-    if (this.record.conflict) this.record.conflict.local = structuredClone(content);
+    if (this.record.uploads.length) {
+      const present = uploadIds(content);
+      for (const upload of this.record.uploads) if (!present.has(upload.id) && upload.state !== 'ready') upload.state = 'removed';
+    }
+    if (this.record.conflict) this.record.conflict.local = content;
     this.changed();
     if (!this.cancelPersist) this.cancelPersist = this.schedule(() => { this.cancelPersist = undefined; void this.flushLocal(); }, DOCUMENT_PERSIST_MS);
     this.scheduleSave();
@@ -336,7 +401,7 @@ export class DocumentSession {
     if (!this.canWork() || this.record.readOnly || this.editorRecoveryIssue() || !this.undoStack.length) return false;
     const previous = this.undoStack.pop()!;
     this.pushHistory(this.redoStack, this.record.content);
-    this.applyEdit(previous.content);
+    this.applyEdit(restoredStep(previous.content));
     this.lastEditAt = -Infinity;
     return true;
   }
@@ -344,7 +409,7 @@ export class DocumentSession {
     if (!this.canWork() || this.record.readOnly || this.editorRecoveryIssue() || !this.redoStack.length) return false;
     const next = this.redoStack.pop()!;
     this.pushHistory(this.undoStack, this.record.content);
-    this.applyEdit(next.content);
+    this.applyEdit(restoredStep(next.content));
     this.lastEditAt = -Infinity;
     return true;
   }
@@ -353,7 +418,7 @@ export class DocumentSession {
   private clearHistory() { this.undoStack = []; this.redoStack = []; this.lastEditAt = -Infinity; this.groupStartedAt = -Infinity; }
 
   private pushHistory(stack: Array<{ content: DraftContent; bytes: number }>, content: DraftContent) {
-    const bytes = (typeof content === 'string' ? content.length : JSON.stringify(content).length) * 2;
+    const bytes = historyBytes(content);
     if (bytes > HISTORY_BYTE_LIMIT) return;
     stack.push({ content, bytes });
     const total = () => [...this.undoStack, ...this.redoStack].reduce((sum, entry) => sum + entry.bytes, 0);
@@ -376,7 +441,7 @@ export class DocumentSession {
   }
 
   private withReadyUploads(content: DraftContent): DraftContent {
-    if (typeof content === 'string') return content;
+    if (typeof content === 'string' || !this.record.uploads.some((upload) => upload.result)) return content;
     const results = new Map(this.record.uploads.filter((upload) => upload.result).map((upload) => [upload.id, upload]));
     if (![...uploadIds(content)].some((id) => results.has(id))) return content;
     return { ...content, blocks: walkBlocks(content.blocks, (block) => {
@@ -404,7 +469,7 @@ export class DocumentSession {
     if (this.discarded) return true;
     const editorsFlushed = this.flushEditors();
     this.cancelPersist?.(); this.cancelPersist = undefined;
-    const record = structuredClone(this.record);
+    const record = this.snapshotRecord();
     const run = this.persistChain.catch(() => {}).then(async () => {
       await this.deps.store.put(record);
       this.durableVersion = Math.max(this.durableVersion, record.recordVersion);
@@ -432,18 +497,20 @@ export class DocumentSession {
       if (this.record.organizationPending || !this.canPublish()) return;
     }
     if (!this.record.pending) {
-      if (uploadIds(this.record.content).size || !this.dirty()) return;
+      if (hasUploads(this.record.content) || !this.dirty()) return;
       if (this.record.resourceId && equal(this.record.content, this.record.base.content) && referenceEqual(this.record.relativeReferences, this.record.base.relativeReferences)) {
         this.record.confirmedSeq = this.record.editSeq; this.changed(); await this.flushLocal(); return;
       }
-      const content = structuredClone(this.record.content);
+      // Bodies are immutable, so the request keeps the current object instead of a copy.
+      const content = this.record.content as DocumentContent;
       const relativeReferences = copyReferences(this.record.relativeReferences);
-      try { assertWritableContent(this.record.format, content, this.record.contentSchemaVersion); }
+      try { assertWritable(this.record.format, content, this.record.contentSchemaVersion); }
       catch (error) { this.record.blocked = failure(error, 'INVALID_CONTENT'); this.changed(); await this.flushLocal(); return; }
       const editSeq = this.record.editSeq;
       const requestId = this.newId();
       const hash = await (this.deps.hash ?? contentHash)(content);
       if (!this.canPublish()) return;
+      const creating = !this.record.resourceId;
       this.record.pending = {
         requestId, resourceId: this.record.resourceId, expectedRevision: this.record.base.revision,
         bodyJson: JSON.stringify({
@@ -452,11 +519,12 @@ export class DocumentSession {
           ...(this.record.format === 'markdown' ? { relativeReferences } : {}),
         }),
         content, editSeq, state: 'prepared',
+        contentHash: hash, ...(creating ? { title: this.record.title } : {}), relativeReferences: this.record.format === 'markdown' ? relativeReferences : [],
       };
       this.changed();
       if (!await this.flushLocal() || !this.canPublish()) return;
     }
-    const pending = structuredClone(this.record.pending!);
+    const pending = { ...this.record.pending! };
     if (pending.state === 'unknown') {
       const checked = await this.deps.transport.receipt(pending.requestId).catch(() => ({ kind: 'unknown' as const }));
       if (checked.kind === 'found') { await this.acknowledge(checked.receipt); return; }
@@ -479,16 +547,19 @@ export class DocumentSession {
     if (pending.resourceId && pending.resourceId !== receipt.resourceId) {
       await this.reject({ code: 'INVALID_RECEIPT', message: 'The save receipt belongs to another document.' }); return;
     }
-    const requestedHash = (JSON.parse(pending.bodyJson) as { contentHash: string }).contentHash;
+    // Older drafts kept these fields only inside bodyJson; parse it once for them.
+    let parsed: { contentHash?: string; title?: string; relativeReferences?: RelativeReference[] } | null = null;
+    const body = () => parsed ??= JSON.parse(pending.bodyJson) as { contentHash?: string; title?: string; relativeReferences?: RelativeReference[] };
+    const requestedHash = pending.contentHash ?? body().contentHash;
     if (!receipt.resourceId || !Number.isSafeInteger(receipt.revision) || receipt.revision < 1 || receipt.contentHash !== requestedHash) {
       await this.reject({ code: 'INVALID_RECEIPT', message: 'The save receipt does not match the submitted document.' }); return;
     }
     this.record.resourceId = receipt.resourceId;
     if (!pending.resourceId) {
-      this.record.confirmedTitle = (JSON.parse(pending.bodyJson) as { title: string }).title;
+      this.record.confirmedTitle = pending.title ?? String(body().title ?? '');
       this.record.organizationRevision = receipt.organizationRevision ?? 1;
     }
-    this.record.base = { revision: receipt.revision, content: structuredClone(pending.content), contentHash: receipt.contentHash, relativeReferences: JSON.parse(pending.bodyJson).relativeReferences ?? [] };
+    this.record.base = { revision: receipt.revision, content: pending.content, contentHash: receipt.contentHash, relativeReferences: pending.relativeReferences ?? body().relativeReferences ?? [] };
     this.record.confirmedSeq = pending.editSeq;
     this.record.pending = null;
     this.networkUnavailable = false;
@@ -573,6 +644,10 @@ export class DocumentSession {
 
   receiveRemote(remote: ResourceDocument) {
     if (remote.id !== this.record.resourceId || remote.revision < this.record.base.revision) return;
+    // Polling and change events usually return the version this session already has; nothing to do then,
+    // and no reason to drain the editors' input buffers.
+    if (remote.revision === this.record.base.revision && remote.title === this.record.confirmedTitle
+      && remote.organizationRevision === this.record.organizationRevision && remote.readOnly === this.record.readOnly) return;
     if (!this.flushEditors()) { this.pendingRemote = remote; return; }
     if (this.composing) { this.pendingRemote = remote; return; }
     if (this.titleDirty() && !this.record.organizationPending && remote.organizationRevision > this.record.organizationRevision && remote.title !== this.record.confirmedTitle) {
@@ -657,7 +732,7 @@ export class DocumentSession {
 
   private async persistFile(upload: DocumentUpload, file: Blob) {
     upload.durable = true; this.changed();
-    const snapshot = structuredClone(this.record);
+    const snapshot = this.snapshotRecord();
     const run = this.persistChain.catch(() => {}).then(() => this.deps.store.putWithFile(snapshot, upload.id, file));
     this.persistChain = run;
     try { await run; this.durableVersion = Math.max(this.durableVersion, snapshot.recordVersion); this.storageError = null; this.emit(); return true; }

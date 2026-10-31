@@ -14,8 +14,17 @@ type ConversionRequest = {
 
 export function saveAsFormats(resource: ResourceDocument | undefined): SaveAsFormat[] {
   if (!resource || resource.supported === false) return [];
-  if (resource.format === 'richdoc-v1') return inspectRichDocument(resource.content).supported ? ['markdown', 'text'] : [];
+  if (resource.format === 'richdoc-v1') return inspectedSupported(resource.content) ? ['markdown', 'text'] : [];
   return resource.format === 'text' ? ['markdown'] : resource.format === 'markdown' ? ['text'] : [];
+}
+
+/** The save-as button renders with every editor snapshot; a loaded version is inspected once, not on each render. */
+const inspected = new WeakMap<object, boolean>();
+function inspectedSupported(content: unknown) {
+  if (!content || typeof content !== 'object') return inspectRichDocument(content).supported;
+  let supported = inspected.get(content);
+  if (supported === undefined) { supported = inspectRichDocument(content).supported; inspected.set(content, supported); }
+  return supported;
 }
 
 export function canSaveDocumentAs(resource: ResourceDocument | undefined, snapshot?: DocumentSnapshot) {

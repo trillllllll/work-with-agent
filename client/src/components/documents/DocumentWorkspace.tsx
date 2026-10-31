@@ -23,7 +23,7 @@ import { TextDocumentEditor, type TextViewMode } from './TextDocumentEditor.js';
 import { SaveDocumentAs } from './SaveDocumentAs.js';
 import { withinTextEditBudget } from './text-budget.js';
 import { RichDocumentEditor } from './RichDocumentEditor.js';
-import { measureRichDocument } from './RichDocumentBoundary.js';
+import { measureDocument } from '@/lib/documents/content-cache.js';
 import { editBudgetOverrideKey, editBudgets, overrideEditBudgets } from './edit-budget.js';
 import { ResourceReader, resourceOriginalUrl, saveDocumentBlob } from './ResourceReader.js';
 import { DocumentInfo } from './DocumentInfo.js';
@@ -50,8 +50,9 @@ function documentBudget(format: string, value: DraftContent) {
     return { within, withinHard: within || withinTextEditBudget(value, budgets.textHard) };
   }
   if (format !== 'richdoc-v1') return { within: true, withinHard: true };
-  const within = measureRichDocument(value, budgets.rich).withinBudget;
-  return { within, withinHard: within || measureRichDocument(value, budgets.richHard).withinBudget };
+  // Sizes are cached per block, so measuring on every edit costs only the changed blocks.
+  const within = measureDocument(value, budgets.rich).withinBudget;
+  return { within, withinHard: within || measureDocument(value, budgets.richHard).withinBudget };
 }
 
 /** Edit permission per open session: granted on first sight within budget or by "edit anyway", never revoked by growth. */
@@ -141,7 +142,9 @@ function DocumentPane({ scopeKey, target, viewId, onOpenTask }: { scopeKey: stri
   }, [local, registry, target.resourceId, session, t]);
   const live = session ?? existing;
   const liveSnapshot = useSyncExternalStore(live?.subscribe ?? idleSubscribe, live?.getSnapshot ?? emptySnapshot, live?.getSnapshot ?? emptySnapshot);
-  const query = useQuery({ queryKey: ['library', 'resource', scopeKey, liveSnapshot?.resourceId ?? target.resourceId, target.revision ?? 'latest'], queryFn: () => loadResource(liveSnapshot?.resourceId ?? target.resourceId, target.revision ?? undefined), enabled: !local && !live || Boolean(liveSnapshot?.resourceId), refetchInterval: target.revision == null ? 8000 : false, retry: false });
+  const query = useQuery({ queryKey: ['library', 'resource', scopeKey, liveSnapshot?.resourceId ?? target.resourceId, target.revision ?? 'latest'], queryFn: () => loadResource(liveSnapshot?.resourceId ?? target.resourceId, target.revision ?? undefined), enabled: !local && !live || Boolean(liveSnapshot?.resourceId), refetchInterval: target.revision == null ? 8000 : false, retry: false,
+    // Comparing a whole document body against the previous poll is wasted work; the session compares versions.
+    structuralSharing: false });
   useEffect(() => {
     if (!query.data || target.revision != null) return;
     let alive = true;
