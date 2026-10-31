@@ -3,7 +3,6 @@ import { insertPlainText, markdownPasteSlice, pasteTransaction } from '@/lib/mar
 import { Surface } from '@/components/ui/surface.js';
 import { Modal } from '@/components/ui/modal.js';
 import { Textarea } from '@/components/ui/textarea.js';
-import { Input } from '@/components/ui/input.js';
 import { askAssistant } from '@/lib/assistant-context.js';
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -19,7 +18,8 @@ import { parseDescription, serializeDescription, type DescriptionModel } from '@
 import type { EditorSelectionBookmark } from '@/lib/task-editor-types.js';
 import { AlignedTable, findUploadPosition, MaterialReferenceNode, RawMarkdownNode, TaskImageNode, TaskItemPointerSync, taskImageContent, uploadKey, UploadDecorations } from './description-extensions.js';
 import { Button } from '@/components/ui/button.js';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.js';
+import { FormatButton, FormatMenu, LinkEditor, type FormatMenuItem } from '@/components/shared/format-controls.js';
+import { useTouchInput } from '@/hooks/useTouchInput.js';
 import { cn } from '@/lib/utils.js';
 
 export type DescriptionHandle = {
@@ -414,19 +414,27 @@ type ToolbarProps = { editor: Editor; composing: () => boolean; taskId: string; 
 
 function FormatToolbar({ editor, composing, taskId, onAskSelection }: ToolbarProps) {
   const { t } = useTranslation('tasks');
+  const { t: tf } = useTranslation('editor');
   const [visible, setVisible] = useState(false);
   const [coords, setCoords] = useState<{ top: number; bottom: number; left: number } | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
-  const [linkHref, setLinkHref] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
   const touch = useTouchInput();
+  // While the format menu or the link editor is open, focus has left the editor on purpose.
+  const holding = useRef(false); holding.current = linkOpen || menuOpen;
 
   useEffect(() => {
+    let leaving = 0;
+    const inTools = () => holding.current || Boolean(document.activeElement?.closest('[data-format-tools]'));
+    const hide = () => { setVisible(false); setLinkOpen(false); };
     const update = () => {
+      window.clearTimeout(leaving);
       if (composing()) { setVisible(false); return; }
       const { from, to, empty } = editor.state.selection;
-      if (empty || !editor.isEditable || !editor.view.hasFocus() && !document.activeElement?.closest('[data-format-tools]')) {
-        setVisible(false);
-        setLinkOpen(false);
+      if (empty || !editor.isEditable) { hide(); return; }
+      if (!editor.view.hasFocus() && !inTools()) {
+        // During a blur the next focus target is not known yet; it may be this toolbar's own menu or link editor.
+        leaving = window.setTimeout(() => { if (!editor.view.hasFocus() && !inTools()) hide(); }, 80);
         return;
       }
       try {
@@ -444,19 +452,22 @@ function FormatToolbar({ editor, composing, taskId, onAskSelection }: ToolbarPro
     editor.on('selectionUpdate', update);
     editor.on('transaction', update);
     editor.on('focus', update);
-    editor.on('blur', () => {
-      window.setTimeout(() => {
-        if (document.activeElement?.closest('[data-format-tools]')) return;
-        setVisible(false);
-      }, 80);
-    });
+    editor.on('blur', update);
     update();
     return () => {
+      window.clearTimeout(leaving);
       editor.off('selectionUpdate', update);
       editor.off('transaction', update);
       editor.off('focus', update);
+      editor.off('blur', update);
     };
   }, [editor, composing]);
+  useEffect(() => {
+    if (linkOpen || menuOpen) return;
+    // A closed menu or link editor either hands focus back to the editor or leaves it elsewhere.
+    const timer = window.setTimeout(() => { if (!editor.view.hasFocus() && !document.activeElement?.closest('[data-format-tools]')) setVisible(false); }, 80);
+    return () => window.clearTimeout(timer);
+  }, [linkOpen, menuOpen, editor]);
 
   if (!visible || !coords) return null;
 
@@ -465,7 +476,19 @@ function FormatToolbar({ editor, composing, taskId, onAskSelection }: ToolbarPro
     command();
     editor.view.focus();
   };
-  const currentLink = editor.getAttributes('link').href as string | undefined;
+  const moreItems: FormatMenuItem[] = [
+    { key: 'heading1', label: tf('heading1'), active: editor.isActive('heading', { level: 1 }), onSelect: () => run(() => editor.chain().focus().toggleHeading({ level: 1 }).run()) },
+    { key: 'heading2', label: tf('heading2'), active: editor.isActive('heading', { level: 2 }), onSelect: () => run(() => editor.chain().focus().toggleHeading({ level: 2 }).run()) },
+    { key: 'heading3', label: tf('heading3'), active: editor.isActive('heading', { level: 3 }), onSelect: () => run(() => editor.chain().focus().toggleHeading({ level: 3 }).run()) },
+    { key: 'bulletList', label: tf('bulletList'), active: editor.isActive('bulletList'), onSelect: () => run(() => editor.chain().focus().toggleBulletList().run()) },
+    { key: 'orderedList', label: tf('orderedList'), active: editor.isActive('orderedList'), onSelect: () => run(() => editor.chain().focus().toggleOrderedList().run()) },
+    { key: 'checklist', label: tf('checklist'), active: editor.isActive('taskList'), onSelect: () => run(() => editor.chain().focus().toggleTaskList().run()) },
+    { key: 'quote', label: tf('quote'), active: editor.isActive('blockquote'), onSelect: () => run(() => editor.chain().focus().toggleBlockquote().run()) },
+    { key: 'codeBlock', label: tf('codeBlock'), active: editor.isActive('codeBlock'), onSelect: () => run(() => editor.chain().focus().toggleCodeBlock().run()) },
+    { key: 'table', label: tf('table'), active: editor.isActive('table'), onSelect: () => run(() => editor.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run()) },
+    { key: 'link', label: tf('link'), active: editor.isActive('link'), onSelect: () => setLinkOpen(true) },
+  ];
+  const more = <FormatMenu label={tf('moreFormats')} icon={MoreHorizontal} items={moreItems} triggerClassName={cn(buttonClass, 'task-format-more')} contentClassName="task-format-menu" onOpenChange={setMenuOpen} />;
 
   const bar = <Surface as="div" tone="overlay" className="task-format-toolbar" data-format-tools role="toolbar" aria-label={t('descriptionEditor.format')} style={{ top: 0, left: 0 }} ref={(node) => {
     if (!node) return;
@@ -483,100 +506,25 @@ function FormatToolbar({ editor, composing, taskId, onAskSelection }: ToolbarPro
   }}>
     <Button variant="row" size="bare" type="button" className={cn(buttonClass, 'task-format-ask')} aria-label={t('descriptionEditor.askAi')} onMouseDown={(event) => event.preventDefault()} onClick={() => { const { from, to } = editor.state.selection; const text = editor.state.doc.textBetween(from, to, '\n'); if (onAskSelection) onAskSelection(text); else askAssistant({ kind: 'selection', title: t('descriptionEditor.selectionTitle'), text, taskId, unsaved: true }); }}>{t('descriptionEditor.askAi')}</Button>
     {touch ? <>
-      <ToolbarButton className={buttonClass} label={t('descriptionEditor.bold')} icon={Bold} pressed={editor.isActive('bold')} onClick={() => run(() => editor.chain().focus().toggleBold().run())} />
-      <ToolbarButton className={buttonClass} label={t('descriptionEditor.bulletList')} icon={List} pressed={editor.isActive('bulletList')} onClick={() => run(() => editor.chain().focus().toggleBulletList().run())} />
-      <ToolbarButton className={buttonClass} label={t('descriptionEditor.checklist')} icon={ListTodo} pressed={editor.isActive('taskList')} onClick={() => run(() => editor.chain().focus().toggleTaskList().run())} />
-      <Popover open={linkOpen} onOpenChange={setLinkOpen}>
-        <PopoverTrigger asChild>
-          <Button variant="row" size="bare" type="button" className={cn(buttonClass, 'task-format-more')} aria-label={t('descriptionEditor.moreFormats')} onMouseDown={(event) => event.preventDefault()}><MoreHorizontal className="size-4" aria-hidden /></Button>
-        </PopoverTrigger>
-        <PopoverContent data-format-tools className="task-format-menu w-44" align="start">
-          <MoreFormats editor={editor} onLink={() => { setLinkHref(currentLink ?? ''); setLinkOpen(true); }} />
-        </PopoverContent>
-      </Popover>
+      <FormatButton className={buttonClass} label={tf('bold')} icon={Bold} pressed={editor.isActive('bold')} onClick={() => run(() => editor.chain().focus().toggleBold().run())} />
+      <FormatButton className={buttonClass} label={tf('bulletList')} icon={List} pressed={editor.isActive('bulletList')} onClick={() => run(() => editor.chain().focus().toggleBulletList().run())} />
+      <FormatButton className={buttonClass} label={tf('checklist')} icon={ListTodo} pressed={editor.isActive('taskList')} onClick={() => run(() => editor.chain().focus().toggleTaskList().run())} />
+      {more}
     </> : <>
-      <ToolbarButton className={buttonClass} label={t('descriptionEditor.bold')} icon={Bold} pressed={editor.isActive('bold')} onClick={() => run(() => editor.chain().focus().toggleBold().run())} />
-      <ToolbarButton className={buttonClass} label={t('descriptionEditor.italic')} icon={Italic} pressed={editor.isActive('italic')} onClick={() => run(() => editor.chain().focus().toggleItalic().run())} />
-      <ToolbarButton className={buttonClass} label={t('descriptionEditor.strike')} icon={Strikethrough} pressed={editor.isActive('strike')} onClick={() => run(() => editor.chain().focus().toggleStrike().run())} />
-      <ToolbarButton className={buttonClass} label={t('descriptionEditor.inlineCode')} icon={Code} pressed={editor.isActive('code')} onClick={() => run(() => editor.chain().focus().toggleCode().run())} />
-      <Button variant="row" size="bare" type="button" className={cn(buttonClass, editor.isActive('link') && 'is-active')} aria-label={t('descriptionEditor.link')} aria-pressed={editor.isActive('link')} title={t('descriptionEditor.link')}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={() => { setLinkHref(currentLink ?? ''); setLinkOpen(true); }}>
-        <Link2 className="size-4" aria-hidden />
-      </Button>
-      <Popover open={linkOpen} onOpenChange={setLinkOpen}>
-        <PopoverTrigger asChild>
-          <Button variant="row" size="bare" type="button" className={cn(buttonClass, 'task-format-more')} aria-label={t('descriptionEditor.moreFormats')} onMouseDown={(event) => event.preventDefault()}><MoreHorizontal className="size-4" aria-hidden /></Button>
-        </PopoverTrigger>
-        <PopoverContent data-format-tools className="task-format-menu w-44" align="start">
-          <MoreFormats editor={editor} onLink={() => { setLinkHref(currentLink ?? ''); setLinkOpen(true); }} />
-        </PopoverContent>
-      </Popover>
+      <FormatButton className={buttonClass} label={tf('bold')} icon={Bold} pressed={editor.isActive('bold')} onClick={() => run(() => editor.chain().focus().toggleBold().run())} />
+      <FormatButton className={buttonClass} label={tf('italic')} icon={Italic} pressed={editor.isActive('italic')} onClick={() => run(() => editor.chain().focus().toggleItalic().run())} />
+      <FormatButton className={buttonClass} label={tf('strike')} icon={Strikethrough} pressed={editor.isActive('strike')} onClick={() => run(() => editor.chain().focus().toggleStrike().run())} />
+      <FormatButton className={buttonClass} label={tf('inlineCode')} icon={Code} pressed={editor.isActive('code')} onClick={() => run(() => editor.chain().focus().toggleCode().run())} />
+      <FormatButton className={buttonClass} label={tf('link')} icon={Link2} pressed={editor.isActive('link')} onClick={() => setLinkOpen(true)} />
+      {more}
     </>}
   </Surface>;
 
   return createPortal(<>
     {bar}
-    <LinkPopover editor={editor} open={linkOpen} setOpen={setLinkOpen} href={linkHref} setHref={setLinkHref} />
+    <LinkEditor editor={editor} open={linkOpen} onOpenChange={setLinkOpen} isAllowedUri={isTaskLink} />
   </>, document.body);
 }
 
-function MoreFormats({ editor, onLink }: { editor: Editor; onLink: () => void }) {
-  const { t } = useTranslation('tasks');
-  const item = (label: string, active: boolean, run: () => void) => <Button variant="row" size="bare" type="button" className={cn('task-format-menu-item', active && 'is-active')} aria-pressed={active} onClick={() => { run(); editor.view.focus(); }}>{label}</Button>;
-  return <div className="task-format-menu-list">
-    {item(t('descriptionEditor.heading1'), editor.isActive('heading', { level: 1 }), () => editor.chain().focus().toggleHeading({ level: 1 }).run())}
-    {item(t('descriptionEditor.heading2'), editor.isActive('heading', { level: 2 }), () => editor.chain().focus().toggleHeading({ level: 2 }).run())}
-    {item(t('descriptionEditor.heading3'), editor.isActive('heading', { level: 3 }), () => editor.chain().focus().toggleHeading({ level: 3 }).run())}
-    {item(t('descriptionEditor.bulletList'), editor.isActive('bulletList'), () => editor.chain().focus().toggleBulletList().run())}
-    {item(t('descriptionEditor.orderedList'), editor.isActive('orderedList'), () => editor.chain().focus().toggleOrderedList().run())}
-    {item(t('descriptionEditor.checklist'), editor.isActive('taskList'), () => editor.chain().focus().toggleTaskList().run())}
-    {item(t('descriptionEditor.quote'), editor.isActive('blockquote'), () => editor.chain().focus().toggleBlockquote().run())}
-    {item(t('descriptionEditor.codeBlock'), editor.isActive('codeBlock'), () => editor.chain().focus().toggleCodeBlock().run())}
-    {item(t('descriptionEditor.table'), editor.isActive('table'), () => editor.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run())}
-    {item(t('descriptionEditor.link'), editor.isActive('link'), onLink)}
-  </div>;
-}
-
-function ToolbarButton({ className, label, icon: Icon, pressed, onClick }: { className: string; label: string; icon: typeof Bold; pressed: boolean; onClick: () => void }) {
-  return <Button variant="row" size="bare" type="button" className={cn(className, pressed && 'is-active')} aria-label={label} aria-pressed={pressed} title={label}
-    onMouseDown={(event) => event.preventDefault()}
-    onClick={onClick}>
-    <Icon className="size-4" aria-hidden />
-  </Button>;
-}
-
-function LinkPopover({ editor, open, setOpen, href, setHref }: { editor: Editor; open: boolean; setOpen: (value: boolean) => void; href: string; setHref: (value: string) => void }) {
-  const { t } = useTranslation('tasks');
-  if (!open) return null;
-  const sanitized = /^https?:|mailto:/i.test(href) ? href : '';
-  return <Modal modal={false} motion="none" className="task-link-popover" data-format-tools title={t('descriptionEditor.link')} onClose={() => setOpen(false)} onCloseAutoFocus={event => { event.preventDefault(); editor.commands.focus(); }}>
-    <Input className="task-link-input" aria-label={t('descriptionEditor.linkAddress')} placeholder={t('descriptionEditor.linkPlaceholder')} value={href} onChange={(event) => setHref(event.target.value)} onKeyDown={(event) => {
-      if (event.key === 'Enter') { event.preventDefault(); apply(); }
-      if (event.key === 'Escape') setOpen(false);
-    }} />
-    <div className="task-link-actions">
-      {sanitized && <a className="task-link-action" href={sanitized} target="_blank" rel="noreferrer">{t('descriptionEditor.open')}</a>}
-      <Button variant="row" size="bare" type="button" className="task-link-action" disabled={!sanitized} onClick={() => { editor.chain().focus().extendMarkRange('link').setLink({ href: sanitized }).run(); setOpen(false); }}>{t('descriptionEditor.apply')}</Button>
-      <Button variant="row" size="bare" type="button" className="task-link-action" onClick={() => { editor.chain().focus().extendMarkRange('link').unsetLink().run(); setOpen(false); }}>{t('descriptionEditor.removeLink')}</Button>
-      <Button variant="row" size="bare" type="button" className="task-link-action" onClick={() => setOpen(false)}>{t('shared.cancel')}</Button>
-    </div>
-  </Modal>;
-  function apply() {
-    if (!sanitized) return;
-    editor.chain().focus().extendMarkRange('link').setLink({ href: sanitized }).run();
-    setOpen(false);
-  }
-}
-
-function useTouchInput() {
-  const [touch, setTouch] = useState(false);
-  useEffect(() => {
-    const query = window.matchMedia('(pointer: coarse)');
-    setTouch(query.matches);
-    const listener = (event: MediaQueryListEvent) => setTouch(event.matches);
-    query.addEventListener('change', listener);
-    return () => query.removeEventListener('change', listener);
-  }, []);
-  return touch;
-}
+/** Task descriptions link to web pages and mail addresses only. */
+function isTaskLink(href: string) { return /^(https?:|mailto:)/i.test(href); }

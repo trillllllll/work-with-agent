@@ -163,6 +163,37 @@ test('选中文本浮出格式条，加粗后立即保持格式', async ({ page,
   await expect(detail.locator('strong')).toContainText('hello world');
 });
 
+test('格式条的更多格式和链接编辑可用，链接只接受网页和邮件地址', async ({ page, request }, info) => {
+  const created = await request.post(`${apiUrl}/api/tasks`, { data: { title: '写一句' } });
+  expect(created.ok(), await created.text()).toBe(true);
+  const task = (await created.json()).data as { id: string };
+  if (!info.project.name.includes('mobile')) await page.setViewportSize({ width: 1200, height: 800 });
+  await page.goto('/#/inbox');
+  await page.getByTestId(`task-row-${task.id}`).getByRole('button', { name: '写一句', exact: true }).click();
+  const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
+  const body = detail.getByLabel('详情', { exact: true });
+  await body.fill('hello world');
+  const select = async () => { await body.click(); await page.keyboard.press('End'); await page.keyboard.press('Shift+Home'); };
+  const bar = page.getByRole('toolbar', { name: '格式', exact: true });
+  await select();
+  // The menu and the link editor take focus; the toolbar must stay up until a choice is made.
+  await bar.getByRole('button', { name: '更多格式', exact: true }).click();
+  await page.locator('.format-menu-list').getByRole('button', { name: '标题 2', exact: true }).click();
+  await expect(body.locator('h2')).toContainText('hello world');
+  await select();
+  await bar.getByRole('button', { name: '更多格式', exact: true }).click();
+  await page.locator('.format-menu-list').getByRole('button', { name: '链接', exact: true }).click();
+  const linkEditor = page.getByRole('dialog', { name: '链接', exact: true });
+  const address = linkEditor.getByRole('textbox', { name: '链接地址', exact: true });
+  await address.fill('javascript:alert(1)//mailto:');
+  await expect(linkEditor.getByRole('button', { name: '应用', exact: true })).toBeDisabled();
+  await address.fill('https://example.com');
+  await address.press('Enter');
+  await expect(linkEditor).toHaveCount(0);
+  await expect(body.locator('h2 a')).toHaveAttribute('href', 'https://example.com');
+  await expect(body).toHaveAttribute('data-value', /\[hello world\]\(https:\/\/example\.com\)/);
+});
+
 test('连续输入逐字回显，停顿后才提交一次', async ({ page, request }) => {
   const created = await request.post(`${apiUrl}/api/tasks`, { data: { title: 'T' } });
   expect(created.ok(), await created.text()).toBe(true);
