@@ -19,7 +19,7 @@ test('real requests record context composition; floating controls work in both t
   await page.goto('/#/chat');
   const trigger = page.getByTestId('context-usage-trigger');
   await trigger.click();
-  await expect(page.getByTestId('context-usage-popover')).toContainText('发送消息后');
+  await expect(page.getByTestId('context-usage-popover')).toContainText('发送前预估');
   await page.keyboard.press('Escape');
   await expect(trigger).toBeFocused();
   await page.getByRole('textbox', { name: '向 AI 提问' }).fill('上下文统计验收：查询我的任务，保持数据不变。');
@@ -41,7 +41,7 @@ test('real requests record context composition; floating controls work in both t
     const popup = page.getByTestId('context-usage-popover');
     await expect(popup).toBeVisible();
     await expect(popup).toContainText('工具定义');
-    await expect(popup).toContainText('模型容量未配置');
+    await expect(popup).toContainText('未填写模型上下文上限');
     await expect(popup).toContainText('未返回');
     expect(await popup.evaluate(el => getComputedStyle(el).backgroundImage)).toContain('linear-gradient');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -56,6 +56,23 @@ test('real requests record context composition; floating controls work in both t
   await page.reload();
   await page.getByTestId('context-usage-trigger').click();
   await expect(page.getByTestId('context-usage-popover')).toContainText('第 2 次调用');
+  await page.keyboard.press('Escape');
+  // A configured window shows free space and the share of the limit before sending.
+  await request.patch(`${api}/api/settings`, { data: { baseUrl: 'http://127.0.0.1:4010/v1', model: 'mock-context-no-usage', contextWindow: 128000 } });
+  const before = { messages: await e2eDatabase.message.count(), conversations: await e2eDatabase.conversation.count(), runs: await e2eDatabase.agentRun.count() };
+  const preview = (await (await request.post(`${api}/api/chat/context-preview`, { data: { conversationId, message: '下一条草稿' } })).json()).data;
+  expect(preview.kind).toBe('preview');
+  // History plus the draft must be counted as conversation tokens.
+  expect(preview.categories.find((c: any) => c.id === 'messages').tokens).toBeGreaterThan(20);
+  expect(preview.contextWindow).toBe(128000);
+  expect(preview.categories.reduce((sum: number, c: any) => sum + c.tokens, 0)).toBe(preview.estimatedInputTokens);
+  expect({ messages: await e2eDatabase.message.count(), conversations: await e2eDatabase.conversation.count(), runs: await e2eDatabase.agentRun.count() }).toEqual(before);
+  await page.reload();
+  await page.getByRole('textbox', { name: '向 AI 提问' }).fill('下一条草稿');
+  await expect(page.getByTestId('context-usage-trigger')).toContainText('/ 128.0k');
+  await page.getByTestId('context-usage-trigger').click();
+  await expect(page.getByTestId('context-usage-free')).toContainText('剩余空间');
+  await expect(page.getByTestId('context-usage-popover')).toContainText('占上限');
   await page.keyboard.press('Escape');
   await page.evaluate(() => localStorage.setItem('dovun.language', 'en'));
   await page.reload();

@@ -5,7 +5,9 @@ import { ESTIMATOR, HISTORY_TOKEN_BUDGET, isBackground, messageTokens, messagesT
 export type ContextCategory = 'messages' | 'tools' | 'system' | 'skills' | 'manual' | 'work' | 'summary';
 export type ContextStats = {
   schemaVersion: 1; runId: string; round: number; recordedAt: string; estimator: string;
-  estimatedInputTokens: number; estimatedOutputTokens: number; contextWindow: null; historyBudget: number; historyOverBudget: boolean;
+  estimatedInputTokens: number; estimatedOutputTokens: number; contextWindow: number | null; historyBudget: number; historyOverBudget: boolean;
+  /** 'run' = recorded before a real model call; 'preview' = pre-send estimate, nothing persisted. */
+  kind?: 'run' | 'preview';
   categories: Array<{ id: ContextCategory; tokens: number }>;
   tools: Array<{ name: string; tokens: number }>; loadedGroups: string[];
   baseline: { estimatedInputTokens: number; toolTokens: number; note: 'same-messages-full-tools' };
@@ -15,7 +17,7 @@ export type ContextStats = {
   durationMs: number;
 };
 
-export function buildContextStats(input: { runId: string; round: number; messages: ModelMessage[]; tools: ModelToolDefinition[]; fullTools: ModelToolDefinition[]; loadedGroups: string[]; summaryCalls?: SummaryMetric[] }): ContextStats {
+export function buildContextStats(input: { runId: string; round: number; messages: ModelMessage[]; tools: ModelToolDefinition[]; fullTools: ModelToolDefinition[]; loadedGroups: string[]; summaryCalls?: SummaryMetric[]; contextWindow?: number | null; kind?: 'run' | 'preview' }): ContextStats {
   const counts: Record<ContextCategory, number> = { messages: 0, tools: 0, system: 0, skills: 0, manual: 0, work: 0, summary: 0 };
   for (const message of input.messages) {
     if (message.role !== 'system') { counts[isBackground(message) ? 'summary' : 'messages'] += messageTokens(message); continue; }
@@ -36,7 +38,7 @@ export function buildContextStats(input: { runId: string; round: number; message
   const full = textTokens(JSON.stringify(input.fullTools));
   return {
     schemaVersion: 1, runId: input.runId, round: input.round, recordedAt: new Date().toISOString(), estimator: ESTIMATOR,
-    estimatedInputTokens, estimatedOutputTokens: 0, contextWindow: null, historyBudget: HISTORY_TOKEN_BUDGET,
+    estimatedInputTokens, estimatedOutputTokens: 0, contextWindow: input.contextWindow ?? null, kind: input.kind ?? 'run', historyBudget: HISTORY_TOKEN_BUDGET,
     historyOverBudget: messagesTokens(input.messages.filter(m => m.role !== 'system')) > HISTORY_TOKEN_BUDGET,
     categories: Object.entries(counts).map(([id, tokens]) => ({ id: id as ContextCategory, tokens })), tools, loadedGroups: input.loadedGroups,
     baseline: { estimatedInputTokens: estimatedInputTokens - counts.tools + full, toolTokens: full, note: 'same-messages-full-tools' },

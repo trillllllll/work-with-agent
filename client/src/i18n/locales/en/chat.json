@@ -532,8 +532,19 @@
     "open": "View context usage",
     "title": "Context usage",
     "shortTitle": "Context",
-    "empty": "Send a message to see the latest model request. Older conversations without recorded statistics show no invented data.",
+    "empty": "Estimating the next request. Older conversations without recorded statistics show no invented data.",
     "latest": "Latest request · Call {{round}} · Estimated tokens",
+    "preview": "Before sending · Includes current draft · Estimated tokens",
+    "ofWindow": "{{percent}}% of limit",
+    "badgeTitle": "View context usage · {{percent}}% of limit used",
+    "compositionWindow": "Context blocks as a share of the model limit; empty space is free",
+    "free": "Free space",
+    "setWindow": "Set the limit",
+    "previewHint": "This is the first request of the next send; tool calls during the run add more.",
+    "windowHigh": "Over 80% of the limit. Earlier turns will rely more on summaries. Start a new conversation or attach less.",
+    "windowFull": "The estimate reaches or exceeds the model limit and the provider may reject the request. Start a new conversation or attach less.",
+    "lastRunTotals": "Previous run · {{count}} model requests",
+    "lastRequest": "Latest request · Call {{round}}",
     "composition": "Context composition as a share of this estimated input",
     "categories": {
       "messages": "Conversation & tool results",
@@ -544,7 +555,7 @@
       "work": "Work context",
       "summary": "History summary"
     },
-    "estimateHint": "Blocks are text estimates, not billed usage. Model capacity is unknown; free space and capacity percentages are unavailable.",
+    "estimateHint": "Blocks are text estimates, not billed usage. No context limit is set for the model, so free space is unavailable.",
     "overBudget": "The current request and tool chain exceed the history budget. The current request was preserved without silent truncation.",
     "toolDetails": "Loaded tools ({{count}})",
     "runTotals": "This run · {{count}} model requests",
@@ -554,7 +565,8 @@
     "estimatedTotal": "Total estimated input tokens",
     "summaries": "Summary requests included",
     "unknown": "Not reported",
-    "partial": "Provider usage is pending or incomplete. Known values may cover only part of this run. Totals include tool-loading and summary requests."
+    "partial": "Provider usage is pending or incomplete. Known values may cover only part of this run. Totals include tool-loading and summary requests.",
+    "estimateHintWindow": "Blocks are text estimates, not billed usage. The limit comes from model settings; the model tokenizer may count differently."
   },
   "reasoning": {
     "active": "Thinking",

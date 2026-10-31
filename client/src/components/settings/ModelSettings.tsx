@@ -32,18 +32,21 @@ export function ModelSettings() {
   // null follows server settings; even an empty edited value remains a local draft.
   const [baseUrlDraft, setBaseUrlDraft] = useState<string | null>(null);
   const [modelDraft, setModelDraft] = useState<string | null>(null);
+  const [windowDraft, setWindowDraft] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState('');
   const [clearKeyConfirmation, setClearKeyConfirmation] = useState(false);
   const settingsQuery = useSettingsQuery();
   const baseUrl = baseUrlDraft ?? settingsQuery.data?.baseUrl ?? '';
   const model = modelDraft ?? settingsQuery.data?.model ?? '';
-  const save = useMutation<Settings, Error, { baseUrl: string; model: string; apiKey: string }>({
-    mutationFn: (submitted) => api('/api/settings', { method: 'PATCH', body: JSON.stringify({ baseUrl: submitted.baseUrl, model: submitted.model, ...(submitted.apiKey.trim() ? { apiKey: submitted.apiKey.trim() } : {}) }) }),
+  const contextWindow = windowDraft ?? (settingsQuery.data?.contextWindow ? String(settingsQuery.data.contextWindow) : '');
+  const save = useMutation<Settings, Error, { baseUrl: string; model: string; apiKey: string; contextWindow: string }>({
+    mutationFn: (submitted) => api('/api/settings', { method: 'PATCH', body: JSON.stringify({ baseUrl: submitted.baseUrl, model: submitted.model, contextWindow: submitted.contextWindow.trim() ? Number(submitted.contextWindow) : null, ...(submitted.apiKey.trim() ? { apiKey: submitted.apiKey.trim() } : {}) }) }),
     onSuccess: (data, submitted) => {
       queryClient.setQueryData(['settings'], data);
       // A slow connection test must not consume edits made after this submission.
       setBaseUrlDraft(current => current === submitted.baseUrl ? null : current);
       setModelDraft(current => current === submitted.model ? null : current);
+      setWindowDraft(current => current === submitted.contextWindow ? null : current);
       setApiKey(current => current === submitted.apiKey ? '' : current);
       toast.success(t('modelSettings.saved'));
     },
@@ -68,7 +71,7 @@ export function ModelSettings() {
       ) : settingsQuery.isError ? (
         <SettingsLoadError error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} />
       ) : (
-        <form className="mt-4" onSubmit={(event) => { event.preventDefault(); save.mutate({ baseUrl, model, apiKey }); }}>
+        <form className="mt-4" onSubmit={(event) => { event.preventDefault(); save.mutate({ baseUrl, model, apiKey, contextWindow }); }}>
           <div className="mb-4">
             <Label htmlFor="settings-base-url">{t('modelSettings.baseUrl')}</Label>
             <Input id="settings-base-url" required value={baseUrl} onChange={(event) => setBaseUrlDraft(event.target.value)} placeholder="https://api.openai.com/v1" />
@@ -76,6 +79,11 @@ export function ModelSettings() {
           <div className="mb-4">
             <Label htmlFor="settings-model">{t('modelSettings.model')}</Label>
             <Input id="settings-model" required value={model} onChange={(event) => setModelDraft(event.target.value)} placeholder="gpt-4o-mini" />
+          </div>
+          <div className="mb-4">
+            <Label htmlFor="settings-context-window">{t('modelSettings.contextWindow')}</Label>
+            <Input id="settings-context-window" type="number" inputMode="numeric" min={1024} max={10000000} step={1} value={contextWindow} onChange={(event) => setWindowDraft(event.target.value)} placeholder={t('modelSettings.contextWindowPlaceholder')} aria-describedby="settings-context-window-hint" />
+            <p id="settings-context-window-hint" className="mt-1.5 text-xs text-muted-foreground">{t('modelSettings.contextWindowHint')}</p>
           </div>
           <div className="mb-4">
             <Label htmlFor="settings-api-key">{t('modelSettings.apiKey')}</Label>

@@ -423,6 +423,29 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     },
   });
 
+  const buildRequestContext = (reference: typeof referencedApproval) => {
+    const requestContext = structuredClone(contextRef.current ?? buildChatContext({ page: view, topicId: selectedTopicId, taskId, materialId: view === 'library' ? library.preview?.materialId ?? null : null, filters, sort, includeArchived, today }));
+    requestContext.referencedApprovalId = reference?.id ?? null;
+    return requestContext;
+  };
+  // Pre-send estimate of the next request (draft + history + tools). Read-only on the server;
+  // debounced while typing and refreshed after each run so it reflects the next send.
+  const [contextPreview, setContextPreview] = useState<ContextUsage | null>(null);
+  const previewSeq = useRef(0);
+  const previewKey = JSON.stringify([input, conversationId, identityId, webSearchEnabled, referencedApproval?.id ?? null, messages.length, context ?? null]);
+  useEffect(() => {
+    const seq = ++previewSeq.current;
+    // A preview from before this run is stale; fall back to the run's own stats until a fresh one arrives.
+    if (busy) { setContextPreview(null); return; }
+    const timer = setTimeout(() => {
+      const body = { conversationId: conversationRef.current || undefined, identityId: identityIdRef.current, message: inputRef.current, webSearchEnabled: webSearchEnabledRef.current, context: buildRequestContext(referencedApproval) };
+      api<ContextUsage>('/api/chat/context-preview', { method: 'POST', body: JSON.stringify(body) })
+        .then((stats) => { if (seq === previewSeq.current) setContextPreview(stats); })
+        .catch(() => { if (seq === previewSeq.current) setContextPreview(null); });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [busy, previewKey]);
+
   const send = async (event: FormEvent) => {
     event.preventDefault();
     const message = input.trim();
@@ -430,8 +453,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     if (!scopeCurrent() || !message || busyRef.current || mutatingRef.current) return;
     if (pendingRequestKey.current) { setInterrupted(true); onErrorRef.current(tRef.current('errors.pendingRequest')); return; }
     const requestKey = crypto.randomUUID();
-    const requestContext = structuredClone(contextRef.current ?? buildChatContext({ page: view, topicId: selectedTopicId, taskId, materialId: view === 'library' ? library.preview?.materialId ?? null : null, filters, sort, includeArchived, today }));
-    requestContext.referencedApprovalId = reference?.id ?? null;
+    const requestContext = buildRequestContext(reference);
     const requestBody = { conversationId: conversationRef.current || undefined, identityId: identityIdRef.current, message, requestKey, context: requestContext };
     // Store the exact body before sending. Replays must retain both the key and its original context.
     const storedBody = JSON.stringify(requestBody);
@@ -775,5 +797,5 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     setPausedRun(null);
   };
 
-  return { draftStorageFailed, hasLegacyPending:chatStorage.hasLegacyPending(), legacyPendingMessage:chatStorage.legacyPending(), activeRunId: busy ? activeRunId.current : undefined, contextStats, stop, stopping, switchIdentity, switchingBlocked, selectConversation, addMaterial, context, pinned: Boolean(pinnedContext), togglePin: () => setPinnedContext((current) => current ? null : structuredClone(pageContext ?? null)), attachments, removeAttachment: (id: string) => setAttachments((current) => current.filter((item) => item.id !== id)), conversationId, selectedTopicId, messages, approvals, busy, interrupted, input, setInput, sendSeq, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference: () => setReferencedApproval(null), showRepreview, webSearchEnabled, setWebSearch };
+  return { draftStorageFailed, hasLegacyPending:chatStorage.hasLegacyPending(), legacyPendingMessage:chatStorage.legacyPending(), activeRunId: busy ? activeRunId.current : undefined, contextStats, contextPreview, stop, stopping, switchIdentity, switchingBlocked, selectConversation, addMaterial, context, pinned: Boolean(pinnedContext), togglePin: () => setPinnedContext((current) => current ? null : structuredClone(pageContext ?? null)), attachments, removeAttachment: (id: string) => setAttachments((current) => current.filter((item) => item.id !== id)), conversationId, selectedTopicId, messages, approvals, busy, interrupted, input, setInput, sendSeq, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference: () => setReferencedApproval(null), showRepreview, webSearchEnabled, setWebSearch };
 }

@@ -13,6 +13,7 @@ import { clearManual, cliSettings, discoverCli, discoverClis, isCliProvider, sav
 import { TopicService, TaskService, TagService, ChangeService } from './application/workspace.js';
 import { listPage } from './application/change-list.js';
 import { AgentService } from './agent.js';
+import { previewChatContext } from './agent/runs.js';
 import { securityRouter, connectionRouter, identityMiddleware, ownerMiddleware, getActor, corsOptions } from './application/security.js';
 import { mountMcp } from './mcp/http.js';
 import { commandsRouter } from './application/commands.js';
@@ -248,7 +249,7 @@ app.delete('/api/settings/cli/:provider', async (req, res, next) => {
     send(res, await clearManual(provider));
   } catch (error) { next(error); }
 });
-const settingsBody = z.object({ baseUrl: z.string().trim().min(1), model: z.string().trim().min(1), apiKey: z.string().optional() });app.patch('/api/settings', schema(settingsBody), async (req, res, next) => {
+const settingsBody = z.object({ baseUrl: z.string().trim().min(1), model: z.string().trim().min(1), apiKey: z.string().optional(), contextWindow: z.number().int().min(0).nullable().optional() });app.patch('/api/settings', schema(settingsBody), async (req, res, next) => {
   try { send(res, { ...await settings.save(req.body, (config) => agent.testConnection(config)), cli: await cliSettings() }); } catch (error) { next(error); }
 });
 app.get('/api/settings/image-search', async (_req, res, next) => { try { send(res, await imageSearchSettings()); } catch (error) { next(error); } });
@@ -309,6 +310,17 @@ const conversationPatchBody = z.object({
 const sse = (res: Response, event: string, data: unknown) => {
   if (!res.destroyed && !res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(translatePayload(data, res.locals.locale))}\n\n`);
 };
+const contextPreviewBody = z.object({
+  conversationId: z.string().min(1).optional(),
+  identityId: z.enum(['work', 'study']).optional(),
+  message: z.string().max(200_000).optional(),
+  webSearchEnabled: z.boolean().optional(),
+  context: z.unknown().optional(),
+});
+// Read-only pre-send estimate for the composer; never creates a conversation or run.
+app.post('/api/chat/context-preview', schema(contextPreviewBody), async (req, res, next) => {
+  try { send(res, await previewChatContext(req.body)); } catch (error) { next(error); }
+});
 app.post('/api/chat', schema(chatBody), async (req, res) => {
   res.status(200).set({ 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
   res.flushHeaders?.();

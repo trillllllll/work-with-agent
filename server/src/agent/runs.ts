@@ -18,7 +18,8 @@ import type { ToolCall } from '../application/workspace.js';
 import { DomainError } from '../domain/task.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { enabledSkillCatalog } from '../application/skills.js';
-import { assembleRunMessages } from './assemble.js';
+import { SettingsService } from '../application/settings.js';
+import { assembleRunMessages, assemblePreviewMessages } from './assemble.js';
 import { buildContextStats, contextTotals, type ContextStats } from './context-stats.js';
 import { packModelMessages, textTokens } from './context-budget.js';
 import { initialToolGroups, toolGroupNames, toolGroupSchema, toolsForGroups, loadedFamilies, loadToolsInput, readSourceInput, mediaInstructionsFor, scopeGroupsFor, isGroupAllowedFor, type ToolGroup } from './tool-loading.js';
@@ -41,6 +42,8 @@ import { currentLocale } from '../i18n/index.js';
 const LEASE_MS = 120_000;
 const MODEL_TIMEOUT_MS = 90_000;
 const MAX_LOOPS = 2;
+const modelSettings = new SettingsService();
+const WEB_ENABLED_PROMPT = '【本会话联网搜索已开启】用户已为当前会话开启联网搜索，能力边界中“不能联网搜索、读取网页”的限制本轮起不成立：可直接调用 web_search 与 read_webpage，配额见【本任务联网预算】。检索策略：先用少量搜索定位权威来源（优先 authority≥3、官方文档域，可用 site: 限定），再 read_webpage 阅读原文；引用结论附 URL 与日期。服务未配置或失败时如实说明，不要反复重试。';
 let clock = () => new Date();
 export function setRunClock(fn: (() => Date) | null) { clock = fn ?? (() => new Date()); }
 const nowIso = () => clock().toISOString();
@@ -341,7 +344,7 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
   const identityId = readContext(owned.contextJson).identityId ?? 'work';
   let tools = cursor.toolGroups ? toolsForGroups(cursor.toolGroups, cursor.loadSkill, identityId, cursor.webEnabled ?? false) : builtinToolDefinitions({ loadSkill: cursor.loadSkill });
   // 工作助手的能力边界写死了“不能联网”；会话开关开启时在这里显式覆盖，避免工具与提示词自相矛盾。
-  if (cursor.webEnabled && identityId === 'work') messages.splice(1, 0, { role: 'system', content: '【本会话联网搜索已开启】用户已为当前会话开启联网搜索，能力边界中“不能联网搜索、读取网页”的限制本轮起不成立：可直接调用 web_search 与 read_webpage，配额见【本任务联网预算】。检索策略：先用少量搜索定位权威来源（优先 authority≥3、官方文档域，可用 site: 限定），再 read_webpage 阅读原文；引用结论附 URL 与日期。服务未配置或失败时如实说明，不要反复重试。' });
+  if (cursor.webEnabled && identityId === 'work') messages.splice(1, 0, { role: 'system', content: WEB_ENABLED_PROMPT });
   if (cursor.webPolicy === 2 && (cursor.webUsed || cursor.toolGroups?.includes('web'))) {
     const state = await webSessionState(runId);
     if (!cursor.businessAttempted && !cursor.toolGroups?.some(group => group.endsWith('_write')) && cursor.round >= cursor.budgetEndRound - 1) {
@@ -362,7 +365,7 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
   const offered = new Set(tools.map(t => t.function.name));
   if (cursor.toolGroups?.includes('media') && !String(messages[0]?.content).includes('【富媒体表达】\nSVG')) messages.splice(1, 0, { role: 'system', content: `【按需富媒体规则】\n${mediaInstructionsFor(identityId)}\n${htmlBlockPrompt(await htmlBlockPolicy())}` });
   await saveMessages(runId, token, messages.filter(m => !(m.role === 'system' && (String(m.content).startsWith('【本次可引用来源】') || String(m.content).startsWith('【按需富媒体规则】') || String(m.content).startsWith('【本任务联网预算】') || String(m.content).startsWith('【本会话联网搜索已开启】') || String(m.content).startsWith('本次资料检索已进入最后作答轮')))));
-  const stats = buildContextStats({ runId, round: cursor.round, messages, tools, fullTools: identityId === 'work' ? builtinToolDefinitions({ loadSkill: cursor.loadSkill }) : toolsForGroups(scopeGroupsFor(identityId, [...toolGroupNames]), cursor.loadSkill, identityId), loadedGroups: cursor.toolGroups ?? ['legacy-all'], summaryCalls: cursor.summaryCalls });
+  const stats = buildContextStats({ runId, round: cursor.round, messages, tools, fullTools: identityId === 'work' ? builtinToolDefinitions({ loadSkill: cursor.loadSkill }) : toolsForGroups(scopeGroupsFor(identityId, [...toolGroupNames]), cursor.loadSkill, identityId), loadedGroups: cursor.toolGroups ?? ['legacy-all'], summaryCalls: cursor.summaryCalls, contextWindow: await modelSettings.contextWindow(identityId) });
   const publishStats = async () => {
     const earlier = await prisma.agentRunEvent.findMany({ where: { runId, type: 'context_stats' }, orderBy: { seq: 'asc' }, select: { dataJson: true } });
     stats.totals = contextTotals([...earlier.map(e => (JSON.parse(e.dataJson) as { contextStats: ContextStats }).contextStats), stats], cursor.summaryCalls);
@@ -655,6 +658,34 @@ async function runLoop(runId: string, stream: ModelStream, contextService: Conte
   } finally {
     clearInterval(heartbeat);
   }
+}
+
+/** Pre-send context estimate for the composer. Read-only: no conversation,
+ * message, run or summary is created. Mirrors the first model request of a
+ * new run (system prompt, replay window, initial tool groups); later tool
+ * rounds can grow beyond this number. */
+export async function previewChatContext(input: { conversationId?: string; message?: string; context?: unknown; identityId?: string; webSearchEnabled?: boolean }) {
+  const message = (input.message ?? '').trim();
+  let identityId: string = input.identityId ?? 'work';
+  let webEnabled = input.webSearchEnabled ?? false;
+  if (input.conversationId) {
+    const existing = await prisma.conversation.findUnique({ where: { id: input.conversationId }, select: { identityId: true, webSearchEnabled: true } });
+    if (!existing) throw new DomainError('NOT_FOUND', '会话不存在', 404);
+    identityId = existing.identityId;
+    webEnabled = existing.webSearchEnabled;
+  }
+  if (!isAssistantIdentityId(identityId)) throw new DomainError('INVALID_IDENTITY', '未知的助手身份', 400);
+  const stored = await validateScopeAndResolveIds({ ...contextFromRequest({ context: input.context }), identityId });
+  if (currentLocale() === 'en') stored.language = 'en';
+  const skills = await enabledSkillCatalog(identityId);
+  const messages = packModelMessages(await assemblePreviewMessages({ conversationId: input.conversationId ?? null, context: stored, identityId, userText: message, skills }));
+  const groups = initialToolGroups(message, stored.page, identityId);
+  if (webEnabled && !groups.includes('web')) groups.push('web');
+  const loadSkill = skills.length > 0;
+  if (webEnabled && identityId === 'work') messages.splice(1, 0, { role: 'system', content: WEB_ENABLED_PROMPT });
+  const tools = toolsForGroups(groups, loadSkill, identityId, webEnabled);
+  const fullTools = identityId === 'work' ? builtinToolDefinitions({ loadSkill }) : toolsForGroups(scopeGroupsFor(identityId, [...toolGroupNames]), loadSkill, identityId);
+  return buildContextStats({ runId: 'preview', round: 0, messages, tools, fullTools, loadedGroups: groups, contextWindow: await modelSettings.contextWindow(identityId), kind: 'preview' });
 }
 
 export async function startChat(input: { conversationId?: string; message: string; pageContext?: PageContext; context?: unknown; requestKey?: string; identityId?: string }) {

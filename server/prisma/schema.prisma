@@ -14,6 +14,7 @@ model AppSetting {
   openaiBaseUrl String   @default("") @map("openai_base_url")
   openaiApiKey  String   @default("") @map("openai_api_key")
   openaiModel   String   @default("") @map("openai_model")
+  openaiContextWindow Int @default(0) @map("openai_context_window")
   replyStyle    String   @default("结论先行，多用短句。") @map("reply_style")
   codexManualCommand String @default("") @map("codex_manual_command")
   codexAutoCommand String @default("") @map("codex_auto_command")

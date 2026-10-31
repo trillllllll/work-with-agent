@@ -639,6 +639,7 @@ export const en: Record<string, string> = {
   "连接已发生变化，请刷新": "Connection has changed, please refresh",
   "接口地址必须是有效的 HTTP(S) URL": "API address must be a valid HTTP(S) URL",
   "模型名称不能为空且不能超过 200 个字符": "Model name cannot be empty and cannot exceed 200 characters",
+  "上下文上限须为 {0} 到 {1} 之间的整数，留空表示未知": "The context limit must be an integer from {0} to {1}; leave it empty if unknown",
   "API Key 不能为空且不能超过 1000 个字符": "API Key cannot be empty and cannot exceed 1000 characters",
   "首次配置必须提供 API Key": "The first configuration must provide an API Key",
   "模型连接测试失败": "Model connection test failed",
