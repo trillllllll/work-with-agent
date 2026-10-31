@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+import { MoreHorizontal, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button.js';
 import { ActionMenu, ActionMenuItem } from '@/components/ui/action-menu.js';
 import { Input } from '@/components/ui/input.js';
@@ -20,7 +21,7 @@ import { documentTabs, openDocument, takeTitleFocus, useOpenDocuments, type Open
 import { leaveDocumentViews } from './leave.js';
 import { DocumentSupplement } from './DocumentSupplement.js';
 import { TextDocumentEditor, type TextViewMode } from './TextDocumentEditor.js';
-import { SaveDocumentAs } from './SaveDocumentAs.js';
+import { useSaveDocumentAs } from './SaveDocumentAs.js';
 import { withinTextEditBudget } from './text-budget.js';
 import { RichDocumentEditor } from './RichDocumentEditor.js';
 import { measureDocument } from '@/lib/documents/content-cache.js';
@@ -166,7 +167,19 @@ function DocumentSurface({ scopeKey, target, viewId, resource, session, snapshot
   const queryClient = useQueryClient();
   const scroll = useRef<HTMLDivElement>(null);
   const titleField = useRef<HTMLInputElement>(null);
-  const file = useRef<HTMLInputElement>(null);
+  // The rich editor renders its format controls into this slot, so the whole toolbar is one row.
+  const [formatSlot, setFormatSlot] = useState<HTMLDivElement | null>(null);
+  const toolbar = useRef<HTMLDivElement>(null);
+  const [compactToolbar, setCompactToolbar] = useState(false);
+  useLayoutEffect(() => {
+    const node = toolbar.current; if (!node) return;
+    // Narrow rows keep only save and "More"; the outline and file information move into the menu.
+    const measure = () => setCompactToolbar(node.clientWidth < 600);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure); observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
   const viewKey = `${scopeKey}:${target.key}:${viewId}`;
   // A freshly created document starts with its title selected, so typing names it right away.
   useLayoutEffect(() => {
@@ -195,12 +208,13 @@ function DocumentSurface({ scopeKey, target, viewId, resource, session, snapshot
   const [mode, setMode] = useState<TextViewMode>(() => readOnly ? 'read' : positions.get(viewKey)?.mode ?? 'edit');
   const [panel, setPanel] = useState<'info' | 'outline' | 'extracted' | null>(target.chunkId ? 'extracted' : null);
   const [conflictOpen, setConflictOpen] = useState(false);
-  const [exportOpen, setExportOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [downloadingAttachment, setDownloadingAttachment] = useState<string | null>(null);
   const [reuse, setReuse] = useState<{ blockId?: string; path?: string } | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [recoveryDraft, setRecoveryDraft] = useState<DocumentDraft | null>(null);
+  const saveAs = useSaveDocumentAs({ scopeKey, resource, snapshot, session });
   usePageContext(`document-${viewId}`, { materialId: resourceId, materialRevision: revision || null, materialVersionMode: target.revision == null ? 'latest' : 'historical', label: title });
   useEffect(() => { if (!titleEditing) setTitle(snapshot?.title ?? resource?.title ?? ''); }, [snapshot?.title, resource?.title, titleEditing]);
   useEffect(() => { documentTabs.title(scopeKey, target.key, snapshot?.title ?? resource?.title ?? t('document.untitled')); }, [scopeKey, target.key, snapshot?.title, resource?.title, t]);
@@ -211,7 +225,8 @@ function DocumentSurface({ scopeKey, target, viewId, resource, session, snapshot
     const next = title.trim();
     if (next && !readOnly) session?.setTitle(next);
   };
-  const insert = (files: File[], bookmark?: { blockId: string }) => { if (!session || bodyReadOnly || format !== 'richdoc-v1') return; const current = session.getSnapshot().content; if (typeof current === 'string') return; for (const entry of files) void session.addUpload(entry, { kind: entry.type.startsWith('image/') ? 'image' : 'file', bookmark: bookmark?.blockId }).catch((error) => toast.error(String(error))); };
+  // Insertion happens at the editor's cursor; reading mode has no cursor, so nothing is inserted there, dropped files included.
+  const insert = (files: File[], bookmark?: { blockId: string }) => { if (!session || bodyReadOnly || mode === 'read' || format !== 'richdoc-v1') return; const current = session.getSnapshot().content; if (typeof current === 'string') return; for (const entry of files) void session.addUpload(entry, { kind: entry.type.startsWith('image/') ? 'image' : 'file', bookmark: bookmark?.blockId }).catch((error) => toast.error(String(error))); };
   const downloadDraft = () => { if (resourceId && revision && (!snapshot || snapshot.status === 'saved' || snapshot.status === 'read-only')) { const link = document.createElement('a'); link.href = resourceOriginalUrl({ id: resourceId, revision }); link.download = resource?.attachment?.fileName || title; link.click(); return; } const blob = new Blob([typeof value === 'string' ? value : JSON.stringify(value, null, 2)], { type: typeof value === 'string' ? 'text/plain' : 'application/json' }); const href = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = href; link.download = `${title || t('document.untitled')}.${typeof value === 'string' ? format === 'markdown' ? 'md' : 'txt' : 'json'}`; link.click(); setTimeout(() => URL.revokeObjectURL(href), 1000); };
   const restoreVersion = async () => {
     if (!resource || target.revision == null || restoring) return;
@@ -232,14 +247,14 @@ function DocumentSurface({ scopeKey, target, viewId, resource, session, snapshot
   };
   const exportBundle = async () => {
     if (!resourceId || !revision || exporting) return;
-    setExportOpen(false); setExporting(true);
+    setMoreOpen(false); setExporting(true);
     try { const { exportResourceBundle } = await import('@/lib/documents/bundle.js'); const blob = await exportResourceBundle(resourceId, revision); saveDocumentBlob(blob, `${title || t('document.untitled')}.dovun.zip`); }
     catch (error) { toast.error(error instanceof Error ? error.message : t('shared.actionFailed')); }
     finally { setExporting(false); }
   };
   const exportRecovery = async () => {
     if (!session || exporting) return;
-    setExportOpen(false); setExporting(true);
+    setMoreOpen(false); setExporting(true);
     try {
       const { exportDraftRecovery } = await import('@/lib/documents/draft-recovery.js');
       const result = await exportDraftRecovery(session);
@@ -258,7 +273,7 @@ function DocumentSurface({ scopeKey, target, viewId, resource, session, snapshot
     } catch { toast.error(t('document.localFileUnavailable')); }
     finally { setDownloadingAttachment(null); }
   };
-  return <Surface tone="card" className="document-pane" data-testid="document-pane" onDragOver={(event) => { if (format === 'richdoc-v1' && [...event.dataTransfer.items].some((item) => item.kind === 'file')) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = bodyReadOnly ? 'none' : 'copy'; } }} onDrop={(event) => { if (event.defaultPrevented || format !== 'richdoc-v1') return; const files = [...event.dataTransfer.files]; if (!files.length) return; event.preventDefault(); event.stopPropagation(); if (!bodyReadOnly) insert(files); }}>
+  return <Surface tone="card" className="document-pane" data-testid="document-pane" onDragOver={(event) => { if (format === 'richdoc-v1' && [...event.dataTransfer.items].some((item) => item.kind === 'file')) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = bodyReadOnly || mode === 'read' ? 'none' : 'copy'; } }} onDrop={(event) => { if (event.defaultPrevented || format !== 'richdoc-v1') return; const files = [...event.dataTransfer.files]; if (!files.length) return; event.preventDefault(); event.stopPropagation(); if (!bodyReadOnly && mode !== 'read') insert(files); }}>
     <header className="document-header">
       <Input ref={titleField} variant="inline" className="document-title" aria-label={t('document.title')} value={title} readOnly={readOnly} onFocus={() => setTitleEditing(true)} onChange={(event) => setTitle(event.target.value)} onBlur={() => { void rename(); }} onKeyDown={(event) => {
         if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
@@ -272,13 +287,27 @@ function DocumentSurface({ scopeKey, target, viewId, resource, session, snapshot
       }} />
       <div className="document-meta"><span>{format === 'richdoc-v1' ? t('kind.document') : format === 'markdown' ? 'Markdown' : format === 'text' ? t('kind.text') : resource?.attachment?.fileName ?? t('kind.attachment')}</span><span role="status" aria-live="polite" data-testid="document-save-state">{target.revision != null ? t('document.version', { revision }) : t(`document.status.${snapshot?.status ?? 'read-only'}`)}</span>{permitted && !budget.within && <span className="document-large-editing" data-testid="document-large-editing">{t('document.largeEditing')}</span>}</div>
     </header>
-    <div className="document-toolbar">
+    <div ref={toolbar} className="document-toolbar">
       {!bodyReadOnly && <div role="group" aria-label={t('document.workspace')} className="document-mode-buttons">{(['edit', 'read', ...(format === 'markdown' ? ['split'] : [])] as TextViewMode[]).map((item) => <Button size="sm" variant="tab" key={item} aria-pressed={mode === item} onClick={() => { void session?.flushLocal().then((saved) => { if (!saved) { toast.error(t('document.storageFailed')); return; } setMode(item); positions.set(viewKey, { scrollTop: scroll.current?.scrollTop ?? 0, mode: item }); }); }}>{t(item === 'edit' && format !== 'richdoc-v1' ? 'document.source' : `document.${item}`)}</Button>)}</div>}
-      {session && !readOnly && <Button size="sm" variant="ghost" onClick={() => { void session.flushRemote(); }}>{t('document.save')}</Button>}
-      <SaveDocumentAs scopeKey={scopeKey} resource={resource} snapshot={snapshot} session={session} />
-      {format === 'richdoc-v1' && !bodyReadOnly && <><Button size="sm" variant="ghost" onClick={() => file.current?.click()}>{t('document.insert')}</Button><Input ref={file} className="sr-only" type="file" multiple aria-label={t('document.insert')} onChange={(event) => { insert([...event.target.files ?? []]); event.target.value = ''; }} /></>}
+      <div ref={setFormatSlot} className="document-format-slot" />
       {target.revision != null && resourceId && <><Button size="sm" variant="outline" onClick={() => openDocument({ resourceId })}>{t('document.latest')}</Button><Button size="sm" variant="outline" disabled={restoring} onClick={() => { void restoreVersion(); }}>{t('document.restoreVersion')}</Button></>}
-      <div className="document-toolbar-end"><Button size="sm" variant="ghost" aria-pressed={panel === 'outline'} onClick={() => setPanel(panel === 'outline' ? null : 'outline')}>{t('document.outline')}</Button>{resourceId && <Button size="sm" variant="ghost" aria-pressed={panel === 'extracted'} onClick={() => setPanel(panel === 'extracted' ? null : 'extracted')}>{t('document.extracted')}</Button>}{resourceId && <Button size="sm" variant="ghost" aria-pressed={panel === 'info'} onClick={() => setPanel(panel === 'info' ? null : 'info')}>{t('document.info')}</Button>}<ActionMenu open={exportOpen} onOpenChange={setExportOpen} trigger={<Button size="sm" variant="ghost" disabled={exporting}>{t(exporting ? 'document.exporting' : 'document.export')}</Button>}><ActionMenuItem onSelect={downloadDraft}>{t(snapshot?.status === 'saved' || readOnly ? 'document.download' : 'document.draftDownload')}</ActionMenuItem>{session && <ActionMenuItem onSelect={() => { void exportRecovery(); }}>{t('document.recoveryExport')}</ActionMenuItem>}{resourceId && revision > 0 && <ActionMenuItem disabled={snapshot != null && snapshot.status !== 'saved' && snapshot.status !== 'read-only'} onSelect={() => { void exportBundle(); }}>{t('document.bundleExport')}</ActionMenuItem>}{resource?.hasSourceOriginal && <ActionMenuItem onSelect={() => { const link = document.createElement('a'); link.href = `/api/v1/library/resources/${encodeURIComponent(resource.id)}/versions/${resource.revision}/source-original`; link.download = resource.attachment?.fileName || resource.title; link.click(); }}>{t('document.sourceOriginal')}</ActionMenuItem>}</ActionMenu></div>
+      <div className="document-toolbar-end">
+        {session && !readOnly && <Button size="icon-sm" variant="ghost" aria-label={t('document.save')} title={t('document.save')} onClick={() => { void session.flushRemote(); }}><Save aria-hidden /></Button>}
+        {!compactToolbar && <Button size="sm" variant="ghost" aria-pressed={panel === 'outline'} onClick={() => setPanel(panel === 'outline' ? null : 'outline')}>{t('document.outline')}</Button>}
+        {!compactToolbar && resourceId && <Button size="sm" variant="ghost" aria-pressed={panel === 'info'} onClick={() => setPanel(panel === 'info' ? null : 'info')}>{t('document.info')}</Button>}
+        <ActionMenu open={moreOpen} onOpenChange={setMoreOpen} trigger={<Button size="icon-sm" variant="ghost" aria-label={t('shared.more')} title={t(exporting ? 'document.exporting' : 'shared.more')}><MoreHorizontal aria-hidden /></Button>}>
+          {compactToolbar && <ActionMenuItem onSelect={() => setPanel(panel === 'outline' ? null : 'outline')}>{t('document.outline')}</ActionMenuItem>}
+          {compactToolbar && resourceId && <ActionMenuItem onSelect={() => setPanel(panel === 'info' ? null : 'info')}>{t('document.info')}</ActionMenuItem>}
+          {resourceId && <ActionMenuItem onSelect={() => setPanel(panel === 'extracted' ? null : 'extracted')}>{t('document.extracted')}</ActionMenuItem>}
+          {saveAs.available && <ActionMenuItem disabled={!saveAs.eligible} title={saveAs.eligible ? undefined : t('document.saveAsSaveFirst')} onSelect={saveAs.show}>{t('document.saveAs')}</ActionMenuItem>}
+          {saveAs.conversionSource && <ActionMenuItem onSelect={saveAs.conversionSource.open}>{t('document.saveAsSource', { revision: saveAs.conversionSource.revision })}</ActionMenuItem>}
+          <ActionMenuItem disabled={exporting} onSelect={downloadDraft}>{t(snapshot?.status === 'saved' || readOnly ? 'document.download' : 'document.draftDownload')}</ActionMenuItem>
+          {session && <ActionMenuItem disabled={exporting} onSelect={() => { void exportRecovery(); }}>{t('document.recoveryExport')}</ActionMenuItem>}
+          {resourceId && revision > 0 && <ActionMenuItem disabled={exporting || snapshot != null && snapshot.status !== 'saved' && snapshot.status !== 'read-only'} onSelect={() => { void exportBundle(); }}>{t('document.bundleExport')}</ActionMenuItem>}
+          {resource?.hasSourceOriginal && <ActionMenuItem onSelect={() => { const link = document.createElement('a'); link.href = `/api/v1/library/resources/${encodeURIComponent(resource.id)}/versions/${resource.revision}/source-original`; link.download = resource.attachment?.fileName || resource.title; link.click(); }}>{t('document.sourceOriginal')}</ActionMenuItem>}
+        </ActionMenu>
+      </div>
+      {saveAs.dialog}
     </div>
     {snapshot?.error && <div className="document-notice document-error" role="alert"><p>{snapshot.error.message}</p>{snapshot.status === 'storage-error' && <p>{t('document.storageFailed')}</p>}<Button size="sm" variant="outline" onClick={() => { void session?.retry(); }}>{t('document.retry')}</Button><Button size="sm" variant="ghost" disabled={exporting} onClick={() => { void exportRecovery(); }}>{t('document.recoveryExport')}</Button></div>}
     {snapshot?.conflict && <div className="document-notice" role="alert"><p>{t('document.conflict')}</p><Button size="sm" variant="outline" onClick={() => setConflictOpen(true)}>{t('document.compareConflict')}</Button></div>}
@@ -286,7 +315,7 @@ function DocumentSurface({ scopeKey, target, viewId, resource, session, snapshot
     {!!snapshot?.uploads.some((upload) => upload.state !== 'removed' && upload.state !== 'ready') && <div className="document-upload-list">{snapshot.uploads.filter((upload) => upload.state !== 'removed' && upload.state !== 'ready').map((upload) => <div key={upload.id}><span>{upload.fileName}</span><span className="library-meta">{upload.error || t('document.uploadNotice')}</span><Button size="sm" variant="ghost" disabled={downloadingAttachment !== null} onClick={() => { void downloadLocalAttachment(upload.id, upload.fileName); }}>{t(downloadingAttachment === upload.id ? 'document.readingLocalFile' : 'document.downloadLocalFile')}</Button>{upload.state === 'failed' && <Button size="sm" variant="ghost" onClick={() => { void session?.retryUpload(upload.id); }}>{t('document.retryUpload')}</Button>}<Button size="sm" variant="ghost" onClick={() => { void session?.removeUpload(upload.id); }}>{t('document.removeUpload')}</Button></div>)}</div>}
     <div className={`document-content-frame ${panel ? 'has-document-panel' : ''}`}>
       <div ref={scroll} className="document-scroll" onScroll={(event) => positions.set(viewKey, { mode, scrollTop: event.currentTarget.scrollTop })}>
-        {format === 'richdoc-v1' && typeof value !== 'string' ? <RichDocumentEditor {...editorBridge} sessionKey={viewKey} value={value} onChange={(next) => { if (!bodyReadOnly) session?.edit(next); }} readOnly={bodyReadOnly || mode === 'read'} paginate={paginate} onEditAnyway={offerEdit} onCompositionChange={compositionChanged} onInsertFiles={insert} onInsertExisting={(bookmark) => { if (!bodyReadOnly) setReuse(bookmark ?? {}); }} onUndo={() => session?.undo()} onRedo={() => session?.redo()} /> : format === 'text' || format === 'markdown' ? <TextDocumentEditor references={snapshot?.relativeReferences ?? resource?.relativeReferences} onResolveMissing={(path) => setReuse({ path })} fileName={resource?.attachment?.fileName || title} viewKey={viewKey} onUndo={() => session?.undo()} onRedo={() => session?.redo()} value={typeof value === 'string' ? value : ''} onChange={(next) => session?.edit(next)} format={format} mode={readOnly ? 'read' : mode} readOnly={readOnly} paginate={paginate} onEditAnyway={offerEdit} onCompositionChange={compositionChanged} /> : resource ? <ResourceReader resource={resource} /> : null}
+        {format === 'richdoc-v1' && typeof value !== 'string' ? <RichDocumentEditor {...editorBridge} sessionKey={viewKey} formatSlot={formatSlot} value={value} onChange={(next) => { if (!bodyReadOnly) session?.edit(next); }} readOnly={bodyReadOnly || mode === 'read'} paginate={paginate} onEditAnyway={offerEdit} onCompositionChange={compositionChanged} onInsertFiles={insert} onInsertExisting={(bookmark) => { if (!bodyReadOnly) setReuse(bookmark ?? {}); }} onUndo={() => session?.undo()} onRedo={() => session?.redo()} /> : format === 'text' || format === 'markdown' ? <TextDocumentEditor references={snapshot?.relativeReferences ?? resource?.relativeReferences} onResolveMissing={(path) => setReuse({ path })} fileName={resource?.attachment?.fileName || title} viewKey={viewKey} onUndo={() => session?.undo()} onRedo={() => session?.redo()} value={typeof value === 'string' ? value : ''} onChange={(next) => session?.edit(next)} format={format} mode={readOnly ? 'read' : mode} readOnly={readOnly} paginate={paginate} onEditAnyway={offerEdit} onCompositionChange={compositionChanged} /> : resource ? <ResourceReader resource={resource} /> : null}
         <DocumentSupplement content={resource?.supplementalContent} viewKey={viewKey} />
       </div>
       {panel && <aside className="document-side-panel" aria-label={t(`document.${panel}`)}><div className="document-side-heading"><h3>{t(`document.${panel}`)}</h3><Button size="sm" variant="ghost" onClick={() => setPanel(null)}>{t('shared.close')}</Button></div>{panel === 'info' && resourceId ? <DocumentInfo key={`${scopeKey}:${resourceId}`} resourceId={resourceId} revision={revision} onOpenTask={onOpenTask} /> : panel === 'extracted' && resourceId ? <DocumentExtractedText key={`${scopeKey}:${resourceId}:${revision}`} resourceId={resourceId} revision={revision} chunkId={target.chunkId} /> : <DocumentOutline content={value} format={format} container={scroll} />}</aside>}

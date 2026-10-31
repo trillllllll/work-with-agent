@@ -22,6 +22,14 @@ async function open(page: Page, id: string) { await page.goto(`/#/library?resour
 const richEditor = (page: Page) => page.getByRole('textbox', { name: '文档正文', exact: true });
 /** Closing is asynchronous (local flush first), so "stays open" must be observed after that window. */
 async function expectStillOpen(page: Page) { await page.waitForTimeout(500); await expect(page.getByTestId('document-pane')).toBeVisible(); }
+/** Format controls that do not fit the toolbar row (narrow and touch screens) are under "More formatting". */
+async function formatControl(page: Page, name: string) {
+  const toolbar = page.getByRole('toolbar', { name: '格式工具', exact: true });
+  const inline = toolbar.getByRole('button', { name, exact: true });
+  if (await inline.count()) { await inline.click(); return; }
+  await toolbar.getByRole('button', { name: '更多格式', exact: true }).click();
+  await page.locator('.format-menu-list').getByRole('button', { name, exact: true }).click();
+}
 
 test('在正文、标题和源码里按 Esc 不关闭文档，焦点离开后 Esc 仍可关闭', async ({ page, request }) => {
   const rich = await createRich(request, 'Esc 富文档', [paragraph('first', '已有正文')]);
@@ -58,6 +66,23 @@ test('在正文、标题和源码里按 Esc 不关闭文档，焦点离开后 Es
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 const firstBlock = (content: { blocks: Array<Record<string, unknown>> }, kind: string) => content.blocks.find((block) => block.kind === kind) as Record<string, unknown> | undefined;
 
+test('阅读模式没有插入入口，拖入文件也不改正文', async ({ page, request }) => {
+  const doc = await createRich(request, '阅读拖放', [paragraph('first', '原有正文')]);
+  await open(page, doc.id);
+  await expect(page.getByRole('toolbar', { name: '格式工具', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '阅读', exact: true }).click();
+  await expect(page.getByRole('toolbar', { name: '格式工具', exact: true })).toHaveCount(0);
+  const uploads: string[] = []; page.on('request', (sent) => { if (new URL(sent.url()).pathname.startsWith('/api/v1/library/uploads')) uploads.push(sent.method()); });
+  const drop = await page.evaluateHandle(() => { const transfer = new DataTransfer(); transfer.items.add(new File(['dropped'], 'dropped.txt', { type: 'text/plain' })); return transfer; });
+  await page.getByTestId('document-pane').dispatchEvent('drop', { dataTransfer: drop });
+  await drop.dispose();
+  await page.waitForTimeout(1_000);
+  expect(uploads).toEqual([]);
+  await page.getByRole('button', { name: '编辑', exact: true }).click();
+  await expect(richEditor(page).locator('.document-resource')).toHaveCount(0);
+  expect((await bodyOf(request, doc.id)).revision).toBe(doc.revision);
+});
+
 test('快速输入图片说明和代码语言不丢字，改说明时不重新读取图片', async ({ page, request }) => {
   const doc = await createRich(request, '属性输入', [paragraph('first', '正文')]);
   await open(page, doc.id);
@@ -85,7 +110,7 @@ test('快速输入图片说明和代码语言不丢字，改说明时不重新�
   await expect(editor.locator('figure img')).toBeVisible();
 
   await editor.locator('p').first().click(); await page.keyboard.press('End'); await page.keyboard.press('Enter');
-  await page.getByRole('toolbar', { name: '格式工具', exact: true }).getByRole('button', { name: '代码块', exact: true }).click();
+  await formatControl(page, '代码块');
   const language = page.getByRole('textbox', { name: '代码语言', exact: true });
   await expect(language).toBeVisible();
   await language.pressSequentially('typescript', { delay: 50 });

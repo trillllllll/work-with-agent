@@ -18,7 +18,7 @@ import { parseDescription, serializeDescription, type DescriptionModel } from '@
 import type { EditorSelectionBookmark } from '@/lib/task-editor-types.js';
 import { AlignedTable, findUploadPosition, MaterialReferenceNode, RawMarkdownNode, TaskImageNode, TaskItemPointerSync, taskImageContent, uploadKey, UploadDecorations } from './description-extensions.js';
 import { Button } from '@/components/ui/button.js';
-import { FormatButton, FormatMenu, LinkEditor, type FormatMenuItem } from '@/components/shared/format-controls.js';
+import { FormatButton, FormatMenu, LinkEditor, focusEditorNow, type FormatMenuItem } from '@/components/shared/format-controls.js';
 import { useTouchInput } from '@/hooks/useTouchInput.js';
 import { cn } from '@/lib/utils.js';
 
@@ -473,8 +473,8 @@ function FormatToolbar({ editor, composing, taskId, onAskSelection }: ToolbarPro
 
   const buttonClass = touch ? 'task-format-button touch' : 'task-format-button';
   const run = (command: () => void) => {
+    focusEditorNow(editor);
     command();
-    editor.view.focus();
   };
   const moreItems: FormatMenuItem[] = [
     { key: 'heading1', label: tf('heading1'), active: editor.isActive('heading', { level: 1 }), onSelect: () => run(() => editor.chain().focus().toggleHeading({ level: 1 }).run()) },

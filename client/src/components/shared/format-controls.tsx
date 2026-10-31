@@ -14,6 +14,15 @@ import { cn } from '@/lib/utils.js';
  */
 type Icon = ComponentType<{ className?: string; 'aria-hidden'?: boolean }>;
 
+/**
+ * Focus the editor now. When the editor is not focused, Tiptap's focus command focuses it a frame later,
+ * which can take focus back from a field the user moved to in between (seen after choosing from a menu).
+ * Call this before a command chain that starts with focus().
+ */
+export function focusEditorNow(editor: Editor | null | undefined) {
+  if (editor && !editor.isDestroyed && !editor.view.hasFocus()) editor.view.focus();
+}
+
 export function FormatButton({ label, icon: Icon, pressed = false, disabled, onClick, className }: {
   label: string; icon: Icon; pressed?: boolean; disabled?: boolean; onClick: () => void; className?: string;
 }) {
@@ -23,7 +32,7 @@ export function FormatButton({ label, icon: Icon, pressed = false, disabled, onC
   </Button>;
 }
 
-export type FormatMenuItem = { key: string; label: string; active?: boolean; disabled?: boolean; onSelect: () => void };
+export type FormatMenuItem = { key: string; label: string; /** Toggles report their state; plain actions leave it out. */ active?: boolean; disabled?: boolean; onSelect: () => void };
 
 /** A popover of formatting toggles. Items report their pressed state, so they are toggle buttons rather than menu items. */
 export function FormatMenu({ label, icon: Icon, items, triggerClassName, contentClassName, align = 'start', onOpenChange }: {
@@ -40,7 +49,7 @@ export function FormatMenu({ label, icon: Icon, items, triggerClassName, content
     {/* A chosen item moves focus itself (into the editor or a dialog it opens); Escape still returns focus to the trigger. */}
     <PopoverContent data-format-tools className={cn('w-44', contentClassName)} align={align} onCloseAutoFocus={(event) => { if (chosen.current) event.preventDefault(); chosen.current = false; }}>
       <div className="format-menu-list">
-        {items.map((item) => <Button key={item.key} variant="row" size="bare" type="button" className={cn('format-menu-item', item.active && 'is-active')} aria-pressed={item.active ?? false} disabled={item.disabled}
+        {items.map((item) => <Button key={item.key} variant="row" size="bare" type="button" className={cn('format-menu-item', item.active && 'is-active')} aria-pressed={item.active} disabled={item.disabled}
           onClick={() => { chosen.current = true; change(false); item.onSelect(); }}>{item.label}</Button>)}
       </div>
     </PopoverContent>
@@ -60,9 +69,10 @@ export function LinkEditor({ editor, open, onOpenChange, isAllowedUri }: {
   if (!open) return null;
   const allowed = isAllowedUri(href) ? href : '';
   const close = () => onOpenChange(false);
-  const apply = () => { if (!allowed) return; editor.chain().focus().extendMarkRange('link').setLink({ href: allowed }).run(); close(); };
-  const remove = () => { editor.chain().focus().extendMarkRange('link').unsetLink().run(); close(); };
-  return <Modal modal={false} motion="none" className="format-link-popover" data-format-tools title={t('link')} onClose={close} onCloseAutoFocus={(event) => { event.preventDefault(); editor.commands.focus(); }}>
+  const apply = () => { if (!allowed) return; focusEditorNow(editor); editor.chain().focus().extendMarkRange('link').setLink({ href: allowed }).run(); close(); };
+  const remove = () => { focusEditorNow(editor); editor.chain().focus().extendMarkRange('link').unsetLink().run(); close(); };
+  // Back to the editor when the dialog closes on its own (Escape, cancel); not when the user clicked into another field.
+  return <Modal modal={false} motion="none" className="format-link-popover" data-format-tools title={t('link')} onClose={close} onCloseAutoFocus={(event) => { event.preventDefault(); const active = document.activeElement; if (!active || active === document.body) focusEditorNow(editor); }}>
     <Input className="format-link-input" aria-label={t('linkAddress')} placeholder={t('linkPlaceholder')} value={href} onChange={(event) => setHref(event.target.value)} onKeyDown={(event) => {
       if (event.nativeEvent.isComposing) return;
       if (event.key === 'Enter') { event.preventDefault(); apply(); }

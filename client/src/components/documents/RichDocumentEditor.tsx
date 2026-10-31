@@ -1,4 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Bold, Italic, Link2, List, ListOrdered, ListTodo, Plus, Quote, Redo2, SquareCode, Strikethrough, Type, Undo2 } from 'lucide-react';
 import { externalDocumentChange } from './editor-sync.js';
 import { Extension, Node, mergeAttributes, type Editor } from '@tiptap/core';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
@@ -10,6 +12,9 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { NativeSelect } from '@/components/ui/native-select.js';
+import { FormatButton, FormatMenu, LinkEditor, focusEditorNow, type FormatMenuItem } from '@/components/shared/format-controls.js';
+import { useTouchInput } from '@/hooks/useTouchInput.js';
+import { cn } from '@/lib/utils.js';
 import { authHeaders } from '@/lib/api.js';
 import { t as translate } from '../../i18n/index.js';
 import { safeDocumentLink } from '../../../../server/src/domain/document-content.js';
@@ -184,6 +189,37 @@ type RichDocumentEditorProps = {
   onSerializationFailure?: (editorJson: unknown, message: string) => void;
   registerFlush?: (flush: () => boolean) => () => void;
   sessionKey: string;
+  /** Where the workspace shows the format controls, in its own single toolbar row. Without it they render above the body. */
+  formatSlot?: HTMLElement | null;
+};
+
+/**
+ * How many format controls fit beside the workspace's other toolbar controls. Measured on the slot, whose width
+ * comes from the free space in the row, not from its content. Touch targets are 44px instead of 32px.
+ */
+export type FormatTier = 'full' | 'wide' | 'compact' | 'minimal';
+export function formatTierFor(width: number, touch: boolean): FormatTier {
+  const [full, wide, compact] = touch ? [660, 430, 240] : [520, 340, 180];
+  return width >= full ? 'full' : width >= wide ? 'wide' : width >= compact ? 'compact' : 'minimal';
+}
+function useFormatTier(slot: HTMLElement | null | undefined, touch: boolean): FormatTier {
+  const [width, setWidth] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    if (!slot) { setWidth(null); return; }
+    const measure = () => setWidth(slot.clientWidth);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure); observer.observe(slot);
+    return () => observer.disconnect();
+  }, [slot]);
+  return width === null ? 'full' : formatTierFor(width, touch);
+}
+/** Controls shown in the row for each tier, in row order; the rest move into "More formatting". */
+const inlineFormats: Record<FormatTier, ReadonlySet<string>> = {
+  full: new Set(['bold', 'italic', 'strike', 'heading', 'bulletList', 'orderedList', 'taskList', 'quote', 'codeBlock', 'link', 'undo', 'redo']),
+  wide: new Set(['bold', 'italic', 'heading', 'bulletList', 'orderedList', 'link']),
+  compact: new Set(['bold', 'bulletList', 'link']),
+  minimal: new Set(),
 };
 
 export function RichDocumentEditor(props: RichDocumentEditorProps) {
@@ -192,8 +228,12 @@ export function RichDocumentEditor(props: RichDocumentEditorProps) {
   return <RichDocumentBoundary value={props.value} paginate={props.paginate === true} onEditAnyway={props.onEditAnyway} renderEditor={(value, paginated) => <RichDocumentEditorCore {...props} key={paginated ? value.blocks[0]?.id ?? 'empty' : 'editing'} value={value} readOnly={props.readOnly || paginated} {...(paginated ? { registerFlush: undefined, onPendingChange: undefined, onCompositionChange: undefined } : {})} />} />;
 }
 
-function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositionChange, onInsertFiles, onInsertExisting, onUndo, onRedo, onPendingChange, onSerializationFailure, registerFlush, sessionKey }: RichDocumentEditorProps) {
+function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositionChange, onInsertFiles, onInsertExisting, onUndo, onRedo, onPendingChange, onSerializationFailure, registerFlush, sessionKey, formatSlot }: RichDocumentEditorProps) {
   const { t } = useTranslation('library');
+  const { t: tf } = useTranslation('editor');
+  const touch = useTouchInput();
+  const tier = useFormatTier(formatSlot, touch);
+  const [linkOpen, setLinkOpen] = useState(false);
   const current = useRef({ value, onChange, readOnly, onCompositionChange, onInsertFiles, onUndo, onRedo, onPendingChange, onSerializationFailure }); current.current = { value, onChange, readOnly, onCompositionChange, onInsertFiles, onUndo, onRedo, onPendingChange, onSerializationFailure };
   const composing = useRef(false); const lastContent = useRef<LocalRichDocument | null>(value);
   const serializeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -201,7 +241,7 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
   const historyJump = useRef(0);
   const plainPaste = useRef(false);
   const deferredEditable = useRef<boolean | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null); const [link, setLink] = useState(''); const [error, setError] = useState('');
+  const fileInput = useRef<HTMLInputElement>(null); const [error, setError] = useState('');
   const supported = useMemo(() => richDocumentSupported(value), [value]);
   // The editor reads its initial content only when it is created for this view; later bodies arrive as transactions.
   const editorContent = useMemo(() => supported ? richDocumentToEditor(value) : { type: 'doc', content: [{ type: 'paragraph' }] }, [sessionKey]);
@@ -347,36 +387,62 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
     editor.view.dispatch(change.transaction);
   }, [editor, value, supported]);
   if (!supported) return <div className="document-unknown" role="status"><p>{t('docsEditor.unknown')}</p><pre>{JSON.stringify(value, null, 2)}</pre></div>;
-  const action = (key: string, run: () => void, active = false) => <Button key={key} type="button" size="sm" variant={active ? 'secondary' : 'ghost'} aria-pressed={active} disabled={!editor || composing.current} onMouseDown={(event) => event.preventDefault()} onClick={run}>{t(`docsEditor.${key}`)}</Button>;
+  // Focus synchronously first: a control that took focus (a menu item, the heading select) would otherwise make
+  // Tiptap re-focus the editor a frame later, taking focus back from whatever the user moved to in between.
+  const chain = () => { focusEditorNow(editor); return editor?.chain().focus(); };
+  const busy = !editor || composing.current;
+  const buttonClass = cn('document-format-button', touch && 'touch');
+  const inline = inlineFormats[tier];
+  const formats = [
+    { key: 'bold', label: tf('bold'), icon: Bold, active: tools.bold, run: () => chain()?.toggleBold().run() },
+    { key: 'italic', label: tf('italic'), icon: Italic, active: tools.italic, run: () => chain()?.toggleItalic().run() },
+    { key: 'strike', label: tf('strike'), icon: Strikethrough, active: tools.strike, run: () => chain()?.toggleStrike().run() },
+    { key: 'bulletList', label: tf('bulletList'), icon: List, active: tools.bulletList, run: () => chain()?.toggleBulletList().run() },
+    { key: 'orderedList', label: tf('orderedList'), icon: ListOrdered, active: tools.orderedList, run: () => chain()?.toggleOrderedList().run() },
+    { key: 'taskList', label: tf('checklist'), icon: ListTodo, active: tools.taskList, run: () => chain()?.toggleTaskList().run() },
+    { key: 'quote', label: tf('quote'), icon: Quote, active: tools.blockquote, run: () => chain()?.toggleBlockquote().run() },
+    { key: 'codeBlock', label: tf('codeBlock'), icon: SquareCode, active: tools.codeBlock, run: () => chain()?.toggleCodeBlock().run() },
+    { key: 'link', label: tf('link'), icon: Link2, active: tools.link, run: () => setLinkOpen(true) },
+    { key: 'undo', label: t('docsEditor.undo'), icon: Undo2, run: () => { focusEditorNow(editor); if (onUndo) travel(onUndo); else chain()?.undo().run(); } },
+    { key: 'redo', label: t('docsEditor.redo'), icon: Redo2, run: () => { focusEditorNow(editor); if (onRedo) travel(onRedo); else chain()?.redo().run(); } },
+  ] satisfies Array<{ key: string; label: string; icon: typeof Bold; active?: boolean; run: () => void }>;
+  const button = (key: string) => { const format = formats.find((entry) => entry.key === key)!; return <FormatButton key={key} className={buttonClass} label={format.label} icon={format.icon} pressed={format.active ?? false} disabled={busy} onClick={format.run} />; };
+  const setHeading = (level: number) => { if (level) chain()?.setHeading({ level: level as 1 | 2 | 3 | 4 | 5 | 6 }).run(); else chain()?.setParagraph().run(); };
+  const headingItems: FormatMenuItem[] = [0, 1, 2, 3].map((level) => ({ key: `heading-${level}`, label: level ? tf(`heading${level}`) : t('docsEditor.paragraph'), active: tools.heading === level, onSelect: () => setHeading(level) }));
+  const overflow: FormatMenuItem[] = [
+    ...(inline.has('heading') ? [] : headingItems),
+    ...formats.filter((format) => !inline.has(format.key)).map((format) => ({ key: format.key, label: format.label, active: format.active, onSelect: format.run })),
+  ];
+  const insertItems: FormatMenuItem[] = [
+    { key: 'file', label: t('docsEditor.insert'), onSelect: () => fileInput.current?.click() },
+    ...(onInsertExisting ? [{ key: 'reuse', label: t('docsEditor.reuse'), onSelect: () => { emit(); onInsertExisting(bookmark()); } }] : []),
+    { key: 'table', label: t('docsEditor.table'), onSelect: () => chain()?.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
+    { key: 'rule', label: t('docsEditor.rule'), onSelect: () => chain()?.setHorizontalRule().run() },
+  ];
+  const formatArea = !readOnly && <div className={cn('document-editor-toolbar', formatSlot && 'in-slot')} role="toolbar" aria-label={t('docsEditor.toolbar')} data-tier={tier}>
+    {['bold', 'italic', 'strike'].filter((key) => inline.has(key)).map(button)}
+    {inline.has('heading') && <NativeSelect aria-label={t('docsEditor.heading')} value={String(tools.heading)} disabled={busy} onChange={(event) => setHeading(Number(event.target.value))}><option value="0">{t('docsEditor.paragraph')}</option>{[1, 2, 3, 4, 5, 6].map((level) => <option value={level} key={level}>{t('docsEditor.heading')} {level}</option>)}</NativeSelect>}
+    {['bulletList', 'orderedList', 'taskList', 'quote', 'codeBlock', 'link'].filter((key) => inline.has(key)).map(button)}
+    <FormatMenu label={t('docsEditor.insertMenu')} icon={Plus} items={insertItems} triggerClassName={buttonClass} contentClassName="document-format-menu" />
+    {['undo', 'redo'].filter((key) => inline.has(key)).map(button)}
+    {overflow.length > 0 && <FormatMenu label={tf('moreFormats')} icon={Type} items={overflow} triggerClassName={buttonClass} contentClassName="document-format-menu" align="end" />}
+    <Input variant="inline" ref={fileInput} className="sr-only" type="file" multiple aria-label={t('docsEditor.insert')} onChange={(event) => { insert([...(event.target.files ?? [])]); event.target.value = ''; }} />
+  </div>;
+  // Attributes of the selected code block or resource; shown only while one is selected.
+  const context = !readOnly && (tools.codeBlock || tools.image || tools.resource) && <div className="document-context-tools" role="group" aria-label={t('docsEditor.contextTools')}>
+    {tools.codeBlock && <Input aria-label={t('docsEditor.language')} placeholder={t('docsEditor.language')} value={tools.language} onChange={(event) => editor?.commands.updateAttributes('codeBlock', { language: event.target.value })} />}
+    {tools.image && <>
+      <Input aria-label={t('docsEditor.alt')} placeholder={t('docsEditor.alt')} value={tools.alt} onChange={(event) => editor?.commands.updateAttributes('image', { alt: event.target.value })} />
+      <Input aria-label={t('docsEditor.caption')} placeholder={t('docsEditor.caption')} value={tools.caption} onChange={(event) => editor?.commands.updateAttributes('image', { caption: event.target.value })} />
+      <Input aria-label={t('docsEditor.width')} type="range" min="64" max="1600" value={tools.width} onChange={(event) => editor?.commands.updateAttributes('image', { width: Number(event.target.value) })} />
+    </>}
+    {tools.resource && <Button type="button" size="sm" variant="ghost" disabled={busy} onMouseDown={(event) => event.preventDefault()} onClick={() => { chain()?.deleteSelection().run(); }}>{t('docsEditor.remove')}</Button>}
+  </div>;
   return <div className="document-editor">
-    {!readOnly && <div className="document-editor-toolbar" role="toolbar" aria-label={t('docsEditor.toolbar')}>
-      {action('bold', () => { editor?.chain().focus().toggleBold().run(); }, tools.bold)}
-      {action('italic', () => { editor?.chain().focus().toggleItalic().run(); }, tools.italic)}
-      {action('strike', () => { editor?.chain().focus().toggleStrike().run(); }, tools.strike)}
-      <NativeSelect aria-label={t('docsEditor.heading')} value={String(tools.heading)} onChange={(event) => { const level = Number(event.target.value); if (level) editor?.chain().focus().setHeading({ level: level as 1 | 2 | 3 | 4 | 5 | 6 }).run(); else editor?.chain().focus().setParagraph().run(); }}><option value="0">{t('docsEditor.paragraph')}</option>{[1, 2, 3, 4, 5, 6].map((level) => <option value={level} key={level}>{t('docsEditor.heading')} {level}</option>)}</NativeSelect>
-      {action('bulletList', () => { editor?.chain().focus().toggleBulletList().run(); }, tools.bulletList)}
-      {action('orderedList', () => { editor?.chain().focus().toggleOrderedList().run(); }, tools.orderedList)}
-      {action('taskList', () => { editor?.chain().focus().toggleTaskList().run(); }, tools.taskList)}
-      {action('quote', () => { editor?.chain().focus().toggleBlockquote().run(); }, tools.blockquote)}
-      {action('code', () => { editor?.chain().focus().toggleCodeBlock().run(); }, tools.codeBlock)}
-      {action('table', () => { editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(); })}
-      {action('rule', () => { editor?.chain().focus().setHorizontalRule().run(); })}
-      {action('insert', () => fileInput.current?.click())}
-      {onInsertExisting && action('reuse', () => { emit(); onInsertExisting(bookmark()); })}
-      {action('undo', () => { if (onUndo) travel(onUndo); else editor?.chain().focus().undo().run(); })}
-      {action('redo', () => { if (onRedo) travel(onRedo); else editor?.chain().focus().redo().run(); })}
-      <Input variant="inline" ref={fileInput} className="sr-only" type="file" multiple aria-label={t('docsEditor.insert')} onChange={(event) => { insert([...(event.target.files ?? [])]); event.target.value = ''; }} />
-      <Input aria-label={t('docsEditor.link')} placeholder="https://" value={link} onChange={(event) => setLink(event.target.value)} className="document-link-input" />
-      <Button type="button" size="sm" variant="ghost" disabled={!safeDocumentLink(link)} onClick={() => { editor?.chain().focus().setLink({ href: link }).run(); setLink(''); }}>{t('docsEditor.applyLink')}</Button>
-      {tools.codeBlock && <Input aria-label={t('docsEditor.language')} placeholder={t('docsEditor.language')} value={tools.language} onChange={(event) => editor?.commands.updateAttributes('codeBlock', { language: event.target.value })} />}
-      {tools.image && <>
-        <Input aria-label={t('docsEditor.alt')} placeholder={t('docsEditor.alt')} value={tools.alt} onChange={(event) => editor?.commands.updateAttributes('image', { alt: event.target.value })} />
-        <Input aria-label={t('docsEditor.caption')} placeholder={t('docsEditor.caption')} value={tools.caption} onChange={(event) => editor?.commands.updateAttributes('image', { caption: event.target.value })} />
-        <Input aria-label={t('docsEditor.width')} type="range" min="64" max="1600" value={tools.width} onChange={(event) => editor?.commands.updateAttributes('image', { width: Number(event.target.value) })} />
-      </>}
-      {tools.resource && action('remove', () => { editor?.chain().focus().deleteSelection().run(); })}
-    </div>}
+    {formatArea && (formatSlot ? createPortal(formatArea, formatSlot) : formatArea)}
+    {context}
     {error && <p role="alert">{error}</p>}
     <EditorContent editor={editor} />
+    {editor && !readOnly && <LinkEditor editor={editor} open={linkOpen} onOpenChange={setLinkOpen} isAllowedUri={safeDocumentLink} />}
   </div>;
 }

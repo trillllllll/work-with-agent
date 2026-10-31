@@ -150,15 +150,18 @@ test('浏览器正文性能、目录分页、图片懒加载与窄屏控件实�
   for (const theme of ['light', 'dark']) for (const width of [390, 430]) {
     await page.setViewportSize({ width, height: 900 });
     await page.evaluate((theme) => { document.documentElement.classList.remove('light', 'dark'); document.documentElement.classList.add(theme); document.documentElement.style.colorScheme = theme; localStorage.setItem('dovun.theme', theme); }, theme);
-    const checks = await page.evaluate(() => {
-      const expected = ['返回文件列表', '编辑', '阅读', '立即保存', '插入图片或附件', '导出'];
-      return expected.map((label) => { const button = [...document.querySelectorAll<HTMLButtonElement>('.document-workspace button')].find((node) => node.textContent?.trim() === label); const box = button?.getBoundingClientRect(); return { label, visible: Boolean(box && box.width > 0 && box.height > 0 && box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight), width: box?.width, height: box?.height }; });
+    const measure = () => page.evaluate(() => {
+      // Matched by visible text or, for icon buttons, by their accessible name.
+      const expected = ['返回文件列表', '编辑', '阅读', '立即保存', '插入', '更多格式', '更多'];
+      return expected.map((label) => { const button = [...document.querySelectorAll<HTMLButtonElement>('.document-workspace button')].find((node) => node.textContent?.trim() === label || node.getAttribute('aria-label') === label); const box = button?.getBoundingClientRect(); return { label, visible: Boolean(box && box.width > 0 && box.height > 0 && box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight), width: box?.width, height: box?.height }; });
     });
-    expect(checks.every((entry) => entry.visible)).toBe(true);
+    // The toolbar regroups its controls after the resize is observed.
+    await expect.poll(async () => (await measure()).filter((entry) => !entry.visible).map((entry) => entry.label)).toEqual([]);
+    const checks = await measure();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
     controls.push({ theme, width, checks }); await page.screenshot({ path: `${output}/${theme}-${width}.png`, fullPage: true });
   }
-  const downloaded = page.waitForEvent('download'); await page.getByRole('button', { name: '导出', exact: true }).click(); await page.getByRole('menuitem', { name: '导出本机恢复包', exact: true }).click();
+  const downloaded = page.waitForEvent('download'); await page.getByTestId('document-pane').getByRole('button', { name: '更多', exact: true }).click(); await page.getByRole('menuitem', { name: '导出本机恢复包', exact: true }).click();
   const packageFile = await downloaded; const zip = await JSZip.loadAsync(await readFile(await packageFile.path()));
   const recovery = JSON.parse(await zip.file('manifest.json')!.async('string')); expect(recovery.complete).toBe(true); expect(zip.file('draft.json')).not.toBeNull();
   const report = { at: new Date().toISOString(), browser: await page.context().browser()?.version(), measurements, editingGates, outline: { headings: 1000, pageSize: 100, secondPageStartsAt: 101 }, images: { count: 8, beforeScroll, afterScroll: richImageRequests }, markdownImages: { count: 8, beforeScroll: markdownBeforeScroll, afterScroll: markdownAfterScroll }, controls, recoveryExport: { complete: recovery.complete }, notes: ['Chromium desktop engine, no CPU throttling; mobile widths are layout simulations.', 'Input samples measure keydown capture to the following requestAnimationFrame callback, a pre-paint proxy. Long tasks also cover delayed serialization and draft persistence.'] };

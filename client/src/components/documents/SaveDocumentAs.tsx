@@ -11,7 +11,11 @@ import type { DocumentSnapshot, ResourceDocument } from '@/lib/documents/types.j
 import type { DocumentSession } from '@/lib/documents/session.js';
 import { openDocument } from './open.js';
 
-export function SaveDocumentAs({ scopeKey, resource, snapshot, session }: { scopeKey: string; resource?: ResourceDocument; snapshot?: DocumentSnapshot; session: DocumentSession | null }) {
+/**
+ * Save-as state and dialog. The caller places the entry point (a menu item) and renders `dialog` outside any
+ * menu, so the dialog stays mounted after the menu closes.
+ */
+export function useSaveDocumentAs({ scopeKey, resource, snapshot, session }: { scopeKey: string; resource?: ResourceDocument; snapshot?: DocumentSnapshot; session: DocumentSession | null }) {
   const { t } = useTranslation('library'); const client = useQueryClient();
   const [source, setSource] = useState<ResourceDocument | null>(null);
   const [open, setOpen] = useState(false); const [busy, setBusy] = useState(false); const [locked, setLocked] = useState(false);
@@ -39,11 +43,8 @@ export function SaveDocumentAs({ scopeKey, resource, snapshot, session }: { scop
       setError(failure instanceof Error ? failure.message : t('shared.actionFailed'));
     } finally { setBusy(false); }
   };
-  if (!resource || !formats.length) return null;
-  return <>
-    <Button size="sm" variant="ghost" disabled={!eligible} title={eligible ? t('document.saveAs') : t('document.saveAsSaveFirst')} onClick={show}>{t('document.saveAs')}</Button>
-    {resource.conversionSource && <Button size="sm" variant="ghost" onClick={() => openDocument({ resourceId: resource.conversionSource!.resourceId, revision: resource.conversionSource!.revision })}>{t('document.saveAsSource', { revision: resource.conversionSource.revision })}</Button>}
-    <Dialog open={open} onOpenChange={(next) => { if (!busy) setOpen(next); }}><DialogContent className="max-w-lg">
+  if (!resource || !formats.length) return { available: false, eligible: false, show, dialog: null, conversionSource: null };
+  const dialog = <Dialog open={open} onOpenChange={(next) => { if (!busy) setOpen(next); }}><DialogContent className="max-w-lg">
       <DialogTitle>{t('document.saveAs')}</DialogTitle>
       <DialogDescription>{t('document.saveAsDescription', { revision: source?.revision ?? resource.revision })}</DialogDescription>
       <Input aria-label={t('document.saveAsTitle')} maxLength={300} value={title} disabled={busy || locked} onChange={(event) => setTitle(event.target.value)} />
@@ -52,6 +53,7 @@ export function SaveDocumentAs({ scopeKey, resource, snapshot, session }: { scop
       {locked && <p role="status" className="text-sm">{t('document.saveAsPending')}</p>}
       {error && <p role="alert" className="text-sm">{error}</p>}
       <div className="flex justify-end gap-2"><Button variant="ghost" disabled={busy} onClick={() => setOpen(false)}>{t('shared.cancel')}</Button><Button disabled={busy || !title.trim()} onClick={() => { void save(); }}>{t(busy ? 'document.saveAsCreating' : locked ? 'document.retry' : 'document.saveAsConfirm')}</Button></div>
-    </DialogContent></Dialog>
-  </>;
+    </DialogContent></Dialog>;
+  const conversionSource = resource.conversionSource ? { revision: resource.conversionSource.revision, open: () => openDocument({ resourceId: resource.conversionSource!.resourceId, revision: resource.conversionSource!.revision }) } : null;
+  return { available: true, eligible, show, dialog, conversionSource };
 }

@@ -115,6 +115,7 @@ test('新建富文档可混合编辑并在刷新后恢复确切正文', async ({
   await page.goto('/#/library'); await page.getByRole('button', { name: '新建文档', exact: true }).click();
   const editor = page.getByRole('textbox', { name: '文档正文', exact: true }); await expect(editor).toBeVisible();
   await editor.fill('支付方案的正文');
+  await page.getByRole('toolbar', { name: '格式工具', exact: true }).getByRole('button', { name: '插入', exact: true }).click();
   await page.getByRole('button', { name: '插入表格', exact: true }).click();
   await expect(editor.locator('table')).toBeVisible();
   await editor.locator('table p').first().fill('金额');
@@ -252,7 +253,7 @@ test('完整文档包离线含原件，重新导入分配新身份和引用', as
   const created = await request.post(`${api}/api/v1/library/resources`, { data: { requestId: randomUUID(), title: '可迁移文档', format: 'richdoc-v1', schemaVersion: 1, content: { schemaVersion: 1, blocks: [
     { id: 'first', kind: 'paragraph', text: [{ text: '可离开应用阅读的正文' }] }, { id: 'file', kind: 'file', target: { resourceId: attachment.id, revision: 1 }, label: 'portable.bin' },
   ] } } }); expect(created.ok()).toBe(true); const resource = (await created.json()).data;
-  await open(page, resource.id); await page.getByRole('button', { name: '导出', exact: true }).click();
+  await open(page, resource.id); await page.getByTestId('document-pane').getByRole('button', { name: '更多', exact: true }).click();
   const downloading = page.waitForEvent('download'); await page.getByRole('menuitem', { name: '文档包（含 Markdown / HTML）', exact: true }).click();
   const download = await Promise.race([downloading, page.locator('[data-sonner-toast]').first().waitFor({ state: 'visible', timeout: 20_000 }).then(async () => { throw new Error(`Export feedback: ${await page.locator('[data-sonner-toast]').first().textContent()}`); })]); const path = await download.path(); expect(path).toBeTruthy();
   const zip = await JSZip.loadAsync(await readFile(path!)); const manifest = JSON.parse(await zip.file('manifest.json')!.async('string'));
