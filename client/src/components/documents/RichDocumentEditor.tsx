@@ -185,6 +185,8 @@ type RichDocumentEditorProps = {
   paginate?: boolean;
   /** Offered while paginated when the document is within the hard budget. */
   onEditAnyway?: () => void;
+  /** Paginated because the document is above the hard budget (decides the notice when "edit anyway" is not offered). */
+  overHardLimit?: boolean;
   onCompositionChange?: (composing: boolean) => void;
   onInsertFiles?: (files: File[], bookmark?: { blockId: string }) => void;
   onInsertExisting?: (bookmark?: { blockId: string }) => void;
@@ -229,7 +231,7 @@ const inlineFormats: Record<FormatTier, ReadonlySet<string>> = {
 export function RichDocumentEditor(props: RichDocumentEditorProps) {
   const supported = useMemo(() => richDocumentSupported(props.value), [props.value]);
   if (!supported) return <RichDocumentEditorCore {...props} />;
-  return <RichDocumentBoundary value={props.value} paginate={props.paginate === true} onEditAnyway={props.onEditAnyway} renderEditor={(value, paginated) => <RichDocumentEditorCore {...props} key={paginated ? value.blocks[0]?.id ?? 'empty' : 'editing'} value={value} readOnly={props.readOnly || paginated} {...(paginated ? { registerFlush: undefined, onPendingChange: undefined, onCompositionChange: undefined } : {})} />} />;
+  return <RichDocumentBoundary value={props.value} paginate={props.paginate === true} overHardLimit={props.overHardLimit === true} onEditAnyway={props.onEditAnyway} renderEditor={(value, paginated) => <RichDocumentEditorCore {...props} key={paginated ? value.blocks[0]?.id ?? 'empty' : 'editing'} value={value} readOnly={props.readOnly || paginated} {...(paginated ? { registerFlush: undefined, onPendingChange: undefined, onCompositionChange: undefined } : {})} />} />;
 }
 
 function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositionChange, onInsertFiles, onInsertExisting, onUndo, onRedo, onPendingChange, onSerializationFailure, registerFlush, sessionKey, formatSlot }: RichDocumentEditorProps) {
@@ -256,8 +258,10 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
     editorProps: {
       attributes: { class: 'document-prose', role: 'textbox', 'aria-multiline': 'true', 'aria-label': t('docsEditor.label') },
       handleKeyDown: (_view, event) => {
-        // Mod+Shift+V pastes plain text, so Markdown characters stay as typed.
-        if (event.key.toLowerCase() === 'v' && event.shiftKey && (event.metaKey || event.ctrlKey)) plainPaste.current = true;
+        // Mod+Shift+V pastes plain text, so Markdown characters stay as typed. Browsers that bind the shortcut paste
+        // synchronously as its default action; where nothing pastes (Safari, the desktop WebView) the flag must not
+        // linger into a later ordinary paste.
+        if (event.key.toLowerCase() === 'v' && event.shiftKey && (event.metaKey || event.ctrlKey)) { plainPaste.current = true; window.setTimeout(() => { plainPaste.current = false; }, 0); }
         if (composing.current || current.current.readOnly || !(event.metaKey || event.ctrlKey)) return false;
         const action = event.key.toLowerCase() === 'z' ? event.shiftKey ? current.current.onRedo : current.current.onUndo : event.key.toLowerCase() === 'y' ? current.current.onRedo : undefined;
         if (!action) return false; event.preventDefault(); travel(action); return true;
@@ -410,9 +414,10 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
     { key: 'undo', label: t('docsEditor.undo'), icon: Undo2, run: () => { focusEditorNow(editor); if (onUndo) travel(onUndo); else chain()?.undo().run(); } },
     { key: 'redo', label: t('docsEditor.redo'), icon: Redo2, run: () => { focusEditorNow(editor); if (onRedo) travel(onRedo); else chain()?.redo().run(); } },
   ] satisfies Array<{ key: string; label: string; icon: typeof Bold; active?: boolean; run: () => void }>;
-  const button = (key: string) => { const format = formats.find((entry) => entry.key === key)!; return <FormatButton key={key} className={buttonClass} label={format.label} icon={format.icon} pressed={format.active ?? false} disabled={busy} onClick={format.run} />; };
+  const button = (key: string) => { const format = formats.find((entry) => entry.key === key)!; return <FormatButton key={key} className={buttonClass} label={format.label} icon={format.icon} pressed={format.active} disabled={busy} onClick={format.run} />; };
   const setHeading = (level: number) => { if (level) chain()?.setHeading({ level: level as 1 | 2 | 3 | 4 | 5 | 6 }).run(); else chain()?.setParagraph().run(); };
-  const headingItems: FormatMenuItem[] = [0, 1, 2, 3].map((level) => ({ key: `heading-${level}`, label: level ? tf(`heading${level}`) : t('docsEditor.paragraph'), active: tools.heading === level, onSelect: () => setHeading(level) }));
+  // The same levels and labels as the heading select of the wide tiers.
+  const headingItems: FormatMenuItem[] = [0, 1, 2, 3, 4, 5, 6].map((level) => ({ key: `heading-${level}`, label: level ? `${t('docsEditor.heading')} ${level}` : t('docsEditor.paragraph'), active: tools.heading === level, onSelect: () => setHeading(level) }));
   const overflow: FormatMenuItem[] = [
     ...(inline.has('heading') ? [] : headingItems),
     ...formats.filter((format) => !inline.has(format.key)).map((format) => ({ key: format.key, label: format.label, active: format.active, onSelect: format.run })),
@@ -430,7 +435,7 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
     <FormatMenu label={t('docsEditor.insertMenu')} icon={Plus} items={insertItems} triggerClassName={buttonClass} contentClassName="document-format-menu" />
     {['undo', 'redo'].filter((key) => inline.has(key)).map(button)}
     {overflow.length > 0 && <FormatMenu label={tf('moreFormats')} icon={Type} items={overflow} triggerClassName={buttonClass} contentClassName="document-format-menu" align="end" />}
-    <Input variant="inline" ref={fileInput} className="sr-only" type="file" multiple aria-label={t('docsEditor.insert')} onChange={(event) => { insert([...(event.target.files ?? [])]); event.target.value = ''; }} />
+    <Input variant="inline" ref={fileInput} className="sr-only" type="file" multiple tabIndex={-1} aria-hidden aria-label={t('docsEditor.insert')} onChange={(event) => { insert([...(event.target.files ?? [])]); event.target.value = ''; }} />
   </div>;
   // Attributes of the selected code block or resource, and the rows and columns of the table at the cursor; shown only then.
   const tableItems: FormatMenuItem[] = [

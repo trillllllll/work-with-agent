@@ -235,6 +235,11 @@ test('粘贴助手回复的 Markdown 变成格式，Ctrl/Cmd+Shift+V 保留原�
   await expect(editor).toContainText('## 原样');
   await expect(editor).toContainText('- 星号 **不转换**');
   await expect(editor.locator('h2')).toHaveCount(1);
+  // Where Mod+Shift+V pastes nothing (Safari, the desktop app), it must not turn the next ordinary paste into plain text.
+  await editor.evaluate((node) => node.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', code: 'KeyV', shiftKey: true, metaKey: navigator.platform.startsWith('Mac'), ctrlKey: !navigator.platform.startsWith('Mac'), bubbles: true, cancelable: true })));
+  await page.waitForTimeout(50);
+  await pasteText(page, '## 之后的标题\n\n正文');
+  await expect(editor.locator('h2')).toHaveCount(2);
 });
 
 type SavedBlock = { kind: string; text?: Array<{ text: string; marks?: Array<{ kind: string; href?: string }> }>; children?: SavedBlock[] };

@@ -26,6 +26,7 @@ import { withinTextEditBudget } from './text-budget.js';
 import { RichDocumentEditor } from './RichDocumentEditor.js';
 import { measureDocument } from '@/lib/documents/content-cache.js';
 import { editBudgetOverrideKey, editBudgets, overrideEditBudgets } from './edit-budget.js';
+import { editPermitKey, forgetTabEditPermit, useEditPermit } from './edit-permits.js';
 import { ResourceReader, resourceOriginalUrl, saveDocumentBlob } from './ResourceReader.js';
 import { DocumentInfo } from './DocumentInfo.js';
 import { DocumentExtractedText } from './DocumentExtractedText.js';
@@ -43,27 +44,13 @@ if (import.meta.env.DEV) {
   try { const raw = localStorage.getItem(editBudgetOverrideKey); if (raw) overrideEditBudgets(JSON.parse(raw)); } catch { /* Measurement override only. */ }
 }
 
-/** Whether a body fits the interactive budget, and whether "edit anyway" may still be offered. */
-function documentBudget(format: string, value: DraftContent) {
+/** Whether a body fits the soft (open straight into the editor) or hard ("edit anyway" still offered) editing budget. */
+function withinDocumentBudget(format: string, value: DraftContent, level: 'soft' | 'hard') {
   const budgets = editBudgets();
-  if (typeof value === 'string') {
-    const within = withinTextEditBudget(value, budgets.text);
-    return { within, withinHard: within || withinTextEditBudget(value, budgets.textHard) };
-  }
-  if (format !== 'richdoc-v1') return { within: true, withinHard: true };
+  if (typeof value === 'string') return withinTextEditBudget(value, level === 'soft' ? budgets.text : budgets.textHard);
+  if (format !== 'richdoc-v1') return true;
   // Sizes are cached per block, so measuring on every edit costs only the changed blocks.
-  const within = measureDocument(value, budgets.rich).withinBudget;
-  return { within, withinHard: within || measureDocument(value, budgets.richHard).withinBudget };
-}
-
-/** Edit permission per open session: granted on first sight within budget or by "edit anyway", never revoked by growth. */
-const editPermits = new Map<string, boolean>();
-function useEditPermit(key: string | null, withinBudget: boolean) {
-  const [, rerender] = useState(0);
-  if (key && (withinBudget || !editPermits.has(key))) editPermits.set(key, withinBudget || editPermits.get(key) === true);
-  const permitted = key !== null && editPermits.get(key) === true;
-  const allow = useCallback(() => { if (!key) return; editPermits.set(key, true); rerender((count) => count + 1); }, [key]);
-  return [permitted, allow] as const;
+  return measureDocument(value, level === 'soft' ? budgets.rich : budgets.richHard).withinBudget;
 }
 
 export function DocumentWorkspace({ scopeKey, onOpenTask }: { scopeKey: string; onOpenTask: (id: string) => void | Promise<void> }) {
@@ -108,7 +95,7 @@ export function DocumentWorkspace({ scopeKey, onOpenTask }: { scopeKey: string; 
       <div className="document-open-tabs" role="tablist" aria-label={t('document.opened')}>
         {state.tabs.map((tab) => <div className="document-tab-wrap" key={tab.key}>
           <Button size="sm" variant="tab" role="tab" tabIndex={state.active === tab.key ? 0 : -1} aria-selected={state.active === tab.key} data-document-tab={tab.key} onKeyDown={(event) => activateByKey(event, tab.key)} onClick={() => { void leaveCurrent(() => documentTabs.activate(scopeKey, tab.key)); }} title={tab.title || t('document.untitled')}><span className="truncate">{tab.title || t('document.untitled')}</span>{tab.revision != null && <span className="library-meta">v{tab.revision}</span>}</Button>
-          <Button size="icon-xs" variant="ghost" aria-label={t('document.closeTab', { title: tab.title || t('document.untitled') })} onClick={() => { void leaveCurrent(() => documentTabs.close(scopeKey, tab.key), [tab]); }}>×</Button>
+          <Button size="icon-xs" variant="ghost" aria-label={t('document.closeTab', { title: tab.title || t('document.untitled') })} onClick={() => { void leaveCurrent(() => { documentTabs.close(scopeKey, tab.key); forgetTabEditPermit(scopeKey, tab); }, [tab]); }}>×</Button>
         </div>)}
       </div>
       <NativeSelect className="document-mobile-tabs" aria-label={t('document.opened')} value={state.active ?? ''} onChange={(event) => { const key = event.target.value; void leaveCurrent(() => documentTabs.activate(scopeKey, key)); }}><option value="" disabled>{t('document.opened')}</option>{state.tabs.map((tab) => <option key={tab.key} value={tab.key}>{tab.title || t('document.untitled')}{tab.revision != null ? ` · v${tab.revision}` : ''}</option>)}</NativeSelect>
@@ -198,11 +185,14 @@ function DocumentSurface({ scopeKey, target, viewId, resource, session, snapshot
   const readOnly = !session || snapshot?.readOnly === true || snapshot?.status === 'recovery' || format === 'binary';
   const compositionChanged = (value: boolean) => { session?.setComposing(value); };
   // Size decides only how a document opens. Once open for editing, growth never turns it read-only.
-  const budget = useMemo(() => documentBudget(format, value), [format, value]);
-  const [permitted, editAnyway] = useEditPermit(session && snapshot ? `${scopeKey}:${snapshot.localId}` : null, budget.within);
+  const withinBudget = useMemo(() => withinDocumentBudget(format, value, 'soft'), [format, value]);
+  const [permitted, editAnyway] = useEditPermit(session && snapshot ? editPermitKey(scopeKey, snapshot.localId) : null, withinBudget);
   const bodyReadOnly = readOnly || !permitted;
-  const paginate = !permitted && !budget.within;
-  const offerEdit = !readOnly && paginate && budget.withinHard ? editAnyway : undefined;
+  const paginate = !permitted && !withinBudget;
+  // The hard limit matters only while reading in pages, so editing never pays for measuring it.
+  const withinHard = useMemo(() => !paginate || withinDocumentBudget(format, value, 'hard'), [paginate, format, value]);
+  const offerEdit = !readOnly && paginate && withinHard ? editAnyway : undefined;
+  const overHardLimit = paginate && !withinHard;
   const [title, setTitle] = useState(snapshot?.title ?? resource?.title ?? '');
   const [titleEditing, setTitleEditing] = useState(false);
   const [mode, setMode] = useState<TextViewMode>(() => readOnly ? 'read' : positions.get(viewKey)?.mode ?? 'edit');
@@ -285,7 +275,7 @@ function DocumentSurface({ scopeKey, target, viewId, resource, session, snapshot
         if (editor) editor.commands.focus('start');
         else { body.focus(); if (body instanceof HTMLTextAreaElement) body.setSelectionRange(0, 0); }
       }} />
-      <div className="document-meta"><span>{format === 'richdoc-v1' ? t('kind.document') : format === 'markdown' ? 'Markdown' : format === 'text' ? t('kind.text') : resource?.attachment?.fileName ?? t('kind.attachment')}</span><span role="status" aria-live="polite" data-testid="document-save-state">{target.revision != null ? t('document.version', { revision }) : t(`document.status.${snapshot?.status ?? 'read-only'}`)}</span>{permitted && !budget.within && <span className="document-large-editing" data-testid="document-large-editing">{t('document.largeEditing')}</span>}</div>
+      <div className="document-meta"><span>{format === 'richdoc-v1' ? t('kind.document') : format === 'markdown' ? 'Markdown' : format === 'text' ? t('kind.text') : resource?.attachment?.fileName ?? t('kind.attachment')}</span><span role="status" aria-live="polite" data-testid="document-save-state">{target.revision != null ? t('document.version', { revision }) : t(`document.status.${snapshot?.status ?? 'read-only'}`)}</span>{permitted && !withinBudget && <span className="document-large-editing" data-testid="document-large-editing">{t('document.largeEditing')}</span>}</div>
     </header>
     <div ref={toolbar} className="document-toolbar">
       {!bodyReadOnly && <div role="group" aria-label={t('document.workspace')} className="document-mode-buttons">{(['edit', 'read', ...(format === 'markdown' ? ['split'] : [])] as TextViewMode[]).map((item) => <Button size="sm" variant="tab" key={item} aria-pressed={mode === item} onClick={() => { void session?.flushLocal().then((saved) => { if (!saved) { toast.error(t('document.storageFailed')); return; } setMode(item); positions.set(viewKey, { scrollTop: scroll.current?.scrollTop ?? 0, mode: item }); }); }}>{t(item === 'edit' && format !== 'richdoc-v1' ? 'document.source' : `document.${item}`)}</Button>)}</div>}
@@ -315,7 +305,7 @@ function DocumentSurface({ scopeKey, target, viewId, resource, session, snapshot
     {!!snapshot?.uploads.some((upload) => upload.state !== 'removed' && upload.state !== 'ready') && <div className="document-upload-list">{snapshot.uploads.filter((upload) => upload.state !== 'removed' && upload.state !== 'ready').map((upload) => <div key={upload.id}><span>{upload.fileName}</span><span className="library-meta">{upload.error || t('document.uploadNotice')}</span><Button size="sm" variant="ghost" disabled={downloadingAttachment !== null} onClick={() => { void downloadLocalAttachment(upload.id, upload.fileName); }}>{t(downloadingAttachment === upload.id ? 'document.readingLocalFile' : 'document.downloadLocalFile')}</Button>{upload.state === 'failed' && <Button size="sm" variant="ghost" onClick={() => { void session?.retryUpload(upload.id); }}>{t('document.retryUpload')}</Button>}<Button size="sm" variant="ghost" onClick={() => { void session?.removeUpload(upload.id); }}>{t('document.removeUpload')}</Button></div>)}</div>}
     <div className={`document-content-frame ${panel ? 'has-document-panel' : ''}`}>
       <div ref={scroll} className="document-scroll" onScroll={(event) => positions.set(viewKey, { mode, scrollTop: event.currentTarget.scrollTop })}>
-        {format === 'richdoc-v1' && typeof value !== 'string' ? <RichDocumentEditor {...editorBridge} sessionKey={viewKey} formatSlot={formatSlot} value={value} onChange={(next) => { if (!bodyReadOnly) session?.edit(next); }} readOnly={bodyReadOnly || mode === 'read'} paginate={paginate} onEditAnyway={offerEdit} onCompositionChange={compositionChanged} onInsertFiles={insert} onInsertExisting={(bookmark) => { if (!bodyReadOnly) setReuse(bookmark ?? {}); }} onUndo={() => session?.undo()} onRedo={() => session?.redo()} /> : format === 'text' || format === 'markdown' ? <TextDocumentEditor references={snapshot?.relativeReferences ?? resource?.relativeReferences} onResolveMissing={(path) => setReuse({ path })} fileName={resource?.attachment?.fileName || title} viewKey={viewKey} onUndo={() => session?.undo()} onRedo={() => session?.redo()} value={typeof value === 'string' ? value : ''} onChange={(next) => session?.edit(next)} format={format} mode={readOnly ? 'read' : mode} readOnly={readOnly} paginate={paginate} onEditAnyway={offerEdit} onCompositionChange={compositionChanged} /> : resource ? <ResourceReader resource={resource} /> : null}
+        {format === 'richdoc-v1' && typeof value !== 'string' ? <RichDocumentEditor {...editorBridge} sessionKey={viewKey} formatSlot={formatSlot} value={value} onChange={(next) => { if (!bodyReadOnly) session?.edit(next); }} readOnly={bodyReadOnly || mode === 'read'} paginate={paginate} overHardLimit={overHardLimit} onEditAnyway={offerEdit} onCompositionChange={compositionChanged} onInsertFiles={insert} onInsertExisting={(bookmark) => { if (!bodyReadOnly) setReuse(bookmark ?? {}); }} onUndo={() => session?.undo()} onRedo={() => session?.redo()} /> : format === 'text' || format === 'markdown' ? <TextDocumentEditor references={snapshot?.relativeReferences ?? resource?.relativeReferences} onResolveMissing={(path) => setReuse({ path })} fileName={resource?.attachment?.fileName || title} viewKey={viewKey} onUndo={() => session?.undo()} onRedo={() => session?.redo()} value={typeof value === 'string' ? value : ''} onChange={(next) => session?.edit(next)} format={format} mode={readOnly ? 'read' : mode} readOnly={readOnly} paginate={paginate} overHardLimit={overHardLimit} onEditAnyway={offerEdit} onCompositionChange={compositionChanged} /> : resource ? <ResourceReader resource={resource} /> : null}
         <DocumentSupplement content={resource?.supplementalContent} viewKey={viewKey} />
       </div>
       {panel && <aside className="document-side-panel" aria-label={t(`document.${panel}`)}><div className="document-side-heading"><h3>{t(`document.${panel}`)}</h3><Button size="sm" variant="ghost" onClick={() => setPanel(null)}>{t('shared.close')}</Button></div>{panel === 'info' && resourceId ? <DocumentInfo key={`${scopeKey}:${resourceId}`} resourceId={resourceId} revision={revision} onOpenTask={onOpenTask} /> : panel === 'extracted' && resourceId ? <DocumentExtractedText key={`${scopeKey}:${resourceId}:${revision}`} resourceId={resourceId} revision={revision} chunkId={target.chunkId} /> : <DocumentOutline content={value} format={format} container={scroll} />}</aside>}

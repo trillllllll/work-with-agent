@@ -14,16 +14,21 @@ type ConversionRequest = {
 
 export function saveAsFormats(resource: ResourceDocument | undefined): SaveAsFormat[] {
   if (!resource || resource.supported === false) return [];
-  if (resource.format === 'richdoc-v1') return inspectedSupported(resource.content) ? ['markdown', 'text'] : [];
+  if (resource.format === 'richdoc-v1') return inspectedSupported(resource) ? ['markdown', 'text'] : [];
   return resource.format === 'text' ? ['markdown'] : resource.format === 'markdown' ? ['text'] : [];
 }
 
-/** The save-as button renders with every editor snapshot; a loaded version is inspected once, not on each render. */
-const inspected = new WeakMap<object, boolean>();
-function inspectedSupported(content: unknown) {
-  if (!content || typeof content !== 'object') return inspectRichDocument(content).supported;
-  let supported = inspected.get(content);
-  if (supported === undefined) { supported = inspectRichDocument(content).supported; inspected.set(content, supported); }
+/**
+ * The save-as entry renders with every editor snapshot, and each poll returns a new copy of the same version,
+ * so a version is inspected once per id, revision and content hash rather than per object.
+ */
+const inspected = new Map<string, boolean>();
+function inspectedSupported(resource: ResourceDocument) {
+  const key = resource.revision && resource.contentHash ? JSON.stringify([resource.id, resource.revision, resource.contentHash]) : null;
+  const cached = key ? inspected.get(key) : undefined;
+  if (cached !== undefined) return cached;
+  const supported = inspectRichDocument(resource.content).supported;
+  if (key) { if (inspected.size > 200) inspected.clear(); inspected.set(key, supported); }
   return supported;
 }
 

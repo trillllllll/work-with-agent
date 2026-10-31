@@ -338,6 +338,8 @@
     "largeHardReadOnly": "文档超过可编辑上限（{{blocks}} 个结构块或 {{size}}），只能分页阅读。完整正文和原格式可下载。",
     "largeTextReadOnly": "文本较大（超过 {{size}}），先以分页源码打开。可以选择仍要编辑，编辑时输入可能变慢。",
     "largeTextHardReadOnly": "文本超过可编辑上限（{{size}}），只能分页阅读。原文未截断，完整内容可下载。",
+    "largeReading": "文档较大（超过 {{blocks}} 个结构块或 {{size}}），以分页阅读打开。",
+    "largeTextReading": "文本较大（超过 {{size}}），以分页源码打开。",
     "editAnyway": "仍要编辑",
     "largeEditing": "文档较长，编辑可能变慢",
     "supplemental": "原版本补充说明",

@@ -84,9 +84,15 @@ function hasUploads(content: DraftContent) {
   forEachUpload(content, () => { found = true; });
   return found;
 }
-/** Bytes retained by one undo step: string code units, or JSON characters of a rich body (cached per block). */
-function historyBytes(content: DraftContent) {
-  return (typeof content === 'string' ? content.length : measureDocument(content as never, { blocks: Number.POSITIVE_INFINITY, bytes: Number.POSITIVE_INFINITY }).bytes) * 2;
+/**
+ * Bytes one undo step keeps alive: string code units, or the JSON characters of the rich blocks it does not share
+ * (by identity) with the body that replaces it. Unchanged blocks are the same objects in both and are kept once.
+ */
+function historyBytes(content: DraftContent, next: DraftContent) {
+  if (typeof content === 'string') return content.length * 2;
+  const shared = typeof next === 'string' ? null : new Set<unknown>(next.blocks);
+  const kept = shared ? content.blocks.filter((block) => !shared.has(block)) : content.blocks;
+  return measureDocument({ ...content, blocks: kept } as never, { blocks: Number.POSITIVE_INFINITY, bytes: Number.POSITIVE_INFINITY }).bytes * 2;
 }
 /**
  * assertWritableContent with the rich-document checks served from the per-block caches. When the fast check
@@ -108,8 +114,9 @@ function emptyBody(content: DraftContent) {
 }
 /** A "new document" draft the user has not touched yet: nothing exists in Dovun and closing it loses nothing. */
 export function isPristineDraft(record: DocumentDraft) {
+  // An upload the user removed again before it finished created nothing that closing would lose.
   return record.blank === true && !record.resourceId && !record.pending && !record.organizationPending && !record.conflict && !record.blocked
-    && !record.editorRecovery?.length && record.uploads.length === 0 && record.title === record.confirmedTitle && emptyBody(record.content);
+    && !record.editorRecovery?.length && record.uploads.every((upload) => upload.state === 'removed' && !upload.result) && record.title === record.confirmedTitle && emptyBody(record.content);
 }
 function insertBlock(content: Exclude<DraftContent, string>, node: UploadBlock, bookmark?: string): DraftContent {
   let inserted = false;
@@ -134,6 +141,8 @@ export class DocumentSession {
   private networkUnavailable = false;
   private active = true;
   private composing = false;
+  /** Whether the composition in progress starts a new undo step; decided when it starts, from the pause before it. */
+  private compositionBoundary = false;
   private pendingRemote: ResourceDocument | null = null;
   private editorFlushers = new Map<string, () => boolean>();
   private pendingEditors = new Set<string>();
@@ -349,9 +358,12 @@ export class DocumentSession {
     // Scope expiry blocks publication immediately, but a registered view must still be
     // able to hand its already-typed buffer into this old scope's local draft.
     if ((!this.canWork() && !this.flushingEditors) || this.record.readOnly || this.editorRecoveryIssue() || this.staleBranches.length) return;
-    // A typing pause starts a new undo step; uninterrupted typing is split at the group duration.
+    // A typing pause starts a new undo step; uninterrupted typing is split at the group duration. An IME
+    // composition is never split: a pause while choosing a candidate would make a step of uncommitted text.
     const now = this.now();
-    if (now - this.lastEditAt >= HISTORY_PAUSE_MS || now - this.groupStartedAt >= HISTORY_GROUP_MAX_MS) { this.pushHistory(this.undoStack, this.record.content); this.groupStartedAt = now; }
+    const boundary = this.composing ? this.compositionBoundary : now - this.lastEditAt >= HISTORY_PAUSE_MS || now - this.groupStartedAt >= HISTORY_GROUP_MAX_MS;
+    if (boundary) { this.pushHistory(this.undoStack, this.record.content, content); this.groupStartedAt = now; }
+    this.compositionBoundary = false;
     this.lastEditAt = now;
     this.redoStack = [];
     this.applyEdit(content);
@@ -400,7 +412,7 @@ export class DocumentSession {
   undo() {
     if (!this.canWork() || this.record.readOnly || this.editorRecoveryIssue() || !this.undoStack.length) return false;
     const previous = this.undoStack.pop()!;
-    this.pushHistory(this.redoStack, this.record.content);
+    this.pushHistory(this.redoStack, this.record.content, previous.content);
     this.applyEdit(restoredStep(previous.content));
     this.lastEditAt = -Infinity;
     return true;
@@ -408,7 +420,7 @@ export class DocumentSession {
   redo() {
     if (!this.canWork() || this.record.readOnly || this.editorRecoveryIssue() || !this.redoStack.length) return false;
     const next = this.redoStack.pop()!;
-    this.pushHistory(this.undoStack, this.record.content);
+    this.pushHistory(this.undoStack, this.record.content, next.content);
     this.applyEdit(restoredStep(next.content));
     this.lastEditAt = -Infinity;
     return true;
@@ -417,8 +429,9 @@ export class DocumentSession {
   /** Local undo steps describe this device's earlier bodies; once another body replaces them they must not be replayed. */
   private clearHistory() { this.undoStack = []; this.redoStack = []; this.lastEditAt = -Infinity; this.groupStartedAt = -Infinity; }
 
-  private pushHistory(stack: Array<{ content: DraftContent; bytes: number }>, content: DraftContent) {
-    const bytes = historyBytes(content);
+  /** `next` is the body that replaces `content`; blocks the two share are retained once, so they are not charged again. */
+  private pushHistory(stack: Array<{ content: DraftContent; bytes: number }>, content: DraftContent, next: DraftContent) {
+    const bytes = historyBytes(content, next);
     if (bytes > HISTORY_BYTE_LIMIT) return;
     stack.push({ content, bytes });
     const total = () => [...this.undoStack, ...this.redoStack].reduce((sum, entry) => sum + entry.bytes, 0);
@@ -431,8 +444,14 @@ export class DocumentSession {
   }
 
   setComposing(value: boolean) {
+    if (value && !this.composing) {
+      // The whole composition joins one undo step; whether it starts a new one depends on the pause before it.
+      const now = this.now();
+      this.compositionBoundary = now - this.lastEditAt >= HISTORY_PAUSE_MS || now - this.groupStartedAt >= HISTORY_GROUP_MAX_MS;
+    }
     this.composing = value;
     if (!value) {
+      this.compositionBoundary = false;
       const reconciled = this.withReadyUploads(this.record.content);
       if (reconciled !== this.record.content) this.applyEdit(reconciled);
       if (this.pendingRemote) { const remote = this.pendingRemote; this.pendingRemote = null; this.receiveRemote(remote); }

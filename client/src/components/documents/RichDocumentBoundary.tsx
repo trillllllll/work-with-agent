@@ -84,7 +84,7 @@ export function richDocumentBlockPage(blocks: LocalRichBlock[], blockId: string)
  * Paginated reading for a document the user has not opened for editing because it exceeds the
  * interactive budget. `paginate` is decided by the caller once; growth while editing never paginates.
  */
-export function RichDocumentBoundary({ value, renderEditor, paginate, onEditAnyway }: { value: LocalRichDocument; renderEditor: (page: LocalRichDocument, readOnly: boolean) => ReactNode; paginate: boolean; onEditAnyway?: () => void }) {
+export function RichDocumentBoundary({ value, renderEditor, paginate, onEditAnyway, overHardLimit = false }: { value: LocalRichDocument; renderEditor: (page: LocalRichDocument, readOnly: boolean) => ReactNode; paginate: boolean; onEditAnyway?: () => void; overHardLimit?: boolean }) {
   const { t } = useTranslation('library');
   const container = useRef<HTMLDivElement>(null);
   const [page, setPage] = useState(0); const [textPage, setTextPage] = useState(0);
@@ -122,7 +122,9 @@ export function RichDocumentBoundary({ value, renderEditor, paginate, onEditAnyw
     <div className="document-notice" role="status">
       <p>{onEditAnyway
         ? t('document.largeReadOnly', { blocks: budgets.rich.blocks, size: formatBudgetBytes(budgets.rich.bytes) })
-        : t('document.largeHardReadOnly', { blocks: budgets.richHard.blocks, size: formatBudgetBytes(budgets.richHard.bytes) })}</p>
+        : overHardLimit
+          ? t('document.largeHardReadOnly', { blocks: budgets.richHard.blocks, size: formatBudgetBytes(budgets.richHard.bytes) })
+          : t('document.largeReading', { blocks: budgets.rich.blocks, size: formatBudgetBytes(budgets.rich.bytes) })}</p>
       {onEditAnyway && <Button size="sm" variant="outline" onClick={onEditAnyway}>{t('document.editAnyway')}</Button>}
     </div>
     {navigation}

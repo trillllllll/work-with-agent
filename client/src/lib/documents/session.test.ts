@@ -501,6 +501,35 @@ describe('session undo history', () => {
     await session.resolveConflict('remote');
     session.undo(); expect(session.getSnapshot().content).toBe('remote draft');
   });
+
+  it('keeps an IME composition in one undo step even when choosing a candidate takes a while', async () => {
+    const h = setup(); const session = await DocumentSession.open(h.deps, resource());
+    session.edit('base typed'); h.clock.advance(HISTORY_PAUSE_MS + 1);
+    session.setComposing(true);
+    session.edit('base typed ni'); h.clock.advance(HISTORY_PAUSE_MS + 1);
+    session.edit('base typed ni hao'); h.clock.advance(HISTORY_PAUSE_MS * 4);
+    session.edit('base typed 你好'); session.setComposing(false);
+    // Undo never shows candidate text the user did not commit.
+    session.undo(); expect(session.getSnapshot().content).toBe('base typed');
+    session.undo(); expect(session.getSnapshot().content).toBe('base');
+  });
+
+  it('charges a rich step only for the blocks it does not share, so long documents keep deep history', async () => {
+    const h = setup();
+    const filler = 'x'.repeat(500);
+    // About 2 MB of JSON: charging each step for the whole body would leave three or four steps within the limit.
+    const blocks = Array.from({ length: 4000 }, (_, index) => ({ id: `p${index}`, kind: 'paragraph' as const, text: [{ text: `${index} ${filler}` }] }));
+    const session = await DocumentSession.open(h.deps, { ...resource(), format: 'richdoc-v1', schemaVersion: 1, content: { schemaVersion: 1, blocks } });
+    type Body = { schemaVersion: 1; blocks: Array<{ id: string; kind: 'paragraph'; text: Array<{ text: string }> }> };
+    let body = session.getSnapshot().content as Body;
+    for (let step = 0; step < 30; step += 1) {
+      body = { ...body, blocks: body.blocks.map((block, index) => index === step ? { ...block, text: [{ text: `edited ${step}` }] } : block) };
+      session.edit(body); h.clock.advance(HISTORY_PAUSE_MS + 1);
+    }
+    let undone = 0; while (session.undo()) undone += 1;
+    expect(undone).toBe(30);
+    expect((session.getSnapshot().content as Body).blocks[0].text[0].text).toBe(`0 ${filler}`);
+  });
 });
 
 describe('blank new documents', () => {
@@ -568,6 +597,10 @@ describe('blank new documents', () => {
     const draft = { blank: true, resourceId: null, pending: null, organizationPending: null, conflict: null, blocked: null, uploads: [], title: 'Untitled', confirmedTitle: 'Untitled', content: emptyRichDocument() } as unknown as DocumentDraft;
     expect(isPristineDraft(draft)).toBe(true);
     expect(isPristineDraft({ ...draft, blank: undefined })).toBe(false);
+    // An attachment added and removed again before it finished created nothing; a finished one did.
+    expect(isPristineDraft({ ...draft, uploads: [{ id: 'u', state: 'removed' }] } as unknown as DocumentDraft)).toBe(true);
+    expect(isPristineDraft({ ...draft, uploads: [{ id: 'u', state: 'queued' }] } as unknown as DocumentDraft)).toBe(false);
+    expect(isPristineDraft({ ...draft, uploads: [{ id: 'u', state: 'ready', result: { resourceId: 'r', revision: 1 } }] } as unknown as DocumentDraft)).toBe(false);
     expect(isPristineDraft({ ...draft, title: 'Renamed' })).toBe(false);
     expect(isPristineDraft({ ...draft, resourceId: 'saved' })).toBe(false);
     expect(isPristineDraft({ ...draft, content: { schemaVersion: 1, blocks: [{ id: 'a', kind: 'paragraph', text: [{ text: 'x' }] }] } })).toBe(false);

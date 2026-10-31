@@ -343,6 +343,8 @@
     "largeHardReadOnly": "This document exceeds the editing limit ({{blocks}} structural blocks or {{size}}) and can only be read in pages. Download the complete content in its original format.",
     "largeTextReadOnly": "This text is large (over {{size}}), so it opens as paged source. You can edit it anyway; typing may be slower.",
     "largeTextHardReadOnly": "This text exceeds the editing limit ({{size}}) and can only be read in pages. The original is unchanged; download it for the complete content.",
+    "largeReading": "This document is large (over {{blocks}} structural blocks or {{size}}), so it opens as paged reading.",
+    "largeTextReading": "This text is large (over {{size}}), so it opens as paged source.",
     "editAnyway": "Edit anyway",
     "largeEditing": "Long document; editing may be slower",
     "supplemental": "Original version notes",

@@ -23,7 +23,8 @@ export function focusEditorNow(editor: Editor | null | undefined) {
   if (editor && !editor.isDestroyed && !editor.view.hasFocus()) editor.view.focus();
 }
 
-export function FormatButton({ label, icon: Icon, pressed = false, disabled, onClick, className }: {
+/** A toggle reports `pressed`; a plain action (undo, redo) leaves it out and is not announced as a toggle. */
+export function FormatButton({ label, icon: Icon, pressed, disabled, onClick, className }: {
   label: string; icon: Icon; pressed?: boolean; disabled?: boolean; onClick: () => void; className?: string;
 }) {
   return <Button variant="row" size="bare" type="button" className={cn(className, pressed && 'is-active')} aria-label={label} aria-pressed={pressed} title={label} disabled={disabled}
@@ -49,7 +50,7 @@ export function FormatMenu({ label, icon: Icon, items, triggerClassName, content
       <Button variant="row" size="bare" type="button" className={cn(triggerClassName, showLabel && 'format-menu-labelled')} aria-label={showLabel ? undefined : label} title={label} onMouseDown={(event) => event.preventDefault()}><Icon className="size-4" aria-hidden />{showLabel && <span>{label}</span>}</Button>
     </PopoverTrigger>
     {/* A chosen item moves focus itself (into the editor or a dialog it opens); Escape still returns focus to the trigger. */}
-    <PopoverContent data-format-tools className={cn('w-44', contentClassName)} align={align} onCloseAutoFocus={(event) => { if (chosen.current) event.preventDefault(); chosen.current = false; }}>
+    <PopoverContent data-format-tools aria-label={label} className={cn('w-44', contentClassName)} align={align} onCloseAutoFocus={(event) => { if (chosen.current) event.preventDefault(); chosen.current = false; }}>
       <div className="format-menu-list">
         {items.map((item) => <Button key={item.key} variant="row" size="bare" type="button" className={cn('format-menu-item', item.active && 'is-active')} aria-pressed={item.active} disabled={item.disabled}
           onClick={() => { chosen.current = true; change(false); item.onSelect(); }}>{item.label}</Button>)}

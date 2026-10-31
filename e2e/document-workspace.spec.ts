@@ -82,9 +82,22 @@ test('打开超预算文档先分页阅读，仍要编辑后可写入保存，�
   await expect(page.getByTestId('document-save-state')).toHaveText('已保存到 Dovun', { timeout: 20_000 });
   const saved = await bodyOf(request, resource.id);
   expect(saved.content.blocks).toHaveLength(over); expect(saved.content.blocks[over - 1].text[0].text).toBe(`段落 ${over - 1}续写`);
-  // A new page load decides again: the document opens as paged reading.
+  // Closing the tab drops the permission: reopening in the same run decides again, and so does a new page load.
+  // Phones switch documents with a list that has no close button.
+  if (test.info().project.name !== 'mobile') {
+    await page.getByRole('button', { name: '关闭 超预算富文档', exact: true }).click();
+    await expect(page.getByTestId('document-pane')).toHaveCount(0);
+    await open(page, resource.id);
+    await expect(page.getByTestId('document-large-reading')).toBeVisible();
+  }
   await page.reload();
   await expect(page.getByTestId('document-large-reading')).toBeVisible();
+  // An earlier version is read-only: paged reading without "edit anyway", and not described as over the hard limit.
+  await page.goto(`/#/library?resource=${resource.id}&revision=1`);
+  const history = page.getByTestId('document-large-reading');
+  await expect(history).toContainText('以分页阅读打开');
+  await expect(history).not.toContainText('超过可编辑上限');
+  await expect(history).not.toContainText('仍要编辑');
 
   const huge = defaultEditBudgets.richHard.blocks + 10;
   const hard = await request.post(`${api}/api/v1/library/resources`, { data: { requestId: randomUUID(), title: '超硬上限富文档', format: 'richdoc-v1', schemaVersion: 1, content: { schemaVersion: 1, blocks: Array.from({ length: huge }, (_, index) => ({ id: `h-${index}`, kind: 'paragraph', text: [{ text: `段 ${index}` }] })) } } });

@@ -1,5 +1,6 @@
 import { getDocumentRegistry } from '@/lib/documents/runtime.js';
 import { documentTabs, type OpenDocumentTab } from './open.js';
+import { forgetTabEditPermit } from './edit-permits.js';
 
 /**
  * Hand each visible view's input to its session and persist it before navigation.
@@ -14,7 +15,7 @@ export async function leaveDocumentViews(scopeKey: string, visible: Array<OpenDo
   if ((await Promise.all([...sessions].map((session) => session.flushLocal()))).some((saved) => !saved)) return false;
   for (const tab of closing) {
     const session = tab && tab.revision == null ? registry.get(tab.resourceId) : undefined;
-    if (session && await registry.discardIfPristine(session)) documentTabs.close(scopeKey, tab!.key);
+    if (session && await registry.discardIfPristine(session)) { forgetTabEditPermit(scopeKey, tab!); documentTabs.close(scopeKey, tab!.key); }
   }
   return true;
 }

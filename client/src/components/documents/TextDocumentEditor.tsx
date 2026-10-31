@@ -13,7 +13,7 @@ import { changedRange, revealTextareaCaret } from './caret.js';
 
 export type TextViewMode = 'edit' | 'read' | 'split';
 const carets = new Map<string, { start: number; end: number }>();
-export function TextDocumentEditor({ value, onChange, format, mode, readOnly, onCompositionChange, viewKey, onUndo, onRedo, fileName, references, onResolveMissing, paginate = false, onEditAnyway }: {
+export function TextDocumentEditor({ value, onChange, format, mode, readOnly, onCompositionChange, viewKey, onUndo, onRedo, fileName, references, onResolveMissing, paginate = false, onEditAnyway, overHardLimit = false }: {
   value: string; onChange: (value: string) => void; format: string; mode: TextViewMode; readOnly: boolean; onCompositionChange: (value: boolean) => void;
   viewKey: string; onUndo: () => boolean | void; onRedo: () => boolean | void;
   fileName?: string;
@@ -22,6 +22,8 @@ export function TextDocumentEditor({ value, onChange, format, mode, readOnly, on
   paginate?: boolean;
   /** Offered while paginated when the text is within the hard budget. */
   onEditAnyway?: () => void;
+  /** Paginated because the text is above the hard budget (decides the notice when "edit anyway" is not offered). */
+  overHardLimit?: boolean;
 }) {
   const { t } = useTranslation('library');
   const editor = useRef<HTMLTextAreaElement>(null);
@@ -86,7 +88,7 @@ export function TextDocumentEditor({ value, onChange, format, mode, readOnly, on
     const budgets = editBudgets();
     return <div className="document-large-reading" data-testid="document-large-text-reading">
       <div className="document-notice" role="status">
-        <p>{onEditAnyway ? t('document.largeTextReadOnly', { size: formatBudgetBytes(budgets.text) }) : t('document.largeTextHardReadOnly', { size: formatBudgetBytes(budgets.textHard) })}</p>
+        <p>{onEditAnyway ? t('document.largeTextReadOnly', { size: formatBudgetBytes(budgets.text) }) : overHardLimit ? t('document.largeTextHardReadOnly', { size: formatBudgetBytes(budgets.textHard) }) : t('document.largeTextReading', { size: formatBudgetBytes(budgets.text) })}</p>
         {onEditAnyway && <Button size="sm" variant="outline" onClick={onEditAnyway}>{t('document.editAnyway')}</Button>}
       </div>
       <div className="flex flex-wrap items-center gap-2 py-2" aria-label={t('document.largePageNavigation')}>

@@ -182,8 +182,8 @@ export function DescriptionEditor({ value, taskId, readonly, fill, openDescripti
     editorProps: {
       attributes: { 'aria-label': translate('tasks:descriptionEditor.detailsLabel'), role: 'textbox', 'aria-multiline': 'true', class: 'task-prose', 'data-task-editor-prose': 'true' },
       handleKeyDown: (_view, event) => {
-        // 粘贴为纯文本：Mod+Shift+V。
-        if (event.key.toLowerCase() === 'v' && event.shiftKey && (event.metaKey || event.ctrlKey)) plainPasteRef.current = true;
+        // 粘贴为纯文本：Mod+Shift+V。快捷键触发的粘贴同步发生；没有粘贴时（Safari、桌面应用）标记不能留到下一次普通粘贴。
+        if (event.key.toLowerCase() === 'v' && event.shiftKey && (event.metaKey || event.ctrlKey)) { plainPasteRef.current = true; window.setTimeout(() => { plainPasteRef.current = false; }, 0); }
         return false;
       },
       handlePaste: (view, event) => {
