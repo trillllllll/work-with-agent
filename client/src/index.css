@@ -1510,6 +1510,22 @@
   background: var(--glass-hover);
 }
 
+.format-menu-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.format-menu-labelled {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .format-link-popover {
   position: fixed;
   z-index: 55;

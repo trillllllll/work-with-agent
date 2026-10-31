@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Bold, Italic, Link2, List, ListOrdered, ListTodo, Plus, Quote, Redo2, SquareCode, Strikethrough, Type, Undo2 } from 'lucide-react';
+import { Bold, Italic, Link2, List, ListOrdered, ListTodo, Plus, Quote, Redo2, SquareCode, Strikethrough, Table2, Type, Undo2 } from 'lucide-react';
 import { externalDocumentChange } from './editor-sync.js';
 import { Extension, Node, mergeAttributes, type Editor } from '@tiptap/core';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
@@ -148,20 +148,24 @@ function resourceNode(kind: 'image' | 'file' | 'upload') {
 export type ToolbarState = {
   bold: boolean; italic: boolean; strike: boolean; code: boolean; link: boolean; linkHref: string; heading: number;
   bulletList: boolean; orderedList: boolean; taskList: boolean; blockquote: boolean; codeBlock: boolean; table: boolean; language: string;
+  /** Deleting the last row or column is refused by the table commands; delete the table instead. */
+  canDeleteRow: boolean; canDeleteColumn: boolean;
   image: boolean; alt: string; caption: string; width: number; resource: boolean;
 };
-const idleToolbar: ToolbarState = { bold: false, italic: false, strike: false, code: false, link: false, linkHref: '', heading: 0, bulletList: false, orderedList: false, taskList: false, blockquote: false, codeBlock: false, table: false, language: '', image: false, alt: '', caption: '', width: 640, resource: false };
+const idleToolbar: ToolbarState = { bold: false, italic: false, strike: false, code: false, link: false, linkHref: '', heading: 0, bulletList: false, orderedList: false, taskList: false, blockquote: false, codeBlock: false, table: false, language: '', canDeleteRow: false, canDeleteColumn: false, image: false, alt: '', caption: '', width: 640, resource: false };
 function toolbarState(editor: Editor | null): ToolbarState {
   if (!editor || editor.isDestroyed) return idleToolbar;
   const image = editor.isActive('image'); const codeBlock = editor.isActive('codeBlock'); const link = editor.isActive('link');
+  const table = editor.isActive('table');
   const imageAttrs = image ? editor.getAttributes('image') : null;
   return {
     bold: editor.isActive('bold'), italic: editor.isActive('italic'), strike: editor.isActive('strike'), code: editor.isActive('code'),
     link, linkHref: link ? String(editor.getAttributes('link').href ?? '') : '',
     heading: editor.isActive('heading') ? Number(editor.getAttributes('heading').level) || 1 : 0,
     bulletList: editor.isActive('bulletList'), orderedList: editor.isActive('orderedList'), taskList: editor.isActive('taskList'),
-    blockquote: editor.isActive('blockquote'), codeBlock, table: editor.isActive('table'),
+    blockquote: editor.isActive('blockquote'), codeBlock, table,
     language: codeBlock ? String(editor.getAttributes('codeBlock').language ?? '') : '',
+    canDeleteRow: table && editor.can().deleteRow(), canDeleteColumn: table && editor.can().deleteColumn(),
     image, alt: String(imageAttrs?.alt ?? ''), caption: String(imageAttrs?.caption ?? ''), width: Number(imageAttrs?.width ?? 640) || 640,
     resource: image || editor.isActive('file') || editor.isActive('upload'),
   };
@@ -428,8 +432,18 @@ function RichDocumentEditorCore({ value, onChange, readOnly = false, onCompositi
     {overflow.length > 0 && <FormatMenu label={tf('moreFormats')} icon={Type} items={overflow} triggerClassName={buttonClass} contentClassName="document-format-menu" align="end" />}
     <Input variant="inline" ref={fileInput} className="sr-only" type="file" multiple aria-label={t('docsEditor.insert')} onChange={(event) => { insert([...(event.target.files ?? [])]); event.target.value = ''; }} />
   </div>;
-  // Attributes of the selected code block or resource; shown only while one is selected.
-  const context = !readOnly && (tools.codeBlock || tools.image || tools.resource) && <div className="document-context-tools" role="group" aria-label={t('docsEditor.contextTools')}>
+  // Attributes of the selected code block or resource, and the rows and columns of the table at the cursor; shown only then.
+  const tableItems: FormatMenuItem[] = [
+    { key: 'rowBefore', label: t('docsEditor.rowBefore'), onSelect: () => chain()?.addRowBefore().run() },
+    { key: 'rowAfter', label: t('docsEditor.rowAfter'), onSelect: () => chain()?.addRowAfter().run() },
+    { key: 'columnBefore', label: t('docsEditor.columnBefore'), onSelect: () => chain()?.addColumnBefore().run() },
+    { key: 'columnAfter', label: t('docsEditor.columnAfter'), onSelect: () => chain()?.addColumnAfter().run() },
+    { key: 'deleteRow', label: t('docsEditor.deleteRow'), disabled: !tools.canDeleteRow, onSelect: () => chain()?.deleteRow().run() },
+    { key: 'deleteColumn', label: t('docsEditor.deleteColumn'), disabled: !tools.canDeleteColumn, onSelect: () => chain()?.deleteColumn().run() },
+    { key: 'deleteTable', label: t('docsEditor.deleteTable'), onSelect: () => chain()?.deleteTable().run() },
+  ];
+  const context = !readOnly && (tools.codeBlock || tools.image || tools.resource || tools.table) && <div className="document-context-tools" role="group" aria-label={t('docsEditor.contextTools')}>
+    {tools.table && <FormatMenu label={t('docsEditor.tableMenu')} icon={Table2} items={tableItems} showLabel contentClassName="document-format-menu" />}
     {tools.codeBlock && <Input aria-label={t('docsEditor.language')} placeholder={t('docsEditor.language')} value={tools.language} onChange={(event) => editor?.commands.updateAttributes('codeBlock', { language: event.target.value })} />}
     {tools.image && <>
       <Input aria-label={t('docsEditor.alt')} placeholder={t('docsEditor.alt')} value={tools.alt} onChange={(event) => editor?.commands.updateAttributes('image', { alt: event.target.value })} />

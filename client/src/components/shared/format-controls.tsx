@@ -34,17 +34,19 @@ export function FormatButton({ label, icon: Icon, pressed = false, disabled, onC
 
 export type FormatMenuItem = { key: string; label: string; /** Toggles report their state; plain actions leave it out. */ active?: boolean; disabled?: boolean; onSelect: () => void };
 
-/** A popover of formatting toggles. Items report their pressed state, so they are toggle buttons rather than menu items. */
-export function FormatMenu({ label, icon: Icon, items, triggerClassName, contentClassName, align = 'start', onOpenChange }: {
+/** A popover of formatting toggles and actions. Toggles report their pressed state, so items are buttons rather than menu items. */
+export function FormatMenu({ label, icon: Icon, items, triggerClassName, contentClassName, align = 'start', onOpenChange, showLabel = false }: {
   label: string; icon: Icon; items: FormatMenuItem[]; triggerClassName?: string; contentClassName?: string;
   align?: 'start' | 'center' | 'end'; onOpenChange?: (open: boolean) => void;
+  /** Show the label next to the icon, for menus whose icon alone is not self-explanatory. */
+  showLabel?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const chosen = useRef(false);
   const change = (next: boolean) => { setOpen(next); onOpenChange?.(next); };
   return <Popover open={open} onOpenChange={change}>
     <PopoverTrigger asChild>
-      <Button variant="row" size="bare" type="button" className={triggerClassName} aria-label={label} title={label} onMouseDown={(event) => event.preventDefault()}><Icon className="size-4" aria-hidden /></Button>
+      <Button variant="row" size="bare" type="button" className={cn(triggerClassName, showLabel && 'format-menu-labelled')} aria-label={showLabel ? undefined : label} title={label} onMouseDown={(event) => event.preventDefault()}><Icon className="size-4" aria-hidden />{showLabel && <span>{label}</span>}</Button>
     </PopoverTrigger>
     {/* A chosen item moves focus itself (into the editor or a dialog it opens); Escape still returns focus to the trigger. */}
     <PopoverContent data-format-tools className={cn('w-44', contentClassName)} align={align} onCloseAutoFocus={(event) => { if (chosen.current) event.preventDefault(); chosen.current = false; }}>

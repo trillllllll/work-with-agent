@@ -236,3 +236,71 @@ test('粘贴助手回复的 Markdown 变成格式，Ctrl/Cmd+Shift+V 保留原�
   await expect(editor).toContainText('- 星号 **不转换**');
   await expect(editor.locator('h2')).toHaveCount(1);
 });
+
+type SavedBlock = { kind: string; text?: Array<{ text: string; marks?: Array<{ kind: string; href?: string }> }>; children?: SavedBlock[] };
+const tableCell = (id: string, text: string, header = false): Block => ({ id, kind: header ? 'tableHeader' : 'tableCell', children: [paragraph(`${id}-p`, text)] });
+/** Each saved row as [cell kind, cell text] pairs. */
+const tableShape = (table: SavedBlock | undefined) => table?.children?.map((row) => row.children?.map((cell) => [cell.kind, cell.children?.[0]?.text?.map((run) => run.text).join('') ?? '']));
+
+test('表格在光标处增删行列，也可整表删除，保存的结构随之改变', async ({ page, request }) => {
+  const doc = await createRich(request, '表格行列', [paragraph('intro', '表格前'), { id: 'table', kind: 'table', children: [
+    { id: 'r0', kind: 'tableRow', children: [tableCell('h0', '名称', true), tableCell('h1', '数量', true)] },
+    { id: 'r1', kind: 'tableRow', children: [tableCell('c0', '苹果'), tableCell('c1', '3')] },
+  ] }]);
+  await open(page, doc.id);
+  const editor = richEditor(page);
+  const rows = editor.locator('tr');
+  const choose = async (name: string) => {
+    await page.getByRole('button', { name: '表格行列', exact: true }).click();
+    await page.locator('.format-menu-list').getByRole('button', { name, exact: true }).click();
+  };
+  await editor.getByText('苹果', { exact: true }).click();
+  await choose('在下方插入行');
+  await expect(rows).toHaveCount(3);
+  await choose('在右侧插入列');
+  await expect(rows.first().locator('th, td')).toHaveCount(3);
+  // Delete the inserted column and row again from inside them; the original table remains.
+  await rows.nth(1).locator('td').nth(1).click();
+  await choose('删除列');
+  await expect(rows.first().locator('th, td')).toHaveCount(2);
+  await rows.nth(2).locator('td').first().click();
+  await choose('删除行');
+  await expect(rows).toHaveCount(2);
+  await expect.poll(async () => tableShape(firstBlock((await bodyOf(request, doc.id)).content, 'table') as SavedBlock), { timeout: 20_000 })
+    .toEqual([[['tableHeader', '名称'], ['tableHeader', '数量']], [['tableCell', '苹果'], ['tableCell', '3']]]);
+  // The whole table goes, including a row added just before.
+  await choose('在下方插入行');
+  await expect(rows).toHaveCount(3);
+  await choose('删除表格');
+  await expect(editor.locator('table')).toHaveCount(0);
+  await expect(editor).toContainText('表格前');
+  await expect.poll(async () => firstBlock((await bodyOf(request, doc.id)).content, 'table'), { timeout: 20_000 }).toBeUndefined();
+});
+
+test('链接可修改地址并整段移除，不安全地址不能应用', async ({ page, request }) => {
+  const doc = await createRich(request, '链接编辑', [{ id: 'first', kind: 'paragraph', text: [{ text: '前文 ' }, { text: '官网链接', marks: [{ kind: 'link', href: 'https://old.example.com/' }] }, { text: ' 后文' }] }]);
+  await open(page, doc.id);
+  const editor = richEditor(page);
+  const links = async () => ((await bodyOf(request, doc.id)).content.blocks[0] as SavedBlock).text!.filter((run) => run.marks?.some((mark) => mark.kind === 'link')).map((run) => ({ text: run.text, href: run.marks!.find((mark) => mark.kind === 'link')!.href }));
+  // The caret sits inside the link; the whole link is edited.
+  await editor.locator('a').click();
+  await formatControl(page, '链接');
+  const dialog = page.getByRole('dialog', { name: '链接', exact: true });
+  const address = dialog.getByRole('textbox', { name: '链接地址', exact: true });
+  await expect(address).toHaveValue('https://old.example.com/');
+  await address.fill('javascript:alert(1)');
+  await expect(dialog.getByRole('button', { name: '应用', exact: true })).toBeDisabled();
+  await address.fill('https://new.example.com/');
+  await address.press('Enter');
+  await expect(dialog).toHaveCount(0);
+  await expect(editor.locator('a')).toHaveAttribute('href', 'https://new.example.com/');
+  await expect(editor.locator('a')).toHaveText('官网链接');
+  await expect.poll(links, { timeout: 20_000 }).toEqual([{ text: '官网链接', href: 'https://new.example.com/' }]);
+  await editor.locator('a').click();
+  await formatControl(page, '链接');
+  await page.getByRole('dialog', { name: '链接', exact: true }).getByRole('button', { name: '移除链接', exact: true }).click();
+  await expect(editor.locator('a')).toHaveCount(0);
+  await expect(editor.locator('p').first()).toHaveText('前文 官网链接 后文');
+  await expect.poll(links, { timeout: 20_000 }).toEqual([]);
+  expect(((await bodyOf(request, doc.id)).content.blocks[0] as SavedBlock).text!.map((run) => run.text).join('')).toBe('前文 官网链接 后文');
+});
