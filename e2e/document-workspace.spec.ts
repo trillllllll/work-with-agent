@@ -19,7 +19,8 @@ async function bodyOf(request: APIRequestContext, id: string) { return (await (a
 async function open(page: Page, id: string) { await page.goto(`/#/library?resource=${id}`); await expect(page.getByTestId('document-pane')).toBeVisible(); }
 
 test('超预算文本以只读源码分页显示，翻页不截断或改写权威正文', async ({ page, request }) => {
-  const content = '\uFEFF# 源文件\r\n' + '😀 中文 `code`\r\n'.repeat(25_000) + 'END-OF-ORIGINAL';
+  // Each repeated line is 20 UTF-8 bytes; enough lines to pass the soft text budget but stay within the hard one.
+  const content = '\uFEFF# 源文件\r\n' + '😀 中文 `code`\r\n'.repeat(Math.ceil(defaultEditBudgets.text / 20) + 1_000) + 'END-OF-ORIGINAL';
   const resource = await create(request, '长文本.md', content);
   await open(page, resource.id);
   const reader = page.getByTestId('document-large-text-reading');

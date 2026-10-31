@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import JSZip from 'jszip';
 import { test, expect, type APIRequestContext, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
+import { defaultEditBudgets } from '../client/src/components/documents/edit-budget.js';
 
 const api = process.env.E2E_API_URL!;
 const output = '/tmp/dovun-document-browser-performance';
@@ -36,7 +37,8 @@ test('浏览器正文性能、目录分页、图片懒加载与窄屏控件实�
   const budgetOnly = process.env.DOCUMENT_BUDGET_ONLY === '1';
   const headingBlocks = Array.from({ length: 1000 }, (_, index) => ({ id: `heading-${index}`, kind: 'heading', level: 2, text: [{ text: `章节 ${index + 1}` }] }));
   const preparedHeadings = budgetOnly ? await create(request, '1000条目录样本', headingBlocks) : null;
-  for (const count of process.env.DOCUMENT_LAYOUT_ONLY === '1' ? [] : budgetOnly ? [500, 1000, 10000] : [1000, 10000]) {
+  // About 345 B per paragraph: 1,000 and 4,000 fit the soft budget (5,000 blocks / 1.5 MiB); 10,000 (about 3.4 MB) is above the hard budget.
+  for (const count of process.env.DOCUMENT_LAYOUT_ONLY === '1' ? [] : budgetOnly ? [1000, 4000, 10000] : [1000, 10000]) {
     const resource = await create(request, `${count}段性能样本`, Array.from({ length: count }, (_, index) => paragraph(index)));
     await open(page, resource.id, resource.title);
     if (await page.getByTestId('document-large-reading').isVisible()) {
@@ -92,7 +94,10 @@ test('浏览器正文性能、目录分页、图片懒加载与窄屏控件实�
   if (await page.getByTestId('document-large-reading').isVisible()) {
     await expect(page.locator('.document-prose > h2')).toHaveCount(100);
     await expect(page.locator('.document-prose')).toHaveAttribute('contenteditable', 'false');
-    const longText = 'A'.repeat(10_000) + 'B'.repeat(10_000) + 'C'.repeat(250_000);
+  }
+  {
+    // One block above the soft byte budget: its page is still too large, so the text itself is paged.
+    const longText = 'A'.repeat(10_000) + 'B'.repeat(10_000) + 'C'.repeat(defaultEditBudgets.rich.bytes);
     const long = await create(request, '单块纯文字阅读降级', [paragraph(0, longText)]);
     await open(page, long.id, long.title);
     const textPage = page.getByTestId('document-large-reading').locator('pre');

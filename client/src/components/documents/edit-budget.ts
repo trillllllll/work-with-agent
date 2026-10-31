@@ -4,15 +4,19 @@
  * budget only reading and download are offered. A document that is already open for editing is never
  * switched to read-only because it grew. No module here depends on React or the bundler, so browser
  * tests can import the same numbers.
+ *
+ * The values come from e2e/document-editing-performance.spec.ts (performance-verification.md, Task 12):
+ * the soft budgets are the largest samples that kept typing and saving free of tasks over 50 ms in
+ * both runs, the hard budgets the largest samples whose longest task stayed under 200 ms.
  */
 export type RichBudget = { blocks: number; bytes: number };
 export type EditBudgets = { rich: RichBudget; richHard: RichBudget; text: number; textHard: number };
 
 export const defaultEditBudgets: EditBudgets = {
-  rich: { blocks: 500, bytes: 256 * 1024 },
-  richHard: { blocks: 2_000, bytes: 1024 * 1024 },
-  text: 256 * 1024,
-  textHard: 1024 * 1024,
+  rich: { blocks: 5_000, bytes: 1.5 * 1024 * 1024 },
+  richHard: { blocks: 10_000, bytes: 3 * 1024 * 1024 },
+  text: 1024 * 1024,
+  textHard: 4 * 1024 * 1024,
 };
 /** Development-only measurement override, JSON shaped like Partial<EditBudgets>. */
 export const editBudgetOverrideKey = 'dovun.documents.editBudget';
@@ -28,7 +32,9 @@ export function overrideEditBudgets(value: Partial<EditBudgets> | null) {
   } : defaultEditBudgets;
 }
 
-/** "256 KiB", "1 MiB": budget sizes shown to the user. */
+/** "256 KiB", "1 MiB", "1.5 MiB": budget sizes shown to the user. */
 export function formatBudgetBytes(bytes: number) {
-  return bytes % (1024 * 1024) === 0 ? `${bytes / (1024 * 1024)} MiB` : `${Math.round(bytes / 1024)} KiB`;
+  const mebibytes = bytes / (1024 * 1024);
+  if (mebibytes >= 1) return `${Number.isInteger(mebibytes) ? mebibytes : Number(mebibytes.toFixed(1))} MiB`;
+  return `${Math.round(bytes / 1024)} KiB`;
 }
