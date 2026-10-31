@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dovun · 图标第二轮 · 归栈宽缝立体化</title>
+<!-- Real app tokens and brand classes, so the in-app mockups match what ships. -->
+<link rel="stylesheet" href="../../../../../client/src/styles/control-tokens.css">
+<link rel="stylesheet" href="../../../../../client/src/styles/workbench.css">
+<link rel="stylesheet" href="../review.css">
+</head>
+<body>
+<div class="page">
+<header>
+  <div class="eyebrow">DOVUN / ICON · <a href="../round-01/index.html">第一轮</a> · 第二轮</div>
+  <h1>归栈宽缝 · 让左块看出是立体的</h1>
+  <p>保留现行图标，外轮廓、缝宽和颜色都不动，只把左块本来就有的顶面画出来。左块是一个盒子：左上那一角是顶面，下面是正面，顶面右半边被中脊挡住。中脊的顶盖同理。</p>
+  <p style="margin-top:8px"><strong>2026-10-31 选定乙</strong>，已换成应用源码中的图标；页面里的“现行”仍是调整前的 10-23 版。</p>
+  <details>
+    <summary>范围与阅读方式</summary>
+    <ul>
+      <li>四个变体都从 <code>baseline/dovun-mark.svg</code>（2026-10-23 版）原样读取三片轮廓，只加顶面或窄缝，外轮廓与现行一致。</li>
+      <li>顶面那条边从左块左上角出发，与左块底边平行；中脊那条从左上角连到右侧凹口的内端。</li>
+      <li>提亮用的是浅一级的蓝 <code>#5671ad</code>，等于光从上方来。窄缝宽 30，约为现有缝宽的 40%。</li>
+      <li>单色、反白和通知剪影只有一种颜色，提亮的变体在这些场合自动改用窄缝。</li>
+      <li>底板沿用现行的浅灰整幅底板，只比较立体处理。深色界面用第一轮的深色配色。</li>
+      <li>重新生成：<code>node docs/design/dovun/icon-redesign/generate-round-02.mjs</code>（Node 22）。</li>
+    </ul>
+  </details>
+</header>
+
+<section aria-labelledby="overview">
+  <h2 class="section" id="overview">四个变体</h2>
+  <p class="note">大图是不带底板的标记。</p>
+  <div class="cards" style="--n: 5">
+    <article class="card current">
+      <img class="hero" src="../baseline/dovun-mark.svg" alt="现行标记">
+      <h3>现行（10-23）</h3>
+      <p>左块和中脊都是一整块深蓝，只靠轮廓暗示立体，看不出哪里是顶面。</p>
+    </article>
+    <article class="card">
+      <img class="hero" src="candidates/tone/mark.svg" alt="甲">
+      <h3>甲 · 左块顶面提亮</h3>
+      <p>只改左块。顶面用浅一级的蓝，一眼能看出是个盒子。</p>
+      <p class="minus"><span class="tag">注意</span>左块立体了，中脊还是平的，两块深蓝的画法不一致。</p>
+    </article>
+    <article class="card pick">
+      <img class="hero" src="candidates/cut/mark.svg" alt="乙">
+      <h3>乙 · 左块顶面开缝（选定）</h3>
+      <p>不加颜色，用一道窄缝把左块的顶面和正面分开。</p>
+      <p class="plus"><span class="tag">选定</span>只用原有两种颜色，单色和反白版与彩色版一致。</p>
+      <p class="minus"><span class="tag">注意</span>顶面变成一块单独的三角；16px 下窄缝看不见。</p>
+    </article>
+    <article class="card">
+      <img class="hero" src="candidates/tone-spine/mark.svg" alt="丙">
+      <h3>丙 · 左块与中脊顶面提亮</h3>
+      <p>中脊的顶盖也提亮，两块深蓝都是光从上方来，珊瑚色卡片保持平的，仍是视觉焦点。</p>
+      <p class="plus"><span class="tag">好处</span>立体最完整，轮廓不变，单色时退成窄缝也成立。</p>
+    </article>
+    <article class="card">
+      <img class="hero" src="candidates/cut-spine/mark.svg" alt="丁">
+      <h3>丁 · 左块与中脊顶面开缝</h3>
+      <p>两块都用窄缝，整体只用一种深蓝。</p>
+      <p class="minus"><span class="tag">注意</span>三片变成五片，中脊顶盖像单独浮着的一块，小尺寸最碎。</p>
+    </article>
+  </div>
+</section>
+
+<section aria-labelledby="dock">
+  <h2 class="section" id="dock">程序坞</h2>
+  <p class="note">临时测试包经 macOS 26.4 渲染（NSWorkspace），测试包生成后已删除并注销。上为浅色桌面，下为深色桌面。</p>
+  <div class="dock">
+    <img src="renders/dock-light.png" alt="浅色背景下的程序坞对照">
+    <img src="renders/dock-dark.png" alt="深色背景下的程序坞对照">
+  </div>
+  <div class="legend" style="--n: 11" aria-hidden="true"><span>现行</span><span>甲</span><span>乙</span><span>丙</span><span>丁</span><span>日历</span><span>备忘录</span><span>Safari</span><span>Obsidian</span><span>Claude</span><span>flomo</span></div>
+</section>
+
+<section aria-labelledby="small">
+  <h2 class="section" id="small">小尺寸</h2>
+  <p class="note">左边两栏是不带底板的标记，按 16、24、32、48px 显示（Retina 屏上浏览器按 2 倍渲染）。右边是图标文件里实际的 16px 与 32px 位图，放大 4 倍，即非 Retina 屏上的样子。</p>
+  <div class="matrix" style="--cols: 3" id="small-grid">
+    <div></div><div class="head">浅色界面</div><div class="head">深色界面</div><div class="head">图标位图 16 / 32px（放大 4 倍）</div>
+  </div>
+</section>
+
+<section aria-labelledby="inapp">
+  <h2 class="section" id="inapp">应用内</h2>
+  <p class="note">侧栏品牌区（39×43，含收起后的窄栏）、工作助手卡片（46×51）、助手欢迎页（58×64）。浅色与深色并排。</p>
+  <div class="matrix" style="--cols: 2" id="inapp-grid">
+    <div></div><div class="head">浅色</div><div class="head">深色</div>
+  </div>
+</section>
+
+<section aria-labelledby="mono">
+  <h2 class="section" id="mono">单色与反白</h2>
+  <p class="note">只有一种颜色时，提亮的变体（甲、丙）自动改用窄缝，所以甲与乙、丙与丁在这里相同。</p>
+  <div class="matrix" style="--cols: 2" id="mono-grid">
+    <div></div><div class="head">单色</div><div class="head">反白</div>
+  </div>
+</section>
+</div>
+
+<script src="../review.js"></script>
+<script>
+const baseline = '../baseline';
+IconReview.render([
+  { name: '现行（10-23）', mark: `${baseline}/dovun-mark.svg`, dark: `${baseline}/dovun-mark.svg`, badge: 'renders/current-badge-48.png', mono: `${baseline}/dovun-mark-mono.svg`, white: `${baseline}/dovun-mark-white.svg`, bitmap: 'renders/current-tile-' },
+  ...[['tone', '甲 左块提亮'], ['cut', '乙 左块开缝'], ['tone-spine', '丙 左块与中脊提亮'], ['cut-spine', '丁 左块与中脊开缝']].map(([id, name]) => ({
+    name, mark: `candidates/${id}/mark.svg`, dark: `candidates/${id}/mark-dark.svg`, badge: `candidates/${id}/badge.svg`,
+    mono: `candidates/${id}/mark-mono.svg`, white: `candidates/${id}/badge.svg`, bitmap: `renders/${id}-tile-`,
+  })),
+]);
+</script>
+</body>
+</html>

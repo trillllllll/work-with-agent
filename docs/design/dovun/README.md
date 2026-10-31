@@ -49,6 +49,16 @@
 
 上文记录图形选定时的原始设计状态。现已完成纯色矢量重绘并用于真实应用、favicon、启动页与桌面图标，见 [实际应用改造](implementation/README.md)。0.3.0 系统标识仍保留旧值。
 
+## 2026 年 10 月 31 日：左块顶面开缝
+
+左块的轮廓是一个盒子：左上一角是顶面，下面是正面，顶面右半边被中脊挡住。原稿两个面同色，看不出立体。现在沿顶面边线开一道 30 源坐标单位的窄缝（约为两道宽缝的 40%），左块拆成顶面和正面两段路径。外轮廓、两道宽缝、颜色和另外两片都不变。窄缝在 32px 起可见，16px 下看不见。
+
+四个候选的对照见 [图标第二轮](icon-redesign/round-02/index.html)，调整前的文件保存在 `icon-redesign/baseline/`。
+
+重新生成导出并装到应用使用的位置（`client/src/assets`、`client/public`、`desktop/splash`、`desktop/src-tauri/icons`）：`node docs/design/dovun/prototype/generate-assets.mjs --app`，需在 macOS 上运行。
+
+推送通知的小图标另用白色剪影 `client/public/push-badge-96.png`（导出为 `exports/dovun-badge-96.png`）。Android 只取它的透明度，原来共用不透明的彩色图标时显示成一块方块。
+
 ## 工作台改造样板
 
 同日开始 Dovun 工作台改造，产出 [可点击视觉样板](prototype/index.html)、[视觉规范与矢量候选](visual-spec.md) 和 [分阶段实施记录](rollout-plan.md)。矢量稿在原选定方向上整理为纯色，供本批审查；上面的原始 PNG 与来源记录保持不变。旧样板保留作历史记录；正式界面与 0.3.0 迁移的最新状态见 [实施进度](rollout-plan.md)。

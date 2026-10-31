@@ -1,0 +1,86 @@
+/* Shared layout for the Dovun icon review pages (round-01, round-02, ...).
+   Pages link the app's control-tokens.css and workbench.css before this file, so mockups use real tokens. */
+:where(.mock) :where(h2, h3, p) { margin: 0; }
+:where(.mock) :where(img) { display: block; max-width: 100%; }
+
+:root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; color: #303a46; background: #f1f0eb; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 32px; }
+.page { max-width: 1440px; margin: auto; }
+.eyebrow { font-size: 12px; color: #626d77; letter-spacing: .4px; }
+.eyebrow a { color: inherit; }
+.page h1 { font-size: 28px; letter-spacing: -.8px; margin: 6px 0 10px; }
+.page > header p, .lede { line-height: 1.6; color: #626d77; font-size: 14px; margin: 0; max-width: 900px; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 22px 0 8px; }
+.controls span { font-size: 13px; color: #626d77; margin-right: 2px; }
+.controls button { font: inherit; font-size: 14px; border: 1px solid #bbc0c5; border-radius: 8px; padding: 8px 14px; background: #faf9f5; color: #303a46; cursor: pointer; }
+.controls button[aria-pressed=true] { background: #354d85; border-color: #354d85; color: #fff; }
+.controls button:focus-visible { outline: 2px solid #354d85; outline-offset: 3px; }
+details { margin-top: 14px; padding: 14px 16px; background: #faf9f5; border: 1px solid #d5d8da; border-radius: 12px; font-size: 13px; line-height: 1.6; color: #4b5560; max-width: 900px; }
+details li { margin: 6px 0; }
+.page > section { margin: 44px 0; }
+.page h2.section { font-size: 18px; margin: 0 0 6px; }
+.note { font-size: 12px; color: #626d77; margin: 0 0 16px; line-height: 1.6; }
+
+/* Overview cards; set --n on .cards for the column count. */
+.cards { display: grid; grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr)); gap: 16px; }
+.card { background: #faf9f5; border: 1px solid #d5d8da; border-radius: 14px; padding: 18px; }
+.card.current { background: #f3f2ed; border-style: dashed; }
+.card.pick { border-color: #354d85; box-shadow: 0 0 0 1px #354d85; }
+.card .hero { width: 100%; max-width: 230px; aspect-ratio: 1; margin: 0 auto 6px; display: block; }
+.card h3 { font-size: 16px; margin: 4px 0 6px; }
+.card p { font-size: 13px; line-height: 1.65; color: #4b5560; margin: 0 0 8px; }
+.card .tag { display: inline-block; font-size: 12px; font-weight: 600; margin-right: 4px; }
+.card .plus .tag { color: #3e6d52; }
+.card .minus .tag { color: #ad4c45; }
+
+/* Dock strips; set --n on .legend to the number of icons in the strip. */
+.dock { display: grid; gap: 10px; }
+.dock img { display: block; width: 100%; max-width: 1760px; height: auto; border-radius: 14px; }
+.legend { display: grid; grid-template-columns: repeat(var(--n, 10), minmax(0, 1fr)); max-width: 1760px; font-size: 12px; color: #626d77; text-align: center; margin-top: 2px; }
+
+/* Rows of candidates; set --cols on .matrix. */
+.matrix { display: grid; grid-template-columns: 150px repeat(var(--cols), minmax(0, 1fr)); gap: 10px; align-items: stretch; }
+.matrix .label { font-size: 13px; font-weight: 600; display: flex; align-items: center; }
+.matrix .head { font-size: 12px; color: #626d77; text-align: center; padding-bottom: 2px; align-self: end; }
+.cell { border-radius: 12px; display: flex; align-items: center; justify-content: center; gap: 14px; padding: 16px 10px; min-height: 96px; flex-wrap: wrap; }
+.cell.light { background: #ffffff; border: 1px solid #e0e1dc; }
+.cell.warm { background: #f1f0eb; border: 1px solid #e0e1dc; }
+.cell.dark { background: #1c2126; }
+.pixel { image-rendering: pixelated; width: 64px; height: 64px; }
+.pixel.big { width: 128px; height: 128px; }
+
+/* Mockups */
+.mock { font-family: var(--control-font-family); color: var(--foreground); background: var(--sidebar); border-radius: 12px; border: 1px solid var(--glass-border-soft); }
+.mock.sidebar { padding: 18px 14px; min-height: 80px; display: flex; align-items: center; gap: 22px; }
+.mock.companion { padding: 22px 19px; background: var(--surface-panel); }
+.mock.welcome { padding: 4px 0 8px; background: var(--surface-panel); }
+.compact-rail { display: flex; flex-direction: column; align-items: center; gap: 6px; padding-left: 18px; border-left: 1px solid var(--glass-border-soft); }
+.compact-rail small { font-size: 11px; color: var(--muted-foreground); }
+
+.tabbar { display: flex; align-items: flex-end; gap: 2px; padding: 8px 10px 0; border-radius: 12px 12px 0 0; font-size: 12px; }
+.tabbar.light { background: #dee1e6; color: #1f1f1f; }
+.tabbar.dark { background: #1f2023; color: #e3e3e3; }
+.tabbar .tab { display: flex; align-items: center; gap: 8px; width: 170px; padding: 8px 12px; border-radius: 9px 9px 0 0; }
+.tabbar.light .tab.on { background: #ffffff; }
+.tabbar.dark .tab.on { background: #35363a; }
+.tabbar .tab.off { opacity: .7; }
+.tabbar .dot { width: 16px; height: 16px; border-radius: 4px; background: currentColor; opacity: .25; flex: none; }
+.tabwrap { border-radius: 12px; overflow: hidden; border: 1px solid #d5d8da; }
+.tabwrap.dark { border-color: #3a3d42; }
+.tabwrap .page-strip { height: 22px; }
+.tabwrap.light .page-strip { background: #ffffff; }
+.tabwrap.dark .page-strip { background: #35363a; }
+
+.statusbar { display: flex; align-items: center; gap: 10px; background: #111418; color: #e8eaed; border-radius: 12px; padding: 10px 16px; font-size: 13px; width: 100%; }
+.statusbar .time { font-weight: 600; margin-right: 6px; }
+.statusbar img { width: 24px; height: 24px; }
+.statusbar .other { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #8b9096; }
+.shade { display: flex; align-items: center; gap: 12px; background: #2a2f36; color: #e8eaed; border-radius: 14px; padding: 12px 14px; width: 100%; font-size: 13px; }
+.shade .badge-circle { width: 34px; height: 34px; border-radius: 50%; background: #354d85; display: grid; place-items: center; flex: none; }
+.shade .badge-circle img { width: 22px; height: 22px; }
+.shade b { display: block; font-size: 13px; }
+.shade span { color: #aeb5bd; font-size: 12px; }
+
+@media (max-width: 1100px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) { body { padding: 18px; } .cards { grid-template-columns: 1fr; } .matrix { grid-template-columns: 90px repeat(var(--cols), minmax(0, 1fr)); } .legend { display: none; } }

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dovun · 图标候选第一轮</title>
+<!-- Real app tokens and brand classes, so the in-app mockups match what ships. -->
+<link rel="stylesheet" href="../../../../../client/src/styles/control-tokens.css">
+<link rel="stylesheet" href="../../../../../client/src/styles/workbench.css">
+<link rel="stylesheet" href="../review.css">
+</head>
+<body>
+<div class="page">
+<header>
+  <div class="eyebrow">DOVUN / ICON · 第一轮 · <a href="../round-02/index.html">第二轮</a></div>
+  <h1>图标重新设计 · 第一轮候选</h1>
+  <p>三个方向，每个都有浅瓷底和青花底两种底板。“程序坞”一栏是 macOS 26.4 对临时测试包的实际渲染，其余是 SVG 直接显示。正式应用的图标没有替换。</p>
+  <div class="controls" role="group" aria-label="底板">
+    <span>底板</span>
+    <button type="button" data-tile="porcelain" aria-pressed="true">浅瓷底</button>
+    <button type="button" data-tile="navy" aria-pressed="false">青花底</button>
+  </div>
+  <details>
+    <summary>范围与阅读方式</summary>
+    <ul>
+      <li>所有候选按 macOS 网格绘制：1024 画布中央 824 的圆角方，留出系统投影的位置。现行图标是整幅铺满的，系统会把它缩进同样大小。</li>
+      <li>颜色取自界面变量：深蓝 <code>#354d85</code>、珊瑚 <code>#cf7659</code>；深色界面用 <code>#b4c9ed</code> 与 <code>#e2a18b</code>。</li>
+      <li>“应用内”一栏直接引用 <code>client/src/styles/control-tokens.css</code> 和 <code>workbench.css</code>，尺寸与侧栏、助手页一致。</li>
+      <li>现行图标没有深色版本，深色界面里显示的就是今天实际的样子。</li>
+      <li>重新生成：<code>node docs/design/dovun/icon-redesign/generate-round-01.mjs</code>（Node 22）。</li>
+    </ul>
+  </details>
+</header>
+
+<section aria-labelledby="overview">
+  <h2 class="section" id="overview">方向</h2>
+  <p class="note">大图是系统实际渲染，带 macOS 26 的玻璃边缘。</p>
+  <div class="cards">
+    <article class="card current">
+      <img class="hero" src="renders/system-current.png" alt="现行图标的系统渲染">
+      <h3>现行 · 归栈宽缝</h3>
+      <p>三片错位卡片，中间一条带台阶的索引脊，两道宽缝。</p>
+      <p class="minus"><span class="tag">问题</span>16px 下三片糊成两团；三片的倾斜角度不统一；系统给每个凹口和尾巴都加了高光，Dock 里显得碎。</p>
+    </article>
+    <article class="card">
+      <img class="hero" data-src="renders/system-a-{tile}.png" alt="A 的系统渲染">
+      <h3>A · 归栈减法</h3>
+      <p>保留三片、两色和向右上错开的节奏。三片用同一个斜度，中脊只留一个 45° 转折，去掉凹口和尾巴。</p>
+      <p class="plus"><span class="tag">好处</span>和现行一脉相承，用户不用重新认。16px 能数出三片。</p>
+      <p class="minus"><span class="tag">风险</span>三条斜块向右上排开，容易被看成柱状图或“增长”图标。</p>
+    </article>
+    <article class="card">
+      <img class="hero" data-src="renders/system-b-{tile}.png" alt="B 的系统渲染">
+      <h3>B · 工作台·一张卡</h3>
+      <p>一块圆角方被一道 L 形缝分开：深蓝的是工作台，右上角珊瑚色的是手上正在做的那张卡。</p>
+      <p class="plus"><span class="tag">好处</span>只有两块，16px 最清楚；外轮廓就是圆角方，在系统玻璃效果下最干净。</p>
+      <p class="minus"><span class="tag">风险</span>形状通用，接近“布局”“小组件”一类图标，辨识主要靠配色。</p>
+    </article>
+    <article class="card">
+      <img class="hero" data-src="renders/system-c-{tile}.png" alt="C 的系统渲染">
+      <h3>C · 回纹·朱印</h3>
+      <p>一枚珊瑚色方印，中间刻出回纹，用白文印的刻法。浅瓷底对应界面的瓷白主题，青花底对应深蓝配朱砂。回纹一圈圈往里收，也接上“归到一处”的原意。</p>
+      <p class="plus"><span class="tag">好处</span>最好记，和 Dock 里其他图标区别最大；单色、反白、通知剪影都成立。</p>
+      <p class="minus"><span class="tag">风险</span>16px 下回纹只剩纹理，看起来是一块带花纹的珊瑚方块；印章和回纹都是常见元素，商标近似要查。</p>
+    </article>
+  </div>
+</section>
+
+<section aria-labelledby="dock">
+  <h2 class="section" id="dock">程序坞</h2>
+  <p class="note">临时测试包经 macOS 26.4 渲染（NSWorkspace），测试包生成后已删除并注销。上为浅色桌面，下为深色桌面。</p>
+  <div class="dock">
+    <img data-src="renders/dock-{tile}-light.png" alt="浅色背景下的程序坞对照">
+    <img data-src="renders/dock-{tile}-dark.png" alt="深色背景下的程序坞对照">
+  </div>
+  <div class="legend" style="--n: 10" aria-hidden="true"><span>现行</span><span>A</span><span>B</span><span>C</span><span>日历</span><span>备忘录</span><span>Safari</span><span>Obsidian</span><span>Claude</span><span>flomo</span></div>
+</section>
+
+<section aria-labelledby="small">
+  <h2 class="section" id="small">小尺寸</h2>
+  <p class="note">左边两栏是不带底板的标记，用在 favicon、侧栏和助手页，按 16、24、32、48px 显示（Retina 屏上浏览器按 2 倍渲染）。右边是图标文件里实际的 16px 与 32px 位图，放大 4 倍，即非 Retina 屏上的样子。</p>
+  <div class="matrix" style="--cols: 3" id="small-grid">
+    <div></div><div class="head">浅色界面</div><div class="head">深色界面</div><div class="head">图标位图 16 / 32px（放大 4 倍）</div>
+  </div>
+</section>
+
+<section aria-labelledby="inapp">
+  <h2 class="section" id="inapp">应用内</h2>
+  <p class="note">侧栏品牌区（39×43，含收起后的窄栏）、工作助手卡片（46×51）、助手欢迎页（58×64）。浅色与深色并排。</p>
+  <div class="matrix" style="--cols: 2" id="inapp-grid">
+    <div></div><div class="head">浅色</div><div class="head">深色</div>
+  </div>
+</section>
+
+<section aria-labelledby="tabs">
+  <h2 class="section" id="tabs">浏览器标签</h2>
+  <p class="note">网页版用不带底板的标记作 favicon。深色标签栏用深色配色，可以在 SVG 里用 <code>prefers-color-scheme</code> 切换。</p>
+  <div class="matrix" style="--cols: 2" id="tab-grid">
+    <div></div><div class="head">浅色浏览器</div><div class="head">深色浏览器</div>
+  </div>
+</section>
+
+<section aria-labelledby="badge">
+  <h2 class="section" id="badge">通知小图标</h2>
+  <p class="note">Android 状态栏只取小图标的透明度，颜色全部丢掉。现行 <code>push-icon-192.png</code> 是不透明的整块，所以显示成白色方块。候选各自带一个白色剪影。</p>
+  <div class="matrix" style="--cols: 2" id="badge-grid">
+    <div></div><div class="head">状态栏（24px）</div><div class="head">通知栏</div>
+  </div>
+</section>
+
+<section aria-labelledby="mono">
+  <h2 class="section" id="mono">单色与反白</h2>
+  <p class="note">打印、单色印章、深色底上的反白。</p>
+  <div class="matrix" style="--cols: 2" id="mono-grid">
+    <div></div><div class="head">单色</div><div class="head">反白</div>
+  </div>
+</section>
+</div>
+
+<script src="../review.js"></script>
+<script>
+const baseline = '../baseline';
+IconReview.render([
+  { name: '现行（10-23）', mark: `${baseline}/dovun-mark.svg`, dark: `${baseline}/dovun-mark.svg`, badge: 'renders/current-badge-48.png', mono: `${baseline}/dovun-mark-mono.svg`, white: `${baseline}/dovun-mark-white.svg`, bitmap: 'renders/current-tile-' },
+  ...[['a', 'A 归栈减法'], ['b', 'B 工作台·一张卡'], ['c', 'C 回纹·朱印']].map(([id, name]) => ({
+    name, mark: `candidates/${id}/mark.svg`, dark: `candidates/${id}/mark-dark.svg`, badge: `candidates/${id}/badge.svg`,
+    mono: `candidates/${id}/mark-mono.svg`, white: `candidates/${id}/badge.svg`, bitmap: `renders/${id}-tile-{tile}-`,
+  })),
+]);
+</script>
+</body>
+</html>

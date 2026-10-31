@@ -13,7 +13,7 @@ self.addEventListener('push', event => {
   event.waitUntil(self.registration.showNotification(title, {
     body: typeof payload.body === 'string' ? payload.body : '',
     tag: typeof payload.tag === 'string' && payload.tag ? payload.tag : 'dovun',
-    icon: '/push-icon-192.png', badge: '/push-icon-192.png',
+    icon: '/push-icon-192.png', badge: '/push-badge-96.png',
     data: { url },
   }));
 });
