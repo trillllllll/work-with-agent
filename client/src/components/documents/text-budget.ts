@@ -1,9 +1,12 @@
-export const textEditBudgetBytes = 256 * 1024;
+import { defaultEditBudgets, editBudgets } from './edit-budget.js';
+
+/** The shipped soft budget; the effective value comes from editBudgets(). */
+export const textEditBudgetBytes = defaultEditBudgets.text;
 export const textReadingPageSize = 10_000;
 
-export function withinTextEditBudget(value: string) {
+export function withinTextEditBudget(value: string, limit = editBudgets().text) {
   // Every UTF-16 unit costs at least one UTF-8 byte, so bound the allocation first.
-  return value.length <= textEditBudgetBytes && new TextEncoder().encode(value).byteLength <= textEditBudgetBytes;
+  return value.length <= limit && new TextEncoder().encode(value).byteLength <= limit;
 }
 
 /** UTF-16 boundaries without splitting surrogate pairs or allocating a copy of all characters. */

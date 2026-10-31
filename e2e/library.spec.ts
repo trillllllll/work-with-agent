@@ -30,7 +30,8 @@ async function openLibrary(page: Page) {
   await page.goto('/#/library');
   await expect(page.getByRole('heading', { name: '资料库', exact: true })).toBeVisible();
   const back = page.getByRole('button', { name: '返回文件列表', exact: true });
-  if (await back.isVisible()) await back.click();
+  // Leaving a document first persists its local draft, so the list appears asynchronously.
+  if (await back.isVisible()) { await back.click(); await expect(page.getByTestId('library-list')).toBeVisible(); }
 }
 
 async function readDocument(page: Page) {
@@ -43,7 +44,7 @@ async function readDocument(page: Page) {
 
 async function downloadDocument(page: Page) {
   const pane = page.getByTestId('document-pane').first();
-  await pane.getByRole('button', { name: '导出', exact: true }).click();
+  await pane.getByRole('button', { name: '更多', exact: true }).click();
   await page.getByRole('menuitem', { name: '下载当前版本', exact: true }).click();
 }
 
@@ -475,7 +476,8 @@ test('第101个片段可以显示，下载原文与原件字节一致', async ({
   const downloaded = page.waitForEvent('download');
   await downloadDocument(page);
   expect(await readFile(await (await downloaded).path(), 'utf8')).toBe(content);
-  await preview.getByRole('button', { name: '提取文字', exact: true }).click();
+  await preview.getByRole('button', { name: '更多', exact: true }).click();
+  await page.getByRole('menuitem', { name: '提取文字', exact: true }).click();
   const chunk = preview.getByTestId(`library-chunk-${chunkId}`);
   for (let step = 0; step < 4 && await chunk.count() === 0; step += 1) {
     const more = preview.getByRole('button', { name: '继续加载', exact: true });
@@ -570,6 +572,8 @@ test('引用已有资料固定所选版本，资料随后更新不改变正文�
   await page.goto(`/#/library?resource=${resource.id}`);
   const editor = page.getByRole('textbox', { name: '文档正文', exact: true });
   await editor.click();
+  // Inserting happens at the cursor through the single "Insert" entry of the format controls.
+  await page.getByRole('toolbar', { name: '格式工具', exact: true }).getByRole('button', { name: '插入', exact: true }).click();
   await page.getByRole('button', { name: '引用已有文件', exact: true }).click();
   const picker = page.getByRole('dialog', { name: '引用已有文件', exact: true });
   await picker.getByRole('button', { name: /已有证据原件/ }).click();

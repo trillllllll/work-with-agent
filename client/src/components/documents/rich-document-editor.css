@@ -1,9 +1,16 @@
 .document-editor { min-width: 0; }
 .document-editor-toolbar { display: flex; flex-wrap: wrap; gap: .25rem; align-items: center; padding: .5rem; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 2; background: var(--background); }
-.document-editor-toolbar input:not([type=file]):not([type=range]) { width: 10rem; }
+.document-editor-toolbar.in-slot { flex-wrap: nowrap; gap: 2px; padding: 0; border-bottom: 0; position: static; background: none; min-width: 0; }
 .document-editor-toolbar select { max-width: 8rem; }
-.document-prose { padding: 1.5rem clamp(1rem, 5vw, 4rem); min-height: 20rem; line-height: 1.75; outline: none; overflow-wrap: anywhere; }
+.document-editor-toolbar.in-slot select { max-width: 6.5rem; height: 32px; }
+.document-format-button { display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 6px; }
+.document-format-button.touch { width: 44px; height: 44px; }
+/* Attributes of the selected code block or resource, shown only while one is selected. */
+.document-context-tools { display: flex; flex-wrap: wrap; gap: .25rem; align-items: center; padding: .5rem; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 2; background: var(--background); }
+.document-context-tools input:not([type=range]) { width: 10rem; }
+.document-prose { padding: 1rem clamp(1rem, 5vw, 4rem) 1.5rem; min-height: 20rem; line-height: 1.75; outline: none; overflow-wrap: anywhere; }
 .document-prose > * { margin-block: .8rem; }
+.document-prose > :first-child { margin-top: 0; }
 .document-prose h1 { font-size: 2rem; font-weight: 650; }.document-prose h2 { font-size: 1.6rem; font-weight: 650; }.document-prose h3 { font-size: 1.3rem; font-weight: 650; }
 .document-prose ul { list-style: disc; padding-left: 1.5rem; }.document-prose ol { list-style: decimal; padding-left: 1.5rem; }
 .document-prose ul[data-type=taskList] { list-style: none; padding-left: 0; }.document-prose li[data-type=taskItem] { display: flex; align-items: baseline; gap: .5rem; }.document-prose li[data-type=taskItem] > div { flex: 1; }
@@ -12,4 +19,4 @@
 .document-prose table { border-collapse: collapse; width: 100%; table-layout: fixed; }.document-prose td,.document-prose th { border: 1px solid var(--border); padding: .4rem .65rem; min-width: 3rem; vertical-align: top; }.document-prose th { background: var(--muted); }
 .document-prose a { color: var(--primary); text-decoration: underline; }.document-resource { border: 1px solid var(--border); border-radius: .5rem; padding: .75rem; max-width: 100%; }.document-resource img { max-width: 100%; height: auto; }.document-resource figcaption { font-size: .875rem; color: var(--muted-foreground); }
 .document-prose .ProseMirror-selectednode { outline: 2px solid var(--ring); }.document-resource-upload { border-style: dashed; color: var(--muted-foreground); }.document-unknown pre { max-height: 50vh; overflow: auto; white-space: pre-wrap; }
-@media (max-width: 600px) { .document-prose { padding: 1rem; }.document-editor-toolbar { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; }.document-editor-toolbar > * { flex-shrink: 0; }.document-editor-toolbar button { min-height: 2.5rem; } }
+@media (max-width: 600px) { .document-prose { padding: .75rem 1rem 1rem; }.document-editor-toolbar { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; }.document-editor-toolbar > * { flex-shrink: 0; }.document-editor-toolbar button { min-height: 2.5rem; } }

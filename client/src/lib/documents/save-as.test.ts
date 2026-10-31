@@ -6,7 +6,8 @@ const mocks = vi.hoisted(() => ({ read: vi.fn(), api: vi.fn(), active: true }));
 vi.mock('./api.js', () => ({ loadResource: mocks.read }));
 vi.mock('../api.js', () => ({ api: mocks.api, ApiError: class ApiError extends Error { constructor(message: string, public code?: string, public status?: number) { super(message); } }, authHeaders: () => ({}) }));
 vi.mock('../task-editor-runtime.js', () => ({ isEditorRuntimeActive: () => mocks.active, EditorRuntime: { current: () => null } }));
-const resource = (format: ResourceDocument['format'] = 'text', content: ResourceDocument['content'] = '正文'): ResourceDocument => ({ id: 'source', title: '来源', format, content, revision: 2, currentRevision: 2, organizationRevision: 1, contentHash: 'hash', schemaVersion: format === 'richdoc-v1' ? 1 : null, readOnly: false, supported: true, kind: format });
+// Like the server's contentHash, the fixture hash follows the content, so one version never carries two bodies.
+const resource = (format: ResourceDocument['format'] = 'text', content: ResourceDocument['content'] = '正文'): ResourceDocument => ({ id: 'source', title: '来源', format, content, revision: 2, currentRevision: 2, organizationRevision: 1, contentHash: `hash:${JSON.stringify(content)}`, schemaVersion: format === 'richdoc-v1' ? 1 : null, readOnly: false, supported: true, kind: format });
 beforeEach(() => {
   vi.clearAllMocks(); mocks.active = true;
   const data = new Map<string, string>(); vi.stubGlobal('localStorage', { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => data.set(key, value), removeItem: (key: string) => data.delete(key) });

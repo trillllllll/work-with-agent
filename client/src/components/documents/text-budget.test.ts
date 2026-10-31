@@ -5,7 +5,8 @@ describe('plain text and Markdown browser budget', () => {
   it('checks actual UTF-8 bytes and allows the exact limit', () => {
     expect(withinTextEditBudget('a'.repeat(textEditBudgetBytes))).toBe(true);
     expect(withinTextEditBudget('a'.repeat(textEditBudgetBytes + 1))).toBe(false);
-    expect(withinTextEditBudget('中'.repeat(90_000))).toBe(false);
+    // Fewer UTF-16 units than the limit, but three UTF-8 bytes each.
+    expect(withinTextEditBudget('中'.repeat(Math.floor(textEditBudgetBytes / 3) + 1))).toBe(false);
   });
   it('pages long text without losing CRLF, BOM, emoji or original syntax', () => {
     const value = '\uFEFF# heading\r\n' + '😀long `code` 中文\r\n'.repeat(2000);

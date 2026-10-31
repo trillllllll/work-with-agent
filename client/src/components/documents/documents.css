@@ -9,15 +9,19 @@
 .document-panes { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; min-width: 0; flex: 1; }
 .document-panes-split { grid-template-columns: minmax(0, var(--document-ratio)) 12px minmax(0, 1fr); }
 .document-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; border-radius: 12px; }
-.document-header { flex: 0 0 auto; padding: 18px 22px 8px; }
+.document-header { flex: 0 0 auto; padding: 14px 22px 4px; }
 .document-title { width: 100%; min-width: 0; font-size: 24px; line-height: 1.4; font-weight: 600; background: transparent; border: none; padding: 2px 0; }
 .document-title:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
 .document-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; padding-top: 5px; font-size: 12px; color: var(--muted-foreground); }
-.document-toolbar { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--border); }
-.document-mode-buttons { display: flex; gap: 2px; }
-.document-toolbar-end { margin-left: auto; display: flex; gap: 2px; }
+.document-large-editing { color: var(--warning); }
+.document-toolbar { display: flex; gap: 4px; flex-wrap: nowrap; align-items: center; min-width: 0; padding: 6px 16px; border-bottom: 1px solid var(--border); }
+.document-mode-buttons { display: flex; gap: 2px; flex-shrink: 0; }
+/* The rich editor portals its format controls here. Its width is the row's free space, never its content's. */
+.document-format-slot { flex: 1 1 0; min-width: 0; display: flex; align-items: center; overflow: hidden; }
+.document-toolbar > .surface-action { flex-shrink: 0; }
+.document-toolbar-end { margin-left: auto; display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
 .document-content-frame { display: flex; min-width: 0; min-height: 0; flex: 1; position: relative; }
-.document-scroll { min-width: 0; min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; padding: 20px 24px 70px; scroll-padding: 24px; }
+.document-scroll { min-width: 0; min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; padding: 8px 24px 70px; scroll-padding: 24px; }
 .document-side-panel { width: 300px; flex: 0 0 300px; overflow: auto; border-left: 1px solid var(--border); padding: 12px; background: var(--card); }
 .document-side-heading { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .document-side-heading h3 { font-size: 14px; font-weight: 600; }
@@ -67,8 +71,7 @@
   .document-header { padding: 14px 14px 6px; }
   .document-title { font-size: 21px; }
   .document-toolbar { padding: 6px 10px; }
-  .document-toolbar-end { margin-left: 0; }
-  .document-scroll { padding: 16px 14px 80px; }
+  .document-scroll { padding: 8px 14px 80px; }
   .document-side-panel { position: absolute; inset: 0 0 0 auto; width: min(340px, 100%); z-index: 4; box-shadow: -10px 0 30px rgb(0 0 0 / 10%); }
   .document-text-split { display: flex; flex-direction: column; }
   .library-page[data-document-open="true"] .library-titlebar,

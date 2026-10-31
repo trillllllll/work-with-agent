@@ -1,0 +1,23 @@
+{
+  "bold": "加粗",
+  "italic": "斜体",
+  "strike": "删除线",
+  "inlineCode": "行内代码",
+  "link": "链接",
+  "heading1": "标题 1",
+  "heading2": "标题 2",
+  "heading3": "标题 3",
+  "bulletList": "无序列表",
+  "orderedList": "有序列表",
+  "checklist": "勾选项",
+  "quote": "引用",
+  "codeBlock": "代码块",
+  "table": "表格",
+  "moreFormats": "更多格式",
+  "linkAddress": "链接地址",
+  "linkPlaceholder": "https:// 或 mailto:",
+  "open": "打开",
+  "apply": "应用",
+  "removeLink": "移除链接",
+  "cancel": "取消"
+}

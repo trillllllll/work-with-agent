@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import { canonicalContent, emptyRichDocument } from '../../../../server/src/domain/document-content.js';
 import { DocumentDraftStore } from './draft-store.js';
-import { DocumentSession, DocumentSessionRegistry, uploadIds, type DocumentSessionDeps } from './session.js';
-import type { DocumentDraftStorage, DocumentReceipt, DocumentTransport, DocumentWrite, ReceiptOutcome, ResourceDocument, WriteOutcome } from './types.js';
+import { DocumentSession, DocumentSessionRegistry, HISTORY_BYTE_LIMIT, HISTORY_GROUP_MAX_MS, HISTORY_PAUSE_MS, HISTORY_STEP_LIMIT, isPristineDraft, uploadIds, type DocumentSessionDeps } from './session.js';
+import type { DocumentDraft, DocumentDraftStorage, DocumentReceipt, DocumentTransport, DocumentWrite, ReceiptOutcome, ResourceDocument, WriteOutcome } from './types.js';
 
 const drain = async () => { for (let i = 0; i < 15; i += 1) await new Promise<void>((resolve) => setImmediate(resolve)); };
 const hash = async (content: unknown) => `hash:${canonicalContent(content)}`;
@@ -376,7 +376,7 @@ describe('document session durability and version protocol', () => {
 
   it('does not claim local success or send data after quota failure', async () => {
     const base = setup();
-    const store: DocumentDraftStorage = { load: base.store.load.bind(base.store), listScope: base.store.listScope.bind(base.store), readFile: base.store.readFile.bind(base.store), adopt: base.store.adopt.bind(base.store), put: async () => { throw new DOMException('quota', 'QuotaExceededError'); }, putWithFile: async () => { throw new DOMException('quota', 'QuotaExceededError'); } };
+    const store: DocumentDraftStorage = { load: base.store.load.bind(base.store), listScope: base.store.listScope.bind(base.store), readFile: base.store.readFile.bind(base.store), adopt: base.store.adopt.bind(base.store), discard: base.store.discard.bind(base.store), put: async () => { throw new DOMException('quota', 'QuotaExceededError'); }, putWithFile: async () => { throw new DOMException('quota', 'QuotaExceededError'); } };
     const h = setup({ store }); const session = await DocumentSession.open(h.deps, resource()); session.edit('must survive in memory');
     await session.flushRemote(); expect(h.sent).toHaveLength(0); expect(session.getSnapshot().status).toBe('storage-error');
   });
@@ -445,5 +445,243 @@ describe('attachment drafts remain tied to the original document session', () =>
     await session.retryUpload(id);
     expect(requests[1]).not.toBe(requests[0]);
     expect(session.getSnapshot().uploads[0]).toMatchObject({ id, state: 'ready', result: { resourceId: 'recovered-file', revision: 1 } });
+  });
+});
+
+describe('session undo history', () => {
+  it('starts a new step only after a typing pause, so continuous typing undoes as one step', async () => {
+    const h = setup(); const session = await DocumentSession.open(h.deps, resource());
+    for (let index = 0; index < 6; index += 1) { session.edit(`typing ${index}`); h.clock.advance(HISTORY_PAUSE_MS - 200); }
+    h.clock.advance(HISTORY_PAUSE_MS); session.edit('after pause');
+    session.undo(); expect(session.getSnapshot().content).toBe('typing 5');
+    session.undo(); expect(session.getSnapshot().content).toBe('base');
+    session.redo(); session.redo(); expect(session.getSnapshot().content).toBe('after pause');
+  });
+
+  it('splits uninterrupted typing into steps of at most the group duration', async () => {
+    const h = setup(); const session = await DocumentSession.open(h.deps, resource());
+    const interval = 300; const boundary = Math.ceil(HISTORY_GROUP_MAX_MS / interval);
+    for (let index = 0; index <= boundary + 3; index += 1) { session.edit(`v${index}`); h.clock.advance(interval); }
+    session.undo(); expect(session.getSnapshot().content).toBe(`v${boundary - 1}`);
+    session.undo(); expect(session.getSnapshot().content).toBe('base');
+  });
+
+  it('keeps at most the step limit', async () => {
+    const h = setup(); const session = await DocumentSession.open(h.deps, resource());
+    const edits = HISTORY_STEP_LIMIT + 20;
+    for (let index = 0; index < edits; index += 1) { session.edit(`step ${index}`); h.clock.advance(HISTORY_PAUSE_MS + 1); }
+    for (let index = 0; index < HISTORY_STEP_LIMIT + 5; index += 1) session.undo();
+    expect(session.getSnapshot().content).toBe(`step ${edits - HISTORY_STEP_LIMIT - 1}`);
+  });
+
+  it('keeps retained history within the byte limit', async () => {
+    const h = setup(); const session = await DocumentSession.open(h.deps, resource());
+    const characters = Math.floor(HISTORY_BYTE_LIMIT * 0.2);
+    for (const letter of ['x', 'y', 'z', 'w']) { session.edit(letter.repeat(characters)); h.clock.advance(HISTORY_PAUSE_MS + 1); }
+    session.undo(); session.undo(); session.undo(); session.undo();
+    expect(session.getSnapshot().content).toBe('y'.repeat(characters));
+  });
+
+  it('drops local history when a remote version replaces the body, so undo cannot revert the other device', async () => {
+    const h = setup(); const session = await DocumentSession.open(h.deps, resource());
+    session.edit('local edit'); const saving = session.flushRemote(); await drain();
+    h.pending[0]({ kind: 'success', receipt: h.receipt(0) }); await saving;
+    session.receiveRemote(resource('doc-1', 'remote text', 3));
+    expect(session.getSnapshot().content).toBe('remote text');
+    session.undo(); expect(session.getSnapshot().content).toBe('remote text');
+    session.edit('remote text, then mine'); h.clock.advance(HISTORY_PAUSE_MS + 1);
+    session.undo(); expect(session.getSnapshot().content).toBe('remote text');
+  });
+
+  it('drops local history after a conflict is resolved', async () => {
+    const h = setup(); const session = await DocumentSession.open(h.deps, resource());
+    session.edit('local draft');
+    session.receiveRemote(resource('doc-1', 'remote draft', 2));
+    expect(session.getSnapshot().conflict).not.toBeNull();
+    await session.resolveConflict('remote');
+    session.undo(); expect(session.getSnapshot().content).toBe('remote draft');
+  });
+
+  it('keeps an IME composition in one undo step even when choosing a candidate takes a while', async () => {
+    const h = setup(); const session = await DocumentSession.open(h.deps, resource());
+    session.edit('base typed'); h.clock.advance(HISTORY_PAUSE_MS + 1);
+    session.setComposing(true);
+    session.edit('base typed ni'); h.clock.advance(HISTORY_PAUSE_MS + 1);
+    session.edit('base typed ni hao'); h.clock.advance(HISTORY_PAUSE_MS * 4);
+    session.edit('base typed 你好'); session.setComposing(false);
+    // Undo never shows candidate text the user did not commit.
+    session.undo(); expect(session.getSnapshot().content).toBe('base typed');
+    session.undo(); expect(session.getSnapshot().content).toBe('base');
+  });
+
+  it('charges a rich step only for the blocks it does not share, so long documents keep deep history', async () => {
+    const h = setup();
+    const filler = 'x'.repeat(500);
+    // About 2 MB of JSON: charging each step for the whole body would leave three or four steps within the limit.
+    const blocks = Array.from({ length: 4000 }, (_, index) => ({ id: `p${index}`, kind: 'paragraph' as const, text: [{ text: `${index} ${filler}` }] }));
+    const session = await DocumentSession.open(h.deps, { ...resource(), format: 'richdoc-v1', schemaVersion: 1, content: { schemaVersion: 1, blocks } });
+    type Body = { schemaVersion: 1; blocks: Array<{ id: string; kind: 'paragraph'; text: Array<{ text: string }> }> };
+    let body = session.getSnapshot().content as Body;
+    for (let step = 0; step < 30; step += 1) {
+      body = { ...body, blocks: body.blocks.map((block, index) => index === step ? { ...block, text: [{ text: `edited ${step}` }] } : block) };
+      session.edit(body); h.clock.advance(HISTORY_PAUSE_MS + 1);
+    }
+    let undone = 0; while (session.undo()) undone += 1;
+    expect(undone).toBe(30);
+    expect((session.getSnapshot().content as Body).blocks[0].text[0].text).toBe(`0 ${filler}`);
+  });
+});
+
+describe('blank new documents', () => {
+  const blank = { title: 'Untitled', format: 'richdoc-v1' as const, content: emptyRichDocument('start'), blank: true };
+
+  it('creates nothing in Dovun until the body changes, then creates exactly once', async () => {
+    const h = setup(); const session = await DocumentSession.create(h.deps, blank);
+    expect(session.getSnapshot().status).toBe('new');
+    h.clock.advance(10_000); await drain(); await session.flushRemote(); await session.reconnect();
+    expect(h.sent).toHaveLength(0);
+    session.edit({ schemaVersion: 1, blocks: [{ id: 'start', kind: 'paragraph', text: [{ text: 'first words' }] }] });
+    expect(session.getSnapshot().status).not.toBe('new');
+    h.clock.advance(2_000); await drain();
+    expect(h.sent).toHaveLength(1);
+    expect(JSON.parse(h.sent[0].bodyJson)).toMatchObject({ title: 'Untitled', content: { blocks: [{ text: [{ text: 'first words' }] }] } });
+    h.pending[0]({ kind: 'success', receipt: h.receipt(0, 1) }); await drain();
+    h.clock.advance(20_000); await drain();
+    expect(h.sent).toHaveLength(1);
+  });
+
+  it('a title change alone creates the document', async () => {
+    const h = setup(); const session = await DocumentSession.create(h.deps, blank);
+    session.setTitle('Payment plan'); h.clock.advance(2_000); await drain();
+    expect(h.sent).toHaveLength(1);
+    expect(JSON.parse(h.sent[0].bodyJson).title).toBe('Payment plan');
+  });
+
+  it('typing and deleting everything returns to the untouched state', async () => {
+    const h = setup(); const session = await DocumentSession.create(h.deps, { title: 'Untitled', format: 'markdown', content: '', blank: true });
+    session.edit('x'); session.edit('');
+    expect(session.getSnapshot().status === 'new' || session.getSnapshot().status === 'local-pending').toBe(true);
+    h.clock.advance(10_000); await drain();
+    expect(h.sent).toHaveLength(0);
+  });
+
+  it('copies and other non-blank creations still save right away', async () => {
+    const h = setup(); await DocumentSession.create(h.deps, { title: 'Copy', format: 'richdoc-v1', content: emptyRichDocument('copy') });
+    h.clock.advance(2_000); await drain();
+    expect(h.sent).toHaveLength(1);
+  });
+
+  it('discards an untouched draft so it never reappears, even if a closing view flushes afterwards', async () => {
+    const h = setup(); const registry = new DocumentSessionRegistry(h.deps);
+    const session = await registry.create(blank);
+    const localId = session.getSnapshot().localId;
+    expect((await h.store.listScope(h.deps.scopeKey)).map((draft) => draft.localId)).toEqual([localId]);
+    expect(await registry.discardIfPristine(session)).toBe(true);
+    await session.flushLocal(); session.deactivate(); await drain();
+    expect(await h.store.listScope(h.deps.scopeKey)).toEqual([]);
+    expect(registry.get(localId)).toBeUndefined();
+    h.clock.advance(20_000); await drain();
+    expect(h.sent).toHaveLength(0);
+  });
+
+  it('keeps a draft that is no longer blank', async () => {
+    const h = setup(); const registry = new DocumentSessionRegistry(h.deps);
+    const session = await registry.create(blank);
+    session.edit({ schemaVersion: 1, blocks: [{ id: 'start', kind: 'paragraph', text: [{ text: 'keep me' }] }] });
+    expect(await registry.discardIfPristine(session)).toBe(false);
+    await session.flushLocal();
+    expect((await h.store.listScope(h.deps.scopeKey))[0].content).toMatchObject({ blocks: [{ text: [{ text: 'keep me' }] }] });
+  });
+
+  it('recognises untouched blank drafts only', () => {
+    const draft = { blank: true, resourceId: null, pending: null, organizationPending: null, conflict: null, blocked: null, uploads: [], title: 'Untitled', confirmedTitle: 'Untitled', content: emptyRichDocument() } as unknown as DocumentDraft;
+    expect(isPristineDraft(draft)).toBe(true);
+    expect(isPristineDraft({ ...draft, blank: undefined })).toBe(false);
+    // An attachment added and removed again before it finished created nothing; a finished one did.
+    expect(isPristineDraft({ ...draft, uploads: [{ id: 'u', state: 'removed' }] } as unknown as DocumentDraft)).toBe(true);
+    expect(isPristineDraft({ ...draft, uploads: [{ id: 'u', state: 'queued' }] } as unknown as DocumentDraft)).toBe(false);
+    expect(isPristineDraft({ ...draft, uploads: [{ id: 'u', state: 'ready', result: { resourceId: 'r', revision: 1 } }] } as unknown as DocumentDraft)).toBe(false);
+    expect(isPristineDraft({ ...draft, title: 'Renamed' })).toBe(false);
+    expect(isPristineDraft({ ...draft, resourceId: 'saved' })).toBe(false);
+    expect(isPristineDraft({ ...draft, content: { schemaVersion: 1, blocks: [{ id: 'a', kind: 'paragraph', text: [{ text: 'x' }] }] } })).toBe(false);
+    expect(isPristineDraft({ ...draft, content: { schemaVersion: 1, blocks: [{ id: 'a', kind: 'heading', level: 1, text: [] }] } })).toBe(false);
+    expect(isPristineDraft({ ...draft, content: '' })).toBe(true);
+  });
+});
+
+describe('shared immutable bodies', () => {
+  const deepFreeze = <T,>(value: T): T => { if (value && typeof value === 'object' && !Object.isFrozen(value)) { Object.freeze(value); for (const child of Object.values(value)) deepFreeze(child); } return value; };
+  const rich = (text: string) => deepFreeze({ schemaVersion: 1 as const, blocks: [{ id: 'initial', kind: 'paragraph' as const, text: [{ text }] }] });
+
+  it('never mutates a body handed to it through edits, undo, uploads, saves and conflicts', async () => {
+    const h = setup(); let finish!: (result: { resourceId: string; revision: number }) => void;
+    h.transport.upload = async () => new Promise((resolve) => { finish = resolve; });
+    const session = await DocumentSession.open(h.deps, { ...resource(), format: 'richdoc-v1', schemaVersion: 1, content: rich('base') });
+    session.edit(rich('first')); h.clock.advance(HISTORY_PAUSE_MS + 1);
+    session.edit(rich('second')); session.undo(); session.redo();
+    await session.addUpload(new File(['x'], 'a.png', { type: 'image/png' }), { kind: 'image', bookmark: 'initial' }); await drain();
+    finish({ resourceId: 'image-1', revision: 1 }); await drain();
+    const saving = session.flushRemote(); await drain();
+    h.pending[0]({ kind: 'success', receipt: h.receipt(0) }); await saving;
+    session.edit(deepFreeze(structuredClone(session.getSnapshot().content)) as never);
+    session.receiveRemote({ ...resource('doc-1', '', 5), format: 'richdoc-v1', schemaVersion: 1, content: rich('remote') as never });
+    session.edit(rich('mine'));
+    await session.resolveConflict('local');
+    expect(session.getSnapshot().content).toMatchObject({ blocks: [{ text: [{ text: 'mine' }] }] });
+  });
+
+  it('persists the state at the moment of flushing, unaffected by later changes', async () => {
+    const h = setup(); const session = await DocumentSession.open(h.deps, resource());
+    session.edit('typed before the flush');
+    const flushing = session.flushLocal();
+    session.edit('typed after the flush'); session.setTitle('Renamed later');
+    await flushing;
+    // The first write is followed by the later scheduled write; the store never holds a mixed record.
+    const [stored] = await h.store.load(h.deps.scopeKey, 'doc-1');
+    expect([['typed before the flush', 'Document'], ['typed after the flush', 'Renamed later']]).toContainEqual([stored.content, stored.title]);
+    await session.flushLocal();
+    expect((await h.store.load(h.deps.scopeKey, 'doc-1'))[0]).toMatchObject({ content: 'typed after the flush', title: 'Renamed later' });
+  });
+
+  it('acknowledges a request stored by an older draft that kept its fields only inside bodyJson', async () => {
+    const h = setup(); const created = await DocumentSession.create(h.deps, { title: 'Older', format: 'text', content: 'old body' });
+    const saving = created.flushRemote(); await drain(); h.pending[0]({ kind: 'unknown' }); await saving;
+    const [draft] = await h.store.listScope(h.deps.scopeKey);
+    const legacy = { ...draft, pending: { ...draft.pending!, contentHash: undefined, title: undefined, relativeReferences: undefined } };
+    delete legacy.pending.contentHash; delete legacy.pending.title; delete legacy.pending.relativeReferences;
+    await h.store.put(legacy);
+    const reloaded = setup({ store: h.store, sessionId: 'window-2', holdBranch: async () => true });
+    reloaded.receipts.set(h.sent[0].requestId, { kind: 'found', receipt: h.receipt(0, 1) });
+    const recovered = await new DocumentSessionRegistry(reloaded.deps).restoreLocalDraft(draft.localId, draft.sessionId);
+    await recovered.flushRemote();
+    expect(recovered.getSnapshot()).toMatchObject({ resourceId: 'created-doc', status: 'saved', title: 'Older' });
+    expect(reloaded.sent).toHaveLength(0);
+  });
+
+  it('ignores a polled copy of the version it already has without draining editor input', async () => {
+    const h = setup(); const session = await DocumentSession.open(h.deps, resource());
+    let drained = 0;
+    session.registerEditor('primary', () => { drained++; return true; });
+    session.receiveRemote(resource());
+    expect(drained).toBe(0);
+    session.receiveRemote(resource('doc-1', 'newer', 2));
+    expect(drained).toBeGreaterThan(0);
+    expect(session.getSnapshot().content).toBe('newer');
+  });
+
+  it('hands back an undone or redone body as a new object that still shares its blocks', async () => {
+    const h = setup();
+    const session = await DocumentSession.open(h.deps, { ...resource(), format: 'richdoc-v1', schemaVersion: 1, content: rich('base') });
+    const opened = session.getSnapshot().content as ReturnType<typeof rich>;
+    // A view hands over its buffered edit and undoes it in the same task, so the restored body is the only one it renders.
+    const typed = rich('typed'); session.edit(typed); session.undo();
+    const undone = session.getSnapshot().content as ReturnType<typeof rich>;
+    expect(undone).not.toBe(opened);
+    expect(undone).toEqual(opened);
+    expect(undone.blocks).toBe(opened.blocks);
+    session.redo();
+    const redone = session.getSnapshot().content as ReturnType<typeof rich>;
+    expect(redone).not.toBe(typed);
+    expect(redone.blocks).toBe(typed.blocks);
   });
 });

@@ -6,6 +6,7 @@ import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import { readFile } from 'node:fs/promises';
 import { cjkPdf } from './fixtures/cjk-pdf.js';
+import { defaultEditBudgets } from '../client/src/components/documents/edit-budget.js';
 
 const api = process.env.E2E_API_URL!;
 test.beforeEach(async ({ page }) => { await resetE2eDatabase(); await page.addInitScript(() => { (window as unknown as { __REACT_GRAB_DISABLED__: boolean }).__REACT_GRAB_DISABLED__ = true; }); });
@@ -18,11 +19,13 @@ async function bodyOf(request: APIRequestContext, id: string) { return (await (a
 async function open(page: Page, id: string) { await page.goto(`/#/library?resource=${id}`); await expect(page.getByTestId('document-pane')).toBeVisible(); }
 
 test('超预算文本以只读源码分页显示，翻页不截断或改写权威正文', async ({ page, request }) => {
-  const content = '\uFEFF# 源文件\r\n' + '😀 中文 `code`\r\n'.repeat(25_000) + 'END-OF-ORIGINAL';
+  // Each repeated line is 20 UTF-8 bytes; enough lines to pass the soft text budget but stay within the hard one.
+  const content = '\uFEFF# 源文件\r\n' + '😀 中文 `code`\r\n'.repeat(Math.ceil(defaultEditBudgets.text / 20) + 1_000) + 'END-OF-ORIGINAL';
   const resource = await create(request, '长文本.md', content);
   await open(page, resource.id);
   const reader = page.getByTestId('document-large-text-reading');
   await expect(reader).toBeVisible(); await expect(page.locator('textarea.document-source')).toHaveCount(0);
+  await expect(reader.getByRole('button', { name: '仍要编辑', exact: true })).toBeVisible();
   await expect(reader.locator('pre')).toContainText('# 源文件');
   await reader.getByRole('button', { name: '下一页', exact: true }).click();
   await expect(reader.getByText(/^第 2 \/ /)).toBeVisible();
@@ -31,16 +34,77 @@ test('超预算文本以只读源码分页显示，翻页不截断或改写权�
   expect(unchanged.content).toBe(content); expect(unchanged.revision).toBe(1);
 });
 
-test('组词跨过文本预算时保留输入框，结束后才转只读并保存完整正文', async ({ page, request }) => {
+test('文本编辑中越过预算时保留输入框，组词结束后也不转只读并保存完整正文', async ({ page, request }) => {
   const resource = await create(request, '组词预算'); await open(page, resource.id);
   const field = page.locator('textarea.document-source');
   await field.dispatchEvent('compositionstart', { data: '中' });
-  const content = 'a'.repeat(256 * 1024) + '中文'; await field.fill(content);
+  const content = 'a'.repeat(defaultEditBudgets.text) + '中文'; await field.fill(content);
   await expect(field).toBeVisible(); await expect(page.getByTestId('document-large-text-reading')).toHaveCount(0);
   await field.dispatchEvent('compositionend', { data: '中文' });
-  await expect(page.getByTestId('document-large-text-reading')).toBeVisible();
   await expect(page.getByTestId('document-save-state')).toHaveText('已保存到 Dovun');
+  await expect(field).toBeVisible(); await expect(page.getByTestId('document-large-text-reading')).toHaveCount(0);
+  await expect(page.getByTestId('document-large-editing')).toBeVisible();
   expect((await bodyOf(request, resource.id)).content).toBe(content);
+});
+
+test('Markdown 分屏预览在输入停顿后刷新，组词期间不刷新', async ({ page, request }) => {
+  const created = await request.post(`${api}/api/v1/library/resources`, { data: { requestId: randomUUID(), title: '分屏预览', format: 'markdown', content: '# 初稿\n' } });
+  expect(created.ok(), await created.text()).toBe(true);
+  await open(page, (await created.json()).data.id); await page.getByRole('button', { name: '分屏', exact: true }).click();
+  const preview = page.locator('.document-reading'); const field = page.locator('textarea.document-source');
+  await expect(preview.getByRole('heading', { name: '初稿', exact: true })).toBeVisible();
+  await field.fill('# 初稿\n\n## 第二节\n');
+  await expect(preview.getByRole('heading', { name: '第二节', exact: true })).toBeVisible();
+  await field.dispatchEvent('compositionstart', { data: '组' });
+  await field.fill('# 初稿\n\n## 第二节\n\n## 组词中\n');
+  await page.waitForTimeout(600);
+  await expect(preview.getByRole('heading', { name: '组词中', exact: true })).toHaveCount(0);
+  await field.dispatchEvent('compositionend', { data: '组词中' });
+  await expect(preview.getByRole('heading', { name: '组词中', exact: true })).toBeVisible();
+});
+
+test('打开超预算文档先分页阅读，仍要编辑后可写入保存，超过硬上限只读', async ({ page, request }) => {
+  const over = defaultEditBudgets.rich.blocks + 20;
+  const blocks = Array.from({ length: over }, (_, index) => ({ id: `p-${index}`, kind: 'paragraph', text: [{ text: `段落 ${index}` }] }));
+  const made = await request.post(`${api}/api/v1/library/resources`, { data: { requestId: randomUUID(), title: '超预算富文档', format: 'richdoc-v1', schemaVersion: 1, content: { schemaVersion: 1, blocks } } });
+  expect(made.ok(), await made.text()).toBe(true); const resource = (await made.json()).data;
+  await open(page, resource.id);
+  const reading = page.getByTestId('document-large-reading');
+  await expect(reading).toBeVisible();
+  await expect(page.locator('.document-prose').first()).toHaveAttribute('contenteditable', 'false');
+  await reading.getByRole('button', { name: '仍要编辑', exact: true }).click();
+  await expect(reading).toHaveCount(0);
+  const editor = page.getByRole('textbox', { name: '文档正文', exact: true });
+  await expect(editor).toHaveAttribute('contenteditable', 'true');
+  await expect(editor.locator('p')).toHaveCount(over);
+  await expect(page.getByTestId('document-large-editing')).toBeVisible();
+  await editor.locator('p').last().click(); await page.keyboard.press('End'); await page.keyboard.type('续写');
+  await expect(page.getByTestId('document-save-state')).toHaveText('已保存到 Dovun', { timeout: 20_000 });
+  const saved = await bodyOf(request, resource.id);
+  expect(saved.content.blocks).toHaveLength(over); expect(saved.content.blocks[over - 1].text[0].text).toBe(`段落 ${over - 1}续写`);
+  // Closing the tab drops the permission: reopening in the same run decides again, and so does a new page load.
+  // Phones switch documents with a list that has no close button.
+  if (test.info().project.name !== 'mobile') {
+    await page.getByRole('button', { name: '关闭 超预算富文档', exact: true }).click();
+    await expect(page.getByTestId('document-pane')).toHaveCount(0);
+    await open(page, resource.id);
+    await expect(page.getByTestId('document-large-reading')).toBeVisible();
+  }
+  await page.reload();
+  await expect(page.getByTestId('document-large-reading')).toBeVisible();
+  // An earlier version is read-only: paged reading without "edit anyway", and not described as over the hard limit.
+  await page.goto(`/#/library?resource=${resource.id}&revision=1`);
+  const history = page.getByTestId('document-large-reading');
+  await expect(history).toContainText('以分页阅读打开');
+  await expect(history).not.toContainText('超过可编辑上限');
+  await expect(history).not.toContainText('仍要编辑');
+
+  const huge = defaultEditBudgets.richHard.blocks + 10;
+  const hard = await request.post(`${api}/api/v1/library/resources`, { data: { requestId: randomUUID(), title: '超硬上限富文档', format: 'richdoc-v1', schemaVersion: 1, content: { schemaVersion: 1, blocks: Array.from({ length: huge }, (_, index) => ({ id: `h-${index}`, kind: 'paragraph', text: [{ text: `段 ${index}` }] })) } } });
+  expect(hard.ok(), await hard.text()).toBe(true);
+  await open(page, (await hard.json()).data.id);
+  await expect(page.getByTestId('document-large-reading')).toBeVisible();
+  await expect(page.getByRole('button', { name: '仍要编辑', exact: true })).toHaveCount(0);
 });
 
 test('旧文本附件的补充说明单独可读，不覆盖原件正文', async ({ page, request }) => {
@@ -64,6 +128,7 @@ test('新建富文档可混合编辑并在刷新后恢复确切正文', async ({
   await page.goto('/#/library'); await page.getByRole('button', { name: '新建文档', exact: true }).click();
   const editor = page.getByRole('textbox', { name: '文档正文', exact: true }); await expect(editor).toBeVisible();
   await editor.fill('支付方案的正文');
+  await page.getByRole('toolbar', { name: '格式工具', exact: true }).getByRole('button', { name: '插入', exact: true }).click();
   await page.getByRole('button', { name: '插入表格', exact: true }).click();
   await expect(editor.locator('table')).toBeVisible();
   await editor.locator('table p').first().fill('金额');
@@ -161,7 +226,11 @@ test('复制混合正文保留附件并分配新的块身份', async ({ page, re
   await editor.locator('p').first().click(); await editor.press('ControlOrMeta+a');
   const copied = await editor.evaluate((node) => { const clipboard = new DataTransfer(); node.dispatchEvent(new ClipboardEvent('copy', { clipboardData: clipboard, bubbles: true, cancelable: true })); return { html: clipboard.getData('text/html'), text: clipboard.getData('text/plain'), selection: window.getSelection()?.toString() }; });
   expect(copied.html, JSON.stringify(copied)).toContain('data-document-resource="file"');
-  await editor.press('ArrowRight'); await editor.press('Enter');
+  await editor.press('ArrowRight');
+  // ArrowRight on a full selection is resolved by the browser and reaches ProseMirror through an asynchronous
+  // selectionchange; pressing Enter before that would replace the whole document.
+  await expect.poll(() => editor.evaluate((node) => (node as HTMLElement & { editor: { state: { selection: { empty: boolean } } } }).editor.state.selection.empty)).toBe(true);
+  await editor.press('Enter');
   await editor.evaluate((node, data) => { const clipboard = new DataTransfer(); clipboard.setData('text/html', data.html); clipboard.setData('text/plain', data.text); node.dispatchEvent(new ClipboardEvent('paste', { clipboardData: clipboard, bubbles: true, cancelable: true })); }, copied);
   await expect(editor.locator('.document-resource-file')).toHaveCount(2);
   const ids = await editor.locator('.document-resource-file').evaluateAll((nodes) => nodes.map((node) => (node as HTMLElement).dataset.blockId));
@@ -197,7 +266,7 @@ test('完整文档包离线含原件，重新导入分配新身份和引用', as
   const created = await request.post(`${api}/api/v1/library/resources`, { data: { requestId: randomUUID(), title: '可迁移文档', format: 'richdoc-v1', schemaVersion: 1, content: { schemaVersion: 1, blocks: [
     { id: 'first', kind: 'paragraph', text: [{ text: '可离开应用阅读的正文' }] }, { id: 'file', kind: 'file', target: { resourceId: attachment.id, revision: 1 }, label: 'portable.bin' },
   ] } } }); expect(created.ok()).toBe(true); const resource = (await created.json()).data;
-  await open(page, resource.id); await page.getByRole('button', { name: '导出', exact: true }).click();
+  await open(page, resource.id); await page.getByTestId('document-pane').getByRole('button', { name: '更多', exact: true }).click();
   const downloading = page.waitForEvent('download'); await page.getByRole('menuitem', { name: '文档包（含 Markdown / HTML）', exact: true }).click();
   const download = await Promise.race([downloading, page.locator('[data-sonner-toast]').first().waitFor({ state: 'visible', timeout: 20_000 }).then(async () => { throw new Error(`Export feedback: ${await page.locator('[data-sonner-toast]').first().textContent()}`); })]); const path = await download.path(); expect(path).toBeTruthy();
   const zip = await JSZip.loadAsync(await readFile(path!)); const manifest = JSON.parse(await zip.file('manifest.json')!.async('string'));

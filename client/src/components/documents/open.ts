@@ -17,6 +17,9 @@ const empty: OpenDocuments = { tabs: [], active: null, secondary: null, create: 
 const states = new Map<string, OpenDocuments>();
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((listener) => listener());
+/** One-shot, in memory only: the first surface of a freshly created document focuses its title. */
+const titleFocus = new Set<string>();
+export function takeTitleFocus(scope: string, key: string) { return titleFocus.delete(JSON.stringify([scope, key])); }
 
 export function documentTargetKey(target: DocumentOpenTarget) { return JSON.stringify([target.resourceId, target.revision ?? null]); }
 
@@ -110,6 +113,6 @@ export const documentTabs = {
   title(scope: string, key: string, title: string) { writeState(scope, (state) => state.tabs.find((tab) => tab.key === key)?.title === title ? state : { ...state, tabs: state.tabs.map((tab) => tab.key === key ? { ...tab, title } : tab) }); },
   split(scope: string, key: string | null) { writeState(scope, (state) => ({ ...state, secondary: key })); },
   showList(scope: string) { writeState(scope, (state) => ({ ...state, active: null })); reflectActive(scope); },
-  created(scope: string, target: DocumentOpenTarget) { writeState(scope, (state) => ({ ...addDocumentTab(state, target), create: null })); reflectActive(scope); },
+  created(scope: string, target: DocumentOpenTarget) { titleFocus.add(JSON.stringify([scope, documentTargetKey(target)])); writeState(scope, (state) => ({ ...addDocumentTab(state, target), create: null })); reflectActive(scope); },
   close(scope: string, key: string) { writeState(scope, (state) => { const index = state.tabs.findIndex((tab) => tab.key === key); const tabs = state.tabs.filter((tab) => tab.key !== key); return { ...state, tabs, active: state.active === key ? (tabs[Math.max(0, index - 1)]?.key ?? null) : state.active, secondary: state.secondary === key ? null : state.secondary }; }); reflectActive(scope); },
 };

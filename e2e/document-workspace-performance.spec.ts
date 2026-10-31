@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import JSZip from 'jszip';
 import { test, expect, type APIRequestContext, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
+import { defaultEditBudgets } from '../client/src/components/documents/edit-budget.js';
 
 const api = process.env.E2E_API_URL!;
 const output = '/tmp/dovun-document-browser-performance';
@@ -36,7 +37,8 @@ test('浏览器正文性能、目录分页、图片懒加载与窄屏控件实�
   const budgetOnly = process.env.DOCUMENT_BUDGET_ONLY === '1';
   const headingBlocks = Array.from({ length: 1000 }, (_, index) => ({ id: `heading-${index}`, kind: 'heading', level: 2, text: [{ text: `章节 ${index + 1}` }] }));
   const preparedHeadings = budgetOnly ? await create(request, '1000条目录样本', headingBlocks) : null;
-  for (const count of process.env.DOCUMENT_LAYOUT_ONLY === '1' ? [] : budgetOnly ? [500, 1000, 10000] : [1000, 10000]) {
+  // About 345 B per paragraph: 1,000 and 4,000 fit the soft budget (5,000 blocks / 1.5 MiB); 10,000 (about 3.4 MB) is above the hard budget.
+  for (const count of process.env.DOCUMENT_LAYOUT_ONLY === '1' ? [] : budgetOnly ? [1000, 4000, 10000] : [1000, 10000]) {
     const resource = await create(request, `${count}段性能样本`, Array.from({ length: count }, (_, index) => paragraph(index)));
     await open(page, resource.id, resource.title);
     if (await page.getByTestId('document-large-reading').isVisible()) {
@@ -92,7 +94,10 @@ test('浏览器正文性能、目录分页、图片懒加载与窄屏控件实�
   if (await page.getByTestId('document-large-reading').isVisible()) {
     await expect(page.locator('.document-prose > h2')).toHaveCount(100);
     await expect(page.locator('.document-prose')).toHaveAttribute('contenteditable', 'false');
-    const longText = 'A'.repeat(10_000) + 'B'.repeat(10_000) + 'C'.repeat(250_000);
+  }
+  {
+    // One block above the soft byte budget: its page is still too large, so the text itself is paged.
+    const longText = 'A'.repeat(10_000) + 'B'.repeat(10_000) + 'C'.repeat(defaultEditBudgets.rich.bytes);
     const long = await create(request, '单块纯文字阅读降级', [paragraph(0, longText)]);
     await open(page, long.id, long.title);
     const textPage = page.getByTestId('document-large-reading').locator('pre');
@@ -145,15 +150,18 @@ test('浏览器正文性能、目录分页、图片懒加载与窄屏控件实�
   for (const theme of ['light', 'dark']) for (const width of [390, 430]) {
     await page.setViewportSize({ width, height: 900 });
     await page.evaluate((theme) => { document.documentElement.classList.remove('light', 'dark'); document.documentElement.classList.add(theme); document.documentElement.style.colorScheme = theme; localStorage.setItem('dovun.theme', theme); }, theme);
-    const checks = await page.evaluate(() => {
-      const expected = ['返回文件列表', '编辑', '阅读', '立即保存', '插入图片或附件', '导出'];
-      return expected.map((label) => { const button = [...document.querySelectorAll<HTMLButtonElement>('.document-workspace button')].find((node) => node.textContent?.trim() === label); const box = button?.getBoundingClientRect(); return { label, visible: Boolean(box && box.width > 0 && box.height > 0 && box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight), width: box?.width, height: box?.height }; });
+    const measure = () => page.evaluate(() => {
+      // Matched by visible text or, for icon buttons, by their accessible name.
+      const expected = ['返回文件列表', '编辑', '阅读', '立即保存', '插入', '更多格式', '更多'];
+      return expected.map((label) => { const button = [...document.querySelectorAll<HTMLButtonElement>('.document-workspace button')].find((node) => node.textContent?.trim() === label || node.getAttribute('aria-label') === label); const box = button?.getBoundingClientRect(); return { label, visible: Boolean(box && box.width > 0 && box.height > 0 && box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight), width: box?.width, height: box?.height }; });
     });
-    expect(checks.every((entry) => entry.visible)).toBe(true);
+    // The toolbar regroups its controls after the resize is observed.
+    await expect.poll(async () => (await measure()).filter((entry) => !entry.visible).map((entry) => entry.label)).toEqual([]);
+    const checks = await measure();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
     controls.push({ theme, width, checks }); await page.screenshot({ path: `${output}/${theme}-${width}.png`, fullPage: true });
   }
-  const downloaded = page.waitForEvent('download'); await page.getByRole('button', { name: '导出', exact: true }).click(); await page.getByRole('menuitem', { name: '导出本机恢复包', exact: true }).click();
+  const downloaded = page.waitForEvent('download'); await page.getByTestId('document-pane').getByRole('button', { name: '更多', exact: true }).click(); await page.getByRole('menuitem', { name: '导出本机恢复包', exact: true }).click();
   const packageFile = await downloaded; const zip = await JSZip.loadAsync(await readFile(await packageFile.path()));
   const recovery = JSON.parse(await zip.file('manifest.json')!.async('string')); expect(recovery.complete).toBe(true); expect(zip.file('draft.json')).not.toBeNull();
   const report = { at: new Date().toISOString(), browser: await page.context().browser()?.version(), measurements, editingGates, outline: { headings: 1000, pageSize: 100, secondPageStartsAt: 101 }, images: { count: 8, beforeScroll, afterScroll: richImageRequests }, markdownImages: { count: 8, beforeScroll: markdownBeforeScroll, afterScroll: markdownAfterScroll }, controls, recoveryExport: { complete: recovery.complete }, notes: ['Chromium desktop engine, no CPU throttling; mobile widths are layout simulations.', 'Input samples measure keydown capture to the following requestAnimationFrame callback, a pre-paint proxy. Long tasks also cover delayed serialization and draft persistence.'] };

@@ -67,7 +67,8 @@ export class DocumentDraftStore implements DocumentDraftStorage {
   putWithFile(record: DocumentDraft, uploadId: string, file: Blob) { return this.write(record, { uploadId, file }); }
 
   private async write(record: DocumentDraft, attachment?: { uploadId: string; file: Blob }) {
-    const snapshot = structuredClone(record);
+    // Callers pass an isolated snapshot (DocumentSession.snapshotRecord); IndexedDB's put clones it once.
+    const snapshot = record;
     // WebKit can leave a transaction pending while cloning a File backed by an external
     // file handle. Materialize bytes before opening the transaction, preserving atomicity.
     const storedAttachment: StoredAttachment | undefined = attachment
@@ -120,6 +121,17 @@ export class DocumentDraftStore implements DocumentDraftStorage {
       drafts.put(structuredClone(record));
       if (retireSource) drafts.delete(key(source));
       this.watch(tx, () => undefined, resolve, reject, 'Document branch could not be restored');
+    });
+  }
+
+  async discard(record: DocumentDraft) {
+    const db = await this.open();
+    return new Promise<void>((resolve, reject) => {
+      const tx = db.transaction([draftStore, fileStore], 'readwrite');
+      const files = tx.objectStore(fileStore);
+      for (const upload of record.uploads) files.delete([...key(record), upload.id]);
+      tx.objectStore(draftStore).delete(key(record));
+      this.watch(tx, () => undefined, resolve, reject, 'Document draft could not be discarded');
     });
   }
 }

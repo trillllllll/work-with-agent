@@ -14,8 +14,22 @@ type ConversionRequest = {
 
 export function saveAsFormats(resource: ResourceDocument | undefined): SaveAsFormat[] {
   if (!resource || resource.supported === false) return [];
-  if (resource.format === 'richdoc-v1') return inspectRichDocument(resource.content).supported ? ['markdown', 'text'] : [];
+  if (resource.format === 'richdoc-v1') return inspectedSupported(resource) ? ['markdown', 'text'] : [];
   return resource.format === 'text' ? ['markdown'] : resource.format === 'markdown' ? ['text'] : [];
+}
+
+/**
+ * The save-as entry renders with every editor snapshot, and each poll returns a new copy of the same version,
+ * so a version is inspected once per id, revision and content hash rather than per object.
+ */
+const inspected = new Map<string, boolean>();
+function inspectedSupported(resource: ResourceDocument) {
+  const key = resource.revision && resource.contentHash ? JSON.stringify([resource.id, resource.revision, resource.contentHash]) : null;
+  const cached = key ? inspected.get(key) : undefined;
+  if (cached !== undefined) return cached;
+  const supported = inspectRichDocument(resource.content).supported;
+  if (key) { if (inspected.size > 200) inspected.clear(); inspected.set(key, supported); }
+  return supported;
 }
 
 export function canSaveDocumentAs(resource: ResourceDocument | undefined, snapshot?: DocumentSnapshot) {

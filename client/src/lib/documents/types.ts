@@ -44,6 +44,10 @@ export type DocumentWrite = {
   content: DocumentContent;
   editSeq: number;
   state: 'prepared' | 'unknown';
+  /** Copies of fields inside bodyJson, so acknowledging a large body does not parse it again. Absent in older drafts. */
+  contentHash?: string;
+  title?: string;
+  relativeReferences?: RelativeReference[];
 };
 export type DocumentFailure = { code: string; message: string; status?: number };
 export type DocumentConflict = { base: DocumentBase; local: DraftContent; localRelativeReferences?: RelativeReference[]; remote: ResourceDocument };
@@ -91,8 +95,10 @@ export type DocumentDraft = {
   uploads: DocumentUpload[];
   /** Exact editor state retained locally when conversion to the product schema fails. Never publish automatically. */
   editorRecovery?: Array<{ viewKey: string; capturedAt: number; message: string; editorJson: unknown }>;
+  /** Opened from "new document": nothing is created in Dovun until the title or body is changed. */
+  blank?: boolean;
 };
-export type DocumentSaveStatus = 'saved' | 'local-pending' | 'saving' | 'local-only' | 'uploading' | 'conflict' | 'error' | 'storage-error' | 'read-only' | 'recovery';
+export type DocumentSaveStatus = 'new' | 'saved' | 'local-pending' | 'saving' | 'local-only' | 'uploading' | 'conflict' | 'error' | 'storage-error' | 'read-only' | 'recovery';
 export type DocumentSnapshot = {
   localId: string;
   resourceId: string | null;
@@ -109,7 +115,7 @@ export type DocumentSnapshot = {
   staleBranches: DocumentDraft[];
   readOnly: boolean;
 };
-export type NewDocument = { title: string; format: Exclude<DocumentFormat, 'binary'>; content: DocumentContent; schemaVersion?: number | null; topicId?: string | null; folderId?: string | null; relativeReferences?: RelativeReference[] };
+export type NewDocument = { title: string; format: Exclude<DocumentFormat, 'binary'>; content: DocumentContent; schemaVersion?: number | null; topicId?: string | null; folderId?: string | null; relativeReferences?: RelativeReference[]; blank?: boolean };
 
 export type WriteOutcome =
   | { kind: 'success'; receipt: DocumentReceipt }
@@ -131,4 +137,6 @@ export interface DocumentDraftStorage {
   putWithFile(record: DocumentDraft, uploadId: string, file: Blob): Promise<void>;
   readFile(record: Pick<DocumentDraft, 'scopeKey' | 'localId' | 'sessionId'>, uploadId: string): Promise<Blob | undefined>;
   adopt(record: DocumentDraft, source: DocumentDraft, retireSource?: boolean): Promise<void>;
+  /** Delete one draft branch and its attachment bytes in a single transaction. */
+  discard(record: DocumentDraft): Promise<void>;
 }

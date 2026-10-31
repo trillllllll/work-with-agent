@@ -1488,13 +1488,13 @@
   padding: 0 12px;
 }
 
-.task-format-menu-list {
+.format-menu-list {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.task-format-menu-item {
+.format-menu-item {
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -1506,11 +1506,27 @@
   cursor: pointer;
 }
 
-.task-format-menu-item:hover, .task-format-menu-item.is-active {
+.format-menu-item:hover, .format-menu-item.is-active {
   background: var(--glass-hover);
 }
 
-.task-link-popover {
+.format-menu-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.format-menu-labelled {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.format-link-popover {
   position: fixed;
   z-index: 55;
   left: 50%;
@@ -1524,7 +1540,7 @@
   translate: -50% 0;
 }
 
-.task-link-input {
+.format-link-input {
   height: 32px;
   width: 100%;
   padding: 0 8px;
@@ -1532,16 +1548,16 @@
 }
 
 @media (pointer: coarse) {
-  .task-link-input { height: 40px; }
+  .format-link-input { height: 40px; }
 }
 
-.task-link-actions {
+.format-link-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
 }
 
-.task-link-action {
+.format-link-action {
   border: 0;
   background: transparent;
   color: var(--popover-foreground);
@@ -1552,11 +1568,11 @@
   text-decoration: none;
 }
 
-.task-link-action:hover {
+.format-link-action:hover {
   background: var(--glass-hover);
 }
 
-.task-link-action:disabled {
+.format-link-action:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
