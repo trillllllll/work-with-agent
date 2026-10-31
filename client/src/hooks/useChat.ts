@@ -34,10 +34,12 @@ type UseChatOptions = {
   sort?: string;
   includeArchived?: boolean;
   today?: string;
+  /** Ask the server for the pre-send context estimate only while the composer can be seen. */
+  contextPreviewEnabled?: boolean;
   onError: (message: string) => void;
 };
 
-export function useChat({ pageContext, selectedTopicId, taskId = '', view, identityId, onIdentityResolved, filters, sort, includeArchived = false, today = '', onError }: UseChatOptions) {
+export function useChat({ pageContext, selectedTopicId, taskId = '', view, identityId, onIdentityResolved, filters, sort, includeArchived = false, today = '', contextPreviewEnabled = true, onError }: UseChatOptions) {
   const { t } = useTranslation('chat');
   const tRef = useRef(t);
   tRef.current = t;
@@ -430,21 +432,26 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
   };
   // Pre-send estimate of the next request (draft + history + tools). Read-only on the server;
   // debounced while typing and refreshed after each run so it reflects the next send.
+  // Only requested while the assistant is visible; a superseded request is aborted.
   const [contextPreview, setContextPreview] = useState<ContextUsage | null>(null);
   const previewSeq = useRef(0);
   const previewKey = JSON.stringify([input, conversationId, identityId, webSearchEnabled, referencedApproval?.id ?? null, messages.length, context ?? null]);
   useEffect(() => {
     const seq = ++previewSeq.current;
     // A preview from before this run is stale; fall back to the run's own stats until a fresh one arrives.
-    if (busy) { setContextPreview(null); return; }
+    if (busy || !contextPreviewEnabled) { setContextPreview(null); return; }
+    const controller = new AbortController();
+    let expiry: ReturnType<typeof setTimeout> | undefined;
     const timer = setTimeout(() => {
+      expiry = setTimeout(() => controller.abort(), 15_000);
       const body = { conversationId: conversationRef.current || undefined, identityId: identityIdRef.current, message: inputRef.current, webSearchEnabled: webSearchEnabledRef.current, context: buildRequestContext(referencedApproval) };
-      api<ContextUsage>('/api/chat/context-preview', { method: 'POST', body: JSON.stringify(body) })
+      api<ContextUsage>('/api/chat/context-preview', { method: 'POST', body: JSON.stringify(body), signal: controller.signal })
         .then((stats) => { if (seq === previewSeq.current) setContextPreview(stats); })
-        .catch(() => { if (seq === previewSeq.current) setContextPreview(null); });
+        .catch(() => { if (seq === previewSeq.current) setContextPreview(null); })
+        .finally(() => clearTimeout(expiry));
     }, 500);
-    return () => clearTimeout(timer);
-  }, [busy, previewKey]);
+    return () => { clearTimeout(timer); clearTimeout(expiry); controller.abort(); };
+  }, [busy, contextPreviewEnabled, previewKey]);
 
   const send = async (event: FormEvent) => {
     event.preventDefault();

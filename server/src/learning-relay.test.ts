@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { relayBoundWorkspace } from './application/workspace-relay.js';
+import { isReadOnlyRelayPost, relayBoundWorkspace } from './application/workspace-relay.js';
 import * as replica from './application/sync-replica.js';
 import * as security from './application/security.js';
 import * as cache from './application/workspace-cache-access.js';
@@ -85,5 +85,34 @@ describe('learning writes through the authoritative workspace relay', () => {
     expect(options.headers.get('authorization')).toBe('Bearer test-only-connection-token');
     expect(test.authenticate).not.toHaveBeenCalled();
     expect(test.response.status).toHaveBeenCalledWith(403);
+  });
+});
+
+describe('chat context preview through the workspace relay', () => {
+  it('forwards the read-only estimate without waiting for or triggering task synchronization', async () => {
+    const test = setup();
+    const body = { conversationId: 'conversation', message: '下一条草稿' };
+    await test.request('/api/chat/context-preview', body);
+    expect(test.authenticate).toHaveBeenCalledOnce();
+    expect(test.synchronize).not.toHaveBeenCalled();
+    expect(test.pending).not.toHaveBeenCalled();
+    expect(test.fetch).toHaveBeenCalledOnce();
+    const [url, options] = test.fetch.mock.calls[0];
+    expect(String(url)).toBe('https://learning-test.invalid/api/v1/sync/relay/api/chat/context-preview');
+    expect(JSON.parse(options.body)).toEqual(body);
+    expect(test.next).not.toHaveBeenCalled();
+  });
+
+  it('keeps real sends and look-alike paths behind task synchronization', async () => {
+    const test = setup();
+    for (const path of ['/api/chat', '/api/chat/context-preview/extra', '/api/chat/context-previews']) {
+      test.synchronize.mockClear(); test.next.mockClear();
+      await test.request(path, { message: '发送' });
+      expect(test.synchronize, path).toHaveBeenCalledOnce();
+      expect(test.next, path).toHaveBeenCalledWith(expect.objectContaining({ code: 'SYNC_PENDING' }));
+    }
+    expect(test.fetch).not.toHaveBeenCalled();
+    expect(isReadOnlyRelayPost('POST', '/api/chat/context-preview')).toBe(true);
+    expect(isReadOnlyRelayPost('PATCH', '/api/chat/context-preview')).toBe(false);
   });
 });

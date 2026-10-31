@@ -28,6 +28,11 @@ export function isIndependentLearningWrite(method: string, path: string) {
   if (method !== 'POST') return false;
   return /^\/api\/v1\/learning\/(?:practice\/(?:generate|start|items\/[^/%]+\/(?:draft|submit|retry|events|archive)|sessions\/[^/%]+\/update|attempts\/[^/%]+\/regrade)|reviews\/update|jobs\/[^/%]+\/(?:retry|cancel)|resume)$/.test(path);
 }
+/** The composer's pre-send estimate is a POST that only reads. It must not wait for,
+ * be refused by, or trigger task synchronization the way a real chat send does. */
+export function isReadOnlyRelayPost(method: string, path: string) {
+  return method === 'POST' && path === '/api/chat/context-preview';
+}
 const canCache = (path: string) => !/event-stream|\/resources\/receipts\//.test(path) && /^\/api\/(?:conversations(?:\/|$)|v1\/(?:knowledge|library|artifacts)(?:\/|$)|tasks\/[^/]+\/(?:images\/|activity$|topic-history$|ai-history$))/.test(path);
 
 /** Pairing grants a full workspace replica, never a computer execution credential.
@@ -101,7 +106,8 @@ export async function relayBoundWorkspace(req: Request, res: Response, next: Nex
   let ownerAuthenticated = false;
   try {
     if (!bearer) { await requireOwner(req); ownerAuthenticated = true; }
-    const writing = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+    const sendsBody = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+    const writing = sendsBody && !isReadOnlyRelayPost(req.method, path);
     if (writing && !bearer && !isIndependentLearningWrite(req.method, path)) {
       await syncBoundReplicaNow();
       if (await prisma.syncOutbox.count({ where: { state: 'pending' } })) throw new DomainError('SYNC_PENDING', '请等待本机修改同步完成后重试', 409);
@@ -111,7 +117,7 @@ export async function relayBoundWorkspace(req: Request, res: Response, next: Nex
     for (const name of ['content-type', 'accept', 'accept-language', 'x-dovun-language', 'x-request-id', 'last-event-id']) if (typeof req.headers[name] === 'string') headers.set(name, req.headers[name] as string);
     const target = new URL((bearer ? '' : PREFIX) + req.url, binding.url);
     const binaryUpload = req.method === 'PUT' && /^\/api\/v1\/library\/uploads\/[^/]+\/content$/.test(path);
-    const payload = writing && !binaryUpload ? bearer ? req.body : await remapVersions(req, binding) : undefined;
+    const payload = sendsBody && !binaryUpload ? bearer || !writing ? req.body : await remapVersions(req, binding) : undefined;
     const disconnected = new AbortController();
     res.once('close', () => disconnected.abort());
     const response = await fetch(target, { method: req.method, headers, ...(binaryUpload ? {body:req as unknown as BodyInit,duplex:'half'} : payload !== undefined ? { body: JSON.stringify(payload) } : {}), signal: AbortSignal.any([disconnected.signal, AbortSignal.timeout(path === '/api/chat' ? 10 * 60_000 : 30_000)]), redirect: 'error' });

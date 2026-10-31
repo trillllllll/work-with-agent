@@ -245,7 +245,7 @@ function ScopedApp({scope}:{scope:string|undefined}) {
   const assistantContext: ChatContextV3 = isAssistantPage
     ? assistantOrigin?.context ?? { ...buildChatContext({ page: 'chat', topicId: '', taskId: '', today }), schemaVersion: 3, label: t('shell.assistant'), section: null, mode: 'follow', taskRevision: null, materialRevision: null, selectedMaterialIds: [], pageState: {}, attachments: [] }
     : pageContext;
-  const chat = useChat({ pageContext: assistantContext, selectedTopicId: assistantContext.scope.kind === 'topic' ? assistantContext.scope.topicId : '', taskId, view: isAssistantPage ? 'chat' : page, identityId: assistantIdentity, onIdentityResolved: (identity) => { setAssistantIdentity(identity); }, onError: (message) => { if (message) toast.error(message); } });
+  const chat = useChat({ pageContext: assistantContext, selectedTopicId: assistantContext.scope.kind === 'topic' ? assistantContext.scope.topicId : '', taskId, view: isAssistantPage ? 'chat' : page, identityId: assistantIdentity, contextPreviewEnabled: chatOpen || isAssistantPage, onIdentityResolved: (identity) => { setAssistantIdentity(identity); }, onError: (message) => { if (message) toast.error(message); } });
   // Keep each identity's current conversation and composer in this authenticated session.
   const switchAssistantIdentity = (identity: string) => {
     const next = identity === 'study' ? 'study' : 'work';

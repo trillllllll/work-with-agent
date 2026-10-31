@@ -81,6 +81,21 @@ test('real requests record context composition; floating controls work in both t
   expect(errors).toEqual([]);
 });
 
+test('asks for the pre-send estimate only while the assistant is visible', async ({ page }) => {
+  let previews = 0;
+  page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/chat/context-preview') previews++; });
+  await page.goto('/#/today');
+  await expect(page.getByTestId('context-usage-trigger')).toBeHidden();
+  for (const hash of ['#/inbox', '#/plan', '#/today']) {
+    await page.evaluate(next => { location.hash = next; }, hash);
+    await page.waitForTimeout(1_200);
+  }
+  expect(previews).toBe(0);
+  await page.evaluate(() => { location.hash = '#/chat'; });
+  await expect(page.getByTestId('context-usage-trigger')).toBeVisible();
+  await expect.poll(() => previews).toBeGreaterThan(0);
+});
+
 test('lazy loading still requires preview approval and keeps its state after confirmation', async ({ page, request }) => {
   await page.goto('/#/chat');
   await page.getByRole('textbox', { name: '向 AI 提问' }).fill('按需提案验收');

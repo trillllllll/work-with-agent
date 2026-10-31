@@ -80,7 +80,7 @@ if (install) {
   // Store, Android and iOS icons are not in the current bundle; the Tauri CLI regenerates them so none keeps an old mark.
   const scratch = await mkdtemp(join(tmpdir(), 'dovun-tauri-icons-'));
   try {
-    execFileSync(process.execPath, [join(repo, 'scripts/tauri.mjs'), 'icon', join(exportsDir, 'dovun-app-1024.png'), '-o', scratch], { stdio: 'ignore' });
+    execFileSync(process.execPath, [join(repo, 'scripts/tauri.mjs'), 'icon', join(exportsDir, 'dovun-app-1024.png'), '-o', scratch], { stdio: ['ignore', 'ignore', 'inherit'] });
     for (const name of (await readdir(scratch)).filter(name => /^(64x64|StoreLogo|Square\d+x\d+Logo)\.png$/.test(name))) {
       await copyFile(join(scratch, name), join(icons, name));
     }

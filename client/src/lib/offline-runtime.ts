@@ -108,6 +108,8 @@ export class BrowserOfflineRuntime {
    * Hub revisions are never substituted when the local task changed in the meantime. */
   async prepareOnline(path: string, init?: RequestInit): Promise<RequestInit | undefined> {
     if (!init?.method || ['GET', 'HEAD'].includes(init.method.toUpperCase()) || !/^\/api\/(?:v1\/(?:commands|handoffs|library|knowledge|runs|proposals)|chat|orchestrations)/.test(path)) return init;
+    // The composer's pre-send estimate only reads, so it neither waits for nor triggers replica sync.
+    if (new URL(path, window.location.origin).pathname === '/api/chat/context-preview') return init;
     if (!this.authenticated) throw new DomainError('AUTH_REQUIRED', t('workspace:offline.errors.login'), 401);
     await this.sync();
     const state = (await this.status())!;

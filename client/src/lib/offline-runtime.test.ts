@@ -223,6 +223,19 @@ describe('durable browser workspace', () => {
     expect((await runtime.status())!.rows.task.task.row.title).toBe('任务');
   });
 
+  it('sends the composer context estimate without syncing or waiting for pending edits', async () => {
+    const remote = hub(); vi.stubGlobal('fetch', remote.fetcher);
+    const runtime = await replica('context-preview');
+    await edit(runtime, { title: '尚未上传的本地修改' });
+    runtime.resume();
+    const sync = vi.spyOn(runtime, 'sync').mockResolvedValue(undefined);
+    const init = { method: 'POST', body: JSON.stringify({ message: '下一条草稿' }) };
+    expect(await runtime.prepareOnline('/api/chat/context-preview', init)).toBe(init);
+    expect(sync).not.toHaveBeenCalled();
+    await expect(runtime.prepareOnline('/api/chat', init)).rejects.toMatchObject({ code: 'SYNC_PENDING' });
+    expect(sync).toHaveBeenCalledOnce();
+  });
+
   it('maps a locally observed task revision to the real hub revision without allowing stale content', async () => {
     const remote = hub(); vi.stubGlobal('fetch', remote.fetcher);
     const original = await replica('revisions');
