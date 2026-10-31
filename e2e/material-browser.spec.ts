@@ -22,6 +22,8 @@ test('工作上下文和资料库分别打开，记忆和当前进展仍可从�
   await page.goto('/#/knowledge');
   await expect(page.getByRole('heading', { name: '工作上下文', exact: true })).toBeVisible();
   await expect(page.getByRole('tab', { name: '当前进展', exact: true })).toHaveAttribute('aria-selected', 'true');
+  // The app adds the default list to this address once the lists load (a replace); navigating away earlier races with it.
+  await expect(page).toHaveURL(/#\/knowledge\/brief\?topicId=/);
 
   await page.goto('/#/library');
   await expect(page).toHaveURL(/#\/library$/);
