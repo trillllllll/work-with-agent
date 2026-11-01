@@ -1,3 +1,4 @@
+import type { LearningEditorLease } from './learning-editor-lease.js';
 import { useEffect, useRef, useState } from 'react';
 import { ApiError } from './api.js';
 import { EditorRuntime } from './task-editor-runtime.js';
@@ -33,10 +34,11 @@ export function reconcilePracticeAnswer(local:LocalPracticeAnswer,remote:Practic
   return {value:local,conflict:true};
 }
 
-export function usePracticeAnswer(scope:string,item:PracticeItemView,onChanged:()=>Promise<unknown>,writable=true) {
+export function usePracticeAnswer(scope:string,item:PracticeItemView,onChanged:()=>Promise<unknown>,writable=true,lease?:LearningEditorLease) {
   const id=`${item.id}:${item.draft.activeAttemptId}`;
   const [local,setLocal]=useState<LocalPracticeAnswer>(()=>freshPracticeAnswer(item.draft));
   const [ready,setReady]=useState(false);
+  const [readGeneration,setReadGeneration]=useState(0);
   const [busy,setBusy]=useState(false);
   const [conflict,setConflict]=useState(false);
   const [error,setError]=useState('');
@@ -49,14 +51,15 @@ export function usePracticeAnswer(scope:string,item:PracticeItemView,onChanged:(
   const locked=useRef(false);
   const submitting=useRef(false);
   const expired=useRef(false);
+  const run = <T,>(operation:()=>Promise<T>) => lease ? lease.run(operation) : operation();
   const persist=async(value:LocalPracticeAnswer)=>{
-    try{await writeLearningRecord(scope,'answer',id,value);if(mounted.current)setStorageFailed(false);return true;}
+    try{await run(()=>writeLearningRecord(scope,'answer',id,value));if(mounted.current)setStorageFailed(false);return true;}
     catch{if(mounted.current)setStorageFailed(true);return false;}
   };
   const update=(value:LocalPracticeAnswer)=>{current.current=value;if(mounted.current)setLocal(value);};
   const scopeValid=()=>!expired.current&&EditorRuntime.current()?.scopeKey===scope;
   useEffect(()=>{
-    mounted.current=true;let active=true;
+    mounted.current=true;setReady(false);let active=true;
     const expire=()=>{expired.current=true;};window.addEventListener('workspace-session-expired',expire);
     void Promise.all([readLearningRecord<LocalPracticeAnswer>(scope,'answer',id),readLearningRecord<{fromAttemptId:string;answer:PracticeAnswer}>(scope,'carry-answer',item.id)]).then(([saved,carry])=>{
       if(!active)return;
@@ -64,11 +67,12 @@ export function usePracticeAnswer(scope:string,item:PracticeItemView,onChanged:(
         const result=reconcilePracticeAnswer(saved,source.current.draft);update(result.value);setConflict(result.conflict);
       }else if(carry&&carry.fromAttemptId!==item.draft.activeAttemptId&&!item.draft.submitted){
         const next={...freshPracticeAnswer(item.draft),answer:carry.answer};update(next);
-        void writeLearningRecord(scope,'answer',id,next).then(()=>removeLearningRecord(scope,'carry-answer',item.id,carry)).catch(()=>{if(active)setStorageFailed(true);});
+        void run(()=>writeLearningRecord(scope,'answer',id,next).then(()=>removeLearningRecord(scope,'carry-answer',item.id,carry))).catch(()=>{if(active)setStorageFailed(true);});
       }
-    }).catch(()=>{if(active)setStorageFailed(true);}).finally(()=>{if(active)setReady(true);});
+      if(active)setReady(true);
+    }).catch(()=>{if(active)setStorageFailed(true);});
     return()=>{active=false;mounted.current=false;window.removeEventListener('workspace-session-expired',expire);};
-  },[scope,id]);
+  },[scope,id,readGeneration]);
   useEffect(()=>{
     if(!ready)return;
     const result=reconcilePracticeAnswer(current.current,item.draft);
@@ -91,7 +95,7 @@ export function usePracticeAnswer(scope:string,item:PracticeItemView,onChanged:(
       // Never send a request whose retry identity could not be made durable.
       if(!await persist(pending))return;
       if(!scopeValid())return;
-      const result=await learningWrite<{draft:PracticeDraftView}>(`/practice/items/${encodeURIComponent(item.id)}/draft`,body);
+      const result=await run(()=>learningWrite<{draft:PracticeDraftView}>(`/practice/items/${encodeURIComponent(item.id)}/draft`,body));
       if(!mounted.current)return;
       const latest=current.current;
       if(latest.pendingSave?.requestId===body.requestId)update({...latest,revision:result.draft.revision,baseAnswer:result.draft.answer,pendingSave:undefined});
@@ -123,7 +127,7 @@ export function usePracticeAnswer(scope:string,item:PracticeItemView,onChanged:(
     try{
       if(!await persist(pending))return;
       if(!scopeValid())return;
-      await learningWrite<{attempt:PracticeAttemptView;sessionId:string;itemId:string}>(`/practice/items/${encodeURIComponent(item.id)}/submit`,body);
+      await run(()=>learningWrite<{attempt:PracticeAttemptView;sessionId:string;itemId:string}>(`/practice/items/${encodeURIComponent(item.id)}/submit`,body));
       if(!mounted.current)return;
       // Keep the frozen submission until the authoritative session reports submitted=true.
       await changed.current();
@@ -152,5 +156,5 @@ export function usePracticeAnswer(scope:string,item:PracticeItemView,onChanged:(
     update(keepLocal?{...fresh,answer:current.current.answer}:fresh);setConflict(false);setError('');
   }
   const status=!ready?'loading':conflict?'conflict':local.pendingSubmit||local.submitIntent?'pending':busy?'saving':error?'local':answerDirty(local)||local.pendingSave?'local':'saved';
-  return {answer:local.answer,edit,ready,busy,conflict,error,storageFailed,composing,setComposing,status,pending:Boolean(local.pendingSubmit||local.submitIntent),saveDraft,submit,resolveConflict};
+  return {answer:local.answer,edit,ready,retryLoad:()=>setReadGeneration(value=>value+1),busy,conflict,error,storageFailed,composing,setComposing,status,pending:Boolean(local.pendingSubmit||local.submitIntent),saveDraft,submit,resolveConflict};
 }

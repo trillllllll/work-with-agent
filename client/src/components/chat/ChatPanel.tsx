@@ -17,13 +17,18 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ChatHistory, ChatReferencePicker } from './ChatPickers.js';
 import { Button } from '@/components/ui/button.js';
 import { MessageList } from './MessageList.js';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { openSkillEditor } from '@/components/skills/skill-format.js';
 import { ContextUsagePopover } from './ContextUsagePopover.js';
 import { ChatComposer } from './ChatComposer.js';
 import { WebSearchToggle } from './WebSearchToggle.js';
 import { AssistantInputProvider } from './assistant-input.js';
+import { StudyTopicBar } from './StudyTopicBar.js';
+import { StudyBriefing } from './StudyBriefing.js';
+import { useCurrentTopic } from '@/lib/learning-topic.js';
+import { focusedLearningNode } from './learning-focus.js';
+import { LEARNING_NAVIGATE_EVENT } from './learning-events.js';
 
 type ChatPanelProps = {
   chat: ReturnType<typeof useChat>;
@@ -63,6 +68,14 @@ export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose
   const learningReferences = chat.attachments.filter(item => item.learningMapId || item.learningSessionId);
   const savedReferences = latestLearningTurn?.context?.schemaVersion === 3 ? latestLearningTurn.context.attachments.filter(item => item.learningMapId || item.learningSessionId) : [];
   const learningReference = learningReferences[learningReferences.length - 1] ?? savedReferences[savedReferences.length - 1];
+  const [topicId, setTopicId] = useCurrentTopic();
+  const focusNodeId = focusedLearningNode(messages, chat.attachments);
+  useEffect(() => {
+    const go = (event: Event) => { const hash = (event as CustomEvent<{ hash?: string }>).detail?.hash; if (!hash) return; window.location.hash = hash; if (mobile) onClose(); };
+    window.addEventListener(LEARNING_NAVIGATE_EVENT, go);
+    return () => window.removeEventListener(LEARNING_NAVIGATE_EVENT, go);
+  }, [mobile, onClose]);
+  const newTopic = () => { if (chat.switchingBlocked) return; startNew(); setTopicId(''); setInput(t('studyTopic.newPrompt')); };
   return (
     <div className="dovun-assistant flex h-full min-h-0 min-w-0 flex-col" data-testid="ai-assistant" data-presentation={presentation}>
       <header className="assistant-header flex shrink-0 items-center gap-1 border-b px-3 py-3">
@@ -83,6 +96,9 @@ export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose
         {presentation === 'side' && showClose && <Button variant="ghost" size="icon-sm" title={t('chatPanel.hideAssistant')} aria-label={mobile ? t('chatPanel.backToPage') : t('chatPanel.closeChat')} onClick={onClose}><X /></Button>}
       </header>
 
+      {identityId === 'study' && <StudyTopicBar topicId={topicId} focusNodeId={focusNodeId} disabled={chat.switchingBlocked} onSelectTopic={(id) => void chat.selectTopic(id)} onNewTopic={newTopic}
+        onOpenNode={(hash) => { window.location.hash = hash; if (mobile) onClose(); }} onAsk={(prompt) => setInput(input.trim() ? `${input}\n\n${prompt}` : prompt)} />}
+      {identityId === 'study' && topicId && <StudyBriefing key={topicId} topicId={topicId} />}
       {onReturnToLearning && <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1">
         <Button variant="ghost" className="min-h-11 shrink-0 px-2" onClick={onReturnToLearning}><ArrowLeft className="size-4" />{t('chatPanel.backToLearning')}</Button>
         {identityId === 'study' && learningReference && <span className="min-w-0 truncate text-xs text-muted-foreground" title={learningReference.title}>{t('chatPanel.learningReference', { title: learningReference.title })}</span>}
@@ -92,7 +108,7 @@ export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose
       {chat.draftStorageFailed&&<p role="alert" className="mx-3 shrink-0 rounded-lg border border-destructive/30 p-3 text-xs text-destructive">{t('errors.draftStorageFailed')}</p>}
       {chat.hasLegacyPending&&<p role="status" className="mx-3 shrink-0 rounded-lg border p-3 text-xs text-muted-foreground">{t('chatPanel.legacyPendingHint')}</p>}
       <AssistantInputProvider setInput={setInput}><MessageList emptyState={<>
-      <div className="dovun-assistant-welcome"><img src={mark} alt="" /><h3>{t('chatPanel.title')}</h3><p>{t('chatPanel.greeting')}</p></div>
+      <div className="dovun-assistant-welcome"><img src={mark} alt="" /><h3>{t(identityId === 'study' ? 'chatPanel.identityStudy' : 'chatPanel.title')}</h3><p>{t(identityId === 'study' ? 'chatPanel.studyGreeting' : 'chatPanel.greeting')}</p></div>
       <div className="dovun-assistant-suggestions flex flex-wrap gap-2 px-3 pt-3">{(identityId === 'study' ? studySuggestions() : suggestions(chat.context?.page ?? '')).map((item) => <Button key={item} size="sm" variant="outline" className="h-auto whitespace-normal text-left" onClick={() => setInput(input.trim() ? `${input}\n\n${item}` : item)}>{item}</Button>)}</div>
       </>} messages={messages} activeRunId={chat.activeRunId} approvals={approvals} approvalPending={approve.isPending || reject.isPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} unresolvedApprovalIds={unresolvedApprovalIds} phase={decisionPhase} onApprove={(id) => approve.mutate(id)} onReject={(id) => reject.mutate(id)} onChanged={refreshApprovals} onRepreviewed={showRepreview} sendSeq={sendSeq} /></AssistantInputProvider>
       {pausedRun && ['new_user_message', 'interrupted', 'round_limit'].includes(pausedRun.reason) && (

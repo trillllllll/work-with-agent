@@ -12,6 +12,8 @@ import { useMediaQuery } from '@/hooks/useMediaQuery.js';
 import { learningKey, learningWrite, useLearningCapabilities, type LearningSearchView, type PracticeMode } from '@/lib/learning-api.js';
 import { learningHash, learningNodePath, readLearningLocation, type LearningLocation } from '@/lib/learning-navigation.js';
 import { readLearningPreference, writeLearningPreference } from '@/lib/learning-storage.js';
+import { readCurrentTopic, useCurrentTopic } from '@/lib/learning-topic.js';
+import { LearningFigure } from './LearningFigure.js';
 import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { Textarea } from '@/components/ui/textarea.js';
@@ -49,10 +51,11 @@ function LearningPageContent({scope,onAskAssistant}:{scope:string;onAskAssistant
   const client=useQueryClient();
   const { overview, unsupported } = useLearningCapabilities(scope);
   const workflowEnabled = !unsupported;
+  const [currentTopic] = useCurrentTopic();
   const root=useRef<HTMLDivElement>(null);
   const [location,setLocation]=useState<LearningLocation>(()=>{
     const requested=readLearningLocation(window.location.hash);
-    return requested.mapId||requested.nodeId||requested.sessionId||requested.tab!=='note'?requested:readLearningPreference(scope,'location',requested);
+    return requested.mapId||requested.nodeId||requested.sessionId||requested.tab!=='note'?requested:readCurrentTopic(scope)?{...requested,mapId:readCurrentTopic(scope)}:readLearningPreference(scope,'location',requested);
   });
   const locationRef=useRef(location);locationRef.current=location;
   const internalHash=useRef<string|null>(null);
@@ -69,6 +72,8 @@ function LearningPageContent({scope,onAskAssistant}:{scope:string;onAskAssistant
   const [setup,setSetup]=useState<Setup|null>(null);
   const [menu,setMenu]=useState(false);
   const [notice,setNotice]=useState('');
+  const [figureOpen,setFigureOpen]=useState(location.tab==='figure');
+  const previousTopic=useRef(currentTopic);
   const [collapsed,setCollapsed]=useState<Record<string,Record<string,boolean>>>(()=>readLearningPreference(scope,'collapsed',{}));
   const views = useRef<Record<string, ViewState>>(readLearningPreference(scope,'chart-views',{}));
   const [command, setCommand] = useState<ChartCommand>({ kind: 'fit', counter: 0 });
@@ -108,6 +113,8 @@ function LearningPageContent({scope,onAskAssistant}:{scope:string;onAskAssistant
   function openSession(id:string){writeLearningPreference(scope,`session-return:${id}`,{...locationRef.current,sessionId:''});navigate({...location,sessionId:id,tab:'practice'});}
   function returnFromSession(mapId?:string){const origin=readLearningPreference<LearningLocation|null>(scope,`session-return:${location.sessionId}`,null);navigate(origin??{mapId:mapId??activeMapId,nodeId:!mapId||mapId===location.mapId?location.nodeId:'',sessionId:'',tab:'note'});}
   function selectMap(id:string){navigate({mapId:id,nodeId:'',sessionId:'',tab:'note'});setFocusId('');}
+  useEffect(()=>{if(currentTopic===previousTopic.current)return;previousTopic.current=currentTopic;if(currentTopic)selectMap(currentTopic);},[currentTopic]);
+  useEffect(()=>{setFigureOpen(location.tab==='figure');},[location.mapId,location.tab]);
   function setTab(tab:string){navigate({...location,mapId:activeMapId,tab});}
   async function startNode(nodeId:string){try{await learningWrite('/resume',{requestId:crypto.randomUUID(),nodeId,reason:'start'});void client.invalidateQueries({queryKey:learningKey(scope,'overview')});}catch(error){toast.error(error instanceof Error?error.message:t('workflow.failed'));}}
   function deleteNode(node: LearningNode) {
@@ -123,6 +130,10 @@ function LearningPageContent({scope,onAskAssistant}:{scope:string;onAskAssistant
     askAssistant({ kind: 'draft', title: contextLabel(map.title), text: `${map.title}\n${map.goal}`, learningMapId: map.id, learningRevision: map.revision, unsaved: false });
   }
   const removalRequest = useRef<{ removal: Removal; id: string } | null>(null);
+  function askFigure() {
+    if (!map || onAskAssistant?.() === false) return;
+    askAssistant({ kind:'draft',title:contextLabel(map.title),text:`${map.title}\n${map.goal}`,learningMapId:map.id,learningRevision:map.revision,unsaved:false }, {prompt:t(mapQuery.data?.figure?'figure.updatePrompt':'figure.drawPrompt')});
+  }
   async function confirmRemoval() {
     if (!removal) return;
     if (removalRequest.current?.removal !== removal) removalRequest.current = { removal, id: crypto.randomUUID() };
@@ -145,6 +156,9 @@ function LearningPageContent({scope,onAskAssistant}:{scope:string;onAskAssistant
   return <div ref={root} className="learning-page flex min-h-0 flex-1 flex-col gap-4 p-4 sm:p-6">
     {capabilityNotice}
     {notice&&<p role="status" className="rounded-lg border p-3 text-sm">{notice}</p>}
+    {map&&<section className="space-y-3" data-testid="learning-archive-figure"><div className="flex flex-wrap items-center gap-2"><Button variant="outline" className="min-h-11" aria-expanded={figureOpen} onClick={()=>setFigureOpen(value=>!value)}>{t('figure.title')}</Button>{figureOpen&&<Button variant="ghost" className="min-h-11" onClick={askFigure}>{t(mapQuery.data?.figure?'figure.update':'figure.draw')}</Button>}</div>
+      {figureOpen&&(mapQuery.data?.figure?<div className="rounded-xl border bg-card p-3">{mapQuery.data.figure.stale&&<p role="status" className="mb-3 text-xs text-muted-foreground">{t('figure.stale')}</p>}<LearningFigure svg={mapQuery.data.figure.svg} nodes={nodes} currentId={selectedNode?.id} onPick={id=>openNode(activeMapId,id)} label={`${map.title} · ${t('figure.title')}`}/></div>:<p className="text-sm text-muted-foreground">{t('figure.missing')}</p>)}
+    </section>}
     {selectedNode&&map?<section className="space-y-4" data-testid="learning-workspace">
       <nav className="flex flex-wrap items-center gap-2" aria-label={t('workflow.workspaceTabs')}><Button variant="ghost" className="min-h-11" onClick={()=>navigate({mapId:activeMapId,nodeId:'',sessionId:'',tab:'note'})}><ArrowLeft/>{t('back')}</Button>{(['note','practice','records','reviews'] as const).map(tab=><Button key={tab} variant={viewTab===tab?'secondary':'ghost'} className="min-h-11" disabled={!workflowEnabled&&tab!=='note'} aria-pressed={viewTab===tab} onClick={()=>setTab(tab)}>{t(`workflow.tabs.${tab}`)}</Button>)}</nav>
       <div className="flex flex-wrap items-center justify-between gap-2"><Button variant="ghost" className="min-h-11" disabled={index<=0} onClick={()=>openNode(orderedItems[index-1].mapId,orderedItems[index-1].id)}><ArrowLeft/>{t('workflow.previous')}</Button><Button variant="ghost" className="min-h-11" disabled={index<0||index>=orderedItems.length-1} onClick={()=>openNode(orderedItems[index+1].mapId,orderedItems[index+1].id)}>{t('workflow.next')}<ArrowRight/></Button></div>

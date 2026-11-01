@@ -221,7 +221,8 @@
     "webSearchOn": "联网搜索已开启，本会话内有效",
     "webSearchOff": "开启联网搜索",
     "webSearchUnavailable": "未配置联网搜索服务，请在设置里配置 DeepSeek 密钥",
-    "legacyPendingHint": "本机仍保留旧版未确认发送，但记录没有工作区标识。它未被归入当前工作区，也未自动重放；再次发送前请到原对话核对结果。"
+    "legacyPendingHint": "本机仍保留旧版未确认发送，但记录没有工作区标识。它未被归入当前工作区，也未自动重放；再次发送前请到原对话核对结果。",
+    "studyGreeting": "讲解、练习和复习都从这里开始，确认后保存到学习档案。"
   },
   "chatPickers": {
     "history": "历史对话",
@@ -573,5 +574,44 @@
     "incomplete": "部分查询失败，回答可能不完整。展开对应记录查看原因。",
     "stopped": "本轮执行未完成，已保留收到的内容。",
     "responding": "正在整理回答"
+  },
+  "studyTopic": {
+    "switch": "切换主题",
+    "none": "未选择主题",
+    "new": "新主题…",
+    "newPrompt": "我想学：",
+    "figure": "主图",
+    "figureShortcut": "学习主图（快捷键 M）",
+    "figureOf": "{{title}} · 学习主图",
+    "figureHint": "高亮的是正在学的知识点",
+    "loading": "正在读取主图…",
+    "noFigure": "这个主题还没有学习主图。",
+    "drawFigure": "让助手画一张主图",
+    "stale": "主题结构已变化，主图需要更新。",
+    "updateFigure": "让助手更新主图",
+    "noNote": "还没有笔记。",
+    "openNote": "看笔记",
+    "askAssistant": "问助手",
+    "askNode": "讲讲「{{title}}」",
+    "shortcutHint": "点图里的知识点看详情。按 M 随时打开或收起主图。"
+  },
+  "figure": {
+    "askDraw": "给这个主题画一张学习主图，体现知识点之间的关系。",
+    "askUpdate": "主题结构变了，请按现有主图更新学习主图。"
+  },
+  "learningCard": {
+    "unavailable": "「{{title}}」已不在学习档案里。",
+    "inFigure": "在主图中看",
+    "collapse": "收起",
+    "openPractice": "在对话中练习",
+    "inArchive": "在档案中看",
+    "morePractice": "给这个主题再出一组练习。"
+  },
+  "briefing": {
+    "title": "学习简报",
+    "noCheckpoint": "还没有确认保存的收尾记录。",
+    "recent": "最近作答 {{count}} 条",
+    "due": "到期复习 {{count}}{{more}} 条",
+    "coverage": "仅显示最近 5 次作答、5 条到期复习和 3 个未完成练习；不是全部记录。"
   }
 }

@@ -8,23 +8,18 @@
 /* 学习主图: the assistant's SVG supplies layout; status colours come from the app's tag tokens. */
 .learning-figure { width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
 .learning-figure svg { display: block; width: 100%; height: auto; }
-.learning-figure [data-node-id] :is(rect, circle, ellipse, path, polygon) { transition: fill 120ms, stroke 120ms; }
-.learning-figure [data-status=todo] :is(rect, ellipse, polygon) { fill: var(--card); stroke: var(--border); }
-.learning-figure [data-status=learning] :is(rect, ellipse, polygon) { fill: var(--tag-blue-bg); stroke: var(--tag-blue-border); }
-.learning-figure [data-status=review] :is(rect, ellipse, polygon) { fill: var(--tag-amber-bg); stroke: var(--tag-amber-border); }
-.learning-figure [data-status=done] :is(rect, ellipse, polygon) { fill: var(--tag-green-bg); stroke: var(--tag-green-border); }
-.learning-figure [data-status=todo] circle { fill: var(--muted-foreground); }
-.learning-figure [data-status=learning] circle { fill: var(--tag-blue-fg); }
-.learning-figure [data-status=review] circle { fill: var(--tag-amber-fg); }
-.learning-figure [data-status=done] circle { fill: var(--tag-green-fg); }
-.learning-figure [data-node-id] text { fill: var(--foreground); }
+/* Owned shape markers also cover a directly tagged rect/path and nested shapes. */
+.learning-figure [data-figure-status=todo] { fill: var(--card); stroke: var(--border); }
+.learning-figure [data-figure-status=learning] { fill: var(--tag-blue-bg); stroke: var(--tag-blue-border); }
+.learning-figure [data-figure-status=review] { fill: var(--tag-amber-bg); stroke: var(--tag-amber-border); }
+.learning-figure [data-figure-status=done] { fill: var(--tag-green-bg); stroke: var(--tag-green-border); }
+.learning-figure [data-node-id] text, .learning-figure [data-node-id]:is(text,tspan) { fill: var(--foreground); }
 .learning-figure [data-status=missing] { opacity: .35; }
-.learning-figure [data-current] :is(rect, ellipse, polygon) { stroke: var(--foreground); stroke-width: 2.2; }
-.learning-figure [data-selected] :is(rect, ellipse, polygon) { stroke: var(--primary); stroke-width: 2.6; }
+.learning-figure [data-figure-current] { stroke: var(--foreground); stroke-width: 2.2; }
+.learning-figure [data-figure-selected] { stroke: var(--primary); stroke-width: 2.6; }
 .learning-figure[data-clickable] [data-node-id][role=button] { cursor: pointer; outline: none; }
-.learning-figure[data-clickable] [data-node-id][role=button]:hover :is(rect, ellipse, polygon) { stroke: var(--foreground); }
-.learning-figure[data-clickable] [data-node-id][role=button]:focus-visible :is(rect, ellipse, polygon) { stroke: var(--ring); stroke-width: 3; }
-.dark .learning-figure svg > :is(rect, g:not([data-node-id]) > rect) { fill: var(--muted); stroke: var(--border); }
+.learning-figure[data-clickable] [data-node-id][role=button]:hover [data-figure-status], .learning-figure[data-clickable] [data-node-id][role=button][data-figure-status]:hover { stroke: var(--foreground); }
+.learning-figure[data-clickable] [data-node-id][role=button]:focus-visible [data-figure-status], .learning-figure[data-clickable] [data-node-id][role=button][data-figure-status]:focus-visible { stroke: var(--ring); stroke-width: 3; }
+.dark .learning-figure svg > rect:not([data-figure-status]) { fill: var(--muted); stroke: var(--border); }
 .dark .learning-figure text { fill: var(--foreground); }
 @media (max-width: 767px) { .learning-figure svg { min-width: 560px; } }
-@media (prefers-reduced-motion: reduce) { .learning-figure [data-node-id] :is(rect, circle, ellipse, path, polygon) { transition: none; } }

@@ -228,7 +228,8 @@
     "webSearchOn": "Web search on for this conversation",
     "webSearchOff": "Enable web search",
     "webSearchUnavailable": "Web search is not configured. Add a DeepSeek key in Settings.",
-    "legacyPendingHint": "An older unconfirmed send remains preserved on this device without a workspace identity. It has not been assigned to this workspace or replayed. Check the original conversation before sending again."
+    "legacyPendingHint": "An older unconfirmed send remains preserved on this device without a workspace identity. It has not been assigned to this workspace or replayed. Check the original conversation before sending again.",
+    "studyGreeting": "Learn, practice and review here. Confirm changes to keep them in your learning archive."
   },
   "chatPickers": {
     "history": "Conversation history",
@@ -592,5 +593,44 @@
     "incomplete": "Some queries failed. The answer may be incomplete. Expand the corresponding record for details.",
     "stopped": "This run was interrupted. Received content has been preserved.",
     "responding": "Preparing response"
+  },
+  "studyTopic": {
+    "switch": "Switch topic",
+    "none": "No topic selected",
+    "new": "New topic…",
+    "newPrompt": "I want to learn: ",
+    "figure": "Figure",
+    "figureShortcut": "Learning figure (shortcut M)",
+    "figureOf": "{{title}} · learning figure",
+    "figureHint": "The highlighted point is what you are learning now",
+    "loading": "Loading the figure…",
+    "noFigure": "This topic has no learning figure yet.",
+    "drawFigure": "Ask the assistant to draw one",
+    "stale": "The topic structure has changed. Update the figure.",
+    "updateFigure": "Ask the assistant to update it",
+    "noNote": "No note yet.",
+    "openNote": "Open note",
+    "askAssistant": "Ask assistant",
+    "askNode": "Explain \"{{title}}\"",
+    "shortcutHint": "Select a knowledge point to see details. Press M to open or close the figure."
+  },
+  "figure": {
+    "askDraw": "Draw a learning figure for this topic that shows how the knowledge points relate.",
+    "askUpdate": "The topic structure changed. Update the learning figure based on the current one."
+  },
+  "learningCard": {
+    "unavailable": "\"{{title}}\" is no longer in the learning archive.",
+    "inFigure": "Show in figure",
+    "collapse": "Collapse",
+    "openPractice": "Practice in chat",
+    "inArchive": "Open archive",
+    "morePractice": "Create another practice set for this topic."
+  },
+  "briefing": {
+    "title": "Study briefing",
+    "noCheckpoint": "No confirmed checkpoint has been saved yet.",
+    "recent": "{{count}} recent attempts",
+    "due": "{{count}}{{more}} due reviews",
+    "coverage": "Shows up to 5 recent attempts, 5 due reviews and 3 unfinished sessions, not the full history."
   }
 }
