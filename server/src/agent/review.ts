@@ -32,7 +32,7 @@ const labels: Record<string, string> = {
 };
 
 export type ReviewEntityChange = {
-  entityType: 'task' | 'topic' | 'tag' | 'material' | 'memory' | 'libraryFolder' | 'libraryTag' | 'skill' | 'learning_map' | 'learning_node' | 'learning_activity' | 'learning_practice_job';
+  entityType: 'task' | 'topic' | 'tag' | 'material' | 'memory' | 'libraryFolder' | 'libraryTag' | 'skill' | 'learning_map' | 'learning_node' | 'learning_activity' | 'learning_practice_job' | 'learning_figure';
   entityId: string;
   titleBefore: string | null;
   titleAfter: string | null;
@@ -128,6 +128,7 @@ function projectMaterialLinks(row: Record<string, unknown> | null, ids: string[]
 }
 
 function fieldsFor(entityType: ReviewEntityChange['entityType'], before: Record<string, unknown> | null, after: Record<string, unknown> | null) {
+  if (entityType === 'learning_figure') return figureFields(before, after);
   if (entityType === 'material') {
     const leftIds = before ? linkTaskIds(before) : null;
     const rightIds = after ? linkTaskIds(after) : null;
@@ -145,6 +146,18 @@ function fieldsFor(entityType: ReviewEntityChange['entityType'], before: Record<
     fields.push({ key, label: entityType === 'learning_node' && key === 'detail' ? '笔记正文' : entityType === 'learning_node' && key === 'status' ? '掌握情况' : entityType === 'skill' ? skillLabels[key] ?? key : labels[key] ?? key, before: jsonValue(left), after: jsonValue(right), beforeText: show(key, left, entityType), afterText: show(key, right, entityType) });
   }
   return fields;
+}
+
+function figureNodeCount(row: Record<string, unknown> | null) {
+  try { const ids = JSON.parse(String(row?.nodeIdsJson ?? '[]')); return Array.isArray(ids) ? ids.length : 0; } catch { return 0; }
+}
+
+/** The SVG itself travels as the field value so the card can preview it; the text stays a short summary. */
+function figureFields(before: Record<string, unknown> | null, after: Record<string, unknown> | null) {
+  const left = typeof before?.svg === 'string' ? before.svg : null;
+  const right = typeof after?.svg === 'string' ? after.svg : null;
+  if (left === right) return [];
+  return [{ key: 'svg', label: '学习主图', before: left, after: right, beforeText: left ? `${figureNodeCount(before)} 个知识点` : '还没有主图', afterText: right ? `${figureNodeCount(after)} 个知识点` : '未设置' }];
 }
 
 type Slot = { entityType: ReviewEntityChange['entityType']; entityId: string; before: Record<string, unknown> | null; after: Record<string, unknown> | null };
@@ -172,7 +185,7 @@ function absorb(slots: Map<string, Slot>, record: ChangeRecord) {
     return;
   }
   const entityType = record.entityType as Slot['entityType'];
-  if (!['task', 'topic', 'tag', 'material', 'memory', 'libraryFolder', 'libraryTag', 'skill', 'learning_map', 'learning_node', 'learning_activity', 'learning_practice_job'].includes(entityType)) return;
+  if (!['task', 'topic', 'tag', 'material', 'memory', 'libraryFolder', 'libraryTag', 'skill', 'learning_map', 'learning_node', 'learning_activity', 'learning_practice_job', 'learning_figure'].includes(entityType)) return;
   remember(slots, entityType, record.entityId, before, after);
 }
 
@@ -221,7 +234,8 @@ export function buildReview(input: { intent: string; requestedOperationCount: nu
 
 function consequenceLines(entities: ReviewEntityChange[]) {
   const lines: string[] = [];
-  if (entities.some(entity => entity.entityType === 'learning_practice_job')) lines.push('确认后开始生成候选练习；采用题集后才开始作答。不会提交答案或修改掌握状态。');
+  if (entities.some(entity => entity.entityType === 'learning_practice_job')) lines.push('确认后开始生成候选练习；生成完成后在对话的练习卡片里点“开始练习”才会采用题集。不会提交答案或修改掌握状态。');
+  if (entities.some(entity => entity.entityType === 'learning_figure')) lines.push('学习主图只用于展示和跳转，图里的知识点会按掌握状态上色。');
   const schedule = entities.filter((entity) => entity.fields.some((field) => ['dueDate', 'scheduledStart', 'scheduledEnd'].includes(field.key)));
   if (schedule.length) {
     const dates = [...new Set(schedule.flatMap((entity) => entity.fields.filter((field) => field.key === 'dueDate').map((field) => `${field.beforeText} → ${field.afterText}`)))];

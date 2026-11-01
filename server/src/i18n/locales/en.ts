@@ -1011,5 +1011,9 @@ export const en: Record<string, string> = {
   "没有导入来源原件": "There is no imported source original.",
   "附件原件不存在": "The original attachment does not exist.",
   "导入来源必须是已经上传完成的文件原件": "Imported provenance must refer to an uploaded, committed original file.",
-  "导入原件与文档正文不一致": "The imported original does not match the document content."
+  "导入原件与文档正文不一致": "The imported original does not match the document content.",
+  "学习主图已经变化，请刷新后重试": "The learning figure has changed. Refresh and try again.",
+  "学习主图不符合 SVG 安全规则：{0}": "The learning figure does not meet the SVG safety rules: {0}",
+  "学习主图引用了不属于这个主题的知识点：{0}": "The learning figure refers to knowledge points outside this topic: {0}",
+  "学习主图至少要用 data-node-id 标出一个知识点": "Mark at least one knowledge point in the learning figure with data-node-id."
 };

@@ -244,6 +244,7 @@ model Conversation {
   id        String    @id @default(cuid())
   identityId String   @default("work") @map("identity_id")
   webSearchEnabled Boolean @default(false) @map("web_search_enabled")
+  learningMapId String? @map("learning_map_id")
   summary   String    @default("")
   summaryVersion Int   @default(0) @map("summary_version")
   lastCompactedAt String? @map("last_compacted_at")
@@ -256,6 +257,7 @@ model Conversation {
   agentRuns AgentRun[]
 
   @@index([identityId])
+  @@index([identityId, learningMapId])
   @@map("conversations")
 }
 
@@ -1204,9 +1206,24 @@ model LearningMap {
   updatedAt String   @default("") @map("updated_at")
   nodes        LearningNode[]
   activities   LearningActivity[]
+  figure       LearningFigure?
 
   @@index([deletedAt, status, sortOrder])
   @@map("learning_maps")
+}
+
+/// 学习主图：助手绘制、经确认保存的主题总览 SVG。知识点以 data-node-id 标记。
+model LearningFigure {
+  id          String @id @default(cuid())
+  mapId       String @unique @map("map_id")
+  svg         String
+  nodeIdsJson String @default("[]") @map("node_ids_json")
+  revision    Int    @default(1)
+  createdAt   String @default("") @map("created_at")
+  updatedAt   String @default("") @map("updated_at")
+  map         LearningMap @relation(fields: [mapId], references: [id], onDelete: Cascade)
+
+  @@map("learning_figures")
 }
 
 model LearningNode {
