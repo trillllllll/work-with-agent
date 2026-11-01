@@ -328,5 +328,11 @@
       "mixed_practice": "Mixed practice within your selected scope",
       "recent_mistake_variant": "A new scenario based on a previous mistake"
     }
+  },
+  "figure": {
+    "label": "{{title}} learning figure",
+    "openNode": "{{title}} ({{status}}), open details",
+    "invalid": "The figure cannot be shown: {{error}}",
+    "preview": "Learning figure preview"
   }
 }

@@ -11,6 +11,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { SkillProposalDetails } from '@/components/skills/SkillProposalCard.js';
 import { SKILL_SAVED_EVENT, type SkillSavedDetail } from '@/components/skills/SkillEditor.js';
 import { isSkillOnlyReview, openSkillEditor, skillProposalEditorDetail } from '@/components/skills/skill-format.js';
+import { LearningFigure } from '@/components/learning/LearningFigure.js';
+import type { LearningNode } from '@/components/learning/learning-model.js';
 
 const CLIP = 240;
 
@@ -104,6 +106,19 @@ function ParentTrees({ entities }: { entities: AppReviewEntity[] }) {
       </div>
     </div>
   );
+}
+
+/** A proposed 学习主图 is previewed read-only; knowledge points in the same proposal take their proposed status. */
+function FigurePreview({ entities }: { entities: AppReviewEntity[] }) {
+  const { t } = useTranslation('learning');
+  const figure = entities.find((entity) => entity.entityType === 'learning_figure');
+  const svg = figure?.fields.find((field) => field.key === 'svg')?.after;
+  if (typeof svg !== 'string' || !svg) return null;
+  const nodes = entities.filter((entity) => entity.entityType === 'learning_node' && entity.operation !== 'delete').map((entity) => {
+    const status = entity.fields.find((field) => field.key === 'status')?.after;
+    return { id: entity.entityId, mapId: '', parentId: null, kind: 'item', title: entity.titleAfter ?? '', detail: '', status: typeof status === 'string' ? status : 'todo', mastery: 0, sortOrder: 0, revision: 1, children: [] } satisfies LearningNode;
+  });
+  return <div className="review-overview" data-testid="review-figure-preview"><LearningFigure svg={svg} nodes={nodes} fallbackStatus="todo" label={t('figure.preview')} /></div>;
 }
 
 function EntityBlock({ entity }: { entity: AppReviewEntity }) {
@@ -207,6 +222,7 @@ export function ReviewCard({ approval, phase = '', unknown = false, unresolved =
       <p className="task-batch-summary" data-testid="approval-related">{relatedText(false)}</p>
       {skillOnly && entities.map((entity) => <SkillProposalDetails key={entity.entityId} entity={entity} />)}
       {!skillOnly && entities.length === 1 && <div className="review-overview"><h3>{entities[0].titleAfter || entities[0].titleBefore || t('review.untitled')}</h3>{entities[0].fields.filter((field) => ['topicId', 'scheduledStart', 'scheduledEnd', 'scheduledDate', 'scheduledTime', 'estimatedMinutes'].includes(field.key)).map((field) => <p key={field.key}><CalendarDays size={14} aria-hidden="true" /><span>{field.label}</span><strong>{field.afterText}</strong></p>)}</div>}
+      {!skillOnly && <FigurePreview entities={entities} />}
       {!skillOnly && <Collapsible open={showAll} onOpenChange={setShowAll}>
         <CollapsibleTrigger className="review-tech-trigger">{showAll ? t('review.collapseAll') : t('review.allChanges', { count: entities.length })}</CollapsibleTrigger>
         <CollapsibleContent><ParentTrees entities={entities} /><div className="review-entities">{entities.map((entity) => <EntityBlock key={`${entity.entityType}:${entity.entityId}`} entity={entity} />)}</div></CollapsibleContent>

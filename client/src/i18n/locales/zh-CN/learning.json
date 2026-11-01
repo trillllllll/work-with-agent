@@ -328,5 +328,11 @@
       "mixed_practice": "在本次范围内混合练习",
       "recent_mistake_variant": "根据之前的错题换一个场景练习"
     }
+  },
+  "figure": {
+    "label": "{{title}} 学习主图",
+    "openNode": "{{title}}（{{status}}），打开详情",
+    "invalid": "主图无法显示：{{error}}",
+    "preview": "学习主图预览"
   }
 }
