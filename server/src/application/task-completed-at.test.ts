@@ -1,5 +1,5 @@
 import request from '../test-auth.js';
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../app.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { ChangeGroup, legacyTaskSnapshot, withoutLegacyTaskKeys } from './workspace-store.js';
@@ -180,19 +180,25 @@ describe('task completedAt', () => {
   });
 
   it('maintains completedAt when a sync write changes status', async () => {
-    const doneRow = filled({ title: '同步完成', status: 'done' });
-    await prisma.$transaction(async (tx) => { await writeLive(tx, 'task', 'sync-done', doneRow); });
-    const created = await row('sync-done');
-    expect(created.completedAt).toBe(created.updatedAt);
-    expect(created.completedAtEstimated).toBe(false);
-    await prisma.$transaction(async (tx) => { await writeLive(tx, 'task', 'sync-done', { ...doneRow, title: '仍完成' }); });
-    const renamed = await row('sync-done');
-    expect(renamed.completedAt).toBe(created.completedAt);
-    expect(renamed.title).toBe('仍完成');
-    expect(renamed.updatedAt).not.toBe(created.updatedAt);
-    await prisma.$transaction(async (tx) => { await writeLive(tx, 'task', 'sync-done', { ...doneRow, status: 'todo' }); });
-    expect(await row('sync-done')).toMatchObject({ status: 'todo', completedAt: null, completedAtEstimated: false });
-    await prisma.$transaction(async (tx) => { await writeLive(tx, 'task', 'sync-todo', filled({ title: '同步待办', status: 'todo' })); });
-    expect(await row('sync-todo')).toMatchObject({ completedAt: null, completedAtEstimated: false });
+    // Two database writes may complete within one real millisecond.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-11-01T00:00:00.000Z'));
+      const doneRow = filled({ title: '同步完成', status: 'done' });
+      await prisma.$transaction(async (tx) => { await writeLive(tx, 'task', 'sync-done', doneRow); });
+      const created = await row('sync-done');
+      expect(created.completedAt).toBe(created.updatedAt);
+      expect(created.completedAtEstimated).toBe(false);
+      vi.setSystemTime(new Date('2026-11-01T00:00:01.000Z'));
+      await prisma.$transaction(async (tx) => { await writeLive(tx, 'task', 'sync-done', { ...doneRow, title: '仍完成' }); });
+      const renamed = await row('sync-done');
+      expect(renamed.completedAt).toBe(created.completedAt);
+      expect(renamed.title).toBe('仍完成');
+      expect(renamed.updatedAt).not.toBe(created.updatedAt);
+      await prisma.$transaction(async (tx) => { await writeLive(tx, 'task', 'sync-done', { ...doneRow, status: 'todo' }); });
+      expect(await row('sync-done')).toMatchObject({ status: 'todo', completedAt: null, completedAtEstimated: false });
+      await prisma.$transaction(async (tx) => { await writeLive(tx, 'task', 'sync-todo', filled({ title: '同步待办', status: 'todo' })); });
+      expect(await row('sync-todo')).toMatchObject({ completedAt: null, completedAtEstimated: false });
+    } finally { vi.useRealTimers(); }
   });
 });

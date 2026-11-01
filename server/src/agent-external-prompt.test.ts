@@ -83,7 +83,8 @@ describe('external prompt cards', () => {
     const result = await agent.chat({ message: '整理一份特别长的外部提示词', pageContext: { page: 'inbox' } });
     expect(result.events.find((event) => event.type === 'tool_result' && event.toolName === 'prepare_external_prompt')?.result).toMatchObject({ success: false, code: 'PROMPT_TOO_LONG' });
     const assistant = await prisma.message.findFirst({ where: { conversationId: result.conversationId, role: 'assistant' }, orderBy: { createdAt: 'asc' } });
-    expect(assistant?.partsJson ?? '[]').toBe('[]');
+    // Citation metadata is stored on every reply, even when no visible card was produced.
+    expect(JSON.parse(assistant?.partsJson ?? '[]').filter((part: { type?: string }) => part.type !== 'assistant_citations')).toEqual([]);
     expect(result.events.some((event) => event.type === 'external_prompt')).toBe(false);
   });
 

@@ -1,12 +1,13 @@
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { prismaClientIsCurrent } from './prisma-current.mjs';
 
 const root = process.cwd();
-// file: 路径按 Prisma 约定相对 server/prisma/schema.prisma 解析，落到 server/data/test.db。
-const databaseUrl = `file:${resolve(root, 'server/data/test.db')}`;
-const databasePath = resolve(root, 'server/data/test.db');
+// Each run owns a fresh explicit /tmp database, including destructive contract tests.
+const directory = await mkdtemp('/tmp/dovun-unit-');
+const databasePath = resolve(directory, 'test.db');
+const databaseUrl = `file:${databasePath}`;
 
 await mkdir(dirname(databasePath), { recursive: true });
 await rm(databasePath, { force: true });
@@ -21,3 +22,4 @@ if (!await prismaClientIsCurrent(root)) runScript('prisma:generate');
 runScript('db:migrate');
 runScript('test', '-w', 'server');
 runScript('test', '-w', 'client');
+await rm(directory, { recursive: true, force: true });
