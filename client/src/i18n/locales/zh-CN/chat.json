@@ -222,7 +222,8 @@
     "webSearchOff": "开启联网搜索",
     "webSearchUnavailable": "未配置联网搜索服务，请在设置里配置 DeepSeek 密钥",
     "legacyPendingHint": "本机仍保留旧版未确认发送，但记录没有工作区标识。它未被归入当前工作区，也未自动重放；再次发送前请到原对话核对结果。",
-    "studyGreeting": "讲解、练习和复习都从这里开始，确认后保存到学习档案。"
+    "studyGreeting": "讲解、练习和复习都从这里开始，确认后保存到学习档案。",
+    "studyWelcomeTitle": "想学什么？"
   },
   "chatPickers": {
     "history": "历史对话",

@@ -229,7 +229,8 @@
     "webSearchOff": "Enable web search",
     "webSearchUnavailable": "Web search is not configured. Add a DeepSeek key in Settings.",
     "legacyPendingHint": "An older unconfirmed send remains preserved on this device without a workspace identity. It has not been assigned to this workspace or replayed. Check the original conversation before sending again.",
-    "studyGreeting": "Learn, practice and review here. Confirm changes to keep them in your learning archive."
+    "studyGreeting": "Learn, practice and review here. Confirm changes to keep them in your learning archive.",
+    "studyWelcomeTitle": "What would you like to learn?"
   },
   "chatPickers": {
     "history": "Conversation history",
