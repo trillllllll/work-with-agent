@@ -1218,6 +1218,7 @@ model LearningFigure {
   mapId       String @unique @map("map_id")
   svg         String
   nodeIdsJson String @default("[]") @map("node_ids_json")
+  structureHash String @default("") @map("structure_hash")
   revision    Int    @default(1)
   createdAt   String @default("") @map("created_at")
   updatedAt   String @default("") @map("updated_at")

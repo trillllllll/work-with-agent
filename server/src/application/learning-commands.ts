@@ -6,7 +6,7 @@ import { DomainError } from '../domain/task.js';
 import type { Prisma } from '@prisma/client';
 import { learningNodeStatuses } from '../domain/learning.js';
 import { checkedCheckpoint, confirmedCheckpoint } from './learning-checkpoint.js';
-import { prepareFigure } from './learning-figure.js';
+import { prepareFigure, figureStructureHash, readFigureStructure } from './learning-figure.js';
 
 // 学习域命令处理器。全部 forceProposal：内置助手和外部连接都只能先生成
 // 待确认方案，用户批准后经 executeBatch 执行并写入变更历史。
@@ -123,6 +123,8 @@ export function registerLearningCommands() {
       const timestamp = now();
       const map = await tx.learningMap.create({ data: { ...(context.entityId || command.entityId ? { id: context.entityId ?? command.entityId } : {}), title: input.title, goal: input.goal, createdAt: timestamp, updatedAt: timestamp } });
       await recordChange(tx, 'learning_map', map.id, 'create', null, map, context);
+      // A topic created from an unbound study conversation becomes that conversation's topic.
+      if (!context.preview && context.conversationId) await tx.conversation.updateMany({ where: { id: context.conversationId, identityId: 'study', learningMapId: null }, data: { learningMapId: map.id } });
       return map;
     },
   });
@@ -284,7 +286,7 @@ export function registerLearningCommands() {
       const map = await requireMap(tx, input.mapId);
       const current = await (tx as unknown as FigureDb).learningFigure.findUnique({ where: { mapId: map.id } });
       await assertFigureRevision(current?.revision, command.expectedRevision);
-      return { preconditions: { mapId: map.id, figureRevision: current?.revision ?? 0 }, preview: { mapTitle: map.title, previousRevision: current?.revision ?? 0 } };
+      return { preconditions: { mapId: map.id, figureRevision: current?.revision ?? 0, structureHash: figureStructureHash(await readFigureStructure(tx, map.id)) }, preview: { mapTitle: map.title, previousRevision: current?.revision ?? 0 } };
     },
     execute: async (tx, _actor, command, context) => {
       const input = figureSave.parse(command.input ?? {});
@@ -294,7 +296,7 @@ export function registerLearningCommands() {
       await assertFigureRevision(current?.revision, command.expectedRevision);
       const prepared = await prepareFigure(db, map.id, input.svg, input.nodeRefs);
       const timestamp = now();
-      const data = { svg: prepared.svg, nodeIdsJson: JSON.stringify(prepared.nodeIds), updatedAt: timestamp };
+      const data = { svg: prepared.svg, nodeIdsJson: JSON.stringify(prepared.nodeIds), structureHash: prepared.structureHash, updatedAt: timestamp };
       const saved = current
         ? await db.learningFigure.update({ where: { id: current.id, revision: current.revision }, data: { ...data, revision: { increment: 1 } } })
         : await db.learningFigure.create({ data: { ...data, mapId: map.id, createdAt: timestamp } });

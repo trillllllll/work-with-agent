@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { Prisma } from '@prisma/client';
 import { DomainError } from '../domain/task.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { figureView } from './learning-figure.js';
@@ -106,7 +107,7 @@ export async function learningRead(args: Record<string, unknown>) {
       where: { mapId: map.id, ...(input.includeArchived === true ? {} : { deletedAt: null }) },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
     })).map(toRow);
-    const figure = figureView(await prisma.learningFigure.findUnique({ where: { mapId: map.id } }), rows.filter(row => row.kind === 'item' && !row.deletedAt).map(row => row.id));
+    const figure = figureView(await prisma.learningFigure.findUnique({ where: { mapId: map.id } }), rows.filter(row => !row.deletedAt));
     return {
       map: { id: map.id, title: map.title, goal: map.goal, status: map.status, revision: map.revision, updatedAt: map.updatedAt },
       tree: buildTree(rows),
@@ -203,7 +204,7 @@ export async function learningMapAggregate(mapId: string) {
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: 30,
   });
-  const figure = figureView(await prisma.learningFigure.findUnique({ where: { mapId: map.id } }), rows.filter(row => row.kind === 'item').map(row => row.id));
+  const figure = figureView(await prisma.learningFigure.findUnique({ where: { mapId: map.id } }), rows);
   return {
     map: { id: map.id, title: map.title, goal: map.goal, status: map.status, revision: map.revision, updatedAt: map.updatedAt },
     tree: buildTree(rows),
@@ -212,4 +213,13 @@ export async function learningMapAggregate(mapId: string) {
     recentActivity: activity,
     activityCoverage: '最近 30 条',
   };
+}
+
+/** A study conversation may only be bound to a topic that still exists. null clears the binding. */
+export async function requireLiveLearningMap(value: unknown, db: Pick<Prisma.TransactionClient, 'learningMap'> = prisma): Promise<string | null> {
+  if (value === null) return null;
+  if (typeof value !== 'string' || !value) throw new DomainError('INVALID_CONVERSATION_PATCH', 'learningMapId 无效', 400);
+  const map = await db.learningMap.findUnique({ where: { id: value }, select: { id: true, deletedAt: true } });
+  if (!map || map.deletedAt) throw new DomainError('NOT_FOUND', '学习主题不存在', 404);
+  return map.id;
 }

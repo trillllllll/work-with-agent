@@ -76,6 +76,24 @@ describe('learning figure (学习主图)', () => {
     expect(await prisma.learningFigure.count()).toBe(0);
   });
 
+  it('invalidates a figure after a move or rename, but not a mastery change, and rejects approval against an old structure', async () => {
+    const { map, a, b } = await topic();
+    await submit([{ kind: 'learning.figure.save', input: { mapId: map.id, svg: svg(a.id, b.id) } }]);
+    await submit([{ kind: 'learning.node.update', targetId: a.id, expectedRevision: 1, input: { status: 'learning' } }]);
+    expect((await ownerRequest(app).get(`/api/v1/learning/maps/${map.id}`)).body.data.figure.stale).toBe(false);
+    const agent = proposing([{ family: 'learning', args: { action: 'figure_save', mapId: map.id, svg: svg(a.id, b.id).replace('400 200', '420 200'), expectedFigureRevision: 1 } }]);
+    const response = await agent.chat({ identityId: 'study', message: '更新主图', requestKey: randomUUID() });
+    const event = response.events.find(item => item.type === 'approval_required') as any;
+    expect(event, JSON.stringify(response.events)).toBeTruthy();
+    await submit([{ kind: 'learning.node.move', targetId: a.id, expectedRevision: 2, input: { parentId: null } }]);
+    expect((await ownerRequest(app).get(`/api/v1/learning/maps/${map.id}`)).body.data.figure.stale).toBe(true);
+    expect((await agent.approve(event.approvalId, { expectedProposalRevision: event.proposalRevision, previewHash: event.previewHash })).outcome).toMatchObject({ status: 'failed', code: 'VERSION_CONFLICT', appliedOperationCount: 0 });
+    expect((await prisma.learningFigure.findUniqueOrThrow({where:{mapId:map.id}})).revision).toBe(1);
+    await submit([{ kind: 'learning.figure.save', expectedRevision: 1, input: { mapId: map.id, svg: svg(a.id, b.id) } }]);
+    await submit([{ kind: 'learning.node.update', targetId: a.id, expectedRevision: 3, input: { title: 'Renamed' } }]);
+    expect((await ownerRequest(app).get(`/api/v1/learning/maps/${map.id}`)).body.data.figure.stale).toBe(true);
+  });
+
   it('links placeholder names to items created in the same batch and guards the figure revision', async () => {
     const result = await submit([
       { kind: 'learning.map.create', clientRef: 'map', input: { title: 'Batch', goal: '' } },

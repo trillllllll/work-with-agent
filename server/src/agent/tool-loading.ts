@@ -13,7 +13,7 @@ const groups: Record<ToolGroup, { description: string; tools: string[] }> = {
   tasks: { description: '任务、清单、标签、动态和规划时间段查询', tools: ['query_tasks', 'query_topics', 'get_task_activity', 'list_plan_time_bands'] },
   library: { description: '资料原文、历史版本、关联任务、文件夹和标签查询', tools: ['library_read'] },
   memory: { description: '已确认记忆和当前工作简报查询', tools: ['memory_read', 'get_work_context'] },
-  learning: { description: '学习地图、知识笔记、练习记录、复习队列和学习动态查询', tools: ['learning_read'] },
+  learning: { description: '学习地图、知识笔记、练习记录、复习队列和学习动态查询', tools: ['learning_read', 'show_learning_card'] },
   orchestration: { description: '编排、执行端、worktree、用量统计及删除确认卡片', tools: ['orchestration_read', 'orchestration_stats', 'propose_worktree_cleanup'] },
   external: { description: '把超出能力的需求整理为外部提示词', tools: ['prepare_external_prompt'] },
   web: { description: '联网搜索与网页阅读（需要已配置 DeepSeek 联网搜索服务）', tools: ['web_search', 'read_webpage'] },
