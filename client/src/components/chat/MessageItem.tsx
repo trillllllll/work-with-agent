@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button.js';
 import { cn } from '@/lib/utils.js';
 import { ApprovalCard } from './ApprovalCard.js';
+import { LearningCard } from './LearningCard.js';
 import { ExternalPromptCard } from './ExternalPromptCard.js';
 import { WorktreeCleanupChatCard } from '@/components/orchestration/WorktreesPage.js';
 import { isAppChangeApproval, ReviewCard } from './ReviewCard.js';
@@ -153,7 +154,7 @@ export function MessageItem({ message, processMessages, hideProcess = false, pro
       {message.role === 'user' && <ContextSummary context={message.context} />}
       <SourceLinks sources={message.sources ?? []} onSelect={setSelectedSource} />
       {approvalsOnMessage(message, approvals).filter(isAppChangeApproval).map((approval) => <ReviewCard key={approval.approvalId} approval={approval} phase={approval.approvalId === executingApprovalId ? phase : ''} unknown={unknownApprovalIds.includes(approval.approvalId)} unresolved={unresolvedApprovalIds.includes(approval.approvalId)} onApprove={onApprove} onReject={onReject} onChanged={onChanged} onRepreviewed={onRepreviewed} />)}
-      {message.parts?.map((part) => part.type === 'worktree_cleanup' ? <WorktreeCleanupChatCard key={part.id} cleanupId={part.cleanupId} /> : <ExternalPromptCard key={part.id} part={part} />)}
+      {message.parts?.map((part) => part.type === 'worktree_cleanup' ? <WorktreeCleanupChatCard key={part.id} cleanupId={part.cleanupId} /> : part.type === 'learning_card' ? <LearningCard key={part.id} part={part} /> : part.type === 'external_prompt' ? <ExternalPromptCard key={part.id} part={part} /> : null)}
     {selectedSource && <SourcePreview source={selectedSource} onClose={() => setSelectedSource(null)} />}
     </div></CitationContext.Provider>
   );

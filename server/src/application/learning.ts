@@ -1,6 +1,8 @@
 import { z } from 'zod';
+import type { Prisma } from '@prisma/client';
 import { DomainError } from '../domain/task.js';
 import { prisma } from '../infrastructure/prisma.js';
+import { figureView } from './learning-figure.js';
 
 // 学习域读取服务：学习地图（learning_maps）、地图树与清单条目（learning_nodes）、
 // 学习动态（learning_activity，只追加）。写入统一经 learning.* 命令；AI 修改须先经 propose_changes 待确认。
@@ -105,12 +107,14 @@ export async function learningRead(args: Record<string, unknown>) {
       where: { mapId: map.id, ...(input.includeArchived === true ? {} : { deletedAt: null }) },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
     })).map(toRow);
+    const figure = figureView(await prisma.learningFigure.findUnique({ where: { mapId: map.id } }), rows.filter(row => !row.deletedAt));
     return {
       map: { id: map.id, title: map.title, goal: map.goal, status: map.status, revision: map.revision, updatedAt: map.updatedAt },
       tree: buildTree(rows),
       stats: statsOf(rows),
+      figure,
       complete: true,
-      note: '完整节点树。kind=topic 是结构分组，kind=item 是知识点；detail 为持久笔记。status 为 todo/learning/review/done，分别表示未开始/学习中/需巩固/已掌握；mastery 仅为兼容历史数值。',
+      note: '完整节点树。kind=topic 是结构分组，kind=item 是知识点；detail 为持久笔记。status 为 todo/learning/review/done，分别表示未开始/学习中/需巩固/已掌握；mastery 仅为兼容历史数值。figure 是已保存的学习主图（null 表示还没有）；stale=true 表示有知识点未画进主图或主图引用了已删除的知识点，修改主图用 figure_save 并带 figure.revision。',
     };
   }
   if (input.action === 'node') {
@@ -200,11 +204,22 @@ export async function learningMapAggregate(mapId: string) {
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: 30,
   });
+  const figure = figureView(await prisma.learningFigure.findUnique({ where: { mapId: map.id } }), rows);
   return {
     map: { id: map.id, title: map.title, goal: map.goal, status: map.status, revision: map.revision, updatedAt: map.updatedAt },
     tree: buildTree(rows),
     stats: statsOf(rows),
+    figure,
     recentActivity: activity,
     activityCoverage: '最近 30 条',
   };
+}
+
+/** A study conversation may only be bound to a topic that still exists. null clears the binding. */
+export async function requireLiveLearningMap(value: unknown, db: Pick<Prisma.TransactionClient, 'learningMap'> = prisma): Promise<string | null> {
+  if (value === null) return null;
+  if (typeof value !== 'string' || !value) throw new DomainError('INVALID_CONVERSATION_PATCH', 'learningMapId 无效', 400);
+  const map = await db.learningMap.findUnique({ where: { id: value }, select: { id: true, deletedAt: true } });
+  if (!map || map.deletedAt) throw new DomainError('NOT_FOUND', '学习主题不存在', 404);
+  return map.id;
 }

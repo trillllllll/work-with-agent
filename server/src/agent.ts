@@ -1,4 +1,5 @@
 import { readAssistantReasoning, type AssistantReasoning } from './domain/assistant-reasoning.js';
+import { requireLiveLearningMap } from './application/learning.js';
 import { parseMessageBlocks, projectBlocks } from './agent/content-blocks.js';
 import type { ChatContextV2, ChatContextV3 } from './agent/chat-context.js';
 import type { AssistantSource } from './agent/assistant-sources.js';
@@ -219,14 +220,14 @@ export class AgentService {
 
   stopScheduler() { this.stopRuns?.(); this.stopRuns = null; }
 
-  async *chatStream(input: { conversationId?: string; message: string; pageContext?: PageContext; context?: unknown; requestKey?: string; identityId?: string; signal?: AbortSignal }): AsyncGenerator<ChatEvent> {
+  async *chatStream(input: { conversationId?: string; message: string; learningMapId?: string | null; pageContext?: PageContext; context?: unknown; requestKey?: string; identityId?: string; signal?: AbortSignal }): AsyncGenerator<ChatEvent> {
     const run = await startChat(input);
     if (run.state === 'queued') scheduleRun(run.id, (messages, signal, includeTools, tools, identityId) => this.streamModel(messages, signal, includeTools ?? true, tools, identityId), this.context);
     yield* followRun(run.id);
     return;
   }
 
-  async chat(input: { conversationId?: string; message: string; pageContext?: PageContext; context?: unknown; requestKey?: string; identityId?: string; signal?: AbortSignal }) { const events: ChatEvent[] = []; for await (const event of this.chatStream(input)) events.push(event); return { conversationId: events.find((event) => event.conversationId)?.conversationId, events }; }
+  async chat(input: { conversationId?: string; message: string; learningMapId?: string | null; pageContext?: PageContext; context?: unknown; requestKey?: string; identityId?: string; signal?: AbortSignal }) { const events: ChatEvent[] = []; for await (const event of this.chatStream(input)) events.push(event); return { conversationId: events.find((event) => event.conversationId)?.conversationId, events }; }
 
   async summarize(conversationId: string, text: string, signal?: AbortSignal) {
     try { const result = await this.model.complete([{ role: 'system', content: '请用简短中文说明刚才的任务变更结果，不要调用工具。' }, { role: 'user', content: text }], signal); return result.text || '变更已执行。'; } catch { return undefined; }
@@ -301,6 +302,22 @@ export class AgentService {
   async stop(runId: string) { const run = await stopRun(runId); return runView(run.id); }
   async getApproval(approvalId: string) { const approval = await approvalView(approvalId); if (!approval) throw Object.assign(new Error('审核记录不存在'), { status: 404 }); return { approval, run: approval.runId ? await runView(approval.runId) : null }; }
   async repreview(approvalId: string, input: { requestKey?: string } = {}) { return repreviewApproval(approvalId, input); }
+  /** Conversation-level settings: web search, and for the study assistant the topic it is bound to. */
+  async updateConversation(conversationId: string, input: { webSearchEnabled?: unknown; learningMapId?: unknown }) {
+    if (input?.learningMapId === undefined) return this.setConversationWebSearch(conversationId, input);
+    return prisma.$transaction(async tx => {
+      const existing = await tx.conversation.findUnique({ where: { id: conversationId }, select: { id: true, identityId: true, webSearchEnabled: true, activeRunId: true } });
+      if (!existing) throw Object.assign(new Error('会话不存在'), { status: 404 });
+      if (existing.identityId !== 'study') throw new DomainError('INVALID_CONVERSATION_PATCH', '只有学习助手的会话可以绑定学习主题', 400);
+      const active = existing.activeRunId ? await tx.agentRun.findUnique({ where: { id: existing.activeRunId }, select: { state: true } }) : null;
+      if (active && ['queued', 'running', 'waiting_approval'].includes(active.state) || await tx.approval.count({ where: { conversationId, status: 'pending' } })) throw new DomainError('CONVERSATION_BUSY', '请先处理当前运行或待确认方案，再切换学习主题', 409);
+      const learningMapId = await requireLiveLearningMap(input.learningMapId, tx);
+      if (input.webSearchEnabled !== undefined && typeof input.webSearchEnabled !== 'boolean') throw new DomainError('INVALID_CONVERSATION_PATCH', 'webSearchEnabled 必须是布尔值', 400);
+      const webSearchEnabled = typeof input.webSearchEnabled === 'boolean' ? input.webSearchEnabled : existing.webSearchEnabled;
+      await tx.conversation.update({ where: { id: conversationId }, data: { learningMapId, webSearchEnabled, updatedAt: new Date().toISOString() } });
+      return { id: conversationId, webSearchEnabled, learningMapId };
+    });
+  }
   async setConversationWebSearch(conversationId: string, input: { webSearchEnabled?: unknown }) {
     if (typeof input?.webSearchEnabled !== 'boolean') throw new DomainError('INVALID_CONVERSATION_PATCH', 'webSearchEnabled 必须是布尔值', 400);
     const existing = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { id: true } });
@@ -317,14 +334,14 @@ export class AgentService {
     const context = JSON.parse(run.contextJson) as { attachments?: Array<{ id: string }> };
     return { id: run.id, conversationId: run.conversationId, state: run.state, message: message?.content || '', attachmentIds: context.attachments?.map((item) => item.id) || [] };
   }
-  async conversationList(cursor?: string, identityId?: string) {
+  async conversationList(cursor?: string, identityId?: string, learningMapId?: string) {
     const rows = await prisma.conversation.findMany({
-      take: 31, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      where: identityId ? { identityId } : undefined,
+      take: 31, orderBy: learningMapId ? [{ updatedAt: 'desc' }, { id: 'desc' }] : [{ createdAt: 'desc' }, { id: 'desc' }],
+      where: identityId || learningMapId ? { ...(identityId ? { identityId } : {}), ...(learningMapId ? { learningMapId } : {}) } : undefined,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-      select: { id: true, identityId: true, createdAt: true, messages: { where: { role: 'user' }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 1, select: { content: true } } },
+      select: { id: true, identityId: true, learningMapId: true, createdAt: true, updatedAt: true, messages: { where: { role: 'user' }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 1, select: { content: true } } },
     });
-    return { items: rows.slice(0, 30).map((row) => ({ id: row.id, identityId: row.identityId, createdAt: row.createdAt, title: row.messages[0]?.content.slice(0, 100) || '新对话' })), nextCursor: rows.length > 30 ? rows[29].id : null };
+    return { items: rows.slice(0, 30).map((row) => ({ id: row.id, identityId: row.identityId, learningMapId: row.learningMapId, createdAt: row.createdAt, updatedAt: row.updatedAt, title: row.messages[0]?.content.slice(0, 100) || '新对话' })), nextCursor: rows.length > 30 ? rows[29].id : null };
   }
   async messages(conversationId: string) { return (await this.snapshot(conversationId)).messages; }
   async snapshot(conversationId: string) {
@@ -343,6 +360,7 @@ export class AgentService {
       return {
         identityId: conversation.identityId,
         webSearchEnabled: conversation.webSearchEnabled,
+        learningMapId: conversation.learningMapId,
         messages: messages.map((message) => {
           const stale = message.status !== 'streaming' || message.id !== liveMessageId;
           const blocks = parseMessageBlocks(message.blocksJson).map((block) => stale && block.status === 'pending' ? { ...block, status: 'error' as const, error: '回复已中断，内容未完成' } : block);

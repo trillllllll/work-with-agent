@@ -2,6 +2,12 @@
 // (template literals use positional {0} placeholders); see scripts/server-messages.mjs.
 // Keep this object JSON-compatible: `npm run i18n:check` parses it and checks it against the sources.
 export const en: Record<string, string> = {
+  "node 需要 nodeId；practice 需要且只能带 jobId 或 sessionId；其他对象参数不能混用": "node requires nodeId; practice requires exactly one of jobId or sessionId. Object parameters cannot be mixed.",
+  "只有学习助手可以展示学习卡片": "Only the study assistant can show learning cards",
+  "学习卡片的对象不存在": "The learning card object was not found",
+  "卡片对象不属于指定学习主题": "The card object does not belong to the selected topic",
+  "学习主题不存在，请先选择主题": "The learning topic was not found. Select a topic first.",
+  "请先处理当前运行或待确认方案，再切换学习主题": "Resolve the current run or pending proposal before changing the study topic",
   "当前范围没有可复习内容；可先加入复习或选择知识点练习": "There is no review content in this scope. Add an item to review or choose knowledge practice.",
   "变式的原题不在本次范围": "The original question for this variation is outside the current scope.",
   "变式不能重复原题": "A variation cannot repeat the original question.",
@@ -1011,5 +1017,12 @@ export const en: Record<string, string> = {
   "没有导入来源原件": "There is no imported source original.",
   "附件原件不存在": "The original attachment does not exist.",
   "导入来源必须是已经上传完成的文件原件": "Imported provenance must refer to an uploaded, committed original file.",
-  "导入原件与文档正文不一致": "The imported original does not match the document content."
+  "导入原件与文档正文不一致": "The imported original does not match the document content.",
+  "学习主图已经变化，请刷新后重试": "The learning figure has changed. Refresh and try again.",
+  "学习主图不符合 SVG 安全规则：{0}": "The learning figure does not meet the SVG safety rules: {0}",
+  "学习主图引用了不属于这个主题的知识点：{0}": "The learning figure refers to knowledge points outside this topic: {0}",
+  "学习主图至少要用 data-node-id 标出一个知识点": "Mark at least one knowledge point in the learning figure with data-node-id.",
+  "只有学习助手的会话可以绑定学习主题": "Only study assistant conversations can be bound to a learning topic.",
+  "learningMapId 无效": "Invalid learningMapId.",
+  "学习主题不存在": "The learning topic does not exist."
 };

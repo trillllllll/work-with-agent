@@ -327,6 +327,21 @@
       "review_queue": "Selected from the review queue",
       "mixed_practice": "Mixed practice within your selected scope",
       "recent_mistake_variant": "A new scenario based on a previous mistake"
-    }
+    },
+    "editorInUse": "This practice is open elsewhere. Collapse the other editor, then retry here to continue.",
+    "restoringOperations": "Restoring the previous operation…"
+  },
+  "figure": {
+    "label": "{{title}} learning figure",
+    "openNode": "{{title}} ({{status}}), open details",
+    "invalid": "The figure cannot be shown: {{error}}",
+    "preview": "Learning figure preview",
+    "title": "Learning figure",
+    "missing": "This topic has no learning figure yet.",
+    "draw": "Ask assistant to draw",
+    "update": "Ask assistant to update",
+    "stale": "The topic structure has changed. Update the figure.",
+    "drawPrompt": "Draw a learning figure for this topic showing the relationships between knowledge points.",
+    "updatePrompt": "Update the learning figure to match the current topic structure."
   }
 }

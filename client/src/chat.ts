@@ -34,7 +34,20 @@ export type WorktreeCleanupPart = {
   reason: string;
 };
 
-export type ChatPart = ExternalPromptPart | WorktreeCleanupPart;
+/** A live learning card shown by the study assistant. The card reads current data when it renders. */
+export type LearningCardPart = {
+  schemaVersion: 1;
+  type: 'learning_card';
+  id: string;
+  kind: 'node' | 'figure' | 'practice';
+  mapId: string;
+  nodeId?: string;
+  jobId?: string;
+  sessionId?: string;
+  title: string;
+};
+
+export type ChatPart = ExternalPromptPart | WorktreeCleanupPart | LearningCardPart;
 
 export type ChatMessage = {
   runId?: string;
@@ -131,7 +144,7 @@ export type SseEvent = {
   supersedesApprovalId?: string;
 };
 
-const READ_ONLY_TOOLS = new Set(['learning_read', 'load_tools', 'read_context_source', 'image_search', 'web_search', 'read_webpage', 'present_reply', 'read_app_knowledge', 'read_page_state', 'list_topics', 'get_topic', 'get_topic_progress', 'list_tasks', 'get_task', 'conversation_search', 'get_time', 'list_plan_time_bands', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'get_change_schema', 'orchestration_read', 'orchestration_stats']);
+const READ_ONLY_TOOLS = new Set(['show_learning_card', 'learning_read', 'load_tools', 'read_context_source', 'image_search', 'web_search', 'read_webpage', 'present_reply', 'read_app_knowledge', 'read_page_state', 'list_topics', 'get_topic', 'get_topic_progress', 'list_tasks', 'get_task', 'conversation_search', 'get_time', 'list_plan_time_bands', 'get_work_context', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'get_change_schema', 'orchestration_read', 'orchestration_stats']);
 const PREVIEW_MAX = 80;
 
 const LIBRARY_READS = new Set(['list', 'search', 'read', 'content', 'linked_tasks', 'task_materials', 'folders', 'tags', 'ask']);
@@ -569,10 +582,11 @@ export function applyMessageEvent(messages: ChatMessage[], event: SseEvent): Cha
 
 function isChatPart(value: unknown): value is ChatPart {
   if (!value || typeof value !== 'object') return false;
-  const part = value as Partial<ExternalPromptPart> & Partial<WorktreeCleanupPart>;
+  const part = value as Partial<ExternalPromptPart> & Partial<WorktreeCleanupPart> & Partial<Omit<LearningCardPart, 'type'>> & { type?: string };
   if (typeof part.id !== 'string') return false;
   if (part.type === 'external_prompt') return typeof part.prompt === 'string' && part.prompt.length > 0;
   if (part.type === 'worktree_cleanup') return typeof part.cleanupId === 'string' && part.cleanupId.length > 0;
+  if (part.type === 'learning_card') return typeof part.mapId === 'string' && part.mapId.length > 0 && (part.kind === 'figure' || (part.kind === 'node' && typeof part.nodeId === 'string' && part.nodeId.length > 0) || (part.kind === 'practice' && (typeof part.jobId === 'string' || typeof part.sessionId === 'string')));
   return false;
 }
 

@@ -22,6 +22,7 @@ import { prisma } from '../infrastructure/prisma.js';
 import { CAPABILITY_UNAVAILABLE, changeSchemaDocument, isBuiltinTool } from './capabilities.js';
 import type { StoredChatContext } from './chat-context.js';
 import { externalPromptInput, externalPromptPart, renderExternalPrompt } from './external-prompt.js';
+import { showLearningCard } from './learning-card.js';
 import { prepareChanges } from './propose.js';
 import { getCurrentTime, type Clock } from './time.js';
 import { searchWorkspace } from './workspace-search.js';
@@ -282,6 +283,10 @@ export async function executeBuiltinTool(input: {
       if (input.context.identityId !== 'study') return CAPABILITY_UNAVAILABLE;
       const extended = ['overview', 'practice_session', 'practice_item', 'practice_history', 'practice_grades', 'reviews', 'practice_job', 'search'].includes(String(args.action));
       return { success: true, data: redact(await (extended ? practiceRead(args) : learningRead(args))) };
+    }
+    if (input.name === 'show_learning_card') {
+      if (input.context.identityId !== 'study') return CAPABILITY_UNAVAILABLE;
+      return await showLearningCard(args, { ...input.run, toolCallId: input.toolCallId });
     }
     if (input.name === 'conversation_search') {
       const invalid = validateConversationSearchArguments(args);

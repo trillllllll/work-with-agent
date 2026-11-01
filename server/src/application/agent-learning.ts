@@ -6,8 +6,9 @@ import { configSchema } from './learning-practice/input.js';
 // 执行与版本检查由 learning-commands.ts 注册的 learning.* 命令处理器完成。
 
 import { checkpointMeta } from './learning-checkpoint.js';
+import { sanitizeSvg } from '../agent/svg-sanitize.js';
 
-export const learningActions = ['map_create', 'map_update', 'map_archive', 'node_create', 'node_update', 'node_move', 'node_archive', 'activity_append', 'practice_generate'] as const;
+export const learningActions = ['map_create', 'map_update', 'map_archive', 'node_create', 'node_update', 'node_move', 'node_archive', 'activity_append', 'practice_generate', 'figure_save'] as const;
 export type LearningAction = (typeof learningActions)[number];
 
 const allowedKeys: Record<LearningAction, readonly string[]> = {
@@ -20,6 +21,7 @@ const allowedKeys: Record<LearningAction, readonly string[]> = {
   node_archive: ['action', 'nodeId', 'expectedNodeRevision', 'cascade', 'expectedDescendantRevisions'],
   activity_append: ['action', 'mapId', 'nodeId', 'kind', 'content', 'meta'],
   practice_generate: ['action', 'mapId', 'nodeIds', 'mode', 'goal', 'count', 'types', 'difficulty', 'language'],
+  figure_save: ['action', 'mapId', 'expectedFigureRevision', 'svg', 'nodeRefs'],
 };
 
 function text(value: unknown): string | null {
@@ -56,6 +58,18 @@ export function validateLearningArguments(args: Record<string, unknown>): string
     const { action: _action, ...config } = args;
     const parsed = configSchema.safeParse(config);
     return parsed.success ? null : parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('；');
+  }
+  if (action === 'figure_save') {
+    const map = requireId(args, 'mapId', 'mapId');
+    if (map) return map;
+    if (args.expectedFigureRevision !== undefined && !integer(args.expectedFigureRevision, 1)) return 'expectedFigureRevision 是刚才读到的 figure.revision；还没有主图时省略';
+    if (typeof args.svg !== 'string' || !args.svg.trim()) return 'figure_save 需要 svg';
+    if (new TextEncoder().encode(args.svg).length > 65536) return 'svg 不能超过 64KB';
+    try { sanitizeSvg(args.svg); } catch (error) { return `svg 不符合安全规则：${error instanceof Error ? error.message : String(error)}`; }
+    if (!args.svg.includes('data-node-id')) return 'svg 需要用 data-node-id 标出知识点';
+    const refs = args.nodeRefs;
+    if (refs !== undefined && (!refs || typeof refs !== 'object' || Array.isArray(refs) || Object.entries(refs).some(([name, value]) => !name || name.length > 128 || !isIdOrRef(value)))) return 'nodeRefs 必须是占位名到知识点 ID 或 {$ref} 的映射';
+    return null;
   }
   if (action === 'map_create') {
     const title = text(args.title);
@@ -127,6 +141,9 @@ export function validateLearningArguments(args: Record<string, unknown>): string
 }
 
 export function commandForLearning(action: LearningAction, args: Record<string, unknown>): Command {
+  if (action === 'figure_save') {
+    return { kind: 'learning.figure.save', ...(args.expectedFigureRevision !== undefined ? { expectedRevision: Number(args.expectedFigureRevision) } : {}), input: { mapId: args.mapId as string | { $ref: string }, svg: String(args.svg), ...(args.nodeRefs !== undefined ? { nodeRefs: args.nodeRefs } : {}) } };
+  }
   if (action === 'practice_generate') {
     const { action: _action, ...config } = args;
     return { kind: 'learning.practice.request', input: configSchema.parse(config) };

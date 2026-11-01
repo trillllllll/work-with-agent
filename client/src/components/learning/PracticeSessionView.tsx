@@ -20,16 +20,25 @@ import { ActionMenu, ActionMenuItem } from '@/components/ui/action-menu.js';
 import { QuestionCard } from './QuestionCard.js';
 import { GradeFeedback, GradeHistory, PreviousAttempts } from './PracticeHistory.js';
 
+import { useLearningEditorLease, type LearningEditorLease } from '@/lib/learning-editor-lease.js';
+
 type SessionOperation={path:string;body:Record<string,unknown>};
-export function PracticeSessionView({scope,sessionId,onBack,onAskAssistant,onAgain}:{scope:string;sessionId:string;onBack:(mapId?:string)=>void;onAskAssistant?:()=>boolean|void;onAgain:(mapId:string)=>void}){
+type SessionProps = {scope:string;sessionId:string;onBack:(mapId?:string)=>void;onAskAssistant?:()=>boolean|void;onAgain:(mapId:string)=>void};
+export function PracticeSessionView(props: SessionProps) {
+  const lease = useLearningEditorLease(props.scope, `session:${props.sessionId}`);
+  const {t} = useTranslation('learning');
+  if (!lease.owned) return <section role="status" data-testid="practice-editor-occupied" className="space-y-2 rounded-lg border p-3 text-sm"><p>{t('workflow.editorInUse')}</p><Button variant="outline" onClick={lease.acquire}>{t('retry')}</Button><Button variant="ghost" onClick={()=>props.onBack()}>{t('back')}</Button></section>;
+  return <OwnedPracticeSession {...props} lease={lease}/>;
+}
+function OwnedPracticeSession({scope,sessionId,onBack,onAskAssistant,onAgain,lease}:SessionProps & {lease:LearningEditorLease}){
   const {t}=useTranslation('learning');
   const query=useQuery({queryKey:learningKey(scope,'session',sessionId),queryFn:()=>loadPracticeSession(scope,sessionId),refetchInterval:query=>query.state.data?.session.items.some(item=>item.attempts.some(attempt=>['queued','running'].includes(attempt.gradingState)))?1800:false});
   if(query.isLoading)return <div className="space-y-3"><Skeleton className="h-12 w-full"/><Skeleton className="h-72 w-full"/></div>;
   if(query.isError||!query.data)return <div role="alert" className="space-y-3"><p>{query.error instanceof Error?query.error.message:t('workflow.failed')}</p><Button variant="outline" onClick={()=>onBack()}>{t('back')}</Button><Button onClick={()=>void query.refetch()}>{t('retry')}</Button></div>;
-  return <PracticeSessionContent key={`${scope}:${sessionId}`} scope={scope} session={query.data.session} offline={query.data.offline} cacheFailed={Boolean(query.data.storageFailed)} refresh={async()=>{await query.refetch();}} onBack={()=>onBack(query.data.session.mapId)} onAskAssistant={onAskAssistant} onAgain={onAgain}/>;
+  return <PracticeSessionContent key={`${scope}:${sessionId}`} lease={lease} scope={scope} session={query.data.session} offline={query.data.offline} cacheFailed={Boolean(query.data.storageFailed)} refresh={async()=>{await query.refetch();}} onBack={()=>onBack(query.data.session.mapId)} onAskAssistant={onAskAssistant} onAgain={onAgain}/>;
 }
 
-function PracticeSessionContent({scope,session,offline,cacheFailed,refresh,onBack,onAskAssistant,onAgain}:{scope:string;session:Session;offline:boolean;cacheFailed:boolean;refresh:()=>Promise<void>;onBack:()=>void;onAskAssistant?:()=>boolean|void;onAgain:(mapId:string)=>void}){
+function PracticeSessionContent({lease,scope,session,offline,cacheFailed,refresh,onBack,onAskAssistant,onAgain}:{lease:LearningEditorLease;scope:string;session:Session;offline:boolean;cacheFailed:boolean;refresh:()=>Promise<void>;onBack:()=>void;onAskAssistant?:()=>boolean|void;onAgain:(mapId:string)=>void}){
   const {t}=useTranslation('learning');
   const client=useQueryClient();
   const [position,setPosition]=useState(()=>{
@@ -37,6 +46,8 @@ function PracticeSessionContent({scope,session,offline,cacheFailed,refresh,onBac
     return Math.min(Math.max(stored&&stored.at>Date.parse(session.updatedAt)?stored.position:session.currentPosition,0),Math.max(session.items.length-1,0));
   });
   const [pending,setPending]=useState<SessionOperation|null>(null);
+  const [operationsReady,setOperationsReady]=useState(false);
+  const [operationLoad,setOperationLoad]=useState(0);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [finish,setFinish]=useState(false);
@@ -49,14 +60,16 @@ function PracticeSessionContent({scope,session,offline,cacheFailed,refresh,onBac
   const expired=useRef(false);
   const state=useRef(session);state.current=session;
   useEffect(()=>{alive.current=true;let active=true;const expire=()=>{expired.current=true;};window.addEventListener('workspace-session-expired',expire);
-    void readLearningRecord<SessionOperation>(scope,'session-operation',session.id).then(value=>{if(active&&value)setPending(value);}).catch(()=>{});
+    setOperationsReady(false);
+    void readLearningRecord<SessionOperation>(scope,'session-operation',session.id).then(value=>{if(active){setPending(value??null);setOperationsReady(true);}}).catch(()=>{if(active)setError(t('workflow.practice.cacheFailed'));});
     return()=>{active=false;alive.current=false;window.removeEventListener('workspace-session-expired',expire);};
-  },[scope,session.id]);
+  },[scope,session.id,operationLoad]);
   const item=session.items[position]??session.items[0];
   const isFinished=session.state==='finished';
   const isCurrent=()=>alive.current&&!expired.current&&EditorRuntime.current()?.scopeKey===scope;
   async function execute(operation:SessionOperation){
-    if(locked.current||!isCurrent())return false;
+    if(locked.current||!operationsReady||!isCurrent())return false;
+    return lease.run(async()=>{
     locked.current=true;setBusy(true);setError('');setPending(operation);
     try{
       await writeLearningRecord(scope,'session-operation',session.id,operation);
@@ -66,7 +79,7 @@ function PracticeSessionContent({scope,session,offline,cacheFailed,refresh,onBac
       if(!isCurrent())return false;
       setPending(null);await refresh();
       if(!isCurrent())return false;
-      void client.invalidateQueries({queryKey:learningKey(scope,'overview')});void client.invalidateQueries({queryKey:learningKey(scope,'reviews')});return true;
+      void client.invalidateQueries({queryKey:learningKey(scope,'overview')});void client.invalidateQueries({queryKey:learningKey(scope,'reviews')});void client.invalidateQueries({queryKey:['learning-briefing']});return true;
     }catch(cause){
       if(!isCurrent())return false;
       setError(cause instanceof Error?cause.message:t('workflow.failed'));
@@ -75,6 +88,7 @@ function PracticeSessionContent({scope,session,offline,cacheFailed,refresh,onBac
       }
       return false;
     }finally{locked.current=false;if(isCurrent())setBusy(false);}
+    });
   }
   function operation(path:string,body:Record<string,unknown>){return execute({path,body:{requestId:crypto.randomUUID(),...body}});}
   async function navigate(next:number){
@@ -93,27 +107,28 @@ function PracticeSessionContent({scope,session,offline,cacheFailed,refresh,onBac
   }
   if(!item)return <div role="alert"><p>{t('workflow.practice.noQuestions')}</p><Button onClick={onBack}>{t('back')}</Button></div>;
   return <section className="mx-auto w-full max-w-3xl space-y-4" data-testid="practice-session" data-session-id={session.id}>
-    <header className="flex flex-wrap items-center justify-between gap-2"><Button variant="ghost" className="min-h-11" onClick={onBack}><ArrowLeft/>{t('workflow.practice.back')}</Button><span className="text-xs text-muted-foreground">{session.mapTitle}</span>{!isFinished&&<Button variant="outline" className="min-h-11" disabled={busy||Boolean(pending)} onClick={()=>void setState('paused')}><Pause/>{t('workflow.practice.pause')}</Button>}</header>
+    <header className="flex flex-wrap items-center justify-between gap-2"><Button variant="ghost" className="min-h-11" onClick={onBack}><ArrowLeft/>{t('workflow.practice.back')}</Button><span className="text-xs text-muted-foreground">{session.mapTitle}</span>{!isFinished&&<Button variant="outline" className="min-h-11" disabled={!operationsReady||busy||Boolean(pending)} onClick={()=>void setState('paused')}><Pause/>{t('workflow.practice.pause')}</Button>}</header>
     {offline&&<p role="status" className="rounded-lg border p-3 text-sm">{t('workflow.practice.offline')}</p>}
     {cacheFailed&&<p role="alert" className="text-sm text-destructive">{t('workflow.practice.cacheFailed')}</p>}
     {(session.archived||item.question.archived)&&<p role="status" className="rounded-lg border p-3 text-sm">{t('workflow.practice.archived')}</p>}
-    {session.state==='paused'&&<div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3"><span className="text-sm">{t('workflow.practice.paused')}</span><Button className="min-h-11" disabled={busy||Boolean(pending)} onClick={()=>void setState('active')}>{t('workflow.continuePractice')}</Button></div>}
+    {session.state==='paused'&&<div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3"><span className="text-sm">{t('workflow.practice.paused')}</span><Button className="min-h-11" disabled={!operationsReady||busy||Boolean(pending)} onClick={()=>void setState('active')}>{t('workflow.continuePractice')}</Button></div>}
+    {!operationsReady&&<div role="status" className="flex items-center gap-2 text-sm"><span>{t('workflow.restoringOperations')}</span><Button variant="outline" onClick={()=>setOperationLoad(value=>value+1)}>{t('retry')}</Button></div>}
     {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
     {pending&&<div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-sm"><span>{t('workflow.practice.operationPending')}</span><Button variant="outline" className="min-h-11" disabled={busy} onClick={()=>void execute(pending)}>{t('retry')}</Button></div>}
     {isFinished&&<PracticeResult session={session} onAgain={()=>onAgain(session.mapId)} onSummarize={()=>ask(item,item.draft.answer,'summarize')}/>}
-    <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-base font-semibold">{t('workflow.sessionPosition',{current:position+1,total:session.items.length})}</h2><span className="text-xs text-muted-foreground">{t('workflow.practice.answered',{count:session.summary.answered,total:session.summary.total})}</span>{!session.archived&&!item.question.archived&&<ActionMenu open={questionMenu} onOpenChange={setQuestionMenu} trigger={<Button variant="ghost" className="min-h-11 min-w-11" disabled={busy||Boolean(pending)} aria-label={t('workflow.practice.questionActions')}><Ellipsis/></Button>}><ActionMenuItem className="text-destructive" onSelect={()=>setArchive(true)}>{t('workflow.practice.archiveQuestion')}</ActionMenuItem></ActionMenu>}</div>
+    <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-base font-semibold">{t('workflow.sessionPosition',{current:position+1,total:session.items.length})}</h2><span className="text-xs text-muted-foreground">{t('workflow.practice.answered',{count:session.summary.answered,total:session.summary.total})}</span>{!session.archived&&!item.question.archived&&<ActionMenu open={questionMenu} onOpenChange={setQuestionMenu} trigger={<Button variant="ghost" className="min-h-11 min-w-11" disabled={!operationsReady||busy||Boolean(pending)} aria-label={t('workflow.practice.questionActions')}><Ellipsis/></Button>}><ActionMenuItem className="text-destructive" onSelect={()=>setArchive(true)}>{t('workflow.practice.archiveQuestion')}</ActionMenuItem></ActionMenu>}</div>
     <nav className="flex gap-1 overflow-x-auto py-1" aria-label={t('workflow.practice.questionNavigation')}>{session.items.map((entry,index)=><Button key={entry.id} variant={index===position?'secondary':'ghost'} className="min-h-11 min-w-11 shrink-0" aria-current={index===position?'step':undefined} aria-label={t('workflow.practice.goQuestion',{number:index+1})} onClick={()=>void navigate(index)}>{index+1}{entry.draft.submitted?' ✓':entry.skipped?' ↷':''}</Button>)}</nav>
-    <PracticeAnswerPanel key={`${item.id}:${item.draft.activeAttemptId}`} scope={scope} item={item} readOnly={isFinished||session.state==='paused'||session.archived||item.question.archived} operationBusy={busy||Boolean(pending)} refresh={refresh} onEvent={type=>operation(`/practice/items/${item.id}/events`,{activeAttemptId:item.draft.activeAttemptId,type})} onRetry={async answer=>{if(answer!==undefined)await writeLearningRecord(scope,'carry-answer',item.id,{fromAttemptId:item.draft.activeAttemptId,answer});return operation(`/practice/items/${item.id}/retry`,{expectedDraftRevision:item.draft.revision});}} onRegrade={id=>{setReason('');setRegrade(id);}} onAsk={answer=>ask(item,answer)}/>
-    <div className="learning-practice-navigation flex flex-wrap items-center justify-between gap-2 border-t pt-3"><Button variant="outline" className="min-h-11" disabled={position===0} onClick={()=>void navigate(position-1)}><ArrowLeft/>{t('workflow.previous')}</Button>{position<session.items.length-1?<Button className="min-h-11" onClick={()=>void navigate(position+1)}>{t('workflow.practice.next')}<ArrowRight/></Button>:!isFinished?<Button className="min-h-11" disabled={busy||Boolean(pending)} onClick={()=>setFinish(true)}>{t('workflow.practice.finish')}</Button>:<Button variant="outline" className="min-h-11" onClick={onBack}>{t('workflow.practice.back')}</Button>}</div>
+    <PracticeAnswerPanel key={`${item.id}:${item.draft.activeAttemptId}`} lease={lease} scope={scope} item={item} readOnly={isFinished||session.state==='paused'||session.archived||item.question.archived} operationBusy={!operationsReady||busy||Boolean(pending)} refresh={refresh} onEvent={type=>operation(`/practice/items/${item.id}/events`,{activeAttemptId:item.draft.activeAttemptId,type})} onRetry={async answer=>{if(answer!==undefined)await writeLearningRecord(scope,'carry-answer',item.id,{fromAttemptId:item.draft.activeAttemptId,answer});return operation(`/practice/items/${item.id}/retry`,{expectedDraftRevision:item.draft.revision});}} onRegrade={id=>{setReason('');setRegrade(id);}} onAsk={answer=>ask(item,answer)}/>
+    <div className="learning-practice-navigation flex flex-wrap items-center justify-between gap-2 border-t pt-3"><Button variant="outline" className="min-h-11" disabled={position===0} onClick={()=>void navigate(position-1)}><ArrowLeft/>{t('workflow.previous')}</Button>{position<session.items.length-1?<Button className="min-h-11" onClick={()=>void navigate(position+1)}>{t('workflow.practice.next')}<ArrowRight/></Button>:!isFinished?<Button className="min-h-11" disabled={!operationsReady||busy||Boolean(pending)} onClick={()=>setFinish(true)}>{t('workflow.practice.finish')}</Button>:<Button variant="outline" className="min-h-11" onClick={onBack}>{t('workflow.practice.back')}</Button>}</div>
     {finish&&<ConfirmDialog title={t('workflow.practice.finish')} itemName={session.mapTitle} description={t('workflow.practice.finishHint')} confirmLabel={t('workflow.practice.finish')} busy={busy} onCancel={()=>setFinish(false)} onConfirm={()=>{setFinish(false);void setState('finished');}}/>}
     {archive&&<ConfirmDialog title={t('workflow.practice.archiveQuestion')} itemName={item.question.objective||session.mapTitle} description={t('workflow.practice.archiveQuestionHint')} confirmLabel={t('workflow.practice.archiveQuestion')} busy={busy} onCancel={()=>setArchive(false)} onConfirm={()=>void operation(`/practice/items/${item.id}/archive`,{questionVersionId:item.question.versionId}).then(ok=>{if(ok)setArchive(false);})}/>}
     {regrade&&<FormDialog title={t('workflow.practice.regrade')} onClose={()=>setRegrade('')}><div className="space-y-3"><label className="block space-y-2 text-sm"><span>{t('workflow.practice.regradeReason')}</span><Textarea value={reason} maxLength={2000} onChange={event=>setReason(event.target.value)} /></label><Button className="min-h-11" disabled={busy||!reason.trim()} onClick={()=>void operation(`/practice/attempts/${regrade}/regrade`,{reason}).then(ok=>{if(ok)setRegrade('');})}>{t('workflow.practice.requestRegrade')}</Button></div></FormDialog>}
   </section>;
 }
 
-function PracticeAnswerPanel({scope,item,readOnly,operationBusy,refresh,onEvent,onRetry,onRegrade,onAsk}:{scope:string;item:PracticeItemView;readOnly:boolean;operationBusy:boolean;refresh:()=>Promise<void>;onEvent:(type:'hint'|'solution'|'skip')=>Promise<boolean>;onRetry:(answer?:PracticeAnswer)=>Promise<boolean>;onRegrade:(id:string)=>void;onAsk:(answer:PracticeAnswer)=>void}){
+function PracticeAnswerPanel({lease,scope,item,readOnly,operationBusy,refresh,onEvent,onRetry,onRegrade,onAsk}:{lease:LearningEditorLease;scope:string;item:PracticeItemView;readOnly:boolean;operationBusy:boolean;refresh:()=>Promise<void>;onEvent:(type:'hint'|'solution'|'skip')=>Promise<boolean>;onRetry:(answer?:PracticeAnswer)=>Promise<boolean>;onRegrade:(id:string)=>void;onAsk:(answer:PracticeAnswer)=>void}){
   const {t}=useTranslation('learning');
-  const state=usePracticeAnswer(scope,item,refresh,!readOnly);
+  const state=usePracticeAnswer(scope,item,refresh,!readOnly,lease);
   const latest=item.attempts.find(attempt=>attempt.id===item.draft.activeAttemptId)??item.attempts[item.attempts.length-1];
   const submitted=item.draft.submitted;
   const disabled=readOnly||submitted||state.pending||!state.ready;
@@ -122,6 +137,7 @@ function PracticeAnswerPanel({scope,item,readOnly,operationBusy,refresh,onEvent,
     <QuestionCard question={item.question} answer={submitted&&!state.conflict?item.draft.answer:state.answer} onChange={state.edit} disabled={disabled} onCompositionChange={state.setComposing}/>
     <p className="text-xs text-muted-foreground">{t(`workflow.selectionReasons.${item.selectionReason}`,{defaultValue:item.selectionReason})}</p>
     <p role="status" className="text-xs text-muted-foreground" data-testid="practice-save-state">{t(`workflow.saveState.${state.storageFailed?'storageFailed':state.conflict?'conflict':submitted?'submitted':state.status}`)}</p>
+    {!state.ready&&state.storageFailed&&<Button variant="outline" onClick={state.retryLoad}>{t('retry')}</Button>}
     {state.storageFailed&&<div role="alert" className="space-y-2 text-sm text-destructive"><p>{t('workflow.practice.cacheFailed')}</p><Button variant="outline" className="min-h-11" onClick={()=>void navigator.clipboard.writeText(Array.isArray(state.answer)?state.answer.join(', '):state.answer).then(()=>toast.success(t('workflow.practice.copied'))).catch(()=>toast.error(t('workflow.practice.copyFailed')))}>{t('workflow.practice.copyAnswer')}</Button></div>}
     {state.error&&<p role="alert" className="text-sm text-destructive">{state.error}</p>}
     {state.conflict&&<div role="alert" className="space-y-3 rounded-lg border p-3 text-sm"><p>{t('workflow.practice.conflict')}</p><p className="whitespace-pre-wrap break-words text-xs">{t('workflow.practice.serverAnswer')}: {Array.isArray(item.draft.answer)?item.draft.answer.join(', '):item.draft.answer}</p><div className="flex flex-wrap gap-2"><Button variant="outline" className="min-h-11" onClick={()=>state.resolveConflict(false)}>{t('loadLatest')}</Button>{submitted?<Button variant="outline" className="min-h-11" disabled={operationBusy||readOnly} onClick={()=>void onRetry(state.answer)}>{t('workflow.practice.newAttemptWithMine')}</Button>:<Button variant="outline" className="min-h-11" onClick={()=>state.resolveConflict(true)}>{t('workflow.practice.keepMine')}</Button>}</div></div>}

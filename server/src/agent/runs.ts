@@ -1,4 +1,5 @@
 import type { Db } from '../application/workspace-store.js';
+import { requireLiveLearningMap } from '../application/learning.js';
 import { uniqueAssistantSources, type AssistantSource } from '../domain/assistant-source.js';
 import { readAssistantReasoning, REASONING_LIMIT, type AssistantReasoning } from '../domain/assistant-reasoning.js';
 import { coordinatorWork } from '../application/coordinator-work.js';
@@ -518,7 +519,7 @@ async function toolTurn(runId: string, token: string, contextService: ContextSer
     const call = calls[index];
     if (!call) continue;
     if (cursor.webPolicy === 2) {
-      const informationTools = new Set(['present_reply', 'load_tools', 'read_context_source', 'load_skill', 'image_search', 'web_search', 'read_webpage', 'read_app_knowledge', 'read_page_state', 'get_time', 'learning_read', 'conversation_search', 'get_change_schema', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'orchestration_read', 'orchestration_stats']);
+      const informationTools = new Set(['present_reply', 'load_tools', 'read_context_source', 'load_skill', 'image_search', 'web_search', 'read_webpage', 'read_app_knowledge', 'read_page_state', 'get_time', 'learning_read', 'show_learning_card', 'conversation_search', 'get_change_schema', 'query_tasks', 'query_topics', 'get_task_activity', 'search_workspace', 'library_read', 'memory_read', 'orchestration_read', 'orchestration_stats']);
       if (!informationTools.has(call.function.name) || call.function.name === 'get_change_schema') cursor.businessAttempted = true;
       if (['web_search', 'read_webpage'].includes(call.function.name)) cursor.webUsed = true;
       await saveCursor(runId, token, cursor);
@@ -664,7 +665,7 @@ async function runLoop(runId: string, stream: ModelStream, contextService: Conte
  * message, run or summary is created. Mirrors the first model request of a
  * new run (system prompt, replay window, initial tool groups); later tool
  * rounds can grow beyond this number. */
-export async function previewChatContext(input: { conversationId?: string; message?: string; context?: unknown; identityId?: string; webSearchEnabled?: boolean }) {
+export async function previewChatContext(input: { conversationId?: string; message?: string; context?: unknown; identityId?: string; webSearchEnabled?: boolean; learningMapId?: string | null }) {
   const message = (input.message ?? '').trim();
   let identityId: string = input.identityId ?? 'work';
   let webEnabled = input.webSearchEnabled ?? false;
@@ -678,7 +679,8 @@ export async function previewChatContext(input: { conversationId?: string; messa
   const stored = await validateScopeAndResolveIds({ ...contextFromRequest({ context: input.context }), identityId });
   if (currentLocale() === 'en') stored.language = 'en';
   const skills = await enabledSkillCatalog(identityId);
-  const messages = packModelMessages(await assemblePreviewMessages({ conversationId: input.conversationId ?? null, context: stored, identityId, userText: message, skills }));
+  const learningMapId = !input.conversationId && identityId === 'study' && input.learningMapId ? await requireLiveLearningMap(input.learningMapId) : undefined;
+  const messages = packModelMessages(await assemblePreviewMessages({ conversationId: input.conversationId ?? null, learningMapId, context: stored, identityId, userText: message, skills }));
   const groups = initialToolGroups(message, stored.page, identityId);
   if (webEnabled && !groups.includes('web')) groups.push('web');
   const loadSkill = skills.length > 0;
@@ -688,7 +690,7 @@ export async function previewChatContext(input: { conversationId?: string; messa
   return buildContextStats({ runId: 'preview', round: 0, messages, tools, fullTools, loadedGroups: groups, contextWindow: await modelSettings.contextWindow(identityId), kind: 'preview' });
 }
 
-export async function startChat(input: { conversationId?: string; message: string; pageContext?: PageContext; context?: unknown; requestKey?: string; identityId?: string }) {
+export async function startChat(input: { conversationId?: string; message: string; pageContext?: PageContext; context?: unknown; requestKey?: string; identityId?: string; learningMapId?: string | null }) {
   const message = input.message.trim();
   if (!message) throw new DomainError('INVALID_MESSAGE', '消息不能为空', 400);
   if (input.requestKey !== undefined && (input.requestKey.trim().length < 1 || input.requestKey.length > 200)) throw new DomainError('INVALID_REQUEST', 'requestKey 无效', 400);
@@ -717,7 +719,9 @@ export async function startChat(input: { conversationId?: string; message: strin
     if (!existingConversation) throw Object.assign(new Error('会话不存在'), { status: 404 });
   } else {
     const timestamp = nowIso();
-    conversationId = (await prisma.conversation.create({ data: { identityId, createdAt: timestamp, updatedAt: timestamp } })).id;
+    // A new study conversation starts on the topic the user chose; later switches go through PATCH.
+    const learningMapId = identityId === 'study' && input.learningMapId ? await requireLiveLearningMap(input.learningMapId) : null;
+    conversationId = (await prisma.conversation.create({ data: { identityId, learningMapId, createdAt: timestamp, updatedAt: timestamp } })).id;
   }
   const stored = await validateScopeAndResolveIds({ ...requestedContext, identityId });
   // The request's UI language (X-WWA-Language / Accept-Language) decides the reply language.

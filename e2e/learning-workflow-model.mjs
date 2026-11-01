@@ -10,6 +10,14 @@ const completion = (response, text, stream) => {
   response.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 40, completion_tokens: 60 }, model: 'learning-workflow-fixture' })}\n\n`);
   response.end('data: [DONE]\n\n');
 };
+const toolCompletion = (response, args, stream) => {
+  const call = { id: 'learning-card-fixture', type: 'function', function: { name: 'show_learning_card', arguments: JSON.stringify(args) } };
+  if (!stream) return json(response, 200, { choices: [{ index: 0, message: { role: 'assistant', content: null, tool_calls: [call] }, finish_reason: 'tool_calls' }] });
+  response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+  response.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, ...call }] }, finish_reason: null }] })}\n\n`);
+  response.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })}\n\n`);
+  response.end('data: [DONE]\n\n');
+};
 
 const generation = input => {
   const { config, nodes } = input;
@@ -49,6 +57,12 @@ const server = http.createServer(async (request, response) => {
       if (answer.includes('fixture-model-failure')) return json(response, 503, { error: 'Controlled grading fixture failure' });
       const disputed = answer.includes('有争议'), correct = /原始答案|题目版本|可核查|历史/.test(answer);
       return completion(response, JSON.stringify({ result: disputed ? 'unresolved' : correct ? 'correct' : 'incorrect', score: disputed ? null : correct ? 1 : 0, maxScore: 1, explanation: disputed ? '验收样例需人工复核。' : '按题目保存的评分依据检查是否说明记录可核查性。', strengths: correct ? '指出了历史证据的作用。' : '', mistakes: correct ? [] : ['未说明为什么保留原始记录'], needsReview: disputed }), body.stream);
+    }
+    const marker = /学习卡片验收 (nodeId|jobId|sessionId)=([a-zA-Z0-9_-]+)/.exec(user);
+    if (marker) {
+      const lastUser = body.messages.findLastIndex(message => message.role === 'user');
+      const alreadyShown = body.messages.slice(lastUser + 1).some(message => message.role === 'tool' && String(message.content).includes('show_learning_card'));
+      if (!alreadyShown) return toolCompletion(response, { kind: marker[1] === 'nodeId' ? 'node' : 'practice', [marker[1]]: marker[2] }, body.stream);
     }
     return completion(response, '可以先回看当前题目的考点，再比较你的思路；这是一条学习辅导验收回复。', body.stream);
   } catch (error) { return json(response, 400, { error: error instanceof Error ? error.message : 'Invalid fixture request' }); }

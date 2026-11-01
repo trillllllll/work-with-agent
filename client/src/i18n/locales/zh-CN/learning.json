@@ -327,6 +327,21 @@
       "review_queue": "从待复习内容中选取",
       "mixed_practice": "在本次范围内混合练习",
       "recent_mistake_variant": "根据之前的错题换一个场景练习"
-    }
+    },
+    "editorInUse": "这份练习已在其他位置打开。先收起原来的练习，再点重试从这里继续。",
+    "restoringOperations": "正在恢复上次操作…"
+  },
+  "figure": {
+    "label": "{{title}} 学习主图",
+    "openNode": "{{title}}（{{status}}），打开详情",
+    "invalid": "主图无法显示：{{error}}",
+    "preview": "学习主图预览",
+    "title": "学习主图",
+    "missing": "这个主题还没有学习主图。",
+    "draw": "让助手画主图",
+    "update": "让助手更新主图",
+    "stale": "主题结构已变化，主图需要更新。",
+    "drawPrompt": "给这个主题画一张学习主图，体现知识点之间的关系。",
+    "updatePrompt": "请按现有主题结构更新学习主图。"
   }
 }

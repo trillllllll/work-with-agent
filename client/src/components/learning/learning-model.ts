@@ -2,7 +2,7 @@ import type { LearningTreeNode } from './learning-tree.js';
 export type LearningNode = LearningTreeNode;
 export type LearningMap = { id: string; title: string; goal: string; status: string; revision: number; updatedAt: string };
 export type LearningMapSummary = LearningMap & { stats: { topics: number; items: number; itemsDone: number } };
-export type LearningMapAggregate = { map: LearningMap; tree: LearningNode[]; recentActivity: Array<{ id: string; content: string; createdAt: string }> };
+export type LearningMapAggregate = { map: LearningMap; tree: LearningNode[]; figure?: import('./learning-figure.js').LearningFigureView | null; recentActivity: Array<{ id: string; content: string; createdAt: string }> };
 export const masteryStates = [
   { id: 'todo', symbol: '○', color: '--muted-foreground', fill: '--card', border: '--border' },
   { id: 'learning', symbol: '◐', color: '--tag-blue-fg', fill: '--tag-blue-bg', border: '--tag-blue-border' },

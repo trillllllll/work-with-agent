@@ -6,6 +6,7 @@ import { DomainError } from '../domain/task.js';
 import type { Prisma } from '@prisma/client';
 import { learningNodeStatuses } from '../domain/learning.js';
 import { checkedCheckpoint, confirmedCheckpoint } from './learning-checkpoint.js';
+import { prepareFigure, figureStructureHash, readFigureStructure } from './learning-figure.js';
 
 // 学习域命令处理器。全部 forceProposal：内置助手和外部连接都只能先生成
 // 待确认方案，用户批准后经 executeBatch 执行并写入变更历史。
@@ -39,6 +40,11 @@ const nodeUpdate = z.object({
   sortOrder: z.number().int().min(0).max(100000).optional(),
 }).strict().refine((value) => Object.keys(value).some((key) => value[key as keyof typeof value] !== undefined), { message: '至少修改一个字段' });
 const nodeMove = z.object({ parentId: z.string().min(1).nullable() }).strict();
+const figureSave = z.object({
+  mapId: z.string().min(1),
+  svg: z.string().min(1).max(65536),
+  nodeRefs: z.record(z.string().min(1).max(128), z.string().min(1)).optional(),
+}).strict();
 const activityAppend = z.object({
   mapId: z.string().min(1),
   nodeId: z.string().min(1).nullable(),
@@ -48,6 +54,7 @@ const activityAppend = z.object({
 }).strict();
 
 type LearningDb = Pick<Prisma.TransactionClient, 'learningMap' | 'learningNode'>;
+type FigureDb = LearningDb & Pick<Prisma.TransactionClient, 'learningFigure'>;
 async function requireMap(tx: Pick<LearningDb, 'learningMap'>, mapId: string) {
   const map = await tx.learningMap.findUnique({ where: { id: mapId } });
   if (!map || map.deletedAt) throw learningFailure('NOT_FOUND', '学习地图不存在', 404);
@@ -64,6 +71,14 @@ async function requireNode(tx: LearningDb, nodeId: string) {
 async function assertRevision(current: number | undefined, expected: number | undefined, label: string) {
   if (expected === undefined || !Number.isInteger(expected) || expected < 1) throw learningFailure('VERSION_REQUIRED', `需要${label}`, 400);
   if (current !== expected) throw learningFailure('VERSION_CONFLICT', '内容已经变化，请刷新后重试', 428);
+}
+
+async function assertFigureRevision(current: number | undefined, expected: number | undefined) {
+  if (current === undefined) {
+    if (expected !== undefined && expected !== 0) throw learningFailure('VERSION_CONFLICT', '学习主图已经变化，请刷新后重试', 428);
+    return;
+  }
+  await assertRevision(current, expected, '学习主图版本');
 }
 
 async function requireParent(tx: LearningDb, mapId: string, parentId: string | null) {
@@ -108,6 +123,8 @@ export function registerLearningCommands() {
       const timestamp = now();
       const map = await tx.learningMap.create({ data: { ...(context.entityId || command.entityId ? { id: context.entityId ?? command.entityId } : {}), title: input.title, goal: input.goal, createdAt: timestamp, updatedAt: timestamp } });
       await recordChange(tx, 'learning_map', map.id, 'create', null, map, context);
+      // A topic created from an unbound study conversation becomes that conversation's topic.
+      if (!context.preview && context.conversationId) await tx.conversation.updateMany({ where: { id: context.conversationId, identityId: 'study', learningMapId: null }, data: { learningMapId: map.id } });
       return map;
     },
   });
@@ -258,6 +275,34 @@ export function registerLearningCommands() {
         if (previous.id === node.id) result = updated;
       }
       return result;
+    },
+  });
+  registerCommandHandler('learning.figure.save', {
+    forceProposal: true,
+    description: '保存主题的学习主图（SVG）。知识点用 data-node-id 标记真实 ID，或用 nodeRefs 把占位名映射到同批新建的知识点。已有主图时须带 expectedRevision。',
+    inputSchema: jsonSchema(figureSave),
+    inspect: async (tx, _actor, command) => {
+      const input = figureSave.parse(command.input ?? {});
+      const map = await requireMap(tx, input.mapId);
+      const current = await (tx as unknown as FigureDb).learningFigure.findUnique({ where: { mapId: map.id } });
+      await assertFigureRevision(current?.revision, command.expectedRevision);
+      return { preconditions: { mapId: map.id, figureRevision: current?.revision ?? 0, structureHash: figureStructureHash(await readFigureStructure(tx, map.id)) }, preview: { mapTitle: map.title, previousRevision: current?.revision ?? 0 } };
+    },
+    execute: async (tx, _actor, command, context) => {
+      const input = figureSave.parse(command.input ?? {});
+      const db = tx as unknown as FigureDb;
+      const map = await requireMap(db, input.mapId);
+      const current = await db.learningFigure.findUnique({ where: { mapId: map.id } });
+      await assertFigureRevision(current?.revision, command.expectedRevision);
+      const prepared = await prepareFigure(db, map.id, input.svg, input.nodeRefs);
+      const timestamp = now();
+      const data = { svg: prepared.svg, nodeIdsJson: JSON.stringify(prepared.nodeIds), structureHash: prepared.structureHash, updatedAt: timestamp };
+      const saved = current
+        ? await db.learningFigure.update({ where: { id: current.id, revision: current.revision }, data: { ...data, revision: { increment: 1 } } })
+        : await db.learningFigure.create({ data: { ...data, mapId: map.id, createdAt: timestamp } });
+      const label = { title: map.title, mapTitle: map.title };
+      await recordChange(tx, 'learning_figure', saved.id, current ? 'update' : 'create', current ? { ...current, ...label } : null, { ...saved, ...label }, context);
+      return saved;
     },
   });
   registerCommandHandler('learning.activity.append', {

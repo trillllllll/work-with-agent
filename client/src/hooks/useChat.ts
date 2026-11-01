@@ -20,6 +20,7 @@ import { useLibrarySnapshot } from '../components/library/store.js';
 import { invalidateTodo } from './useTodo.js';
 import { EditorRuntime, useEditorRuntime } from '../lib/task-editor-runtime.js';
 import { createChatStorage, type ChatComposerSnapshot } from '../lib/chat-storage.js';
+import { readCurrentTopic, writeCurrentTopic } from '../lib/learning-topic.js';
 
 export type { View };
 
@@ -68,6 +69,9 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
   }) as typeof setInputState;
   const [sendSeq, setSendSeq] = useState(0);
   const [conversationId, setConversationId] = useState<string>(() => restoredComposer.snapshot?.conversationId ?? chatStorage.get('conversationId') ?? '');
+  // The topic this study conversation is bound to (server-owned). A new conversation starts on the current topic.
+  const [conversationTopic, setConversationTopic] = useState('');
+  const topicSelectionGeneration = useRef(0);
   const identityIdRef = useRef(identityId ?? 'work');
   identityIdRef.current = identityId ?? 'work';
   const onIdentityResolvedRef = useRef(onIdentityResolved);
@@ -167,6 +171,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     if(next===identityIdRef.current)return true;
     if(busyRef.current||mutatingRef.current||stopping||pendingRequestKey.current||unknownApprovalIds.length||unresolvedApprovalIds.length){onErrorRef.current(tRef.current('errors.retryBeforeSwitch'));return false;}
     if(!persistComposer(identityIdRef.current,composerSnapshot()))return false;
+    topicSelectionGeneration.current++;
     if(snapshotScope.current!==editorRuntime?.scopeKey){identitySnapshots.current.clear();snapshotScope.current=editorRuntime?.scopeKey;}
     identitySnapshots.current.set(identityIdRef.current,{conversationId:conversationRef.current,input:inputRef.current,attachments:structuredClone(attachmentsRef.current),pinnedContext,referencedApproval,webSearchEnabled:webSearchEnabledRef.current,webSearchPending:webSearchPendingRef.current,messages,approvals,contextStats,pausedRun,interrupted,activeRunId:activeRunId.current,refusedRequest:refusedRequest.current});
     const cached=identitySnapshots.current.get(next);
@@ -194,6 +199,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     // 审批可能改到学习域；地图页未挂载时这里是无害的空失效。
     void queryClient.invalidateQueries({ queryKey: ['learning-maps'] });
     void queryClient.invalidateQueries({ queryKey: ['learning-map'] });
+    void queryClient.invalidateQueries({ queryKey: ['learning-briefing'] });
   };
 
   const resumableReason = (reason: string | null | undefined) => Boolean(reason && ['new_user_message', 'interrupted', 'round_limit'].includes(reason));
@@ -203,7 +209,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     if (!force && (mutatingRef.current || newConversationRef.current === id)) return;
     const generation = ++loadGeneration.current;
     try {
-      const snapshot = await api<{ identityId?: 'work' | 'study'; webSearchEnabled?: boolean; contextStats?: ContextUsage | null; messages: ChatMessage[]; approvals: Array<Parameters<typeof parseApproval>[0]>; watermarks: Record<string, number>; activeRun: { id: string; state: string; pauseReason?: string | null } | null }>(`/api/conversations/${id}/snapshot`);
+      const snapshot = await api<{ identityId?: 'work' | 'study'; webSearchEnabled?: boolean; learningMapId?: string | null; contextStats?: ContextUsage | null; messages: ChatMessage[]; approvals: Array<Parameters<typeof parseApproval>[0]>; watermarks: Record<string, number>; activeRun: { id: string; state: string; pauseReason?: string | null } | null }>(`/api/conversations/${id}/snapshot`);
       const history = snapshot.messages; const active = snapshot.activeRun;
       if (generation !== loadGeneration.current || conversationRef.current !== id) return;
       if (!force && busyRef.current) return;
@@ -213,6 +219,8 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
       if(snapshot.identityId&&snapshot.identityId!==identityIdRef.current&&!switchIdentityRef.current(snapshot.identityId,id))return;
       setWebSearchEnabled(snapshot.webSearchEnabled ?? false);
       webSearchPendingRef.current = false;
+      setConversationTopic(snapshot.learningMapId ?? '');
+      if ((snapshot.identityId ?? identityIdRef.current) === 'study') writeCurrentTopic(instanceScope.current, snapshot.learningMapId ?? '');
       snapshotWatermarks.current = snapshot.watermarks;
       activeRunId.current = active?.id ?? '';
       if (!busyRef.current) {
@@ -444,7 +452,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     let expiry: ReturnType<typeof setTimeout> | undefined;
     const timer = setTimeout(() => {
       expiry = setTimeout(() => controller.abort(), 15_000);
-      const body = { conversationId: conversationRef.current || undefined, identityId: identityIdRef.current, message: inputRef.current, webSearchEnabled: webSearchEnabledRef.current, context: buildRequestContext(referencedApproval) };
+      const body = { conversationId: conversationRef.current || undefined, identityId: identityIdRef.current, message: inputRef.current, learningMapId: identityIdRef.current === 'study' && !conversationRef.current ? readCurrentTopic(instanceScope.current) || undefined : undefined, webSearchEnabled: webSearchEnabledRef.current, context: buildRequestContext(referencedApproval) };
       api<ContextUsage>('/api/chat/context-preview', { method: 'POST', body: JSON.stringify(body), signal: controller.signal })
         .then((stats) => { if (seq === previewSeq.current) setContextPreview(stats); })
         .catch(() => { if (seq === previewSeq.current) setContextPreview(null); })
@@ -454,6 +462,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
   }, [busy, contextPreviewEnabled, previewKey]);
 
   const send = async (event: FormEvent) => {
+    topicSelectionGeneration.current++;
     event.preventDefault();
     const message = input.trim();
     const reference = referencedApproval;
@@ -461,7 +470,8 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     if (pendingRequestKey.current) { setInterrupted(true); onErrorRef.current(tRef.current('errors.pendingRequest')); return; }
     const requestKey = crypto.randomUUID();
     const requestContext = buildRequestContext(reference);
-    const requestBody = { conversationId: conversationRef.current || undefined, identityId: identityIdRef.current, message, requestKey, context: requestContext };
+    const startingTopic = !conversationRef.current && identityIdRef.current === 'study' ? readCurrentTopic(instanceScope.current) : '';
+    const requestBody = { conversationId: conversationRef.current || undefined, identityId: identityIdRef.current, message, requestKey, context: requestContext, ...(startingTopic ? { learningMapId: startingTopic } : {}) };
     // Store the exact body before sending. Replays must retain both the key and its original context.
     const storedBody = JSON.stringify(requestBody);
     try {
@@ -679,6 +689,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
   const selectConversation = (id: string) => {
     if (busyRef.current || mutatingRef.current || id === conversationRef.current) return;
     if (pendingRequestKey.current) { onErrorRef.current(tRef.current('errors.retryBeforeSwitch')); return; }
+    topicSelectionGeneration.current++;
     // Keep the current composer draft and explicit references when browsing history.
     refusedRequest.current=null;
     activeRunId.current = '';
@@ -779,6 +790,21 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     const last = [...messages].reverse().find((item) => item.role === 'user');
     if (last) { setInput((current) => current.trim() ? current : last.content); if (last.context?.schemaVersion === 3) { setPinnedContext(structuredClone(last.context)); setAttachments(structuredClone(last.context.attachments)); } setInterrupted(false); }
   };
+  /** Study topics each keep their own conversation: open the latest one for the topic, or start a fresh one on it. */
+  const selectTopic = async (mapId: string) => {
+    if (!scopeCurrent() || identityIdRef.current !== 'study' || busyRef.current || mutatingRef.current || mapId === readCurrentTopic(instanceScope.current) && (!conversationRef.current || conversationTopic === mapId)) return;
+    if (pendingRequestKey.current || unknownApprovalIds.length || unresolvedApprovalIds.length) { onErrorRef.current(tRef.current('errors.retryBeforeSwitch')); return; }
+    const selection = ++topicSelectionGeneration.current;
+    const previousConversation = conversationRef.current;
+    try {
+      const list = await api<{ items: Array<{ id: string }> }>(`/api/conversations?identityId=study&learningMapId=${encodeURIComponent(mapId)}`);
+      if (selection !== topicSelectionGeneration.current || !scopeCurrent() || identityIdRef.current !== 'study' || conversationRef.current !== previousConversation || busyRef.current || mutatingRef.current || pendingRequestKey.current) return;
+      writeCurrentTopic(instanceScope.current, mapId);
+      const latest = list.items[0]?.id;
+      if (latest) selectConversation(latest); else startNewRef.current();
+    } catch (reason) { if (selection === topicSelectionGeneration.current && scopeCurrent() && identityIdRef.current === 'study') onErrorRef.current(reason instanceof Error ? reason.message : tRef.current('errors.loadConversationFailed')); }
+  };
+  const startNewRef = useRef<() => void>(() => undefined);
   const startNew = () => {
     if (busyRef.current || mutatingRef.current) return;
     if(pendingRequestKey.current||unknownApprovalIds.length||unresolvedApprovalIds.length){onErrorRef.current(tRef.current('errors.retryBeforeSwitch'));return;}
@@ -786,9 +812,11 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     refusedRequest.current = null;
     clearPendingRequest();
     loadGeneration.current++;
+    topicSelectionGeneration.current++;
     chatStorage.remove('conversationId');
     newConversationRef.current = '';
     setConversationId('');
+    setConversationTopic('');
     setContextStats(null); setMessages([]);
     setApprovals([]);
     setWebSearchEnabled(false);
@@ -804,5 +832,6 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     setPausedRun(null);
   };
 
-  return { draftStorageFailed, hasLegacyPending:chatStorage.hasLegacyPending(), legacyPendingMessage:chatStorage.legacyPending(), activeRunId: busy ? activeRunId.current : undefined, contextStats, contextPreview, stop, stopping, switchIdentity, switchingBlocked, selectConversation, addMaterial, context, pinned: Boolean(pinnedContext), togglePin: () => setPinnedContext((current) => current ? null : structuredClone(pageContext ?? null)), attachments, removeAttachment: (id: string) => setAttachments((current) => current.filter((item) => item.id !== id)), conversationId, selectedTopicId, messages, approvals, busy, interrupted, input, setInput, sendSeq, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference: () => setReferencedApproval(null), showRepreview, webSearchEnabled, setWebSearch };
+  startNewRef.current = startNew;
+  return { draftStorageFailed, hasLegacyPending:chatStorage.hasLegacyPending(), legacyPendingMessage:chatStorage.legacyPending(), activeRunId: busy ? activeRunId.current : undefined, contextStats, contextPreview, stop, stopping, switchIdentity, switchingBlocked, selectConversation, addMaterial, context, pinned: Boolean(pinnedContext), togglePin: () => setPinnedContext((current) => current ? null : structuredClone(pageContext ?? null)), attachments, removeAttachment: (id: string) => setAttachments((current) => current.filter((item) => item.id !== id)), conversationId, conversationTopic, selectTopic, selectedTopicId, messages, approvals, busy, interrupted, input, setInput, sendSeq, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference: () => setReferencedApproval(null), showRepreview, webSearchEnabled, setWebSearch };
 }

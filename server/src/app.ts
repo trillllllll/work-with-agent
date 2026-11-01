@@ -301,16 +301,19 @@ const chatBody = z.object({
   identityId: z.enum(['work', 'study']).optional(),
   message: z.string().trim().min(1),
   requestKey: z.string().min(1).max(200).optional(),
+  learningMapId: z.string().min(1).max(200).nullable().optional(),
   pageContext: z.object({ topicId: z.string().nullable().optional(), taskId: z.string().nullable().optional(), page: z.string().nullable().optional() }).optional(),
   context: z.unknown().optional(),
 });
 const conversationPatchBody = z.object({
-  webSearchEnabled: z.boolean(),
-});
+  webSearchEnabled: z.boolean().optional(),
+  learningMapId: z.string().min(1).max(200).nullable().optional(),
+}).refine(value => value.webSearchEnabled !== undefined || value.learningMapId !== undefined, { message: '至少修改一个字段' });
 const sse = (res: Response, event: string, data: unknown) => {
   if (!res.destroyed && !res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(translatePayload(data, res.locals.locale))}\n\n`);
 };
 const contextPreviewBody = z.object({
+  learningMapId: z.string().min(1).max(200).nullable().optional(),
   conversationId: z.string().min(1).optional(),
   identityId: z.enum(['work', 'study']).optional(),
   message: z.string().max(200_000).optional(),
@@ -346,12 +349,13 @@ app.post('/api/chat', schema(chatBody), async (req, res) => {
 
 app.get('/api/v1/assistant/sources/:kind/:id', async (req, res, next) => { try { send(res, await resolveAssistantSource(String(req.params.kind), String(req.params.id), req.query.revision === undefined ? undefined : Number(req.query.revision))); } catch (error) { next(error); } });
 app.get('/api/v1/learning/maps', async (_req, res, next) => { try { send(res, await learningRead({ action: 'list' })); } catch (error) { next(error); } });
+app.get('/api/v1/learning/maps/:id/briefing', async (req, res, next) => { try { const { learningBriefing } = await import('./application/learning-briefing.js'); send(res, await learningBriefing(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/v1/learning/maps/:id', async (req, res, next) => { try { send(res, await learningMapAggregate(String(req.params.id))); } catch (error) { next(error); } });
-app.get('/api/conversations', async (req, res, next) => { try { const identity = z.enum(['work', 'study']).safeParse(req.query.identityId); send(res, await agent.conversationList(typeof req.query.cursor === 'string' ? req.query.cursor : undefined, identity.success ? identity.data : undefined)); } catch (error) { next(error); } });
+app.get('/api/conversations', async (req, res, next) => { try { const identity = z.enum(['work', 'study']).safeParse(req.query.identityId); send(res, await agent.conversationList(typeof req.query.cursor === 'string' ? req.query.cursor : undefined, identity.success ? identity.data : undefined, typeof req.query.learningMapId === 'string' && req.query.learningMapId ? req.query.learningMapId : undefined)); } catch (error) { next(error); } });
 app.get('/api/conversations/:id/messages', async (req, res, next) => { try { send(res, await agent.messages(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/conversations/:id/snapshot', async (req, res, next) => { try { send(res, await agent.snapshot(String(req.params.id))); } catch (error) { next(error); } });
 app.get('/api/conversations/:id/active-run', async (req, res, next) => { try { send(res, await agent.activeRun(String(req.params.id))); } catch (error) { next(error); } });
-app.patch('/api/conversations/:id', schema(conversationPatchBody), async (req, res, next) => { try { send(res, await agent.setConversationWebSearch(String(req.params.id), req.body)); } catch (error) { next(error); } });
+app.patch('/api/conversations/:id', schema(conversationPatchBody), async (req, res, next) => { try { send(res, await agent.updateConversation(String(req.params.id), req.body)); } catch (error) { next(error); } });
 app.get('/api/agent/approvals', async (req, res, next) => { try { send(res, await agent.approvalList(typeof req.query.status === 'string' ? req.query.status : undefined)); } catch (error) { next(error); } });
 app.get('/api/agent/approvals/:id', async (req, res, next) => { try { send(res, await agent.getApproval(String(req.params.id))); } catch (error) { next(error); } });
 app.post('/api/agent/approvals/:id/approve', async (req, res, next) => { try { send(res, await agent.approve(String(req.params.id), req.body ?? {})); } catch (error) { next(error); } });
