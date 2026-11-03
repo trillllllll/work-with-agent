@@ -1,10 +1,15 @@
 import { Surface } from '@/components/ui/surface.js';
-import { useEffect, useRef, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowUp, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button.js';
 import { isCompositionKey } from '@/lib/todo.js';
 import { Textarea } from '@/components/ui/textarea.js';
+
+const LINE_HEIGHT = 20;
+const INPUT_PAD = 8;
+const EXPANDED_LINES = 3;
+const MAX_LINES = 8;
 
 type ChatComposerProps = {
   input: string;
@@ -24,23 +29,33 @@ export function ChatComposer({ input, busy, reference, onChange, onSend, onCance
   const { t } = useTranslation('chat');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
+  const [focused, setFocused] = useState(false);
+  const [justSent, setJustSent] = useState(false);
+  const expanded = (focused || input.trim().length > 0) && !justSent;
   useEffect(() => { const focus = () => textareaRef.current?.focus(); window.addEventListener('dovun-focus-assistant', focus); return () => window.removeEventListener('dovun-focus-assistant', focus); }, []);
   useEffect(() => { if (reference) textareaRef.current?.focus(); }, [reference?.id]);
   const resize = () => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+    const min = (expanded ? EXPANDED_LINES : 1) * LINE_HEIGHT + INPUT_PAD;
+    const max = MAX_LINES * LINE_HEIGHT + INPUT_PAD;
+    el.style.height = `${Math.max(min, Math.min(el.scrollHeight, max))}px`;
+    el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
   };
-  useEffect(resize, [input]);
+  useEffect(resize, [input, expanded]);
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !composing.current && !isCompositionKey(event.nativeEvent)) {
       event.preventDefault();
-      if (input.trim() && !busy) onSend(event);
+      if (input.trim() && !busy) handleSubmit(event);
     }
   };
+  const handleSubmit = (event: FormEvent) => {
+    if (input.trim() && !busy) setJustSent(true);
+    onSend(event);
+  };
   return (
-    <form className="assistant-composer flex shrink-0 flex-col gap-2 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2" onSubmit={onSend}>
+    <form className="assistant-composer flex shrink-0 flex-col gap-2 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2" onSubmit={handleSubmit}>
       {reference && (
         <div className="flex items-center justify-between gap-3 text-xs">
           <span>{t('composer.adjusting', { title: reference.title })}</span>
@@ -54,8 +69,10 @@ export function ChatComposer({ input, busy, reference, onChange, onSend, onCance
           value={input}
           rows={1}
           placeholder={t('composer.placeholder')}
-          className="max-h-[120px] min-h-12 w-full resize-none px-1 py-1 text-[13px]"
-          onChange={(event) => { onChange(event.target.value); requestAnimationFrame(resize); }}
+          className="w-full resize-none px-1 py-1 text-[13px] leading-5 transition-[height] duration-150 ease-out"
+          onFocus={() => { setFocused(true); setJustSent(false); }}
+          onBlur={() => setFocused(false)}
+          onChange={(event) => { setJustSent(false); onChange(event.target.value); }}
           onCompositionStart={() => { composing.current = true; }}
           onCompositionEnd={() => { composing.current = false; }}
           onKeyDown={onKeyDown}
