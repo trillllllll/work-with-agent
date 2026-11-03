@@ -206,7 +206,7 @@ test('the assistant can only propose a worktree deletion; the user confirms it i
   const before = git(repo, 'worktree', 'list');
   const cleanupsBefore = await e2eDatabase.worktreeCleanup.count();
   await page.goto('/');
-  if (!(await page.getByPlaceholder(composer).isVisible())) await page.getByRole('button', { name: '打开聊天', exact: true }).click();
+  if (!(await page.getByPlaceholder(composer).isVisible())) await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
   await page.getByPlaceholder(composer).fill('帮我清理已验收的 worktree');
   await page.getByRole('button', { name: '发送', exact: true }).click();
   const card = page.getByRole('group', { name: '待确认的删除' });

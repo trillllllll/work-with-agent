@@ -35,7 +35,7 @@ export const navigationItems: NavigationItem[] = [
   navItem('stats', 'app:nav.stats', ChartColumn),
 ];
 
-/** 聊天与“更多”是固定入口，不进入可配置清单，也不自动加入桌面侧栏。 */
+/** 聊天与“更多”是固定入口，不进入可配置清单；桌面侧栏把聊天固定渲染在底部工具区（Sidebar footer），移动端更多页与底栏单独使用。 */
 export const chatItem: NavigationItem = navItem('chat', 'app:nav.chat', MessageSquare);
 export const moreItem: NavigationItem = navItem('more', 'app:nav.more', Menu);
 

@@ -17,7 +17,7 @@ async function linkedTasks(request: APIRequestContext, materialId: string) {
 }
 
 async function openChat(page: Page) {
-  if (!(await page.getByPlaceholder(composer).isVisible())) await page.getByRole('button', { name: '打开聊天', exact: true }).click();
+  if (!(await page.getByPlaceholder(composer).isVisible())) await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
 }
 
 async function ask(page: Page, message: string) {

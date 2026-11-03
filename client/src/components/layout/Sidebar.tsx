@@ -37,20 +37,21 @@ export function Sidebar({ compact, route, page, topics, topicsLoading, selectedT
       <nav aria-label={t('sidebar.mainNav')} className="sidebar-nav">
         {link('search')}
         {navigationGroups.filter(group => group.id !== 'system').map(group => {
-          if (compact) return <div key={group.id} className="dovun-compact-group">{group.views.map(link)}</div>;
+          const views = group.views.filter(view => view !== 'chat');
+          if (compact) return <div key={group.id} className="dovun-compact-group">{views.map(link)}</div>;
           if (group.id === 'advanced') return <Disclosure key={group.id} className="dovun-advanced" open={advancedOpen || route === 'worktrees'}>
             <DisclosureTrigger className="sidebar-link" onClick={event => { event.preventDefault(); setAdvancedOpen(value => !value); }}><ChevronRight className="size-3.5" aria-hidden /><span>{t('app:groups.advanced')}</span></DisclosureTrigger>
-            {group.views.map(link)}
+            {views.map(link)}
           </Disclosure>;
           return <section key={group.id} className="dovun-nav-group" aria-label={t(`app:groups.${group.id}`)}>
             <div className="sidebar-section">{group.id === 'lists' ? <Button variant="plain" size="bare" onClick={() => onNavigate('topics')}>{t('app:groups.lists')}</Button> : <span>{t(`app:groups.${group.id}`)}</span>}
               {group.id === 'lists' && <Button variant="row" size="bare" type="button" className="sidebar-add" aria-label={t('sidebar.newList')} onClick={onNewTopic}><Plus className="size-3.5" aria-hidden /></Button>}
             </div>
-            {group.id === 'lists' ? <>{link('inbox')}<TopicList variant="sidebar" topics={topics} loading={topicsLoading} selectedTopicId={page === 'board' ? selectedTopicId : ''} onSelect={onSelectTopic} onEdit={onEditTopic} />{link('tags')}{link('archived')}</> : group.views.map(link)}
+            {group.id === 'lists' ? <>{link('inbox')}<TopicList variant="sidebar" topics={topics} loading={topicsLoading} selectedTopicId={page === 'board' ? selectedTopicId : ''} onSelect={onSelectTopic} onEdit={onEditTopic} />{link('tags')}{link('archived')}</> : views.map(link)}
           </section>;
         })}
       </nav>
     </SidebarScroll>
-    <footer className="sidebar-footer"><nav aria-label={t('sidebar.tools')} className="sidebar-nav">{['changes', 'trash', 'settings'].map(view => link(view as View))}</nav>{compact && <ThemeToggle />}</footer>
+    <footer className="sidebar-footer"><nav aria-label={t('sidebar.aiAssistant')} className="sidebar-nav">{link('chat')}</nav><nav aria-label={t('sidebar.tools')} className="sidebar-nav sidebar-nav-follow">{['changes', 'trash', 'settings'].map(view => link(view as View))}</nav>{compact && <ThemeToggle />}</footer>
   </aside>;
 }

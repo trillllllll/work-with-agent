@@ -205,7 +205,7 @@ test('stats tab counts the rounds from this run, including the rejection', async
 
 test('the assistant answers a dispatch-stats question from orchestration_stats', async ({ page }) => {
   await page.goto('/');
-  if (!(await page.getByPlaceholder(composer).isVisible())) await page.getByRole('button', { name: '打开聊天', exact: true }).click();
+  if (!(await page.getByPlaceholder(composer).isVisible())) await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
   await page.getByPlaceholder(composer).fill('统计这周 AI 派发');
   await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect(page.getByText(/本周派发 \d+ 轮/)).toBeVisible({ timeout: 30_000 });

@@ -25,7 +25,7 @@ async function taskCount(request: APIRequestContext, topicId: string) {
 }
 
 async function send(page: Page, message: string) {
-  if (!(await page.getByPlaceholder(composerPlaceholder).isVisible())) await page.getByRole('button', { name: '打开聊天', exact: true }).click();
+  if (!(await page.getByPlaceholder(composerPlaceholder).isVisible())) await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
   await page.getByPlaceholder(composerPlaceholder).fill(message);
   await page.getByRole('button', { name: '发送' }).click();
 }
@@ -151,7 +151,7 @@ test.describe('Agent 工作室 MVP', () => {
     const chatHeading = page.getByRole('heading', { level: 2, name: 'Dovun 工作助手' });
     const boardSection = page.getByRole('main');
     await expect(chatHeading).toBeHidden();
-    await page.getByRole('button', { name: '打开聊天', exact: true }).click();
+    await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
     await expect(chatHeading).toBeVisible();
     await expect(page.getByRole('button', { name: '关闭聊天' })).toBeVisible();
     const composer = page.getByPlaceholder(composerPlaceholder);
@@ -162,12 +162,12 @@ test.describe('Agent 工作室 MVP', () => {
 
     await page.getByRole('button', { name: '关闭聊天' }).click();
     await expect(chatHeading).toBeHidden();
-    await expect(page.getByRole('button', { name: '打开聊天' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '打开 AI 助手' })).toBeVisible();
     const boardWidthAfterClose = (await boardSection.boundingBox())?.width;
     expect(boardWidthAfterClose).toBeGreaterThan(boardWidthBeforeClose!);
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
 
-    await page.getByRole('button', { name: '打开聊天' }).click();
+    await page.getByRole('button', { name: '打开 AI 助手' }).click();
     await expect(chatHeading).toBeVisible();
     await expect(page.getByRole('button', { name: '关闭聊天' })).toBeVisible();
     await expect(composer).toHaveValue('关闭后仍然保留');
@@ -185,7 +185,7 @@ test.describe('Agent 工作室 MVP', () => {
     const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
     await detail.getByLabel('详情', { exact: true }).fill('检查器草稿');
 
-    await page.getByRole('button', { name: '打开聊天', exact: true }).click();
+    await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
     await expect(page.getByRole('dialog', { name: '保存未完成的编辑？' })).toHaveCount(0);
     await expect(page.getByRole('heading', { level: 2, name: 'Dovun 工作助手' })).toBeVisible();
     await expect(detail).toBeHidden();
@@ -230,7 +230,7 @@ test.describe('Agent 工作室 MVP', () => {
     await expect(page.getByRole('button', { name: '移动端任务', exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
 
-    await page.getByRole('button', { name: '打开聊天', exact: true }).click();
+    await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
     await expect(page.getByPlaceholder(composerPlaceholder)).toBeVisible();
     await send(page, '创建任务');
     const card = page.getByTestId('approval-card');

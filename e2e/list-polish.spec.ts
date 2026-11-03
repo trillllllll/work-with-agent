@@ -49,14 +49,14 @@ test('已完成任务收在底部，今天不画出空分组', async ({ page, re
   await expect(page.getByText('暂无任务', { exact: true })).toBeVisible();
 });
 
-test('打开聊天后未保存的标题还在', async ({ page, request }) => {
+test('打开 AI 助手后未保存的标题还在', async ({ page, request }) => {
   const created = await (await request.post(`${apiUrl}/api/tasks`, { data: { title: '原来的标题' } })).json();
   await page.setViewportSize({ width: 1200, height: 800 });
   await page.goto('/#/inbox');
   await page.getByTestId(`task-row-${created.data.id}`).getByRole('button', { name: '原来的标题', exact: true }).click();
   const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
   await detail.getByLabel('任务标题', { exact: true }).fill('还没保存的标题');
-  await page.getByRole('button', { name: '打开聊天', exact: true }).click();
+  await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '保存未完成的编辑？' })).toHaveCount(0);
   await expect(detail).toBeHidden();
   await expect(page.getByRole('button', { name: '关闭工作侧栏', exact: true })).toBeVisible();

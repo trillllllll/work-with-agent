@@ -46,7 +46,6 @@
     "inboxHint": "这是一个分类，这里只显示放在收集箱里的任务。",
     "todayDue": "{{date}} · 未完成的到期任务",
     "archivedReadonly": "此清单已归档，内容只读。",
-    "openChat": "打开聊天",
     "editList": "编辑清单：{{name}}",
     "listLayout": "列表",
     "boardLayout": "看板",
