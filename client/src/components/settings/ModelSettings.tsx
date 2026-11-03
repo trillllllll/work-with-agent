@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { api, type Settings } from '@/lib/api.js';
+import { api, type ContextWindowProbe, type Settings } from '@/lib/api.js';
 import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
@@ -57,6 +57,19 @@ export function ModelSettings() {
     onSuccess: (data) => { queryClient.setQueryData(['settings'], data); setClearKeyConfirmation(false); setApiKey(''); toast.success(t('modelSettings.cleared')); },
     onError: (error) => { setClearKeyConfirmation(false); toast.error(error.message); },
   });
+  // Reads the window the provider publishes; a null window leaves the field for the user to fill in.
+  const probeWindow = useMutation<ContextWindowProbe, Error, { baseUrl: string; model: string; apiKey: string }>({
+    mutationFn: (submitted) => api('/api/settings/context-window/probe', { method: 'POST', body: JSON.stringify({ baseUrl: submitted.baseUrl, model: submitted.model, ...(submitted.apiKey.trim() ? { apiKey: submitted.apiKey.trim() } : {}) }) }),
+    onSuccess: (data) => {
+      if (data.contextWindow) {
+        setWindowDraft(String(data.contextWindow));
+        toast.success(t('modelSettings.contextWindowFetched', { model: data.model, window: data.contextWindow }));
+      } else {
+        toast.error(t(`modelSettings.contextWindowFetchMiss.${data.reason}`, { status: data.status ?? '' }));
+      }
+    },
+    onError: (error) => { toast.error(error.message); },
+  });
 
   return (
     <section aria-labelledby="settings-model-title">
@@ -83,6 +96,12 @@ export function ModelSettings() {
           <div className="mb-4">
             <Label htmlFor="settings-context-window">{t('modelSettings.contextWindow')}</Label>
             <Input id="settings-context-window" type="number" inputMode="numeric" min={1024} max={10000000} step={1} value={contextWindow} onChange={(event) => setWindowDraft(event.target.value)} placeholder={t('modelSettings.contextWindowPlaceholder')} aria-describedby="settings-context-window-hint" />
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Button type="button" size="sm" variant="outline" disabled={!baseUrl.trim() || !model.trim() || probeWindow.isPending || save.isPending} onClick={() => probeWindow.mutate({ baseUrl, model, apiKey })}>
+                {probeWindow.isPending ? t('modelSettings.contextWindowFetching') : t('modelSettings.contextWindowFetch')}
+              </Button>
+              <span className="text-xs text-muted-foreground">{t('modelSettings.contextWindowFetchHint')}</span>
+            </div>
             <p id="settings-context-window-hint" className="mt-1.5 text-xs text-muted-foreground">{t('modelSettings.contextWindowHint')}</p>
           </div>
           <div className="mb-4">

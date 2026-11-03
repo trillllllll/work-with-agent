@@ -259,7 +259,16 @@
     "model": "Model",
     "contextWindow": "Context limit (tokens, optional)",
     "contextWindowPlaceholder": "For example 128000; leave empty if unknown",
-    "contextWindowHint": "When set, the composer context usage shows free space and the share used. Use the maximum input context from the provider docs.",
+    "contextWindowHint": "Try \"Read from API\" first: when the provider declares the limit in /models it is filled in for you; otherwise copy the maximum input context from the provider docs. When set, the composer context usage shows free space and the share used.",
+    "contextWindowFetch": "Read from API",
+    "contextWindowFetching": "Reading…",
+    "contextWindowFetchHint": "Reads the context limit declared in the provider's /models",
+    "contextWindowFetched": "Read the context limit for {{model}}: {{window}}",
+    "contextWindowFetchMiss": {
+      "unreachable": "Couldn't reach the model service, so no context limit was read. Please enter it manually.",
+      "http_error": "The model service returned {{status}}, so no context limit was read. Please enter it manually.",
+      "not_provided": "This service's /models doesn't report a context limit. Please enter it manually."
+    },
     "apiKey": "API key",
     "configuredPlaceholder": "Configured: {{masked}}",
     "enterKey": "Enter an API key",

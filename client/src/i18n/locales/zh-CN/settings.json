@@ -258,7 +258,16 @@
     "model": "模型名称",
     "contextWindow": "上下文上限（token，可选）",
     "contextWindowPlaceholder": "例如 128000，留空表示未知",
-    "contextWindowHint": "填写后，对话输入框的上下文用量会显示剩余空间和占比。按供应商文档填写该模型的最大输入上下文。",
+    "contextWindowHint": "先点「从接口读取」，供应商在 /models 里声明了上限就直接填上；读不到时按供应商文档手填。填写后，对话输入框的上下文用量会显示剩余空间和占比。",
+    "contextWindowFetch": "从接口读取",
+    "contextWindowFetching": "正在读取…",
+    "contextWindowFetchHint": "读取供应商 /models 里声明的上下文上限",
+    "contextWindowFetched": "已读取 {{model}} 的上下文上限：{{window}}",
+    "contextWindowFetchMiss": {
+      "unreachable": "连不上模型服务，没读到上下文上限，请手动填写。",
+      "http_error": "模型服务返回 {{status}}，没读到上下文上限，请手动填写。",
+      "not_provided": "该服务的 /models 没有提供上下文上限，请手动填写。"
+    },
     "apiKey": "API Key",
     "configuredPlaceholder": "已配置：{{masked}}",
     "enterKey": "请输入 API Key",

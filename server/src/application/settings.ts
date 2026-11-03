@@ -1,5 +1,6 @@
 import { defaultMobileNavigationJson } from '../domain/mobile-navigation.js';
 import { prisma } from '../infrastructure/prisma.js';
+import { probeModelWindow, type ModelWindowProbe } from './model-window.js';
 
 export type ModelConfig = { baseUrl: string; apiKey: string; model: string; contextWindow?: number | null };
 export type PublicSettings = { baseUrl: string; model: string; contextWindow: number | null; apiKeyConfigured: boolean; apiKeyMasked: string | null };
@@ -52,6 +53,20 @@ export class SettingsService {
   }
   /** Window for the model a given identity actually calls; null when unknown. */
   async contextWindow(identityId?: string) { return (await this.credentials(identityId))?.contextWindow ?? null; }
+  /**
+   * Reads the window the provider publishes for this model. Draft values from the
+   * form win over stored ones, so the window can be read before saving. Falls back
+   * to the stored API key, and never writes: the field stays manually editable.
+   */
+  async probeContextWindow(input: { baseUrl?: string; model?: string; apiKey?: string } = {}): Promise<ModelWindowProbe> {
+    const setting = await this.getStored();
+    const baseUrl = input.baseUrl?.trim() ? this.normalizeBaseUrl(input.baseUrl) : setting?.openaiBaseUrl ?? '';
+    const model = input.model?.trim() || setting?.openaiModel || '';
+    const apiKey = input.apiKey?.trim() || await this.credentialsStore.read() || '';
+    if (!baseUrl || !model) throw badRequest('请先填写接口地址和模型名称');
+    if (!apiKey) throw badRequest('请先填写 API Key');
+    return probeModelWindow({ baseUrl, apiKey, model });
+  }
   private validateWindow(value: number | null | undefined) { if (value === undefined) return undefined; if (value === null || value === 0) return 0; if (!windowOrNull(value)) throw badRequest(`上下文上限须为 ${CONTEXT_WINDOW_MIN} 到 ${CONTEXT_WINDOW_MAX} 之间的整数，留空表示未知`); return value; }
   async save(input: { baseUrl: string; model: string; apiKey?: string; contextWindow?: number | null }, testConnection: (config: ModelConfig) => Promise<void>) { const current = await this.getStored(); const baseUrl = this.normalizeBaseUrl(input.baseUrl); const model = this.validateModel(input.model); const contextWindow = this.validateWindow(input.contextWindow); const apiKey = input.apiKey?.trim() || await this.credentialsStore.read() || current?.openaiApiKey || ''; if (!apiKey) throw badRequest('首次配置必须提供 API Key'); this.validateKey(apiKey); const config = { baseUrl, apiKey, model }; try { await testConnection(config); } catch (error) { if (error && typeof error === 'object' && 'status' in error) throw error; throw Object.assign(error instanceof Error ? error : new Error('模型连接测试失败'), { status: 502, code: 'SETTINGS_CONNECTION_FAILED' }); } const timestamp = now(); await prisma.appSetting.upsert({ where: { id: this.id }, create: { mobileNavigationJson: defaultMobileNavigationJson, id: this.id, openaiBaseUrl: baseUrl, openaiApiKey: apiKey, openaiModel: model, openaiContextWindow: contextWindow ?? 0, createdAt: timestamp, updatedAt: timestamp }, update: { openaiBaseUrl: baseUrl, openaiApiKey: apiKey, openaiModel: model, ...(contextWindow === undefined ? {} : { openaiContextWindow: contextWindow }), updatedAt: timestamp } }); await this.credentialsStore.write(apiKey); return this.getPublic(); }
   async clearApiKey() { if (await this.getStored()) await this.credentialsStore.clear(); return this.getPublic(); }

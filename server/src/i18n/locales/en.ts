@@ -648,6 +648,8 @@ export const en: Record<string, string> = {
   "上下文上限须为 {0} 到 {1} 之间的整数，留空表示未知": "The context limit must be an integer from {0} to {1}; leave it empty if unknown",
   "API Key 不能为空且不能超过 1000 个字符": "API Key cannot be empty and cannot exceed 1000 characters",
   "首次配置必须提供 API Key": "The first configuration must provide an API Key",
+  "请先填写接口地址和模型名称": "Enter the API address and model name first",
+  "请先填写 API Key": "Enter an API Key first",
   "模型连接测试失败": "Model connection test failed",
   "并入结果缺少计数": "Merge result is missing the count",
   "并入快照失败：{0}": "Failed to merge snapshot: {0}",

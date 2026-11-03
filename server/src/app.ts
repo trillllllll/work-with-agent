@@ -252,6 +252,11 @@ app.delete('/api/settings/cli/:provider', async (req, res, next) => {
 const settingsBody = z.object({ baseUrl: z.string().trim().min(1), model: z.string().trim().min(1), apiKey: z.string().optional(), contextWindow: z.number().int().min(0).nullable().optional() });app.patch('/api/settings', schema(settingsBody), async (req, res, next) => {
   try { send(res, { ...await settings.save(req.body, (config) => agent.testConnection(config)), cli: await cliSettings() }); } catch (error) { next(error); }
 });
+// 上下文上限先问供应商的 /models；读不到时前端保留手填。只读不写，也不回传 Key。
+const contextWindowProbeBody = z.object({ baseUrl: z.string().trim().max(2000).optional(), model: z.string().trim().max(200).optional(), apiKey: z.string().trim().max(1000).optional() }).strict();
+app.post('/api/settings/context-window/probe', schema(contextWindowProbeBody), async (req, res, next) => {
+  try { send(res, await settings.probeContextWindow(req.body)); } catch (error) { next(error); }
+});
 app.get('/api/settings/image-search', async (_req, res, next) => { try { send(res, await imageSearchSettings()); } catch (error) { next(error); } });
 app.patch('/api/settings/image-search', schema(z.object({ apiKey: z.string().trim().min(1).max(1000) }).strict()), async (req, res, next) => { try { send(res, await saveImageSearchKey(req.body.apiKey)); } catch (error) { next(error); } });
 app.delete('/api/settings/image-search', async (_req, res, next) => { try { send(res, await saveImageSearchKey('')); } catch (error) { next(error); } });
