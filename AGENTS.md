@@ -63,6 +63,10 @@ echo "EXIT:$build_rc" >> /tmp/dovun-desktop-build.log
 
 zsh 里 `status` 是只读变量。安装或打包脚本不要写 `status=$?`，否则后半段整段跳过。
 
+干净 worktree（或新装依赖的目录）里跑 `desktop:build` 前，先执行 `npm run prisma:generate -w server`：没有钩子自动生成 Prisma 客户端，缺了它服务端 `tsc` 会成片报 TS7006。
+
+往 Linux（服务器构建上下文）传 tar 包时必须用 `COPYFILE_DISABLE=1 tar -czf …`：macOS bsdtar 默认把扩展属性打成 AppleDouble `._*` 条目，本地 `tar -t` 看不见、Linux 全部解成真实文件污染镜像。解包后 `find <目录> -name '._*' | wc -l` 必须为 0。
+
 ## Dovun 覆盖安装到本机
 
 只替换 `/Applications/Dovun.app`。先备份旧应用，再整包删掉并复制新包，不要往旧包上 `ditto` 合并。
