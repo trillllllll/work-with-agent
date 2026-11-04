@@ -118,7 +118,7 @@ test('暗色卡片使用约定的背景和正文颜色', async ({ page, request 
   await expect(card).toHaveAttribute('data-state', 'pending');
   await expandChanges(card);
   const colors = await card.evaluate((el) => ({ background: getComputedStyle(el).backgroundImage, color: getComputedStyle(el).color }));
-  expect(colors).toEqual({ background: expect.stringContaining('linear-gradient'), color: 'rgb(230, 233, 236)' });
+  expect(colors).toEqual({ background: expect.stringContaining('linear-gradient'), color: 'rgb(244, 241, 234)' });
 });
 
 test('取消整组修改不改任务', async ({ page, request }) => {

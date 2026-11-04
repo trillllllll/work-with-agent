@@ -30,12 +30,12 @@
   --tag-amber-fg: hsl(38 90% 72%); --tag-amber-bg: hsl(34 40% 14%); --tag-amber-border: hsl(34 32% 28%);
   --tag-rose-fg: hsl(345 80% 78%); --tag-rose-bg: hsl(345 32% 16%); --tag-rose-border: hsl(345 26% 32%);
   --tag-slate-fg: hsl(220 12% 78%); --tag-slate-bg: hsl(220 10% 16%); --tag-slate-border: hsl(220 8% 32%);
-  --time-band-blue-bg: #18263D; --time-band-blue-fg: #BFDBFE;
-  --time-band-green-bg: #182D25; --time-band-green-fg: #BBF7D0;
-  --time-band-orange-bg: #35271C; --time-band-orange-fg: #FED7AA;
-  --time-band-purple-bg: #2A213B; --time-band-purple-fg: #E9D5FF;
-  --time-band-pink-bg: #352130; --time-band-pink-fg: #FBCFE8;
-  --time-band-gray-bg: #252B35; --time-band-gray-fg: #E5E7EB;
+  --time-band-blue-bg: #2D3640; --time-band-blue-fg: #A9BED4;
+  --time-band-green-bg: #2B383B; --time-band-green-fg: #A9C4B4;
+  --time-band-orange-bg: #373839; --time-band-orange-fg: #C9A876;
+  --time-band-purple-bg: #313441; --time-band-purple-fg: #C3B2D8;
+  --time-band-pink-bg: #35333B; --time-band-pink-fg: #D8A9B6;
+  --time-band-gray-bg: #303842; --time-band-gray-fg: #A3AEBB;
 }
 
 @theme inline {
@@ -116,7 +116,7 @@
     font-size: var(--control-font-size);
     line-height: var(--control-line-height);
     background-image:
-      radial-gradient(circle at 14% 8%, rgb(255 255 255 / 0.3), transparent 26rem),
+      radial-gradient(circle at 14% 8%, rgb(255 253 248 / 0.3), transparent 26rem),
       radial-gradient(circle at 88% 90%, rgb(0 0 0 / 0.035), transparent 30rem);
     background-attachment: fixed;
     font-synthesis: none;
@@ -131,27 +131,27 @@
 
   .dark body {
     background-image:
-      radial-gradient(circle at 12% 8%, rgb(255 255 255 / 0.045), transparent 28rem),
-      radial-gradient(circle at 88% 92%, rgb(255 255 255 / 0.02), transparent 34rem);
+      radial-gradient(circle at 12% 8%, rgb(244 241 234 / 0.045), transparent 28rem),
+      radial-gradient(circle at 88% 92%, rgb(244 241 234 / 0.02), transparent 34rem);
   }
 }
 
 @layer components {
   .app-backdrop {
     background:
-      radial-gradient(circle at 8% 5%, rgb(255 255 255 / 0.42), transparent 24rem),
+      radial-gradient(circle at 8% 5%, rgb(255 253 248 / 0.42), transparent 24rem),
       var(--background);
   }
 
   .dark .app-backdrop {
     background:
-      radial-gradient(circle at 8% 5%, rgb(255 255 255 / 0.035), transparent 26rem),
+      radial-gradient(circle at 8% 5%, rgb(244 241 234 / 0.035), transparent 26rem),
       var(--background);
   }
 
   .app-frame {
     background: var(--workbench-frame);
-    box-shadow: 0 16px 50px -26px rgb(22 31 48 / 0.3), inset 0 1px 0 var(--glass-highlight);
+    box-shadow: 0 16px 50px -26px rgb(26 32 43 / 0.3), inset 0 1px 0 var(--glass-highlight);
   }
 
   @media (min-width: 1280px) {
@@ -1151,14 +1151,14 @@
 /* ---------- 轻量编辑器：正文视觉契约 ---------- */
 
 :root {
-  --task-code-bg: hsl(0 0% 93%);
-  --task-selection: rgb(59 130 246 / 0.18);
+  --task-code-bg: #f2efe8;
+  --task-selection: rgb(67 97 140 / 0.18);
   --task-popover-shadow: var(--surface-overlay-shadow);
 }
 
 .dark {
-  --task-code-bg: hsl(0 0% 14%);
-  --task-selection: rgb(59 130 246 / 0.30);
+  --task-code-bg: #1b222a;
+  --task-selection: rgb(122 146 168 / 0.26);
   --task-popover-shadow: var(--surface-overlay-shadow);
 }
 

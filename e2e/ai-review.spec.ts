@@ -140,7 +140,7 @@ test('深色审批卡使用约定颜色', async ({ page, isMobile, request }) =>
   const colors = await cardStyle(card);
   expect(colors.background).toContain('linear-gradient');
   expect(colors.shadow).not.toBe('none');
-  expect(colors.color).toBe('rgb(230, 233, 236)');
+  expect(colors.color).toBe('rgb(244, 241, 234)');
   await card.screenshot({ path: '/tmp/wwa-approval-dark.png' });
 });
 

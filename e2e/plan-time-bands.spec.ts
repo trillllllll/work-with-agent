@@ -84,8 +84,8 @@ test('日视图按重叠规则绘制不透明背景', async ({ page, request }, 
   await switchDark(page, testInfo.project.name);
   const darkDay = page.locator('[data-testid="time-band-day"][data-date="2026-10-12"]');
   const darkSegments = darkDay.getByTestId('time-band-segment');
-  await expect(darkSegments.nth(0)).toHaveCSS('background-color', 'rgb(24, 38, 61)');
-  await expect(darkSegments.nth(1)).toHaveCSS('background-color', 'rgb(24, 45, 37)');
+  await expect(darkSegments.nth(0)).toHaveCSS('background-color', 'rgb(45, 54, 64)');
+  await expect(darkSegments.nth(1)).toHaveCSS('background-color', 'rgb(43, 56, 59)');
   if (testInfo.project.name === 'chromium') await page.screenshot({ path: '/tmp/wwa-plan-time-bands-dark-day.png' });
 });
 
@@ -540,7 +540,7 @@ test('标签留在侧栏，任务文字与标签不相交', async ({ page, reque
   await page.getByRole('button', { name: '日', exact: true }).click();
   await switchDark(page, testInfo.project.name);
   await checkDay(1280, 112);
-  await expect(day().locator('[data-testid="time-band-segment"][data-start-minute="600"]')).toHaveCSS('background-color', 'rgb(24, 38, 61)');
+  await expect(day().locator('[data-testid="time-band-segment"][data-start-minute="600"]')).toHaveCSS('background-color', 'rgb(45, 54, 64)');
   if (testInfo.project.name === 'chromium') await page.screenshot({ path: '/tmp/wwa-plan-rail-day-dark.png' });
   await checkDay(390, 80);
   await checkDay(375, 80);
