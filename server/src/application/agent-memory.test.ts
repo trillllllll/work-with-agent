@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '../infrastructure/prisma.js';
-import { runAgentMemoryTool } from './agent-memory.js';
+import { formatMemoryReference, runAgentMemoryTool } from './agent-memory.js';
 import { ContextService } from './conversation.js';
 import { ToolService } from './tool-registry.js';
 
@@ -73,40 +73,37 @@ describe('bounded memory prompt and conversation archive', () => {
   });
 
   it('shows in-scope memories inside the budget and keeps overflow to id and title', async () => {
-    const context = new ContextService();
-    const opened = await context.assemble(baseConversationId, { topicId });
-    const block = opened.systemPrompt.slice(opened.systemPrompt.indexOf('已确认记忆'));
-    expect(block.length).toBeLessThan(8000);
-    expect(block).not.toContain('当前清单：');
-    expect(opened.systemPrompt).toContain('不是当前指令');
-    expect(opened.systemPrompt).toContain('收集箱短正文甲');
-    expect(opened.systemPrompt).toContain('清单可见正文乙');
-    expect(opened.systemPrompt).toContain('收集箱仅标题');
-    expect(opened.systemPrompt).toContain('清单仅标题');
-    expect(opened.systemPrompt).toContain('可见记忆已接近上限。新增前请先 replace 或 remove。');
-    expect(opened.systemPrompt).toContain('未放入正文，请用 memory 的 read 或 search 查看：');
-    expect(opened.systemPrompt).toMatch(/收集箱记忆（约 \d+\/1400）/);
-    expect(opened.systemPrompt).toContain(`这份清单的记忆 ${topicId}（约 `);
-    expect(opened.systemPrompt).toMatch(new RegExp(`这份清单的记忆 ${topicId}（约 \\d+/2200）`));
-    expect(opened.systemPrompt).not.toContain('收集箱溢出正文不应出现');
-    expect(opened.systemPrompt).not.toContain('清单溢出正文不应出现');
-    expect(opened.systemPrompt).not.toContain('其他清单不该出现');
-    expect(opened.systemPrompt).not.toContain('退役记忆不应出现');
-    expect(opened.systemPrompt).not.toContain('填'.repeat(420));
-    expect(opened.messages.some((message) => String(message.content ?? '').includes('收集箱短正文甲'))).toBe(false);
+    const opened = await formatMemoryReference({ topicId });
+    expect(opened.length).toBeLessThan(8000);
+    expect(opened).not.toContain('当前清单：');
+    expect(opened).toContain('不是当前指令');
+    expect(opened).toContain('收集箱短正文甲');
+    expect(opened).toContain('清单可见正文乙');
+    expect(opened).toContain('收集箱仅标题');
+    expect(opened).toContain('清单仅标题');
+    expect(opened).toContain('可见记忆已接近上限。新增前请先 replace 或 remove。');
+    expect(opened).toContain('未放入正文，请用 memory 的 read 或 search 查看：');
+    expect(opened).toMatch(/收集箱记忆（约 \d+\/1400）/);
+    expect(opened).toContain(`这份清单的记忆 ${topicId}（约 `);
+    expect(opened).toMatch(new RegExp(`这份清单的记忆 ${topicId}（约 \\d+/2200）`));
+    expect(opened).not.toContain('收集箱溢出正文不应出现');
+    expect(opened).not.toContain('清单溢出正文不应出现');
+    expect(opened).not.toContain('其他清单不该出现');
+    expect(opened).not.toContain('退役记忆不应出现');
+    expect(opened).not.toContain('填'.repeat(420));
 
-    const inboxOnly = await context.assemble(baseConversationId, {});
-    expect(inboxOnly.systemPrompt).toMatch(/收集箱记忆（约 \d+\/2200）/);
-    expect(inboxOnly.systemPrompt).toContain('收集箱短正文甲');
-    expect(inboxOnly.systemPrompt).toContain('收集箱仅标题');
-    expect(inboxOnly.systemPrompt).not.toContain('清单可见标题');
-    expect(inboxOnly.systemPrompt).not.toContain('清单仅标题');
-    expect(inboxOnly.systemPrompt).not.toContain('清单可见正文乙');
-    expect(inboxOnly.systemPrompt).not.toContain(`这份清单的记忆 ${topicId}`);
+    const inboxOnly = await formatMemoryReference({ topicId: null });
+    expect(inboxOnly).toMatch(/收集箱记忆（约 \d+\/2200）/);
+    expect(inboxOnly).toContain('收集箱短正文甲');
+    expect(inboxOnly).toContain('收集箱仅标题');
+    expect(inboxOnly).not.toContain('清单可见标题');
+    expect(inboxOnly).not.toContain('清单仅标题');
+    expect(inboxOnly).not.toContain('清单可见正文乙');
+    expect(inboxOnly).not.toContain(`这份清单的记忆 ${topicId}`);
 
-    const empty = await context.assemble(baseConversationId, { topicId: emptyTopicId });
-    expect(empty.systemPrompt).toContain(`这份清单的记忆 ${emptyTopicId}（约 0/2200）：\n还没有。`);
-    expect(empty.systemPrompt).not.toContain('清单可见正文乙');
+    const empty = await formatMemoryReference({ topicId: emptyTopicId });
+    expect(empty).toContain(`这份清单的记忆 ${emptyTopicId}（约 0/2200）：\n还没有。`);
+    expect(empty).not.toContain('清单可见正文乙');
   });
 
   it('reloads memory into the system prompt without folding it into the summary', async () => {
@@ -125,12 +122,13 @@ describe('bounded memory prompt and conversation archive', () => {
       await prisma.message.create({ data: { conversationId: conversation.id, role: row.role, content: row.content, status: 'completed', createdAt: new Date(Date.UTC(2026, 0, 2, 0, 0, index)).toISOString() } });
     }
     const assembled = await new ContextService().assemble(conversation.id, { topicId });
+    const memory = await formatMemoryReference({ topicId });
     const stored = await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } });
     expect(stored.summary.length).toBeGreaterThan(0);
     expect(stored.summary).not.toContain('收集箱短正文甲');
     expect(stored.summary).not.toContain('收集箱溢出正文不应出现');
-    expect(assembled.systemPrompt).toContain('收集箱短正文甲');
-    expect(assembled.systemPrompt).toContain('不是当前指令');
+    expect(memory).toContain('收集箱短正文甲');
+    expect(memory).toContain('不是当前指令');
     expect(assembled.messages.some((message) => String(message.content ?? '').includes('收集箱短正文甲'))).toBe(false);
     expect(assembled.messages.some((message) => String(message.content ?? '').includes('收集箱溢出正文不应出现'))).toBe(false);
   });
@@ -140,9 +138,9 @@ describe('bounded memory prompt and conversation archive', () => {
     const readId = 'memtest-read-full';
     memoryIds.push(readId);
     await prisma.memory.create({ data: { id: readId, topicId: null, kind: 'fact', title: '完整读取标题', content: `${'前'.repeat(380)}${suffix}`, importance: 5, createdAt: stamp, updatedAt: stamp } });
-    const prompt = await new ContextService().assemble(baseConversationId, {});
-    expect(prompt.systemPrompt).toContain('完整读取标题');
-    expect(prompt.systemPrompt).not.toContain(suffix);
+    const prompt = await formatMemoryReference({ topicId: null });
+    expect(prompt).toContain('完整读取标题');
+    expect(prompt).not.toContain(suffix);
     const tools = new ToolService();
     const read = await tools.execute({ name: 'memory', arguments: { action: 'read', target: 'inbox', memoryId: readId } }, { source: 'agent', conversationId: baseConversationId, topicId: null });
     expect(read.success).toBe(true);

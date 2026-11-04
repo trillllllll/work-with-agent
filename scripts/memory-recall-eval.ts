@@ -32,7 +32,16 @@ type CaseResult = {
     missedIds: string[];
     recall: number | null;
   };
-  new: null;
+  new: {
+    coreIds: string[];
+    recallIds: string[];
+    chars: number;
+    irrelevantIds: string[];
+    hitIds: string[];
+    missedIds: string[];
+    recall: number | null;
+    skipped: string | null;
+  } | null;
 };
 
 function parseArgs() {
@@ -153,6 +162,7 @@ async function buildSynthetic(dbPath: string) {
   };
 
   const memories: Array<{ id: string; identityId: string; topicId: string | null; kind: string; title: string; content: string; status: string; health: string; importance: number; labels: string; origin: string; revision: number; evidence: string; createdAt: string; updatedAt: string }> = [];
+  const factById = new Map<string, string>();
   let index = 0;
   for (const theme of THEMES) {
     theme.facts.forEach((fact, factIndex) => {
@@ -160,8 +170,10 @@ async function buildSynthetic(dbPath: string) {
       const aliased = factIndex % 4 === 0;
       const head = aliased ? theme.alias : theme.keyword;
       const detail = `${fact}。这条是${theme.key}主题的第${factIndex + 1}条记录，用于评测检索。`;
+      const id = `mem-${String(index + 1).padStart(4, '0')}`;
+      factById.set(id, fact);
       memories.push({
-        id: `mem-${String(index + 1).padStart(4, '0')}`,
+        id,
         identityId: 'work',
         topicId: theme.topicId,
         kind: kindOf(index),
@@ -185,23 +197,20 @@ async function buildSynthetic(dbPath: string) {
   }
   await prisma.memory.createMany({ data: memories });
 
-  // 30 个用例：18 单期望、4 多期望、4 简单回复、4 追问。
+  // 30 个用例：16 单期望（含 2 条近义标题）、2 条 all 范围、4 多期望、4 简单回复、4 追问。
+  // 查询模拟真实问法：引用记忆正文里的两段短语（头 8 字 + 尾 8 字），
+  // 而不是"单关键词+填充词"——后者只产生 1 个 3 字切片，会被命中门槛全部挡掉。
+  const quoteOf = (fact: string) => `${fact.slice(0, 8)}，${fact.length >= 22 ? fact.slice(-8) : fact.slice(8, 16)}，这条约定现在是什么？`;
   const byTheme = (key: string) => memories.filter((memory) => THEMES.find((theme) => theme.key === key && memory.labels.includes(key)));
   const cases: EvalCase[] = [];
   let caseNo = 0;
   const addCase = (query: string, scope: Scope, expect: string[], trivial = false) => { caseNo += 1; cases.push({ id: `syn-${String(caseNo).padStart(2, '0')}`, query, scope, expect, ...(trivial ? { trivial: true } : {}) }); };
 
-  const queryTemplates = [
-    (kw: string) => `${kw}的约定是什么？`,
-    (kw: string) => `查一下${kw}现在怎么处理`,
-    (kw: string) => `${kw}这块有什么要注意的`,
-    (kw: string) => `帮我确认${kw}的细节`,
-  ];
   const inboxThemes = THEMES.filter((theme) => theme.topicId === null);
   inboxThemes.slice(0, 4).forEach((theme, themeIndex) => {
     const pool = byTheme(theme.key);
     const memory = pool[themeIndex % pool.length];
-    addCase(queryTemplates[themeIndex % queryTemplates.length](theme.keyword), { kind: 'inbox' }, [memory.id]);
+    addCase(quoteOf(factById.get(memory.id)!), { kind: 'inbox' }, [memory.id]);
   });
   const topicPlan: Array<[string, string]> = [
     ['db-backup', 'syn-topic-deploy'], ['release', 'syn-topic-deploy'], ['logging', 'syn-topic-deploy'],
@@ -209,24 +218,22 @@ async function buildSynthetic(dbPath: string) {
     ['method', 'syn-topic-study'], ['review', 'syn-topic-study'], ['mistakes', 'syn-topic-study'],
   ];
   topicPlan.forEach(([themeKey, topicId], i) => {
-    const theme = THEMES.find((item) => item.key === themeKey)!;
     const pool = byTheme(themeKey);
     const memory = pool[i % pool.length];
-    addCase(queryTemplates[i % queryTemplates.length](theme.keyword), { kind: 'topic', topicId }, [memory.id]);
+    addCase(quoteOf(factById.get(memory.id)!), { kind: 'topic', topicId }, [memory.id]);
   });
-  // 近义改写：期望条目的标题用别名，query 用关键词（靠正文命中）。
-  const aliasTheme = THEMES.find((item) => item.key === 'ratelimit')!;
-  const aliasMemory = byTheme('ratelimit').find((memory) => memory.title.startsWith(aliasTheme.alias));
-  if (aliasMemory) addCase(`${aliasTheme.keyword}的规则再说一遍`, { kind: 'topic', topicId: aliasTheme.topicId! }, [aliasMemory.id]);
-  const aliasTheme2 = THEMES.find((item) => item.key === 'schedule')!;
-  const aliasMemory2 = byTheme('schedule').find((memory) => memory.title.startsWith(aliasTheme2.alias));
-  if (aliasMemory2) addCase(`现在的${aliasTheme2.keyword}是什么`, { kind: 'topic', topicId: aliasTheme2.topicId! }, [aliasMemory2.id]);
+  // 近义改写：期望条目的标题用别名，query 用别名加事实短语。
+  const aliasPlan: Array<[string]> = [['monitor'], ['notify']];
+  for (const [themeKey] of aliasPlan) {
+    const theme = THEMES.find((item) => item.key === themeKey)!;
+    const aliasMemory = byTheme(themeKey).find((memory) => memory.title.startsWith(theme.alias));
+    if (aliasMemory) addCase(`${theme.alias}，${factById.get(aliasMemory.id)!.slice(0, 8)}，这条约定现在是什么？`, { kind: 'topic', topicId: theme.topicId! }, [aliasMemory.id]);
+  }
   // all 范围只含收集箱（与现状一致）。
-  const allPool = byTheme('server');
-  addCase(`${THEMES.find((item) => item.key === 'server')!.keyword}的规范有哪些`, { kind: 'all' }, [allPool[0].id]);
-  addCase(`${THEMES.find((item) => item.key === 'domains')!.keyword}怎么管理`, { kind: 'all' }, [byTheme('domains')[2].id]);
+  addCase(quoteOf(factById.get(byTheme('server')[0].id)!), { kind: 'all' }, [byTheme('server')[0].id]);
+  addCase(quoteOf(factById.get(byTheme('domains')[2].id)!), { kind: 'all' }, [byTheme('domains')[2].id]);
 
-  // 多期望：同一主题两条。
+  // 多期望：两条记忆各引一段短语。
   const multiPlan: Array<[string, Scope]> = [
     ['env', { kind: 'topic', topicId: 'syn-topic-deploy' }],
     ['rollback', { kind: 'topic', topicId: 'syn-topic-deploy' }],
@@ -234,9 +241,10 @@ async function buildSynthetic(dbPath: string) {
     ['export', { kind: 'topic', topicId: 'syn-topic-product' }],
   ];
   for (const [themeKey, scope] of multiPlan) {
-    const theme = THEMES.find((item) => item.key === themeKey)!;
     const pool = byTheme(themeKey);
-    addCase(`${theme.keyword}和${theme.alias}都讲一下`, scope, [pool[1].id, pool[5].id]);
+    const first = factById.get(pool[1].id)!;
+    const second = factById.get(pool[5].id)!;
+    addCase(`${first.slice(0, 8)} 和 ${second.slice(0, 8)} 的约定分别说一下`, scope, [pool[1].id, pool[5].id]);
   }
 
   addCase('好的', { kind: 'inbox' }, [], true);
@@ -259,6 +267,7 @@ async function buildSynthetic(dbPath: string) {
 async function runEval(dbPath: string, casesPath: string, outPath: string) {
   process.env.DATABASE_URL = `file:${dbPath}`;
   const { formatMemoryReference } = await import('../server/src/application/agent-memory.js');
+  const { buildMemoryContext } = await import('../server/src/application/memory-recall.js');
   const { takeKnowledgeSnapshot } = await import('../server/src/application/knowledge.js');
   const { ownerActor } = await import('../server/src/application/security.js');
   const { codePointLength } = await import('../server/src/application/library/text.js');
@@ -289,6 +298,14 @@ async function runEval(dbPath: string, casesPath: string, outPath: string) {
     const injected = [...new Set([...entryIds, ...briefIds])];
     const hit = item.expect.filter((id) => injected.includes(id));
     const missed = item.expect.filter((id) => !injected.includes(id));
+
+    // 新方案（P2 起）：注入 = 常驻 ∪ 相关记忆；字数 = coreText + recallText。
+    const memoryContext = await buildMemoryContext({ topicId, identityId: 'work', userText: item.query });
+    const newInjected = [...memoryContext.stats.coreIds, ...memoryContext.stats.recallIds];
+    const newHit = item.expect.filter((id) => newInjected.includes(id));
+    const newMissed = item.expect.filter((id) => !newInjected.includes(id));
+    const irrelevant = memoryContext.stats.recallIds.filter((id) => !item.expect.includes(id));
+
     results.push({
       id: item.id, query: item.query, scope: item.scope, expect: item.expect, trivial: Boolean(item.trivial),
       old: {
@@ -296,25 +313,47 @@ async function runEval(dbPath: string, casesPath: string, outPath: string) {
         hitIds: hit, missedIds: missed,
         recall: item.expect.length ? hit.length / item.expect.length : null,
       },
-      new: null,
+      new: {
+        coreIds: memoryContext.stats.coreIds,
+        recallIds: memoryContext.stats.recallIds,
+        chars: memoryContext.stats.coreChars + memoryContext.stats.recallChars,
+        irrelevantIds: irrelevant,
+        hitIds: newHit, missedIds: newMissed,
+        recall: item.expect.length ? newHit.length / item.expect.length : null,
+        skipped: memoryContext.stats.skipped,
+      },
     });
   }
   await prisma.$disconnect();
 
   const measurable = results.filter((item) => item.expect.length > 0);
+  const nonTrivial = results.filter((item) => !item.trivial);
+  const oldRecallMean = measurable.length ? measurable.reduce((sum, item) => sum + (item.old.recall ?? 0), 0) / measurable.length : null;
+  const newRecallMean = measurable.length ? measurable.reduce((sum, item) => sum + (item.new?.recall ?? 0), 0) / measurable.length : null;
   const aggregate = {
-    scheme: 'old',
+    schemes: ['old', 'new'],
     cases: results.length,
     measurableCases: measurable.length,
-    recallMean: measurable.length ? measurable.reduce((sum, item) => sum + (item.old.recall ?? 0), 0) / measurable.length : null,
-    charsMean: results.length ? results.reduce((sum, item) => sum + item.old.chars, 0) / results.length : null,
-    missedCaseIds: measurable.filter((item) => (item.old.recall ?? 1) < 1).map((item) => item.id),
+    recallMean: { old: oldRecallMean, new: newRecallMean },
+    charsMean: {
+      old: results.length ? results.reduce((sum, item) => sum + item.old.chars, 0) / results.length : null,
+      new: results.length ? results.reduce((sum, item) => sum + (item.new?.chars ?? 0), 0) / results.length : null,
+    },
+    irrelevantMean: nonTrivial.length ? nonTrivial.reduce((sum, item) => sum + (item.new?.irrelevantIds.length ?? 0), 0) / nonTrivial.length : null,
+    trivialClean: results.filter((item) => item.trivial).filter((item) => (item.new?.recallIds.length ?? 1) === 0).length,
+    trivialTotal: results.filter((item) => item.trivial).length,
+    missedCaseIds: {
+      old: measurable.filter((item) => (item.old.recall ?? 1) < 1).map((item) => item.id),
+      new: measurable.filter((item) => (item.new?.recall ?? 1) < 1).map((item) => item.id),
+    },
   };
   const report = { generatedAt: new Date().toISOString(), db: dbPath, cases: casesPath, aggregate, results };
   await mkdir(dirname(outPath), { recursive: true });
   await writeFile(outPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+  const pct = (value: number | null) => (typeof value === 'number' ? `${(value * 100).toFixed(1)}%` : '—');
   console.log(`[评测] ${results.length} 个用例 → ${outPath}`);
-  console.log(`[汇总] 召回率均值 ${typeof aggregate.recallMean === 'number' ? (aggregate.recallMean * 100).toFixed(1) + '%' : '—'}；记忆字数均值 ${aggregate.charsMean === null ? '—' : Math.round(aggregate.charsMean)}；漏召回用例 ${aggregate.missedCaseIds.join(', ') || '无'}`);
+  console.log(`[旧方案] 召回 ${pct(aggregate.recallMean.old)}；字数均值 ${aggregate.charsMean.old === null ? '—' : Math.round(aggregate.charsMean.old)}`);
+  console.log(`[新方案] 召回 ${pct(aggregate.recallMean.new)}；字数均值 ${aggregate.charsMean.new === null ? '—' : Math.round(aggregate.charsMean.new)}；无关条目均值 ${aggregate.irrelevantMean === null ? '—' : aggregate.irrelevantMean.toFixed(2)}；简单回复干净 ${aggregate.trivialClean}/${aggregate.trivialTotal}；漏召回 ${aggregate.missedCaseIds.new.join(', ') || '无'}`);
 }
 
 async function main() {

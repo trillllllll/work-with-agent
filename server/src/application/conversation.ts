@@ -4,7 +4,6 @@ import { withChatAttachments } from './chat-attachments.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { TASK_BATCH_INSTRUCTIONS } from '../domain/task-batch.js';
 import { readStoredApproval } from '../domain/task-batch-types.js';
-import { formatMemoryReference } from './agent-memory.js';
 
 const now = () => new Date().toISOString();
 const notFound = (message: string) => Object.assign(new Error(message), { status: 404 });
@@ -383,8 +382,7 @@ export class ContextService {
   async assemble(conversationId: string, pageContext: PageContextInput = {}, signal?: AbortSignal, onSummary?: OnSummary) {
     const { messages, summary } = await this.syncSummary(conversationId, signal, onSummary);
     const tasks = await nearbyTasks(pageContext);
-    const memory = await formatMemoryReference(pageContext);
     const pending = await pendingBatchLines(conversationId);
-    return { systemPrompt: `${formatSystemPrompt(pageContext, tasks, pending)}\n\n${memory}`, messages: replayWindow(messages, summary) };
+    return { systemPrompt: formatSystemPrompt(pageContext, tasks, pending), messages: replayWindow(messages, summary) };
   }
 }

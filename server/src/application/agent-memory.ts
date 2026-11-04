@@ -89,6 +89,9 @@ async function loadEntries(topicId: string | null, identityId: string = 'work') 
   });
 }
 
+/** 旧版记忆注入渲染（按范围预算装填，与当前问题无关）。
+ * 生产路径已改用 memory-recall.ts 的 buildMemoryContext；保留本函数供
+ * scripts/memory-recall-eval.ts 输出旧方案对照结果（计划 P0：P2 起两套结果并存）。 */
 export async function formatMemoryReference(page: { topicId?: string | null; identityId?: string | null }) {
   const topicId = openTopicId(page.topicId);
   const identityId = page.identityId ?? 'work';
