@@ -6,7 +6,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 33,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "inbox",
@@ -14,7 +17,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 37,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "topics",
@@ -22,7 +28,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 29,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "plan",
@@ -30,7 +39,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 382,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "quadrant",
@@ -38,7 +50,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 33,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "focus",
@@ -46,7 +61,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 29,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "stats",
@@ -54,7 +72,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 42,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "library",
@@ -62,7 +83,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 45,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "knowledge/brief",
@@ -70,7 +94,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 41,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "knowledge/memories",
@@ -78,7 +105,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 35,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "knowledge/extractions",
@@ -86,7 +116,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 42,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "reviews",
@@ -94,7 +127,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 28,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "proposals",
@@ -102,7 +138,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 28,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "skills",
@@ -110,7 +149,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 30,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "connections",
@@ -118,7 +160,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 29,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "runs",
@@ -126,7 +171,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 30,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "worktrees",
@@ -134,7 +182,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 25,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "search",
@@ -142,7 +193,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 33,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "tags",
@@ -150,7 +204,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 35,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "archived",
@@ -158,7 +215,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 25,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings",
@@ -166,7 +226,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 54,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/model",
@@ -174,7 +237,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 54,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/local",
@@ -182,7 +248,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 41,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/skills",
@@ -190,7 +259,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 38,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/projects",
@@ -198,7 +270,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 42,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/ui",
@@ -206,7 +281,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 70,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/data",
@@ -214,7 +292,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 44,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/about",
@@ -222,7 +303,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 37,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "changes",
@@ -230,7 +314,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 38,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "trash",
@@ -238,7 +325,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 30,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "chat",
@@ -246,7 +336,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 38,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "more",
@@ -254,7 +347,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 50,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "today",
@@ -262,7 +358,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 13,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "inbox",
@@ -270,7 +369,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 18,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "topics",
@@ -278,7 +380,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 10,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "plan",
@@ -286,7 +391,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 363,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "quadrant",
@@ -294,7 +402,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 14,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "focus",
@@ -302,7 +413,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 10,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "stats",
@@ -310,7 +424,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 23,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "library",
@@ -318,7 +435,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 19,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "knowledge/brief",
@@ -326,7 +446,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 22,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "knowledge/memories",
@@ -334,7 +457,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 16,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "knowledge/extractions",
@@ -342,7 +468,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 23,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "reviews",
@@ -350,7 +479,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 9,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "proposals",
@@ -358,7 +490,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 9,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "skills",
@@ -366,7 +501,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 11,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "connections",
@@ -374,7 +512,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 10,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "runs",
@@ -382,7 +523,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 11,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "worktrees",
@@ -390,7 +534,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 6,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "search",
@@ -398,7 +545,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 14,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "tags",
@@ -406,7 +556,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 16,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "archived",
@@ -414,7 +567,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 6,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings",
@@ -422,7 +578,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 16,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/model",
@@ -430,7 +589,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 25,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/local",
@@ -438,7 +600,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 12,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/skills",
@@ -446,7 +611,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 9,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/projects",
@@ -454,7 +622,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 13,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/ui",
@@ -462,7 +633,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 41,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/data",
@@ -470,7 +644,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 15,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/about",
@@ -478,7 +655,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 8,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "changes",
@@ -486,7 +666,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 12,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "trash",
@@ -494,7 +677,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 8,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "chat",
@@ -502,7 +688,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 18,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "more",
@@ -510,7 +699,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(241, 240, 235)"
+      "background": "rgb(234, 230, 222)",
+      "controlCount": 31,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "today",
@@ -518,7 +710,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 33,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "inbox",
@@ -526,7 +721,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 37,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "topics",
@@ -534,7 +732,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 29,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "plan",
@@ -542,7 +743,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 382,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "quadrant",
@@ -550,7 +754,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 33,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "focus",
@@ -558,7 +765,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 29,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "stats",
@@ -566,7 +776,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 42,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "library",
@@ -574,7 +787,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 45,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "knowledge/brief",
@@ -582,7 +798,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 41,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "knowledge/memories",
@@ -590,7 +809,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 35,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "knowledge/extractions",
@@ -598,7 +820,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 42,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "reviews",
@@ -606,7 +831,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 28,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "proposals",
@@ -614,7 +842,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 28,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "skills",
@@ -622,7 +853,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 30,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "connections",
@@ -630,7 +864,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 29,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "runs",
@@ -638,7 +875,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 30,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "worktrees",
@@ -646,7 +886,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 25,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "search",
@@ -654,7 +897,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 33,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "tags",
@@ -662,7 +908,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 35,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "archived",
@@ -670,7 +919,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 25,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings",
@@ -678,7 +930,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 54,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/model",
@@ -686,7 +941,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 54,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/local",
@@ -694,7 +952,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 41,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/skills",
@@ -702,7 +963,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 38,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/projects",
@@ -710,7 +974,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 42,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/ui",
@@ -718,7 +985,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 70,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/data",
@@ -726,7 +996,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 44,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/about",
@@ -734,7 +1007,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 37,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "changes",
@@ -742,7 +1018,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 38,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "trash",
@@ -750,7 +1029,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 30,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "chat",
@@ -758,7 +1040,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 38,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "more",
@@ -766,7 +1051,10 @@
       "viewport": 1586,
       "pageWidth": 1586,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 50,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "today",
@@ -774,7 +1062,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 13,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "inbox",
@@ -782,7 +1073,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 18,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "topics",
@@ -790,7 +1084,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 10,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "plan",
@@ -798,7 +1095,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 363,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "quadrant",
@@ -806,7 +1106,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 14,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "focus",
@@ -814,7 +1117,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 10,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "stats",
@@ -822,7 +1128,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 23,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "library",
@@ -830,7 +1139,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 19,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "knowledge/brief",
@@ -838,7 +1150,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 22,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "knowledge/memories",
@@ -846,7 +1161,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 16,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "knowledge/extractions",
@@ -854,7 +1172,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 23,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "reviews",
@@ -862,7 +1183,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 9,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "proposals",
@@ -870,7 +1194,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 9,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "skills",
@@ -878,7 +1205,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 11,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "connections",
@@ -886,7 +1216,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 10,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "runs",
@@ -894,7 +1227,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 11,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "worktrees",
@@ -902,7 +1238,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 6,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "search",
@@ -910,7 +1249,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 14,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "tags",
@@ -918,7 +1260,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 16,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "archived",
@@ -926,7 +1271,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 6,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings",
@@ -934,7 +1282,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 16,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/model",
@@ -942,7 +1293,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 25,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/local",
@@ -950,7 +1304,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 12,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/skills",
@@ -958,7 +1315,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 9,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/projects",
@@ -966,7 +1326,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 13,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/ui",
@@ -974,7 +1337,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 41,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/data",
@@ -982,7 +1348,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 15,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "settings/about",
@@ -990,7 +1359,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 8,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "changes",
@@ -998,7 +1370,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 12,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "trash",
@@ -1006,7 +1381,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 8,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "chat",
@@ -1014,7 +1392,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 18,
+      "uncovered": [],
+      "wrongPaint": []
     },
     {
       "route": "more",
@@ -1022,7 +1403,10 @@
       "viewport": 390,
       "pageWidth": 390,
       "fontSize": "14px",
-      "background": "rgb(28, 33, 38)"
+      "background": "rgb(30, 36, 43)",
+      "controlCount": 31,
+      "uncovered": [],
+      "wrongPaint": []
     }
   ],
   "errors": [],

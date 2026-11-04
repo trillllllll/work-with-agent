@@ -1,0 +1,1137 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f7f5ef">
+  <meta name="description" content="日程页组件原型。离线运行，使用示例数据，不连接真实账号。">
+  <title>DAYLINE · 暖白陶瓷质感版 r3</title>
+  <style>
+/* tokens.css */
+/* Porcelain / 暖白陶瓷 · Shared semantic design tokens. */
+:root {
+  color-scheme: light;
+  --canvas: #eae6de;
+  --surface: #fffdf8;
+  --surface-low: #f2efe8;
+  --surface-high: #fffefa;
+  --text: #293535;
+  --muted: #626d67;
+  --line: #e1dfd7;
+  --line-soft: #ece9e1;
+  --accent: #43618C;
+  --accent-soft: #E7EEF8;
+  --work: #e9eeeb;
+  --commute: #f2eade;
+  --commute-ink: #6B573A;
+  --edge-rail: #8E9FBC; --edge-rail-muted: #c9d0da; --edge-work: #c6cee1; --edge-commute: #d9c5a7;
+  --danger: #a44840;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-6: 24px;
+  --radius-task: 10px;
+  --radius-control: 10px;
+  --radius-dialog: 22px;
+  --material-face: linear-gradient(155deg, #fffefa 0%, #faf7f0 100%);
+  --material-active: linear-gradient(150deg, #F7FAFE 0%, #E7EEF8 100%);
+  --shadow-rest: inset 0 1px 0 rgb(255 255 255 / 95%), 0 1px 2px rgb(63 55 38 / 7%), 0 5px 12px rgb(63 55 38 / 5%);
+  --shadow-selected: inset 0 1px 0 rgb(255 255 255 / 95%), 0 0 0 1px rgb(53 91 102 / 32%), 0 5px 16px rgb(53 70 64 / 11%);
+  --shadow-pressed: inset 0 2px 4px rgb(63 55 38 / 9%), inset 0 -1px 0 rgb(255 255 255 / 65%);
+  --shadow-control: inset 0 1px 0 #fff, 0 1px 2px rgb(63 55 38 / 10%), 0 3px 7px rgb(63 55 38 / 5%);
+  --floating-shadow: inset 0 1px 0 #fff, 0 20px 70px rgb(41 47 42 / 20%);
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
+  --hour-height: 96px;
+  --time-gutter: 54px;
+  --context-gutter: 22px;
+
+  /* r3: skin tokens (light values) */
+  --frame-bg: #f9f7f2; --frame-border: #ffffffa8; --frame-shadow: 0 3px 8px #4e4b3c08, 0 25px 65px #4e4b3c12;
+  --canvas-glow: #f9f6ef; --mobile-canvas: #f9f7f1;
+  --primary-col-paint: linear-gradient(140deg, #fdfbf6, #f5f2ec);
+  --chrome-ink: #64706a; --icon-ink: #626d67; --icon-hover: #e8e7df80;
+  --key-border: #deded38a; --key-border-strong: #e0dfd4;
+  --switch-track: #e8e6df; --switch-track-shadow: inset 0 1px 3px #514c3e0e, 0 1px 0 #fff;
+  --count-chip-bg: #e9e7df; --count-chip-shadow: inset 0 1px 1px #5a554d09;
+  --primary-paint: linear-gradient(150deg, #4E6C99, #3E5883); --primary-hover-paint: linear-gradient(150deg, #5A79A6, #46628D);
+  --primary-border: #3A5478; --primary-ink: #FFFDF8;
+  --primary-shadow: inset 0 1px 0 rgb(255 253 248 / 0.28), 0 3px 7px rgb(62 88 131 / 0.16);
+  --primary-active-shadow: inset 0 2px 4px rgb(26 38 55 / 0.30);
+  --plate-bg: #f4f2ec; --plate-border: #e1ded5; --plate-inset: inset 0 2px 6px #56504105; --scrollbar-thumb: #c9cdc4;
+  --hour-line: #e1ded5a6; --hour-line-soft: #e7e3da85; --scale-ink: #5D685C;
+  --band-work-paint: linear-gradient(110deg, #e5ece8b3, #edf0e6a6); --band-commute-paint: linear-gradient(115deg, #eee3d1b3, #f5ede0a6);
+  --band-highlight: inset 0 1px 0 #fff6; --band-context-ink: #535F55;
+  --band-symbol-bg: #fffaf18c; --band-symbol-inset: #fffc;
+  --card-border: #deded372; --card-hover-bg: #f9faff; --card-hover-paint: linear-gradient(150deg, #fffefb, #f9f8f1);
+  --card-hover-shadow: inset 0 1px 0 #fff, 0 2px 4px #3f372612, 0 8px 16px #3f37260c;
+  --card-active-bg: #eeeee5; --card-done-bg: #fbfcfd;
+  --done-paint: linear-gradient(150deg, #f5f5ee, #f0f0e8); --done-highlight: inset 0 1px 0 #fff8;
+  --done-border: #d9ded37a; --done-ink: #626d65; --selected-border: #A9BCDA;
+  --overflow-bg: #e0e6e1a6; --overflow-hover: #d7e1da; --overflow-ink: #47584E; --overflow-shadow: inset 0 1px 1px #7d8e7e0b;
+  --now-ink: #b56b4a; --now-label-ink: #9e5939; --now-label-bg: #fff9ed;
+  --nav-pill-paint: linear-gradient(150deg, #edf2ec, #e3ebe5); --nav-pill-shadow: inset 0 1px 0 #fff9;
+  --panel-paint: linear-gradient(130deg, #f9f8f3, #eeeee6); --panel-border: #e1e0d5; --panel-inset: inset 1px 0 0 #fff9;
+  --caption-ink: #626e65;
+  --counts-bg: #e8e9e0; --counts-shadow: inset 0 1px 3px #69705f0c, 0 1px 0 #fff8; --counts-divider: #d8ddcf;
+  --track-bg: #dce1d6; --track-fill: #7f9e8e;
+  --dot-border: #b6c2b7; --dot-shadow: inset 0 1px 1px #6b786309;
+  --dot-done-bg: #dce6dc; --dot-done-border: #c9d7cb; --dot-done-ink: #587966; --dot-done-shadow: inset 0 1px 0 #fff9;
+  --demo-well-bg: #eeece4; --demo-well-shadow: inset 0 1px 2px #766d5808;
+  --layer-base-bg: #e9e7df; --layer-base-shadow: inset 0 1px 3px #6760500c;
+  --swatch-inset: inset 0 1px 0 #ffffff70; --chip-bg: #fcfaf4; --chip-shadow: inset 0 1px 0 #fff;
+  --spacing-fill: #dfe7dd; --spacing-border: #b0c6b6; --hairline: #e2e1d7; --empty-bg: #faf8f2;
+  --toast-bg: #344c4a; --toast-ink: #FFFDF8; --toast-shadow: 0 5px 20px #243a3826; --demo-bar-bg: #f7f5ef;
+  --backdrop: rgb(32 39 51 / 0.28); --field-bg: #f3f2eb; --field-border: #dadcd0; --field-shadow: inset 0 1px 2px #4d583a08;
+  --dialog-paint: linear-gradient(145deg, #fffdf8, #f3f2e9); --dialog-border: #fff9;
+}
+
+/* r3: dark theme · 阴天湖面蓝灰：炭黑底、暖白字、雾蓝强调、黄铜点睛 */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #1E242B; --surface: #262E38; --surface-low: #1B222A; --surface-high: #2E3844;
+  --text: #F4F1EA; --muted: #A3AEBB; --line: #39434E; --line-soft: #313B46;
+  --accent: #96AFCF; --accent-soft: #2B3A4D; --danger: #D89B8F;
+  --work: #26313A; --commute: #32302B; --commute-ink: #C9A876;
+  --edge-rail: #5A7191; --edge-rail-muted: #46505C; --edge-work: #3E4E60; --edge-commute: #6E5B41;
+  --material-face: linear-gradient(155deg, #2A333E 0%, #262E38 100%);
+  --material-active: linear-gradient(150deg, #33445C 0%, #2C3B50 100%);
+  --shadow-rest: inset 0 1px 0 rgb(244 241 234 / 0.07), 0 1px 2px rgb(0 0 0 / 0.22), 0 5px 12px rgb(0 0 0 / 0.16);
+  --shadow-selected: inset 0 1px 0 rgb(244 241 234 / 0.09), 0 0 0 1px rgb(91 120 158 / 0.45), 0 5px 16px rgb(0 0 0 / 0.30);
+  --shadow-pressed: inset 0 2px 4px rgb(0 0 0 / 0.28), inset 0 -1px 0 rgb(244 241 234 / 0.04);
+  --shadow-control: inset 0 1px 0 rgb(244 241 234 / 0.08), 0 1px 2px rgb(0 0 0 / 0.25), 0 3px 7px rgb(0 0 0 / 0.15);
+  --floating-shadow: inset 0 1px 0 rgb(244 241 234 / 0.08), 0 20px 70px rgb(0 0 0 / 0.55);
+  --frame-bg: #232A33; --frame-border: rgb(244 241 234 / 0.08); --frame-shadow: 0 3px 8px rgb(0 0 0 / 0.22), 0 25px 65px rgb(0 0 0 / 0.38);
+  --canvas-glow: #2A3542; --mobile-canvas: #1A2027;
+  --primary-col-paint: linear-gradient(140deg, #262E38, #20272F);
+  --chrome-ink: #7E8894; --icon-ink: #B9C2CD; --icon-hover: rgb(148 163 183 / 0.10);
+  --key-border: rgb(148 163 183 / 0.18); --key-border-strong: #3A4450;
+  --switch-track: #1A2027; --switch-track-shadow: inset 0 1px 3px rgb(0 0 0 / 0.30), 0 1px 0 rgb(244 241 234 / 0.05);
+  --count-chip-bg: #2A323C; --count-chip-shadow: inset 0 1px 1px rgb(0 0 0 / 0.25);
+  --primary-paint: linear-gradient(150deg, #56749E, #425E86); --primary-hover-paint: linear-gradient(150deg, #6283AE, #4C6A94);
+  --primary-border: #3B5478; --primary-ink: #F4F1EA;
+  --primary-shadow: inset 0 1px 0 rgb(244 241 234 / 0.18), 0 3px 8px rgb(0 0 0 / 0.30);
+  --primary-active-shadow: inset 0 2px 4px rgb(6 10 16 / 0.45);
+  --plate-bg: #20272F; --plate-border: #343E4A; --plate-inset: inset 0 2px 6px rgb(0 0 0 / 0.18); --scrollbar-thumb: rgb(148 163 183 / 0.26);
+  --hour-line: rgb(88 102 118 / 0.35); --hour-line-soft: rgb(88 102 118 / 0.22); --scale-ink: #96A1AF;
+  --band-work-paint: linear-gradient(110deg, rgb(122 146 168 / 0.20), rgb(122 146 168 / 0.13)); --band-commute-paint: linear-gradient(115deg, rgb(196 164 118 / 0.14), rgb(196 164 118 / 0.09));
+  --band-highlight: inset 0 1px 0 rgb(244 241 234 / 0.07); --band-context-ink: #A8B4C2;
+  --band-symbol-bg: rgb(244 241 234 / 0.06); --band-symbol-inset: rgb(244 241 234 / 0.10);
+  --card-border: rgb(148 163 183 / 0.18); --card-hover-bg: #2E3844; --card-hover-paint: linear-gradient(150deg, #2E3844, #29323E);
+  --card-hover-shadow: inset 0 1px 0 rgb(244 241 234 / 0.06), 0 2px 4px rgb(0 0 0 / 0.25), 0 8px 16px rgb(0 0 0 / 0.18);
+  --card-active-bg: #1D242C; --card-done-bg: #232A32;
+  --done-paint: linear-gradient(150deg, #232A32, #20262E); --done-highlight: inset 0 1px 0 rgb(244 241 234 / 0.05);
+  --done-border: rgb(88 102 118 / 0.20); --done-ink: #98A2AC; --selected-border: #5B789E;
+  --overflow-bg: rgb(148 163 183 / 0.16); --overflow-hover: rgb(148 163 183 / 0.24); --overflow-ink: #9FB0C2; --overflow-shadow: inset 0 1px 1px rgb(0 0 0 / 0.20);
+  --now-ink: #C9A876; --now-label-ink: #D9BC8C; --now-label-bg: #232A33;
+  --nav-pill-paint: linear-gradient(150deg, #2E3D52, #283648); --nav-pill-shadow: inset 0 1px 0 rgb(244 241 234 / 0.07);
+  --panel-paint: linear-gradient(130deg, #242C36, #1F262E); --panel-border: #343E4A; --panel-inset: inset 1px 0 0 rgb(244 241 234 / 0.05);
+  --caption-ink: #96A1AF;
+  --counts-bg: #1B222A; --counts-shadow: inset 0 1px 3px rgb(0 0 0 / 0.30), 0 1px 0 rgb(244 241 234 / 0.04); --counts-divider: #333D48;
+  --track-bg: #2B3540; --track-fill: #7E9CC0;
+  --dot-border: #96A5B7; --dot-shadow: inset 0 1px 1px rgb(0 0 0 / 0.22);
+  --dot-done-bg: #33414F; --dot-done-border: #465666; --dot-done-ink: #A9C4B4; --dot-done-shadow: inset 0 1px 0 rgb(244 241 234 / 0.06);
+  --demo-well-bg: #1B222A; --demo-well-shadow: inset 0 1px 2px rgb(0 0 0 / 0.25);
+  --layer-base-bg: #1A2027; --layer-base-shadow: inset 0 1px 3px rgb(0 0 0 / 0.35);
+  --swatch-inset: inset 0 1px 0 rgb(244 241 234 / 0.08); --chip-bg: #262E38; --chip-shadow: inset 0 1px 0 rgb(244 241 234 / 0.06);
+  --spacing-fill: #33445C; --spacing-border: #5B789E; --hairline: #333D48; --empty-bg: #262E38;
+  --toast-bg: #10161C; --toast-ink: #F4F1EA; --toast-shadow: 0 5px 20px rgb(0 0 0 / 0.40); --demo-bar-bg: #1A2027;
+  --backdrop: rgb(6 10 16 / 0.55); --field-bg: #1B222A; --field-border: #3A4450; --field-shadow: inset 0 1px 2px rgb(0 0 0 / 0.25);
+  --dialog-paint: linear-gradient(145deg, #262E38, #222932); --dialog-border: rgb(244 241 234 / 0.08);
+}
+
+</style>
+  <style>
+/* styles.css */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { color: var(--text); background: var(--canvas); font-family: var(--font); font-size: 14px; -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; color: inherit; -webkit-tap-highlight-color: transparent; }
+button:disabled { cursor: not-allowed; opacity: .5; }
+button, input, textarea, select { touch-action: manipulation; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+button svg { pointer-events: none; }
+button { border: 0; background: none; }
+svg.icon { width: 20px; height: 20px; display: block; flex: 0 0 auto; stroke-width: 1.7; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.demo-bar { max-width: 1120px; margin: 0 auto; height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0 2px; color: var(--muted); font-size: 11px; letter-spacing: .03em; }
+.demo-brand { display: flex; gap: 10px; align-items: center; }
+.brand-mark { width: 17px; height: 17px; display: inline-flex; gap: 3px; align-items: flex-end; }
+.brand-mark i { width: 4px; height: 15px; background: var(--accent); border-radius: 1px; }
+.brand-mark i:nth-child(2) { height: 10px; opacity: .65; }
+.brand-mark i:nth-child(3) { height: 6px; opacity: .4; }
+.demo-bar button { font-size: 11px; min-height: 32px; padding: 0 8px; color: var(--muted); }
+.demo-actions { display: flex; align-items: center; gap: 8px; }
+.app-shell { max-width: 1120px; margin: 0 auto; height: calc(100dvh - 76px); min-height: 580px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) 288px; }
+.primary { min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.page-header { flex: 0 0 auto; padding: 23px 26px 0; border-bottom: 1px solid var(--line); }
+.date-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.eyebrow { font-size: 11px; line-height: 17px; color: var(--muted); letter-spacing: .07em; margin-bottom: 3px; }
+.date-title { font-size: 22px; line-height: 30px; font-weight: 600; margin: 0; padding: 0; text-align: left; white-space: nowrap; letter-spacing: -.025em; min-height: 32px; }
+.date-actions { display: flex; align-items: center; gap: 0; }
+.icon-button { width: 48px; height: 48px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--radius-control); flex-shrink: 0; color: var(--icon-ink); }
+.icon-button:hover { background: var(--line-soft); color: var(--text); }
+.icon-button.selected { background: var(--accent-soft); color: var(--accent); }
+.text-button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 12px; gap: 6px; font-size: 13px; font-weight: 500; border-radius: var(--radius-control); }
+.text-button:hover { background: var(--line-soft); }
+.today-button { color: var(--accent); padding: 0 10px; }
+.toolbar-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 13px; height: 51px; }
+.view-switch { display: flex; align-items: stretch; height: 100%; gap: 8px; }
+.view-tab { font-size: 13px; color: var(--muted); min-width: 44px; min-height: 44px; position: relative; }
+  .view-tab span { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; padding: 0 14px; border-radius: 8px; }
+.view-tab[aria-pressed=true] { color: var(--accent); font-weight: 600; }
+.view-tab[aria-pressed=true]::after { content: ''; position: absolute; bottom: -1px; height: 2px; background: var(--accent); left: 12px; right: 12px; }
+.toolbar-actions { display: flex; align-items: center; gap: 2px; }
+.backlog-button { color: var(--text); gap: 6px; }
+.backlog-button .count { color: var(--muted); font-size: 12px; }
+.add-button { color: var(--accent); }
+.page-body { flex: 1; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; position: relative; overscroll-behavior: contain; }
+.timeline { position: relative; height: calc(24 * var(--hour-height) + 24px); margin-right: 20px; }
+.time-grid { position: absolute; inset: 0; pointer-events: none; }
+.hour-row { position: absolute; left: 0; width: 100%; height: var(--hour-height); }
+.hour-row::before { content: ''; position: absolute; left: var(--time-gutter); right: 0; height: 1px; background: var(--line); }
+.hour-row:not(:last-child)::after { content: ''; position: absolute; top: 50%; left: var(--time-gutter); right: 0; height: 1px; background: var(--line-soft); }
+.hour-label { position: absolute; left: 10px; top: 4px; color: var(--muted); font-size: 11px; line-height: 16px; font-variant-numeric: tabular-nums; }
+.band-stage, .task-stage { position: absolute; left: var(--time-gutter); right: 0; top: 0; bottom: 24px; }
+.band-stage { pointer-events: none; }
+.time-band { position: absolute; left: 0; right: 0; background: var(--work); border-left: 2px solid var(--edge-work); }
+.time-band.commute { background: var(--commute); border-left-color: var(--edge-commute); }
+.time-band .band-context { writing-mode: vertical-rl; text-orientation: upright; position: absolute; left: 3px; top: 10px; font-size: 10px; line-height: 14px; letter-spacing: 1px; color: var(--muted); }
+.time-band .band-free { position: absolute; left: 14px; top: 14px; color: var(--commute-ink); display: flex; align-items: baseline; gap: 12px; z-index: 1; }
+.band-free strong { display: block; font-size: 15px; font-weight: 500; margin-bottom: 0; }
+.band-free span { font-size: 12px; font-variant-numeric: tabular-nums; background: var(--commute); padding-right: 4px; }
+.task-group { position: absolute; left: var(--context-gutter); right: 0; }
+.task-slot { position: absolute; }
+.task-item { width: 100%; height: calc(100% - 3px); border-radius: var(--radius-task); background: var(--surface); border-left: 2px solid var(--edge-rail); overflow: hidden; position: relative; }
+.task-open { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: stretch; text-align: left; padding: 10px 12px; }
+.task-open:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.task-check { position: absolute; right: 0; bottom: 0; width: 44px; height: 44px; max-height: calc(100% - 4px); display: inline-flex; align-items: center; justify-content: center; border-radius: 0 0 8px 0; }
+.task-check .status-dot { width: 18px; height: 18px; margin: 0; }
+.task-check:hover { background: var(--accent-soft); }
+.task-check:hover .status-dot { border-color: var(--accent); }
+.task-check:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.task-item:hover { background: var(--card-hover-bg); }
+.task-item .task-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 15px; line-height: 22px; font-weight: 500; overflow-wrap: anywhere; flex-shrink: 0; }
+.task-item .task-time { margin-top: 5px; display: flex; gap: 5px; align-items: center; font-size: 12px; line-height: 18px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.task-item .task-note { color: var(--muted); font-size: 12px; line-height: 19px; margin-top: auto; padding-top: 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.task-item.done { color: var(--muted); border-left-color: var(--edge-rail-muted); background: var(--card-done-bg); }
+.task-item.is-selected { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); border-left-color: var(--accent); }
+.task-item.compact .task-open { padding: 4px 8px; }
+.task-item.compact .task-name { font-size: 14px; line-height: 19px; }
+.task-item.compact .task-time, .task-item.compact .task-note { display: none; }
+.task-item.micro .task-open { padding: 2px 6px; }
+.task-item.micro .task-name { -webkit-line-clamp: 1; font-size: 12px; line-height: 16px; }
+.task-item.micro .task-time, .task-item.micro .task-note { display: none; }
+.overflow-slot { position: absolute; right: 0; width: 44px; }
+.overflow-button { height: calc(100% - 3px); width: 100%; border-radius: 4px; color: var(--overflow-ink); background: var(--overflow-bg); font-size: 12px; padding: 0; display: flex; align-items: center; justify-content: center; }
+.overflow-button:hover { background: var(--overflow-hover); color: var(--accent); }
+.now-line { position: absolute; left: 0; right: 0; z-index: 4; border-top: 1px solid var(--accent); pointer-events: none; }
+.now-line::before { content: ''; width: 6px; height: 6px; background: var(--accent); border-radius: 50%; position: absolute; top: -3.5px; left: -3px; }
+.now-label { position: absolute; right: 4px; top: -19px; color: var(--accent); background: var(--surface); font-size: 10px; padding: 2px 4px; font-variant-numeric: tabular-nums; }
+.empty-day { position: absolute; top: calc(8.5 * var(--hour-height)); left: calc(var(--time-gutter) + 20px); right: 20px; text-align: center; padding: 22px 8px; background: var(--surface); }
+.empty-day p { color: var(--muted); font-size: 13px; line-height: 22px; margin: 6px 0 12px; }
+.primary-button { min-height: 44px; border-radius: 6px; padding: 10px 18px; background: var(--accent); color: var(--primary-ink); font-weight: 500; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.primary-button:hover { background: var(--accent); }
+.secondary-button { min-height: 44px; padding: 10px 16px; background: var(--line-soft); border-radius: 6px; color: var(--text); }
+.bottom-nav { display: grid; grid-template-columns: repeat(3, 1fr); flex: 0 0 auto; min-height: 64px; padding: 5px 12px max(5px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--surface); }
+.nav-item { display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--muted); font-size: 12px; min-height: 48px; position: relative; }
+.nav-item[aria-current=page] { color: var(--accent); font-weight: 500; }
+.nav-item[aria-current=page]::before { content: ''; position: absolute; top: -6px; width: 26px; height: 2px; background: var(--accent); }
+.day-panel { border-left: 1px solid var(--line); padding: 28px 22px; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
+.panel-kicker { font-size: 11px; color: var(--muted); letter-spacing: .08em; margin-bottom: 10px; }
+.panel-heading { margin: 0 0 5px; font-size: 17px; font-weight: 600; }
+.panel-date { font-size: 12px; color: var(--muted); }
+.day-counts { display: flex; margin: 23px 0 26px; gap: 32px; }
+.metric strong { font-size: 28px; font-weight: 500; letter-spacing: -.04em; display: block; line-height: 35px; }
+.metric small { font-size: 11px; color: var(--muted); }
+.panel-section { margin-top: 24px; }
+.panel-section-title { font-size: 12px; color: var(--muted); margin: 0 0 8px; font-weight: 400; }
+.side-task { display: flex; align-items: flex-start; gap: 9px; width: 100%; text-align: left; padding: 11px 0; }
+.status-dot { width: 16px; height: 16px; border: 1.5px solid var(--dot-border); border-radius: 50%; flex-shrink: 0; margin-top: 2px; display: flex; justify-content: center; align-items: center; }
+.status-dot.done { border-color: var(--dot-done-border); color: var(--dot-done-ink); }
+.status-dot svg { width: 11px; height: 11px; stroke-width: 2; }
+.side-task-title { font-size: 13px; line-height: 20px; }
+.side-task.done .side-task-title { color: var(--muted); }
+.side-task-time { color: var(--muted); font-size: 11px; margin-top: 3px; font-variant-numeric: tabular-nums; }
+.side-footer { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; line-height: 19px; }
+.side-footer button { color: var(--accent); font-size: 11px; padding: 8px 0; }
+.content-page { padding: 24px 26px 32px; }
+.section-title { font-size: 16px; font-weight: 600; margin: 0 0 5px; }
+.section-subtitle { font-size: 12px; color: var(--muted); line-height: 20px; margin: 0 0 20px; }
+.list-heading { display: flex; justify-content: space-between; align-items: center; margin: 24px 0 8px; }
+.list-heading:first-child { margin-top: 0; }
+.list-heading h3 { margin: 0; font-size: 13px; font-weight: 500; }
+.list-heading span { color: var(--muted); font-size: 11px; }
+.task-list-row { display: flex; gap: 12px; align-items: center; border-bottom: 1px solid var(--line-soft); padding: 5px 0; }
+.check-button { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.check-button .status-dot { width: 20px; height: 20px; margin: 0; }
+.list-task-main { flex: 1; text-align: left; min-height: 53px; min-width: 0; padding: 8px 0; }
+.list-task-title { font-size: 15px; line-height: 22px; }
+.list-task-meta { font-size: 12px; color: var(--muted); margin-top: 5px; line-height: 18px; }
+.task-list-row.done .list-task-title { color: var(--muted); }
+.month-view { padding: 22px 20px; }
+.month-weekdays, .month-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.month-weekdays span { color: var(--muted); text-align: center; font-size: 11px; padding: 10px 0 18px; }
+.month-cell { min-height: 85px; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 10px 2px; border-top: 1px solid var(--line-soft); font-size: 13px; }
+.month-cell.outside { color: var(--muted); }
+.month-cell.current { color: var(--accent); background: var(--accent-soft); }
+.month-cell .day-number { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; }
+.month-cell.today .day-number { border: 1px solid var(--accent); border-radius: 50%; }
+.month-cell .day-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); }
+.month-hint { font-size: 12px; color: var(--muted); margin: 24px 0 0; text-align: center; }
+.week-view { padding: 20px 24px; }
+.week-day { display: grid; grid-template-columns: 60px minmax(0, 1fr); padding: 17px 0; border-bottom: 1px solid var(--line); gap: 14px; }
+.week-day-label { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; text-align: left; }
+.week-day-label strong { font-size: 21px; font-weight: 500; }
+.week-day-label span { color: var(--muted); font-size: 11px; }
+.week-day.current .week-day-label { color: var(--accent); }
+.week-mini-task { text-align: left; width: 100%; display: flex; align-items: flex-start; gap: 10px; padding: 6px 0; font-size: 13px; line-height: 20px; }
+.week-mini-task time { color: var(--muted); flex-shrink: 0; font-size: 11px; width: 37px; }
+.week-mini-task.done { color: var(--muted); }
+.week-empty { font-size: 12px; color: var(--muted); padding: 12px 0; }
+.gallery { padding: 26px; }
+.gallery h2 { font-size: 20px; margin: 0 0 7px; font-weight: 600; }
+.gallery .intro { font-size: 13px; color: var(--muted); line-height: 22px; margin: 0 0 30px; }
+.gallery-section { margin: 28px 0; }
+.gallery-section h3 { font-size: 14px; margin: 0 0 14px; font-weight: 500; }
+.gallery-section h3 small { color: var(--muted); font-size: 10px; margin-right: 8px; font-weight: 400; }
+.swatches { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.swatch-color { height: 42px; border-radius: 4px; border: 1px solid var(--line); margin-bottom: 8px; }
+.swatch-label { font-size: 11px; line-height: 18px; }
+.swatch-code { color: var(--muted); font-size: 10px; font-family: ui-monospace, monospace; }
+.type-spec { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid var(--line-soft); padding: 14px 0; gap: 8px; }
+.type-spec code { color: var(--muted); font-size: 10px; white-space: nowrap; }
+.spec-tasks { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.spec-task-wrap { padding: 12px; background: var(--work); border-radius: 4px; }
+.spec-task-label { font-size: 10px; color: var(--muted); margin-bottom: 8px; }
+.spec-task-canvas { height: 100px; }
+.spec-task-canvas.short { height: 48px; }
+.gallery-note { font-size: 12px; line-height: 21px; color: var(--muted); margin: 12px 0 0; }
+.spacing-demo { display: flex; gap: 20px; align-items: flex-end; margin: 16px 0; }
+.spacing-unit { font-size: 11px; color: var(--muted); text-align: center; }
+.spacing-unit i { display: block; height: 20px; background: var(--accent-soft); border-left: 1px solid var(--line); border-right: 1px solid var(--line); margin-bottom: 8px; }
+.rule-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.rule-chip { border: 1px solid var(--line); padding: 8px 10px; font-size: 11px; }
+dialog { border: 0; border-radius: var(--radius-dialog); padding: 0; width: min(460px, calc(100vw - 32px)); max-height: min(85dvh, 820px); color: var(--text); background: var(--surface); box-shadow: var(--floating-shadow); }
+dialog::backdrop { background: var(--backdrop); }
+.dialog-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px 8px 24px; }
+.dialog-head h2 { font-size: 17px; line-height: 25px; font-weight: 600; margin: 0; }
+.dialog-content { padding: 0 24px 24px; }
+.dialog-description { font-size: 13px; line-height: 22px; color: var(--muted); margin: 0 0 20px; }
+.form-field { display: flex; flex-direction: column; gap: 8px; margin-top: 17px; min-width: 0; }
+.form-field label { font-size: 12px; color: var(--muted); }
+.form-field input, .form-field textarea { width: 100%; border: 1px solid var(--field-border); border-radius: 6px; background: var(--field-bg); color: var(--text); min-height: 44px; padding: 10px 12px; }
+.form-field textarea { resize: vertical; min-height: 78px; line-height: 21px; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.checkbox-label { display: flex; align-items: center; gap: 10px; min-height: 48px; font-size: 13px; cursor: pointer; }
+input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); flex-shrink: 0; }
+.form-error { font-size: 12px; line-height: 19px; color: var(--danger); margin: 10px 0; }
+.dialog-actions { display: flex; align-items: center; gap: 10px; margin-top: 22px; }
+.dialog-actions .primary-button { margin-left: auto; }
+.danger-button { color: var(--danger); font-size: 12px; padding: 12px 4px; }
+.settings-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--line-soft); padding: 12px 0; min-height: 60px; }
+.settings-row small { display: block; color: var(--muted); font-size: 11px; margin-top: 5px; line-height: 18px; }
+.settings-row input { width: 18px; height: 18px; }
+.backlog-row { display: flex; align-items: center; gap: 10px; min-height: 58px; border-bottom: 1px solid var(--line-soft); }
+.backlog-row span { flex: 1; font-size: 14px; line-height: 21px; }
+.backlog-row .text-button { color: var(--accent); padding: 0 8px; }
+.about-list { margin: 0; padding-left: 18px; font-size: 13px; line-height: 24px; }
+.about-list li + li { margin-top: 9px; }
+.empty-text { font-size: 13px; color: var(--muted); line-height: 22px; padding: 16px 0; }
+.toast { position: fixed; z-index: 20; bottom: 86px; left: 50%; transform: translate(-50%, 12px); opacity: 0; pointer-events: none; background: var(--toast-bg); color: var(--toast-ink); border-radius: 6px; padding: 12px 18px; font-size: 13px; max-width: min(90vw, 420px); line-height: 20px; transition: opacity .18s, transform .18s; }
+.toast.visible { opacity: 1; transform: translate(-50%, 0); }
+@media (max-width: 900px) {
+  .app-shell { max-width: 680px; grid-template-columns: 1fr; }
+  .day-panel { display: none; }
+  .demo-bar { max-width: 680px; }
+}
+@media (max-width: 600px) {
+  body { background: var(--surface); }
+  .demo-bar { height: 26px; padding: 0 16px; background: var(--demo-bar-bg); font-size: 10px; }
+  .demo-brand { gap: 7px; }
+  .brand-mark { display: none; }
+  .demo-bar button { min-height: 32px; font-size: 10px; padding: 0 4px; }
+  .app-shell { height: calc(100dvh - 26px); min-height: 0; width: 100%; border: 0; border-radius: 0; }
+  .page-header { padding: 16px 16px 0; }
+  .date-title { font-size: 22px; }
+  .date-actions .icon-button { width: 48px; height: 48px; }
+  .today-button { min-height: 48px; min-width: 44px; padding: 0 6px; font-size: 12px; }
+  .eyebrow { font-size: 10px; }
+  .toolbar-row { margin-top: 10px; height: 49px; }
+  .view-switch { gap: 0; }
+  .view-tab { min-width: 40px; padding: 0 11px; }
+  .view-tab[aria-pressed=true]::after { left: 11px; right: 11px; }
+  .toolbar-actions { gap: 0; }
+  .toolbar-actions .icon-button { width: 48px; height: 48px; }
+  .backlog-button { min-height: 48px; padding: 0 8px; font-size: 12px; }
+  .backlog-button svg { display: none; }
+  .timeline { margin-right: 16px; }
+  .bottom-nav { min-height: 65px; padding-top: 5px; }
+  .nav-item { flex-direction: column; gap: 5px; font-size: 10px; min-height: 50px; }
+  .nav-item .icon { width: 20px; height: 20px; }
+  .task-item { padding: 8px; }
+  .task-item .task-note { display: none; }
+  .task-item .task-time { font-size: 11px; }
+  .task-item.compact { padding: 4px 6px; }
+  .content-page, .gallery { padding: 22px 20px; }
+  .gallery h2 { font-size: 19px; }
+  .spec-tasks { gap: 10px; }
+  .spec-task-wrap { padding: 8px; }
+  .spec-task-canvas .task-name { font-size: 14px; }
+  .swatches { gap: 10px; }
+  .swatch-code { font-size: 10px; }
+  .week-view { padding: 12px 20px; }
+  .month-view { padding: 16px; }
+  .month-cell { min-height: 74px; }
+  dialog { width: 100%; max-width: none; max-height: 90dvh; margin: auto 0 0; border-radius: 12px 12px 0 0; padding-bottom: env(safe-area-inset-bottom); }
+  .dialog-head { padding-top: 16px; }
+}
+@media (max-width: 359px) {
+  .date-title { font-size: 19px; }
+  .page-header { padding-left: 12px; padding-right: 12px; }
+  .view-tab { min-width: 34px; padding: 0 9px; }
+  .backlog-button { padding: 0 5px; }
+  .task-item .task-name { font-size: 14px; line-height: 20px; }
+  .task-item .task-time { font-size: 10px; }
+  :root { --time-gutter: 48px; --context-gutter: 18px; }
+  .hour-label { left: 6px; font-size: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
+.date-row h1 { margin: 0; font-size: inherit; line-height: 1; }
+
+</style>
+  <style>
+/* material.css */
+/* Material skin. One light direction; shallow resting cards; no moving time geometry. */
+body { background: radial-gradient(ellipse at 12% 0, var(--canvas-glow) 0, transparent 60%), var(--canvas); }
+button { transition: background .16s ease, box-shadow .16s ease, color .16s ease; }
+.demo-bar { height: 64px; padding: 0 8px; color: var(--chrome-ink); font-size: 11px; letter-spacing: .045em; }
+.demo-brand > span:last-child { display: flex; gap: 12px; align-items: center; }
+.demo-brand strong { color: var(--text); font-size: 12px; font-weight: 600; letter-spacing: .12em; }
+.brand-mark i { border-radius: 2px; background: var(--accent); }
+.app-shell { height: calc(100dvh - 88px); border: 1px solid var(--frame-border); border-radius: 24px; background: var(--frame-bg); box-shadow: var(--frame-shadow); grid-template-columns: minmax(0, 1fr) 292px; }
+.primary { background: var(--primary-col-paint); }
+.page-header { padding: 27px 28px 17px; border: 0; background: none; }
+.eyebrow { font-size: 10px; color: var(--muted); letter-spacing: .15em; margin-bottom: 5px; }
+.date-title { font-size: 27px; line-height: 36px; letter-spacing: -.055em; font-weight: 600; }
+.date-actions { gap: 2px; }
+.date-actions .icon-button { width: 44px; height: 44px; color: var(--icon-ink); }
+.date-actions .icon-button .icon { width: 17px; height: 17px; }
+.icon-button:hover { background: var(--icon-hover); }
+.today-button { background: var(--material-face); color: var(--text); border: 1px solid var(--key-border); box-shadow: var(--shadow-control); min-height: 44px; padding: 0 13px; margin-left: 5px; font-size: 12px; }
+.today-button:hover { background: var(--card-hover-bg); box-shadow: var(--shadow-rest); }
+.today-button:active { background: var(--surface-low); box-shadow: var(--shadow-pressed); }
+.toolbar-row { margin-top: 17px; height: 44px; }
+.view-switch { height: 44px; border-radius: 12px; padding: 4px; gap: 2px; background: var(--switch-track); box-shadow: var(--switch-track-shadow); }
+.view-tab { min-width: 44px; min-height: 44px; margin: -4px 0; border-radius: 8px; font-size: 12px; }
+.view-tab span { display: inline-flex; align-items: center; justify-content: center; min-height: 28px; padding: 0 13px; border-radius: 8px; }
+.view-tab[aria-pressed=true] { color: var(--text); }
+.view-tab[aria-pressed=true] span { background: var(--material-face); box-shadow: var(--shadow-control); }
+.view-tab[aria-pressed=true]::after { display: none; }
+.toolbar-actions { gap: 4px; }
+.toolbar-actions .icon-button { width: 44px; height: 44px; }
+.backlog-button { font-size: 12px; color: var(--muted); padding: 0 7px; min-height: 44px; }
+.backlog-button .icon { width: 16px; height: 16px; }
+.backlog-button .count { min-width: 22px; height: 22px; padding: 0 5px; display: inline-flex; align-items: center; justify-content: center; background: var(--count-chip-bg); border-radius: 7px; box-shadow: var(--count-chip-shadow); color: var(--text); font-size: 11px; }
+.toolbar-actions .add-button { color: var(--primary-ink); background: var(--primary-paint); border: 1px solid var(--primary-border); box-shadow: var(--primary-shadow); margin-left: 3px; border-radius: 12px; }
+.toolbar-actions .add-button:hover { background: var(--primary-hover-paint); }
+.toolbar-actions .add-button:active { box-shadow: var(--primary-active-shadow); }
+.page-body { margin: 0 20px; border: 1px solid var(--plate-border); border-bottom: 0; border-radius: 18px 18px 0 0; background: var(--plate-bg); box-shadow: var(--plate-inset); scrollbar-color: var(--scrollbar-thumb) transparent; }
+.timeline { margin-right: 15px; }
+.hour-row::before { background: var(--hour-line); }
+.hour-row:not(:last-child)::after { background: var(--hour-line-soft); }
+.hour-label { color: var(--scale-ink); font-size: 10px; letter-spacing: .015em; }
+.time-band { background: var(--band-work-paint); border: 0; border-radius: 12px; box-shadow: var(--band-highlight); }
+.time-band.commute { background: var(--band-commute-paint); border: 0; }
+.time-band .band-context { left: 4px; top: 13px; font-size: 10px; line-height: 14px; color: var(--band-context-ink); letter-spacing: 2px; }
+.time-band .band-free { left: 16px; top: 14px; gap: 10px; align-items: center; }
+.band-free strong { font-size: 14px; font-weight: 500; }
+.band-free .band-symbol { width: 25px; height: 25px; border-radius: 8px; display: grid; place-items: center; background: var(--band-symbol-bg); box-shadow: var(--band-symbol-inset); }
+.band-free .band-symbol .icon { width: 15px; height: 15px; }
+.band-free span { background: none; font-size: 11px; }
+.task-item { height: calc(100% - 6px); border: 1px solid var(--card-border); background: var(--material-face); box-shadow: var(--shadow-rest); border-radius: var(--radius-task); }
+.task-open { padding: 11px 12px; }
+.task-check:hover .status-dot { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft), var(--dot-shadow); }
+.task-item.is-selected .task-check .status-dot { border-color: var(--accent); }
+.task-item::before { content: ''; position: absolute; top: 11px; bottom: 11px; width: 2px; left: 0; border-radius: 2px; background: var(--edge-rail); }
+.task-item:hover { background: var(--card-hover-paint); box-shadow: var(--card-hover-shadow); }
+.task-item:active { background: var(--card-active-bg); box-shadow: var(--shadow-pressed); }
+.task-item .task-name { font-size: 15px; font-weight: 500; line-height: 23px; color: var(--text); letter-spacing: -.01em; }
+.task-item .task-time { font-size: 11px; line-height: 17px; margin-top: 6px; color: var(--muted); flex-wrap: wrap; gap: 3px; }
+.timeline .task-item .task-note { display: none; }
+.task-item.done { background: var(--done-paint); box-shadow: var(--done-highlight); border: 1px solid var(--done-border); }
+.task-item.done::before { display: none; }
+.task-item.done .task-name { color: var(--done-ink); }
+.task-item.is-selected { background: var(--material-active); border-color: var(--selected-border); box-shadow: var(--shadow-selected); }
+.task-item.is-selected::before { background: var(--accent); }
+.task-item.compact .task-open { padding: 6px 9px; }
+.task-item.compact .task-name { font-size: 14px; line-height: 20px; }
+.task-item.micro { border-radius: 6px; height: calc(100% - 2px); }
+.task-item.micro .task-open { padding: 1px 6px; }
+.task-item.micro .task-name { font-size: 12px; line-height: 16px; }
+.task-item.micro::before { top: 4px; bottom: 4px; }
+.overflow-button { height: calc(100% - 6px); background: var(--overflow-bg); color: var(--overflow-ink); border-radius: 8px; box-shadow: var(--overflow-shadow); }
+.overflow-button:hover { background: var(--overflow-hover); color: var(--accent); }
+.now-line { border-color: var(--now-ink); }
+.now-line::before { background: var(--now-ink); }
+.now-label { color: var(--now-label-ink); background: var(--now-label-bg); border-radius: 4px; }
+.bottom-nav { background: transparent; border: 0; padding: 6px 18px max(8px, env(safe-area-inset-bottom)); min-height: 72px; gap: 18px; }
+.nav-item { isolation: isolate; font-size: 12px; color: var(--muted); }
+.nav-item[aria-current=page] { color: var(--accent); }
+.nav-item[aria-current=page]::before { width: 112px; height: 42px; top: 4px; left: 50%; transform: translateX(-50%); background: var(--nav-pill-paint); border-radius: 12px; box-shadow: var(--nav-pill-shadow); z-index: -1; }
+.day-panel { background: var(--panel-paint); border-left: 1px solid var(--panel-border); padding: 32px 25px; box-shadow: var(--panel-inset); }
+.panel-kicker { font-size: 10px; letter-spacing: .2em; color: var(--caption-ink); }
+.panel-heading { font-size: 23px; font-weight: 500; letter-spacing: -.04em; margin-bottom: 8px; }
+.day-counts { display: grid; grid-template-columns: 1fr 1fr; gap: 0; padding: 18px 19px; margin: 24px 0 13px; background: var(--counts-bg); box-shadow: var(--counts-shadow); border-radius: 14px; }
+.metric + .metric { padding-left: 20px; border-left: 1px solid var(--counts-divider); }
+.metric strong { font-size: 32px; font-weight: 400; color: var(--accent); }
+.metric small { font-size: 11px; }
+.completion-caption { font-size: 10px; display: flex; justify-content: space-between; color: var(--muted); margin-bottom: 7px; }
+.completion-track { height: 3px; background: var(--track-bg); border-radius: 2px; overflow: hidden; margin-bottom: 29px; }
+.completion-track i { display: block; height: 100%; background: var(--track-fill); border-radius: 2px; }
+.panel-section-title { font-size: 11px; letter-spacing: .08em; margin-bottom: 10px; }
+.side-task { padding: 10px 0; gap: 10px; }
+.side-task:hover .side-task-title { color: var(--accent); }
+.status-dot { border-color: var(--dot-border); box-shadow: var(--dot-shadow); }
+.status-dot.done { background: var(--dot-done-bg); border-color: var(--dot-done-border); color: var(--dot-done-ink); box-shadow: var(--dot-done-shadow); }
+.side-footer { color: var(--caption-ink); font-size: 10px; }
+.primary-button { background: var(--primary-paint); border: 1px solid var(--primary-border); box-shadow: var(--primary-shadow); border-radius: 10px; }
+.primary-button:hover { background: var(--primary-hover-paint); }
+.primary-button:active { box-shadow: var(--primary-active-shadow); }
+.secondary-button { background: var(--material-face); border: 1px solid var(--key-border-strong); border-radius: 10px; box-shadow: var(--shadow-control); }
+.secondary-button:active, .secondary-button.is-pressed { background: var(--card-active-bg); box-shadow: var(--shadow-pressed); }
+.form-field input, .form-field textarea { background: var(--field-bg); border: 1px solid var(--field-border); border-radius: 10px; box-shadow: var(--field-shadow); }
+dialog { background: var(--dialog-paint); border: 1px solid var(--dialog-border); }
+dialog::backdrop { background: var(--backdrop); backdrop-filter: blur(4px); }
+.gallery { padding: 27px; }
+.gallery h2 { font-size: 24px; line-height: 34px; letter-spacing: -.04em; font-weight: 500; }
+.material-eyebrow { font-size: 10px; letter-spacing: .16em; color: var(--accent); margin-bottom: 10px; }
+.gallery .intro { font-size: 12px; line-height: 21px; margin-bottom: 25px; }
+.gallery-section { margin: 25px 0 32px; }
+.gallery-section h3 { font-weight: 500; font-size: 13px; margin-bottom: 14px; }
+.gallery-section h3 small { letter-spacing: .07em; margin-right: 9px; }
+.spec-tasks { gap: 16px; }
+.spec-task-wrap { background: var(--demo-well-bg); padding: 14px; border-radius: 14px; box-shadow: var(--demo-well-shadow); }
+.spec-task-label { font-size: 11px; margin-bottom: 11px; display: flex; justify-content: space-between; gap: 3px; }
+.spec-task-label small { font-size: 10px; color: var(--muted); }
+.spec-task-canvas { height: 98px; }
+.spec-task-canvas.short { height: 48px; }
+.spec-task-canvas .task-item { padding: 11px; }
+.spec-task-canvas .task-item.compact { padding: 8px; }
+.spec-task-canvas .task-item .task-time { margin-top: 9px; }
+.gallery-note { font-size: 12px; line-height: 22px; }
+.control-demo { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 18px; background: var(--demo-well-bg); border-radius: 14px; box-shadow: var(--demo-well-shadow); }
+.control-spec { display: flex; flex-direction: column; gap: 10px; }
+.control-spec small { color: var(--muted); font-size: 10px; }
+.control-demo .view-switch { height: 44px; }
+.control-demo .today-button { margin: 0; height: 44px; }
+.control-demo .secondary-button { min-height: 44px; padding: 7px 12px; }
+.layer-demos { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+.layer-demo { border-radius: 12px; height: 85px; padding: 13px; display: flex; flex-direction: column; justify-content: space-between; font-size: 11px; }
+.layer-demo small { font-size: 10px; color: var(--muted); }
+.layer-base { background: var(--layer-base-bg); box-shadow: var(--layer-base-shadow); }
+.layer-card { background: var(--material-face); border: 1px solid var(--card-border); box-shadow: var(--shadow-rest); }
+.layer-active { background: var(--material-active); border: 1px solid var(--selected-border); box-shadow: var(--shadow-selected); }
+.swatch-color { height: 46px; border-radius: 10px; border: 1px solid var(--card-border); box-shadow: var(--swatch-inset); }
+.rule-chip { background: var(--chip-bg); border-color: var(--key-border-strong); box-shadow: var(--chip-shadow); font-size: 10px; }
+.spacing-unit i { background: var(--spacing-fill); border-color: var(--spacing-border); }
+.type-spec { border-color: var(--hairline); }
+.task-list-row { border-color: var(--hairline); }
+.month-cell.current { border-radius: 10px; }
+.month-cell.today .day-number { border-radius: 9px; }
+.empty-day { background: var(--empty-bg); border: 1px solid var(--key-border-strong); border-radius: 14px; }
+.toast { background: var(--toast-bg); border-radius: 12px; box-shadow: var(--toast-shadow); }
+@media (max-width: 900px) {
+  .app-shell { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  body { background: var(--mobile-canvas); }
+  .demo-bar { height: 34px; padding: 0 19px; background: var(--demo-bar-bg); font-size: 10px; border-bottom: 1px solid var(--hairline); }
+  .demo-brand > span:last-child { gap: 9px; }
+  .demo-brand strong { font-size: 10px; letter-spacing: .13em; }
+  .demo-bar button { font-size: 10px; }
+  .app-shell { height: calc(100dvh - 34px); min-height: 0; border: 0; border-radius: 0; box-shadow: none; }
+  .page-header { padding: 19px 18px 15px; }
+  .date-title { font-size: 24px; line-height: 34px; letter-spacing: -.055em; }
+  .eyebrow { font-size: 10px; letter-spacing: .12em; }
+  .date-actions { gap: 0; }
+  .date-actions .icon-button { width: 44px; height: 44px; }
+  .today-button { min-height: 44px; min-width: 44px; padding: 0 10px; margin-left: 4px; font-size: 11px; }
+  .toolbar-row { margin-top: 16px; height: 42px; gap: 6px; }
+  .view-switch { height: 40px; padding: 3px; gap: 1px; border-radius: 11px; }
+  .view-tab { min-width: 44px; min-height: 44px; margin: -5px 0; font-size: 11px; }
+  .view-tab span { min-height: 26px; padding: 0 10px; border-radius: 7px; }
+  .toolbar-actions { gap: 3px; }
+  .toolbar-actions .icon-button { width: 44px; height: 44px; }
+  .toolbar-actions .add-button { width: 44px; height: 44px; border-radius: 11px; margin-left: 2px; }
+  .backlog-button { min-height: 44px; font-size: 11px; padding: 0 4px; gap: 5px; }
+  .backlog-button .count { height: 20px; min-width: 20px; font-size: 10px; }
+  .page-body { margin: 0 12px; border-radius: 16px 16px 0 0; }
+  .timeline { margin-right: 12px; }
+  .task-open { padding: 9px; }
+  .task-item .task-name { font-size: 14px; line-height: 21px; }
+  .task-item .task-time { font-size: 11px; line-height: 17px; gap: 2px; }
+  .task-item.compact .task-open { padding: 6px 8px; }
+  .task-item.compact .task-name { font-size: 13px; line-height: 19px; }
+  .task-item.micro .task-open { padding: 1px 5px; }
+  .task-item.micro .task-name { font-size: 12px; line-height: 16px; }
+  .hour-label { left: 7px; font-size: 10px; }
+  .band-free strong { font-size: 13px; }
+  .time-band .band-free { gap: 8px; left: 12px; }
+  .bottom-nav { min-height: 68px; padding: 5px 24px max(6px, env(safe-area-inset-bottom)); gap: 16px; }
+  .nav-item { min-height: 52px; font-size: 10px; gap: 6px; }
+  .nav-item[aria-current=page]::before { width: 62px; height: 32px; top: 1px; border-radius: 11px; }
+  .nav-item .icon { width: 19px; height: 19px; }
+  .gallery { padding: 23px 16px; }
+  .gallery h2 { font-size: 22px; line-height: 31px; }
+  .gallery .intro { font-size: 11px; }
+  .spec-tasks { gap: 10px; }
+  .spec-task-wrap { padding: 10px; border-radius: 12px; }
+  .spec-task-label { font-size: 10px; }
+  .spec-task-label small { font-size: 10px; }
+  .spec-task-canvas { height: 90px; }
+  .spec-task-canvas .task-item { padding: 9px; }
+  .spec-task-canvas .task-name { font-size: 13px; line-height: 20px; }
+  .spec-task-canvas .task-time { font-size: 10px; }
+  .spec-task-canvas.short { height: 46px; }
+  .control-demo { padding: 13px; gap: 14px; }
+  .layer-demos { gap: 9px; }
+  .layer-demo { padding: 10px; font-size: 10px; }
+  .layer-demo small { font-size: 10px; }
+  .type-spec:first-of-type { flex-wrap: wrap; }
+  dialog { border-radius: 22px 22px 0 0; }
+}
+@media (max-width: 359px) {
+  :root { --time-gutter: 45px; --context-gutter: 17px; }
+  .page-header { padding-left: 14px; padding-right: 14px; }
+  .page-body { margin: 0 9px; }
+  .date-title { font-size: 20px; }
+  .date-actions .icon-button { width: 44px; }
+  .today-button { min-width: 44px; padding: 0 7px; }
+  .view-tab { min-width: 40px; }
+  .view-tab span { padding: 0 8px; }
+  .toolbar-actions .icon-button { width: 44px; }
+  .toolbar-actions .add-button { width: 44px; height: 44px; }
+  .toolbar-actions { gap: 1px; }
+  .backlog-button { padding: 0 2px; gap: 3px; }
+  .task-open { padding: 7px; }
+  .task-item .task-name { font-size: 13px; }
+  .task-item.compact .task-open { padding: 6px; }
+  .gallery { padding: 20px 12px; }
+  .spec-tasks { gap: 8px; }
+  .spec-task-wrap { padding: 8px; }
+  .spec-task-label small { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
+
+</style>
+</head>
+<body>
+  <div class="demo-bar"><div class="demo-brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span><strong>DAYLINE</strong><span>质感版 · 示例数据</span></span></div><div class="demo-actions"><button type="button" data-action="theme" id="theme-toggle">深色</button><button type="button" data-action="about">原型说明</button></div></div>
+  <div id="app"></div>
+  <dialog id="modal"></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <noscript>这个交互原型需要启用 JavaScript。它不依赖互联网或任何外部库。</noscript>
+  <script>
+/* layout.js */
+/** Pure time-layout functions. The UI never shifts start/end times to fit cards. */
+(function (root) {
+  'use strict';
+  const rootStyle = typeof getComputedStyle === 'function' ? getComputedStyle(document.documentElement) : null;
+  const cssHour = rootStyle ? parseFloat(rootStyle.getPropertyValue('--hour-height')) : NaN;
+  const HOUR_HEIGHT = Number.isFinite(cssHour) && cssHour > 0 ? cssHour : 96;
+  const px = minutes => minutes * HOUR_HEIGHT / 60;
+  const overlaps = (a, b) => a.start < b.end && b.start < a.end;
+
+  /** Connected interval groups; touching endpoints do not overlap. */
+  function groupIntervals(tasks) {
+    const sorted = [...tasks].sort((a, b) => a.start - b.start || b.end - a.end || a.id.localeCompare(b.id));
+    const groups = [];
+    for (const task of sorted) {
+      let group = groups[groups.length - 1];
+      if (!group || task.start >= group.end) {
+        group = { start: task.start, end: task.end, tasks: [] };
+        groups.push(group);
+      }
+      group.end = Math.max(group.end, task.end);
+      group.tasks.push(task);
+    }
+    return groups;
+  }
+
+  /**
+   * At most two readable task columns. Unfinished tasks receive display priority.
+   * Extra tasks retain their own true times in an explicit overflow rail.
+   * This is a deterministic UI heuristic, not an optimal interval scheduler.
+   */
+  function layoutTasks(tasks, maxColumns = 2) {
+    if (!Number.isInteger(maxColumns) || maxColumns < 1) throw new Error('maxColumns must be positive');
+    return groupIntervals(tasks).map(group => {
+      const lanes = Array.from({ length: maxColumns }, () => []);
+      const placed = [];
+      const hidden = [];
+      const ordered = [...group.tasks].sort((a, b) => Number(a.done) - Number(b.done) || a.start - b.start || b.end - a.end || a.id.localeCompare(b.id));
+      for (const task of ordered) {
+        const lane = lanes.findIndex(items => items.every(other => !overlaps(task, other)));
+        if (lane < 0) hidden.push(task);
+        else { lanes[lane].push(task); placed.push({ task, lane }); }
+      }
+      const columns = Math.max(1, ...placed.map(item => item.lane + 1));
+      const boundaries = [...new Set(hidden.flatMap(task => [task.start, task.end]))].sort((a,b) => a-b);
+      const overflow = [];
+      for (let i = 0; i < boundaries.length - 1; i++) {
+        const start = boundaries[i], end = boundaries[i + 1];
+        const ids = hidden.filter(task => task.start < end && task.end > start).map(task => task.id).sort();
+        if (!ids.length) continue;
+        const last = overflow[overflow.length - 1];
+        if (last && last.end === start && last.ids.join('|') === ids.join('|')) last.end = end;
+        else overflow.push({ start, end, ids });
+      }
+      return { ...group, placed, hidden, columns, overflow };
+    });
+  }
+  const api = Object.freeze({ HOUR_HEIGHT, px, overlaps, groupIntervals, layoutTasks });
+  root.ScheduleLayout = api;
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+})(typeof window === 'undefined' ? globalThis : window);
+
+</script>
+  <script>
+/* data.js */
+/* Demo data only. Names/times obscured in the source screenshot are NOT inferred facts. */
+(function (root) {
+  'use strict';
+  const SAMPLE_DATE = '2026-11-03';
+  function initialData() {
+    return {
+      version: 1,
+      date: SAMPLE_DATE,
+      view: 'day',
+      page: 'schedule',
+      showCompleted: true,
+      showBands: true,
+      tasks: [
+        { id: 't1', date: SAMPLE_DATE, title: '工单需求确认', start: 600, end: 690, done: false, note: '示例任务，用于观察长任务与其他任务的重叠。' },
+        { id: 't2', date: SAMPLE_DATE, title: '编写 TR4', start: 600, end: 660, done: false, note: '示例任务，具体时段为演示设置。' },
+        { id: 't3', date: SAMPLE_DATE, title: '梳理待办', start: 660, end: 690, done: false, note: '示例任务，具体时段为演示设置。' },
+        { id: 't4', date: SAMPLE_DATE, title: '管易云主动通知', start: 600, end: 630, done: true, note: '示例：演示已完成任务与待处理任务重叠。' },
+        { id: 't5', date: SAMPLE_DATE, title: '京东脱敏排查', start: 630, end: 660, done: true, note: '示例：时间仅用于组件测试。' },
+        { id: 't6', date: SAMPLE_DATE, title: '知更账号配置', start: 660, end: 690, done: true, note: '示例：时间仅用于组件测试。' },
+        { id: 't7', date: SAMPLE_DATE, title: '转正材料填写', start: 750, end: 810, done: true, note: '原截图可见的 12:30—13:30；此处作为示例数据使用。' }
+      ],
+      bands: [
+        { id: 'b1', date: SAMPLE_DATE, title: '地铁', start: 510, end: 590, kind: 'commute' },
+        { id: 'b2', date: SAMPLE_DATE, title: '上班（上午）', start: 600, end: 720, kind: 'work' }
+      ],
+      backlog: [
+        '补充接口边界用例', '整理本周待办', '阅读 Go 并发笔记', '检查订阅配置',
+        '复盘一次问题排查', '更新接口文档', '整理学习记录', '检查慢查询日志',
+        '练习一道算法题', '准备需求评审问题', '补充发布检查项', '整理代码审查意见',
+        '回顾本周学习目标', '清理临时笔记'
+      ].map((title, i) => ({ id: 'u' + (i + 1), title }))
+    };
+  }
+  root.ScheduleData = { SAMPLE_DATE, initialData };
+})(window);
+
+</script>
+  <script>
+/* components.js */
+/** Reusable presentational components. No localStorage or domain mutation here. */
+(function (root) {
+  'use strict';
+  const { px, layoutTasks } = root.ScheduleLayout;
+  const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+  const time = minutes => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+  const localDate = date => new Date(date + 'T12:00:00');
+  const dateKey = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const weekday = date => ['周日','周一','周二','周三','周四','周五','周六'][localDate(date).getDay()];
+  const dateTitle = date => { const d = localDate(date); return `${d.getMonth()+1}月${d.getDate()}日 · ${weekday(date)}`; };
+  const paths = {
+    left: '<path d="m14 6-6 6 6 6"/>',
+    right: '<path d="m10 6 6 6-6 6"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    close: '<path d="m6 6 12 12M6 18 18 6"/>',
+    check: '<path d="m5 12 4 4L19 6"/>',
+    calendar: '<rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4m8-4v4M4 10h16M8 14h2m4 0h2M8 17h2"/>',
+    list: '<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/>',
+    grid: '<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/>',
+    inbox: '<path d="m5 4-3 10v6h20v-6L19 4H5Z"/><path d="M2 14h6l2 3h4l2-3h6"/>',
+    settings: '<path d="M4 7h6m4 0h6M4 17h10m4 0h2"/><circle cx="12" cy="7" r="2"/><circle cx="16" cy="17" r="2"/>',
+    train: '<rect x="5" y="3" width="14" height="15" rx="4"/><path d="M5 10h14M8 18l-2 3m10-3 2 3M9 14h.01M15 14h.01"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/>'
+  };
+  const Icon = name => `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.info}</svg>`;
+  const IconButton = (icon, label, action, extra = '') => `<button type="button" class="icon-button ${extra}" data-action="${esc(action)}" aria-label="${esc(label)}" title="${esc(label)}">${Icon(icon)}</button>`;
+
+  function ViewSwitcher(view) {
+    return `<div class="view-switch" role="group" aria-label="日程视图">${[['day','日'],['week','周'],['month','月']].map(([key,label]) => `<button type="button" class="view-tab" data-action="view" data-view="${key}" aria-pressed="${view === key}"><span>${label}</span></button>`).join('')}</div>`;
+  }
+  function DateToolbar(state) {
+    const d = localDate(state.date);
+    return `<header class="page-header"><div class="date-row"><div><div class="eyebrow">${d.getFullYear()}年 · 日程</div><h1><button type="button" class="date-title" data-action="pick-date" aria-label="选择日期，当前${dateTitle(state.date)}">${dateTitle(state.date)}</button></h1></div><div class="date-actions">${IconButton('left','上一' + ({day:'天',week:'周',month:'月'}[state.view]),'previous')}${IconButton('right','下一' + ({day:'天',week:'周',month:'月'}[state.view]),'next')}<button type="button" class="text-button today-button" data-action="today">今天</button></div></div><div class="toolbar-row">${ViewSwitcher(state.view)}<div class="toolbar-actions"><button type="button" class="text-button backlog-button" data-action="backlog" aria-label="待安排 ${state.backlog.length} 项">${Icon('inbox')}待安排 <span class="count">${state.backlog.length}</span></button>${IconButton('settings','显示设置','settings')}${IconButton('plus','新建任务','add','add-button')}</div></div></header>`;
+  }
+  function TimeBand(band, allTasks) {
+    const occupied = allTasks.some(task => task.start < band.end && task.end > band.start);
+    return `<div class="time-band ${esc(band.kind)}" style="top:${px(band.start)}px;height:${px(band.end-band.start)}px" role="note" aria-label="时间段：${esc(band.title)}，${time(band.start)}至${time(band.end)}">${occupied ? `<span class="band-context">${esc(band.title.replace(/（.*?）|\(.*?\)/g,''))}</span>` : `<div class="band-free">${band.kind==='commute'?`<span class="band-symbol">${Icon('train')}</span>`:''}<strong>${esc(band.title)}</strong><span>${time(band.start)}—${time(band.end)}</span></div>`}</div>`;
+  }
+  function TaskItem(task, options = {}) {
+    const duration = task.end - task.start;
+    const compact = options.compact ?? duration <= 35;
+    const micro = duration <= 18;
+    const openAction = options.preview ? 'preview-task' : 'task';
+    const checkAction = options.preview ? 'preview-task' : 'toggle';
+    const check = micro ? '' : `<button type="button" class="task-check" data-action="${checkAction}" data-id="${esc(task.id)}" aria-label="${task.done ? '标记未完成' : '标记完成'}：${esc(task.title)}"><span class="status-dot ${task.done ? 'done' : ''}">${task.done ? Icon('check') : ''}</span></button>`;
+    return `<div class="task-item ${task.done ? 'done' : ''} ${compact ? 'compact' : ''} ${micro ? 'micro' : ''} ${options.selected ? 'is-selected' : ''}" data-id="${esc(task.id)}"><button type="button" class="task-open" data-action="${openAction}" data-id="${esc(task.id)}" aria-label="${esc(task.title)}，${time(task.start)}至${time(task.end)}，${task.done ? '已完成' : '待处理'}" title="${esc(task.title)} · ${time(task.start)}—${time(task.end)}"><span class="task-name">${esc(task.title)}</span><span class="task-time">${time(task.start)}—${time(task.end)}</span>${duration >= 80 && task.note ? `<span class="task-note">${esc(task.note)}</span>` : ''}</button>${check}</div>`;
+  }
+  function OverflowTrigger(item, groupStart) {
+    return `<div class="overflow-slot" style="top:${px(item.start-groupStart)}px;height:${px(item.end-item.start)}px"><button type="button" class="overflow-button" data-action="overflow" data-start="${item.start}" data-end="${item.end}" aria-label="${time(item.start)}至${time(item.end)}，另有${item.ids.length}项重叠任务，展开查看" title="另有${item.ids.length}项重叠任务">+${item.ids.length}</button></div>`;
+  }
+  function TimeGrid(state) {
+    const all = state.tasks.filter(task => task.date === state.date);
+    const tasks = all.filter(task => state.showCompleted || !task.done);
+    const bands = state.showBands ? state.bands.filter(band => band.date === state.date) : [];
+    const groups = layoutTasks(tasks);
+    const now = new Date();
+    const isToday = dateKey(now) === state.date;
+    const minutes = now.getHours() * 60 + now.getMinutes();
+    const grid = Array.from({ length: 25 }, (_, hour) => `<div class="hour-row" style="top:${px(hour*60)}px;${hour === 24 ? 'height:0;' : ''}"><span class="hour-label">${String(hour).padStart(2,'0')}:00</span></div>`).join('');
+    const rendered = groups.map(group => {
+      const reserve = group.hidden.length ? 50 : 0;
+      const gap = group.columns > 1 ? 6 : 0;
+      const width = `calc((100% - ${reserve + gap * (group.columns-1)}px) / ${group.columns})`;
+      return `<div class="task-group" style="top:${px(group.start)}px;height:${px(group.end-group.start)}px">${group.placed.map(({task,lane}) => `<div class="task-slot" data-slot="${esc(task.id)}" style="top:${px(task.start-group.start)}px;height:${px(task.end-task.start)}px;width:${width};left:calc(${lane} * ((${width}) + ${gap}px))">${TaskItem(task)}</div>`).join('')}${group.overflow.map(item => OverflowTrigger(item,group.start)).join('')}</div>`;
+    }).join('');
+    return `<div class="timeline" aria-label="${dateTitle(state.date)}时间轴"><div class="band-stage">${bands.map(band => TimeBand(band,tasks)).join('')}</div><div class="time-grid" aria-hidden="true">${grid}</div><div class="task-stage">${rendered}${isToday ? `<div class="now-line" style="top:${px(minutes)}px"><span class="now-label">${time(minutes)} 现在</span></div>` : ''}</div>${!tasks.length && !bands.length ? `<div class="empty-day"><strong>${all.length ? '已完成任务已隐藏' : '这一天，还没有安排'}</strong><p>${all.length ? '在显示设置中打开「显示已完成任务」。' : '保留空白，也是一种安排。'}</p><button type="button" class="primary-button" data-action="add">${Icon('plus')}添加任务</button></div>` : ''}</div>`;
+  }
+  function BottomNav(page) {
+    return `<nav class="bottom-nav" aria-label="原型导航">${[['schedule','calendar','日程'],['tasks','list','任务'],['components','grid','组件']].map(([key,icon,label]) => `<button type="button" class="nav-item" data-action="page" data-page="${key}" ${key === page ? 'aria-current="page"' : ''}>${Icon(icon)}<span>${label}</span></button>`).join('')}</nav>`;
+  }
+  function TaskRow(task, checkbox = true) {
+    return `<div class="task-list-row ${task.done ? 'done' : ''}">${checkbox ? `<button type="button" class="check-button" data-action="toggle" data-id="${esc(task.id)}" aria-label="${task.done ? '标记未完成' : '标记完成'}：${esc(task.title)}"><span class="status-dot ${task.done ? 'done' : ''}">${task.done ? Icon('check') : ''}</span></button>` : ''}<button type="button" class="list-task-main" data-action="task" data-id="${esc(task.id)}"><div class="list-task-title">${esc(task.title)}</div><div class="list-task-meta">${time(task.start)}—${time(task.end)} · ${task.done ? '已完成' : '待处理'}</div></button></div>`;
+  }
+  function TaskList(state) {
+    const tasks = state.tasks.filter(task => task.date === state.date).sort((a,b) => a.start-b.start);
+    return `<div class="content-page"><h2 class="section-title">当日任务</h2><p class="section-subtitle">${dateTitle(state.date)} · 完整显示名称，不受时间轴宽度限制</p>${[false,true].map(done => { const items = tasks.filter(task => task.done === done); return `<section><div class="list-heading"><h3>${done ? '已完成' : '待处理'}</h3><span>${items.length} 项</span></div>${items.length ? items.map(task => TaskRow(task)).join('') : '<div class="empty-text">暂无任务</div>'}</section>`; }).join('')}</div>`;
+  }
+  function DayPanel(state) {
+    const tasks = state.tasks.filter(task => task.date === state.date).sort((a,b)=>a.start-b.start);
+    const done = tasks.filter(task => task.done).length;
+    const sideTask = task => `<button type="button" class="side-task ${task.done ? 'done' : ''}" data-action="task" data-id="${esc(task.id)}"><span class="status-dot ${task.done ? 'done' : ''}">${task.done ? Icon('check') : ''}</span><div><div class="side-task-title">${esc(task.title)}</div><div class="side-task-time">${time(task.start)}—${time(task.end)}</div></div></button>`;
+    return `<aside class="day-panel" aria-label="当天概览"><div class="panel-kicker">DAY OVERVIEW</div><h2 class="panel-heading">这一天</h2><div class="panel-date">${dateTitle(state.date)}</div><div class="day-counts"><div class="metric"><strong>${tasks.length-done}</strong><small>待处理</small></div><div class="metric"><strong>${done}</strong><small>已完成</small></div></div><div class="completion-caption"><span>当日完成</span><span>${done} / ${tasks.length}</span></div><div class="completion-track" role="meter" aria-label="当日任务完成数量" aria-valuemin="0" aria-valuemax="${Math.max(tasks.length,1)}" aria-valuenow="${done}"><i style="width:${tasks.length ? done / tasks.length * 100 : 0}%"></i></div><section class="panel-section"><h3 class="panel-section-title">待处理</h3>${tasks.filter(task=>!task.done).map(sideTask).join('') || '<div class="empty-text">没有待处理任务</div>'}</section>${state.showCompleted && done ? `<section class="panel-section"><h3 class="panel-section-title">已完成</h3>${tasks.filter(task=>task.done).map(sideTask).join('')}</section>` : ''}<div class="side-footer">示例仅用于验证布局与组件。<br>${state.storageAvailable === false ? '临时模式：刷新后不保留修改。' : '修改保存在当前浏览器，不同步账号。'}<br><button type="button" data-action="sample-date">回到 11 月 3 日示例</button><br><button type="button" data-action="about">查看原型范围</button></div></aside>`;
+  }
+  function WeekView(state) {
+    const base = localDate(state.date), offset = (base.getDay()+6)%7;
+    base.setDate(base.getDate()-offset);
+    return `<div class="week-view"><p class="section-subtitle">周概览 · 点日期进入日视图</p>${Array.from({length:7},(_,i)=>{ const date = new Date(base); date.setDate(base.getDate()+i); const key=dateKey(date); const tasks=state.tasks.filter(task=>task.date===key&&(state.showCompleted||!task.done)).sort((a,b)=>a.start-b.start); return `<section class="week-day ${key===state.date?'current':''}"><button type="button" class="week-day-label" data-action="open-day" data-date="${key}" aria-label="查看${dateTitle(key)}"><strong>${date.getDate()}</strong><span>${weekday(key)}</span></button><div>${tasks.length ? tasks.map(task=>`<button type="button" class="week-mini-task ${task.done?'done':''}" data-action="task" data-id="${esc(task.id)}"><time>${time(task.start)}</time><span>${esc(task.title)}${task.done?' ✓':''}</span></button>`).join('') : '<div class="week-empty">暂无任务</div>'}</div></section>`; }).join('')}</div>`;
+  }
+  function MonthView(state) {
+    const selected=localDate(state.date), start=new Date(selected.getFullYear(),selected.getMonth(),1,12);
+    start.setDate(1-(start.getDay()+6)%7);
+    const today=dateKey(new Date());
+    return `<div class="month-view"><div class="month-weekdays">${['一','二','三','四','五','六','日'].map(d=>`<span>${d}</span>`).join('')}</div><div class="month-grid">${Array.from({length:42},(_,i)=>{ const day=new Date(start); day.setDate(start.getDate()+i); const key=dateKey(day); const n=state.tasks.filter(task=>task.date===key&&(state.showCompleted||!task.done)).length; return `<button type="button" class="month-cell ${day.getMonth()!==selected.getMonth()?'outside':''} ${key===state.date?'current':''} ${key===today?'today':''}" data-action="open-day" data-date="${key}" aria-label="${dateTitle(key)}，${n}项任务"><span class="day-number">${day.getDate()}</span>${n?'<span class="day-dot" aria-hidden="true"></span>':''}</button>`; }).join('')}</div><p class="month-hint">圆点表示有任务 · 点击日期查看时间轴</p></div>`;
+  }
+  function ComponentGallery() {
+    const task={ id:'preview',title:'工单需求确认',start:600,end:660,done:false,note:'' };
+    return `<div class="gallery"><div class="material-eyebrow">PORCELAIN / 01 · 组件规范</div><h2>柔和，但不寡淡。</h2><p class="intro">暖白表面，蓝灰墨色，来自左上方的柔光；暗色如阴天湖面，一层蓝灰退到底。<br>让任务有触感，让时间与内容仍然清楚。</p>
+      <section class="gallery-section"><h3><small>01</small>一张任务卡，四种状态</h3><div class="spec-tasks">${[['普通','微微浮起',{},task],['选中','靠近一层',{selected:true},task],['已完成','回落底面',{}, {...task,done:true}],['紧凑','时长不变',{compact:true},{...task,title:'梳理待办',start:660,end:690}]].map(([label,note,options,item])=>`<div class="spec-task-wrap"><div class="spec-task-label">${label}<small>${note}</small></div><div class="spec-task-canvas ${options.compact?'short':''}">${TaskItem(item,{...options,preview:true})}</div></div>`).join('')}</div><p class="gallery-note">高光和阴影只改变表面，不改变卡片的位置与高度。短任务不为装下文字而延长；已完成不整块透明。</p></section>
+      <section class="gallery-section"><h3><small>02</small>有触感的控件，不是一排凸起按钮</h3><div class="control-demo"><div class="control-spec"><small>内凹轨道 · 浮起选中项</small>${ViewSwitcher('day')}</div><div class="control-spec"><small>普通</small><button type="button" class="text-button today-button" data-action="preview-task">今天</button></div><div class="control-spec"><small>按下效果</small><button type="button" class="secondary-button is-pressed" data-action="preview-task">今天</button></div></div><p class="gallery-note">日期箭头和设置保持平面。高光集中在可触摸表面，按下时切换为轻微内阴影。</p></section>
+      <section class="gallery-section"><h3><small>03</small>三种层次，同一个光源</h3><div class="layer-demos"><div class="layer-demo layer-base"><span>底面</span><small>平面 · 无外投影</small></div><div class="layer-demo layer-card"><span>任务</span><small>微浮起 · 双层软影</small></div><div class="layer-demo layer-active"><span>选中</span><small>蓝灰调 · 更清晰边界</small></div></div></section>
+      <section class="gallery-section"><h3><small>04</small>颜色有温度，也有角色</h3><div class="swatches">${[['暖白表面','#FFFDF8'],['蓝灰强调(明)','#43618C'],['工作背景','#E9EEEB'],['通勤背景','#F2EADE'],['炭黑画布(暗)','#1E242B'],['暖白文字(暗)','#F4F1EA'],['雾蓝强调(暗)','#96AFCF'],['黄铜点睛(暗)','#C9A876']].map(([label,color])=>`<div><div class="swatch-color" style="background:${color}"></div><div class="swatch-label">${label}</div><div class="swatch-code">${color}</div></div>`).join('')}</div></section>
+      <section class="gallery-section"><h3><small>05</small>文字清楚，装饰收敛</h3><div class="type-spec"><span style="font-size:24px;font-weight:600">11月3日 · 周二</span><code>24 / 34 · 600</code></div><div class="type-spec"><span style="font-size:14px;font-weight:500">工单需求确认</span><code>14 / 21 · 500</code></div><div class="type-spec"><span style="font-size:11px;color:var(--muted)">10:00—11:30 · 待处理</span><code>11 / 17 · 400</code></div><p class="gallery-note">以上是手机端主规格；很窄的时段只显示摘要，完整信息在任务详情与任务列表中可读。</p></section>
+      <section class="gallery-section"><h3><small>06</small>间距与曲率</h3><div class="spacing-demo">${[4,8,12,16,24].map(n=>`<div class="spacing-unit"><i style="width:${n}px"></i>${n}</div>`).join('')}</div><div class="rule-row"><span class="rule-chip" style="border-radius:10px">任务 10</span><span class="rule-chip" style="border-radius:10px">按钮 10</span><span class="rule-chip" style="border-radius:16px">面板 16</span><span class="rule-chip" style="border-radius:22px">浮层 22</span></div><p class="gallery-note">时间背景不投影，普通任务浅投影，弹出层才使用明显浮起。禁止每层容器各自添加阴影。</p></section>
+      <section class="gallery-section"><h3><small>07</small>代码职责不因换皮改变</h3><p class="gallery-note">TaskItem 负责内容与状态；TimeGrid 负责真实时长和重叠；tokens.css 定义共用材质；material.css 把规则分配给不同角色。</p><button type="button" class="text-button" data-action="reset-confirm">恢复示例数据</button></section></div>`;
+  }
+  root.ScheduleComponents = Object.freeze({ esc,time,localDate,dateKey,weekday,dateTitle,Icon,IconButton,ViewSwitcher,DateToolbar,TimeBand,TaskItem,OverflowTrigger,TimeGrid,BottomNav,TaskRow,TaskList,DayPanel,WeekView,MonthView,ComponentGallery });
+})(window);
+
+</script>
+  <script>
+/* app.js */
+/** Demo application: state, local persistence, accessible dialogs, event routing. */
+(function () {
+  'use strict';
+  const C = window.ScheduleComponents;
+  const { esc, time, dateKey, localDate, dateTitle, Icon, IconButton } = C;
+  const { SAMPLE_DATE, initialData } = window.ScheduleData;
+  const STORAGE_KEY = 'dayline-porcelain-demo-v1';
+  const app = document.getElementById('app');
+  const modal = document.getElementById('modal');
+  const toastNode = document.getElementById('toast');
+  let toastTimer, previousFocus, selectedId = null;
+  let storageOK = true;
+  const openingScroll = () => ScheduleLayout.px(480) - 10;
+  let pendingScroll = openingScroll();
+
+  const THEME_KEY = 'dayline-porcelain-theme';
+  function applyTheme(theme) {
+    document.documentElement.dataset.theme = theme;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#1E242B' : '#f7f5ef');
+    const toggle = document.getElementById('theme-toggle');
+    if (toggle) toggle.textContent = theme === 'dark' ? '浅色' : '深色';
+  }
+  applyTheme((() => {
+    try {
+      const saved = localStorage.getItem(THEME_KEY);
+      if (saved === 'dark' || saved === 'light') return saved;
+    } catch (_) {}
+    return window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  })());
+
+  function validDate(value) {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const date = localDate(value);
+    return Number.isFinite(date.getTime()) && dateKey(date) === value;
+  }
+  function validInterval(item) {
+    return item && typeof item.id === 'string' && typeof item.title === 'string' &&
+      validDate(item.date) && Number.isInteger(item.start) && Number.isInteger(item.end) &&
+      item.start >= 0 && item.end <= 1440 && item.start < item.end;
+  }
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return initialData();
+      const saved = JSON.parse(raw);
+      if (saved.version !== 1 || !validDate(saved.date) ||
+          !Array.isArray(saved.tasks) || !saved.tasks.every(t => validInterval(t) && typeof t.done === 'boolean') ||
+          !Array.isArray(saved.bands) || !saved.bands.every(validInterval) ||
+          !Array.isArray(saved.backlog) || !saved.backlog.every(t => typeof t.id === 'string' && typeof t.title === 'string') ||
+          !['day', 'week', 'month'].includes(saved.view) || !['schedule', 'tasks', 'components'].includes(saved.page) ||
+          typeof saved.showCompleted !== 'boolean' || typeof saved.showBands !== 'boolean' ||
+          new Set(saved.tasks.map(t => t.id)).size !== saved.tasks.length) return initialData();
+      return saved;
+    } catch (_) {
+      storageOK = false;
+      return initialData();
+    }
+  }
+  let state = load();
+  function save() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); storageOK = true; }
+    catch (_) {
+      storageOK = false;
+      toast('当前浏览器未允许本地保存；本次修改仍在页面中生效。');
+    }
+  }
+  function toast(message) {
+    clearTimeout(toastTimer);
+    toastNode.textContent = message;
+    toastNode.classList.add('visible');
+    toastTimer = setTimeout(() => toastNode.classList.remove('visible'), 3200);
+  }
+  function render({ keepScroll = false, focusSelector = null } = {}) {
+    const oldBody = document.getElementById('page-body');
+    const oldScroll = keepScroll && oldBody ? oldBody.scrollTop : null;
+    const content = state.page === 'components' ? C.ComponentGallery() :
+      state.page === 'tasks' ? C.TaskList(state) :
+      state.view === 'day' ? C.TimeGrid(state) :
+      state.view === 'week' ? C.WeekView(state) : C.MonthView(state);
+    app.innerHTML = `<div class="app-shell"><div class="primary">${C.DateToolbar(state)}<main id="page-body" class="page-body" aria-label="${state.page === 'components' ? '组件预览' : state.page === 'tasks' ? '当日任务列表' : '日程内容'}" tabindex="-1">${content}</main>${C.BottomNav(state.page)}</div>${C.DayPanel({...state, storageAvailable: storageOK})}</div>`;
+    const body = document.getElementById('page-body');
+    if (oldScroll !== null) body.scrollTop = oldScroll;
+    else if (state.page === 'schedule' && state.view === 'day') body.scrollTop = pendingScroll;
+    else body.scrollTop = 0;
+    if (focusSelector) document.querySelector(focusSelector)?.focus({ preventScroll: true });
+  }
+  function changed(options = {}) { save(); render(options); }
+  function scrollToMinute(minute) {
+    pendingScroll = Math.max(0, window.ScheduleLayout.px(minute) - 28);
+    if (state.page === 'schedule' && state.view === 'day') document.getElementById('page-body').scrollTop = pendingScroll;
+  }
+  function openModal(title, content, focusSelector = null) {
+    if (!modal.open) previousFocus = document.activeElement;
+    modal.innerHTML = `<div class="dialog-head"><h2 id="dialog-title">${esc(title)}</h2>${IconButton('close', '关闭', 'close')}</div><div class="dialog-content">${content}</div>`;
+    modal.setAttribute('aria-labelledby', 'dialog-title');
+    if (!modal.open) modal.showModal();
+    if (focusSelector) modal.querySelector(focusSelector)?.focus();
+  }
+  function closeModal() {
+    modal.close();
+  }
+  modal.addEventListener('close', () => {
+    document.querySelectorAll('.task-item.is-selected').forEach(node => {
+      if (!node.closest('.gallery')) node.classList.remove('is-selected');
+    });
+    selectedId = null;
+    if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+    else document.querySelector('[data-action="add"]')?.focus({ preventScroll: true });
+  });
+  modal.addEventListener('click', event => {
+    if (event.target === modal) {
+      const rect = modal.getBoundingClientRect();
+      if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) closeModal();
+    }
+  });
+
+  function openEditor(id = null, backlogId = null) {
+    const task = id ? state.tasks.find(t => t.id === id) : null;
+    const backlog = backlogId ? state.backlog.find(t => t.id === backlogId) : null;
+    if (id && !task) return toast('这项任务已不存在。');
+    if (backlogId && !backlog) return toast('这项待办已安排或移除。');
+    selectedId = id;
+    if (id) document.querySelectorAll(`.task-item[data-id="${CSS.escape(id)}"]`).forEach(node => node.classList.add('is-selected'));
+    const value = task || { title: backlog?.title || '', date: state.date, start: 600, end: 630, done: false, note: '' };
+    openModal(task ? '任务详情' : backlog ? '安排待办' : '新建任务', `
+      <form id="task-form" data-id="${esc(id || '')}" data-backlog="${esc(backlogId || '')}">
+        <div class="form-field"><label for="task-title">任务名称</label><input id="task-title" name="title" maxlength="120" required value="${esc(value.title)}" placeholder="写下要做的事" autocomplete="off"></div>
+        <div class="form-field"><label for="task-date">日期</label><input id="task-date" name="date" type="date" required value="${esc(value.date)}"></div>
+        <div class="form-row"><div class="form-field"><label for="task-start">开始时间</label><input id="task-start" name="start" type="time" step="60" required value="${time(value.start)}"></div><div class="form-field"><label for="task-end">结束时间</label><input id="task-end" name="end" type="time" step="60" required value="${time(Math.min(value.end,1439))}"></div></div>
+        <div class="form-field"><label for="task-note">备注（可选）</label><textarea id="task-note" name="note" maxlength="1000" rows="2">${esc(value.note || '')}</textarea></div>
+        <label class="checkbox-label"><input type="checkbox" name="done" ${value.done ? 'checked' : ''}>已完成</label>
+        <p class="form-error" id="form-error" role="alert" hidden></p>
+        <div class="dialog-actions">${task ? `<button type="button" class="danger-button" data-action="delete-confirm" data-id="${esc(id)}">删除任务</button>` : '<button type="button" class="secondary-button" data-action="close">取消</button>'}<button type="submit" class="primary-button">${task ? '保存修改' : '加入日程'}</button></div>
+      </form>`, task ? null : '#task-title');
+  }
+  function openBacklog() {
+    openModal(`待安排 · ${state.backlog.length}`, `<p class="dialog-description">以下是原型中的示例待办。点击“安排”，为它指定日期和时间。</p>${state.backlog.length ? state.backlog.map(task => `<div class="backlog-row"><span>${esc(task.title)}</span><button type="button" class="text-button" data-action="schedule-backlog" data-id="${esc(task.id)}" aria-label="安排${esc(task.title)}">安排 ${Icon('right')}</button></div>`).join('') : '<p class="empty-text">所有示例待办都已安排。</p>'}`);
+  }
+  function openSettings() {
+    openModal('显示设置', `<p class="dialog-description">只改变显示，不改变任务时间或完成记录。</p><label class="settings-row"><span>显示已完成任务<small>保留回顾信息，降低视觉强调。</small></span><input type="checkbox" data-setting="showCompleted" ${state.showCompleted ? 'checked' : ''}></label><label class="settings-row"><span>显示时间段背景<small>通勤、上班作为背景，不占任务列。</small></span><input type="checkbox" data-setting="showBands" ${state.showBands ? 'checked' : ''}></label><div class="dialog-actions"><button type="button" class="primary-button" data-action="close">完成</button></div>`);
+  }
+  function openAbout() {
+    openModal('关于这个原型', `<p class="dialog-description">从整页角色出发，验证一套可复用的日程组件。</p><ul class="about-list"><li><strong>示例数据，不是账号数据。</strong>沿用截图中的日期和部分文字。地铁、上班、转正材料的时段来自截图，其余任务名称及具体时间为演示设置，不是对实际日程的还原。</li><li><strong>可以实际操作：</strong>切换日期、日／周／月概览、查看重叠、增改删任务、勾选完成、安排待办、调整显示。</li><li><strong>保存范围：</strong>仅当前浏览器的 localStorage，不登录、不联网、不修改真实任务软件。${storageOK ? '' : '当前浏览器未允许本地保存，关闭或刷新页面后修改可能丢失。'}</li><li><strong>未实现：</strong>拖拽改期、跨午夜任务、重复任务、通知、远端同步。周视图是列表式概览，不是完整七列时间轴。</li></ul><div class="dialog-actions"><button type="button" class="secondary-button" data-action="reset-confirm">恢复示例</button><button type="button" class="primary-button" data-action="close">知道了</button></div>`);
+  }
+  function openOverflow(start, end) {
+    const tasks = state.tasks.filter(task => task.date === state.date && (state.showCompleted || !task.done) && task.start < end && task.end > start).sort((a,b)=>Number(a.done)-Number(b.done)||a.start-b.start);
+    openModal('重叠任务', `<p class="dialog-description">${time(start)}—${time(end)} 期间共有 ${tasks.length} 项任务。以下完整显示它们的名称与各自时段；没有将重叠任务排成先后执行。</p>${tasks.map(task => C.TaskRow(task,false)).join('')}`);
+  }
+  function openDatePicker() {
+    openModal('跳转日期', `<form id="date-form"><div class="form-field"><label for="goto-date">选择日期</label><input id="goto-date" name="date" type="date" value="${state.date}" required></div><div class="dialog-actions"><button type="button" class="text-button" data-action="sample-date">回到 11月3日示例</button><button type="submit" class="primary-button">查看</button></div></form>`);
+  }
+  function setDate(date) {
+    if (!validDate(date)) return toast('请选择有效日期。');
+    state.date = date; state.page = 'schedule';
+    pendingScroll = openingScroll();
+    changed();
+  }
+  function navigate(direction) {
+    const day = localDate(state.date);
+    if (state.view === 'month') {
+      const wanted = day.getDate(); day.setDate(1); day.setMonth(day.getMonth() + direction);
+      const last = new Date(day.getFullYear(),day.getMonth()+1,0).getDate();
+      day.setDate(Math.min(wanted,last));
+    } else day.setDate(day.getDate() + direction * (state.view === 'week' ? 7 : 1));
+    setDate(dateKey(day));
+    document.querySelector(`[data-action="${direction < 0 ? 'previous' : 'next'}"]`)?.focus({preventScroll:true});
+  }
+  function handleAction(button) {
+    const action = button.dataset.action;
+    const id = button.dataset.id;
+    switch (action) {
+      case 'close': closeModal(); break;
+      case 'about': openAbout(); break;
+      case 'theme': {
+        const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+        try { localStorage.setItem(THEME_KEY, next); } catch (_) {}
+        applyTheme(next);
+        break;
+      }
+      case 'task': openEditor(id); break;
+      case 'add': openEditor(); break;
+      case 'backlog': openBacklog(); break;
+      case 'schedule-backlog': openEditor(null,id); break;
+      case 'settings': openSettings(); break;
+      case 'pick-date': openDatePicker(); break;
+      case 'overflow': openOverflow(Number(button.dataset.start),Number(button.dataset.end)); break;
+      case 'previous': navigate(-1); break;
+      case 'next': navigate(1); break;
+      case 'today': {
+        state.view = 'day'; setDate(dateKey(new Date()));
+        const now = new Date(); scrollToMinute(Math.max(0,now.getHours()*60-30));
+        document.querySelector('[data-action="today"]')?.focus({preventScroll:true});
+        break;
+      }
+      case 'sample-date': {
+        state.view = 'day'; setDate(SAMPLE_DATE);
+        if (modal.open) closeModal();
+        break;
+      }
+      case 'open-day': state.view='day'; setDate(button.dataset.date); break;
+      case 'view': {
+        state.view=button.dataset.view; state.page='schedule';
+        changed({focusSelector:`.view-tab[data-view="${state.view}"]`}); break;
+      }
+      case 'page': {
+        const currentBody = document.getElementById('page-body');
+        if (state.page==='schedule' && state.view==='day') pendingScroll=currentBody.scrollTop;
+        state.page=button.dataset.page;
+        changed({focusSelector:`.nav-item[data-page="${state.page}"]`}); break;
+      }
+      case 'toggle': {
+        const task=state.tasks.find(t=>t.id===id);
+        if (!task) break;
+        task.done=!task.done;
+        changed({keepScroll:true,focusSelector:`[data-action="toggle"][data-id="${id}"]`});
+        toast(task.done?'已标记完成':'已恢复为待处理'); break;
+      }
+      case 'delete-confirm': {
+        const task=state.tasks.find(t=>t.id===id);
+        if (!task) break;
+        openModal('删除这项任务？', `<p class="dialog-description">${esc(task.title)}<br>只删除此原型中的任务；不会修改真实账号。</p><div class="dialog-actions"><button type="button" class="secondary-button" data-action="task" data-id="${esc(id)}">取消</button><button type="button" class="primary-button" data-action="delete" data-id="${esc(id)}">确认删除</button></div>`); break;
+      }
+      case 'delete': state.tasks=state.tasks.filter(t=>t.id!==id); changed({keepScroll:true}); closeModal(); toast('任务已删除'); break;
+      case 'preview-task': toast('这是复用同一个 TaskItem 的状态样例；在「日程」或「任务」中编辑真实示例。'); break;
+      case 'reset-confirm': openModal('恢复示例数据？', `<p class="dialog-description">这会清除在当前原型里新增和修改的任务，恢复 11 月 3 日的演示状态。真实任务软件不受影响。</p><div class="dialog-actions"><button type="button" class="secondary-button" data-action="close">取消</button><button type="button" class="primary-button" data-action="reset">恢复示例</button></div>`); break;
+      case 'reset': state=initialData(); pendingScroll=openingScroll(); changed(); closeModal(); toast('已恢复示例数据'); break;
+    }
+  }
+  document.addEventListener('click', event => {
+    const button=event.target.closest('button[data-action]');
+    if (button && !button.disabled) handleAction(button);
+  });
+  modal.addEventListener('change', event => {
+    const key=event.target.dataset.setting;
+    if (!['showCompleted','showBands'].includes(key)) return;
+    state[key]=event.target.checked;
+    changed({keepScroll:true});
+  });
+  modal.addEventListener('submit', event => {
+    event.preventDefault();
+    const form=event.target;
+    const formData=new FormData(form);
+    if (form.id==='date-form') {
+      const date=String(formData.get('date')||'');
+      if (!validDate(date)) return;
+      setDate(date); closeModal(); return;
+    }
+    if (form.id!=='task-form') return;
+    const toMinutes = value => {
+      const match=/^(\d{2}):(\d{2})$/.exec(String(value));
+      if (!match || Number(match[1])>23 || Number(match[2])>59) return NaN;
+      return Number(match[1])*60+Number(match[2]);
+    };
+    const title=String(formData.get('title')||'').trim();
+    const date=String(formData.get('date')||'');
+    const start=toMinutes(formData.get('start')), end=toMinutes(formData.get('end'));
+    const error=form.querySelector('#form-error');
+    const fail=message=>{error.hidden=false;error.textContent=message;};
+    if (!title) return fail('请填写任务名称，不能只输入空格。');
+    if (!validDate(date)) return fail('请选择有效日期。');
+    if (!Number.isFinite(start)||!Number.isFinite(end)||end<=start) return fail('结束时间必须晚于开始时间。本原型暂不支持跨午夜任务。');
+    const id=form.dataset.id;
+    const old=id?state.tasks.find(task=>task.id===id):null;
+    const uuid=()=>globalThis.crypto?.randomUUID?.() || `t-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const task={id:old?.id||uuid(),title,date,start,end,done:formData.get('done')==='on',note:String(formData.get('note')||'').trim()};
+    if (old) Object.assign(old,task); else state.tasks.push(task);
+    if (form.dataset.backlog) state.backlog=state.backlog.filter(item=>item.id!==form.dataset.backlog);
+    const sameDay=state.date===date;
+    state.date=date;
+    changed({keepScroll:sameDay});
+    closeModal();
+    if (state.page==='schedule' && state.view==='day') scrollToMinute(start-20);
+    toast(storageOK ? (old ? '修改已保存' : '任务已加入日程') : '修改已生效（临时模式，刷新后不保留）');
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key==='Escape' && !modal.open) toastNode.classList.remove('visible');
+  });
+  // Refresh the real-time marker only on the device's actual current date.
+  // Never add a pretend "now" line to the historical demo date.
+  setInterval(() => {
+    if (state.page==='schedule' && state.view==='day' && state.date===dateKey(new Date()) && !modal.open) render({keepScroll:true});
+  }, 60000);
+  render();
+  if (!storageOK) toast('本地保存不可用，当前以临时演示模式运行。');
+})();
+
+</script>
+</body>
+</html>
