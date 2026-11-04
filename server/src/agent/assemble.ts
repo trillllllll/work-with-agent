@@ -55,8 +55,8 @@ async function briefText(context: StoredChatContext) {
     const snapshot = await takeKnowledgeSnapshot(ownerActor, { topicId });
     const lines = ['# 当前简报', '', '## 任务'];
     for (const source of snapshot.sources.filter((item) => item.type === 'task')) lines.push(`- ${source.title}`);
-    lines.push('', '## 资料与记忆摘录');
-    for (const source of snapshot.sources.filter((item) => item.type !== 'task')) lines.push(`- ${source.type} ${source.title}：${source.content.slice(0, 200)}`);
+    lines.push('', '## 资料摘录');
+    for (const source of snapshot.sources.filter((item) => item.type === 'material')) lines.push(`- ${source.type} ${source.title}：${source.content.slice(0, 200)}`);
     if (snapshot.truncated) lines.push('', '简报未包含全部来源，请用工具续读。');
     return clipPoints(lines.join('\n'), BRIEF_CAP);
   } catch (error) {

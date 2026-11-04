@@ -39,6 +39,9 @@ describe('builtin run context', () => {
     const nearby = seen.split('【附近任务】')[1]?.split('【本请求待确认方案】')[0] ?? '';
     expect(notes).toContain('固定约定：标题原样保留');
     expect(brief).not.toContain('固定约定：标题原样保留');
+    expect(brief).toContain('## 资料摘录');
+    expect(brief).not.toContain('## 资料与记忆摘录');
+    expect(brief).not.toMatch(/^- memory /m);
     expect(seen).toContain('服务端重新读取的标题');
     expect(seen).toContain('先问清楚指哪些任务，不要默认取附近任务');
     expect(seen).toContain('get_time');
