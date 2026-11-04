@@ -84,7 +84,7 @@ export function ChatComposer({ input, busy, reference, onChange, onSend, onCance
           {busy ? <Button type="button" size="icon" className="size-8 rounded-full" onClick={onStop} disabled={stopping} aria-label={t('composer.stop')}><Square className="size-3 fill-current" /></Button> : <Button type="submit" size="icon" className="size-8 rounded-full" disabled={!input.trim()} aria-label={t('composer.send')}><ArrowUp /></Button>}
         </div>
       </Surface>
-      <p className="text-center text-[10px] text-muted-foreground">{stopping ? t('composer.stopping') : t('composer.previewHint')}</p>
+      {stopping && <p className="text-center text-[10px] text-muted-foreground">{t('composer.stopping')}</p>}
     </form>
   );
 }

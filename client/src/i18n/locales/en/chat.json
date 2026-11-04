@@ -183,8 +183,7 @@
     "placeholder": "Example: Create a task: Organize the API docs",
     "stop": "Stop generating",
     "send": "Send",
-    "stopping": "Stopping…",
-    "previewHint": "Changes are previewed and run only after you confirm."
+    "stopping": "Stopping…"
   },
   "chatPanel": {
     "title": "Dovun assistant",
