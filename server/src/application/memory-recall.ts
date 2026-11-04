@@ -79,6 +79,8 @@ const SYMBOL_ONLY = /^[\p{P}\p{S}]+$/u;
  */
 export function rankMemories(query: string, candidates: MemoryCandidateRow[]): RankedMemory[] {
   const q = [...normalizeQuery(query)].slice(0, RECALL_QUERY_CHARS).join('');
+  // 纯标点/符号的剔除按"分段"判定：混合段（如"好！！！"）切出的符号 3 字切片仍会留在 Q 里，
+  // 但只有命中候选字段才会计分，实际影响可忽略（计划 5.4 第 2 条的口径说明）。
   const segments = q.split(' ').filter(Boolean);
   const fragments: string[] = [];
   for (const segment of segments) {

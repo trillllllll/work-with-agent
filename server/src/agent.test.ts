@@ -68,7 +68,7 @@ describe('Agent tool gate', () => {
       const tool = (id: string, name: string, args: Record<string, unknown>) => sseResponse([{ choices: [{ delta: { tool_calls: [{ index: 0, id, function: { name, arguments: JSON.stringify(args) } }] }, finish_reason: 'tool_calls' }] }]);
       if (userText.includes('读取完整记忆') && hasToolReply) return answer('已读到记忆。');
       if (userText.includes('读取完整记忆')) {
-        const memoryId = systemText.match(/id=(\S+)(?: revision=\d+ kind=\w+)? 《完整记忆标题》/)?.[1];
+        const memoryId = systemText.match(/id=(\S+) r\d+ \w+ 《完整记忆标题》/)?.[1];
         return tool('call_memory_read', 'memory_read', { action: 'read', target: 'inbox', memoryId });
       }
       if (userText.includes('空白搜索记忆') && hasToolReply) return answer('已列出记忆。');
