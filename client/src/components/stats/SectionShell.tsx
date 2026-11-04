@@ -29,7 +29,7 @@ export function Panel({ children, className }: { children: ReactNode; className?
   return <Surface as="div" tone="subtle" className={cn('glass-subtle min-w-0 rounded-xl border p-4', className)}>{children}</Surface>;
 }
 
-export function SectionFrame({ id, title, summary, link, children }: { id: 'tasks' | 'focus' | 'plan' | 'ai'; title: string; summary?: string; link?: { label: string; onClick: () => void }; children: ReactNode }) {
+export function SectionFrame({ id, title, summary, link, children }: { id: 'tasks' | 'focus' | 'plan' | 'ai' | 'assistant'; title: string; summary?: string; link?: { label: string; onClick: () => void }; children: ReactNode }) {
   return (
     <section data-testid={`stats-section-${id}`} className="min-w-0 space-y-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -42,7 +42,7 @@ export function SectionFrame({ id, title, summary, link, children }: { id: 'task
   );
 }
 
-export function SectionError({ id, title, message, onRetry }: { id: 'tasks' | 'focus' | 'plan' | 'ai'; title: string; message: string; onRetry: () => void }) {
+export function SectionError({ id, title, message, onRetry }: { id: 'tasks' | 'focus' | 'plan' | 'ai' | 'assistant'; title: string; message: string; onRetry: () => void }) {
   const { t } = useTranslation('stats');
   return (
     <section data-testid={`stats-section-${id}`} className="min-w-0 space-y-3">

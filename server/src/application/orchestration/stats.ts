@@ -7,6 +7,7 @@ import { prisma } from '../../infrastructure/prisma.js';
 import { DomainError } from '../../domain/task.js';
 import { assertTimeZone, calendarFormatter, eachLocalDay, localCalendarDate } from '../reviews-clock.js';
 import { failureKindFromStep, type FailureKind } from './checks.js';
+import { aggregateAssistantUsage, loadAssistantRuns, type AssistantUsageGroup, type AssistantUsageRun } from '../assistant-usage.js';
 
 const MAX_RANGE_MS = 366 * 24 * 60 * 60 * 1000;
 const ISO_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -69,16 +70,8 @@ export type StatsLegacyRun = {
   costMicroUsd: number | null;
 };
 
-export type StatsAssistantRun = {
-  id: string;
-  createdAt: string | null;
-  completedAt: string | null;
-  updatedAt: string;
-  inputTokens: number | null;
-  cachedInputTokens: number | null;
-  outputTokens: number | null;
-  model: string | null;
-};
+/** Same shape as the shared assistant-usage run row. */
+export type StatsAssistantRun = AssistantUsageRun;
 
 export type StatsTask = { id: string; title: string };
 export type StatsNode = { id: string; name: string };
@@ -149,6 +142,7 @@ export type DispatchStats = {
     outputTokens: number;
     costMicroUsd: number | null;
     byModel: UsageGroup[];
+    byIdentity: UsageGroup[];
   };
 };
 
@@ -319,33 +313,20 @@ export function aggregateDispatchStats(input: {
     }
   }
 
-  const assistant = { runs: 0, runsWithUsage: 0, durationMs: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, costMicroUsd: null as number | null, byModel: [] as UsageGroup[] };
-  if (!projectId) {
-    const byModel = new Map<string, UsageGroup>();
-    for (const run of input.assistantRuns ?? []) {
-      if (!inRange(run.updatedAt, parsed.fromMs, parsed.toMs)) continue;
-      assistant.runs += 1;
-      const inputTokens = run.inputTokens ?? 0;
-      const cachedInputTokens = run.cachedInputTokens ?? 0;
-      const outputTokens = run.outputTokens ?? 0;
-      if (run.inputTokens != null || run.outputTokens != null) assistant.runsWithUsage += 1;
-      const runDuration = durationMs(run.createdAt, run.completedAt ?? run.updatedAt);
-      assistant.durationMs += runDuration;
-      assistant.inputTokens += inputTokens;
-      assistant.cachedInputTokens += cachedInputTokens;
-      assistant.outputTokens += outputTokens;
-      if (run.inputTokens == null && run.outputTokens == null && !run.model) continue;
-      const key = run.model || 'unknown';
-      const group = byModel.get(key) ?? emptyGroup(key);
-      group.jobs += 1;
-      group.durationMs += runDuration;
-      group.inputTokens += inputTokens;
-      group.cachedInputTokens += cachedInputTokens;
-      group.outputTokens += outputTokens;
-      byModel.set(key, group);
-    }
-    assistant.byModel = sortedGroups(byModel);
-  }
+  /** Assistant usage shares the aggregation with the stats overview section; `UsageGroup.jobs` mirrors its `runs`. */
+  const assistantGroups = (groups: AssistantUsageGroup[]): UsageGroup[] => groups.map((group) => ({ key: group.key, jobs: group.runs, durationMs: group.durationMs, inputTokens: group.inputTokens, cachedInputTokens: group.cachedInputTokens, outputTokens: group.outputTokens, costMicroUsd: 0 }));
+  const assistantUsage = projectId ? null : aggregateAssistantUsage(input.assistantRuns ?? [], { fromMs: parsed.fromMs, toMs: parsed.toMs });
+  const assistant = {
+    runs: assistantUsage?.totals.runs ?? 0,
+    runsWithUsage: assistantUsage?.totals.runsWithUsage ?? 0,
+    durationMs: assistantUsage?.totals.durationMs ?? 0,
+    inputTokens: assistantUsage?.totals.inputTokens ?? 0,
+    cachedInputTokens: assistantUsage?.totals.cachedInputTokens ?? 0,
+    outputTokens: assistantUsage?.totals.outputTokens ?? 0,
+    costMicroUsd: null as number | null,
+    byModel: assistantUsage ? assistantGroups(assistantUsage.byModel) : [],
+    byIdentity: assistantUsage ? assistantGroups(assistantUsage.byIdentity) : [],
+  };
 
   const zone = input.tz?.trim() || 'UTC';
   if (input.tz?.trim()) assertTimeZone(zone);
@@ -444,13 +425,7 @@ export async function dispatchStats(query: { from: string; to: string; projectId
     taskIds.length ? prisma.task.findMany({ where: { id: { in: taskIds } }, select: { id: true, title: true } }) : Promise.resolve([]),
     prisma.project.findMany({ select: { id: true, name: true } }),
     projectId ? Promise.resolve([]) : prisma.run.findMany({ where: { endedAt: { gte: parsed.from, lt: parsed.to } }, select: { id: true, startedAt: true, endedAt: true, inputTokens: true, cachedInputTokens: true, outputTokens: true, costMicroUsd: true } }),
-    projectId ? Promise.resolve([]) : prisma.agentRun.findMany({
-      where: {
-        updatedAt: { gte: parsed.from, lt: parsed.to },
-        OR: [{ inputTokens: { not: null } }, { outputTokens: { not: null } }],
-      },
-      select: { id: true, createdAt: true, completedAt: true, updatedAt: true, inputTokens: true, cachedInputTokens: true, outputTokens: true, model: true },
-    }),
+    projectId ? Promise.resolve([]) : loadAssistantRuns({ from: parsed.from, to: parsed.to }),
   ]);
   const nodes = [...new Map(jobs.map((job) => [job.nodeId, { id: job.nodeId, name: job.node?.name || 'unknown' }])).values()];
 

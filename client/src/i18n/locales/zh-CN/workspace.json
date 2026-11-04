@@ -398,7 +398,9 @@
       "loading": "正在加载…",
       "accepted": "已验收 {{n}}",
       "outcome": "成功 {{succeeded}} · 失败 {{failed}}",
-      "unknown": "未知"
+      "unknown": "未知",
+      "identityWork": "工作助手",
+      "identityStudy": "学习助手"
     }
   },
   "handoff": {

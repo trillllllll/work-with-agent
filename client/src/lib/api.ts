@@ -288,10 +288,26 @@ export type StatsAiSection = {
   };
   connections: Array<{ id: string; name: string; status: string; host: string; writes: number; proposals: number; lastActiveAt: string | null; byDay: Array<{ date: string; count: number }> }>;
 };
+export type StatsAssistantUsageSection = {
+  totals: {
+    runs: StatsPair;
+    inputTokens: StatsPair;
+    outputTokens: StatsPair;
+    cachedInputTokens: number;
+    runsWithUsage: number;
+    durationMs: number;
+  };
+  byIdentity: Array<{ key: string; runs: number; inputTokens: number; outputTokens: number; cachedInputTokens: number }>;
+  byModel: Array<{ key: string; runs: number; inputTokens: number; outputTokens: number }>;
+  byDay: Array<{ date: string; runs: number; inputTokens: number; outputTokens: number }>;
+  topConversations: Array<{ conversationId: string; title: string | null; identityId: string; runs: number; inputTokens: number; outputTokens: number }>;
+  memoryJobs: { jobs: number; failed: number; inputTokens: number; outputTokens: number; totalTokens: number } | null;
+};
 export type StatsOverview = {
   range: StatsRangeInfo;
   tasks: StatsTasksSection | StatsSectionError;
   focus: StatsFocusSection | StatsSectionError;
   plan: StatsPlanSection | StatsSectionError;
   ai: StatsAiSection | StatsSectionError;
+  assistantUsage: StatsAssistantUsageSection | StatsSectionError;
 };

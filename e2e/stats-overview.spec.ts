@@ -15,6 +15,7 @@ type Overview = {
   focus: { minutes: Pair } | { error: { code: string; message: string } };
   plan: { onPlanRate: Rate } | { error: { code: string; message: string } };
   ai: { proposals: { adoptionRate: Rate }; dispatch: { rounds: Pair } } | { error: { code: string; message: string } };
+  assistantUsage: { totals: { runs: Pair }; byIdentity: Array<{ key: string; runs: number }>; topConversations: Array<{ conversationId: string; title: string | null; runs: number; inputTokens: number; outputTokens: number }> } | { error: { code: string; message: string } };
 };
 
 function shanghaiToday() {
@@ -406,4 +407,45 @@ test('深色主题下统计页没有控制台错误', async ({ page }) => {
   });
   expect(contrast.color).not.toBe(contrast.background);
   expect(errors, errors.join('\n')).toEqual([]);
+});
+
+test('统计页展示 AI 助手用量分区，身份、模型与会话分类和接口一致', async ({ page, request }, testInfo) => {
+  desktopOnly(testInfo);
+  test.setTimeout(60_000);
+  const today = shanghaiToday();
+  const workConv = 'au-spec-work';
+  const studyConv = 'au-spec-study';
+  const stamp = (hour: string, minute = '00') => `${today}T${hour}:${minute}:00.000Z`;
+  await e2eDatabase.conversation.createMany({ data: [
+    { id: workConv, identityId: 'work', createdAt: stamp('00'), updatedAt: stamp('00') },
+    { id: studyConv, identityId: 'study', createdAt: stamp('00'), updatedAt: stamp('00') },
+  ] });
+  const runBase = { state: 'completed', contextJson: '{}', modelMessagesJson: '[]', cursorJson: '{}', createdAt: stamp('00') };
+  await e2eDatabase.agentRun.createMany({ data: [
+    { ...runBase, id: 'au-spec-w1', conversationId: workConv, sourceUserMessageId: 'au-spec-w1-src', requestKey: 'au-spec-w1-key', requestHash: 'h', updatedAt: stamp('01', '05'), completedAt: stamp('01', '05'), inputTokens: 12000, cachedInputTokens: 4000, outputTokens: 900, model: 'spec-model' },
+    { ...runBase, id: 'au-spec-s1', conversationId: studyConv, sourceUserMessageId: 'au-spec-s1-src', requestKey: 'au-spec-s1-key', requestHash: 'h', updatedAt: stamp('02', '01'), completedAt: stamp('02', '01'), inputTokens: 3000, outputTokens: 200, model: 'spec-model' },
+  ] });
+  await e2eDatabase.message.create({ data: { id: 'au-spec-msg', conversationId: workConv, role: 'user', content: '帮我梳理统计验证用例', createdAt: stamp('00', '59') } });
+
+  const overview = await fetchOverview(request, today, today, 'Asia/Shanghai');
+  if (isSectionError(overview.assistantUsage)) throw new Error(`助手用量分区返回了错误 ${JSON.stringify(overview.assistantUsage)}`);
+  expect(overview.assistantUsage.totals.runs).toEqual({ value: 2, previous: 0 });
+  expect(overview.assistantUsage.byIdentity.map((row) => [row.key, row.runs]).sort()).toEqual([['study', 1], ['work', 1]]);
+  expect(overview.assistantUsage.topConversations[0]).toMatchObject({ conversationId: workConv, title: '帮我梳理统计验证用例', runs: 1, inputTokens: 12000, outputTokens: 900 });
+
+  const payload = await openStats(page);
+  if (isSectionError(payload.assistantUsage)) throw new Error(`助手用量分区返回了错误 ${JSON.stringify(payload.assistantUsage)}`);
+  const section = page.getByTestId('stats-section-assistant');
+  await expect(section).toBeVisible();
+  await expect(section.getByText('工作助手')).toBeVisible();
+  await expect(section.getByText('学习助手')).toBeVisible();
+  await expect(section.getByText('spec-model')).toBeVisible();
+  await expect(section.getByText('帮我梳理统计验证用例')).toBeVisible();
+
+  // AI 执行页统计段的「内置 AI」区块同样按身份分组。
+  await page.goto(`/#/runs?tab=stats&from=${today}&to=${today}`);
+  const assistant = page.getByTestId('stats-assistant');
+  await expect(assistant).toBeVisible();
+  await expect(assistant.getByText('工作助手')).toBeVisible();
+  await expect(assistant.getByText('学习助手')).toBeVisible();
 });

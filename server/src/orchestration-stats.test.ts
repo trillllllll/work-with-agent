@@ -169,12 +169,12 @@ describe('dispatch stats aggregation', () => {
     expect(all.roundCount).toBe(0);
   });
 
-  it('sums built-in assistant runs by updatedAt, grouping models, with unknown cost', () => {
+  it('sums built-in assistant runs by updatedAt, grouping identity and models, with unknown cost', () => {
     const assistantRuns: StatsAssistantRun[] = [
-      { id: 'chat-1', createdAt: '2099-06-02T00:00:00.000Z', completedAt: '2099-06-02T00:01:00.000Z', updatedAt: '2099-06-02T00:01:00.000Z', inputTokens: 300, cachedInputTokens: 120, outputTokens: 50, model: 'k1' },
-      { id: 'chat-2', createdAt: '2099-06-03T00:00:00.000Z', completedAt: '2099-06-03T00:02:00.000Z', updatedAt: '2099-06-03T00:02:00.000Z', inputTokens: 100, cachedInputTokens: 0, outputTokens: 20, model: 'k1' },
-      { id: 'chat-no-usage', createdAt: '2099-06-04T00:00:00.000Z', completedAt: null, updatedAt: '2099-06-04T00:00:30.000Z', inputTokens: null, cachedInputTokens: null, outputTokens: null, model: null },
-      { id: 'chat-out', createdAt: TO, completedAt: TO, updatedAt: TO, inputTokens: 999, cachedInputTokens: 0, outputTokens: 999, model: 'k2' },
+      { id: 'chat-1', conversationId: 'conv-1', identityId: 'work', createdAt: '2099-06-02T00:00:00.000Z', completedAt: '2099-06-02T00:01:00.000Z', updatedAt: '2099-06-02T00:01:00.000Z', inputTokens: 300, cachedInputTokens: 120, outputTokens: 50, model: 'k1' },
+      { id: 'chat-2', conversationId: 'conv-2', identityId: 'study', createdAt: '2099-06-03T00:00:00.000Z', completedAt: '2099-06-03T00:02:00.000Z', updatedAt: '2099-06-03T00:02:00.000Z', inputTokens: 100, cachedInputTokens: 0, outputTokens: 20, model: 'k1' },
+      { id: 'chat-no-usage', conversationId: 'conv-1', identityId: 'work', createdAt: '2099-06-04T00:00:00.000Z', completedAt: null, updatedAt: '2099-06-04T00:00:30.000Z', inputTokens: null, cachedInputTokens: null, outputTokens: null, model: null },
+      { id: 'chat-out', conversationId: 'conv-3', identityId: 'work', createdAt: TO, completedAt: TO, updatedAt: TO, inputTokens: 999, cachedInputTokens: 0, outputTokens: 999, model: 'k2' },
     ];
     const stats = aggregate({ assistantRuns });
     expect(stats.assistant).toEqual({
@@ -188,10 +188,15 @@ describe('dispatch stats aggregation', () => {
       byModel: [
         { key: 'k1', jobs: 2, durationMs: 180_000, inputTokens: 400, cachedInputTokens: 120, outputTokens: 70, costMicroUsd: 0 },
       ],
+      byIdentity: [
+        { key: 'work', jobs: 2, durationMs: 90_000, inputTokens: 300, cachedInputTokens: 120, outputTokens: 50, costMicroUsd: 0 },
+        { key: 'study', jobs: 1, durationMs: 120_000, inputTokens: 100, cachedInputTokens: 0, outputTokens: 20, costMicroUsd: 0 },
+      ],
     });
     const filtered = aggregate({ assistantRuns, projectId: 'project-p' });
     expect(filtered.assistant.runs).toBe(0);
     expect(filtered.assistant.byModel).toEqual([]);
+    expect(filtered.assistant.byIdentity).toEqual([]);
   });
 
   it('fills every UTC day and splits a Shanghai midnight across byDay', () => {

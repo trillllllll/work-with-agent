@@ -160,5 +160,25 @@
     "inbox": "Open inbox",
     "focus": "Start focus",
     "connections": "Set up AI connections"
+  },
+  "aiUsage": {
+    "title": "AI assistant usage",
+    "summary": "{{count}} requests · {{tokens}} tokens",
+    "requests": "Requests",
+    "input": "Input tokens",
+    "output": "Output tokens",
+    "cached": "Cached tokens",
+    "usageNote": "{{count}} requests came back without provider usage and count as zero tokens",
+    "byIdentity": "By assistant",
+    "identityWork": "Work assistant",
+    "identityStudy": "Learning assistant",
+    "groupMeta": "{{count}} runs · {{tokens}}",
+    "daily": "Daily usage",
+    "lineLabel": "Daily assistant token usage",
+    "byModel": "By model",
+    "modelMeta": "{{count}} runs · {{input}} in · {{output}} out",
+    "topConversations": "Top conversations",
+    "unnamedConversation": "Conversation {{id}}",
+    "memoryJobs": "Background memory extraction: {{count}} jobs ({{failed}} failed) · {{input}} in · {{output}} out"
   }
 }

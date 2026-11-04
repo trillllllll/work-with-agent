@@ -3,7 +3,7 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
 import { app } from '../app.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { localCalendarDate } from './reviews-clock.js';
-import { parseOverviewQuery, statsOverview, type AiSection, type FocusSection, type PlanSection, type TasksSection } from './stats-overview.js';
+import { parseOverviewQuery, statsOverview, type AiSection, type AssistantUsageSection, type FocusSection, type PlanSection, type TasksSection } from './stats-overview.js';
 
 const TZ = 'Asia/Shanghai';
 const ids = {
@@ -15,6 +15,9 @@ const ids = {
   memories: [] as string[],
   jobs: [] as string[],
   connections: [] as string[],
+  conversations: [] as string[],
+  runs: [] as string[],
+  messages: [] as string[],
 };
 
 function view(from: string, to: string, now?: Date) {
@@ -33,6 +36,10 @@ function planOf(section: PlanSection | { error: { message: string } }): PlanSect
   return section;
 }
 function aiOf(section: AiSection | { error: { message: string } }): AiSection {
+  if ('error' in section) throw new Error(section.error.message);
+  return section;
+}
+function assistantUsageOf(section: AssistantUsageSection | { error: { message: string } }): AssistantUsageSection {
   if ('error' in section) throw new Error(section.error.message);
   return section;
 }
@@ -80,6 +87,9 @@ describe('stats overview', () => {
     if (ids.proposals.length) await prisma.proposal.deleteMany({ where: { id: { in: ids.proposals } } });
     if (ids.memories.length) await prisma.memory.deleteMany({ where: { id: { in: ids.memories } } });
     if (ids.connections.length) await prisma.connection.deleteMany({ where: { id: { in: ids.connections } } });
+    if (ids.runs.length) await prisma.agentRun.deleteMany({ where: { id: { in: ids.runs } } });
+    if (ids.messages.length) await prisma.message.deleteMany({ where: { id: { in: ids.messages } } });
+    if (ids.conversations.length) await prisma.conversation.deleteMany({ where: { id: { in: ids.conversations } } });
   });
 
   it('buckets UTC instants in Asia/Shanghai, leaves focus wall time alone, and repeats tags', async () => {
@@ -351,11 +361,60 @@ describe('stats overview', () => {
     expect(response.body.data.focus).not.toHaveProperty('error');
     expect(response.body.data.plan).not.toHaveProperty('error');
     expect(response.body.data.ai).not.toHaveProperty('error');
+    expect(response.body.data.assistantUsage).not.toHaveProperty('error');
     const bad = await ownerRequest(app).get('/api/stats/overview').query({ from: '2099-11-12', to: '2099-11-10', tz: TZ });
     expect(bad.status).toBe(400);
     expect(bad.body).toMatchObject({ code: 'INVALID_STATS_RANGE', error: '统计区间无效' });
     const zone = await ownerRequest(app).get('/api/stats/overview').query({ from: '2099-11-10', to: '2099-11-10', tz: 'Nope/Zone' });
     expect(zone.status).toBe(400);
     expect(zone.body.code).toBe('INVALID_TIME_ZONE');
+  });
+
+  it('summarizes built-in assistant usage by identity, model, day and top conversations', async () => {
+    ids.conversations.push('sov-au-work', 'sov-au-study');
+    await prisma.conversation.createMany({ data: [
+      { id: 'sov-au-work', identityId: 'work', createdAt: '2080-01-01T00:00:00.000Z', updatedAt: '2080-01-01T00:00:00.000Z' },
+      { id: 'sov-au-study', identityId: 'study', createdAt: '2080-01-01T00:00:00.000Z', updatedAt: '2080-01-01T00:00:00.000Z' },
+    ] });
+    const mkRun = async (id: string, conversationId: string, data: Record<string, unknown>) => {
+      ids.runs.push(id);
+      // `completed` keeps the one-active-run-per-conversation index happy.
+      await prisma.agentRun.create({ data: { id, conversationId, state: 'completed', sourceUserMessageId: `${id}-src`, requestKey: `${id}-key`, requestHash: 'h', contextJson: '{}', modelMessagesJson: '[]', cursorJson: '{}', createdAt: '2080-01-01T00:00:00.000Z', updatedAt: '2080-01-01T00:00:00.000Z', ...data } });
+    };
+    await mkRun('sov-au-w1', 'sov-au-work', { updatedAt: '2088-04-04T10:00:00.000Z', completedAt: '2088-04-04T10:05:00.000Z', inputTokens: 1000, cachedInputTokens: 400, outputTokens: 100, model: 'm1' });
+    await mkRun('sov-au-s1', 'sov-au-study', { updatedAt: '2088-04-05T02:00:00.000Z', completedAt: '2088-04-05T02:01:00.000Z', inputTokens: 500, outputTokens: 50, model: 'm2' });
+    await mkRun('sov-au-silent', 'sov-au-work', { updatedAt: '2088-04-04T03:00:00.000Z' });
+    await mkRun('sov-au-prev', 'sov-au-work', { updatedAt: '2088-04-03T10:00:00.000Z', inputTokens: 70, outputTokens: 7, model: 'm1' });
+    ids.messages.push('sov-au-msg');
+    await prisma.message.create({ data: { id: 'sov-au-msg', conversationId: 'sov-au-work', role: 'user', content: '  帮我规划  今天的学习   ', createdAt: '2088-04-04T09:59:00.000Z' } });
+    ids.jobs.push('sov-au-job', 'sov-au-job-fail');
+    await prisma.autoMemoryJob.createMany({ data: [
+      { id: 'sov-au-job', scopeKey: 'sov-au', inputHash: 'sov-au-1', status: 'succeeded', snapshot: '{}', inputTokens: 800, outputTokens: 120, totalTokens: 920, createdAt: '2088-04-04T04:00:00.000Z' },
+      { id: 'sov-au-job-fail', scopeKey: 'sov-au', inputHash: 'sov-au-2', status: 'failed', snapshot: '{}', createdAt: '2088-04-05T04:00:00.000Z' },
+    ] });
+
+    const usage = assistantUsageOf((await view('2088-04-04', '2088-04-05')).assistantUsage);
+    expect(usage.totals.runs).toEqual({ value: 3, previous: 1 });
+    expect(usage.totals.inputTokens).toEqual({ value: 1500, previous: 70 });
+    expect(usage.totals.outputTokens).toEqual({ value: 150, previous: 7 });
+    expect(usage.totals.cachedInputTokens).toBe(400);
+    expect(usage.totals.runsWithUsage).toBe(2);
+    expect(usage.byIdentity).toEqual([
+      { key: 'work', runs: 2, inputTokens: 1000, outputTokens: 100, cachedInputTokens: 400 },
+      { key: 'study', runs: 1, inputTokens: 500, outputTokens: 50, cachedInputTokens: 0 },
+    ]);
+    expect(usage.byModel).toEqual([
+      { key: 'm1', runs: 1, inputTokens: 1000, outputTokens: 100 },
+      { key: 'm2', runs: 1, inputTokens: 500, outputTokens: 50 },
+    ]);
+    expect(usage.byDay).toEqual([
+      { date: '2088-04-04', runs: 2, inputTokens: 1000, outputTokens: 100 },
+      { date: '2088-04-05', runs: 1, inputTokens: 500, outputTokens: 50 },
+    ]);
+    expect(usage.topConversations).toEqual([
+      { conversationId: 'sov-au-work', title: '帮我规划 今天的学习', identityId: 'work', runs: 2, inputTokens: 1000, outputTokens: 100 },
+      { conversationId: 'sov-au-study', title: null, identityId: 'study', runs: 1, inputTokens: 500, outputTokens: 50 },
+    ]);
+    expect(usage.memoryJobs).toEqual({ jobs: 2, failed: 1, inputTokens: 800, outputTokens: 120, totalTokens: 920 });
   });
 });

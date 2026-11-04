@@ -399,7 +399,9 @@
       "loading": "Loading…",
       "accepted": "Accepted {{n}}",
       "outcome": "Succeeded {{succeeded}} · failed {{failed}}",
-      "unknown": "Unknown"
+      "unknown": "Unknown",
+      "identityWork": "Work assistant",
+      "identityStudy": "Learning assistant"
     }
   },
   "handoff": {

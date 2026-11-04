@@ -1,5 +1,5 @@
 /**
- * Owner stats overview. Four sections load independently: a failure becomes
+ * Owner stats overview. Five sections load independently: a failure becomes
  * `{ error }` on that section and the HTTP response stays 200.
  *
  * UTC instants (completedAt, createdAt, updatedAt, endedAt, lastUsedAt) are
@@ -16,6 +16,7 @@ import { scheduleLastDate, shiftMinutes } from '../domain/schedule.js';
 import { isCalendarDate } from './workspace-input.js';
 import { calendarFormatter, eachCalendarDate, localCalendarDate, nextLocalMidnight, scheduledInstant, shiftCalendarDate } from './reviews-clock.js';
 import { dispatchStats } from './orchestration/stats.js';
+import { aggregateAssistantUsage, loadAssistantMemoryJobs, loadAssistantRuns, loadAssistantTopConversations, type AssistantMemoryJobs } from './assistant-usage.js';
 
 const dayMs = 86_400_000;
 const maxDays = 366;
@@ -137,6 +138,22 @@ export type AiSection = {
   }>;
 };
 
+export type AssistantUsageSection = {
+  totals: {
+    runs: Pair;
+    inputTokens: Pair;
+    outputTokens: Pair;
+    cachedInputTokens: number;
+    runsWithUsage: number;
+    durationMs: number;
+  };
+  byIdentity: Array<{ key: string; runs: number; inputTokens: number; outputTokens: number; cachedInputTokens: number }>;
+  byModel: Array<{ key: string; runs: number; inputTokens: number; outputTokens: number }>;
+  byDay: Array<{ date: string; runs: number; inputTokens: number; outputTokens: number }>;
+  topConversations: Array<{ conversationId: string; title: string | null; identityId: string; runs: number; inputTokens: number; outputTokens: number }>;
+  memoryJobs: AssistantMemoryJobs;
+};
+
 type ProposalSource = 'connection' | 'auto-memory' | 'local-owner' | 'builtin-agent' | 'orchestration-learning' | 'other';
 type Period = 'current' | 'previous';
 type SectionError = { error: { code: string; message: string } };
@@ -147,6 +164,7 @@ export type StatsOverviewDeps = {
   focus?: (range: OverviewRange) => Promise<FocusSection>;
   plan?: (range: OverviewRange) => Promise<PlanSection>;
   ai?: (range: OverviewRange) => Promise<AiSection>;
+  assistantUsage?: (range: OverviewRange) => Promise<AssistantUsageSection>;
 };
 
 export function parseOverviewQuery(query: { from?: string | null; to?: string | null; tz?: string | null }, now = new Date()): OverviewRange {
@@ -856,13 +874,51 @@ export async function loadAi(range: OverviewRange): Promise<AiSection> {
   };
 }
 
+function inRangeMs(iso: string | null | undefined, fromMs: number, toMs: number) {
+  if (!iso) return false;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) && ms >= fromMs && ms < toMs;
+}
+
+/** Built-in assistant chat usage for the current window, with the previous window for the deltas. */
+export async function loadAssistantUsage(range: OverviewRange): Promise<AssistantUsageSection> {
+  const start = range.start.toISOString();
+  const end = range.end.toISOString();
+  const runs = await loadAssistantRuns({ from: range.prevStart.toISOString(), to: end });
+  const startMs = range.start.getTime();
+  const endMs = range.end.getTime();
+  const currentRuns = runs.filter((run) => inRangeMs(run.updatedAt, startMs, endMs));
+  const current = aggregateAssistantUsage(currentRuns, { fromMs: startMs, toMs: endMs, tz: range.tz });
+  const previous = aggregateAssistantUsage(runs, { fromMs: range.prevStart.getTime(), toMs: startMs });
+  const [topConversations, memoryJobs] = await Promise.all([
+    loadAssistantTopConversations(currentRuns),
+    loadAssistantMemoryJobs({ from: start, to: end }),
+  ]);
+  return {
+    totals: {
+      runs: pair(current.totals.runs, previous.totals.runs),
+      inputTokens: pair(current.totals.inputTokens, previous.totals.inputTokens),
+      outputTokens: pair(current.totals.outputTokens, previous.totals.outputTokens),
+      cachedInputTokens: current.totals.cachedInputTokens,
+      runsWithUsage: current.totals.runsWithUsage,
+      durationMs: current.totals.durationMs,
+    },
+    byIdentity: current.byIdentity.map(({ key, runs: count, inputTokens, outputTokens, cachedInputTokens }) => ({ key, runs: count, inputTokens, outputTokens, cachedInputTokens })),
+    byModel: current.byModel.map(({ key, runs: count, inputTokens, outputTokens }) => ({ key, runs: count, inputTokens, outputTokens })),
+    byDay: current.byDay,
+    topConversations,
+    memoryJobs,
+  };
+}
+
 export async function statsOverview(query: { from: string; to: string; tz: string }, deps?: StatsOverviewDeps) {
   const range = parseOverviewQuery(query, deps?.now);
-  const [tasks, focus, plan, ai] = await Promise.allSettled([
+  const [tasks, focus, plan, ai, assistantUsage] = await Promise.allSettled([
     (deps?.tasks ?? loadTasks)(range),
     (deps?.focus ?? loadFocus)(range),
     (deps?.plan ?? loadPlan)(range),
     (deps?.ai ?? loadAi)(range),
+    (deps?.assistantUsage ?? loadAssistantUsage)(range),
   ]);
-  return { range: publicRange(range), tasks: settle('tasks', tasks), focus: settle('focus', focus), plan: settle('plan', plan), ai: settle('ai', ai) };
+  return { range: publicRange(range), tasks: settle('tasks', tasks), focus: settle('focus', focus), plan: settle('plan', plan), ai: settle('ai', ai), assistantUsage: settle('assistantUsage', assistantUsage) };
 }

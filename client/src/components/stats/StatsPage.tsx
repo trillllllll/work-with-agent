@@ -2,7 +2,7 @@ import { Surface } from '@/components/ui/surface.js';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { api, type StatsAiSection, type StatsFocusSection, type StatsOverview, type StatsPlanSection, type StatsTasksSection } from '@/lib/api.js';
+import { api, type StatsAiSection, type StatsAssistantUsageSection, type StatsFocusSection, type StatsOverview, type StatsPlanSection, type StatsTasksSection } from '@/lib/api.js';
 import { usePageContext } from '@/lib/assistant-context.js';
 import { useHashRoute } from '@/hooks/useHashRoute.js';
 import { intlLocale } from '@/i18n/index.js';
@@ -18,17 +18,19 @@ import { TasksSection } from './sections/TasksSection.js';
 import { FocusSection } from './sections/FocusSection.js';
 import { PlanSection } from './sections/PlanSection.js';
 import { AiSection } from './sections/AiSection.js';
+import { AssistantUsageSection } from './sections/AssistantUsageSection.js';
 
 function positive(value: number | null | undefined) {
   return typeof value === 'number' && value > 0;
 }
 
 export function workspaceIsEmpty(data: StatsOverview): boolean {
-  if ([data.tasks, data.focus, data.plan, data.ai].some((section) => isSectionError(section))) return false;
+  if ([data.tasks, data.focus, data.plan, data.ai, data.assistantUsage].some((section) => isSectionError(section))) return false;
   const tasks = data.tasks as StatsTasksSection;
   const focus = data.focus as StatsFocusSection;
   const plan = data.plan as StatsPlanSection;
   const ai = data.ai as StatsAiSection;
+  const assistantUsage = data.assistantUsage as StatsAssistantUsageSection;
   if (positive(tasks.completed.value) || positive(tasks.created.value) || positive(tasks.overdue) || positive(tasks.estimatedCount.value)) return false;
   if (tasks.byTopic.length > 0 || tasks.byTag.length > 0 || tasks.overdueTop.length > 0) return false;
   if (tasks.completedByDay.some((row) => row.count > 0) || tasks.createdByDay.some((row) => row.count > 0)) return false;
@@ -44,6 +46,9 @@ export function workspaceIsEmpty(data: StatsOverview): boolean {
   if (positive(ai.autoMemory.jobs.value) || positive(ai.autoMemory.failed.value)) return false;
   if (positive(ai.dispatch.rounds.value) || positive(ai.dispatch.costMicroUsd.value)) return false;
   if (ai.dispatch.byDay.some((row) => row.rounds > 0) || ai.connections.length > 0) return false;
+  // Chat-only workspaces are real usage too: a single assistant request keeps the page.
+  if (positive(assistantUsage.totals.runs.value) || positive(assistantUsage.memoryJobs?.jobs ?? 0)) return false;
+  if (assistantUsage.byDay.some((row) => row.runs > 0)) return false;
   return true;
 }
 
@@ -57,6 +62,7 @@ function recordedDays(data: StatsOverview): number {
   if (!isSectionError(data.focus)) series.push(valuesByDate(dates, data.focus.minutesByDay, (row) => row.minutes));
   if (!isSectionError(data.plan)) series.push(valuesByDate(dates, data.plan.byDay, (row) => row.plannedTasks + row.focusMinutes + row.doneOnPlan + row.doneLate + row.notDone));
   if (!isSectionError(data.ai)) series.push(valuesByDate(dates, data.ai.dispatch.byDay, (row) => row.rounds));
+  if (!isSectionError(data.assistantUsage)) series.push(valuesByDate(dates, (data.assistantUsage as StatsAssistantUsageSection).byDay, (row) => row.runs));
   if (series.length === 0) return dates.length;
   return activeCount(combineActivity(series));
 }
@@ -133,6 +139,7 @@ export function StatsPage({ onOpenTopic }: { onOpenTopic: (id: string) => void }
           <FocusSection data={data.focus} range={data.range} nav={nav} onRetry={retry} />
           <PlanSection data={data.plan} range={data.range} nav={nav} onRetry={retry} />
           <AiSection data={data.ai} range={data.range} nav={nav} onRetry={retry} />
+          <AssistantUsageSection data={data.assistantUsage} range={data.range} onRetry={retry} />
         </>
       )}
     </div>

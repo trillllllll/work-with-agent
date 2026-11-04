@@ -56,6 +56,7 @@ type DispatchStats = {
     cachedInputTokens: number;
     outputTokens: number;
     byModel: UsageGroup[];
+    byIdentity: UsageGroup[];
   };
 };
 type Project = { id: string; name: string };
@@ -220,6 +221,12 @@ export function DispatchStatsView({ rangeFrom, rangeTo }: { rangeFrom?: string; 
           cached: formatTokens(data.assistant.cachedInputTokens),
           duration: formatDuration(data.assistant.durationMs),
         })}</p>
+        {data.assistant.byIdentity.length > 0 && <ul className="mt-2 space-y-1">
+          {data.assistant.byIdentity.map((group) => <li key={group.key} className="flex items-center justify-between gap-3 text-xs">
+            <span className="min-w-0 truncate text-muted-foreground">{group.key === 'study' ? t('runs.stats.identityStudy') : group.key === 'work' ? t('runs.stats.identityWork') : groupLabel(group.key)}</span>
+            <span className="shrink-0 tabular-nums">{t('runs.stats.assistantModelLine', { count: group.jobs, tokens: formatTokens(group.inputTokens + group.outputTokens) })}</span>
+          </li>)}
+        </ul>}
         {data.assistant.byModel.length > 0 && <ul className="mt-2 space-y-1">
           {data.assistant.byModel.map((group) => <li key={group.key} className="flex items-center justify-between gap-3 text-xs">
             <span className="min-w-0 truncate text-muted-foreground">{groupLabel(group.key)}</span>

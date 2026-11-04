@@ -160,5 +160,25 @@
     "inbox": "打开收集箱",
     "focus": "开始专注",
     "connections": "设置 AI 连接"
+  },
+  "aiUsage": {
+    "title": "AI 助手用量",
+    "summary": "{{count}} 次请求 · token {{tokens}}",
+    "requests": "请求次数",
+    "input": "输入 token",
+    "output": "输出 token",
+    "cached": "缓存 token",
+    "usageNote": "另有 {{count}} 次请求供应商未返回用量，按 0 token 计",
+    "byIdentity": "按助手",
+    "identityWork": "工作助手",
+    "identityStudy": "学习助手",
+    "groupMeta": "{{count}} 次 · {{tokens}}",
+    "daily": "每日用量",
+    "lineLabel": "每日助手 token 用量",
+    "byModel": "按模型",
+    "modelMeta": "{{count}} 次 · 输入 {{input}} · 输出 {{output}}",
+    "topConversations": "高耗会话",
+    "unnamedConversation": "会话 {{id}}",
+    "memoryJobs": "后台记忆提炼 {{count}} 次（失败 {{failed}}）· 输入 {{input}} · 输出 {{output}}"
   }
 }
