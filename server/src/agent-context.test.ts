@@ -34,8 +34,8 @@ describe('builtin run context', () => {
       }),
     } as never);
     await agent.chat({ message: '这些任务怎么处理', pageContext: { page: 'board', topicId, taskId: selected.body.data.id } });
-    const notes = seen.split('【固定说明】')[1]?.split('【当前简报】')[0] ?? '';
-    const brief = seen.split('【当前简报】')[1]?.split('【选中对象】')[0] ?? '';
+    const notes = seen.split('【固定说明】')[1]?.split('【已确认记忆】')[0] ?? '';
+    const brief = seen.split('【当前简报】')[1]?.split('【页面筛选与选中任务】')[0] ?? '';
     const nearby = seen.split('【附近任务】')[1]?.split('【本请求待确认方案】')[0] ?? '';
     expect(notes).toContain('固定约定：标题原样保留');
     expect(brief).not.toContain('固定约定：标题原样保留');
@@ -47,8 +47,16 @@ describe('builtin run context', () => {
     expect(nearby.split('\n').filter((line) => line.startsWith('- ')).length).toBeLessThanOrEqual(8);
     const topicName = String(topic.body.data.name);
     expect(seen).toContain(`当前清单：${topicName} ${topicId}`);
-    expect(seen.split('【选中对象】')[1]?.split('【已确认记忆】')[0] ?? '').toContain(`清单 ${topicName} ${topicId}`);
+    expect(seen.split('【选中对象】')[1]?.split('【附近任务】')[0] ?? '').toContain(`清单 ${topicName} ${topicId}`);
     expect(nearby).toContain(`清单 ${topicName} ${topicId}`);
+    // 分层顺序锁定（docs/2026-11-04_memory-recall-plan.md 5.1）：慢变层先于易变层。
+    // 只统计行首段头：应用功能知识手册正文会引用【规划时间段】等名称，不算段落本身。
+    const headers = [...seen.matchAll(/^【([^】]+)】/gm)].map((match) => match[1]);
+    const layered = ['固定说明', '已确认记忆', '规划时间段', '当前简报', '页面筛选与选中任务', '本次请求的上下文', '选中对象', '附近任务', '本请求待确认方案'];
+    const positions = layered.map((header) => headers.indexOf(header));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions.every((position, index) => index === 0 || position > positions[index - 1])).toBe(true);
+    expect(headers.indexOf('固定说明')).toBeGreaterThan(headers.indexOf('应用功能知识 v0.6.0'));
   });
 
   it('labels selected and nearby tasks with their topic, falling back to 收集箱', async () => {
@@ -62,6 +70,6 @@ describe('builtin run context', () => {
     } as never);
     await agent.chat({ message: '这个任务在哪', pageContext: { page: 'inbox', taskId: loose.id } });
     expect(seen).toContain('当前清单：收集箱');
-    expect(seen.split('【选中对象】')[1]?.split('【已确认记忆】')[0] ?? '').toContain('清单 收集箱');
+    expect(seen.split('【选中对象】')[1]?.split('【附近任务】')[0] ?? '').toContain('清单 收集箱');
   });
 });
