@@ -92,6 +92,30 @@ describe('rankMemories', () => {
     for (const text of ['好的。', '嗯嗯', 'ok', '谢谢！', '收到', 'ok~']) expect(recall.isTrivialPrompt(text)).toBe(true);
     for (const text of ['帮我查一下任务', '可以开始吗', '数据库备份窗口']) expect(recall.isTrivialPrompt(text)).toBe(false);
   });
+
+  it('passes on a 2-char Han word in the title and ignores stop bigrams', () => {
+    const candidates = [
+      { id: 'b-work', revision: 1, kind: 'fact', title: '上班时间', content: '用户的上班时间为 10:00。', importance: 3, labels: [], updatedAt: stamp },
+      { id: 'b-noise', revision: 1, kind: 'fact', title: '什么都能问', content: '这个那个都可以', importance: 3, labels: [], updatedAt: stamp },
+    ];
+    expect(recall.rankMemories('我几点上班', candidates).map((item) => item.id)).toEqual(['b-work']);
+    expect(recall.rankMemories('这个是什么', candidates).map((item) => item.id)).toEqual([]);
+  });
+
+  it('does not build 2-char fragments from Latin text', () => {
+    const candidates = [{ id: 'b-latin', revision: 1, kind: 'fact', title: 'about upgrades', content: 'bundle notes', importance: 3, labels: [], updatedAt: stamp }];
+    expect(recall.rankMemories('bug report', candidates)).toEqual([]);
+  });
+
+  it('breaks score ties by importance, then newer updatedAt, then id', () => {
+    const same = { revision: 1, kind: 'fact', title: '值班安排', content: '值班', labels: [] as string[] };
+    const ranked = recall.rankMemories('值班', [
+      { ...same, id: 't-old', importance: 3, updatedAt: '2026-01-01T00:00:00.000Z' },
+      { ...same, id: 't-new', importance: 3, updatedAt: '2026-06-01T00:00:00.000Z' },
+      { ...same, id: 't-high', importance: 4, updatedAt: '2025-01-01T00:00:00.000Z' },
+    ]);
+    expect(ranked.map((item) => item.id)).toEqual(['t-high', 't-new', 't-old']);
+  });
 });
 
 describe('buildMemoryContext', () => {
@@ -130,7 +154,7 @@ describe('buildMemoryContext', () => {
     expect(allIds).not.toContain('rc-other');
   });
 
-  it('caps recall at the budget and reports the remaining count', async () => {
+  it('caps recall at the budget and lists the rest as a title index', async () => {
     for (let index = 1; index <= 6; index += 1) {
       const suffix = String(index).padStart(2, '0');
       await createMemory({ id: `rc-bulk-${suffix}`, topicId: null, kind: 'fact', title: `批量标题${suffix}`, content: `批量正文${'长'.repeat(300)}`, importance: 2 });
@@ -139,9 +163,17 @@ describe('buildMemoryContext', () => {
     expect(context.stats.skipped).toBeNull();
     expect(context.stats.recallIds.length).toBeLessThanOrEqual(recall.RECALL_TOP_K);
     expect(context.stats.recallIds.every((id) => id.startsWith('rc-bulk-'))).toBe(true);
-    expect(context.recallText).toMatch(/另有 \d+ 条已确认记忆未注入/);
-    const entryPart = context.recallText.split('\n另有')[0];
+    const [entryPart, indexPart = ''] = context.recallText.split('\n以下记忆未注入正文');
     expect([...entryPart].length).toBeLessThanOrEqual(recall.RECALL_BUDGET);
+    expect(context.stats.indexIds.length).toBeGreaterThan(0);
+    expect(context.stats.indexIds.some((id) => context.stats.recallIds.includes(id))).toBe(false);
+    expect([...`以下记忆未注入正文${indexPart}`].length).toBeLessThanOrEqual(recall.RECALL_INDEX_BUDGET);
+    expect(indexPart).toContain('《值班安排》');
+  });
+
+  it('recalls a 2-char Chinese word inside an unspaced question', async () => {
+    const context = await recall.buildMemoryContext({ topicId: null, identityId: 'work', userText: '今天谁来值班啊' });
+    expect(context.stats.recallIds).toContain('rc-exact');
   });
 
   it('renders identical coreText for unchanged memories', async () => {
