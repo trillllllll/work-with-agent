@@ -5,8 +5,11 @@
 //   生成合成库与用例：tsx scripts/memory-recall-eval.ts --synthetic /tmp/dovun-eval-synthetic.db
 //   跑评测：tsx scripts/memory-recall-eval.ts --db <库副本> --cases <用例文件> --out <结果文件>
 //
-// 用例格式：[{ "id", "query", "scope": { "kind", "topicId" }, "expect": [memoryId], "trivial"?: true }]
+// 用例格式：[{ "id", "query", "scope": { "kind", "topicId" }, "expect": [memoryId], "trivial"?: true, "expectAny"?: true }]
+// expectAny：期望集合中任一条被注入即算命中（用于"问一个主题"的换说法用例）。
+// 结果同时给两种口径：注入正文（content）和可见（正文或标题索引里出现）。
 // P0 只输出旧方案结果；P2 起同一脚本追加新方案列。
+// 合成库生成两份用例：<库>.cases.json（引用原文短语）和 <库>.paraphrase.cases.json（不含原文，只用主题词或别名）。
 import { execFileSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -17,7 +20,14 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 
 type Scope = { kind: 'inbox' | 'topic' | 'all'; topicId?: string | null };
-type EvalCase = { id: string; query: string; scope: Scope; expect: string[]; trivial?: boolean };
+type EvalCase = { id: string; query: string; scope: Scope; expect: string[]; trivial?: boolean; expectAny?: boolean };
+
+/** 命中率：expectAny 时任一命中即 1，否则为命中比例；没有期望时为 null。 */
+function recallOf(expect: string[], injected: string[], any: boolean) {
+  if (!expect.length) return null;
+  const hit = expect.filter((id) => injected.includes(id)).length;
+  return any ? (hit > 0 ? 1 : 0) : hit / expect.length;
+}
 type CaseResult = {
   id: string;
   query: string;
@@ -35,11 +45,13 @@ type CaseResult = {
   new: {
     coreIds: string[];
     recallIds: string[];
+    indexIds: string[];
     chars: number;
     irrelevantIds: string[];
     hitIds: string[];
     missedIds: string[];
     recall: number | null;
+    visibleRecall: number | null;
     skipped: string | null;
   } | null;
 };
@@ -258,8 +270,25 @@ async function buildSynthetic(dbPath: string) {
 
   const casesPath = `${dbPath}.cases.json`;
   await writeFile(casesPath, `${JSON.stringify(cases, null, 2)}\n`, 'utf8');
+
+  // 换说法用例：查询里不出现任何记忆原文，只用主题词（正文和标题都有）或别名（只在别名标题里有）。
+  // 一个主题有 10 条记忆，问主题时任一条被注入即算命中（expectAny）。
+  const paraphrase: EvalCase[] = [];
+  const addParaphrase = (query: string, scope: Scope, expect: string[]) => paraphrase.push({ id: `syn-para-${String(paraphrase.length + 1).padStart(2, '0')}`, query, scope, expect, expectAny: true });
+  const scopeOf = (theme: Theme): Scope => (theme.topicId ? { kind: 'topic', topicId: theme.topicId } : { kind: 'inbox' });
+  for (const key of ['accounts', 'shortcuts', 'server', 'domains', 'db-backup', 'monitor', 'cache', 'mistakes']) {
+    const theme = THEMES.find((item) => item.key === key)!;
+    addParaphrase(`我们${theme.keyword}这块是怎么定的？`, scopeOf(theme), byTheme(key).map((memory) => memory.id));
+  }
+  for (const key of ['extensions', 'release', 'auth', 'notes']) {
+    const theme = THEMES.find((item) => item.key === key)!;
+    const aliased = byTheme(key).filter((memory) => memory.title.startsWith(theme.alias)).map((memory) => memory.id);
+    addParaphrase(`${theme.alias}有什么规矩？`, scopeOf(theme), aliased);
+  }
+  const paraphrasePath = `${dbPath}.paraphrase.cases.json`;
+  await writeFile(paraphrasePath, `${JSON.stringify(paraphrase, null, 2)}\n`, 'utf8');
   await prisma.$disconnect();
-  console.log(`[合成库] ${memories.length} 条记忆、${cases.length} 个用例 → ${dbPath} / ${casesPath}`);
+  console.log(`[合成库] ${memories.length} 条记忆、${cases.length} 个原文用例、${paraphrase.length} 个换说法用例 → ${dbPath} / ${casesPath} / ${paraphrasePath}`);
 }
 
 // ---------- 评测 ----------
@@ -296,11 +325,13 @@ async function runEval(dbPath: string, casesPath: string, outPath: string) {
       }
     }
     const injected = [...new Set([...entryIds, ...briefIds])];
+    const any = Boolean(item.expectAny);
     const hit = item.expect.filter((id) => injected.includes(id));
     const missed = item.expect.filter((id) => !injected.includes(id));
 
-    // 新方案（P2 起）：注入 = 常驻 ∪ 相关记忆；字数 = coreText + recallText。
+    // 新方案（P2 起）：注入 = 常驻 ∪ 相关记忆；可见 = 注入 ∪ 标题索引；字数 = coreText + recallText。
     const memoryContext = await buildMemoryContext({ topicId, identityId: 'work', userText: item.query });
+    const indexIds = (memoryContext.stats as { indexIds?: string[] }).indexIds ?? [];
     const newInjected = [...memoryContext.stats.coreIds, ...memoryContext.stats.recallIds];
     const newHit = item.expect.filter((id) => newInjected.includes(id));
     const newMissed = item.expect.filter((id) => !newInjected.includes(id));
@@ -311,15 +342,17 @@ async function runEval(dbPath: string, casesPath: string, outPath: string) {
       old: {
         injectedIds: injected, briefIds, chars: blockChars + briefChars,
         hitIds: hit, missedIds: missed,
-        recall: item.expect.length ? hit.length / item.expect.length : null,
+        recall: recallOf(item.expect, injected, any),
       },
       new: {
         coreIds: memoryContext.stats.coreIds,
         recallIds: memoryContext.stats.recallIds,
+        indexIds,
         chars: memoryContext.stats.coreChars + memoryContext.stats.recallChars,
         irrelevantIds: irrelevant,
         hitIds: newHit, missedIds: newMissed,
-        recall: item.expect.length ? newHit.length / item.expect.length : null,
+        recall: recallOf(item.expect, newInjected, any),
+        visibleRecall: recallOf(item.expect, [...newInjected, ...indexIds], any),
         skipped: memoryContext.stats.skipped,
       },
     });
@@ -330,11 +363,12 @@ async function runEval(dbPath: string, casesPath: string, outPath: string) {
   const nonTrivial = results.filter((item) => !item.trivial);
   const oldRecallMean = measurable.length ? measurable.reduce((sum, item) => sum + (item.old.recall ?? 0), 0) / measurable.length : null;
   const newRecallMean = measurable.length ? measurable.reduce((sum, item) => sum + (item.new?.recall ?? 0), 0) / measurable.length : null;
+  const newVisibleMean = measurable.length ? measurable.reduce((sum, item) => sum + (item.new?.visibleRecall ?? 0), 0) / measurable.length : null;
   const aggregate = {
     schemes: ['old', 'new'],
     cases: results.length,
     measurableCases: measurable.length,
-    recallMean: { old: oldRecallMean, new: newRecallMean },
+    recallMean: { old: oldRecallMean, new: newRecallMean, newVisible: newVisibleMean },
     charsMean: {
       old: results.length ? results.reduce((sum, item) => sum + item.old.chars, 0) / results.length : null,
       new: results.length ? results.reduce((sum, item) => sum + (item.new?.chars ?? 0), 0) / results.length : null,
@@ -353,7 +387,7 @@ async function runEval(dbPath: string, casesPath: string, outPath: string) {
   const pct = (value: number | null) => (typeof value === 'number' ? `${(value * 100).toFixed(1)}%` : '—');
   console.log(`[评测] ${results.length} 个用例 → ${outPath}`);
   console.log(`[旧方案] 召回 ${pct(aggregate.recallMean.old)}；字数均值 ${aggregate.charsMean.old === null ? '—' : Math.round(aggregate.charsMean.old)}`);
-  console.log(`[新方案] 召回 ${pct(aggregate.recallMean.new)}；字数均值 ${aggregate.charsMean.new === null ? '—' : Math.round(aggregate.charsMean.new)}；无关条目均值 ${aggregate.irrelevantMean === null ? '—' : aggregate.irrelevantMean.toFixed(2)}；简单回复干净 ${aggregate.trivialClean}/${aggregate.trivialTotal}；漏召回 ${aggregate.missedCaseIds.new.join(', ') || '无'}`);
+  console.log(`[新方案] 召回 ${pct(aggregate.recallMean.new)}（含标题可见 ${pct(aggregate.recallMean.newVisible)}）；字数均值 ${aggregate.charsMean.new === null ? '—' : Math.round(aggregate.charsMean.new)}；无关条目均值 ${aggregate.irrelevantMean === null ? '—' : aggregate.irrelevantMean.toFixed(2)}；简单回复干净 ${aggregate.trivialClean}/${aggregate.trivialTotal}；漏召回 ${aggregate.missedCaseIds.new.join(', ') || '无'}`);
 }
 
 async function main() {
