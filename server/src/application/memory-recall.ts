@@ -33,6 +33,8 @@ export type MemoryCandidateRow = {
   importance: number;
   labels: string[];
   updatedAt: string;
+  status?: string;
+  topicId?: string | null;
 };
 
 export type RankedMemory = { id: string; score: number; hits: number; exact: boolean };
@@ -164,6 +166,35 @@ export function renderRecall(entries: MemoryCandidateRow[], budget = RECALL_BUDG
     used = next;
   }
   return { text: lines.join('\n'), includedIds };
+}
+
+/** memory_read search 的统一排序（5.6）：rankMemories 通过的在前，
+ * 旧规则命中但排序器未通过的在后（组内 importance desc, updatedAt desc, id asc）。
+ * q 为空时不排序，直接按候选顺序（调用方已按同序取数）。返回完整并集，条数截断由渲染处理。 */
+export function orderMemorySearch(q: string, candidates: MemoryCandidateRow[], oldHits: MemoryCandidateRow[]): MemoryCandidateRow[] {
+  if (!q.trim()) return candidates;
+  const ranked = rankMemories(q, candidates);
+  const rankedIds = new Set(ranked.map((item) => item.id));
+  const fallbackOrder = (left: MemoryCandidateRow, right: MemoryCandidateRow) => (right.importance - left.importance)
+    || (left.updatedAt < right.updatedAt ? -1 : left.updatedAt > right.updatedAt ? 1 : 0)
+    || (left.id < right.id ? -1 : 1);
+  const byId = new Map(candidates.map((entry) => [entry.id, entry]));
+  const rankedEntries = ranked.map((item) => byId.get(item.id)).filter((entry): entry is MemoryCandidateRow => Boolean(entry));
+  const oldOnly = oldHits.filter((entry) => !rankedIds.has(entry.id)).sort(fallbackOrder);
+  return [...rankedEntries, ...oldOnly];
+}
+
+/** search 结果渲染：最多 20 条，第 1 条正文最多 SEARCH_TOP_CLIP 字，其余 SEARCH_CLIP 字。 */
+export function renderMemorySearchMatches(entries: MemoryCandidateRow[], options: { withTopicId?: boolean } = {}) {
+  const matches = entries.slice(0, 20).map((entry, index) => ({
+    id: entry.id,
+    title: entry.title,
+    revision: entry.revision,
+    ...(options.withTopicId ? { topicId: entry.topicId ?? null } : {}),
+    content: clipPoints(entry.content, index === 0 ? SEARCH_TOP_CLIP : SEARCH_CLIP),
+    ...(entry.status ? { status: entry.status } : {}),
+  }));
+  return { matches, truncated: entries.length > matches.length };
 }
 
 /** 读取并组装常驻记忆与相关记忆。范围与旧 formatMemoryReference 一致：收集箱始终在内，清单范围再加当前清单。 */

@@ -116,6 +116,51 @@ describe('global assistant context', () => {
     expect(JSON.stringify(read.data)).toContain(memory.content);
   });
 
+  it('reorders memory search by relevance while keeping legacy hits, clipping, and identity scope', async () => {
+    const at = new Date().toISOString();
+    const topic = (await api.post('/api/topics').send({ name: `memory-search-${Date.now()}` })).body.data;
+    const long = '长'.repeat(400);
+    const rows = [
+      { id: 'ms-rank-first', topicId: topic.id, title: '接口鉴权约定', content: `接口鉴权使用双向证书。${long}`, importance: 2 },
+      { id: 'ms-rank-second', topicId: topic.id, title: '接口鉴权补充材料', content: `补充阅读。${'补'.repeat(300)}`, importance: 1 },
+      { id: 'ms-label-only', topicId: topic.id, title: '标题与查询无关', content: '正文与查询无关', importance: 4, labels: '["值班"]' },
+      { id: 'ms-order-five', topicId: topic.id, title: '五星排序样本', content: '排序正文五', importance: 5 },
+      { id: 'ms-order-mid', topicId: topic.id, title: '三星排序样本', content: '排序正文三', importance: 3 },
+      { id: 'ms-order-low', topicId: topic.id, title: '一星排序样本', content: '排序正文一', importance: 1 },
+      { id: 'ms-study-only', topicId: topic.id, title: '接口鉴权值班专属', content: '学习身份专属记忆', importance: 5, identityId: 'study' },
+    ];
+    for (const row of rows) {
+      await prisma.memory.create({ data: { id: row.id, topicId: row.topicId, kind: 'fact', title: row.title, content: row.content, importance: row.importance, labels: row.labels ?? '[]', identityId: row.identityId ?? 'work', status: 'active', createdAt: at, updatedAt: at } });
+    }
+    const scoped = context({ scope: { kind: 'topic', topicId: topic.id } });
+
+    // 相关度排序：标题+正文双命中的排第一；第 1 条正文不截断（上限 2000），其余截到 240。
+    const ranked = await execute('memory_read', { action: 'search', q: '接口鉴权' }, scoped);
+    const matches = (ranked.data as { matches: Array<{ id: string; content: string }> }).matches;
+    expect(matches[0].id).toBe('ms-rank-first');
+    expect([...matches[0].content].length).toBeGreaterThan(300);
+    const second = matches.find((row) => row.id === 'ms-rank-second')!;
+    expect([...second.content].length).toBeLessThanOrEqual(241);
+    expect(second.content.endsWith('…')).toBe(true);
+    expect(matches.some((row) => row.id === 'ms-study-only')).toBe(false);
+
+    // A6：旧规则（每个词都是标题/正文/标签的子串）命中的条目一条不丢——
+    // 标签-only 命中的"值班"条目排序器不打分，仍在结果里。
+    const duty = await execute('memory_read', { action: 'search', q: '值班' }, scoped);
+    const dutyIds = ((duty.data as { matches: Array<{ id: string }> }).matches).map((row) => row.id);
+    expect(dutyIds).toContain('ms-label-only');
+    expect(dutyIds).not.toContain('ms-study-only');
+
+    // q 为空：按 importance desc, updatedAt desc, id asc 列出（一星两条按 id 排）。
+    const empty = await execute('memory_read', { action: 'search', q: '' }, scoped);
+    const emptyIds = ((empty.data as { matches: Array<{ id: string }> }).matches).map((row) => row.id);
+    expect(emptyIds.slice(0, 6)).toEqual(['ms-order-five', 'ms-label-only', 'ms-order-mid', 'ms-rank-first', 'ms-order-low', 'ms-rank-second']);
+    expect(emptyIds).not.toContain('ms-study-only');
+    // scope=all 不丢跨清单旧命中，且身份隔离仍然成立。
+    const all = await execute('memory_read', { action: 'search', q: '接口鉴权值班专属', scope: 'all' }, scoped);
+    expect((all.data as { matches: Array<{ id: string }> }).matches.map((row) => row.id)).not.toContain('ms-study-only');
+  });
+
   it('retries an accepted request with its original snapshot after saved data changes', async () => {
     const task = (await api.post('/api/tasks').send({ title: '重连版本样本', topicId: null })).body.data;
     const input = { message: '解释这个任务', requestKey: `snapshot-retry-${task.id}`, context: context({ taskId: task.id }) };

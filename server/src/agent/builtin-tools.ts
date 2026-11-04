@@ -1,7 +1,6 @@
 import { searchImages } from './image-search.js';
 import { fetchWebPage, searchWeb } from './web-search.js';
 import { withChatAttachments } from '../application/chat-attachments.js';
-import { KnowledgeService } from '../application/knowledge.js';
 import { assertTopicAccess } from '../application/security.js';
 import { libraryFiltersSchema } from '../application/library/schema.js';
 import { readPlanTimeBands } from '../application/plan-time-bands.js';
@@ -13,6 +12,8 @@ import { redact } from '../infrastructure/controlled-execution.js';
 import { readResourceDocument } from '../application/resources/agent-read.js';
 import { LibraryService } from '../application/library/service.js';
 import { runAgentMemoryTool, validateConversationSearchArguments, validateMemoryArguments } from '../application/agent-memory.js';
+import { orderMemorySearch, renderMemorySearchMatches, type MemoryCandidateRow } from '../application/memory-recall.js';
+import { readLabels } from '../application/knowledge.js';
 import { learningRead } from '../application/learning.js';
 import { practiceRead } from '../application/learning-practice/read.js';
 import { ownerActor } from '../application/security.js';
@@ -213,12 +214,35 @@ async function memoryRead(args: Record<string, unknown>, context: StoredChatCont
     const status = args.status ?? page?.status ?? 'active';
     if (!['active', 'history', 'all'].includes(String(status))) throw new DomainError('INVALID_TOOL_ARGUMENTS', '记忆状态无效', 400);
     const q = String(args.q ?? page?.query ?? '');
+    const identityId = context.identityId ?? 'work';
+    const statusWhere = status === 'active' ? { status: 'active' as const } : status === 'history' ? { status: { in: ['retired' as const, 'superseded' as const] } } : {};
+    const normalize = (value: string) => value.normalize('NFKC').toLocaleLowerCase('en-US');
+    const fetchCandidates = async (where: Record<string, unknown>) => {
+      const rows = await prisma.memory.findMany({
+        where: { ...where, ...statusWhere, identityId },
+        orderBy: [{ importance: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
+        select: { id: true, title: true, revision: true, topicId: true, content: true, status: true, importance: true, labels: true, updatedAt: true },
+      });
+      return rows.map((row) => ({ ...row, labels: readLabels(row.labels) })) as MemoryCandidateRow[];
+    };
     if (args.scope === 'all') {
-      const rows = await prisma.memory.findMany({ where: { ...(status === 'active' ? { status: 'active' } : status === 'history' ? { status: { in: ['retired', 'superseded'] } } : {}), OR: [{ title: { contains: q } }, { content: { contains: q } }] }, orderBy: [{ importance: 'desc' }, { id: 'asc' }], take: 21 });
-      return { success: true, data: { matches: rows.slice(0, 20).map((row) => ({ id: row.id, title: row.title, revision: row.revision, topicId: row.topicId, content: [...row.content].slice(0, 2000).join(''), status: row.status })), truncated: rows.length > 20, coverage: '全部可访问清单，最多 20 条摘要；需要正文时按 ID 读取' } };
+      // 旧规则：整句是标题或正文的子串。
+      const candidates = await fetchCandidates({});
+      const needle = normalize(q);
+      const oldHits = needle ? candidates.filter((row) => normalize(row.title).includes(needle) || normalize(row.content).includes(needle)) : [];
+      const ordered = orderMemorySearch(q, candidates, oldHits);
+      const rendered = renderMemorySearchMatches(ordered, { withTopicId: true });
+      return { success: true, data: { ...rendered, coverage: '全部可访问清单，最多 20 条摘要；需要正文时按 ID 读取' } };
     }
-    const found = await new KnowledgeService().memories(ownerActor, topicId, { status: status as 'active' | 'history' | 'all', q, limit: 20 });
-    return { success: true, data: { matches: found.items.map((row) => ({ id: row.id, title: row.title, revision: row.revision, status: row.status, content: [...row.content].slice(0, 2000).join('') })), total: found.total, truncated: found.hasMore } };
+    // 当前范围：旧规则是每个空格分隔的词都是标题/正文/标签的子串。
+    const candidates = await fetchCandidates({ topicId });
+    const terms = normalize(q).split(/\s+/).filter(Boolean);
+    const oldHits = terms.length
+      ? candidates.filter((row) => terms.every((term) => normalize(`${row.title}\n${row.content}\n${row.labels.join(' ')}`).includes(term)))
+      : [];
+    const ordered = orderMemorySearch(q, candidates, oldHits);
+    const rendered = renderMemorySearchMatches(ordered);
+    return { success: true, data: { ...rendered, total: ordered.length } };
   }
   return runAgentMemoryTool({ name: 'memory', arguments: args }, { topicId });
 }
