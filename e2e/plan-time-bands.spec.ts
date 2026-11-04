@@ -41,7 +41,7 @@ async function saveBands(request: { put: (url: string, options: { data: unknown 
 
 async function openPlan(page: Page) {
   await page.goto('/#/plan');
-  await expect(page.getByRole('heading', { name: '规划', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^选择日期/ })).toBeVisible();
   await page.getByRole('button', { name: '日', exact: true }).click();
 }
 
@@ -68,9 +68,9 @@ test('日视图按重叠规则绘制不透明背景', async ({ page, request }, 
       height: element.style.height,
     };
   }))).toEqual([
-    { start: '540', end: '720', top: '504px', height: '168px' },
-    { start: '720', end: '780', top: '672px', height: '56px' },
-    { start: '780', end: '1080', top: '728px', height: '280px' },
+    { start: '540', end: '720', top: '864px', height: '288px' },
+    { start: '720', end: '780', top: '1152px', height: '96px' },
+    { start: '780', end: '1080', top: '1248px', height: '480px' },
   ]);
   await expect(segments.nth(0)).toHaveCSS('background-color', 'rgb(234, 242, 255)');
   await expect(segments.nth(1)).toHaveCSS('background-color', 'rgb(234, 247, 239)');
@@ -153,7 +153,7 @@ test('保存后背景位置更新，删除后背景消失', async ({ page, reque
   expect(await segment.evaluate(node => {
     const element = node as HTMLElement;
     return { end: element.dataset.endMinute, top: element.style.top, height: element.style.height };
-  })).toEqual({ end: '720', top: '504px', height: '168px' });
+  })).toEqual({ end: '720', top: '864px', height: '288px' });
   await page.getByRole('button', { name: '时间段', exact: true }).click();
   await dialog.getByRole('button', { name: '删除时间段', exact: true }).click();
   await dialog.getByRole('button', { name: '保存', exact: true }).click();
@@ -192,6 +192,7 @@ test('另一个浏览器上下文能读到同一份已保存设置', async ({ pa
 test('保存失败时保留草稿和原背景，恢复后可以保存', async ({ page, request }) => {
   await saveBands(request, [work, lunch]);
   await openPlan(page);
+  await expect(page.locator('[data-testid="time-band-day"][data-date="2026-10-12"]').getByTestId('time-band-segment')).toHaveCount(3);
   const before = await page.locator('[data-testid="time-band-day"][data-date="2026-10-12"]').getByTestId('time-band-segment').evaluateAll(nodes => nodes.map(node => (node as HTMLElement).style.top));
   let fail = true;
   await page.route('**/api/plan/time-bands', async (route) => {
@@ -284,7 +285,7 @@ test('底色不吞掉任务缩放', async ({ page, request }, testInfo) => {
   if (!box) throw new Error('没有缩放手柄');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 28, { steps: 10 });
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 48, { steps: 10 });
   await page.mouse.up();
   await expect.poll(async () => (await (await request.get(`${apiUrl}/api/tasks/${task.id}`)).json()).data.scheduledEnd).toBe('2026-10-12T15:30');
 });
@@ -361,7 +362,7 @@ test('结束 24:00 可以保存，并且下边界不超过一天的高度', asyn
     return { end: element.dataset.endMinute, top: Number.parseFloat(element.style.top), height: Number.parseFloat(element.style.height) };
   });
   expect(geometry.end).toBe('1440');
-  expect(geometry.top + geometry.height).toBeLessThanOrEqual(1344);
+  expect(geometry.top + geometry.height).toBeLessThanOrEqual(2304);
   await page.reload();
   await page.getByRole('button', { name: '时间段', exact: true }).click();
   await expect(dialog.getByRole('textbox', { name: '结束时间', exact: true })).toHaveValue('24:00');
@@ -383,22 +384,18 @@ async function pageScrollWidth(page: Page) {
   return page.evaluate(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth));
 }
 
-async function railMetrics(day: Locator) {
+async function laneMetrics(day: Locator) {
   return day.evaluate((node) => {
-    const rail = node.querySelector('[data-testid="time-band-rail"]') as HTMLElement | null;
     const lane = node.querySelector('[data-testid="plan-task-lane"]') as HTMLElement;
     const segment = node.querySelector('[data-testid="time-band-segment"]') as HTMLElement | null;
     const border = Number.parseFloat(getComputedStyle(node).borderLeftWidth) || 0;
     const dayRect = node.getBoundingClientRect();
     const laneRect = lane.getBoundingClientRect();
-    const railRect = rail?.getBoundingClientRect();
-    const segmentRect = segment?.getBoundingClientRect();
     return {
-      rail: railRect?.width ?? 0,
       laneLeft: laneRect.left - dayRect.left - border,
       laneWidth: laneRect.width,
       clientWidth: node.clientWidth,
-      segmentWidth: segmentRect?.width ?? 0,
+      segmentWidth: segment?.getBoundingClientRect().width ?? 0,
     };
   });
 }
@@ -410,24 +407,21 @@ async function expectLabelsClearOfTasks(day: Locator) {
       return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, text: (element.textContent ?? '').trim() };
     }).filter((rect) => rect.right - rect.left > 0.5 && rect.bottom - rect.top > 0.5);
     const labels = rects('[data-testid="time-band-label-name"], [data-testid="time-band-label-range"]');
-    const tasks = rects('[data-testid="task-block"] span.truncate');
-    const rail = node.querySelector('[data-testid="time-band-rail"]')?.getBoundingClientRect();
+    const tasks = rects('[data-testid="task-block"] .plan-task-title');
     const collisions: string[] = [];
     for (const label of labels) {
-      if (rail && (label.left < rail.left - 1 || label.right > rail.right + 1)) collisions.push(`标签超出侧栏 ${label.text}`);
       for (const task of tasks) {
         const width = Math.min(label.right, task.right) - Math.max(label.left, task.left);
         const height = Math.min(label.bottom, task.bottom) - Math.max(label.top, task.top);
         if (width > 0.5 && height > 0.5) collisions.push(`${label.text} × ${task.text}`);
       }
     }
-    if (rail) for (const task of tasks) if (task.left < rail.right - 1) collisions.push(`任务进入侧栏 ${task.text}`);
     return collisions;
   });
   expect(hit).toEqual([]);
 }
 
-test('标签留在侧栏，任务文字与标签不相交', async ({ page, request }, testInfo) => {
+test('时间段全宽铺底，带标不与任务文字相交', async ({ page, request }, testInfo) => {
   test.setTimeout(90_000);
   const longName = `验证省略${'名'.repeat(36)}`;
   await saveBands(request, [
@@ -446,28 +440,32 @@ test('标签留在侧栏，任务文字与标签不相交', async ({ page, reque
   await openPlan(page);
 
   const day = () => page.locator('[data-testid="time-band-day"][data-date="2026-10-12"]');
-  const scrollTimeline = () => page.getByTestId('timeline-scroll').evaluate((node) => { node.scrollTop = 8 * 56; });
+  const scrollTimeline = () => page.getByTestId('timeline-scroll').evaluate((node) => { node.scrollTop = 8 * 96; });
   const show = async (span: 'day' | 'week', width: number) => {
     await page.setViewportSize({ width, height: 900 });
     await page.getByRole('button', { name: span === 'day' ? '日' : '周', exact: true }).click();
     await scrollTimeline();
     expect(await pageScrollWidth(page)).toBeLessThanOrEqual(width + 1);
   };
-  const expectRail = async (column: Locator, width: number) => {
-    const metrics = await railMetrics(column);
-    expect(Math.abs(metrics.rail - width)).toBeLessThanOrEqual(1);
-    expect(Math.abs(metrics.laneLeft - width)).toBeLessThanOrEqual(1);
+  const expectBandedColumn = async (column: Locator) => {
+    const metrics = await laneMetrics(column);
+    expect(Math.abs(metrics.laneLeft - 20)).toBeLessThanOrEqual(1);
     expect(Math.abs(metrics.segmentWidth - metrics.clientWidth)).toBeLessThanOrEqual(1);
-    expect(metrics.segmentWidth).toBeGreaterThan(width + 40);
+    expect(metrics.segmentWidth).toBeGreaterThan(60);
     await expectLabelsClearOfTasks(column);
     return metrics;
   };
+  const expectOpenColumn = async (column: Locator) => {
+    const metrics = await laneMetrics(column);
+    expect(Math.abs(metrics.laneLeft)).toBeLessThanOrEqual(1);
+    return metrics;
+  };
 
-  const checkDay = async (width: number, rail: number) => {
+  const checkDay = async (width: number) => {
     await show('day', width);
     const column = day();
     await expect(column.getByTestId('time-band-segment')).toHaveCount(6);
-    const metrics = await expectRail(column, rail);
+    const metrics = await expectBandedColumn(column);
     expect(metrics.laneWidth).toBeGreaterThan(80);
     const morning = column.locator('[data-testid="time-band-segment"][data-start-minute="600"]');
     const afternoon = column.locator('[data-testid="time-band-segment"][data-start-minute="840"]');
@@ -475,14 +473,16 @@ test('标签留在侧栏，任务文字与标签不相交', async ({ page, reque
     const nameOnly = column.locator('[data-testid="time-band-segment"][data-start-minute="60"]');
     const shortBoth = column.locator('[data-testid="time-band-segment"][data-start-minute="120"]');
     const block = column.locator(`[data-testid="task-block"][data-task-id="${video.id}"]`);
-    await expect(morning).toHaveAttribute('style', /top:\s*560px/);
-    await expect(morning).toHaveAttribute('style', /height:\s*112px/);
-    await expect(afternoon).toHaveAttribute('style', /top:\s*784px/);
-    await expect(block.locator('xpath=..')).toHaveAttribute('style', /top:\s*560px/);
+    await expect(morning).toHaveAttribute('style', /top:\s*960px/);
+    await expect(morning).toHaveAttribute('style', /height:\s*192px/);
+    await expect(afternoon).toHaveAttribute('style', /top:\s*1344px/);
+    await expect(block.locator('xpath=..')).toHaveAttribute('style', /top:\s*960px/);
     await expect(morning.getByTestId('time-band-label')).toHaveAttribute('aria-label', '上班（上午） 10:00–12:00');
-    await expect(morning.getByTestId('time-band-label-range')).toHaveText('10:00–12:00');
-    await expect(hidden.getByTestId('time-band-label')).toHaveCount(0);
-    expect(await hidden.evaluate((node) => Number.parseFloat((node as HTMLElement).style.height))).toBeLessThan(20);
+    await expect(morning.getByTestId('time-band-label')).toHaveAttribute('data-band-state', 'occupied');
+    await expect(morning.getByTestId('time-band-label-range')).toHaveCount(0);
+    await expect(hidden.getByTestId('time-band-label')).toHaveAttribute('data-band-state', 'free');
+    await expect(hidden.getByTestId('time-band-label')).toHaveAttribute('data-label-mode', 'name');
+    expect(await hidden.evaluate((node) => Number.parseFloat((node as HTMLElement).style.height))).toBeLessThan(36);
     await expect(nameOnly.getByTestId('time-band-label')).toHaveAttribute('data-label-mode', 'name');
     await expect(nameOnly.getByTestId('time-band-label-range')).toHaveCount(0);
     await expect(nameOnly.getByTestId('time-band-label')).toHaveAttribute('aria-label', '只显示名 01:00–01:22');
@@ -492,6 +492,7 @@ test('标签留在侧栏，任务文字与标签不相交', async ({ page, reque
     await expect(shortBoth.getByTestId('time-band-label')).toHaveAttribute('data-label-mode', 'both');
     const longLabel = column.locator('[data-testid="time-band-segment"][data-start-minute="1200"]').getByTestId('time-band-label');
     await expect(longLabel).toHaveAttribute('aria-label', `${longName} 20:00–21:00`);
+    await expect(longLabel).toHaveAttribute('data-band-state', 'free');
     expect(await longLabel.getByTestId('time-band-label-name').evaluate((node) => node.scrollWidth > node.clientWidth + 1)).toBe(true);
     await expect(page.locator('[data-drop-id="allday:2026-10-12"]')).toContainText('全天对照');
     await expect(column.getByTestId('plan-task-lane')).not.toContainText('全天对照');
@@ -504,16 +505,13 @@ test('标签留在侧栏，任务文字与标签不相交', async ({ page, reque
     expect(await page.getByTestId('calendar-horizontal-scroll').evaluate((node) => node.scrollWidth)).toBeGreaterThanOrEqual(weekMinWidth);
     for (const date of ['2026-10-12', '2026-10-13', '2026-10-16']) {
       const column = page.locator(`[data-testid="time-band-day"][data-date="${date}"]`);
-      const metrics = await expectRail(column, 0);
+      const metrics = await expectOpenColumn(column);
       expect(metrics.laneWidth).toBeGreaterThanOrEqual(100);
       await expect(column.getByTestId('time-band-layer')).toHaveCSS('opacity', '0.28');
       await expect(column.getByTestId('time-band-label').first()).not.toBeVisible();
     }
     const saturday = page.locator('[data-testid="time-band-day"][data-date="2026-10-17"]');
-    await expect(saturday).toHaveAttribute('data-band-rail', 'false');
-    await expect(saturday.getByTestId('time-band-rail')).toHaveCount(0);
-    const open = await railMetrics(saturday);
-    expect(open.rail).toBe(0);
+    const open = await laneMetrics(saturday);
     expect(Math.abs(open.laneLeft)).toBeLessThanOrEqual(1);
     expect(Math.abs(open.laneWidth - open.clientWidth)).toBeLessThanOrEqual(1);
     await expect(page.locator('[data-testid="task-block"][data-date="2026-10-12"]').filter({ hasText: '跨午夜联调' })).toHaveCount(1);
@@ -521,11 +519,11 @@ test('标签留在侧栏，任务文字与标签不相交', async ({ page, reque
     await expectLabelsClearOfTasks(page.locator('[data-testid="time-band-day"][data-date="2026-10-13"]'));
   };
 
-  await checkDay(1280, 112);
+  await checkDay(1280);
   if (testInfo.project.name === 'chromium') await page.screenshot({ path: '/tmp/wwa-plan-rail-day-light.png' });
-  await checkDay(390, 80);
+  await checkDay(390);
   if (testInfo.project.name === 'chromium') await page.screenshot({ path: '/tmp/wwa-plan-rail-day-390.png' });
-  await checkDay(375, 80);
+  await checkDay(375);
   if (testInfo.project.name === 'chromium') await page.screenshot({ path: '/tmp/wwa-plan-rail-day-375.png' });
   await checkWeek(1280);
   if (testInfo.project.name === 'chromium') await page.screenshot({ path: '/tmp/wwa-plan-rail-week-light.png' });
@@ -533,17 +531,16 @@ test('标签留在侧栏，任务文字与标签不相交', async ({ page, reque
   await checkWeek(375);
   await page.getByRole('button', { name: '月', exact: true }).click();
   await expect(page.getByTestId('time-band-layer')).toHaveCount(0);
-  await expect(page.getByTestId('time-band-rail')).toHaveCount(0);
   expect(await pageScrollWidth(page)).toBeLessThanOrEqual(376);
 
   await page.setViewportSize({ width: testInfo.project.name === 'mobile' ? 390 : 1280, height: 900 });
   await page.getByRole('button', { name: '日', exact: true }).click();
   await switchDark(page, testInfo.project.name);
-  await checkDay(1280, 112);
+  await checkDay(1280);
   await expect(day().locator('[data-testid="time-band-segment"][data-start-minute="600"]')).toHaveCSS('background-color', 'rgb(45, 54, 64)');
   if (testInfo.project.name === 'chromium') await page.screenshot({ path: '/tmp/wwa-plan-rail-day-dark.png' });
-  await checkDay(390, 80);
-  await checkDay(375, 80);
+  await checkDay(390);
+  await checkDay(375);
   await checkWeek(1280);
   await checkWeek(375);
 });
@@ -554,7 +551,7 @@ test('侧栏位置仍能创建，任务可拖放、缩放、完成和打开详�
   const task = await createTask(request, { title: '侧栏回归', dueDate: '2026-10-12', scheduledStart: '2026-10-12T14:00', scheduledEnd: '2026-10-12T15:00' });
   await openPlan(page);
   const day = page.locator('[data-testid="time-band-day"][data-date="2026-10-12"]');
-  await page.getByTestId('timeline-scroll').evaluate((node) => { node.scrollTop = 9 * 56; });
+  await page.getByTestId('timeline-scroll').evaluate((node) => { node.scrollTop = 9 * 96; });
   const slot = day.locator('[data-drop-id="slot:2026-10-12:10:00"]');
   const slotBox = await slot.boundingBox();
   if (!slotBox) throw new Error('没有 10:00 时间槽');
@@ -579,7 +576,7 @@ test('侧栏位置仍能创建，任务可拖放、缩放、完成和打开详�
     if (!handleBox) throw new Error('没有缩放手柄');
     await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
     await page.mouse.down();
-    await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2 + 28, { steps: 10 });
+    await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2 + 48, { steps: 10 });
     await page.mouse.up();
     await expect.poll(async () => (await (await request.get(`${apiUrl}/api/tasks/${task.id}`)).json()).data.scheduledEnd).toBe('2026-10-12T15:30');
 

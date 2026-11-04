@@ -10,10 +10,22 @@
     "addTask": "Add task"
   },
   "quadrant": {
-    "high": { "title": "Important and urgent", "description": "Handle now" },
-    "medium": { "title": "Important but not urgent", "description": "Schedule it" },
-    "low": { "title": "Not important but urgent", "description": "Handle quickly or delegate" },
-    "none": { "title": "Not important and not urgent", "description": "Reduce or delete" },
+    "high": {
+      "title": "Important and urgent",
+      "description": "Handle now"
+    },
+    "medium": {
+      "title": "Important but not urgent",
+      "description": "Schedule it"
+    },
+    "low": {
+      "title": "Not important but urgent",
+      "description": "Handle quickly or delegate"
+    },
+    "none": {
+      "title": "Not important and not urgent",
+      "description": "Reduce or delete"
+    },
     "laneLabel": "{{title}}, {{description}}",
     "dropHere": "Drop a task here",
     "completed_one": "Completed · {{count}}",
@@ -33,13 +45,41 @@
     "cancel": "Cancel"
   },
   "weekday": {
-    "mon": { "narrow": "Mon", "short": "Mon", "full": "Monday" },
-    "tue": { "narrow": "Tue", "short": "Tue", "full": "Tuesday" },
-    "wed": { "narrow": "Wed", "short": "Wed", "full": "Wednesday" },
-    "thu": { "narrow": "Thu", "short": "Thu", "full": "Thursday" },
-    "fri": { "narrow": "Fri", "short": "Fri", "full": "Friday" },
-    "sat": { "narrow": "Sat", "short": "Sat", "full": "Saturday" },
-    "sun": { "narrow": "Sun", "short": "Sun", "full": "Sunday" }
+    "mon": {
+      "narrow": "Mon",
+      "short": "Mon",
+      "full": "Monday"
+    },
+    "tue": {
+      "narrow": "Tue",
+      "short": "Tue",
+      "full": "Tuesday"
+    },
+    "wed": {
+      "narrow": "Wed",
+      "short": "Wed",
+      "full": "Wednesday"
+    },
+    "thu": {
+      "narrow": "Thu",
+      "short": "Thu",
+      "full": "Thursday"
+    },
+    "fri": {
+      "narrow": "Fri",
+      "short": "Fri",
+      "full": "Friday"
+    },
+    "sat": {
+      "narrow": "Sat",
+      "short": "Sat",
+      "full": "Saturday"
+    },
+    "sun": {
+      "narrow": "Sun",
+      "short": "Sun",
+      "full": "Sunday"
+    }
   },
   "focus": {
     "title": "Focus",
@@ -138,7 +178,17 @@
     "noMatches": "No matching tasks",
     "overdue": "Overdue · {{label}}",
     "trayHint": "Drag to schedule, or open the task to edit the time.",
-    "movePreview": "→ {{weekday}}, {{date}}"
+    "movePreview": "→ {{weekday}}, {{date}}",
+    "pickDate": "Pick a date, current {{current}}",
+    "pickDateTitle": "Jump to date",
+    "viewDate": "View",
+    "now": "now",
+    "showBands": "Show time-band backgrounds",
+    "displaySettings": "Display settings",
+    "addTask": "New task",
+    "statOpen": "Open",
+    "statDone": "Done",
+    "dayCompletion": "Completed today"
   },
   "timeBand": {
     "open": "Time blocks",

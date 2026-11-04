@@ -15,15 +15,16 @@ import { Button } from '@/components/ui/button.js';
 import { Tooltip } from '@/components/ui/tooltip.js';
 import { Input } from '@/components/ui/input.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.js';
 import { ScheduleFields, scheduleError, type ScheduleValue } from '@/components/tasks/ScheduleFields.js';
 import { keepSchedulePickerOpen } from '@/components/tasks/SchedulePickers.js';
 import { isCompositionKey } from '@/lib/todo.js';
 import type { PlanTimeBand } from '@/lib/api.js';
-import { isoWeekday, planTimeline, planTimelineMinWidth, resolveTimeBandSegments } from '@/lib/plan-time-bands.js';
+import { isoWeekday, planTimeline, planTimelineMinWidth, resolveTimeBandSegments, PLAN_HOUR_HEIGHT } from '@/lib/plan-time-bands.js';
 import { TimeBandLayer } from './TimeBandLayer.js';
 import { TimeBandControls } from './TimeBandDialog.js';
 import { usePlanTimeBands } from './usePlanTimeBands.js';
-import { ChevronLeft, ChevronRight, PanelRight, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, PanelRight, Plus, Settings2, X } from 'lucide-react';
 import { laneCap, layoutLanes, type LaneMore } from '@/lib/plan-layout.js';
 import { clampPlanDragOverlay, createPlanCollisionDetection, formatPlanDay, horizontalPlanDrag, planAutoScroll, planLaneDrop, weekdayIdOf, type PlanLaneDrop } from '@/lib/plan-drag.js';
 import { loadPlanLaneOrders, movePlanLaneOrder, planLaneOrderLimit, savePlanLaneOrder, type PlanLaneOrders } from '@/lib/plan-lane-order.js';
@@ -52,7 +53,7 @@ type Props = {
   onCreate: (input: { title: string; topicId: string | null; parentId: null } & ScheduleValue) => Promise<unknown>;
   onDelete: (task: Task) => void; busy: boolean;
 };
-const hourHeight = 56;
+const hourHeight = PLAN_HOUR_HEIGHT;
 const timelineHeight = hourHeight * 24;
 const weekdayIds = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
 function dateLabel(value: string, options: Intl.DateTimeFormatOptions) {
@@ -92,26 +93,29 @@ function TimedTask({ block, dateKey, busy, left, width, lane, laneCount, groupKe
   const { t } = useTranslation('plan');
   const task = block.task;
   const { setNodeRef: setDropRef } = useDroppable({ id: `lane:${dateKey}:${task.id}`, disabled: busy, data: { laneDrop: { groupKey, dateKey, taskId: task.id, groupTaskIds } } });
-  const height = block.point ? 28 : Math.max(24, (block.endMin - block.startMin) / 60 * hourHeight - 2);
+  const minutes = block.endMin - block.startMin;
+  const tier = block.point ? 'point' : minutes <= 18 ? 'micro' : minutes <= 35 ? 'compact' : 'normal';
+  const height = block.point ? 28 : Math.max(24, minutes / 60 * hourHeight - 2);
   const top = Math.min(block.startMin / 60 * hourHeight, timelineHeight - height);
   const offset = minutesBetween(task.scheduledStart!, addMinutes(`${dateKey}T00:00`, block.startMin));
   const range = timedRange(block);
-  const showInline = !block.point && height < 44;
   const title = <>{block.point && <span>● {formatTime(task.scheduledStart!)} </span>}{!block.startsHere && '↳ '}{task.title}</>;
   const blockTitle = t('plan.blockTitle', { title: task.title, schedule: scheduleLabel(task) });
   const dropping = laneDrop?.targetTaskId === task.id && laneDrop.groupKey === groupKey ? laneDrop : null;
   return <DragTask task={task} instance={dateKey} offset={offset} busy={busy} lane={lane} laneCount={laneCount} laneGroup={{ groupKey, dateKey }} className="plan-lane-card pointer-events-auto absolute z-[2]" style={{ top, height, left: `calc(${left * 100}% + 2px)`, width: `calc(${width * 100}% - 4px)` }}>
-    <article ref={setDropRef} data-testid="task-block" data-task-id={task.id} data-date={dateKey} data-point={block.point} data-lane-drop={dropping?.side} style={dropping ? { boxShadow: dropping.side === 'before' ? 'inset 3px 0 0 var(--primary)' : 'inset -3px 0 0 var(--primary)' } : undefined} className={cn('plan-timed-task relative h-full overflow-hidden rounded-md border px-1.5 text-xs leading-tight', block.point ? 'flex items-center border-dashed' : 'pt-2 pb-1', task.status === 'done' && 'opacity-55 line-through')}>
+    <article ref={setDropRef} data-testid="task-block" data-task-id={task.id} data-date={dateKey} data-point={block.point} data-tier={tier} data-done={task.status === 'done' ? '' : undefined} data-lane-drop={dropping?.side} style={dropping ? { boxShadow: dropping.side === 'before' ? 'inset 3px 0 0 var(--primary)' : 'inset -3px 0 0 var(--primary)' } : undefined} className={cn('plan-timed-task relative h-full overflow-hidden', block.point && 'flex items-center border-dashed')}>
       {!block.point && block.startsHere && <ResizeHandle task={task} edge="start" busy={busy} onOpen={onOpen} />}
       <Tooltip content={blockTitle} side="bottom">
-        <div className={cn('flex min-w-0 gap-1', block.point ? 'items-center' : 'h-full items-start')}>
-          <Check task={task} busy={busy} onToggle={onToggle} />
-          <Button variant="row" size="bare" type="button" className="min-w-0 flex-1 text-left" aria-label={t('plan.openTask', { title: task.title })} onClick={() => { if (!skipClick.current) onOpen(task.id); }}>
-            {showInline ? <span className="flex w-full min-w-0 items-start gap-1"><span className="plan-task-title min-w-0 flex-1">{title}</span><span className="plan-timed-when-inline shrink-0 whitespace-nowrap text-[10px] text-muted-foreground tabular-nums">{range}</span></span> : <span className="plan-task-title block">{title}</span>}
-            {height >= 44 && <span className="plan-timed-when block truncate text-[10px] text-muted-foreground tabular-nums">{range}</span>}
-          </Button>
-        </div>
+        <Button variant="row" size="bare" type="button" className="flex h-full min-w-0 flex-col items-stretch text-left" aria-label={t('plan.openTask', { title: task.title })} onClick={() => { if (!skipClick.current) onOpen(task.id); }}>
+          <span className={cn('plan-task-title min-w-0', tier === 'normal' && !block.point ? 'flex-1' : 'flex items-center')}>{title}</span>
+          {tier === 'normal' && !block.point && <span className="plan-timed-when shrink-0">{range}</span>}
+        </Button>
       </Tooltip>
+      {tier !== 'micro' && tier !== 'point' && (
+        <label className="plan-task-check">
+          <Check task={task} busy={busy} onToggle={onToggle} />
+        </label>
+      )}
       {!block.point && block.endsHere && <ResizeHandle task={task} edge="end" busy={busy} onOpen={onOpen} />}
     </article>
   </DragTask>;
@@ -124,9 +128,12 @@ function LaneMoreButton({ more, onOpen }: { more: LaneMore; onOpen: (button: HTM
   return <Button variant="plain" size="bare" type="button" data-testid="plan-lane-more" aria-haspopup="dialog" className="plan-lane-more pointer-events-auto absolute z-[3]" style={{ top, height, left: `calc(${more.left * 100}% + 2px)`, width: `calc(${more.width * 100}% - 4px)` }} aria-label={t('plan.laneMoreLabel', { count, start: clock(more.startMin), end: clock(more.endMin) })} title={more.blocks.map((block) => `${clock(block.startMin)}—${clock(block.endMin)} ${block.task.title}`).join('\n')} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => onOpen(event.currentTarget, more.blocks.map((block) => block.task.id))}>{t('plan.laneMore', { count })}</Button>;
 }
 function NowLine({ dateKey, today }: { dateKey: string; today: string }) {
+  const { t } = useTranslation('plan');
   const [now, setNow] = useState(localDateTime);
   useEffect(() => { const timer = window.setInterval(() => setNow(localDateTime()), 30000); return () => window.clearInterval(timer); }, []);
-  return dateKey === today ? <div className="pointer-events-none absolute inset-x-0 z-10 h-0.5 bg-destructive" style={{ top: minutesOf(now) / 60 * hourHeight }} /> : null;
+  if (dateKey !== today) return null;
+  const minutes = minutesOf(now);
+  return <div className="plan-now-line" style={{ top: minutes / 60 * hourHeight }}><span className="plan-now-label">{clock(minutes)} {t('plan.now')}</span></div>;
 }
 const allDayPreviewLimit = 2;
 function Timeline({ days, tasks, today, busy, bands, allDayOpen, onAllDayOpen, onOpen, onToggle, onCreate, activeTaskId, skipClick, manualOrders, laneDrop }: { days: string[]; tasks: Task[]; today: string; busy: boolean; bands: readonly PlanTimeBand[]; allDayOpen: boolean | null; onAllDayOpen: (open: boolean) => void; onOpen: Props['onOpen']; onToggle: Props['onToggle']; onCreate: (value: ScheduleValue) => void; activeTaskId: string | null; skipClick: { current: boolean }; manualOrders: PlanLaneOrders; laneDrop: PlanLaneDrop | null }) {
@@ -182,17 +189,18 @@ function Timeline({ days, tasks, today, busy, bands, allDayOpen, onAllDayOpen, o
         <div>{Array.from({ length: 24 }, (_, hour) => <div key={hour} className="border-b border-[var(--glass-divider)] pr-1 text-right text-[10px] tabular-nums text-muted-foreground" style={{ height: hourHeight }}>{String(hour).padStart(2, '0')}:00</div>)}</div>
         {days.map((day) => {
           const banded = bandDays.has(day);
-          const { placed, mores } = layoutLanes(layoutTimed(tasks, day), laneCaps[day] ?? laneCap(0), { pinnedTaskId: activeTaskId ?? undefined, manualOrders });
-          return <div key={day} data-testid="time-band-day" data-date={day} data-band-rail={banded ? 'true' : 'false'} className="relative isolate border-l border-[var(--glass-divider)]">
-            <TimeBandLayer bands={bands} dateKey={day} />
-            {banded && !week && <div data-testid="time-band-rail" className="pointer-events-none absolute inset-y-0 z-[1] border-r border-[var(--glass-divider)]" style={{ width: 'var(--plan-band-rail, 112px)' }} />}
+          const blocks = layoutTimed(tasks, day);
+          const occupied = blocks.filter((block) => !block.point).map((block) => ({ start: block.startMin, end: block.endMin }));
+          const { placed, mores } = layoutLanes(blocks, laneCaps[day] ?? laneCap(0), { pinnedTaskId: activeTaskId ?? undefined, manualOrders });
+          return <div key={day} data-testid="time-band-day" data-date={day} className="relative isolate border-l border-[var(--glass-divider)]">
+            <TimeBandLayer bands={bands} dateKey={day} occupied={occupied} />
             {Array.from({ length: 48 }, (_, index) => {
               const start = addMinutes(`${day}T00:00`, index * 30);
               const id = `slot:${day}:${start.slice(11, 13)}:${start.slice(14, 16)}`;
               return <DropTarget key={id} id={id} className="absolute inset-x-0 z-[1]" style={{ top: index * hourHeight / 2, height: hourHeight / 2 }}><Button variant="row" size="bare" type="button" disabled={busy} aria-label={t('plan.addAt', { when: start.replace('T', ' ') })} className="h-full w-full bg-transparent hover:bg-primary/5 focus-visible:bg-primary/10" onClick={() => onCreate({ dueDate: day, scheduledStart: start, scheduledEnd: addMinutes(start, 60) })} /></DropTarget>;
             })}
             {Array.from({ length: 24 }, (_, hour) => <div key={hour} className="pointer-events-none absolute inset-x-0 z-[1] border-b border-[var(--glass-divider)]" style={{ top: hour * hourHeight, height: hourHeight }} />)}
-            <div data-testid="plan-task-lane" className="pointer-events-none absolute inset-y-0 right-0 z-[2]" style={{ left: banded && !week ? 'var(--plan-band-rail, 112px)' : 0 }}>
+            <div data-testid="plan-task-lane" className="pointer-events-none absolute inset-y-0 right-0 z-[2]" style={{ left: banded && !week ? 'var(--plan-context-inset, 20px)' : 0 }}>
               {placed.map((item) => <TimedTask key={item.block.id} block={item.block} dateKey={day} left={item.left} width={item.width} lane={item.lane} laneCount={item.laneCount} groupKey={item.groupKey} groupTaskIds={item.groupTaskIds} laneDrop={laneDrop} busy={busy} onOpen={onOpen} onToggle={onToggle} skipClick={skipClick} />)}
               {mores.map((more) => <LaneMoreButton key={more.id} more={more} onOpen={(button, taskIds) => { overlapOpener.current = button; openingTask.current = false; setOverlap({ day, taskIds }); }} />)}
             </div>
@@ -232,7 +240,10 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
   const [anchor, setAnchor] = useState(() => readPlanAnchor(today));
   const chooseAnchor = (next: string) => { setAnchor(next); localStorage.setItem('dovun.plan.anchor', next); };
   const [showCompleted, setShowCompleted] = useState(() => localStorage.getItem('dovun.plan.showCompleted') === 'true');
+  const [showBands, setShowBands] = useState(() => localStorage.getItem('dovun.plan.showBands') !== 'false');
   const [trayOpen, setTrayOpen] = useState(false);
+  const [pickingDate, setPickingDate] = useState(false);
+  const [dateDraft, setDateDraft] = useState(anchor);
   const [allDayOpen, setAllDayOpen] = useState<boolean | null>(() => {
     const stored = localStorage.getItem('dovun.plan.allDayOpen');
     return stored === 'true' ? true : stored === 'false' ? false : null;
@@ -256,6 +267,13 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
   const saveLock = useRef(false);
   const range = rangeOf(mode, anchor);
   const span = t(mode === 'day' ? 'plan.spanDay' : mode === 'week' ? 'plan.spanWeek' : 'plan.spanMonth');
+  const headerTitle = mode === 'day'
+    ? `${dateLabel(anchor, { month: 'numeric', day: 'numeric' })} · ${dateLabel(anchor, { weekday: 'short' })}`
+    : mode === 'week' ? rangeLabel('week', anchor, range) : dateLabel(anchor, { year: 'numeric', month: 'long' });
+  const addAtAnchor = () => {
+    const start = `${anchor}T${localDateTime().split('T')[1]}`;
+    setCreating({ dueDate: anchor, scheduledStart: start, scheduledEnd: addMinutes(start, 60) });
+  };
   usePageContext('plan', { label: t('plan.contextLabel', { span, from: range[0], to: range[1] }), taskFilter: { status: showCompleted ? 'all' : 'open', scheduledFrom: range[0], scheduledTo: range[1] }, pageState: { layout: mode, dateFrom: range[0], dateTo: range[1], anchor, showCompleted } });
   const planned = useTasks({ status: showCompleted ? 'all' : 'open', scheduledFrom: range[0], scheduledTo: range[1] });
   const trayQuery = useTasks({ status: 'open', sort: 'date' });
@@ -344,16 +362,42 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
   }} onDragEnd={onDragEnd} onDragCancel={() => { clearDrag(); window.setTimeout(() => { skipClick.current = false; }, 400); }}>
     <div data-testid="plan-page" className="plan-page mx-auto p-4 pb-10 sm:p-6">
       <header className="plan-header">
-        <h1 className="text-2xl font-semibold">{t('plan.title')}</h1>
-        <Button variant="outline" size="sm" aria-expanded={trayOpen} aria-controls="plan-task-tray" onClick={() => setTrayOpen(!trayOpen)}><PanelRight className="size-4" />{t('plan.toSchedule')}<span className="plan-tray-count">{(trayQuery.data ?? []).filter((task) => !scheduleDateKey(task)).length}</span></Button>
+        <div className="plan-date-cluster">
+          <div>
+            <div className="plan-eyebrow">{dateLabel(anchor, { year: 'numeric' })} · {t('plan.title')}</div>
+            <Button variant="plain" size="bare" type="button" className="plan-date-title" aria-label={t('plan.pickDate', { current: headerTitle })} onClick={() => { setDateDraft(anchor); setPickingDate(true); }}>
+              {headerTitle}
+              <ChevronDown className="size-4 opacity-60" aria-hidden="true" />
+            </Button>
+          </div>
+          <div className="plan-date-actions">
+            <Button variant="ghost" size="icon-sm" aria-label={t('plan.previous')} onClick={() => chooseAnchor(mode === 'month' ? shiftMonth(anchor, -1) : addDays(anchor, mode === 'week' ? -7 : -1))}><ChevronLeft /></Button>
+            <Button variant="ghost" size="icon-sm" aria-label={t('plan.next')} onClick={() => chooseAnchor(mode === 'month' ? shiftMonth(anchor, 1) : addDays(anchor, mode === 'week' ? 7 : 1))}><ChevronRight /></Button>
+            <Button variant="outline" size="sm" onClick={() => chooseAnchor(today)}>{t('plan.today')}</Button>
+          </div>
+        </div>
+        <div className="plan-toolbar-row">
+          <div className="plan-mode-switch">{(['day', 'week', 'month'] as const).map((item) => <Button variant="tab" size="bare" key={item} type="button" data-plan-mode={item} aria-pressed={mode === item} className="px-3 py-1.5 text-xs" onClick={() => { clearDrag(); chooseMode(item); }}>{t(item === 'day' ? 'plan.spanDay' : item === 'week' ? 'plan.spanWeek' : 'plan.spanMonth')}</Button>)}</div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button variant="outline" size="sm" aria-expanded={trayOpen} aria-controls="plan-task-tray" onClick={() => setTrayOpen(!trayOpen)}><PanelRight className="size-4" />{t('plan.toSchedule')}<span className="plan-tray-count">{(trayQuery.data ?? []).filter((task) => !scheduleDateKey(task)).length}</span></Button>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon-sm" aria-label={t('plan.displaySettings')}><Settings2 /></Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64">
+                <div className="grid gap-3 text-sm">
+                  <label className="flex items-center justify-between gap-3"><span>{t('shared.showCompleted')}</span><Checkbox checked={showCompleted} onChange={(event) => { setShowCompleted(event.target.checked); localStorage.setItem('dovun.plan.showCompleted', String(event.target.checked)); }} /></label>
+                  <label className="flex items-center justify-between gap-3"><span>{t('plan.showBands')}</span><Checkbox checked={showBands} onChange={(event) => { setShowBands(event.target.checked); localStorage.setItem('dovun.plan.showBands', String(event.target.checked)); }} /></label>
+                </div>
+              </PopoverContent>
+            </Popover>
+            <Button size="sm" aria-label={t('plan.addTask')} onClick={addAtAnchor}><Plus className="size-4" />{t('plan.addTask')}</Button>
+          </div>
+        </div>
       </header>
-      <div className="plan-toolbar">
-        <div className="flex flex-wrap items-center gap-2 text-sm"><span className="font-medium">{dateLabel(anchor, { year: 'numeric', month: 'long' })}</span><Button variant="ghost" size="icon-sm" aria-label={t('plan.previous')} onClick={() => chooseAnchor(mode === 'month' ? shiftMonth(anchor, -1) : addDays(anchor, mode === 'week' ? -7 : -1))}><ChevronLeft /></Button><Button variant="ghost" size="icon-sm" aria-label={t('plan.next')} onClick={() => chooseAnchor(mode === 'month' ? shiftMonth(anchor, 1) : addDays(anchor, mode === 'week' ? 7 : 1))}><ChevronRight /></Button><Button variant="outline" size="sm" onClick={() => chooseAnchor(today)}>{t('plan.today')}</Button></div>
-        <div className="plan-mode-switch">{(['day', 'week', 'month'] as const).map((item) => <Button variant="tab" size="bare" key={item} type="button" data-plan-mode={item} aria-pressed={mode === item} className="px-3 py-1.5 text-xs" onClick={() => { clearDrag(); chooseMode(item); }}>{t(item === 'day' ? 'plan.spanDay' : item === 'week' ? 'plan.spanWeek' : 'plan.spanMonth')}</Button>)}</div>
-      </div>
       {error ? <p role="alert" className="text-destructive">{error.message}</p> : planned.isLoading || trayQuery.isLoading ? <p className="py-12 text-center text-muted-foreground">{t('shared.loadingTasks')}</p> : <div className="plan-layout" data-tray-open={trayOpen || undefined}>
         <div className="min-w-0">
-          {mode !== 'month' ? <Timeline days={days} tasks={tasks} today={today} busy={disabled} bands={timeBands.data?.bands ?? []} allDayOpen={allDayOpen} onAllDayOpen={(open) => { setAllDayOpen(open); localStorage.setItem('dovun.plan.allDayOpen', String(open)); }} onOpen={onOpen} onToggle={onToggle} onCreate={setCreating} activeTaskId={activeTaskId} skipClick={skipClick} manualOrders={manualOrders} laneDrop={laneDrop} /> : <div data-testid="month-horizontal-scroll" className="plan-month-scroll overflow-x-auto max-sm:overflow-visible"><div className="min-w-[560px] max-sm:min-w-0">
+          {mode !== 'month' ? <Timeline days={days} tasks={tasks} today={today} busy={disabled} bands={showBands ? timeBands.data?.bands ?? [] : []} allDayOpen={allDayOpen} onAllDayOpen={(open) => { setAllDayOpen(open); localStorage.setItem('dovun.plan.allDayOpen', String(open)); }} onOpen={onOpen} onToggle={onToggle} onCreate={setCreating} activeTaskId={activeTaskId} skipClick={skipClick} manualOrders={manualOrders} laneDrop={laneDrop} /> : <div data-testid="month-horizontal-scroll" className="plan-month-scroll overflow-x-auto max-sm:overflow-visible"><div className="min-w-[560px] max-sm:min-w-0">
             <div className="grid grid-cols-7 py-2 text-center text-xs text-muted-foreground">{weekdayIds.map((day) => <div key={day}>{t(`weekday.${day}.narrow`)}</div>)}</div>
             <div className="grid grid-cols-7">{days.map((day) => {
               const items = tasks.filter((task) => occursOn(task, day)).sort((a, b) => (a.scheduledStart ?? '').localeCompare(b.scheduledStart ?? '') || a.id.localeCompare(b.id));
@@ -370,6 +414,20 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
         </div>
         <aside id="plan-task-tray" aria-label={t('plan.trayLabel')} hidden={!trayOpen} className="plan-task-tray min-w-0 rounded-xl border border-[var(--glass-divider)] p-4">
           <div className="mb-3 flex items-center justify-between text-sm font-medium"><span>{t('plan.trayTitle', { total: tray.length })}</span><Button variant="ghost" size="icon-sm" aria-label={t('plan.hideTray')} onClick={() => setTrayOpen(false)}><X /></Button></div>
+          {mode === 'day' && (() => {
+            const dayTasks = tasks.filter((task) => occursOn(task, anchor));
+            const openCount = dayTasks.filter((task) => task.status !== 'done').length;
+            const doneCount = dayTasks.length - openCount;
+            const percent = dayTasks.length ? Math.round((doneCount / dayTasks.length) * 100) : 0;
+            return <div className="plan-day-stats" data-testid="plan-day-stats">
+              <div className="plan-day-stat"><strong>{openCount}</strong><small>{t('plan.statOpen')}</small></div>
+              <div className="plan-day-stat"><strong>{doneCount}</strong><small>{t('plan.statDone')}</small></div>
+              <div className="plan-day-completion">
+                <div className="plan-day-completion-caption"><span>{t('plan.dayCompletion')}</span><span>{doneCount} / {dayTasks.length}</span></div>
+                <div className="plan-day-completion-track"><i style={{ width: `${percent}%` }} /></div>
+              </div>
+            </div>;
+          })()}
           <Input type="search" aria-label={t('plan.searchLabel')} placeholder={t('plan.searchPlaceholder')} value={search} onChange={(event) => setSearch(event.target.value)} />
           <NativeSelect aria-label={t('plan.filterLabel')} value={trayFilter} onChange={(event) => setTrayFilter(event.target.value)} className="glass-control my-2 h-9 w-full rounded px-2 text-sm"><option value="unplanned">{t('schedule.unscheduled')}</option><option value="planned">{t('plan.scheduled')}</option><option value="all">{t('plan.all')}</option></NativeSelect>
           <DropTarget id="unschedule" className="mb-2 rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">{t('plan.dropUnschedule')}</DropTarget>
@@ -377,9 +435,18 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
           <p className="mt-3 text-[11px] text-muted-foreground">{t('plan.trayHint')}</p>
         </aside>
       </div>}
-      <footer className="plan-footer"><span className="text-xs text-muted-foreground">{rangeLabel(mode, anchor, range)}</span><div className="flex flex-wrap items-center gap-4"><label className="flex items-center gap-2 text-xs text-muted-foreground"><Checkbox  checked={showCompleted} onChange={(event) => { setShowCompleted(event.target.checked); localStorage.setItem('dovun.plan.showCompleted', String(event.target.checked)); }} />{t('shared.showCompleted')}</label><TimeBandControls /></div></footer>
+      <footer className="plan-footer"><span className="text-xs text-muted-foreground">{rangeLabel(mode, anchor, range)}</span><TimeBandControls /></footer>
     </div>
     <DragOverlay modifiers={narrow ? narrowOverlayModifiers : undefined} style={narrow ? narrowOverlayStyle : undefined}>{dragging && <Surface as="div" tone="input" data-testid="plan-drag-overlay" className={cn('glass-control rounded-lg px-3 py-2 text-sm shadow-lg', narrow ? 'max-w-[calc(100vw-16px)]' : 'max-w-64')}><p className="truncate">{dragging.title}</p>{overlayDetail ? <p className={cn('text-xs text-muted-foreground', narrow && 'whitespace-nowrap')}>{overlayDetail}</p> : null}</Surface>}</DragOverlay>
     {creating && <CreateScheduledTask initial={creating} topics={topics} onClose={() => setCreating(null)} onCreate={onCreate} />}
+    <Dialog open={pickingDate} onOpenChange={(open) => { if (!open) setPickingDate(false); }}>
+      <DialogContent surface="glass" className="max-w-xs">
+        <DialogHeader><DialogTitle>{t('plan.pickDateTitle')}</DialogTitle></DialogHeader>
+        <form className="grid gap-3" onSubmit={(event) => { event.preventDefault(); if (/^\d{4}-\d{2}-\d{2}$/.test(dateDraft)) chooseAnchor(dateDraft); setPickingDate(false); }}>
+          <Input type="date" aria-label={t('plan.pickDateTitle')} value={dateDraft} onChange={(event) => setDateDraft(event.target.value)} />
+          <div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => setPickingDate(false)}>{t('shared.cancel')}</Button><Button type="submit">{t('plan.viewDate')}</Button></div>
+        </form>
+      </DialogContent>
+    </Dialog>
   </DndContext>;
 }

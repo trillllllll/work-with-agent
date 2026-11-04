@@ -58,6 +58,7 @@ test('重叠任务在周视图并排成泳道，每项可打开、完成，并�
   await first.getByLabel('完成任务：接口开发', { exact: true }).click();
   await expect(day.getByText('接口开发', { exact: true })).toHaveCount(0);
   await expect(second.locator('xpath=..')).toHaveAttribute('data-lane-count', '1');
+  await page.getByRole('button', { name: '显示设置' }).click();
   await page.getByLabel('显示已完成', { exact: true }).check();
   await expect(first.getByLabel('重开任务：接口开发')).toBeChecked();
   // Completion changes the visual state only; both tasks keep their lanes.

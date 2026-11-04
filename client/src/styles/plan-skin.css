@@ -1,0 +1,360 @@
+/* 规划页皮肤：值来自 docs/design/dovun/schedule-restyle 的 porcelain r3 原型。
+   任务卡是前景实体（瓷面+边+轻影），时间段是纯背景（洗色+无投影），现在线是唯一的暖色点睛。 */
+
+:root {
+  --plan-hour-height: 96px;
+  --plan-context-inset: 20px;
+  --plan-now-ink: #b56b4a;
+  --plan-now-label-ink: #9e5939;
+  --plan-now-label-bg: #fff9ed;
+  --plan-card-radius: 10px;
+  --plan-card-border: rgb(86 98 111 / 0.28);
+  --plan-band-gutter: rgb(86 98 111 / 0.115);
+}
+
+.dark {
+  --plan-hour-height: 96px;
+  --plan-context-inset: 20px;
+  --plan-now-ink: #c9a876;
+  --plan-now-label-ink: #d9bc8c;
+  --plan-now-label-bg: #232a33;
+  --plan-card-radius: 10px;
+  --plan-card-border: rgb(148 163 183 / 0.18);
+  --plan-band-gutter: rgb(183 197 214 / 0.1);
+}
+
+/* ---------- 日期簇头部 ---------- */
+
+.plan-date-cluster {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.plan-eyebrow {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 17px;
+  letter-spacing: 0.07em;
+  margin-bottom: 3px;
+}
+
+.plan-date-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  padding: 0 6px 0 0;
+}
+
+.plan-date-title:hover {
+  background: var(--glass-hover);
+}
+
+.plan-date-title:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 0;
+}
+
+.plan-date-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.plan-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+/* 日/周/月：内凹轨道 + 浮起选中胶囊 */
+.plan-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--glass-control);
+  box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.06), 0 1px 0 var(--glass-highlight);
+}
+
+.dark .plan-mode-switch {
+  box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.3), 0 1px 0 rgb(244 241 234 / 0.05);
+}
+
+.plan-mode-switch [data-plan-mode] {
+  min-width: 44px;
+  min-height: 34px;
+  border-radius: calc(var(--radius-sm) - 2px);
+  color: var(--muted-foreground);
+}
+
+.plan-mode-switch [data-plan-mode][aria-pressed="true"] {
+  background: var(--card);
+  color: var(--foreground);
+  font-weight: 600;
+  box-shadow: var(--surface-card-shadow);
+}
+
+/* ---------- 任务卡：三档密度，右下角一步完成 ---------- */
+
+.plan-timed-task {
+  background: var(--surface-card-paint);
+  border: 1px solid var(--plan-card-border);
+  border-radius: var(--plan-card-radius);
+  box-shadow: var(--surface-card-shadow);
+  color: var(--foreground);
+  font-size: 13px;
+  line-height: 19px;
+  padding: 8px 10px;
+}
+
+.plan-timed-task:hover {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--plan-card-border));
+}
+
+.plan-timed-task[data-tier="compact"] {
+  padding: 4px 8px;
+}
+
+.plan-timed-task[data-tier="micro"] {
+  padding: 2px 6px;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.plan-timed-task[data-tier="point"] {
+  padding: 2px 8px;
+}
+
+.plan-timed-task .plan-task-check {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  max-height: calc(100% - 4px);
+  border-radius: 0 0 calc(var(--plan-card-radius) - 2px) 0;
+  cursor: pointer;
+}
+
+.plan-timed-task .plan-task-check:hover {
+  background: var(--selected);
+}
+
+.plan-timed-task .plan-task-title {
+  font-size: 13px;
+  line-height: 19px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.plan-timed-task[data-tier="normal"] .plan-task-title {
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.plan-timed-task .plan-timed-when {
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+  width: 100%;
+  padding-right: 44px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-timed-task[data-done] {
+  background: var(--muted);
+  box-shadow: none;
+  border-color: var(--glass-border-soft);
+}
+
+.plan-timed-task[data-done] .plan-task-title {
+  color: var(--muted-foreground);
+}
+
+.plan-timed-task[data-done] .plan-timed-when {
+  color: var(--muted-foreground);
+}
+
+/* 完成态：勾选 + 次要文字，不再用删除线和整卡透明度 */
+
+/* ---------- 时间段背景：空闲大标签 / 占用竖排小字 ---------- */
+
+.plan-band-label-free {
+  position: absolute;
+  top: 10px;
+  left: calc(var(--plan-context-inset) + 8px);
+  max-width: min(320px, calc(100% - var(--plan-context-inset) - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  pointer-events: none;
+}
+
+.plan-band-label-free .plan-band-label-name {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-band-label-free .plan-band-label-range {
+  font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.plan-band-label-occupied {
+  position: absolute;
+  top: 10px;
+  left: 4px;
+  width: calc(var(--plan-context-inset) - 6px);
+  max-height: calc(100% - 16px);
+  overflow: hidden;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  font-size: 10px;
+  line-height: 14px;
+  letter-spacing: 1px;
+  font-weight: 500;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+/* ---------- 现在线：唯一的暖色点睛 ---------- */
+
+.plan-now-line {
+  position: absolute;
+  inset-inline: 0;
+  height: 0;
+  border-top: 1.5px solid var(--plan-now-ink);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.plan-now-line::before {
+  content: '';
+  position: absolute;
+  left: -3px;
+  top: -4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--plan-now-ink);
+}
+
+.plan-now-label {
+  position: absolute;
+  right: 6px;
+  top: -18px;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--plan-now-label-bg);
+  color: var(--plan-now-label-ink);
+  font-size: 10px;
+  line-height: 16px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 周视图日列窄，标签会压住任务卡；列头已标识今天，这里只留线与点。 */
+.plan-calendar-week .plan-now-label { display: none; }
+
+/* ---------- 托盘顶部：当日概览 ---------- */
+
+.plan-day-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  border-radius: var(--radius-md);
+  background: var(--glass-control);
+  box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.05), 0 1px 0 var(--glass-highlight);
+}
+
+.dark .plan-day-stats {
+  box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.25), 0 1px 0 rgb(244 241 234 / 0.04);
+}
+
+.plan-day-stat strong {
+  display: block;
+  font-size: 26px;
+  line-height: 32px;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  color: var(--primary);
+}
+
+.plan-day-stat small {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+.plan-day-stat + .plan-day-stat {
+  padding-left: 14px;
+  border-left: 1px solid var(--glass-divider);
+}
+
+.plan-day-completion {
+  grid-column: 1 / -1;
+  margin-top: 10px;
+}
+
+.plan-day-completion .plan-day-completion-caption {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  margin-bottom: 5px;
+}
+
+.plan-day-completion .plan-day-completion-track {
+  height: 3px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--glass-control);
+}
+
+.plan-day-completion .plan-day-completion-track > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--primary);
+}
+
+@media (max-width: 639px) {
+  .plan-date-title {
+    font-size: 22px;
+    line-height: 30px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan-now-line,
+  .plan-now-line::before {
+    transition: none;
+  }
+}

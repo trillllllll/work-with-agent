@@ -318,9 +318,11 @@ test('空白处创建支持输入法和取消，完成后保留且隐藏选择�
   const block = page.locator(`[data-task-id="${rows[0].id}"]`);
   await block.getByLabel('完成任务：输入法创建', { exact: true }).click();
   await expect(block.getByLabel('重开任务：输入法创建')).toBeChecked();
+  await page.getByRole('button', { name: '显示设置' }).click();
   await page.getByLabel('显示已完成', { exact: true }).uncheck();
   await expect(block).toHaveCount(0);
-  await page.reload(); await expect(page.getByLabel('显示已完成', { exact: true })).not.toBeChecked();
+  await page.reload(); await page.getByRole('button', { name: '显示设置' }).click();
+  await expect(page.getByLabel('显示已完成', { exact: true })).not.toBeChecked();
   await page.getByLabel('显示已完成', { exact: true }).check(); await expect(block).toHaveCount(1);
 });
 
@@ -422,5 +424,5 @@ test('拖动保存失败后恢复原安排，不留下预览块', async ({ page,
   await expect(page.getByText('安排保存失败', { exact: true })).toBeVisible();
   await expect(block).toHaveCount(1);
   expect((await (await request.get(`${api}/api/tasks/${item.id}`)).json()).data).toMatchObject({ dueDate: day, scheduledStart: `${day}T14:00`, scheduledEnd: `${day}T15:00` });
-  expect(await block.evaluate((node) => (node.parentElement as HTMLElement).style.top)).toBe('784px');
+  expect(await block.evaluate((node) => (node.parentElement as HTMLElement).style.top)).toBe('1344px');
 });

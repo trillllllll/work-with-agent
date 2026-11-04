@@ -19,14 +19,22 @@ const segmentStyle = (color: TimeBandColor, top: number, height: number): CSSPro
   pointerEvents: 'none',
 });
 
-function BandLabel({ label }: { label: TimeBandSegmentLabel }) {
-  return <span role="group" aria-label={label.text} data-testid="time-band-label" data-label-mode={label.range ? 'both' : 'name'} className="absolute overflow-hidden" style={{ top: 2, left: 0, width: 'var(--plan-band-rail, 112px)', paddingLeft: 6, paddingRight: 6, pointerEvents: 'none' }}>
-    <span aria-hidden="true" data-testid="time-band-label-name" className="block overflow-hidden text-ellipsis whitespace-nowrap" style={{ fontSize: 11, lineHeight: '16px', fontWeight: 500 }}>{label.name}</span>
-    {label.range && <span aria-hidden="true" data-testid="time-band-label-range" className="block overflow-hidden text-ellipsis whitespace-nowrap tabular-nums" style={{ fontSize: 10, lineHeight: '14px', fontWeight: 500 }}>{label.range}</span>}
+/** 该时段内是否有可见任务（含跨天续段）。空闲显示大标签，被占用退为左侧竖排小字。 */
+function isOccupied(segment: { startMinute: number; endMinute: number }, occupied: ReadonlyArray<{ start: number; end: number }>) {
+  return occupied.some((range) => range.start < segment.endMinute && range.end > segment.startMinute);
+}
+
+function BandLabel({ label, occupied }: { label: TimeBandSegmentLabel; occupied: boolean }) {
+  if (occupied) {
+    return <span role="group" aria-label={label.text} data-testid="time-band-label" data-band-state="occupied" className="plan-band-label-occupied"><span data-testid="time-band-label-name" className="block">{label.name}</span></span>;
+  }
+  return <span role="group" aria-label={label.text} data-testid="time-band-label" data-band-state="free" data-label-mode={label.range ? 'both' : 'name'} className="plan-band-label-free">
+    <span aria-hidden="true" data-testid="time-band-label-name" className="plan-band-label-name">{label.name}</span>
+    {label.range && <span aria-hidden="true" data-testid="time-band-label-range" className="plan-band-label-range tabular-nums">{label.range}</span>}
   </span>;
 }
 
-export function TimeBandLayer({ bands, dateKey }: { bands: readonly PlanTimeBand[]; dateKey: string }) {
+export function TimeBandLayer({ bands, dateKey, occupied = [] }: { bands: readonly PlanTimeBand[]; dateKey: string; occupied?: ReadonlyArray<{ start: number; end: number }> }) {
   const segments = resolveTimeBandSegments(bands, isoWeekday(dateKey));
   const labels = timeBandSegmentLabels(bands, segments);
   return <div data-testid="time-band-layer" className="pointer-events-none absolute inset-0 z-0">
@@ -34,7 +42,7 @@ export function TimeBandLayer({ bands, dateKey }: { bands: readonly PlanTimeBand
       const geometry = timeBandGeometry(segment);
       const label = labels[index];
       return <div key={`${segment.bandId}:${segment.startMinute}:${segment.endMinute}`} data-testid="time-band-segment" data-band-id={segment.bandId} data-start-minute={segment.startMinute} data-end-minute={segment.endMinute} data-color={segment.color} className="absolute overflow-hidden" style={segmentStyle(segment.color, geometry.top, geometry.height)}>
-        {label && <BandLabel label={label} />}
+        {label && <BandLabel label={label} occupied={isOccupied(segment, occupied)} />}
       </div>;
     })}
   </div>;

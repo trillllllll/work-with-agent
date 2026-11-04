@@ -67,15 +67,15 @@ test('规划页保持路由，并按公式摆放 14:00 时间块', async ({ page
   await page.goto('/#/plan');
   await page.getByRole('button', { name: '日', exact: true }).click();
   await expect(page).toHaveURL(/#\/plan$/);
-  await expect(page.getByRole('heading', { name: '规划', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^选择日期/ })).toBeVisible();
   const block = page.locator(`[data-testid="task-block"][data-task-id="${created.id}"]`);
   await expect(block).toBeVisible();
   const style = await block.evaluate((node) => {
     const parent = node.parentElement as HTMLElement;
     return { top: parent.style.top, height: parent.style.height };
   });
-  expect(style.top).toBe('784px');
-  expect(style.height).toBe('82px');
+  expect(style.top).toBe('1344px');
+  expect(style.height).toBe('142px');
 
   await page.getByRole('button', { name: '周', exact: true }).click();
   await expect(page.locator('[data-plan-mode="week"]')).toHaveAttribute('aria-pressed', 'true');
@@ -132,7 +132,7 @@ test('暗色模式下规划页和专注页使用主题色', async ({ page }, tes
   await expect(page.locator('html')).toHaveClass(/dark/);
   if (testInfo.project.name === 'mobile') await page.goto('/#/plan');
   await page.getByRole('button', { name: '日', exact: true }).click();
-  const darkTone = await page.getByRole('heading', { name: '规划' }).evaluate((node) => getComputedStyle(node).color);
+  const darkTone = await page.getByRole('button', { name: /^选择日期/ }).evaluate((node) => getComputedStyle(node).color);
   const darkChannels = darkTone.match(/\d+/g)!.map(Number);
   expect((darkChannels[0] + darkChannels[1] + darkChannels[2]) / 3).toBeGreaterThan(160);
   await expect(page.getByTestId('plan-page').getByRole('button', { name: '今天', exact: true })).toHaveCSS('color', darkTone);

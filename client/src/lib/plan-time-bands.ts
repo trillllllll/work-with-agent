@@ -30,10 +30,14 @@ export function resolveTimeBandSegments(bands: readonly PlanTimeBand[], weekday:
   return result;
 }
 
+/** 日/周时间轴的纵向比例：一小时占多少像素。PlanPage 与 CSS 共用这一个来源。 */
+export const PLAN_HOUR_HEIGHT = 96;
+export const planMinutePx = PLAN_HOUR_HEIGHT / 60;
+
 export function timeBandGeometry(segment: Pick<TimeBandSegment, 'startMinute' | 'endMinute'>) {
   return {
-    top: segment.startMinute * 56 / 60,
-    height: (segment.endMinute - segment.startMinute) * 56 / 60,
+    top: segment.startMinute * planMinutePx,
+    height: (segment.endMinute - segment.startMinute) * planMinutePx,
   };
 }
 
@@ -50,8 +54,8 @@ export function timeBandLabel(band: Pick<PlanTimeBand, 'name' | 'startMinute' | 
   return `${band.name} ${timeBandRange(band)}`;
 }
 
-/** 日视图保留标签侧栏（112 / 窄屏 80）；周视图仅铺底色，七列共享完整宽度。 */
-export const planTimeline = { hourGutter: 48, weekMin: 760, railDay: 112, railCompact: 80 } as const;
+/** 日视图时间段作为纯背景全宽铺底，任务道只留 contextInset 的竖排带标沟槽；周视图共享完整宽度。 */
+export const planTimeline = { hourGutter: 48, weekMin: 760, contextInset: 20 } as const;
 export const timeBandNameHeight = 20;
 export const timeBandBothHeight = 36;
 

@@ -63,14 +63,14 @@ describe('时间段背景', () => {
 
   it('保留分钟级小数像素', () => {
     const result = timeBandGeometry({ startMinute: 541, endMinute: 542 });
-    expect(result.top).toBeCloseTo(504.9333333333333, 8);
-    expect(result.height).toBeCloseTo(0.9333333333333, 8);
+    expect(result.top).toBeCloseTo(865.6, 8);
+    expect(result.height).toBeCloseTo(1.6, 8);
   });
 
   it('完整工作时间位置精确', () => {
-    expect(timeBandGeometry(work)).toEqual({ top: 504, height: 504 });
+    expect(timeBandGeometry(work)).toEqual({ top: 864, height: 864 });
     expect(timeBandGeometry({ startMinute: 0, endMinute: 1440 }))
-      .toEqual({ top: 0, height: 1344 });
+      .toEqual({ top: 0, height: 2304 });
   });
 
   it('不修改输入', () => {
@@ -131,9 +131,10 @@ describe('时间段背景', () => {
       { name: '午休', range: '12:00–13:00', text: '午休 12:00–13:00' },
       null,
     ]);
-    const short: PlanTimeBand = { ...work, id: '00000000-0000-4000-8000-00000000000a', name: '短', startMinute: 0, endMinute: 21 };
+    const short: PlanTimeBand = { ...work, id: '00000000-0000-4000-8000-00000000000a', name: '短', startMinute: 0, endMinute: 10 };
     const tall: PlanTimeBand = { ...work, id: '00000000-0000-4000-8000-00000000000b', name: '够高', startMinute: 100, endMinute: 122 };
     expect(timeBandGeometry(short).height).toBeLessThan(20);
+    expect(timeBandGeometry({ startMinute: 0, endMinute: 13 }).height).toBeGreaterThanOrEqual(20);
     expect(timeBandGeometry({ startMinute: 100, endMinute: 122 }).height).toBeGreaterThanOrEqual(20);
     expect(timeBandGeometry({ startMinute: 100, endMinute: 122 }).height).toBeLessThan(36);
     expect(timeBandSegmentLabels([short, tall], resolveTimeBandSegments([short, tall], 1))).toEqual([
@@ -153,11 +154,11 @@ describe('时间段背景', () => {
     expect(timeBandLabelMode(35)).toBe('name');
     expect(timeBandLabelMode(35.999)).toBe('name');
     expect(timeBandLabelMode(36)).toBe('both');
-    const nameOnly: PlanTimeBand = { ...work, id: '00000000-0000-4000-8000-00000000000c', name: '只看名称', startMinute: 0, endMinute: 38 };
+    const nameOnly: PlanTimeBand = { ...work, id: '00000000-0000-4000-8000-00000000000c', name: '只看名称', startMinute: 0, endMinute: 20 };
     expect(timeBandGeometry(nameOnly).height).toBeGreaterThanOrEqual(20);
     expect(timeBandGeometry(nameOnly).height).toBeLessThan(36);
     expect(timeBandSegmentLabels([nameOnly], resolveTimeBandSegments([nameOnly], 1))).toEqual([
-      { name: '只看名称', range: null, text: '只看名称 00:00–00:38' },
+      { name: '只看名称', range: null, text: '只看名称 00:00–00:20' },
     ]);
     const both: PlanTimeBand = { ...work, id: '00000000-0000-4000-8000-00000000000d', name: '两行', startMinute: 100, endMinute: 139 };
     expect(timeBandGeometry(both).height).toBeGreaterThanOrEqual(36);
@@ -176,24 +177,23 @@ describe('时间段背景', () => {
     expect(timeBandGeometry(split[2]).height).toBeGreaterThanOrEqual(36);
     expect(timeBandSegmentLabels([outer, bite], split)).toEqual([
       { name: '外层', range: null, text: '外层 00:00–03:00' },
-      null,
+      { name: '咬掉', range: null, text: '咬掉 00:22–00:40' },
       null,
     ]);
-    const cap: PlanTimeBand = { ...lunch, id: '00000000-0000-4000-8000-000000000010', name: '帽', startMinute: 0, endMinute: 15, color: 'pink' };
+    const cap: PlanTimeBand = { ...lunch, id: '00000000-0000-4000-8000-000000000010', name: '帽', startMinute: 0, endMinute: 8, color: 'pink' };
     const later = resolveTimeBandSegments([outer, cap], 1);
     expect(timeBandLabelMode(timeBandGeometry(later[0]).height)).toBe('hidden');
     expect(timeBandSegmentLabels([outer, cap], later)[1]).toEqual({ name: '外层', range: '00:00–03:00', text: '外层 00:00–03:00' });
   });
 
-  it('周视图有时间段时为侧栏和任务区预留宽度', () => {
-    expect(planTimeline).toEqual({ hourGutter: 48, weekMin: 760, railDay: 112, railCompact: 80 });
+  it('日视图时间段全宽铺底，任务道只留竖排带标沟槽', () => {
+    expect(planTimeline).toEqual({ hourGutter: 48, weekMin: 760, contextInset: 20 });
     expect(planTimelineMinWidth(7)).toBe(760);
     expect(planTimelineMinWidth(1)).toBeUndefined();
     const css = readFileSync(fileURLToPath(new URL('../index.css', import.meta.url)), 'utf8');
-    expect(css).toContain(`--plan-band-rail: ${planTimeline.railDay}px`);
-    expect(css).toContain(`--plan-band-rail: ${planTimeline.railCompact}px`);
-    expect(css).toContain('max-width: 639px');
-    expect(css).toContain('.plan-calendar.plan-calendar-week');
+    expect(css).toContain(`--plan-context-inset: ${planTimeline.contextInset}px`);
+    expect(css).not.toContain('--plan-band-rail');
+    expect(css).toContain('.plan-calendar-week [data-testid="time-band-layer"]');
   });
 
   it('24:00 标签使用结束分钟原文', () => {
