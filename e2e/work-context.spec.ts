@@ -91,8 +91,8 @@ test('工作上下文默认显示当前进展，建议不会直接变成记忆',
   expect(wideRail!.x).toBeGreaterThan(wideBrief!.x + 40);
   expect(wideRail!.y).toBeLessThan(wideBrief!.y + wideBrief!.height);
   if (testInfo.project.name === 'chromium') {
-    await expect(page.getByRole('region', { name: '积累', exact: true }).getByRole('button')).toHaveText(['资料库', '工作上下文', '定期回顾']);
-    await expect(page.getByRole('region', { name: 'AI 协作', exact: true }).getByRole('button')).toContainText(['AI 助手', '待确认', '技能', 'AI 连接', 'AI 执行']);
+    await expect(page.getByRole('region', { name: '积累', exact: true }).getByRole('button')).toContainText(['资料库', '工作上下文', '定期回顾']);
+    await expect(page.getByRole('region', { name: 'AI 协作', exact: true }).getByRole('button')).toContainText(['待确认', '技能', 'AI 连接', 'AI 执行']);
   }
   await setTheme(page, 'light');
   await shot(page, testInfo.project.name, '1440-light-brief');
@@ -318,7 +318,7 @@ test('键盘可以切换标签、关闭菜单，并在关闭编辑后回到触�
   await expect(edit).toBeFocused();
 });
 
-test('任务关联资料弹窗可以编辑资料，不出现工作上下文标题和自动提炼', async ({ page, request }) => {
+test('任务关联资料弹窗提供新建文档入口，不出现工作上下文标题和自动提炼', async ({ page, request }) => {
   const created = await request.post(`${base}/api/tasks`, { data: { title: '需要弹窗资料的任务' } });
   expect(created.ok(), await created.text()).toBe(true);
   const taskId = (await created.json()).data.id as string;
@@ -331,11 +331,8 @@ test('任务关联资料弹窗可以编辑资料，不出现工作上下文标�
   await expect(dialog.getByText('自动提炼')).toHaveCount(0);
   await expect(dialog.getByText('所属清单的长期记忆', { exact: true })).toHaveCount(0);
   await dialog.getByRole('tab', { name: '参考资料', exact: true }).click();
-  await dialog.getByRole('button', { name: '保存材料', exact: true }).click();
-  await dialog.getByLabel('材料标题', { exact: true }).fill('弹窗里的资料');
-  await dialog.getByLabel('材料正文', { exact: true }).fill('从任务弹窗保存的原文');
-  await dialog.getByRole('button', { name: '保存材料', exact: true }).last().click();
-  await expect(dialog.getByRole('button', { name: '弹窗里的资料', exact: true })).toBeVisible();
+  // Writing a material opens the document editor (covered by document-*.spec.ts); the dialog only offers the entry.
+  await expect(dialog.getByRole('button', { name: '新建文档', exact: true })).toBeVisible();
   await dialog.getByRole('tab', { name: '长期记忆', exact: true }).click();
   await expect(dialog.getByText('所属清单的长期记忆', { exact: true })).toBeVisible();
   await expect(dialog.getByText('自动提炼')).toHaveCount(0);

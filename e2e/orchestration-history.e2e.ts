@@ -120,7 +120,8 @@ test('shows AI history for the main task and a subtask, and opens the round from
 
   await history.getByRole('button', { name: 'Close' }).click();
   await expect(history).toBeHidden();
-  await detail.getByRole('button', { name: '关闭任务详情' }).click();
+  // The task detail sits in the work rail, which owns the close button.
+  await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
   await expect(detail).toBeHidden();
 
   const subDetail = await openTask(page, state.subA, 'Task A');
@@ -132,7 +133,7 @@ test('shows AI history for the main task and a subtask, and opens the round from
   await expect(subHistory.getByText('Task B')).toHaveCount(0);
   await expect(subHistory.getByText('建集成分支')).toHaveCount(0);
   await subHistory.getByRole('button', { name: 'Close' }).click();
-  await subDetail.getByRole('button', { name: '关闭任务详情' }).click();
+  await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
   await expect(subDetail).toBeHidden();
 
   await page.goto('/#/runs');
@@ -209,8 +210,8 @@ test('the assistant answers a dispatch-stats question from orchestration_stats',
   await page.getByPlaceholder(composer).fill('统计这周 AI 派发');
   await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect(page.getByText(/本周派发 \d+ 轮/)).toBeVisible({ timeout: 30_000 });
-  const lookup = page.getByTestId('assistant-process').locator(':scope > summary');
-  await lookup.click();
-  await expect(lookup).toHaveAttribute('aria-expanded', 'true');
+  const process = page.getByTestId('assistant-process');
+  await process.locator(':scope > summary').click();
+  await expect(process).toHaveAttribute('open', '');
   await expect(page.getByRole('button', { name: /派发统计/ })).toBeVisible();
 });

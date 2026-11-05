@@ -119,10 +119,10 @@ test('连接测试回包只清理已提交的草稿，保留等待期间的新�
     await expect(url).toHaveValue('https://example.invalid/submitted');
     await expect(model).toHaveValue('newer-model-draft');
     await expect(key).toHaveValue('newer-key-draft');
-    expect(requests[0]).toEqual({ baseUrl: 'https://example.invalid/submitted/', model: 'submitted-model', apiKey: 'submitted-key' });
+    expect(requests[0]).toEqual({ baseUrl: 'https://example.invalid/submitted/', model: 'submitted-model', apiKey: 'submitted-key', contextWindow: null });
     await save.click();
     await expect.poll(() => requests.length).toBe(2);
-    expect(requests[1]).toEqual({ baseUrl: 'https://example.invalid/submitted', model: 'newer-model-draft', apiKey: 'newer-key-draft' });
+    expect(requests[1]).toEqual({ baseUrl: 'https://example.invalid/submitted', model: 'newer-model-draft', apiKey: 'newer-key-draft', contextWindow: null });
     await expect(key).toHaveValue('');
     await expect(model).toHaveValue('newer-model-draft');
   } finally { release(); }
@@ -146,18 +146,19 @@ test('任务编辑器放大缩小时保留同一个节点和草稿', async ({ pa
 });
 
 
-test('知识页放大缩小保留未保存材料及原子路由参数', async ({ page }) => {
+test('知识页新建的文档在放大缩小后保留标题和路由', async ({ page }) => {
   await page.goto('/#/knowledge/materials?topicId=inbox');
-  await page.getByRole('button', { name: '保存材料', exact: true }).click();
-  await page.getByLabel('材料标题', { exact: true }).fill('未提交材料标题');
-  await page.getByLabel('材料正文', { exact: true }).fill('未提交正文需要完整保留');
+  await page.getByRole('button', { name: '新建文档', exact: true }).click();
+  const title = page.getByRole('textbox', { name: '文档标题', exact: true });
+  await expect(title).toBeFocused();
+  await page.keyboard.type('未提交材料标题');
+  const route = page.url();
   await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
   await page.getByRole('button', { name: '放大到独立页' }).click();
   await page.getByRole('button', { name: '缩小回原页面' }).click();
-  await expect(page).toHaveURL(/#\/knowledge\/materials\?topicId=inbox$/);
+  expect(page.url()).toBe(route);
   await page.getByRole('button', { name: /^(关闭聊天|返回当前页面)$/ }).click();
-  await expect(page.getByLabel('材料标题', { exact: true })).toHaveValue('未提交材料标题');
-  await expect(page.getByLabel('材料正文', { exact: true })).toHaveValue('未提交正文需要完整保留');
+  await expect(title).toHaveValue('未提交材料标题');
 });
 
 test('规划日期、模式和时间网格滚动在放大缩小后保持', async ({ page }) => {

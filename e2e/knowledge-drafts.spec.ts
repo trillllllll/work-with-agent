@@ -57,31 +57,3 @@ test('固定说明迟到保存只更新原清单，保留保存后的新输入�
   await expect.poll(async () => (await e2eDatabase.workingBrief.findUniqueOrThrow({ where: { id: `topic:${first}` } })).manualNotes).toBe('A 保存之后继续输入的说明');
 });
 
-test('材料保存锁住提交表单，切清单的新编辑实例不受旧响应关闭', async ({ page, request }) => {
-  const first = await project(request, '材料清单 A');
-  const second = await project(request, '材料清单 B');
-  await page.goto('/#/knowledge/materials');
-  const scope = page.getByLabel('所属清单', { exact: true });
-  await scope.selectOption(first);
-  await page.getByRole('button', { name: '保存材料', exact: true }).click();
-  await page.getByLabel('材料标题', { exact: true }).fill('A 的材料');
-  await page.getByLabel('材料正文', { exact: true }).fill('A 的原始内容');
-  const delayed = await holdResponse(page, '/api/v1/commands', 'POST');
-  await page.getByRole('button', { name: '保存材料', exact: true }).last().click();
-  await delayed.started;
-  await expect(page.getByLabel('材料正文', { exact: true })).toBeDisabled();
-  await scope.selectOption(second);
-  await page.getByRole('button', { name: '保存材料', exact: true }).click();
-  await page.getByLabel('材料标题', { exact: true }).fill('B 的新材料草稿');
-  await page.getByLabel('材料正文', { exact: true }).fill('B 的未保存内容');
-  delayed.release();
-  await expect(page.getByText('已保存', { exact: true })).toBeVisible();
-  await expect(page.getByLabel('材料标题', { exact: true })).toHaveValue('B 的新材料草稿');
-  await expect(page.getByLabel('材料正文', { exact: true })).toHaveValue('B 的未保存内容');
-  expect(await e2eDatabase.material.count({ where: { topicId: first } })).toBe(1);
-  expect(await e2eDatabase.material.count({ where: { topicId: second } })).toBe(0);
-  await page.getByRole('button', { name: '保存材料', exact: true }).last().click();
-  await expect.poll(() => e2eDatabase.material.count({ where: { topicId: second, title: 'B 的新材料草稿' } })).toBe(1);
-  await expect(page.getByLabel('材料标题', { exact: true })).toHaveCount(0);
-  expect((await e2eDatabase.material.findFirstOrThrow({ where: { topicId: first } })).title).toBe('A 的材料');
-});

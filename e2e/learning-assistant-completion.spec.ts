@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 
+// Needs the learning model fixture and isolated server from playwright.learning-assistant.config.ts.
+test.skip(process.env.LEARNING_WORKFLOW_E2E !== '1', 'Run with playwright.learning-assistant.config.ts');
 const api = process.env.E2E_API_URL!;
 async function write(request: APIRequestContext, path: string, data: object) {
   const response = await request.post(`${api}${path}`, { data });

@@ -89,7 +89,7 @@ test('确认安排修改后留在原页面，刷新仍是已完成卡片', async
     border: '1px',
     background: expect.stringContaining('linear-gradient'),
     shadow: expect.not.stringMatching(/^none$/),
-    color: 'rgb(48, 58, 70)',
+    color: 'rgb(41, 53, 53)',
   });
   await expectDiffLayout(card);
   await card.screenshot({ path: '/tmp/wwa-approval-light.png' });

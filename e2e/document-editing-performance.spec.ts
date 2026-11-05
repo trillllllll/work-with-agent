@@ -141,5 +141,8 @@ test('编辑性能样本：段落、列表、表格与 Markdown', async ({ page,
     console.log('edit measurement', JSON.stringify(result));
     await writeFile(`${output}/edit-measurements-${label}.json`, JSON.stringify({ at: new Date().toISOString(), browser: page.context().browser()?.version(), label, results }, null, 2));
   }
+  // The samples leave a large search index behind; clear it here, under this test's long timeout,
+  // so the next spec's 30-second beforeEach reset does not time out.
+  await resetE2eDatabase();
   await e2eDatabase.$disconnect();
 });

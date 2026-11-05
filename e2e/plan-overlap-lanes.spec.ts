@@ -29,7 +29,16 @@ async function lanes(scope: Locator, id: string) {
   return { lane: Number(await node.getAttribute('data-lane')), count: Number(await node.getAttribute('data-lane-count')) };
 }
 async function scrollTo(page: Page, hour: number) {
-  await page.getByTestId('timeline-scroll').evaluate((node, value) => { node.scrollTop = value * 56; }, hour);
+  // PLAN_HOUR_HEIGHT in client/src/lib/plan-time-bands.ts is 96px.
+  await page.getByTestId('timeline-scroll').evaluate((node, value) => { node.scrollTop = value * 96; }, hour);
+}
+/** "显示已完成" lives in the display-settings popover; close it again so it does not cover the grid. */
+async function showCompleted(page: Page, on: boolean) {
+  await page.getByRole('button', { name: '显示设置' }).click();
+  const toggle = page.getByLabel('显示已完成', { exact: true });
+  if (on) await toggle.check(); else await toggle.uncheck();
+  await page.keyboard.press('Escape');
+  await expect(toggle).toHaveCount(0);
 }
 async function openDay(page: Page) {
   await page.goto('/#/plan');
@@ -55,7 +64,7 @@ async function expectNoCollisions(scope: Locator) {
 test('截图场景：三条分成两条泳道，完成状态不改变既有左右顺序', async ({ page }) => {
   await seedScreenshotScenario();
   await openDay(page);
-  await page.getByLabel('显示已完成', { exact: true }).check();
+  await showCompleted(page, true);
   const col = column(page);
   await scrollTo(page, 13);
   await expect(page.getByTestId('plan-stack')).toHaveCount(0);
@@ -72,7 +81,7 @@ test('截图场景：三条分成两条泳道，完成状态不改变既有左�
   const right = (await card(col, 'qps').boundingBox())!;
   expect(right.x).toBeGreaterThan(left.x + left.width - 1);
 
-  await page.getByLabel('显示已完成', { exact: true }).uncheck();
+  await showCompleted(page, false);
   await expect(card(col, 'qps')).toHaveCount(0);
   expect(await lanes(col, 'alipay')).toEqual({ lane: 0, count: 2 });
   expect(await lanes(col, 'bugfix')).toEqual({ lane: 1, count: 2 });
@@ -136,7 +145,7 @@ test('1024 宽并打开 AI 助手时日、周视图卡片不重叠、不溢出',
   await seedScreenshotScenario();
   await page.setViewportSize({ width: 1024, height: 800 });
   await openDay(page);
-  await page.getByLabel('显示已完成', { exact: true }).check();
+  await showCompleted(page, true);
   await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
   await expect(page.locator('[data-assistant-open]')).toHaveCount(1);
   for (const span of ['日', '周'] as const) {
@@ -159,6 +168,8 @@ test('拖动泳道里的任务只改时间，拖进拥挤时段不会中断，�
     { id: 'busy-a', title: '拥挤甲', scheduledStart: at('14:00'), scheduledEnd: at('16:00'), dueDate: day },
     { id: 'busy-b', title: '拥挤乙', scheduledStart: at('14:00'), scheduledEnd: at('16:00'), dueDate: day },
   ] });
+  // At 96px per hour both drop slots must stay clear of the bottom edge, where dragging auto-scrolls.
+  await page.setViewportSize({ width: 1280, height: 1100 });
   await page.goto('/#/plan');
   const col = column(page);
   await scrollTo(page, 9.5);
@@ -196,7 +207,7 @@ test('父子默认相邻，水平换列持久化且不改排期或清单顺序',
     { id: 'z-other', title: '其他任务', scheduledStart: at('10:00'), scheduledEnd: at('11:00'), dueDate: day, sortOrder: 0 },
   ] });
   await openDay(page);
-  await page.getByLabel('显示已完成', { exact: true }).check();
+  await showCompleted(page, true);
   const col = column(page);
   await scrollTo(page, 9.5);
   expect(await lanes(col, 'a-parent')).toEqual({ lane: 0, count: 3 });

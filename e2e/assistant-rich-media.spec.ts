@@ -163,7 +163,7 @@ test('未确认的离线请求阻止切换历史和跨会话调整，不把新�
   await page.getByLabel('向 AI 提问').fill('尚未到达服务器'); await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect(page.getByText('聊天连接中断，可重试恢复本次请求。', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '历史对话', exact: true }).click();
-  await page.getByRole('button', { name: /另一段历史对话/ }).click();
+  await expect(page.getByRole('button', { name: /另一段历史对话/ })).toBeDisabled();
   expect(await page.evaluate(() => localStorage.getItem('dovun.conversationId'))).toBeNull();
   await page.evaluate((id) => window.dispatchEvent(new CustomEvent('dovun-adjust-approval', { detail: { approvalId: 'other-approval', conversationId: id } })), other.id);
   expect(await page.evaluate(() => localStorage.getItem('dovun.conversationId'))).toBeNull();

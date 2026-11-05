@@ -31,18 +31,18 @@ test('用户会话和连接权限覆盖旧 REST，提议经确认后才修改任
   await expect(page.getByTestId(`task-row-${task.id}`)).toContainText('经用户确认的任务');
 });
 
-test('无需模型保存资料、修订原文、记录记忆和维护当前简报', async ({ page }) => {
+test('无需模型保存资料、记录记忆和维护当前简报', async ({ page }) => {
+  // Materials are written as documents: the first keystroke creates one and edits autosave.
   await page.goto('/#/knowledge/materials');
-  await page.getByRole('button', { name: '保存材料', exact: true }).click();
-  await page.getByLabel('材料标题', { exact: true }).fill('项目约束');
-  await page.getByLabel('材料正文', { exact: true }).fill('第一版必须支持中文资料。');
-  await page.getByRole('button', { name: '保存材料', exact: true }).last().click();
-  await expect.poll(() => e2eDatabase.material.count()).toBe(1);
-  await page.getByRole('button', { name: /项目约束/ }).click();
-  await page.getByRole('button', { name: '编辑材料', exact: true }).click();
-  await page.getByLabel('材料正文', { exact: true }).fill('第一版必须支持中文资料和来源追溯。');
-  await page.getByRole('button', { name: '保存材料', exact: true }).last().click();
-  await expect.poll(() => e2eDatabase.materialVersion.count()).toBe(2);
+  await page.getByRole('button', { name: '新建文档', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: '文档标题', exact: true })).toBeFocused();
+  await page.keyboard.type('项目约束');
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('textbox', { name: '文档正文', exact: true })).toBeFocused();
+  await page.keyboard.type('第一版必须支持中文资料。');
+  await expect(page.getByTestId('document-save-state')).toHaveText('已保存到 Dovun', { timeout: 20_000 });
+  await expect.poll(() => e2eDatabase.material.count({ where: { title: '项目约束' } })).toBe(1);
+  await page.goto('/#/knowledge/materials');
   await page.getByRole('tab', { name: '长期记忆', exact: true }).click();
   await page.getByRole('button', { name: '手动记录', exact: true }).click();
   await page.getByLabel('记忆标题', { exact: true }).fill('中文检索决策');

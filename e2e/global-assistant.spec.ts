@@ -3,6 +3,12 @@ import { e2eDatabase, resetE2eDatabase } from './database.js';
 const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const panel = (page: Page) => page.getByTestId('ai-assistant');
 async function open(page: Page) { await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click(); await expect(panel(page)).toBeVisible(); }
+// Sources sit in a collapsed "N 个参考来源" list under the reply.
+async function openPlanSource(page: Page) {
+  const sources = panel(page).getByTestId('assistant-sources').last();
+  if (!(await sources.evaluate((node) => (node as HTMLDetailsElement).open))) await sources.locator('summary').click();
+  await sources.locator('.assistant-source-row').filter({ hasText: '规划与时间段' }).first().click();
+}
 async function ask(page: Page, text: string) {
   const sent = page.waitForRequest((request) => request.url().endsWith('/api/chat') && request.method() === 'POST');
   await panel(page).getByRole('textbox', { name: '向 AI 提问' }).fill(text);
@@ -49,13 +55,17 @@ test('all pages share one assistant; workspace modal, shortcuts, sources and his
   expect(settings.context.page).toBe('settings');
   if (isMobile) { const box = await panel(page).boundingBox(); expect(box!.x).toBeGreaterThanOrEqual(0); expect(box!.y).toBeGreaterThanOrEqual(0); expect((await page.locator('.assistant-workspace-open').boundingBox())!.width).toBe(page.viewportSize()!.width); await page.screenshot({ path: '/tmp/wwa-ai-mobile-settings.png' }); }
   expect(JSON.stringify(settings.context)).not.toContain('e2e-key');
-  await panel(page).getByRole('button', { name: '规划与时间段', exact: true }).first().click();
-  await expect(page.getByRole('region', { name: '来源原文' })).toContainText('应用版本');
-  if (isMobile) { await open(page); }
+  await openPlanSource(page);
+  const sourceDialog = page.getByRole('dialog', { name: '参考来源', exact: true });
+  await expect(sourceDialog).toContainText('应用版本');
+  await page.keyboard.press('Escape');
+  await expect(sourceDialog).toHaveCount(0);
   await expect(panel(page)).toBeVisible();
   await page.reload();
-  await open(page);
-  await expect(panel(page).getByRole('button', { name: '规划与时间段', exact: true }).first()).toBeVisible();
+  // The reload lands on the settings modal; its header has its own assistant entry.
+  await page.getByRole('button', { name: 'AI 助手', exact: true }).click();
+  await expect(panel(page)).toBeVisible();
+  await expect(panel(page).getByTestId('assistant-sources').last()).toContainText('1 个参考来源');
   await expect(panel(page).getByTestId('context-summary').first()).toContainText('收集箱');
   if (!isMobile) {
     await panel(page).getByRole('button', { name: '关闭聊天', exact: true }).click();
@@ -133,31 +143,16 @@ test('knowledge scope and actual memory filters reach the request', async ({ pag
   expect(body.context.scope).toEqual({ kind: 'inbox' });
   expect(body.context.section).toBe('memories');
   expect(body.context.pageState).toMatchObject({ status: 'history', query: '之前的决定' });
-  await panel(page).getByRole('button', { name: '规划与时间段', exact: true }).first().click();
-  if (isMobile) await open(page);
+  // Opening a source shows it in a dialog and leaves the page alone; the next page gets its own scope.
+  await openPlanSource(page);
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => { location.hash = '/plan'; });
+  await expect(page.getByTestId('assistant-context')).toContainText('规划');
   const source = await ask(page, 'AI验收来源原文');
   expect(source.context.page).toBe('plan');
   expect(source.context.scope).toEqual({ kind: 'all' });
-  expect(source.context.taskFilter).toBeNull();
+  expect(source.context.taskFilter.scheduledFrom).toBe(source.context.pageState.dateFrom);
   expect(source.context.pageState.status).toBeUndefined();
-});
-
-test('material draft is opt-in and survives assistant close', async ({ page, isMobile }) => {
-  await page.goto('/#/library');
-  await page.getByRole('button', { name: '添加', exact: true }).click();
-  await page.getByRole('menuitem', { name: '文本', exact: true }).click();
-  const composer = page.getByRole('dialog', { name: '添加文本', exact: true });
-  await composer.getByRole('textbox', { name: '文本标题', exact: true }).fill('尚未保存的资料');
-  await composer.getByRole('textbox', { name: '文本内容', exact: true }).fill('只存在于编辑器中的文字');
-  await composer.getByRole('button', { name: 'AI 助手', exact: true }).click();
-  const plain = await ask(page, 'AI验收没有附加草稿');
-  expect(plain.context.attachments).toEqual([]);
-  if (!isMobile) await expect(composer).toBeVisible();
-  await panel(page).getByRole('button', { name: isMobile ? '返回当前页面' : '关闭聊天', exact: true }).click();
-  await expect(composer.getByRole('textbox', { name: '文本内容', exact: true })).toHaveValue('只存在于编辑器中的文字');
-  await composer.getByRole('button', { name: '带上当前草稿', exact: true }).click();
-  const attached = await ask(page, 'AI验收资料草稿');
-  expect(attached.context.attachments[0]).toMatchObject({ unsaved: true, text: '尚未保存的资料\n\n只存在于编辑器中的文字' });
 });
 
 test('task lists use page context without AI selection controls', async ({ page, request }) => {

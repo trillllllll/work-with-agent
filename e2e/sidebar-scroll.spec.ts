@@ -13,7 +13,7 @@ test('侧栏滚动条浮出且不占宽，边缘按剩余内容渐隐', async ({
   }
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/#/plan');
-  await expect(page.getByRole('heading', { name: '规划', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^选择日期/ })).toBeVisible();
   const scroller = page.locator('.app-sidebar .sidebar-scroll');
   const rail = page.locator('.app-sidebar .sidebar-rail');
   await expect(page.getByRole('button', { name: '滚动清单0', exact: true })).toBeVisible();

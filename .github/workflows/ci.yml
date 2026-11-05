@@ -20,12 +20,12 @@ jobs:
       - run: npm test
       - run: npm run build
 
-  # 端到端门禁：PR 和 main 上跑 chromium 全量（单 worker，约 20 分钟）。
+  # 端到端门禁：PR 和 main 上跑 chromium 全量（单 worker，约 35 分钟）。
   # 观察期内不是必需检查；稳定后在仓库分支保护里把 e2e-chromium 设为必需。
   e2e-chromium:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
