@@ -19,6 +19,8 @@
     "test:library:performance": "tsx scripts/library-performance.ts",
     "e2e:real": "node e2e/run-real.mjs",
     "db:backup": "node scripts/backup.mjs",
+    "backup:local": "node scripts/backup-local-install.mjs",
+    "backup:prune": "node scripts/prune-local-backups.mjs",
     "desktop:assemble": "node scripts/assemble-desktop.mjs",
     "desktop:dev": "node scripts/assemble-desktop.mjs && node scripts/tauri.mjs dev",
     "desktop:build": "node scripts/assemble-desktop.mjs && node scripts/tauri.mjs build",

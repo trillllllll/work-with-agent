@@ -74,9 +74,10 @@ zsh 里 `status` 是只读变量。安装或打包脚本不要写 `status=$?`，
 1. 确认没有正在执行的任务后，正常退出 Dovun：运行中时执行 `osascript -e 'tell application id "app.dovun.desktop" to quit'`。仍有残留时，先用 `ps` 核对 PID 的完整路径确实是 `/Applications/Dovun.app/Contents/MacOS/dovun`，再终止该 PID；不要按同名 `dovun` 批量杀进程，也不要 `pkill -f` 含应用路径的命令。
 2. 确认 `127.0.0.1:47317` 没有在听。若仍有服务，查明所属进程，不能为了安装停掉另一套应用。
 3. 在停止后记录并备份 `~/Library/Application Support/dovun/dovun.db` 及已有的 `-wal`、`-shm`、`-journal`，保留它们的原文件名和同目录关系。备份本机配置、浏览器偏好/草稿状态和旧应用。Dovun 的浏览器状态位于 `~/Library/WebKit/app.dovun.desktop/`、`~/Library/Application Support/app.dovun.desktop/` 等已有位置，只备份，不清空或改写。核对数据库及偏好的大小和 sha256，安装前后必须一致；安装失败保留备份和原数据。
+   备份统一放到 `~/WorkSpace/.backups/dovun-local/<YYYYMMDD-HHMMSS>-<提交短哈希>/`，数据目录复制到其中的 `data/`（复制时排除数据目录下的 `backups/`），不要再往数据目录里或 `dovun-release-backups/` 写备份。用 `npm run backup:local -- --commit <本次提交短哈希>` 完成：Dovun 未退出或 47317 仍有监听时它会拒绝；它复制数据目录、浏览器状态、偏好和旧应用（`Dovun-before.zip`），核对副本后在 `manifest.json` 记下大小和 sha256。有 `DOVUN_DATA_DIR` 覆盖时加 `--data-dir <实际目录>`。
 4. 确认新包标识为 `app.dovun.desktop`、备份完整后，`rm -rf "/Applications/Dovun.app"`，再用 `ditto` 把 `desktop/src-tauri/target/release/bundle/macos/Dovun.app` 拷到该位置。
-5. 核对安装包全部文件/链接、签名、`Info.plist` 标识和版本、包内 `client/index.html` 的 `assets/index-*.js` 与 `assets/index-*.css`，以及应用功能知识与本次编译产物一致。重新核对数据库及偏好；不要改服务器库。
-6. 核验成功后，移除构建目录中的重复 `.app`，保留 DMG。检查 `bundle/` 的历史版本子目录，发现旧候选先核对身份、归档，再清理对应可运行副本，不盲删其他应用或数据。用户没要求打开时，Dovun 保持关闭，47317 无监听。
+5. 核对安装包全部文件/链接、签名、`Info.plist` 标识和版本、包内 `client/index.html` 的 `assets/index-*.js` 与 `assets/index-*.css`，以及应用功能知识与本次编译产物一致。在启动 Dovun 之前，用 `npm run backup:local -- --verify <备份目录>` 重新核对数据库及偏好；不要改服务器库。
+6. 核验成功后，移除构建目录中的重复 `.app`，保留 DMG。检查 `bundle/` 的历史版本子目录，发现旧候选先核对身份、归档，再清理对应可运行副本，不盲删其他应用或数据。再执行 `npm run backup:prune -- --apply`，只保留 `dovun-local/` 下最近 3 份备份。用户没要求打开时，Dovun 保持关闭，47317 无监听。
 
 当前 Dovun 桌面启动后使用本机任务副本，由已安装应用提供 `127.0.0.1:47317` 服务。开发服务是另一套：默认 Vite `127.0.0.1:5176`、API `127.0.0.1:3016`，隔离测试可另用端口；不能拿开发服务冒充桌面安装验收。关窗口是隐藏，Command-Q 才退出。
 
