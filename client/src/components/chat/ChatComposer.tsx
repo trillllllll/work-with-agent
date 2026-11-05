@@ -39,13 +39,17 @@ export function ChatComposer({ input, busy, reference, onChange, onSend, onCance
   useEffect(() => {
     const down = () => { pointerDown.current = true; };
     const up = () => { pointerDown.current = false; };
+    // A native context menu or the window losing focus can swallow the release; do not stay "pressed".
+    // Element blurs also reach a window capture listener, so only the window's own blur counts.
+    const windowBlur = (event: FocusEvent) => { if (event.target === window) up(); };
+    const reset = ['pointerup', 'pointercancel', 'contextmenu'] as const;
     window.addEventListener('pointerdown', down, true);
-    window.addEventListener('pointerup', up, true);
-    window.addEventListener('pointercancel', up, true);
+    for (const type of reset) window.addEventListener(type, up, true);
+    window.addEventListener('blur', windowBlur);
     return () => {
       window.removeEventListener('pointerdown', down, true);
-      window.removeEventListener('pointerup', up, true);
-      window.removeEventListener('pointercancel', up, true);
+      for (const type of reset) window.removeEventListener(type, up, true);
+      window.removeEventListener('blur', windowBlur);
       cancelCollapse.current();
     };
   }, []);

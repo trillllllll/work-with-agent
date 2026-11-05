@@ -152,11 +152,13 @@ test('知识页新建的文档在放大缩小后保留标题和路由', async ({
   const title = page.getByRole('textbox', { name: '文档标题', exact: true });
   await expect(title).toBeFocused();
   await page.keyboard.type('未提交材料标题');
+  // The title alone stays an unsaved local draft; wait for the editor route before recording it.
+  await expect(page).toHaveURL(/#\/library\?resource=/);
   const route = page.url();
   await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
   await page.getByRole('button', { name: '放大到独立页' }).click();
   await page.getByRole('button', { name: '缩小回原页面' }).click();
-  expect(page.url()).toBe(route);
+  await expect(page).toHaveURL(route);
   await page.getByRole('button', { name: /^(关闭聊天|返回当前页面)$/ }).click();
   await expect(title).toHaveValue('未提交材料标题');
 });

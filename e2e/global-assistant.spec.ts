@@ -181,6 +181,8 @@ test('in-flight request stays on A while navigation changes the next message to 
   await panel(page).getByRole('button', { name: '发送', exact: true }).click();
   const original = (await pending).postDataJSON();
   expect(original.context.taskId).toBe(a.id);
+  // 问 AI does not opt in to the task draft; nothing unsaved goes to the model.
+  expect(original.context.attachments).toEqual([]);
   await page.evaluate(() => { location.hash = '/plan'; });
   await expect(page.getByTestId('assistant-context')).toContainText('规划');
   release();
