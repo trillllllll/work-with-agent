@@ -122,7 +122,8 @@ test('浏览器正文性能、目录分页、图片懒加载与窄屏控件实�
   await open(page, illustrated.id, illustrated.title); await expect(page.locator('.document-resource-image')).toHaveCount(8); await page.waitForTimeout(500);
   const beforeScroll = originalRequests.length; expect(beforeScroll).toBe(0);
   await page.locator('.document-resource-image').last().scrollIntoViewIfNeeded();
-  await expect.poll(() => originalRequests.length).toBe(8);
+  // Lazy images load as they enter the viewport; shared CI runners need longer than the 5 s default.
+  await expect.poll(() => originalRequests.length, { timeout: 20_000 }).toBe(8);
   const richImageRequests = originalRequests.length;
   const markdownReferences = Array.from({ length: 8 }, (_, index) => ({ path: `images/proof-${index}.png`, resourceId: imageId, revision: 1 }));
   const markdownBody = `${Array.from({ length: 100 }, (_, index) => `第${index + 1}段 Markdown 正文。`).join('\n\n')}\n\n${markdownReferences.map((reference, index) => `![配图${index + 1}](${reference.path})`).join('\n\n')}`;

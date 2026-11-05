@@ -67,9 +67,11 @@ test.describe('任务提醒', () => {
     await page.goto('/#/today');
     await expect(page.getByPlaceholder('下一步要做什么？')).toBeVisible();
     const start = new Date(Date.now() + 60 * 60_000);
-    const pad = (value: number) => String(value).padStart(2, '0');
-    const date = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
-    await createTask(request, { title: '推送演练', scheduledStart: `${date}T${pad(start.getHours())}:${pad(start.getMinutes())}`, dueDate: date, reminderMinutesBefore: 60 });
+    // Scheduled times are wall-clock times in the reminder time zone, not the test runner's zone (UTC on CI).
+    const { timeZone } = await reminderSettings(request);
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(start).map((part) => [part.type, part.value]));
+    const date = `${parts.year}-${parts.month}-${parts.day}`;
+    await createTask(request, { title: '推送演练', scheduledStart: `${date}T${parts.hour}:${parts.minute}`, dueDate: date, reminderMinutesBefore: 60 });
     // 服务端调度每 30 秒一跳；到点后事件经 /api/v1/events 到达页面。
     await expect(page.locator('[data-sonner-toast]').getByText(/推送演练 将于 \d{2}:\d{2} 开始/)).toBeVisible({ timeout: 60_000 });
   });

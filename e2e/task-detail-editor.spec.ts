@@ -180,7 +180,8 @@ test('格式条的更多格式和链接编辑可用，链接只接受网页和�
   await bar.getByRole('button', { name: '更多格式', exact: true }).click();
   await page.locator('.format-menu-list').getByRole('button', { name: '标题 2', exact: true }).click();
   await expect(body.locator('h2')).toContainText('hello world');
-  await select();
+  // Select inside the heading itself; clicking the editor's centre can land below it on other fonts.
+  await body.locator('h2').click(); await page.keyboard.press('End'); await page.keyboard.press('Shift+Home');
   await bar.getByRole('button', { name: '更多格式', exact: true }).click();
   await page.locator('.format-menu-list').getByRole('button', { name: '链接', exact: true }).click();
   const linkEditor = page.getByRole('dialog', { name: '链接', exact: true });
