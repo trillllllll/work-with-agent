@@ -78,7 +78,7 @@ export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose
   const newTopic = () => { if (chat.switchingBlocked) return; startNew(); setTopicId(''); setInput(t('studyTopic.newPrompt')); };
   return (
     <div className="dovun-assistant flex h-full min-h-0 min-w-0 flex-col" data-testid="ai-assistant" data-presentation={presentation}>
-      <header className="assistant-header flex shrink-0 items-center gap-1 border-b px-3 py-3">
+      <header className="assistant-header flex shrink-0 items-center gap-1 px-3 py-3">
         <Sparkles className="size-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1"><h2 className="truncate whitespace-nowrap text-sm font-semibold">{identityId === 'study' ? t('chatPanel.identityStudy') : t('chatPanel.title')}</h2><span className="text-[10px] text-muted-foreground" role="status">{busy ? t('status.working') : interrupted ? t('status.interrupted') : settings.isLoading ? t('status.checking') : settings.error ? t('status.unknown') : configured ? t('status.available') : t('status.noModel')}</span></div>
         {onSwitchIdentity && <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="h-7 gap-1 px-1 text-xs" disabled={chat.switchingBlocked} aria-label={t('chatPanel.switchIdentity')} title={t('chatPanel.switchIdentity')}><ChevronDown className="size-3" /></Button></DropdownMenuTrigger><DropdownMenuContent data-assistant-floating align="end">

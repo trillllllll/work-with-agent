@@ -109,7 +109,7 @@ export function MessageList({ messages, activeRunId, emptyState, approvals, appr
   }, [sendSeq]);
 
   return (
-    <div className="relative min-h-0 min-w-0 flex-1">
+    <div className="assistant-messages relative min-h-0 min-w-0 flex-1">
       {/* HtmlBlock's lazy observer uses [data-chat-scroll] as its root. */}
       <div data-chat-scroll ref={scrollRef} onScroll={handleScroll} className="glass-scrollbar h-full min-w-0 overflow-y-auto overscroll-contain px-3 py-3">
         {!messages.length && !approvals.length && (emptyState ?? (

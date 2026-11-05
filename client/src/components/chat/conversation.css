@@ -1,4 +1,27 @@
 /* The existing material tokens supply light/dark colors; this file owns chat geometry. */
+.dovun-assistant { --assistant-header-height: 64px; position: relative; }
+.dovun-assistant .assistant-header {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 20;
+  box-sizing: border-box;
+  height: var(--assistant-header-height);
+  border-bottom: 1px solid var(--glass-border-soft);
+  background: color-mix(in srgb, var(--glass-bg-strong) 72%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
+}
+.dovun-assistant .assistant-header::after {
+  content: '';
+  position: absolute;
+  inset: 100% 0 auto;
+  height: 18px;
+  background: linear-gradient(color-mix(in srgb, var(--glass-bg-strong) 36%, transparent), transparent);
+  pointer-events: none;
+}
+.dovun-assistant .assistant-header + *:not(.assistant-messages) { margin-top: var(--assistant-header-height); }
+.dovun-assistant .assistant-messages [data-chat-scroll] { padding-top: calc(var(--assistant-header-height) + 12px); }
+.dovun-assistant:has(.assistant-header + *:not(.assistant-messages)) .assistant-messages [data-chat-scroll] { padding-top: 12px; }
 .assistant-header h2 { min-width: 0; }
 .assistant-thread { gap: 12px; }
 .assistant-turn { min-width: 0; }

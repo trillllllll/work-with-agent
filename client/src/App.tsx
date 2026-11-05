@@ -84,14 +84,32 @@ function moveHost(slot: HTMLElement, host: HTMLElement): boolean {
   return true;
 }
 
+const assistantTransitionBounds = new WeakMap<HTMLElement, DOMRect>();
+
+function rememberAssistantTransition(host: HTMLElement) {
+  const bounds = host.querySelector<HTMLElement>('[data-testid="ai-assistant"]')?.getBoundingClientRect();
+  if (bounds?.width && bounds.height) assistantTransitionBounds.set(host, bounds);
+}
+
 /** moveHost plus keeping the chat scroll position and focus, which a plain appendChild resets. */
 function relocateHost(slot: HTMLElement, host: HTMLElement) {
   const scroller = host.querySelector<HTMLElement>('[data-chat-scroll]');
+  const panel = host.querySelector<HTMLElement>('[data-testid="ai-assistant"]');
+  const first = assistantTransitionBounds.get(host) ?? panel?.getBoundingClientRect();
+  assistantTransitionBounds.delete(host);
   const top = scroller?.scrollTop;
   const focused = host.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
   if (!moveHost(slot, host)) return;
   if (scroller && top !== undefined) scroller.scrollTop = top;
   focused?.focus({ preventScroll: true });
+  if (!panel || !first || !first.width || !first.height || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const last = panel.getBoundingClientRect();
+  if (!last.width || !last.height || first.x === last.x && first.y === last.y && first.width === last.width && first.height === last.height) return;
+  panel.getAnimations().forEach(animation => animation.cancel());
+  panel.animate([
+    { opacity: 0.76, transformOrigin: '0 0', transform: `translate(${first.x - last.x}px, ${first.y - last.y}px) scale(${first.width / last.width}, ${first.height / last.height})` },
+    { opacity: 1, transformOrigin: '0 0', transform: 'none' },
+  ], { duration: 380, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
 }
 
 function classificationSections(tasks: Task[], topics: Topic[]) {
@@ -319,11 +337,13 @@ function ScopedApp({scope}:{scope:string|undefined}) {
   const contextAssistantRef = useRef(openContextAssistant);
   contextAssistantRef.current = openContextAssistant;
   const expandAssistant = () => {
+    rememberAssistantTransition(assistantHost);
     setAssistantOrigin({ route, hash: window.location.hash, context: structuredClone(pageContext), knowledgeSection, knowledgeTopicId, knowledgeTopicExplicit, settingsCategory });
     navigate('chat');
   };
   const shrinkAssistant = () => {
     if (!assistantOrigin) return;
+    rememberAssistantTransition(assistantHost);
     window.location.hash = assistantOrigin.hash || `/${assistantOrigin.route}`;
     setChatOpen(true);
   };

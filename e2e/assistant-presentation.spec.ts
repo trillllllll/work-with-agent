@@ -10,6 +10,14 @@ test.afterAll(() => e2eDatabase.$disconnect());
 test('同一助手放大缩小保留输入、手动附件及页面，直接进入没有尺寸控件', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
+  await page.addInitScript(() => {
+    const original = Element.prototype.animate;
+    (window as any).__assistantTransitions = 0;
+    Element.prototype.animate = function (...args: any[]) {
+      if (this instanceof HTMLElement && this.dataset.testid === 'ai-assistant') (window as any).__assistantTransitions += 1;
+      return original.apply(this, args as any);
+    };
+  });
   await page.goto('/#/plan');
   await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
   const assistant = page.getByTestId('ai-assistant');
@@ -18,12 +26,15 @@ test('同一助手放大缩小保留输入、手动附件及页面，直接进�
   await assistant.getByRole('button', { name: '放大到独立页' }).click();
   await expect(page).toHaveURL(/#\/chat$/);
   await expect(assistant).toHaveAttribute('data-presentation', 'expanded');
+  expect(await page.evaluate(() => (window as any).__assistantTransitions)).toBe(1);
   await expect(assistant.getByLabel('向 AI 提问')).toHaveValue('保留这段没有发送的草稿');
   await expect(assistant.getByText('手动附加 · 未保存草稿', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '打开 AI 助手', exact: true })).toHaveCount(0);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await assistant.getByRole('button', { name: '缩小回原页面' }).click();
   await expect(page).toHaveURL(/#\/plan$/);
   await expect(assistant).toHaveAttribute('data-presentation', 'side');
+  expect(await page.evaluate(() => (window as any).__assistantTransitions)).toBe(1);
   await expect(assistant.getByLabel('向 AI 提问')).toHaveValue('保留这段没有发送的草稿');
   await page.goto('/#/chat');
   await expect(assistant).toHaveAttribute('data-presentation', 'direct');

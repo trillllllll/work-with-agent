@@ -127,7 +127,6 @@
 .dovun-companion.is-compact .dovun-companion-prompt { padding: 10px 12px; }
 .dovun-companion.is-compact .dovun-companion-brand h2 { font-size: 17px; }
 .dovun-assistant { background: var(--glass-bg-strong); }
-.dovun-assistant .assistant-header { background: transparent; }
 .dovun-assistant-welcome { text-align: center; padding: 28px 22px 14px; }
 .dovun-assistant-welcome img { width: 58px; height: 64px; margin: 0 auto 14px; }
 .dovun-assistant-welcome h3 { font-size: 22px; font-weight: 650; letter-spacing: -.4px; }
