@@ -27,6 +27,14 @@ export function mountMcp(app: Express, authorize: (token: string) => Promise<boo
         await mcpCredential.run(existing.credential, () => existing.transport.handleRequest(req, res, req.method === 'POST' ? req.body : undefined));
         return;
       }
+      if (sessionId) {
+        if (!token || !(await authorize(token))) {
+          res.status(401).json({ error: '连接凭据无效或已撤销' });
+          return;
+        }
+        res.status(404).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Session not found' }, id: null });
+        return;
+      }
       if (req.method !== 'POST' || !token || !(await authorize(token))) {
         res.status(req.method === 'POST' ? 401 : 400).json({ error: req.method === 'POST' ? '连接凭据无效或已撤销' : '需要已建立的 MCP 会话' });
         return;

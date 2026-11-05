@@ -137,8 +137,22 @@ describe('MCP is served by the workspace process', () => {
   let api: Server;
   let workspace: Server;
   let client: Client;
+  let transport: StreamableHTTPClientTransport;
   const previousApi = process.env.DOVUN_API_URL;
   const calls: Array<{ authorization: string | undefined }> = [];
+  const listen = (port = 0) => new Promise<void>((resolve) => workspace.listen(port, '127.0.0.1', resolve));
+  const mount = () => {
+    const app = express();
+    app.use(express.json());
+    mountMcp(app, async (token) => token === 'isolated-test-connection');
+    workspace = createServer(app);
+  };
+  const connect = () => {
+    client = new Client({ name: 'workspace-mcp', version: '1.0.0' });
+    const port = (workspace.address() as { port: number }).port;
+    transport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), { requestInit: { headers: { Authorization: 'Bearer isolated-test-connection' } } });
+    return client.connect(transport);
+  };
   beforeAll(async () => {
     api = createServer((req, res) => {
       calls.push({ authorization: req.headers.authorization });
@@ -147,14 +161,9 @@ describe('MCP is served by the workspace process', () => {
     });
     await new Promise<void>((resolve) => api.listen(0, '127.0.0.1', resolve));
     process.env.DOVUN_API_URL = `http://127.0.0.1:${(api.address() as { port: number }).port}`;
-    const app = express();
-    app.use(express.json());
-    mountMcp(app, async (token) => token === 'isolated-test-connection');
-    workspace = createServer(app);
-    await new Promise<void>((resolve) => workspace.listen(0, '127.0.0.1', resolve));
-    client = new Client({ name: 'workspace-mcp', version: '1.0.0' });
-    const port = (workspace.address() as { port: number }).port;
-    await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), { requestInit: { headers: { Authorization: 'Bearer isolated-test-connection' } } }));
+    mount();
+    await listen();
+    await connect();
   }, 20_000);
   afterAll(async () => {
     if (previousApi === undefined) delete process.env.DOVUN_API_URL;
@@ -170,6 +179,32 @@ describe('MCP is served by the workspace process', () => {
     expect(tools.map((tool) => tool.name)).toContain('list_tasks');
     await client.callTool({ name: 'list_tasks', arguments: { limit: 1 } });
     expect(calls.at(-1)?.authorization).toBe('Bearer isolated-test-connection');
+  });
+  it('reports stale sessions after a restart and accepts a fresh initialization', async () => {
+    const port = (workspace.address() as { port: number }).port;
+    const staleSessionId = transport.sessionId;
+    expect(staleSessionId).toBeTruthy();
+    await client.close();
+    await new Promise<void>((resolve) => workspace.close(() => resolve()));
+    mount();
+    await listen(port);
+    const url = `http://127.0.0.1:${port}/mcp`;
+    const request = (authorization?: string) => fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'mcp-session-id': staleSessionId!, ...(authorization ? { authorization } : {}) },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 'stale', method: 'tools/list', params: {} }),
+    });
+    const denied = await request('Bearer revoked-connection');
+    expect(denied.status).toBe(401);
+    const stale = await request('Bearer isolated-test-connection');
+    expect(stale.status).toBe(404);
+    expect(await stale.json()).toMatchObject({ jsonrpc: '2.0', error: { code: -32001, message: 'Session not found' }, id: null });
+    await connect();
+    const { tools } = await client.listTools();
+    expect(tools.map((tool) => tool.name)).toContain('list_tasks');
+    const result = await client.callTool({ name: 'list_tasks', arguments: { limit: 1 } });
+    expect(result.isError).not.toBe(true);
+    expect(transport.sessionId).not.toBe(staleSessionId);
   });
 });
 
