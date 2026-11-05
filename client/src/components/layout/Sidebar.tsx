@@ -20,7 +20,7 @@ type SidebarProps = {
 
 export function Sidebar({ compact, route, page, topics, topicsLoading, selectedTopicId, onNavigate, onOpenAssistant, assistantOpen, onSelectTopic, onEditTopic, onNewTopic }: SidebarProps) {
   const { t } = useTranslation(['settings', 'app']);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const pending = usePendingProposalCount().data?.pending;
   const link = (view: View) => {
     const { label, icon: Icon } = navigationItem(view);
@@ -31,6 +31,11 @@ export function Sidebar({ compact, route, page, topics, topicsLoading, selectedT
       {compact && view === 'proposals' && Boolean(pending) && <span className="dovun-rail-badge" />}
     </Button>;
   };
+  const sectionTitle = (id: string) => <div className="sidebar-section">{id === 'lists' ? <Button variant="plain" size="bare" onClick={() => onNavigate('topics')}>{t('app:groups.lists')}</Button> : <span>{t(`app:groups.${id}`)}</span>}
+    {id === 'lists' && <Button variant="row" size="bare" type="button" className="sidebar-add" aria-label={t('sidebar.newList')} onClick={onNewTopic}><Plus className="size-3.5" aria-hidden /></Button>}
+  </div>;
+  const groupItems = (id: string, views: readonly View[]) => id === 'lists' ? <>{link('inbox')}<TopicList variant="sidebar" topics={topics} loading={topicsLoading} selectedTopicId={page === 'board' ? selectedTopicId : ''} onSelect={onSelectTopic} onEdit={onEditTopic} />{link('tags')}{link('archived')}</> : views.map(link);
+
   return <aside className={`app-sidebar${compact ? ' assistant-compact-nav' : ''}`} style={{ gridColumn: 1, gridRow: 1 }}>
     <div className="sidebar-header"><BrandMark compact={compact} />{!compact && <ThemeToggle />}</div>
     <SidebarScroll>
@@ -39,16 +44,17 @@ export function Sidebar({ compact, route, page, topics, topicsLoading, selectedT
         {navigationGroups.filter(group => group.id !== 'system').map(group => {
           const views = group.views.filter(view => view !== 'chat');
           if (compact) return <div key={group.id} className="dovun-compact-group">{views.map(link)}</div>;
-          if (group.id === 'advanced') return <Disclosure key={group.id} className="dovun-advanced" open={advancedOpen || route === 'worktrees'}>
-            <DisclosureTrigger className="sidebar-link" onClick={event => { event.preventDefault(); setAdvancedOpen(value => !value); }}><ChevronRight className="size-3.5" aria-hidden /><span>{t('app:groups.advanced')}</span></DisclosureTrigger>
-            {views.map(link)}
-          </Disclosure>;
-          return <section key={group.id} className="dovun-nav-group" aria-label={t(`app:groups.${group.id}`)}>
-            <div className="sidebar-section">{group.id === 'lists' ? <Button variant="plain" size="bare" onClick={() => onNavigate('topics')}>{t('app:groups.lists')}</Button> : <span>{t(`app:groups.${group.id}`)}</span>}
-              {group.id === 'lists' && <Button variant="row" size="bare" type="button" className="sidebar-add" aria-label={t('sidebar.newList')} onClick={onNewTopic}><Plus className="size-3.5" aria-hidden /></Button>}
-            </div>
-            {group.id === 'lists' ? <>{link('inbox')}<TopicList variant="sidebar" topics={topics} loading={topicsLoading} selectedTopicId={page === 'board' ? selectedTopicId : ''} onSelect={onSelectTopic} onEdit={onEditTopic} />{link('tags')}{link('archived')}</> : views.map(link)}
+          if (group.id === 'daily' || group.id === 'lists') return <section key={group.id} className="dovun-nav-group" aria-label={t(`app:groups.${group.id}`)}>
+            {sectionTitle(group.id)}
+            {groupItems(group.id, views)}
           </section>;
+          const open = expanded[group.id] ?? group.views.some(view => view === route);
+          return <Disclosure key={group.id} className="dovun-nav-group dovun-nav-disclosure" open={open}>
+            <DisclosureTrigger className="sidebar-section" onClick={event => { event.preventDefault(); setExpanded(current => ({ ...current, [group.id]: !open })); }}>
+              <span>{t(`app:groups.${group.id}`)}</span><ChevronRight className="size-3.5" aria-hidden />
+            </DisclosureTrigger>
+            <div className="dovun-nav-disclosure-items">{groupItems(group.id, views)}</div>
+          </Disclosure>;
         })}
       </nav>
     </SidebarScroll>

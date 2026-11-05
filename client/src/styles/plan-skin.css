@@ -315,7 +315,6 @@
 
 .plan-day-stat + .plan-day-stat {
   padding-left: 14px;
-  border-left: 1px solid var(--glass-divider);
 }
 
 .plan-day-completion {

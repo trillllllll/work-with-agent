@@ -30,7 +30,7 @@ function DesktopSettings({ category, onCategoryChange, onNavigate }: { category:
   const hints = useSettingsCategoryHints();
   return (
     <div className="flex h-full min-h-0">
-      <nav aria-label={t('layout.nav.label')} className="glass-scrollbar w-[232px] shrink-0 overflow-y-auto border-r border-[var(--glass-divider)] px-3 py-4">
+      <nav aria-label={t('layout.nav.label')} className="glass-scrollbar w-[232px] shrink-0 overflow-y-auto px-3 py-4">
         {SETTINGS_GROUPS.map((group) => (
           <div key={group} className="mb-3 last:mb-0">
             <h2 className="px-3 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{t(`layout.groups.${group}`)}</h2>

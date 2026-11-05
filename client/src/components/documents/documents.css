@@ -22,7 +22,7 @@
 .document-toolbar-end { margin-left: auto; display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
 .document-content-frame { display: flex; min-width: 0; min-height: 0; flex: 1; position: relative; }
 .document-scroll { min-width: 0; min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; padding: 8px 24px 70px; scroll-padding: 24px; }
-.document-side-panel { width: 300px; flex: 0 0 300px; overflow: auto; border-left: 1px solid var(--border); padding: 12px; background: var(--card); }
+.document-side-panel { width: 300px; flex: 0 0 300px; overflow: auto; padding: 12px; background: var(--card); }
 .document-side-heading { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .document-side-heading h3 { font-size: 14px; font-weight: 600; }
 .document-info-content { font-size: 13px; }

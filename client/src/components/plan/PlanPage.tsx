@@ -103,7 +103,7 @@ function TimedTask({ block, dateKey, busy, left, width, lane, laneCount, groupKe
   const blockTitle = t('plan.blockTitle', { title: task.title, schedule: scheduleLabel(task) });
   const dropping = laneDrop?.targetTaskId === task.id && laneDrop.groupKey === groupKey ? laneDrop : null;
   return <DragTask task={task} instance={dateKey} offset={offset} busy={busy} lane={lane} laneCount={laneCount} laneGroup={{ groupKey, dateKey }} className="plan-lane-card pointer-events-auto absolute z-[2]" style={{ top, height, left: `calc(${left * 100}% + 2px)`, width: `calc(${width * 100}% - 4px)` }}>
-    <article ref={setDropRef} data-testid="task-block" data-task-id={task.id} data-date={dateKey} data-point={block.point} data-tier={tier} data-done={task.status === 'done' ? '' : undefined} data-lane-drop={dropping?.side} style={dropping ? { boxShadow: dropping.side === 'before' ? 'inset 3px 0 0 var(--primary)' : 'inset -3px 0 0 var(--primary)' } : undefined} className={cn('plan-timed-task relative h-full overflow-hidden', block.point && 'flex items-center border-dashed')}>
+    <article ref={setDropRef} data-testid="task-block" data-task-id={task.id} data-date={dateKey} data-point={block.point} data-tier={tier} data-done={task.status === 'done' ? '' : undefined} data-lane-drop={dropping?.side} style={dropping ? { boxShadow: dropping.side === 'before' ? 'inset 0 3px 0 var(--primary)' : 'inset 0 -3px 0 var(--primary)' } : undefined} className={cn('plan-timed-task relative h-full overflow-hidden', block.point && 'flex items-center border-dashed')}>
       {!block.point && block.startsHere && <ResizeHandle task={task} edge="start" busy={busy} onOpen={onOpen} />}
       <Tooltip content={blockTitle} side="bottom">
         <Button variant="row" size="bare" type="button" className="flex h-full min-w-0 flex-col items-stretch text-left" aria-label={t('plan.openTask', { title: task.title })} onClick={() => { if (!skipClick.current) onOpen(task.id); }}>
@@ -175,7 +175,7 @@ function Timeline({ days, tasks, today, busy, bands, allDayOpen, onAllDayOpen, o
         const items = allDayByDay.get(day) ?? [];
         const visible = allDayExpanded ? items : items.slice(0, allDayPreviewLimit);
         const hidden = items.length - visible.length;
-        return <div key={day} className="min-h-0 min-w-0 border-l border-[var(--glass-divider)]">
+        return <div key={day} className="min-h-0 min-w-0 border-[var(--glass-divider)]">
           <DropTarget id={`dayhead:${day}`} className="plan-day-heading p-1 text-center text-xs"><Button variant="row" size="bare" type="button" onClick={() => onCreate({ dueDate: day, scheduledStart: null, scheduledEnd: null })} aria-label={t('plan.addAllDay', { date: day })} className="flex w-full items-center justify-center gap-2 rounded py-2"><span className="text-muted-foreground">{dateLabel(day, { weekday: 'short' })}</span><span className={cn('inline-grid size-7 place-items-center rounded-full text-sm', day === today && 'bg-primary text-primary-foreground')}>{Number(day.slice(8))}</span></Button></DropTarget>
           <DropTarget id={`allday:${day}`} className={cn('min-h-12 space-y-1 p-1', allDayExpanded && 'max-h-36 overflow-y-auto')}>
             {visible.map((task) => <DragTask key={task.id} task={task} instance={`all:${day}`} busy={busy}><div className={cn('flex items-center gap-1 rounded bg-muted/50 px-1 py-1 text-xs', task.status === 'done' && 'opacity-55 line-through')}><Check task={task} busy={busy} onToggle={onToggle} /><Button variant="row" size="bare" type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => { if (!skipClick.current) onOpen(task.id); }}>{task.title}</Button></div></DragTask>)}
@@ -192,7 +192,7 @@ function Timeline({ days, tasks, today, busy, bands, allDayOpen, onAllDayOpen, o
           const blocks = layoutTimed(tasks, day);
           const occupied = blocks.filter((block) => !block.point).map((block) => ({ start: block.startMin, end: block.endMin }));
           const { placed, mores } = layoutLanes(blocks, laneCaps[day] ?? laneCap(0), { pinnedTaskId: activeTaskId ?? undefined, manualOrders });
-          return <div key={day} data-testid="time-band-day" data-date={day} className="relative isolate border-l border-[var(--glass-divider)]">
+          return <div key={day} data-testid="time-band-day" data-date={day} className="relative isolate border-[var(--glass-divider)]">
             <TimeBandLayer bands={bands} dateKey={day} occupied={occupied} />
             {Array.from({ length: 48 }, (_, index) => {
               const start = addMinutes(`${day}T00:00`, index * 30);
@@ -401,7 +401,7 @@ export function PlanPage({ topics, onOpen, onToggle, onSave, onCreate, busy }: P
             <div className="grid grid-cols-7 py-2 text-center text-xs text-muted-foreground">{weekdayIds.map((day) => <div key={day}>{t(`weekday.${day}.narrow`)}</div>)}</div>
             <div className="grid grid-cols-7">{days.map((day) => {
               const items = tasks.filter((task) => occursOn(task, day)).sort((a, b) => (a.scheduledStart ?? '').localeCompare(b.scheduledStart ?? '') || a.id.localeCompare(b.id));
-              return <DropTarget key={day} id={`cell:${day}`} className={cn('plan-month-cell min-h-[76px] sm:min-h-28 min-w-0 border-t border-l border-[var(--glass-divider)] p-1 [&:nth-child(7n)]:border-r', day.slice(0, 7) !== anchor.slice(0, 7) && 'opacity-50')}>
+              return <DropTarget key={day} id={`cell:${day}`} className={cn('plan-month-cell min-h-[76px] sm:min-h-28 min-w-0 border-t border-[var(--glass-divider)] p-1 [&:nth-child(7n)]:border-r', day.slice(0, 7) !== anchor.slice(0, 7) && 'opacity-50')}>
                 <div className="mb-1 flex justify-between"><Button variant="plain" size="bare" type="button" aria-label={t('plan.viewDay', { date: day })} className={cn('rounded px-1 text-sm', day === today && 'bg-primary text-primary-foreground')} onClick={() => { chooseAnchor(day); chooseMode('day'); }}>{Number(day.slice(8))}</Button><Button variant="plain" size="bare" type="button" aria-label={t('plan.addAllDay', { date: day })} className="plan-month-add max-sm:hidden" disabled={disabled} onClick={() => setCreating({ dueDate: day, scheduledStart: null, scheduledEnd: null })}>{t('plan.addMark')}</Button></div>
                 {items.slice(0, 3).map((task) => {
                   const continued = scheduleDateKey(task) !== day;

@@ -175,7 +175,6 @@
   min-width: 0;
   min-height: 0;
   max-height: min(40rem, calc(100dvh - 12rem));
-  border-left: 1px solid var(--ctx-border);
 }
 .ctx-rail .ctx-status { flex-direction: column; align-items: stretch; margin: 0; padding: 16px 16px 8px; }
 .ctx-rail-list { min-height: 0; overflow: auto; }
@@ -230,7 +229,7 @@
 .work-context .ctx-preview-frame > div { height: 100%; }
 
 .ctx-memory-split { grid-template-columns: minmax(0, 0.86fr) minmax(0, 1fr); }
-.ctx-mem-list { min-width: 0; max-height: min(36rem, calc(100dvh - 16rem)); overflow: auto; border-right: 1px solid var(--ctx-border); }
+.ctx-mem-list { min-width: 0; max-height: min(36rem, calc(100dvh - 16rem)); overflow: auto; }
 .ctx-mem-list button { width: 100%; border-radius: 0; box-shadow: none; padding: 12px 14px; }
 .ctx-mem-list button[aria-pressed="true"] { background: var(--ctx-hover); box-shadow: none; }
 .ctx-mem-row + .ctx-mem-row { border-top: 1px solid var(--ctx-border); }
@@ -247,7 +246,7 @@
 @container work (max-width: 720px) {
   .ctx-desk,
   .ctx-memory-split { display: flex; flex-direction: column; }
-  .ctx-rail { order: -1; max-height: none; border-left: 0; border-bottom: 1px solid var(--ctx-border); }
+  .ctx-rail { order: -1; max-height: none; border-bottom: 1px solid var(--ctx-border); }
   .ctx-rail-list { max-height: 22rem; }
   .ctx-brief-col { border-right: 0; }
   .ctx-mem-list { max-height: 20rem; border-right: 0; border-bottom: 1px solid var(--ctx-border); }

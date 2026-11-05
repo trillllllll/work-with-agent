@@ -139,27 +139,11 @@
 
 @layer components {
   .app-backdrop {
-    background:
-      radial-gradient(circle at 8% 5%, rgb(255 253 248 / 0.42), transparent 24rem),
-      var(--background);
-  }
-
-  .dark .app-backdrop {
-    background:
-      radial-gradient(circle at 8% 5%, rgb(244 241 234 / 0.035), transparent 26rem),
-      var(--background);
+    background: var(--background);
   }
 
   .app-frame {
     background: var(--workbench-frame);
-    box-shadow: 0 16px 50px -26px rgb(26 32 43 / 0.3), inset 0 1px 0 var(--glass-highlight);
-  }
-
-  @media (min-width: 1280px) {
-    .app-frame {
-      border: 1px solid var(--glass-border);
-      border-radius: var(--radius);
-    }
   }
 
   .app-main {
@@ -531,13 +515,6 @@
     background: var(--sidebar);
     border-right: 0;
     padding: 18px 14px 12px;
-  }
-
-  @media (min-width: 1280px) {
-    .app-sidebar {
-      border-top-left-radius: var(--radius);
-      border-bottom-left-radius: var(--radius);
-    }
   }
 
   .sidebar-header,
@@ -1295,7 +1272,6 @@
 .task-prose blockquote {
   margin: 8px 0;
   padding-left: 12px;
-  border-left: 2px solid var(--border);
   color: var(--muted-foreground);
 }
 
@@ -1891,7 +1867,6 @@ textarea.task-title.line-through {
 .task-batch-children {
   margin-left: 8px;
   padding-left: 20px;
-  border-left: 1px solid var(--batch-border);
 }
 
 .task-batch-node {

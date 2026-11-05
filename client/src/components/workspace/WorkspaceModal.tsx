@@ -152,7 +152,7 @@ export function WorkspaceModal({ suspended = false, assistantOpen, assistantSlot
       >
         <div className={cn("flex min-h-0 flex-1", assistantOpen && "max-lg:flex-col")}><div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", assistantOpen && "max-lg:hidden")}>
         <div ref={setBusinessSlot} className="flex min-h-0 flex-1 flex-col" />
-        </div><div ref={assistantSlot} className={cn("w-[400px] shrink-0 border-l max-lg:h-full max-lg:w-full", !assistantOpen && "hidden")} /></div>
+        </div><div ref={assistantSlot} className={cn("w-[400px] shrink-0 max-lg:h-full max-lg:w-full", !assistantOpen && "hidden")} /></div>
       </DialogContent>
     </Dialog>
   </>);

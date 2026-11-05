@@ -14,7 +14,13 @@ test.afterAll(() => e2eDatabase.$disconnect());
 test('new installation starts Today, captures its first task without a hidden list, and works without a model', async ({ page, request, isMobile }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: '今天', exact: true })).toBeVisible();
-  if (!isMobile) await expect(page.getByRole('button', { name: '配置模型', exact: true })).toBeVisible();
+  if (!isMobile) {
+    await expect(page.getByRole('button', { name: '打开 AI 助手', exact: true })).toBeVisible();
+    const library = page.getByRole('button', { name: '资料库', exact: true });
+    await expect(library).toBeHidden();
+    await page.locator('.dovun-nav-disclosure').filter({ hasText: '积累' }).locator('summary').click();
+    await expect(library).toBeVisible();
+  }
   const created = page.waitForResponse(response => response.url().endsWith('/api/tasks') && response.request().method() === 'POST');
   await page.getByRole('textbox', { name: '任务名称', exact: true }).fill('我的第一项工作');
   await page.getByRole('textbox', { name: '任务名称', exact: true }).press('Enter');
@@ -37,7 +43,7 @@ test('shared rail preserves chat draft and keeps all header controls reachable a
   const input = assistant.getByRole('textbox', { name: '向 AI 提问', exact: true });
   await input.fill('未发送的原草稿');
   await assistant.getByRole('button', { name: '关闭聊天', exact: true }).click();
-  await page.getByRole('button', { name: '帮我梳理今天的安排', exact: true }).click();
+  await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
   await expect(input).toHaveValue('未发送的原草稿');
   const task = (await (await request.post(api + '/api/tasks', { data: { title: '右栏验收任务', topicId: null } })).json()).data;
   await page.evaluate(() => { location.hash = '/inbox'; });

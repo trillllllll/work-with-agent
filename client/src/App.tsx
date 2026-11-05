@@ -56,7 +56,6 @@ import { withSortOrder } from './components/tasks/task-order.js';
 import { TagManager } from './components/tasks/TagManager.js';
 import { MorePage } from './components/layout/MorePage.js';
 import { Sidebar } from './components/layout/Sidebar.js';
-import { WorkCompanion } from './components/layout/WorkCompanion.js';
 import { PlanPage } from './components/plan/PlanPage.js';
 import { FocusPage } from './components/focus/FocusPage.js';
 import { StatsPage } from './components/stats/StatsPage.js';
@@ -563,11 +562,10 @@ function ScopedApp({scope}:{scope:string|undefined}) {
     return () => window.removeEventListener('dovun-open-task', handler);
   }, []);
   const detailPane = taskId ? <TaskDetailPane key={taskId} ref={detailRef} id={taskId} fallback={tasks.find((task) => task.id === taskId)} tags={tags} topics={topics} readonly={archived} showClose={!taskRail} presentation={isDesktop || taskRail ? 'panel' : showChat ? 'retained' : 'modal'} panelSlot={detailSlot} onSave={patchTask} onClose={closeTask} onDirtyChange={setDetailDirty} onToggleTask={toggleTask} onCreateTask={createTask} onOpenTask={openTask} /> : null;
-  const companionVisible = isDesktop && !isAssistantPage && !workspaceView && (page === 'today' || Boolean(taskId));
-  const hasAccessory = !isAssistantPage && (showChat || focusSide || companionVisible || taskRail);
+  const hasAccessory = !isAssistantPage && (showChat || focusSide || taskRail);
 
   return <FocusProvider>
-    <div data-assistant-open={showChat || undefined} className="app-backdrop h-dvh overflow-hidden bg-background p-0 xl:p-4">
+    <div data-assistant-open={showChat || undefined} className="app-backdrop h-dvh overflow-hidden bg-background p-0">
       <div className={cn('app-frame dovun-workspace relative h-full overflow-hidden', isDesktop ? 'grid' : 'flex flex-col')} style={isDesktop ? { gridTemplateColumns: hasAccessory ? 'var(--dovun-nav-width) minmax(0, 1fr) var(--dovun-work-width)' : 'var(--dovun-nav-width) minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1fr)' } : undefined}>
         {isDesktop ? <Sidebar compact={!wide} key="sidebar" route={route} page={isAssistantPage ? 'chat' : page} topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onNavigate={navigateSafely} onOpenAssistant={openContextAssistant} assistantOpen={showChat} onSelectTopic={selectTopic} onEditTopic={setTopicForm} onNewTopic={newTopic} /> : <div key="sidebar" className="hidden" />}
         {!isDesktop && !isAssistantPage && !showChat && !taskRail && !workspaceView && !(page === 'learning' && routeQuery.session) && <Button variant="ghost" size="icon" className="mobile-global-assistant" onClick={openContextAssistant} aria-label={t('shell.openAssistant')}><Sparkles className="size-4" /></Button>}
@@ -576,7 +574,6 @@ function ScopedApp({scope}:{scope:string|undefined}) {
         <aside className={cn('dovun-work-rail', !isDesktop && (taskRail ? 'dovun-mobile-task-rail' : 'contents'), isDesktop && !hasAccessory && 'hidden')} data-tabbed={taskRail || undefined} data-chat={chatAccessory || undefined} data-task={Boolean(taskId) || undefined} aria-label={t('shell.workspace')} style={isDesktop ? { gridColumn: 3, gridRow: 1 } : undefined}>
           {taskRail && <WorkRailTabs active={chatAccessory ? 'assistant' : 'task'} hasDraft={Boolean(chat.input.trim())} onSelect={tab => { setFocusOpen(false); setChatOpen(tab === 'assistant'); }} onClose={() => transitionFromDetail(() => { closeTask(); setChatOpen(false); })} />}
           <div ref={setDetailSlot} id="work-rail-panel-task" role={taskRail ? 'tabpanel' : undefined} aria-labelledby={taskRail ? 'work-rail-tab-task' : undefined} className={cn('dovun-task-slot min-h-0 min-w-0 overflow-hidden', (isDesktop || taskRail) && taskId && !sourceView && !isAssistantPage && !focusAccessory && !chatAccessory ? '' : 'hidden')} />
-          {companionVisible && !taskId && !chatAccessory && !focusAccessory && <WorkCompanion tasks={tasks} today={today} onOpen={openChat} onAsk={text => { if (!chat.input.trim()) chat.setInput(text); openChat(); }} onConfigure={() => openSettings('model')} onOpenTask={openTask} />}
           <div key="accessory" ref={setAssistantSlot} id="work-rail-panel-assistant" role={taskRail ? 'tabpanel' : undefined} aria-labelledby={taskRail ? 'work-rail-tab-assistant' : undefined} className={cn('accessory-pane dovun-chat-slot min-h-0 min-w-0 flex-1 overflow-hidden', chatAccessory ? '' : 'hidden')} />
           {focusAccessory && <div className="accessory-pane h-full min-h-0 min-w-0 overflow-hidden"><FocusPage presentation="side" onExpand={expandFocus} onShrink={shrinkFocus} onClose={() => setFocusOpen(false)} /></div>}
         </aside>
