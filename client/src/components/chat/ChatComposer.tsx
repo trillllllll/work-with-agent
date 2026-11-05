@@ -32,6 +32,39 @@ export function ChatComposer({ input, busy, reference, onChange, onSend, onCance
   const [focused, setFocused] = useState(false);
   const [justSent, setJustSent] = useState(false);
   const expanded = (focused || input.trim().length > 0) && !justSent;
+  // Collapsing on blur resizes the thread. When a pointer press caused the blur, wait until it is
+  // released so the press and release land on the same control and its click is not lost.
+  const pointerDown = useRef(false);
+  const cancelCollapse = useRef(() => {});
+  useEffect(() => {
+    const down = () => { pointerDown.current = true; };
+    const up = () => { pointerDown.current = false; };
+    window.addEventListener('pointerdown', down, true);
+    window.addEventListener('pointerup', up, true);
+    window.addEventListener('pointercancel', up, true);
+    return () => {
+      window.removeEventListener('pointerdown', down, true);
+      window.removeEventListener('pointerup', up, true);
+      window.removeEventListener('pointercancel', up, true);
+      cancelCollapse.current();
+    };
+  }, []);
+  const handleBlur = () => {
+    cancelCollapse.current();
+    if (!pointerDown.current) { setFocused(false); return; }
+    let timer = 0;
+    const stopListening = () => {
+      window.removeEventListener('pointerup', release, true);
+      window.removeEventListener('pointercancel', release, true);
+    };
+    function release() {
+      stopListening();
+      timer = window.setTimeout(() => { if (document.activeElement !== textareaRef.current) setFocused(false); }, 0);
+    }
+    window.addEventListener('pointerup', release, true);
+    window.addEventListener('pointercancel', release, true);
+    cancelCollapse.current = () => { stopListening(); window.clearTimeout(timer); };
+  };
   useEffect(() => { const focus = () => textareaRef.current?.focus(); window.addEventListener('dovun-focus-assistant', focus); return () => window.removeEventListener('dovun-focus-assistant', focus); }, []);
   useEffect(() => { if (reference) textareaRef.current?.focus(); }, [reference?.id]);
   const resize = () => {
@@ -70,8 +103,8 @@ export function ChatComposer({ input, busy, reference, onChange, onSend, onCance
           rows={1}
           placeholder={t('composer.placeholder')}
           className="w-full resize-none px-1 py-1 text-[13px] leading-5 transition-[height] duration-150 ease-out"
-          onFocus={() => { setFocused(true); setJustSent(false); }}
-          onBlur={() => setFocused(false)}
+          onFocus={() => { cancelCollapse.current(); setFocused(true); setJustSent(false); }}
+          onBlur={handleBlur}
           onChange={(event) => { setJustSent(false); onChange(event.target.value); }}
           onCompositionStart={() => { composing.current = true; }}
           onCompositionEnd={() => { composing.current = false; }}
