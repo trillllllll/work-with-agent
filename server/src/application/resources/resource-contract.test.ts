@@ -16,7 +16,8 @@ import { addTaskImage, readTaskImage, pruneTaskImages } from '../task-images.js'
 import { LibraryService } from '../library/service.js';
 import { readResourceDocument } from './agent-read.js';
 
-if (!process.env.DATABASE_URL?.includes('/tmp/')) throw new Error('Resource contract tests require an explicit /tmp/ database');
+// npm test creates /tmp/dovun-unit-* (or %TEMP%\\dovun-unit-* on Windows); never run against a real database.
+if (!/\/tmp\/|\/dovun-unit-/.test(process.env.DATABASE_URL ?? '')) throw new Error('Resource contract tests require an explicit temporary database');
 const service = new ResourceService();
 const originalRoot = process.env.KNOWLEDGE_STORAGE_ROOT;
 let directory: string;
