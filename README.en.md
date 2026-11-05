@@ -57,7 +57,7 @@ Prebuilt installers are on [GitHub Releases](https://github.com/trillllllll/work
 - macOS Apple Silicon: `.dmg`
 - Windows x64: NSIS installer `.exe`
 
-For this branch’s candidate builds, data lives in `~/Library/Application Support/dovun/` on macOS and `%LOCALAPPDATA%\dovun\` on Windows. The app listens on `127.0.0.1:47316`. The macOS bundle is ad-hoc signed (`signingIdentity` is `-` in `desktop/src-tauri/tauri.conf.json`) and not notarized by Apple. The Windows build has no code signing configured.
+For this branch’s candidate builds, data lives in `~/Library/Application Support/dovun/` on macOS and `%LOCALAPPDATA%\dovun\` on Windows. The app listens on `127.0.0.1:47317`. The macOS bundle is ad-hoc signed (`signingIdentity` is `-` in `desktop/src-tauri/tauri.conf.json`) and not notarized by Apple. The Windows build has no code signing configured.
 
 To build installers from source, see [Desktop app](#desktop-app).
 
@@ -97,13 +97,13 @@ macOS:
 npm run desktop:build
 ```
 
-The output is in `desktop/src-tauri/target/release/bundle/dmg/`. The app listens on `127.0.0.1:47316` and stores data in `~/Library/Application Support/dovun/`. Stop the desktop app, API and executor before importing development data. This tool backs up and verifies the entire source folder, preserves the original, and refuses conflicting workspaces:
+The output is in `desktop/src-tauri/target/release/bundle/dmg/`. The app listens on `127.0.0.1:47317` and stores data in `~/Library/Application Support/dovun/`. Stop the desktop app, API and executor before importing development data. This tool backs up and verifies the entire source folder, preserves the original, and refuses conflicting workspaces:
 
 ```bash
 node scripts/import-desktop-data.mjs
 ```
 
-Codex, Claude Code, and Grok can connect only while the desktop app is open. Copy the configs again from **AI connections** in the app: the stdio command points at `bin/dovun-mcp` in the data directory above, and Grok uses `http://127.0.0.1:47316/mcp`. Configs that still point at port 3016 keep talking to the development server.
+Codex, Claude Code, and Grok can connect only while the desktop app is open. Copy the configs again from **AI connections** in the app: the stdio command points at `bin/dovun-mcp` in the data directory above, and Grok uses `http://127.0.0.1:47317/mcp`. Configs that still point at port 3016 keep talking to the development server.
 
 Windows x64:
 

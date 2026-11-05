@@ -55,7 +55,7 @@
 - macOS Apple Silicon：`.dmg`
 - Windows x64：NSIS 安装包 `.exe`
 
-当前分支候选包的数据目录（公开旧包仍用旧目录，升级先备份校验迁移）：macOS 为 `~/Library/Application Support/dovun/`，Windows 为 `%LOCALAPPDATA%\dovun\`。应用监听 `127.0.0.1:47316`。macOS 包是 ad-hoc 签名（`desktop/src-tauri/tauri.conf.json` 里 `signingIdentity` 为 `-`），没有 Apple 公证。Windows 构建未配置代码签名。
+当前分支候选包的数据目录（公开旧包仍用旧目录，升级先备份校验迁移）：macOS 为 `~/Library/Application Support/dovun/`，Windows 为 `%LOCALAPPDATA%\dovun\`。应用监听 `127.0.0.1:47317`。macOS 包是 ad-hoc 签名（`desktop/src-tauri/tauri.conf.json` 里 `signingIdentity` 为 `-`），没有 Apple 公证。Windows 构建未配置代码签名。
 
 从源码打包装见 [桌面应用](#桌面应用)。
 
@@ -93,13 +93,13 @@ macOS：
 npm run desktop:build
 ```
 
-产物在 `desktop/src-tauri/target/release/bundle/dmg/`。应用监听 `127.0.0.1:47316`，数据在 `~/Library/Application Support/dovun/`。导入开发数据前先停止开发服务、桌面应用和执行端。下面工具会备份并完整复制来源目录，保留原件，拒绝合并或覆盖冲突目录；不要只复制数据库：
+产物在 `desktop/src-tauri/target/release/bundle/dmg/`。应用监听 `127.0.0.1:47317`，数据在 `~/Library/Application Support/dovun/`。导入开发数据前先停止开发服务、桌面应用和执行端。下面工具会备份并完整复制来源目录，保留原件，拒绝合并或覆盖冲突目录；不要只复制数据库：
 
 ```bash
 node scripts/import-desktop-data.mjs
 ```
 
-桌面应用开着，Codex、Claude Code 和 Grok 才能连上。在应用的「AI 连接」里重新复制配置。stdio 命令指向上面目录中的 `bin/dovun-mcp`，Grok 使用 `http://127.0.0.1:47316/mcp`。原来指向 3016 的配置仍然只连接开发服务。
+桌面应用开着，Codex、Claude Code 和 Grok 才能连上。在应用的「AI 连接」里重新复制配置。stdio 命令指向上面目录中的 `bin/dovun-mcp`，Grok 使用 `http://127.0.0.1:47317/mcp`。原来指向 3016 的配置仍然只连接开发服务。
 
 Windows x64：
 
