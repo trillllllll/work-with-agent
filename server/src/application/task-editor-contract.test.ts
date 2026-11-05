@@ -9,6 +9,11 @@ import { ownerActor } from './security.js';
 const commands = new CommandService();
 
 async function clean() {
+  // ResourceReference/LibrarySearchDocument reference (materialId, revision) with
+  // RESTRICT; they survive earlier suites (resource-contract leaves rows behind), so
+  // clear them first regardless of vitest's size-based file ordering.
+  await prisma.resourceReference.deleteMany();
+  await prisma.librarySearchDocument.deleteMany();
   await prisma.materialChunk.deleteMany();
   await prisma.materialExtraction.deleteMany();
   await prisma.materialTaskLink.deleteMany();
