@@ -221,7 +221,10 @@ test('侧栏和更多页显示待确认数量', async ({ page, request, isMobile
     await expect(row.locator('[data-count]')).toHaveAttribute('data-count', '2');
   } else {
     await page.goto('/#/inbox');
-    const linkButton = page.getByRole('region', { name: 'AI 协作', exact: true }).getByRole('button', { name: '待确认', exact: true });
+    // AI 协作 is a collapsible sidebar group; it starts closed outside its own pages.
+    const group = page.getByRole('navigation', { name: '主导航' }).locator('details', { has: page.locator('summary', { hasText: 'AI 协作' }) });
+    await group.locator('summary').click();
+    const linkButton = group.getByRole('button', { name: '待确认', exact: true });
     await expect(linkButton.locator('[data-count]')).toHaveAttribute('data-count', '2');
   }
 });

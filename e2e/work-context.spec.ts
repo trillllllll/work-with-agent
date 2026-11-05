@@ -91,8 +91,13 @@ test('工作上下文默认显示当前进展，建议不会直接变成记忆',
   expect(wideRail!.x).toBeGreaterThan(wideBrief!.x + 40);
   expect(wideRail!.y).toBeLessThan(wideBrief!.y + wideBrief!.height);
   if (testInfo.project.name === 'chromium') {
-    await expect(page.getByRole('region', { name: '积累', exact: true }).getByRole('button')).toContainText(['资料库', '工作上下文', '定期回顾']);
-    await expect(page.getByRole('region', { name: 'AI 协作', exact: true }).getByRole('button')).toContainText(['待确认', '技能', 'AI 连接', 'AI 执行']);
+    // 积累 opens because the current page is in it; AI 协作 is collapsed until clicked.
+    const nav = page.getByRole('navigation', { name: '主导航' });
+    const group = (name: string) => nav.locator('details', { has: page.locator('summary', { hasText: name }) });
+    await expect(group('积累')).toHaveAttribute('open', '');
+    await expect(group('积累').getByRole('button')).toHaveText(['资料库', '工作上下文', '学习地图', '定期回顾']);
+    await group('AI 协作').locator('summary').click();
+    await expect(group('AI 协作').getByRole('button')).toHaveText(['待确认', '技能', 'AI 连接', 'AI 执行']);
   }
   await setTheme(page, 'light');
   await shot(page, testInfo.project.name, '1440-light-brief');
