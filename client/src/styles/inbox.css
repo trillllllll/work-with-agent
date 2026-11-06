@@ -1,0 +1,83 @@
+/* The Inbox lifts one task sheet; individual rows keep their shared 48px geometry. */
+.dovun-main[data-page='inbox'] {
+  background: var(--background);
+}
+.dovun-inbox {
+  --inbox-divider: color-mix(in srgb, var(--foreground) 9%, transparent);
+  --inbox-hover: color-mix(in srgb, var(--foreground) 4%, transparent);
+  --inbox-sheet: var(--surface-panel);
+  --inbox-sheet-paint: linear-gradient(155deg, color-mix(in srgb, var(--inbox-sheet) 97%, var(--foreground)), var(--inbox-sheet) 75%);
+  --inbox-sheet-shadow: 0 12px 30px -12px rgb(0 0 0 / 18%), 0 1px 2px rgb(0 0 0 / 4%), inset 0 1px 0 color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+.dovun-inbox .dovun-inbox-header { margin-bottom: 16px; }
+.inbox-title-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 24px; }
+.dovun-inbox-header h1 { font-size: 28px; font-weight: 600; }
+.inbox-description { margin-top: 8px; font-size: 13px; color: var(--muted-foreground); }
+.inbox-new-task {
+  --surface-button-shadow: inset 0 1px 0 color-mix(in srgb, var(--primary-foreground) 12%, transparent), 0 2px 5px rgb(0 0 0 / 6%);
+  --surface-button-hover-shadow: var(--surface-button-shadow);
+  --surface-button-hover-offset: 0px;
+  flex: none;
+}
+.inbox-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--inbox-divider); }
+.inbox-view-switch { flex: none; align-items: center; gap: 2px; }
+.dovun-inbox .list-surface.inbox-task-surface {
+  padding: 12px 16px 10px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--inbox-sheet-paint);
+  box-shadow: var(--inbox-sheet-shadow);
+  --surface-input-paint: transparent;
+  --surface-input-shadow: none;
+  --surface-input-border: 1px solid color-mix(in srgb, var(--muted-foreground) 60%, transparent);
+}
+.dovun-inbox .list-surface.inbox-task-surface .quick-capture,
+.dovun-inbox > .quick-capture {
+  min-height: 48px;
+  margin: 0 0 8px;
+  padding: 3px 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--background) 35%, transparent);
+  box-shadow: none;
+}
+.dovun-inbox .list-surface.inbox-task-surface .quick-capture:focus-within,
+.dovun-inbox > .quick-capture:focus-within {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 12%, transparent);
+}
+.dovun-inbox .quick-capture > svg { width: 17px; height: 17px; }
+.dovun-inbox .quick-capture input { height: 36px; }
+.dovun-inbox .quick-capture .glass-button-ghost,
+.dovun-inbox .inbox-toolbar > .glass-button-ghost { --surface-button-hover-offset: 0px; --surface-button-hover-shadow: none; --surface-button-pressed-shadow: none; }
+.dovun-inbox .quick-capture .glass-button-ghost:hover:not(:focus-visible),
+.dovun-inbox .inbox-toolbar > .glass-button-ghost:hover:not(:focus-visible) { border-color: transparent; box-shadow: none; }
+.dovun-inbox .list-surface.inbox-task-surface .task-row {
+  border: 0;
+  border-bottom: 1px solid var(--inbox-divider);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.dovun-inbox .list-surface.inbox-task-surface .task-row:hover { background: var(--inbox-hover); }
+.dovun-inbox .list-surface.inbox-task-surface .task-row[data-selected],
+.dovun-inbox .list-surface.inbox-task-surface .task-row[data-drop-parent='true'] {
+  background: color-mix(in srgb, var(--selected) 70%, transparent);
+  box-shadow: inset 2px 0 0 var(--ring);
+}
+.dovun-inbox .inbox-task-surface .task-inline-title,
+.dovun-inbox .inbox-task-surface .task-inline-title-measure { font-weight: 400; }
+.dovun-inbox .inbox-task-surface .task-checkbox { box-shadow: none; }
+.dovun-inbox .inbox-task-surface .task-children { padding-top: 0; }
+.dovun-inbox .inbox-task-surface .disclosure { margin-top: 10px; padding-top: 0; border-top: 0; }
+.dovun-inbox .inbox-task-surface .task-fold { min-height: 38px; font-size: 12px; color: var(--muted-foreground); }
+@media (max-width: 639px) {
+  .dovun-task-content.dovun-inbox { padding: 24px 12px 40px; }
+  .inbox-title-row { padding: 0 5px 20px; gap: 10px; }
+  .dovun-inbox-header h1 { font-size: 26px; }
+  .inbox-description { font-size: 12px; }
+  .inbox-new-task { padding-inline: 10px; font-size: 12px; }
+  .inbox-toolbar { margin-inline: 5px; }
+  .dovun-inbox .list-surface.inbox-task-surface { padding: 8px 6px; border-radius: 10px; }
+  .dovun-inbox .quick-capture input { font-size: 16px; }
+}

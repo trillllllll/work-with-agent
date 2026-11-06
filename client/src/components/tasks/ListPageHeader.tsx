@@ -30,6 +30,24 @@ type Props = {
 
 export function ListPageHeader({ page, title, scoped, archived, today, detail, briefNotes, filterSummary, layout, onLayout, onOpenKnowledge, onEditTopic, onNewTask, filterBar }: Props) {
   const { t } = useTranslation('tasks');
+  if (page === 'inbox') return (
+    <header className="dovun-page-header dovun-inbox-header">
+      <div className="inbox-title-row">
+        <div className="min-w-0">
+          <h1>{title}</h1>
+          <p className="inbox-description">{t('listPageHeader.inboxHint')}</p>
+        </div>
+        {!archived && <Button className="inbox-new-task" onClick={onNewTask}><Plus />{t('listPageHeader.newTask')}</Button>}
+      </div>
+      <div className="inbox-toolbar">
+        <Surface as="div" tone="input" className="inbox-view-switch flex rounded-xl p-1" role="group" aria-label={t('listPageHeader.viewLayout')}>
+          <Button variant={layout === 'list' ? 'secondary' : 'ghost'} size="sm" aria-pressed={layout === 'list'} onClick={() => onLayout('list')}>{t('listPageHeader.listLayout')}</Button>
+          <Button variant={layout === 'board' ? 'secondary' : 'ghost'} size="sm" aria-pressed={layout === 'board'} onClick={() => onLayout('board')}>{t('listPageHeader.boardLayout')}</Button>
+        </Surface>
+        {filterBar}
+      </div>
+    </header>
+  );
   return (
     <header className={`dovun-page-header mb-5${page === 'today' ? ' dovun-today-header' : ''}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -39,7 +57,6 @@ export function ListPageHeader({ page, title, scoped, archived, today, detail, b
           {page === 'board' && detail && <Button variant="plain" size="bare" type="button" className="topic-jump" onClick={onOpenKnowledge}><Library aria-hidden />{t('listPageHeader.workContext')}<ChevronRight aria-hidden /></Button>}
           {page === 'board' && briefNotes && <p className="line-clamp-2 text-sm whitespace-pre-wrap text-muted-foreground">{briefNotes}</p>}
           {filterSummary && <p className="text-xs text-muted-foreground">{filterSummary}</p>}
-          {page === 'inbox' && <p className="max-w-xl text-xs text-muted-foreground">{t('listPageHeader.inboxHint')}</p>}
 
           {archived && <p className="text-sm text-muted-foreground">{t('listPageHeader.archivedReadonly')}</p>}
         </div>

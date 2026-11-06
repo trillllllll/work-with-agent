@@ -4,6 +4,7 @@
 @import "./styles/control-surfaces.css";
 @import "./styles/workbench.css";
 @import "./styles/task-inline.css";
+@import "./styles/inbox.css";
 @import "./styles/plan-skin.css";
 
 @custom-variant dark (&:is(.dark *));

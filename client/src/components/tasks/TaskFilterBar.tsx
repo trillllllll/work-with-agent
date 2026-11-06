@@ -86,9 +86,9 @@ export function TaskFilterBar({ page, scoped, filters, sortMode, topics, tags, o
   if (presentation === 'popover') {
     return <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <Button type="button" variant="ghost" size="icon" aria-label={t('taskFilter.filter')} aria-expanded={open} className="relative">
+        <Button type="button" variant="ghost" size={page === 'inbox' ? 'sm' : 'icon'} aria-label={t('taskFilter.filter')} aria-expanded={open} className="relative">
           <ListFilter />
-          {parts.length > 0 && <span aria-hidden className="absolute -right-0.5 -top-0.5 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] leading-4 font-semibold text-primary-foreground">{parts.length}</span>}
+          {page === 'inbox' ? <span>{parts.length ? t('taskFilter.filterWithCount', { count: parts.length }) : t('taskFilter.filter')}</span> : parts.length > 0 && <span aria-hidden className="absolute -right-0.5 -top-0.5 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] leading-4 font-semibold text-primary-foreground">{parts.length}</span>}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[min(20rem,calc(100vw-2rem))] space-y-3 p-3">
