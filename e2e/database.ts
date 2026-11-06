@@ -3,7 +3,20 @@ import { createHash } from 'node:crypto';
 
 export const e2eDatabase = new PrismaClient({ datasourceUrl: process.env.E2E_DATABASE_URL ?? 'file:../../e2e/.data/agent-studio-e2e.db' });
 
+// After heavy specs the API can hold the SQLite write lock for a while (indexing large documents);
+// retry instead of failing the next spec on a socket timeout.
 export async function resetE2eDatabase() {
+  for (let attempt = 1; ; attempt += 1) {
+    try { return await resetOnce(); }
+    catch (error) {
+      const timedOut = (error as { code?: string }).code === 'P1008' || String((error as Error)?.message).includes('Socket timeout');
+      if (!timedOut || attempt >= 5) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+    }
+  }
+}
+
+async function resetOnce() {
   await e2eDatabase.resourceReference.deleteMany();
   await e2eDatabase.resourceWriteReceipt.deleteMany();
   await e2eDatabase.resourceLegacyAlias.deleteMany();

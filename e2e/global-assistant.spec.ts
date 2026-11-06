@@ -119,8 +119,9 @@ test('desktop widths and theme remain usable with current content visible', asyn
     await page.setViewportSize({ width, height: 900 });
     await expect(panel(page)).toBeVisible();
     const box = await panel(page).boundingBox();
-    expect(box?.width).toBeGreaterThanOrEqual(width === 1440 ? 426 : 346);
-    expect(box?.width).toBeLessThanOrEqual(width === 1440 ? 440 : 360);
+    // --dovun-work-width in workbench.css: 400px from 1440, 380px below.
+    expect(box?.width).toBeGreaterThanOrEqual(width === 1440 ? 394 : 374);
+    expect(box?.width).toBeLessThanOrEqual(width === 1440 ? 400 : 380);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: `/tmp/wwa-ai-${width}-light.png` });
   }

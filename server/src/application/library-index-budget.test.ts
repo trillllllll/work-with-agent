@@ -8,7 +8,8 @@ import { publishLibraryExtraction, runLibraryWorkerOnce, startLibraryWorker } fr
 import { textLineSegments } from './library/text.js';
 import * as coordinator from './coordinator-work.js';
 
-if (!process.env.DATABASE_URL?.includes('/tmp/')) throw new Error('Index regression tests require an explicit /tmp/ database');
+// npm test creates /tmp/dovun-unit-* (or %TEMP%\\dovun-unit-* on Windows); never run against a real database.
+if (!/\/tmp\/|\/dovun-unit-/.test(process.env.DATABASE_URL ?? '')) throw new Error('Index regression tests require an explicit temporary database');
 const resources = new ResourceService();
 const library = new LibraryService();
 const turn = () => new Promise<void>((resolve) => setImmediate(resolve));

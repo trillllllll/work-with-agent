@@ -230,7 +230,7 @@ test.describe('已完成子任务保持缩进并混排', () => {
         expect(await openTitle.evaluate((node) => getComputedStyle(node).color)).toBe(foreground.color);
         const seam = page.locator('.task-children .task-row-block').nth(1);
         await expect(seam).toHaveCSS('border-top-width', '0px');
-        await expect(page.locator('.task-children').first()).toHaveCSS('row-gap', '5px');
+        await expect(page.locator('.task-children').first()).toHaveCSS('row-gap', '0px');
 
         const canHover = await page.evaluate(() => matchMedia('(hover: hover)').matches);
         const handle = doneRow.locator('.task-drag-handle');
@@ -247,8 +247,8 @@ test.describe('已完成子任务保持缩进并混排', () => {
 
         await openRow.getByRole('button', { name: A.title, exact: true }).click();
         await expect(openRow).toHaveAttribute('data-selected', 'true');
-        await expect.poll(async () => openRow.evaluate((node) => getComputedStyle(node).backgroundImage)).not.toBe('none');
-        await expect(openRow).toHaveCSS('border-top-width', '1px');
+        // The selected row in the flat workbench list is a --selected fill without a border.
+        await expect.poll(async () => openRow.evaluate((node) => getComputedStyle(node).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
         await page.getByRole('button', { name: '关闭工作侧栏', exact: true }).click();
         await expect(page.getByRole('dialog', { name: '任务详情', exact: true })).toBeHidden();
       }

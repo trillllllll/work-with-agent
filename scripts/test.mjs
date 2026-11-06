@@ -1,13 +1,15 @@
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { prismaClientIsCurrent } from './prisma-current.mjs';
 
 const root = process.cwd();
-// Each run owns a fresh explicit /tmp database, including destructive contract tests.
-const directory = await mkdtemp('/tmp/dovun-unit-');
+// Each run owns a fresh temporary database, including destructive contract tests.
+// POSIX keeps the explicit /tmp location; Windows has no /tmp, so use the user temp directory.
+const directory = await mkdtemp(process.platform === 'win32' ? resolve(tmpdir(), 'dovun-unit-') : '/tmp/dovun-unit-');
 const databasePath = resolve(directory, 'test.db');
-const databaseUrl = `file:${databasePath}`;
+const databaseUrl = `file:${databasePath.replaceAll('\\', '/')}`;
 
 await mkdir(dirname(databasePath), { recursive: true });
 await rm(databasePath, { force: true });
