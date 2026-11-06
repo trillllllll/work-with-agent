@@ -23,9 +23,10 @@ type ChatComposerProps = {
   model?: string;
   onStop?: () => void;
   stopping?: boolean;
+  placeholder?: string;
 };
 
-export function ChatComposer({ input, busy, reference, onChange, onSend, onCancelReference, toolbar, contextUsage, model, onStop, stopping }: ChatComposerProps) {
+export function ChatComposer({ input, busy, reference, onChange, onSend, onCancelReference, toolbar, contextUsage, model, onStop, stopping, placeholder }: ChatComposerProps) {
   const { t } = useTranslation('chat');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
@@ -105,7 +106,7 @@ export function ChatComposer({ input, busy, reference, onChange, onSend, onCance
           aria-label={t('composer.askAi')}
           value={input}
           rows={1}
-          placeholder={t('composer.placeholder')}
+          placeholder={placeholder ?? t('composer.placeholder')}
           className="w-full resize-none px-1 py-1 text-[13px] leading-5 transition-[height] duration-150 ease-out"
           onFocus={() => { cancelCollapse.current(); setFocused(true); setJustSent(false); }}
           onBlur={handleBlur}
@@ -116,7 +117,7 @@ export function ChatComposer({ input, busy, reference, onChange, onSend, onCance
         />
         <div className="mt-2 flex min-w-0 items-center gap-2">
           {toolbar}
-          <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground" title={model}>{model || t('status.noModel')}</span>
+          <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground" title={model}>{model}</span>
           {contextUsage}
           {busy ? <Button type="button" size="icon" className="size-8 rounded-full" onClick={onStop} disabled={stopping} aria-label={t('composer.stop')}><Square className="size-3 fill-current" /></Button> : <Button type="submit" size="icon" className="size-8 rounded-full" disabled={!input.trim()} aria-label={t('composer.send')}><ArrowUp /></Button>}
         </div>

@@ -183,7 +183,8 @@
     "placeholder": "Example: Create a task: Organize the API docs",
     "stop": "Stop generating",
     "send": "Send",
-    "stopping": "Stopping…"
+    "stopping": "Stopping…",
+    "continuePlaceholder": "Continue the conversation…"
   },
   "chatPanel": {
     "title": "Dovun assistant",
@@ -229,7 +230,12 @@
     "webSearchUnavailable": "Web search is not configured. Add a DeepSeek key in Settings.",
     "legacyPendingHint": "An older unconfirmed send remains preserved on this device without a workspace identity. It has not been assigned to this workspace or replayed. Check the original conversation before sending again.",
     "studyGreeting": "Learn, practice and review here. Confirm changes to keep them in your learning archive.",
-    "studyWelcomeTitle": "What would you like to learn?"
+    "studyWelcomeTitle": "What would you like to learn?",
+    "openNavigation": "Open workspace navigation",
+    "model": "Model",
+    "reference": "Context",
+    "referencePinned": "Pinned",
+    "closeDetails": "Close details"
   },
   "chatPickers": {
     "history": "Conversation history",
@@ -298,7 +304,8 @@
       "list": "List",
       "board": "Board",
       "quadrant": "Quadrants"
-    }
+    },
+    "view": "View the context for this message"
   },
   "externalPrompt": {
     "ready": "The request is ready. Copy it into an AI that supports this capability.",
@@ -592,7 +599,8 @@
     "order": "In chronological order",
     "incomplete": "Some queries failed. The answer may be incomplete. Expand the corresponding record for details.",
     "stopped": "This run was interrupted. Received content has been preserved.",
-    "responding": "Preparing response"
+    "responding": "Preparing response",
+    "queried": "Queried {{count}} items"
   },
   "studyTopic": {
     "switch": "Switch topic",

@@ -62,7 +62,7 @@ test('study assistant keeps its own session and writes learning maps through app
   // 切回工作助手后标题恢复，且开始新会话。
   await panel(page).getByRole('button', { name: '切换助手', exact: true }).click();
   await page.getByRole('menuitem', { name: '工作助手', exact: true }).click();
-  await expect(panel(page).getByRole('heading', { name: 'Dovun 工作助手', level: 2 })).toBeVisible();
+  await expect(panel(page).getByRole('heading', { name: '工作助手', level: 2 })).toBeVisible();
 
   // 全局提案入口可以跳回另一位助手的会话，身份须随服务端会话一起恢复。
   const studyConversation = await e2eDatabase.conversation.findFirstOrThrow({ where: { identityId: 'study' } });

@@ -178,7 +178,8 @@
     "placeholder": "例如：创建任务：整理 API 文档",
     "stop": "停止生成",
     "send": "发送",
-    "stopping": "正在停止…"
+    "stopping": "正在停止…",
+    "continuePlaceholder": "继续聊聊…"
   },
   "chatPanel": {
     "title": "Dovun 工作助手",
@@ -222,7 +223,12 @@
     "webSearchUnavailable": "未配置联网搜索服务，请在设置里配置 DeepSeek 密钥",
     "legacyPendingHint": "本机仍保留旧版未确认发送，但记录没有工作区标识。它未被归入当前工作区，也未自动重放；再次发送前请到原对话核对结果。",
     "studyGreeting": "讲解、练习和复习都从这里开始，确认后保存到学习档案。",
-    "studyWelcomeTitle": "想学什么？"
+    "studyWelcomeTitle": "想学什么？",
+    "openNavigation": "打开工作区导航",
+    "model": "模型",
+    "reference": "参考",
+    "referencePinned": "已固定",
+    "closeDetails": "关闭详情"
   },
   "chatPickers": {
     "history": "历史对话",
@@ -288,7 +294,8 @@
       "list": "列表",
       "board": "看板",
       "quadrant": "四象限"
-    }
+    },
+    "view": "查看本条消息的参考范围"
   },
   "externalPrompt": {
     "ready": "下面已整理好查询要求，可以复制到支持对应能力的 AI 中。",
@@ -573,7 +580,8 @@
     "order": "按发生顺序",
     "incomplete": "部分查询失败，回答可能不完整。展开对应记录查看原因。",
     "stopped": "本轮执行未完成，已保留收到的内容。",
-    "responding": "正在整理回答"
+    "responding": "正在整理回答",
+    "queried": "已查询 {{count}} 项"
   },
   "studyTopic": {
     "switch": "切换主题",

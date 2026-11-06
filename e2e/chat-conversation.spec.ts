@@ -49,8 +49,7 @@ test('旧对话来源去重、正文编号打开原文、查询分组和窄屏�
   ] });
   await page.addInitScript(id => localStorage.setItem('dovun.conversationId', id), id);
   await page.goto('/#/chat'); const panel = page.getByTestId('ai-assistant');
-  await expect(panel.locator('.assistant-header')).toHaveCSS('position', 'absolute');
-  expect(await panel.locator('.assistant-header').evaluate(element => getComputedStyle(element).backdropFilter)).not.toBe('none');
+  await expect(panel.locator('.assistant-header')).toHaveCSS('position', 'relative');
   await expect(panel.getByTestId('assistant-sources')).toHaveCount(1);
   await panel.getByRole('button', { name: /查看来源 1/ }).click();
   const dialog = page.getByRole('dialog', { name: '参考来源', exact: true });
@@ -121,7 +120,7 @@ test('多轮工具与思考合为一条过程，失败收起可见且下一次�
   const first = processes.first();
   await expect(first).not.toHaveAttribute('open');
   await expect(first.locator(':scope > summary')).toContainText('有 2 项查询失败');
-  await expect(first.locator(':scope > summary')).toContainText('查询 5 项 · 思考 2 次');
+  await expect(first.locator('.assistant-process-counts')).toContainText('查询 5 项 · 思考 2 次');
   await expect(panel.getByText('已整理可用结果。',{exact:true})).toBeVisible();
   await expect(panel.getByText('明天没有待办。',{exact:true})).toBeVisible();
   await first.locator(':scope > summary').focus(); await page.keyboard.press('Enter');

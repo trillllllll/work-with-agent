@@ -17,15 +17,16 @@ export function AssistantProcess({ messages, runActive = false, renderTool }: { 
   const warning = state.failed > 0 || state.interrupted;
   const title = state.failed ? t('process.failed', { count: state.failed }) : state.interrupted ? t('process.interrupted')
     : state.runningTool ? (toolLabels[state.runningTool.name] ?? state.runningTool.name)
-    : state.thinking ? t('reasoning.active') : active ? t('process.responding') : t(state.queries ? 'process.completed' : 'process.finished');
+    : state.thinking ? t('reasoning.active') : active ? t('process.responding') : state.queries ? t('process.queried', { count: state.queries }) : t('process.finished');
   const counts = [state.queries ? t('process.queries', { count: state.queries }) : '', state.reasoning.length ? t('process.thoughts', { count: state.reasoning.length }) : '', state.skills ? t('process.skills', { count: state.skills }) : ''].filter(Boolean).join(' · ');
   return <Disclosure className="assistant-process" open={open} onToggle={event => setOpen(event.currentTarget.open)} data-testid="assistant-process" data-state={warning ? 'interrupted' : active ? 'streaming' : 'completed'}>
     <DisclosureTrigger className="assistant-process-trigger">
       {warning ? <CircleAlert className="size-3.5 shrink-0 text-warning" /> : active ? <LoaderCircle className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none" /> : <CheckCheck className="size-3.5 shrink-0 text-success" />}
-      <span className="assistant-process-title">{title}</span><small>{counts}</small><ChevronRight className={open ? 'assistant-process-chevron rotate-90' : 'assistant-process-chevron'} />
+      <span className="assistant-process-title">{title}</span><ChevronRight className={open ? 'assistant-process-chevron rotate-90' : 'assistant-process-chevron'} />
     </DisclosureTrigger>
     <div className="assistant-process-body">
       <p className="assistant-process-caption">{t('process.title')}<span>{t('process.order')}</span></p>
+      <p className="assistant-process-counts">{counts}</p>
       <ol className="assistant-process-steps">
         {messages.map((message, index) => <li key={message.id ?? index}>
           {message.reasoning?.text && <ReasoningDisclosure reasoning={message.reasoning} streaming={message.status === 'streaming'} />}

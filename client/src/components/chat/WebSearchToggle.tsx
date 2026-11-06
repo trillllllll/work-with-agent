@@ -25,7 +25,7 @@ export function WebSearchToggle({ enabled, busy, onToggle }: WebSearchToggleProp
       aria-pressed={enabled}
       disabled={busy || !available}
       data-testid="web-search-toggle"
-      className={cn('flex h-7 shrink-0 items-center gap-1 rounded-full border px-2 text-[11px] transition-colors', enabled ? 'border-primary/40 bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground')}
+      className={cn('assistant-web-search flex h-9 shrink-0 items-center gap-1 rounded-lg px-2 text-[11px] transition-colors', enabled ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground')}
       title={title}
       aria-label={title}
       onClick={() => onToggle(!enabled)}

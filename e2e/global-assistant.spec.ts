@@ -66,7 +66,9 @@ test('all pages share one assistant; workspace modal, shortcuts, sources and his
   await page.getByRole('button', { name: 'AI 助手', exact: true }).click();
   await expect(panel(page)).toBeVisible();
   await expect(panel(page).getByTestId('assistant-sources').last()).toContainText('1 个参考来源');
-  await expect(panel(page).getByTestId('context-summary').first()).toContainText('收集箱');
+  await panel(page).getByRole('button', { name: '查看本条消息的参考范围', exact: true }).first().click();
+  await expect(page.getByTestId('context-summary')).toContainText('收集箱');
+  await page.keyboard.press('Escape');
   if (!isMobile) {
     await panel(page).getByRole('button', { name: '关闭聊天', exact: true }).click();
     await page.keyboard.press('Control+Shift+L');

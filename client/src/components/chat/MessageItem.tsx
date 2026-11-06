@@ -8,7 +8,8 @@ import { ContextSummary } from './ContextSummary.js';
 import { SourceLinks, SourcePreview } from './SourceLinks.js';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronRight, Copy } from 'lucide-react';
+import { BookOpen, ChevronRight, Copy } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.js';
 import type { Approval, ChatMessage, ToolActivity } from '@/chat.js';
 import { approvalsOnMessage, isReadOnlyTool } from '@/chat.js';
 import { toolLabels } from '@/lib/api.js';
@@ -124,13 +125,15 @@ export function MessageItem({ message, processMessages, hideProcess = false, pro
   return (
     <CitationContext.Provider value={{ sources: message.citationSources ?? message.sources ?? [], onSelect: setSelectedSource }}><div
       className={cn(
-        'assistant-message min-w-0 rounded-xl px-3 py-2.5',
-        role === 'user' && 'ml-auto max-w-[90%] rounded-2xl bg-muted/70',
+        'assistant-message min-w-0',
+        role === 'user' && 'assistant-user-message ml-auto',
         failed && 'border-2 border-destructive/50 bg-destructive/10',
         role === 'system' && 'bg-transparent px-1 py-1.5'
       )}
+      data-role={role}
     >
-      {(content || role !== 'assistant') && (
+      <div className={role === 'user' ? 'assistant-user-bubble' : undefined}>
+      {(role === 'system' || failed) && (content || role !== 'assistant') && (
         <span className={cn('mb-1 block text-[11px] font-bold tracking-wide', failed ? 'text-destructive' : 'text-muted-foreground')}>
           {label}{failed ? t('messageItem.outputFailed') : ''}
         </span>
@@ -146,13 +149,16 @@ export function MessageItem({ message, processMessages, hideProcess = false, pro
           <p className="text-xs leading-relaxed text-muted-foreground">{content}</p>
         )
       ) : streaming ? (
-        <p className="streaming-caret text-[13.5px] leading-relaxed break-words whitespace-pre-wrap">{content}</p>
+        <p className="assistant-streaming-text streaming-caret break-words whitespace-pre-wrap">{content}</p>
       ) : (
-        <MarkdownView content={content} diagrams={!failed && (role === 'user' || role === 'assistant')} />
+        <MarkdownView content={content} responsiveTables diagrams={!failed && (role === 'user' || role === 'assistant')} />
       ))}
-      {message.role === 'assistant' && content && !streaming && <Button variant="ghost" size="icon-xs" className="mt-2 text-muted-foreground" aria-label={t('messageItem.copyReply')} onClick={() => void navigator.clipboard.writeText(message.content).then(() => toast.success(t('messageItem.replyCopied')), () => toast.error(t('clipboard.copyFailed')))}><Copy /></Button>}
-      {message.role === 'user' && <ContextSummary context={message.context} />}
-      <SourceLinks sources={message.sources ?? []} onSelect={setSelectedSource} />
+      </div>
+      {message.role === 'user' && <Popover><PopoverTrigger asChild><Button variant="ghost" size="icon-sm" className="assistant-message-context" aria-label={t('contextSummary.view')} title={t('contextSummary.view')}><BookOpen className="size-3.5" /></Button></PopoverTrigger><PopoverContent data-assistant-floating align="end" className="w-80 max-w-[calc(100vw-2rem)] p-3"><ContextSummary context={message.context} /></PopoverContent></Popover>}
+      {(message.sources?.length || message.role === 'assistant' && content && !streaming) ? <div className="assistant-answer-footer">
+        <SourceLinks sources={message.sources ?? []} onSelect={setSelectedSource} />
+        {message.role === 'assistant' && content && !streaming && <Button variant="ghost" size="icon-sm" className="assistant-copy-reply text-muted-foreground" aria-label={t('messageItem.copyReply')} onClick={() => void navigator.clipboard.writeText(message.content).then(() => toast.success(t('messageItem.replyCopied')), () => toast.error(t('clipboard.copyFailed')))}><Copy className="size-3.5" /></Button>}
+      </div> : null}
       {approvalsOnMessage(message, approvals).filter(isAppChangeApproval).map((approval) => <ReviewCard key={approval.approvalId} approval={approval} phase={approval.approvalId === executingApprovalId ? phase : ''} unknown={unknownApprovalIds.includes(approval.approvalId)} unresolved={unresolvedApprovalIds.includes(approval.approvalId)} onApprove={onApprove} onReject={onReject} onChanged={onChanged} onRepreviewed={onRepreviewed} />)}
       {message.parts?.map((part) => part.type === 'worktree_cleanup' ? <WorktreeCleanupChatCard key={part.id} cleanupId={part.cleanupId} /> : part.type === 'learning_card' ? <LearningCard key={part.id} part={part} /> : part.type === 'external_prompt' ? <ExternalPromptCard key={part.id} part={part} /> : null)}
     {selectedSource && <SourcePreview source={selectedSource} onClose={() => setSelectedSource(null)} />}

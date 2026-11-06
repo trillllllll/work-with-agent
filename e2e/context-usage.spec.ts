@@ -3,7 +3,11 @@ import { e2eDatabase, resetE2eDatabase } from './database.js';
 import { mkdir } from 'node:fs/promises';
 
 const api = process.env.E2E_API_URL!;
-const evidence = 'docs/design/dovun/context-optimization/evidence';
+const evidence = '/tmp/dovun-context-usage-evidence';
+async function openUsage(page: import('@playwright/test').Page) {
+  await page.getByTestId('assistant-more-actions').click();
+  await page.getByTestId('context-usage-trigger').click();
+}
 test.beforeEach(async ({ request, page }) => {
   await resetE2eDatabase();
   await request.patch(`${api}/api/settings`, { data: { baseUrl: 'http://127.0.0.1:4010/v1', model: 'mock-context-no-usage', apiKey: 'test-key' } });
@@ -17,15 +21,17 @@ test('real requests record context composition; floating controls work in both t
   page.on('pageerror', error => errors.push(error.message));
   await request.post(`${api}/api/tasks`, { data: { title: '整理产品资料，核对任务安排' } });
   await page.goto('/#/chat');
-  const trigger = page.getByTestId('context-usage-trigger');
-  await trigger.click();
+  const trigger = page.getByTestId('assistant-more-actions');
+  await openUsage(page);
   await expect(page.getByTestId('context-usage-popover')).toContainText('发送前预估');
   await page.keyboard.press('Escape');
   await expect(trigger).toBeFocused();
   await page.getByRole('textbox', { name: '向 AI 提问' }).fill('上下文统计验收：查询我的任务，保持数据不变。');
   await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect(page.getByText('已读取隔离工作台的任务。保持原有数据，未进行修改。', { exact: true })).toBeVisible();
-  await expect(trigger).toContainText('≈');
+  await openUsage(page);
+  await expect(page.getByTestId('context-usage-total')).toContainText('≈');
+  await page.keyboard.press('Escape');
   const conversationId = await page.evaluate(() => localStorage.getItem('dovun.conversationId'));
   const snapshot = (await (await request.get(`${api}/api/conversations/${conversationId}/snapshot`)).json()).data;
   expect(snapshot.contextStats.categories.reduce((sum: number, c: any) => sum + c.tokens, 0)).toBe(snapshot.contextStats.estimatedInputTokens);
@@ -37,13 +43,13 @@ test('real requests record context composition; floating controls work in both t
   for (const theme of ['light', 'dark']) for (const width of [1586, 1280, 1024, 390]) {
     await page.setViewportSize({ width, height: 992 });
     await page.evaluate(theme => { document.documentElement.className = theme; localStorage.setItem('dovun.theme', theme); }, theme);
-    await trigger.click();
+    await openUsage(page);
     const popup = page.getByTestId('context-usage-popover');
     await expect(popup).toBeVisible();
     await expect(popup).toContainText('工具定义');
     await expect(popup).toContainText('未填写模型上下文上限');
     await expect(popup).toContainText('未返回');
-    expect(await popup.evaluate(el => getComputedStyle(el).backgroundImage)).toContain('linear-gradient');
+    await expect(page.getByRole('dialog')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const bounds = (await popup.boundingBox())!;
     expect(bounds.x).toBeGreaterThanOrEqual(15); expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
@@ -54,7 +60,7 @@ test('real requests record context composition; floating controls work in both t
     await expect(trigger).toBeFocused();
   }
   await page.reload();
-  await page.getByTestId('context-usage-trigger').click();
+  await openUsage(page);
   await expect(page.getByTestId('context-usage-popover')).toContainText('第 2 次调用');
   await page.keyboard.press('Escape');
   // A configured window shows free space and the share of the limit before sending.
@@ -69,14 +75,16 @@ test('real requests record context composition; floating controls work in both t
   expect({ messages: await e2eDatabase.message.count(), conversations: await e2eDatabase.conversation.count(), runs: await e2eDatabase.agentRun.count() }).toEqual(before);
   await page.reload();
   await page.getByRole('textbox', { name: '向 AI 提问' }).fill('下一条草稿');
-  await expect(page.getByTestId('context-usage-trigger')).toContainText('/ 128.0k');
-  await page.getByTestId('context-usage-trigger').click();
+  await openUsage(page);
+  await expect(page.getByTestId('context-usage-total')).toContainText('/ 128,000');
+  await page.keyboard.press('Escape');
+  await openUsage(page);
   await expect(page.getByTestId('context-usage-free')).toContainText('剩余空间');
   await expect(page.getByTestId('context-usage-popover')).toContainText('占上限');
   await page.keyboard.press('Escape');
   await page.evaluate(() => localStorage.setItem('dovun.language', 'en'));
   await page.reload();
-  await page.getByRole('button', { name: 'View context usage' }).click();
+  await openUsage(page);
   await expect(page.getByTestId('context-usage-popover')).toContainText('Tool definitions');
   expect(errors).toEqual([]);
 });
@@ -92,7 +100,7 @@ test('asks for the pre-send estimate only while the assistant is visible', async
   }
   expect(previews).toBe(0);
   await page.evaluate(() => { location.hash = '#/chat'; });
-  await expect(page.getByTestId('context-usage-trigger')).toBeVisible();
+  await expect(page.getByTestId('assistant-more-actions')).toBeVisible();
   await expect.poll(() => previews).toBeGreaterThan(0);
 });
 

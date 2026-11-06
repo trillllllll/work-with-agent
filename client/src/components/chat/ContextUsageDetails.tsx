@@ -1,10 +1,8 @@
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, Gauge } from 'lucide-react';
-import { Button } from '@/components/ui/button.js';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.js';
+import { ChevronDown } from 'lucide-react';
 import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure.js';
 import { settingsHash } from '@/components/settings/settings-categories.js';
-import { compactTokens, tokenPercent, usageLevel, windowPercent, type ContextUsage } from '@/lib/context-usage.js';
+import { tokenPercent, usageLevel, windowPercent, type ContextUsage } from '@/lib/context-usage.js';
 import { cn } from '@/lib/utils.js';
 
 const colors = { messages: '#3478df', tools: '#e07743', system: '#10a37f', skills: '#d49b16', manual: '#b279cc', work: '#d76b96', summary: '#597c45' };
@@ -15,7 +13,9 @@ const levelText = { normal: 'text-muted-foreground', high: 'text-warning', full:
  * pre-send estimate of the next request. While a run is busy the live stats win;
  * when idle the preview is shown so the user sees usage before sending.
  */
-export function ContextUsagePopover({ stats, preview, busy }: { stats: ContextUsage | null; preview?: ContextUsage | null; busy?: boolean }) {
+type ContextUsageProps = { stats: ContextUsage | null; preview?: ContextUsage | null; busy?: boolean; onNavigate?: () => void };
+
+export function ContextUsageDetails({ stats, preview, busy, onNavigate }: ContextUsageProps) {
   const { t } = useTranslation('chat');
   const number = (value: number | null | undefined) => typeof value === 'number' ? value.toLocaleString() : t('usage.unknown');
   const shown = busy ? stats : preview ?? stats;
@@ -26,13 +26,8 @@ export function ContextUsagePopover({ stats, preview, busy }: { stats: ContextUs
   // With a known window the bar is a share of capacity (free space stays empty); otherwise a share of the estimate.
   const scale = shown ? Math.max(capacity ?? 0, shown.estimatedInputTokens) : 0;
   const share = (tokens: number) => tokenPercent(tokens, capacity ?? shown?.estimatedInputTokens ?? 0);
-  const badge = shown ? `≈${compactTokens(shown.estimatedInputTokens)}${capacity ? ` / ${compactTokens(capacity)}` : ''}` : t('usage.shortTitle');
   const totals = busy ? stats : stats?.kind === 'preview' ? null : stats;
-  return <Popover>
-    <PopoverTrigger asChild><Button type="button" variant="ghost" size="sm" className={cn('h-7 gap-1 px-1.5 text-[11px]', levelText[level])} aria-label={t('usage.open')} title={percent === null ? t('usage.open') : t('usage.badgeTitle', { percent: percent.toFixed(1) })} data-testid="context-usage-trigger" data-level={level}>
-      <Gauge className="size-3.5" /><span className="tabular-nums">{badge}</span>
-    </Button></PopoverTrigger>
-    <PopoverContent data-assistant-floating side="top" align="end" collisionPadding={16} onEscapeKeyDown={event => event.stopPropagation()} className="max-h-[min(620px,var(--radix-popover-content-available-height))] w-[380px] max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain p-4" data-testid="context-usage-popover" aria-label={t('usage.title')}>
+  return <div data-testid="context-usage-popover" aria-label={t('usage.title')}>
       <div className="mb-1 flex items-center justify-between gap-3"><h3 className="text-sm font-medium">{t('usage.title')}</h3><span className={cn('text-sm tabular-nums', levelText[level])} data-testid="context-usage-total">{shown ? `≈ ${number(shown.estimatedInputTokens)}${capacity ? ` / ${number(capacity)}` : ''}` : '—'}</span></div>
       {!shown ? <p className="py-3 text-xs leading-relaxed text-muted-foreground">{t('usage.empty')}</p> : <>
         <p className="mb-3 text-[11px] text-muted-foreground">{isPreview ? t('usage.preview') : t('usage.latest', { round: shown.round + 1 })}{percent !== null && <> · <span className={levelText[level]}>{t('usage.ofWindow', { percent: percent.toFixed(1) })}</span></>}</p>
@@ -49,7 +44,7 @@ export function ContextUsagePopover({ stats, preview, busy }: { stats: ContextUs
             <span className="tabular-nums text-muted-foreground">≈ {number(Math.max(0, capacity - shown.estimatedInputTokens))}</span><span className="text-right tabular-nums">{share(Math.max(0, capacity - shown.estimatedInputTokens))}%</span>
           </div>}
         </div>
-        <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">{capacity ? t('usage.estimateHintWindow') : <>{t('usage.estimateHint')} <a className="font-medium text-brand-link underline-offset-4 hover:underline" href={`#${settingsHash('model')}`}>{t('usage.setWindow')}</a></>}</p>
+        <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">{capacity ? t('usage.estimateHintWindow') : <>{t('usage.estimateHint')} <a className="font-medium text-brand-link underline-offset-4 hover:underline" href={`#${settingsHash('model')}`} onClick={onNavigate}>{t('usage.setWindow')}</a></>}</p>
         {isPreview && <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t('usage.previewHint')}</p>}
         {level !== 'normal' && <p className={cn('mt-2 text-xs', levelText[level])}>{level === 'full' ? t('usage.windowFull') : t('usage.windowHigh')}</p>}
         {shown.historyOverBudget && <p className="mt-2 text-xs text-warning">{t('usage.overBudget')}</p>}
@@ -72,6 +67,5 @@ export function ContextUsagePopover({ stats, preview, busy }: { stats: ContextUs
           {!totals.totals.usageComplete && <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">{t('usage.partial')}</p>}
         </div>}
       </>}
-    </PopoverContent>
-  </Popover>;
+  </div>;
 }

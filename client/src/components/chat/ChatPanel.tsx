@@ -4,7 +4,7 @@ import mark from '@/assets/dovun-mark.svg';
 import { settingsHash } from '@/components/settings/settings-categories.js';
 import { ContextSummary } from './ContextSummary.js';
 import { suggestions, studySuggestions } from '@/lib/assistant-context.js';
-import { ArrowLeft, ChevronDown, Ellipsis, Maximize2, Minimize2, RotateCcw, Sparkles, SquarePen, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Ellipsis, Maximize2, Minimize2, PanelLeft, RotateCcw, SquarePen, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChat } from '@/hooks/useChat.js';
 import { api, type Settings } from '@/lib/api.js';
@@ -17,11 +17,12 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ChatHistory, ChatReferencePicker } from './ChatPickers.js';
 import { Button } from '@/components/ui/button.js';
 import { MessageList } from './MessageList.js';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { openSkillEditor } from '@/components/skills/skill-format.js';
-import { ContextUsagePopover } from './ContextUsagePopover.js';
+import { ContextUsageDetails } from './ContextUsageDetails.js';
 import { ChatComposer } from './ChatComposer.js';
+import { Modal } from '@/components/ui/modal.js';
 import { WebSearchToggle } from './WebSearchToggle.js';
 import { AssistantInputProvider } from './assistant-input.js';
 import { StudyTopicBar } from './StudyTopicBar.js';
@@ -41,14 +42,22 @@ type ChatPanelProps = {
   onShrink?: () => void;
   showClose?: boolean;
   onReturnToLearning?: () => void;
+  onOpenNavigation?: () => void;
 };
 
-export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose, mobile, presentation = 'side', onExpand, onShrink, showClose = true, onReturnToLearning }: ChatPanelProps) {
+export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose, mobile, presentation = 'side', onExpand, onShrink, showClose = true, onReturnToLearning, onOpenNavigation }: ChatPanelProps) {
   const { t } = useTranslation('chat');
   const action = usePlatformAction();
   const settings = useQuery<Settings>({ queryKey: ['settings'], queryFn: () => api('/api/settings') });
   const configured = Boolean(settings.data?.model && settings.data?.baseUrl && settings.data?.apiKeyConfigured);
   const [drafting, setDrafting] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
+  const moreTrigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const closeDetails = () => setUsageOpen(false);
+    window.addEventListener('hashchange', closeDetails);
+    return () => window.removeEventListener('hashchange', closeDetails);
+  }, []);
   const saveAsSkill = async () => {
     if (!chat.conversationId || drafting) return;
     setDrafting(true);
@@ -79,15 +88,19 @@ export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose
   return (
     <div className="dovun-assistant flex h-full min-h-0 min-w-0 flex-col" data-testid="ai-assistant" data-presentation={presentation}>
       <header className="assistant-header flex shrink-0 items-center gap-1 px-3 py-3">
-        <Sparkles className="size-4 shrink-0 text-muted-foreground" />
-        <div className="min-w-0 flex-1"><h2 className="truncate whitespace-nowrap text-sm font-semibold">{identityId === 'study' ? t('chatPanel.identityStudy') : t('chatPanel.title')}</h2><span className="text-[10px] text-muted-foreground" role="status">{busy ? t('status.working') : interrupted ? t('status.interrupted') : settings.isLoading ? t('status.checking') : settings.error ? t('status.unknown') : configured ? t('status.available') : t('status.noModel')}</span></div>
-        {onSwitchIdentity && <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="h-7 gap-1 px-1 text-xs" disabled={chat.switchingBlocked} aria-label={t('chatPanel.switchIdentity')} title={t('chatPanel.switchIdentity')}><ChevronDown className="size-3" /></Button></DropdownMenuTrigger><DropdownMenuContent data-assistant-floating align="end">
-          <DropdownMenuItem disabled={identityId === 'work'} onSelect={() => onSwitchIdentity('work')}>{t('chatPanel.identityWork')}</DropdownMenuItem>
-          <DropdownMenuItem disabled={identityId === 'study'} onSelect={() => onSwitchIdentity('study')}>{t('chatPanel.identityStudy')}</DropdownMenuItem>
-        </DropdownMenuContent></DropdownMenu>}
+        {onOpenNavigation && <Button variant="ghost" size="icon-sm" aria-label={t('chatPanel.openNavigation')} onClick={onOpenNavigation}><PanelLeft /></Button>}
+        <div className="assistant-identity min-w-0 flex-1">
+          {onSwitchIdentity ? <h2 aria-label={t(identityId === 'study' ? 'chatPanel.identityStudy' : 'chatPanel.identityWork')}><DropdownMenu><DropdownMenuTrigger asChild><Button variant="plain" size="bare" className="assistant-identity-trigger" disabled={chat.switchingBlocked} aria-label={t('chatPanel.switchIdentity')}><span className="truncate">{t(identityId === 'study' ? 'chatPanel.identityStudy' : 'chatPanel.identityWork')}</span><ChevronDown className="size-3" /></Button></DropdownMenuTrigger><DropdownMenuContent data-assistant-floating align="start">
+            <DropdownMenuItem disabled={identityId === 'work'} onSelect={() => onSwitchIdentity('work')}>{t('chatPanel.identityWork')}</DropdownMenuItem>
+            <DropdownMenuItem disabled={identityId === 'study'} onSelect={() => onSwitchIdentity('study')}>{t('chatPanel.identityStudy')}</DropdownMenuItem>
+          </DropdownMenuContent></DropdownMenu></h2> : <h2>{t(identityId === 'study' ? 'chatPanel.identityStudy' : 'chatPanel.identityWork')}</h2>}
+          <span className="sr-only" role="status">{busy ? t('status.working') : interrupted ? t('status.interrupted') : settings.isLoading ? t('status.checking') : settings.error ? t('status.unknown') : configured ? t('status.available') : t('status.noModel')}</span>
+        </div>
         <ChatHistory busy={chat.switchingBlocked || action.busy} currentId={chat.conversationId} identityId={identityId} onSelect={chat.selectConversation} />
         <Button variant="ghost" size="icon-sm" disabled={chat.switchingBlocked} onClick={startNew} aria-label={t('chatPanel.newConversation')} title={t('chatPanel.newConversation')}><SquarePen /></Button>
-        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={t('chatPanel.moreActions')} title={t('chatPanel.moreActions')}><Ellipsis /></Button></DropdownMenuTrigger><DropdownMenuContent data-assistant-floating align="end">
+        <DropdownMenu><DropdownMenuTrigger asChild><Button ref={moreTrigger} data-testid="assistant-more-actions" variant="ghost" size="icon-sm" aria-label={t('chatPanel.moreActions')} title={t('chatPanel.moreActions')}><Ellipsis /></Button></DropdownMenuTrigger><DropdownMenuContent data-assistant-floating align="end" className="w-72 max-w-[calc(100vw-2rem)]">
+          <div className="assistant-model-summary flex items-start gap-3 px-2 py-2 text-xs text-muted-foreground"><span className="shrink-0">{t('chatPanel.model')}</span><strong className="min-w-0 break-all font-medium text-foreground">{settings.data?.model || t('status.noModel')}</strong></div>
+          <DropdownMenuItem data-testid="context-usage-trigger" onSelect={() => window.setTimeout(() => setUsageOpen(true), 0)}>{t('usage.open')}</DropdownMenuItem>
           <DropdownMenuItem disabled={busy || action.busy || !chat.conversationId || !messages.length} onSelect={() => void action.run(() => api('/api/v1/knowledge/materials/from-conversation', { method: 'POST', body: json({ conversationId: chat.conversationId, topicId: chat.selectedTopicId || null, title: t('chatPanel.sessionMaterialTitle', { time: new Date().toLocaleString(intlLocale()) }) }) }), t('chatPanel.sessionSaved'))}>{t('chatPanel.saveSession')}</DropdownMenuItem>
           <DropdownMenuItem disabled={busy || drafting || !chat.conversationId || !messages.length} onSelect={() => void saveAsSkill()}>{t('chatPanel.saveAsSkill')}</DropdownMenuItem>
         </DropdownMenuContent></DropdownMenu>
@@ -127,11 +140,16 @@ export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose
         </Surface>
       )}
 
-      <div className="assistant-composer-context shrink-0 px-4 pt-2" data-testid="assistant-context">
-        {chat.context && <Popover><PopoverTrigger asChild><Button variant="row" size="bare" type="button" className="flex w-full min-w-0 items-center gap-1.5 py-1 text-left text-[11px] text-muted-foreground" data-testid="assistant-context-trigger"><span className="truncate">{materialCount ? t(chat.pinned ? 'chatPanel.contextPinnedWithMaterials' : 'chatPanel.contextReferenceWithMaterials', { label: chat.context.label, count: materialCount }) : t(chat.pinned ? 'chatPanel.contextPinned' : 'chatPanel.contextReference', { label: chat.context.label })}</span><ChevronDown className="size-3 shrink-0" /></Button></PopoverTrigger><PopoverContent data-assistant-floating side="top" onEscapeKeyDown={(event) => event.stopPropagation()} className="w-80 max-w-[calc(100vw-2rem)] p-3"><h3 className="mb-2 text-sm font-semibold">{t('chatPanel.referenceScope')}</h3><ContextSummary context={chat.context} /><Button size="sm" variant="ghost" onClick={chat.togglePin}>{chat.pinned ? t('chatPanel.followPage') : t('chatPanel.pinContext')}</Button></PopoverContent></Popover>}
-        {chat.attachments.map((item) => <div className="mb-1 flex items-center gap-2 text-xs" key={item.id}><span className="min-w-0 flex-1 truncate">{t(item.unsaved ? 'chatPanel.unsavedAttachment' : 'chatPanel.selectedAttachment', { title: item.title })}</span><Button variant="ghost" size="icon-xs" onClick={() => chat.removeAttachment(item.id)} aria-label={t('chatPanel.removeAttachment', { title: item.title })}><X /></Button></div>)}
+      <div className="assistant-composer-area shrink-0" data-testid="assistant-context">
+        {chat.attachments.length > 0 && <div className="assistant-attachments">{chat.attachments.map((item) => <div className="assistant-attachment" key={item.id}><span className="min-w-0 flex-1 truncate">{t(item.unsaved ? 'chatPanel.unsavedAttachment' : 'chatPanel.selectedAttachment', { title: item.title })}</span><Button variant="ghost" size="icon-xs" onClick={() => chat.removeAttachment(item.id)} aria-label={t('chatPanel.removeAttachment', { title: item.title })}><X /></Button></div>)}</div>}
+        <ChatComposer input={input} busy={busy} reference={referencedApproval} onChange={setInput} onSend={send} onCancelReference={clearReference} placeholder={messages.length ? t('composer.continuePlaceholder') : t('composer.placeholder')} onStop={() => void chat.stop()} stopping={chat.stopping} toolbar={<>
+          <ChatReferencePicker selectedIds={chat.context?.selectedMaterialIds ?? []} onSelect={chat.addMaterial} />
+          <WebSearchToggle enabled={chat.webSearchEnabled} busy={busy} onToggle={chat.setWebSearch} />
+          {chat.context && <Popover><PopoverTrigger asChild><Button variant="plain" size="bare" type="button" className="assistant-context-trigger" data-testid="assistant-context-trigger" title={chat.context.label}><span>{t(chat.pinned ? 'chatPanel.referencePinned' : 'chatPanel.reference')}{materialCount > 0 && ` · ${materialCount}`}</span><span className="sr-only"> {chat.context.label}</span><ChevronDown className="size-3" /></Button></PopoverTrigger><PopoverContent data-assistant-floating side="top" onEscapeKeyDown={event => event.stopPropagation()} className="w-80 max-w-[calc(100vw-2rem)] p-3"><h3 className="mb-2 text-sm font-semibold">{t('chatPanel.referenceScope')}</h3><ContextSummary context={chat.context} /><Button size="sm" variant="ghost" onClick={chat.togglePin}>{chat.pinned ? t('chatPanel.followPage') : t('chatPanel.pinContext')}</Button></PopoverContent></Popover>}
+        </>} />
       </div>
-      <ChatComposer contextUsage={<ContextUsagePopover stats={chat.contextStats} preview={chat.contextPreview} busy={busy} />} input={input} busy={busy} reference={referencedApproval} onChange={setInput} onSend={send} onCancelReference={clearReference} model={settings.data?.model} onStop={() => void chat.stop()} stopping={chat.stopping} toolbar={<><ChatReferencePicker selectedIds={chat.context?.selectedMaterialIds ?? []} onSelect={chat.addMaterial} /><WebSearchToggle enabled={chat.webSearchEnabled} busy={busy} onToggle={chat.setWebSearch} /></>} />
+      {usageOpen && <Modal title={t('usage.title')} onClose={() => setUsageOpen(false)} onCloseAutoFocus={event => { event.preventDefault(); if (moreTrigger.current?.getClientRects().length) moreTrigger.current.focus(); }} data-assistant-floating className="assistant-usage-dialog"><header className="mb-3 flex justify-end"><Button variant="ghost" size="icon-sm" aria-label={t('chatPanel.closeDetails')} onClick={() => setUsageOpen(false)}><X /></Button></header><ContextUsageDetails stats={chat.contextStats} preview={chat.contextPreview} busy={busy} onNavigate={() => setUsageOpen(false)} /></Modal>}
+
     </div>
   );
 }

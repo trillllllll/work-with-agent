@@ -11,6 +11,7 @@ import { MermaidBlock } from './MermaidBlock.js';
 import { isSvgFence } from '@/lib/svg-fence.js';
 import { SvgBlock } from './SvgBlock.js';
 import { HighlightedCode } from './HighlightedCode.js';
+import { ResponsiveMarkdownTable } from './ResponsiveMarkdownTable.js';
 
 function fenceText(children: ReactNode): string {
   if (typeof children === 'string' || typeof children === 'number') return String(children);
@@ -54,7 +55,7 @@ export function extractText(node: React.ReactNode): string {
   return '';
 }
 
-function markdownComponents(diagrams: boolean): Components {
+function markdownComponents(diagrams: boolean, responsiveTables: boolean): Components {
   return {
     p: ({ children }) => <p className="my-1.5">{children}</p>,
     ul: ({ children }) => <ul className="my-1.5 list-disc pl-5">{children}</ul>,
@@ -79,7 +80,7 @@ function markdownComponents(diagrams: boolean): Components {
       }
       return diagrams && hasMermaidFence(children) ? <>{children}</> : <PreBlock>{children}</PreBlock>;
     },
-    table: ({ children }) => (
+    table: ({ children }) => responsiveTables ? <ResponsiveMarkdownTable>{children}</ResponsiveMarkdownTable> : (
       <div className="my-2 min-w-0 max-w-full overflow-x-auto">
         <table className="w-full border-collapse text-xs">{children}</table>
       </div>
@@ -91,7 +92,7 @@ function markdownComponents(diagrams: boolean): Components {
   };
 }
 
-export function MarkdownView({ content, components, allowMaterialLinks = false, diagrams = false, className }: { content: string; components?: Components; allowMaterialLinks?: boolean; diagrams?: boolean; className?: string }) {
+export function MarkdownView({ content, components, allowMaterialLinks = false, diagrams = false, responsiveTables = false, className }: { content: string; components?: Components; allowMaterialLinks?: boolean; diagrams?: boolean; responsiveTables?: boolean; className?: string }) {
   const citations = useCitations();
   const citationComponents: Components = citations ? { a: ({ children, href }) => {
     const match = /^#source-(\d+)$/.exec(href ?? '');
@@ -106,7 +107,7 @@ export function MarkdownView({ content, components, allowMaterialLinks = false, 
   const urlTransform = allowMaterialLinks
     ? (url: string) => url.startsWith('wwa-material:') ? url : defaultUrlTransform(url)
     : undefined;
-  const rendered = useMemo(() => markdownComponents(diagrams), [diagrams]);
+  const rendered = useMemo(() => markdownComponents(diagrams, responsiveTables), [diagrams, responsiveTables]);
   return (
     <div className={cn('markdown-body min-w-0 max-w-full break-words', className ?? 'text-[13.5px] leading-relaxed')}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ ...rendered, ...components, ...citationComponents }} urlTransform={urlTransform}>
