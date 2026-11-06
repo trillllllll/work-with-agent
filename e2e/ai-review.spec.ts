@@ -88,7 +88,7 @@ test('确认安排修改后留在原页面，刷新仍是已完成卡片', async
     padding: '16px',
     border: '1px',
     background: expect.stringContaining('linear-gradient'),
-    shadow: expect.not.stringMatching(/^none$/),
+    shadow: 'none',
     color: 'rgb(41, 53, 53)',
   });
   await expectDiffLayout(card);
@@ -109,10 +109,10 @@ test('确认安排修改后留在原页面，刷新仍是已完成卡片', async
   expect(page.url()).toBe(urlBeforeApprove);
   await expect(card.getByRole('button', { name: '确认修改', exact: true })).toHaveCount(0);
   await expect(card.getByRole('status')).toContainText('已修改');
-  const chatHeader = page.locator('header').filter({ has: page.getByRole('heading', { level: 2, name: 'Dovun 工作助手' }) });
+  const chatHeader = page.getByTestId('ai-assistant').locator('.assistant-header');
   await expect(page.getByText('安排方案已放在确认卡里。')).toBeVisible();
   await expect(page.getByText('正在输出…')).toHaveCount(0);
-  await expect(chatHeader.getByText('可用', { exact: true })).toBeVisible();
+  await expect(chatHeader.getByRole('status')).toHaveText('可用');
   await expect(chatHeader.getByText('处理中…')).toHaveCount(0);
 
   await page.reload();
@@ -120,7 +120,7 @@ test('确认安排修改后留在原页面，刷新仍是已完成卡片', async
   await expect(page.getByTestId('approval-card')).toHaveCount(1);
   await expect(page.getByTestId('approval-card')).toHaveAttribute('data-state', 'executed');
   await expect(page.getByText('正在输出…')).toHaveCount(0);
-  await expect(page.locator('header').filter({ has: page.getByRole('heading', { level: 2, name: 'Dovun 工作助手' }) }).getByText('可用', { exact: true })).toBeVisible();
+  await expect(chatHeader.getByRole('status')).toHaveText('可用');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const stored = await e2eDatabase.task.findUniqueOrThrow({ where: { id: task.id } });
   expect(stored).toMatchObject({ dueDate: '2026-10-16', scheduledStart: '2026-10-16T11:00', scheduledEnd: '2026-10-16T12:00' });
@@ -139,7 +139,7 @@ test('深色审批卡使用约定颜色', async ({ page, isMobile, request }) =>
   await expect(card.getByTestId('approval-impact')).toContainText('2026-10-16');
   const colors = await cardStyle(card);
   expect(colors.background).toContain('linear-gradient');
-  expect(colors.shadow).not.toBe('none');
+  expect(colors.shadow).toBe('none');
   expect(colors.color).toBe('rgb(244, 241, 234)');
   await card.screenshot({ path: '/tmp/wwa-approval-dark.png' });
 });

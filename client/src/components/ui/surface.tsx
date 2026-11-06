@@ -1,7 +1,7 @@
 import type { ComponentProps, ElementType } from 'react';
 import { cn } from '@/lib/utils.js';
 
-const surfaces = { card: 'glass-surface', subtle: 'glass-subtle', input: 'glass-control', overlay: 'glass-overlay', panel: 'surface-panel' };
+const surfaces = { card: 'glass-surface', subtle: 'glass-subtle', input: 'glass-control', overlay: 'glass-overlay', panel: 'surface-panel', sheet: 'workspace-sheet', row: 'workspace-row' };
 
 /** A material, not a layout: the owner supplies spacing, dimensions and scrolling. */
 export function Surface<T extends ElementType = 'div'>({ as, tone = 'card', className, ...props }: {

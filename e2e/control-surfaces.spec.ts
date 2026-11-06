@@ -16,7 +16,7 @@ test('real controls keep focus, independent surface depth, theme and responsive 
     await page.getByRole('button', { name: theme, exact: true }).click();
     await expect(primary).toHaveCSS('font-size', '14px');
     const shadows = await input.evaluate(el => ({ input: getComputedStyle(el).boxShadow, button: getComputedStyle(document.querySelector('.glass-button-primary')!).boxShadow, card: getComputedStyle(document.querySelector('.controls-card')!).boxShadow }));
-    expect(shadows.input).toContain('inset');
+    expect(shadows.input).toBe('none');
     expect(new Set(Object.values(shadows)).size).toBe(3);
     const contrast = await page.evaluate(() => {
       const style = getComputedStyle(document.documentElement);
@@ -47,6 +47,15 @@ test('real controls keep focus, independent surface depth, theme and responsive 
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect(page.locator('html')).toHaveClass('dark');
   expect(await primary.evaluate(el => Math.max(...getComputedStyle(el).transitionDuration.split(',').map(parseFloat)))).toBeLessThan(.001);
+  await resetE2eDatabase();
+  await page.goto('/#/chat');
+  const suggestions = page.locator('.workspace-chat-prompts button');
+  await expect(suggestions.first()).toBeVisible();
+  await suggestions.first().focus();
+  await page.keyboard.press('Tab');
+  await expect(suggestions.nth(1)).toBeFocused();
+  await expect(suggestions.nth(1)).toHaveCSS('outline-style', 'solid');
+  await expect(suggestions.nth(1)).toHaveCSS('outline-width', '2px');
 });
 
 test('all application routes use shared themes without viewport overflow or page errors', async ({ page, request }, testInfo) => {
@@ -56,6 +65,15 @@ test('all application routes use shared themes without viewport overflow or page
   expect(response.ok()).toBe(true);
   const task = (await response.json()).data;
   await request.post(`${api}/api/tasks`, { data: { title: '长标题验证：' + '任务内容与附加说明需要自然换行'.repeat(5) } });
+  const topicResponse = await request.post(`${api}/api/topics`, { data: { name: '产品设计' } });
+  expect(topicResponse.ok()).toBe(true);
+  const topic = (await topicResponse.json()).data;
+  for (const title of ['梳理页面层级', '统一公共组件', '检查键盘操作']) {
+    expect((await request.post(`${api}/api/tasks`, { data: { title, topicId: topic.id } })).ok()).toBe(true);
+  }
+  for (const name of ['每周回顾', '阶段整理']) {
+    expect((await request.post(`${api}/api/v1/reviews/rules`, { data: { name, includeInbox: true, provider: 'none', enabled: false } })).ok()).toBe(true);
+  }
   await page.addInitScript(() => { localStorage.setItem('dovun.theme', 'light'); (window as any).__REACT_GRAB_DISABLED__ = true; });
   const errors: string[] = [], browserNotifications: { route: string; message: string }[] = [];
   page.on('pageerror', e => {
@@ -64,12 +82,16 @@ test('all application routes use shared themes without viewport overflow or page
     if (e.message === 'ResizeObserver loop completed with undelivered notifications.') browserNotifications.push({ route: page.url(), message: e.message });
     else errors.push(e.message);
   });
-  const routes = ['today', 'inbox', 'topics', 'plan', 'quadrant', 'focus', 'stats', 'library', 'knowledge/brief', 'knowledge/memories', 'knowledge/extractions', 'reviews', 'proposals', 'skills', 'connections', 'runs', 'worktrees', 'search', 'tags', 'archived', 'settings', 'settings/model', 'settings/local', 'settings/skills', 'settings/projects', 'settings/ui', 'settings/data', 'settings/about', 'changes', 'trash', 'chat', 'more'];
-  const snapshots = new Set(['today', 'plan', 'library', 'knowledge/brief', 'settings', 'proposals']);
+  const routes = ['today', 'inbox', 'topics', 'plan', 'quadrant', 'focus', 'stats', 'library', 'learning', 'knowledge/brief', 'knowledge/memories', 'knowledge/extractions', 'reviews', 'proposals', 'skills', 'connections', 'runs', 'worktrees', 'search', 'tags', 'archived', 'settings', 'settings/model', 'settings/local', 'settings/skills', 'settings/projects', 'settings/ui', 'settings/data', 'settings/about', 'changes', 'trash', 'chat', 'more'];
+  const snapshots = new Set(['today', 'topics', 'plan', 'quadrant', 'focus', 'stats', 'library', 'learning', 'knowledge/brief', 'settings', 'settings/ui', 'proposals', 'changes', 'chat', 'more']);
+  const topicRoute = `board?topicId=${encodeURIComponent(topic.id)}`;
+  routes.push(topicRoute);
+  snapshots.add(topicRoute);
+  snapshots.add('reviews');
   const results: unknown[] = [];
   await mkdir(evidence, { recursive: true });
   for (const theme of ['light', 'dark']) {
-    for (const width of [1586, 390]) {
+    for (const width of [1586, 390, 320]) {
       await page.setViewportSize({ width, height: 992 });
       for (const route of routes) {
         await page.goto(`/#/${route}`);
@@ -82,6 +104,10 @@ test('all application routes use shared themes without viewport overflow or page
         }
         // Allow data and font layout to settle before measuring and capturing.
         await page.waitForTimeout(150);
+        if (route === topicRoute) {
+          await page.getByRole('button', { name: '看板', exact: true }).click();
+          await expect(page.getByRole('button', { name: '统一公共组件', exact: true })).toBeVisible();
+        }
         const metrics = await page.evaluate(() => {
           const visible = (el: Element) => { const box = el.getBoundingClientRect(); const s = getComputedStyle(el); return box.width > 2 && box.height > 2 && s.visibility !== 'hidden' && s.display !== 'none'; };
           const controls = [...document.querySelectorAll('button, input, textarea, select')].filter(visible).filter(el => !el.closest('.tiptap, [data-user-content]'));
@@ -93,7 +119,7 @@ test('all application routes use shared themes without viewport overflow or page
         expect(metrics.wrongPaint, `${route}/${theme}/${width}: local CSS replaced public material`).toEqual([]);
         expect(metrics.pageWidth, `${route}/${theme}/${width}`).toBeLessThanOrEqual(width);
         expect(metrics.fontSize).toBe('14px');
-        if (testInfo.project.name === 'chromium' && snapshots.has(route)) await page.screenshot({ path: `${evidence}/${route.replaceAll('/', '-')}-${theme}-${width}.png`, animations: 'disabled' });
+        if (testInfo.project.name === 'chromium' && snapshots.has(route)) await page.screenshot({ path: `${evidence}/${route === topicRoute ? 'board' : route.replaceAll('/', '-')}-${theme}-${width}.png`, animations: 'disabled' });
         results.push({ route, theme, ...metrics });
       }
     }
@@ -114,14 +140,18 @@ test('English core pages and longer labels reflow in both themes', async ({ page
   test.setTimeout(90_000);
   await page.addInitScript(() => { localStorage.setItem('dovun.language', 'en'); (window as any).__REACT_GRAB_DISABLED__ = true; });
   await mkdir(evidence, { recursive: true });
-  for (const width of [1440, 390]) for (const theme of ['light', 'dark']) {
+  for (const width of [1440, 390, 320]) for (const theme of ['light', 'dark']) {
     await page.setViewportSize({ width, height: 992 });
-    for (const route of ['today', 'plan', 'library', 'knowledge/brief', 'settings', 'proposals', 'chat', 'connections']) {
+    for (const route of ['today', 'topics', 'plan', 'library', 'learning', 'knowledge/brief', 'settings', 'proposals', 'chat', 'connections']) {
       await page.goto(`/#/${route}`);
       await page.evaluate(t => { localStorage.setItem('dovun.theme', t); document.documentElement.className = t; }, theme);
       await expect(page.locator('html')).toHaveAttribute('lang', 'en');
       await expect(route === 'chat' ? page.getByTestId('ai-assistant') : page.locator('.dovun-main')).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+      if (route === 'topics') {
+        const clipped = await page.locator('.workspace-topics > header button').evaluateAll(buttons => buttons.some(button => { const box = button.getBoundingClientRect(); return box.left < 0 || box.right > innerWidth; }));
+        expect(clipped, `Topics actions fit at ${width}px`).toBe(false);
+      }
       if (testInfo.project.name === 'chromium' && route === 'today') await page.screenshot({ path: `${evidence}/today-en-${theme}-${width}.png`, animations: 'disabled' });
     }
   }

@@ -26,32 +26,32 @@ export function compactDuration(minutes: number, t: Translate): string {
 }
 
 export function Panel({ children, className }: { children: ReactNode; className?: string }) {
-  return <Surface as="div" tone="subtle" className={cn('glass-subtle min-w-0 rounded-xl border p-4', className)}>{children}</Surface>;
+  return <Surface as="div" tone="subtle" className={cn('workspace-stats-panel min-w-0 py-4', className)}>{children}</Surface>;
 }
 
 export function SectionFrame({ id, title, summary, link, children }: { id: 'tasks' | 'focus' | 'plan' | 'ai' | 'assistant'; title: string; summary?: string; link?: { label: string; onClick: () => void }; children: ReactNode }) {
   return (
-    <section data-testid={`stats-section-${id}`} className="min-w-0 space-y-3">
+    <Surface as="section" tone="sheet" data-testid={`stats-section-${id}`} className="min-w-0 space-y-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-lg font-semibold">{title}</h2>
         {link && <Button variant="link" size="bare" type="button" className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline" onClick={link.onClick}>{link.label}</Button>}
       </div>
       {summary && <p className="text-sm text-muted-foreground">{summary}</p>}
       {children}
-    </section>
+    </Surface>
   );
 }
 
 export function SectionError({ id, title, message, onRetry }: { id: 'tasks' | 'focus' | 'plan' | 'ai' | 'assistant'; title: string; message: string; onRetry: () => void }) {
   const { t } = useTranslation('stats');
   return (
-    <section data-testid={`stats-section-${id}`} className="min-w-0 space-y-3">
+    <Surface as="section" tone="sheet" data-testid={`stats-section-${id}`} className="min-w-0 space-y-3">
       <h2 className="text-lg font-semibold">{title}</h2>
       <Surface as="div" tone="subtle" role="alert" data-testid="stats-section-error" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4">
         <p className="text-sm text-destructive">{message || t('sectionError')}</p>
         <Button type="button" variant="outline" size="sm" onClick={onRetry}>{t('retry')}</Button>
       </Surface>
-    </section>
+    </Surface>
   );
 }
 

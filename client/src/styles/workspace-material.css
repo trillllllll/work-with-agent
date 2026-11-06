@@ -1,0 +1,163 @@
+/* One lifted work surface, quiet content inside it. Controls retain their material. */
+:root {
+  --workspace-divider: color-mix(in srgb, var(--foreground) 9%, transparent);
+  --workspace-hover: color-mix(in srgb, var(--foreground) 4%, transparent);
+  --workspace-sheet-paint: linear-gradient(155deg, color-mix(in srgb, var(--surface-panel) 97%, var(--foreground)), var(--surface-panel) 75%);
+  --workspace-sheet-shadow: 0 12px 30px -12px rgb(0 0 0 / 18%), 0 1px 2px rgb(0 0 0 / 4%), inset 0 1px 0 color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+.workspace-sheet,
+.workspace-sheet[data-slot] {
+  min-width: 0;
+  border: 0;
+  border-radius: 12px;
+  background: var(--workspace-sheet-paint);
+  box-shadow: var(--workspace-sheet-shadow);
+}
+.workspace-row,
+.workspace-row[data-slot] {
+  min-width: 0;
+  border: 0;
+  border-bottom: 1px solid var(--workspace-divider);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.workspace-row:last-child { border-bottom-color: transparent; }
+.workspace-row:hover, .workspace-row[data-slot]:hover { background: var(--workspace-hover); }
+.workspace-row[data-selected], .workspace-row[aria-selected='true'],
+.workspace-row[data-slot][data-selected], .workspace-row[data-slot][aria-selected='true'] { background: var(--selected); box-shadow: inset 2px 0 0 var(--ring); }
+.workspace-row:focus-visible, .workspace-row[data-slot]:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.workspace-rows { display: flex; flex-direction: column; gap: 0; padding: 6px 16px; }
+.workspace-rows > * { margin-block: 0; }
+/* Secondary containers do not create another raised rim inside the work surface. */
+[data-slot='surface']:is([data-surface='card'], [data-surface='subtle']),
+[data-slot='disclosure']:is([data-surface='card'], [data-surface='subtle']) {
+  border-color: var(--workspace-divider);
+  box-shadow: none;
+}
+.workspace-sheet [data-surface='subtle'] { background: var(--workspace-hover); }
+/* Recessed fields stay distinct; segmented floating buttons use their original input tray. */
+:is(input, textarea, select).glass-control {
+  --surface-input-paint: color-mix(in srgb, var(--background) 65%, var(--surface-panel));
+  --surface-input-shadow: none;
+}
+.surface-choice { --surface-input-shadow: none; }
+.dovun-main { background: var(--background); }
+.dovun-main .workspace-page { width: 100%; max-width: 1120px; margin-inline: auto; padding: 38px 44px 64px; }
+.workspace-page > header { margin-bottom: 24px; }
+.workspace-page > header h1, .workspace-page > h1 { font-size: 28px; line-height: 1.25; font-weight: 600; letter-spacing: -.7px; }
+.workspace-page > header p { font-size: 13px; line-height: 1.6; }
+.workspace-page > header + [role='tablist'] { padding-bottom: 12px; border-bottom: 1px solid var(--workspace-divider); }
+
+/* Tasks: Inbox, Today, lists, search, tags, boards and quadrants share the same row rhythm. */
+.dovun-task-content .list-surface,
+.dovun-task-content [data-testid='task-list'] {
+  padding: 12px 16px 10px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--workspace-sheet-paint);
+  box-shadow: var(--workspace-sheet-shadow);
+  --surface-input-paint: transparent;
+  --surface-input-shadow: none;
+  --surface-input-border: 1px solid color-mix(in srgb, var(--muted-foreground) 60%, transparent);
+}
+.dovun-task-content .list-surface [data-testid='task-list'] { padding: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.dovun-task-content .task-rows { gap: 0; }
+.dovun-task-content .task-row,
+.dovun-task-content .list-surface .task-row {
+  border: 0; border-bottom: 1px solid var(--workspace-divider); border-radius: 0; background: transparent; box-shadow: none;
+}
+.dovun-task-content .task-row:hover, .dovun-task-content .list-surface .task-row:hover { background: var(--workspace-hover); }
+.dovun-task-content .task-row[data-selected], .dovun-task-content .task-row[data-drop-parent='true'],
+.dovun-task-content .list-surface .task-row[data-selected], .dovun-task-content .list-surface .task-row[data-drop-parent='true'] {
+  border-radius: 0; background: color-mix(in srgb, var(--selected) 70%, transparent); box-shadow: inset 2px 0 0 var(--ring);
+}
+.dovun-task-content .task-inline-title, .dovun-task-content .task-inline-title-measure { font-weight: 400; }
+.dovun-task-content .task-checkbox { box-shadow: none; }
+.dovun-task-content .task-children { padding-top: 0; }
+.dovun-task-content .quick-capture,
+.dovun-task-content .list-surface .quick-capture {
+  min-height: 48px; margin: 0 0 8px; padding: 3px 10px; border: 1px solid transparent; border-radius: 7px;
+  background: color-mix(in srgb, var(--background) 35%, transparent); box-shadow: none;
+}
+.dovun-task-content .quick-capture:focus-within { border-color: var(--ring); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 12%, transparent); }
+.dovun-task-content .quick-capture > svg { width: 17px; height: 17px; }
+.dovun-task-content .quick-capture input { height: 36px; }
+.dovun-task-content .disclosure { margin-top: 10px; padding-top: 0; border-top: 0; }
+.dovun-task-content .task-fold { min-height: 38px; font-size: 12px; color: var(--muted-foreground); }
+.workspace-board-column .workspace-row { padding: 16px 8px; }
+.workspace-board-column .workspace-row button.font-bold { font-weight: 500; font-size: 13px; }
+.workspace-board-tasks > * + * { border-top: 1px solid var(--workspace-divider); }
+.workspace-board-tasks .workspace-row { border-bottom: 0; }
+.workspace-board-column[data-drag-over] { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+/* Collection and administration pages use one sheet for their repeated records. */
+.workspace-topics > header { padding: 0 0 24px; border: 0; }
+.workspace-topics .sidebar-topic-list { gap: 0; }
+.workspace-topics .sidebar-topic-item { border: 0; border-bottom: 1px solid var(--workspace-divider); border-radius: 0; box-shadow: none; }
+.workspace-topics .sidebar-topic-item > button:first-child { min-height: 56px; font-size: 14px; }
+.workspace-topics .sidebar-topic-item[data-active] { background: var(--selected); box-shadow: inset 2px 0 0 var(--ring); }
+.workspace-topics .sidebar-topic-item:last-child { border-bottom: 0; }
+.workspace-queue > [data-surface], .workspace-queue > .proposal-card, .workspace-queue > .workspace-proposal-record { margin: 0; border: 0; border-bottom: 1px solid var(--workspace-divider); border-radius: 0; box-shadow: none; background: transparent; }
+.workspace-queue > .workspace-proposal-record { padding: 16px; }
+.workspace-queue .workspace-proposal-record > [data-slot='surface'] { border: 0; border-radius: 0; background: transparent; box-shadow: none; padding-inline: 0; }
+.workspace-queue > :last-child { border-bottom: 0; }
+.workspace-page > [data-testid^='stats-section-'], .workspace-page > * > [data-testid^='stats-section-'] { padding: 22px; }
+.workspace-kpis { padding: 8px; }
+.workspace-kpis > button { border-radius: 0; }
+.workspace-kpis > button + button { border-left: 1px solid var(--workspace-divider); }
+.workspace-metrics > [data-slot='surface'] { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.workspace-metrics > [data-slot='surface']:nth-child(n + 5) { border-top: 1px solid var(--workspace-divider); }
+.workspace-sheet .workspace-stats-panel { border: 0; border-top: 1px solid var(--workspace-divider); border-radius: 0; background: transparent; box-shadow: none; }
+.workspace-sheet .workspace-learning-records { padding-inline: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.workspace-learning-records > .workspace-row { margin-block: 0; }
+
+/* Wide tools keep their own scrolling and geometry; only their material changes. */
+.library-page.library-surface { --lib-bg: var(--background); --lib-border: var(--workspace-divider); }
+.library-panel.workspace-sheet { border-radius: 12px; }
+.library-folders.workspace-sheet { box-shadow: none; background: transparent; }
+.document-pane { background: var(--workspace-sheet-paint); box-shadow: var(--workspace-sheet-shadow); }
+.document-side-panel { background: color-mix(in srgb, var(--background) 50%, var(--surface-panel)); border-left: 1px solid var(--workspace-divider); }
+.dovun-main .plan-page { background: var(--background); }
+.plan-calendar, .plan-month-scroll { border-radius: 12px; background: var(--workspace-sheet-paint); box-shadow: var(--workspace-sheet-shadow); }
+.plan-timed-task { box-shadow: 0 1px 3px rgb(0 0 0 / 6%); }
+.work-context .ctx-card { border-color: var(--workspace-divider); box-shadow: none; }
+.work-context { --ctx-bg: var(--background); --ctx-border: var(--workspace-divider); }
+.workspace-context-sheet { padding: 24px; }
+.workspace-context-sheet .ctx-desk, .workspace-context-sheet .ctx-memory-split { border: 0; border-radius: 0; background: transparent; }
+.workspace-context-sheet .ctx-card { border: 0; border-radius: 0; background: transparent; padding: 16px 0; }
+.workspace-context-sheet .ctx-stack > .ctx-card + .ctx-card { border-top: 1px solid var(--workspace-divider); }
+.workspace-settings { background: var(--background); }
+.workspace-settings-content { margin-top: 24px; padding: 4px 24px 24px; }
+.workspace-settings-content .settings-block { margin-top: 24px; }
+.workspace-settings-content .settings-block + .settings-block { padding-top: 24px; border-color: var(--workspace-divider); }
+.workspace-settings-content [data-surface='card'] { background: transparent; border: 0; }
+.dovun-work-rail { background: var(--workspace-sheet-paint); border-left: 1px solid var(--workspace-divider); box-shadow: -8px 0 24px -20px rgb(0 0 0 / 22%); }
+.dovun-assistant { background: var(--background); }
+.workspace-chat-prompts { width: min(100%, 760px); margin: 18px auto 24px; }
+.workspace-chat-prompts button { min-height: 48px; font-size: 13px; }
+.dovun-assistant .assistant-composer .assistant-input-box { border: 1px solid transparent; border-radius: 12px; background: var(--workspace-sheet-paint); box-shadow: var(--workspace-sheet-shadow); }
+.dovun-assistant .assistant-composer .assistant-input-box:focus-within { border-color: var(--ring); }
+.dovun-rail-header, .assistant-header { border-bottom-color: var(--workspace-divider); }
+.dovun-workspace .mobile-tab-bar { background: var(--surface-panel); }
+
+@media (max-width: 1023px) {
+  .dovun-main .workspace-page { padding: 26px 20px 44px; }
+  .dovun-work-rail { border-left: 0; }
+  .workspace-kpis > button:nth-child(odd) { border-left: 0; }
+  .workspace-kpis > button:nth-child(n + 3) { border-top: 1px solid var(--workspace-divider); }
+  .workspace-metrics > [data-slot='surface']:nth-child(n + 3) { border-top: 1px solid var(--workspace-divider); }
+}
+@media (max-width: 639px) {
+  .dovun-main .workspace-page, .dovun-task-content { padding: 24px 12px 40px; }
+  .workspace-page > header h1, .workspace-page > h1 { font-size: 26px; }
+  .workspace-sheet, .workspace-sheet[data-slot] { border-radius: 10px; }
+  .workspace-rows { padding-inline: 8px; }
+  .dovun-task-content .list-surface, .dovun-task-content [data-testid='task-list'] { padding: 8px 6px; border-radius: 10px; }
+  .dovun-task-content .list-surface [data-testid='task-list'] { padding: 0; }
+  .dovun-task-content .quick-capture input { font-size: 16px; }
+  .workspace-settings-content { padding-inline: 16px; }
+  .workspace-page > [data-testid^='stats-section-'], .workspace-page > * > [data-testid^='stats-section-'] { padding: 16px; }
+  .workspace-context-sheet { padding: 16px; }
+  .dovun-main .workspace-page-with-actions { padding-bottom: 144px; }
+}

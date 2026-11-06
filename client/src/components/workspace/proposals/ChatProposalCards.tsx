@@ -76,7 +76,7 @@ export function ChatProposalCards({ proposal, connections, onSettled }: { propos
   const batch = !app && Boolean(batchPreview && proposal.batchCard);
   if (!app && !batch) return null;
   return (
-    <div className="space-y-2">
+    <div className="workspace-proposal-record space-y-2">
       <ProposalOrigin actorId={proposal.actorId} connectionId={proposal.connectionId} connections={connections} createdAt={proposal.createdAt} />
       {app ? <AppChangeProposalCard proposal={proposal} onSettled={onSettled} /> : <BatchProposalCard proposal={proposal} onSettled={onSettled} />}
     </div>

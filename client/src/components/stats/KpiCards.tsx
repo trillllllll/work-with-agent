@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button.js';
+import { Surface } from '@/components/ui/surface.js';
 import { useTranslation } from 'react-i18next';
 import type { StatsAiSection, StatsFocusSection, StatsOverview, StatsPlanSection, StatsTasksSection } from '@/lib/api.js';
 import { isSectionError, percentNumber } from '@/lib/stats-range.js';
@@ -72,15 +73,15 @@ export function KpiCards({ data, quiet, nav }: { data: StatsOverview; quiet?: bo
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+    <Surface tone="sheet" className="workspace-kpis grid grid-cols-2 lg:grid-cols-6">
       {cards.map((card) => (
-        <Button variant="card" size="bare" key={card.id} type="button" data-testid={`stats-kpi-${card.id}`} onClick={() => nav.go(card.hash)} className="min-w-0 rounded-xl p-3 text-left">
+        <Button variant="row" size="bare" key={card.id} type="button" data-testid={`stats-kpi-${card.id}`} onClick={() => nav.go(card.hash)} className="min-w-0 p-4 text-left">
           <p className="truncate text-xs text-muted-foreground">{card.label}</p>
           <p className={cn('mt-1 text-2xl font-semibold tabular-nums', card.tone)}>{card.value}</p>
           {card.hint && <p className="mt-1 truncate text-xs text-muted-foreground">{card.hint}</p>}
           {card.delta && <p className="mt-1"><Delta current={card.delta.current} previous={card.delta.previous} /></p>}
         </Button>
       ))}
-    </div>
+    </Surface>
   );
 }

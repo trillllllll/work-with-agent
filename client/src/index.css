@@ -6,6 +6,7 @@
 @import "./styles/task-inline.css";
 @import "./styles/inbox.css";
 @import "./styles/plan-skin.css";
+@import "./styles/workspace-material.css";
 
 @custom-variant dark (&:is(.dark *));
 

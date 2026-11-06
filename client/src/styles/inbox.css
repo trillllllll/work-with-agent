@@ -3,11 +3,11 @@
   background: var(--background);
 }
 .dovun-inbox {
-  --inbox-divider: color-mix(in srgb, var(--foreground) 9%, transparent);
-  --inbox-hover: color-mix(in srgb, var(--foreground) 4%, transparent);
+  --inbox-divider: var(--workspace-divider);
+  --inbox-hover: var(--workspace-hover);
   --inbox-sheet: var(--surface-panel);
-  --inbox-sheet-paint: linear-gradient(155deg, color-mix(in srgb, var(--inbox-sheet) 97%, var(--foreground)), var(--inbox-sheet) 75%);
-  --inbox-sheet-shadow: 0 12px 30px -12px rgb(0 0 0 / 18%), 0 1px 2px rgb(0 0 0 / 4%), inset 0 1px 0 color-mix(in srgb, var(--foreground) 5%, transparent);
+  --inbox-sheet-paint: var(--workspace-sheet-paint);
+  --inbox-sheet-shadow: var(--workspace-sheet-shadow);
 }
 .dovun-inbox .dovun-inbox-header { margin-bottom: 16px; }
 .inbox-title-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 24px; }

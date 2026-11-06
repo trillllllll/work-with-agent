@@ -133,7 +133,7 @@ function PracticeAnswerPanel({lease,scope,item,readOnly,operationBusy,refresh,on
   const submitted=item.draft.submitted;
   const disabled=readOnly||submitted||state.pending||!state.ready;
   const empty=Array.isArray(state.answer)?!state.answer.length:!state.answer.trim();
-  return <div className="space-y-4 rounded-xl border bg-card p-4 sm:p-6">
+  return <div className="workspace-sheet space-y-4 p-4 sm:p-6">
     <QuestionCard question={item.question} answer={submitted&&!state.conflict?item.draft.answer:state.answer} onChange={state.edit} disabled={disabled} onCompositionChange={state.setComposing}/>
     <p className="text-xs text-muted-foreground">{t(`workflow.selectionReasons.${item.selectionReason}`,{defaultValue:item.selectionReason})}</p>
     <p role="status" className="text-xs text-muted-foreground" data-testid="practice-save-state">{t(`workflow.saveState.${state.storageFailed?'storageFailed':state.conflict?'conflict':submitted?'submitted':state.status}`)}</p>
@@ -152,5 +152,5 @@ function PracticeAnswerPanel({lease,scope,item,readOnly,operationBusy,refresh,on
 function PracticeResult({session,onAgain,onSummarize}:{session:Session;onAgain:()=>void;onSummarize:()=>void}){
   const {t}=useTranslation('learning');
   const summary=session.summary;
-  return <section className="space-y-4 rounded-xl border bg-card p-4" data-testid="practice-result"><h2 className="text-lg font-semibold">{t('workflow.practice.resultTitle')}</h2><dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">{(['answered','independentCorrect','assistedCorrect','incorrect','partial','pending','unresolved','skipped','invalid'] as const).map(key=><div key={key}><dt className="text-xs text-muted-foreground">{t(`workflow.summary.${key}`)}</dt><dd className="mt-1 text-xl font-semibold">{summary[key]??0}{key==='answered'?` / ${summary.total}`:''}</dd></div>)}</dl><p className="text-xs text-muted-foreground">{t('workflow.practice.resultHint')}</p><div className="flex flex-wrap gap-2"><Button className="min-h-11" onClick={onAgain}>{t('workflow.practice.again')}</Button><Button variant="outline" className="min-h-11" onClick={onSummarize}>{t('workflow.actions.summarize')}</Button></div></section>;
+  return <section className="workspace-sheet space-y-4 p-4" data-testid="practice-result"><h2 className="text-lg font-semibold">{t('workflow.practice.resultTitle')}</h2><dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">{(['answered','independentCorrect','assistedCorrect','incorrect','partial','pending','unresolved','skipped','invalid'] as const).map(key=><div key={key}><dt className="text-xs text-muted-foreground">{t(`workflow.summary.${key}`)}</dt><dd className="mt-1 text-xl font-semibold">{summary[key]??0}{key==='answered'?` / ${summary.total}`:''}</dd></div>)}</dl><p className="text-xs text-muted-foreground">{t('workflow.practice.resultHint')}</p><div className="flex flex-wrap gap-2"><Button className="min-h-11" onClick={onAgain}>{t('workflow.practice.again')}</Button><Button variant="outline" className="min-h-11" onClick={onSummarize}>{t('workflow.actions.summarize')}</Button></div></section>;
 }

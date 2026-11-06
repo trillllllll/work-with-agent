@@ -279,7 +279,7 @@ export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topi
       {pageNotice && <p className="library-meta" role="alert">{pageNotice}</p>}
       <div className={`library-body ${documentOpen ? 'has-document' : 'no-preview'}`}>
         <FolderNav folders={folders.data?.items ?? []} tags={tags.data?.items ?? []} open={foldersOpen} onClose={() => setFoldersOpen(false)} onEdit={setEditor} onRefresh={refresh} />
-        <Surface as="div" tone="card" ref={listRef} className="library-panel library-document-list" hidden={documentOpen} data-testid="library-list" onScroll={(event) => patchLibrary({ scrollTop: event.currentTarget.scrollTop })}>
+        <Surface as="div" tone="sheet" ref={listRef} className="library-panel library-document-list" hidden={documentOpen} data-testid="library-list" onScroll={(event) => patchLibrary({ scrollTop: event.currentTarget.scrollTop })}>
           {showError && <div className="library-error" role="alert"><p>{list.error instanceof Error ? list.error.message : t('shared.materialsLoadFailed')}</p><Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => { void list.refetch(); }}>{t('shared.retry')}</Button></div>}
           {!showError && list.isLoading && !list.data && <p className="library-meta p-3">{t('shared.loadingMaterials')}</p>}
           {!showError && !rows.length && !list.isLoading && <div className="p-6"><p>{t('shared.noMatchingMaterials')}</p><Button variant="outline" size="bare" type="button" className="library-btn mt-3" onClick={() => { clearLibraryFilters(); setDebounced(''); }}>{t('libraryPage.clearFilters')}</Button></div>}
@@ -419,7 +419,7 @@ function FolderNav({ folders, tags, open, onClose, onEdit, onRefresh }: { folder
     </form>
   </>;
   return <>
-    <Surface as="nav" tone="card" className="library-panel library-folders" data-testid="library-folders" aria-label={t('libraryPage.foldersNav')}>{!open && body}</Surface>
+    <Surface as="nav" tone="sheet" className="library-panel library-folders" data-testid="library-folders" aria-label={t('libraryPage.foldersNav')}>{!open && body}</Surface>
     {open && <Modal workspace className="library-surface" title={t('shared.folders')} onClose={onClose}><section><Button variant="outline" size="bare" type="button" className="library-btn" onClick={onClose}>{t('shared.close')}</Button>{body}</section></Modal>}
   </>;
 }

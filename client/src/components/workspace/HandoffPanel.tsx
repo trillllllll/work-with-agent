@@ -57,7 +57,7 @@ export function HandoffPanel({ task, disabled = false }: { task: Task; disabled?
       <Button size="sm" disabled={!instruction.trim()} onClick={() => void run(async () => { const result = await api('/api/v1/handoffs', { method: 'POST', body: json({ taskId: task.id, expectedTaskRevision: task.revision, instruction: `${instruction}${acceptance ? `${acceptancePrefix}${acceptance}` : ''}`, provider, mode, materialIds: sources.filter((ref) => ref.type === 'material').map((ref) => ref.id), memoryIds: sources.filter((ref) => ref.type === 'memory').map((ref) => ref.id), permissions: { profile: write ? 'workspace_write' : 'read_only', allowShell } }) }); setInstruction(''); setAcceptance(''); return result; }, t('handoff.frozenToast'))}>{t('handoff.prepare')}</Button>
     </fieldset>
     {list.error && <p role="alert" className="text-sm text-destructive">{list.error.message}</p>}
-    {(list.data ?? []).map((handoff) => <HandoffCard key={handoff.id} handoff={handoff} task={task} />)}
+    {Boolean(list.data?.length) && <Surface tone="sheet" className="workspace-rows">{list.data!.map((handoff) => <HandoffCard key={handoff.id} handoff={handoff} task={task} />)}</Surface>}
   </section>;
 }
 export function RunsPage() {
@@ -65,7 +65,7 @@ export function RunsPage() {
   const { query, setQuery } = useHashRoute();
   const tab = query.tab === 'handoffs' ? 'handoffs' : query.tab === 'stats' ? 'stats' : 'orchestrations';
   const tabClass = (_selected: boolean) => 'shrink-0 px-3 py-1 text-sm';
-  return <section className="mx-auto max-w-5xl space-y-5 p-5 sm:p-7">
+  return <section className="workspace-page mx-auto max-w-5xl space-y-5 p-5 sm:p-7">
     <h1 className="text-2xl font-semibold">{t('handoff.runsTitle')}</h1>
     <p className="text-sm text-muted-foreground">{t('handoff.runsDescription')}</p>
     <div role="tablist" className="flex gap-2 overflow-x-auto">
@@ -79,7 +79,7 @@ export function RunsPage() {
 function HandoffRunsList() {
   const { t } = useTranslation('workspace');
   const list = useQuery({ queryKey: ['handoffs'], queryFn: () => api<any[]>('/api/v1/handoffs'), refetchInterval: 5000 });
-  return <>{list.error && <p role="alert">{list.error.message}</p>}{list.isLoading ? <p>{t('handoff.loading')}</p> : !list.data?.length ? <p className="py-8 text-sm text-muted-foreground">{t('handoff.empty')}</p> : list.data.map((handoff) => <HandoffCard key={handoff.id} handoff={handoff} />)}</>;
+  return <>{list.error && <p role="alert">{list.error.message}</p>}{list.isLoading ? <p>{t('handoff.loading')}</p> : !list.data?.length ? <p className="py-8 text-sm text-muted-foreground">{t('handoff.empty')}</p> : <Surface tone="sheet" className="workspace-rows">{list.data.map((handoff) => <HandoffCard key={handoff.id} handoff={handoff} />)}</Surface>}</>;
 }
 function HandoffCard({ handoff: initial, task }: { handoff: any; task?: Task }) {
   const { t } = useTranslation('workspace');
@@ -100,7 +100,7 @@ function HandoffCard({ handoff: initial, task }: { handoff: any; task?: Task }) 
   const [changePermissions, setChangePermissions] = useState(false);
   const { run, busy } = usePlatformAction();
   const actualTask = task ?? taskQuery.data;
-  return <Surface as="article" tone="subtle" className="space-y-3 rounded-xl border p-4"><Button variant="row" size="bare" type="button" className="flex w-full flex-wrap justify-between gap-2 text-left" aria-expanded={open} onClick={() => setOpen(!open)}><strong className="min-w-0 break-words text-sm">{actualTask?.title ?? handoff.instruction?.split('\n')[0] ?? handoff.taskId}</strong><span className="text-xs text-muted-foreground">{handoff.provider} · {statusName(handoff.status)}</span></Button>{open && <>
+  return <Surface as="article" tone="row" className="space-y-3 p-4"><Button variant="row" size="bare" type="button" className="flex w-full flex-wrap justify-between gap-2 text-left" aria-expanded={open} onClick={() => setOpen(!open)}><strong className="min-w-0 break-words text-sm">{actualTask?.title ?? handoff.instruction?.split('\n')[0] ?? handoff.taskId}</strong><span className="text-xs text-muted-foreground">{handoff.provider} · {statusName(handoff.status)}</span></Button>{open && <>
     <BodyText text={handoff.instruction} />{handoff.status === 'prepared' && !handoff.runs?.length && <div className="space-y-2">{revisedInstruction === null ? <Button size="sm" variant="ghost" onClick={() => setRevisedInstruction(handoff.instruction)}>{t('handoff.editGoal')}</Button> : <><Textarea aria-label={t('handoff.editAria')} value={revisedInstruction} onChange={(event) => setRevisedInstruction(event.target.value)} /><Button size="sm" disabled={busy || !actualTask || !revisedInstruction.trim()} onClick={() => void run(async () => { const result = await api(`/api/v1/handoffs/${handoff.id}`, { method: 'PATCH', body: json({ expectedRevision: handoff.revision, expectedTaskRevision: actualTask?.revision, instruction: revisedInstruction }) }); setRevisedInstruction(null); return result; }, t('handoff.savedVersionToast'))}>{t('handoff.saveVersion')}</Button></>}</div>}
     <Disclosure className="disclosure"><DisclosureTrigger className="cursor-pointer text-xs text-muted-foreground">{t('handoff.frozenContext')}</DisclosureTrigger><pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap break-all text-xs">{JSON.stringify(parseStored(handoff.inputSnapshot, {}), null, 2)}</pre></Disclosure>
     {handoff.mode === 'manual' ? <p className="rounded-lg bg-muted p-3 text-xs">{t('handoff.manualClaim', { provider: handoff.provider, id: handoff.id })}</p> : <div className="space-y-2"><Input aria-label={t('handoff.sourceAria')} placeholder={t('handoff.sourcePlaceholder')} disabled={busy} value={sourcePath} onChange={(event) => setSourcePath(event.target.value)} /><p className="text-xs text-muted-foreground">{t('handoff.gitHint')}</p><Disclosure className="disclosure"><DisclosureTrigger className="cursor-pointer text-xs">{t('handoff.nonGitSummary')}</DisclosureTrigger><Textarea className="mt-2" aria-label={t('handoff.inputFilesAria')} placeholder={t('handoff.inputFilesPlaceholder')} disabled={busy} value={inputFiles} onChange={(event) => { setInputFiles(event.target.value); setInputFilesEdited(true); }} /><p className="mt-1 text-xs text-muted-foreground">{t('handoff.inputFilesHint')}</p></Disclosure><Button size="sm" disabled={busy || !sourcePath.trim() || handoff.status !== 'prepared'} onClick={() => void run(() => api(`/api/v1/handoffs/${handoff.id}/start`, { method: 'POST', body: json({ sourcePath, inputFiles: inputFiles.split(/\r?\n/).map((path) => path.trim()).filter(Boolean), requestId: crypto.randomUUID() }) }), t('handoff.startedToast'))}>{t('handoff.start', { provider: handoff.provider === 'codex' ? 'Codex' : 'Claude Code' })}</Button></div>}

@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { TableRow } from '@/components/ui/table-row.js';
 import { Checkbox } from '@/components/ui/checkbox.js';
 import { useState } from 'react';
@@ -32,7 +33,7 @@ const usageLabel = (usage: Usage | null) => {
 export function WorktreesPage() {
   const { t: tr } = useTranslation('orchestration');
   const overview = useQuery({ queryKey: ['worktrees'], queryFn: () => api<NodeView[]>('/api/worktrees'), refetchInterval: (query) => (query.state.data ?? []).some((item) => item.refreshing || item.cleaning) ? 1500 : 10_000 });
-  return <div className="space-y-6 p-5 sm:p-7" aria-label={tr('worktrees.aria')}>
+  return <div className="workspace-page space-y-6 p-5 sm:p-7" aria-label={tr('worktrees.aria')}>
     <div><h1 className="text-2xl font-semibold">{tr('worktrees.title')}</h1>
       <p className="mt-1 text-sm text-muted-foreground">{tr('worktrees.intro')}</p></div>
     {overview.isLoading && <p className="text-sm text-muted-foreground">{tr('worktrees.loading')}</p>}
@@ -55,7 +56,7 @@ function NodeSection({ view }: { view: NodeView }) {
   const total = view.worktrees.reduce((sum, entry) => sum + entry.sizeBytes, 0);
   const reported = view.inventoryAt ? tr('worktrees.reported', { time: new Date(view.inventoryAt).toLocaleString(intlLocale()) }) : tr('worktrees.notReported');
   const runs = view.runs ? tr('worktrees.runs', { count: view.runs.count, size: formatBytes(view.runs.sizeBytes) }) : '—';
-  return <section className="rounded-xl border p-4" aria-label={tr('worktrees.nodeSection', { name: view.node.name })}>
+  return <Surface as="section" tone="sheet" className="p-4" aria-label={tr('worktrees.nodeSection', { name: view.node.name })}>
     <div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold">{view.node.name}</h2><span className={view.node.online ? 'text-xs text-green-600' : 'text-xs text-muted-foreground'}>{view.node.online ? tr('worktrees.online') : tr('worktrees.offline')}</span>
       <span className="text-xs text-muted-foreground">{tr('worktrees.inventory', { reported, count: view.worktrees.length, total: formatBytes(total), runs, free: formatBytes(view.freeBytes) })}</span>
       <Button size="sm" variant="outline" className="ml-auto" disabled={view.refreshing || refresh.isPending} onClick={() => refresh.mutate()}>{view.refreshing ? tr('worktrees.scanning') : tr('worktrees.refresh')}</Button></div>
@@ -76,7 +77,7 @@ function NodeSection({ view }: { view: NodeView }) {
       </div>
     </>}
     {card && <CleanupDialog card={card} onClose={() => { setCard(null); setSelected([]); }} />}
-  </section>;
+  </Surface>;
 }
 
 function useCleanupActions(card: CleanupCard, onDone?: () => void) {

@@ -129,7 +129,7 @@ export function ProposalsPage() {
   const pendingLabel = typeof pendingTotal === 'number' ? `${t('status.pending')} ${pendingTotal}` : t('status.pending');
   const tabLabel = (id: StatusTab) => id === 'pending' ? pendingLabel : t(`status.${id}`);
   return (
-    <section className={cn('mx-auto max-w-4xl space-y-5 p-5 sm:p-7', barVisible && 'max-sm:pb-36')}>
+    <section className={cn('workspace-page mx-auto max-w-4xl space-y-5 p-5 sm:p-7', barVisible && 'workspace-page-with-actions')}>
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">{t('title')}</h1>
@@ -150,7 +150,7 @@ export function ProposalsPage() {
       {query.isLoading && !listed.length ? <p className="text-sm">{t('loading')}</p> : null}
       {!query.isLoading && !query.error && !listed.length ? (
         status === 'pending' ? (
-          <Surface as="div" tone="subtle" className="rounded-xl px-4 py-8">
+          <Surface as="div" tone="sheet" className="rounded-xl px-4 py-8">
             <h2 className="text-base font-semibold">{t('empty.title')}</h2>
             <p className="mt-2 text-sm text-muted-foreground">{t('empty.pending')}</p>
             <ul className="mt-4 space-y-3">
@@ -165,7 +165,7 @@ export function ProposalsPage() {
         ) : <p className="py-8 text-sm text-muted-foreground">{t('empty.other')}</p>
       ) : null}
       {listed.length && !filtered.length ? <p className="py-8 text-sm text-muted-foreground">{t('filter.empty')}</p> : null}
-      <div className="space-y-4">
+      <Surface tone="sheet" className="workspace-queue">
         {filtered.map(({ proposal }) => {
           const chat = proposal.appChangeCard?.review || proposal.batchCard || isChatProposal(proposal);
           if (chat) return <ChatProposalCards key={`${proposal.id}:${proposal.revision}`} proposal={proposal} connections={connections} onSettled={(next) => setPinned((current) => [...current.filter((item) => item.id !== next.id), next])} />;
@@ -183,7 +183,7 @@ export function ProposalsPage() {
             />
           );
         })}
-      </div>
+      </Surface>
     </section>
   );
 }

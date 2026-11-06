@@ -65,7 +65,7 @@ export function ConnectionCard({ connection, topics, archivedTopics, revoked = f
   const activity = [command, write].filter(Boolean).join(' · ') || t('connections.noActivity');
   const edit = onEdit ?? (() => {});
   return (
-    <Surface as="article" tone="subtle" className="space-y-3 rounded-xl p-4">
+    <Surface as="article" tone="row" className="space-y-3 p-4">
       <div className="flex items-start gap-3">
         <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-xs font-semibold">{hostInitials(connection.host)}</span>
         <div className="min-w-0 flex-1">

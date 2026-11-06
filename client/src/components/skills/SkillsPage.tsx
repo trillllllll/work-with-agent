@@ -109,7 +109,7 @@ function SkillDetailView({ id, onBack }: { id: string; onBack: () => void }) {
         <Button variant="tab" size="bare" type="button" role="tab" aria-selected={tab === 'history'} data-testid="skill-tab-history" className={tabClass(tab === 'history')} onClick={() => setTab('history')}>{t('history.title')}</Button>
       </div>
       {tab === 'body'
-        ? <Surface as="div" tone="subtle" role="tabpanel" className="glass-scrollbar min-h-0 overflow-y-auto rounded-xl p-4" data-testid="skill-instructions"><BodyText text={skill.instructions} format="markdown" /></Surface>
+        ? <Surface as="div" tone="sheet" role="tabpanel" className="glass-scrollbar min-h-0 overflow-y-auto rounded-xl p-4" data-testid="skill-instructions"><BodyText text={skill.instructions} format="markdown" /></Surface>
         : <div role="tabpanel" className="glass-scrollbar min-h-0 overflow-y-auto"><SkillHistory skill={skill} /></div>}
       {confirmDelete && <ConfirmDialog title={t('page.deleteTitle')} itemName={skill.name} description={t('page.deleteDescription')} busy={busy} onCancel={() => setConfirmDelete(false)} onConfirm={() => void act(() => api(`/api/skills/${skill.id}?expectedRevision=${skill.revision}`, { method: 'DELETE' }), t('page.deletedToast')).then((ok) => { setConfirmDelete(false); if (ok) onBack(); })} />}
     </article>
@@ -168,7 +168,7 @@ export function SkillsPage() {
 
   const empty = status === 'deleted' ? t('page.emptyDeleted') : q || origin || status !== 'all' ? t('page.emptyFiltered') : t('page.empty');
   return (
-    <section className="@container mx-auto flex h-full max-w-6xl min-h-[30rem] flex-col gap-4 p-5 sm:p-7" aria-label={t('page.label')}>
+    <section className="workspace-page @container mx-auto flex h-full max-w-6xl min-h-[30rem] flex-col gap-4 p-5 sm:p-7" aria-label={t('page.label')}>
       <header className="flex shrink-0 flex-wrap items-end gap-3">
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-semibold">{t('page.title')}</h1>
@@ -191,7 +191,7 @@ export function SkillsPage() {
           </div>
           {list.error && <p role="alert" className="text-sm text-destructive">{list.error.message}</p>}
           {list.isLoading ? <p className="text-sm text-muted-foreground">{t('action.loading')}</p> : !skills.length ? <p className="py-8 text-sm text-muted-foreground">{empty}</p> : (
-            <Surface as="ul" tone="subtle" aria-label={t('page.listLabel')} className="glass-scrollbar  min-h-0 divide-y divide-[var(--glass-divider)] overflow-y-auto rounded-xl">
+            <Surface as="ul" tone="sheet" aria-label={t('page.listLabel')} className="glass-scrollbar  min-h-0 divide-y divide-[var(--glass-divider)] overflow-y-auto rounded-xl">
               {skills.map((skill) => (
                 <li key={skill.id} data-testid="skill-row" data-skill-name={skill.name} className={cn('flex items-start gap-2 px-3 py-2.5', selectedId === skill.id && 'bg-[color-mix(in_srgb,var(--foreground)_8%,transparent)]')}>
                   <Button variant="row" size="bare" type="button" className="min-w-0 flex-1 text-left" aria-current={selectedId === skill.id ? 'true' : undefined} onClick={() => setSelectedId(skill.id)}>

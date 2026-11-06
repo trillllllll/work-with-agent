@@ -1,5 +1,6 @@
 import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure.js';
 import { Checkbox } from '@/components/ui/checkbox.js';
+import { Surface } from '@/components/ui/surface.js';
 import { useTranslation } from 'react-i18next';
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
@@ -28,17 +29,17 @@ function QuadrantLane({ definition, tasks, props, showCompleted }: { definition:
   const { setNodeRef, isOver } = useDroppable({ id: definition.id });
   const active = sortTasks(tasks.filter((task) => task.status !== 'done'));
   const completed = sortTasks(tasks.filter((task) => task.status === 'done'));
-  return <section ref={setNodeRef} aria-label={t('quadrant.laneLabel', { title: definition.title, description: definition.description })} className={cn('flex min-h-[17rem] min-w-0 flex-col rounded-2xl border bg-[var(--glass-bg)] p-3 transition-colors', isOver && 'border-primary/60 bg-[var(--glass-hover)]')}>
+  return <Surface as="section" tone="sheet" ref={setNodeRef} aria-label={t('quadrant.laneLabel', { title: definition.title, description: definition.description })} className="workspace-board-column flex min-h-[17rem] min-w-0 flex-col p-3 transition-colors" data-drag-over={isOver || undefined}>
     <header className="mb-3 flex items-start justify-between gap-3">
       <div className="min-w-0"><h2 className={cn('inline-flex rounded-md border px-2 py-1 text-sm font-semibold', definition.tone)}>{definition.title}</h2><p className="mt-1 text-xs text-muted-foreground">{definition.description}</p></div>
       <span className="glass-control shrink-0 rounded-full px-2 py-0.5 text-xs text-muted-foreground">{tasks.length}</span>
     </header>
-    <div className="flex min-h-24 flex-1 flex-col gap-2">
+    <div className="workspace-board-tasks flex min-h-24 flex-1 flex-col">
       {active.map((task) => <DraggableTask key={task.id} task={task} props={props} />)}
       {!active.length && !completed.length && <p className="grid min-h-20 flex-1 place-items-center rounded-xl border border-dashed border-border/70 px-3 text-center text-xs text-muted-foreground">{t('quadrant.dropHere')}</p>}
       {showCompleted && completed.length > 0 && <Disclosure className="mt-1 rounded-xl border border-dashed border-border/60 px-2 py-1.5"><DisclosureTrigger className="flex cursor-pointer list-none items-center gap-1 text-xs text-muted-foreground"><ChevronDown className="size-3.5" />{t('quadrant.completed', { count: completed.length })}</DisclosureTrigger><div className="mt-2 flex flex-col gap-2">{completed.map((task) => <DraggableTask key={task.id} task={task} props={props} completed />)}</div></Disclosure>}
     </div>
-  </section>;
+  </Surface>;
 }
 
 function DraggableTask({ task, props, completed = false }: { task: TaskCardProps['task']; props: Omit<Props, 'tasks' | 'showCompleted' | 'onShowCompleted' | 'onMoveQuadrant'>; completed?: boolean }) {

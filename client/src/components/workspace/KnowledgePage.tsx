@@ -243,7 +243,7 @@ export function KnowledgePage({
         {section !== 'tree' && section !== 'graph' && section !== 'search' && section !== 'extractions' && <p className="ctx-tab-note">{tabNote}</p>}
         {section === 'memories' && <p className="ctx-tab-note">{t('page.memoriesExtraNote')}</p>}
         {section === 'extractions' && <div className="ctx-tools"><Button variant="ghost" onClick={() => locate('memories', topicId === 'all' ? '' : topicId)}>{t('page.backToMemory')}</Button></div>}
-        {body}
+        <Surface tone="sheet" className="workspace-context-sheet">{body}</Surface>
       </div>
     </div>
   </section>;

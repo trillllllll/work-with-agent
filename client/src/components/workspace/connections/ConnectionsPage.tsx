@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -78,7 +79,7 @@ export function ConnectionsPage({ topics, archivedTopics = [] }: { topics: Topic
   };
   const dialogKey = mode.kind === 'edit' ? mode.connection.id : 'create';
   return (
-    <section className="mx-auto max-w-4xl space-y-6 p-5 sm:p-7">
+    <section className="workspace-page mx-auto max-w-4xl space-y-6 p-5 sm:p-7">
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold">{t('connections.title')}</h1>
@@ -100,7 +101,7 @@ export function ConnectionsPage({ topics, archivedTopics = [] }: { topics: Topic
       ) : connections.length === 0 && !list.isError ? (
         <ConnectionEmpty onConnect={(host) => setMode({ kind: 'create', host })} />
       ) : connections.length > 0 ? (
-        <div className="space-y-3">
+        <Surface tone="sheet" className="workspace-queue workspace-rows">
           {active.map((connection) => (
             <ConnectionCard key={connection.id} connection={connection} topics={topics} archivedTopics={archivedTopics} onEdit={() => setMode({ kind: 'edit', connection })} onRevoke={() => setRevokeTarget(connection)} />
           ))}
@@ -116,7 +117,7 @@ export function ConnectionsPage({ topics, archivedTopics = [] }: { topics: Topic
               </CollapsibleContent>
             </Collapsible>
           )}
-        </div>
+        </Surface>
       ) : null}
       {mode.kind !== 'closed' && (
         <ConnectionFormDialog key={dialogKey} mode={mode} topics={topics} archivedTopics={archivedTopics} onClose={() => setMode({ kind: 'closed' })} onCreate={create} onSave={(draft) => mode.kind === 'edit' ? save(mode.connection, draft) : Promise.resolve()} />

@@ -29,7 +29,7 @@ export function TaskCard({ task, topics, tags, selected = false, readonly = fals
   const priority = task.priority ?? 'none';
   const priorityLabel = priorities.find((item) => item.value === priority)?.label ?? t('taskCard.noPriority');
   return <TaskActions task={task} topics={topics} tags={tags} readonly={readonly} busy={busy} textDirty={textDirty} onOpen={onOpen} onToggle={onToggle} onMove={onMove} onDelete={onDelete} onSave={onSave} onCreate={onCreate}>
-    <Surface as="article" tone="subtle" data-testid={`task-card-${task.id}`} data-selected={selected || undefined} className="group rounded-xl p-3 transition-colors hover:border-primary/25 hover:bg-[var(--glass-hover)]" onClick={(event) => { const target = event.target; if (!(target instanceof Element) || target.closest('button, a, select, label, input, [role="menu"], [role="menuitem"], [role="listbox"], [role="option"]')) return; onOpen(task.id); }}>
+    <Surface as="article" tone="row" data-testid={`task-card-${task.id}`} data-selected={selected || undefined} className="group rounded-xl p-3 transition-colors hover:border-primary/25 hover:bg-[var(--glass-hover)]" onClick={(event) => { const target = event.target; if (!(target instanceof Element) || target.closest('button, a, select, label, input, [role="menu"], [role="menuitem"], [role="listbox"], [role="option"]')) return; onOpen(task.id); }}>
       <div className="flex items-start justify-between gap-1.5">
         <Button variant="row" size="bare" type="button" onClick={(event) => { event.stopPropagation(); onOpen(task.id); }} className="min-w-0 flex-1 text-left text-xs leading-relaxed font-bold hover:text-brand-link">{task.title}</Button>
         <TaskMenuButton />
@@ -64,12 +64,12 @@ type BoardColumnProps = {
 export function BoardColumn({ label, count, isTodo = false, onAddTask, children }: BoardColumnProps) {
   const { t } = useTranslation('plan');
   return (
-    <Surface as="div" tone="subtle" className="flex w-[82vw] max-w-80 shrink-0 snap-start flex-col rounded-2xl p-2.5 max-md:max-h-full md:w-auto md:max-w-none md:shrink md:snap-none md:min-h-[350px]">
+    <Surface as="div" tone="sheet" className="workspace-board-column flex w-[82vw] max-w-80 shrink-0 snap-start flex-col rounded-2xl p-2.5 max-md:max-h-full md:w-auto md:max-w-none md:shrink md:snap-none md:min-h-[350px]">
       <div className="mb-3 flex items-center justify-between px-1">
         <h2 className="text-[11px] font-semibold tracking-wide text-muted-foreground">{label}</h2>
         <span className="glass-control min-w-5 rounded-full px-1.5 py-0.5 text-center text-[10px] text-muted-foreground">{count}</span>
       </div>
-      <div className="flex flex-col gap-2">{children}</div>
+      <div className="workspace-board-tasks flex flex-col">{children}</div>
       {isTodo && onAddTask && (
         <Button variant="ghost" size="sm" className="mt-2 w-full justify-start text-muted-foreground hover:text-brand-link" onClick={onAddTask}>
           <Plus />{t('boardColumn.addTask')}

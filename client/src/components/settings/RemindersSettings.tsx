@@ -139,7 +139,7 @@ function PushCard() {
         : state.support === 'insecure' ? t('reminders.push.hintInsecure')
           : state.support === 'denied' ? t('reminders.push.hintDenied')
             : '';
-  return <div className="mt-8 max-w-md rounded-xl border bg-card/40 p-4" data-testid="push-card">
+  return <div className="mt-8 max-w-md border-t pt-4" data-testid="push-card">
     <p className="text-sm font-medium">{t('reminders.push.title')}</p>
     {inDesktopShell() ? <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{t('reminders.push.desktop')}</p> : <>
       <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{t('reminders.push.description')}</p>

@@ -20,7 +20,7 @@ export function MorePage({ route, onNavigate }: MorePageProps) {
   const { t } = useTranslation('settings');
   const pendingProposals = usePendingProposalCount().data?.pending;
   return (
-    <div className="mx-auto w-full max-w-2xl p-4 pb-10 sm:p-6 lg:max-w-4xl">
+    <div className="workspace-page mx-auto w-full max-w-2xl p-4 pb-10 sm:p-6 lg:max-w-4xl">
       <header className="mb-5 flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">{t('morePage.title')}</h1>
@@ -46,7 +46,7 @@ export function MorePage({ route, onNavigate }: MorePageProps) {
           <section key={group.id} aria-label={t(`app:groups.${group.id}`)}>
             <Panel {...(group.id === 'advanced' ? { open: group.views.some(view => view === route) } : {})}>
             {group.id === 'advanced' ? <DisclosureTrigger className="mb-1.5 cursor-pointer px-3 text-xs font-medium text-muted-foreground">{t(`app:groups.${group.id}`)}</DisclosureTrigger> : <h2 className="mb-1.5 px-3 text-xs font-medium text-muted-foreground">{t(`app:groups.${group.id}`)}</h2>}
-            <Surface as="div" tone="subtle" className="overflow-hidden rounded-2xl">
+            <Surface as="div" tone="sheet" className="overflow-hidden rounded-2xl">
               {group.views.map((view, index) => {
                 const item = navigationItem(view);
                 const Icon = item.icon;

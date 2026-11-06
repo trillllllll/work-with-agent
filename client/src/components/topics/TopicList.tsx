@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { useTranslation } from 'react-i18next';
 import { Pencil, Plus, Settings } from 'lucide-react';
 import type { Topic } from '@/lib/api.js';
@@ -98,21 +99,20 @@ type TopicListPageProps = {
 export function TopicListPage({ topics, topicsLoading, selectedTopicId, onSelectTopic, onNewTopic, onEditTopic, onOpenSettings, onOpenInbox }: TopicListPageProps) {
   const { t } = useTranslation('settings');
   return (
-    <div className="flex h-full flex-col bg-background/80">
-      <header className="flex items-center justify-between gap-2 border-b glass-divider px-4 py-3.5">
-        <div>
+    <div className="workspace-page workspace-topics flex h-full flex-col">
+      <header className="flex flex-wrap items-center justify-between gap-4">
+        <div className="min-w-0 flex-1 basis-40">
           <h1 className="text-lg font-semibold tracking-tight">{t('topicList.title')}</h1>
           <p className="mt-0.5 text-xs text-muted-foreground">{t('topicList.subtitle')}</p>
         </div>
-        <div className="flex items-center gap-1">
-          <ThemeToggle />
+        <div className="flex shrink-0 items-center gap-1">
+          <Button onClick={onNewTopic}><Plus />{t('topicList.newList')}</Button><ThemeToggle />
           <Button variant="ghost" size="icon" title={t('topicList.settings')} aria-label={t('topicList.settings')} onClick={onOpenSettings}><Settings /></Button>
         </div>
       </header>
-      <div className="glass-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
-        <Button className="mb-3 w-full" onClick={onNewTopic}><Plus />{t('topicList.newList')}</Button>
+      <Surface tone="sheet" className="glass-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
         <TopicList topics={topics} loading={topicsLoading} selectedTopicId={selectedTopicId} onSelect={onSelectTopic} onEdit={onEditTopic} onOpenInbox={onOpenInbox} />
-      </div>
+      </Surface>
     </div>
   );
 }

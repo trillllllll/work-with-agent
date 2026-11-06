@@ -99,11 +99,11 @@ export function LearningNote({ node, map, scope, onBack, onDelete, onAskAssistan
       <span role="status">{dirty ? t('unsaved') : t('saved')} · {t('characters', { count: draft.detail.length })}</span>
     </div>
     <div className="flex flex-wrap gap-2">{(['explain','example','summarize'] as const).map(intent => <Button key={intent} variant="outline" className="min-h-11" onClick={() => attach(undefined, intent)}>{t(`workflow.actions.${intent}`)}</Button>)}{onPractice && <Button className="min-h-11" onClick={onPractice}>{t('workflow.actions.practice')}</Button>}</div>
-    {editing ? <div className="learning-note-editor min-h-80 rounded-lg border p-4" data-testid="learning-note-editor">
+    {editing ? <div className="workspace-sheet learning-note-editor min-h-80 p-4" data-testid="learning-note-editor">
       <DescriptionEditor taskId={`learning-note:${scope}:${node.id}`} value={draft.detail} readonly={saving || pending} fill={false} openDescription={openDescription}
         onEdit={detail => changed({ detail })} onComposeStart={() => setComposing(true)} onComposeEnd={() => setComposing(false)}
         onPasteImages={() => toast.info(t('imagesUnsupported'))} onZoom={() => {}} onAskSelection={text => attach(text)} />
-    </div> : <div className="learning-note-reading min-h-48 rounded-lg border p-4 sm:p-6" data-testid="learning-note-reading"><MarkdownView content={draft.detail || t('workflow.emptyNote')} diagrams className="text-sm leading-7" /></div>}
+    </div> : <div className="workspace-sheet learning-note-reading min-h-48 p-4 sm:p-6" data-testid="learning-note-reading"><MarkdownView content={draft.detail || t('workflow.emptyNote')} diagrams className="text-sm leading-7" /></div>}
     {draft.detail.length > 20000 && <p role="alert" className="text-sm text-destructive">{t('tooLong')}</p>}
     <footer className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
       <Button variant="ghost" className="min-h-11" disabled={saving || !dirty && !pending} onClick={() => setDiscard(true)}>{t('discard')}</Button>

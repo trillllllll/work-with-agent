@@ -64,7 +64,8 @@ test('桌面文档占据主工作面，手机返回列表后访问文件夹', as
   expect(Math.abs(fw - 190)).toBeLessThanOrEqual(1);
   expect(pw).toBeGreaterThan(600);
   await expect(page.getByTestId('library-list')).toBeHidden();
-  await expect(surface).toHaveCSS('background-color', 'rgb(246, 244, 238)');
+  const workspaceBackground = await page.locator('.dovun-main').evaluate(el => getComputedStyle(el).backgroundColor);
+  await expect(surface).toHaveCSS('background-color', workspaceBackground);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
 
   await page.setViewportSize({ width: 390, height: 844 });

@@ -48,7 +48,7 @@ export function OrchestrationRunsList() {
     sessionStorage.setItem('dovun-open-orchestration', JSON.stringify({ taskId: item.taskId, orchestrationId: item.id }));
     window.dispatchEvent(new CustomEvent('dovun-open-task', { detail: { taskId: item.taskId } }));
   };
-  return <div className="space-y-3">
+  return <div className="workspace-sheet workspace-run-list space-y-3 p-4">
     <div className="flex flex-wrap gap-2">
       <Select value={status} onValueChange={(value) => setStatus(value as (typeof STATUSES)[number])}>
         <SelectTrigger className="h-9 w-[11rem] rounded-xl text-sm" aria-label={t('runs.statusFilter')}><SelectValue /></SelectTrigger>
@@ -67,7 +67,7 @@ export function OrchestrationRunsList() {
     {!feed.isLoading && !items.length && <p className="py-8 text-sm text-muted-foreground">{t('runs.emptyOrchestrations')}</p>}
     {items.map((item) => {
       const started = item.startedAt && Number.isFinite(Date.parse(item.startedAt)) ? new Date(item.startedAt).toLocaleString(intlLocale()) : formatMissing();
-      return <Button variant="card" size="bare" key={item.id} type="button" data-testid="orchestration-feed-item" className="flex w-full flex-wrap items-center gap-2 rounded-xl p-4 text-left" onClick={() => openRound(item)}>
+      return <Button variant="row" size="bare" key={item.id} type="button" data-testid="orchestration-feed-item" className="workspace-row flex w-full flex-wrap items-center gap-2 p-4 text-left" onClick={() => openRound(item)}>
         <strong className="min-w-0 break-words text-sm">{item.taskTitle ?? formatMissing()}</strong>
         <span className="text-xs text-muted-foreground">{orchestration('history.roundTotal', { round: item.round })}</span>
         <Badge variant="outline">{orchestrationStatusLabels[item.status] ?? item.status}</Badge>

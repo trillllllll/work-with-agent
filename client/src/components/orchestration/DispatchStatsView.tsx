@@ -135,7 +135,7 @@ export function DispatchStatsView({ rangeFrom, rangeTo }: { rangeFrom?: string; 
     {!range && <p className="text-sm text-muted-foreground">{t('runs.statsEmpty')}</p>}
     {empty && <p className="py-8 text-sm text-muted-foreground">{t('runs.statsEmpty')}</p>}
     {data && !empty && <>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <Surface tone="sheet" className="workspace-metrics grid grid-cols-2 p-2 lg:grid-cols-4">
         <Surface as="article" tone="subtle" className="rounded-xl border p-4" data-testid="stats-card-rounds">
           <p className="text-xs text-muted-foreground">{t('runs.stats.rounds')}</p>
           <p className="text-2xl font-semibold tabular-nums">{data.roundCount}</p>
@@ -173,7 +173,7 @@ export function DispatchStatsView({ rangeFrom, rangeTo }: { rangeFrom?: string; 
           <p className="text-xs text-muted-foreground">{t('runs.stats.diff')}</p>
           <p className="text-sm font-semibold">{formatDiff(data.resources.filesChanged, data.resources.linesAdded, data.resources.linesDeleted)}</p>
         </Surface>
-      </div>
+      </Surface>
       <section className="space-y-2" data-testid="stats-failures">
         <h2 className="text-sm font-semibold">{t('runs.stats.failures')}</h2>
         <ul className="space-y-2">

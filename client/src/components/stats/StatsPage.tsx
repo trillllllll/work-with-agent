@@ -101,7 +101,7 @@ export function StatsPage({ onOpenTopic }: { onOpenTopic: (id: string) => void }
   const days = data && !quiet ? recordedDays(data) : 0;
 
   return (
-    <div data-testid="stats-page" className="mx-auto w-full min-w-0 max-w-5xl space-y-6 p-5 sm:p-7" aria-busy={overview.isLoading}>
+    <div data-testid="stats-page" className="workspace-page mx-auto w-full min-w-0 max-w-5xl space-y-6 p-5 sm:p-7" aria-busy={overview.isLoading}>
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold">{t('title')}</h1>

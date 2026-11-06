@@ -1,3 +1,4 @@
+import { Surface } from '@/components/ui/surface.js';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -150,7 +151,7 @@ export function ReviewsPage({ topics }: { topics: Topic[] }) {
   };
   const openCreate = (seed: ReviewDraftSeed = blankSeed()) => setDialog({ kind: 'create', key: crypto.randomUUID(), seed });
   return (
-    <section className="mx-auto max-w-4xl space-y-6 p-5 sm:p-7">
+    <section className="workspace-page mx-auto max-w-4xl space-y-6 p-5 sm:p-7">
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold">{t('reviews.title')}</h1>
@@ -182,7 +183,7 @@ export function ReviewsPage({ topics }: { topics: Topic[] }) {
                 <h2 className="text-sm font-semibold">{t('reviews.rulesHeading')}</h2>
                 <span className="text-xs text-muted-foreground">{t('reviews.rulesSummary', { enabled: enabledCount, paused: ruleList.length - enabledCount })}</span>
               </div>
-              {ordered.map((rule) => (
+              <Surface tone="sheet" className="workspace-rows">{ordered.map((rule) => (
                 <ReviewRuleCard
                   key={rule.id}
                   rule={rule}
@@ -201,7 +202,7 @@ export function ReviewsPage({ topics }: { topics: Topic[] }) {
                   onRetry={(batch) => { void retry(batch); }}
                   onView={(batch) => setQuery({ batch: batch.id })}
                 />
-              ))}
+              ))}</Surface>
             </section>
           )}
           {(ruleList.length > 0 || batchList.length > 0) && (

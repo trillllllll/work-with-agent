@@ -29,7 +29,7 @@ function DesktopSettings({ category, onCategoryChange, onNavigate }: { category:
   const { t } = useTranslation('settings');
   const hints = useSettingsCategoryHints();
   return (
-    <div className="flex h-full min-h-0">
+    <div className="workspace-settings flex h-full min-h-0">
       <nav aria-label={t('layout.nav.label')} className="glass-scrollbar w-[232px] shrink-0 overflow-y-auto px-3 py-4">
         {SETTINGS_GROUPS.map((group) => (
           <div key={group} className="mb-3 last:mb-0">
@@ -84,10 +84,10 @@ function CategoryContent({ category, mobile = false, onNavigate }: { category: S
       <div className={cn('max-w-2xl', mobile ? 'px-4 pb-28 pt-4 sm:px-6' : 'p-6 pb-10 sm:p-8')}>
         <h2 id={titleId} className={cn(mobile ? 'sr-only' : 'text-2xl font-semibold tracking-tight')}>{t(`layout.categories.${category}.title`)}</h2>
         <p className={cn('text-[13px] leading-relaxed text-muted-foreground', !mobile && 'mt-1.5')}>{t(`layout.categories.${category}.lead`)}</p>
-        {settingsCategoryDef(category).sections.map((id) => {
+        <Surface tone="sheet" className="workspace-settings-content">{settingsCategoryDef(category).sections.map((id) => {
           const Section = SETTINGS_SECTION_COMPONENTS[id];
           return <div key={id} className="settings-block" data-settings-section={id}><Section onNavigate={onNavigate} /></div>;
-        })}
+        })}</Surface>
       </div>
     </div>
   );
@@ -123,7 +123,7 @@ function CategoryList({ onCategoryChange, onNavigate }: { onCategoryChange: (cat
       {groups.map((group) => (
         <section key={group.id} aria-labelledby={`settings-group-${group.id}`}>
           <h2 id={`settings-group-${group.id}`} className="mb-1.5 px-3 text-xs font-medium text-muted-foreground">{group.title}</h2>
-          <Surface as="div" tone="subtle" className="overflow-hidden rounded-2xl">
+          <Surface as="div" tone="sheet" className="overflow-hidden rounded-2xl">
             {group.items.map((item, index) => {
               const Icon = item.icon;
               return (
