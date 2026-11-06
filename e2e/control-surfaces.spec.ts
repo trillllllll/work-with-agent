@@ -7,7 +7,7 @@ const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const evidence = resolve(process.env.DOVUN_EVIDENCE_DIR ?? 'docs/design/dovun/controls-unification/evidence');
 test.afterAll(() => e2eDatabase.$disconnect());
 
-test('real controls keep focus, independent surface depth, theme and responsive layout', async ({ page }) => {
+test('real controls keep focus, independent surface depth, theme and responsive layout', async ({ page, browserName }) => {
   await page.goto('/controls.html');
   await page.getByRole('heading', { name: '真实控件对照' }).waitFor();
   const primary = page.getByRole('button', { name: '新建任务', exact: true });
@@ -52,7 +52,8 @@ test('real controls keep focus, independent surface depth, theme and responsive 
   const suggestions = page.locator('.workspace-chat-prompts button');
   await expect(suggestions.first()).toBeVisible();
   await suggestions.first().focus();
-  await page.keyboard.press('Tab');
+  // Safari's default keyboard mode uses Option-Tab to include buttons.
+  await page.keyboard.press(browserName === 'webkit' ? 'Alt+Tab' : 'Tab');
   await expect(suggestions.nth(1)).toBeFocused();
   await expect(suggestions.nth(1)).toHaveCSS('outline-style', 'solid');
   await expect(suggestions.nth(1)).toHaveCSS('outline-width', '2px');
