@@ -1,3 +1,4 @@
+import { renderMermaid } from '@/lib/mermaid-render.js';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from 'next-themes';
@@ -20,33 +21,9 @@ export function MermaidBlock({ source }: { source: string }) {
     const id = `mmd${reactId}${attempt.current++}`;
     setFailed(false);
     (async () => {
-      const mermaid = (await import('mermaid')).default;
-      // Frontmatter in the diagram cannot override these keys.
-      mermaid.initialize({
-        startOnLoad: false,
-        securityLevel: 'strict',
-        secure: ['secure', 'securityLevel', 'startOnLoad', 'maxTextSize'],
-        htmlLabels: false,
-        suppressErrorRendering: true,
-        logLevel: 'fatal',
-        fontFamily: 'inherit',
-        theme: resolvedTheme === 'dark' ? 'dark' : 'default',
-      });
-      const parsed = await mermaid.parse(source, { suppressErrors: true });
+      const svg = await renderMermaid(source, resolvedTheme === 'dark', false, id);
       if (cancelled) return;
-      if (parsed === false) {
-        setSvg('');
-        setFailed(true);
-        return;
-      }
-      const rendered = await mermaid.render(id, source);
-      if (cancelled) return;
-      if (!rendered.svg.includes('<svg') || /<script/i.test(rendered.svg)) {
-        setSvg('');
-        setFailed(true);
-        return;
-      }
-      setSvg(rendered.svg);
+      setSvg(svg);
     })().catch(() => {
       if (!cancelled) {
         setSvg('');

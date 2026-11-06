@@ -191,3 +191,43 @@ describe('study assistant and persistent practice', () => {
     expect(await prisma.learningNode.findUnique({ where: { id: f.node.id } })).toMatchObject({ status: 'todo' });
   });
 });
+
+it('records real progressive help before interruption, but not empty markup; Mermaid waits for a safe-render acknowledgement', async () => {
+  const cases = [
+    { type: 'svg', source: '<svg><rect width="4" height="4"/>', delivered: true },
+    { type: 'svg', source: '<svg><defs><linearGradient id="g"/></defs>', delivered: false },
+    { type: 'html', source: '<style>p{color:red}</style>', delivered: false },
+    { type: 'html', source: '<p>先考虑作用域</p>', delivered: true },
+    { type: 'mermaid', source: 'flowchart LR\nA[词法环境]-->B[闭包]\n', delivered: false },
+  ];
+  for (const item of cases) {
+    const f = await fixture();
+    const block = { type: item.type, ...(item.type === 'html' ? { renderMode: 'fragments' } : {}), source: item.source };
+    const agent = new AgentService({ stream: async function* () {
+      yield { toolDelta: { index: 0, name: 'present_reply', argumentsDelta: '{"blocks":[' + JSON.stringify(block).slice(0, -2) } };
+      throw new Error('interrupted model');
+    } } as never);
+    const response = await ask(agent, [f.attachment], '请用图表提示');
+    const where = { itemId: f.item.id, type: 'assistance_delivered' };
+    expect(await prisma.learningPracticeEvent.count({ where })).toBe(item.delivered ? 1 : 0);
+    if (item.type === 'mermaid') {
+      const message = await prisma.message.findFirstOrThrow({ where: { conversationId: response.conversationId, role: 'assistant', blocksJson: { not: null } }, orderBy: { createdAt: 'desc' } });
+      const saved = JSON.parse(message.blocksJson!).blocks[0];
+      await expect(agent.acknowledgeBlockPreview(message.id, saved.id, 'unrelated source')).rejects.toMatchObject({ code: 'INVALID_PREVIEW' });
+      await agent.acknowledgeBlockPreview(message.id, saved.id, saved.source);
+      await agent.acknowledgeBlockPreview(message.id, saved.id, saved.source);
+      expect(await prisma.learningPracticeEvent.count({ where })).toBe(1);
+      expect((await submit(f)).attempt.assisted).toBe(true);
+    }
+  }
+});
+
+it('retains late solution metadata even when the structured reply is interrupted', async () => {
+  const f = await fixture();
+  const agent = new AgentService({ stream: async function* () {
+    yield { toolDelta: { index: 0, name: 'present_reply', argumentsDelta: '{"blocks":[{"type":"text","markdown":"公开答案","studySupport":"solution"' } };
+    throw new Error('stop before block closes');
+  } } as never);
+  await ask(agent, [f.attachment], '请用富媒体解释');
+  expect(await prisma.learningPracticeEvent.count({ where: { itemId: f.item.id, type: 'assistance_solution' } })).toBe(1);
+});

@@ -515,7 +515,10 @@
     "captionWithAlt": "{{alt}} · 隔离运行，不能联网，只能把内容填进输入框",
     "fullscreen": "全屏查看",
     "exportHtml": "导出 HTML",
-    "fullscreenDescription": "全屏运行交互页面，状态与对话里的页面互不影响"
+    "fullscreenDescription": "全屏运行交互页面，状态与对话里的页面互不影响",
+    "fragmentConflict": "片段与已显示的内容冲突",
+    "fragmentIncomplete": "页面尚未完成，保留已有预览：{{error}}",
+    "fragmentUnsupported": "当前片段无法安全追加。请使用显式闭合的元素，把唯一的初始化脚本放在末尾；外部依赖请使用完整页面模式。"
   },
   "usage": {
     "open": "查看上下文统计",

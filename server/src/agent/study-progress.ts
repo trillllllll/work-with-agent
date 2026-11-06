@@ -7,12 +7,16 @@ import { ownerActor } from '../application/security.js';
 /** Called in the same transaction as the visible chat event. The model cannot
  * create these records through a tool or claim that help was already delivered. */
 export async function recordStudyProgress(tx: Db, run: Pick<AgentRun, 'contextJson' | 'sourceUserMessageId'>, type: string, data: unknown) {
-  if (!['user_context', 'message_delta', 'block_delta', 'block_commit', 'run_state'].includes(type)) return;
+  if (!['user_context', 'message_delta', 'block_delta', 'block_source_delta', 'block_chart_preview', 'block_preview_seen', 'block_commit', 'run_state'].includes(type)) return;
   const context = JSON.parse(run.contextJson) as StoredChatContext;
   if (context.identityId !== 'study' || context.schemaVersion !== 3 || !context.attachments?.length) return;
-  const event = data as { delta?: string; compatibilityProjection?: boolean; state?: string; studySupport?: string; block?: { status?: string; type?: string; markdown?: string; studySupport?: string } };
+  const event = data as { previewAvailable?: boolean; delta?: string; compatibilityProjection?: boolean; state?: string; studySupport?: string; block?: { status?: string; type?: string; markdown?: string; studySupport?: string } };
   const requested = type === 'user_context';
   const delivered = (type === 'message_delta' || type === 'block_delta') && Boolean(event.delta?.trim()) && !event.compatibilityProjection
+    || type === 'block_delta' && event.previewAvailable === true
+    || type === 'block_source_delta' && event.previewAvailable === true
+    || type === 'block_preview_seen'
+    || type === 'block_chart_preview'
     || type === 'block_commit' && event.block?.status === 'ready' && event.block.type !== 'pending'
       && (event.block.type !== 'text' || Boolean(event.block.markdown?.trim()));
   const failed = type === 'run_state' && ['failed', 'cancelled', 'paused', 'completed'].includes(event.state ?? '');

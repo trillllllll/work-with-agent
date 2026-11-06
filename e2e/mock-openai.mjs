@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { releaseStreamingFixture, streamProductionFixture } from './streaming-fixture.mjs';
 
 // Alternate ports let parallel suites share one machine (see playwright.orchestration.config.ts).
 const port = Number(process.env.MOCK_OPENAI_PORT ?? 4010);
@@ -39,6 +40,7 @@ const fixedHtml = (title) => `<div style="height:300px">${title}</div>`;
 // Appending a 900px div after load changes that height, which grows the parent iframe.
 const growingHtml = `<div id="grow" style="height:300px"></div><script>setTimeout(function(){var extra=document.createElement("div");extra.style.height="900px";document.body.appendChild(extra);},1500);</script>`;
 const server = http.createServer(async (req, res) => {
+  if (req.url === '/stream-fixture/release') { releaseStreamingFixture(); return json(res, 200, { ok: true }); }
   if (req.url === '/health') return json(res, 200, { ok: true });
   if (req.url === '/html-leaks') return json(res, 200, { count: htmlLeaks });
   if (req.url === '/cdn/probe@1.0.0/ok.js') { res.writeHead(200, { 'Content-Type': 'text/javascript' }); return res.end("document.getElementById('cdn-ok').textContent = 'loaded';"); }
@@ -57,6 +59,7 @@ const server = http.createServer(async (req, res) => {
     return calls.length ? [{ ...m, tool_calls: calls }] : m.content ? [{ ...m, tool_calls: undefined }] : [];
   });
   const latestUser = String([...messages].reverse().find((item) => item.role === 'user')?.content ?? '');
+  if (latestUser.includes('正式流式验收')) { await streamProductionFixture(res, latestUser, body.tools ?? []); return; }
   const system = String(messages.find((item) => item.role === 'system')?.content ?? '');
   if (system.includes('[编排计划]') || system.includes('[编排验收]') || system.includes('[编排最终验收]')) {
     // Orchestrator model: independent subtasks, accept every report, final satisfied.

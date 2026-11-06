@@ -503,6 +503,58 @@ test('贴底：内容变高时停在底部', async ({ page }) => {
   expect(await distanceFromBottom(page)).toBeLessThanOrEqual(2);
 });
 
+test('贴底：内容增高与用户上滚同时发生时不抢', async ({ page }, testInfo) => {
+  await loadLazyHistory(page);
+  const before = await scrollTopOf(page);
+  await page.locator('[data-chat-scroll]').evaluate((element) => {
+    element.addEventListener('wheel', () => {
+      const extra = document.createElement('div'); extra.style.height = '400px';
+      element.querySelector('.assistant-thread')!.appendChild(extra);
+    }, { capture: true, once: true });
+  });
+  if (testInfo.project.name === 'mobile') {
+    // Touch-device projects have no wheel input. Deliver the same simultaneous layout +
+    // upward movement deterministically; the desktop projects use real browser wheel input.
+    await page.locator('[data-chat-scroll]').evaluate((element) => {
+      element.dispatchEvent(new WheelEvent('wheel', { deltaY: -150, bubbles: true }));
+      element.scrollTop -= 150;
+    });
+  } else await wheelScroller(page, -150);
+  await expect.poll(async () => scrollTopOf(page), { timeout: 5000 }).toBeLessThan(before - 2);
+  await expect.poll(async () => { const top = await scrollTopOf(page); await page.waitForTimeout(300); return top === await scrollTopOf(page); }).toBe(true);
+  expect(await distanceFromBottom(page)).toBeGreaterThan(300);
+});
+
+test('贴底：上滚后立即回到底部会恢复跟随', async ({ page }) => {
+  await loadLazyHistory(page);
+  await page.locator('[data-chat-scroll]').evaluate(async (element) => {
+    const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    element.dispatchEvent(new WheelEvent('wheel', { deltaY: -150, bubbles: true }));
+    element.scrollTop -= 150;
+    await frame(); await frame();
+    element.dispatchEvent(new WheelEvent('wheel', { deltaY: 150, bubbles: true }));
+    element.scrollTop = element.scrollHeight - element.clientHeight - 20;
+    await frame(); await frame();
+    const extra = document.createElement('div'); extra.style.height = '400px';
+    element.querySelector('.assistant-thread')!.appendChild(extra);
+  });
+  await expect.poll(async () => distanceFromBottom(page)).toBeLessThanOrEqual(2);
+});
+
+for (const reverse of [false, true]) test(`贴底：只有操作意图而未实际上滚时继续跟随${reverse ? '（改变方向）' : ''}`, async ({ page }) => {
+  await loadLazyHistory(page);
+  await page.locator('[data-chat-scroll]').evaluate((element) => {
+    element.dispatchEvent(new WheelEvent('wheel', { deltaY: -150, bubbles: true }));
+    const extra = document.createElement('div'); extra.style.height = '400px';
+    element.querySelector('.assistant-thread')!.appendChild(extra);
+  });
+  if (reverse) await page.locator('[data-chat-scroll]').evaluate(async (element) => {
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    element.dispatchEvent(new WheelEvent('wheel', { deltaY: 150, bubbles: true }));
+  });
+  await expect.poll(async () => distanceFromBottom(page)).toBeLessThanOrEqual(2);
+});
+
 test('贴底：用户往上滚后不抢', async ({ page }, testInfo) => {
   test.setTimeout(90_000);
   const mobile = testInfo.project.name === 'mobile';

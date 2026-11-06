@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { isReadOnlyRelayPost, relayBoundWorkspace } from './application/workspace-relay.js';
+import { isReadOnlyRelayPost, relayBoundWorkspace, relayPathAllowed, isIndependentLearningWrite } from './application/workspace-relay.js';
 import * as replica from './application/sync-replica.js';
 import * as security from './application/security.js';
 import * as cache from './application/workspace-cache-access.js';
@@ -115,4 +115,14 @@ describe('chat context preview through the workspace relay', () => {
     expect(isReadOnlyRelayPost('POST', '/api/chat/context-preview')).toBe(true);
     expect(isReadOnlyRelayPost('PATCH', '/api/chat/context-preview')).toBe(false);
   });
+});
+
+it('routes only the exact owner preview acknowledgement to the bound authoritative workspace', async () => {
+  const test = setup(); const path = '/api/messages/message-id/block-preview';
+  expect(relayPathAllowed(path)).toBe(true); expect(isIndependentLearningWrite('POST', path)).toBe(true);
+  for (const invalid of [path + '/extra', '/api/messages/message-id/delete', '/api/messages/message%2Fid/block-preview']) expect(relayPathAllowed(invalid)).toBe(false);
+  await test.request(path, { blockId: 'message-id:0', source: 'flowchart LR\nA-->B\n' });
+  expect(test.fetch).toHaveBeenCalledOnce(); expect(test.authenticate).toHaveBeenCalledOnce();
+  expect(test.synchronize).not.toHaveBeenCalled(); expect(test.next).not.toHaveBeenCalled();
+  expect(String(test.fetch.mock.calls[0][0])).toBe('https://learning-test.invalid/api/v1/sync/relay' + path);
 });

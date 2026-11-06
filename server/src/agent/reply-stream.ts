@@ -1,3 +1,4 @@
+import { sourcePreviewAvailable } from './source-preview.js';
 import { verifyChartSource } from './chart-source.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { DomainError } from '../domain/task.js';
@@ -5,6 +6,8 @@ import type { ChatEvent } from '../agent.js';
 import { appendRunEvent } from './events.js';
 import { ReplyParser } from './reply-parser.js';
 import { TextBatcher } from './text-batcher.js';
+import { SnapshotBatcher } from './snapshot-batcher.js';
+import type { ChartSpec } from './content-blocks.js';
 import { htmlBlockPolicy } from '../application/html-block-settings.js';
 import type { HtmlBlockPolicy } from './html-block.js';
 import { projectBlocks, validateReplyBlock, type BlockEvent, type ContentBlock, type ImageResult } from './content-blocks.js';
@@ -14,6 +17,10 @@ export class ReplyStream {
   private parser = new ReplyParser();
   private blocks: ContentBlock[] = [];
   private batchers = new Map<number, TextBatcher>();
+  private sourceBatchers = new Map<number, TextBatcher>();
+  private chartBatchers = new Map<number, SnapshotBatcher<ChartSpec>>();
+  private receivedSource = new Map<number, string>();
+  private studySupport = new Map<number, 'hint' | 'solution'>();
   private receivedText = new Map<number, string>();
   private lane: Promise<void> = Promise.resolve();
   private prefixCount = 0;
@@ -51,19 +58,63 @@ export class ReplyStream {
         if (!event.text.startsWith(previous)) throw new Error('文字增量发生冲突');
         const delta = event.text.slice(previous.length);
         this.receivedText.set(index, event.text);
-        if (!delta) continue;
+        const supportChanged = event.studySupport && event.studySupport !== this.studySupport.get(index);
+        if (event.studySupport) this.studySupport.set(index, event.studySupport);
+        if (!delta) {
+          if (supportChanged && event.text.trim()) {
+            await this.batchers.get(index)?.finish(); this.batchers.delete(index);
+            const block = this.blocks[index];
+            await this.persist({ type: 'block_delta', blockId: id, offset: block.markdown?.length ?? 0, delta: '', studySupport: event.studySupport, previewAvailable: true }, () => { block.studySupport = event.studySupport; });
+          }
+          continue;
+        }
         let batcher = this.batchers.get(index);
         if (!batcher) {
           batcher = new TextBatcher(async (text) => {
             const block = this.blocks[index];
             const offset = block.markdown?.length ?? 0;
-            await this.persist({ type: 'block_delta', blockId: id, offset, delta: text, ...(event.studySupport ? { studySupport: event.studySupport } : {}) }, () => { block.type = 'text'; block.markdown = (block.markdown ?? '') + text; if (event.studySupport) block.studySupport = event.studySupport; });
+            const support = this.studySupport.get(index);
+            await this.persist({ type: 'block_delta', blockId: id, offset, delta: text, ...(support ? { studySupport: support } : {}) }, () => { block.type = 'text'; block.markdown = (block.markdown ?? '') + text; if (support) block.studySupport = support; });
           }, this.abort);
           this.batchers.set(index, batcher);
         }
         await batcher.add(delta);
+      } else if (event.kind === 'source') {
+        if (event.blockType === 'html') {
+          this.htmlPolicy ??= htmlBlockPolicy();
+          if (!(await this.htmlPolicy).enabled) continue;
+        }
+        const previous = this.receivedSource.get(index) ?? '';
+        if (!event.source.startsWith(previous)) throw new Error('源码增量发生冲突');
+        const delta = event.source.slice(previous.length); this.receivedSource.set(index, event.source);
+        if (!delta) continue;
+        let batcher = this.sourceBatchers.get(index);
+        if (!batcher) {
+          batcher = new TextBatcher(async (source) => {
+            const block = this.blocks[index]; const offset = block.source?.length ?? 0;
+            await this.persist({ type: 'block_source_delta', blockId: id, blockType: event.blockType, renderMode: event.renderMode, offset, delta: source, previewAvailable: sourcePreviewAvailable(event.blockType, (block.source ?? '') + source) }, () => {
+              block.type = event.blockType; block.source = (block.source ?? '') + source; block.renderMode = event.renderMode;
+            });
+          }, this.abort);
+          this.sourceBatchers.set(index, batcher);
+        }
+        await batcher.add(delta);
+      } else if (event.kind === 'chart') {
+        let batcher = this.chartBatchers.get(index);
+        if (!batcher) {
+          batcher = new SnapshotBatcher(async (previewSpec) => {
+            const block = this.blocks[index]; const revision = (block.previewRevision ?? 0) + 1;
+            await this.persist({ type: 'block_chart_preview', blockId: id, revision, previewSpec }, () => {
+              block.type = 'chart'; block.previewSpec = previewSpec; block.previewRevision = revision;
+            });
+          }, this.abort);
+          this.chartBatchers.set(index, batcher);
+        }
+        batcher.add(event.spec);
       } else {
         await this.batchers.get(index)?.finish();
+        await this.sourceBatchers.get(index)?.finish();
+        await this.chartBatchers.get(index)?.finish();
         try {
           const raw = event.value && typeof event.value === 'object' ? event.value as Record<string, unknown> : {};
           if (raw.type === 'html') this.htmlPolicy ??= htmlBlockPolicy();
@@ -92,12 +143,12 @@ export class ReplyStream {
   async finish() {
     this.parser.finish();
     await this.events();
-    for (const batcher of this.batchers.values()) await batcher.finish();
+    for (const batcher of [...this.batchers.values(), ...this.sourceBatchers.values(), ...this.chartBatchers.values()]) await batcher.finish();
     await this.lane;
     return projectBlocks(this.blocks);
   }
   async fail(message: string) {
-    for (const batcher of this.batchers.values()) await batcher.finish();
+    for (const batcher of [...this.batchers.values(), ...this.sourceBatchers.values(), ...this.chartBatchers.values()]) await batcher.finish();
     for (const block of this.blocks) if (block.status === 'pending') await this.blockError(block.index, message);
     await this.lane;
     return projectBlocks(this.blocks);

@@ -155,3 +155,83 @@ describe('provider reasoning display and replay', () => {
     } finally { fetchMock.mockRestore(); }
   });
 });
+
+describe('persisted source and chart previews', () => {
+  it.each(['svg', 'mermaid', 'html', 'chart'])('saves %s preview before commit and restores the final source', async type => {
+    const held = barrier();
+    const source = type === 'svg' ? '<svg viewBox="0 0 20 20"><rect width="2"/>\n<circle cx="5" cy="5" r="2"/></svg>' : type === 'mermaid' ? 'flowchart LR\nA-->B\nB-->C' : '<p>开始</p><input id="name"/><script>window.ready=1</script>';
+    const block = type === 'chart' ? { type, spec: { kind: 'bar', title: 'T', categories: ['A', 'B'], series: [{ name: 'S', values: [1, 2] }], provenance: { kind: 'simulated', label: 'test' } } } : { type, ...(type === 'html' ? { renderMode: 'fragments' } : {}), source, alt: 'test' };
+    const wire = JSON.stringify({ blocks: [block] });
+    const split = type === 'chart' ? wire.indexOf('1,2') + 2 : type === 'html' ? wire.indexOf('<script>') : wire.indexOf('\\n') + 2;
+    const { conversationId, runId } = await fixture(async function* () {
+      yield delta(wire.slice(0, split)); await held.promise; yield delta(wire.slice(split));
+      yield { toolCalls: [{ id: 'presentation', name: 'present_reply', arguments: JSON.parse(wire) }] };
+    });
+    try {
+      const eventType = type === 'chart' ? 'block_chart_preview' : 'block_source_delta';
+      await until(async () => Boolean(await prisma.agentRunEvent.findFirst({ where: { runId, type: eventType } })));
+      const snapshot = await new AgentService().snapshot(conversationId);
+      const preview = JSON.parse(snapshot.messages.at(-1)!.blocksJson!).blocks[0];
+      expect(preview).toMatchObject({ type, status: 'pending' });
+      if (type === 'chart') expect(preview.previewSpec.provenance.kind).toBe('unverified');
+      else expect(source.startsWith(preview.source)).toBe(true);
+      expect(snapshot.watermarks[runId]).toBe((await prisma.agentRun.findUniqueOrThrow({ where: { id: runId } })).nextEventSeq);
+      held.release();
+      await until(async () => (await prisma.agentRun.findUniqueOrThrow({ where: { id: runId } })).state === 'completed');
+      const saved = JSON.parse((await new AgentService().snapshot(conversationId)).messages.at(-1)!.blocksJson!).blocks[0];
+      expect(saved.status).toBe('ready');
+      if (type === 'chart') expect(saved.spec.series[0].values).toEqual([1, 2]);
+      else expect(saved.source).toContain(type === 'svg' ? '<circle' : type === 'mermaid' ? 'B-->C' : 'window.ready=1');
+    } finally { held.release(); }
+  });
+  it('stopping graphics keeps the saved safe prefix and rejects late writes', async () => {
+    const held = barrier();
+    const { conversationId, runId } = await fixture(async function* () {
+      yield delta('{"blocks":[{"type":"svg","source":"<svg><rect width=\\"2\\"/>'); await held.promise;
+      yield delta('<circle/></svg>"}]}');
+    });
+    try {
+      await until(async () => Boolean(await prisma.agentRunEvent.findFirst({ where: { runId, type: 'block_source_delta' } })));
+      await stopRun(runId);
+      const stopped = await new AgentService().snapshot(conversationId);
+      const block = JSON.parse(stopped.messages.at(-1)!.blocksJson!).blocks[0];
+      expect(block).toMatchObject({ status: 'error', source: '<svg><rect width="2"/>' });
+      const watermark = stopped.watermarks[runId]; held.release(); await tick(); await tick();
+      expect((await new AgentService().snapshot(conversationId)).watermarks[runId]).toBe(watermark);
+    } finally { held.release(); }
+  });
+});
+
+it('bounds fast long-message updates while preserving the final text, SVG element and all chart points', async () => {
+  const markdown = '长文本😀 '.repeat(6000);
+  const source = '<svg viewBox="0 0 1000 20">' + Array.from({ length: 200 }, (_, i) => `<rect x="${i * 5}" width="4" height="10"/>`).join('') + '</svg>';
+  const spec = { kind: 'line', title: '长序列', categories: Array.from({ length: 1000 }, (_, i) => String(i)), series: [{ name: 'S', values: Array.from({ length: 1000 }, (_, i) => i) }], provenance: { kind: 'simulated', label: 'stress' } };
+  const args = { blocks: [{ type: 'text', markdown }, { type: 'svg', source }, { type: 'chart', spec }] };
+  const wire = JSON.stringify(args);
+  const { conversationId, runId } = await fixture(async function* () {
+    for (let i = 0; i < wire.length; i += 31) yield delta(wire.slice(i, i + 31));
+    yield { toolCalls: [{ id: 'presentation', name: 'present_reply', arguments: args }] };
+  });
+  await until(async () => (await prisma.agentRun.findUniqueOrThrow({ where: { id: runId } })).state === 'completed');
+  const blocks = JSON.parse((await new AgentService().snapshot(conversationId)).messages.at(-1)!.blocksJson!).blocks;
+  expect(blocks[0].markdown).toBe(markdown); expect(blocks[1].source).toContain('x="995"'); expect(blocks[2].spec.series[0].values).toHaveLength(1000);
+  const events = await prisma.agentRunEvent.groupBy({ by: ['type'], where: { runId }, _count: true });
+  const count = (type: string) => events.find(row => row.type === type)?._count ?? 0;
+  expect(count('block_delta')).toBeLessThan(40); expect(count('block_source_delta')).toBeLessThan(10); expect(count('block_chart_preview')).toBeLessThan(20);
+}, 20_000);
+
+it('refuses graphics arriving after the run loses its lease', async () => {
+  const held = barrier();
+  const { conversationId, runId } = await fixture(async function* () {
+    yield delta('{"blocks":[{"type":"svg","source":"<svg><rect width=\\"2\\"/>'); await held.promise;
+    yield delta('<circle/></svg>"}]}');
+  });
+  try {
+    await until(async () => Boolean(await prisma.agentRunEvent.findFirst({ where: { runId, type: 'block_source_delta' } })));
+    await prisma.agentRun.update({ where: { id: runId }, data: { leaseToken: 'another-owner' } });
+    const before = (await new AgentService().snapshot(conversationId)).watermarks[runId];
+    held.release(); await tick(); await tick();
+    const after = await new AgentService().snapshot(conversationId);
+    expect(after.watermarks[runId]).toBe(before); expect(after.messages.at(-1)?.blocksJson).not.toContain('circle');
+  } finally { held.release(); await stopRun(runId); }
+});

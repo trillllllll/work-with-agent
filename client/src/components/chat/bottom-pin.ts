@@ -13,18 +13,27 @@ function distanceFromBottom(metrics: Metrics) {
 export function createBottomPin(threshold = 80) {
   let pinned = true;
   let lastTop = 0;
+  let lastHeight = 0;
+  let lastViewport = 0;
   return {
-    onScroll(metrics: Metrics) {
+    onScroll(metrics: Metrics, userScrolledUp = false) {
       if (metrics.clientHeight === 0) return;
       const distance = distanceFromBottom(metrics);
-      if (metrics.scrollTop < lastTop - 1 && distance > 1) pinned = false;
+      // Replacing a streamed placeholder can clamp/anchor scrollTop before ResizeObserver runs.
+      // That layout movement is not a user scrolling up; the next resize must still follow the bottom.
+      const layoutChanged = metrics.scrollHeight !== lastHeight || metrics.clientHeight !== lastViewport;
+      if ((userScrolledUp || !layoutChanged && metrics.scrollTop < lastTop - 1) && distance > 1) pinned = false;
       else if (distance < threshold) pinned = true;
       lastTop = metrics.scrollTop;
+      lastHeight = metrics.scrollHeight;
+      lastViewport = metrics.clientHeight;
     },
     onResize(metrics: Metrics): number | null {
       if (metrics.clientHeight === 0 || !pinned) return null;
       const top = metrics.scrollHeight - metrics.clientHeight;
       lastTop = top;
+      lastHeight = metrics.scrollHeight;
+      lastViewport = metrics.clientHeight;
       return top;
     },
     pin() { pinned = true; },

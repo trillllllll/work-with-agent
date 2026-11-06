@@ -92,13 +92,18 @@ test('四类 Mermaid、四类图表、标准 SVG、图片布局和恶意块隔�
   await expect(page.getByRole('img', { name: 'line，矩阵验收数据' }).locator('canvas')).toBeVisible();
 });
 
-test('刷新进行中的流，恢复轮询失败后重连同一请求，不丢前文或重复发送', async ({ page }) => {
-  const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message));
+test('刷新进行中的流，恢复轮询失败后重连同一请求，不丢前文或重复发送', async ({ page, browserName }, info) => {
+  let injectingFailure = false; const expectedNetworkErrors: string[] = [];
+  const errors: string[] = []; page.on('pageerror', error => {
+    if (browserName === 'webkit' && injectingFailure && /\/api\/(?:agent\/runs\/[^/]+\/events|conversations\/[^/]+\/snapshot).*due to access control checks\.$/.test(error.message)) expectedNetworkErrors.push(error.message);
+    else errors.push(error.message);
+  });
   let sends = 0; page.on('request', (request) => { if (request.url().endsWith('/api/chat') && request.method() === 'POST') sends++; });
   await page.goto('/#/chat');
   await page.getByLabel('向 AI 提问').fill('富媒体验收停止时长用于重连'); await page.getByRole('button', { name: '发送', exact: true }).click();
   await expect(page.locator('[data-block-type=text]').first()).toContainText('文字流式前缀😀');
   const conversationId = await page.evaluate(() => localStorage.getItem('dovun.conversationId'));
+  injectingFailure = true;
   await page.route('**/api/agent/runs/*/events?*', (route) => route.abort('internetdisconnected'));
   await page.reload();
   await expect(page.locator('[data-block-type=text]').first()).toContainText('文字流式前缀😀');
@@ -109,6 +114,8 @@ test('刷新进行中的流，恢复轮询失败后重连同一请求，不丢�
   await expect(page.getByRole('button', { name: '停止生成' })).toHaveCount(0);
   expect(sends).toBe(1);
   expect(await page.evaluate(() => localStorage.getItem('dovun.conversationId'))).toBe(conversationId);
+  injectingFailure = false;
+  if (expectedNetworkErrors.length) await info.attach('injected-network-failure', { body: JSON.stringify(expectedNetworkErrors), contentType: 'application/json' });
   expect(errors).toEqual([]);
 });
 

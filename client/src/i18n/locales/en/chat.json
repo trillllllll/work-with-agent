@@ -534,7 +534,10 @@
     "captionWithAlt": "{{alt}} · Sandboxed: no network, and it can only fill the input",
     "fullscreen": "View fullscreen",
     "exportHtml": "Export HTML",
-    "fullscreenDescription": "Runs the interactive page fullscreen. Its state is separate from the page in the conversation"
+    "fullscreenDescription": "Runs the interactive page fullscreen. Its state is separate from the page in the conversation",
+    "fragmentConflict": "A fragment conflicts with the displayed content",
+    "fragmentIncomplete": "Page incomplete. Keeping the current preview: {{error}}",
+    "fragmentUnsupported": "This fragment cannot be appended safely. Use explicitly closed elements and one final initialization script; use full-page mode for external dependencies."
   },
   "usage": {
     "open": "View context usage",

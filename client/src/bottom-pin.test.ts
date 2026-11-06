@@ -56,6 +56,26 @@ describe('createBottomPin', () => {
     expect(pin.isPinned()).toBe(false);
   });
 
+  it('keeps the pin when placeholder layout clamps the previous programmatic scroll', () => {
+    const pin = createBottomPin();
+    expect(pin.onResize(at(0, 612, 553))).toBe(59);
+    pin.onScroll(at(9, 815, 553));
+    expect(pin.isPinned()).toBe(true);
+    expect(pin.onResize(at(9, 2230, 553))).toBe(1677);
+    pin.onScroll(at(1677, 2230, 553));
+    pin.onScroll(at(1527, 2230, 553));
+    expect(pin.isPinned()).toBe(false);
+    expect(pin.onResize(at(1527, 3000, 553))).toBeNull();
+  });
+
+  it('respects an actual user upward scroll during simultaneous content growth', () => {
+    const pin = createBottomPin();
+    pin.onScroll(at(1400, 1800, 400));
+    pin.onScroll(at(1250, 2000, 400), true);
+    expect(pin.isPinned()).toBe(false);
+    expect(pin.onResize(at(1250, 2000, 400))).toBeNull();
+  });
+
   it('returns the bottom offset from onResize only while pinned', () => {
     const pin = createBottomPin();
     expect(pin.onResize(at(0, 1800, 400))).toBe(1400);

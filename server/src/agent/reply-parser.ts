@@ -1,7 +1,9 @@
 import { Tokenizer, TokenType } from '@streamparser/json';
+import { projectChartPreview } from '../shared/chart-preview.js';
+import type { ChartSpec } from './content-blocks.js';
 
-export type ReplyParseEvent = { kind: 'start'; index: number } | { kind: 'text'; index: number; text: string; studySupport?: 'hint' | 'solution' } | { kind: 'block'; index: number; value: unknown };
-type Frame = { value: Record<string, unknown> | unknown[]; path: Array<string | number>; state: 'keyOrEnd' | 'key' | 'colon' | 'valueOrEnd' | 'value' | 'commaOrEnd'; key?: string; keys: Set<string>; partialText?: string };
+export type ReplyParseEvent = { kind: 'source'; index: number; source: string; blockType: 'mermaid' | 'svg' | 'html'; renderMode?: 'fragments' } | { kind: 'chart'; index: number; spec: ChartSpec } | { kind: 'start'; index: number } | { kind: 'text'; index: number; text: string; studySupport?: 'hint' | 'solution' } | { kind: 'block'; index: number; value: unknown };
+type Frame = { value: Record<string, unknown> | unknown[]; path: Array<string | number>; state: 'keyOrEnd' | 'key' | 'colon' | 'valueOrEnd' | 'value' | 'commaOrEnd'; key?: string; keys: Set<string>; partialText?: string; partialSource?: string };
 const invalid = (message: string) => Object.assign(new Error(message), { code: 'INVALID_REPLY_STREAM' });
 
 /** Real token/structure parsing; partial values never go through JSON.parse. */
@@ -11,6 +13,9 @@ export class ReplyParser {
   private root?: Record<string, unknown>;
   private events: ReplyParseEvent[] = [];
   private bytes = 0;
+  private open = new WeakSet<object>();
+  private dirty = new Map<number, Frame>();
+  private chartKeys = new Map<number, string>();
   private ended = false;
   private failed: unknown;
   private highSurrogate = '';
@@ -26,8 +31,24 @@ export class ReplyParser {
     const support = (frame.value as Record<string, unknown>).studySupport;
     this.events.push({ kind: 'text', index, text: safe, ...(support === 'hint' || support === 'solution' ? { studySupport: support } : {}) });
   }
+  private source(frame: Frame) {
+    const index = this.blockIndex(frame);
+    const raw = frame.value as Record<string, unknown>;
+    if (index === null || frame.partialSource === undefined || !['mermaid', 'svg', 'html'].includes(String(raw.type))) return;
+    // Legacy whole documents stay on their complete-only path. Metadata may arrive after source.
+    if (raw.type === 'html' && raw.renderMode !== 'fragments') return;
+    const source = /[\uD800-\uDBFF]$/.test(frame.partialSource) ? frame.partialSource.slice(0, -1) : frame.partialSource;
+    this.events.push({ kind: 'source', index, source, blockType: raw.type as 'mermaid' | 'svg' | 'html', ...(raw.renderMode === 'fragments' ? { renderMode: 'fragments' as const } : {}) });
+  }
+  private chart(frame: Frame) {
+    const index = this.blockIndex(frame); if (index === null) return;
+    const raw = frame.value as Record<string, unknown>; if (raw.type !== 'chart') return;
+    const spec = projectChartPreview(raw.spec, item => !this.open.has(item)); if (!spec) return;
+    const key = JSON.stringify(spec); if (this.chartKeys.get(index) === key) return;
+    this.chartKeys.set(index, key); this.events.push({ kind: 'chart', index, spec });
+  }
   private accept(value: unknown) {
-    const parent = this.stack.at(-1);
+    const parent = this.stack[this.stack.length - 1];
     if (!parent) {
       if (this.root || !value || typeof value !== 'object' || Array.isArray(value)) throw invalid('回复根节点必须是单个对象');
       this.root = value as Record<string, unknown>;
@@ -42,17 +63,19 @@ export class ReplyParser {
     return path;
   }
   private token(token: TokenType, value: unknown, partial: boolean) {
-    const frame = this.stack.at(-1);
+    const frame = this.stack[this.stack.length - 1];
     if (typeof value === 'string' && value.length > 65536) throw invalid('单字段超过大小限制');
     if (partial) {
       if (token === TokenType.STRING && frame?.state === 'value' && frame.key === 'markdown') {
         frame.partialText = String(value); this.text(frame, frame.partialText);
       }
+      if (token === TokenType.STRING && frame?.state === 'value' && frame.key === 'source') { frame.partialSource = String(value); this.source(frame); }
       return;
     }
     if (token === TokenType.LEFT_BRACE || token === TokenType.LEFT_BRACKET) {
       const array = token === TokenType.LEFT_BRACKET;
       const object = array ? [] : Object.create(null) as Record<string, unknown>;
+      this.open.add(object);
       const path = this.accept(object);
       if (path.length === 1 && (path[0] !== 'blocks' || !array)) throw invalid('根节点只允许 blocks 数组');
       if (path.length === 2 && path[0] === 'blocks') {
@@ -68,8 +91,11 @@ export class ReplyParser {
       const array = token === TokenType.RIGHT_BRACKET;
       if (array !== Array.isArray(frame.value) || !['commaOrEnd', array ? 'valueOrEnd' : 'keyOrEnd'].includes(frame.state)) throw invalid('JSON 对象未完整结束');
       this.stack.pop();
+      this.open.delete(frame.value);
+      const owner = this.stack.find(item => this.blockIndex(item) !== null);
+      if (owner) this.dirty.set(this.blockIndex(owner)!, owner);
       const index = this.blockIndex(frame);
-      if (index !== null) this.events.push({ kind: 'block', index, value: frame.value });
+      if (index !== null) { this.chart(frame); this.dirty.delete(index); this.events.push({ kind: 'block', index, value: frame.value }); }
       if (!this.stack.length) this.ended = true;
       return;
     }
@@ -91,12 +117,16 @@ export class ReplyParser {
     if (frame.path.length === 1 && frame.path[0] === 'blocks') throw invalid('内容块必须是对象');
     if (!frame.path.length) throw invalid('blocks 必须是数组');
     if (frame.key === 'markdown' && typeof value === 'string') { frame.partialText = value; this.text(frame, value); }
+    if (frame.key === 'source' && typeof value === 'string') { frame.partialSource = value; this.source(frame); }
     this.accept(value);
-    if (frame.key === 'type' && frame.partialText !== undefined) this.text(frame, frame.partialText);
+    const owner = this.stack.find(item => this.blockIndex(item) !== null);
+    if (owner) this.dirty.set(this.blockIndex(owner)!, owner);
+    if (frame.key === 'type' || frame.key === 'renderMode') this.source(frame);
+    if ((frame.key === 'type' || frame.key === 'studySupport') && frame.partialText !== undefined) this.text(frame, frame.partialText);
   }
   write(chunk: string | Uint8Array) {
     if (this.failed) throw this.failed;
-    this.bytes += typeof chunk === 'string' ? Buffer.byteLength(chunk) : chunk.byteLength;
+    this.bytes += typeof chunk === 'string' ? new TextEncoder().encode(chunk).length : chunk.byteLength;
     if (this.bytes > 512 * 1024) throw invalid('回复超过 512 KiB');
     // The tokenizer accepts bytes directly. Hold raw UTF-16 halves from string APIs.
     let input = chunk;
@@ -107,7 +137,7 @@ export class ReplyParser {
     }
     try { this.tokenizer.write(input); } catch (error) { this.failed = error; throw error; }
   }
-  drain() { const events = this.events; this.events = []; return events; }
+  drain() { for (const frame of this.dirty.values()) this.chart(frame); this.dirty.clear(); const events = this.events; this.events = []; return events; }
   finish() {
     if (this.failed) throw this.failed;
     if (this.highSurrogate) throw invalid('未完成的 Unicode 字符');

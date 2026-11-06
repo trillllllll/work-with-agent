@@ -1,3 +1,4 @@
+import { holdIncompleteFences } from '@/lib/streaming-markdown.js';
 import { useCitations } from '@/components/chat/citation-context.js';
 import { Button } from '@/components/ui/button.js';
 import { Children, isValidElement, useMemo, useState, type ReactNode } from 'react';
@@ -92,7 +93,7 @@ function markdownComponents(diagrams: boolean, responsiveTables: boolean): Compo
   };
 }
 
-export function MarkdownView({ content, components, allowMaterialLinks = false, diagrams = false, responsiveTables = false, className }: { content: string; components?: Components; allowMaterialLinks?: boolean; diagrams?: boolean; responsiveTables?: boolean; className?: string }) {
+export function MarkdownView({ content, components, allowMaterialLinks = false, diagrams = false, responsiveTables = false, streaming = false, className }: { content: string; components?: Components; allowMaterialLinks?: boolean; diagrams?: boolean; responsiveTables?: boolean; streaming?: boolean; className?: string }) {
   const citations = useCitations();
   const citationComponents: Components = citations ? { a: ({ children, href }) => {
     const match = /^#source-(\d+)$/.exec(href ?? '');
@@ -110,7 +111,7 @@ export function MarkdownView({ content, components, allowMaterialLinks = false, 
   const rendered = useMemo(() => markdownComponents(diagrams, responsiveTables), [diagrams, responsiveTables]);
   return (
     <div className={cn('markdown-body min-w-0 max-w-full break-words', className ?? 'text-[13.5px] leading-relaxed')}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ ...rendered, ...components, ...citationComponents }} urlTransform={urlTransform}>
+      <ReactMarkdown remarkPlugins={streaming ? [remarkGfm, holdIncompleteFences] : [remarkGfm]} components={{ ...rendered, ...components, ...citationComponents }} urlTransform={urlTransform}>
         {content}
       </ReactMarkdown>
     </div>

@@ -112,6 +112,10 @@ export type SseEvent = {
   reasoning?: Omit<AssistantReasoning, 'text'>;
   contextStats?: import('./lib/context-usage.js').ContextUsage;
   blockId?: string;
+  studySupport?: 'hint' | 'solution';
+  renderMode?: 'fragments';
+  previewSpec?: import('../../server/src/agent/content-blocks.js').ChartSpec;
+  revision?: number;
   blockType?: ContentBlock['type'];
   index?: number;
   block?: ContentBlock;
@@ -460,18 +464,38 @@ export function applyMessageEvent(messages: ChatMessage[], event: SseEvent): Cha
       const blocks = [...(message.blocks ?? [])];
       const position = blocks.findIndex((block) => block.id === event.blockId);
       const current = blocks[position];
+      if (['block_start', 'block_delta', 'block_source_delta', 'block_chart_preview'].includes(event.type) && (message.status === 'completed' || message.status === 'failed')) return message;
       if (event.type === 'block_start') {
         if (current) return message;
         blocks.push({ id: event.blockId!, index: event.index ?? blocks.length, type: event.blockType ?? 'pending', status: 'pending' });
       } else if (event.type === 'block_commit' && event.block) {
         if (position < 0) blocks.push(event.block); else blocks[position] = event.block;
+      } else if (event.type === 'block_source_delta') {
+        if (!current) return { ...message, needsSnapshot: true };
+        if (current.status !== 'pending') return message;
+        if ((current.type !== 'pending' && current.type !== event.blockType) || (current.source !== undefined && current.renderMode !== event.renderMode) || !['mermaid', 'svg', 'html'].includes(event.blockType ?? '') || (event.blockType === 'html' && event.renderMode !== 'fragments')) return { ...message, needsSnapshot: true };
+        const source = current.source ?? ''; const offset = event.offset ?? -1; const delta = event.delta ?? '';
+        if (!Number.isInteger(offset) || offset < 0 || typeof event.delta !== 'string') return { ...message, needsSnapshot: true };
+        if (offset >= 0 && offset < source.length && source.slice(offset, offset + delta.length) === delta) return message;
+        if (offset !== source.length) return { ...message, needsSnapshot: true };
+        blocks[position] = { ...current, type: event.blockType!, source: source + delta, renderMode: event.renderMode };
+      } else if (event.type === 'block_chart_preview') {
+        if (!current) return { ...message, needsSnapshot: true };
+        if (current.status !== 'pending') return message;
+        if (current.type !== 'pending' && current.type !== 'chart') return { ...message, needsSnapshot: true };
+        const revision = event.revision ?? 0; const previous = current.previewRevision ?? 0;
+        if (!Number.isInteger(revision) || revision < 1) return { ...message, needsSnapshot: true };
+        if (revision < previous) return message;
+        if (revision === previous) return JSON.stringify(current.previewSpec) === JSON.stringify(event.previewSpec) ? message : { ...message, needsSnapshot: true };
+        if (revision !== previous + 1 || !event.previewSpec) return { ...message, needsSnapshot: true };
+        blocks[position] = { ...current, type: 'chart', previewRevision: revision, previewSpec: event.previewSpec };
       } else if (event.type === 'block_delta') {
         if (!current) return { ...message, needsSnapshot: true };
         if (current.status !== 'pending') return message;
         const text = current.markdown ?? ''; const offset = event.offset ?? -1; const delta = event.delta ?? '';
         if (offset < text.length && text.slice(offset, offset + delta.length) === delta) return message;
         if (offset !== text.length) return { ...message, needsSnapshot: true };
-        blocks[position] = { ...current, type: 'text', markdown: text + delta };
+        blocks[position] = { ...current, type: 'text', markdown: text + delta, ...(event.studySupport ? { studySupport: event.studySupport } : {}) };
       } else if (event.type === 'block_error') {
         if (!current) return { ...message, needsSnapshot: true };
         blocks[position] = { ...current, status: 'error', error: event.message || t('chat:messageBlocks.incomplete') };

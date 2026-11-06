@@ -35,37 +35,61 @@ export function MessageList({ messages, activeRunId, emptyState, approvals, appr
   const scrollRef = useRef<HTMLDivElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const pinRef = useRef(createBottomPin());
+  const scrollIntent = useRef({ top: 0, until: 0 });
+  const intentTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const touchY = useRef(0);
   const [showJump, setShowJump] = useState(false);
 
   const metrics = (el: HTMLElement) => ({ scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight });
+
+  const resizeToBottom = () => {
+    const el = scrollRef.current;
+    // A wheel default action can arrive after ResizeObserver. Give the active gesture the
+    // first move, then resume following if it never actually scrolled this container upward.
+    if (!el || performance.now() < scrollIntent.current.until) return;
+    const next = pinRef.current.onResize(metrics(el));
+    if (next !== null) el.scrollTop = next;
+  };
+
+  const clearScrollIntent = () => {
+    const deferred = intentTimer.current !== undefined;
+    scrollIntent.current.until = 0;
+    clearTimeout(intentTimer.current); intentTimer.current = undefined;
+    if (deferred) resizeToBottom();
+  };
+
+  const noteScrollIntent = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    scrollIntent.current = { top: el.scrollTop, until: performance.now() + 700 };
+    clearTimeout(intentTimer.current);
+    intentTimer.current = setTimeout(() => { intentTimer.current = undefined; scrollIntent.current.until = 0; resizeToBottom(); }, 700);
+  };
 
   const handleScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
     const pin = pinRef.current;
-    pin.onScroll(metrics(el));
+    const intent = scrollIntent.current;
+    // Intent alone never unpins: the scroller must actually move upward. This also covers a
+    // wheel/touch/key/scrollbar movement arriving in the same frame as streamed content growth.
+    pin.onScroll(metrics(el), performance.now() <= intent.until && el.scrollTop < intent.top - 1);
+    intent.top = el.scrollTop;
     setShowJump(!pin.isPinned() && el.scrollHeight > el.clientHeight * 1.5);
   };
 
   useEffect(() => {
-    const el = scrollRef.current;
-    if (el) {
-      const next = pinRef.current.onResize(metrics(el));
-      if (next !== null) el.scrollTop = next;
-    }
+    resizeToBottom();
   }, [messages, approvals]);
+
+  useEffect(() => () => clearTimeout(intentTimer.current), []);
 
   useEffect(() => {
     if (typeof ResizeObserver === 'undefined') return;
     const scroller = scrollRef.current;
     const thread = threadRef.current;
     if (!scroller || !thread) return;
-    const observer = new ResizeObserver(() => {
-      const el = scrollRef.current;
-      if (!el) return;
-      const next = pinRef.current.onResize(metrics(el));
-      if (next !== null) el.scrollTop = next;
-    });
+    const observer = new ResizeObserver(resizeToBottom);
     observer.observe(scroller);
     observer.observe(thread);
     return () => observer.disconnect();
@@ -91,6 +115,7 @@ export function MessageList({ messages, activeRunId, emptyState, approvals, appr
 
   const jumpToBottom = () => {
     const el = scrollRef.current;
+    clearScrollIntent();
     pinRef.current.pin();
     if (el) {
       const next = pinRef.current.onResize(metrics(el));
@@ -111,7 +136,18 @@ export function MessageList({ messages, activeRunId, emptyState, approvals, appr
   return (
     <div className="assistant-messages relative min-h-0 min-w-0 flex-1">
       {/* HtmlBlock's lazy observer uses [data-chat-scroll] as its root. */}
-      <div data-chat-scroll ref={scrollRef} onScroll={handleScroll} className="glass-scrollbar h-full min-w-0 overflow-y-auto overscroll-contain px-3 py-3">
+      <div data-chat-scroll ref={scrollRef} onScroll={handleScroll}
+        onWheelCapture={(event) => { if (event.deltaY < 0) noteScrollIntent(); else if (event.deltaY > 0) clearScrollIntent(); }}
+        onTouchStartCapture={(event) => { touchY.current = event.touches[0]?.clientY ?? 0; }}
+        onTouchMoveCapture={(event) => { const next = event.touches[0]?.clientY ?? touchY.current; if (next > touchY.current) noteScrollIntent(); else if (next < touchY.current) clearScrollIntent(); touchY.current = next; }}
+        onKeyDownCapture={(event) => {
+          if ((event.target as Element).closest('input, textarea, select, button, [contenteditable], [role="textbox"]')) return;
+          if (['ArrowUp', 'PageUp', 'Home'].includes(event.key) || event.key === ' ' && event.shiftKey) noteScrollIntent();
+          else if (['ArrowDown', 'PageDown', 'End', ' '].includes(event.key)) clearScrollIntent();
+        }}
+        onPointerDownCapture={(event) => { if (event.target === event.currentTarget) noteScrollIntent(); }}
+        onPointerMoveCapture={(event) => { if (event.buttons === 1 && event.target === event.currentTarget) noteScrollIntent(); }}
+        className="glass-scrollbar h-full min-w-0 overflow-y-auto overscroll-contain px-3 py-3">
         {!messages.length && !approvals.length && (emptyState ?? (
           <div className="flex flex-col items-center px-6 py-16 text-center">
             <Surface as="div" tone="subtle" className="grid size-12 place-items-center rounded-2xl border-primary/15 text-brand-link">

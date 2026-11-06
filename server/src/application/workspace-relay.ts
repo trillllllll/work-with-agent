@@ -17,15 +17,17 @@ import { readLive } from './sync-log.js';
 const PREFIX = '/api/v1/sync/relay';
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 const cacheLimit = 24 * 1024 * 1024;
+const previewAcknowledgement = /^\/api\/messages\/[^/%]+\/block-preview$/;
 const ownerFamilies = /^\/api\/(?:chat(?:\/|$)|conversations(?:\/|$)|agent(?:\/|$)|orchestrations(?:\/|$)|nodes(?:\/|$)|worktrees(?:\/|$)|worktree-cleanups(?:\/|$)|project-bindings(?:\/|$)|projects(?:\/|$)|skills(?:\/|$)|focus-sessions(?:\/|$)|stats(?:\/|$)|changes(?:\/|$)|plan(?:\/|$)|settings(?:$|\/(?:reply-style|html-blocks|image-search|web-search|api-key)(?:\/|$))|v1\/(?:sync\/archive|assistant\/sources|commands|proposals|knowledge|library|learning|handoffs|runs|runners|artifacts|connections|reviews|plan)(?:\/|$))/;
 const taskExtras = /^\/api\/tasks\/[^/]+\/(?:images(?:\/[^/]+)?|ai-history|activity|topic-history)$/;
 const scopedFamilies = /^\/api\/v1\/(?:tasks|topics|tags|changes|commands|proposals|knowledge|library|learning|handoffs|runs|runners|artifacts|plan|identity|tools)(?:\/|$)|^\/api\/v1\/trash\/tasks(?:\/|$)/;
 const ordinaryTaskCommand = (body: any) => Array.isArray(body?.commands) && body.commands.length > 0 && body.commands.every((command: any) => /^(?:task|topic|tag)\./.test(command.kind) && command.kind !== 'task.reference_materials');
-export function relayPathAllowed(path: string) { return ownerFamilies.test(path) || taskExtras.test(path) || /^\/api\/(?:tasks|topics|tags)(?:\/|$)/.test(path); }
+export function relayPathAllowed(path: string) { return previewAcknowledgement.test(path) || ownerFamilies.test(path) || taskExtras.test(path) || /^\/api\/(?:tasks|topics|tags)(?:\/|$)/.test(path); }
 /** These owner-only endpoints operate exclusively on the shared learning store.
  * Generic commands, proposals and chat still wait for local task synchronization. */
 export function isIndependentLearningWrite(method: string, path: string) {
   if (method !== 'POST') return false;
+  if (previewAcknowledgement.test(path)) return true;
   return /^\/api\/v1\/learning\/(?:practice\/(?:generate|start|items\/[^/%]+\/(?:draft|submit|retry|events|archive)|sessions\/[^/%]+\/update|attempts\/[^/%]+\/regrade)|reviews\/update|jobs\/[^/%]+\/(?:retry|cancel)|resume)$/.test(path);
 }
 /** The composer's pre-send estimate is a POST that only reads. It must not wait for,
@@ -91,7 +93,7 @@ export async function relayBoundWorkspace(req: Request, res: Response, next: Nex
   if (!binding || isReplicaRequest(req)) { next(); return; }
   const path = new URL(req.url, 'http://local').pathname;
   const bearer = typeof req.headers.authorization === 'string' && req.headers.authorization.startsWith('Bearer ');
-  const allowed = bearer ? scopedFamilies.test(path) : ownerFamilies.test(path) || taskExtras.test(path);
+  const allowed = bearer ? scopedFamilies.test(path) : previewAcknowledgement.test(path) || ownerFamilies.test(path) || taskExtras.test(path);
   if (!allowed || !bearer && /^\/api\/v1\/commands(?:\/preview)?$/.test(path) && ordinaryTaskCommand(req.body)) { next(); return; }
   // Task undo belongs to the durable local command record; cloud material/AI
   // changes must be undone against the cloud record that created them.

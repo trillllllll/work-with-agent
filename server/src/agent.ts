@@ -1,3 +1,5 @@
+import { mermaidHasContent } from './shared/mermaid-policy.js';
+import { recordStudyProgress } from './agent/study-progress.js';
 import { readAssistantReasoning, type AssistantReasoning } from './domain/assistant-reasoning.js';
 import { requireLiveLearningMap } from './application/learning.js';
 import { parseMessageBlocks, projectBlocks } from './agent/content-blocks.js';
@@ -30,7 +32,7 @@ export type ChatEvent = {
   contextStats?: import('./agent/context-stats.js').ContextStats;
   context?: ChatContextV2 | ChatContextV3;
   sources?: AssistantSource[];
-  type: 'reasoning_delta' | 'reasoning_end' | 'context_stats' | 'block_start' | 'block_delta' | 'block_commit' | 'block_error' | 'user_context' | 'sources' | 'message_start' | 'message_delta' | 'message_end' | 'tool_call' | 'tool_result' | 'approval_required' | 'approval_resolved' | 'run_state' | 'external_prompt' | 'error' | 'done';
+  type: 'reasoning_delta' | 'reasoning_end' | 'context_stats' | 'block_start' | 'block_delta' | 'block_source_delta' | 'block_chart_preview' | 'block_commit' | 'block_error' | 'user_context' | 'sources' | 'message_start' | 'message_delta' | 'message_end' | 'tool_call' | 'tool_result' | 'approval_required' | 'approval_resolved' | 'run_state' | 'external_prompt' | 'error' | 'done';
   conversationId?: string;
   messageId?: string;
   delta?: string;
@@ -47,6 +49,10 @@ export type ChatEvent = {
   state?: string;
   pauseReason?: string | null;
   blockId?: string;
+  previewAvailable?: boolean;
+  renderMode?: 'fragments';
+  previewSpec?: import('./agent/content-blocks.js').ChartSpec;
+  revision?: number;
   index?: number;
   blockType?: import('./agent/content-blocks.js').ContentBlock['type'];
   block?: import('./agent/content-blocks.js').ContentBlock;
@@ -342,6 +348,20 @@ export class AgentService {
       select: { id: true, identityId: true, learningMapId: true, createdAt: true, updatedAt: true, messages: { where: { role: 'user' }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 1, select: { content: true } } },
     });
     return { items: rows.slice(0, 30).map((row) => ({ id: row.id, identityId: row.identityId, learningMapId: row.learningMapId, createdAt: row.createdAt, updatedAt: row.updatedAt, title: row.messages[0]?.content.slice(0, 100) || '新对话' })), nextCursor: rows.length > 30 ? rows[29].id : null };
+  }
+  /** A same-origin UI acknowledgement, never a model tool. It cannot alter block content. */
+  async acknowledgeBlockPreview(messageId: string, blockId: string, source: string) {
+    return prisma.$transaction(async tx => {
+      const message = await tx.message.findUnique({ where: { id: messageId } });
+      const block = parseMessageBlocks(message?.blocksJson).find(item => item.id === blockId);
+      if (!message || !block || block.type !== 'mermaid' || !mermaidHasContent(source) || !block.source?.startsWith(source)) throw new DomainError('INVALID_PREVIEW', '预览不属于这条已接收内容', 409);
+      const parts = JSON.parse(message.partsJson || '[]') as Array<{ type: string; runId?: string }>;
+      const runId = parts.find(part => part.type === 'assistant_citations')?.runId;
+      const run = runId ? await tx.agentRun.findUnique({ where: { id: runId } }) : null;
+      if (!run || run.conversationId !== message.conversationId) throw new DomainError('INVALID_PREVIEW', '预览没有对应请求', 409);
+      await recordStudyProgress(tx, run, 'block_preview_seen', {});
+      return { ok: true };
+    });
   }
   async messages(conversationId: string) { return (await this.snapshot(conversationId)).messages; }
   async snapshot(conversationId: string) {

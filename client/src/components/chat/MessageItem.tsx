@@ -149,7 +149,7 @@ export function MessageItem({ message, processMessages, hideProcess = false, pro
           <p className="text-xs leading-relaxed text-muted-foreground">{content}</p>
         )
       ) : streaming ? (
-        <p className="assistant-streaming-text streaming-caret break-words whitespace-pre-wrap">{content}</p>
+        <div className="streaming-caret"><MarkdownView content={content} responsiveTables diagrams streaming /></div>
       ) : (
         <MarkdownView content={content} responsiveTables diagrams={!failed && (role === 'user' || role === 'assistant')} />
       ))}

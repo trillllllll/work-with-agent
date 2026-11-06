@@ -1,3 +1,4 @@
+import { runEventOrder, replayAfterSnapshot } from '@/lib/run-event-order.js';
 import type { ContextUsage } from '@/lib/context-usage.js';
 import { readMessageBlocks } from '@/lib/message-blocks.js';
 import { contextLabel, attachmentError, appendAssistantPrompt, type ChatAttachment, type ChatContextV3 } from '@/lib/assistant-context.js';
@@ -154,6 +155,8 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
   const loadGeneration = useRef(0);
   const seenEvents = useRef(new Map<string, SseEvent>());
   const snapshotWatermarks = useRef<Record<string, number>>({});
+  const repairingRuns = useRef(new Set<string>());
+  const bufferedGapRuns = useRef(new Set<string>());
   approvalsRef.current = approvals;
   conversationRef.current = conversationId;
   busyRef.current = busy;
@@ -229,10 +232,16 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
       }
       let nextApprovals = snapshot.approvals.map(parseApproval);
       let restored = pairToolMessages(history.map((message: ChatMessage) => ({ id: message.id, runId: message.runId, citationSources: message.citationSources, role: message.role, content: message.content, status: message.status, toolCalls: message.toolCalls, toolCallId: message.toolCallId, parts: parseExternalParts(message.partsJson), context: message.context, sources: message.sources, reasoning: message.reasoning, blocks: readMessageBlocks(message.blocksJson) })), nextApprovals);
-      for (const event of seenEvents.current.values()) if (event.conversationId === id && event.runId && (event.seq ?? 0) > (snapshot.watermarks[event.runId] ?? 0)) { restored = applyMessageEvent(restored, event); nextApprovals = applyApprovalEvent(nextApprovals, event); }
+      const replayed = replayAfterSnapshot([...seenEvents.current.values()].filter(event => event.conversationId === id), snapshot.watermarks);
+      for (const runId of Object.keys(snapshot.watermarks)) {
+        if (replayed.gaps.has(runId)) bufferedGapRuns.current.add(runId); else bufferedGapRuns.current.delete(runId);
+      }
+      for (const runId of replayed.gaps) bufferedGapRuns.current.add(runId);
+      for (const event of replayed.events) if (event.conversationId === id && event.runId && (event.seq ?? 0) > (snapshot.watermarks[event.runId] ?? 0)) { restored = applyMessageEvent(restored, event); nextApprovals = applyApprovalEvent(nextApprovals, event); }
       let restoredStats = snapshot.contextStats ?? null;
-      for (const event of seenEvents.current.values()) if (event.conversationId === id && event.runId && (event.seq ?? 0) > (snapshot.watermarks[event.runId] ?? 0) && event.contextStats) restoredStats = event.contextStats;
+      for (const event of replayed.events) if (event.conversationId === id && event.runId && (event.seq ?? 0) > (snapshot.watermarks[event.runId] ?? 0) && event.contextStats) restoredStats = event.contextStats;
       setContextStats(restoredStats);
+      if (replayed.gaps.size && restored.length) restored = restored.map((message, index) => index === 0 ? { ...message, needsSnapshot: true } : message);
       setMessages(restored);
       for (const [key, event] of seenEvents.current) if (event.runId && (event.seq ?? 0) <= (snapshot.watermarks[event.runId] ?? 0)) seenEvents.current.delete(key);
       setApprovals(nextApprovals);
@@ -587,12 +596,26 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
   };
   const applyLiveEvent = (event: SseEvent) => {
     if(!scopeCurrent())return false;
+    if (event.conversationId && event.conversationId !== conversationRef.current) {
+      if (!conversationRef.current) newConversationRef.current = event.conversationId;
+      conversationRef.current = event.conversationId;
+      setConversationId(event.conversationId);
+      chatStorage.set('conversationId', event.conversationId);
+    }
     if (event.runId) activeRunId.current = event.runId;
     if (event.runId && typeof event.seq === 'number') {
-      if (event.seq <= (snapshotWatermarks.current[event.runId] ?? 0)) return false;
-      const key = `${event.runId}:${event.seq}`;
-      if (seenEvents.current.has(key)) return false;
-      seenEvents.current.set(key, event);
+      const order = runEventOrder(event.runId, event.seq, snapshotWatermarks.current[event.runId] ?? 0, seenEvents.current);
+      if (order === 'duplicate') return false;
+      seenEvents.current.set(`${event.runId}:${event.seq}`, event);
+      if (order === 'gap' || bufferedGapRuns.current.has(event.runId)) {
+        bufferedGapRuns.current.add(event.runId);
+        const id = event.conversationId ?? conversationRef.current;
+        if (id && !repairingRuns.current.has(event.runId)) {
+          const runId = event.runId; repairingRuns.current.add(runId);
+          void reloadConversation(id, true).finally(() => repairingRuns.current.delete(runId));
+        }
+        return false;
+      }
     }
     if (event.type === 'context_stats' && event.contextStats) setContextStats(event.contextStats);
     if (event.type === 'run_state' && event.state === 'paused' && event.pauseReason === 'user_stopped') {
@@ -600,12 +623,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     }
     if (event.type === 'run_state' && event.state === 'paused' && event.runId && event.pauseReason) setPausedRun({ id: event.runId, reason: event.pauseReason });
     if (event.type === 'run_state' && (event.state === 'completed' || event.state === 'waiting_approval')) setPausedRun(null);
-    if (event.conversationId && event.conversationId !== conversationRef.current) {
-      if (!conversationRef.current) newConversationRef.current = event.conversationId;
-      conversationRef.current = event.conversationId;
-      setConversationId(event.conversationId);
-      chatStorage.set('conversationId', event.conversationId);
-    }
+
     setMessages((current) => applyMessageEvent(current, event));
     setApprovals((current) => applyApprovalEvent(current, event));
     if (event.type === 'error' && !event.message?.includes(replyIncompleteMarker)) onErrorRef.current(event.code ? tRef.current('errors.chatFailedWithCode', { message: event.message ?? tRef.current('errors.chatFailed'), code: event.code }) : (event.message ?? tRef.current('errors.chatFailed')));

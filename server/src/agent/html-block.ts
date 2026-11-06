@@ -51,7 +51,8 @@ export function htmlBlockPrompt(policy: HtmlBlockPolicy) {
   if (!policy.enabled) return '【交互页面】\nhtml 块已在设置中关闭。不要使用 html 块；需要图示时用 svg、mermaid 或 chart。';
   return `【交互页面】
 只有需要用户在页面里操作时（选择题、快速决策、筛选、小计算器、概念模拟器、互动讲解、参数实验、知识自测），才在 present_reply 里用 html 块；静态图示仍用 svg、mermaid 或 chart。
-html 块：{ type: "html", title, alt, source, height? }。source 是完整的单文件 HTML（最多 ${HTML_SOURCE_LIMIT} 字符），alt 用一句话说明页面内容和用法，height 是 ${HTML_HEIGHT_MIN}-${HTML_HEIGHT_MAX} 的初始高度。
+html 块：{ type: "html", title, alt, source, height?, renderMode?: "fragments" }。source 是完整的单文件 HTML（最多 ${HTML_SOURCE_LIMIT} 字符），alt 用一句话说明页面内容和用法，height 是 ${HTML_HEIGHT_MIN}-${HTML_HEIGHT_MAX} 的初始高度。
+适合渐进展示的自包含页面优先指定 renderMode: "fragments"，并把 renderMode 放在 source 前。此时 source 由显式闭合的顶层元素组成（可含 style），不要 html/head/body/meta/link、外部依赖、模块脚本、内联事件或嵌套脚本；唯一可选的普通 <script> 必须放在最后，完成校验后只初始化一次，不要依赖 DOMContentLoaded/load。已完整片段会立即显示，用户输入会保留。需要完整文档加载时序或外部库时省略 renderMode，等完整页面生成再显示。
 页面运行在隔离沙箱里：不能联网（fetch、XHR、WebSocket 都会失败），不能跳转、弹窗、提交表单，读不到 WWA 的数据。页面需要的数据直接写在 source 里。
 外部库只能从这些地址加载：${policy.cdn.join('、')}。地址必须写死精确版本号（例如 https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js），能加 integrity 就加。不能用 eval 或 new Function。
 用户做出选择后，调用 window.wwa.fillInput(文字) 把结果填进对话输入框，例如 window.wwa.fillInput("我选择：先做 A")。文字要完整、可直接作为下一条消息，最多 2000 字。它只填入、不发送，用户确认后自己发送。不要声称已经替用户发送或执行了任何操作。
