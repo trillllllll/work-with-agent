@@ -157,6 +157,66 @@ test('正文保存与改名分离，切换文档及刷新不丢输入', async ({
   void editor;
 });
 
+test('保存响应晚到不覆盖后续输入，也不影响已切换到的另一份文档', async ({ page, request, isMobile }) => {
+  const first = await create(request, '迟到保存 A');
+  const second = await create(request, '迟到保存 B');
+  // Open both views before holding a response; subsequent switches stay in this page.
+  await open(page, first.id);
+  await open(page, second.id);
+  const activate = async (title: string) => {
+    if (isMobile) await page.getByRole('combobox', { name: '已打开', exact: true }).selectOption({ label: title });
+    else await page.getByRole('tab', { name: title, exact: true }).click();
+    await expect(page.getByRole('textbox', { name: '文档标题', exact: true })).toHaveValue(title);
+  };
+  await activate(first.title);
+  const source = page.locator('textarea.document-source');
+  const submitted = 'A 已提交，回包仍在路上';
+  const newer = 'A 等待回包期间继续输入的正文';
+  const other = 'B 独立编辑的正文';
+  let release = () => {};
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let held = false, delivered = false;
+  await page.route(`**/api/v1/library/resources/${first.id}/content`, async route => {
+    if (route.request().method() !== 'PUT' || held) return route.continue();
+    expect(route.request().postDataJSON().content).toBe(submitted);
+    // Let the real API commit, then delay only its response to the original session.
+    const response = await route.fetch();
+    expect(response.ok(), await response.text()).toBe(true);
+    held = true;
+    await gate;
+    await route.fulfill({ response });
+    delivered = true;
+  });
+  try {
+    await source.fill(submitted);
+    await expect.poll(() => held).toBe(true);
+    expect((await bodyOf(request, first.id)).content).toBe(submitted);
+    await source.fill(newer);
+    await activate(second.title);
+    await expect(source).toHaveValue('original');
+    await source.fill(other);
+    await expect(page.getByTestId('document-save-state')).toHaveText('已保存到 Dovun');
+    expect((await bodyOf(request, second.id)).content).toBe(other);
+    release();
+    await expect.poll(() => delivered).toBe(true);
+    // Await A's follow-up save as well, so assertions cannot beat the late acknowledgement.
+    await expect.poll(async () => (await bodyOf(request, first.id)).content).toBe(newer);
+    await expect(page).toHaveURL(new RegExp(`resource=${second.id}(?:&|$)`));
+    await expect(page.getByTestId('document-pane')).toBeVisible();
+    await expect(page.getByRole('textbox', { name: '文档标题', exact: true })).toHaveValue(second.title);
+    await expect(source).toHaveValue(other);
+    await activate(first.title);
+    await expect(source).toHaveValue(newer);
+    await expect(page.getByTestId('document-save-state')).toHaveText('已保存到 Dovun');
+    expect((await bodyOf(request, first.id)).revision).toBe(3);
+    expect((await bodyOf(request, second.id)).revision).toBe(2);
+    await page.reload();
+    await expect(source).toHaveValue(newer);
+    await activate(second.title);
+    await expect(source).toHaveValue(other);
+  } finally { release(); }
+});
+
 test('并发保存保留双方正文并提示冲突', async ({ page, request }) => {
   const resource = await create(request, '并发文档'); await open(page, resource.id);
   await page.locator('textarea.document-source').fill('本机尚未提交');

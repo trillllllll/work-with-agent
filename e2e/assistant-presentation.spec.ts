@@ -157,21 +157,44 @@ test('任务编辑器放大缩小时保留同一个节点和草稿', async ({ pa
 });
 
 
-test('知识页新建的文档在放大缩小后保留标题和路由', async ({ page }) => {
-  await page.goto('/#/knowledge/materials?topicId=inbox');
-  await page.getByRole('button', { name: '新建文档', exact: true }).click();
-  const title = page.getByRole('textbox', { name: '文档标题', exact: true });
-  await expect(title).toBeFocused();
-  await page.keyboard.type('未提交材料标题');
-  // The title alone stays an unsaved local draft; wait for the editor route before recording it.
-  await expect(page).toHaveURL(/#\/library\?resource=/);
-  const route = page.url();
-  await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
-  await page.getByRole('button', { name: '放大到独立页' }).click();
-  await page.getByRole('button', { name: '缩小回原页面' }).click();
-  await expect(page).toHaveURL(route);
-  await page.getByRole('button', { name: /^(关闭聊天|返回当前页面)$/ }).click();
-  await expect(title).toHaveValue('未提交材料标题');
+test('知识页新建的文档在放大缩小后保留标题、未确认保存的正文和路由', async ({ page }) => {
+  let release = () => {};
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let held = false;
+  await page.route('**/api/v1/library/resources', async route => {
+    if (route.request().method() !== 'POST' || held) return route.continue();
+    held = true;
+    await gate;
+    await route.continue();
+  });
+  try {
+    await page.goto('/#/knowledge/materials?topicId=inbox');
+    await page.getByRole('button', { name: '新建文档', exact: true }).click();
+    const title = page.getByRole('textbox', { name: '文档标题', exact: true });
+    await expect(title).toBeFocused();
+    await page.keyboard.type('未提交材料标题');
+    const body = page.getByRole('textbox', { name: '文档正文', exact: true });
+    const text = '放大助手前写下的正文，含中文、标点和 emoji 📝。';
+    await body.fill(text);
+    await body.evaluate(element => element.setAttribute('data-regression-instance', 'original'));
+    await expect.poll(() => held).toBe(true);
+    // The create request is still held: server reloads cannot stand in for retaining this editor.
+    await expect(page).toHaveURL(/#\/library\?resource=/);
+    const route = page.url();
+    await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
+    await page.getByRole('button', { name: '放大到独立页' }).click();
+    await page.getByRole('button', { name: '缩小回原页面' }).click();
+    await expect(page).toHaveURL(route);
+    await page.getByRole('button', { name: /^(关闭聊天|返回当前页面)$/ }).click();
+    await expect(title).toHaveValue('未提交材料标题');
+    await expect(body).toHaveText(text);
+    await expect(body).toHaveAttribute('data-regression-instance', 'original');
+    release();
+    await expect(page.getByTestId('document-save-state')).toHaveText('已保存到 Dovun');
+    await page.reload();
+    await expect(title).toHaveValue('未提交材料标题');
+    await expect(body).toHaveText(text);
+  } finally { release(); }
 });
 
 test('规划日期、模式和时间网格滚动在放大缩小后保持', async ({ page }) => {
