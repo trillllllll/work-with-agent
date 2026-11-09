@@ -18,7 +18,8 @@ export default defineConfig({
   workers: 1,
   timeout: 30_000,
   expect: { timeout: 5_000 },
-  retries: 0,
+  // CI 单 worker 环境有偶发抖动（同一提交一红一绿），重试一次滤掉；本地保持 0 以暴露问题。
+  retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['line'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: `http://127.0.0.1:${uiPort}`,

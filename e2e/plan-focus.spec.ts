@@ -143,12 +143,12 @@ test('暗色模式下规划页和专注页使用主题色', async ({ page }, tes
   expect(focusFills).toEqual([]);
 });
 
-test('375px 周视图可横滑，专注芯片在底栏上方', async ({ page }) => {
+test('375px 周视图可横滑，专注芯片在悬浮按钮上方', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 800 });
   await page.goto('/#/plan');
   await page.getByRole('button', { name: '日', exact: true }).click();
-  const tabs = page.getByRole('navigation', { name: '主导航' });
-  await expect(tabs.getByRole('button')).toHaveText(['今天', '规划', '清单', '资料库', '更多']);
+  // 底部标签栏已换成侧栏抽屉，入口是左下角的悬浮「主导航」按钮。
+  await expect(page.getByRole('button', { name: '主导航', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '周', exact: true }).click();
   const scroll = await page.getByTestId('calendar-horizontal-scroll').evaluate((node) => ({ scrollWidth: node.scrollWidth, clientWidth: node.clientWidth, pageWidth: document.documentElement.scrollWidth }));
   expect(scroll.scrollWidth).toBeGreaterThanOrEqual(720);
@@ -157,13 +157,17 @@ test('375px 周视图可横滑，专注芯片在底栏上方', async ({ page }) 
   await page.goto('/#/focus');
   await page.getByRole('button', { name: '开始专注', exact: true }).click();
   await expect(page.getByTestId('focus-chip')).toHaveCount(0);
-  await tabs.getByRole('button', { name: '今天', exact: true }).click();
+  await page.getByRole('button', { name: '主导航', exact: true }).click();
+  const navigation = page.getByRole('dialog');
+  await expect(navigation.locator('.app-sidebar')).toBeVisible();
+  await navigation.getByRole('button', { name: '今天', exact: true }).click();
   const chip = page.getByTestId('focus-chip');
   await expect(chip).toBeVisible();
   const chipBox = await chip.boundingBox();
-  const tab = await tabs.boundingBox();
-  if (!chipBox || !tab) throw new Error('芯片或底栏没有布局');
-  expect(chipBox.y + chipBox.height).toBeLessThanOrEqual(tab.y + 1);
+  const assistantButton = page.getByRole('button', { name: '打开 AI 助手', exact: true });
+  const buttonBox = await assistantButton.boundingBox();
+  if (!chipBox || !buttonBox) throw new Error('芯片或悬浮按钮没有布局');
+  expect(chipBox.y + chipBox.height).toBeLessThanOrEqual(buttonBox.y + 1);
 });
 });
 

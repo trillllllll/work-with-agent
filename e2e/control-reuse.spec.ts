@@ -73,7 +73,8 @@ test('public choices, compact sizes and tabs preserve keyboard and state feedbac
     await expect(checkbox).toBeChecked({ checked: !before });
     await page.getByRole('radio').last().check();
     await expect(page.getByRole('radio').first()).not.toBeChecked();
-    expect((await checkbox.evaluate(material)).shadow).not.toBe('none');
+    // 控件统一后 .surface-choice 抹平了阴影（--surface-input-shadow: none），改查它仍带 surface 填充。
+    expect((await checkbox.evaluate(material)).paint).not.toBe('none');
   }
   await page.goto('/#/knowledge/memories');
   const selected = page.getByRole('tab', { selected: true });

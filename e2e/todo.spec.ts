@@ -742,7 +742,8 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
 
     await page.goto('/#/inbox');
     await expect(page.getByRole('heading', { name: '收集箱', exact: true })).toBeVisible();
-    await expect(page.getByText('这是一个分类，这里只显示放在收集箱里的任务。', { exact: true })).toBeVisible();
+    // 收集箱副标题已随工作台简化改为 inboxHint 文案。
+    await expect(page.getByRole('main').getByText('先记下来，慢慢理清。', { exact: true })).toBeVisible();
     if ((page.viewportSize()?.width ?? 1280) >= 1024) await expect(page.getByRole('button', { name: '收集箱', exact: true })).toHaveAttribute('aria-current', 'page');
     await expect(page.getByTestId(`task-row-${inboxTask.id}`)).toBeVisible();
     await expect(page.getByTestId(`task-row-${topicTask.id}`)).toHaveCount(0);

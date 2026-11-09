@@ -2,7 +2,8 @@ import { test, expect, type APIRequestContext, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
 const apiUrl = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
-const composerPlaceholder = '例如：创建任务：整理 API 文档';
+// composer 的占位符会随会话切换（首条消息后变为「继续聊聊…」），用稳定的 aria-label 定位。
+const composerName = '向 AI 提问';
 
 async function responseData<T>(response: Awaited<ReturnType<APIRequestContext['get']>>) {
   expect(response.ok(), await response.text()).toBe(true);
@@ -25,8 +26,13 @@ async function taskCount(request: APIRequestContext, topicId: string) {
 }
 
 async function send(page: Page, message: string) {
-  if (!(await page.getByPlaceholder(composerPlaceholder).isVisible())) await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
-  await page.getByPlaceholder(composerPlaceholder).fill(message);
+  const box = page.getByRole('textbox', { name: composerName });
+  if (!(await box.isVisible())) {
+    // 打开入口可能尚未水合，点击等待其可操作；独立聊天页没有该入口，降级为直接等 composer 挂载。
+    await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click({ timeout: 5_000 }).catch(() => undefined);
+  }
+  await expect(box).toBeVisible({ timeout: 15_000 });
+  await box.fill(message);
   await page.getByRole('button', { name: '发送' }).click();
 }
 
@@ -148,13 +154,13 @@ test.describe('Agent 工作室 MVP', () => {
     test.skip(Boolean(isMobile), '聊天栏桌面布局在桌面视口验收');
     await page.goto('/#/board');
 
-    const chatHeading = page.getByRole('heading', { level: 2, name: 'Dovun 工作助手' });
+    const chatHeading = page.getByRole('heading', { level: 3, name: 'Dovun 工作助手' });
     const boardSection = page.getByRole('main');
     await expect(chatHeading).toBeHidden();
     await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
     await expect(chatHeading).toBeVisible();
     await expect(page.getByRole('button', { name: '关闭聊天' })).toBeVisible();
-    const composer = page.getByPlaceholder(composerPlaceholder);
+    const composer = page.getByRole('textbox', { name: composerName });
     await composer.fill('关闭后仍然保留');
     const boardWidthBeforeClose = (await boardSection.boundingBox())?.width;
     expect(boardWidthBeforeClose).toBeGreaterThan(0);
@@ -187,7 +193,7 @@ test.describe('Agent 工作室 MVP', () => {
 
     await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
     await expect(page.getByRole('dialog', { name: '保存未完成的编辑？' })).toHaveCount(0);
-    await expect(page.getByRole('heading', { level: 2, name: 'Dovun 工作助手' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 3, name: 'Dovun 工作助手' })).toBeVisible();
     await expect(detail).toBeHidden();
     await page.getByRole('tablist', { name: '工作侧栏' }).getByRole('tab', { name: '任务', exact: true }).click();
     await expect(detail).toBeVisible();
@@ -199,7 +205,7 @@ test.describe('Agent 工作室 MVP', () => {
     test.skip(!isMobile, '聊天栏移动布局在移动视口验收');
     await page.goto('/#/chat');
 
-    const chatHeading = page.getByRole('heading', { level: 2, name: 'Dovun 工作助手' });
+    const chatHeading = page.getByRole('heading', { level: 3, name: 'Dovun 工作助手' });
     await expect(chatHeading).toBeVisible();
     await expect(page.getByRole('button', { name: '返回当前页面' })).toHaveCount(0);
 
@@ -233,7 +239,7 @@ test.describe('Agent 工作室 MVP', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
 
     await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
-    await expect(page.getByPlaceholder(composerPlaceholder)).toBeVisible();
+    await expect(page.getByRole('textbox', { name: composerName })).toBeVisible();
     await send(page, '创建任务');
     const card = page.getByTestId('approval-card');
     const reject = card.getByRole('button', { name: '取消', exact: true });

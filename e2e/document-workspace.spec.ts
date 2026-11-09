@@ -239,10 +239,11 @@ test('上传中切换文档并刷新，附件只插回原文档', async ({ page,
   await expect(page.locator('textarea.document-source')).toHaveValue('original');
   release(); await page.unroute('**/api/v1/library/uploads/*/content');
   await page.goto(localUrl);
-  await expect(page.locator('.document-resource-file')).toContainText('evidence.zip');
+  // 慢机器上草稿恢复加上传续传可能超过默认 5s（CI 上该用例多次超时）。
+  await expect(page.locator('.document-resource-file')).toContainText('evidence.zip', { timeout: 15_000 });
   await expect(page.getByTestId('document-save-state')).toHaveText('已保存到 Dovun');
   expect((await bodyOf(request, other.id)).content).toBe('original');
-  await page.reload(); await expect(editor).toContainText('等待附件也能继续写'); await expect(page.locator('.document-resource-file')).toContainText('evidence.zip');
+  await page.reload(); await expect(editor).toContainText('等待附件也能继续写'); await expect(page.locator('.document-resource-file')).toContainText('evidence.zip', { timeout: 15_000 });
 });
 
 test('中文 PDF 使用本地 CMap 读取和搜索，不依赖外网', async ({ page, request }) => {

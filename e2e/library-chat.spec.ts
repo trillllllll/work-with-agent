@@ -43,6 +43,8 @@ test('读取项目资料不出现审核卡', async ({ page, isMobile }) => {
   await page.goto('/#/inbox');
   await ask(page, '读取项目资料');
   await expect(page.getByText('我先查看项目资料。', { exact: true })).toBeVisible();
+  // 过程块默认收起，先展开再断言查询计数。
+  await page.getByTestId('assistant-process').locator(':scope > summary').click();
   await expect(page.getByTestId('assistant-process').getByText('查询 1 项', { exact: true })).toBeVisible();
   await expect(page.getByText('当前任务已读取完成。', { exact: true })).toBeVisible();
   await expect(page.getByText('需要审核')).toHaveCount(0);

@@ -125,7 +125,8 @@ test('工作上下文默认显示当前进展，建议不会直接变成记忆',
   await setTheme(page, 'light');
   await shot(page, testInfo.project.name, '390-light-tabs');
   await page.evaluate(() => document.documentElement.classList.add('dark'));
-  await expect(root).toHaveCSS('background-color', 'rgb(36, 44, 54)');
+  // 暗色 --background 令牌当前为 #1e242b（瓷蓝灰调色板）。
+  await expect(root).toHaveCSS('background-color', 'rgb(30, 36, 43)');
   await shot(page, testInfo.project.name, '390-dark-tabs');
 
   await page.setViewportSize({ width: 1440, height: 1000 });

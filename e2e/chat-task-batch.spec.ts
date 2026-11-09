@@ -4,7 +4,8 @@ import { e2eDatabase, resetE2eDatabase } from './database.js';
 const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 const oldTitle = '按大威的意见，修改k8s入门文档';
 const checkTitle = '核对，第9节，我们怎么使用k8s';
-const composer = '例如：创建任务：整理 API 文档';
+// composer 的占位符会随会话切换（首条消息后变为「继续聊聊…」），用稳定的 aria-label 定位。
+const composerBox = '向 AI 提问';
 
 async function post(request: APIRequestContext, path: string, data: unknown) {
   const response = await request.post(`${api}${path}`, { data });
@@ -25,7 +26,12 @@ async function expandChanges(card: Locator) {
 }
 
 async function openChat(page: Page) {
-  if (!(await page.getByPlaceholder(composer).isVisible())) await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
+  const box = page.getByRole('textbox', { name: composerBox });
+  if (!(await box.isVisible())) {
+    // 打开入口可能尚未水合，点击等待其可操作；独立聊天页没有该入口，降级为直接等 composer 挂载。
+    await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click({ timeout: 5_000 }).catch(() => undefined);
+  }
+  await expect(box).toBeVisible({ timeout: 15_000 });
 }
 
 async function closeChat(page: Page) {
@@ -35,7 +41,7 @@ async function closeChat(page: Page) {
 
 async function ask(page: Page, message: string) {
   await openChat(page);
-  await page.getByPlaceholder(composer).fill(message);
+  await page.getByRole('textbox', { name: composerBox }).fill(message);
   await page.getByRole('button', { name: '发送', exact: true }).click();
 }
 

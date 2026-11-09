@@ -225,7 +225,6 @@ test.describe('已完成子任务保持缩进并混排', () => {
 
         const muted = await tokenPaint(page, '--muted-foreground');
         const foreground = await tokenPaint(page, '--foreground');
-        const ring = await tokenPaint(page, '--ring');
         expect(await doneTitle.evaluate((node) => getComputedStyle(node).color)).toBe(muted.color);
         expect(await openTitle.evaluate((node) => getComputedStyle(node).color)).toBe(foreground.color);
         const seam = page.locator('.task-children .task-row-block').nth(1);
@@ -238,9 +237,11 @@ test.describe('已完成子任务保持缩进并混排', () => {
           await expect(handle).toBeHidden();
         } else if (canHover) {
           await expect(handle).toHaveCSS('opacity', '0');
+          const restBackground = await doneRow.evaluate((node) => getComputedStyle(node).backgroundColor);
           await doneRow.hover();
           await expect(handle).toHaveCSS('opacity', '1');
-          await expect(doneRow).toHaveCSS('border-top-color', ring.borderTopColor);
+          // 工作台统一后行悬停出现填充与下边框；160ms 过渡期间读到中间帧，轮询等终值出现。
+          await expect.poll(async () => doneRow.evaluate((node) => getComputedStyle(node).backgroundColor)).not.toBe(restBackground);
         } else {
           await expect(handle).toHaveCSS('opacity', '1');
         }
