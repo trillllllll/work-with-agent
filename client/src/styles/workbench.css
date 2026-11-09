@@ -106,10 +106,17 @@
 
   .assistant-navigation-sheet .sidebar-header { padding-right: 44px; }
 
-  /* 助手全屏页的输入区让开左下角导航按钮。 */
-  .dovun-assistant[data-presentation='direct'] .assistant-composer-area,
-  .dovun-assistant[data-presentation='expanded'] .assistant-composer-area {
-    padding-bottom: calc(64px + env(safe-area-inset-bottom));
+  /* 助手全屏页：导航入口收进输入框上方一行，沿用全局圆形浮标样式，输入区回贴底部（安全区走基础规则）。 */
+  .assistant-nav-row { display: flex; align-items: center; padding: 0 2px 6px; }
+  .dovun-workspace .assistant-nav-row .assistant-nav-bubble {
+    display: inline-flex;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 1px solid var(--glass-border-soft);
+    border-radius: 50%;
+    background: var(--glass-bg-strong);
+    box-shadow: var(--surface-overlay-shadow);
   }
 
   /* 规划页脚的时间段入口避开右下角悬浮按钮。 */

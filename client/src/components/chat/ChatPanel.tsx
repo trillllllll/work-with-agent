@@ -4,7 +4,7 @@ import mark from '@/assets/dovun-mark.svg';
 import { settingsHash } from '@/components/settings/settings-categories.js';
 import { ContextSummary } from './ContextSummary.js';
 import { suggestions, studySuggestions } from '@/lib/assistant-context.js';
-import { ArrowLeft, ChevronDown, Ellipsis, Maximize2, Minimize2, RotateCcw, SquarePen, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Ellipsis, Maximize2, Minimize2, PanelLeft, RotateCcw, SquarePen, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChat } from '@/hooks/useChat.js';
 import { api, type Settings } from '@/lib/api.js';
@@ -42,9 +42,10 @@ type ChatPanelProps = {
   onShrink?: () => void;
   showClose?: boolean;
   onReturnToLearning?: () => void;
+  onOpenNavigation?: () => void;
 };
 
-export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose, mobile, presentation = 'side', onExpand, onShrink, showClose = true, onReturnToLearning }: ChatPanelProps) {
+export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose, mobile, presentation = 'side', onExpand, onShrink, showClose = true, onReturnToLearning, onOpenNavigation }: ChatPanelProps) {
   const { t } = useTranslation('chat');
   const action = usePlatformAction();
   const settings = useQuery<Settings>({ queryKey: ['settings'], queryFn: () => api('/api/settings') });
@@ -139,6 +140,7 @@ export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose
       )}
 
       <div className="assistant-composer-area shrink-0" data-testid="assistant-context">
+        {mobile && (presentation === 'direct' || presentation === 'expanded') && onOpenNavigation && <div className="assistant-nav-row"><Button variant="ghost" size="icon" className="assistant-nav-bubble" aria-label={t('app:shell.mainNav')} title={t('app:shell.mainNav')} onClick={onOpenNavigation}><PanelLeft className="size-4" /></Button></div>}
         {chat.attachments.length > 0 && <div className="assistant-attachments">{chat.attachments.map((item) => <div className="assistant-attachment" key={item.id}><span className="min-w-0 flex-1 truncate">{t(item.unsaved ? 'chatPanel.unsavedAttachment' : 'chatPanel.selectedAttachment', { title: item.title })}</span><Button variant="ghost" size="icon-xs" onClick={() => chat.removeAttachment(item.id)} aria-label={t('chatPanel.removeAttachment', { title: item.title })}><X /></Button></div>)}</div>}
         <ChatComposer input={input} busy={busy} reference={referencedApproval} onChange={setInput} onSend={send} onCancelReference={clearReference} placeholder={messages.length ? t('composer.continuePlaceholder') : t('composer.placeholder')} onStop={() => void chat.stop()} stopping={chat.stopping} toolbar={<>
           <ChatReferencePicker selectedIds={chat.context?.selectedMaterialIds ?? []} onSelect={chat.addMaterial} />
