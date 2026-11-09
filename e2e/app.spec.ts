@@ -203,11 +203,13 @@ test.describe('Agent 工作室 MVP', () => {
     await expect(chatHeading).toBeVisible();
     await expect(page.getByRole('button', { name: '返回当前页面' })).toHaveCount(0);
 
-    await page.getByTestId('mobile-bottom-navigation').getByRole('button', { name: '收集箱', exact: true }).click();
+    await page.getByRole('button', { name: '主导航', exact: true }).click();
+    const navigation = page.getByRole('dialog');
+    await expect(navigation.locator('.app-sidebar')).toBeVisible();
+    await navigation.getByRole('button', { name: '收集箱', exact: true }).click();
     await expect(page).toHaveURL(/#\/inbox$/);
     await expect(chatHeading).toBeHidden();
-    await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
-    await expect(page.getByTestId('mobile-bottom-navigation').getByRole('button', { name: '收集箱', exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('button', { name: '主导航', exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
 
     await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
@@ -218,13 +220,13 @@ test.describe('Agent 工作室 MVP', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
   });
 
-  test('移动端底部导航、可选看板和审核按钮均保持在视口内', async ({ page, isMobile, request }) => {
+  test('移动端导航按钮、可选看板和审核按钮均保持在视口内', async ({ page, isMobile, request }) => {
     test.skip(!isMobile, '仅在移动视口验收');
     const topic = await createTopic(request, 'E2E 移动主题');
     await request.post(`${apiUrl}/api/tasks`, { data: { topicId: topic.id, title: '移动端任务' } });
     await configureMock(request);
     await page.goto('/#/board');
-    await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '主导航', exact: true })).toBeVisible();
     await page.getByRole('button', { name: '看板', exact: true }).click();
     await expect(page.getByRole('heading', { name: '待办', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: '移动端任务', exact: true })).toBeVisible();

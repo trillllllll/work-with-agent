@@ -183,8 +183,7 @@
     "inbox": "Inbox",
     "organize": "Organize",
     "work": "Work",
-    "tools": "Tools",
-    "more": "More"
+    "tools": "Tools"
   },
   "morePage": {
     "title": "Workspace",
@@ -232,24 +231,6 @@
     "title": "Skills",
     "description": "Create, import, and manage skills for the AI assistant.",
     "manage": "Manage skills →"
-  },
-  "mobileNavigation": {
-    "title": "Features",
-    "description": "Choose shortcuts for the phone tab bar and drag to reorder. More stays pinned on the right.",
-    "loadFailed": "Couldn't load features",
-    "reload": "Reload",
-    "preview": "Tab bar preview",
-    "shown": "Shown",
-    "hidden": "Hidden",
-    "pinned": "Pinned on the right",
-    "atCapacity": "You can show at most {{max}} shortcuts. Turn one off before turning another on.",
-    "saving": "Saving…",
-    "synced": "Synced to this server",
-    "saveFailed": "Couldn't save. The previous settings were restored.",
-    "retrySave": "Retry save",
-    "showInBar": "Show {{label}} in the tab bar",
-    "drag": "Drag {{label}}",
-    "reorderHint": "Drag a handle to reorder. Or focus a handle, press Space to pick it up, move it with the arrow keys, and press Space to drop it."
   },
   "modelSettings": {
     "title": "Model settings",
@@ -442,7 +423,7 @@
       },
       "ui": {
         "title": "Interface",
-        "lead": "Interface language and the phone tab bar."
+        "lead": "Interface language and reminder settings."
       },
       "data": {
         "title": "Data",
@@ -472,12 +453,10 @@
       "imageSearchOff": "Image search off",
       "skills_one": "{{count}} skill · {{enabled}} enabled",
       "skills_other": "{{count}} skills · {{enabled}} enabled",
-      "bar": "Tab bar: {{items}}",
       "latestSnapshot": "Latest snapshot {{time}}",
       "noSnapshot": "No snapshots yet",
       "syncConflicts": "{{count}} sync conflicts",
       "separator": " · ",
-      "listSeparator": ", ",
       "loading": "…",
       "online_one": "{{count}} computer online",
       "online_other": "{{count}} computers online",

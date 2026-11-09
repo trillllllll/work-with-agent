@@ -1,7 +1,6 @@
-import { Archive, Bot, CalendarClock, CalendarDays, CalendarRange, ChartColumn, ClipboardCheck, FolderKanban, GitBranch, GraduationCap, Grid2X2, History, Inbox, Library, Menu, MessageSquare, NotebookText, Plug, Search, Settings, Sparkles, Tags, Timer, Trash2, type LucideIcon } from 'lucide-react';
+import { Archive, Bot, CalendarClock, CalendarDays, CalendarRange, ChartColumn, ClipboardCheck, FolderKanban, GitBranch, GraduationCap, Grid2X2, History, Inbox, Library, MessageSquare, NotebookText, Plug, Search, Settings, Sparkles, Tags, Timer, Trash2, type LucideIcon } from 'lucide-react';
 import { t } from '../i18n/index.js';
 import type { View } from './api.js';
-import type { MobileNavigationView } from './mobile-navigation.js';
 
 export type NavigationItem = { view: View; label: string; icon: LucideIcon };
 
@@ -35,9 +34,8 @@ export const navigationItems: NavigationItem[] = [
   navItem('stats', 'app:nav.stats', ChartColumn),
 ];
 
-/** 聊天与“更多”是固定入口，不进入可配置清单；桌面侧栏把聊天固定渲染在底部工具区（Sidebar footer），移动端更多页与底栏单独使用。 */
+/** 聊天是固定入口，不进入可配置清单；侧栏把聊天固定渲染在底部工具区（Sidebar footer）。 */
 export const chatItem: NavigationItem = navItem('chat', 'app:nav.chat', MessageSquare);
-export const moreItem: NavigationItem = navItem('more', 'app:nav.more', Menu);
 
 const itemsByView = new Map<View, NavigationItem>([...navigationItems, chatItem].map((item) => [item.view, item]));
 
@@ -55,8 +53,4 @@ export function navigationItem(view: View): NavigationItem {
   const item = itemsByView.get(view);
   if (!item) throw new Error(`Unknown navigation view: ${view}`);
   return item;
-}
-
-export function mobileNavigationItem(view: MobileNavigationView): NavigationItem {
-  return itemsByView.get(view)!;
 }

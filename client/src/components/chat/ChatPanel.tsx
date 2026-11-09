@@ -4,7 +4,7 @@ import mark from '@/assets/dovun-mark.svg';
 import { settingsHash } from '@/components/settings/settings-categories.js';
 import { ContextSummary } from './ContextSummary.js';
 import { suggestions, studySuggestions } from '@/lib/assistant-context.js';
-import { ArrowLeft, ChevronDown, Ellipsis, Maximize2, Minimize2, PanelLeft, RotateCcw, SquarePen, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Ellipsis, Maximize2, Minimize2, RotateCcw, SquarePen, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChat } from '@/hooks/useChat.js';
 import { api, type Settings } from '@/lib/api.js';
@@ -42,10 +42,9 @@ type ChatPanelProps = {
   onShrink?: () => void;
   showClose?: boolean;
   onReturnToLearning?: () => void;
-  onOpenNavigation?: () => void;
 };
 
-export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose, mobile, presentation = 'side', onExpand, onShrink, showClose = true, onReturnToLearning, onOpenNavigation }: ChatPanelProps) {
+export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose, mobile, presentation = 'side', onExpand, onShrink, showClose = true, onReturnToLearning }: ChatPanelProps) {
   const { t } = useTranslation('chat');
   const action = usePlatformAction();
   const settings = useQuery<Settings>({ queryKey: ['settings'], queryFn: () => api('/api/settings') });
@@ -88,7 +87,6 @@ export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose
   return (
     <div className="dovun-assistant flex h-full min-h-0 min-w-0 flex-col" data-testid="ai-assistant" data-presentation={presentation}>
       <header className="assistant-header flex shrink-0 items-center gap-1 px-3 py-3">
-        {onOpenNavigation && <Button variant="ghost" size="icon-sm" aria-label={t('chatPanel.openNavigation')} onClick={onOpenNavigation}><PanelLeft /></Button>}
         <div className="assistant-identity min-w-0 flex-1">
           {onSwitchIdentity ? <h2 aria-label={t(identityId === 'study' ? 'chatPanel.identityStudy' : 'chatPanel.identityWork')}><DropdownMenu><DropdownMenuTrigger asChild><Button variant="plain" size="bare" className="assistant-identity-trigger" disabled={chat.switchingBlocked} aria-label={t('chatPanel.switchIdentity')}><span className="truncate">{t(identityId === 'study' ? 'chatPanel.identityStudy' : 'chatPanel.identityWork')}</span><ChevronDown className="size-3" /></Button></DropdownMenuTrigger><DropdownMenuContent data-assistant-floating align="start">
             <DropdownMenuItem disabled={identityId === 'work'} onSelect={() => onSwitchIdentity('work')}>{t('chatPanel.identityWork')}</DropdownMenuItem>

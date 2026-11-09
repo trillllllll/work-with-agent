@@ -46,13 +46,14 @@
 .dovun-compact-group { border-top: 1px solid var(--glass-divider); padding-top: 5px; margin-top: 5px; }
 .dovun-rail-badge { position: absolute; top: 8px; right: 8px; width: 5px; height: 5px; border-radius: 50%; background: var(--workbench-coral); }
 .dovun-workspace .sidebar-link[data-active='true']:not([aria-current='page']) { background: var(--selected); color: var(--foreground); box-shadow: none; }
-.mobile-global-assistant { display: none; }
+.mobile-global-assistant,
+.mobile-global-nav { display: none; }
 @media (max-width: 1023px) {
-  .dovun-workspace .mobile-global-assistant {
+  .dovun-workspace .mobile-global-assistant,
+  .dovun-workspace .mobile-global-nav {
     display: inline-flex;
     position: absolute;
-    right: 16px;
-    bottom: calc(76px + env(safe-area-inset-bottom));
+    bottom: calc(16px + env(safe-area-inset-bottom));
     z-index: 12;
     width: 44px;
     height: 44px;
@@ -61,6 +62,63 @@
     background: var(--glass-bg-strong);
     box-shadow: var(--surface-overlay-shadow);
   }
+
+  .dovun-workspace .mobile-global-assistant { right: 16px; }
+
+  .dovun-workspace .mobile-global-nav { left: 16px; }
+
+  /* 手机导航抽屉：复用 Sidebar 的左侧滑出面板，替代原底栏。 */
+  .assistant-navigation-sheet {
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: auto;
+    translate: none;
+    transform: none;
+    width: min(320px, 86vw);
+    height: 100dvh;
+    max-height: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
+    border-radius: 0 18px 18px 0;
+  }
+
+  .assistant-navigation-sheet[data-state='open'] {
+    animation: dovun-nav-sheet-in 260ms cubic-bezier(0.32, 0.72, 0.33, 1);
+  }
+
+  .assistant-navigation-sheet .assistant-navigation-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 1;
+  }
+
+  .assistant-navigation-sheet .app-sidebar {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+
+  .assistant-navigation-sheet .sidebar-header { padding-right: 44px; }
+
+  /* 助手全屏页的输入区让开左下角导航按钮。 */
+  .dovun-assistant[data-presentation='direct'] .assistant-composer-area,
+  .dovun-assistant[data-presentation='expanded'] .assistant-composer-area {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom));
+  }
+
+  /* 规划页脚的时间段入口避开右下角悬浮按钮。 */
+  .dovun-workspace .plan-footer { margin-bottom: 60px; padding-right: 68px; }
+}
+
+@keyframes dovun-nav-sheet-in {
+  from { transform: translateX(-108%); }
+  to { transform: translateX(0); }
 }
 .dovun-main {
   margin: 0;
@@ -134,7 +192,6 @@
 .dovun-assistant-suggestions { flex-direction: column; padding-inline: 18px; }
 .dovun-assistant-suggestions button { min-height: 42px; justify-content: flex-start; padding: 10px 13px; font-size: 12px; }
 .dovun-workspace button:focus-visible, .dovun-workspace input:focus-visible { outline-color: var(--ring); }
-.dovun-workspace .mobile-tab-bar { background: var(--glass-bg-strong); }
 @media (min-width: 1280px) { .dovun-workspace { --dovun-nav-width: 224px; --dovun-work-width: 380px; } }
 @media (min-width: 1440px) { .dovun-workspace { --dovun-nav-width: 240px; --dovun-work-width: 400px; } }
 @media (max-width: 1279px) and (min-width: 1024px) { .dovun-task-content { padding: 30px 28px 48px; } }
@@ -154,7 +211,11 @@
   .dovun-task-content { padding: 24px 18px 40px; }
   .dovun-task-content .list-surface .task-row { border-radius: 0; }
 }
-@media (prefers-reduced-motion: reduce) { .dovun-workspace * { scroll-behavior: auto; } }
+@media (prefers-reduced-motion: reduce) {
+  .dovun-workspace * { scroll-behavior: auto; }
+
+  .assistant-navigation-sheet[data-state='open'] { animation: none; }
+}
 
 /* Hidden panes stay mounted, including the mobile Portal outside the workspace. */
 [data-task-editor] [hidden] { display: none !important; }

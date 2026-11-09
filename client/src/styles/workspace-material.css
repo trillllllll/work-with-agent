@@ -139,7 +139,6 @@
 .dovun-assistant .assistant-composer .assistant-input-box { border: 1px solid transparent; border-radius: 12px; background: var(--workspace-sheet-paint); box-shadow: var(--workspace-sheet-shadow); }
 .dovun-assistant .assistant-composer .assistant-input-box:focus-within { border-color: var(--ring); }
 .dovun-rail-header, .assistant-header { border-bottom-color: var(--workspace-divider); }
-.dovun-workspace .mobile-tab-bar { background: var(--surface-panel); }
 
 @media (max-width: 1023px) {
   .dovun-main .workspace-page { padding: 26px 20px 44px; }

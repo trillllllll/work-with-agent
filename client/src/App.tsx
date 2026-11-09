@@ -2,7 +2,7 @@ import { Modal } from './components/ui/modal.js';
 import { WorkRailTabs } from './components/layout/WorkRailTabs.js';
 import { Surface } from '@/components/ui/surface.js';
 import { createPortal } from 'react-dom';
-import { Sparkles, X } from 'lucide-react';
+import { PanelLeft, Sparkles, X } from 'lucide-react';
 import { buildChatContext } from './lib/chat-context.js';
 import { pageNames, usePageContexts, type ChatContextV3 } from './lib/assistant-context.js';
 import { useLibrarySnapshot, patchLibrary } from './components/library/store.js';
@@ -21,9 +21,7 @@ import { useHashRoute } from './hooks/useHashRoute.js';
 import { useMediaQuery } from './hooks/useMediaQuery.js';
 import { useLocalDate, useTasks, useTodoActions } from './hooks/useTodo.js';
 import { useWorkspaceEvents } from './hooks/useWorkspaceEvents.js';
-import { useMobileNavigation } from './hooks/useMobileNavigation.js';
-import { DEFAULT_MOBILE_NAVIGATION, mobileSelectedView } from './lib/mobile-navigation.js';
-import { mobileNavigationItem, moreItem, navigationItems } from './lib/navigation-items.js';
+import { navigationItems } from './lib/navigation-items.js';
 import { ConnectionsPage } from './components/workspace/ConnectionsPage.js';
 import { ProposalsPage } from './components/workspace/ProposalsPage.js';
 import { KnowledgePage } from './components/workspace/KnowledgePage.js';
@@ -159,7 +157,6 @@ function ScopedApp({scope}:{scope:string|undefined}) {
   const [assistantSlot, setAssistantSlot] = useState<HTMLDivElement | null>(null);
   const [workspaceAssistantSlot, setWorkspaceAssistantSlot] = useState<HTMLDivElement | null>(null);
   const [sourceView, setSourceView] = useState<{ title: string; content: string; kind: string; id: string; topicId?: string | null; revision?: number } | null>(null);
-  const mobileNavigation = useMobileNavigation();
   const [selectedTopicId, setSelectedTopicId] = useState(() => localStorage.getItem('dovun.selectedTopic') ?? '');
   const [chatOpen, setChatOpen] = useState(false);
   const [assistantIdentity, setAssistantIdentity] = useState<'work' | 'study'>(() => (chatStorage.get('assistantIdentity') === 'study' ? 'study' : 'work'));
@@ -561,11 +558,33 @@ function ScopedApp({scope}:{scope:string|undefined}) {
   const chatAccessory = showChat && !workspaceView && !isAssistantPage;
   const focusAccessory = focusSide && !workspaceView && !chatAccessory;
   const taskRail = Boolean(taskId) && !workspaceView && !isAssistantPage && !sourceView && !focusAccessory;
-  const chatPanel = <ChatPanel onOpenNavigation={!isDesktop && isAssistantPage ? () => setAssistantNavigationOpen(true) : undefined} chat={chat} identityId={assistantIdentity} onSwitchIdentity={switchAssistantIdentity} presentation={isAssistantPage ? assistantOrigin ? 'expanded' : 'direct' : 'side'} onExpand={expandAssistant} onShrink={shrinkAssistant} mobile={!isDesktop} showClose={!taskRail} onReturnToLearning={page === 'learning' ? () => setChatOpen(false) : assistantOrigin?.route === 'learning' ? shrinkAssistant : undefined} onClose={() => setChatOpen(false)} />;
+  const chatPanel = <ChatPanel chat={chat} identityId={assistantIdentity} onSwitchIdentity={switchAssistantIdentity} presentation={isAssistantPage ? assistantOrigin ? 'expanded' : 'direct' : 'side'} onExpand={expandAssistant} onShrink={shrinkAssistant} mobile={!isDesktop} showClose={!taskRail} onReturnToLearning={page === 'learning' ? () => setChatOpen(false) : assistantOrigin?.route === 'learning' ? shrinkAssistant : undefined} onClose={() => setChatOpen(false)} />;
   const focusPageVisible = isFocusPage && (isDesktop || !showChat);
   const closeTask = () => { setDetailDirty(false); setTaskId(''); };
   const taskIdRef = useRef(taskId);
   taskIdRef.current = taskId;
+  // 手机上从屏幕左缘向右滑打开导航抽屉，与左下角导航按钮等价。
+  const mobileNavGesture = useRef({ x: 0, y: 0, fromEdge: false });
+  const mobileNavAvailableRef = useRef(false);
+  mobileNavAvailableRef.current = !isDesktop && !workspaceView && !(showChat && !isAssistantPage) && !taskRail && !(page === 'learning' && routeQuery.session);
+  useEffect(() => {
+    if (isDesktop) return;
+    const start = (event: PointerEvent) => {
+      mobileNavGesture.current = { x: event.clientX, y: event.clientY, fromEdge: mobileNavAvailableRef.current && event.isPrimary && event.clientX <= 32 && !(event.pointerType === 'mouse' && event.button !== 0) };
+    };
+    const end = (event: PointerEvent) => {
+      const gesture = mobileNavGesture.current;
+      mobileNavGesture.current = { x: 0, y: 0, fromEdge: false };
+      if (!gesture.fromEdge) return;
+      if (event.clientX - gesture.x > 48 && Math.abs(event.clientY - gesture.y) < 32) setAssistantNavigationOpen(true);
+    };
+    window.addEventListener('pointerdown', start, true);
+    window.addEventListener('pointerup', end, true);
+    return () => {
+      window.removeEventListener('pointerdown', start, true);
+      window.removeEventListener('pointerup', end, true);
+    };
+  }, [isDesktop]);
   useEffect(() => {
     if (!taskIdRef.current) return;
     detailRef.current?.requestTransition(closeTask);
@@ -591,6 +610,7 @@ function ScopedApp({scope}:{scope:string|undefined}) {
     <div data-assistant-open={showChat || undefined} className="app-backdrop h-dvh overflow-hidden bg-background p-0">
       <div className={cn('app-frame dovun-workspace relative h-full overflow-hidden', isDesktop ? 'grid' : 'flex flex-col')} style={isDesktop ? { gridTemplateColumns: hasAccessory ? 'var(--dovun-nav-width) minmax(0, 1fr) var(--dovun-work-width)' : 'var(--dovun-nav-width) minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1fr)' } : undefined}>
         {isDesktop ? <Sidebar compact={!wide} key="sidebar" route={route} page={isAssistantPage ? 'chat' : page} topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onNavigate={navigateSafely} onOpenAssistant={openContextAssistant} assistantOpen={showChat} onSelectTopic={selectTopic} onEditTopic={setTopicForm} onNewTopic={newTopic} /> : <div key="sidebar" className="hidden" />}
+        {!isDesktop && !workspaceView && !(showChat && !isAssistantPage) && !taskRail && !(page === 'learning' && routeQuery.session) && <Button variant="ghost" size="icon" className="mobile-global-nav" onClick={() => setAssistantNavigationOpen(true)} aria-label={t('shell.mainNav')}><PanelLeft className="size-4" /></Button>}
         {!isDesktop && !isAssistantPage && !showChat && !taskRail && !workspaceView && !(page === 'learning' && routeQuery.session) && <Button variant="ghost" size="icon" className="mobile-global-assistant" onClick={openContextAssistant} aria-label={t('shell.openAssistant')}><Sparkles className="size-4" /></Button>}
         <main key="main" data-page={page} className={cn('app-main dovun-main glass-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto bg-[var(--glass-bg-strong)]', ((!isDesktop && (showChat || taskRail)) || sourceView || isAssistantPage) && 'hidden')} style={isDesktop ? { gridColumn: 2, gridRow: 1 } : undefined}>{content}</main>
         {sourceView && <section className={cn('min-h-0 overflow-auto p-5', (isAssistantPage || (!isDesktop && showChat)) && 'hidden')} style={isDesktop ? { gridColumn: 2, gridRow: 1 } : undefined} aria-label={t('shell.sourceText')}><Button variant="ghost" onClick={() => setSourceView(null)}>{t('shell.backToPage')}</Button><h2 className="my-3 text-lg font-semibold">{sourceView.title}</h2><BodyText text={sourceView.content} /></section>}
@@ -601,17 +621,10 @@ function ScopedApp({scope}:{scope:string|undefined}) {
           {focusAccessory && <div className="accessory-pane h-full min-h-0 min-w-0 overflow-hidden"><FocusPage presentation="side" onExpand={expandFocus} onShrink={shrinkFocus} onClose={() => setFocusOpen(false)} /></div>}
         </aside>
         <div ref={setAssistantPageSlot} data-testid="assistant-page" className={cn('min-h-0 min-w-0 flex-1 overflow-hidden', !isAssistantPage && 'hidden')} style={isDesktop ? { gridColumn: '2 / -1', gridRow: 1 } : undefined} />
-        {!isDesktop && !taskRail && !isAssistantPage && !showChat && (() => {
-          // 服务端配置驱动手机底栏；初次加载失败时按默认四项显示，不回写服务器。
-          const visibleViews = mobileNavigation.data?.visibleViews ?? DEFAULT_MOBILE_NAVIGATION.visibleViews;
-          const items = [...visibleViews.map(mobileNavigationItem), moreItem];
-          const selected = mobileSelectedView(route, visibleViews);
-          return <nav aria-label={t('shell.mainNav')} data-testid="mobile-bottom-navigation" className="mobile-tab-bar glass-surface grid shrink-0 rounded-none border-x-0 border-b-0 pb-[env(safe-area-inset-bottom)]" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>{items.map(({ view, label, icon: Icon }) => <Button variant="row" size="bare" key={view} data-view={view} className={cn('mobile-tab-item flex min-w-0 flex-col items-center gap-1 py-3 text-[11px]', selected === view ? 'text-foreground' : 'text-muted-foreground')} onClick={() => navigateSafely(view)} aria-current={selected === view ? 'page' : undefined}><Icon className="size-5" />{label}</Button>)}</nav>;
-        })()}
       </div>
     </div>
     {createPortal(chatPanel, assistantHost)}
-    {assistantNavigationOpen && !isDesktop && isAssistantPage && <Modal title={t('shell.mainNav')} onClose={() => setAssistantNavigationOpen(false)} className="assistant-navigation-sheet"><Button variant="ghost" size="icon-sm" className="assistant-navigation-close" aria-label={t('shell.backToPage')} onClick={() => setAssistantNavigationOpen(false)}><X /></Button><Sidebar route={route} page="chat" topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onNavigate={view => { setAssistantNavigationOpen(false); navigateSafely(view); }} onOpenAssistant={() => setAssistantNavigationOpen(false)} assistantOpen onSelectTopic={id => { setAssistantNavigationOpen(false); selectTopic(id); }} onEditTopic={topic => { setAssistantNavigationOpen(false); setTopicForm(topic); }} onNewTopic={() => { setAssistantNavigationOpen(false); newTopic(); }} /></Modal>}
+    {assistantNavigationOpen && !isDesktop && <Modal motion="none" title={t('shell.mainNav')} onClose={() => setAssistantNavigationOpen(false)} className="assistant-navigation-sheet"><Button variant="ghost" size="icon-sm" className="assistant-navigation-close" aria-label={t('shell.backToPage')} onClick={() => setAssistantNavigationOpen(false)}><X /></Button><Sidebar route={route} page={page} topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onNavigate={view => { setAssistantNavigationOpen(false); navigateSafely(view); }} onOpenAssistant={() => { setAssistantNavigationOpen(false); openContextAssistant(); }} assistantOpen onSelectTopic={id => { setAssistantNavigationOpen(false); selectTopic(id); }} onEditTopic={topic => { setAssistantNavigationOpen(false); setTopicForm(topic); }} onNewTopic={() => { setAssistantNavigationOpen(false); newTopic(); }} /></Modal>}
     <UploadQueue />
     <SkillEditorHost />
     {!(focusAccessory || focusPageVisible) && <FocusChip />}

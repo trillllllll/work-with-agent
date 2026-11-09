@@ -350,14 +350,15 @@ test('悬停或点按柱子出现 tooltip', async ({ page }, testInfo) => {
   await expect(tooltip).toBeVisible();
 });
 
-test('手机从更多进入统计，单列且页面没有横向溢出', async ({ page }, testInfo) => {
+test('手机从导航抽屉进入统计，单列且页面没有横向溢出', async ({ page }, testInfo) => {
   mobileOnly(testInfo);
   const today = shanghaiToday();
   for (const offset of [0, -1, -2]) await focusOn(addDays(today, offset), 25);
   await page.goto('/#/inbox');
-  await page.getByTestId('mobile-bottom-navigation').locator('[data-view="more"]').click();
-  await expect(page).toHaveURL(/#\/more$/);
-  await page.getByRole('navigation', { name: '工作区导航' }).getByRole('button', { name: '统计', exact: true }).click();
+  await page.getByRole('button', { name: '主导航', exact: true }).click();
+  const navigation = page.getByRole('dialog');
+  await expect(navigation.locator('.app-sidebar')).toBeVisible();
+  await navigation.getByRole('button', { name: '统计', exact: true }).click();
   await expect(page).toHaveURL(/#\/stats$/);
   await expect(page.getByTestId('stats-page')).toBeVisible();
 

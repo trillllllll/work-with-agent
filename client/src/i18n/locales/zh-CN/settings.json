@@ -182,8 +182,7 @@
     "inbox": "收集箱",
     "organize": "整理",
     "work": "工作",
-    "tools": "工具",
-    "more": "更多"
+    "tools": "工具"
   },
   "morePage": {
     "title": "工作区",
@@ -231,24 +230,6 @@
     "title": "技能",
     "description": "新建、导入和管理 AI 助手的技能。",
     "manage": "管理技能 →"
-  },
-  "mobileNavigation": {
-    "title": "功能模块",
-    "description": "选择手机底栏入口，拖动调整顺序。更多固定在最右侧。",
-    "loadFailed": "功能模块加载失败",
-    "reload": "重新加载",
-    "preview": "底栏预览",
-    "shown": "已显示",
-    "hidden": "未显示",
-    "pinned": "固定显示在最右侧",
-    "atCapacity": "最多显示 {{max}} 个入口，请先关闭一个再开启其他入口。",
-    "saving": "正在保存…",
-    "synced": "已同步到当前服务",
-    "saveFailed": "保存失败，已恢复上次设置。",
-    "retrySave": "重试保存",
-    "showInBar": "在底栏显示{{label}}",
-    "drag": "拖动{{label}}",
-    "reorderHint": "拖动手柄调整顺序。也可以聚焦手柄后按空格拿起，用上下方向键移动，再按空格放下。"
   },
   "modelSettings": {
     "title": "模型设置",
@@ -441,7 +422,7 @@
       },
       "ui": {
         "title": "界面",
-        "lead": "界面语言和手机底栏。"
+        "lead": "界面语言和提醒设置。"
       },
       "data": {
         "title": "数据",
@@ -470,12 +451,10 @@
       "imageSearchOn": "图片搜索已配置",
       "imageSearchOff": "图片搜索未配置",
       "skills": "{{count}} 个技能 · {{enabled}} 个已启用",
-      "bar": "底栏：{{items}}",
       "latestSnapshot": "最近快照 {{time}}",
       "noSnapshot": "还没有快照",
       "syncConflicts": "{{count}} 个同步冲突",
       "separator": " · ",
-      "listSeparator": "、",
       "loading": "…",
       "online_one": "{{count}} 台在线",
       "online_other": "{{count}} 台在线",

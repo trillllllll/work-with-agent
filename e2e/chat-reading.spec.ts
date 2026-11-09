@@ -46,7 +46,7 @@ test('same-content conversation stays readable across container widths and theme
     }
     expect(await panel.locator('.assistant-user-bubble').evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThan(150);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    if (width < 1024) await expect(page.getByTestId('mobile-bottom-navigation')).toHaveCount(0);
+    if (width < 1024) await expect(page.getByRole('button', { name: '主导航', exact: true })).toBeVisible();
     await panel.locator('[data-chat-scroll]').evaluate(element => { element.scrollTop = 0; });
     await page.screenshot({ path: `${evidence}/${info.project.name}-${theme}-${width}.png`, animations: 'disabled' });
   }
@@ -67,12 +67,12 @@ test('mobile navigation returns to chat without losing its draft', async ({ page
   await page.goto('/#/chat');
   const panel = page.getByTestId('ai-assistant');
   await panel.getByLabel('向 AI 提问').fill('暂时不发送的草稿');
-  await panel.getByRole('button', { name: '打开工作区导航', exact: true }).click();
+  await page.getByRole('button', { name: '主导航', exact: true }).click();
   const navigation = page.getByRole('dialog');
   await expect(navigation.locator('.app-sidebar')).toBeVisible();
   await navigation.getByRole('button', { name: '收集箱', exact: true }).click();
   await expect(page).toHaveURL(/#\/inbox$/);
-  await expect(page.getByTestId('mobile-bottom-navigation')).toBeVisible();
+  await expect(page.getByRole('button', { name: '主导航', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
   await expect(panel.getByLabel('向 AI 提问')).toHaveValue('暂时不发送的草稿');
 });

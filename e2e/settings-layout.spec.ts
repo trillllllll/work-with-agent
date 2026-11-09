@@ -40,14 +40,12 @@ test.describe('桌面', () => {
     await expect(page).toHaveURL(/#\/settings\/data$/);
     await expect(dialog.getByRole('heading', { name: '备份与恢复' })).toBeVisible();
     await expect(dialog.getByLabel('接口地址')).toHaveCount(0);
-    await expect(dialog.getByTestId('mobile-navigation-settings')).toHaveCount(0);
     await page.reload();
     await expect(page.getByRole('dialog').getByRole('heading', { name: '备份与恢复' })).toBeVisible();
     await expect(page.getByRole('dialog').getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: /^数据/ })).toHaveAttribute('aria-current', 'page');
 
     await page.getByRole('dialog').getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: /^界面/ }).click();
     await expect(page).toHaveURL(/#\/settings\/ui$/);
-    await expect(page.getByTestId('mobile-navigation-settings')).toBeVisible();
     await expect(page.getByTestId('language-settings')).toBeVisible();
     await expect(page.getByRole('dialog').getByLabel('接口地址')).toHaveCount(0);
 
@@ -189,24 +187,4 @@ test.describe('手机', () => {
     }
   });
 
-  test('底栏设置每项一行，没有上移下移按钮', async ({ page }) => {
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    await page.goto('/#/settings/ui');
-    const panel = page.getByTestId('mobile-navigation-settings');
-    await expect(panel).toBeVisible();
-    await expect(panel.getByRole('button', { name: /^上移|^下移/ })).toHaveCount(0);
-    const row = panel.getByTestId('mobile-navigation-row-today');
-    const handle = (await row.getByRole('button', { name: '拖动今天' }).boundingBox())!;
-    const name = (await row.getByText('今天', { exact: true }).boundingBox())!;
-    const toggle = (await row.getByRole('switch').boundingBox())!;
-    const center = (box: { y: number; height: number }) => box.y + box.height / 2;
-    expect(Math.abs(center(handle) - center(name))).toBeLessThan(6);
-    expect(Math.abs(center(toggle) - center(name))).toBeLessThan(6);
-    // A 44px touch target plus 10px padding on each side is exactly 64px.
-    const height = (await row.boundingBox())!.height;
-    expect(height).toBeGreaterThanOrEqual(56);
-    expect(height).toBeLessThanOrEqual(64);
-    await expect(row.getByRole('button', { name: '拖动今天' })).toHaveCSS('height', '44px');
-    await screenshot(page, 'mobile-ui');
-  });
 });

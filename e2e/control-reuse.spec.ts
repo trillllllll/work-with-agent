@@ -30,22 +30,9 @@ test('settings and populated assistant compose shared materials in light and dar
     await page.goto('/#/settings/ui');
     await page.reload();
     await page.evaluate(t => { document.documentElement.className = t; localStorage.setItem('dovun.theme', t); }, theme);
-    const settings = page.getByTestId('mobile-navigation-settings');
-    const first = settings.getByRole('switch').first();
-    await expect(first).toBeVisible();
-    const toggle = settings.getByRole('switch', { name: (await first.getAttribute('aria-label'))!, exact: true });
-    await expect(toggle).toHaveClass(/surface-switch/);
-    await expect(toggle).toHaveAttribute('data-slot', 'switch');
-    const list = settings.locator('.mnav-list').first();
-    await expect(list).toHaveAttribute('data-surface', 'card');
-    const listStyle = await list.evaluate(material);
-    expect(listStyle.paint).toContain('linear-gradient');
-    expect(listStyle.shadow).not.toBe('none');
-    const before = await toggle.isChecked();
-    await toggle.focus(); await page.keyboard.press('Space');
-    await expect(toggle).toBeChecked({ checked: !before });
-    await expect(settings.getByTestId('mobile-navigation-save-status')).not.toContainText('保存中');
-    await settings.locator('.mnav-preview').scrollIntoViewIfNeeded();
+    const settingsCategory = page.getByTestId('settings-category');
+    await expect(settingsCategory).toBeVisible();
+    await expect(settingsCategory.getByRole('heading', { name: '提醒', exact: true })).toBeVisible();
     if (width >= 1024) {
       await page.getByRole('button', { name: 'AI 助手', exact: true }).last().click();
     } else {

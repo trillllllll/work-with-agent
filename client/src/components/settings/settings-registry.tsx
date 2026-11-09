@@ -3,8 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Database, FolderKanban, Info, MonitorSmartphone, Server, Sparkles, Zap, type LucideIcon } from 'lucide-react';
 import { api, type Settings, type View } from '@/lib/api.js';
-import { MOBILE_NAVIGATION_LABELS, type MobileNavigationSettings as MobileNavigationPayload } from '@/lib/mobile-navigation.js';
-import { mobileNavigationKey } from '@/hooks/useMobileNavigation.js';
 import { currentLanguage, intlLocale } from '@/i18n/index.js';
 import type { SettingsCategory, SettingsSectionId } from './settings-categories.js';
 import { ModelSettings, useSettingsQuery } from './ModelSettings.js';
@@ -19,7 +17,6 @@ import { NotificationsSection } from './runner/NotificationsSection.js';
 import { ProjectsSettings } from './runner/ProjectsSettings.js';
 import { SkillsSummary, skillCounts, skillsQueryOptions } from './SkillsSummary.js';
 import { LanguageSettings } from './LanguageSettings.js';
-import { MobileNavigationSettings } from './MobileNavigationSettings.js';
 import { BackupSettings, snapshotsQueryOptions } from './BackupSettings.js';
 import { SyncConflicts, syncConflictsQueryOptions } from './SyncConflicts.js';
 import { ServerSettings, serverInfoQueryOptions } from './ServerSettings.js';
@@ -40,7 +37,6 @@ export const SETTINGS_SECTION_COMPONENTS: Record<SettingsSectionId, ComponentTyp
   skills: ({ onNavigate }) => <SkillsSummary onOpenSkills={() => onNavigate('skills')} />,
   projects: ProjectsSettings,
   language: LanguageSettings,
-  'mobile-navigation': MobileNavigationSettings,
   backup: BackupSettings,
   sync: SyncConflicts,
   server: ServerSettings,
@@ -70,7 +66,6 @@ export function useSettingsCategoryHints(): Record<SettingsCategory, string> {
   const nodes = useQuery({ queryKey: ['nodes'], queryFn: () => api<NodeRow[]>('/api/nodes') });
   const projects = useQuery({ queryKey: ['projects'], queryFn: () => api<ProjectHint[]>('/api/projects') });
   const skills = useQuery(skillsQueryOptions);
-  const navigation = useQuery<MobileNavigationPayload>({ queryKey: mobileNavigationKey, queryFn: ({ signal }) => api<MobileNavigationPayload>('/api/settings/mobile-navigation', { signal }) });
   const snapshots = useQuery(snapshotsQueryOptions);
   const conflicts = useQuery(syncConflictsQueryOptions);
   const server = useQuery(serverInfoQueryOptions);
@@ -98,7 +93,6 @@ export function useSettingsCategoryHints(): Record<SettingsCategory, string> {
     projects: projects.data ? join([t('layout.hints.projectCount', { count: projects.data.length }), t('layout.hints.pendingLocations', { count: pendingLocations })]) : loading,
     ui: join([
       t(`language.options.${currentLanguage()}`),
-      navigation.data && t('layout.hints.bar', { items: navigation.data.visibleViews.map((view) => MOBILE_NAVIGATION_LABELS[view]).filter(Boolean).join(t('layout.hints.listSeparator')) }),
     ]),
     data: snapshots.data ? [time ? t('layout.hints.latestSnapshot', { time }) : t('layout.hints.noSnapshot'), conflicts.data?.length ? t('layout.hints.syncConflicts', { count: conflicts.data.length }) : null].filter(Boolean).join(sep) : loading,
     about: join([
