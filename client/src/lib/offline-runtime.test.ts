@@ -124,6 +124,29 @@ describe('durable browser workspace', () => {
     expect((await restarted.status())!.rows.task.task.row.description).toBe('已提交但确认丢失');
   });
 
+  it('keeps pending edits behind an unexpired foreign lease and uploads after its expiry', async () => {
+    const remote = hub(); vi.stubGlobal('fetch', remote.fetcher);
+    const runtime = await replica('lease-expiry');
+    await edit(runtime, { description: 'lease experiment' });
+    const leaseStart = Date.now();
+    await runtime.store.update(runtime.scope, state => ({ state: { ...state!, lease: { owner: 'previous-page', until: leaseStart + 60_000 } }, value: undefined }));
+    const network = vi.fn(async () => ({ data: { workspaceId: 'workspace-test', schemaVersion: 'protocol-test' }, error: null as null }));
+    const restarted = new BrowserOfflineRuntime(runtime.scope, network, runtime.store);
+    const now = vi.spyOn(Date, 'now').mockReturnValue(leaseStart + 25_000);
+    try {
+      await restarted.sync();
+      expect(network).not.toHaveBeenCalled();
+      expect((await restarted.status())!.outbox).toHaveLength(1);
+      expect(remote.tasks.task.description).toBe('');
+      now.mockReturnValue(leaseStart + 60_000);
+      await restarted.sync();
+      expect(network).toHaveBeenCalledOnce();
+      expect((await restarted.status())!.outbox).toHaveLength(0);
+      expect(remote.tasks.task.description).toBe('lease experiment');
+      expect((await restarted.status())!.lease).toBeUndefined();
+    } finally { now.mockRestore(); }
+  });
+
   it('requires a stable preview for cascade mutations and never mutates before confirmation', async () => {
     const remote = hub(); remote.tasks.child = row({ parentId: 'task', title: '子任务' }); vi.stubGlobal('fetch', remote.fetcher);
     const runtime = await replica('a'), state = (await runtime.status())!;
