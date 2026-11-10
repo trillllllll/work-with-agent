@@ -55,6 +55,10 @@ test('清单颜色留在方块上，探索只多一枚标签', async ({ page, re
   const task = await data(await request.post(`${apiUrl}/api/tasks`, { data: { title: '颜色样本任务', topicId: topic.id } }));
   await page.goto('/#/search');
   const row = page.getByTestId(`task-row-${task.id}`);
-  await expect(row.getByText('颜色样本', { exact: true })).toBeVisible();
+  // Narrow rows abbreviate visible metadata but retain the full accessible name.
+  const info = row.locator('.task-inline-info').filter({ visible: true });
+  await expect(info).toBeVisible();
+  await expect(info).toHaveAccessibleName('颜色样本');
+  await expect(row.locator('.task-place-chip').filter({ visible: true })).toBeVisible();
   await expect(row.locator('.task-place-chip').filter({ visible: true })).not.toHaveAttribute('data-color', /.+/);
 });

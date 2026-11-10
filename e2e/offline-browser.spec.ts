@@ -8,6 +8,8 @@ test.afterEach(() => fault(false));
 test.afterAll(() => e2eDatabase.$disconnect());
 
 test('offline create, completion and reload survive and converge without duplicate tasks', async ({ page, context, request }, info) => {
+  // A page interrupted during sync can leave the durable 60s lease behind after reload.
+  test.setTimeout(90_000);
   const errors: string[] = []; let outageStarted = false;
   page.on('pageerror', error => {
     // WebKit reports a caught failed Fetch as a page error during the deliberate
@@ -40,7 +42,7 @@ test('offline create, completion and reload survive and converge without duplica
   await expect.poll(async () => {
     const result = await request.get(`${api}/api/tasks/${id}`);
     return result.ok() ? (await result.json()).data.status : null;
-  }, { timeout: 25_000 }).toBe('done');
+  }, { timeout: 70_000 }).toBe('done');
   await expect.poll(async () => (await (await request.get(`${api}/api/tasks?status=all`)).json()).data.filter((task: any) => task.id === id).length).toBe(1);
   await expect(page.getByRole('status').filter({ hasText: /条修改待同步/ })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

@@ -35,8 +35,15 @@ test.describe('清单长期目标', () => {
     await expect(page.getByText('把积累的资料全部归档')).toBeVisible();
     await expect(page.getByText(/目标截止 12月31日/)).toBeVisible();
 
-    // 侧栏标记
+    // Mobile navigation is mounted only while its drawer is open.
+    const mobileNavigation = (page.viewportSize()?.width ?? 0) < 1024;
+    if (mobileNavigation) await page.getByRole('button', { name: '主导航', exact: true }).click();
     await expect(page.locator('.sidebar-nav').getByText('目标', { exact: true })).toBeVisible();
+    if (mobileNavigation) {
+      const navigation = page.getByRole('dialog', { name: '主导航', exact: true });
+      await navigation.getByRole('button', { name: '返回页面', exact: true }).click();
+      await expect(navigation).toBeHidden();
+    }
 
     // 改成过期日期后显示逾期
     const revised = await data(await request.get(`${apiUrl}/api/topics`));
