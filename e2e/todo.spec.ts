@@ -186,6 +186,9 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await page.getByRole('button', { name: '保存安排', exact: true }).click();
     await page.getByRole('dialog', { name: '任务详情', exact: true }).getByLabel('任务标题', { exact: true }).click();
     await expect.poll(async () => (await task(request, current.id)).dueDate).toBeNull();
+    // Mobile task details replace the list until the work rail is closed.
+    await page.locator('.dovun-rail-close').click();
+    await expect(page.getByRole('dialog', { name: '任务详情', exact: true })).toBeHidden();
     await expect(row).toBeVisible();
     await page.goto('/#/today');
     await expect(page.getByTestId(`task-row-${current.id}`)).toBeHidden();

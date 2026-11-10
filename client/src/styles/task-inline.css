@@ -42,5 +42,6 @@
   .task-row { gap: 4px; padding-inline: 6px; }
   .task-row .task-drag-handle { display: none; }
   .task-inline-schedule { font-size: 10px; }
-  .task-inline-schedule svg { display: none; }
+  /* Date/time labels retain their text; recurrence has only an icon. */
+  .task-inline-schedule:not(.task-inline-recurrence) svg { display: none; }
 }

@@ -615,7 +615,14 @@ test('Markdown 批次导入映射配图，缺少文件可补充且保留源码�
   expect(saved.relativeReferences).toContainEqual(expect.objectContaining({ path: 'missing.txt', resourceId: evidence.id, revision: 1 }));
   await page.reload(); await readDocument(page);
   await expect(pane.getByRole('img', { name: '批次配图', exact: true })).toBeVisible();
-  await pane.getByRole('button', { name: '文件信息', exact: true }).click();
+  // Narrow toolbars move file information into the More menu.
+  const info = pane.getByRole('button', { name: '文件信息', exact: true });
+  if (await info.isVisible()) {
+    await info.click();
+  } else {
+    await pane.getByRole('button', { name: '更多', exact: true }).click();
+    await page.getByRole('menuitem', { name: '文件信息', exact: true }).click();
+  }
   const usedFiles = pane.getByTestId('document-used-files');
   await expect(usedFiles).toContainText('可补充的附件');
   await usedFiles.getByRole('button', { name: /可补充的附件/ }).click();

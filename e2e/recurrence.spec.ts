@@ -35,6 +35,7 @@ test.describe('重复任务', () => {
     const row = page.getByTestId(`task-row-${origin.id}`);
     await expect(row).toBeVisible();
     await expect(row.getByLabel('重复任务：每周')).toBeVisible();
+    await expect(row.getByLabel('重复任务：每周').locator('svg')).toBeVisible();
     await row.getByRole('checkbox', { name: '完成任务：每周复盘', exact: true }).click();
     const preview = page.getByRole('dialog', { name: '确认连带修改', exact: true });
     await expect(preview).toBeVisible();
@@ -46,6 +47,7 @@ test.describe('重复任务', () => {
     expect(next).toMatchObject({ title: '每周复盘', status: 'todo', dueDate: '2026-10-27', recurrenceRule: '{"unit":"week","step":1}' });
     await expect(page.getByTestId(`task-row-${next.id}`)).toBeVisible();
     await expect(page.getByTestId(`task-row-${next.id}`).getByLabel('重复任务：每周')).toBeVisible();
+    await expect(page.getByTestId(`task-row-${next.id}`).getByLabel('重复任务：每周').locator('svg')).toBeVisible();
   });
 
   test('任务详情可设置并清除重复', async ({ page, request }) => {
