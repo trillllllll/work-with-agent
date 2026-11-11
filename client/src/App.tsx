@@ -567,10 +567,10 @@ function ScopedApp({scope}:{scope:string|undefined}) {
   const closeTask = () => { setDetailDirty(false); setTaskId(''); };
   const taskIdRef = useRef(taskId);
   taskIdRef.current = taskId;
-  // 手机上从屏幕左缘向右滑打开导航抽屉，与左下角导航按钮等价。
+  // 手机上从屏幕左缘向右滑打开导航抽屉；助手全屏页与侧栏面板打开时仍可用（那里有输入框上方的导航圆钮）。
   const mobileNavGesture = useRef({ x: 0, y: 0, fromEdge: false });
   const mobileNavAvailableRef = useRef(false);
-  mobileNavAvailableRef.current = !isDesktop && !workspaceView && !(showChat && !isAssistantPage) && !taskRail && !(page === 'learning' && routeQuery.session);
+  mobileNavAvailableRef.current = !isDesktop && !workspaceView && !taskRail && !(page === 'learning' && routeQuery.session);
   // 手机上从助手（侧边面板或独立页）进入设置/回收站/变更历史弹窗时收起助手，否则弹窗里只见助手、内容被隐藏；
   // 从弹窗内放大到独立页后收缩返回是延续，不算进入。
   useLayoutEffect(() => {

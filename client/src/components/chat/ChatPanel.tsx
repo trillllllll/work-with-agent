@@ -140,7 +140,7 @@ export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose
       )}
 
       <div className="assistant-composer-area shrink-0" data-testid="assistant-context">
-        {mobile && (presentation === 'direct' || presentation === 'expanded') && onOpenNavigation && <div className="assistant-nav-row"><Button variant="ghost" size="icon" className="assistant-nav-bubble" aria-label={t('app:shell.mainNav')} title={t('app:shell.mainNav')} onClick={onOpenNavigation}><PanelLeft className="size-4" /></Button></div>}
+        {mobile && onOpenNavigation && <div className="assistant-nav-row"><Button variant="ghost" size="icon" className="assistant-nav-bubble" aria-label={t('app:shell.mainNav')} title={t('app:shell.mainNav')} onClick={onOpenNavigation}><PanelLeft className="size-4" /></Button></div>}
         {chat.attachments.length > 0 && <div className="assistant-attachments">{chat.attachments.map((item) => <div className="assistant-attachment" key={item.id}><span className="min-w-0 flex-1 truncate">{t(item.unsaved ? 'chatPanel.unsavedAttachment' : 'chatPanel.selectedAttachment', { title: item.title })}</span><Button variant="ghost" size="icon-xs" onClick={() => chat.removeAttachment(item.id)} aria-label={t('chatPanel.removeAttachment', { title: item.title })}><X /></Button></div>)}</div>}
         <ChatComposer input={input} busy={busy} reference={referencedApproval} onChange={setInput} onSend={send} onCancelReference={clearReference} placeholder={messages.length ? t('composer.continuePlaceholder') : t('composer.placeholder')} onStop={() => void chat.stop()} stopping={chat.stopping} toolbar={<>
           <ChatReferencePicker selectedIds={chat.context?.selectedMaterialIds ?? []} onSelect={chat.addMaterial} />
