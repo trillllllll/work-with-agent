@@ -184,15 +184,17 @@ function ProfileCard({ profile, active, busy, last, onActivate, onEdit, onDuplic
         <dd className="min-w-0">
           <span className="flex items-center gap-2">
             <ModelPicker profileId={profile.id} value={profile.model} onPick={onPickModel}>
-              <button
+              <Button
                 type="button"
+                variant="plain"
+                size="bare"
                 className="-mx-1.5 inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 font-mono text-[13px] transition-colors hover:bg-accent disabled:opacity-50"
                 disabled={busy}
                 title={t('modelSettings.modelFetch')}
               >
                 {profile.model}
                 <ChevronDown className="size-3 text-muted-foreground" aria-hidden="true" />
-              </button>
+              </Button>
             </ModelPicker>
             <span className="text-[11px] text-muted-foreground">{t('modelSettings.modelFetchHint')}</span>
           </span>

@@ -87,17 +87,17 @@ export function ModelPicker({ baseUrl, apiKey, profileId, value, onPick, childre
           )}
           {!entries && !failure && <p className="p-4 text-center text-xs text-muted-foreground">{t('modelSettings.modelEmpty')}</p>}
           {trimmed && !exact && (
-            <button type="button" role="option" className={cn(rowClass, 'text-primary')} onClick={() => pick({ id: trimmed })}>
+            <Button type="button" variant="plain" size="bare" role="option" className={cn(rowClass, 'text-primary')} onClick={() => pick({ id: trimmed })}>
               <Check className="size-3.5 shrink-0" aria-hidden="true" />
               <span className="min-w-0 flex-1 truncate font-mono">{t('modelSettings.customModel', { id: trimmed })}</span>
-            </button>
+            </Button>
           )}
           {filtered?.map((entry) => (
-            <button type="button" role="option" aria-selected={entry.id === value} key={entry.id} className={rowClass} onClick={() => pick(entry)}>
+            <Button type="button" variant="plain" size="bare" role="option" aria-selected={entry.id === value} key={entry.id} className={rowClass} onClick={() => pick(entry)}>
               <Check className={cn('size-3.5 shrink-0', entry.id === value ? 'text-primary' : 'invisible')} aria-hidden="true" />
               <span className="min-w-0 flex-1 truncate font-mono">{entry.id}</span>
               {entry.contextWindow ? <span className="shrink-0 text-[11px] text-muted-foreground">{fmtWindow(entry.contextWindow)}</span> : null}
-            </button>
+            </Button>
           ))}
           {entries && !filtered?.length && (exact || !trimmed) && <p className="p-3 text-center text-xs text-muted-foreground">{t('modelSettings.modelNoMatch', { query: trimmed })}</p>}
         </div>
