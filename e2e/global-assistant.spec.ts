@@ -45,6 +45,11 @@ test('all pages share one assistant; workspace modal, shortcuts, sources and his
   await page.getByRole('button', { name: '固定当前上下文', exact: true }).click();
   await panel(page).getByTestId('assistant-context-trigger').click();
   await page.evaluate(() => { location.hash = '/settings'; });
+  if (isMobile) {
+    // 手机上进入工作区弹窗会收起助手（否则助手盖住弹窗内容），用弹窗内的 AI 助手按钮重新打开。
+    await expect(panel(page)).toBeHidden();
+    await page.getByTestId('workspace-assistant-fab').click();
+  }
   await expect(panel(page)).toBeVisible();
   const fixed = await ask(page, 'AI验收固定规划');
   expect(fixed.context.page).toBe('plan');
@@ -207,6 +212,10 @@ test('every route shares input and mobile visual viewport keeps the composer vis
   await panel(page).getByRole('textbox', { name: '向 AI 提问' }).fill('全局草稿');
   for (const name of ['today', 'search', 'tags', 'quadrant', 'plan', 'library', 'knowledge', 'connections', 'runs', 'reviews', 'proposals', 'settings', 'trash', 'changes', 'focus', 'topics', 'archived', 'inbox']) {
     await page.evaluate((name) => { location.hash = `/${name}`; }, name);
+    if (isMobile && ['settings', 'trash', 'changes'].includes(name) && !(await panel(page).isVisible())) {
+      // 手机上进入工作区弹窗会收起助手，用弹窗内的 AI 助手按钮重新打开后继续校验草稿。
+      await page.getByTestId('workspace-assistant-fab').click();
+    }
     await expect(panel(page)).toBeVisible();
     await expect(panel(page).getByRole('textbox', { name: '向 AI 提问' })).toHaveValue('全局草稿');
   }

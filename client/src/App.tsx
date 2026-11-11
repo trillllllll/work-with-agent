@@ -167,6 +167,9 @@ function ScopedApp({scope}:{scope:string|undefined}) {
   const isAssistantPage = route === 'chat';
   const [assistantNavigationOpen, setAssistantNavigationOpen] = useState(false);
   useEffect(() => { setAssistantNavigationOpen(false); }, [route, isDesktop]);
+  // 手机上助手面板与工作区弹窗互斥：从助手进入弹窗时收起助手；从弹窗内放大到独立页再收缩返回不算进入。
+  const assistantResumedRef = useRef(false);
+  const workspaceModalShownRef = useRef(false);
   const isFocusPage = route === 'focus';
   useEffect(() => { if (!isAssistantPage) setAssistantOrigin(null); }, [isAssistantPage]);
   useEffect(() => { if (!isFocusPage) setFocusOrigin(null); }, [isFocusPage]);
@@ -344,6 +347,7 @@ function ScopedApp({scope}:{scope:string|undefined}) {
   const shrinkAssistant = () => {
     if (!assistantOrigin) return;
     rememberAssistantTransition(assistantHost);
+    assistantResumedRef.current = true;
     window.location.hash = assistantOrigin.hash || `/${assistantOrigin.route}`;
     setChatOpen(true);
   };
@@ -567,6 +571,14 @@ function ScopedApp({scope}:{scope:string|undefined}) {
   const mobileNavGesture = useRef({ x: 0, y: 0, fromEdge: false });
   const mobileNavAvailableRef = useRef(false);
   mobileNavAvailableRef.current = !isDesktop && !workspaceView && !(showChat && !isAssistantPage) && !taskRail && !(page === 'learning' && routeQuery.session);
+  // 手机上从助手（侧边面板或独立页）进入设置/回收站/变更历史弹窗时收起助手，否则弹窗里只见助手、内容被隐藏；
+  // 从弹窗内放大到独立页后收缩返回是延续，不算进入。
+  useLayoutEffect(() => {
+    const shown = Boolean(workspaceView) && !isAssistantPage;
+    if (shown && !workspaceModalShownRef.current && !isDesktop && showChat && !assistantResumedRef.current) setChatOpen(false);
+    assistantResumedRef.current = false;
+    workspaceModalShownRef.current = shown;
+  });
   useEffect(() => {
     if (isDesktop) return;
     const start = (event: PointerEvent) => {
