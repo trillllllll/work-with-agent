@@ -31,7 +31,7 @@ test.describe('桌面', () => {
     const nav = dialog.getByRole('navigation', { name: '设置分类' });
     await expect(nav).toBeVisible();
     // 不带分类时默认显示模型与 AI，地址不改写。
-    await expect(dialog.getByLabel('接口地址')).toBeVisible();
+    await expect(dialog.getByRole('heading', { name: '模型设置' })).toBeVisible();
     await expect(nav.getByRole('button', { name: /模型与 AI/ })).toHaveAttribute('aria-current', 'page');
     await expect(page).toHaveURL(/#\/settings$/);
     await screenshot(page, 'desktop-model');
@@ -39,7 +39,7 @@ test.describe('桌面', () => {
     await nav.getByRole('button', { name: /^数据/ }).click();
     await expect(page).toHaveURL(/#\/settings\/data$/);
     await expect(dialog.getByRole('heading', { name: '备份与恢复' })).toBeVisible();
-    await expect(dialog.getByLabel('接口地址')).toHaveCount(0);
+    await expect(dialog.getByRole('heading', { name: '模型设置' })).toHaveCount(0);
     await page.reload();
     await expect(page.getByRole('dialog').getByRole('heading', { name: '备份与恢复' })).toBeVisible();
     await expect(page.getByRole('dialog').getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: /^数据/ })).toHaveAttribute('aria-current', 'page');
@@ -47,7 +47,7 @@ test.describe('桌面', () => {
     await page.getByRole('dialog').getByRole('navigation', { name: '设置分类' }).getByRole('button', { name: /^界面/ }).click();
     await expect(page).toHaveURL(/#\/settings\/ui$/);
     await expect(page.getByTestId('language-settings')).toBeVisible();
-    await expect(page.getByRole('dialog').getByLabel('接口地址')).toHaveCount(0);
+    await expect(page.getByRole('dialog').getByRole('heading', { name: '模型设置' })).toHaveCount(0);
 
     // 浏览器后退回到上一个分类。
     await page.goBack();
@@ -108,7 +108,7 @@ test.describe('桌面', () => {
 
   test('未知分类按 #/settings 处理，旧链接仍可用', async ({ page }) => {
     await page.goto('/#/settings/nope');
-    await expect(page.getByRole('dialog').getByLabel('接口地址')).toBeVisible();
+    await expect(page.getByRole('dialog').getByRole('heading', { name: '模型设置' })).toBeVisible();
     await expect(page).toHaveURL(/#\/settings\/nope$/);
     await page.goto('/#/changes');
     await expect(page.getByRole('dialog', { name: '变更历史' })).toBeVisible();
@@ -125,13 +125,13 @@ test.describe('手机', () => {
     const dialog = page.getByRole('dialog');
     const list = dialog.getByTestId('settings-category-list');
     await expect(list).toBeVisible();
-    await expect(dialog.getByLabel('接口地址')).toHaveCount(0);
+    await expect(dialog.getByRole('heading', { name: '模型设置' })).toHaveCount(0);
     await expect(dialog.getByRole('navigation', { name: '工作区设置导航' })).toHaveCount(0);
     await screenshot(page, 'mobile-list');
 
     await list.getByRole('button', { name: '模型与 AI', exact: true }).click();
     await expect(page).toHaveURL(/#\/settings\/model$/);
-    await expect(dialog.getByLabel('接口地址')).toBeVisible();
+    await expect(dialog.getByRole('heading', { name: '模型设置' })).toBeVisible();
     const back = dialog.getByRole('button', { name: '返回设置' });
     await expect(back).toBeFocused();
     await expect(back).toContainText('模型与 AI');
@@ -146,9 +146,9 @@ test.describe('手机', () => {
 
   test('直接打开分类地址，刷新后仍在详情页', async ({ page }) => {
     await page.goto('/#/settings/model');
-    await expect(page.getByRole('dialog').getByLabel('接口地址')).toBeVisible();
+    await expect(page.getByRole('dialog').getByRole('heading', { name: '模型设置' })).toBeVisible();
     await page.reload();
-    await expect(page.getByRole('dialog').getByLabel('接口地址')).toBeVisible();
+    await expect(page.getByRole('dialog').getByRole('heading', { name: '模型设置' })).toBeVisible();
     await expect(page.getByRole('dialog').getByRole('button', { name: '返回设置' })).toContainText('模型与 AI');
   });
 

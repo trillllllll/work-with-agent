@@ -43,7 +43,12 @@ export type TaskActivityChange =
   | { field: 'deleted'; before: boolean; after: boolean };
 export type TaskActivityEvent = { id: string; at: string; actor: { kind: 'user' | 'agent'; name: string }; action: 'create' | 'update' | 'delete' | 'restore' | 'undo'; changes: TaskActivityChange[] };
 export type CliCommandSetting = { command: string; source: 'manual' | 'auto' | 'none'; version: string; checkedAt: string; manualCommand: string; autoCommand: string; discoveredCommand: string; discoveredVersion: string; applied: boolean; message: string };
-export type Settings = { baseUrl: string; model: string; contextWindow?: number | null; apiKeyConfigured: boolean; apiKeyMasked: string | null; cli?: { codex: CliCommandSetting; claude: CliCommandSetting }; discovered?: Record<string, CliCommandSetting> };
+/** 一套已保存的模型配置档案；Key 只以掩码出现，原始值留在服务端。 */
+export type ModelProfile = { id: string; name: string; baseUrl: string; model: string; contextWindow: number | null; apiKeyConfigured: boolean; apiKeyMasked: string | null };
+export type Settings = { baseUrl: string; model: string; contextWindow?: number | null; apiKeyConfigured: boolean; apiKeyMasked: string | null; profiles?: ModelProfile[]; activeProfileId?: string; cli?: { codex: CliCommandSetting; claude: CliCommandSetting }; discovered?: Record<string, CliCommandSetting> };
+export type ModelCatalogEntry = { id: string; contextWindow?: number };
+/** 服务端代理供应商 GET /models 的结果；读不到时给 reason 而不回传上游响应体。 */
+export type ModelCatalog = { models: ModelCatalogEntry[] } | { reason: 'unreachable' | 'http_error'; status?: number };
 /** Result of asking the provider's `/models` for a window. A null window keeps the field manual. */
 export type ContextWindowProbe = { contextWindow: number | null; model: string; reason: 'ok' | 'unreachable' | 'http_error' | 'not_provided'; status?: number };
 export type ApprovalResponse = { result?: ToolResult; assistantMessage?: string; assistantMessageId?: string; summaryError?: string; approval?: unknown; resumed?: boolean; run?: { id?: string; state?: string } | null };

@@ -49,11 +49,13 @@ test.describe('Agent 工作室 MVP', () => {
     test.skip(Boolean(isMobile), 'Agent 完整工作流在桌面视口验收');
     const topic = await createTopic(request, 'E2E Agent 主题');
     await page.goto('/#/settings');
+    await page.getByRole('button', { name: '新建配置' }).click();
+    await page.getByLabel('配置名称').fill('E2E Mock');
     await page.getByLabel('接口地址').fill('http://127.0.0.1:4010/v1');
     await page.getByLabel('模型名称').fill('mock-model');
     await page.getByLabel('API Key', { exact: true }).fill('e2e-key');
     await page.getByRole('button', { name: '测试连接并保存' }).click();
-    await expect(page.getByText('设置已保存，连接测试通过。')).toBeVisible();
+    await expect(page.getByText('已保存，连接测试通过。')).toBeVisible();
 
     await page.goto('/#/board');
     await expect(page.getByRole('heading', { name: 'E2E Agent 主题', exact: true })).toBeVisible();
@@ -139,8 +141,16 @@ test.describe('Agent 工作室 MVP', () => {
   test('Mock 服务明确报告上游错误和无效响应', async ({ page, isMobile }) => {
     test.skip(Boolean(isMobile), '模型错误协议在桌面视口验收');
     await page.goto('/#/settings');
+    await page.getByRole('button', { name: '新建配置' }).click();
+    await page.getByLabel('配置名称').fill('E2E Mock');
     await page.getByLabel('接口地址').fill('http://127.0.0.1:4010/v1');
     await page.getByLabel('API Key', { exact: true }).fill('e2e-key');
+    await page.getByLabel('模型名称').fill('mock-model');
+    await page.getByRole('button', { name: '测试连接并保存' }).click();
+    await expect(page.getByText('已保存，连接测试通过。')).toBeVisible();
+
+    // 编辑同一套配置：换成上游报错和返回无效响应的模型
+    await page.getByRole('article').getByRole('button', { name: '编辑', exact: true }).click();
     await page.getByLabel('模型名称').fill('mock-upstream');
     await page.getByRole('button', { name: '测试连接并保存' }).click();
     await expect(page.getByText('模型服务错误：502')).toBeVisible();

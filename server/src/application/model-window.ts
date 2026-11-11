@@ -52,3 +52,43 @@ export async function probeModelWindow(target: ModelWindowTarget, fetchImpl: typ
   const contextWindow = windowFromModelsPayload(payload, model);
   return contextWindow ? { contextWindow, model, reason: 'ok' } : { contextWindow: null, model, reason: 'not_provided' };
 }
+
+/** One selectable entry of the provider's `/models` list; the window stays absent when undeclared. */
+export type ModelCatalogEntry = { id: string; contextWindow?: number };
+export type ModelCatalog = { models: ModelCatalogEntry[] } | { reason: 'unreachable' | 'http_error'; status?: number };
+/** Providers can publish hundreds of entries; past this the list stops being a picker and becomes noise. */
+const MODEL_CATALOG_LIMIT = 200;
+
+/** Flattens an OpenAI-style `{ data: [{ id, … }] }` payload into picker entries. */
+export function modelsFromModelsPayload(payload: unknown): ModelCatalogEntry[] {
+  const data = (payload as { data?: unknown } | null)?.data;
+  if (!Array.isArray(data)) return [];
+  const entries: ModelCatalogEntry[] = [];
+  for (const item of data) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const id = (item as { id?: unknown }).id;
+    if (typeof id !== 'string' || !id.trim()) continue;
+    const contextWindow = readWindow(item as Record<string, unknown>);
+    entries.push(contextWindow ? { id: id.trim(), contextWindow } : { id: id.trim() });
+    if (entries.length >= MODEL_CATALOG_LIMIT) break;
+  }
+  return entries;
+}
+
+/**
+ * Lists the models a provider publishes, same transport and error taxonomy as the
+ * window probe (which hits the same URL). Never throws and never returns the
+ * upstream body: the UI only needs ids and declared windows.
+ */
+export async function fetchModelCatalog(target: { baseUrl: string; apiKey: string }, fetchImpl: typeof fetch = fetch, timeoutMs = 8000): Promise<ModelCatalog> {
+  const url = `${target.baseUrl.replace(/\/+$/, '')}/models`;
+  let response: Response;
+  try {
+    response = await fetchImpl(url, { headers: { Authorization: `Bearer ${target.apiKey}`, Accept: 'application/json' }, signal: AbortSignal.timeout(timeoutMs) });
+  } catch {
+    return { reason: 'unreachable' };
+  }
+  if (!response.ok) return { reason: 'http_error', status: response.status };
+  const payload = await response.json().catch(() => null);
+  return { models: modelsFromModelsPayload(payload) };
+}

@@ -257,6 +257,29 @@ const contextWindowProbeBody = z.object({ baseUrl: z.string().trim().max(2000).o
 app.post('/api/settings/context-window/probe', schema(contextWindowProbeBody), async (req, res, next) => {
   try { send(res, await settings.probeContextWindow(req.body)); } catch (error) { next(error); }
 });
+// 多套模型配置档案：一套 = 名称 + 接口地址 + Key + 模型 + 上下文；「使用中」的一套同步写回 openai_* 列。
+const profileBody = z.object({ name: z.string().trim().min(1).max(60), baseUrl: z.string().trim().min(1), model: z.string().trim().min(1), apiKey: z.string().optional(), contextWindow: z.number().int().min(0).nullable().optional() }).strict();
+const profileUpdateBody = profileBody.partial();
+app.post('/api/settings/profiles', schema(profileBody), async (req, res, next) => {
+  try { send(res, await settings.saveProfile(req.body, (config) => agent.testConnection(config))); } catch (error) { next(error); }
+});
+app.patch('/api/settings/profiles/:id', schema(profileUpdateBody), async (req, res, next) => {
+  try { send(res, await settings.saveProfile({ profileId: String(req.params.id), ...req.body }, (config) => agent.testConnection(config))); } catch (error) { next(error); }
+});
+app.delete('/api/settings/profiles/:id', async (req, res, next) => {
+  try { send(res, await settings.deleteProfile(String(req.params.id))); } catch (error) { next(error); }
+});
+app.post('/api/settings/profiles/:id/activate', async (req, res, next) => {
+  try { send(res, await settings.activateProfile(String(req.params.id))); } catch (error) { next(error); }
+});
+app.post('/api/settings/profiles/:id/copy', async (req, res, next) => {
+  try { send(res, await settings.copyProfile(String(req.params.id))); } catch (error) { next(error); }
+});
+// 模型列表同走供应商的 /models：服务端代理避免 CORS，Key 不进浏览器请求记录；不回传上游响应体。
+const modelCatalogBody = z.object({ baseUrl: z.string().trim().max(2000).optional(), apiKey: z.string().trim().max(1000).optional(), profileId: z.string().trim().max(80).optional() }).strict();
+app.post('/api/settings/models', schema(modelCatalogBody), async (req, res, next) => {
+  try { send(res, await settings.fetchModelCatalog(req.body)); } catch (error) { next(error); }
+});
 app.get('/api/settings/image-search', async (_req, res, next) => { try { send(res, await imageSearchSettings()); } catch (error) { next(error); } });
 app.patch('/api/settings/image-search', schema(z.object({ apiKey: z.string().trim().min(1).max(1000) }).strict()), async (req, res, next) => { try { send(res, await saveImageSearchKey(req.body.apiKey)); } catch (error) { next(error); } });
 app.delete('/api/settings/image-search', async (_req, res, next) => { try { send(res, await saveImageSearchKey('')); } catch (error) { next(error); } });

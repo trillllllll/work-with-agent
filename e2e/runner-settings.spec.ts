@@ -139,7 +139,7 @@ test.describe('桌面', () => {
     await expect(section.getByText('只用于定期回顾和交接')).toBeVisible();
     await section.getByRole('link', { name: '在『模型与 AI』修改' }).click();
     await expect(page).toHaveURL(/#\/settings\/model$/);
-    await expect(page.getByLabel('接口地址')).toBeVisible();
+    await expect(page.getByRole('dialog', { name: '设置' }).getByRole('heading', { name: '模型设置' })).toBeVisible();
   });
 
   test('在线电脑卡显示上报信息，离线卡写明上次上报', async ({ page, request }) => {
