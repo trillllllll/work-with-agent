@@ -595,7 +595,7 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
       await expect(page.getByRole('heading', { name: '第二清单', exact: true })).toBeVisible();
       await capture.fill('第二清单未提交草稿');
       releaseResponse.release();
-      await expect(page.getByText('任务已创建', { exact: true }).first()).toBeVisible();
+      await expect(page.getByText('已创建 1 项任务', { exact: true }).first()).toBeVisible();
       await expect(capture).toHaveValue('第二清单未提交草稿');
       await expect(page.getByRole('heading', { name: '第二清单', exact: true })).toBeVisible();
       expect(await data(await request.get(`${apiUrl}/api/tasks?topicId=${secondList.id}`))).toHaveLength(0);
