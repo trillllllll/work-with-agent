@@ -4,7 +4,7 @@ import { app } from './app.js';
 import { prisma } from './services.js';
 
 /** Chat-completions 测试连接与 /models 拉取共用一个 fetch 桩：按路径分流。 */
-function stubProvider(respond: () => Response | Promise<Response>) {
+function stubProvider(respond: (url: string) => Response | Promise<Response>) {
   return vi.fn(async (url: string | URL | RequestInit, init?: RequestInit) => respond(String(url)));
 }
 const chatOk = () => new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: '连接成功' } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
