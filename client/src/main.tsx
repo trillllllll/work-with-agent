@@ -24,7 +24,7 @@ async function start() {
   <QueryClientProvider client={queryClient}>
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem storageKey="dovun.theme" disableTransitionOnChange>
       <SessionGate><CommandPreviewProvider><App /></CommandPreviewProvider></SessionGate>
-      <Toaster richColors position="top-center" />
+      <Toaster position="top-center" />
     </ThemeProvider>
   </QueryClientProvider>
 );

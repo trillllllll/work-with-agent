@@ -2038,3 +2038,37 @@ textarea.task-title.line-through {
 .proposal-chip[data-tone="success"] { border-color: color-mix(in srgb, var(--success) 40%, transparent); background: color-mix(in srgb, var(--success) 12%, transparent); color: color-mix(in srgb, var(--success) 85%, var(--foreground)); }
 .proposal-chip[data-tone="info"] { border-color: color-mix(in srgb, var(--primary) 40%, transparent); background: color-mix(in srgb, var(--primary) 12%, transparent); color: color-mix(in srgb, var(--primary) 85%, var(--foreground)); }
 .proposal-chip[data-tone="danger"] { border-color: color-mix(in srgb, var(--destructive) 40%, transparent); background: color-mix(in srgb, var(--destructive) 12%, transparent); color: color-mix(in srgb, var(--destructive) 85%, var(--foreground)); }
+
+/* Sonner 横幅：瓷釉玻璃卡片。可撤销横幅（dovun-toast--undo）带状态色圆底图标与实体撤销按钮。 */
+[data-sonner-toast].dovun-toast {
+  gap: 10px;
+  padding: 9px 9px 9px 12px;
+  border-radius: 13px;
+  background: var(--surface-overlay-paint);
+  border: 1px solid var(--surface-overlay-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--surface-overlay-shadow);
+  color: var(--surface-overlay-text);
+  font-family: var(--control-font-family);
+}
+[data-sonner-toast].dovun-toast .dovun-toast-title { font-size: 13px; font-weight: 450; line-height: 1.5; }
+[data-sonner-toast].dovun-toast[data-type="success"] [data-icon] { color: var(--success); }
+[data-sonner-toast].dovun-toast[data-type="error"] [data-icon] { color: var(--destructive); }
+[data-sonner-toast].dovun-toast[data-type="warning"] [data-icon] { color: var(--warning); }
+[data-sonner-toast].dovun-toast[data-type="info"] [data-icon] { color: var(--link); }
+[data-sonner-toast].dovun-toast.dovun-toast--undo [data-icon] { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--success-bg); color: var(--success); }
+[data-sonner-toast].dovun-toast.dovun-toast--undo.dovun-toast--danger [data-icon] { background: var(--danger-bg); color: var(--destructive); }
+[data-sonner-toast].dovun-toast .dovun-toast-action {
+  height: 28px;
+  padding: 0 13px;
+  border-radius: 8px;
+  background: var(--surface-button-paint);
+  border: 1px solid var(--surface-button-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  color: var(--surface-button-text);
+  font-family: var(--control-font-family);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: filter var(--surface-button-duration) ease;
+}
+[data-sonner-toast].dovun-toast .dovun-toast-action:hover { filter: brightness(var(--surface-button-hover-brightness)); }

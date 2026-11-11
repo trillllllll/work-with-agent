@@ -158,8 +158,10 @@
     "studyBusy": "请先结束当前助手的运行，再切换到学习助手。"
   },
   "todo": {
-    "taskUpdated": "任务已更新",
-    "taskCreated": "任务已创建"
+    "taskCompleted": "已完成 {{count}} 项任务",
+    "taskTrashed": "已移入回收站 {{count}} 项任务",
+    "taskCreated": "已创建 {{count}} 项任务",
+    "taskMoved": "已移动到其他清单"
   },
   "review": {
     "ready": "新的回顾报告已就绪",

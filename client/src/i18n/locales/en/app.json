@@ -158,8 +158,13 @@
     "studyBusy": "Finish the current assistant run before switching to the study assistant."
   },
   "todo": {
-    "taskUpdated": "Task updated",
-    "taskCreated": "Task created"
+    "taskCompleted_one": "Completed {{count}} task",
+    "taskCompleted_other": "Completed {{count}} tasks",
+    "taskTrashed_one": "Moved {{count}} task to Trash",
+    "taskTrashed_other": "Moved {{count}} tasks to Trash",
+    "taskCreated_one": "Created {{count}} task",
+    "taskCreated_other": "Created {{count}} tasks",
+    "taskMoved": "Moved to another list"
   },
   "review": {
     "ready": "A new review is ready",

@@ -80,7 +80,7 @@ function Controls() {
         </div>
       </Surface>
     </div>
-    <Toaster richColors position="top-center" />
+    <Toaster position="top-center" />
   </main>;
 }
 

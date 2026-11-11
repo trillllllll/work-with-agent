@@ -506,7 +506,7 @@ function ScopedApp({scope}:{scope:string|undefined}) {
     const latest = await api<Task>(`/api/tasks/${task.id}`);
     const children = latest.children ?? [];
     if (!await confirm({ title: t('confirm.deleteTask'), description: children.length ? t('confirm.deleteTaskWithChildren', { title: task.title, count: children.length, list: children.map((child) => `• ${child.title}`).join('\n') }) : t('confirm.deleteTaskDescription', { title: task.title }), confirm: t('confirm.moveToTrash'), destructive: true })) return;
-    await actions.write(`/api/tasks/${task.id}`, 'DELETE', undefined, [task.id, ...children.map((child) => child.id)], t('shell.taskTrashed'));
+    await actions.write(`/api/tasks/${task.id}`, 'DELETE', undefined, [task.id, ...children.map((child) => child.id)], t('shell.taskTrashed'), { coalesce: 'trash', labelKey: 'todo.taskTrashed', danger: true });
     if (taskId === task.id) setTaskId('');
   };
   const archiveTopic = async (topic: Partial<Topic>) => {
