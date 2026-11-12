@@ -9,6 +9,13 @@
   "sparse": "Not enough data",
   "sparseBanner": "Only {{count}} days in this range have activity, so trend charts stay hidden. The numbers are still counted.",
   "sparseTrend": "Not enough data for a trend",
+  "insight": {
+    "analyzing": "Analyzing the last {{days}} days…",
+    "error": "This analysis didn't finish.",
+    "reanalyze": "Re-analyze",
+    "ask": "Ask the assistant",
+    "meta": "Analyzed {{time}} · {{span}}"
+  },
   "range": {
     "label": "Stats range",
     "d7": "7 days",

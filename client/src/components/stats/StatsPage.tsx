@@ -11,6 +11,7 @@ import { valuesByDate } from './charts/scale.js';
 import { Button } from '@/components/ui/button.js';
 import { Skeleton } from '@/components/ui/skeleton.js';
 import { KpiCards } from './KpiCards.js';
+import { StatsInsight } from './StatsInsight.js';
 import { StatsEmpty } from './StatsEmpty.js';
 import { StatsRangeBar } from './StatsRangeBar.js';
 import { type StatsNav } from './SectionShell.js';
@@ -133,6 +134,7 @@ export function StatsPage({ onOpenTopic }: { onOpenTopic: (id: string) => void }
       {data && quiet && <><KpiCards data={data} quiet nav={nav} /><StatsEmpty nav={nav} /></>}
       {data && !quiet && (
         <>
+          {days >= 3 && <StatsInsight key={`${data.range.from}|${data.range.to}`} from={data.range.from} to={data.range.to} tz={tz} rangeDays={data.range.days} recordedDays={days} />}
           {days > 0 && days < 3 && <p data-testid="stats-sparse" className="glass-subtle rounded-xl border px-4 py-3 text-sm text-muted-foreground">{t('sparseBanner', { count: days })}</p>}
           <KpiCards data={data} nav={nav} />
           <TasksSection data={data.tasks} range={data.range} nav={nav} onRetry={retry} />

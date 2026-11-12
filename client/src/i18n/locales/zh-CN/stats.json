@@ -9,6 +9,13 @@
   "sparse": "数据不足",
   "sparseBanner": "这段时间只有 {{count}} 天有记录，趋势图先不画。数字照常统计。",
   "sparseTrend": "数据不足，暂不显示趋势",
+  "insight": {
+    "analyzing": "正在分析近 {{days}} 天数据…",
+    "error": "这次分析没有完成。",
+    "reanalyze": "重新分析",
+    "ask": "问工作助手",
+    "meta": "分析于 {{time}} · {{span}}"
+  },
   "range": {
     "label": "统计区间",
     "d7": "7 天",

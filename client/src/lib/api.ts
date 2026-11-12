@@ -316,3 +316,9 @@ export type StatsOverview = {
   ai: StatsAiSection | StatsSectionError;
   assistantUsage: StatsAssistantUsageSection | StatsSectionError;
 };
+export type StatsInsightNote = { tone: 'warn' | 'info' | 'idea'; label: string; text: string };
+export type StatsInsightResponse = {
+  insight: { headline: string; notes: StatsInsightNote[] } | null;
+  reason?: 'sparse' | 'no-model' | 'failed';
+  generatedAt?: string;
+};
