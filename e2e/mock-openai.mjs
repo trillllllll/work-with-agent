@@ -75,6 +75,10 @@ const server = http.createServer(async (req, res) => {
   }
   if (body.model === 'mock-upstream' || latestUser.includes('上游错误')) return json(res, 502, { error: { message: 'mock upstream failure' } });
   if (!body.stream && body.model === 'mock-invalid') return json(res, 200, { choices: [] });
+  if (!body.stream && messages.some((item) => item.role === 'system' && String(item.content).includes('[统计洞察]'))) {
+    const output = { headline: '洞察验收：本期完成 1 项任务，新增 2 项。', notes: [{ tone: 'warn', label: '逾期风险', text: '「E2E 洞察样本」还没完成，先处理它。' }, { tone: 'idea', label: '建议', text: '把两次专注的节奏排进明天。' }] };
+    return json(res, 200, { choices: [{ message: { role: 'assistant', content: JSON.stringify(output) }, finish_reason: 'stop' }] });
+  }
   if (!body.stream && messages.some((item) => item.role === 'system' && String(item.content).includes('有来源的长期记忆'))) {
     const snapshot = JSON.parse(latestUser);
     const source = snapshot.sources[0];
