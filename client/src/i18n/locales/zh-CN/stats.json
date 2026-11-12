@@ -14,6 +14,8 @@
     "error": "这次分析没有完成。",
     "reanalyze": "重新分析",
     "ask": "问工作助手",
+    "askPrompt": "统计页分析：「{{headline}}」其中「{{note}}」这条，帮我把处理办法排进接下来的计划。",
+    "askPromptPlain": "统计页分析：「{{headline}}」帮我把结论变成接下来的计划。",
     "meta": "分析于 {{time}} · {{span}}"
   },
   "range": {

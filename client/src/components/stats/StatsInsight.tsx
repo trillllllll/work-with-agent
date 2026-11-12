@@ -58,8 +58,8 @@ export function StatsInsight({ from, to, tz, rangeDays, recordedDays }: { from: 
     if (!insight) return;
     const note = insight.notes[0];
     const prompt = note
-      ? `统计页分析：「${insight.headline}」其中「${note.text}」这条，帮我把处理办法排进接下来的计划。`
-      : `统计页分析：「${insight.headline}」帮我把结论变成接下来的计划。`;
+      ? t('insight.askPrompt', { headline: insight.headline, note: note.text })
+      : t('insight.askPromptPlain', { headline: insight.headline });
     window.dispatchEvent(new CustomEvent('dovun-open-assistant', { detail: { prompt } }));
   };
 

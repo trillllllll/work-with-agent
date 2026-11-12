@@ -14,6 +14,8 @@
     "error": "This analysis didn't finish.",
     "reanalyze": "Re-analyze",
     "ask": "Ask the assistant",
+    "askPrompt": "Stats insight: \"{{headline}}\" — about \"{{note}}\" in particular, help me work the handling into my upcoming plan.",
+    "askPromptPlain": "Stats insight: \"{{headline}}\" — help me turn this conclusion into a plan.",
     "meta": "Analyzed {{time}} · {{span}}"
   },
   "range": {
