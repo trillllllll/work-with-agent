@@ -568,7 +568,8 @@ function ScopedApp({scope}:{scope:string|undefined}) {
   const taskIdRef = useRef(taskId);
   taskIdRef.current = taskId;
   // 手机上从屏幕左缘向右滑打开导航抽屉；助手全屏页与侧栏面板打开时仍可用（那里有输入框上方的导航圆钮）。
-  const mobileNavGesture = useRef({ x: 0, y: 0, fromEdge: false });
+  // iOS 把横向拖动当成系统平移手势，会提前发 pointercancel 且不再有 pointerup，所以必须在 pointermove 途中就判定。
+  const mobileNavGesture = useRef({ id: -1, x: 0, y: 0, fromEdge: false });
   const mobileNavAvailableRef = useRef(false);
   mobileNavAvailableRef.current = !isDesktop && !workspaceView && !taskRail && !(page === 'learning' && routeQuery.session);
   // 手机上从助手（侧边面板或独立页）进入设置/回收站/变更历史弹窗时收起助手，否则弹窗里只见助手、内容被隐藏；
@@ -581,20 +582,32 @@ function ScopedApp({scope}:{scope:string|undefined}) {
   });
   useEffect(() => {
     if (isDesktop) return;
+    const reset = () => { mobileNavGesture.current = { id: -1, x: 0, y: 0, fromEdge: false }; };
     const start = (event: PointerEvent) => {
-      mobileNavGesture.current = { x: event.clientX, y: event.clientY, fromEdge: mobileNavAvailableRef.current && event.isPrimary && event.clientX <= 32 && !(event.pointerType === 'mouse' && event.button !== 0) };
+      const gesture = mobileNavGesture.current;
+      if (gesture.fromEdge && event.pointerId !== gesture.id) return;
+      mobileNavGesture.current = { id: event.pointerId, x: event.clientX, y: event.clientY, fromEdge: mobileNavAvailableRef.current && event.isPrimary && event.clientX <= 32 && !(event.pointerType === 'mouse' && event.button !== 0) };
+    };
+    const travel = (event: PointerEvent) => {
+      const gesture = mobileNavGesture.current;
+      if (!gesture.fromEdge || event.pointerId !== gesture.id) return;
+      if (event.clientX - gesture.x > 48 && Math.abs(event.clientY - gesture.y) < 32) { reset(); setAssistantNavigationOpen(true); }
     };
     const end = (event: PointerEvent) => {
       const gesture = mobileNavGesture.current;
-      mobileNavGesture.current = { x: 0, y: 0, fromEdge: false };
-      if (!gesture.fromEdge) return;
+      reset();
+      if (!gesture.fromEdge || event.pointerId !== gesture.id) return;
       if (event.clientX - gesture.x > 48 && Math.abs(event.clientY - gesture.y) < 32) setAssistantNavigationOpen(true);
     };
     window.addEventListener('pointerdown', start, true);
+    window.addEventListener('pointermove', travel, true);
     window.addEventListener('pointerup', end, true);
+    window.addEventListener('pointercancel', reset, true);
     return () => {
       window.removeEventListener('pointerdown', start, true);
+      window.removeEventListener('pointermove', travel, true);
       window.removeEventListener('pointerup', end, true);
+      window.removeEventListener('pointercancel', reset, true);
     };
   }, [isDesktop]);
   useEffect(() => {

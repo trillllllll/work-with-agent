@@ -133,6 +133,8 @@
   border: 0;
   border-radius: 0;
   box-shadow: none;
+  /* Horizontal drags stay with the page (left-edge swipe nav); vertical scroll and pinch zoom stay with the browser. */
+  touch-action: pan-y pinch-zoom;
 }
 .dovun-task-content { max-width: 960px; padding: 38px 44px 64px; }
 .dovun-page-header { margin-bottom: 24px; }

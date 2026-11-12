@@ -227,3 +227,37 @@ test('every route shares input and mobile visual viewport keeps the composer vis
     expect((await input.boundingBox())!.y + (await input.boundingBox())!.height).toBeLessThanOrEqual(500);
   }
 });
+
+test('mobile left-edge swipe opens the navigation drawer mid-gesture', async ({ page, isMobile }) => {
+  test.skip(!isMobile, '左缘滑动是手机手势');
+  await page.goto('/#/inbox');
+  await expect(page.getByRole('button', { name: '主导航', exact: true })).toBeVisible();
+  const drawer = page.locator('.assistant-navigation-sheet');
+  await expect(drawer).toHaveCount(0);
+  const session = await page.context().newCDPSession(page);
+  const touchDrag = async (start: { x: number; y: number }, dx: number, dy: number) => {
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: start.x, y: start.y, id: 0 }] });
+    const steps = 10;
+    for (let index = 1; index <= steps; index += 1) {
+      await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: start.x + (dx * index) / steps, y: start.y + (dy * index) / steps, id: 0 }] });
+    }
+  };
+  try {
+    // 从左缘向右滑：途中（尚未松手）就应打开抽屉——iOS 会提前发 pointercancel 且不再有 pointerup，这是唯一可靠时机。
+    await touchDrag({ x: 8, y: 360 }, 96, 6);
+    await expect(drawer).toBeVisible();
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.getByRole('button', { name: '返回页面', exact: true }).click();
+    await expect(drawer).toHaveCount(0);
+    // 纵向滑动归页面滚动，不打开抽屉。
+    await touchDrag({ x: 8, y: 360 }, 6, 120);
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await expect(drawer).toHaveCount(0);
+    // 离左缘太远的横向滑动不算手势。
+    await touchDrag({ x: 160, y: 360 }, 96, 6);
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await expect(drawer).toHaveCount(0);
+  } finally {
+    await session.detach();
+  }
+});

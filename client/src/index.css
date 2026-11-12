@@ -1984,7 +1984,8 @@ textarea.task-title.line-through {
 
 /* The same chat surface moves between hosts; its state and scroll DOM stay mounted. */
 /* Both axes stay hidden. overflow-x alone computes overflow-y to auto and steals the message scroller. */
-[data-testid="ai-assistant"] { background: var(--background); min-width: 0; overflow: hidden; }
+/* Horizontal drags stay with the page (left-edge swipe nav); vertical scroll and pinch zoom stay with the browser. */
+[data-testid="ai-assistant"] { background: var(--background); min-width: 0; overflow: hidden; touch-action: pan-y pinch-zoom; }
 [data-chat-scroll] { min-width: 0; }
 .assistant-thread { min-width: 0; max-width: 100%; }
 [data-testid="ai-assistant"][data-presentation="expanded"] .assistant-thread,
