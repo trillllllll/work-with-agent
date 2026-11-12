@@ -33,6 +33,7 @@ import { ReviewService } from './application/reviews.js';
 import { OrganizationService } from './application/knowledge-organizations.js';
 import { FocusService } from './application/focus.js';
 import { statsOverview } from './application/stats-overview.js';
+import { statsInsight } from './application/stats-insight.js';
 import { listPlanTimeBands, replacePlanTimeBands } from './application/plan-time-bands.js';
 import { isValidVisibleViews, type MobileNavigationView } from './domain/mobile-navigation.js';
 import { readMobileNavigation, writeMobileNavigation } from './application/mobile-navigation.js';
@@ -212,6 +213,15 @@ app.get('/api/stats/overview', async (req, res, next) => {
       to: typeof req.query.to === 'string' ? req.query.to : '',
       tz: typeof req.query.tz === 'string' ? req.query.tz : '',
     }));
+  } catch (error) { next(error); }
+});
+app.get('/api/stats/insight', async (req, res, next) => {
+  try {
+    send(res, await statsInsight({
+      from: typeof req.query.from === 'string' ? req.query.from : '',
+      to: typeof req.query.to === 'string' ? req.query.to : '',
+      tz: typeof req.query.tz === 'string' ? req.query.tz : '',
+    }, { refresh: req.query.refresh === '1' }));
   } catch (error) { next(error); }
 });
 app.post('/api/focus-sessions', schema(z.object({ taskId: z.string().min(1).nullable(), kind: z.enum(['focus', 'break']).optional(), startedAt: z.string().min(1), endedAt: z.string().min(1), durationMinutes: z.number().int().min(0).max(1440), plannedMinutes: z.number().int().min(1).max(10080).optional(), completed: z.boolean().optional() })), async (req, res, next) => { try { send(res, await focus.create(req.body)); } catch (error) { next(error); } });
