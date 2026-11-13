@@ -3,7 +3,12 @@
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(SHELL).then(cache => cache.addAll(ASSETS)));
 });
-self.addEventListener('activate', event => { event.waitUntil(self.clients.claim()); });
+self.addEventListener('activate', event => { event.waitUntil((async () => {
+  /* The shell name embeds the build; shells of older builds only pile up storage on phones. */
+  const names = await caches.keys();
+  await Promise.all(names.filter(name => name.startsWith('dovun-shell-') && name !== SHELL).map(name => caches.delete(name)));
+  await self.clients.claim();
+})()); });
 // Task reminders reach installed browsers here even with every tab closed.
 self.addEventListener('push', event => {
   let payload = {};
