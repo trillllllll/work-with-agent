@@ -249,6 +249,16 @@ test('mobile left-edge swipe opens the navigation drawer mid-gesture', async ({ 
     await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     await page.getByRole('button', { name: '返回页面', exact: true }).click();
     await expect(drawer).toHaveCount(0);
+    // 真机上系统边缘手势会抢走滑动并提前 pointercancel：已横向走过 ≥24px 时 cancel 也应打开抽屉。
+    await touchDrag({ x: 8, y: 360 }, 30, 6);
+    await session.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
+    await expect(drawer).toBeVisible();
+    await page.getByRole('button', { name: '返回页面', exact: true }).click();
+    await expect(drawer).toHaveCount(0);
+    // cancel 时位移不足（近纵向）不开抽屉。
+    await touchDrag({ x: 8, y: 360 }, 12, 60);
+    await session.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
+    await expect(drawer).toHaveCount(0);
     // 纵向滑动归页面滚动，不打开抽屉。
     await touchDrag({ x: 8, y: 360 }, 6, 120);
     await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
