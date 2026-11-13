@@ -27,3 +27,4 @@ desktop/src-tauri/gen/
 .archify/
 .ccb/
 .nodeterm/
+.workbuddy/
