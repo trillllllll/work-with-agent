@@ -138,6 +138,7 @@ export function WorkspaceModal({ suspended = false, assistantOpen, assistantSlot
         </section>
 </>, businessHost)}
       <DialogContent
+        data-mobile-nav-page={mobile || undefined}
         onInteractOutside={keepWorkspaceInteraction}
         showCloseButton={false}
         aria-describedby={undefined}

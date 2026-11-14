@@ -137,5 +137,5 @@ export function MapChart({ map, nodes, dark, views, command, onOpen, mobile = fa
     viewport.scrollLeft = state.scrollLeft ?? 0;
     return () => { cancelAnimationFrame(frame); capture(); viewport.removeEventListener('scroll', captureScroll); observer.disconnect(); instance.dispose(); };
   }, [map, nodes, dark, views, command, mobile, focusId, t]);
-  return <div className="max-w-full overflow-x-auto"><div ref={host} className="learning-map-chart w-full" data-testid="echarts-tree" role="img" aria-label={t('chart.label', { title: map.title })} /></div>;
+  return <div className="max-w-full overflow-x-auto"><div ref={host} className="learning-map-chart w-full" data-mobile-nav-ignore data-testid="echarts-tree" role="img" aria-label={t('chart.label', { title: map.title })} /></div>;
 }
