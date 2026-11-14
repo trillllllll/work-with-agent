@@ -271,3 +271,124 @@ test('mobile left-edge swipe opens the navigation drawer mid-gesture', async ({ 
     await session.detach();
   }
 });
+
+for (const route of ['inbox', 'chat']) test(`mobile inset swipes open navigation without stealing scrolling or editing (${route})`, async ({ page, request, isMobile }) => {
+  test.skip(!isMobile, '左侧靠内滑动是手机手势');
+  if (route === 'inbox') for (let index = 0; index < 20; index += 1) {
+    const response = await request.post(`${api}/api/tasks`, { data: { title: `手机滑动回归 ${index + 1}` } });
+    expect(response.ok()).toBe(true);
+  }
+  const session = await page.context().newCDPSession(page);
+  const drawer = page.locator('.assistant-navigation-sheet');
+  const touchDrag = async (x: number, y: number, dx: number, dy: number) => {
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 0 }] });
+    for (let step = 1; step <= 10; step += 1) {
+      await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + dx * step / 10, y: y + dy * step / 10, id: 0 }] });
+    }
+  };
+  const release = () => session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  try {
+    // CDP delivers browser touch input; Android's OS back gesture still needs a real-device check.
+    await page.goto(`/#/${route}`);
+    await expect(page.getByRole('button', { name: '主导航', exact: true })).toBeVisible();
+    if (route === 'inbox') {
+      await test.step('the populated task list still scrolls vertically', async () => {
+        const scroller = page.locator('main.app-main');
+        await expect(page.getByTestId('task-list').locator('article[data-testid]')).toHaveCount(20);
+        await touchDrag(64, 600, 6, -240);
+        await release();
+        await expect.poll(() => scroller.evaluate(node => node.scrollTop)).toBeGreaterThan(80);
+        await expect(drawer).toHaveCount(0);
+        await scroller.evaluate(node => { node.scrollTop = 0; });
+      });
+    }
+    await test.step(`${route}: start inside the page, away from the system edge`, async () => {
+      for (const x of [64, 96]) {
+        await touchDrag(x, 360, 96, 6);
+        await expect(drawer).toBeVisible();
+        await release();
+        await page.getByRole('button', { name: '返回页面', exact: true }).click();
+        await expect(drawer).toHaveCount(0);
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+      }
+    });
+    await test.step(`${route}: vertical, leftward, short and central swipes do not open navigation`, async () => {
+      for (const [x, dx, dy] of [[64, 6, 120], [64, -56, 6], [64, 24, 6], [128, 96, 6]]) {
+        await touchDrag(x, 360, dx, dy);
+        await release();
+        await expect(drawer).toHaveCount(0);
+      }
+    });
+    if (route === 'chat') {
+      await test.step('swiping in the composer preserves the draft', async () => {
+        const input = panel(page).getByRole('textbox', { name: '向 AI 提问' });
+        const draft = '保留中的手机草稿';
+        await input.fill(draft);
+        const bounds = (await input.boundingBox())!;
+        const x = Math.max(64, bounds.x + 8);
+        expect(x).toBeLessThanOrEqual(96);
+        await touchDrag(x, bounds.y + bounds.height / 2, 96, 6);
+        await release();
+        await expect(drawer).toHaveCount(0);
+        await expect(input).toHaveValue(draft);
+      });
+    }
+  } finally {
+    await session.detach();
+  }
+});
+
+test('mobile inset swipe yields to a held task drag', async ({ page, request, isMobile }) => {
+  test.skip(!isMobile, '手机长按拖动应保留给任务排序');
+  const topicResponse = await request.post(`${api}/api/topics`, { data: { name: '手机拖动回归' } });
+  expect(topicResponse.ok()).toBe(true);
+  const topic = (await topicResponse.json()).data;
+  const ids: string[] = [];
+  for (const title of ['拖动目标', '长按拖动任务']) {
+    const response = await request.post(`${api}/api/tasks`, { data: { title, topicId: topic.id } });
+    expect(response.ok()).toBe(true);
+    ids.push((await response.json()).data.id);
+  }
+  await page.addInitScript(id => localStorage.setItem('dovun.selectedTopic', id), topic.id);
+  await page.goto('/#/board');
+  const title = page.getByTestId(`task-row-${ids[1]}`).locator('.task-inline-title');
+  await expect(title).toBeVisible();
+  const bounds = (await title.boundingBox())!;
+  const x = Math.max(64, bounds.x + 8), y = bounds.y + bounds.height / 2;
+  expect(x).toBeLessThanOrEqual(96);
+  const session = await page.context().newCDPSession(page);
+  try {
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 0 }] });
+    await expect(page.locator('.task-drag-overlay')).toBeVisible();
+    for (let step = 1; step <= 10; step += 1) {
+      await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + step * 6, y, id: 0 }] });
+    }
+    await expect(page.locator('.task-drag-overlay')).toBeVisible();
+    await expect(page.locator('.assistant-navigation-sheet')).toHaveCount(0);
+    await session.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
+    await expect(page.locator('.task-drag-overlay')).toHaveCount(0);
+    await expect(page.locator('.assistant-navigation-sheet')).toHaveCount(0);
+  } finally {
+    await session.detach();
+  }
+});
+
+test('mobile inset swipe leaves the knowledge canvas in control', async ({ page, isMobile }) => {
+  test.skip(!isMobile, '画布拖动不应打开手机导航');
+  await page.goto('/#/knowledge/graph');
+  const canvas = page.getByLabel('知识关系图');
+  await canvas.scrollIntoViewIfNeeded();
+  const bounds = (await canvas.boundingBox())!;
+  const x = Math.max(64, bounds.x + 8), y = bounds.y + 80;
+  expect(x).toBeLessThanOrEqual(96);
+  const session = await page.context().newCDPSession(page);
+  try {
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 0 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + 80, y, id: 0 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await expect(page.locator('.assistant-navigation-sheet')).toHaveCount(0);
+    await expect(canvas).toBeVisible();
+  } finally {
+    await session.detach();
+  }
+});

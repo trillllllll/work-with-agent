@@ -67,6 +67,7 @@ import { toast } from 'sonner';
 import { t as translate } from './i18n/index.js';
 
 const emptyFilters: TaskFilters = { q: '', status: 'all', topic: 'all', dueFrom: '', dueTo: '', tag: '' };
+const mobileNavSwipeStartWidth = 96;
 
 // This TypeScript lib.dom has no moveBefore. Keep the augmentation local.
 type MoveBeforeParent = ParentNode & { moveBefore?(node: Node, child: Node | null): void };
@@ -567,7 +568,8 @@ function ScopedApp({scope}:{scope:string|undefined}) {
   const closeTask = () => { setDetailDirty(false); setTaskId(''); };
   const taskIdRef = useRef(taskId);
   taskIdRef.current = taskId;
-  // 手机上从屏幕左缘向右滑打开导航抽屉；助手全屏页与侧栏面板打开时仍可用（那里有输入框上方的导航圆钮）。
+  // 手机左侧 96px 内均可起滑，让安卓用户能从靠内位置右滑，避开最边缘的系统返回手势。
+  // 复用导航抽屉；助手全屏页与侧栏面板打开时仍可用（那里有输入框上方的导航圆钮）。
   // iOS 把横向拖动当成系统平移手势，会提前发 pointercancel 且不再有 pointerup，所以必须在 pointermove 途中就判定。
   // 真机上系统边缘手势抢走滑动时也会提前 cancel：cancel 时按已走过的横向位移兜底打开。
   const mobileNavGesture = useRef({ id: -1, x: 0, y: 0, lastX: 0, lastY: 0, fromEdge: false });
@@ -584,14 +586,22 @@ function ScopedApp({scope}:{scope:string|undefined}) {
   useEffect(() => {
     if (isDesktop) return;
     const reset = () => { mobileNavGesture.current = { id: -1, x: 0, y: 0, lastX: 0, lastY: 0, fromEdge: false }; };
+    // 清单排序、规划排期等已开始拖动时，导航不再接管同一根手指。
+    const dragging = () => Boolean(document.querySelector('[data-dragging="true"]'));
     const start = (event: PointerEvent) => {
       const gesture = mobileNavGesture.current;
       if (gesture.fromEdge && event.pointerId !== gesture.id) return;
-      mobileNavGesture.current = { id: event.pointerId, x: event.clientX, y: event.clientY, lastX: event.clientX, lastY: event.clientY, fromEdge: mobileNavAvailableRef.current && event.isPrimary && event.clientX <= 32 && !(event.pointerType === 'mouse' && event.button !== 0) };
+      // 起点扩大后会覆盖控件，编辑、滑块与画布拖动仍交给原控件。
+      const controlTarget = event.target instanceof Element && event.target.closest('input, textarea, select, canvas, [contenteditable]:not([contenteditable="false"]), [role="slider"]');
+      mobileNavGesture.current = {
+        id: event.pointerId, x: event.clientX, y: event.clientY, lastX: event.clientX, lastY: event.clientY,
+        fromEdge: mobileNavAvailableRef.current && event.isPrimary && event.clientX >= 0 && event.clientX <= mobileNavSwipeStartWidth && !controlTarget && !(event.pointerType === 'mouse' && event.button !== 0),
+      };
     };
     const travel = (event: PointerEvent) => {
       const gesture = mobileNavGesture.current;
       if (!gesture.fromEdge || event.pointerId !== gesture.id) return;
+      if (dragging()) { reset(); return; }
       gesture.lastX = event.clientX;
       gesture.lastY = event.clientY;
       if (event.clientX - gesture.x > 48 && Math.abs(event.clientY - gesture.y) < 32) { reset(); setAssistantNavigationOpen(true); }
@@ -599,13 +609,13 @@ function ScopedApp({scope}:{scope:string|undefined}) {
     const end = (event: PointerEvent) => {
       const gesture = mobileNavGesture.current;
       reset();
-      if (!gesture.fromEdge || event.pointerId !== gesture.id) return;
+      if (!gesture.fromEdge || event.pointerId !== gesture.id || dragging()) return;
       if (event.clientX - gesture.x > 48 && Math.abs(event.clientY - gesture.y) < 32) setAssistantNavigationOpen(true);
     };
     // 系统抢走手势时不发 pointerup，只发 pointercancel；此时用已走过的位移判定，阈值比完整滑动低。
     const cancel = (event: PointerEvent) => {
       const gesture = mobileNavGesture.current;
-      const recovered = gesture.fromEdge && event.pointerId === gesture.id && gesture.lastX - gesture.x >= 24 && Math.abs(gesture.lastY - gesture.y) < 32;
+      const recovered = gesture.fromEdge && event.pointerId === gesture.id && !dragging() && gesture.lastX - gesture.x >= 24 && Math.abs(gesture.lastY - gesture.y) < 32;
       reset();
       if (recovered) setAssistantNavigationOpen(true);
     };

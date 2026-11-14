@@ -1986,6 +1986,8 @@ textarea.task-title.line-through {
 /* Both axes stay hidden. overflow-x alone computes overflow-y to auto and steals the message scroller. */
 /* Horizontal drags stay with the page (left-edge swipe nav); vertical scroll and pinch zoom stay with the browser. */
 [data-testid="ai-assistant"] { background: var(--background); min-width: 0; overflow: hidden; touch-action: pan-y pinch-zoom; }
+/* The gesture policy must also reach the first scroll container under the touch target. */
+[data-testid="ai-assistant"] [data-chat-scroll] { touch-action: pan-y pinch-zoom; }
 [data-chat-scroll] { min-width: 0; }
 .assistant-thread { min-width: 0; max-width: 100%; }
 [data-testid="ai-assistant"][data-presentation="expanded"] .assistant-thread,

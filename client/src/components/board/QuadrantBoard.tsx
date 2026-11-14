@@ -44,7 +44,7 @@ function QuadrantLane({ definition, tasks, props, showCompleted }: { definition:
 
 function DraggableTask({ task, props, completed = false }: { task: TaskCardProps['task']; props: Omit<Props, 'tasks' | 'showCompleted' | 'onShowCompleted' | 'onMoveQuadrant'>; completed?: boolean }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task.id, disabled: props.readonly || props.busy });
-  return <div ref={setNodeRef} style={{ transform: CSS.Translate.toString(transform), touchAction: 'manipulation' }} className={cn('relative', isDragging && 'opacity-40', completed && 'opacity-75')} {...attributes} {...listeners}>
+  return <div ref={setNodeRef} style={{ transform: CSS.Translate.toString(transform), touchAction: 'manipulation' }} className={cn('relative', isDragging && 'opacity-40', completed && 'opacity-75')} {...attributes} {...listeners} data-dragging={isDragging || undefined}>
     <span aria-hidden="true" className="pointer-events-none absolute right-9 top-3 z-10 text-muted-foreground/45"><GripVertical className="size-3.5" /></span>
     <TaskCard {...props} task={task} />
   </div>;
