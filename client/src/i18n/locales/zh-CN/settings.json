@@ -249,7 +249,7 @@
     "editProfile": "编辑",
     "moreActions": "更多操作",
     "duplicate": "复制配置",
-    "duplicatedToast": "已复制为「{{name}}」，API Key 一并复制",
+    "duplicatedToast": "已复制配置「{{name}}」，API Key 一并复制",
     "deleteAction": "删除…",
     "deleteConfirm": "删除",
     "deleteTitle": "删除配置",

@@ -109,7 +109,7 @@ test('规划页保持路由，并按公式摆放 14:00 时间块', async ({ page
   }
 });
 
-test('托盘拖到 16:00 得到一小时并可以撤销', async ({ page, request }, testInfo) => {
+test('托盘拖到 16:00 得到一小时并可从变更历史撤销', async ({ page, request }, testInfo) => {
   test.skip(testInfo.project.name === 'mobile', '鼠标跨列拖动；触屏安排由 schedule.spec.ts 的详情编辑覆盖');
   const today = localKey();
   const created = await jsonData(await request.post(`${apiUrl}/api/tasks`, { data: { title: '待安排事项' } })) as { id: string };
@@ -119,12 +119,15 @@ test('托盘拖到 16:00 得到一小时并可以撤销', async ({ page, request
   const tray = page.getByTestId('tray-item').filter({ hasText: '待安排事项' });
   await expect(tray).toBeVisible();
   await drag(page, tray, page.locator(`[data-drop-id="slot:${today}:16:00"]`));
-  await expect(page.getByText('任务已更新').first()).toBeVisible();
-  await expect.poll(async () => (await jsonData(await request.get(`${apiUrl}/api/tasks/${created.id}`)) as { scheduledStart: string; scheduledEnd: string; dueDate: string })).toMatchObject({ scheduledStart: `${today}T16:00`, scheduledEnd: `${today}T17:00`, dueDate: today });
+  const readTask = async () => jsonData(await request.get(`${apiUrl}/api/tasks/${created.id}`));
+  await expect.poll(readTask).toMatchObject({ scheduledStart: `${today}T16:00`, scheduledEnd: `${today}T17:00`, dueDate: today });
   await page.locator(`[data-testid="task-block"][data-task-id="${created.id}"]`).getByRole('button', { name: '打开任务：待安排事项', exact: true }).click();
   await expect(page.getByRole('button', { name: '安排时间', exact: true })).toContainText('16:00 — 17:00');
-  await page.getByRole('button', { name: '撤销' }).click();
-  await expect.poll(async () => (await jsonData(await request.get(`${apiUrl}/api/tasks/${created.id}`)) as { scheduledStart: string | null }).scheduledStart).toBeNull();
+  await page.goto('/#/changes');
+  const change = page.getByTestId('change-row').filter({ hasText: '待安排事项' })
+    .filter({ has: page.getByText('更新', { exact: true }) });
+  await change.getByRole('button', { name: '撤销', exact: true }).click();
+  await expect.poll(readTask).toMatchObject({ scheduledStart: null, scheduledEnd: null, dueDate: null });
 });
 
 test('月视图拖到另一天保留时分', async ({ page, request }) => {

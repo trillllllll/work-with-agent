@@ -375,8 +375,13 @@ test('拖动安排、缩放、拖回取消和撤销保持一致', async ({ page,
   await drag(page, block.getByRole('button', { name: '打开任务：拖动完整闭环', exact: true }), page.locator('[data-drop-id="unschedule"]'));
   await expect.poll(async () => (await read()).dueDate).toBeNull();
   expect(await read()).toMatchObject({ scheduledStart: null, scheduledEnd: null, estimatedMinutes: 90 });
-  await page.getByRole('button', { name: '撤销', exact: true }).last().click();
-  await expect.poll(async () => (await read()).scheduledEnd).toBe(`${day}T16:00`);
+  await page.goto('/#/changes');
+  const cancellation = page.getByTestId('change-row').filter({ hasText: '拖动完整闭环' })
+    .filter({ has: page.getByText('更新', { exact: true }) }).first();
+  await cancellation.getByRole('button', { name: '撤销', exact: true }).click();
+  await expect.poll(read).toMatchObject({
+    dueDate: day, scheduledStart: `${day}T14:00`, scheduledEnd: `${day}T16:00`, estimatedMinutes: 90,
+  });
 });
 
 test('打开弹层期间外部更新会触发版本冲突，不覆盖安排或预计时长', async ({ page, request }) => {

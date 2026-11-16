@@ -10,6 +10,23 @@ test.beforeEach(async ({ page }) => {
 });
 test.afterAll(async () => { await e2eDatabase.$disconnect(); });
 
+test('英文界面复制模型配置时，本地化新名称及成功提示', async ({ page, request }) => {
+  const apiUrl = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
+  const created = await request.post(`${apiUrl}/api/settings/profiles`, {
+    data: { name: 'Relay', baseUrl: 'http://127.0.0.1:4010/v1', model: 'mock-model', apiKey: 'e2e-model-key' },
+  });
+  expect(created.ok(), await created.text()).toBe(true);
+  await page.addInitScript(() => localStorage.setItem('dovun.language', 'en'));
+  await page.goto('/#/settings/model');
+  const profile = page.getByRole('article').filter({ has: page.getByRole('heading', { name: 'Relay', exact: true }) });
+  await profile.getByRole('button', { name: 'More actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Duplicate', exact: true }).click();
+  await expect(page.locator('[data-sonner-toast]').getByText('Copied profile "Relay" (API key included)', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Relay copy', exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Relay copy', exact: true })).toBeVisible();
+});
+
 /** Acceptance screenshots: desktop ones from the Desktop Chrome project, phone ones from the Pixel 7 project. */
 async function screenshot(page: Page, name: string) {
   if (!shots) return;

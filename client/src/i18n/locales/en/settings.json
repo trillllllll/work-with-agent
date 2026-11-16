@@ -250,7 +250,7 @@
     "editProfile": "Edit",
     "moreActions": "More actions",
     "duplicate": "Duplicate",
-    "duplicatedToast": "Duplicated as \"{{name}}\" (API key included)",
+    "duplicatedToast": "Copied profile \"{{name}}\" (API key included)",
     "deleteAction": "Delete…",
     "deleteConfirm": "Delete",
     "deleteTitle": "Delete profile",

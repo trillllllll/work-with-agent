@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { defaultMobileNavigationJson } from '../domain/mobile-navigation.js';
 import { prisma } from '../infrastructure/prisma.js';
+import { localize } from '../i18n/index.js';
 import { fetchModelCatalog, probeModelWindow, type ModelCatalog, type ModelWindowProbe } from './model-window.js';
 
 export type ModelConfig = { baseUrl: string; apiKey: string; model: string; contextWindow?: number | null };
@@ -167,7 +168,7 @@ export class SettingsService {
     const { profiles, activeProfileId } = await this.ensureProfiles();
     const source = profiles.find((profile) => profile.id === profileId);
     if (!source) throw badRequest('配置不存在或已被删除');
-    const copy: StoredModelProfile = { ...source, id: this.newProfileId(), name: `${source.name} 副本` };
+    const copy: StoredModelProfile = { ...source, id: this.newProfileId(), name: localize(`${source.name} 副本`) };
     const index = profiles.findIndex((profile) => profile.id === profileId);
     await this.persistProfiles([...profiles.slice(0, index + 1), copy, ...profiles.slice(index + 1)], activeProfileId);
     return this.getPublic();

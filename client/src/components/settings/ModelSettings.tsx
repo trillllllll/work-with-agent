@@ -51,7 +51,7 @@ export function ModelSettings() {
   });
   const copy = useMutation({
     mutationFn: (profile: ModelProfile) => api<Settings>(`/api/settings/profiles/${profile.id}/copy`, { method: 'POST' }),
-    onSuccess: (data, profile) => { publish(data); toast.success(t('modelSettings.duplicatedToast', { name: `${profile.name} 副本` })); },
+    onSuccess: (data, profile) => { publish(data); toast.success(t('modelSettings.duplicatedToast', { name: profile.name })); },
     onError: (error: Error) => toast.error(error.message),
   });
   const remove = useMutation({

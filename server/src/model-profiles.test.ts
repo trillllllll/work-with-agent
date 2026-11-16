@@ -68,6 +68,30 @@ describe('model profiles', () => {
     expect(JSON.stringify(copied.body)).not.toContain('relay-key-5678');
   });
 
+  it('uses the request language for model profile errors', async () => {
+    const english = ['X-Dovun-Language', 'en'] as const;
+    const noAddress = await request(app).post('/api/settings/models').set(...english).send({});
+    expect(noAddress.status).toBe(400);
+    expect(noAddress.body.error).toBe('Enter the API address first');
+
+    const created = await createProfile({ name: 'Relay', baseUrl: 'https://relay.example.com/v1', model: 'm-one', apiKey: 'relay-key-1234' });
+    const last = await request(app).delete(`/api/settings/profiles/${created.body.data.profiles[0].id}`).set(...english);
+    expect(last.status).toBe(400);
+    expect(last.body.error).toBe('Keep at least one model profile');
+
+    const missing = '/api/settings/profiles/missing';
+    const responses = await Promise.all([
+      request(app).patch(missing).set(...english).send({ name: 'Relay' }),
+      request(app).delete(missing).set(...english),
+      request(app).post(`${missing}/activate`).set(...english),
+      request(app).post(`${missing}/copy`).set(...english),
+    ]);
+    for (const response of responses) {
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('The profile does not exist or has been deleted');
+    }
+  });
+
   it('rejects deleting the last profile and falls back when the active one is deleted', async () => {
     await createProfile({ name: '第一套', baseUrl: 'https://one.example.com/v1', model: 'm-one', apiKey: 'one-key-1234' });
     const second = await createProfile({ name: '第二套', baseUrl: 'https://two.example.com/v1', model: 'm-two', apiKey: 'two-key-5678' });
