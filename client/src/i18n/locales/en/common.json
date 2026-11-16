@@ -1,1 +1,10 @@
-{}
+{
+  "unsaved": {
+    "title": "Save unfinished edits?",
+    "description": "There are unsaved changes.",
+    "keepEditing": "Keep editing",
+    "discard": "Discard changes",
+    "saveAndContinue": "Save and continue",
+    "saving": "Saving…"
+  }
+}

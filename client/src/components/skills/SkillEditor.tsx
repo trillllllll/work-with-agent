@@ -1,5 +1,5 @@
 import { Checkbox } from '@/components/ui/checkbox.js';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -8,9 +8,10 @@ import { Button } from '@/components/ui/button.js';
 import { Input } from '@/components/ui/input.js';
 import { Textarea } from '@/components/ui/textarea.js';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
+import { UnsavedChangesDialog } from '@/components/dialogs/UnsavedChangesDialog.js';
 import { BodyText } from '@/components/shared/BodyText.js';
 import { cn } from '@/lib/utils.js';
-import { lineDiff, skillSaveRequest, type FromApproval, type OpenSkillEditorDetail, type SkillDetail, type SkillDiffLine, type SkillDraftInput } from './skill-format.js';
+import { lineDiff, skillDraftEquals, skillSaveRequest, type FromApproval, type OpenSkillEditorDetail, type SkillDetail, type SkillDiffLine, type SkillDraftInput } from './skill-format.js';
 
 export const SKILL_SAVED_EVENT = 'dovun-skill-saved';
 export type SkillSavedDetail = { skillId: string; revision: number; approvalId?: string };
@@ -34,15 +35,23 @@ export function SkillEditor({ state, onClose }: { state: EditorState; onClose: (
   const { t } = useTranslation('skills');
   const client = useQueryClient();
   const [draft, setDraft] = useState<SkillDraftInput>(state.draft);
+  const baseline = useRef<SkillDraftInput>(state.draft);
   const [reason, setReason] = useState('');
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [conflict, setConflict] = useState<SkillDetail | null>(null);
   const [compare, setCompare] = useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
   const editing = Boolean(draft.id);
   const missing = !draft.name.trim() || !draft.description.trim() || !draft.instructions.trim();
+  const dirty = !skillDraftEquals(draft, baseline.current) || reason.trim() !== '';
   const set = (patch: Partial<SkillDraftInput>) => setDraft((current) => ({ ...current, ...patch }));
+  const requestClose = () => {
+    if (busy) return;
+    if (dirty) setConfirmLeave(true);
+    else onClose();
+  };
 
   const save = async () => {
     if (missing || busy) return;
@@ -71,7 +80,9 @@ export function SkillEditor({ state, onClose }: { state: EditorState; onClose: (
 
   const loadLatest = () => {
     if (!conflict) return;
-    setDraft({ id: conflict.id, name: conflict.name, description: conflict.description, instructions: conflict.instructions, enabled: conflict.enabled, expectedRevision: conflict.revision });
+    const latest: SkillDraftInput = { id: conflict.id, name: conflict.name, description: conflict.description, instructions: conflict.instructions, enabled: conflict.enabled, expectedRevision: conflict.revision };
+    setDraft(latest);
+    baseline.current = latest;
     setConflict(null);
     setCompare(false);
     setError('');
@@ -85,7 +96,8 @@ export function SkillEditor({ state, onClose }: { state: EditorState; onClose: (
   const reasonPlaceholder = editing ? t('editor.reasonPlaceholderEdit') : state.fromApproval ? t('editor.reasonPlaceholderProposal') : t('editor.reasonPlaceholderCreate');
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
+    <>
+    <Dialog open onOpenChange={(open) => { if (!open) requestClose(); }}>
       <DialogContent data-assistant-floating data-testid="skill-editor" surface="glass" className="flex max-h-[calc(100dvh-48px)] w-[min(760px,calc(100vw-32px))] max-w-none flex-col overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{state.title}</DialogTitle>
@@ -114,12 +126,19 @@ export function SkillEditor({ state, onClose }: { state: EditorState; onClose: (
             {conflict && compare && <div className="text-foreground"><p className="mb-1 text-xs text-muted-foreground">{t('editor.compareCaption', { revision: conflict.revision })}</p><DiffLines lines={lineDiff(conflict.instructions, draft.instructions)} /></div>}
           </div>}
           <DialogFooter>
-            <Button type="button" variant="outline" disabled={busy} onClick={onClose}>{t('action.cancel')}</Button>
+            <Button type="button" variant="outline" disabled={busy} onClick={requestClose}>{t('action.cancel')}</Button>
             <Button type="submit" disabled={busy || missing}>{busy ? t('action.saving') : t('action.save')}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
+    {confirmLeave && <UnsavedChangesDialog
+      canSave={!missing}
+      onKeep={() => setConfirmLeave(false)}
+      onDiscard={() => { setConfirmLeave(false); onClose(); }}
+      onSave={() => { setConfirmLeave(false); void save(); }}
+    />}
+    </>
   );
 }
 

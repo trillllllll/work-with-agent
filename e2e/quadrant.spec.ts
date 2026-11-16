@@ -11,6 +11,27 @@ async function data(response: Awaited<ReturnType<APIRequestContext['get']>>) {
 test.beforeEach(resetE2eDatabase);
 test.afterAll(async () => { await e2eDatabase.$disconnect(); });
 
+test('四象限按已完成筛选，显示开关和计数跟随结果', async ({ page, request }) => {
+  const active = await data(await request.post(`${apiUrl}/api/tasks`, { data: { title: '仍待处理', priority: 'medium' } }));
+  const completed = await data(await request.post(`${apiUrl}/api/tasks`, { data: { title: '已经做完', priority: 'medium' } }));
+  await data(await request.patch(`${apiUrl}/api/tasks/${completed.id}`, { data: { status: 'done' } }));
+  await page.goto('/#/quadrant');
+  const activeCard = page.getByTestId(`task-card-${active.id}`);
+  const completedCard = page.getByTestId(`task-card-${completed.id}`);
+  const lane = page.getByRole('region', { name: '重要但不紧急，计划安排', exact: true });
+  const count = lane.locator('span.glass-control');
+  await expect(activeCard).toBeVisible();
+  await page.getByRole('button', { name: '筛选', exact: true }).click();
+  await page.getByLabel('筛选完成状态').selectOption('done');
+  await expect(activeCard).toHaveCount(0);
+  await expect(count).toHaveText('0');
+  await page.getByRole('checkbox', { name: '显示已完成', exact: true }).check();
+  await expect(count).toHaveText('1');
+  await lane.getByText('已完成 · 1', { exact: true }).click();
+  await expect(completedCard).toBeVisible();
+  await expect(activeCard).toHaveCount(0);
+});
+
 test('四象限复用优先级，并支持全局、清单和拖动保存', async ({ page, request }) => {
   const list = await data(await request.post(`${apiUrl}/api/topics`, { data: { name: '四象限清单' } }));
   const high = await data(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: list.id, title: '立即处理', priority: 'high' } }));
@@ -25,7 +46,11 @@ test('四象限复用优先级，并支持全局、清单和拖动保存', async
   for (const name of ['重要且紧急', '重要但不紧急', '不重要但紧急', '不重要且不紧急']) await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
   await expect(page.getByTestId(`task-card-${high.id}`)).toBeVisible();
   await expect(page.getByTestId(`task-card-${completed.id}`)).toBeHidden();
+  // 徽章只数当前可见任务：已完成隐藏时不计入，打开显示后计入
+  const plannedRegion = page.getByRole('region', { name: '重要但不紧急，计划安排', exact: true });
+  await expect(plannedRegion.locator('span.glass-control')).toHaveText('1');
   await page.getByRole('checkbox', { name: '显示已完成', exact: true }).check();
+  await expect(plannedRegion.locator('span.glass-control')).toHaveText('2');
   await page.getByText('已完成 · 1', { exact: true }).click();
   await expect(page.getByTestId(`task-card-${completed.id}`)).toBeVisible();
 

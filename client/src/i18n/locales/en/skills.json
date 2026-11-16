@@ -52,7 +52,8 @@
     "view": "View",
     "failed": "Couldn't complete that",
     "loading": "Loading…",
-    "reading": "Loading…"
+    "reading": "Loading…",
+    "retry": "Retry"
   },
   "page": {
     "label": "Skills",

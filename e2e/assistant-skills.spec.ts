@@ -204,3 +204,22 @@ test('存为技能 drafts from the conversation and writes only on save', async 
   await expect(page.getByTestId('skill-editor')).toHaveCount(0);
   expect((await skills(request)).map((skill) => [skill.name, skill.origin, skill.enabled])).toEqual([['会话起草技能', 'manual', true]]);
 });
+
+test('技能编辑器取消可继续编辑，Esc 提示后可舍弃草稿', async ({ page, request, isMobile }) => {
+  test.skip(isMobile, 'desktop only');
+  await page.goto('/#/skills');
+  await page.getByRole('button', { name: '新建', exact: true }).click();
+  const editor = page.getByTestId('skill-editor');
+  await expect(editor).toBeVisible();
+  await editor.getByLabel('技能名称').fill('脏检查验收');
+  await editor.getByRole('button', { name: '取消', exact: true }).click();
+  const guard = page.getByRole('dialog', { name: '保存未完成的编辑？' });
+  await expect(guard).toBeVisible();
+  await guard.getByRole('button', { name: '继续编辑' }).click();
+  await expect(editor.getByLabel('技能名称')).toHaveValue('脏检查验收');
+  await page.keyboard.press('Escape');
+  await expect(guard).toBeVisible();
+  await guard.getByRole('button', { name: '舍弃更改' }).click();
+  await expect(editor).toHaveCount(0);
+  expect(await skills(request)).toHaveLength(0);
+});

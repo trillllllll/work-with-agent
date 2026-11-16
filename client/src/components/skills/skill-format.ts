@@ -43,6 +43,11 @@ export type OpenSkillEditorDetail = {
 };
 
 export type SkillDiffLine = { type: 'same' | 'add' | 'remove'; text: string };
+
+/** Compares the editable fields only; id and expectedRevision never count as user edits. */
+export function skillDraftEquals(a: SkillDraftInput, b: SkillDraftInput) {
+  return a.name === b.name && a.description === b.description && a.instructions === b.instructions && a.enabled === b.enabled;
+}
 export type SkillDiff = {
   from?: number;
   to?: number;

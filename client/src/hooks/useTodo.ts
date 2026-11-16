@@ -5,6 +5,7 @@ import { Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, apiMutation, ApiError, type ApiEnvelope, type ChangePage, type FocusSession, type Task } from '@/lib/api.js';
 import { markChangeUndone } from '@/lib/change-list-cache.js';
+import type { FocusSessionInput } from '@/lib/focus-records.js';
 import { enqueueWrite, localDate, queryKeys, keepNewestTask } from '@/lib/todo.js';
 import { useCommandPreview, type CommandPreview } from '@/components/dialogs/CommandPreviewProvider.js';
 import { useEditorRuntime } from '@/lib/task-editor-runtime.js';
@@ -188,9 +189,13 @@ export function useFocusSessions(params: { taskId?: string; from?: string; to?: 
 }
 export function useRecordFocusSession() {
   const client = useQueryClient();
+  const { t } = useTranslation('app');
   return useMutation({
-    mutationFn: (input: { taskId: string | null; kind: 'focus' | 'break'; startedAt: string; endedAt: string; durationMinutes: number; plannedMinutes: number; completed: boolean }) =>
-      apiMutation<FocusSession>('/api/focus-sessions', { method: 'POST', body: JSON.stringify(input) }),
+    mutationFn: async (input: FocusSessionInput) => {
+      const result = await apiMutation<FocusSession>('/api/focus-sessions', { method: 'POST', body: JSON.stringify(input) });
+      if (!result.data?.id) throw new ApiError(t('api.invalidResponse'));
+      return result;
+    },
     onSuccess: () => { void client.invalidateQueries({ queryKey: queryKeys.focusSessions }); },
   });
 }

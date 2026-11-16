@@ -28,7 +28,7 @@ import './work-context.css';
 
 type PageResult<T> = { items: T[]; total: number; nextCursor: number | null };
 type Resource = { id: string; title: string; kind: string; revision: number; content?: string; uri?: string; health?: string; status?: string; evidence?: Evidence[]; archivedAt?: string | null; versions?: any[]; importance?: number; labels?: string[]; origin?: string; createdAt?: string; updatedAt?: string };
-type ResourceEditing = { id: string; scope: string; resource?: Resource };
+type ResourceEditing = { id: string; resource?: Resource; draft: MemoryEditorDraft };
 type BriefDraft = { notes: string; revision: number };
 type KnowledgeTab = KnowledgeSection;
 type MemoryStatus = 'active' | 'history' | 'all';
@@ -120,7 +120,8 @@ export function KnowledgePage({
   const [memoryInput, setMemoryInput] = useState('');
   const [memoryStatus, setMemoryStatus] = useState<MemoryStatus>('active');
   const [searchHistory, setSearchHistory] = useState(false);
-  const [editing, setEditing] = useState<ResourceEditing | null>(null);
+  const [memoryEditors, setMemoryEditors] = useState<Record<string, ResourceEditing>>({});
+  const { run: runMemorySave, busy: memorySaving } = usePlatformAction();
   const [briefDrafts, setBriefDrafts] = useState<Record<string, BriefDraft | null>>({});
   const [opened, setOpened] = useState('');
   const searchQuery = useSubmittedQuery(searchInput);
@@ -130,13 +131,60 @@ export function KnowledgePage({
   const missing = !embedded && topicExplicit && topicId !== '' && !(section === 'extractions' && topicId === 'all') && topicsReady && !knownTopics.some((topic) => topic.id === topicId);
   const scope = scopeQuery(topicId);
   const editorScope = `${topicId}:${section}`;
-  const activeEditor = editing?.scope === editorScope ? editing : null;
+  const activeEditor = memoryEditors[editorScope] ?? null;
   const locate = (nextSection: KnowledgeTab, nextTopic = topicId) => {
     if (nextSection !== 'extractions' && nextTopic === 'all') nextTopic = '';
     if (embedded) { setLocalTopic(nextTopic); setLocalSection(nextSection); return; }
     onLocate?.(nextSection, nextTopic);
   };
-  const openEditor = (resource?: Resource) => setEditing({ id: crypto.randomUUID(), scope: editorScope, resource });
+  const openEditor = (resource?: Resource) => {
+    const editor: ResourceEditing = {
+      id: crypto.randomUUID(),
+      resource,
+      draft: {
+        title: resource?.title ?? '',
+        content: resource?.content ?? '',
+        kind: resource?.kind ?? 'fact',
+        importance: resource?.importance ?? 3,
+        labels: asLabels(resource?.labels).join(' '),
+        origin: resource?.origin ?? 'manual',
+        evidence: resource?.evidence ?? [],
+        reason: '',
+      },
+    };
+    setMemoryEditors((current) => {
+      const existing = current[editorScope];
+      return existing && existing.resource?.id === resource?.id ? current : { ...current, [editorScope]: editor };
+    });
+  };
+  const updateEditorDraft = (patch: Partial<MemoryEditorDraft>) => {
+    setMemoryEditors((current) => {
+      const editor = current[editorScope];
+      return editor && editor.id === activeEditor?.id
+        ? { ...current, [editorScope]: { ...editor, draft: { ...editor.draft, ...patch } } }
+        : current;
+    });
+  };
+  const closeMemoryEditor = () => {
+    setMemoryEditors((current) => {
+      if (!activeEditor || current[editorScope]?.id !== activeEditor.id) return current;
+      const next = { ...current };
+      delete next[editorScope];
+      return next;
+    });
+  };
+  const saveMemoryEditor = (input: NonNullable<Command['input']>) => {
+    if (!activeEditor) return;
+    const { resource } = activeEditor;
+    void runMemorySave(async () => {
+      const command: Command = resource
+        ? { kind: 'memory.update', targetId: resource.id, expectedRevision: resource.revision, input }
+        : { kind: 'memory.create', input };
+      const result = await submitCommands([command]);
+      closeMemoryEditor();
+      return result;
+    });
+  };
   const updateBriefDraft = (update: (current: BriefDraft | null) => BriefDraft | null) => setBriefDrafts((drafts) => ({ ...drafts, [topicId]: update(drafts[topicId] ?? null) }));
   useEffect(() => { if (embedded && initialTab) setLocalSection(initialTab); }, [embedded, initialTab]);
   useEffect(() => { setCursor(0); setOpened(''); }, [topicId, section]);
@@ -170,7 +218,7 @@ export function KnowledgePage({
   };
   const brief = <BriefPanel key={topicId} topicId={topicId || null} draft={briefDrafts[topicId] ?? null} updateDraft={updateBriefDraft} />;
   const materials = <MaterialBrowser topicId={topicId || null} taskId={taskId} onCreate={() => openNewDocument('richdoc-v1', { topicId: topicId || null })} onEdit={(item) => openDocument({ resourceId: item.id, title: item.title })} />;
-  const memories = <MemoryBrowser embedded={embedded} topicId={topicId} scope={scope} cursor={cursor} setCursor={setCursor} status={memoryStatus} setStatus={(value) => { setMemoryStatus(value); setCursor(0); }} input={memoryInput} setInput={setMemoryInput} submitted={memoryQuery.submitted} onCompositionStart={memoryQuery.onCompositionStart} onCompositionEnd={memoryQuery.onCompositionEnd} opened={opened} setOpened={setOpened} activeEditor={activeEditor} openEditor={openEditor} closeEditor={() => setEditing((current) => current?.id === activeEditor?.id ? null : current)} auto={auto.data} onShowProposals={() => locate('brief')} onShowMaterials={() => locate('materials')} onShowRecords={embedded ? undefined : () => locate('extractions')} />;
+  const memories = <MemoryBrowser embedded={embedded} topicId={topicId} scope={scope} cursor={cursor} setCursor={setCursor} status={memoryStatus} setStatus={(value) => { setMemoryStatus(value); setCursor(0); }} input={memoryInput} setInput={setMemoryInput} submitted={memoryQuery.submitted} onCompositionStart={memoryQuery.onCompositionStart} onCompositionEnd={memoryQuery.onCompositionEnd} opened={opened} setOpened={setOpened} activeEditor={activeEditor} openEditor={openEditor} closeEditor={closeMemoryEditor} onEditorDraftChange={updateEditorDraft} onEditorSave={saveMemoryEditor} editorSaving={memorySaving} auto={auto.data} onShowProposals={() => locate('brief')} onShowMaterials={() => locate('materials')} onShowRecords={embedded ? undefined : () => locate('extractions')} />;
   const search = <ContextSearch topicId={topicId} scope={scope} cursor={cursor} setCursor={setCursor} input={searchInput} setInput={setSearchInput} submitted={searchQuery.submitted} history={searchHistory} setHistory={(value) => { setSearchHistory(value); setCursor(0); }} onCompositionStart={searchQuery.onCompositionStart} onCompositionEnd={searchQuery.onCompositionEnd} />;
   const listName = topicId ? knownTopics.find((topic) => topic.id === topicId)?.name ?? t('page.unknownList') : t('page.inbox');
   const pendingCount = auto.data?.pendingProposalCount ?? 0;
@@ -470,7 +518,9 @@ function MemoryReading({ item, resource, openEditor }: { item: Resource; resourc
   </>;
 }
 
-function MemoryBrowser({ embedded, topicId, scope, cursor, setCursor, status, setStatus, input, setInput, submitted, onCompositionStart, onCompositionEnd, opened, setOpened, activeEditor, openEditor, closeEditor, auto, onShowProposals, onShowMaterials, onShowRecords }: {
+type MemoryEditorDraft = { title: string; content: string; kind: string; importance: number; labels: string; origin: string; evidence: Evidence[]; reason: string };
+
+function MemoryBrowser({ embedded, topicId, scope, cursor, setCursor, status, setStatus, input, setInput, submitted, onCompositionStart, onCompositionEnd, opened, setOpened, activeEditor, openEditor, closeEditor, onEditorDraftChange, onEditorSave, editorSaving, auto, onShowProposals, onShowMaterials, onShowRecords }: {
   embedded: boolean;
   topicId: string;
   scope: string;
@@ -488,6 +538,9 @@ function MemoryBrowser({ embedded, topicId, scope, cursor, setCursor, status, se
   activeEditor: ResourceEditing | null;
   openEditor: (resource?: Resource) => void;
   closeEditor: () => void;
+  onEditorDraftChange: (patch: Partial<MemoryEditorDraft>) => void;
+  onEditorSave: (input: NonNullable<Command['input']>) => void;
+  editorSaving: boolean;
   auto?: AutoMemoryState;
   onShowProposals: () => void;
   onShowMaterials: () => void;
@@ -526,7 +579,7 @@ function MemoryBrowser({ embedded, topicId, scope, cursor, setCursor, status, se
       {(list.data?.total ?? 0) > 0 && <span className="ctx-muted">{t('page.memory.results', { count: list.data?.total ?? 0 })}</span>}
       <div className="ctx-sheet-end">{records}<Button variant="default" type="button" className="ctx-btn ctx-btn-primary" onClick={() => openEditor()}>{t('page.memory.addManual')}</Button></div>
     </div>}
-    {activeEditor && <MemoryEditor key={activeEditor.id} resource={activeEditor.resource} topicId={topicId || null} onClose={closeEditor} />}
+    {activeEditor && <MemoryEditor key={activeEditor.id} resource={activeEditor.resource} topicId={topicId || null} draft={activeEditor.draft} busy={editorSaving} onDraftChange={onEditorDraftChange} onSave={onEditorSave} onClose={closeEditor} />}
     {failed && <div role="alert" className="ctx-error"><p>{(list.error ?? probe.error)?.message}</p><Button variant="outline" type="button" className="ctx-btn" onClick={() => { void list.refetch(); void probe.refetch(); }}>{t('page.memory.retry')}</Button></div>}
     {trueEmpty && <Surface as="div" tone="card" data-testid="context-memory-empty" className="ctx-card ctx-empty">
       <h2 className="ctx-empty-title">{t('page.memory.emptyTitle')}</h2>
@@ -609,28 +662,29 @@ function ContextSearch({ topicId, scope, cursor, setCursor, input, setInput, sub
   </div>;
 }
 
-function MemoryEditor({ resource, topicId, onClose }: { resource?: Resource; topicId: string | null; onClose: () => void }) {
+function MemoryEditor({ resource, topicId, draft, busy, onDraftChange: set, onSave, onClose }: {
+  resource?: Resource;
+  topicId: string | null;
+  draft: MemoryEditorDraft;
+  busy: boolean;
+  onDraftChange: (patch: Partial<MemoryEditorDraft>) => void;
+  onSave: (input: NonNullable<Command['input']>) => void;
+  onClose: () => void;
+}) {
   const { t } = useTranslation('knowledge');
-  const [title, setTitle] = useState(resource?.title ?? '');
-  const [content, setContent] = useState(resource?.content ?? '');
-  const [kind, setKind] = useState(resource?.kind ?? 'fact');
-  const [importance, setImportance] = useState(resource?.importance ?? 3);
-  const [labels, setLabels] = useState(asLabels(resource?.labels).join(' '));
-  const [origin, setOrigin] = useState(resource?.origin ?? 'manual');
-  const [evidence, setEvidence] = useState<Evidence[]>(resource?.evidence ?? []);
-  const [reason, setReason] = useState('');
-  const { run, busy } = usePlatformAction();
-  return <Surface as="form" tone="card" className="ctx-card ctx-stack" onSubmit={(event) => { event.preventDefault(); if (!title.trim() || !content.trim()) return; void run(async () => {
+  const { title, content, kind, importance, labels, origin, evidence, reason } = draft;
+  return <Surface as="form" tone="card" className="ctx-card ctx-stack" onSubmit={(event) => {
+    event.preventDefault();
+    if (busy || !title.trim() || !content.trim()) return;
     const input = { title: title.trim(), content, kind, evidence, reason: reason || (resource ? '用户修订' : '人工记录'), importance, labels: labels.split(/[\s,，]+/).map((label) => label.trim()).filter(Boolean), origin, ...(!resource ? { topicId } : {}) }; // i18n-ignore
-    const result = await submitCommands([{ kind: `memory.${resource ? 'update' : 'create'}`, ...(resource ? { targetId: resource.id, expectedRevision: resource.revision } : {}), input }]);
-    onClose(); return result;
-  }); }}><fieldset className="ctx-stack" disabled={busy}>
+    onSave(input);
+  }}><fieldset className="ctx-stack" disabled={busy}>
     <h2 className="ctx-section-title">{t(resource ? 'page.editor.editMemory' : 'page.editor.createMemory')}</h2>
-    <Input aria-label={t('page.editor.memoryTitle')} className="ctx-field" placeholder={t('page.editor.titlePlaceholder')} value={title} onChange={(event) => setTitle(event.target.value)} required />
-    <NativeSelect aria-label={t('page.editor.memoryKind')} className="ctx-select" disabled={resource?.kind === 'crystal'} value={kind} onChange={(event) => setKind(event.target.value)}>{(resource?.kind === 'crystal' ? ['crystal'] : memoryKindKeys.filter((value) => value !== 'crystal')).map((value) => <option key={value} value={value}>{t(`memoryView.kinds.${value}`)}</option>)}</NativeSelect>
-    <div className="ctx-actions"><Stars value={importance} onChange={setImportance} /><NativeSelect aria-label={t('page.editor.origin')} className="ctx-select" value={origin} onChange={(event) => setOrigin(event.target.value)}>{originKeys.map((value) => <option key={value} value={value}>{t(`memoryView.origins.${value}`)}</option>)}</NativeSelect><Input aria-label={t('page.editor.tags')} className="ctx-field max-w-sm" placeholder={t('page.editor.tagsPlaceholder')} value={labels} onChange={(event) => setLabels(event.target.value)} /></div>
-    <Textarea aria-label={t('page.editor.memoryBody')} className="ctx-field" placeholder={t('page.editor.memoryBodyPlaceholder')} value={content} onChange={(event) => setContent(event.target.value)} rows={5} />
-    <ContextPicker topicId={topicId} selected={evidence} onChange={setEvidence} /><Input aria-label={t('page.editor.reason')} className="ctx-field" placeholder={t('page.editor.reasonPlaceholder')} value={reason} onChange={(event) => setReason(event.target.value)} />
+    <Input aria-label={t('page.editor.memoryTitle')} className="ctx-field" placeholder={t('page.editor.titlePlaceholder')} value={title} onChange={(event) => set({ title: event.target.value })} required />
+    <NativeSelect aria-label={t('page.editor.memoryKind')} className="ctx-select" disabled={resource?.kind === 'crystal'} value={kind} onChange={(event) => set({ kind: event.target.value })}>{(resource?.kind === 'crystal' ? ['crystal'] : memoryKindKeys.filter((value) => value !== 'crystal')).map((value) => <option key={value} value={value}>{t(`memoryView.kinds.${value}`)}</option>)}</NativeSelect>
+    <div className="ctx-actions"><Stars value={importance} onChange={(value) => set({ importance: value })} /><NativeSelect aria-label={t('page.editor.origin')} className="ctx-select" value={origin} onChange={(event) => set({ origin: event.target.value })}>{originKeys.map((value) => <option key={value} value={value}>{t(`memoryView.origins.${value}`)}</option>)}</NativeSelect><Input aria-label={t('page.editor.tags')} className="ctx-field max-w-sm" placeholder={t('page.editor.tagsPlaceholder')} value={labels} onChange={(event) => set({ labels: event.target.value })} /></div>
+    <Textarea aria-label={t('page.editor.memoryBody')} className="ctx-field" placeholder={t('page.editor.memoryBodyPlaceholder')} value={content} onChange={(event) => set({ content: event.target.value })} rows={5} />
+    <ContextPicker topicId={topicId} selected={evidence} onChange={(value) => set({ evidence: value })} /><Input aria-label={t('page.editor.reason')} className="ctx-field" placeholder={t('page.editor.reasonPlaceholder')} value={reason} onChange={(event) => set({ reason: event.target.value })} />
     <div className="ctx-actions"><Button variant="outline" type="button" className="ctx-btn" disabled={busy} onClick={onClose}>{t('page.editor.cancel')}</Button><Button variant="default" className="ctx-btn ctx-btn-primary" disabled={busy || !title.trim() || !content.trim()}>{t('page.editor.saveMemory')}</Button></div>
   </fieldset></Surface>;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatSkillDiff, isSkillOnlyReview, lineDiff, skillImportErrorText, skillProposalEditorDetail, skillSaveRequest } from './skill-format.js';
+import { formatSkillDiff, isSkillOnlyReview, lineDiff, skillDraftEquals, skillImportErrorText, skillProposalEditorDetail, skillSaveRequest } from './skill-format.js';
 
 describe('skill formatting', () => {
   it('shows the missing SKILL.md fields from a 400', () => {
@@ -55,5 +55,16 @@ describe('skill proposal editor detail', () => {
     expect(isSkillOnlyReview([{ entityType: 'skill' }])).toBe(true);
     expect(isSkillOnlyReview([{ entityType: 'skill' }, { entityType: 'task' }])).toBe(false);
     expect(isSkillOnlyReview([])).toBe(false);
+  });
+});
+
+describe('skill draft equality', () => {
+  const base = { name: '周报', description: '周五', instructions: '步骤', enabled: false };
+  it('ignores id and expectedRevision; only user-editable fields count', () => {
+    expect(skillDraftEquals(base, { ...base, id: 'sk1', expectedRevision: 3 })).toBe(true);
+    expect(skillDraftEquals(base, { ...base, enabled: true })).toBe(false);
+    expect(skillDraftEquals(base, { ...base, instructions: '改了' })).toBe(false);
+    expect(skillDraftEquals(base, { ...base, name: '日报' })).toBe(false);
+    expect(skillDraftEquals(base, { ...base, description: '' })).toBe(false);
   });
 });

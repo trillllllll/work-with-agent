@@ -75,6 +75,8 @@
     "workspace": "工作区",
     "notReady": "专注计时尚未就绪",
     "completedToast": "专注完成，休息一下",
+    "recordFailed": "专注记录保存失败，联网后会自动重试",
+    "recordNotRetained": "专注记录保存失败，请检查网络和浏览器存储",
     "breakOver": "休息结束"
   },
   "schedule": {

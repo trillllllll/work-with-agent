@@ -204,7 +204,8 @@ export function TaskMaterials({ taskId, topicId, description, readonly, saveText
       </div>}
     </div>
     <div className={over ? 'library-drop' : undefined}>
-      {!items.length && <p className="library-meta py-3">{t('taskMaterials.empty')}</p>}
+      {materials.isError && <p role="alert" className="library-meta text-destructive">{materials.error.message}<Button variant="outline" size="bare" type="button" className="library-btn ml-2" onClick={() => void materials.refetch()}>{t('shared.retry')}</Button></p>}
+      {!items.length && !materials.isError && <p className="library-meta py-3">{t('taskMaterials.empty')}</p>}
       {items.map((item) => <div key={item.id} className="task-material-row" data-testid={`task-material-${item.id}`}>
         <FileText className="library-icon" aria-hidden />
         <span className="library-name min-w-0 flex-1 truncate" title={item.title}>{item.title}</span>

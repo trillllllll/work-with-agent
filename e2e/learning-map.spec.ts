@@ -29,6 +29,52 @@ test.beforeEach(async ({ page,request }) => {
 });
 test.afterAll(() => e2eDatabase.$disconnect());
 
+test('复习保存被拒保留表单，并发冲突后用新版本保存本地修改', async ({ page, request }) => {
+  const endpoint = `${api}/api/v1/learning/reviews/update`;
+  async function update(data: Record<string, unknown>) {
+    const response = await request.post(endpoint, { data: { ...data, requestId: randomUUID() } });
+    expect(response.ok(), await response.text()).toBe(true);
+    return (await response.json()).data.review;
+  }
+  const initial = await update({ mapId, nodeId, dueAt: '2026-01-02T10:00:00.000Z' });
+  await page.goto(`/#/learning?map=${mapId}&node=${nodeId}&tab=reviews`);
+  await page.getByRole('button', { name: '调整复习安排', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: '调整复习安排' });
+  const date = editor.getByLabel('下次复习时间（本地时间）');
+  const save = editor.getByRole('button', { name: '保存', exact: true });
+  await date.fill('2031-04-05T06:07');
+
+  const path = '**/api/v1/learning/reviews/update';
+  await page.route(path, (route) => route.fulfill({ status: 400, json: { data: null, error: '暂时无法保存此安排' } }), { times: 1 });
+  const saveAndWait = () => Promise.all([
+    page.waitForResponse((response) => response.url().endsWith('/api/v1/learning/reviews/update') && response.request().method() === 'POST'),
+    save.click(),
+  ]).then(([response]) => response);
+  const rejected = await saveAndWait();
+  expect(rejected.status()).toBe(400);
+  await expect(date).toBeEnabled();
+  await expect(date).toHaveValue('2031-04-05T06:07');
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog', { name: '保存未完成的编辑？' }).getByRole('button', { name: '继续编辑' }).click();
+
+  const remote = await update({ id: initial.id, expectedRevision: initial.revision, paused: true });
+  const conflict = await saveAndWait();
+  expect(conflict.status()).toBe(409);
+  expect(conflict.request().postDataJSON().requestId).not.toBe(rejected.request().postDataJSON().requestId);
+  await expect(editor.getByRole('status')).toContainText('已载入最新的复习安排');
+  await expect(date).toHaveValue('2031-04-05T06:07');
+  await expect(editor.getByRole('button', { name: '继续此项', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  const applied = await saveAndWait();
+  expect(applied.ok(), await applied.text()).toBe(true);
+  const body = applied.request().postDataJSON();
+  expect(body.expectedRevision).toBe(remote.revision);
+  expect(body.requestId).not.toBe(conflict.request().postDataJSON().requestId);
+  expect(body).not.toHaveProperty('paused');
+  await expect(editor).toHaveCount(0);
+  const saved = await e2eDatabase.learningReviewItem.findUniqueOrThrow({ where: { id: initial.id } });
+  expect(saved).toMatchObject({ dueAt: body.dueAt, paused: true });
+});
+
 test('real notes preserve drafts, save four-state mastery and protect concurrent AI edits', async ({ page,request },testInfo) => {
   await openNote(page);
   const editor = page.getByTestId('learning-note-editor').getByRole('textbox');

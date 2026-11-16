@@ -40,6 +40,9 @@ function DeleteRevoked({ computer, onClose }: { computer: Computer; onClose: () 
   const { t } = useTranslation('settings');
   const client = useQueryClient();
   const hasLocations = computer.locations.length > 0;
+  // NODE_HAS_LOCATIONS mid-flight switches the dialog into escalate mode; deleting the
+  // connected locations then needs an explicit second confirmation, never an auto-retry.
+  const [escalate, setEscalate] = useState(false);
   const remove = useMutation({
     mutationFn: (removeLocations: boolean) => api(`/api/nodes/${encodeURIComponent(computer.id)}${removeLocations ? '?removeLocations=1' : ''}`, { method: 'DELETE' }),
     onSuccess: async () => {
@@ -50,21 +53,22 @@ function DeleteRevoked({ computer, onClose }: { computer: Computer; onClose: () 
     },
     onError: (error: Error, removeLocations: boolean) => {
       if (!removeLocations && errorCode(error) === 'NODE_HAS_LOCATIONS') {
-        remove.mutate(true);
+        setEscalate(true);
         return;
       }
       toast.error(error.message);
     },
   });
+  const removeLocations = hasLocations || escalate;
   return (
     <ConfirmDialog
       title={t('computers.revoked.deleteTitle')}
       itemName={computer.name}
-      description={hasLocations ? t('computers.revoked.deleteLocations') : t('computers.revoked.deleteDescription')}
+      description={removeLocations ? t('computers.revoked.deleteLocations') : t('computers.revoked.deleteDescription')}
       confirmLabel={t('computers.revoked.confirm')}
       busy={remove.isPending}
       onCancel={onClose}
-      onConfirm={() => remove.mutate(hasLocations)}
+      onConfirm={() => remove.mutate(removeLocations)}
     />
   );
 }

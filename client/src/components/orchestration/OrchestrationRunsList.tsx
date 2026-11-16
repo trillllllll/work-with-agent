@@ -64,7 +64,7 @@ export function OrchestrationRunsList() {
     </div>
     {feed.isLoading && <p className="text-sm text-muted-foreground">{t('handoff.loading')}</p>}
     {feed.isError && <p role="alert" className="text-sm text-destructive">{feed.error.message}</p>}
-    {!feed.isLoading && !items.length && <p className="py-8 text-sm text-muted-foreground">{t('runs.emptyOrchestrations')}</p>}
+    {!feed.isLoading && !feed.isError && !items.length && <p className="py-8 text-sm text-muted-foreground">{t('runs.emptyOrchestrations')}</p>}
     {items.map((item) => {
       const started = item.startedAt && Number.isFinite(Date.parse(item.startedAt)) ? new Date(item.startedAt).toLocaleString(intlLocale()) : formatMissing();
       return <Button variant="row" size="bare" key={item.id} type="button" data-testid="orchestration-feed-item" className="workspace-row flex w-full flex-wrap items-center gap-2 p-4 text-left" onClick={() => openRound(item)}>

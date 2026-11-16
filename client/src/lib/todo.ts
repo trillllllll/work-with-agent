@@ -34,8 +34,26 @@ export const enqueueWrite = createWriteQueue();
 export function localDate(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
-export function captureDraftKey(topicId: string | null, parentId: string | null) {
-  return `todo.capture.${topicId ?? 'inbox'}.${parentId ?? 'root'}`;
+export type CaptureDraftScope = 'inbox' | 'today' | 'list';
+export function captureDraftKey(scope: CaptureDraftScope, topicId: string | null, parentId: string | null) {
+  return `todo.capture.${scope}.${topicId ?? 'inbox'}.${parentId ?? 'root'}`;
+}
+
+export function readCaptureDraft(storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>, scope: CaptureDraftScope, topicId: string | null, parentId: string | null) {
+  const key = captureDraftKey(scope, topicId, parentId);
+  const saved = storage.getItem(key);
+  if (saved !== null) return saved;
+  // The old root key was shared by inbox and Today. Keep it in inbox to avoid assigning a date.
+  if (scope === 'today' || (scope === 'list' && !topicId && !parentId)) return '';
+  const legacyKey = `todo.capture.${topicId ?? 'inbox'}.${parentId ?? 'root'}`;
+  const legacy = storage.getItem(legacyKey) ?? '';
+  if (legacy) {
+    try {
+      storage.setItem(key, legacy);
+      storage.removeItem(legacyKey);
+    } catch { /* The old key remains readable if the new key cannot be written. */ }
+  }
+  return legacy;
 }
 // Only one level of subtasks is supported. Mirrors server INVALID_PARENT.
 export function canHaveSubtasks(task: Pick<Task, 'parentId'>): boolean {

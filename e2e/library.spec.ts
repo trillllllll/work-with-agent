@@ -793,3 +793,25 @@ test('预览里可以一次关联多个任务', async ({ page, request }) => {
   const ids = (linkedBody.data?.items ?? []).map((item) => item.id).sort();
   expect(ids).toEqual([firstId, secondId].sort());
 });
+
+test('批量归档先确认，成功横幅可撤销', async ({ page, request }) => {
+  const first = await createMaterial(request, '归档验收一', '内容一');
+  const second = await createMaterial(request, '归档验收二', '内容二');
+  await openLibrary(page);
+  await page.getByTestId(`library-row-${first.id}`).getByRole('checkbox').check();
+  await page.getByTestId(`library-row-${second.id}`).getByRole('checkbox').check();
+  await page.getByRole('button', { name: '归档', exact: true }).click();
+  const confirmDialog = page.getByRole('dialog', { name: '归档所选资料？' });
+  await expect(confirmDialog).toBeVisible();
+  await expect(confirmDialog).toContainText('完成后可在成功提示中撤销。');
+  await confirmDialog.getByRole('button', { name: '取消', exact: true }).click();
+  await expect(page.getByTestId(`library-row-${first.id}`)).toBeVisible();
+  await page.getByRole('button', { name: '归档', exact: true }).click();
+  await page.getByRole('dialog', { name: '归档所选资料？' }).getByRole('button', { name: '归档', exact: true }).click();
+  await expect(page.getByTestId(`library-row-${first.id}`)).toHaveCount(0);
+  const undo = page.getByRole('button', { name: '撤销', exact: true });
+  await expect(undo).toBeVisible();
+  await undo.click();
+  await expect(page.getByTestId(`library-row-${first.id}`)).toBeVisible();
+  await expect(page.getByTestId(`library-row-${second.id}`)).toBeVisible();
+});

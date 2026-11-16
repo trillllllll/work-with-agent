@@ -226,7 +226,14 @@
     "modelRequired": "Set up a text-recognition model. Regular search still works.",
     "insufficient": "There isn't enough source text in the materials to answer.",
     "ask": "Ask",
-    "apply": "Apply"
+    "apply": "Apply",
+    "confirmArchiveTitle": "Archive selected materials?",
+    "confirmArchiveDescription": "Archive the {{count}} selected materials. You can undo this from the success notification.",
+    "confirmFolderDeleteTitle": "Delete empty folder?",
+    "confirmFolderDeleteDescription": "The folder must be empty before it can be deleted.",
+    "confirmTagDeleteTitle": "Delete tag?",
+    "confirmTagDeleteDescription": "The tag will be removed from all materials; history is kept.",
+    "archivedToast": "Archived {{count}} materials"
   },
   "document": {
     "workspace": "Document workspace",

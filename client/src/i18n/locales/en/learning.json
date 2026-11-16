@@ -255,6 +255,8 @@
       "manualSchedule": "Manual adjustment preserved",
       "practice": "Start review",
       "adjust": "Adjust review schedule",
+      "conflictLoaded": "The latest review schedule is loaded, with your edits preserved. Check the fields and save again.",
+      "conflictReload": "The review schedule has changed. Your edits are preserved. Retry loading the latest schedule.",
       "nextDate": "Next review (local time)",
       "policy": "Scheduling policy",
       "policyHint": "Rules v1: incorrect or partial answers suggest 1 day; consecutive independent correct answers suggest 2, 4, 8, 16, then 30 days. Other correct answers suggest 1 day. This is an adjustable app rule, not a proven optimal interval. Manual dates and pauses are preserved. Switch to manual, then back to spaced rules to resume automatic scheduling. No notifications are enabled.",

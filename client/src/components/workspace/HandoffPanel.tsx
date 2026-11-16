@@ -79,7 +79,7 @@ export function RunsPage() {
 function HandoffRunsList() {
   const { t } = useTranslation('workspace');
   const list = useQuery({ queryKey: ['handoffs'], queryFn: () => api<any[]>('/api/v1/handoffs'), refetchInterval: 5000 });
-  return <>{list.error && <p role="alert">{list.error.message}</p>}{list.isLoading ? <p>{t('handoff.loading')}</p> : !list.data?.length ? <p className="py-8 text-sm text-muted-foreground">{t('handoff.empty')}</p> : <Surface tone="sheet" className="workspace-rows">{list.data.map((handoff) => <HandoffCard key={handoff.id} handoff={handoff} />)}</Surface>}</>;
+  return <>{list.error && <p role="alert">{list.error.message}</p>}{list.isLoading ? <p>{t('handoff.loading')}</p> : list.data?.length ? <Surface tone="sheet" className="workspace-rows">{list.data.map((handoff) => <HandoffCard key={handoff.id} handoff={handoff} />)}</Surface> : !list.error && <p className="py-8 text-sm text-muted-foreground">{t('handoff.empty')}</p>}</>;
 }
 function HandoffCard({ handoff: initial, task }: { handoff: any; task?: Task }) {
   const { t } = useTranslation('workspace');

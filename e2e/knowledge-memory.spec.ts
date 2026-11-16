@@ -14,6 +14,38 @@ async function openKnowledge(page: Page, topicId: string) {
   await page.getByLabel('所属清单', { exact: true }).selectOption(topicId);
 }
 
+test('记忆草稿分别留在各清单，切页签能找回，取消只丢弃当前草稿', async ({ page, request }) => {
+  const first = await project(request, '记忆草稿清单甲');
+  const second = await project(request, '记忆草稿清单乙');
+  await page.goto(`/#/knowledge/memories?topicId=${first}`);
+  const scope = page.getByLabel('所属清单', { exact: true });
+  const add = page.getByRole('button', { name: '手动记录', exact: true });
+  const title = page.getByLabel('记忆标题', { exact: true });
+  const body = page.getByLabel('记忆正文', { exact: true });
+  await expect(scope).toHaveValue(first);
+  await add.click();
+  await title.fill('甲的记忆');
+  await body.fill('甲的未保存正文');
+  await page.getByRole('tab', { name: '参考资料', exact: true }).click();
+  await expect(body).toHaveCount(0);
+  await page.getByRole('tab', { name: '长期记忆', exact: true }).click();
+  await expect(body).toHaveValue('甲的未保存正文');
+
+  await scope.selectOption(second);
+  await expect(body).toHaveCount(0);
+  await add.click();
+  await title.fill('乙的记忆');
+  await body.fill('乙的未保存正文');
+  await scope.selectOption(first);
+  await expect(title).toHaveValue('甲的记忆');
+  await expect(body).toHaveValue('甲的未保存正文');
+  await page.getByRole('button', { name: '取消', exact: true }).click();
+  await expect(body).toHaveCount(0);
+  await scope.selectOption(second);
+  await expect(title).toHaveValue('乙的记忆');
+  await expect(body).toHaveValue('乙的未保存正文');
+});
+
 test('记忆可以按重要度和标签浏览，并在知识树与关系图里出现', async ({ page, request }) => {
   const topicId = await project(request, '记忆清单');
   await openKnowledge(page, topicId);

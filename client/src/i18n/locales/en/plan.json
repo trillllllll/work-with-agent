@@ -118,6 +118,8 @@
     "workspace": "Workspace",
     "notReady": "Focus timer is not ready",
     "completedToast": "Focus complete, take a break",
+    "recordFailed": "Saving the focus record failed; it retries automatically once online",
+    "recordNotRetained": "Could not save the focus record. Check your connection and browser storage.",
     "breakOver": "Break over"
   },
   "schedule": {

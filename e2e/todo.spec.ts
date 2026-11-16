@@ -780,3 +780,28 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
   });
 });
+
+test('快速收集草稿按页面隔离，切页不串', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'desktop quick capture layout');
+  await page.goto('/#/inbox');
+  const inboxInput = page.getByLabel('收集任务名称');
+  await expect(inboxInput).toBeVisible();
+  await inboxInput.fill('收集箱未发送草稿');
+  await page.goto('/#/today');
+  await expect(page.getByLabel('任务名称', { exact: true })).toHaveValue('');
+  await page.goto('/#/inbox');
+  await expect(page.getByLabel('收集任务名称')).toHaveValue('收集箱未发送草稿');
+});
+
+test('升级前的共享草稿回到收集箱，先打开今日也不会读走它', async ({ page }) => {
+  await page.goto('/#/today');
+  await page.evaluate(() => sessionStorage.setItem('todo.capture.inbox.root', '旧版未提交草稿'));
+  await page.reload();
+  await expect(page.getByLabel('任务名称', { exact: true })).toHaveValue('');
+  await page.goto('/#/inbox');
+  const input = page.getByLabel('收集任务名称');
+  await expect(input).toHaveValue('旧版未提交草稿');
+  await page.reload();
+  await expect(input).toHaveValue('旧版未提交草稿');
+  expect(await page.evaluate(() => sessionStorage.getItem('todo.capture.inbox.root'))).toBeNull();
+});

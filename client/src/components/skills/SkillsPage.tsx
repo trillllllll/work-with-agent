@@ -189,8 +189,7 @@ export function SkillsPage() {
               <option value="">{t('page.originAll')}</option><option value="manual">{t('origin.manual')}</option><option value="import">{t('origin.import')}</option><option value="assistant">{t('origin.assistant')}</option>
             </NativeSelect>
           </div>
-          {list.error && <p role="alert" className="text-sm text-destructive">{list.error.message}</p>}
-          {list.isLoading ? <p className="text-sm text-muted-foreground">{t('action.loading')}</p> : !skills.length ? <p className="py-8 text-sm text-muted-foreground">{empty}</p> : (
+          {list.error ? <p role="alert" className="text-sm text-destructive">{list.error.message}<Button variant="outline" size="sm" className="ml-3" onClick={() => void list.refetch()}>{t('action.retry')}</Button></p> : list.isLoading ? <p className="text-sm text-muted-foreground">{t('action.loading')}</p> : !skills.length ? <p className="py-8 text-sm text-muted-foreground">{empty}</p> : (
             <Surface as="ul" tone="sheet" aria-label={t('page.listLabel')} className="glass-scrollbar  min-h-0 divide-y divide-[var(--glass-divider)] overflow-y-auto rounded-xl">
               {skills.map((skill) => (
                 <li key={skill.id} data-testid="skill-row" data-skill-name={skill.name} className={cn('flex items-start gap-2 px-3 py-2.5', selectedId === skill.id && 'bg-[color-mix(in_srgb,var(--foreground)_8%,transparent)]')}>

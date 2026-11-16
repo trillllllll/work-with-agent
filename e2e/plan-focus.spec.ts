@@ -17,6 +17,23 @@ function clockSeconds(value: string) {
   return minutes * 60 + seconds;
 }
 
+function pendingFocusRecords(page: Page) {
+  return page.evaluate(() => new Promise<number>((resolve, reject) => {
+    const open = indexedDB.open('dovun-learning-v1');
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      const read = db.transaction('records').objectStore('records').getAll();
+      read.onerror = () => { db.close(); reject(read.error); };
+      read.onsuccess = () => {
+        const count = read.result.filter((row) => row.kind === 'focus-session').length;
+        db.close();
+        resolve(count);
+      };
+    };
+  }));
+}
+
 async function jsonData(response: { ok: () => boolean; text: () => Promise<string>; json: () => Promise<{ data: unknown }> }) {
   expect(response.ok(), await response.text()).toBe(true);
   return (await response.json()).data;
@@ -216,4 +233,58 @@ test('一分钟专注完成后留下记录，刷新则暂停且不归零', async
     return rows.some((row) => row.kind === 'focus' && row.durationMinutes === 1 && row.completed && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(row.startedAt));
   }).toBe(true);
 });
+
+for (const scenario of [
+  { title: '首次请求断网，联网后补写专注记录', day: 10, failure: 'offline' },
+  { title: '专注写入后的回执丢失，重开页面只认领原记录', day: 11, failure: 'receipt' },
+  { title: '专注记录遇到限流时保留，恢复连接后补写', day: 12, failure: 'rate-limit' },
+] as const) {
+  test(scenario.title, async ({ page, request, isMobile }) => {
+    await page.clock.install({ time: new Date(Date.UTC(2026, 4, scenario.day, 10, isMobile ? 20 : 10)) });
+    await page.addInitScript(() => {
+      if (localStorage.getItem('dovun.focusTimer')) return;
+      localStorage.setItem('dovun.focusTimer', JSON.stringify({ phase: 'idle', taskId: null, taskTitle: null, accumulatedMs: 0, segmentStartedAt: null, sessionStartedAt: null, plannedMinutes: 1, breakMinutes: 5, cycle: 0, autoStartBreak: false }));
+    });
+    const writes: Array<{ startedAt: string; endedAt: string }> = [];
+    let fail = true;
+    await page.route(/\/api\/focus-sessions(?:\?|$)/, async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      writes.push(route.request().postDataJSON());
+      if (!fail) return route.continue();
+      if (scenario.failure === 'rate-limit') return route.fulfill({ status: 429, json: { data: null, error: 'Too many requests' } });
+      if (scenario.failure === 'receipt') {
+        const response = await route.fetch();
+        expect(response.ok(), await response.text()).toBe(true);
+      }
+      await route.abort();
+    });
+
+    await page.goto('/#/focus');
+    await expect(page.getByTestId('focus-remaining')).toHaveText('01:00');
+    await page.getByRole('button', { name: '开始专注', exact: true }).click();
+    await page.clock.fastForward(61_000);
+    await expect(page.getByText('专注完成，休息一下').first()).toBeVisible();
+    await expect(page.getByText('专注记录保存失败，联网后会自动重试', { exact: true })).toBeVisible();
+    await expect.poll(() => pendingFocusRecords(page)).toBe(1);
+    expect(writes).toHaveLength(1);
+
+    const readThisSession = async () => {
+      const [body] = writes;
+      const day = body.startedAt.slice(0, 10);
+      const rows = await jsonData(await request.get(`${apiUrl}/api/focus-sessions?from=${day}&to=${day}`)) as typeof writes;
+      return rows.filter((row) => row.startedAt === body.startedAt && row.endedAt === body.endedAt);
+    };
+    const alreadyStored = scenario.failure === 'receipt';
+    expect(await readThisSession()).toHaveLength(alreadyStored ? 1 : 0);
+    fail = false;
+    if (alreadyStored) await page.reload();
+    else await page.evaluate(() => {
+      window.dispatchEvent(new Event('online'));
+      window.dispatchEvent(new Event('online'));
+    });
+    await expect.poll(() => pendingFocusRecords(page)).toBe(0);
+    expect(await readThisSession()).toHaveLength(1);
+    expect(writes).toHaveLength(alreadyStored ? 1 : 2);
+  });
+}
 });

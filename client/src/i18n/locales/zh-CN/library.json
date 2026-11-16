@@ -221,7 +221,14 @@
     "modelRequired": "需要配置识字模型。普通搜索仍然可用。",
     "insufficient": "资料里没有足够的原文可以回答。",
     "ask": "提问",
-    "apply": "应用"
+    "apply": "应用",
+    "confirmArchiveTitle": "归档所选资料？",
+    "confirmArchiveDescription": "将归档所选 {{count}} 项资料。完成后可在成功提示中撤销。",
+    "confirmFolderDeleteTitle": "删除空文件夹？",
+    "confirmFolderDeleteDescription": "空文件夹删除后，其中不能包含资料。",
+    "confirmTagDeleteTitle": "删除标签？",
+    "confirmTagDeleteDescription": "标签将从所有资料上移除，历史记录保留。",
+    "archivedToast": "已归档 {{count}} 项资料"
   },
   "document": {
     "workspace": "文档工作区",

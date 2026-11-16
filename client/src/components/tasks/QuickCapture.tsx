@@ -4,17 +4,20 @@ import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import { Input } from '@/components/ui/input.js';
 import { Button } from '@/components/ui/button.js';
-import { captureDraftKey, isCompositionKey } from '@/lib/todo.js';
+import { captureDraftKey, isCompositionKey, readCaptureDraft, type CaptureDraftScope } from '@/lib/todo.js';
 
-type Props = { topicId: string | null; parentId?: string | null; onCreate: (input: { title: string; topicId: string | null; parentId: string | null }) => Promise<unknown>; inbox?: boolean; disabled?: boolean; variant?: 'bar' | 'row' };
+type Props = { topicId: string | null; parentId?: string | null; onCreate: (input: { title: string; topicId: string | null; parentId: string | null }) => Promise<unknown>; inbox?: boolean; disabled?: boolean; variant?: 'bar' | 'row'; draftScope?: CaptureDraftScope };
 export type QuickCaptureHandle = { focus: () => void };
 function storedDraft(key: string) { try { return sessionStorage.getItem(key) ?? ''; } catch { return ''; } }
 function storeDraft(key: string, value: string) { try { if (value) sessionStorage.setItem(key, value); else sessionStorage.removeItem(key); } catch { /* Storage may be unavailable in a private browser. */ } }
 
-export const QuickCapture = forwardRef<QuickCaptureHandle, Props>(function QuickCapture({ topicId, parentId = null, onCreate, inbox, disabled, variant = 'bar' }, ref) {
+export const QuickCapture = forwardRef<QuickCaptureHandle, Props>(function QuickCapture({ topicId, parentId = null, onCreate, inbox, disabled, variant = 'bar', draftScope = 'list' }, ref) {
   const { t } = useTranslation('tasks');
-  const key = captureDraftKey(topicId, parentId);
-  const [title, setTitle] = useState(() => storedDraft(key));
+  const key = captureDraftKey(draftScope, topicId, parentId);
+  const [title, setTitle] = useState(() => {
+    try { return readCaptureDraft(sessionStorage, draftScope, topicId, parentId); }
+    catch { return ''; }
+  });
   const [saving, setSaving] = useState(false);
   const lock = useRef(false);
   const composing = useRef(false);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canHaveSubtasks, captureDraftKey, createWriteQueue, draftPatch, isCompositionKey, keepNewestTask, localDate, mergeTaskDraft, taskDraft } from './todo.js';
+import { canHaveSubtasks, captureDraftKey, createWriteQueue, draftPatch, isCompositionKey, keepNewestTask, localDate, mergeTaskDraft, readCaptureDraft, taskDraft } from './todo.js';
 import type { Task } from './api.js';
 
 const task: Task = { id: 'a', topicId: null, title: '原任务', description: '', status: 'todo', allowedTransitions: ['doing', 'done'], priority: 'none', dueDate: null, estimatedMinutes: null, scheduledStart: null, scheduledEnd: null, resultSummary: '', revision: 1, tagIds: ['a', 'b'] };
@@ -84,8 +84,25 @@ describe('canHaveSubtasks', () => {
 });
 
 describe('capture and dates', () => {
-  it('isolates drafts by list and parent', () => {
-    expect(new Set([captureDraftKey(null, null), captureDraftKey('topic', null), captureDraftKey('topic', 'parent')]).size).toBe(3);
+  it('isolates drafts by page, list and parent', () => {
+    expect(new Set([captureDraftKey('list', null, null), captureDraftKey('list', 'topic', null), captureDraftKey('list', 'topic', 'parent')]).size).toBe(3);
+    // Same null list used to collide across pages: inbox and today must not share a draft.
+    expect(captureDraftKey('inbox', null, null)).not.toBe(captureDraftKey('today', null, null));
+  });
+  it('migrates the shared draft to inbox and preserves a legacy subtask draft', () => {
+    const drafts = new Map([['todo.capture.inbox.root', 'inbox draft'], ['todo.capture.list-id.parent-id', 'subtask draft']]);
+    const storage = {
+      getItem: (key: string) => drafts.get(key) ?? null,
+      setItem: (key: string, value: string) => { drafts.set(key, value); },
+      removeItem: (key: string) => { drafts.delete(key); },
+    };
+    expect(readCaptureDraft(storage, 'today', null, null)).toBe('');
+    expect(readCaptureDraft(storage, 'inbox', null, null)).toBe('inbox draft');
+    expect(readCaptureDraft(storage, 'list', 'list-id', 'parent-id')).toBe('subtask draft');
+    expect(drafts.get(captureDraftKey('inbox', null, null))).toBe('inbox draft');
+    expect(drafts.get(captureDraftKey('list', 'list-id', 'parent-id'))).toBe('subtask draft');
+    expect(drafts.has('todo.capture.inbox.root')).toBe(false);
+    expect(drafts.has('todo.capture.list-id.parent-id')).toBe(false);
   });
   it('suppresses IME composition, legacy 229 and repeat Enter', () => {
     expect(isCompositionKey({ isComposing: true })).toBe(true);

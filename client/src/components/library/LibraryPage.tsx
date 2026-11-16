@@ -15,6 +15,7 @@ import { intlLocale, t as translate } from '../../i18n/index.js';
 import { submitCommands, type Command } from '@/lib/platform.js';
 import { BodyText } from '@/components/shared/BodyText.js';
 import { Button } from '@/components/ui/button.js';
+import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog.js';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { Input } from '@/components/ui/input.js';
 import { Textarea } from '@/components/ui/textarea.js';
@@ -37,6 +38,9 @@ type Editor =
   | { kind: 'folder-move'; folder: LibraryFolder }
   | { kind: 'tag-rename'; tag: LibraryTag }
   | { kind: 'material-rename'; id: string; title: string };
+
+type LibraryDeleteTarget = { kind: 'folder'; folder: LibraryFolder } | { kind: 'tag'; tag: LibraryTag };
+type LibraryConfirm = { kind: 'archive'; count: number } | LibraryDeleteTarget;
 
 export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topics: Topic[]; selectedTopicId?: string; onOpenTask: (taskId: string) => void | Promise<void> }) {
   const { t } = useTranslation('library');
@@ -64,6 +68,8 @@ export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topi
   const [editor, setEditor] = useState<Editor | null>(null);
   const [rowMenu, setRowMenu] = useState<string | null>(null);
   const [pageNotice, setPageNotice] = useState('');
+  const [confirm, setConfirm] = useState<LibraryConfirm | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
   const params = librarySearchParams(snapshot);
   const searching = debounced.trim().length > 0;
   usePageContext('library-list', { pageState: { query: debounced, folderId: snapshot.folderId, tagIds: snapshot.tagIds, kind: snapshot.kind, libraryView: snapshot.view, taskTopicId: snapshot.taskTopicId, linkedTaskId: snapshot.taskId } });
@@ -140,10 +146,11 @@ export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topi
     if (!selected) return;
     requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-testid="library-row-${CSS.escape(selected)}"]`)?.focus());
   };
-  const applyBatch = async (ids: string[], build: (item: MaterialDetail) => Command) => {
+  const applyBatch = async (ids: string[], build: (item: MaterialDetail) => Command): Promise<{ ok: boolean; text: string; changeIds: string[] }> => {
     const locked = ids.slice();
-    if (!locked.length) return { ok: false, text: t('libraryPage.batchResult', { done: 0, remaining: 0 }) };
+    if (!locked.length) return { ok: false, text: t('libraryPage.batchResult', { done: 0, remaining: 0 }), changeIds: [] };
     let done = 0;
+    const changeIds: string[] = [];
     try {
       const latest = await Promise.all(locked.map((itemId) => api<MaterialDetail>(`/api/v1/library/materials/${itemId}`)));
       const commands = latest.map(build);
@@ -152,19 +159,45 @@ export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topi
         try {
           const result = await submitCommands(slice);
           if (result.status !== 'applied') throw new Error('incomplete');
+          if (result.changeId) changeIds.push(result.changeId);
           done += slice.length;
         } catch {
           patchLibrary({ selectedIds: locked.slice(done) });
-          return { ok: false, text: t('libraryPage.batchResult', { done, remaining: locked.length - done }) };
+          return { ok: false, text: t('libraryPage.batchResult', { done, remaining: locked.length - done }), changeIds };
         }
       }
     } catch {
       patchLibrary({ selectedIds: locked.slice(done) });
-      return { ok: false, text: t('libraryPage.batchResult', { done, remaining: locked.length - done }) };
+      return { ok: false, text: t('libraryPage.batchResult', { done, remaining: locked.length - done }), changeIds };
     }
     patchLibrary({ selectedIds: [] });
     await refresh();
-    return { ok: true, text: '' };
+    return { ok: true, text: '', changeIds };
+  };
+  const undoChanges = async (changeIds: string[]) => {
+    try {
+      for (const changeId of changeIds) await api(`/api/changes/${changeId}/undo`, { method: 'POST', body: '{}', headers: { 'X-Request-ID': crypto.randomUUID() } });
+      await refresh();
+      toast.success(translate('app:action.undone'));
+    } catch (error) { toast.error(error instanceof Error ? error.message : t('shared.actionFailed')); }
+  };
+  const runConfirmed = async () => {
+    if (!confirm || confirmBusy) return;
+    setConfirmBusy(true);
+    try {
+      if (confirm.kind === 'archive') {
+        const outcome = await applyBatch(snapshot.selectedIds, (item) => ({ kind: 'material.archive', targetId: item.id, expectedRevision: item.revision, input: { archived: true } }));
+        if (outcome.ok && outcome.changeIds.length) {
+          toast.success(t('libraryPage.archivedToast', { count: confirm.count }), { duration: 8000, action: { label: translate('app:action.undo'), onClick: () => { void undoChanges(outcome.changeIds); } } });
+        } else if (!outcome.ok) setPageNotice(outcome.text);
+        setConfirm(null);
+      } else {
+        if (confirm.kind === 'folder') await submitCommands([{ kind: 'libraryFolder.delete', targetId: confirm.folder.id, expectedRevision: confirm.folder.revision, input: {} }]);
+        else await submitCommands([{ kind: 'libraryTag.delete', targetId: confirm.tag.id, expectedRevision: confirm.tag.revision, input: {} }]);
+        await refresh();
+        setConfirm(null);
+      }
+    } catch (error) { toast.error(error instanceof Error ? error.message : t('shared.actionFailed')); } finally { setConfirmBusy(false); }
   };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -273,12 +306,12 @@ export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topi
         <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => setDialog('move')}>{t('shared.move')}</Button>
         <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => setDialog('tags')}>{t('shared.tags')}</Button>
         <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => setDialog('tasks')}>{t('libraryPage.linkTasks')}</Button>
-        <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => { void applyBatch(snapshot.selectedIds, (item) => ({ kind: 'material.archive', targetId: item.id, expectedRevision: item.revision, input: { archived: true } })).then((outcome) => { if (!outcome.ok) setPageNotice(outcome.text); }); }}>{t('shared.archive')}</Button>
+        <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => setConfirm({ kind: 'archive', count: snapshot.selectedIds.length })}>{t('shared.archive')}</Button>
         <Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => patchLibrary({ selectedIds: [] })}>{t('libraryPage.clearSelection')}</Button>
       </div>}
       {pageNotice && <p className="library-meta" role="alert">{pageNotice}</p>}
       <div className={`library-body ${documentOpen ? 'has-document' : 'no-preview'}`}>
-        <FolderNav folders={folders.data?.items ?? []} tags={tags.data?.items ?? []} open={foldersOpen} onClose={() => setFoldersOpen(false)} onEdit={setEditor} onRefresh={refresh} />
+        <FolderNav folders={folders.data?.items ?? []} tags={tags.data?.items ?? []} open={foldersOpen} onClose={() => setFoldersOpen(false)} onEdit={setEditor} onRequestDelete={setConfirm} onRefresh={refresh} />
         <Surface as="div" tone="sheet" ref={listRef} className="library-panel library-document-list" hidden={documentOpen} data-testid="library-list" onScroll={(event) => patchLibrary({ scrollTop: event.currentTarget.scrollTop })}>
           {showError && <div className="library-error" role="alert"><p>{list.error instanceof Error ? list.error.message : t('shared.materialsLoadFailed')}</p><Button variant="outline" size="bare" type="button" className="library-btn" onClick={() => { void list.refetch(); }}>{t('shared.retry')}</Button></div>}
           {!showError && list.isLoading && !list.data && <p className="library-meta p-3">{t('shared.loadingMaterials')}</p>}
@@ -311,6 +344,15 @@ export function LibraryPage({ topics, selectedTopicId = '', onOpenTask }: { topi
       </div>
     </div>
     {dialog && <BatchDialog mode={dialog} ids={snapshot.selectedIds} topics={topics} folders={folders.data?.items ?? []} tags={tags.data?.items ?? []} onClose={() => setDialog(null)} applyBatch={applyBatch} />}
+    {confirm && <ConfirmDialog
+      title={confirm.kind === 'archive' ? t('libraryPage.confirmArchiveTitle') : confirm.kind === 'folder' ? t('libraryPage.confirmFolderDeleteTitle') : t('libraryPage.confirmTagDeleteTitle')}
+      itemName={confirm.kind === 'folder' ? confirm.folder.name : confirm.kind === 'tag' ? confirm.tag.name : undefined}
+      description={confirm.kind === 'archive' ? t('libraryPage.confirmArchiveDescription', { count: confirm.count }) : confirm.kind === 'folder' ? t('libraryPage.confirmFolderDeleteDescription') : t('libraryPage.confirmTagDeleteDescription')}
+      busy={confirmBusy}
+      confirmLabel={confirm.kind === 'archive' ? t('shared.archive') : t('shared.delete')}
+      onCancel={() => { if (!confirmBusy) setConfirm(null); }}
+      onConfirm={() => { void runConfirmed(); }}
+    />}
     {composer && <LinkComposer container={surfaceRef.current} onClose={() => setComposer(null)} onRefresh={refresh} />}
     {editor && <NameDialog editor={editor} folders={folders.data?.items ?? []} onClose={() => setEditor(null)} onSave={saveEditor} />}
   </section>;
@@ -365,21 +407,13 @@ function descendantIds(folders: LibraryFolder[], id: string) {
   return seen;
 }
 
-function FolderNav({ folders, tags, open, onClose, onEdit, onRefresh }: { folders: LibraryFolder[]; tags: LibraryTag[]; open: boolean; onClose: () => void; onEdit: (editor: Editor) => void; onRefresh: () => Promise<void> }) {
+function FolderNav({ folders, tags, open, onClose, onEdit, onRequestDelete, onRefresh }: { folders: LibraryFolder[]; tags: LibraryTag[]; open: boolean; onClose: () => void; onEdit: (editor: Editor) => void; onRequestDelete: (target: LibraryDeleteTarget) => void; onRefresh: () => Promise<void> }) {
   const { t } = useTranslation('library');
   const snapshot = useLibrarySnapshot();
   const [name, setName] = useState('');
   const [tagName, setTagName] = useState('');
   const [menu, setMenu] = useState<string | null>(null);
   const ordered = orderedFolders(folders);
-  const removeFolder = async (folder: LibraryFolder) => {
-    await submitCommands([{ kind: 'libraryFolder.delete', targetId: folder.id, expectedRevision: folder.revision, input: {} }]);
-    await onRefresh();
-  };
-  const removeTag = async (tag: LibraryTag) => {
-    await submitCommands([{ kind: 'libraryTag.delete', targetId: tag.id, expectedRevision: tag.revision, input: {} }]);
-    await onRefresh();
-  };
   const createTag = async () => {
     const next = tagName.trim();
     if (!next) return;
@@ -398,7 +432,7 @@ function FolderNav({ folders, tags, open, onClose, onEdit, onRefresh }: { folder
         <ActionMenuItem onSelect={() => { setMenu(null); onEdit({ kind: 'folder-create', parentId: folder.id }); }}>{t('libraryPage.newSubfolder')}</ActionMenuItem>
         <ActionMenuItem onSelect={() => { setMenu(null); onEdit({ kind: 'folder-rename', folder }); }}>{t('shared.rename')}</ActionMenuItem>
         <ActionMenuItem onSelect={() => { setMenu(null); onEdit({ kind: 'folder-move', folder }); }}>{t('shared.move')}</ActionMenuItem>
-        <ActionMenuItem onSelect={() => { setMenu(null); void removeFolder(folder).catch((error) => toast.error(error instanceof Error ? error.message : t('libraryPage.deleteFolderFailed'))); }}>{t('libraryPage.deleteEmptyFolder')}</ActionMenuItem>
+        <ActionMenuItem onSelect={() => { setMenu(null); onRequestDelete({ kind: 'folder', folder }); }}>{t('libraryPage.deleteEmptyFolder')}</ActionMenuItem>
         </ActionMenu>
       </div>
     </div>)}
@@ -411,7 +445,7 @@ function FolderNav({ folders, tags, open, onClose, onEdit, onRefresh }: { folder
     {tags.map((tag) => <div key={tag.id} className="library-folder-row">
       <Button variant="row" size="bare" type="button" className="library-tag" aria-pressed={snapshot.tagIds.includes(tag.id)} onClick={() => patchLibrary({ tagIds: snapshot.tagIds.includes(tag.id) ? snapshot.tagIds.filter((item) => item !== tag.id) : [...snapshot.tagIds, tag.id] })}>{tag.name}</Button>
       <Button variant="outline" size="bare" type="button" className="library-btn" aria-label={t('libraryPage.renameNamed', { name: tag.name })} onClick={() => onEdit({ kind: 'tag-rename', tag })}>{t('shared.rename')}</Button>
-      <Button variant="outline" size="bare" type="button" className="library-btn" aria-label={t('libraryPage.deleteNamed', { name: tag.name })} onClick={() => { void removeTag(tag).catch((error) => toast.error(error instanceof Error ? error.message : t('libraryPage.deleteTagFailed'))); }}>{t('shared.delete')}</Button>
+      <Button variant="outline" size="bare" type="button" className="library-btn" aria-label={t('libraryPage.deleteNamed', { name: tag.name })} onClick={() => onRequestDelete({ kind: 'tag', tag })}>{t('shared.delete')}</Button>
     </div>)}
     <form className="flex gap-1 px-2 py-2" onSubmit={(event) => { event.preventDefault(); void createTag().catch((error) => toast.error(error instanceof Error ? error.message : t('libraryPage.createTagFailed'))); }}>
       <Input className="library-search" aria-label={t('libraryPage.newTagName')} value={tagName} onChange={(event) => setTagName(event.target.value)} />

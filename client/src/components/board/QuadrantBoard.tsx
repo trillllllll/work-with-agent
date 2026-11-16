@@ -32,7 +32,7 @@ function QuadrantLane({ definition, tasks, props, showCompleted }: { definition:
   return <Surface as="section" tone="sheet" ref={setNodeRef} aria-label={t('quadrant.laneLabel', { title: definition.title, description: definition.description })} className="workspace-board-column flex min-h-[17rem] min-w-0 flex-col p-3 transition-colors" data-drag-over={isOver || undefined}>
     <header className="mb-3 flex items-start justify-between gap-3">
       <div className="min-w-0"><h2 className={cn('inline-flex rounded-md border px-2 py-1 text-sm font-semibold', definition.tone)}>{definition.title}</h2><p className="mt-1 text-xs text-muted-foreground">{definition.description}</p></div>
-      <span className="glass-control shrink-0 rounded-full px-2 py-0.5 text-xs text-muted-foreground">{tasks.length}</span>
+      <span className="glass-control shrink-0 rounded-full px-2 py-0.5 text-xs text-muted-foreground">{active.length + (showCompleted ? completed.length : 0)}</span>
     </header>
     <div className="workspace-board-tasks flex min-h-24 flex-1 flex-col">
       {active.map((task) => <DraggableTask key={task.id} task={task} props={props} />)}
