@@ -1,6 +1,9 @@
-/* Shared by the production light theme and the independent workspace preview. */
-:root:not(.dark) {
+/* Workspace typography and layout are shared. The warm porcelain palette is used in light mode. */
+:root {
   --porcelain-heading: "Songti SC", "Noto Serif CJK SC", SimSun, Georgia, serif;
+}
+
+:root:not(.dark) {
   --porcelain-reading-face: linear-gradient(155deg, #fffdf8 15%, #f8f4eb);
   --porcelain-sheet: linear-gradient(149deg, #fffefa, #fbf8f1);
   --porcelain-recess: #f2eee5;
@@ -23,15 +26,15 @@
   background: var(--porcelain-reading-face);
 }
 
-:root:not(.dark) :is(.dovun-task-content, .dovun-main .workspace-page) {
+:root :is(.dovun-task-content, .dovun-main .workspace-page) {
   padding: clamp(29px, 3.3vw, 48px) clamp(20px, 3.6vw, 54px) 60px;
 }
 
-:root:not(.dark) .dovun-task-content {
+:root .dovun-task-content {
   max-width: 960px;
 }
 
-:root:not(.dark) :is(
+:root :is(
   .dovun-page-header h1,
   .workspace-page > h1,
   .workspace-page > header h1,
@@ -40,7 +43,6 @@
   .work-context .ctx-title,
   [data-testid='focus-page'] h1
 ) {
-  color: var(--preview-ink);
   font-family: var(--porcelain-heading);
   font-size: clamp(28px, 3.2vw, 39px);
   font-weight: 650;
@@ -48,31 +50,33 @@
   letter-spacing: 0.055em;
 }
 
-:root:not(.dark) :is(.dovun-page-header, .workspace-page > header, .library-titlebar) {
+:root :is(.dovun-page-header, .workspace-page > header, .library-titlebar) {
   padding-bottom: 14px;
-  border-bottom: 1px solid var(--preview-rule);
+  border-bottom: 1px solid var(--workspace-divider);
 }
 
-:root:not(.dark) .workspace-topics > header {
+:root .workspace-topics > header {
   margin-bottom: 17px;
 }
 
-:root:not(.dark) .dovun-page-date {
+:root .dovun-page-date {
   margin-bottom: 7px;
-  color: var(--preview-secondary);
   font-family: var(--preview-serif);
   font-size: 15px;
   font-variant-numeric: tabular-nums;
 }
 
-:root:not(.dark) .dovun-task-content :is(.list-surface, [data-testid='task-list']) {
-  border: 1px solid var(--preview-rule);
+:root .dovun-task-content :is(.list-surface, [data-testid='task-list']) {
+  border: 1px solid var(--workspace-divider);
   border-radius: 11px;
+}
+
+:root:not(.dark) .dovun-task-content :is(.list-surface, [data-testid='task-list']) {
   background: var(--porcelain-sheet);
   box-shadow: var(--preview-lift);
 }
 
-:root:not(.dark) .dovun-task-content .list-surface [data-testid='task-list'] {
+:root .dovun-task-content .list-surface [data-testid='task-list'] {
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -84,17 +88,19 @@
   box-shadow: none;
 }
 
-:root:not(.dark) .dovun-task-content section > h2 {
+:root .dovun-task-content section > h2 {
   margin-bottom: 8px;
-  color: var(--preview-secondary);
   font-size: 13px;
   font-weight: 650;
   letter-spacing: 0.035em;
 }
 
+:root .dovun-task-content :is(.quick-capture, .quick-capture-row) {
+  border-radius: 8px;
+}
+
 :root:not(.dark) .dovun-task-content :is(.quick-capture, .quick-capture-row) {
   border-color: var(--preview-rule);
-  border-radius: 8px;
   background: color-mix(in srgb, var(--porcelain-recess) 65%, transparent);
 }
 
@@ -103,8 +109,7 @@
   border-color: var(--ring);
 }
 
-:root:not(.dark) .dovun-task-content .task-row :is(time, .task-place-chip) {
-  color: var(--preview-secondary);
+:root .dovun-task-content .task-row :is(time, .task-place-chip) {
   font-variant-numeric: tabular-nums;
 }
 
@@ -129,23 +134,25 @@
   background: linear-gradient(180deg, var(--preview-face), #fbf8f1);
 }
 
-:root:not(.dark) .dovun-task-slot textarea.task-title {
-  color: var(--preview-ink);
+:root .dovun-task-slot textarea.task-title {
   font-size: 20px;
   font-weight: 630;
   letter-spacing: 0;
 }
 
-:root:not(.dark) .dovun-task-slot .task-info-rows {
+:root .dovun-task-slot .task-info-rows {
   gap: 1px;
   margin-top: 3px;
   padding: 4px 5px;
-  border: 1px solid var(--preview-rule);
+  border: 1px solid var(--workspace-divider);
   border-radius: 10px;
+}
+
+:root:not(.dark) .dovun-task-slot .task-info-rows {
   background: #f7f4ec;
 }
 
-:root:not(.dark) .dovun-task-slot .dovun-detail-writing {
+:root .dovun-task-slot .dovun-detail-writing {
   padding-top: 3px;
 }
 
@@ -161,13 +168,15 @@
   background: linear-gradient(transparent, #faf7ef);
 }
 
-:root:not(.dark) .dovun-assistant .assistant-identity h2 {
-  color: var(--preview-ink);
+:root .dovun-assistant .assistant-identity h2 {
   font-size: 15px;
 }
 
+:root .dovun-assistant :is(.workspace-chat-prompts, .assistant-input-box) {
+  border: 1px solid var(--workspace-divider);
+}
+
 :root:not(.dark) .dovun-assistant :is(.workspace-chat-prompts, .assistant-input-box) {
-  border: 1px solid var(--preview-rule);
   background: var(--porcelain-sheet);
   box-shadow: var(--preview-lift);
 }
@@ -176,21 +185,20 @@
   border-color: var(--ring);
 }
 
-:root:not(.dark) .dovun-assistant-welcome h3 {
-  color: var(--preview-ink);
+:root .dovun-assistant-welcome h3 {
   font-family: var(--porcelain-heading);
   font-size: 25px;
   letter-spacing: 0.04em;
 }
 
-:root:not(.dark) .dovun-assistant:is([data-presentation='direct'], [data-presentation='expanded']) .dovun-assistant-welcome {
+:root .dovun-assistant:is([data-presentation='direct'], [data-presentation='expanded']) .dovun-assistant-welcome {
   width: min(100%, 760px);
   margin-inline: auto;
   padding: 36px 18px 15px;
   text-align: start;
 }
 
-:root:not(.dark) .dovun-assistant:is([data-presentation='direct'], [data-presentation='expanded']) .dovun-assistant-welcome img {
+:root .dovun-assistant:is([data-presentation='direct'], [data-presentation='expanded']) .dovun-assistant-welcome img {
   width: 43px;
   height: 47px;
   margin-inline: 0;
@@ -201,9 +209,13 @@
   --lib-border: var(--preview-rule);
 }
 
+:root .library-page .library-panel.workspace-sheet:not(.library-folders),
+:root .library-page .document-pane {
+  border: 1px solid var(--workspace-divider);
+}
+
 :root:not(.dark) .library-page .library-panel.workspace-sheet:not(.library-folders),
 :root:not(.dark) .library-page .document-pane {
-  border: 1px solid var(--preview-rule);
   background: var(--porcelain-sheet);
   box-shadow: var(--preview-lift);
 }
@@ -216,25 +228,27 @@
   background: var(--preview-blue-soft);
 }
 
-:root:not(.dark) :is(.learning-page, .workspace-topics, .work-context) .workspace-sheet {
-  border: 1px solid var(--preview-rule);
+:root :is(.learning-page, .workspace-topics, .work-context) .workspace-sheet {
+  border: 1px solid var(--workspace-divider);
+}
+
+:root [data-testid='stats-page'] .workspace-kpis {
+  border: 1px solid var(--workspace-divider);
 }
 
 :root:not(.dark) [data-testid='stats-page'] .workspace-kpis {
-  border: 1px solid var(--preview-rule);
   background: var(--porcelain-sheet);
   box-shadow: var(--preview-lift);
 }
 
-:root:not(.dark) [data-testid='stats-page'] [data-testid^='stats-section-'] h2 {
+:root [data-testid='stats-page'] [data-testid^='stats-section-'] h2 {
   font-family: var(--porcelain-heading);
   font-size: 17px;
   font-weight: 650;
   letter-spacing: 0.05em;
 }
 
-:root:not(.dark) [data-testid='focus-page'] [data-testid='focus-remaining'] {
-  color: var(--preview-blue);
+:root [data-testid='focus-page'] [data-testid='focus-remaining'] {
   font-family: var(--preview-serif);
   font-variant-numeric: tabular-nums;
   font-weight: 500;
@@ -250,26 +264,62 @@
   background: var(--porcelain-reading-face);
 }
 
-:root:not(.dark) .workspace-settings-content {
-  border: 1px solid var(--preview-rule);
+:root .workspace-settings-content {
+  border: 1px solid var(--workspace-divider);
+}
+
+:root [data-testid='settings-category'] h2:not(.sr-only):first-child,
+:root [data-slot='dialog-content']:has([data-testid='workspace-modal-scroller']) > header [data-slot='dialog-title']:not(.sr-only) {
+  font-family: var(--porcelain-heading);
+  letter-spacing: 0.045em;
 }
 
 :root:not(.dark) [data-testid='settings-category'] h2:not(.sr-only):first-child,
 :root:not(.dark) [data-slot='dialog-content']:has([data-testid='workspace-modal-scroller']) > header [data-slot='dialog-title']:not(.sr-only) {
   color: var(--preview-ink);
-  font-family: var(--porcelain-heading);
-  letter-spacing: 0.045em;
+}
+
+:root:not(.dark) :is(
+  .dovun-page-header h1,
+  .workspace-page > h1,
+  .workspace-page > header h1,
+  .workspace-page > div > h1,
+  .library-titlebar > h1,
+  .work-context .ctx-title,
+  [data-testid='focus-page'] h1
+),
+:root:not(.dark) .dovun-task-slot textarea.task-title,
+:root:not(.dark) .dovun-assistant .assistant-identity h2,
+:root:not(.dark) .dovun-assistant-welcome h3 {
+  color: var(--preview-ink);
+}
+
+:root:not(.dark) .dovun-page-date,
+:root:not(.dark) .dovun-task-content section > h2,
+:root:not(.dark) .dovun-task-content .task-row :is(time, .task-place-chip) {
+  color: var(--preview-secondary);
+}
+
+:root:not(.dark) [data-testid='focus-page'] [data-testid='focus-remaining'] {
+  color: var(--preview-blue);
 }
 
 @media (min-width: 1024px) {
-  :root:not(.dark) .app-backdrop:not(:has(main[data-page='plan']:not(.hidden))) {
+  :root .app-backdrop:has(> .dovun-workspace) {
     padding: 12px;
+  }
+
+  :root .dovun-workspace {
+    border: 1px solid var(--workspace-divider);
+    border-radius: 16px;
+  }
+
+  :root:not(.dark) .app-backdrop:not(:has(main[data-page='plan']:not(.hidden))) {
     background: #eee9e0;
   }
 
   :root:not(.dark) .dovun-workspace:not(:has(main[data-page='plan']:not(.hidden))) {
-    border: 1px solid var(--preview-face);
-    border-radius: 16px;
+    border-color: var(--preview-face);
     background: var(--preview-face);
     box-shadow: 0 12px 32px -24px rgb(65 54 38 / 0.36);
   }
@@ -281,25 +331,25 @@
 }
 
 @media (min-width: 1370px) {
-  :root:not(.dark) .dovun-workspace:not(:has(.assistant-compact-nav, main[data-page='plan'])) {
+  :root .dovun-workspace:not(:has(.assistant-compact-nav)) {
     --dovun-nav-width: 186px;
   }
 }
 
 @media (max-width: 639px) {
-  :root:not(.dark) :is(.dovun-main .workspace-page, .dovun-task-content) {
+  :root :is(.dovun-main .workspace-page, .dovun-task-content) {
     padding: 22px 14px 78px;
   }
 
-  :root:not(.dark) :is(.dovun-page-header, .workspace-page > header, .library-titlebar) {
+  :root :is(.dovun-page-header, .workspace-page > header, .library-titlebar) {
     padding-bottom: 11px;
   }
 
-  :root:not(.dark) .library-titlebar > h1 {
+  :root .library-titlebar > h1 {
     font-size: 27px;
   }
 
-  :root:not(.dark) .dovun-task-slot .task-info-rows {
+  :root .dovun-task-slot .task-info-rows {
     padding-inline: 4px;
   }
 }

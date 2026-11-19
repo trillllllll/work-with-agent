@@ -40,3 +40,16 @@ test('the narrow dark planning view keeps the porcelain date typography', async 
   await expect(page.locator('.plan-date-cluster')).toHaveCSS('justify-content', 'space-between');
   expect(await page.locator('html').evaluate(element => getComputedStyle(element).getPropertyValue('--preview-face').trim())).toBe('');
 });
+
+test('dark workspace pages share the demo heading typography', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  for (const route of ['today', 'inbox', 'library', 'stats', 'focus']) {
+    await page.goto('/#/' + route);
+    const heading = page.locator('main[data-page="' + route + '"]').getByRole('heading', { level: 1 });
+    await expect(heading).toBeVisible();
+    await expect(heading).toHaveCSS('font-family', /Songti SC/);
+  }
+  await expect(page.getByTestId('focus-remaining')).toHaveCSS('font-family', /Bodoni 72/);
+  await expect(page.locator('html')).toHaveClass(/\bdark\b/);
+  expect(await page.locator('html').evaluate(element => getComputedStyle(element).getPropertyValue('--preview-face').trim())).toBe('');
+});
