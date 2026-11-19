@@ -269,14 +269,14 @@
 }
 
 :root [data-testid='settings-category'] h2:not(.sr-only):first-child,
-:root .workspace-modal-detail-title,
-:root [data-slot='dialog-content']:has([data-testid='workspace-modal-scroller']) > header [data-slot='dialog-title']:not(.sr-only) {
+:root .workspace-modal-title,
+:root .workspace-modal-detail-title {
   font-family: var(--porcelain-heading);
   letter-spacing: 0.045em;
 }
 
 :root:not(.dark) [data-testid='settings-category'] h2:not(.sr-only):first-child,
-:root:not(.dark) [data-slot='dialog-content']:has([data-testid='workspace-modal-scroller']) > header [data-slot='dialog-title']:not(.sr-only) {
+:root:not(.dark) .workspace-modal-title {
   color: var(--preview-ink);
 }
 

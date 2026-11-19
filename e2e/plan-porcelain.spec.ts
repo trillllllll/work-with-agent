@@ -65,6 +65,8 @@ test('narrow task and settings dialogs use the shared layout', async ({ page }) 
   await expect(detail.getByLabel('任务标题', { exact: true })).toHaveCSS('font-size', '20px');
   await expect(detail.locator('.task-info-rows')).toHaveCSS('border-radius', '10px');
 
+  await page.goto('/#/settings');
+  await expect(page.locator('.workspace-modal-title')).toHaveCSS('font-family', /Songti SC/);
   await page.goto('/#/settings/model');
   await expect(page.locator('.workspace-modal-detail-title')).toHaveCSS('font-family', /Songti SC/);
 });

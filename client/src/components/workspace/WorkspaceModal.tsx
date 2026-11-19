@@ -81,7 +81,7 @@ export function WorkspaceModal({ suspended = false, assistantOpen, assistantSlot
           <DialogTitle className="sr-only">{mobileDetail}</DialogTitle>
         </>
       ) : (
-        <DialogTitle className="px-1 text-lg font-semibold">{t('modal.settings')}</DialogTitle>
+        <DialogTitle className="workspace-modal-title px-1 text-lg font-semibold">{t('modal.settings')}</DialogTitle>
       )}
       <span className="flex-1" />
       {closeButton}
