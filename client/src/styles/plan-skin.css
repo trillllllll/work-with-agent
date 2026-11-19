@@ -357,3 +357,294 @@
     transition: none;
   }
 }
+
+/* Light porcelain layout for the planning surface. */
+:root:not(.dark) .dovun-main[data-page='plan'] {
+  --glass-divider: var(--porcelain-rule);
+  --plan-card-border: rgb(110 101 89 / 0.22);
+  --plan-now-ink: var(--porcelain-brass);
+  --plan-now-label-ink: #6d542d;
+  --plan-now-label-bg: #fbf4e6;
+  background: linear-gradient(155deg, var(--porcelain-face), #f8f4eb);
+  color: var(--porcelain-ink);
+}
+
+:root:not(.dark) .plan-page {
+  width: 100%;
+  max-width: 1600px;
+  padding: 24px clamp(19px, 2.5vw, 38px) 22px;
+  background: transparent;
+}
+
+:root:not(.dark) .plan-header {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px 20px;
+  margin-bottom: 16px;
+}
+
+:root:not(.dark) .plan-date-cluster {
+  justify-content: start;
+  gap: 12px;
+}
+
+:root:not(.dark) .plan-eyebrow {
+  margin-bottom: 5px;
+  color: var(--porcelain-secondary);
+  font-size: 12px;
+  font-weight: 540;
+  letter-spacing: 0.11em;
+}
+
+:root:not(.dark) .plan-date-title {
+  gap: 8px;
+  padding: 0 5px 1px 0;
+  color: var(--porcelain-ink);
+  font-family: var(--porcelain-serif);
+  font-size: clamp(23px, 3vw, 35px);
+  font-style: italic;
+  font-weight: 500;
+  line-height: 1.05;
+  text-align: start;
+  letter-spacing: -0.035em;
+}
+
+:root:not(.dark) .plan-date-title:hover {
+  background: var(--porcelain-blue-soft);
+}
+
+:root:not(.dark) .plan-date-title svg {
+  flex: none;
+  color: var(--porcelain-blue);
+}
+
+:root:not(.dark) .plan-date-actions {
+  flex-shrink: 0;
+}
+
+:root:not(.dark) .plan-toolbar-row {
+  min-width: 0;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 0;
+}
+
+:root:not(.dark) .plan-mode-switch {
+  border: 1px solid var(--porcelain-rule);
+  border-radius: 9px;
+  background: var(--porcelain-base);
+}
+
+:root:not(.dark) .plan-mode-switch [data-plan-mode] {
+  min-width: 35px;
+  min-height: 31px;
+}
+
+:root:not(.dark) .plan-mode-switch [aria-pressed='true'] {
+  background: var(--porcelain-face);
+  box-shadow: var(--porcelain-lift);
+  color: var(--porcelain-blue);
+}
+
+:root:not(.dark) .plan-layout {
+  min-width: 0;
+  gap: 13px;
+}
+
+:root:not(.dark) :is(.plan-calendar, .plan-month-scroll) {
+  border: 1px solid var(--porcelain-rule);
+  border-radius: 12px;
+  background: linear-gradient(155deg, var(--porcelain-face), #f8f5ee);
+  box-shadow: inset 0 1px 0 #fffefd;
+}
+
+:root:not(.dark) .plan-calendar [data-testid='timeline-scroll'] {
+  max-height: min(65dvh, max(220px, calc(100dvh - 282px)));
+}
+
+:root:not(.dark) :is(.plan-day-heading, .plan-month-cell) {
+  background: rgb(255 253 248 / 0.55);
+}
+
+:root:not(.dark) .plan-day-heading button > span:last-child {
+  font-size: 16px;
+  font-weight: 620;
+  font-variant-numeric: tabular-nums;
+}
+
+:root:not(.dark) .plan-day-heading:has(.bg-primary) {
+  background: var(--porcelain-blue-soft);
+}
+
+:root:not(.dark) .plan-day-heading .bg-primary {
+  background: var(--porcelain-blue);
+}
+
+:root:not(.dark) [data-testid='time-band-day']:has(.plan-now-line) {
+  background: rgb(213 226 241 / 0.27);
+}
+
+:root:not(.dark) .plan-timed-task {
+  background: var(--porcelain-card);
+  box-shadow: var(--porcelain-lift);
+  color: var(--porcelain-ink);
+}
+
+:root:not(.dark) .plan-timed-task[data-done] {
+  background: var(--porcelain-base);
+  box-shadow: none;
+}
+
+:root:not(.dark) .plan-timed-task:hover {
+  border-color: #8fa5bb;
+}
+
+:root:not(.dark) .plan-timed-task .plan-task-title {
+  font-weight: 620;
+}
+
+:root:not(.dark) .plan-timed-task button:has(> .plan-task-title) {
+  width: 100%;
+}
+
+:root:not(.dark) .plan-calendar-week .plan-timed-task[data-tier='normal'] {
+  padding-inline: 7px;
+}
+
+:root:not(.dark) .plan-timed-task .plan-task-check {
+  justify-content: flex-end;
+  padding-inline-end: 7px;
+}
+
+:root:not(.dark) .plan-timed-when {
+  padding-inline-end: 20px;
+  color: var(--porcelain-secondary);
+}
+
+:root:not(.dark) .plan-now-line {
+  z-index: 1;
+}
+
+:root:not(.dark) :is(.plan-month-task, .plan-lane-more) {
+  background: var(--porcelain-base);
+  color: var(--porcelain-ink);
+}
+
+:root:not(.dark) .plan-page [data-drop-id][data-over] {
+  background: #dce8f5;
+  box-shadow: inset 0 0 0 1px #839bb4;
+}
+
+:root:not(.dark) .plan-task-tray {
+  background: var(--porcelain-face);
+  border-color: var(--porcelain-rule);
+  box-shadow: var(--porcelain-lift);
+}
+
+:root:not(.dark) .plan-tray-count {
+  background: var(--porcelain-base);
+  color: var(--porcelain-secondary);
+}
+
+:root:not(.dark) [data-testid='plan-drag-overlay'] {
+  background: var(--porcelain-card);
+  border: 1px solid #adbed0;
+  box-shadow: 0 7px 19px rgb(51 64 78 / 0.16);
+}
+
+@media (min-width: 1370px) {
+  :root:not(.dark) .dovun-workspace:not(:has(.dovun-work-rail:is([data-task], [data-chat]), .plan-layout[data-tray-open])) .plan-page:has(.plan-layout) {
+    display: grid;
+    grid-template-columns: minmax(205px, 218px) minmax(0, 1fr);
+    grid-template-areas: "date controls" "date calendar" "date footer";
+    gap: 13px 24px;
+  }
+
+  :root:not(.dark) .dovun-workspace:not(:has(.dovun-work-rail:is([data-task], [data-chat]), .plan-layout[data-tray-open])) .plan-page:has(.plan-layout) .plan-header {
+    display: contents;
+  }
+
+  :root:not(.dark) .plan-date-cluster { grid-area: date; }
+  :root:not(.dark) .plan-toolbar-row { grid-area: controls; }
+  :root:not(.dark) .plan-layout { grid-area: calendar; }
+  :root:not(.dark) .plan-footer { grid-area: footer; }
+
+  :root:not(.dark) .dovun-workspace:not(:has(.dovun-work-rail:is([data-task], [data-chat]), .plan-layout[data-tray-open])) .plan-page:has(.plan-layout) .plan-date-cluster {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 17px;
+    padding: 13px 0 0;
+  }
+
+  :root:not(.dark) .dovun-workspace:not(:has(.dovun-work-rail:is([data-task], [data-chat]), .plan-layout[data-tray-open])) .plan-page:has(.plan-layout) .plan-date-title {
+    max-width: 100%;
+    margin-top: 9px;
+    font-size: clamp(33px, 2.48vw, 38px);
+    line-height: 1.08;
+  }
+
+  :root:not(.dark) .dovun-workspace:not(:has(.dovun-work-rail:is([data-task], [data-chat]), .plan-layout[data-tray-open])) .plan-page:has(.plan-layout) .plan-date-actions {
+    width: 100%;
+    padding-top: 12px;
+    border-top: 1px solid #cab998;
+  }
+
+  :root:not(.dark) .dovun-workspace:not(:has(.dovun-work-rail:is([data-task], [data-chat]), .plan-layout[data-tray-open])) .plan-page:has(.plan-layout) .plan-toolbar-row {
+    min-height: 55px;
+  }
+}
+
+@media (max-width: 1230px) {
+  :root:not(.dark) .plan-header {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 9px;
+  }
+
+  :root:not(.dark) .plan-toolbar-row {
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 1023px) {
+  :root:not(.dark) .plan-page {
+    padding: 12px 12px 24px;
+  }
+
+  :root:not(.dark) .plan-date-cluster {
+    justify-content: space-between;
+  }
+
+  :root:not(.dark) .plan-date-title {
+    min-height: 44px;
+    max-width: 164px;
+    font-size: clamp(20px, 5.2vw, 26px);
+  }
+
+  :root:not(.dark) .plan-toolbar-row {
+    gap: 5px;
+  }
+
+  :root:not(.dark) .plan-mode-switch [data-plan-mode] {
+    min-width: 29px;
+    padding-inline: 6px;
+  }
+
+  :root:not(.dark) .plan-toolbar-row > div:last-child,
+  :root:not(.dark) .plan-date-actions {
+    gap: 2px;
+  }
+
+  :root:not(.dark) .plan-toolbar-row button {
+    font-size: 12px;
+  }
+
+  :root:not(.dark) .plan-toolbar-row [data-size='sm'] {
+    padding-inline: 7px;
+  }
+
+  :root:not(.dark) .plan-footer {
+    padding-inline: 53px;
+  }
+}
