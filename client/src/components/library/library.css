@@ -187,7 +187,8 @@ label.library-btn {
 .library-preview-tabs,
 .library-preview-actions { display: flex; align-items: center; gap: 8px; }
 
-.library-preview-head { justify-content: space-between; padding: 12px; }
+.library-preview-head { padding: 12px; }
+.library-preview-head > .min-w-0 { flex: 1; }
 .library-preview-tabs,
 .library-preview-actions,
 .library-preview-block { padding: 0 12px 12px; }

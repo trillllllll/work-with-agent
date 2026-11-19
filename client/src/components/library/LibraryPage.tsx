@@ -15,6 +15,7 @@ import { intlLocale, t as translate } from '../../i18n/index.js';
 import { submitCommands, type Command } from '@/lib/platform.js';
 import { BodyText } from '@/components/shared/BodyText.js';
 import { Button } from '@/components/ui/button.js';
+import { CloseIconButton } from '@/components/ui/nav-buttons.js';
 import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog.js';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { Input } from '@/components/ui/input.js';
@@ -454,7 +455,7 @@ function FolderNav({ folders, tags, open, onClose, onEdit, onRequestDelete, onRe
   </>;
   return <>
     <Surface as="nav" tone="sheet" className="library-panel library-folders" data-testid="library-folders" aria-label={t('libraryPage.foldersNav')}>{!open && body}</Surface>
-    {open && <Modal workspace className="library-surface" title={t('shared.folders')} onClose={onClose}><section><Button variant="outline" size="bare" type="button" className="library-btn" onClick={onClose}>{t('shared.close')}</Button>{body}</section></Modal>}
+    {open && <Modal workspace className="library-surface" title={t('shared.folders')} onClose={onClose}><section><CloseIconButton label={t('shared.close')} onClick={onClose} />{body}</section></Modal>}
   </>;
 }
 
@@ -547,7 +548,7 @@ function BatchDialog({ mode, ids, topics, folders, tags, onClose, applyBatch }: 
   };
   return <Modal workspace className="library-surface" title={mode === 'ask' ? t('libraryPage.askMaterials') : t('libraryPage.bulkOrganize')} onClose={onClose}>
     <section>
-      <div className="flex justify-between"><h2 className="library-name">{mode === 'move' ? t('shared.move') : mode === 'tags' ? t('shared.tags') : mode === 'tasks' ? t('libraryPage.linkTasks') : t('libraryPage.askMaterials')}</h2><Button variant="outline" size="bare" type="button" className="library-btn" onClick={onClose}>{t('shared.close')}</Button></div>
+      <div className="flex items-center gap-2"><CloseIconButton label={t('shared.close')} onClick={onClose} /><h2 className="library-name">{mode === 'move' ? t('shared.move') : mode === 'tags' ? t('shared.tags') : mode === 'tasks' ? t('libraryPage.linkTasks') : t('libraryPage.askMaterials')}</h2></div>
       {mode === 'move' && <NativeSelect className="library-select mt-3 w-full" aria-label={t('libraryPage.moveToFolder')} value={folderId} onChange={(event) => setFolderId(event.target.value)}><option value="">{t('shared.unfiled')}</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}</NativeSelect>}
       {mode === 'tags' && <div className="mt-3 space-y-2">
         <label className="flex items-center gap-2"><Radio  name="library-tag-mode" checked={tagMode === 'add'} onChange={() => setTagMode('add')} />{t('libraryPage.addSelectedTags')}</label>

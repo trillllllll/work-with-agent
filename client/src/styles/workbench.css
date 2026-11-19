@@ -231,7 +231,8 @@
 .dovun-detail-writing { display: flex; flex-direction: column; flex: 1 0 auto; min-width: 0; }
 
 /* Task and assistant keep their mounted hosts and take turns filling the rail. */
-.dovun-rail-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: none; padding: 12px 16px; border-bottom: 1px solid var(--glass-divider); }
+/* Close leads the header (unified left-side rule); the tab strip follows it. */
+.dovun-rail-header { display: flex; align-items: center; gap: 12px; flex: none; padding: 12px 16px; border-bottom: 1px solid var(--glass-divider); }
 .dovun-rail-tabs { display: inline-flex; flex: none; width: max-content; gap: 2px; padding: 3px; border: 1px solid var(--glass-border); border-radius: 10px; background: var(--glass-bg-strong); }
 .dovun-rail-tabs > button { display: flex; flex: none; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 4px 11px; border-radius: 7px; color: var(--muted-foreground); font-size: 12px; white-space: nowrap; transition: none; }
 .dovun-rail-close { flex: none; }

@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode, type RefCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { ChevronLeft, History, Settings, Sparkles, Trash2, X } from 'lucide-react';
+import { ArrowLeft, History, Settings, Sparkles, Trash2, X } from 'lucide-react';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '@/components/ui/dialog.js';
 import { Button } from '@/components/ui/button.js';
 import { cn } from '@/lib/utils.js';
@@ -66,7 +66,7 @@ export function WorkspaceModal({ suspended = false, assistantOpen, assistantSlot
 
   const closeButton = !assistantOpen && (
     <DialogClose asChild>
-      <Button type="button" variant="ghost" size="icon-sm" aria-label={t('modal.close')} className="shrink-0 rounded-full text-foreground/70 hover:text-foreground"><X /></Button>
+      <Button type="button" variant="ghost" size="icon" aria-label={t('modal.close')} className="shrink-0 rounded-full text-foreground/70 hover:text-foreground"><X /></Button>
     </DialogClose>
   );
 
@@ -74,8 +74,8 @@ export function WorkspaceModal({ suspended = false, assistantOpen, assistantSlot
     <header className="flex h-14 shrink-0 items-center gap-2 border-b border-black/[0.06] px-3 dark:border-white/[0.08]">
       {mobileDetail ? (
         <>
-          <Button ref={backButton} type="button" variant="ghost" className="-ml-1 h-10 min-w-0 gap-1 px-2 text-base font-semibold" aria-label={t('settings:layout.nav.back')} onClick={onBack}>
-            <ChevronLeft className="size-5 shrink-0" />
+          <Button ref={backButton} type="button" variant="ghost" className="-ml-1 h-9 min-w-0 gap-1.5 rounded-full px-2.5 text-sm font-medium text-foreground/70 hover:text-foreground" aria-label={t('settings:layout.nav.back')} onClick={onBack}>
+            <ArrowLeft className="size-4 shrink-0" />
             <span className="truncate">{mobileDetail}</span>
           </Button>
           <DialogTitle className="sr-only">{mobileDetail}</DialogTitle>

@@ -2,6 +2,7 @@ import { NativeSelect } from '@/components/ui/native-select.js';
 import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure.js';
 import { Surface } from '@/components/ui/surface.js';
 import { Checkbox } from '@/components/ui/checkbox.js';
+import { ArrowLeft } from 'lucide-react';
 import { MemoryExtractionJobs } from './MemoryExtractionJobs.js';
 import { usePageContext } from '@/lib/assistant-context.js';
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
@@ -290,7 +291,7 @@ export function KnowledgePage({
         </div>
         {section !== 'tree' && section !== 'graph' && section !== 'search' && section !== 'extractions' && <p className="ctx-tab-note">{tabNote}</p>}
         {section === 'memories' && <p className="ctx-tab-note">{t('page.memoriesExtraNote')}</p>}
-        {section === 'extractions' && <div className="ctx-tools"><Button variant="ghost" onClick={() => locate('memories', topicId === 'all' ? '' : topicId)}>{t('page.backToMemory')}</Button></div>}
+        {section === 'extractions' && <div className="ctx-tools"><Button variant="ghost" className="h-9 gap-1.5 rounded-full px-2.5 text-sm font-medium text-foreground/70 hover:text-foreground" onClick={() => locate('memories', topicId === 'all' ? '' : topicId)}><ArrowLeft className="size-4 shrink-0" />{t('page.backToMemory')}</Button></div>}
         <Surface tone="sheet" className="workspace-context-sheet">{body}</Surface>
       </div>
     </div>

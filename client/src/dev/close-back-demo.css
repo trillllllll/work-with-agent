@@ -1,0 +1,286 @@
+/* Development-only styles for the close/back placement demo. */
+
+.cbd-page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.cbd-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cbd-header h1 {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.cbd-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.cbd-rules {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.cbd-rule {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+}
+
+.cbd-rule-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.cbd-rule-no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--glass-border);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cbd-rule-sample {
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--muted-foreground, hsl(0 0% 45%));
+  background: var(--glass-subtle, transparent);
+}
+
+.cbd-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cbd-section > h2 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.cbd-section > p {
+  font-size: 13px;
+  color: var(--muted-foreground, hsl(0 0% 45%));
+  margin: 0;
+}
+
+.cbd-pair-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+.cbd-pair {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+
+.cbd-pair-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.cbd-pair-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cbd-pair-note {
+  font-size: 12px;
+  color: var(--muted-foreground, hsl(0 0% 45%));
+  margin: 0;
+}
+
+/* Clickable mini previews that show where the X sits before opening the real dialog. */
+.cbd-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cbd-mini-mock {
+  display: block;
+  border-radius: 8px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-subtle, transparent);
+  padding: 9px 12px;
+}
+
+.cbd-mini-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.cbd-mini-title {
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cbd-mini-spacer {
+  flex: 1;
+}
+
+.cbd-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: 999px;
+  padding: 2px 8px;
+  border: 1px solid var(--glass-border);
+  color: var(--muted-foreground, hsl(0 0% 45%));
+}
+
+.cbd-tag-before {
+  background: transparent;
+}
+
+.cbd-tag-after {
+  background: var(--primary, hsl(0 0% 20%));
+  color: var(--primary-foreground, hsl(0 0% 100%));
+  border-color: transparent;
+}
+
+.cbd-tag-keep {
+  background: transparent;
+  border-style: dashed;
+}
+
+.cbd-mock-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cbd-mock-caption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted-foreground, hsl(0 0% 45%));
+}
+
+/* Static header mocks: approximate real panel headers at desktop width. */
+.cbd-mock {
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-surface, transparent);
+  padding: 10px 12px;
+}
+
+.cbd-mock-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+}
+
+.cbd-mock-label {
+  font-size: 13px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cbd-mock-spacer {
+  flex: 1;
+}
+
+.cbd-mock-muted {
+  color: var(--muted-foreground, hsl(0 0% 45%));
+}
+
+.cbd-mock-mobile {
+  max-width: 390px;
+}
+
+/* Leading-close header used by the "统一后" variants. */
+.cbd-leading-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cbd-leading-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 6px;
+  min-width: 0;
+}
+
+.cbd-leading-header-text .cbd-title {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.cbd-leading-header-text .cbd-desc {
+  font-size: 13px;
+  color: var(--muted-foreground, hsl(0 0% 45%));
+}
+
+.cbd-notes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+.cbd-note-card {
+  padding: 14px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.cbd-note-card h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+
+.cbd-note-card ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.cbd-note-card code {
+  font-size: 12px;
+  border-radius: 4px;
+  padding: 1px 4px;
+  background: var(--glass-subtle, transparent);
+}

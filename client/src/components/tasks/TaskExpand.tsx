@@ -613,7 +613,7 @@ function TagPicker() {
 function CloseDetailButton() {
   const { t } = useTranslation('tasks');
   const edit = useEdit();
-  return <Button type="button" variant="ghost" size="icon-sm" aria-label={t('taskExpand.close')} onClick={edit.requestClose}><X /></Button>;
+  return <Button type="button" variant="ghost" size="icon" aria-label={t('taskExpand.close')} onClick={edit.requestClose} className="shrink-0 rounded-full text-foreground/70 hover:text-foreground"><X /></Button>;
 }
 
 function ActivityButton({ onOpen }: { onOpen: () => void }) {
@@ -750,7 +750,7 @@ export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children
         <header className="task-detail-header">
           <TaskAssistantActions showAssistant={presentation !== 'panel'} />
           <ParentTaskLink />
-          <div data-testid="task-detail-title-row" className="flex min-w-0 items-start gap-2"><TaskStatusCheckbox /><div className="min-w-0 flex-1"><TaskTitleField /></div><ActivityButton onOpen={() => setActivity(true)} />{showClose && <CloseDetailButton />}</div>
+          <div data-testid="task-detail-title-row" className="flex min-w-0 items-start gap-2">{showClose && <CloseDetailButton />}<TaskStatusCheckbox /><div className="min-w-0 flex-1"><TaskTitleField /></div><ActivityButton onOpen={() => setActivity(true)} /></div>
         </header>
         <div role="tabpanel" id={`detail-panel-${props.id}`} aria-labelledby={`detail-tab-${props.id}-${section}`} className="min-h-0 flex-1 overflow-y-auto px-5 pb-5"><TaskExpandBody fill section={section} /></div>
         {presentation === 'panel' && <footer className="dovun-task-assistant-footer"><Button onClick={() => askAssistant()}>{t('workRail.askAssistant')}</Button></footer>}

@@ -73,6 +73,7 @@ function DialogContent({
           "fixed top-[50%] left-[50%] z-[var(--layer-dialog)] grid w-full max-w-[min(var(--overlay-width),calc(100%-3rem))] translate-x-[-50%] translate-y-[-50%] gap-4 px-[var(--surface-overlay-padding-x)] py-[var(--surface-overlay-padding-y)] duration-[var(--control-duration)] outline-none",
           (surface === "default" || surface === "glass") && "glass-overlay",
           motion === "default" && "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
+          showCloseButton && "[&>[data-slot=dialog-header]:first-child]:ps-12",
           className
         )}
         {...props}
@@ -82,7 +83,7 @@ function DialogContent({
           <DialogPrimitive.Close
             data-slot="dialog-close"
             className={cn(
-              "absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+              "absolute top-4 left-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
               closeButtonClassName,
             )}
           >

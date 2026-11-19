@@ -59,7 +59,7 @@ export function ReviewReportDrawer({ open, batch, loading, missing, retrying, on
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
       <DialogContent surface="glass" className={drawerClass}>
-        <DialogHeader className="shrink-0 border-b glass-divider px-5 py-4 pr-12 text-left">
+        <DialogHeader className="shrink-0 border-b glass-divider px-5 py-4 text-left">
           <DialogTitle className="break-words">{batch?.ruleName || t('reviews.fallbackName')}</DialogTitle>
           <DialogDescription className="space-y-0.5 break-words">{when || range ? <>{when && <span className="block">{when}</span>}{range && <span className="block">{range}</span>}</> : t('reviews.recordsHeading')}</DialogDescription>
           {batch && <div className="pt-1"><Badge variant="outline" className={statusClass[batch.status]}>{t(statusKey[batch.status])}</Badge></div>}

@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button.js';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog.js';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { Input } from '@/components/ui/input.js';
 import { NativeSelect } from '@/components/ui/native-select.js';
 import { canSaveDocumentAs, pendingSaveAs, saveAsFormats, saveDocumentAs, type SaveAsFormat } from '@/lib/documents/save-as.js';
@@ -45,8 +45,10 @@ export function useSaveDocumentAs({ scopeKey, resource, snapshot, session }: { s
   };
   if (!resource || !formats.length) return { available: false, eligible: false, show, dialog: null, conversionSource: null };
   const dialog = <Dialog open={open} onOpenChange={(next) => { if (!busy) setOpen(next); }}><DialogContent className="max-w-lg">
+      <DialogHeader>
       <DialogTitle>{t('document.saveAs')}</DialogTitle>
       <DialogDescription>{t('document.saveAsDescription', { revision: source?.revision ?? resource.revision })}</DialogDescription>
+      </DialogHeader>
       <Input aria-label={t('document.saveAsTitle')} maxLength={300} value={title} disabled={busy || locked} onChange={(event) => setTitle(event.target.value)} />
       <NativeSelect aria-label={t('document.saveAsFormat')} value={format} disabled={busy || locked} onChange={(event) => setFormat(event.target.value as SaveAsFormat)}>{formats.map((item) => <option key={item} value={item}>{item === 'markdown' ? 'Markdown' : t('kind.text')}</option>)}</NativeSelect>
       <p className="text-sm" data-testid="document-conversion-loss">{t((source ?? resource).format === 'richdoc-v1' ? format === 'markdown' ? 'document.saveAsRichMarkdownLoss' : 'document.saveAsRichTextLoss' : (source ?? resource).format === 'markdown' ? 'document.saveAsMarkdownTextLoss' : 'document.saveAsTextMarkdownLoss')}</p>

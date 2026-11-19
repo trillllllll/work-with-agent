@@ -195,7 +195,7 @@ function MobileFilters({ filters, connections, onReplace }: { filters: ChangeFil
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent surface="glass" showCloseButton aria-describedby={undefined} overlayClassName="!z-[80]" className="!top-auto !bottom-0 !left-0 !z-[80] !flex max-h-[86dvh] w-full !max-w-none !translate-x-0 !translate-y-0 flex-col gap-0 !rounded-t-2xl !rounded-b-none p-0">
         <div className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-muted" />
-        <DialogTitle className="px-4 py-3 text-left text-base">{t('changes.filterButton')}</DialogTitle>
+        <DialogTitle className="py-3 pl-12 pr-4 text-left text-base">{t('changes.filterButton')}</DialogTitle>
         <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
           <OptionGroup title={t('changes.filters.object')}>
             {types.map((value) => <OptionButton key={value} pressed={draft.type.includes(value)} label={knownLabel(CHANGE_ENTITY_TYPES, value, t, 'changes.entities')} onClick={() => setDraft((current) => ({ ...current, type: toggleValue(current.type, value) }))} />)}

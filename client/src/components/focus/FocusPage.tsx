@@ -54,10 +54,10 @@ export function FocusPage({ presentation = 'direct', onExpand, onShrink, onClose
   return <div data-testid="focus-page" data-presentation={presentation} className={compact ? 'flex h-full min-h-0 flex-col' : 'flex min-h-full flex-col'}>
     {presentation !== 'side' && <FocusPageContext taskId={state.taskId ?? ''} phase={state.phase} dateFrom={days[0] ?? today} dateTo={days[6] ?? today} />}
     {compact && <header className="assistant-header flex shrink-0 items-center gap-2 border-b px-4 py-3">
+      <Button type="button" variant="ghost" size="icon" className="shrink-0 rounded-full text-foreground/70 hover:text-foreground" title={t('focus.collapse')} aria-label={t('focus.collapse')} onClick={onClose}><X /></Button>
       <Timer className="size-4 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1"><h2 className="text-sm font-semibold">{t('focus.title')}</h2><span className="text-[10px] text-muted-foreground" role="status">{phaseLabel(state.phase)}</span></div>
       <Button type="button" variant="ghost" size="icon-sm" onClick={onExpand} aria-label={t('focus.expand')} title={t('focus.expand')}><Maximize2 /></Button>
-      <Button type="button" variant="ghost" size="icon-sm" title={t('focus.collapse')} aria-label={t('focus.collapse')} onClick={onClose}><X /></Button>
     </header>}
     <div className={compact ? 'glass-scrollbar min-h-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto p-3' : 'mx-auto w-full max-w-5xl space-y-6 p-5 sm:p-7'}>
     {!compact && <div className="flex items-center gap-2"><h1 className="min-w-0 flex-1 text-2xl font-semibold">{t('focus.title')}</h1>{presentation === 'expanded' && <Button type="button" variant="ghost" size="icon-sm" onClick={onShrink} aria-label={t('focus.shrink')} title={t('focus.shrink')}><Minimize2 /></Button>}</div>}

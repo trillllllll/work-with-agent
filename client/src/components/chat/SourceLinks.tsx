@@ -3,7 +3,8 @@ import { Button } from '@/components/ui/button.js';
 import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure.js';
 import { Modal } from '@/components/ui/modal.js';
 import { MarkdownView } from '@/components/shared/MarkdownView.js';
-import { BookOpen, ChevronDown, ChevronRight, LoaderCircle, X } from 'lucide-react';
+import { CloseIconButton } from '@/components/ui/nav-buttons.js';
+import { BookOpen, ChevronDown, ChevronRight, LoaderCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '@/lib/api.js';
@@ -34,7 +35,7 @@ export function SourcePreview({ source, onClose }: { source: AssistantSource; on
     return () => { current = false; };
   }, [source.kind, source.id, source.revision, attempt, t]);
   return <Modal title={t('sourceLinks.preview')} onClose={onClose} data-assistant-floating className="assistant-source-preview">
-    <header className="mb-4 flex items-center gap-2"><BookOpen className="size-4 text-muted-foreground" /><h2 className="min-w-0 flex-1 text-sm font-semibold">{result?.title || sourceTitle(source, t('sourceLinks.conversation'))}</h2><Button variant="ghost" size="icon-sm" aria-label={t('sourceLinks.close')} onClick={onClose}><X /></Button></header>
+    <header className="mb-4 flex items-center gap-2"><CloseIconButton label={t('sourceLinks.close')} onClick={onClose} /><BookOpen className="size-4 text-muted-foreground" /><h2 className="min-w-0 flex-1 text-sm font-semibold">{result?.title || sourceTitle(source, t('sourceLinks.conversation'))}</h2></header>
     <p className="mb-3 text-[11px] text-muted-foreground">{t(`sourceLinks.kinds.${source.kind}`)}{source.revision ? ` · v${source.revision}` : ''}</p>
     {error ? <div role="alert"><p className="text-sm text-destructive">{error}</p><Button variant="outline" size="sm" className="mt-3" onClick={() => setAttempt(value => value + 1)}>{t('actions.retry')}</Button></div> : result ? <CitationContext.Provider value={null}><MarkdownView content={result.content || t('sourceLinks.empty')} /></CitationContext.Provider> : <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground"><LoaderCircle className="size-3 animate-spin motion-reduce:animate-none" />{t('sourceLinks.loading')}</p>}
   </Modal>;

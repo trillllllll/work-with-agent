@@ -105,14 +105,14 @@ export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose
         </DropdownMenuContent></DropdownMenu>
         {presentation === 'side' && <Button variant="ghost" size="icon-sm" onClick={onExpand} aria-label={t('chatPanel.expand')} title={t('chatPanel.expand')}><Maximize2 /></Button>}
         {presentation === 'expanded' && <Button variant="ghost" size="icon-sm" onClick={onShrink} aria-label={t('chatPanel.shrink')} title={t('chatPanel.shrink')}><Minimize2 /></Button>}
-        {presentation === 'side' && showClose && <Button variant="ghost" size="icon-sm" title={t('chatPanel.hideAssistant')} aria-label={mobile ? t('chatPanel.backToPage') : t('chatPanel.closeChat')} onClick={onClose}><X /></Button>}
+        {presentation === 'side' && showClose && <Button variant="ghost" size="icon" className="shrink-0 rounded-full text-foreground/70 hover:text-foreground" title={t('chatPanel.hideAssistant')} aria-label={mobile ? t('chatPanel.backToPage') : t('chatPanel.closeChat')} onClick={onClose}><X /></Button>}
       </header>
 
       {identityId === 'study' && <StudyTopicBar topicId={topicId} focusNodeId={focusNodeId} disabled={chat.switchingBlocked} onSelectTopic={(id) => void chat.selectTopic(id)} onNewTopic={newTopic}
         onOpenNode={(hash) => { window.location.hash = hash; if (mobile) onClose(); }} onAsk={(prompt) => setInput(input.trim() ? `${input}\n\n${prompt}` : prompt)} />}
       {identityId === 'study' && topicId && <StudyBriefing key={topicId} topicId={topicId} />}
       {onReturnToLearning && <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1">
-        <Button variant="ghost" className="min-h-11 shrink-0 px-2" onClick={onReturnToLearning}><ArrowLeft className="size-4" />{t('chatPanel.backToLearning')}</Button>
+        <Button variant="ghost" className="h-9 shrink-0 gap-1.5 rounded-full px-2.5 text-sm font-medium text-foreground/70 hover:text-foreground" onClick={onReturnToLearning}><ArrowLeft className="size-4 shrink-0" />{t('chatPanel.backToLearning')}</Button>
         {identityId === 'study' && learningReference && <span className="min-w-0 truncate text-xs text-muted-foreground" title={learningReference.title}>{t('chatPanel.learningReference', { title: learningReference.title })}</span>}
       </div>}
 

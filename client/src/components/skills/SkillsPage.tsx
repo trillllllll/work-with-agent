@@ -87,7 +87,7 @@ function SkillDetailView({ id, onBack }: { id: string; onBack: () => void }) {
   const tabClass = (_selected: boolean) => 'shrink-0 px-3 py-1 text-sm';
   return (
     <article className="flex min-h-0 flex-1 flex-col gap-3" aria-label={t('page.detailLabel', { name: skill.name })} data-testid="skill-detail">
-      <Button variant="ghost" size="sm" className="shrink-0 self-start @3xl:hidden" onClick={onBack}><ArrowLeft />{t('page.backToList')}</Button>
+      <Button variant="ghost" className="h-9 shrink-0 self-start gap-1.5 rounded-full px-2.5 text-sm font-medium text-foreground/70 hover:text-foreground @3xl:hidden" onClick={onBack}><ArrowLeft className="size-4 shrink-0" />{t('page.backToList')}</Button>
       <header className="flex shrink-0 flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1">
           <h2 className="text-xl font-semibold break-words">{skill.name}</h2>
