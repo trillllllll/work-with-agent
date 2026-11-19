@@ -7,6 +7,8 @@
 @import "./styles/inbox.css";
 @import "./styles/plan-skin.css";
 @import "./styles/workspace-material.css";
+@import "./styles/plan-porcelain.css";
+@import "./styles/workspace-porcelain.css";
 
 @custom-variant dark (&:is(.dark *));
 
