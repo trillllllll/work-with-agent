@@ -106,7 +106,8 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
   const [pinnedContext, setPinnedContext] = useState<ChatContextV3 | null>(restoredComposer.snapshot?.pinnedContext??null);
   const [attachments, setAttachments] = useState<ChatAttachment[]>(restoredComposer.snapshot?.attachments??[]);
   const activeContext = pinnedContext ?? pageContext;
-  const context = activeContext ? { ...activeContext, label: contextLabel(activeContext.label), mode: pinnedContext ? 'pinned' as const : 'follow' as const, attachments } : undefined;
+  const contextCleared = pinnedContext?.mode === 'cleared';
+  const context = activeContext ? { ...activeContext, label: contextLabel(activeContext.label), mode: contextCleared ? 'cleared' as const : pinnedContext ? 'pinned' as const : 'follow' as const, attachments } : undefined;
   const contextRef = useRef(context);
   contextRef.current = context;
   const attachmentsRef = useRef(attachments);
@@ -718,12 +719,25 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     setReferencedApproval(null); setUnknownApprovalIds([]); setUnresolvedApprovalIds([]);
     setConversationId(id);
   };
+  const pinContext = () => { if (pageContext) setPinnedContext(structuredClone(pageContext)); };
+  const clearContext = () => {
+    if (!pageContext) return;
+    setPinnedContext({
+      ...structuredClone(pageContext), page: 'chat', scope: { kind: 'all' }, label: '', section: null, mode: 'cleared',
+      taskId: null, taskRevision: null, selectedTaskIds: [], taskFilter: null,
+      materialId: null, materialRevision: null, materialVersionMode: 'latest', selectedMaterialIds: [], pageState: {}, attachments: [],
+    });
+    attachmentsRef.current = [];
+    setAttachments([]);
+  };
   const addMaterial = (id: string) => {
     const current = contextRef.current;
     if (!current) return;
+    const base = current.mode === 'cleared' ? pageContext : current;
+    if (!base) return;
     const ids = current.selectedMaterialIds.includes(id) ? current.selectedMaterialIds.filter((item) => item !== id) : [...current.selectedMaterialIds, id];
     if (ids.length > 100) { onErrorRef.current(tRef.current('errors.tooManyMaterials')); return; }
-    setPinnedContext({ ...structuredClone(current), selectedMaterialIds: ids });
+    setPinnedContext({ ...structuredClone(base), mode: 'pinned', selectedMaterialIds: ids });
   };
   useEffect(() => { if (messages.some((message) => message.needsSnapshot)) void reloadConversation(conversationRef.current, true); }, [messages]);
   useEffect(() => { if (pendingRequestKey.current) { setInterrupted(true); void retry(); } }, []);
@@ -851,5 +865,5 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
   };
 
   startNewRef.current = startNew;
-  return { draftStorageFailed, hasLegacyPending:chatStorage.hasLegacyPending(), legacyPendingMessage:chatStorage.legacyPending(), activeRunId: busy ? activeRunId.current : undefined, contextStats, contextPreview, stop, stopping, switchIdentity, switchingBlocked, selectConversation, addMaterial, context, pinned: Boolean(pinnedContext), togglePin: () => setPinnedContext((current) => current ? null : structuredClone(pageContext ?? null)), attachments, removeAttachment: (id: string) => setAttachments((current) => current.filter((item) => item.id !== id)), conversationId, conversationTopic, selectTopic, selectedTopicId, messages, approvals, busy, interrupted, input, setInput, sendSeq, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference: () => setReferencedApproval(null), showRepreview, webSearchEnabled, setWebSearch };
+  return { draftStorageFailed, hasLegacyPending:chatStorage.hasLegacyPending(), legacyPendingMessage:chatStorage.legacyPending(), activeRunId: busy ? activeRunId.current : undefined, contextStats, contextPreview, stop, stopping, switchIdentity, switchingBlocked, selectConversation, addMaterial, context, pinned: Boolean(pinnedContext) && !contextCleared, contextCleared, pinContext, clearContext, attachments, removeAttachment: (id: string) => setAttachments((current) => current.filter((item) => item.id !== id)), conversationId, conversationTopic, selectTopic, selectedTopicId, messages, approvals, busy, interrupted, input, setInput, sendSeq, send, retry, startNew, resume, refreshApprovals, approve, reject, executingApprovalId, decisionPhase, unknownApprovalIds, unresolvedApprovalIds, pausedRun, referencedApproval, clearReference: () => setReferencedApproval(null), showRepreview, webSearchEnabled, setWebSearch };
 }

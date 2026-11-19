@@ -43,7 +43,7 @@ test('all pages share one assistant; workspace modal, shortcuts, sources and his
   expect(second.context.pageState.dateFrom).toBeTruthy();
   expect(second.context.taskFilter.scheduledFrom).toBe(second.context.pageState.dateFrom);
   await panel(page).getByTestId('assistant-context-trigger').click();
-  await page.getByRole('button', { name: '固定当前上下文', exact: true }).click();
+  await page.getByRole('button', { name: '固定当前参考范围', exact: true }).click();
   await panel(page).getByTestId('assistant-context-trigger').click();
   await page.evaluate(() => { location.hash = '/settings'; });
   if (isMobile) {
@@ -55,7 +55,13 @@ test('all pages share one assistant; workspace modal, shortcuts, sources and his
   const fixed = await ask(page, 'AI验收固定规划');
   expect(fixed.context.page).toBe('plan');
   await panel(page).getByTestId('assistant-context-trigger').click();
-  await page.getByRole('button', { name: '跟随页面', exact: true }).click();
+  await page.getByRole('button', { name: '清除参考', exact: true }).click();
+  await expect(page.getByText('未添加页面参考', { exact: true }).last()).toBeVisible();
+  await panel(page).getByTestId('assistant-context-trigger').click();
+  const cleared = await ask(page, 'AI验收清除参考');
+  expect(cleared.context).toMatchObject({ page: 'chat', scope: { kind: 'all' }, mode: 'cleared', taskFilter: null, selectedTaskIds: [], selectedMaterialIds: [], attachments: [] });
+  await panel(page).getByTestId('assistant-context-trigger').click();
+  await page.getByRole('button', { name: '固定当前参考范围', exact: true }).click();
   await panel(page).getByTestId('assistant-context-trigger').click();
   const settings = await ask(page, 'AI验收设置');
   expect(settings.context.page).toBe('settings');

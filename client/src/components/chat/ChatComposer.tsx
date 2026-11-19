@@ -20,7 +20,7 @@ type ChatComposerProps = {
   onCancelReference?: () => void;
   toolbar?: ReactNode;
   contextUsage?: ReactNode;
-  model?: string;
+  model?: ReactNode;
   onStop?: () => void;
   stopping?: boolean;
   placeholder?: string;
@@ -117,7 +117,7 @@ export function ChatComposer({ input, busy, reference, onChange, onSend, onCance
         />
         <div className="mt-2 flex min-w-0 items-center gap-2">
           {toolbar}
-          <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground" title={model}>{model}</span>
+          <span className="flex min-w-0 flex-1 items-center truncate text-[11px] text-muted-foreground">{model}</span>
           {contextUsage}
           {busy ? <Button type="button" size="icon" className="size-8 rounded-full" onClick={onStop} disabled={stopping} aria-label={t('composer.stop')}><Square className="size-3 fill-current" /></Button> : <Button type="submit" size="icon" className="size-8 rounded-full" disabled={!input.trim()} aria-label={t('composer.send')}><ArrowUp /></Button>}
         </div>

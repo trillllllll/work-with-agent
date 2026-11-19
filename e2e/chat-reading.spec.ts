@@ -50,12 +50,11 @@ test('same-content conversation stays readable across container widths and theme
     await panel.locator('[data-chat-scroll]').evaluate(element => { element.scrollTop = 0; });
     await page.screenshot({ path: `${evidence}/${info.project.name}-${theme}-${width}.png`, animations: 'disabled' });
   }
-  await panel.getByRole('button', { name: '更多会话操作', exact: true }).click();
-  await expect(page.getByText('mock-model', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('assistant-model-trigger')).toHaveText('mock-model');
   await page.getByTestId('context-usage-trigger').click();
   await expect(page.getByTestId('context-usage-popover')).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(panel.getByRole('button', { name: '更多会话操作', exact: true })).toBeFocused();
+  await expect(page.getByTestId('context-usage-trigger')).toBeFocused();
   await panel.getByRole('button', { name: /查看来源 1/ }).click();
   await expect(page.getByRole('dialog')).toContainText('9 项工程 + 2 项文档维护。');
   await page.keyboard.press('Escape');
@@ -101,18 +100,39 @@ test('user tables and rich text blocks keep their content and copy the original 
   expect(await page.evaluate(() => (window as any).__copiedReading)).toBe(markdown);
 });
 
-test('context settings navigation closes usage details and long model names fit the menu', async ({ page, request }) => {
+test('context settings navigation closes usage details and long model names fit the composer', async ({ page, request }) => {
   await request.patch(`${api}/api/settings`, { data: { model: `model-${'long-name-'.repeat(25)}` } });
   await page.setViewportSize({ width: 320, height: 740 });
   await page.goto('/#/chat');
-  await page.getByTestId('assistant-more-actions').click();
-  const menu = page.getByRole('menu');
-  const bounds = (await menu.boundingBox())!;
+  await page.getByTestId('assistant-model-trigger').click();
+  const models = page.getByRole('listbox', { name: '获取模型列表' });
+  const bounds = (await models.boundingBox())!;
   expect(bounds.x).toBeGreaterThanOrEqual(0);
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(320);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.keyboard.press('Escape');
   await page.getByTestId('context-usage-trigger').click();
   await page.getByTestId('context-usage-popover').getByRole('link').click();
   await expect(page).toHaveURL(/#\/settings\/model$/);
   await expect(page.getByTestId('context-usage-popover')).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(1);
+});
+
+test('composer model picker switches and persists the active profile model', async ({ page, request }) => {
+  await page.route('**/api/settings/models', async route => {
+    await route.fulfill({ json: { data: { models: [{ id: 'mock-model' }, { id: 'mock-model-next', contextWindow: 128000 }] }, error: null } });
+  });
+  await page.goto('/#/chat');
+  const trigger = page.getByTestId('assistant-model-trigger');
+  await expect(trigger).toHaveText('mock-model');
+  await trigger.click();
+  await page.getByRole('button', { name: '获取模型列表', exact: true }).click();
+  await page.getByRole('option', { name: /mock-model-next/ }).click();
+  await expect(trigger).toHaveText('mock-model-next');
+  const settings = (await (await request.get(`${api}/api/settings`)).json()).data;
+  expect(settings.model).toBe('mock-model-next');
+  expect(settings.profiles.find((profile: { id: string }) => profile.id === settings.activeProfileId).model).toBe('mock-model-next');
+  await page.reload();
+  await expect(trigger).toHaveText('mock-model-next');
+  await expect(page.getByTestId('context-usage-trigger')).toBeVisible();
 });

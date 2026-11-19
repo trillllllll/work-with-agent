@@ -49,6 +49,7 @@ function asStored(row: { id: string; role: string; content: string; status: stri
 }
 
 async function briefText(context: StoredChatContext) {
+  if (context.schemaVersion === 3 && context.mode === 'cleared') return '用户已清除页面参考，没有当前简报。';
   const topicId = scopeTopicId(context);
   if (topicId === undefined) return '当前范围是全部可访问的数据，没有单独的一份当前简报。';
   try {
@@ -66,6 +67,7 @@ async function briefText(context: StoredChatContext) {
 }
 
 async function fixedNotes(context: StoredChatContext) {
+  if (context.schemaVersion === 3 && context.mode === 'cleared') return '用户已清除页面参考，没有当前固定说明。';
   const topicId = scopeTopicId(context);
   if (topicId === undefined) return '当前范围没有单独的固定说明。';
   const notes = await knowledge.briefNotes(ownerActor, topicId);
@@ -149,7 +151,8 @@ export async function assemblePreviewMessages(input: {
 }
 
 async function buildSystemPrompt(input: { conversationId: string | null; learningMapId?: string | null; context: StoredChatContext; identityId: string; userText: string; skills: Array<{ name: string; description: string }> }): Promise<string> {
-  const topicId = input.context.scope.kind === 'topic' ? input.context.scope.topicId : null;
+  const contextCleared = input.context.schemaVersion === 3 && input.context.mode === 'cleared';
+  const topicId = !contextCleared && input.context.scope.kind === 'topic' ? input.context.scope.topicId : null;
   const time = getCurrentTime({}, input.context);
   const identityId = input.identityId;
   const identity = getAssistantIdentity(identityId);
@@ -186,7 +189,7 @@ async function buildSystemPrompt(input: { conversationId: string | null; learnin
     buildMemoryContext({ topicId, identityId, userText: input.userText }),
   ]);
   const nearbyWhere = input.context.scope.kind === 'all' ? { deletedAt: null } : { deletedAt: null, topicId };
-  const nearby = await prisma.task.findMany({
+  const nearby = contextCleared ? [] : await prisma.task.findMany({
     where: nearbyWhere,
     select: { id: true, title: true, status: true, dueDate: true, scheduledStart: true, scheduledEnd: true, topic: { select: { id: true, name: true } } },
     orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
@@ -208,9 +211,11 @@ async function buildSystemPrompt(input: { conversationId: string | null; learnin
   const goalLine = scopeTopic?.goal?.trim() || scopeTopic?.goalDueDate
     ? `清单目标：${scopeTopic?.goal?.trim().slice(0, 500) || '（未填写）'}${scopeTopic?.goalDueDate ? `（截止 ${scopeTopic.goalDueDate}）` : ''}`
     : '';
-  const scopeLine = input.context.scope.kind === 'topic'
-    ? `当前清单：${scopeTopic ? `${scopeTopic.name} ${input.context.scope.topicId}` : input.context.scope.topicId}`
-    : input.context.scope.kind === 'inbox' ? '当前清单：收集箱' : '当前范围是全部可访问的数据';
+  const scopeLine = contextCleared
+    ? '用户已清除本次页面参考。不要假设当前页面、清单、任务或资料；需要这些信息时先询问用户。'
+    : input.context.scope.kind === 'topic'
+      ? `当前清单：${scopeTopic ? `${scopeTopic.name} ${input.context.scope.topicId}` : input.context.scope.topicId}`
+      : input.context.scope.kind === 'inbox' ? '当前清单：收集箱' : '当前范围是全部可访问的数据';
   // 分三层（docs/2026-11-04_memory-recall-plan.md 5.1）：稳定层在前，慢变层居中，易变层殿后。
   const system = [
     lazySystemPrompt(identityId),

@@ -23,11 +23,12 @@ type ModelPickerProps = {
   value: string;
   /** 第二个参数是供应商在 /models 里声明的上下文上限，可能没有。 */
   onPick: (modelId: string, contextWindow?: number) => void;
+  side?: 'top' | 'bottom';
   children: ReactElement;
 };
 
 /** 从接口的 /models 拉模型列表的浮层：可搜索、可手填兜底（读不到列表的中转也能用）。 */
-export function ModelPicker({ baseUrl, apiKey, profileId, value, onPick, children }: ModelPickerProps) {
+export function ModelPicker({ baseUrl, apiKey, profileId, value, onPick, side = 'bottom', children }: ModelPickerProps) {
   const { t } = useTranslation('settings');
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -65,7 +66,7 @@ export function ModelPicker({ baseUrl, apiKey, profileId, value, onPick, childre
   return (
     <Popover open={open} onOpenChange={(next) => { setOpen(next); if (!next) setQuery(''); }}>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
-      <PopoverContent align="start" className="w-80 max-w-[calc(100vw-2rem)] p-0">
+      <PopoverContent side={side} align="start" className="w-80 max-w-[calc(100vw-2rem)] p-0">
         <div className="border-b border-[var(--glass-divider)] p-2">
           <Input
             variant="inline"

@@ -5,7 +5,6 @@ import { mkdir } from 'node:fs/promises';
 const api = process.env.E2E_API_URL!;
 const evidence = '/tmp/dovun-context-usage-evidence';
 async function openUsage(page: import('@playwright/test').Page) {
-  await page.getByTestId('assistant-more-actions').click();
   await page.getByTestId('context-usage-trigger').click();
 }
 test.beforeEach(async ({ request, page }) => {
@@ -21,7 +20,7 @@ test('real requests record context composition; floating controls work in both t
   page.on('pageerror', error => errors.push(error.message));
   await request.post(`${api}/api/tasks`, { data: { title: '整理产品资料，核对任务安排' } });
   await page.goto('/#/chat');
-  const trigger = page.getByTestId('assistant-more-actions');
+  const trigger = page.getByTestId('context-usage-trigger');
   await openUsage(page);
   await expect(page.getByTestId('context-usage-popover')).toContainText('发送前预估');
   await page.keyboard.press('Escape');

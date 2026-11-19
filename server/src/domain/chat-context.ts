@@ -45,7 +45,7 @@ export const chatContextV3 = chatContextV2.extend({
   schemaVersion: z.literal(3),
   label: short,
   section: short.nullable(),
-  mode: z.enum(['follow', 'pinned']),
+  mode: z.enum(['follow', 'pinned', 'cleared']),
   taskRevision: z.number().int().positive().nullable(),
   materialRevision: z.number().int().positive().nullable(),
   materialVersionMode: z.enum(['latest', 'historical']).optional(),

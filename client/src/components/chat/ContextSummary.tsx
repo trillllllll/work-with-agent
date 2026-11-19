@@ -14,9 +14,9 @@ export function ContextSummary({ context }: { context?: ChatContextV2 | ChatCont
   const sectionName = (section: string) => (sections as readonly string[]).includes(section) ? t(`contextSummary.section.${section}`) : section;
   const layoutName = (layout: string) => (layouts as readonly string[]).includes(layout) ? t(`contextSummary.layout.${layout}`) : layout;
   return <Disclosure className="text-xs text-muted-foreground" data-testid="context-summary">
-    <DisclosureTrigger className="cursor-pointer py-1">{context.schemaVersion === 3 ? context.label : pageNames[context.page] ?? context.page}</DisclosureTrigger>
+    <DisclosureTrigger className="cursor-pointer py-1">{context.schemaVersion === 3 && context.mode === 'cleared' ? t('chatPanel.noReference') : context.schemaVersion === 3 ? context.label : pageNames[context.page] ?? context.page}</DisclosureTrigger>
     <div className="space-y-1 break-words py-2">
-      <p>{context.scope.kind === 'all' ? t('contextSummary.scopeAll') : context.scope.kind === 'inbox' ? t('contextSummary.scopeInbox') : t('contextSummary.scopeList')}</p>
+      {!(context.schemaVersion === 3 && context.mode === 'cleared') && <p>{context.scope.kind === 'all' ? t('contextSummary.scopeAll') : context.scope.kind === 'inbox' ? t('contextSummary.scopeInbox') : t('contextSummary.scopeList')}</p>}
       {context.taskId && <p>{t('contextSummary.currentTask')}</p>}
       {context.materialId && <p>{context.schemaVersion === 3 && context.materialRevision ? t('contextSummary.materialRevision', { revision: context.materialRevision }) : t('contextSummary.material')}</p>}
       {context.selectedTaskIds.length > 0 && <p>{t('contextSummary.selectedTasks', { count: context.selectedTaskIds.length })}</p>}
