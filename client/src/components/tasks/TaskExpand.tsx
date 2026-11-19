@@ -738,7 +738,7 @@ export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children
   const placeholder: Task = fallback ?? { id: props.id, title: '', description: '', status: 'todo', priority: 'none', dueDate: null, estimatedMinutes: null, scheduledStart: null, scheduledEnd: null, resultSummary: '', recurrenceRule: '', topicId: null, parentId: null, tagIds: [], allowedTransitions: [] };
   return <TaskExpand ref={ref} {...props} fallback={placeholder}>
     <DetailFrame presentation={presentation} panelSlot={panelSlot}>
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="dovun-task-detail flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="dovun-detail-tabs" role="tablist" aria-label={t('companion.details')}>
           {(['details', 'materials', 'context'] as const).map((tab, index, tabs) => <Button variant="tab" size="bare" type="button" role="tab" key={tab} id={`detail-tab-${props.id}-${tab}`} aria-controls={`detail-panel-${props.id}`} aria-selected={section === tab} tabIndex={section === tab ? 0 : -1} onClick={() => setSection(tab)} onKeyDown={event => {
             if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;

@@ -134,13 +134,13 @@
   background: linear-gradient(180deg, var(--preview-face), #fbf8f1);
 }
 
-:root .dovun-task-slot textarea.task-title {
+:root .dovun-task-detail textarea.task-title {
   font-size: 20px;
   font-weight: 630;
   letter-spacing: 0;
 }
 
-:root .dovun-task-slot .task-info-rows {
+:root .dovun-task-detail .task-info-rows {
   gap: 1px;
   margin-top: 3px;
   padding: 4px 5px;
@@ -148,11 +148,11 @@
   border-radius: 10px;
 }
 
-:root:not(.dark) .dovun-task-slot .task-info-rows {
+:root:not(.dark) .dovun-task-detail .task-info-rows {
   background: #f7f4ec;
 }
 
-:root .dovun-task-slot .dovun-detail-writing {
+:root .dovun-task-detail .dovun-detail-writing {
   padding-top: 3px;
 }
 
@@ -269,6 +269,7 @@
 }
 
 :root [data-testid='settings-category'] h2:not(.sr-only):first-child,
+:root .workspace-modal-detail-title,
 :root [data-slot='dialog-content']:has([data-testid='workspace-modal-scroller']) > header [data-slot='dialog-title']:not(.sr-only) {
   font-family: var(--porcelain-heading);
   letter-spacing: 0.045em;
@@ -288,7 +289,7 @@
   .work-context .ctx-title,
   [data-testid='focus-page'] h1
 ),
-:root:not(.dark) .dovun-task-slot textarea.task-title,
+:root:not(.dark) .dovun-task-detail textarea.task-title,
 :root:not(.dark) .dovun-assistant .assistant-identity h2,
 :root:not(.dark) .dovun-assistant-welcome h3 {
   color: var(--preview-ink);
@@ -349,7 +350,7 @@
     font-size: 27px;
   }
 
-  :root .dovun-task-slot .task-info-rows {
+  :root .dovun-task-detail .task-info-rows {
     padding-inline: 4px;
   }
 }

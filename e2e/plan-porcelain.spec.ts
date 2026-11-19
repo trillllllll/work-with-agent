@@ -53,3 +53,18 @@ test('dark workspace pages share the demo heading typography', async ({ page }) 
   await expect(page.locator('html')).toHaveClass(/\bdark\b/);
   expect(await page.locator('html').evaluate(element => getComputedStyle(element).getPropertyValue('--preview-face').trim())).toBe('');
 });
+
+test('narrow task and settings dialogs use the shared layout', async ({ page }) => {
+  await page.setViewportSize({ width: 497, height: 868 });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  const now = new Date().toISOString();
+  await e2eDatabase.task.create({ data: { id: 'porcelain-modal-task', title: '任务详情排版', createdAt: now, updatedAt: now } });
+  await page.goto('/#/inbox');
+  await page.getByRole('button', { name: '任务详情排版', exact: true }).click();
+  const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
+  await expect(detail.getByLabel('任务标题', { exact: true })).toHaveCSS('font-size', '20px');
+  await expect(detail.locator('.task-info-rows')).toHaveCSS('border-radius', '10px');
+
+  await page.goto('/#/settings/model');
+  await expect(page.locator('.workspace-modal-detail-title')).toHaveCSS('font-family', /Songti SC/);
+});

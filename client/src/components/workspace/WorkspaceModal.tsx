@@ -76,7 +76,7 @@ export function WorkspaceModal({ suspended = false, assistantOpen, assistantSlot
         <>
           <Button ref={backButton} type="button" variant="ghost" className="-ml-1 h-9 min-w-0 gap-1.5 rounded-full px-2.5 text-sm font-medium text-foreground/70 hover:text-foreground" aria-label={t('settings:layout.nav.back')} onClick={onBack}>
             <ArrowLeft className="size-4 shrink-0" />
-            <span className="truncate">{mobileDetail}</span>
+            <span className="workspace-modal-detail-title truncate">{mobileDetail}</span>
           </Button>
           <DialogTitle className="sr-only">{mobileDetail}</DialogTitle>
         </>
