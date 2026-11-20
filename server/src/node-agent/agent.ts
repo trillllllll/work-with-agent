@@ -10,6 +10,8 @@ import os from 'node:os';
 import { NODE_PROTOCOL_VERSION, NODE_RESULT_FEATURES, cleanupPayloadSchema, inventoryPayloadSchema, preparePayloadSchema, probePayloadSchema, pullRequestPayloadSchema, pushPayloadSchema, runPayloadSchema, type LeasedJob, type NodeCapabilities } from './protocol.js';
 import { assertAllowed, assertManagedWorktree, cleanupWorktrees, collectFacts, createPullRequest, fetchRef, ghAvailable, gitDirs, hooksFingerprint, git, inventory, NodeError, prepareWorktree, probe, pushBranch } from './git.js';
 import { createLocalLaunchSpec, localProviders } from './cli.js';
+import { HarnessController } from './harness-controller.js';
+import { HARNESS_FEATURE, harnessLeaseSchema } from './harness-protocol.js';
 
 export type NodeConfig = { server: string; token: string; roots: string[]; dataDir: string; maxConcurrent?: number; pollMs?: number; version?: string };
 type JournalState = 'running' | 'pending_report' | 'reported' | 'abandoned';
@@ -52,6 +54,7 @@ export class NodeAgent {
   private lastError: string | null = null;
   private quiesceTask: Promise<void> | null = null;
   private exited = false;
+  private harness: HarnessController | null = null;
   constructor(private readonly config: NodeConfig, private readonly http: typeof fetch = fetch, private readonly hooks: NodeAgentHooks = {}) {
     if (!config.roots.length) throw new Error('至少需要一个允许的目录（--roots）');
     // The runner supervisor keeps its control files under DOVUN_RUNNER_DIR; give it this node's own data directory.
@@ -85,7 +88,14 @@ export class NodeAgent {
   private async api(path: string, body: unknown) {
     let response: Response;
     try {
-      response = await this.http(`${this.config.server.replace(/\/$/, '')}/api/v1/node${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Node ${this.config.token}` }, body: JSON.stringify(body) });
+      response = await this.http(`${this.config.server.replace(/\/$/, '')}/api/v1/node${path}`, {
+        method: 'POST', headers: {
+          'Content-Type': 'application/json', Authorization: `Node ${this.config.token}`,
+          ...(path === '/lease' ? { 'X-Dovun-Node-Features': HARNESS_FEATURE } : {}),
+        },
+        body: JSON.stringify(body),
+        ...(path.startsWith('/harness-sessions/') ? { signal: AbortSignal.timeout(8_000) } : {}),
+      });
     } catch (error) {
       this.rememberError(error);
       throw error;
@@ -114,6 +124,9 @@ export class NodeAgent {
       return capsV2 ? { ...base, path: item.path } : base;
     });
     const body: NodeCapabilities = { protocol: NODE_PROTOCOL_VERSION, version: this.config.version ?? '', platform: `${os.platform()}-${os.arch()}`, providers, maxConcurrent: this.config.maxConcurrent ?? 2, allowedRoots: this.config.roots, freeBytes: await this.freeBytes(), gh: this.gh };
+    const codex = providers.find((provider) => provider.provider === 'codex' && provider.available);
+    const version = /(\d+)\.(\d+)\.\d+/.exec(codex?.version ?? '');
+    if (this.serverAccepts.has(HARNESS_FEATURE) && version && (Number(version[1]) > 0 || Number(version[2]) >= 166)) body.harnessSessions = HARNESS_FEATURE;
     if (!capsV2) return body;
     const logPath = runtimeEnv('NODE_LOG')?.trim() || null;
     return { ...body, managedBy: runtimeEnv('NODE_MANAGED') === 'desktop' ? 'desktop' : 'cli', logPath: logPath ? logPath.slice(0, 4096) : null, lastError: this.lastError, startedAt: this.startedAt };
@@ -135,10 +148,21 @@ export class NodeAgent {
     const pending = (await this.journals()).filter((entry) => this.open(entry)).map((entry) => entry.job.id);
     const activeJobIds = [...new Set([...this.active.keys(), ...pending])];
     const max = Math.max(0, (this.config.maxConcurrent ?? 2) - activeJobIds.length);
-    const lease = await this.api('/lease', { capabilities: await this.capabilities(), activeJobIds, max }) as { jobs: LeasedJob[]; cancel: string[]; accepts?: unknown; nodeId?: unknown };
+    const capabilities = await this.capabilities();
+    const lease = await this.api('/lease', { capabilities, activeJobIds, max }) as { jobs: LeasedJob[]; cancel: string[]; accepts?: unknown; nodeId?: unknown; harness?: unknown };
     this.serverAccepts = new Set(Array.isArray(lease.accepts) ? lease.accepts.filter((item): item is string => typeof item === 'string') : []);
     if (typeof lease.nodeId === 'string' && lease.nodeId) await this.writeState(lease.nodeId).catch((error) => console.error(`[wwa-node] 无法写入 state.json：${this.summary(error)}`));
     if (this.stopped) return 0;
+    if (lease.harness && capabilities.harnessSessions && this.serverAccepts.has(HARNESS_FEATURE) && typeof lease.nodeId === 'string') {
+      const assignment = harnessLeaseSchema.safeParse(lease.harness);
+      if (assignment.success) {
+        const controller = this.harness ??= new HarnessController(
+          this.config.dataDir, this.config.server + '/' + lease.nodeId, this.config.roots,
+          (id, payload) => this.api(`/harness-sessions/${encodeURIComponent(id)}/sync`, payload) as Promise<{ snapshotRequested?: boolean }>,
+        );
+        void controller.consume(assignment.data)?.catch((error) => this.rememberError(error));
+      }
+    }
     for (const id of lease.cancel) { await (await this.runner()).requestCancel(id).catch(() => undefined); }
     for (const job of lease.jobs) {
       const entry: Journal = { job, state: 'running' };
@@ -185,6 +209,7 @@ export class NodeAgent {
   /** Stop pulling, cancel unfinished runs, and mark their journals abandoned so they are never reported again. */
   private async quiesce() {
     this.stopped = true;
+    await this.harness?.close();
     const runner = await this.runnerApi();
     const waiting: string[] = [];
     for (const entry of await this.journals()) {

@@ -43,6 +43,7 @@ import { createSkill, deleteSkill, diffSkill, draftSkill, getSkill, getSkillVers
 import { registerLearningCommands } from './application/learning-commands.js';
 import { learningRead, learningMapAggregate } from './application/learning.js';
 import { createNodeRouter, createOrchestrationRouter } from './routes/orchestration.js';
+import { harnessSessionsRouter } from './routes/harness-sessions.js';
 import { createSyncRouter } from './routes/sync.js';
 import { acceptReplicaRelay, relayBoundWorkspace } from './application/workspace-relay.js';
 import { createLearningPracticeRouter } from './routes/learning-practice.js';
@@ -69,7 +70,7 @@ app.use('/api/v1', identityMiddleware);
 app.get('/api/v1/identity', (req, res) => { res.json({ data: { actor: getActor(req) }, error: null }); });
 app.use('/api/v1/connections', connectionRouter);
 app.use('/api/v1/server', createServerRouter());
-app.use('/api/v1', commandsRouter, workspaceQueryRouter, handoffRouter);
+app.use('/api/v1', commandsRouter, workspaceQueryRouter, handoffRouter, harnessSessionsRouter);
 app.use('/api/v1/knowledge', createKnowledgeRouter());
 app.use('/api/v1/library', createLibraryRouter());
 export const reviewService = new ReviewService(new OrganizationService(), generateExternalReview);

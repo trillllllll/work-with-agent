@@ -78,6 +78,18 @@ function orchestrationUsesNode(row: { nodeId: string | null; extraLocationsJson:
 
 /** Cancel queued/leased/lost work and pause running rounds that still use this computer. Caller publishes after commit. */
 async function cancelWorkOnNode(tx: Db, nodeId: string, at: string) {
+  await tx.harnessCommand.updateMany({
+    where: { session: { activeNodeId: nodeId }, status: 'queued' },
+    data: { status: 'expired', error: '电脑已断开' },
+  });
+  await tx.harnessCommand.updateMany({
+    where: { session: { activeNodeId: nodeId }, status: 'dispatched' },
+    data: { status: 'unknown', error: '电脑已断开' },
+  });
+  await tx.harnessSession.updateMany({
+    where: { activeNodeId: nodeId },
+    data: { status: 'unavailable', error: '电脑已断开', updatedAt: at },
+  });
   const open = await tx.nodeJob.findMany({ where: { nodeId, status: { in: [...openJobStatuses] } }, select: { id: true } });
   const openIds = open.map((job) => job.id);
   if (openIds.length) await tx.nodeJob.updateMany({ where: { id: { in: openIds }, status: { in: [...openJobStatuses] } }, data: { status: 'cancelled', error: '电脑已断开', endedAt: at, updatedAt: at } });

@@ -352,6 +352,57 @@
     "regenerate": "Regenerate",
     "batchMissing": "This review record could not be found."
   },
+  "harness": {
+    "tab": "Sessions",
+    "project": "Local project",
+    "select": "Select a project and computer",
+    "start": "Start Codex session",
+    "requestFailed": "Could not complete the request. Try again.",
+    "noComputer": "Pair a computer and verify its project location in settings. It must be online and support Codex sessions.",
+    "unknownComputer": "Original computer",
+    "back": "Back to sessions",
+    "conversation": "Conversation messages",
+    "empty": "No messages yet",
+    "allow": "Allow once",
+    "decline": "Decline",
+    "draft": "Enter a message",
+    "send": "Send",
+    "steer": "Add to the current turn",
+    "interrupt": "Interrupt turn",
+    "retry": "Retry the same operation",
+    "status": {
+      "offline": "Computer offline",
+      "ready": "Connected",
+      "creating": "Starting",
+      "failed": "Could not start",
+      "unavailable": "Session unavailable",
+      "reconnecting": "Syncing"
+    },
+    "turn": {
+      "inProgress": "Running",
+      "completed": "Turn complete",
+      "failed": "Turn failed",
+      "interrupted": "Turn interrupted",
+      "unknown": "Previous turn outcome unknown"
+    },
+    "role": {
+      "user": "You",
+      "assistant": "Codex"
+    },
+    "approval": {
+      "command": "Codex requested a command",
+      "fileChange": "Codex requested a file change",
+      "permissions": "Codex requested permissions"
+    },
+    "receipt": {
+      "queued": "Received by the server",
+      "dispatched": "Sent to the computer",
+      "accepted": "Accepted by Codex",
+      "rejected": "Operation rejected",
+      "expired": "Operation expired",
+      "unknown": "Operation outcome unknown"
+    }
+  },
   "runs": {
     "tabOrchestrations": "Orchestration rounds",
     "tabHandoffs": "Handoffs",

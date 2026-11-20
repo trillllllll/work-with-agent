@@ -19,6 +19,7 @@ import { reviewPreview } from './review-text.js';
 import { useHashRoute } from '@/hooks/useHashRoute.js';
 import { OrchestrationRunsList } from '@/components/orchestration/OrchestrationRunsList.js';
 import { DispatchStatsView } from '@/components/orchestration/DispatchStatsView.js';
+import { HarnessSessions } from './HarnessSessions.js';
 
 const acceptancePrefix = '\n\n验收标准与产物：\n'; // i18n-ignore
 const handoffStatusKeys: Record<string, string> = {
@@ -63,7 +64,7 @@ export function HandoffPanel({ task, disabled = false }: { task: Task; disabled?
 export function RunsPage() {
   const { t } = useTranslation('workspace');
   const { query, setQuery } = useHashRoute();
-  const tab = query.tab === 'handoffs' ? 'handoffs' : query.tab === 'stats' ? 'stats' : 'orchestrations';
+  const tab = query.tab === 'handoffs' || query.tab === 'stats' || query.tab === 'sessions' ? query.tab : 'orchestrations';
   const tabClass = (_selected: boolean) => 'shrink-0 px-3 py-1 text-sm';
   return <section className="workspace-page mx-auto max-w-5xl space-y-5 p-5 sm:p-7">
     <h1 className="text-2xl font-semibold">{t('handoff.runsTitle')}</h1>
@@ -71,9 +72,10 @@ export function RunsPage() {
     <div role="tablist" className="flex gap-2 overflow-x-auto">
       <Button variant="tab" size="bare" type="button" role="tab" aria-selected={tab === 'orchestrations'} data-testid="runs-tab-orchestrations" className={tabClass(tab === 'orchestrations')} onClick={() => setQuery({ tab: 'orchestrations' })}>{t('runs.tabOrchestrations')}</Button>
       <Button variant="tab" size="bare" type="button" role="tab" aria-selected={tab === 'handoffs'} data-testid="runs-tab-handoffs" className={tabClass(tab === 'handoffs')} onClick={() => setQuery({ tab: 'handoffs' })}>{t('runs.tabHandoffs')}</Button>
+      <Button variant="tab" size="bare" type="button" role="tab" aria-selected={tab === 'sessions'} data-testid="runs-tab-sessions" className={tabClass(tab === 'sessions')} onClick={() => setQuery({ tab: 'sessions' })}>{t('harness.tab')}</Button>
       <Button variant="tab" size="bare" type="button" role="tab" aria-selected={tab === 'stats'} data-testid="runs-tab-stats" className={tabClass(tab === 'stats')} onClick={() => setQuery({ tab: 'stats' })}>{t('runs.tabStats')}</Button>
     </div>
-    {tab === 'orchestrations' ? <OrchestrationRunsList /> : tab === 'stats' ? <DispatchStatsView rangeFrom={query.from} rangeTo={query.to} /> : <HandoffRunsList />}
+    {tab === 'orchestrations' ? <OrchestrationRunsList /> : tab === 'stats' ? <DispatchStatsView rangeFrom={query.from} rangeTo={query.to} /> : tab === 'sessions' ? <HarnessSessions id={query.sessionId} open={(sessionId) => setQuery({ sessionId: sessionId ?? null })} /> : <HandoffRunsList />}
   </section>;
 }
 function HandoffRunsList() {

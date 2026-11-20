@@ -351,6 +351,57 @@
     "regenerate": "重新生成",
     "batchMissing": "找不到这条回顾记录。"
   },
+  "harness": {
+    "tab": "会话",
+    "project": "本机项目",
+    "select": "选择项目和电脑",
+    "start": "开启 Codex 会话",
+    "requestFailed": "操作失败，请重试",
+    "noComputer": "请先在设置中配对电脑并验证项目位置。电脑需要在线并支持 Codex 会话。",
+    "unknownComputer": "原电脑",
+    "back": "返回会话列表",
+    "conversation": "会话消息",
+    "empty": "还没有对话",
+    "allow": "允许一次",
+    "decline": "拒绝",
+    "draft": "输入消息",
+    "send": "发送",
+    "steer": "追加到当前轮",
+    "interrupt": "打断当前轮",
+    "retry": "用原操作 ID 重试",
+    "status": {
+      "offline": "电脑离线",
+      "ready": "已连接",
+      "creating": "正在启动",
+      "failed": "启动失败",
+      "unavailable": "会话暂不可用",
+      "reconnecting": "正在同步"
+    },
+    "turn": {
+      "inProgress": "运行中",
+      "completed": "本轮完成",
+      "failed": "本轮失败",
+      "interrupted": "本轮已打断",
+      "unknown": "上一轮结果待核实"
+    },
+    "role": {
+      "user": "你",
+      "assistant": "Codex"
+    },
+    "approval": {
+      "command": "Codex 请求执行命令",
+      "fileChange": "Codex 请求修改文件",
+      "permissions": "Codex 请求权限"
+    },
+    "receipt": {
+      "queued": "服务器已收到",
+      "dispatched": "指令已发往电脑",
+      "accepted": "Codex 已受理",
+      "rejected": "操作已拒绝",
+      "expired": "指令已过期",
+      "unknown": "操作结果待核实"
+    }
+  },
   "runs": {
     "tabOrchestrations": "编排轮次",
     "tabHandoffs": "接力",

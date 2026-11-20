@@ -1,5 +1,6 @@
 /** Wire contract between the WWA server and a local executor (wwa-node). Shared by both sides. */
 import { z } from 'zod';
+import { HARNESS_FEATURE } from './harness-protocol.js';
 import { permissionsSchema, providerSchema, resultSchema } from '../runner/contracts.js';
 
 export const NODE_PROTOCOL_VERSION = 2;
@@ -141,6 +142,7 @@ export const pullRequestResultSchema = z.object({ url: z.string().max(2000), exi
 
 const providerCapabilitySchema = z.object({ provider: providerSchema, available: z.boolean(), version: z.string().max(200).default(''), path: z.string().max(4096).default('') }).strict();
 export const capabilitiesSchema = z.object({
+  harnessSessions: z.literal(HARNESS_FEATURE).optional(),
   protocol: z.number().int(),
   version: z.string().max(100).default(''),
   platform: z.string().max(100).default(''),

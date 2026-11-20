@@ -6,6 +6,8 @@ import { dispatchStats, parseStatsQuery } from '../application/orchestration/sta
 import { assertTimeZone } from '../application/reviews-clock.js';
 import { WorktreeService } from '../application/orchestration/worktrees.js';
 import { isServerMode, publicWorkspaceUrl } from '../application/desktop-paths.js';
+import { leaseHarness, syncHarness } from '../application/harness-sessions.js';
+import { HARNESS_FEATURE } from '../node-agent/harness-protocol.js';
 
 const route = (action: (req: Request) => Promise<unknown>) => async (req: Request, res: Response, next: NextFunction) => { try { res.json({ data: await action(req), error: null }); } catch (error) { next(error); } };
 const nodes = new NodeService();
@@ -83,7 +85,14 @@ export function createOrchestrationRouter() {
 export function createNodeRouter() {
   const router = Router();
   router.use(nodeMiddleware);
-  router.post('/lease', route((req) => nodes.lease(getNode(req), req.body)));
+  router.post('/lease', route(async (req) => {
+    const node = getNode(req);
+    const response = await nodes.lease(node, req.body);
+    if (req.get('X-Dovun-Node-Features') !== HARNESS_FEATURE) return response;
+    const harness = req.body.capabilities.harnessSessions === HARNESS_FEATURE ? await leaseHarness(node.id, node.tokenHash) : undefined;
+    return { ...response, accepts: [...response.accepts, HARNESS_FEATURE], ...(harness ? { harness } : {}) };
+  }));
+  router.post('/harness-sessions/:id/sync', route((req) => syncHarness(getNode(req), String(req.params.id), req.body)));
   router.post('/jobs/:id/progress', route((req) => nodes.progress(getNode(req), String(req.params.id), req.body)));
   router.post('/jobs/:id/result', route((req) => nodes.report(getNode(req), String(req.params.id), req.body)));
   return router;
