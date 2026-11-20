@@ -124,12 +124,6 @@
   box-shadow: -4px 0 19px -18px rgb(61 52 39 / 0.23);
 }
 
-:root:not(.dark) .dovun-detail-tabs button[aria-selected='true'] {
-  border-bottom-color: var(--preview-blue);
-  background: var(--preview-blue-soft);
-  color: var(--preview-blue);
-}
-
 :root:not(.dark) .task-detail-header {
   background: linear-gradient(180deg, var(--preview-face), #fbf8f1);
 }

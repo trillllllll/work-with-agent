@@ -158,9 +158,54 @@
 .dovun-work-rail.contents { display: contents; }
 .dovun-task-slot { flex: 1; }
 .dovun-work-rail[data-chat] .dovun-chat-slot { min-height: 0; }
-.dovun-detail-tabs { display: flex; gap: 6px; padding: 13px 13px 0; border-bottom: 1px solid var(--glass-divider); flex: none; }
-.dovun-detail-tabs button { min-height: 38px; flex: 1; padding: 4px 6px 12px; font-size: 13px; color: var(--muted-foreground); border-bottom: 2px solid transparent; }
-.dovun-detail-tabs button[aria-selected='true'] { color: var(--primary); font-weight: 600; border-bottom-color: var(--primary); }
+.dovun-detail-tabs {
+  display: flex;
+  flex: none;
+  gap: 12px;
+  padding-inline: 11px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  border-bottom: 1px solid var(--glass-divider);
+}
+.dovun-detail-tabs > button {
+  --tab-padding: 9px;
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding-inline: var(--tab-padding);
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dovun-detail-tabs > button svg { width: 15px; height: 15px; flex: none; stroke-width: 1.7; }
+.dovun-detail-tabs > button:hover { color: var(--foreground); background: color-mix(in srgb, var(--glass-hover) 45%, transparent); }
+.dovun-detail-tabs > button[aria-selected='true'] { color: var(--link); background: transparent; }
+.dovun-detail-tabs > button[aria-selected='true'] svg { stroke-width: 2; }
+.dovun-detail-tabs > button[aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  inset-inline: var(--tab-padding);
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: currentColor;
+}
+.dovun-detail-tabs > button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -3px;
+}
+@media (max-width: 420px) {
+  .dovun-detail-tabs { gap: 3px; padding-inline: 4px; }
+  .dovun-detail-tabs > button { --tab-padding: 5px; gap: 4px; }
+  .dovun-detail-tabs > button svg { width: 14px; height: 14px; }
+}
 .dovun-task-slot .task-detail-header { padding: 15px 20px; }
 .dovun-task-slot .task-info-rows { margin-top: 0; padding-top: 0; border-top: 0; }
 .dovun-task-slot .task-info-row { min-height: 34px; font-size: 13px; }

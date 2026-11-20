@@ -7,7 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { BodyText } from '@/components/shared/BodyText.js';
 import { intlLocale, t as translate } from '../../i18n/index.js';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, Bell, CalendarDays,  ChevronRight, Clock, Flag, FolderKanban, Hash, Repeat, Timer, X } from 'lucide-react';
+import { AlertTriangle, Bell, CalendarDays, ChevronRight, Clock, FileText, Flag, FolderKanban, FolderOpen, Hash, Layers3, Repeat, Timer, X } from 'lucide-react';
 import { api, ApiError, priorities, type Status, type Tag, type Task, type TaskPriority, type Topic } from '@/lib/api.js';
 import { isCompositionKey, sameField, taskDraft, queryKeys, type TaskDraft } from '@/lib/todo.js';
 import { scheduleLabel } from '@/lib/schedule.js';
@@ -481,7 +481,13 @@ const InfoRow = forwardRef<HTMLButtonElement, { icon: typeof CalendarDays; label
   </Button>;
 });
 
-type DetailSection = 'details' | 'materials' | 'context';
+const detailTabs = [
+  { section: 'details', icon: FileText },
+  { section: 'materials', icon: FolderOpen },
+  { section: 'context', icon: Layers3 },
+] as const;
+
+type DetailSection = (typeof detailTabs)[number]['section'];
 
 function TaskBrief() {
   const { t } = useTranslation('app');
@@ -740,12 +746,26 @@ export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children
     <DetailFrame presentation={presentation} panelSlot={panelSlot}>
       <div className="dovun-task-detail flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="dovun-detail-tabs" role="tablist" aria-label={t('companion.details')}>
-          {(['details', 'materials', 'context'] as const).map((tab, index, tabs) => <Button variant="tab" size="bare" type="button" role="tab" key={tab} id={`detail-tab-${props.id}-${tab}`} aria-controls={`detail-panel-${props.id}`} aria-selected={section === tab} tabIndex={section === tab ? 0 : -1} onClick={() => setSection(tab)} onKeyDown={event => {
-            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-            event.preventDefault();
-            const next = event.key === 'Home' ? 0 : event.key === 'End' ? 2 : (index + (event.key === 'ArrowRight' ? 1 : 2)) % 3;
-            setSection(tabs[next]); document.getElementById(`detail-tab-${props.id}-${tabs[next]}`)?.focus();
-          }}>{t(`companion.${tab}`)}</Button>)}
+          {detailTabs.map(({ section: tab, icon: Icon }, index) => <Button
+            variant="tab" size="bare" type="button" role="tab" key={tab}
+            id={`detail-tab-${props.id}-${tab}`} aria-controls={`detail-panel-${props.id}`}
+            aria-selected={section === tab} tabIndex={section === tab ? 0 : -1}
+            onClick={() => setSection(tab)} onKeyDown={event => {
+              if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+              event.preventDefault();
+              const count = detailTabs.length;
+              const offset = event.key === 'ArrowRight' ? 1 : -1;
+              const next = event.key === 'Home' ? 0 : event.key === 'End' ? count - 1 : (index + offset + count) % count;
+              const nextTab = detailTabs[next].section;
+              setSection(nextTab);
+              const nextButton = document.getElementById(`detail-tab-${props.id}-${nextTab}`);
+              nextButton?.focus({ preventScroll: true });
+              nextButton?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            }}
+          >
+            <Icon aria-hidden />
+            <span>{t(`companion.${tab}`)}</span>
+          </Button>)}
         </div>
         <header className="task-detail-header">
           <TaskAssistantActions showAssistant={presentation !== 'panel'} />
