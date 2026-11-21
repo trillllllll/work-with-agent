@@ -100,15 +100,15 @@ const arrivalSpan: Components['span'] = ({ node, children, ...props }) =>
 
 export function MarkdownView({ content, components, allowMaterialLinks = false, diagrams = false, responsiveTables = false, streaming = false, revealAdditions = false, className }: { content: string; components?: Components; allowMaterialLinks?: boolean; diagrams?: boolean; responsiveTables?: boolean; streaming?: boolean; revealAdditions?: boolean; className?: string }) {
   const animate = streaming && revealAdditions;
-  const committed = useRef({ content, animate });
+  const committed = useRef(content);
   const arrivals = useMemo<PluggableList | undefined>(() => {
     const previous = committed.current;
-    const added = content.length - previous.content.length;
-    if (animate && previous.animate && added > 0 && added <= 256 && content.startsWith(previous.content)) {
-      return [[revealMarkdownArrival, { from: previous.content.length }]];
+    const added = content.length - previous.length;
+    if (animate && added > 0 && added <= 256 && content.startsWith(previous)) {
+      return [[revealMarkdownArrival, { from: previous.length }]];
     }
   }, [content, animate]);
-  useLayoutEffect(() => { committed.current = { content, animate }; }, [content, animate]);
+  useLayoutEffect(() => { committed.current = content; }, [content]);
   const citations = useCitations();
   const citationComponents: Components = citations ? { a: ({ children, href }) => {
     const match = /^#source-(\d+)$/.exec(href ?? '');

@@ -132,10 +132,18 @@ test('desktop and phone open and control the same Harness session', async ({ bro
     await expect(phone.locator('.mobile-global-assistant')).toHaveCount(0);
     await expect(phoneChat.getByText('streamed', { exact: true })).toBeVisible();
     const input = phoneChat.getByRole('textbox', { name: '输入消息' });
-    await input.fill('手机追加的内容');
+    const steerText = 'stream another chunk';
+    await input.fill(steerText);
     await phoneChat.getByRole('button', { name: '追加到当前轮' }).click();
-    await poll(async () => (await detail()).snapshot?.view.messages.some((message) => message.text === '手机追加的内容'), true);
-    await expect(desktopChat.getByText('手机追加的内容', { exact: true })).toBeVisible();
+    await poll(async () => (await detail()).snapshot?.view.messages.some((message) => message.text === steerText), true);
+    await expect(desktopChat.getByText(steerText, { exact: true })).toBeVisible();
+    const reply = phoneChat.locator('[data-role=assistant] .markdown-body').last();
+    await expect(reply).toHaveText('streamed 新增正文');
+    await expect(reply.locator('.markdown-arrival')).toHaveText(['新', '增', '正', '文']);
+    await phone.reload();
+    await expect(phoneChat.getByRole('button', { name: '打断当前轮' })).toBeEnabled();
+    await expect(reply).toHaveText('streamed 新增正文');
+    await expect(reply.locator('.markdown-arrival')).toHaveCount(0);
     await phoneChat.getByRole('button', { name: '打断当前轮' }).click();
     await poll(async () => (await detail()).snapshot?.view.turn?.status, 'interrupted');
 

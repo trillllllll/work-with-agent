@@ -62,6 +62,8 @@ for await (const line of createInterface({ input: process.stdin })) {
         for (let i = 0; i < 140; i++) {
           notify('item/agentMessage/delta', { itemId: 'response-' + active.id, turnId: active.id, delta: 'x' });
         }
+      } else if (params.input[0].text === 'stream another chunk') {
+        notify('item/agentMessage/delta', { itemId: 'response-' + active.id, turnId: active.id, delta: '新增正文' });
       }
       break;
     case 'turn/interrupt':

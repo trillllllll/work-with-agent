@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { ChevronRight, CircleAlert, ListChecks, LoaderCircle, MessageSquare, ShieldQuestion, Terminal } from 'lucide-react';
+import { ArrowDown, ChevronRight, CircleAlert, ListChecks, LoaderCircle, MessageSquare, ShieldQuestion, Terminal } from 'lucide-react';
 import { ApiError, api } from '@/lib/api.js';
 import { json } from '@/lib/platform.js';
 import { intlLocale } from '@/i18n/index.js';
@@ -56,7 +56,9 @@ function delivering(receipt: Receipt) { return receipt.status === 'queued' || re
 
 function useHarnessStream(id: string) {
   const snapshotKey = `dovun-harness-snapshot:${id}`;
-  const [snapshot, setSnapshot] = useState(() => load<HarnessSnapshot>(snapshotKey));
+  const [{ snapshot, liveText }, setOutput] = useState(() => ({
+    snapshot: load<HarnessSnapshot>(snapshotKey), liveText: false,
+  }));
   const [ready, setReady] = useState(false);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [unavailable, setUnavailable] = useState<string | null>(null);
@@ -66,27 +68,29 @@ function useHarnessStream(id: string) {
     function connect(reset = false) {
       source?.close();
       setReady(false);
+      let live = false;
       const view = current.current;
       const after = !reset && view ? `?after=${view.epoch}:${view.seq}` : '';
       source = new EventSource(`${base}/${encodeURIComponent(id)}/events${after}`);
-      source.onerror = () => setReady(false);
+      source.onerror = () => { live = false; setReady(false); };
       source.onmessage = (event) => {
         let data: HarnessSnapshot | { type: 'event'; epoch: number; seq: number; event: HarnessEvent } | { type: 'receipt'; receipt: Receipt } | { type: 'unavailable'; epoch: number; error: string } | { type: 'caughtUp'; epoch: number; seq: number };
         try { data = JSON.parse(event.data); } catch { connect(true); return; }
         const previous = current.current;
         if (data.type === 'receipt') { setReceipt(data.receipt); return; }
         if (data.type === 'unavailable') {
-          if (!previous || data.epoch >= previous.epoch) { setUnavailable(data.error); setReady(false); }
+          if (!previous || data.epoch >= previous.epoch) { live = false; setUnavailable(data.error); setReady(false); }
           return;
         }
         if (data.type === 'caughtUp') {
-          if (previous?.epoch === data.epoch && previous.seq === data.seq) setReady(true);
+          if (previous?.epoch === data.epoch && previous.seq === data.seq) { live = true; setReady(true); }
           return;
         }
         if (data.type === 'snapshot') {
           if (previous && (data.epoch < previous.epoch || data.epoch === previous.epoch && data.seq < previous.seq)) return;
           current.current = data;
-          setSnapshot(data);
+          setOutput({ snapshot: data, liveText: false });
+          live = true;
           setUnavailable(null);
           setReady(true);
           return;
@@ -95,7 +99,7 @@ function useHarnessStream(id: string) {
         if (!previous || previous.epoch !== data.epoch || data.seq !== previous.seq + 1) { connect(true); return; }
         const next = { ...previous, seq: data.seq, view: applyHarnessEvent(previous.view, data.event) };
         current.current = next;
-        setSnapshot(next);
+        setOutput({ snapshot: next, liveText: live && data.event.kind === 'delta' });
       };
     }
     const remember = () => save(snapshotKey, current.current);
@@ -115,7 +119,7 @@ function useHarnessStream(id: string) {
       window.removeEventListener('offline', offline);
     };
   }, [id, snapshotKey]);
-  return { snapshot, ready, receipt, unavailable };
+  return { snapshot, liveText, ready, receipt, unavailable };
 }
 
 function SessionList({ sessions, selectedId, open }: { sessions: Session[]; selectedId?: string; open: (id: string) => void }) {
@@ -302,7 +306,7 @@ export function HarnessSessions({ id, harness, project, navigation, open, select
 }
 
 function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: string; summary?: Session; harnessName: string; back: () => void; chooseProject: () => void }) {
-  const { t } = useTranslation('workspace');
+  const { t } = useTranslation(['workspace', 'chat']);
   const queryClient = useQueryClient();
   const path = `${base}/${encodeURIComponent(id)}`;
   const draftKey = `dovun-harness-draft:${id}`;
@@ -317,6 +321,7 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
   const scrollRef = useRef<HTMLDivElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const [pin] = useState(createBottomPin);
+  const [showLatest, setShowLatest] = useState(false);
   const detail = useQuery({ queryKey: ['harness-session', id], queryFn: () => api<Detail>(path), refetchInterval: 4_000 });
   const stream = useHarnessStream(id);
   const snapshot = stream.snapshot ?? detail.data?.snapshot;
@@ -363,17 +368,27 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
     if (stream.ready) void queryClient.invalidateQueries({ queryKey: ['harness-sessions'] });
   }, [queryClient, stream.ready, inProgress, awaitingApproval]);
 
-  useEffect(() => {
+  const followLatest = useCallback(() => {
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+    const top = pin.onResize(scroll);
+    if (top !== null && top !== scroll.scrollTop) scroll.scrollTop = top;
+  }, [pin]);
+  useLayoutEffect(followLatest, [followLatest, view]);
+  useLayoutEffect(() => {
     const scroll = scrollRef.current, thread = threadRef.current;
     if (!scroll || !thread) return;
-    const observer = new ResizeObserver(() => {
-      const top = pin.onResize(scroll);
-      if (top !== null) scroll.scrollTop = top;
-    });
+    const observer = new ResizeObserver(followLatest);
     observer.observe(scroll);
     observer.observe(thread);
     return () => observer.disconnect();
-  }, [pin]);
+  }, [followLatest]);
+
+  function jumpToLatest() {
+    pin.pin();
+    setShowLatest(false);
+    followLatest();
+  }
 
   async function post(command: HarnessCommand) {
     if (sendGate.current) return;
@@ -391,7 +406,7 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
     | Omit<Extract<HarnessCommand, { operation: 'interrupt' }>, 'commandId' | 'expectedEpoch'>
     | Omit<Extract<HarnessCommand, { operation: 'resolveApproval' }>, 'commandId' | 'expectedEpoch'>) {
     if (!enabled || !snapshot || pendingRef.current || sendGate.current) return;
-    if ('text' in action) pin.pin();
+    if ('text' in action) jumpToLatest();
     const command = { ...action, commandId: crypto.randomUUID(), expectedEpoch: snapshot.epoch };
     setReceipt(null);
     updatePending({ command });
@@ -422,8 +437,11 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
       <span className="max-w-[34%] text-right text-xs leading-tight text-muted-foreground" role="status">{t('harness.status.' + status)}</span>
     </header>
     {detailError && <p role="alert" className="shrink-0 px-4 pt-2 text-sm text-destructive [overflow-wrap:anywhere]">{detailError}</p>}
-    <div className="assistant-messages min-h-0 flex-1">
-      <div data-chat-scroll ref={scrollRef} onScroll={(event) => pin.onScroll(event.currentTarget)}
+    <div className="assistant-messages relative min-h-0 flex-1">
+      <div data-chat-scroll ref={scrollRef} onScroll={(event) => {
+        pin.onScroll(event.currentTarget);
+        setShowLatest(!pin.isPinned());
+      }}
         className="glass-scrollbar h-full min-w-0 overflow-y-auto overscroll-contain">
         <div ref={threadRef} className="assistant-thread flex min-w-0 flex-col gap-4">
           {messages.length ? <ol aria-label={t('harness.conversation')} className="flex min-w-0 flex-col gap-4">
@@ -437,7 +455,7 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
                   <Terminal className="size-3.5" aria-hidden="true" />{harnessName}
                 </div>
                 <div className={item.id === latestReply?.id ? 'streaming-caret' : undefined}>
-                  <MarkdownView content={item.text} streaming={item.id === latestReply?.id} responsiveTables
+                  <MarkdownView content={item.text} streaming={item.id === latestReply?.id} revealAdditions={stream.liveText} responsiveTables
                     components={{ img: ({ alt }) => alt ? <span>{alt}</span> : null }} />
                 </div>
               </li>
@@ -472,6 +490,10 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
           </Surface>)}
         </div>
       </div>
+      {showLatest && <Button type="button" variant="secondary" size="sm"
+        className="absolute right-3 bottom-3 min-h-11 rounded-full shadow-card" onClick={jumpToLatest}>
+        <ArrowDown aria-hidden="true" />{t('chat:messageList.jumpToBottom')}
+      </Button>}
     </div>
     <div className="assistant-composer-area shrink-0">
       {(visibleReceipt || error || pending && !sending && tracked.error) && (
