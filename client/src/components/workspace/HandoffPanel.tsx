@@ -65,17 +65,25 @@ export function RunsPage() {
   const { t } = useTranslation('workspace');
   const { query, setQuery } = useHashRoute();
   const tab = query.tab === 'handoffs' || query.tab === 'stats' || query.tab === 'sessions' ? query.tab : 'orchestrations';
-  const tabClass = (_selected: boolean) => 'shrink-0 px-3 py-1 text-sm';
+  const tabs = [
+    { id: 'orchestrations', label: t('runs.tabOrchestrations') },
+    { id: 'handoffs', label: t('runs.tabHandoffs') },
+    { id: 'sessions', label: t('harness.tab') },
+    { id: 'stats', label: t('runs.tabStats') },
+  ];
+  const navigation = <div role="tablist" aria-label={t('handoff.runsTitle')} className="flex gap-2 overflow-x-auto">
+    {tabs.map(({ id, label }) => <Button key={id} variant="tab" size="bare" type="button" role="tab"
+      aria-selected={tab === id} data-testid={'runs-tab-' + id} className="shrink-0 px-3 py-1 text-sm"
+      onClick={() => setQuery({ tab: id, sessionId: null })}>{label}</Button>)}
+  </div>;
+  if (tab === 'sessions') return <HarnessSessions id={query.sessionId} harness={query.harness} navigation={navigation}
+    open={(sessionId) => setQuery({ sessionId: sessionId ?? null }, sessionId && !query.sessionId ? 'push' : 'replace')}
+    selectHarness={(harness) => setQuery({ harness, sessionId: null })} />;
   return <section className="workspace-page mx-auto max-w-5xl space-y-5 p-5 sm:p-7">
     <h1 className="text-2xl font-semibold">{t('handoff.runsTitle')}</h1>
     <p className="text-sm text-muted-foreground">{t('handoff.runsDescription')}</p>
-    <div role="tablist" className="flex gap-2 overflow-x-auto">
-      <Button variant="tab" size="bare" type="button" role="tab" aria-selected={tab === 'orchestrations'} data-testid="runs-tab-orchestrations" className={tabClass(tab === 'orchestrations')} onClick={() => setQuery({ tab: 'orchestrations' })}>{t('runs.tabOrchestrations')}</Button>
-      <Button variant="tab" size="bare" type="button" role="tab" aria-selected={tab === 'handoffs'} data-testid="runs-tab-handoffs" className={tabClass(tab === 'handoffs')} onClick={() => setQuery({ tab: 'handoffs' })}>{t('runs.tabHandoffs')}</Button>
-      <Button variant="tab" size="bare" type="button" role="tab" aria-selected={tab === 'sessions'} data-testid="runs-tab-sessions" className={tabClass(tab === 'sessions')} onClick={() => setQuery({ tab: 'sessions' })}>{t('harness.tab')}</Button>
-      <Button variant="tab" size="bare" type="button" role="tab" aria-selected={tab === 'stats'} data-testid="runs-tab-stats" className={tabClass(tab === 'stats')} onClick={() => setQuery({ tab: 'stats' })}>{t('runs.tabStats')}</Button>
-    </div>
-    {tab === 'orchestrations' ? <OrchestrationRunsList /> : tab === 'stats' ? <DispatchStatsView rangeFrom={query.from} rangeTo={query.to} /> : tab === 'sessions' ? <HarnessSessions id={query.sessionId} open={(sessionId) => setQuery({ sessionId: sessionId ?? null })} /> : <HandoffRunsList />}
+    {navigation}
+    {tab === 'orchestrations' ? <OrchestrationRunsList /> : tab === 'stats' ? <DispatchStatsView rangeFrom={query.from} rangeTo={query.to} /> : <HandoffRunsList />}
   </section>;
 }
 function HandoffRunsList() {

@@ -1,24 +1,43 @@
-import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { ChevronRight, CircleAlert, FolderOpen, ListChecks, LoaderCircle, MessageSquare, ShieldQuestion, Terminal } from 'lucide-react';
 import { ApiError, api } from '@/lib/api.js';
 import { json } from '@/lib/platform.js';
+import { intlLocale } from '@/i18n/index.js';
+import { ChatComposer } from '@/components/chat/ChatComposer.js';
+import { createBottomPin } from '@/components/chat/bottom-pin.js';
+import { MarkdownView } from '@/components/shared/MarkdownView.js';
+import { Badge } from '@/components/ui/badge.js';
 import { Button } from '@/components/ui/button.js';
-import { NativeSelect } from '@/components/ui/native-select.js';
+import { ChoiceList } from '@/components/ui/choice-list.js';
+import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure.js';
+import { BackButton } from '@/components/ui/nav-buttons.js';
 import { Surface } from '@/components/ui/surface.js';
-import { Textarea } from '@/components/ui/textarea.js';
+import { HarnessStartDialog } from './HarnessStartDialog.js';
 import { applyHarnessEvent, HARNESS_TEXT_LIMIT, type HarnessCommand, type HarnessEvent, type HarnessSnapshot } from '../../../../server/src/node-agent/harness-protocol.js';
+import '@/components/chat/conversation.css';
+import './harness-sessions.css';
 
 const base = '/api/v1/harness-sessions';
+const codex = { id: 'codex', name: 'Codex' };
+const createKey = 'dovun-harness-create';
+type Harness = typeof codex;
 type Session = {
   id: string; nodeId: string; nodeName: string | null; online: boolean; projectName: string;
   threadId: string | null; epoch: number; status: string; error: string | null; startCommandId: string;
+  harness?: string; title?: string | null; activity?: 'approval' | 'running' | null; updatedAt: string;
 };
 type Detail = Session & { snapshot: HarnessSnapshot | null; current: boolean };
-type List = { nodes: Array<{ id: string; name: string; online: boolean; supportsHarness: boolean }>; sessions: Session[] };
+type List = {
+  harnesses?: Harness[];
+  nodes: Array<{ id: string; name: string; online: boolean; supportsHarness: boolean }>;
+  sessions: Session[];
+};
 type Project = { id: string; name: string; locations: Array<{ id: string; nodeId: string; status: string }> };
 type Receipt = { commandId: string; status: string; error: string | null };
 type Pending = { command: HarnessCommand };
+type StartCommand = { nodeId: string; locationId: string; commandId: string };
 
 function load<T>(key: string): T | null {
   try { return JSON.parse(sessionStorage.getItem(key) ?? 'null') as T; } catch { return null; }
@@ -30,6 +49,7 @@ function save(key: string, value: unknown) {
   } catch { /* Keep the live draft when storage is unavailable. */ }
 }
 function message(error: unknown, fallback: string) { return error instanceof Error ? error.message : fallback; }
+function delivering(receipt: Receipt) { return receipt.status === 'queued' || receipt.status === 'dispatched'; }
 
 function useHarnessStream(id: string) {
   const snapshotKey = `dovun-harness-snapshot:${id}`;
@@ -95,68 +115,155 @@ function useHarnessStream(id: string) {
   return { snapshot, ready, receipt, unavailable };
 }
 
-export function HarnessSessions({ id, open }: { id?: string; open: (id?: string) => void }) {
+function SessionList({ sessions, selectedId, open }: { sessions: Session[]; selectedId?: string; open: (id: string) => void }) {
   const { t } = useTranslation('workspace');
-  const list = useQuery({ queryKey: ['harness-sessions'], queryFn: () => api<List>(base), refetchInterval: 5000, enabled: !id });
-  const projects = useQuery({ queryKey: ['harness-projects'], queryFn: () => api<Project[]>('/api/projects'), enabled: !id });
-  const [locationId, setLocation] = useState('');
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const groups = { today: [] as Session[], yesterday: [] as Session[], earlier: [] as Session[] };
+  const clock = new Intl.DateTimeFormat(intlLocale(), { hour: '2-digit', minute: '2-digit' });
+  for (const session of sessions) {
+    const time = Date.parse(session.updatedAt);
+    groups[time >= today.valueOf() ? 'today' : time >= yesterday.valueOf() ? 'yesterday' : 'earlier'].push(session);
+  }
+
+  return <Surface tone="sheet" className="workspace-rows">
+    {Object.entries(groups).filter(([, entries]) => entries.length).map(([group, entries]) => <section className="harness-session-group" key={group}>
+      <h2 className="px-2 pt-3.5 pb-1 text-xs font-medium text-muted-foreground">{t('harness.group.' + group)}</h2>
+      {entries.map((session) => {
+        const running = session.online && session.activity === 'running';
+        const approval = session.online && session.activity === 'approval';
+        const status = !session.online ? t('harness.status.offline') : session.status !== 'ready' ? t('harness.status.' + session.status)
+          : approval ? t('harness.waitingApproval') : running ? t('harness.turn.inProgress') : '';
+        const nodeName = session.nodeName ?? t('harness.unknownComputer');
+        return <Button key={session.id} type="button" variant="row" size="bare"
+          className="workspace-row flex min-h-[55px] w-full items-center gap-2.5 px-2 py-2 text-left"
+          aria-current={selectedId === session.id ? 'page' : undefined} data-selected={selectedId === session.id || undefined}
+          onClick={() => open(session.id)}>
+          {approval ? <CircleAlert className="size-4 shrink-0 text-warning" aria-hidden="true" />
+            : running ? <LoaderCircle className="size-4 shrink-0 animate-spin text-brand-link motion-reduce:animate-none" aria-hidden="true" />
+              : <MessageSquare className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium">{session.title || session.projectName}</span>
+            <span className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="truncate">{session.title ? session.projectName + ' · ' + nodeName : nodeName}</span>
+              {status && <span className={'shrink-0 ' + (approval ? 'text-warning' : '')}>{status}</span>}
+            </span>
+          </span>
+          {Number.isFinite(Date.parse(session.updatedAt)) && <time dateTime={session.updatedAt} className="shrink-0 text-xs text-muted-foreground tabular-nums">{clock.format(new Date(session.updatedAt))}</time>}
+          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        </Button>;
+      })}
+    </section>)}
+  </Surface>;
+}
+
+export function HarnessSessions({ id, harness, navigation, open, selectHarness }: {
+  id?: string;
+  harness?: string;
+  navigation: ReactNode;
+  open: (id?: string) => void;
+  selectHarness: (id: string) => void;
+}) {
+  const { t } = useTranslation('workspace');
+  const list = useQuery({ queryKey: ['harness-sessions'], queryFn: () => api<List>(base), refetchInterval: 5_000 });
+  const harnesses = list.data?.harnesses?.length ? list.data.harnesses : [codex];
+  const selected = harnesses.find((item) => item.id === harness) ?? harnesses[0];
+  const sessions = (list.data?.sessions ?? []).filter((session) => (session.harness ?? codex.id) === selected.id);
+  const current = list.data?.sessions.find((session) => session.id === id);
+  const [createOpen, setCreateOpen] = useState(false);
+  const projects = useQuery({ queryKey: ['harness-projects'], queryFn: () => api<Project[]>('/api/projects'), enabled: createOpen });
+  const [locationId, setLocationId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const startGate = useRef(false);
   const nodes = new Map(list.data?.nodes.map((node) => [node.id, node]));
   const busyNodes = new Set(list.data?.sessions.filter((session) => session.status !== 'failed').map((session) => session.nodeId));
-  const locations = projects.data?.flatMap((project) => project.locations.flatMap((location) => {
+  const verifiedLocations = projects.data?.flatMap((project) => project.locations.flatMap((location) => {
     const node = nodes.get(location.nodeId);
-    return location.status === 'verified' && node?.supportsHarness && node.online && !busyNodes.has(node.id)
-      ? [{ ...location, label: `${project.name} · ${node.name}` }] : [];
+    return selected.id === codex.id && location.status === 'verified' && node?.supportsHarness && node.online
+      ? [{ ...location, projectName: project.name, computerName: node.name }] : [];
   })) ?? [];
+  const locations = verifiedLocations.filter((location) => !busyNodes.has(location.nodeId));
   const choice = locations.find((location) => location.id === locationId);
+  const verifiedNodes = new Set(verifiedLocations.map((location) => location.nodeId));
+  const occupied = sessions.filter((session) => session.status !== 'failed' && verifiedNodes.has(session.nodeId))
+    .map((session) => ({ id: session.id, title: session.title || session.projectName, computerName: session.nodeName ?? t('harness.unknownComputer') }));
+
+  function changeCreateOpen(next: boolean) {
+    if (startGate.current) return;
+    if (next) {
+      const previous = load<StartCommand>(createKey);
+      const recovered = previous && sessions.find((session) => session.startCommandId === previous.commandId);
+      if (recovered) {
+        save(createKey, null);
+        open(recovered.id);
+        return;
+      }
+      setLocationId(previous?.locationId ?? '');
+      setError(null);
+    }
+    setCreateOpen(next);
+  }
 
   async function start() {
     if (!choice || startGate.current) return;
     startGate.current = true;
     setStarting(true);
     setError(null);
-    const key = 'dovun-harness-create';
-    const saved = load<{ nodeId: string; locationId: string; commandId: string }>(key);
+    const origin = window.location.hash;
+    const saved = load<StartCommand>(createKey);
     const command = saved?.locationId === choice.id && saved.nodeId === choice.nodeId ? saved
       : { nodeId: choice.nodeId, locationId: choice.id, commandId: crypto.randomUUID() };
-    save(key, command);
+    save(createKey, command);
     try {
       const created = await api<{ sessionId: string }>(base, { method: 'POST', body: json(command) });
-      save(key, null);
-      open(created.sessionId);
+      save(createKey, null);
+      setCreateOpen(false);
+      void list.refetch();
+      if (window.location.hash === origin) open(created.sessionId);
     } catch (failure) {
       setError(message(failure, t('harness.requestFailed')));
       void list.refetch();
     } finally { startGate.current = false; setStarting(false); }
   }
-  if (id) return <HarnessDetail key={id} id={id} back={() => { setError(null); open(); }} />;
-  return <div className="space-y-4">
-    <div className="flex flex-wrap items-end gap-2">
-      <label className="min-w-0 flex-1 space-y-1 text-sm">
-        <span className="block">{t('harness.project')}</span>
-        <NativeSelect className="w-full" value={choice?.id ?? ''} onChange={(event) => setLocation(event.target.value)}>
-          <option value="">{t('harness.select')}</option>
-          {locations.map((location) => <option key={location.id} value={location.id}>{location.label}</option>)}
-        </NativeSelect>
-      </label>
-      <Button className="min-h-11" disabled={!choice || starting} onClick={() => void start()}>{t('harness.start')}</Button>
+
+  const locationError = error ?? projects.error?.message ?? list.error?.message;
+  const chatHarness = harnesses.find((item) => item.id === (current?.harness ?? codex.id)) ?? selected;
+  return <section className="harness-workspace h-full min-h-0">
+    <div className="harness-workspace-panes" data-session-open={Boolean(id)}>
+      <div className="harness-list-pane glass-scrollbar min-h-0 min-w-0 overflow-y-auto overscroll-contain">
+        <div className="workspace-page harness-session-page">
+          {navigation}
+          <header className="flex items-center justify-between gap-2">
+            <h1>{t('harness.tab')}</h1>
+            <HarnessStartDialog open={createOpen} onOpenChange={changeCreateOpen} harnessName={selected.name}
+              locations={locations} value={choice?.id ?? ''} onSelect={setLocationId} onStart={start}
+              occupied={occupied} onResume={(sessionId) => { setCreateOpen(false); open(sessionId); }}
+              loading={list.isLoading || projects.isLoading} starting={starting} error={locationError} />
+          </header>
+          <div className="mb-5">
+            <ChoiceList label={t('harness.filter')} value={selected.id} onChange={selectHarness}
+              options={harnesses.map((item) => ({ id: item.id, label: item.name, icon: <Terminal className="size-4" /> }))} />
+          </div>
+          {list.error && <p role="alert" className="mb-3 text-sm text-destructive">{list.error.message}</p>}
+          {list.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t('harness.loading')}</p>
+            : sessions.length ? <SessionList sessions={sessions} selectedId={id} open={open} />
+              : !list.error && <p className="px-2 py-6 text-sm text-muted-foreground">{t('harness.noSessions', { harness: selected.name })}</p>}
+        </div>
+      </div>
+      <div className="harness-detail-pane min-h-0 min-w-0">
+        {id ? <HarnessDetail key={id} id={id} summary={current} harnessName={chatHarness.name} back={() => open()} />
+          : <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{t('harness.chooseSession')}</div>}
+      </div>
     </div>
-    {(error || list.error || projects.error) && <p role="alert" className="text-sm text-destructive">{error ?? list.error?.message ?? projects.error?.message}</p>}
-    {list.data && !locations.length && !list.data.sessions.length && <p className="text-sm text-muted-foreground">{t('harness.noComputer')}</p>}
-    {!!list.data?.sessions.length && <Surface tone="sheet" className="workspace-rows">
-      {list.data.sessions.map((session) => <Button type="button" variant="row" size="bare" key={session.id}
-        className="flex min-h-11 w-full flex-wrap items-center justify-between gap-2 px-3 py-2 text-left" onClick={() => open(session.id)}>
-        <span className="min-w-0 break-words">{session.projectName}</span>
-        <span className="text-xs text-muted-foreground">{session.nodeName ?? t('harness.unknownComputer')} · {t(`harness.status.${session.online ? session.status : 'offline'}`)}</span>
-      </Button>)}
-    </Surface>}
-  </div>;
+  </section>;
 }
 
-function HarnessDetail({ id, back }: { id: string; back: () => void }) {
+function HarnessDetail({ id, summary, harnessName, back }: { id: string; summary?: Session; harnessName: string; back: () => void }) {
   const { t } = useTranslation('workspace');
+  const queryClient = useQueryClient();
   const path = `${base}/${encodeURIComponent(id)}`;
   const draftKey = `dovun-harness-draft:${id}`;
   const pendingKey = `dovun-harness-pending:${id}`;
@@ -167,16 +274,23 @@ function HarnessDetail({ id, back }: { id: string; back: () => void }) {
   const sendGate = useRef(false);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const threadRef = useRef<HTMLDivElement>(null);
+  const [pin] = useState(createBottomPin);
   const detail = useQuery({ queryKey: ['harness-session', id], queryFn: () => api<Detail>(path), refetchInterval: 4_000 });
   const stream = useHarnessStream(id);
   const snapshot = stream.snapshot ?? detail.data?.snapshot;
   const view = snapshot?.view;
   const currentTurn = view?.turn;
   const inProgress = currentTurn?.status === 'inProgress';
+  const awaitingApproval = Boolean(view?.approvals.length);
   const enabled = !!detail.data?.online && !!snapshot && stream.ready && !stream.unavailable && detail.data.status !== 'failed';
-  const commandId = pending?.command.commandId ?? detail.data?.startCommandId;
+  const actionsDisabled = !enabled || !!pending || sending;
+  const startCommandId = detail.data?.startCommandId;
+  const waitingForStart = !snapshot && detail.data?.status === 'creating';
+  const commandId = pending?.command.commandId ?? (waitingForStart ? startCommandId : undefined);
   const tracked = useQuery({
-    queryKey: ['harness-receipt', id, commandId], enabled: !!commandId && (!!pending || detail.data?.status === 'creating'),
+    queryKey: ['harness-receipt', id, commandId], enabled: !!commandId,
     queryFn: () => api<Receipt>(`${path}/commands/${encodeURIComponent(commandId!)}`),
     refetchInterval: 2_000, retry: false,
   });
@@ -185,10 +299,14 @@ function HarnessDetail({ id, back }: { id: string; back: () => void }) {
   function updatePending(value: Pending | null) { pendingRef.current = value; setPending(value); save(pendingKey, value); }
   function observe(next: Receipt) {
     const active = pendingRef.current;
-    if (active?.command.commandId !== next.commandId && detail.data?.startCommandId !== next.commandId) return;
-    setReceipt(next);
-    if (next.commandId === detail.data?.startCommandId && next.status !== 'queued' && next.status !== 'dispatched') void detail.refetch();
-    if (!active || active.command.commandId !== next.commandId || next.status === 'queued' || next.status === 'dispatched') return;
+    const expected = active?.command.commandId ?? (waitingForStart ? startCommandId : undefined);
+    if (next.commandId !== expected) return;
+    setReceipt((previous) => {
+      if (previous?.commandId === next.commandId && delivering(next) && previous.status !== 'queued') return previous;
+      return next;
+    });
+    if (next.commandId === startCommandId && !delivering(next)) void detail.refetch();
+    if (!active || delivering(next)) return;
     if (next.status === 'accepted' && 'text' in active.command) {
       const text = active.command.text;
       setDraft((value) => {
@@ -201,6 +319,21 @@ function HarnessDetail({ id, back }: { id: string; back: () => void }) {
   }
   useEffect(() => { if (stream.receipt) observe(stream.receipt); }, [stream.receipt]);
   useEffect(() => { if (tracked.data) observe(tracked.data); }, [tracked.data]);
+  useEffect(() => {
+    if (stream.ready) void queryClient.invalidateQueries({ queryKey: ['harness-sessions'] });
+  }, [queryClient, stream.ready, inProgress, awaitingApproval]);
+
+  useEffect(() => {
+    const scroll = scrollRef.current, thread = threadRef.current;
+    if (!scroll || !thread) return;
+    const observer = new ResizeObserver(() => {
+      const top = pin.onResize(scroll);
+      if (top !== null) scroll.scrollTop = top;
+    });
+    observer.observe(scroll);
+    observer.observe(thread);
+    return () => observer.disconnect();
+  }, [pin]);
 
   async function post(command: HarnessCommand) {
     if (sendGate.current) return;
@@ -217,50 +350,110 @@ function HarnessDetail({ id, back }: { id: string; back: () => void }) {
     | Omit<Extract<HarnessCommand, { operation: 'steer' }>, 'commandId' | 'expectedEpoch'>
     | Omit<Extract<HarnessCommand, { operation: 'interrupt' }>, 'commandId' | 'expectedEpoch'>
     | Omit<Extract<HarnessCommand, { operation: 'resolveApproval' }>, 'commandId' | 'expectedEpoch'>) {
-    if (!enabled || !snapshot || pendingRef.current) return;
+    if (!enabled || !snapshot || pendingRef.current || sendGate.current) return;
+    if ('text' in action) pin.pin();
     const command = { ...action, commandId: crypto.randomUUID(), expectedEpoch: snapshot.epoch };
+    setReceipt(null);
     updatePending({ command });
     void post(command);
   }
 
-  return <section className="space-y-4">
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <Button variant="outline" type="button" onClick={back}>{t('harness.back')}</Button>
-      <p role="status" className="break-words text-sm text-muted-foreground">{detail.data?.projectName} · {t(`harness.status.${detail.data ? !detail.data.online ? 'offline' : enabled ? 'ready' : detail.data.status === 'ready' ? 'reconnecting' : detail.data.status : 'reconnecting'}`)}</p>
-    </div>
-    {(detail.error || detail.data?.error || stream.unavailable) && <p role="alert" className="text-sm text-destructive break-words">{detail.error?.message ?? stream.unavailable ?? detail.data?.error}</p>}
-    <Surface tone="sheet" className="space-y-3 p-3 sm:p-4">
-      <ol aria-label={t('harness.conversation')} className="space-y-4">
-        {view?.messages.map((message) => <li key={message.id} className="space-y-1">
-          <p className="text-xs font-medium text-muted-foreground">{t(`harness.role.${message.role}`)}</p>
-          <p className="whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]">{message.text}</p>
-        </li>)}
-      </ol>
-      {!view?.messages.length && <p className="text-sm text-muted-foreground">{t('harness.empty')}</p>}
-      {currentTurn && <p role="status" className="text-xs text-muted-foreground">{t(`harness.turn.${currentTurn.status}`)}{currentTurn.error && ` · ${currentTurn.error}`}</p>}
-      {view?.approvals.map((request) => <div key={request.id} className="space-y-2 border-t pt-3">
-        <h2 className="text-sm font-medium">{t(`harness.approval.${request.kind}`)}</h2>
-        {request.details && <p className="whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]">{request.details}</p>}
-        <div className="flex flex-wrap gap-2">
-          {request.canAccept && <Button className="min-h-11" disabled={!enabled || !!pending} onClick={() => act({ operation: 'resolveApproval', requestId: request.id, decision: 'accept' })}>{t('harness.allow')}</Button>}
-          <Button className="min-h-11" variant="outline" disabled={!enabled || !!pending} onClick={() => act({ operation: 'resolveApproval', requestId: request.id, decision: 'decline' })}>{t('harness.decline')}</Button>
-        </div>
-      </div>)}
-    </Surface>
-    <form className="space-y-2" onSubmit={(event) => {
-      event.preventDefault();
-      if (!draft.trim()) return;
-      if (inProgress) act({ operation: 'steer', turnId: currentTurn.id, text: draft.trim() });
-      else act({ operation: 'send', text: draft.trim() });
-    }}>
-      <Textarea aria-label={t('harness.draft')} placeholder={t('harness.draft')} value={draft} maxLength={HARNESS_TEXT_LIMIT} onChange={(event) => updateDraft(event.target.value)} />
-      <div className="flex flex-wrap gap-2">
-        <Button className="min-h-11" type="submit" disabled={!enabled || !draft.trim() || !!pending}>{t(inProgress ? 'harness.steer' : 'harness.send')}</Button>
-        {inProgress && <Button className="min-h-11" type="button" variant="outline" disabled={!enabled || !!pending} onClick={() => act({ operation: 'interrupt', turnId: currentTurn.id })}>{t('harness.interrupt')}</Button>}
-        {pending && !sending && tracked.error && <Button className="min-h-11" type="button" variant="outline" onClick={() => void post(pending.command)}>{t('harness.retry')}</Button>}
+  const session = detail.data ?? summary;
+  const projectName = session?.projectName;
+  const nodeName = session?.nodeName ?? t('harness.unknownComputer');
+  const status = !session ? 'reconnecting' : !session.online ? 'offline' : enabled ? 'ready'
+    : stream.unavailable ? 'unavailable' : session.status === 'ready' ? 'reconnecting' : session.status;
+  const detailError = detail.error?.message ?? stream.unavailable ?? detail.data?.error;
+  const messages = view?.messages ?? [];
+  const latestReply = inProgress ? messages.filter((item) => item.turnId === currentTurn.id && item.role === 'assistant').pop() : undefined;
+  const approvals = view?.approvals ?? [];
+  const turnStatus = currentTurn && t('harness.turn.' + currentTurn.status);
+  const visibleReceipt = receipt && (waitingForStart || receipt.commandId !== startCommandId) ? receipt : null;
+
+  return <section className="dovun-assistant harness-thread flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
+    data-presentation="direct" aria-label={t('harness.detail')}>
+    <header className="assistant-header flex items-center gap-2.5">
+      <BackButton className="min-h-11 min-w-11" onClick={back}><span className="sr-only">{t('harness.back')}</span></BackButton>
+      <Badge variant="secondary" className="size-8 p-0 text-muted-foreground"><Terminal className="size-4" aria-hidden="true" /></Badge>
+      <div className="assistant-identity min-w-0 flex-1">
+        <h2 title={session?.title ?? projectName}>{session?.title || projectName || t('harness.tab')}</h2>
+        <p className="truncate text-xs text-muted-foreground" title={nodeName}>{harnessName}{session && ' · ' + nodeName}</p>
       </div>
-    </form>
-    {receipt && <p role="status" className="text-sm text-muted-foreground">{t(`harness.receipt.${receipt.status}`)}{receipt.error && ` · ${receipt.error}`}</p>}
-    {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      <span className="max-w-[34%] text-right text-xs leading-tight text-muted-foreground" role="status">{t('harness.status.' + status)}</span>
+    </header>
+    {detailError && <p role="alert" className="shrink-0 px-4 pt-2 text-sm text-destructive [overflow-wrap:anywhere]">{detailError}</p>}
+    <div className="assistant-messages min-h-0 flex-1">
+      <div data-chat-scroll ref={scrollRef} onScroll={(event) => pin.onScroll(event.currentTarget)}
+        className="glass-scrollbar h-full min-w-0 overflow-y-auto overscroll-contain">
+        <div ref={threadRef} className="assistant-thread flex min-w-0 flex-col gap-4">
+          {messages.length ? <ol aria-label={t('harness.conversation')} className="flex min-w-0 flex-col gap-4">
+            {messages.map((item) => item.role === 'user' ? (
+              <li className="assistant-message assistant-user-message ml-auto" key={item.id} data-role="user">
+                <div className="assistant-user-bubble whitespace-pre-wrap [overflow-wrap:anywhere]">{item.text}</div>
+              </li>
+            ) : (
+              <li className="assistant-message" key={item.id} data-role="assistant">
+                <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <Terminal className="size-3.5" aria-hidden="true" />{harnessName}
+                </div>
+                <div className={item.id === latestReply?.id ? 'streaming-caret' : undefined}>
+                  <MarkdownView content={item.text} streaming={item.id === latestReply?.id} responsiveTables
+                    components={{ img: ({ alt }) => alt ? <span>{alt}</span> : null }} />
+                </div>
+              </li>
+            ))}
+          </ol> : !detailError && <div className="dovun-assistant-welcome">
+            <h3>{t('harness.empty', { harness: harnessName })}</h3>
+          </div>}
+          {currentTurn?.error ? <Disclosure className="assistant-process group">
+            <DisclosureTrigger className="assistant-process-trigger">
+              <ListChecks className="size-4" aria-hidden="true" />
+              <span className="assistant-process-title">{t('harness.activity')}</span>
+              <span>{turnStatus}</span>
+              <ChevronRight className="assistant-process-chevron group-open:rotate-90" aria-hidden="true" />
+            </DisclosureTrigger>
+            <p className="assistant-process-body text-xs" role="status">{currentTurn.error}</p>
+          </Disclosure> : turnStatus && <p role="status" className="assistant-process flex items-center gap-2 text-xs">
+            {inProgress ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+              : <ListChecks className="size-4" aria-hidden="true" />}
+            {turnStatus}
+          </p>}
+          {approvals.map((request) => <Surface as="section" tone="subtle" className="space-y-2.5 rounded-xl p-3" key={request.id} aria-label={t('harness.approval.' + request.kind)}>
+            <h3 className="flex items-center gap-2 text-sm font-medium text-warning">
+              <ShieldQuestion className="size-4" aria-hidden="true" />{t('harness.approval.' + request.kind)}
+            </h3>
+            {request.details && <p className="font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">{request.details}</p>}
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button type="button" className="min-h-11" variant="outline" disabled={actionsDisabled}
+                onClick={() => act({ operation: 'resolveApproval', requestId: request.id, decision: 'decline' })}>{t('harness.decline')}</Button>
+              {request.canAccept && <Button type="button" className="min-h-11" disabled={actionsDisabled}
+                onClick={() => act({ operation: 'resolveApproval', requestId: request.id, decision: 'accept' })}>{t('harness.allow')}</Button>}
+            </div>
+          </Surface>)}
+        </div>
+      </div>
+    </div>
+    <div className="assistant-composer-area shrink-0">
+      {(visibleReceipt || error || pending && !sending && tracked.error) && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 px-2 text-xs text-muted-foreground">
+          {visibleReceipt && <p role="status" className="[overflow-wrap:anywhere]">{t('harness.receipt.' + visibleReceipt.status)}{visibleReceipt.error && ' · ' + visibleReceipt.error}</p>}
+          {error && <p role="alert" className="text-destructive [overflow-wrap:anywhere]">{error}</p>}
+          {pending && !sending && tracked.error && <Button size="sm" variant="outline" type="button" onClick={() => void post(pending.command)}>{t('harness.retry')}</Button>}
+        </div>
+      )}
+      <ChatComposer input={draft} onChange={updateDraft} maxLength={HARNESS_TEXT_LIMIT} busy={inProgress}
+        actionsDisabled={actionsDisabled} allowSendWhileBusy listenForAssistantFocus={false}
+        labels={{ input: t('harness.draft'), send: t(inProgress ? 'harness.steer' : 'harness.send'), stop: t('harness.interrupt') }}
+        placeholder={inProgress ? t('harness.steer') : t('harness.placeholder', { harness: harnessName })}
+        model={projectName && <span className="inline-flex min-w-0 items-center gap-1.5"><FolderOpen className="size-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{projectName}</span></span>}
+        onSend={(event) => {
+          event.preventDefault();
+          const text = draft.trim();
+          if (!text) return;
+          if (inProgress) act({ operation: 'steer', turnId: currentTurn.id, text });
+          else act({ operation: 'send', text });
+        }}
+        onStop={inProgress ? () => act({ operation: 'interrupt', turnId: currentTurn.id }) : undefined} />
+    </div>
   </section>;
 }

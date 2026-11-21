@@ -95,6 +95,10 @@ it('preserves one thread across browsers, receipt loss, an expired target and ex
   await agent.pollOnce();
   const started = data(await owner.post(base).send(create));
   const url = `${base}/${started.sessionId}`;
+  expect(data(await owner.get(base))).toMatchObject({
+    harnesses: [{ id: 'codex', name: 'Codex' }],
+    sessions: expect.arrayContaining([expect.objectContaining({ id: started.sessionId, harness: 'codex', title: null })]),
+  });
   expect(data(await owner.post(base).send(create)).sessionId).toBe(started.sessionId);
   expect((await owner.post(base).send({ ...create, commandId: 'start-two' })).status).toBe(409);
   const view = async () => data<{ snapshot: HarnessSnapshot; online: boolean }>(await owner.get(url));
@@ -109,6 +113,10 @@ it('preserves one thread across browsers, receipt loss, an expired target and ex
   data(await owner.post(`${url}/commands`).send(startTurn));
   expect((await owner.post(`${url}/commands`).send({ ...startTurn, text: 'changed' })).status).toBe(409);
   await until(agent, async () => (await receipt('send-one')).status === 'accepted' && !!(await view()).snapshot.view.turn);
+  expect(data(await owner.get(base)).sessions).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: started.sessionId, title: 'from computer', activity: 'running' }),
+  ]));
+  expect(data(await owner.get(url)).title).toBe('from computer');
   expect(dropReceipt).toBe(false);
   expect((await readFile(process.env.HARNESS_TEST_CALLS!, 'utf8')).match(/^turn\/start$/gm)).toHaveLength(1);
   const firstTurn = (await view()).snapshot.view.turn!;

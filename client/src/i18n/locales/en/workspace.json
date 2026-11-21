@@ -354,22 +354,38 @@
   },
   "harness": {
     "tab": "Sessions",
+    "filter": "Harness",
+    "new": "New session",
+    "selectDescription": "Choose the project and computer for {{harness}}.",
+    "loading": "Loading…",
+    "noSessions": "Your {{harness}} sessions will appear here.",
+    "chooseSession": "Select a session to continue",
+    "computersBusy": "The available computers are already running {{harness}}. Select a session to continue.",
+    "resumeExisting": "Existing sessions",
+    "detail": "Session details",
     "project": "Local project",
-    "select": "Select a project and computer",
-    "start": "Start Codex session",
+    "start": "Start {{harness}} session",
     "requestFailed": "Could not complete the request. Try again.",
     "noComputer": "Pair a computer and verify its project location in settings. It must be online and support Codex sessions.",
     "unknownComputer": "Original computer",
     "back": "Back to sessions",
     "conversation": "Conversation messages",
-    "empty": "No messages yet",
+    "empty": "Start a conversation with {{harness}}",
+    "activity": "Run activity",
+    "waitingApproval": "Needs approval",
     "allow": "Allow once",
     "decline": "Decline",
     "draft": "Enter a message",
+    "placeholder": "Message {{harness}}",
     "send": "Send",
     "steer": "Add to the current turn",
     "interrupt": "Interrupt turn",
     "retry": "Retry the same operation",
+    "group": {
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "earlier": "Earlier"
+    },
     "status": {
       "offline": "Computer offline",
       "ready": "Connected",
@@ -384,10 +400,6 @@
       "failed": "Turn failed",
       "interrupted": "Turn interrupted",
       "unknown": "Previous turn outcome unknown"
-    },
-    "role": {
-      "user": "You",
-      "assistant": "Codex"
     },
     "approval": {
       "command": "Codex requested a command",

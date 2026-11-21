@@ -1,0 +1,89 @@
+@import "../../client/src/index.css";
+@import "../../client/src/components/chat/conversation.css";
+
+@source "./app.tsx";
+@source "../../client/src/components/ui";
+@source "../../client/src/components/workspace/HarnessStartDialog.tsx";
+@source "../../client/src/components/layout/ThemeToggle.tsx";
+@source "../../client/src/components/chat/ChatComposer.tsx";
+@source "../../client/src/components/shared/MarkdownView.tsx";
+
+.harness-preview {
+  display: grid;
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.harness-list-pane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  border-inline-end: 1px solid var(--workspace-divider);
+}
+
+:root:not(.dark) .harness-list-pane {
+  --workspace-divider: var(--preview-rule);
+  --workspace-hover: var(--porcelain-quiet);
+  --workspace-sheet-paint: var(--porcelain-sheet);
+  --workspace-sheet-shadow: var(--preview-lift);
+  --selected: var(--preview-blue-soft);
+}
+
+.harness-brand-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: calc(56px + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) 16px 0 20px;
+  border-bottom: 1px solid var(--workspace-divider);
+}
+
+:root .harness-preview .harness-list-pane .harness-session-page {
+  padding: 22px 20px max(24px, env(safe-area-inset-bottom));
+}
+
+.harness-session-page > header { margin-bottom: 16px; }
+.harness-session-group + .harness-session-group { border-top: 1px solid var(--workspace-divider); }
+
+.harness-chat-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.harness-chat-pane.dovun-assistant .assistant-header {
+  height: calc(var(--assistant-header-height) + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+}
+
+.harness-chat-pane .assistant-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.harness-chat-pane .assistant-thread > .assistant-message { margin-top: 0; }
+.harness-chat-pane .assistant-process { margin-bottom: 0; }
+.harness-chat-pane .assistant-process-trigger { min-height: 44px; }
+.harness-chat-pane .assistant-user-bubble { overflow-wrap: anywhere; }
+.harness-chat-pane .harness-back, .harness-chat-theme { display: none; }
+
+@media (max-width: 740px) {
+  .harness-preview { grid-template-columns: minmax(0, 1fr); }
+  .harness-list-pane { border-inline-end: 0; }
+  .harness-preview[data-chat-open='true'] .harness-list-pane,
+  .harness-preview[data-chat-open='false'] .harness-chat-pane { display: none; }
+  .harness-chat-pane .harness-back,
+  .harness-chat-theme { display: inline-flex; }
+  .harness-chat-pane .harness-back,
+  .harness-theme button,
+  .harness-chat-pane .assistant-composer button[data-size='icon'] {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .harness-chat-pane.dovun-assistant .assistant-input-box textarea { font-size: 16px; }
+}

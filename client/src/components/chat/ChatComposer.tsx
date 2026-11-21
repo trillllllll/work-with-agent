@@ -24,9 +24,17 @@ type ChatComposerProps = {
   onStop?: () => void;
   stopping?: boolean;
   placeholder?: string;
+  maxLength?: number;
+  actionsDisabled?: boolean;
+  allowSendWhileBusy?: boolean;
+  listenForAssistantFocus?: boolean;
+  labels?: { input?: string; send?: string; stop?: string };
 };
 
-export function ChatComposer({ input, busy, reference, onChange, onSend, onCancelReference, toolbar, contextUsage, model, onStop, stopping, placeholder }: ChatComposerProps) {
+export function ChatComposer({
+  input, busy, reference, onChange, onSend, onCancelReference, toolbar, contextUsage, model, onStop, stopping,
+  placeholder, maxLength, actionsDisabled, allowSendWhileBusy, labels, listenForAssistantFocus = true,
+}: ChatComposerProps) {
   const { t } = useTranslation('chat');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
@@ -70,7 +78,12 @@ export function ChatComposer({ input, busy, reference, onChange, onSend, onCance
     window.addEventListener('pointercancel', release, true);
     cancelCollapse.current = () => { stopListening(); window.clearTimeout(timer); };
   };
-  useEffect(() => { const focus = () => textareaRef.current?.focus(); window.addEventListener('dovun-focus-assistant', focus); return () => window.removeEventListener('dovun-focus-assistant', focus); }, []);
+  useEffect(() => {
+    if (!listenForAssistantFocus) return;
+    const focus = () => textareaRef.current?.focus();
+    window.addEventListener('dovun-focus-assistant', focus);
+    return () => window.removeEventListener('dovun-focus-assistant', focus);
+  }, [listenForAssistantFocus]);
   useEffect(() => { if (reference) textareaRef.current?.focus(); }, [reference?.id]);
   const resize = () => {
     const el = textareaRef.current;
@@ -82,14 +95,17 @@ export function ChatComposer({ input, busy, reference, onChange, onSend, onCance
     el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
   };
   useEffect(resize, [input, expanded]);
+  const showSend = !busy || allowSendWhileBusy;
+  const canSend = showSend && !actionsDisabled && !!input.trim();
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !composing.current && !isCompositionKey(event.nativeEvent)) {
       event.preventDefault();
-      if (input.trim() && !busy) handleSubmit(event);
+      if (canSend) handleSubmit(event);
     }
   };
   const handleSubmit = (event: FormEvent) => {
-    if (input.trim() && !busy) setJustSent(true);
+    if (actionsDisabled) { event.preventDefault(); return; }
+    if (canSend) setJustSent(true);
     onSend(event);
   };
   return (
@@ -103,9 +119,10 @@ export function ChatComposer({ input, busy, reference, onChange, onSend, onCance
       <Surface as="div" tone="input" className="assistant-input-box p-3">
         <Textarea variant="inline"
           ref={textareaRef}
-          aria-label={t('composer.askAi')}
+          aria-label={labels?.input ?? t('composer.askAi')}
           value={input}
           rows={1}
+          maxLength={maxLength}
           placeholder={placeholder ?? t('composer.placeholder')}
           className="w-full resize-none px-1 py-1 text-[13px] leading-5 transition-[height] duration-150 ease-out"
           onFocus={() => { cancelCollapse.current(); setFocused(true); setJustSent(false); }}
@@ -119,7 +136,8 @@ export function ChatComposer({ input, busy, reference, onChange, onSend, onCance
           {toolbar}
           <span className="flex min-w-0 flex-1 items-center truncate text-[11px] text-muted-foreground">{model}</span>
           {contextUsage}
-          {busy ? <Button type="button" size="icon" className="size-8 rounded-full" onClick={onStop} disabled={stopping} aria-label={t('composer.stop')}><Square className="size-3 fill-current" /></Button> : <Button type="submit" size="icon" className="size-8 rounded-full" disabled={!input.trim()} aria-label={t('composer.send')}><ArrowUp /></Button>}
+          {busy && <Button type="button" size="icon" className="size-8 rounded-full" onClick={onStop} disabled={stopping || actionsDisabled} aria-label={labels?.stop ?? t('composer.stop')} title={labels?.stop}><Square className="size-3 fill-current" /></Button>}
+          {showSend && <Button type="submit" size="icon" className="size-8 rounded-full" disabled={!canSend} aria-label={labels?.send ?? t('composer.send')} title={labels?.send}><ArrowUp /></Button>}
         </div>
       </Surface>
       {stopping && <p className="text-center text-[10px] text-muted-foreground">{t('composer.stopping')}</p>}

@@ -353,22 +353,38 @@
   },
   "harness": {
     "tab": "会话",
+    "filter": "Harness",
+    "new": "新建会话",
+    "selectDescription": "选择要运行 {{harness}} 的项目和电脑。",
+    "loading": "正在加载…",
+    "noSessions": "{{harness}} 的会话会出现在这里。",
+    "chooseSession": "选择一条会话继续",
+    "computersBusy": "可用电脑已经在运行 {{harness}}，点开已有会话可以接着聊。",
+    "resumeExisting": "已有会话",
+    "detail": "会话详情",
     "project": "本机项目",
-    "select": "选择项目和电脑",
-    "start": "开启 Codex 会话",
+    "start": "开启 {{harness}} 会话",
     "requestFailed": "操作失败，请重试",
     "noComputer": "请先在设置中配对电脑并验证项目位置。电脑需要在线并支持 Codex 会话。",
     "unknownComputer": "原电脑",
     "back": "返回会话列表",
     "conversation": "会话消息",
-    "empty": "还没有对话",
+    "empty": "开始一条 {{harness}} 对话",
+    "activity": "执行过程",
+    "waitingApproval": "待确认",
     "allow": "允许一次",
     "decline": "拒绝",
     "draft": "输入消息",
+    "placeholder": "发消息给 {{harness}}",
     "send": "发送",
     "steer": "追加到当前轮",
     "interrupt": "打断当前轮",
     "retry": "用原操作 ID 重试",
+    "group": {
+      "today": "今天",
+      "yesterday": "昨天",
+      "earlier": "更早"
+    },
     "status": {
       "offline": "电脑离线",
       "ready": "已连接",
@@ -383,10 +399,6 @@
       "failed": "本轮失败",
       "interrupted": "本轮已打断",
       "unknown": "上一轮结果待核实"
-    },
-    "role": {
-      "user": "你",
-      "assistant": "Codex"
     },
     "approval": {
       "command": "Codex 请求执行命令",

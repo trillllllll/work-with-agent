@@ -1,0 +1,40 @@
+.app-main:has(> .harness-workspace) {
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+
+.harness-workspace { container: harness-workspace / inline-size; }
+.harness-workspace-panes {
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  height: 100%;
+}
+
+.harness-workspace-panes[data-session-open='true'] .harness-list-pane,
+.harness-workspace-panes[data-session-open='false'] .harness-detail-pane { display: none; }
+
+:root .dovun-main .harness-workspace .harness-list-pane > .harness-session-page {
+  padding: 20px clamp(14px, 4cqi, 22px) max(76px, env(safe-area-inset-bottom));
+}
+.harness-session-page > header { margin-block: 15px; }
+.harness-session-group + .harness-session-group { border-top: 1px solid var(--workspace-divider); }
+
+.harness-thread.dovun-assistant .assistant-header {
+  height: calc(var(--assistant-header-height) + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+}
+.harness-thread .assistant-thread .assistant-message { margin-top: 0; }
+.harness-thread .assistant-process { margin-bottom: 0; }
+.harness-thread .assistant-process-trigger { min-height: 44px; }
+
+@container harness-workspace (min-width: 740px) {
+  .harness-workspace-panes { grid-template-columns: minmax(300px, 355px) minmax(0, 1fr); }
+  .harness-workspace-panes[data-session-open='true'] .harness-list-pane,
+  .harness-workspace-panes[data-session-open='false'] .harness-detail-pane { display: block; }
+  .harness-list-pane { border-inline-end: 1px solid var(--workspace-divider); }
+}
+
+@media (max-width: 1023px) {
+  .harness-thread.dovun-assistant .assistant-input-box textarea { font-size: 16px; }
+  .harness-thread .assistant-composer button[data-size='icon'] { min-width: 44px; min-height: 44px; }
+}

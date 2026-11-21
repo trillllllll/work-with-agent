@@ -151,6 +151,7 @@ function ScopedApp({scope}:{scope:string|undefined}) {
   }, []);
   const { route, query: routeQuery, knowledgeSection: liveKnowledgeSection, knowledgeTopicId: liveKnowledgeTopicId, knowledgeTopicExplicit: liveKnowledgeTopicExplicit, settingsCategory: liveSettingsCategory, navigate, openKnowledge, openSettings } = useHashRoute();
   const isDesktop = useMediaQuery('(min-width: 1024px)');
+  const mobileHarnessDetail = !isDesktop && route === 'runs' && routeQuery.tab === 'sessions' && Boolean(routeQuery.sessionId);
   const wide = useMediaQuery('(min-width: 1280px)');
   const librarySnapshot = useLibrarySnapshot();
   const pageContexts = usePageContexts();
@@ -600,11 +601,11 @@ function ScopedApp({scope}:{scope:string|undefined}) {
   const hasAccessory = !isAssistantPage && (showChat || focusSide || taskRail);
 
   return <FocusProvider>
-    <div data-assistant-open={showChat || undefined} className="app-backdrop h-dvh overflow-hidden bg-background p-0">
+    <div data-assistant-open={showChat || mobileHarnessDetail || undefined} className="app-backdrop h-dvh overflow-hidden bg-background p-0">
       <div className={cn('app-frame dovun-workspace relative h-full overflow-hidden', isDesktop ? 'grid' : 'flex flex-col')} style={isDesktop ? { gridTemplateColumns: hasAccessory ? 'var(--dovun-nav-width) minmax(0, 1fr) var(--dovun-work-width)' : 'var(--dovun-nav-width) minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1fr)' } : undefined}>
         {isDesktop ? <Sidebar compact={!wide} key="sidebar" route={route} page={isAssistantPage ? 'chat' : page} topics={topics} topicsLoading={topicsQuery.isLoading} selectedTopicId={selectedTopicId} onNavigate={navigateSafely} onOpenAssistant={openContextAssistant} assistantOpen={showChat} onSelectTopic={selectTopic} onEditTopic={setTopicForm} onNewTopic={newTopic} /> : <div key="sidebar" className="hidden" />}
-        {!isDesktop && !isAssistantPage && !workspaceView && !(showChat && !isAssistantPage) && !taskRail && !(page === 'learning' && routeQuery.session) && <Button variant="ghost" size="icon" className="mobile-global-nav" onClick={() => setAssistantNavigationOpen(true)} aria-label={t('shell.mainNav')}><PanelLeft className="size-4" /></Button>}
-        {!isDesktop && !isAssistantPage && !showChat && !taskRail && !workspaceView && !(page === 'learning' && routeQuery.session) && <Button variant="ghost" size="icon" className="mobile-global-assistant" onClick={openContextAssistant} aria-label={t('shell.openAssistant')}><Sparkles className="size-4" /></Button>}
+        {!isDesktop && !isAssistantPage && !workspaceView && !(showChat && !isAssistantPage) && !taskRail && !mobileHarnessDetail && !(page === 'learning' && routeQuery.session) && <Button variant="ghost" size="icon" className="mobile-global-nav" onClick={() => setAssistantNavigationOpen(true)} aria-label={t('shell.mainNav')}><PanelLeft className="size-4" /></Button>}
+        {!isDesktop && !isAssistantPage && !showChat && !taskRail && !workspaceView && !mobileHarnessDetail && !(page === 'learning' && routeQuery.session) && <Button variant="ghost" size="icon" className="mobile-global-assistant" onClick={openContextAssistant} aria-label={t('shell.openAssistant')}><Sparkles className="size-4" /></Button>}
         <main key="main" data-page={page} className={cn('app-main dovun-main glass-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto bg-[var(--glass-bg-strong)]', ((!isDesktop && (showChat || taskRail)) || sourceView || isAssistantPage) && 'hidden')} style={isDesktop ? { gridColumn: 2, gridRow: 1 } : undefined}>{content}</main>
         {sourceView && <section className={cn('min-h-0 overflow-auto p-5', (isAssistantPage || (!isDesktop && showChat)) && 'hidden')} style={isDesktop ? { gridColumn: 2, gridRow: 1 } : undefined} aria-label={t('shell.sourceText')}><Button variant="ghost" className="h-9 gap-1.5 rounded-full px-2.5 text-sm font-medium text-foreground/70 hover:text-foreground" onClick={() => setSourceView(null)}><ArrowLeft className="size-4 shrink-0" />{t('shell.backToPage')}</Button><h2 className="my-3 text-lg font-semibold">{sourceView.title}</h2><BodyText text={sourceView.content} /></section>}
         <aside className={cn('dovun-work-rail', !isDesktop && (taskRail ? 'dovun-mobile-task-rail' : 'contents'), isDesktop && !hasAccessory && 'hidden')} data-tabbed={taskRail || undefined} data-chat={chatAccessory || undefined} data-task={Boolean(taskId) || undefined} aria-label={t('shell.workspace')} style={isDesktop ? { gridColumn: 3, gridRow: 1 } : undefined}>

@@ -1,4 +1,4 @@
-import type { AgentNode, HarnessCommand as CommandRow, HarnessSession } from '@prisma/client';
+import type { AgentNode, HarnessCommand as CommandRow, HarnessSession, Prisma } from '@prisma/client';
 import { prisma } from '../infrastructure/prisma.js';
 import { DomainError } from '../domain/task.js';
 import { isOnline } from './orchestration/nodes.js';
@@ -20,6 +20,13 @@ const cache = new Map<string, Cache>();
 const refresh = new Set<string>();
 const listeners = new Map<string, Set<(event: StreamEvent) => void>>();
 const expiresAfter = 30_000;
+const codex = { id: 'codex', name: 'Codex' } as const;
+const titleCommand = {
+  where: { status: 'accepted', payload: { contains: '"operation":"send"' } },
+  orderBy: [{ createdAt: 'asc' }, { commandId: 'asc' }],
+  select: { payload: true },
+  take: 1,
+} satisfies Prisma.HarnessSession$commandsArgs;
 
 function publish(id: string, event: StreamEvent) {
   for (const listener of listeners.get(id) ?? []) listener(event);
@@ -27,9 +34,20 @@ function publish(id: string, event: StreamEvent) {
 function commandDto(row: CommandRow) {
   return { commandId: row.commandId, status: row.status, error: row.error, createdAt: row.createdAt, expiresAt: row.expiresAt };
 }
-function sessionDto(session: HarnessSession, node: AgentNode | null) {
+function readStoredCommand(payload: string) {
+  try { return harnessCommandSchema.parse(JSON.parse(payload)); }
+  catch { return null; }
+}
+function sessionDto(session: HarnessSession & { commands: Array<{ payload: string }> }, node: AgentNode | null) {
+  const first = session.commands[0];
+  const command = first ? readStoredCommand(first.payload) : null;
+  const title = command?.operation === 'send' ? Array.from(command.text.replace(/\s+/g, ' ')) : [];
+  const state = cache.get(session.id);
+  const view = state && !state.stale && state.snapshot.epoch === session.epoch ? state.snapshot.view : null;
   return {
-    id: session.id, nodeId: session.nodeId, nodeName: node?.name ?? null, online: node ? isOnline(node) : false,
+    id: session.id, harness: codex.id, nodeId: session.nodeId, nodeName: node?.name ?? null, online: node ? isOnline(node) : false,
+    title: title.length ? title.slice(0, 48).join('') + (title.length > 48 ? '…' : '') : null,
+    activity: view?.approvals.length ? 'approval' : view?.turn?.status === 'inProgress' ? 'running' : null,
     locationId: session.locationId, projectName: session.projectName, threadId: session.threadId, epoch: session.epoch,
     status: session.status, error: session.error, updatedAt: session.updatedAt,
     startCommandId: session.startCommandId,
@@ -52,14 +70,18 @@ export function supportsHarness(node: Pick<AgentNode, 'capabilitiesJson'>) {
 export async function listHarnessSessions() {
   const nodes = await prisma.agentNode.findMany({ where: { deletedAt: null, status: 'active' } });
   const available = new Map(nodes.map((node) => [node.id, node]));
-  const sessions = await prisma.harnessSession.findMany({ orderBy: { updatedAt: 'desc' }, take: 100 });
+  const sessions = await prisma.harnessSession.findMany({
+    orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }], take: 100, include: { commands: titleCommand },
+  });
   return {
+    harnesses: [codex],
     nodes: nodes.map((node) => ({ id: node.id, name: node.name, online: isOnline(node), supportsHarness: supportsHarness(node) })),
     sessions: sessions.map((session) => sessionDto(session, available.get(session.nodeId) ?? null)),
   };
 }
 export async function readHarnessSession(id: string) {
-  const row = await load(id);
+  const row = await prisma.harnessSession.findUnique({ where: { id }, include: { commands: titleCommand } });
+  if (!row) throw new DomainError('HARNESS_NOT_FOUND', '会话不存在', 404);
   const node = await prisma.agentNode.findUnique({ where: { id: row.nodeId } });
   const view = cache.get(id);
   return { ...sessionDto(row, node), snapshot: view?.snapshot.epoch === row.epoch ? view.snapshot : null, current: !!view && !view.stale && view.snapshot.epoch === row.epoch };
@@ -190,6 +212,12 @@ async function saveReceipt(session: HarnessSession, input: HarnessReceipt) {
           error: input.error ?? '创建会话失败', updatedAt: at,
         },
       });
+    }
+    if (input.status === 'accepted' && session.startCommandId !== input.commandId) {
+      const command = readStoredCommand(current.payload);
+      if (command?.operation === 'send' || command?.operation === 'steer') {
+        await tx.harnessSession.updateMany({ where: { id: session.id, updatedAt: { lt: at } }, data: { updatedAt: at } });
+      }
     }
     return updated;
   });

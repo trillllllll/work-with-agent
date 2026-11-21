@@ -82,7 +82,7 @@ export function useHashRoute() {
   const openSettings = useCallback((category: SettingsCategory | null, mode: 'push' | 'replace' = 'push') => {
     applyHash(settingsHash(category), mode);
   }, []);
-  const setQuery = useCallback((patch: Record<string, string | null>) => {
+  const setQuery = useCallback((patch: Record<string, string | null>, mode: 'push' | 'replace' = 'replace') => {
     const params = hashQuery();
     for (const [key, value] of Object.entries(patch)) {
       if (value == null || value === '') params.delete(key);
@@ -90,7 +90,7 @@ export function useHashRoute() {
     }
     const path = hashPath();
     const qs = params.toString();
-    applyHash(qs ? `${path}?${qs}` : path, 'replace');
+    applyHash(qs ? `${path}?${qs}` : path, mode);
   }, []);
   return {
     route: state.view,
