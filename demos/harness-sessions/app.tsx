@@ -4,7 +4,7 @@ import {
   LoaderCircle, MessageSquare, ShieldQuestion, Sparkles, Terminal,
 } from 'lucide-react';
 import { ThemeProvider } from 'next-themes';
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { I18nextProvider } from 'react-i18next';
 import { ChatComposer } from '@/components/chat/ChatComposer.js';
@@ -180,18 +180,21 @@ function ChatView({ conversation, draft, now, back, chooseProject, write, send, 
   const name = harnessName(conversation.harness);
   const latest = conversation.messages.at(-1);
   const hasMessages = conversation.messages.length > 0;
+  const followStream = useCallback(() => {
+    const pane = timeline.current;
+    if (!pane) return;
+    const top = pin.onResize(pane);
+    if (top !== null && pane.scrollTop !== top) pane.scrollTop = top;
+  }, [pin]);
+
+  useLayoutEffect(followStream, [followStream, conversation.messages, now]);
   useLayoutEffect(() => {
     const pane = timeline.current;
     if (!pane || !thread.current) return;
-    const follow = () => {
-      const top = pin.onResize(pane);
-      if (top !== null && pane.scrollTop !== top) pane.scrollTop = top;
-    };
-    follow();
-    const observer = new ResizeObserver(follow);
+    const observer = new ResizeObserver(followStream);
     observer.observe(pane); observer.observe(thread.current);
     return () => observer.disconnect();
-  }, [pin, hasMessages]);
+  }, [followStream, hasMessages]);
 
   function followLatest() {
     pin.pin(); setDetached(false);
