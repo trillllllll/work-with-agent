@@ -35,7 +35,7 @@ for await (const line of createInterface({ input: process.stdin })) {
   switch (method) {
     case 'initialize': reply(id, { userAgent: 'fixture' }); break;
     case 'initialized': break;
-    case 'thread/start': log('thread/start'); reply(id, { thread: { id: threadId } }); break;
+    case 'thread/start': log('thread/start'); log('cwd ' + params.cwd); reply(id, { thread: { id: threadId } }); break;
     case 'thread/resume': log('thread/resume'); reply(id, { thread: { id: threadId } }); break;
     case 'thread/turns/list': reply(id, { data: [...history].reverse() }); break;
     case 'turn/start': {

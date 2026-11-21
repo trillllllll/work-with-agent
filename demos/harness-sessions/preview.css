@@ -4,6 +4,7 @@
 @source "./app.tsx";
 @source "../../client/src/components/ui";
 @source "../../client/src/components/workspace/HarnessStartDialog.tsx";
+@source "../../client/src/components/workspace/HarnessProjectPicker.tsx";
 @source "../../client/src/components/layout/ThemeToggle.tsx";
 @source "../../client/src/components/chat/ChatComposer.tsx";
 @source "../../client/src/components/shared/MarkdownView.tsx";

@@ -2,6 +2,7 @@ import type { AgentNode, HarnessCommand as CommandRow, HarnessSession, Prisma } 
 import { prisma } from '../infrastructure/prisma.js';
 import { DomainError } from '../domain/task.js';
 import { isOnline } from './orchestration/nodes.js';
+import { canBrowse } from './harness-directories.js';
 import {
   applyHarnessEvent, HARNESS_EVENTS, HARNESS_FEATURE, harnessCommandSchema, harnessCreateSchema, harnessSyncSchema,
   type HarnessDelivery, type HarnessEvent, type HarnessLease, type HarnessReceipt, type HarnessSnapshot,
@@ -70,12 +71,14 @@ export function supportsHarness(node: Pick<AgentNode, 'capabilitiesJson'>) {
 export async function listHarnessSessions() {
   const nodes = await prisma.agentNode.findMany({ where: { deletedAt: null, status: 'active' } });
   const available = new Map(nodes.map((node) => [node.id, node]));
+  const directories = await prisma.harnessDirectory.findMany({ where: { nodeId: { in: [...available.keys()] } }, orderBy: [{ name: 'asc' }, { path: 'asc' }] });
   const sessions = await prisma.harnessSession.findMany({
     orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }], take: 100, include: { commands: titleCommand },
   });
   return {
     harnesses: [codex],
-    nodes: nodes.map((node) => ({ id: node.id, name: node.name, online: isOnline(node), supportsHarness: supportsHarness(node) })),
+    nodes: nodes.map((node) => ({ id: node.id, name: node.name, online: isOnline(node), supportsHarness: supportsHarness(node), canBrowse: canBrowse(node) })),
+    directories: directories.map((dir) => ({ id: dir.id, nodeId: dir.nodeId, path: dir.path, projectName: dir.name, computerName: available.get(dir.nodeId)!.name })),
     sessions: sessions.map((session) => sessionDto(session, available.get(session.nodeId) ?? null)),
   };
 }
@@ -95,23 +98,26 @@ export async function createHarnessSession(body: unknown) {
       const command = await tx.harnessCommand.findUniqueOrThrow({ where: { sessionId_commandId: { sessionId: prior.id, commandId: input.commandId } } });
       return { sessionId: prior.id, receipt: commandDto(command) };
     }
-    const location = await tx.projectLocation.findUnique({ where: { id: input.locationId }, include: { node: true, project: true } });
-    if (!location || location.nodeId !== input.nodeId || location.status !== 'verified' || location.project.archivedAt) {
+    const location = await tx.projectLocation.findFirst({ where: { id: input.locationId, nodeId: input.nodeId, status: 'verified', project: { archivedAt: null } }, include: { project: true } });
+    const directory = location ? null : await tx.harnessDirectory.findFirst({ where: { id: input.locationId, nodeId: input.nodeId } });
+    const cwd = location?.path ?? directory?.path;
+    const projectName = location?.project.name ?? directory?.name;
+    if (!cwd || !projectName) {
       throw new DomainError('HARNESS_LOCATION', '请选择这台电脑上已经验证的项目位置', 409);
     }
-    requireAvailable(location.node);
+    requireAvailable(await tx.agentNode.findFirst({ where: { id: input.nodeId, status: 'active', deletedAt: null } }));
     if (await tx.harnessSession.findUnique({ where: { activeNodeId: input.nodeId } })) {
       throw new DomainError('HARNESS_ACTIVE', '这台电脑已有会话，请打开原会话', 409);
     }
     const now = new Date();
     const session = await tx.harnessSession.create({ data: {
-      nodeId: input.nodeId, activeNodeId: input.nodeId, locationId: location.id,
-      projectName: location.project.name, startCommandId: input.commandId,
+      nodeId: input.nodeId, activeNodeId: input.nodeId, locationId: input.locationId,
+      projectName, startCommandId: input.commandId,
       createdAt: now.toISOString(), updatedAt: now.toISOString(),
     } });
     const command = await tx.harnessCommand.create({ data: {
       sessionId: session.id, commandId: input.commandId,
-      payload: JSON.stringify({ commandId: input.commandId, operation: 'start', cwd: location.path }),
+      payload: JSON.stringify({ commandId: input.commandId, operation: 'start', cwd }),
       createdAt: now.toISOString(), expiresAt: new Date(now.getTime() + expiresAfter).toISOString(),
     } });
     return { sessionId: session.id, receipt: commandDto(command) };

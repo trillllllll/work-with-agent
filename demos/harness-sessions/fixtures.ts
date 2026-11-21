@@ -19,6 +19,7 @@ export type Conversation = {
   harness: HarnessId;
   title: string;
   project: string;
+  projectId?: string;
   updatedAt: number;
   messages: Message[];
 };

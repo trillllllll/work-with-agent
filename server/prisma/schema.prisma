@@ -710,6 +710,15 @@ model Artifact {
 }
 
 // ---- Orchestration: the server only plans and checks; local executors (wwa-node) do the work.
+model HarnessDirectory {
+  id     String @id @default(cuid())
+  nodeId String
+  path   String
+  name   String
+  @@unique([nodeId, path])
+  @@map("harness_directories")
+}
+
 model HarnessSession {
   id             String           @id @default(cuid())
   nodeId         String

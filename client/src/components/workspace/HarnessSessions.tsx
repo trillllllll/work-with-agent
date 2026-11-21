@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { ChevronRight, CircleAlert, FolderOpen, ListChecks, LoaderCircle, MessageSquare, ShieldQuestion, Terminal } from 'lucide-react';
+import { ChevronRight, CircleAlert, ListChecks, LoaderCircle, MessageSquare, ShieldQuestion, Terminal } from 'lucide-react';
 import { ApiError, api } from '@/lib/api.js';
 import { json } from '@/lib/platform.js';
 import { intlLocale } from '@/i18n/index.js';
@@ -15,6 +15,8 @@ import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure.js';
 import { BackButton } from '@/components/ui/nav-buttons.js';
 import { Surface } from '@/components/ui/surface.js';
 import { HarnessStartDialog } from './HarnessStartDialog.js';
+import { ChatProjectButton, HarnessProjectPicker, type HarnessProject, type ProjectComputer } from './HarnessProjectPicker.js';
+import type { DirectoryPage } from '../../../../server/src/node-agent/directory-protocol.js';
 import { applyHarnessEvent, HARNESS_TEXT_LIMIT, type HarnessCommand, type HarnessEvent, type HarnessSnapshot } from '../../../../server/src/node-agent/harness-protocol.js';
 import '@/components/chat/conversation.css';
 import './harness-sessions.css';
@@ -26,15 +28,16 @@ type Harness = typeof codex;
 type Session = {
   id: string; nodeId: string; nodeName: string | null; online: boolean; projectName: string;
   threadId: string | null; epoch: number; status: string; error: string | null; startCommandId: string;
-  harness?: string; title?: string | null; activity?: 'approval' | 'running' | null; updatedAt: string;
+  harness?: string; locationId: string; title?: string | null; activity?: 'approval' | 'running' | null; updatedAt: string;
 };
 type Detail = Session & { snapshot: HarnessSnapshot | null; current: boolean };
 type List = {
   harnesses?: Harness[];
-  nodes: Array<{ id: string; name: string; online: boolean; supportsHarness: boolean }>;
+  nodes: Array<ProjectComputer & { supportsHarness: boolean }>;
+  directories?: HarnessProject[];
   sessions: Session[];
 };
-type Project = { id: string; name: string; locations: Array<{ id: string; nodeId: string; status: string }> };
+type Project = { id: string; name: string; locations: Array<{ id: string; nodeId: string; path: string; status: string }> };
 type Receipt = { commandId: string; status: string; error: string | null };
 type Pending = { command: HarnessCommand };
 type StartCommand = { nodeId: string; locationId: string; commandId: string };
@@ -159,49 +162,67 @@ function SessionList({ sessions, selectedId, open }: { sessions: Session[]; sele
   </Surface>;
 }
 
-export function HarnessSessions({ id, harness, navigation, open, selectHarness }: {
+export function HarnessSessions({ id, harness, project, navigation, open, selectHarness, selectProject }: {
   id?: string;
   harness?: string;
+  project?: string;
   navigation: ReactNode;
   open: (id?: string) => void;
   selectHarness: (id: string) => void;
+  selectProject: (id: string | null) => void;
 }) {
   const { t } = useTranslation('workspace');
   const list = useQuery({ queryKey: ['harness-sessions'], queryFn: () => api<List>(base), refetchInterval: 5_000 });
+  const queryClient = useQueryClient();
   const harnesses = list.data?.harnesses?.length ? list.data.harnesses : [codex];
   const selected = harnesses.find((item) => item.id === harness) ?? harnesses[0];
   const sessions = (list.data?.sessions ?? []).filter((session) => (session.harness ?? codex.id) === selected.id);
   const current = list.data?.sessions.find((session) => session.id === id);
   const [createOpen, setCreateOpen] = useState(false);
-  const projects = useQuery({ queryKey: ['harness-projects'], queryFn: () => api<Project[]>('/api/projects'), enabled: createOpen });
+  const [picker, setPicker] = useState<'list' | 'new' | 'chat' | null>(null);
+  const projects = useQuery({ queryKey: ['harness-projects'], queryFn: () => api<Project[]>('/api/projects') });
   const [locationId, setLocationId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const startGate = useRef(false);
   const nodes = new Map(list.data?.nodes.map((node) => [node.id, node]));
   const busyNodes = new Set(list.data?.sessions.filter((session) => session.status !== 'failed').map((session) => session.nodeId));
-  const verifiedLocations = projects.data?.flatMap((project) => project.locations.flatMap((location) => {
+  const registered = projects.data?.flatMap((project) => project.locations.flatMap((location) => {
     const node = nodes.get(location.nodeId);
-    return selected.id === codex.id && location.status === 'verified' && node?.supportsHarness && node.online
+    return location.status === 'verified' && node
       ? [{ ...location, projectName: project.name, computerName: node.name }] : [];
   })) ?? [];
+  const directories = list.data?.directories ?? [];
+  const allLocations: HarnessProject[] = [...registered, ...directories];
+  const catalog = [...registered, ...directories.filter((dir) => !registered.some((item) => item.nodeId === dir.nodeId && item.path === dir.path))];
+  const chosenLocation = allLocations.find((item) => item.id === project);
+  const selectedProject = chosenLocation && (catalog.find((item) => item.id === project)
+    ?? catalog.find((item) => item.nodeId === chosenLocation.nodeId && item.path === chosenLocation.path));
+  const matchesProject = (locationId: string) => !project || locationId === project || Boolean(selectedProject &&
+    allLocations.some((item) => item.id === locationId && item.nodeId === selectedProject.nodeId && item.path === selectedProject.path));
+  const projectComputer = selectedProject && nodes.get(selectedProject.nodeId);
+  const visibleSessions = sessions.filter((session) => matchesProject(session.locationId));
+  const verifiedLocations = catalog.filter((item) => {
+    const node = nodes.get(item.nodeId);
+    return selected.id === codex.id && node?.online && node.supportsHarness && (!project || item.id === selectedProject?.id);
+  });
   const locations = verifiedLocations.filter((location) => !busyNodes.has(location.nodeId));
   const choice = locations.find((location) => location.id === locationId);
   const verifiedNodes = new Set(verifiedLocations.map((location) => location.nodeId));
   const occupied = sessions.filter((session) => session.status !== 'failed' && verifiedNodes.has(session.nodeId))
-    .map((session) => ({ id: session.id, title: session.title || session.projectName, computerName: session.nodeName ?? t('harness.unknownComputer') }));
+    .map((session) => ({ id: session.id, title: session.title || session.projectName, computerName: (session.title ? session.projectName + ' · ' : '') + (session.nodeName ?? t('harness.unknownComputer')) }));
 
   function changeCreateOpen(next: boolean) {
     if (startGate.current) return;
     if (next) {
       const previous = load<StartCommand>(createKey);
-      const recovered = previous && sessions.find((session) => session.startCommandId === previous.commandId);
+      const recovered = previous && visibleSessions.find((session) => session.startCommandId === previous.commandId);
       if (recovered) {
         save(createKey, null);
         open(recovered.id);
         return;
       }
-      setLocationId(previous?.locationId ?? '');
+      setLocationId(selectedProject?.id ?? previous?.locationId ?? '');
       setError(null);
     }
     setCreateOpen(next);
@@ -240,28 +261,47 @@ export function HarnessSessions({ id, harness, navigation, open, selectHarness }
             <h1>{t('harness.tab')}</h1>
             <HarnessStartDialog open={createOpen} onOpenChange={changeCreateOpen} harnessName={selected.name}
               locations={locations} value={choice?.id ?? ''} onSelect={setLocationId} onStart={start}
+              unavailable={projectComputer && (!projectComputer.online ? t('harness.selectedOffline', { computer: projectComputer.name })
+                : !projectComputer.supportsHarness ? t('harness.selectedUnsupported', { computer: projectComputer.name, harness: selected.name }) : undefined)}
+              onChooseProject={() => { setCreateOpen(false); setPicker('new'); }}
               occupied={occupied} onResume={(sessionId) => { setCreateOpen(false); open(sessionId); }}
               loading={list.isLoading || projects.isLoading} starting={starting} error={locationError} />
           </header>
-          <div className="mb-5">
+          <div className="mb-5 grid gap-3">
             <ChoiceList label={t('harness.filter')} value={selected.id} onChange={selectHarness}
               options={harnesses.map((item) => ({ id: item.id, label: item.name, icon: <Terminal className="size-4" /> }))} />
+            <HarnessProjectPicker open={picker !== null} onOpenChange={(next) => {
+              if (!next && picker === 'new') setCreateOpen(true);
+              setPicker(next ? 'list' : null);
+            }} projects={catalog} computers={list.data?.nodes ?? []} value={picker === 'chat' ? current?.locationId : selectedProject?.id}
+              loading={projects.isLoading || list.isLoading} error={projects.error?.message}
+              browse={(nodeId, path) => api<DirectoryPage>(base + '/directories/browse', { method: 'POST', body: json({ nodeId, path }) })}
+              selectDirectory={(nodeId, path) => api<HarnessProject>(base + '/directories/select', { method: 'POST', body: json({ nodeId, path }) })}
+              onChange={(item) => {
+                if (item && !catalog.some((p) => p.id === item.id)) {
+                  queryClient.setQueryData<List>(['harness-sessions'], (data) => data && { ...data, directories: [...(data.directories ?? []), item] });
+                  void list.refetch();
+                  void projects.refetch();
+                }
+                if (picker !== 'chat' || !item || item.id !== current?.locationId) selectProject(item?.id ?? null);
+                setLocationId(item?.id ?? '');
+              }} />
           </div>
           {list.error && <p role="alert" className="mb-3 text-sm text-destructive">{list.error.message}</p>}
           {list.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t('harness.loading')}</p>
-            : sessions.length ? <SessionList sessions={sessions} selectedId={id} open={open} />
-              : !list.error && <p className="px-2 py-6 text-sm text-muted-foreground">{t('harness.noSessions', { harness: selected.name })}</p>}
+            : visibleSessions.length ? <SessionList sessions={visibleSessions} selectedId={id} open={open} />
+              : !list.error && <p className="px-2 py-6 text-sm text-muted-foreground">{t(selectedProject ? 'harness.noProjectSessions' : 'harness.noSessions', { harness: selected.name, project: selectedProject?.projectName })}</p>}
         </div>
       </div>
       <div className="harness-detail-pane min-h-0 min-w-0">
-        {id ? <HarnessDetail key={id} id={id} summary={current} harnessName={chatHarness.name} back={() => open()} />
+        {id ? <HarnessDetail key={id} id={id} summary={current} harnessName={chatHarness.name} back={() => open()} chooseProject={() => setPicker('chat')} />
           : <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{t('harness.chooseSession')}</div>}
       </div>
     </div>
   </section>;
 }
 
-function HarnessDetail({ id, summary, harnessName, back }: { id: string; summary?: Session; harnessName: string; back: () => void }) {
+function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: string; summary?: Session; harnessName: string; back: () => void; chooseProject: () => void }) {
   const { t } = useTranslation('workspace');
   const queryClient = useQueryClient();
   const path = `${base}/${encodeURIComponent(id)}`;
@@ -445,7 +485,7 @@ function HarnessDetail({ id, summary, harnessName, back }: { id: string; summary
         actionsDisabled={actionsDisabled} allowSendWhileBusy listenForAssistantFocus={false}
         labels={{ input: t('harness.draft'), send: t(inProgress ? 'harness.steer' : 'harness.send'), stop: t('harness.interrupt') }}
         placeholder={inProgress ? t('harness.steer') : t('harness.placeholder', { harness: harnessName })}
-        model={projectName && <span className="inline-flex min-w-0 items-center gap-1.5"><FolderOpen className="size-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{projectName}</span></span>}
+        model={projectName && <ChatProjectButton name={projectName} open={chooseProject} />}
         onSend={(event) => {
           event.preventDefault();
           const text = draft.trim();

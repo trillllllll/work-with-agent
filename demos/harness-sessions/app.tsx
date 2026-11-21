@@ -1,6 +1,6 @@
 import { createInstance } from 'i18next';
 import {
-  Braces, Check, ChevronRight, CircleAlert, FileCode2, GitBranch, ListChecks,
+  Braces, Check, ChevronRight, CircleAlert, FileCode2, ListChecks,
   LoaderCircle, MessageSquare, ShieldQuestion, Sparkles, Terminal,
 } from 'lucide-react';
 import { ThemeProvider } from 'next-themes';
@@ -17,6 +17,8 @@ import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure.js';
 import { BackButton } from '@/components/ui/nav-buttons.js';
 import { Surface } from '@/components/ui/surface.js';
 import { HarnessStartDialog } from '@/components/workspace/HarnessStartDialog.js';
+import { ChatProjectButton, HarnessProjectPicker, type HarnessProject } from '@/components/workspace/HarnessProjectPicker.js';
+import { demoComputer, demoDirectory, demoProject, initialProjects } from './directories.js';
 import chatMessages from '@/i18n/locales/zh-CN/chat.json';
 import settingsMessages from '@/i18n/locales/zh-CN/settings.json';
 import workspaceMessages from '@/i18n/locales/zh-CN/workspace.json';
@@ -30,10 +32,6 @@ const MarkdownView = lazy(() => import('@/components/shared/MarkdownView.js').th
 const storageKey = 'dovun.harness-sessions.preview.v1';
 const replyDuration = 4_600;
 const icons = { codex: Terminal, claude: Sparkles, zcode: Braces };
-const locations = [
-  { id: 'dovun', projectName: 'Dovun', computerName: '演示 Mac' },
-  { id: 'docs', projectName: '文档项目', computerName: '演示 Mac' },
-];
 const isHarness = (value: unknown): value is HarnessId => harnesses.some((harness) => harness.id === value);
 const harnessName = (id: HarnessId) => harnesses.find((harness) => harness.id === id)!.name;
 const desktop = window.matchMedia('(min-width: 741px)');
@@ -43,26 +41,27 @@ function subscribeDesktop(listener: () => void) {
 }
 const isDesktop = () => desktop.matches;
 
-type Route = { harness: HarnessId; sessionId: string | null };
+type Route = { harness: HarnessId; sessionId: string | null; project: string | null };
 type PreviewData = {
   conversations: Conversation[];
   drafts: Record<string, string>;
+  projects: HarnessProject[];
 };
 
 function readData(): PreviewData {
   try {
     const value: PreviewData | null = JSON.parse(localStorage.getItem(storageKey) ?? 'null');
     if (value && Array.isArray(value.conversations) && value.drafts) {
-      return { conversations: value.conversations, drafts: value.drafts };
+      return { conversations: value.conversations, drafts: value.drafts, projects: Array.isArray(value.projects) ? value.projects : [] };
     }
   } catch { /* A browser may not grant storage in private mode. */ }
-  return { conversations: exampleConversations(), drafts: {} };
+  return { conversations: exampleConversations(), drafts: {}, projects: [] };
 }
 
 function readRoute(): Route {
   const hash = new URLSearchParams(window.location.hash.slice(1));
   const harness = hash.get('harness');
-  return { harness: isHarness(harness) ? harness : 'codex', sessionId: hash.get('session') };
+  return { harness: isHarness(harness) ? harness : 'codex', sessionId: hash.get('session'), project: hash.get('project') };
 }
 
 function remaining(message: TextMessage, now: number) {
@@ -171,9 +170,9 @@ function ApprovalCard({ approval, decide }: { approval: Approval; decide: (decis
   </Surface>;
 }
 
-function ChatView({ conversation, draft, now, back, write, send, stop, approve }: {
+function ChatView({ conversation, draft, now, back, chooseProject, write, send, stop, approve }: {
   conversation: Conversation; draft: string; now: number;
-  back: () => void; write: (draft: string) => void;
+  back: () => void; chooseProject: () => void; write: (draft: string) => void;
   send: () => void; stop: () => void; approve: (id: string, decision: 'accepted' | 'declined') => void;
 }) {
   const timeline = useRef<HTMLDivElement>(null);
@@ -230,10 +229,10 @@ function ChatView({ conversation, draft, now, back, write, send, stop, approve }
       </div>
     </div>
     <footer className="assistant-composer-area shrink-0">
-      <fieldset disabled={approvalPending} aria-label="消息输入">
-        <ChatComposer input={draft} busy={busy} onChange={(value) => write(value.slice(0, 8_000))} onStop={stop}
+      <fieldset aria-label="消息输入">
+        <ChatComposer input={draft} busy={busy} actionsDisabled={approvalPending} onChange={(value) => write(value.slice(0, 8_000))} onStop={stop}
           placeholder={approvalPending ? '处理权限请求后继续' : `发消息给 ${name}`}
-          model={<span className="inline-flex items-center gap-1.5 truncate"><GitBranch className="size-3.5 shrink-0" aria-hidden="true" />{conversation.project}</span>}
+          model={<ChatProjectButton name={conversation.project} open={chooseProject} />}
           onSend={(event) => {
             event.preventDefault();
             if (!draft.trim() || busy || approvalPending) return;
@@ -250,11 +249,16 @@ function App() {
   const [route, setRoute] = useState(readRoute);
   const [now, setNow] = useState(Date.now);
   const [createOpen, setCreateOpen] = useState(false);
+  const [picker, setPicker] = useState<'list' | 'new' | 'chat' | null>(null);
   const [locationId, setLocationId] = useState('');
   const wide = useSyncExternalStore(subscribeDesktop, isDesktop);
-  const conversations = data.conversations.filter((session) => session.harness === route.harness).sort((a, b) => b.updatedAt - a.updatedAt);
+  const locations = [...initialProjects, ...data.projects];
+  const conversations = data.conversations.filter((session) => session.harness === route.harness &&
+    (!route.project || (session.projectId ?? initialProjects.find((item) => item.projectName === session.project)?.id) === route.project))
+    .sort((a, b) => b.updatedAt - a.updatedAt);
   const open = conversations.find((session) => session.id === route.sessionId);
   const current = open ?? (wide ? conversations[0] : undefined);
+  const chatProject = current?.projectId ?? initialProjects.find((item) => item.projectName === current?.project)?.id;
   const busy = data.conversations.some((session) => isBusy(session, now));
 
   useEffect(() => {
@@ -273,11 +277,12 @@ function App() {
     return () => window.clearInterval(interval);
   }, [busy]);
 
-  function navigate(harness: HarnessId, sessionId: string | null = null) {
+  function navigate(harness: HarnessId, sessionId: string | null = null, project = route.project) {
     const hash = new URLSearchParams({ harness });
     if (sessionId) hash.set('session', sessionId);
+    if (project) hash.set('project', project);
     window.location.hash = hash.toString();
-    setRoute({ harness, sessionId });
+    setRoute({ harness, sessionId, project });
   }
 
   function newConversation() {
@@ -286,7 +291,7 @@ function App() {
     const id = crypto.randomUUID();
     const updatedAt = Date.now();
     setData((value) => ({ ...value, conversations: [
-      { id, harness: route.harness, title: '新会话', project: location.projectName, updatedAt, messages: [] }, ...value.conversations,
+      { id, harness: route.harness, title: '新会话', project: location.projectName, projectId: location.id, updatedAt, messages: [] }, ...value.conversations,
     ] }));
     setCreateOpen(false);
     setNow(updatedAt);
@@ -333,12 +338,25 @@ function App() {
         <div className="workspace-page harness-session-page">
           <header className="flex items-center justify-between gap-2">
             <h1>会话</h1>
-            <HarnessStartDialog open={createOpen} onOpenChange={(next) => { setLocationId(''); setCreateOpen(next); }}
-              harnessName={harnessName(route.harness)} locations={locations} value={locationId} onSelect={setLocationId} onStart={newConversation} />
+            <HarnessStartDialog open={createOpen} onOpenChange={(next) => { if (next) setLocationId(route.project ?? ''); setCreateOpen(next); }}
+              harnessName={harnessName(route.harness)} locations={locations.filter((item) => !route.project || item.id === route.project)}
+              value={locationId} onSelect={setLocationId} onStart={newConversation} onChooseProject={() => { setCreateOpen(false); setPicker('new'); }} />
           </header>
-          <div className="mb-5">
+          <div className="mb-5 grid gap-3">
             <ChoiceList label="Harness" value={route.harness} onChange={(harness) => { if (isHarness(harness)) navigate(harness); }}
               options={harnesses.map((item) => ({ id: item.id, label: item.name, icon: <HarnessIcon harness={item.id} /> }))} />
+            <HarnessProjectPicker open={picker !== null} onOpenChange={(next) => {
+              if (!next && picker === 'new') setCreateOpen(true);
+              setPicker(next ? 'list' : null);
+            }} projects={locations} computers={[demoComputer]} value={picker === 'chat' ? chatProject : route.project ?? undefined}
+              directoryHint="这是演示电脑。可点开文件夹，也可在 /WorkSpace 下输入自己的项目路径演练，选择只保存在此浏览器。"
+              browse={async (_nodeId, path) => demoDirectory(path, locations)}
+              selectDirectory={async (_nodeId, path) => demoProject(path)}
+              onChange={(item) => {
+                if (item && !locations.some((known) => known.id === item.id)) setData((old) => ({ ...old, projects: [...old.projects, item] }));
+                setLocationId(item?.id ?? '');
+                if (picker !== 'chat' || !item || item.id !== chatProject) navigate(route.harness, null, item?.id ?? null);
+              }} />
           </div>
           <ConversationList conversations={conversations} active={current?.id} now={now} open={(id) => navigate(route.harness, id)} />
         </div>
@@ -346,7 +364,8 @@ function App() {
     </aside>
     <main className="dovun-assistant harness-chat-pane" aria-label="会话详情" data-presentation="direct">
       {current && <ChatView key={current.id} conversation={current} draft={data.drafts[current.id] ?? ''} now={now}
-        back={() => navigate(route.harness)} write={(draft) => setData((value) => ({ ...value, drafts: { ...value.drafts, [current.id]: draft } }))}
+        back={() => navigate(route.harness)} chooseProject={() => setPicker('chat')}
+        write={(draft) => setData((value) => ({ ...value, drafts: { ...value.drafts, [current.id]: draft } }))}
         send={() => send(current)} stop={() => stop(current)} approve={(id, decision) => amend(current.id, (session) => ({
           ...session, messages: session.messages.map((message) => message.id === id && message.kind === 'approval' ? { ...message, decision } : message),
         }))} />}

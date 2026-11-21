@@ -12,6 +12,7 @@ import { prisma } from './infrastructure/prisma.js';
 import ownerRequest, { ownerSession } from './test-auth.js';
 import { NodeAgent } from './node-agent/agent.js';
 import { HARNESS_EVENTS, HARNESS_FEATURE, type HarnessSnapshot } from './node-agent/harness-protocol.js';
+import { DIRECTORY_FEATURE } from './node-agent/directory-protocol.js';
 
 const base = '/api/v1/harness-sessions';
 const savedEnv = { ...process.env };
@@ -200,4 +201,33 @@ it('preserves one thread across browsers, receipt loss, an expired target and ex
   const response = (await legacy.json()).data;
   expect(response.accepts).not.toContain(HARNESS_FEATURE);
   expect(response.harness).toBeUndefined();
+  expect(response.accepts).not.toContain(DIRECTORY_FEATURE);
+  expect(response.directoryRequests).toBeUndefined();
+  expect((await owner.post(base + '/directories/browse').send({ nodeId: other.node.id, path: null })).body.code).toBe('DIRECTORY_UNSUPPORTED');
 }, 35_000);
+
+it('accepts a directory listing only from the paired computer handling the request', async () => {
+  const owner = ownerRequest(app);
+  const target = data(await owner.post('/api/nodes').send({ name: 'Folder computer' }));
+  const peer = data(await owner.post('/api/nodes').send({ name: 'Other folder computer' }));
+  nodeIds.push(target.node.id, peer.node.id);
+  const capabilities = { protocol: 2, providers: [], directoryBrowser: DIRECTORY_FEATURE };
+  const lease = async (token: string) => data(await supertest(app).post('/api/v1/node/lease').set('Authorization', 'Node ' + token)
+    .set('X-Dovun-Node-Features', HARNESS_FEATURE).set('X-Dovun-Directory-Browser', DIRECTORY_FEATURE).send({ capabilities, max: 0 }));
+  await lease(target.token);
+  const query = { nodeId: target.node.id, path: null };
+  expect((await supertest(app).post(base + '/directories/browse').send(query)).status).toBe(401);
+  const browsing = owner.post(base + '/directories/browse').send(query).then(data);
+  let id: string | undefined;
+  await expect.poll(async () => {
+    id = (await lease(target.token)).directoryRequests?.[0]?.id;
+    return Boolean(id);
+  }).toBe(true);
+  expect((await lease(peer.token)).directoryRequests).toBeUndefined();
+  const reply = { page: { directory: null, parent: null, entries: [], truncated: false } };
+  const url = '/api/v1/node/directories/' + id;
+  expect((await supertest(app).post(url).set('Authorization', 'Node ' + peer.token).send(reply)).status).toBe(403);
+  data(await supertest(app).post(url).set('Authorization', 'Node ' + target.token).send(reply));
+  expect(await browsing).toEqual(reply.page);
+  expect((await lease(target.token)).directoryRequests).toBeUndefined();
+});

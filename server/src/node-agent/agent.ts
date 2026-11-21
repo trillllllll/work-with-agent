@@ -12,6 +12,8 @@ import { assertAllowed, assertManagedWorktree, cleanupWorktrees, collectFacts, c
 import { createLocalLaunchSpec, localProviders } from './cli.js';
 import { HarnessController } from './harness-controller.js';
 import { HARNESS_FEATURE, harnessLeaseSchema } from './harness-protocol.js';
+import { DIRECTORY_FEATURE, directoryTaskSchema, type DirectoryTask } from './directory-protocol.js';
+import { readDirectory } from './directories.js';
 
 export type NodeConfig = { server: string; token: string; roots: string[]; dataDir: string; maxConcurrent?: number; pollMs?: number; version?: string };
 type JournalState = 'running' | 'pending_report' | 'reported' | 'abandoned';
@@ -91,10 +93,10 @@ export class NodeAgent {
       response = await this.http(`${this.config.server.replace(/\/$/, '')}/api/v1/node${path}`, {
         method: 'POST', headers: {
           'Content-Type': 'application/json', Authorization: `Node ${this.config.token}`,
-          ...(path === '/lease' ? { 'X-Dovun-Node-Features': HARNESS_FEATURE } : {}),
+          ...(path === '/lease' ? { 'X-Dovun-Node-Features': HARNESS_FEATURE, 'X-Dovun-Directory-Browser': DIRECTORY_FEATURE } : {}),
         },
         body: JSON.stringify(body),
-        ...(path.startsWith('/harness-sessions/') ? { signal: AbortSignal.timeout(8_000) } : {}),
+        ...(path.startsWith('/harness-sessions/') || path.startsWith('/directories/') ? { signal: AbortSignal.timeout(8_000) } : {}),
       });
     } catch (error) {
       this.rememberError(error);
@@ -108,6 +110,7 @@ export class NodeAgent {
       throw Object.assign(new Error(`服务端返回 401 ${code}`), { status: 401, code, revoked: true });
     }
     if (!response.ok) {
+      if (path === '/lease' && response.status === 400) this.serverAccepts.delete(DIRECTORY_FEATURE);
       const error = Object.assign(new Error(`服务端返回 ${response.status} ${code ?? ''}`), { status: response.status, code });
       this.rememberError(error);
       throw error;
@@ -127,6 +130,7 @@ export class NodeAgent {
     const codex = providers.find((provider) => provider.provider === 'codex' && provider.available);
     const version = /(\d+)\.(\d+)\.\d+/.exec(codex?.version ?? '');
     if (this.serverAccepts.has(HARNESS_FEATURE) && version && (Number(version[1]) > 0 || Number(version[2]) >= 166)) body.harnessSessions = HARNESS_FEATURE;
+    if (this.serverAccepts.has(DIRECTORY_FEATURE)) body.directoryBrowser = DIRECTORY_FEATURE;
     if (!capsV2) return body;
     const logPath = runtimeEnv('NODE_LOG')?.trim() || null;
     return { ...body, managedBy: runtimeEnv('NODE_MANAGED') === 'desktop' ? 'desktop' : 'cli', logPath: logPath ? logPath.slice(0, 4096) : null, lastError: this.lastError, startedAt: this.startedAt };
@@ -149,7 +153,7 @@ export class NodeAgent {
     const activeJobIds = [...new Set([...this.active.keys(), ...pending])];
     const max = Math.max(0, (this.config.maxConcurrent ?? 2) - activeJobIds.length);
     const capabilities = await this.capabilities();
-    const lease = await this.api('/lease', { capabilities, activeJobIds, max }) as { jobs: LeasedJob[]; cancel: string[]; accepts?: unknown; nodeId?: unknown; harness?: unknown };
+    const lease = await this.api('/lease', { capabilities, activeJobIds, max }) as { jobs: LeasedJob[]; cancel: string[]; accepts?: unknown; nodeId?: unknown; harness?: unknown; directoryRequests?: unknown };
     this.serverAccepts = new Set(Array.isArray(lease.accepts) ? lease.accepts.filter((item): item is string => typeof item === 'string') : []);
     if (typeof lease.nodeId === 'string' && lease.nodeId) await this.writeState(lease.nodeId).catch((error) => console.error(`[wwa-node] 无法写入 state.json：${this.summary(error)}`));
     if (this.stopped) return 0;
@@ -169,7 +173,22 @@ export class NodeAgent {
       await this.saveJournal(entry);
       this.active.set(job.id, this.execute(entry).finally(() => this.active.delete(job.id)));
     }
+    if (capabilities.directoryBrowser && this.serverAccepts.has(DIRECTORY_FEATURE) && Array.isArray(lease.directoryRequests)) {
+      for (const raw of lease.directoryRequests.slice(0, 12)) {
+        const parsed = directoryTaskSchema.safeParse(raw);
+        if (parsed.success && !this.readingDirectories.has(parsed.data.id)) void this.answerDirectory(parsed.data);
+      }
+    }
     return lease.jobs.length;
+  }
+  private readonly readingDirectories = new Set<string>();
+  private async answerDirectory(task: DirectoryTask) {
+    this.readingDirectories.add(task.id);
+    try {
+      const reply = await readDirectory(task, this.config.roots).then((page) => ({ page }), (error) => ({ error: this.summary(error) }));
+      if (!this.stopped) await this.api('/directories/' + task.id, reply);
+    } catch (error) { this.rememberError(error); }
+    finally { this.readingDirectories.delete(task.id); }
   }
   /** `<dataDir>/state.json` lets the desktop shell recognize this computer. Never written into config.json. */
   private async writeState(nodeId: string) {

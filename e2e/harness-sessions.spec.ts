@@ -1,7 +1,7 @@
 import { test, expect, devices, type APIResponse } from '@playwright/test';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { HarnessSnapshot } from '../server/src/node-agent/harness-protocol.js';
@@ -17,7 +17,7 @@ async function data<T>(response: APIResponse): Promise<T> {
 
 test('desktop and phone open and control the same Harness session', async ({ browser, page, request, baseURL, extraHTTPHeaders }, testInfo) => {
   test.skip(testInfo.project.name === 'mobile', 'The test opens desktop and mobile viewports in the same browser project.');
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   await resetE2eDatabase();
   const folder = await mkdtemp(join(tmpdir(), 'dovun-harness-browser-'));
   const phoneContext = await browser.newContext({
@@ -27,14 +27,18 @@ test('desktop and phone open and control the same Harness session', async ({ bro
   let agent: ChildProcess | undefined;
   let nodeId: string | undefined;
   try {
-    const repo = join(folder, 'repo');
-    await mkdir(repo);
+    const workspace = join(folder, 'workspace');
+    const repo = join(workspace, 'repo');
+    await mkdir(repo, { recursive: true });
     execFileSync('git', ['init', '--quiet', repo]);
-    const root = await realpath(repo);
+    const root = await realpath(workspace);
+    const customPath = join(root, '手机自选项目');
+    await mkdir(customPath);
     const node = await data<{ node: { id: string }; token: string }>(await request.post('/api/nodes', { data: { name: '测试电脑' } }));
     nodeId = node.node.id;
     const project = await data<{ id: string }>(await request.post('/api/projects', { data: { name: '会话测试项目', defaultParallel: 1 } }));
-    await data(await request.post('/api/projects/' + project.id + '/locations', { data: { nodeId: node.node.id, path: root } }));
+    const registeredPath = await realpath(repo);
+    const registered = await data<{ location: { id: string } }>(await request.post('/api/projects/' + project.id + '/locations', { data: { nodeId: node.node.id, path: registeredPath } }));
     agent = spawn(process.execPath, ['--import', 'tsx', resolve('server/src/node-agent/index.ts'), '--server', process.env.E2E_API_URL!,
       '--roots', root, '--data', join(folder, 'node'), '--max', '1'], {
       stdio: 'ignore',
@@ -70,13 +74,31 @@ test('desktop and phone open and control the same Harness session', async ({ bro
     await phoneDialog.getByRole('button', { name: '取消' }).tap();
     await expect(phoneDialog).toBeHidden();
 
+    await phone.getByRole('button', { name: '选择项目', exact: true }).tap();
+    const projectPicker = phone.getByRole('dialog');
+    await projectPicker.getByRole('button', { name: '测试电脑', exact: true }).tap();
+    await projectPicker.getByRole('button', { name: /^workspace.*\/workspace$/ }).tap();
+    await projectPicker.getByRole('button', { name: '手机自选项目', exact: true }).tap();
+    await expect(projectPicker.getByRole('textbox', { name: '电脑上的目录' })).toHaveValue(customPath);
+    await phone.screenshot({ path: testInfo.outputPath('phone-folders.png'), scale: 'css', animations: 'disabled' });
+    await projectPicker.getByRole('button', { name: '使用此目录' }).tap();
+    await expect(projectPicker).toBeHidden();
+    await expect(phone.getByRole('button', { name: '选择项目', exact: true })).toContainText('手机自选项目');
+    await phone.reload();
+    await expect(phone.getByText('「手机自选项目」还没有 Codex 会话。')).toBeVisible();
+    const savedId = new URLSearchParams(new URL(phone.url()).hash.split('?')[1]).get('project');
+    for (const [path, expected] of [[customPath, savedId], [registeredPath, registered.location.id]]) {
+      const chosen = await data<{ id: string }>(await request.post(apiUrl + '/directories/select', { data: { nodeId, path } }));
+      expect(chosen.id).toBe(expected);
+    }
+
     await page.goto(listUrl);
     const harness = page.getByRole('radiogroup', { name: 'Harness' });
     await expect(harness.getByRole('radio')).toHaveCount(1);
     await expect(harness.getByRole('radio', { name: 'Codex' })).toBeChecked();
     await page.getByRole('button', { name: '新建会话' }).click();
     const dialog = page.getByRole('dialog', { name: '新建会话' });
-    const location = dialog.getByRole('radiogroup', { name: '本机项目' }).getByRole('radio', { name: /会话测试项目.*测试电脑/ });
+    const location = dialog.getByRole('radiogroup', { name: '本机项目' }).getByRole('radio', { name: /手机自选项目.*测试电脑/ });
     await location.focus();
     await location.press('Space');
     await expect(location).toBeChecked();
@@ -87,6 +109,7 @@ test('desktop and phone open and control the same Harness session', async ({ bro
     expect(sessionId).toBeTruthy();
     const detail = async () => data<{ threadId: string | null; snapshot: HarnessSnapshot | null }>(await request.get(apiUrl + '/' + sessionId));
     await poll(async () => (await detail()).threadId, 'fixture-thread');
+    expect((await readFile(join(folder, 'calls'), 'utf8')).split('\n')).toContain('cwd ' + customPath);
     const desktopChat = page.getByRole('region', { name: '会话详情' });
     await expect(desktopChat).toBeVisible();
     await expect(page.getByRole('heading', { name: '会话', exact: true })).toBeVisible();
@@ -99,7 +122,8 @@ test('desktop and phone open and control the same Harness session', async ({ bro
     await phone.getByRole('button', { name: /电脑发出的第一条消息/ }).click();
     const phoneChat = phone.getByRole('region', { name: '会话详情' });
     await expect(phone).toHaveURL(/sessionId=/);
-    expect(new URL(phone.url()).hash).toBe(sessionHash);
+    const phoneHash = new URL(phone.url()).hash;
+    expect(new URLSearchParams(phoneHash.split('?')[1]).get('sessionId')).toBe(sessionId);
     await phone.goBack();
     await expect(phone.getByRole('heading', { name: '会话', exact: true })).toBeVisible();
     await phone.goForward();
@@ -147,7 +171,16 @@ test('desktop and phone open and control the same Harness session', async ({ bro
     await expect(phoneDialog.getByRole('button', { name: '开启 Codex 会话' })).toHaveCount(0);
     await phoneDialog.getByRole('button', { name: /电脑发出的第一条消息.*测试电脑/ }).tap();
     await expect(phoneChat).toBeVisible();
-    expect(new URL(phone.url()).hash).toBe(sessionHash);
+    expect(new URL(phone.url()).hash).toBe(phoneHash);
+    await phoneChat.getByRole('button', { name: '选择项目，当前为 手机自选项目' }).tap();
+    await projectPicker.getByRole('button', { name: /^会话测试项目.*测试电脑/ }).tap();
+    await expect(phoneChat).toBeHidden();
+    await expect(phone.getByText('「会话测试项目」还没有 Codex 会话。')).toBeVisible();
+    await phone.getByRole('button', { name: '选择项目', exact: true }).tap();
+    await projectPicker.getByRole('button', { name: /^手机自选项目.*测试电脑/ }).tap();
+    await phone.getByRole('button', { name: /电脑发出的第一条消息/ }).tap();
+    await expect(input).toHaveValue('刷新后保留的草稿');
+    expect(new URL(phone.url()).hash).toBe(phoneHash);
     const listed = await data<{ sessions: Array<{ id: string }> }>(await request.get(apiUrl));
     expect(listed.sessions.map((session) => session.id)).toEqual([sessionId]);
   } finally {
@@ -156,7 +189,10 @@ test('desktop and phone open and control the same Harness session', async ({ bro
       agent.kill('SIGTERM');
       await exited;
     }
-    if (nodeId) await e2eDatabase.harnessSession.deleteMany({ where: { nodeId } });
+    if (nodeId) {
+      await e2eDatabase.harnessSession.deleteMany({ where: { nodeId } });
+      await e2eDatabase.harnessDirectory.deleteMany({ where: { nodeId } });
+    }
     await rm(folder, { recursive: true, force: true });
     await phoneContext.close();
   }

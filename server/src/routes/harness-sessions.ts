@@ -1,5 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { ownerMiddleware } from '../application/security.js';
+import { browseDirectory, selectDirectory } from '../application/harness-directories.js';
 import {
   createHarnessSession, listHarnessSessions, queueHarnessCommand,
   readHarnessReceipt, readHarnessSession, subscribeHarness,
@@ -18,6 +19,8 @@ function cursor(value: string | undefined) {
 export const harnessSessionsRouter = Router();
 harnessSessionsRouter.use('/harness-sessions', ownerMiddleware);
 harnessSessionsRouter.get('/harness-sessions', route(listHarnessSessions));
+harnessSessionsRouter.post('/harness-sessions/directories/browse', route((req) => browseDirectory(req.body)));
+harnessSessionsRouter.post('/harness-sessions/directories/select', route((req) => selectDirectory(req.body)));
 harnessSessionsRouter.post('/harness-sessions', route((req) => createHarnessSession(req.body)));
 harnessSessionsRouter.get('/harness-sessions/:id', route((req) => readHarnessSession(String(req.params.id))));
 harnessSessionsRouter.post('/harness-sessions/:id/commands', route((req) => queueHarnessCommand(String(req.params.id), req.body)));

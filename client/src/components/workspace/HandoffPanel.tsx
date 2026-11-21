@@ -76,9 +76,10 @@ export function RunsPage() {
       aria-selected={tab === id} data-testid={'runs-tab-' + id} className="shrink-0 px-3 py-1 text-sm"
       onClick={() => setQuery({ tab: id, sessionId: null })}>{label}</Button>)}
   </div>;
-  if (tab === 'sessions') return <HarnessSessions id={query.sessionId} harness={query.harness} navigation={navigation}
+  if (tab === 'sessions') return <HarnessSessions id={query.sessionId} harness={query.harness} project={query.project} navigation={navigation}
     open={(sessionId) => setQuery({ sessionId: sessionId ?? null }, sessionId && !query.sessionId ? 'push' : 'replace')}
-    selectHarness={(harness) => setQuery({ harness, sessionId: null })} />;
+    selectHarness={(harness) => setQuery({ harness, sessionId: null })}
+    selectProject={(project) => setQuery({ project, sessionId: null })} />;
   return <section className="workspace-page mx-auto max-w-5xl space-y-5 p-5 sm:p-7">
     <h1 className="text-2xl font-semibold">{t('handoff.runsTitle')}</h1>
     <p className="text-sm text-muted-foreground">{t('handoff.runsDescription')}</p>

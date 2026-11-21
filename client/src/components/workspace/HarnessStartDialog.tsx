@@ -8,35 +8,40 @@ import { Surface } from '@/components/ui/surface.js';
 type Location = { id: string; projectName: string; computerName: string };
 type OccupiedComputer = { id: string; title: string; computerName: string };
 
-export function HarnessStartDialog({ open, onOpenChange, harnessName, locations, value, onSelect, onStart, occupied = [], onResume, loading, starting, error }: {
+export function HarnessStartDialog({ open, onOpenChange, harnessName, locations, value, onSelect, onChooseProject, onStart, occupied = [], onResume, loading, starting, error, unavailable }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   harnessName: string;
   locations: Location[];
   value: string;
   onSelect: (id: string) => void;
+  onChooseProject: () => void;
   onStart: () => void;
   occupied?: OccupiedComputer[];
   onResume?: (id: string) => void;
   loading?: boolean;
   starting?: boolean;
   error?: string | null;
+  unavailable?: string;
 }) {
   const { t } = useTranslation('workspace');
   const description = !locations.length && occupied.length ? 'harness.computersBusy'
-    : !locations.length && !loading && !error ? 'harness.noComputer' : 'harness.selectDescription';
+    : 'harness.selectDescription';
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogTrigger asChild><Button type="button" className="min-h-11"><Plus />{t('harness.new')}</Button></DialogTrigger>
     <DialogContent showCloseButton={false} className="max-h-[85dvh] overflow-y-auto">
       <DialogHeader>
         <DialogTitle>{t('harness.new')}</DialogTitle>
-        <DialogDescription>{t(description, { harness: harnessName })}</DialogDescription>
+        <DialogDescription>{unavailable ?? t(description, { harness: harnessName })}</DialogDescription>
       </DialogHeader>
       <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); onStart(); }}>
         {locations.length > 0 && <ChoiceList label={t('harness.project')} value={value} onChange={onSelect} disabled={starting}
           options={locations.map((location) => ({
             id: location.id, label: location.projectName, description: location.computerName, icon: <FolderOpen className="size-4" />,
           }))} />}
+        <Button type="button" variant="outline" className="min-h-11" disabled={starting} onClick={onChooseProject}>
+          <FolderOpen />{t('harness.chooseProject')}
+        </Button>
         {occupied.length > 0 && onResume && <div className="grid gap-1.5">
           <h3 className="text-xs font-medium text-muted-foreground">{t('harness.resumeExisting')}</h3>
           <Surface tone="sheet" className="workspace-rows">
