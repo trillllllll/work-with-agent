@@ -874,6 +874,14 @@
 }
 
 /* 流式输出打字光标 */
+@keyframes markdown-arrival {
+  from { opacity: .35; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .markdown-arrival { animation: markdown-arrival 170ms ease-out backwards; }
+}
+
 .streaming-caret::after {
   content: "";
   display: inline-block;

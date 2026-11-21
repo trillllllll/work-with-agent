@@ -1,7 +1,9 @@
 import { holdIncompleteFences } from '@/lib/streaming-markdown.js';
+import { revealMarkdownArrival } from '@/lib/markdown-arrivals.js';
 import { useCitations } from '@/components/chat/citation-context.js';
 import { Button } from '@/components/ui/button.js';
-import { Children, isValidElement, useMemo, useState, type ReactNode } from 'react';
+import { Children, isValidElement, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { PluggableList } from 'unified';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -93,7 +95,20 @@ function markdownComponents(diagrams: boolean, responsiveTables: boolean): Compo
   };
 }
 
-export function MarkdownView({ content, components, allowMaterialLinks = false, diagrams = false, responsiveTables = false, streaming = false, className }: { content: string; components?: Components; allowMaterialLinks?: boolean; diagrams?: boolean; responsiveTables?: boolean; streaming?: boolean; className?: string }) {
+const arrivalSpan: Components['span'] = ({ node, children, ...props }) =>
+  <span key={String(node?.properties.dataArrivalOffset ?? '')} {...props}>{children}</span>;
+
+export function MarkdownView({ content, components, allowMaterialLinks = false, diagrams = false, responsiveTables = false, streaming = false, revealAdditions = false, className }: { content: string; components?: Components; allowMaterialLinks?: boolean; diagrams?: boolean; responsiveTables?: boolean; streaming?: boolean; revealAdditions?: boolean; className?: string }) {
+  const animate = streaming && revealAdditions;
+  const committed = useRef({ content, animate });
+  const arrivals = useMemo<PluggableList | undefined>(() => {
+    const previous = committed.current;
+    const added = content.length - previous.content.length;
+    if (animate && previous.animate && added > 0 && added <= 256 && content.startsWith(previous.content)) {
+      return [[revealMarkdownArrival, { from: previous.content.length }]];
+    }
+  }, [content, animate]);
+  useLayoutEffect(() => { committed.current = { content, animate }; }, [content, animate]);
   const citations = useCitations();
   const citationComponents: Components = citations ? { a: ({ children, href }) => {
     const match = /^#source-(\d+)$/.exec(href ?? '');
@@ -111,7 +126,7 @@ export function MarkdownView({ content, components, allowMaterialLinks = false, 
   const rendered = useMemo(() => markdownComponents(diagrams, responsiveTables), [diagrams, responsiveTables]);
   return (
     <div className={cn('markdown-body min-w-0 max-w-full break-words', className ?? 'text-[13.5px] leading-relaxed')}>
-      <ReactMarkdown remarkPlugins={streaming ? [remarkGfm, holdIncompleteFences] : [remarkGfm]} components={{ ...rendered, ...components, ...citationComponents }} urlTransform={urlTransform}>
+      <ReactMarkdown remarkPlugins={streaming ? [remarkGfm, holdIncompleteFences] : [remarkGfm]} rehypePlugins={arrivals} components={{ ...rendered, ...(animate ? { span: arrivalSpan } : {}), ...components, ...citationComponents }} urlTransform={urlTransform}>
         {content}
       </ReactMarkdown>
     </div>

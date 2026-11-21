@@ -5,7 +5,8 @@ export const harnesses = [
 ] as const;
 
 export type HarnessId = (typeof harnesses)[number]['id'];
-export type TextMessage = { id: string; kind: 'user' | 'answer'; text: string; startedAt?: number };
+export type TextMessage = { id: string; kind: 'user' | 'answer'; text: string };
+export type StreamMessage = { id: string; kind: 'stream'; script: 'checks' | 'reply'; startedAt: number | null; stoppedAt?: number };
 export type Activity = {
   id: string;
   kind: 'activity';
@@ -13,7 +14,7 @@ export type Activity = {
   change?: { path: string; removed: string; added: string };
 };
 export type Approval = { id: string; kind: 'approval'; command: string; decision?: 'accepted' | 'declined' };
-export type Message = TextMessage | Activity | Approval;
+export type Message = TextMessage | Activity | Approval | StreamMessage;
 export type Conversation = {
   id: string;
   harness: HarnessId;
@@ -38,8 +39,20 @@ function example(id: string, harness: HarnessId, title: string, project: string,
   };
 }
 
+export const streamExampleId = 'codex-live';
+export function streamExample(): Conversation {
+  return {
+    id: streamExampleId, harness: 'codex', title: '检查手机会话页', project: 'Dovun', updatedAt: Date.now(),
+    messages: [
+      { id: 'checks-user', kind: 'user', text: '跑一下手机会话页的检查，我想边看输出边看结果。' },
+      { id: 'checks-run', kind: 'stream', script: 'checks', startedAt: null },
+    ],
+  };
+}
+
 export function exampleConversations(): Conversation[] {
   return [
+    streamExample(),
     {
       id: 'codex-mobile', harness: 'codex', title: '重做手机会话入口', project: 'Dovun', updatedAt: before(0, 10, 42),
       messages: [
@@ -71,9 +84,3 @@ export function exampleConversations(): Conversation[] {
     example('zcode-list', 'zcode', '整理移动端最近会话', 'Dovun', before(2, 15, 23), '给最近的会话做分组。', '按今天、昨天和更早分组。标题足够识别会话，项目和更新时间放在第二行。'),
   ];
 }
-
-export const demoReply: Record<HarnessId, string> = {
-  codex: '我先把这轮工作拆成两步。\n\n1. 沿入口检查会话的读取、发送和返回行为。\n2. 在手机视口复验长标题、工具详情和输入区。\n\n检查完会把变更和结果留在这条会话里。',
-  claude: '我先梳理当前界面和状态的边界，再核对有哪些组件能直接复用。\n\n**本轮重点**是保持会话各自的历史与草稿，切换时尽量不打断当前工作。',
-  zcode: '我会先看当前轮的消息和工具过程。需要额外权限的操作会在对话里单独提示，确认后再继续。',
-};

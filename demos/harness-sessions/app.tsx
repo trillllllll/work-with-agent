@@ -1,13 +1,15 @@
 import { createInstance } from 'i18next';
 import {
-  Braces, Check, ChevronRight, CircleAlert, FileCode2, ListChecks,
+  ArrowDown, Braces, Check, ChevronRight, CircleAlert, FileCode2, ListChecks,
   LoaderCircle, MessageSquare, ShieldQuestion, Sparkles, Terminal,
 } from 'lucide-react';
 import { ThemeProvider } from 'next-themes';
-import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { I18nextProvider } from 'react-i18next';
 import { ChatComposer } from '@/components/chat/ChatComposer.js';
+import { createBottomPin } from '@/components/chat/bottom-pin.js';
+import { MarkdownView } from '@/components/shared/MarkdownView.js';
 import { BrandMark } from '@/components/layout/BrandMark.js';
 import { ThemeToggle } from '@/components/layout/ThemeToggle.js';
 import { Badge } from '@/components/ui/badge.js';
@@ -23,14 +25,14 @@ import chatMessages from '@/i18n/locales/zh-CN/chat.json';
 import settingsMessages from '@/i18n/locales/zh-CN/settings.json';
 import workspaceMessages from '@/i18n/locales/zh-CN/workspace.json';
 import {
-  demoReply, exampleConversations, harnesses,
-  type Activity, type Approval, type Conversation, type HarnessId, type TextMessage,
+  exampleConversations, harnesses, streamExample, streamExampleId,
+  type Activity, type Approval, type Conversation, type HarnessId, type StreamMessage, type TextMessage,
 } from './fixtures.js';
+import { nextFrameAt } from './stream.js';
+import { StreamReply } from './StreamReply.js';
 import './preview.css';
 
-const MarkdownView = lazy(() => import('@/components/shared/MarkdownView.js').then(({ MarkdownView }) => ({ default: MarkdownView })));
 const storageKey = 'dovun.harness-sessions.preview.v1';
-const replyDuration = 4_600;
 const icons = { codex: Terminal, claude: Sparkles, zcode: Braces };
 const isHarness = (value: unknown): value is HarnessId => harnesses.some((harness) => harness.id === value);
 const harnessName = (id: HarnessId) => harnesses.find((harness) => harness.id === id)!.name;
@@ -52,7 +54,9 @@ function readData(): PreviewData {
   try {
     const value: PreviewData | null = JSON.parse(localStorage.getItem(storageKey) ?? 'null');
     if (value && Array.isArray(value.conversations) && value.drafts) {
-      return { conversations: value.conversations, drafts: value.drafts, projects: Array.isArray(value.projects) ? value.projects : [] };
+      const conversations = value.conversations.some((item) => item.id === streamExampleId)
+        ? value.conversations : [streamExample(), ...value.conversations];
+      return { conversations, drafts: value.drafts, projects: Array.isArray(value.projects) ? value.projects : [] };
     }
   } catch { /* A browser may not grant storage in private mode. */ }
   return { conversations: exampleConversations(), drafts: {}, projects: [] };
@@ -64,17 +68,9 @@ function readRoute(): Route {
   return { harness: isHarness(harness) ? harness : 'codex', sessionId: hash.get('session'), project: hash.get('project') };
 }
 
-function remaining(message: TextMessage, now: number) {
-  return message.startedAt === undefined ? 0 : Math.max(0, replyDuration - Math.max(0, now - message.startedAt));
-}
-
-function previewText(message: TextMessage, now: number) {
-  return message.text.slice(0, Math.round(message.text.length * (1 - remaining(message, now) / replyDuration)));
-}
-
 function isBusy(conversation: Conversation, now: number) {
   const last = conversation.messages.at(-1);
-  return last?.kind === 'answer' && remaining(last, now) > 0;
+  return last?.kind === 'stream' && nextFrameAt(last, conversation.harness, now) !== undefined;
 }
 
 function waitingForApproval(conversation: Conversation) {
@@ -170,22 +166,37 @@ function ApprovalCard({ approval, decide }: { approval: Approval; decide: (decis
   </Surface>;
 }
 
-function ChatView({ conversation, draft, now, back, chooseProject, write, send, stop, approve }: {
+function ChatView({ conversation, draft, now, back, chooseProject, write, send, stop, replay, approve }: {
   conversation: Conversation; draft: string; now: number;
   back: () => void; chooseProject: () => void; write: (draft: string) => void;
-  send: () => void; stop: () => void; approve: (id: string, decision: 'accepted' | 'declined') => void;
+  send: () => void; stop: () => void; replay: (id: string) => void; approve: (id: string, decision: 'accepted' | 'declined') => void;
 }) {
   const timeline = useRef<HTMLDivElement>(null);
-  const following = useRef(true);
+  const thread = useRef<HTMLOListElement>(null);
+  const [pin] = useState(() => createBottomPin());
+  const [detached, setDetached] = useState(false);
   const busy = isBusy(conversation, now);
   const approvalPending = waitingForApproval(conversation);
   const name = harnessName(conversation.harness);
   const latest = conversation.messages.at(-1);
-  const visibleLength = latest?.kind === 'answer' ? previewText(latest, now).length : 0;
-  useEffect(() => {
+  const hasMessages = conversation.messages.length > 0;
+  useLayoutEffect(() => {
     const pane = timeline.current;
-    if (pane && following.current && conversation.messages.length > 3) pane.scrollTop = pane.scrollHeight;
-  }, [conversation.messages.length, visibleLength]);
+    if (!pane || !thread.current) return;
+    const follow = () => {
+      const top = pin.onResize(pane);
+      if (top !== null && pane.scrollTop !== top) pane.scrollTop = top;
+    };
+    follow();
+    const observer = new ResizeObserver(follow);
+    observer.observe(pane); observer.observe(thread.current);
+    return () => observer.disconnect();
+  }, [pin, hasMessages]);
+
+  function followLatest() {
+    pin.pin(); setDetached(false);
+    if (timeline.current) timeline.current.scrollTop = timeline.current.scrollHeight;
+  }
 
   return <>
     <header className="assistant-header flex items-center gap-2.5">
@@ -195,31 +206,28 @@ function ChatView({ conversation, draft, now, back, chooseProject, write, send, 
       </Badge>
       <div className="assistant-identity min-w-0 flex-1">
         <h2>{conversation.title}</h2>
-        <p className="truncate text-xs text-muted-foreground">{name} · {conversation.project}</p>
+        <p className="truncate text-xs text-muted-foreground">{name} · {conversation.project}{conversation.id === streamExampleId && ' · 流式演示'}</p>
       </div>
       <div className="harness-theme harness-chat-theme"><ThemeToggle /></div>
     </header>
-    <div className="assistant-messages min-h-0 flex-1">
+    <div className="assistant-messages relative min-h-0 flex-1">
       <div data-chat-scroll className="glass-scrollbar h-full overflow-y-auto overscroll-contain" ref={timeline}
         onScroll={(event) => {
-          const pane = event.currentTarget;
-          following.current = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 72;
+          pin.onScroll(event.currentTarget); setDetached(!pin.isPinned());
         }}>
-        {conversation.messages.length ? <ol className="assistant-thread" aria-label="对话记录">
+        {conversation.messages.length ? <ol ref={thread} className="assistant-thread" aria-label="对话记录">
           {conversation.messages.map((message) => {
             if (message.kind === 'user') return <li className="assistant-message assistant-user-message ml-auto" data-role="user" key={message.id}>
               <div className="assistant-user-bubble whitespace-pre-wrap break-words">{message.text}</div>
             </li>;
             if (message.kind === 'activity') return <li className="harness-process-record" key={message.id}><ToolActivity message={message} /></li>;
             if (message.kind === 'approval') return <li className="assistant-message" key={message.id}><ApprovalCard approval={message} decide={(decision) => approve(message.id, decision)} /></li>;
-            const streaming = remaining(message, now) > 0;
-            const text = previewText(message, now);
-            return <li className="assistant-message" data-role="assistant" key={message.id} aria-busy={streaming}>
+            if (message.kind === 'stream') return <StreamReply key={message.id + '-' + message.startedAt} message={message}
+              harness={conversation.harness} name={name} now={now} icon={<HarnessIcon harness={conversation.harness} className="size-3.5" />}
+              replay={message.script === 'checks' && latest?.id === message.id ? () => replay(message.id) : undefined} />;
+            return <li className="assistant-message" data-role="assistant" key={message.id}>
               <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><HarnessIcon harness={conversation.harness} className="size-3.5" />{name}</div>
-              <Suspense fallback={<p className="assistant-streaming-text whitespace-pre-wrap">{text}</p>}>
-                <MarkdownView streaming={streaming} content={text} />
-              </Suspense>
-              {streaming && <span className="streaming-caret" aria-label="正在生成" />}
+              <MarkdownView content={message.text} />
             </li>;
           })}
         </ol> : <div className="dovun-assistant-welcome mx-auto flex flex-col items-start gap-3">
@@ -227,6 +235,9 @@ function ChatView({ conversation, draft, now, back, chooseProject, write, send, 
           <h3>开始一条 {name} 对话</h3>
         </div>}
       </div>
+      {detached && <Button type="button" variant="outline" size="sm" className="harness-follow" onClick={followLatest}>
+        <ArrowDown className="size-3.5" aria-hidden="true" />回到最新
+      </Button>}
     </div>
     <footer className="assistant-composer-area shrink-0">
       <fieldset aria-label="消息输入">
@@ -236,7 +247,7 @@ function ChatView({ conversation, draft, now, back, chooseProject, write, send, 
           onSend={(event) => {
             event.preventDefault();
             if (!draft.trim() || busy || approvalPending) return;
-            following.current = true;
+            followLatest();
             send();
           }} />
       </fieldset>
@@ -259,12 +270,14 @@ function App() {
   const open = conversations.find((session) => session.id === route.sessionId);
   const current = open ?? (wide ? conversations[0] : undefined);
   const chatProject = current?.projectId ?? initialProjects.find((item) => item.projectName === current?.project)?.id;
-  const busy = data.conversations.some((session) => isBusy(session, now));
+  const previewId = current?.id === streamExampleId ? current.messages.find((item) => item.kind === 'stream' && item.startedAt === null)?.id : undefined;
 
   useEffect(() => {
-    const refresh = () => setRoute(readRoute());
+    const refresh = () => { setRoute(readRoute()); setNow(Date.now()); };
+    const catchUp = () => { if (document.visibilityState === 'visible') setNow(Date.now()); };
     window.addEventListener('hashchange', refresh);
-    return () => window.removeEventListener('hashchange', refresh);
+    document.addEventListener('visibilitychange', catchUp);
+    return () => { window.removeEventListener('hashchange', refresh); document.removeEventListener('visibilitychange', catchUp); };
   }, []);
 
   useEffect(() => {
@@ -272,10 +285,19 @@ function App() {
   }, [data]);
 
   useEffect(() => {
-    if (!busy) return;
-    const interval = window.setInterval(() => setNow(Date.now()), 105);
-    return () => window.clearInterval(interval);
-  }, [busy]);
+    if (previewId) playExample(previewId);
+  }, [previewId]);
+
+  useEffect(() => {
+    const deadlines = data.conversations.flatMap((session) => {
+      const last = session.messages.at(-1);
+      const time = last?.kind === 'stream' && nextFrameAt(last, session.harness, now);
+      return typeof time === 'number' ? [time] : [];
+    });
+    if (!deadlines.length) return;
+    const timer = window.setTimeout(() => setNow(Date.now()), Math.max(1, Math.min(...deadlines) - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [data.conversations, now]);
 
   function navigate(harness: HarnessId, sessionId: string | null = null, project = route.project) {
     const hash = new URLSearchParams({ harness });
@@ -310,7 +332,7 @@ function App() {
     if (!draft || isBusy(conversation, Date.now()) || waitingForApproval(conversation)) return;
     const at = Date.now();
     const user: TextMessage = { id: crypto.randomUUID(), kind: 'user', text: draft };
-    const answer: TextMessage = { id: crypto.randomUUID(), kind: 'answer', text: demoReply[conversation.harness], startedAt: at };
+    const answer: StreamMessage = { id: crypto.randomUUID(), kind: 'stream', script: 'reply', startedAt: at };
     amend(conversation.id, (session) => ({ ...session,
       title: session.messages.length ? session.title : Array.from(draft.replace(/\s+/g, ' ')).slice(0, 28).join(''),
       updatedAt: at, messages: [...session.messages, user, answer],
@@ -320,11 +342,17 @@ function App() {
 
   function stop(conversation: Conversation) {
     const last = conversation.messages.at(-1);
-    if (last?.kind !== 'answer' || last.startedAt === undefined) return;
-    const text = previewText(last, Date.now()).trim();
+    if (last?.kind !== 'stream' || !isBusy(conversation, Date.now())) return;
     amend(conversation.id, (session) => ({ ...session, messages: [
-      ...session.messages.slice(0, -1), { ...last, startedAt: undefined, text: text ? `${text}\n\n*已停止生成。*` : '*已停止生成。*' },
+      ...session.messages.slice(0, -1), { ...last, stoppedAt: Date.now() },
     ] }));
+  }
+
+  function playExample(id: string) {
+    const at = Date.now();
+    amend(streamExampleId, (session) => ({ ...session, messages: session.messages.map((item) =>
+      item.id === id && item.kind === 'stream' ? { ...item, startedAt: at, stoppedAt: undefined } : item) }));
+    setNow(at);
   }
 
   return <div className="app-backdrop harness-preview" data-chat-open={Boolean(open)}>
@@ -366,7 +394,7 @@ function App() {
       {current && <ChatView key={current.id} conversation={current} draft={data.drafts[current.id] ?? ''} now={now}
         back={() => navigate(route.harness)} chooseProject={() => setPicker('chat')}
         write={(draft) => setData((value) => ({ ...value, drafts: { ...value.drafts, [current.id]: draft } }))}
-        send={() => send(current)} stop={() => stop(current)} approve={(id, decision) => amend(current.id, (session) => ({
+        send={() => send(current)} stop={() => stop(current)} replay={playExample} approve={(id, decision) => amend(current.id, (session) => ({
           ...session, messages: session.messages.map((message) => message.id === id && message.kind === 'approval' ? { ...message, decision } : message),
         }))} />}
     </main>

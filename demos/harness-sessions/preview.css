@@ -2,6 +2,7 @@
 @import "../../client/src/components/chat/conversation.css";
 
 @source "./app.tsx";
+@source "./StreamReply.tsx";
 @source "../../client/src/components/ui";
 @source "../../client/src/components/workspace/HarnessStartDialog.tsx";
 @source "../../client/src/components/workspace/HarnessProjectPicker.tsx";
@@ -72,6 +73,34 @@
 .harness-chat-pane .assistant-process-trigger { min-height: 44px; }
 .harness-chat-pane .assistant-user-bubble { overflow-wrap: anywhere; }
 .harness-chat-pane .harness-back, .harness-chat-theme { display: none; }
+
+.harness-byline,
+.harness-tool-line,
+.harness-replay,
+.harness-follow { display: flex; align-items: center; gap: 8px; }
+.harness-byline { color: var(--muted-foreground); font-size: 12px; margin-block-end: 10px; }
+.harness-live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--link); }
+.harness-chat-pane .harness-prose { font-size: 15px; line-height: 1.72; }
+.harness-operation-list {
+  border-inline-start: 1px solid var(--border);
+  margin: 12px 0; padding-inline-start: 13px; min-width: 0;
+}
+.harness-tool-line { min-height: 44px; width: 100%; padding: 5px 2px; color: var(--foreground); }
+.harness-command > summary { list-style: none; }
+.harness-command > summary::-webkit-details-marker { display: none; }
+.harness-file-name { display: block; color: var(--muted-foreground); font-size: 12px; overflow-wrap: anywhere; }
+.harness-terminal { margin-block: 3px 9px; padding: 10px 12px; min-width: 0; }
+.harness-terminal pre, .harness-command-text {
+  font-family: var(--font-mono, monospace); font-size: 12px; line-height: 1.7;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.harness-command-text { margin-block-end: 6px; color: var(--foreground); }
+.harness-command-text > span, .harness-terminal pre { color: var(--muted-foreground); }
+.harness-replay { min-height: 44px; width: fit-content; padding-inline: 8px; color: var(--muted-foreground); font-size: 12px; }
+.harness-follow {
+  position: absolute; inset-block-end: 10px; left: 50%; transform: translateX(-50%);
+  min-height: 44px; border-radius: var(--radius-xl, 12px); background: var(--background);
+}
 
 @media (max-width: 740px) {
   .harness-preview { grid-template-columns: minmax(0, 1fr); }
