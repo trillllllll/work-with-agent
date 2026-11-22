@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronRight, CircleAlert, FileText, ImageIcon, ListChecks, LoaderCircle, Search, Terminal, Wrench } from 'lucide-react';
 import { createBottomPin } from '@/components/chat/bottom-pin.js';
@@ -42,6 +42,21 @@ function groupTurns(view: HarnessView) {
     if (turn?.rows.some((row) => row.kind === 'message' && row.item.id === artifact.messageId)) turn.artifacts.push(artifact);
   }
   return [...turns.values()];
+}
+
+// Insert older/live-only rows before the next shared anchor, without duplicating a turn or item.
+function mergeOrdered<T>(history: T[], live: T[], key: (value: T) => string, merge: (history: T, live: T) => T) {
+  const ordered = new Map(history.map((value) => [key(value), value]));
+  const before = new Map<string, T[]>();
+  let unanchored: T[] = [];
+  for (const value of live) {
+    const id = key(value);
+    const previous = ordered.get(id);
+    if (previous === undefined) { unanchored.push(value); continue; }
+    if (unanchored.length) { before.set(id, unanchored); unanchored = []; }
+    ordered.set(id, merge(previous, value));
+  }
+  return [...[...ordered].flatMap(([id, value]) => [...(before.get(id) ?? []), value]), ...unanchored];
 }
 
 function parts(rows: Row[]) {
@@ -160,12 +175,18 @@ function ArtifactCard({ artifact }: { artifact: HarnessArtifact }) {
   </Disclosure>;
 }
 
-export function HarnessTimeline({ view, name, liveMessageId, approvalControls }: {
-  view: HarnessView; name: string; liveMessageId?: string; approvalControls?: ReactNode;
+export function HarnessTimeline({ view, history, name, liveMessageId, approvalControls }: {
+  view: HarnessView; history?: HarnessView[]; name: string; liveMessageId?: string; approvalControls?: ReactNode;
 }) {
   const { t } = useTranslation('workspace');
+  const past = useMemo(() => (history ?? []).flatMap(groupTurns), [history]);
+  const turns = mergeOrdered(past, groupTurns(view), (turn) => turn.id, (older, current) => ({
+    ...current, status: current.status ?? older.status,
+    rows: mergeOrdered(older.rows, current.rows, (row) => row.item.id, (_older, newer) => newer),
+    artifacts: mergeOrdered(older.artifacts, current.artifacts, (artifact) => artifact.id, (_older, newer) => newer),
+  }));
   return <ol aria-label={t('harness.conversation')} className="harness-conversation flex min-w-0 flex-col gap-5">
-    {groupTurns(view).map((turn) => {
+    {turns.map((turn) => {
       const active = turn.status?.status === 'inProgress';
       const content = parts(turn.rows);
       const firstAssistant = content.findIndex((part) => part.kind !== 'user');

@@ -389,6 +389,9 @@
     "unknownComputer": "Original computer",
     "back": "Back to sessions",
     "conversation": "Conversation messages",
+    "moreSessions": "Load more sessions",
+    "moreHistory": "Load earlier messages",
+    "loadingHistory": "Loading message history…",
     "empty": "Start a conversation with {{harness}}",
     "activity": "Run activity",
     "tool": {

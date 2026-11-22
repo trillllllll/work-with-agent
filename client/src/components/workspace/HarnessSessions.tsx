@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ArrowDown, ChevronRight, CircleAlert, LoaderCircle, MessageSquare, ShieldQuestion, Terminal } from 'lucide-react';
 import { ApiError, api } from '@/lib/api.js';
@@ -16,23 +16,27 @@ import { HarnessStartDialog } from './HarnessStartDialog.js';
 import { HarnessTimeline } from './HarnessTimeline.js';
 import { ChatProjectButton, HarnessProjectPicker, type HarnessProject, type ProjectComputer } from './HarnessProjectPicker.js';
 import type { DirectoryPage } from '../../../../server/src/node-agent/directory-protocol.js';
-import { applyHarnessEvent, HARNESS_TEXT_LIMIT, type HarnessCommand, type HarnessEvent, type HarnessSnapshot } from '../../../../server/src/node-agent/harness-protocol.js';
+import { applyHarnessEvent, HARNESS_TEXT_LIMIT, type HarnessCatalogPage, type HarnessHistoryPage,
+  type HarnessCommand, type HarnessEvent, type HarnessSnapshot, type HarnessView } from '../../../../server/src/node-agent/harness-protocol.js';
 import '@/components/chat/conversation.css';
 import './harness-sessions.css';
 
 const base = '/api/v1/harness-sessions';
 const codex = { id: 'codex', name: 'Codex' };
 const createKey = 'dovun-harness-create';
+const emptyTimeline: HarnessView = { messages: [], turn: null, approvals: [], error: null };
 type Harness = typeof codex;
 type Session = {
   id: string; nodeId: string; nodeName: string | null; online: boolean; projectName: string;
   threadId: string | null; epoch: number; status: string; error: string | null; startCommandId: string;
   harness?: string; locationId: string; title?: string | null; activity?: 'approval' | 'running' | null; updatedAt: string;
+  native?: boolean; historyAvailable?: boolean;
 };
+type SessionRow = Pick<Session, 'id' | 'nodeName' | 'online' | 'projectName' | 'status' | 'title' | 'activity' | 'updatedAt'> & { nativeThreadId?: string };
 type Detail = Session & { snapshot: HarnessSnapshot | null; current: boolean };
 type List = {
   harnesses?: Harness[];
-  nodes: Array<ProjectComputer & { supportsHarness: boolean }>;
+  nodes: Array<ProjectComputer & { supportsHarness: boolean; harnessLibrary?: boolean }>;
   directories?: HarnessProject[];
   sessions: Session[];
 };
@@ -121,13 +125,13 @@ function useHarnessStream(id: string) {
   return { snapshot, liveMessageId, ready, receipt, unavailable };
 }
 
-function SessionList({ sessions, selectedId, open }: { sessions: Session[]; selectedId?: string; open: (id: string) => void }) {
+function SessionList({ sessions, selectedId, opening, open }: { sessions: SessionRow[]; selectedId?: string; opening?: string | null; open: (row: SessionRow) => void }) {
   const { t } = useTranslation('workspace');
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
-  const groups = { today: [] as Session[], yesterday: [] as Session[], earlier: [] as Session[] };
+  const groups = { today: [] as SessionRow[], yesterday: [] as SessionRow[], earlier: [] as SessionRow[] };
   const clock = new Intl.DateTimeFormat(intlLocale(), { hour: '2-digit', minute: '2-digit' });
   for (const session of sessions) {
     const time = Date.parse(session.updatedAt);
@@ -146,9 +150,10 @@ function SessionList({ sessions, selectedId, open }: { sessions: Session[]; sele
         return <Button key={session.id} type="button" variant="row" size="bare"
           className="workspace-row flex min-h-[55px] w-full items-center gap-2.5 px-2 py-2 text-left"
           aria-current={selectedId === session.id ? 'page' : undefined} data-selected={selectedId === session.id || undefined}
-          onClick={() => open(session.id)}>
+          disabled={Boolean(session.nativeThreadId && (!session.online || opening))} aria-busy={opening === session.id || undefined}
+          onClick={() => open(session)}>
           {approval ? <CircleAlert className="size-4 shrink-0 text-warning" aria-hidden="true" />
-            : running ? <LoaderCircle className="size-4 shrink-0 animate-spin text-brand-link motion-reduce:animate-none" aria-hidden="true" />
+            : running || opening === session.id ? <LoaderCircle className="size-4 shrink-0 animate-spin text-brand-link motion-reduce:animate-none" aria-hidden="true" />
               : <MessageSquare className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium">{session.title || session.projectName}</span>
@@ -187,7 +192,10 @@ export function HarnessSessions({ id, harness, project, navigation, open, select
   const [locationId, setLocationId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [opening, setOpening] = useState<string | null>(null);
+  const [nativeError, setNativeError] = useState<{ project: string; text: string } | null>(null);
   const startGate = useRef(false);
+  const openGate = useRef(false);
   const nodes = new Map(list.data?.nodes.map((node) => [node.id, node]));
   const busyNodes = new Set(list.data?.sessions.filter((session) => session.status !== 'failed').map((session) => session.nodeId));
   const registered = projects.data?.flatMap((project) => project.locations.flatMap((location) => {
@@ -209,11 +217,46 @@ export function HarnessSessions({ id, harness, project, navigation, open, select
     const node = nodes.get(item.nodeId);
     return selected.id === codex.id && node?.online && node.supportsHarness && (!project || item.id === selectedProject?.id);
   });
-  const locations = verifiedLocations.filter((location) => !busyNodes.has(location.nodeId));
+  const locations = verifiedLocations.filter((location) => nodes.get(location.nodeId)?.harnessLibrary || !busyNodes.has(location.nodeId));
   const choice = locations.find((location) => location.id === locationId);
   const verifiedNodes = new Set(verifiedLocations.map((location) => location.nodeId));
-  const occupied = sessions.filter((session) => session.status !== 'failed' && verifiedNodes.has(session.nodeId))
+  const occupied = sessions.filter((session) => session.status !== 'failed' && verifiedNodes.has(session.nodeId) && !nodes.get(session.nodeId)?.harnessLibrary)
     .map((session) => ({ id: session.id, title: session.title || session.projectName, computerName: (session.title ? session.projectName + ' · ' : '') + (session.nodeName ?? t('harness.unknownComputer')) }));
+  const nativeEnabled = Boolean(selected.id === codex.id && selectedProject && projectComputer?.online && projectComputer.harnessLibrary);
+  const native = useInfiniteQuery({
+    queryKey: ['harness-native', selectedProject?.nodeId, selectedProject?.id], enabled: nativeEnabled,
+    initialPageParam: null as string | null, staleTime: 20_000, retry: false,
+    queryFn: ({ pageParam, signal }) => api<HarnessCatalogPage>(base + '/native', { method: 'POST', signal,
+      body: json({ nodeId: selectedProject!.nodeId, locationId: selectedProject!.id, cursor: pageParam }) }),
+    getNextPageParam: (page, _pages, cursor) => page.nextCursor === cursor ? null : page.nextCursor,
+  });
+  const seen = new Set(sessions.filter((session) => session.nodeId === selectedProject?.nodeId && session.status !== 'failed').map((session) => session.threadId));
+  const rows: SessionRow[] = [...visibleSessions];
+  if (selectedProject && selected.id === codex.id) {
+    for (const page of native.data?.pages ?? []) for (const thread of page.threads) {
+      if (seen.has(thread.threadId)) continue;
+      seen.add(thread.threadId);
+      rows.push({ id: 'native:' + thread.threadId, nativeThreadId: thread.threadId, nodeName: selectedProject.computerName,
+        online: nativeEnabled, projectName: selectedProject.projectName, title: thread.title, status: 'ready', updatedAt: thread.updatedAt });
+    }
+  }
+  rows.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
+
+  async function openRow(row: SessionRow) {
+    if (!row.nativeThreadId) { open(row.id); return; }
+    if (!nativeEnabled || !selectedProject || openGate.current) return;
+    openGate.current = true;
+    setOpening(row.id);
+    setNativeError(null);
+    const origin = window.location.hash;
+    try {
+      const result = await api<{ sessionId: string }>(base + '/native/open', { method: 'POST',
+        body: json({ nodeId: selectedProject.nodeId, locationId: selectedProject.id, threadId: row.nativeThreadId }) });
+      void list.refetch();
+      if (window.location.hash === origin) open(result.sessionId);
+    } catch (failure) { setNativeError({ project: selectedProject.id, text: message(failure, t('harness.requestFailed')) }); }
+    finally { openGate.current = false; setOpening(null); }
+  }
 
   function changeCreateOpen(next: boolean) {
     if (startGate.current) return;
@@ -291,9 +334,17 @@ export function HarnessSessions({ id, harness, project, navigation, open, select
               }} />
           </div>
           {list.error && <p role="alert" className="mb-3 text-sm text-destructive">{list.error.message}</p>}
-          {list.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t('harness.loading')}</p>
-            : visibleSessions.length ? <SessionList sessions={visibleSessions} selectedId={id} open={open} />
-              : !list.error && <p className="px-2 py-6 text-sm text-muted-foreground">{t(selectedProject ? 'harness.noProjectSessions' : 'harness.noSessions', { harness: selected.name, project: selectedProject?.projectName })}</p>}
+          {nativeError && nativeError.project === selectedProject?.id && <p role="alert" className="mb-3 text-sm text-destructive">{nativeError.text}</p>}
+          {rows.length > 0 && <SessionList sessions={rows} selectedId={id} opening={opening} open={(row) => void openRow(row)} />}
+          {(list.isLoading || nativeEnabled && native.isPending) && <p role="status" className="px-2 py-4 text-sm text-muted-foreground">{t('harness.loading')}</p>}
+          {nativeEnabled && native.error && <div className="flex flex-wrap items-center gap-2 px-2 py-3">
+            <p role="alert" className="text-sm text-destructive">{native.error.message}</p>
+            <Button type="button" variant="outline" size="sm" onClick={() => void native.refetch()}>{t('harness.retry')}</Button>
+          </div>}
+          {!list.isLoading && !list.error && !rows.length && (!nativeEnabled || !native.isPending && !native.error && !native.hasNextPage) &&
+            <p className="px-2 py-6 text-sm text-muted-foreground">{t(selectedProject ? 'harness.noProjectSessions' : 'harness.noSessions', { harness: selected.name, project: selectedProject?.projectName })}</p>}
+          {nativeEnabled && native.hasNextPage && <Button type="button" variant="ghost" className="mt-2 min-h-11 w-full"
+            disabled={native.isFetching} onClick={() => void native.fetchNextPage()}>{t(native.isFetchingNextPage ? 'harness.loading' : 'harness.moreSessions')}</Button>}
         </div>
       </div>
       <div className="harness-detail-pane min-h-0 min-w-0">
@@ -319,19 +370,30 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
+  const historyAnchor = useRef<{ row: HTMLElement; top: number; pages: number } | null>(null);
   const [pin] = useState(createBottomPin);
   const [showLatest, setShowLatest] = useState(false);
   const detail = useQuery({ queryKey: ['harness-session', id], queryFn: () => api<Detail>(path + '?timeline=1'), refetchInterval: 4_000 });
   const stream = useHarnessStream(id);
   const snapshot = stream.snapshot ?? detail.data?.snapshot;
   const view = snapshot?.view;
+  const historyEnabled = Boolean(detail.data?.historyAvailable && (detail.data.native || detail.data.title || view?.messages.length));
+  const history = useInfiniteQuery({
+    queryKey: ['harness-history', id, detail.data?.threadId], enabled: historyEnabled,
+    initialPageParam: null as string | null, staleTime: 30_000, retry: false, refetchOnWindowFocus: false,
+    queryFn: ({ pageParam, signal }) => api<HarnessHistoryPage>(path + '/history', { method: 'POST', signal, body: json({ cursor: pageParam }) }),
+    getNextPageParam: (page, _pages, cursor) => page.nextCursor === cursor ? null : page.nextCursor,
+  });
+  const historicalViews = useMemo(() => (history.data?.pages ?? []).slice().reverse().map((page) => page.view), [history.data]);
+  const historyLoading = historyEnabled && history.isPending;
+  const hasMessages = Boolean(view?.messages.length || view?.turn || historicalViews.some((page) => page.messages.length));
   const currentTurn = view?.turn;
   const inProgress = currentTurn?.status === 'inProgress';
   const awaitingApproval = Boolean(view?.approvals.length);
   const enabled = !!detail.data?.online && !!snapshot && stream.ready && !stream.unavailable && detail.data.status !== 'failed';
   const actionsDisabled = !enabled || !!pending || sending;
   const startCommandId = detail.data?.startCommandId;
-  const waitingForStart = !snapshot && detail.data?.status === 'creating';
+  const waitingForStart = !snapshot && detail.data?.status === 'creating' && !detail.data.native;
   const commandId = pending?.command.commandId ?? (waitingForStart ? startCommandId : undefined);
   const tracked = useQuery({
     queryKey: ['harness-receipt', id, commandId], enabled: !!commandId,
@@ -373,7 +435,15 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
     const top = pin.onResize(scroll);
     if (top !== null && top !== scroll.scrollTop) scroll.scrollTop = top;
   }, [pin]);
-  useLayoutEffect(followLatest, [followLatest, view]);
+  useLayoutEffect(followLatest, [followLatest, view, historicalViews]);
+  useLayoutEffect(() => {
+    const scroll = scrollRef.current, anchor = historyAnchor.current;
+    if (!scroll || !anchor || (history.data?.pages.length ?? 0) <= anchor.pages) return;
+    historyAnchor.current = null;
+    if (anchor.row.isConnected) scroll.scrollTop += anchor.row.getBoundingClientRect().top - anchor.top;
+    pin.onScroll(scroll, true);
+    setShowLatest(!pin.isPinned());
+  }, [history.data, pin]);
   useLayoutEffect(() => {
     const scroll = scrollRef.current, thread = threadRef.current;
     if (!scroll || !thread) return;
@@ -384,9 +454,22 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
   }, [followLatest]);
 
   function jumpToLatest() {
+    historyAnchor.current = null;
     pin.pin();
     setShowLatest(false);
     followLatest();
+  }
+
+  function loadOlder() {
+    if (!history.hasNextPage || history.isFetching || !detail.data?.historyAvailable) return;
+    const scroll = scrollRef.current;
+    if (scroll) {
+      const viewport = scroll.getBoundingClientRect();
+      const row = [...scroll.querySelectorAll<HTMLElement>('[data-harness-turn]')].find((item) => item.getBoundingClientRect().bottom > viewport.top);
+      if (row) historyAnchor.current = { row, top: row.getBoundingClientRect().top, pages: history.data?.pages.length ?? 0 };
+      pin.onScroll(scroll, true);
+    }
+    void history.fetchNextPage({ cancelRefetch: false }).then((result) => { if (result.isError) historyAnchor.current = null; });
   }
 
   async function post(command: HarnessCommand) {
@@ -448,11 +531,21 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
       <div data-chat-scroll ref={scrollRef} onScroll={(event) => {
         pin.onScroll(event.currentTarget);
         setShowLatest(!pin.isPinned());
+        if (!pin.isPinned() && event.currentTarget.scrollTop <= 24 && !history.isError) loadOlder();
       }}
         className="glass-scrollbar h-full min-w-0 overflow-y-auto overscroll-contain">
         <div ref={threadRef} className="assistant-thread flex min-w-0 flex-col gap-4">
-          {view && (view.messages.length || view.turn) ? <HarnessTimeline view={view} name={harnessName} liveMessageId={stream.liveMessageId}
-            approvalControls={approvalControls} /> : !detailError && <div className="dovun-assistant-welcome">
+          {detail.data?.historyAvailable && history.hasNextPage && <Button type="button" variant="ghost" size="sm"
+            className="mx-auto min-h-11" disabled={history.isFetching} onClick={loadOlder}>
+            {t(history.isFetchingNextPage ? 'harness.loadingHistory' : 'harness.moreHistory')}
+          </Button>}
+          {history.error && <div className="mx-auto flex flex-wrap items-center gap-2">
+            <p role="alert" className="text-sm text-destructive">{history.error.message}</p>
+            {!history.hasNextPage && <Button type="button" size="sm" variant="outline" onClick={() => void history.refetch()}>{t('harness.retry')}</Button>}
+          </div>}
+          {historyLoading && !hasMessages && <p role="status" className="text-center text-sm text-muted-foreground">{t('harness.loadingHistory')}</p>}
+          {hasMessages ? <HarnessTimeline view={view ?? emptyTimeline} history={historicalViews} name={harnessName} liveMessageId={stream.liveMessageId}
+            approvalControls={approvalControls} /> : !detailError && !historyLoading && !history.error && <div className="dovun-assistant-welcome">
             <h3>{t('harness.empty', { harness: harnessName })}</h3>
           </div>}
           {!currentTurn && approvalControls}

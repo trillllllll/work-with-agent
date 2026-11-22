@@ -6,8 +6,9 @@ import { dispatchStats, parseStatsQuery } from '../application/orchestration/sta
 import { assertTimeZone } from '../application/reviews-clock.js';
 import { WorktreeService } from '../application/orchestration/worktrees.js';
 import { isServerMode, publicWorkspaceUrl } from '../application/desktop-paths.js';
-import { leaseHarness, syncHarness } from '../application/harness-sessions.js';
-import { HARNESS_FEATURE, HARNESS_TIMELINE_FEATURE } from '../node-agent/harness-protocol.js';
+import { leaseHarness, leaseHarnessLibrary, syncHarness } from '../application/harness-sessions.js';
+import { pendingHarnessReads, reportHarnessRead } from '../application/harness-library.js';
+import { HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_TIMELINE_FEATURE } from '../node-agent/harness-protocol.js';
 import { DIRECTORY_FEATURE } from '../node-agent/directory-protocol.js';
 import { pendingDirectories, reportDirectory } from '../application/harness-directories.js';
 
@@ -91,14 +92,21 @@ export function createNodeRouter() {
     const node = getNode(req);
     const response = await nodes.lease(node, req.body);
     if (req.get('X-Dovun-Node-Features') !== HARNESS_FEATURE) return response;
-    const harness = req.body.capabilities.harnessSessions === HARNESS_FEATURE ? await leaseHarness(node.id, node.tokenHash) : undefined;
     const accepts = [...response.accepts, HARNESS_FEATURE];
+    if (req.get('X-Dovun-Harness-Library') === HARNESS_LIBRARY_FEATURE) accepts.push(HARNESS_LIBRARY_FEATURE);
     if (req.get('X-Dovun-Harness-Timeline') === HARNESS_TIMELINE_FEATURE) accepts.push(HARNESS_TIMELINE_FEATURE);
     if (req.get('X-Dovun-Directory-Browser') === DIRECTORY_FEATURE) accepts.push(DIRECTORY_FEATURE);
+    const supportsHarness = req.body.capabilities.harnessSessions === HARNESS_FEATURE;
+    const library = supportsHarness && accepts.includes(HARNESS_LIBRARY_FEATURE) && req.body.capabilities.harnessLibrary === HARNESS_LIBRARY_FEATURE;
+    const harness = supportsHarness && !library ? await leaseHarness(node.id, node.tokenHash) : undefined;
+    const harnesses = library ? await leaseHarnessLibrary(node.id, node.tokenHash) : [];
+    const harnessReads = library ? pendingHarnessReads(node) : [];
     const directoryRequests = accepts.includes(DIRECTORY_FEATURE) && req.body.capabilities.directoryBrowser === DIRECTORY_FEATURE ? pendingDirectories(node) : [];
-    return { ...response, accepts, ...(harness ? { harness } : {}), ...(directoryRequests.length ? { directoryRequests } : {}) };
+    return { ...response, accepts, ...(harness ? { harness } : {}), ...(harnesses.length ? { harnesses } : {}),
+      ...(harnessReads.length ? { harnessReads } : {}), ...(directoryRequests.length ? { directoryRequests } : {}) };
   }));
   router.post('/directories/:id', route(async (req) => reportDirectory(getNode(req), String(req.params.id), req.body)));
+  router.post('/harness-library/:id', route(async (req) => reportHarnessRead(getNode(req), String(req.params.id), req.body)));
   router.post('/harness-sessions/:id/sync', route((req) => syncHarness(getNode(req), String(req.params.id), req.body)));
   router.post('/jobs/:id/progress', route((req) => nodes.progress(getNode(req), String(req.params.id), req.body)));
   router.post('/jobs/:id/result', route((req) => nodes.report(getNode(req), String(req.params.id), req.body)));

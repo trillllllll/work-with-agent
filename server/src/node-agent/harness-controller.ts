@@ -4,16 +4,18 @@ import { dirname, resolve } from 'node:path';
 import { exclusiveDataGuard } from '../shared/data-guard.js';
 import { asObject, CodexAppServer, CodexRejected } from './harness-codex.js';
 import { readHarnessArtifacts } from './harness-artifacts.js';
+import { codexText as text, codexItems as items, codexMessage as message, codexTurn as turn, projectCodexHistory } from './harness-history.js';
+import { assertNativeThreadIdle, readProjectThread } from './harness-library.js';
 import { codexHarnessTool, harnessFilePaths, harnessOutput } from './harness-tools.js';
 import { assertAllowed } from './git.js';
 import {
-  applyHarnessEvent, HARNESS_ARTIFACTS, HARNESS_EVENTS, HARNESS_TEXT_LIMIT,
-  harnessMessagePhase, legacyHarnessEvent, legacyHarnessSnapshot,
-  type HarnessArtifact, type HarnessDelivery, type HarnessEvent, type HarnessLease, type HarnessMessage,
-  type HarnessReceipt, type HarnessSnapshot, type HarnessSync, type HarnessTurn, type HarnessView,
+  applyHarnessEvent, HARNESS_EVENTS, HARNESS_TEXT_LIMIT, legacyHarnessEvent, legacyHarnessSnapshot,
+  type HarnessDelivery, type HarnessEvent, type HarnessLease,
+  type HarnessReceipt, type HarnessSnapshot, type HarnessSync, type HarnessView,
 } from './harness-protocol.js';
 
-type Binding = { sessionId: string; threadId: string; cwd: string; epoch: number; pid?: number };
+type Binding = { sessionId: string; threadId: string; cwd: string; epoch: number; pid?: number; native?: true; parked?: true };
+type Assignment = HarnessLease & { nativeCwd?: string };
 type SavedCommand = { hash: string; receipt: HarnessReceipt | null };
 type Sync = (sessionId: string, payload: HarnessSync) => Promise<{ snapshotRequested?: boolean }>;
 type RpcId = number | string;
@@ -21,8 +23,6 @@ type RpcId = number | string;
 const emptyView = (): HarnessView => ({ messages: [], turn: null, approvals: [], error: null });
 const sessionOptions = { sandbox: 'workspace-write', approvalPolicy: 'on-request' };
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
-const text = (value: unknown) => typeof value === 'string' ? value : '';
-const items = (value: unknown) => Array.isArray(value) ? value.map(asObject) : [];
 const failure = (error: unknown) => (error instanceof Error ? error : new Error('本机操作失败')).message.slice(0, 500);
 
 async function readJson<T>(file: string): Promise<T | null> {
@@ -36,27 +36,6 @@ async function writeJson(file: string, value: unknown) {
   await rename(temp, file);
 }
 
-function message(item: Record<string, unknown>, turnId: string, streaming = false): HarnessMessage | null {
-  const id = text(item.id);
-  if (!id || !turnId) return null;
-  if (item.type === 'agentMessage') {
-    const phase = harnessMessagePhase.safeParse(item.phase);
-    return { id, turnId, role: 'assistant', text: text(item.text).slice(0, HARNESS_TEXT_LIMIT), streaming,
-      ...(phase.success ? { phase: phase.data } : {}) };
-  }
-  if (item.type === 'userMessage') {
-    return { id, turnId, role: 'user', text: items(item.content).filter((part) => part.type === 'text').map((part) => text(part.text)).join('\n').slice(0, HARNESS_TEXT_LIMIT) };
-  }
-  return null;
-}
-function turn(value: Record<string, unknown>): HarnessTurn | null {
-  const id = text(value.id);
-  if (!id) return null;
-  const status = value.status;
-  if (status === 'inProgress' || status === 'completed' || status === 'interrupted') return { id, status };
-  if (status === 'failed') return { id, status, error: 'Codex 当前轮执行失败' };
-  return { id, status: 'unknown' };
-}
 function isAlive(pid: number) {
   try { process.kill(pid, 0); return true; }
   catch (error) { return (error as NodeJS.ErrnoException).code !== 'ESRCH'; }
@@ -83,20 +62,21 @@ export class HarnessController {
   private retryAt = 0;
   private stopped = false;
   private timeline = false;
+  private lastWork = Date.now();
 
-  constructor(dataDir: string, nodeKey: string, private readonly roots: string[], private readonly sync: Sync) {
+  constructor(dataDir: string, nodeKey: string, private readonly roots: string[], private readonly sync: Sync, private readonly library = false) {
     this.directory = resolve(dataDir, 'harness', digest(nodeKey));
   }
 
   private get bindingPath() { return resolve(this.directory, 'session.json'); }
 
-  consume(lease: HarnessLease, timeline = false) {
+  consume(lease: Assignment, timeline = false) {
     if (this.stopped || this.work) return;
-    this.work = this.processLease(lease, timeline).finally(() => { this.work = null; });
+    this.work = this.processLease(lease, timeline).finally(() => { this.work = null; this.lastWork = Date.now(); });
     return this.work;
   }
 
-  private async processLease(lease: HarnessLease, timeline: boolean) {
+  private async processLease(lease: Assignment, timeline: boolean) {
     if (!this.release) this.release = await exclusiveDataGuard([resolve(this.directory, 'owner')]);
     if (this.timeline !== timeline) {
       await this.upload?.catch(() => undefined);
@@ -110,22 +90,25 @@ export class HarnessController {
       const saved = await readJson<Binding>(this.bindingPath);
       this.binding = saved?.sessionId === lease.sessionId ? saved : null;
     }
-    if (this.binding && !this.app && Date.now() >= this.retryAt) {
-      try { await this.restore(lease); }
+    let parkedEpoch: number | undefined;
+    if (!this.app && (this.binding || lease.threadId) && Date.now() >= this.retryAt) {
+      try {
+        if (!this.binding && (!lease.nativeCwd || !lease.threadId || lease.epoch !== 0)) throw new Error('找不到本机保存的会话绑定');
+        const prior = this.binding ?? { sessionId: lease.sessionId, threadId: lease.threadId!,
+          cwd: await assertAllowed(lease.nativeCwd!, this.roots), epoch: 0, native: true as const };
+        if (await this.restore(lease, prior)) parkedEpoch = prior.epoch;
+        this.retryAt = 0;
+      }
       catch (error) {
         this.retryAt = Date.now() + 15_000;
         await this.sync(lease.sessionId, { type: 'unavailable', epoch: lease.epoch, error: failure(error) });
       }
     }
-    if (lease.threadId && !this.binding && Date.now() >= this.retryAt) {
-      this.retryAt = Date.now() + 15_000;
-      await this.sync(lease.sessionId, { type: 'unavailable', epoch: lease.epoch, error: '找不到本机保存的会话绑定' });
-    }
     if (lease.snapshotRequested && this.app) this.snapshotNeeded = true;
     await this.flush();
     for (const delivery of lease.commands) {
       if (this.stopped || delivery.sessionId !== lease.sessionId) break;
-      await this.execute(delivery, lease.epoch, lease.threadId);
+      await this.execute(delivery, lease.epoch, lease.threadId, parkedEpoch);
     }
   }
 
@@ -143,52 +126,27 @@ export class HarnessController {
     } finally { this.opening = null; }
   }
 
-  private async restore(lease: HarnessLease) {
-    const prior = this.binding!;
+  private async restore(lease: HarnessLease, prior: Binding) {
     if (lease.threadId && lease.threadId !== prior.threadId) throw new Error('本机保存的线程与服务器绑定不一致');
     if (prior.pid && isAlive(prior.pid)) throw new Error('正在等待原 Codex 进程退出');
     const cwd = await assertAllowed(prior.cwd, this.roots);
     if (cwd !== prior.cwd) throw new Error('项目路径已变化，无法恢复原会话');
     const app = await this.open(cwd);
     try {
+      if (prior.native) {
+        const thread = await readProjectThread(app, prior.threadId, cwd, this.roots);
+        await assertNativeThreadIdle(app, thread, prior.threadId);
+      }
       const reopened = await app.request('thread/resume', { ...sessionOptions, cwd, threadId: prior.threadId, excludeTurns: true });
       if (asObject(reopened.thread).id !== prior.threadId) throw new Error('Codex 返回了不同的线程');
       const history = await app.request('thread/turns/list', { threadId: prior.threadId, limit: 20, sortDirection: 'desc', itemsView: 'full' });
-      this.view = emptyView();
-      this.restoredClients.clear();
+      const { view, clients } = await projectCodexHistory(history.data, cwd, this.roots, true);
+      this.view = view;
+      this.restoredClients = clients;
       this.fileChanges.clear();
       this.approvals.clear();
-      const artifactMessages: HarnessMessage[] = [];
-      for (const entry of items(history.data).reverse()) {
-        const restored = turn(entry);
-        if (!restored) continue;
-        let lastAnswer: HarnessMessage | undefined;
-        for (const item of items(entry.items)) {
-          if (item.type === 'userMessage' && typeof item.clientId === 'string') this.restoredClients.add(item.clientId);
-          const restoredMessage = message(item, restored.id);
-          if (restoredMessage) {
-            this.view = applyHarnessEvent(this.view, { kind: 'message', message: restoredMessage });
-            if (restoredMessage.role === 'assistant' && restoredMessage.phase !== 'commentary') lastAnswer = restoredMessage;
-          }
-          const restoredTool = codexHarnessTool(item, restored.id, true);
-          if (restoredTool) this.view = applyHarnessEvent(this.view, { kind: 'tool', tool: restoredTool });
-        }
-        const status = restored.status === 'inProgress' ? { ...restored, status: 'unknown' as const } : restored;
-        this.view = applyHarnessEvent(this.view, { kind: 'turn', turn: status });
-        if (lastAnswer?.text && restored.status !== 'inProgress') {
-          artifactMessages.push(lastAnswer);
-        }
-      }
-      const retainedMessages = new Set(this.view.messages.map((item) => item.id));
-      const artifacts: HarnessArtifact[] = [];
-      for (const answer of artifactMessages.reverse()) {
-        if (!retainedMessages.has(answer.id)) continue;
-        const found = await readHarnessArtifacts(answer, cwd, this.roots);
-        artifacts.unshift(...found.slice(0, HARNESS_ARTIFACTS - artifacts.length));
-        if (artifacts.length === HARNESS_ARTIFACTS) break;
-      }
-      for (const artifact of artifacts) this.view = applyHarnessEvent(this.view, { kind: 'artifact', artifact });
-      await this.setBinding({ ...prior, epoch: Math.max(prior.epoch, lease.epoch) + 1, pid: app.pid });
+      await this.setBinding({ ...prior, parked: undefined, epoch: Math.max(prior.epoch, lease.epoch) + 1, pid: app.pid });
+      return prior.parked === true && prior.epoch === lease.epoch && view.turn?.status !== 'unknown';
     } catch (error) { await this.dropApp(); throw error; }
   }
 
@@ -205,6 +163,8 @@ export class HarnessController {
       const started = await app.request('thread/start', { ...sessionOptions, cwd, ephemeral: false });
       const id = text(asObject(started.thread).id);
       if (!id) throw new Error('Codex 线程创建结果待核实');
+      // Naming materializes an empty Codex thread so it can be resumed after execution restarts.
+      if (this.library) await app.request('thread/name/set', { threadId: id, name: 'Dovun' });
       this.view = emptyView();
       await this.setBinding({ sessionId, cwd: await realpath(cwd), threadId: id, epoch: epoch + 1, pid: app.pid });
     } catch (error) { await this.dropApp(); throw error; }
@@ -218,7 +178,7 @@ export class HarnessController {
     this.snapshotNeeded = true;
   }
 
-  private async execute(delivery: HarnessDelivery, epoch: number, threadId: string | null) {
+  private async execute(delivery: HarnessDelivery, epoch: number, threadId: string | null, parkedEpoch?: number) {
     const { command, sessionId } = delivery;
     const file = resolve(this.directory, 'commands', digest(sessionId + '\0' + command.commandId) + '.json');
     const hash = digest(JSON.stringify(command));
@@ -236,7 +196,7 @@ export class HarnessController {
         try {
           if (this.stopped) throw new CodexRejected('执行器已停止');
           if (command.operation === 'start') await this.start(sessionId, command.cwd, epoch, threadId);
-          else await this.action(command);
+          else await this.action(command, parkedEpoch);
         } catch (error) {
           receipt = { ...receipt, status: error instanceof CodexRejected ? 'rejected' : 'unknown', error: failure(error) };
         }
@@ -249,9 +209,10 @@ export class HarnessController {
     await this.sync(sessionId, receipt);
   }
 
-  private async action(command: Exclude<HarnessDelivery['command'], { operation: 'start' }>) {
+  private async action(command: Exclude<HarnessDelivery['command'], { operation: 'start' }>, parkedEpoch?: number) {
     const app = this.app, binding = this.binding;
-    if (!app || !binding || binding.epoch !== command.expectedEpoch) throw new CodexRejected('会话已重连，请刷新后重试');
+    const resumesIdle = command.operation === 'send' && parkedEpoch === command.expectedEpoch;
+    if (!app || !binding || (binding.epoch !== command.expectedEpoch && !resumesIdle)) throw new CodexRejected('会话已重连，请刷新后重试');
     const { threadId } = binding;
     const current = this.view.turn;
     if (command.operation === 'resolveApproval') {
@@ -269,11 +230,16 @@ export class HarnessController {
     }
     if (command.operation === 'send') {
       if (current?.status === 'inProgress') throw new CodexRejected('当前轮仍在运行，请使用追加');
+      const nameFirstTurn = this.library && !binding.native && !current;
       const response = await app.request('turn/start', {
         threadId, input: [{ type: 'text', text: command.text }], clientUserMessageId: command.commandId,
       });
       const started = turn(asObject(response.turn));
       if (started && this.view.turn?.id !== started.id) this.emit({ kind: 'turn', turn: started });
+      if (nameFirstTurn) {
+        const name = Array.from(command.text.replace(/\s+/g, ' ')).slice(0, 48).join('');
+        void app.request('thread/name/set', { threadId, name }).catch(() => undefined);
+      }
       return;
     }
     if (current?.status !== 'inProgress' || current.id !== command.turnId) throw new CodexRejected('该轮已结束，请刷新会话');
@@ -426,7 +392,13 @@ export class HarnessController {
     await this.appClose;
   }
 
-  async close() {
+  parkIfIdle() {
+    if (this.stopped || this.work || this.upload || this.events.length || this.approvalAcks.size
+        || this.view.turn?.status === 'inProgress' || this.view.approvals.length || Date.now() - this.lastWork < 120_000) return;
+    return this.close(Boolean(this.app && this.binding && !this.snapshotNeeded));
+  }
+
+  async close(parked = false) {
     this.stopped = true;
     for (const ack of this.approvalAcks.values()) ack.finish(new Error('Codex 的权限回复结果待核实'));
     if (this.timer) clearTimeout(this.timer);
@@ -434,6 +406,8 @@ export class HarnessController {
     await this.dropApp();
     const release = this.release;
     this.release = undefined;
-    await release?.();
+    try {
+      if (parked && this.binding) await writeJson(this.bindingPath, { ...this.binding, pid: undefined, parked: true });
+    } finally { await release?.(); }
   }
 }

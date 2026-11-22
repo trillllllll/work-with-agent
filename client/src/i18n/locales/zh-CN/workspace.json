@@ -388,6 +388,9 @@
     "unknownComputer": "原电脑",
     "back": "返回会话列表",
     "conversation": "会话消息",
+    "moreSessions": "加载更多会话",
+    "moreHistory": "加载更早的消息",
+    "loadingHistory": "正在读取历史消息…",
     "empty": "开始一条 {{harness}} 对话",
     "activity": "执行过程",
     "tool": {

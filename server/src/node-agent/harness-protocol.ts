@@ -2,6 +2,9 @@ import { z } from 'zod';
 
 export const HARNESS_FEATURE = 'harness_sessions_v1';
 export const HARNESS_TIMELINE_FEATURE = 'harness_timeline_v1';
+export const HARNESS_LIBRARY_FEATURE = 'harness_library_v1';
+export const HARNESS_LIBRARY_LEASES = 12;
+export const HARNESS_LIBRARY_READS = 6;
 export const HARNESS_MESSAGES = 40;
 export const HARNESS_TEXT_LIMIT = 24_000;
 export const HARNESS_EVENTS = 128;
@@ -11,11 +14,16 @@ export const HARNESS_ARTIFACTS = 4;
 export const HARNESS_SVG_LIMIT = 64 * 1024;
 
 const id = z.string().min(1).max(200);
+const cwd = z.string().min(1).max(4096);
+const cursor = z.string().min(1).max(4096).nullable();
 const sequence = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const epoch = sequence.min(1);
 const text = z.string().max(HARNESS_TEXT_LIMIT);
 const input = z.string().trim().min(1).max(HARNESS_TEXT_LIMIT);
 export const harnessCreateSchema = z.object({ nodeId: id, locationId: id, commandId: id }).strict();
+export const harnessCatalogQuerySchema = z.object({ nodeId: id, locationId: id, cursor: cursor.optional() }).strict();
+export const harnessOpenThreadSchema = z.object({ nodeId: id, locationId: id, threadId: id }).strict();
+export const harnessHistoryQuerySchema = z.object({ cursor: cursor.optional() }).strict();
 const commandId = { commandId: id, expectedEpoch: epoch };
 const turnId = { turnId: id };
 
@@ -25,11 +33,17 @@ export const harnessCommandSchema = z.discriminatedUnion('operation', [
   z.object({ ...commandId, ...turnId, operation: z.literal('interrupt') }).strict(),
   z.object({ ...commandId, operation: z.literal('resolveApproval'), requestId: id, decision: z.enum(['accept', 'decline']) }).strict(),
 ]);
-const startSchema = z.object({ commandId: id, operation: z.literal('start'), cwd: z.string().min(1).max(4096) }).strict();
-const intent = z.union([startSchema, harnessCommandSchema]);
+export const harnessStartSchema = z.object({ commandId: id, operation: z.literal('start'), cwd }).strict();
+const intent = z.union([harnessStartSchema, harnessCommandSchema]);
 export const harnessDeliverySchema = z.object({
   sessionId: id, command: intent, expiresAt: z.string().datetime(),
 }).strict();
+
+export const harnessReadTaskSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('catalog'), id, cwd, cursor }).strict(),
+  z.object({ kind: z.literal('thread'), id, cwd, threadId: id }).strict(),
+  z.object({ kind: z.literal('history'), id, cwd, threadId: id, cursor }).strict(),
+]);
 
 export const harnessLeaseSchema = z.object({
   sessionId: id,
@@ -38,6 +52,7 @@ export const harnessLeaseSchema = z.object({
   snapshotRequested: z.boolean(),
   commands: z.array(harnessDeliverySchema).max(32),
 }).strict();
+export const harnessLibraryLeaseSchema = harnessLeaseSchema.extend({ library: z.boolean(), nativeCwd: cwd.optional() });
 
 export const harnessMessagePhase = z.enum(['commentary', 'partial_answer', 'final_answer']);
 const message = z.object({
@@ -68,6 +83,17 @@ const state = z.object({
   tools: z.array(tool).max(HARNESS_TOOLS).optional(),
   artifacts: z.array(artifact).max(HARNESS_ARTIFACTS).optional(),
 }).strict();
+export const harnessCatalogThreadSchema = z.object({
+  threadId: id, title: z.string().max(160), updatedAt: z.string().datetime(),
+}).strict();
+export const harnessCatalogPageSchema = z.object({ threads: z.array(harnessCatalogThreadSchema).max(30), nextCursor: cursor }).strict();
+export const harnessHistoryPageSchema = z.object({
+  view: state.extend({ messages: z.array(message), turn: z.null() }), nextCursor: cursor,
+}).strict();
+export const harnessReadResultSchemas = {
+  catalog: harnessCatalogPageSchema, thread: harnessCatalogThreadSchema, history: harnessHistoryPageSchema,
+};
+export const harnessReadErrorSchema = z.object({ error: z.string().min(1).max(500) }).strict();
 export const harnessSnapshotSchema = z.object({
   type: z.literal('snapshot'), threadId: id, epoch, seq: sequence, view: state,
 }).strict();
@@ -93,6 +119,11 @@ export const harnessSyncSchema = z.discriminatedUnion('type', [
 export type HarnessCommand = z.infer<typeof harnessCommandSchema>;
 export type HarnessDelivery = z.infer<typeof harnessDeliverySchema>;
 export type HarnessLease = z.infer<typeof harnessLeaseSchema>;
+export type HarnessLibraryLease = z.infer<typeof harnessLibraryLeaseSchema>;
+export type HarnessReadTask = z.infer<typeof harnessReadTaskSchema>;
+export type HarnessCatalogThread = z.infer<typeof harnessCatalogThreadSchema>;
+export type HarnessCatalogPage = z.infer<typeof harnessCatalogPageSchema>;
+export type HarnessHistoryPage = z.infer<typeof harnessHistoryPageSchema>;
 export type HarnessSnapshot = z.infer<typeof harnessSnapshotSchema>;
 export type HarnessEvent = z.infer<typeof harnessEventSchema>;
 export type HarnessSync = z.infer<typeof harnessSyncSchema>;

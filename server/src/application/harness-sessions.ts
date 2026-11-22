@@ -1,12 +1,15 @@
+import { randomUUID } from 'node:crypto';
 import type { AgentNode, HarnessCommand as CommandRow, HarnessSession, Prisma } from '@prisma/client';
 import { prisma } from '../infrastructure/prisma.js';
 import { DomainError } from '../domain/task.js';
 import { isOnline } from './orchestration/nodes.js';
 import { canBrowse } from './harness-directories.js';
+import { requestHarnessRead, supportsHarnessLibrary } from './harness-library.js';
 import {
-  applyHarnessEvent, HARNESS_EVENTS, HARNESS_FEATURE, harnessCommandSchema, harnessCreateSchema, harnessSyncSchema,
+  applyHarnessEvent, HARNESS_EVENTS, HARNESS_FEATURE, HARNESS_LIBRARY_LEASES, harnessCommandSchema, harnessCreateSchema, harnessSyncSchema,
+  harnessCatalogQuerySchema, harnessHistoryQuerySchema, harnessOpenThreadSchema, harnessStartSchema,
   legacyHarnessEvent, legacyHarnessSnapshot,
-  type HarnessDelivery, type HarnessEvent, type HarnessLease, type HarnessReceipt, type HarnessSnapshot,
+  type HarnessDelivery, type HarnessEvent, type HarnessLease, type HarnessLibraryLease, type HarnessReceipt, type HarnessSnapshot,
 } from '../node-agent/harness-protocol.js';
 
 type Frame = { seq: number; event: HarnessEvent };
@@ -33,6 +36,14 @@ const titleCommand = {
 function publish(id: string, event: StreamEvent) {
   for (const listener of listeners.get(id) ?? []) listener(event);
 }
+function pruneInactiveSnapshots() {
+  if (cache.size <= 48) return;
+  for (const [id, entry] of cache) {
+    if (listeners.has(id) || entry.snapshot.view.turn?.status === 'inProgress' || entry.snapshot.view.approvals.length) continue;
+    cache.delete(id);
+    if (cache.size <= 48) break;
+  }
+}
 function commandDto(row: CommandRow) {
   return { commandId: row.commandId, status: row.status, error: row.error, createdAt: row.createdAt, expiresAt: row.expiresAt };
 }
@@ -47,8 +58,11 @@ function sessionDto(session: HarnessSession & { commands: Array<{ payload: strin
   const state = cache.get(session.id);
   const view = state && !state.stale && state.snapshot.epoch === session.epoch ? state.snapshot.view : null;
   return {
-    id: session.id, harness: codex.id, nodeId: session.nodeId, nodeName: node?.name ?? null, online: node ? isOnline(node) : false,
-    title: title.length ? title.slice(0, 48).join('') + (title.length > 48 ? '…' : '') : null,
+    id: session.id, harness: codex.id, nodeId: session.nodeId, nodeName: node?.name ?? null,
+    online: Boolean(node && isOnline(node) && (!session.library || supportsHarnessLibrary(node))),
+    historyAvailable: Boolean(node && isOnline(node) && supportsHarnessLibrary(node) && session.threadId),
+    native: session.nativeTitle !== null,
+    title: session.nativeTitle || (title.length ? title.slice(0, 48).join('') + (title.length > 48 ? '…' : '') : null),
     activity: view?.approvals.length ? 'approval' : view?.turn?.status === 'inProgress' ? 'running' : null,
     locationId: session.locationId, projectName: session.projectName, threadId: session.threadId, epoch: session.epoch,
     status: session.status, error: session.error, updatedAt: session.updatedAt,
@@ -69,6 +83,58 @@ export function supportsHarness(node: Pick<AgentNode, 'capabilitiesJson'>) {
   try { return JSON.parse(node.capabilitiesJson).harnessSessions === HARNESS_FEATURE; }
   catch { return false; }
 }
+async function projectLocation(db: Prisma.TransactionClient, nodeId: string, locationId: string) {
+  const location = await db.projectLocation.findFirst({ where: { id: locationId, nodeId, status: 'verified', project: { archivedAt: null } }, include: { project: true } });
+  if (location) return { cwd: location.path, projectName: location.project.name };
+  const directory = await db.harnessDirectory.findFirst({ where: { id: locationId, nodeId } });
+  if (directory) return { cwd: directory.path, projectName: directory.name };
+  throw new DomainError('HARNESS_LOCATION', '请选择这台电脑上已经验证的项目位置', 409);
+}
+
+export async function listNativeHarnessThreads(raw: unknown) {
+  const { nodeId, locationId, cursor } = harnessCatalogQuerySchema.parse(raw);
+  const { cwd } = await projectLocation(prisma, nodeId, locationId);
+  const node = await prisma.agentNode.findUnique({ where: { id: nodeId } });
+  return requestHarnessRead(node, 'catalog', { cwd, cursor: cursor ?? null });
+}
+
+export async function openNativeHarnessThread(raw: unknown) {
+  const { nodeId, locationId, threadId } = harnessOpenThreadSchema.parse(raw);
+  const original = await projectLocation(prisma, nodeId, locationId);
+  const node = await prisma.agentNode.findUnique({ where: { id: nodeId } });
+  const thread = await requestHarnessRead(node, 'thread', { cwd: original.cwd, threadId });
+  if (thread.threadId !== threadId) throw new DomainError('HARNESS_THREAD_CONFLICT', '原 Codex 线程与绑定不一致', 409);
+  return prisma.$transaction(async (tx) => {
+    const available = await tx.agentNode.findUnique({ where: { id: nodeId, status: 'active', deletedAt: null } });
+    requireAvailable(available);
+    if (!available || available.tokenHash !== node?.tokenHash || !supportsHarnessLibrary(available)) {
+      throw new DomainError('HARNESS_LIBRARY_UNSUPPORTED', '这台电脑的会话连接已变化，请重试', 409);
+    }
+    const { cwd, projectName } = await projectLocation(tx, nodeId, locationId);
+    if (cwd !== original.cwd) throw new DomainError('HARNESS_LOCATION', '项目位置已变化，请重新选择', 409);
+    const row = await tx.harnessSession.upsert({
+      where: { nodeId_threadId: { nodeId, threadId } }, update: { threadId },
+      create: { nodeId, activeNodeId: nodeId, locationId, cwd, projectName, threadId, library: true,
+        nativeTitle: thread.title, startCommandId: randomUUID(), createdAt: new Date().toISOString(), updatedAt: thread.updatedAt },
+    });
+    return { sessionId: row.id };
+  });
+}
+
+export async function readHarnessHistory(id: string, raw: unknown) {
+  const { cursor } = harnessHistoryQuerySchema.parse(raw);
+  const row = await load(id);
+  if (!row.threadId || !row.activeNodeId) throw new DomainError('HARNESS_SESSION_STALE', '这条会话尚未连接', 409);
+  let cwd = row.cwd;
+  // Earlier releases saved the immutable directory in the creation command.
+  if (!cwd) {
+    const start = await prisma.harnessCommand.findUnique({ where: { sessionId_commandId: { sessionId: id, commandId: row.startCommandId } } });
+    if (start) cwd = harnessStartSchema.safeParse(JSON.parse(start.payload)).data?.cwd ?? null;
+  }
+  if (!cwd) throw new DomainError('HARNESS_LOCATION', '找不到原会话的项目位置', 409);
+  const node = await prisma.agentNode.findUnique({ where: { id: row.nodeId } });
+  return requestHarnessRead(node, 'history', { cwd, threadId: row.threadId, cursor: cursor ?? null });
+}
 export async function listHarnessSessions() {
   const nodes = await prisma.agentNode.findMany({ where: { deletedAt: null, status: 'active' } });
   const available = new Map(nodes.map((node) => [node.id, node]));
@@ -78,7 +144,8 @@ export async function listHarnessSessions() {
   });
   return {
     harnesses: [codex],
-    nodes: nodes.map((node) => ({ id: node.id, name: node.name, online: isOnline(node), supportsHarness: supportsHarness(node), canBrowse: canBrowse(node) })),
+    nodes: nodes.map((node) => ({ id: node.id, name: node.name, online: isOnline(node), supportsHarness: supportsHarness(node),
+      harnessLibrary: supportsHarnessLibrary(node), canBrowse: canBrowse(node) })),
     directories: directories.map((dir) => ({ id: dir.id, nodeId: dir.nodeId, path: dir.path, projectName: dir.name, computerName: available.get(dir.nodeId)!.name })),
     sessions: sessions.map((session) => sessionDto(session, available.get(session.nodeId) ?? null)),
   };
@@ -101,21 +168,17 @@ export async function createHarnessSession(body: unknown) {
       const command = await tx.harnessCommand.findUniqueOrThrow({ where: { sessionId_commandId: { sessionId: prior.id, commandId: input.commandId } } });
       return { sessionId: prior.id, receipt: commandDto(command) };
     }
-    const location = await tx.projectLocation.findFirst({ where: { id: input.locationId, nodeId: input.nodeId, status: 'verified', project: { archivedAt: null } }, include: { project: true } });
-    const directory = location ? null : await tx.harnessDirectory.findFirst({ where: { id: input.locationId, nodeId: input.nodeId } });
-    const cwd = location?.path ?? directory?.path;
-    const projectName = location?.project.name ?? directory?.name;
-    if (!cwd || !projectName) {
-      throw new DomainError('HARNESS_LOCATION', '请选择这台电脑上已经验证的项目位置', 409);
-    }
-    requireAvailable(await tx.agentNode.findFirst({ where: { id: input.nodeId, status: 'active', deletedAt: null } }));
-    if (await tx.harnessSession.findUnique({ where: { activeNodeId: input.nodeId } })) {
+    const { cwd, projectName } = await projectLocation(tx, input.nodeId, input.locationId);
+    const node = await tx.agentNode.findFirst({ where: { id: input.nodeId, status: 'active', deletedAt: null } });
+    requireAvailable(node);
+    const library = Boolean(node && supportsHarnessLibrary(node));
+    if (!library && await tx.harnessSession.findFirst({ where: { activeNodeId: input.nodeId } })) {
       throw new DomainError('HARNESS_ACTIVE', '这台电脑已有会话，请打开原会话', 409);
     }
     const now = new Date();
     const session = await tx.harnessSession.create({ data: {
       nodeId: input.nodeId, activeNodeId: input.nodeId, locationId: input.locationId,
-      projectName, startCommandId: input.commandId,
+      cwd, library, projectName, startCommandId: input.commandId,
       createdAt: now.toISOString(), updatedAt: now.toISOString(),
     } });
     const command = await tx.harnessCommand.create({ data: {
@@ -140,9 +203,11 @@ export async function queueHarnessCommand(id: string, body: unknown) {
     }
     const session = await tx.harnessSession.findUnique({ where: { id } });
     if (!session) throw new DomainError('HARNESS_NOT_FOUND', '会话不存在', 404);
-    requireAvailable(await tx.agentNode.findUnique({ where: { id: session.nodeId } }));
+    const node = await tx.agentNode.findUnique({ where: { id: session.nodeId } });
+    requireAvailable(node);
     const view = cache.get(id);
-    if (!session.activeNodeId || session.status !== 'ready' || session.epoch !== input.expectedEpoch || !view || view.stale || view.snapshot.epoch !== session.epoch) {
+    if (!session.activeNodeId || (session.library && (!node || !supportsHarnessLibrary(node)))
+        || session.status !== 'ready' || session.epoch !== input.expectedEpoch || !view || view.stale || view.snapshot.epoch !== session.epoch) {
       throw new DomainError('HARNESS_SESSION_STALE', '会话正在恢复，请刷新后重试', 409);
     }
     const now = new Date();
@@ -178,13 +243,44 @@ async function expireQueued(sessionId: string) {
 }
 
 export async function leaseHarness(nodeId: string, tokenHash: string): Promise<HarnessLease | undefined> {
-  const session = await prisma.harnessSession.findUnique({ where: { activeNodeId: nodeId } });
+  const session = await prisma.harnessSession.findFirst({ where: { activeNodeId: nodeId, library: false }, orderBy: { createdAt: 'asc' } });
   if (!session) return;
-  await expireQueued(session.id);
+  const assignment = await dispatchHarness(session.id, nodeId, tokenHash, false);
+  if (!assignment) return;
+  const { library: _library, nativeCwd: _cwd, ...lease } = assignment;
+  return lease;
+}
+
+export async function leaseHarnessLibrary(nodeId: string, tokenHash: string): Promise<HarnessLibraryLease[]> {
+  const rows = await prisma.harnessSession.findMany({
+    where: { activeNodeId: nodeId, OR: [
+      { commands: { some: { status: { in: ['queued', 'dispatched'] } } } },
+      { status: 'creating', threadId: { not: null } },
+    ] },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: HARNESS_LIBRARY_LEASES, select: { id: true },
+  });
+  if (rows.length < HARNESS_LIBRARY_LEASES) {
+    const pending = rows.map((row) => row.id);
+    rows.push(...await prisma.harnessSession.findMany({
+      where: { activeNodeId: nodeId, id: { notIn: pending }, OR: [{ library: false }, { id: { in: [...refresh] } }] },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }], take: HARNESS_LIBRARY_LEASES - rows.length, select: { id: true },
+    }));
+  }
+  const leases: HarnessLibraryLease[] = [];
+  for (const row of rows) {
+    const lease = await dispatchHarness(row.id, nodeId, tokenHash, true);
+    if (lease) leases.push(lease);
+  }
+  return leases;
+}
+
+async function dispatchHarness(id: string, nodeId: string, tokenHash: string, library: boolean): Promise<HarnessLibraryLease | undefined> {
+  await expireQueued(id);
   return prisma.$transaction(async (tx) => {
     const node = await tx.agentNode.findUnique({ where: { id: nodeId } });
-    const row = await tx.harnessSession.findUnique({ where: { activeNodeId: nodeId } });
-    if (!node || node.status !== 'active' || node.deletedAt || node.tokenHash !== tokenHash || !row || !supportsHarness(node)) return;
+    const row = await tx.harnessSession.findUnique({ where: { id, activeNodeId: nodeId } });
+    if (!node || node.status !== 'active' || node.deletedAt || node.tokenHash !== tokenHash || !row || !supportsHarness(node)
+        || (library ? !supportsHarnessLibrary(node) : row.library)) return;
     const dispatchTime = new Date().toISOString();
     const commands = await tx.harnessCommand.findMany({
       where: { sessionId: row.id, OR: [{ status: 'dispatched' }, { status: 'queued', expiresAt: { gt: dispatchTime } }] },
@@ -198,6 +294,8 @@ export async function leaseHarness(nodeId: string, tokenHash: string): Promise<H
       sessionId: row.id, threadId: row.threadId, epoch: row.epoch,
       snapshotRequested: row.status === 'unavailable' || refresh.has(row.id) || !cache.has(row.id),
       commands: commands.map(({ sessionId, expiresAt, payload }) => ({ sessionId, expiresAt, command: JSON.parse(payload) as HarnessDelivery['command'] })),
+      library: row.library,
+      ...(row.epoch === 0 && row.threadId && row.cwd && row.nativeTitle !== null ? { nativeCwd: row.cwd } : {}),
     };
   });
 }
@@ -238,7 +336,8 @@ export async function syncHarness(node: AgentNode, id: string, raw: unknown) {
   const row = await load(id);
   const authenticated = await prisma.agentNode.findFirst({ where: { id: node.id, tokenHash: node.tokenHash, status: 'active', deletedAt: null }, select: { id: true } });
   if (!authenticated) throw new DomainError('NODE_REVOKED', '电脑已断开', 401);
-  if (row.nodeId !== node.id || !supportsHarness(node) || !row.activeNodeId && input.type !== 'receipt') {
+  if (row.nodeId !== node.id || !supportsHarness(node) || (row.library && !supportsHarnessLibrary(node))
+      || (row.activeNodeId !== node.id && input.type !== 'receipt')) {
     throw new DomainError('HARNESS_NODE_SCOPE', '这台电脑没有会话权限', 403);
   }
   if (input.type === 'receipt') { await saveReceipt(row, input); return {}; }
@@ -251,7 +350,7 @@ export async function syncHarness(node: AgentNode, id: string, raw: unknown) {
     });
     const entry = cache.get(id);
     if (entry?.snapshot.epoch === input.epoch) entry.stale = true;
-    refresh.add(id);
+    if (!row.library || listeners.has(id)) refresh.add(id);
     publish(id, input);
     return {};
   }
@@ -268,6 +367,7 @@ export async function syncHarness(node: AgentNode, id: string, raw: unknown) {
     cache.set(id, { snapshot: input, frames: current?.snapshot.epoch === input.epoch && current.snapshot.seq === input.seq ? current.frames : [], stale: false });
     refresh.delete(id);
     publish(id, input);
+    pruneInactiveSnapshots();
     return { seq: input.seq };
   }
   if (!current || current.stale || input.epoch !== current.snapshot.epoch || input.epoch !== row.epoch) {
@@ -288,7 +388,7 @@ export async function syncHarness(node: AgentNode, id: string, raw: unknown) {
   return { seq: current.snapshot.seq };
 }
 
-export function subscribeHarness(id: string, after: { epoch: number; seq: number } | null, emit: (event: StreamEvent) => void, timeline = false) {
+export function subscribeHarness(id: string, after: { epoch: number; seq: number } | null, emit: (event: StreamEvent) => void, timeline = false, library = false) {
   let cursor = after;
   const send = (frame: StreamEvent) => {
     if (frame.type === 'snapshot') {
@@ -315,6 +415,7 @@ export function subscribeHarness(id: string, after: { epoch: number; seq: number
   let subscribed = listeners.get(id);
   if (!subscribed) { subscribed = new Set(); listeners.set(id, subscribed); }
   subscribed.add(send);
+  if (library) refresh.add(id);
   const current = cache.get(id);
   if (current && !current.stale) {
     if (!after) send(current.snapshot);
@@ -329,6 +430,6 @@ export function subscribeHarness(id: string, after: { epoch: number; seq: number
   } else refresh.add(id);
   return () => {
     subscribed.delete(send);
-    if (!subscribed.size) listeners.delete(id);
+    if (!subscribed.size) { listeners.delete(id); refresh.delete(id); pruneInactiveSnapshots(); }
   };
 }

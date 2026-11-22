@@ -176,8 +176,9 @@ test('desktop and phone open and control the same Harness session', async ({ bro
     await phone.screenshot({ path: testInfo.outputPath('phone-list.png'), scale: 'css', animations: 'disabled' });
     await page.screenshot({ path: testInfo.outputPath('desktop.png'), scale: 'css', animations: 'disabled' });
     await phone.getByRole('button', { name: '新建会话' }).tap();
-    await expect(phoneDialog.getByRole('button', { name: '开启 Codex 会话' })).toHaveCount(0);
-    await phoneDialog.getByRole('button', { name: /电脑发出的第一条消息.*测试电脑/ }).tap();
+    await expect(phoneDialog.getByRole('button', { name: '开启 Codex 会话' })).toBeEnabled();
+    await phoneDialog.getByRole('button', { name: '取消' }).tap();
+    await phone.getByRole('button', { name: /电脑发出的第一条消息.*测试电脑/ }).tap();
     await expect(phoneChat).toBeVisible();
     expect(new URL(phone.url()).hash).toBe(phoneHash);
     await phoneChat.getByRole('button', { name: '选择项目，当前为 手机自选项目' }).tap();
@@ -189,8 +190,8 @@ test('desktop and phone open and control the same Harness session', async ({ bro
     await phone.getByRole('button', { name: /电脑发出的第一条消息/ }).tap();
     await expect(input).toHaveValue('刷新后保留的草稿');
     expect(new URL(phone.url()).hash).toBe(phoneHash);
-    const listed = await data<{ sessions: Array<{ id: string }> }>(await request.get(apiUrl));
-    expect(listed.sessions.map((session) => session.id)).toEqual([sessionId]);
+    const listed = await data<{ sessions: Array<{ id: string; nodeId: string }> }>(await request.get(apiUrl));
+    expect(listed.sessions.filter((session) => session.nodeId === nodeId).map((session) => session.id)).toEqual([sessionId]);
 
     await input.fill('画一张 SVG 测试图');
     await phoneChat.getByRole('button', { name: '发送', exact: true }).tap();
@@ -240,5 +241,124 @@ test('desktop and phone open and control the same Harness session', async ({ bro
     }
     await rm(folder, { recursive: true, force: true });
     await phoneContext.close();
+  }
+});
+
+test('opens saved Codex history and keeps multiple chats in the same project independent', async ({ browser, page, request, baseURL, extraHTTPHeaders }, testInfo) => {
+  test.skip(testInfo.project.name === 'mobile', 'The test opens a phone viewport itself.');
+  test.setTimeout(120_000);
+  await resetE2eDatabase();
+  const folder = await mkdtemp(join(tmpdir(), 'dovun-codex-library-'));
+  const phoneContext = await browser.newContext({ ...devices['iPhone 13'], baseURL, extraHTTPHeaders, locale: 'zh-CN',
+    storageState: await page.context().storageState() });
+  let agent: ChildProcess | undefined;
+  let nodeId: string | undefined;
+  try {
+    const root = await realpath(folder);
+    const repo = join(root, 'repo'), sibling = join(root, 'other-project'), library = join(root, 'codex-history');
+    await Promise.all([mkdir(repo), mkdir(sibling), mkdir(library)]);
+    execFileSync('git', ['init', '--quiet', repo]);
+    const nativeId = 'codex-desktop-history';
+    const turnCount = 36;
+    const turns = Array.from({ length: turnCount }, (_, index) => ({
+      id: `turn-${index + 1}`, status: 'completed', items: [
+        { type: 'userMessage', id: `native-question-${index}`, content: [{ type: 'text', text: `历史问题 ${index + 1}` }] },
+        { type: 'agentMessage', id: `native-answer-${index}`, phase: 'final_answer', text: `历史回答 ${index + 1}` },
+      ],
+    }));
+    const updatedAt = Math.floor(Date.now() / 1000);
+    await writeFile(join(library, `${nativeId}.json`), JSON.stringify({
+      thread: { id: nativeId, cwd: repo, name: 'Mac 上的原 Codex 对话', updatedAt }, turns,
+    }));
+    await writeFile(join(library, 'other-thread.json'), JSON.stringify({
+      thread: { id: 'other-thread', cwd: sibling, name: '另一个项目的私有对话', updatedAt }, turns,
+    }));
+    const node = await data<{ node: { id: string }; token: string }>(await request.post('/api/nodes', { data: { name: '历史测试 Mac' } }));
+    nodeId = node.node.id;
+    agent = spawn(process.execPath, ['--import', 'tsx', resolve('server/src/node-agent/index.ts'), '--server', process.env.E2E_API_URL!,
+      '--roots', root, '--data', join(root, 'node')], { stdio: 'ignore', env: {
+      ...process.env, DOVUN_NODE_TOKEN: node.token, DOVUN_CODEX_BIN: resolve('server/test/stub-harness-codex.mjs'),
+      HARNESS_TEST_LIBRARY: library, HARNESS_TEST_CALLS: join(root, 'calls'), HARNESS_TEST_HISTORY: join(root, 'unused.json'),
+    } });
+    await expect.poll(async () => (await data<{ nodes: Array<{ id: string; harnessLibrary?: boolean }> }>(await request.get(apiUrl)))
+      .nodes.find((entry) => entry.id === node.node.id)?.harnessLibrary, { timeout: 15_000 }).toBe(true);
+    const location = await data<{ id: string }>(await request.post(apiUrl + '/directories/select', { data: { nodeId: node.node.id, path: repo } }));
+    const projectUrl = `${listUrl}&project=${location.id}`;
+    const phone = await phoneContext.newPage();
+    await phone.goto(projectUrl);
+    const original = phone.getByRole('button', { name: /Mac 上的原 Codex 对话/ });
+    await expect(original).toBeVisible({ timeout: 12_000 });
+    await expect(phone.getByText('另一个项目的私有对话')).toHaveCount(0);
+    expect((await request.post(apiUrl + '/native/open', { data: { nodeId: node.node.id, locationId: location.id, threadId: 'other-thread' } })).status()).toBe(409);
+    const nativeSelection = { nodeId, locationId: location.id, threadId: nativeId };
+    const [, simultaneous] = await Promise.all([
+      original.tap(),
+      request.post(apiUrl + '/native/open', { data: nativeSelection }).then(data<{ sessionId: string }>),
+    ]);
+    const chat = phone.getByRole('region', { name: '会话详情' });
+    const ready = () => expect(chat.locator('header [role=status]')).toHaveText('已连接', { timeout: 15_000 });
+    const back = () => chat.getByRole('button', { name: '返回会话列表' }).tap();
+    const sessionId = () => new URLSearchParams(new URL(phone.url()).hash.split('?')[1]).get('sessionId')!;
+    const details = (id: string) => request.get(`${apiUrl}/${id}?timeline=1`).then((response) => data<{ threadId: string }>(response));
+    const send = async (text: string) => {
+      await chat.getByRole('textbox', { name: '输入消息' }).fill(text);
+      await chat.getByRole('button', { name: '发送', exact: true }).tap();
+    };
+    await ready();
+    const originalSessionId = sessionId();
+    expect(originalSessionId).toBe(simultaneous.sessionId);
+    expect((await details(originalSessionId)).threadId).toBe(nativeId);
+    await expect(chat.getByText('历史回答 36', { exact: true })).toBeVisible();
+    await expect(chat.getByText('历史回答 1', { exact: true })).toHaveCount(0);
+    const scroller = chat.locator('[data-chat-scroll]');
+    await expect(chat.getByRole('button', { name: '加载更早的消息' })).toBeAttached({ timeout: 12_000 });
+    await scroller.evaluate((element) => { element.scrollTop = 0; });
+    await expect(chat.getByText('历史回答 13', { exact: true })).toBeAttached({ timeout: 12_000 });
+    await scroller.evaluate((element) => { element.scrollTop = 0; });
+    await expect(chat.getByText('历史回答 1', { exact: true })).toBeAttached({ timeout: 12_000 });
+    await expect(chat.locator('[data-harness-turn]')).toHaveCount(turnCount);
+    await send('完成测试：从手机继续旧会话');
+    await expect(chat.getByText('完成测试：从手机继续旧会话 已回复', { exact: true })).toBeVisible({ timeout: 12_000 });
+    expect((await details(originalSessionId)).threadId).toBe(nativeId);
+    const calls = await readFile(join(root, 'calls'), 'utf8');
+    expect(calls).toContain(`resume ${nativeId}`);
+    expect(calls).not.toContain('thread/start');
+    const openedAgain = await data<{ sessionId: string }>(await request.post(apiUrl + '/native/open', { data: nativeSelection }));
+    expect(openedAgain.sessionId).toBe(originalSessionId);
+    await back();
+    await expect(original).toHaveCount(1);
+
+    async function newChat() {
+      await phone.getByRole('button', { name: '新建会话' }).tap();
+      await phone.getByRole('dialog', { name: '新建会话' }).getByRole('button', { name: '开启 Codex 会话' }).tap();
+      await ready();
+      return sessionId();
+    }
+    const first = await newChat();
+    await send('第一条新对话仍在运行');
+    await expect(chat.getByText('streamed', { exact: true })).toBeVisible({ timeout: 12_000 });
+    await back();
+    const second = await newChat();
+    await send('完成测试：第二条独立对话');
+    await expect(chat.getByText('完成测试：第二条独立对话 已回复', { exact: true })).toBeVisible({ timeout: 12_000 });
+    await expect(chat.getByText('第一条新对话仍在运行', { exact: true })).toHaveCount(0);
+    expect(new Set([nativeId, (await details(first)).threadId, (await details(second)).threadId]).size).toBe(3);
+    await back();
+    await phone.getByRole('button', { name: /第一条新对话仍在运行/ }).tap();
+    expect(sessionId()).toBe(first);
+    await expect(chat.getByText('streamed', { exact: true })).toBeVisible();
+    await expect(chat.getByText('完成测试：第二条独立对话 已回复', { exact: true })).toHaveCount(0);
+  } finally {
+    if (agent && agent.exitCode === null && agent.signalCode === null) {
+      const exited = once(agent, 'exit');
+      agent.kill('SIGTERM');
+      await exited;
+    }
+    if (nodeId) {
+      await e2eDatabase.harnessSession.deleteMany({ where: { nodeId } });
+      await e2eDatabase.harnessDirectory.deleteMany({ where: { nodeId } });
+    }
+    await phoneContext.close();
+    await rm(folder, { recursive: true, force: true });
   }
 });

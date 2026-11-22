@@ -11,7 +11,11 @@ import { NODE_PROTOCOL_VERSION, NODE_RESULT_FEATURES, cleanupPayloadSchema, inve
 import { assertAllowed, assertManagedWorktree, cleanupWorktrees, collectFacts, createPullRequest, fetchRef, ghAvailable, gitDirs, hooksFingerprint, git, inventory, NodeError, prepareWorktree, probe, pushBranch } from './git.js';
 import { createLocalLaunchSpec, localProviders } from './cli.js';
 import { HarnessController } from './harness-controller.js';
-import { HARNESS_FEATURE, HARNESS_TIMELINE_FEATURE, harnessLeaseSchema } from './harness-protocol.js';
+import { readHarnessLibrary } from './harness-library.js';
+import {
+  HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_LIBRARY_LEASES, HARNESS_LIBRARY_READS, HARNESS_TIMELINE_FEATURE,
+  harnessLeaseSchema, harnessLibraryLeaseSchema, harnessReadTaskSchema, type HarnessLease, type HarnessReadTask,
+} from './harness-protocol.js';
 import { DIRECTORY_FEATURE, directoryTaskSchema, type DirectoryTask } from './directory-protocol.js';
 import { readDirectory } from './directories.js';
 
@@ -57,6 +61,8 @@ export class NodeAgent {
   private quiesceTask: Promise<void> | null = null;
   private exited = false;
   private harness: HarnessController | null = null;
+  private readonly harnesses = new Map<string, HarnessController>();
+  private readonly readingHarnesses = new Set<string>();
   constructor(private readonly config: NodeConfig, private readonly http: typeof fetch = fetch, private readonly hooks: NodeAgentHooks = {}) {
     if (!config.roots.length) throw new Error('至少需要一个允许的目录（--roots）');
     // The runner supervisor keeps its control files under DOVUN_RUNNER_DIR; give it this node's own data directory.
@@ -94,10 +100,10 @@ export class NodeAgent {
         method: 'POST', headers: {
           'Content-Type': 'application/json', Authorization: `Node ${this.config.token}`,
           ...(path === '/lease' ? { 'X-Dovun-Node-Features': HARNESS_FEATURE, 'X-Dovun-Directory-Browser': DIRECTORY_FEATURE,
-            'X-Dovun-Harness-Timeline': HARNESS_TIMELINE_FEATURE } : {}),
+            'X-Dovun-Harness-Timeline': HARNESS_TIMELINE_FEATURE, 'X-Dovun-Harness-Library': HARNESS_LIBRARY_FEATURE } : {}),
         },
         body: JSON.stringify(body),
-        ...(path.startsWith('/harness-sessions/') || path.startsWith('/directories/') ? { signal: AbortSignal.timeout(8_000) } : {}),
+        ...(/^\/(harness-sessions|harness-library|directories)\//.test(path) ? { signal: AbortSignal.timeout(8_000) } : {}),
       });
     } catch (error) {
       this.rememberError(error);
@@ -111,7 +117,10 @@ export class NodeAgent {
       throw Object.assign(new Error(`服务端返回 401 ${code}`), { status: 401, code, revoked: true });
     }
     if (!response.ok) {
-      if (path === '/lease' && response.status === 400) this.serverAccepts.delete(DIRECTORY_FEATURE);
+      if (path === '/lease' && response.status === 400) {
+        this.serverAccepts.delete(DIRECTORY_FEATURE);
+        this.serverAccepts.delete(HARNESS_LIBRARY_FEATURE);
+      }
       const error = Object.assign(new Error(`服务端返回 ${response.status} ${code ?? ''}`), { status: response.status, code });
       this.rememberError(error);
       throw error;
@@ -131,6 +140,7 @@ export class NodeAgent {
     const codex = providers.find((provider) => provider.provider === 'codex' && provider.available);
     const version = /(\d+)\.(\d+)\.\d+/.exec(codex?.version ?? '');
     if (this.serverAccepts.has(HARNESS_FEATURE) && version && (Number(version[1]) > 0 || Number(version[2]) >= 166)) body.harnessSessions = HARNESS_FEATURE;
+    if (body.harnessSessions && this.serverAccepts.has(HARNESS_LIBRARY_FEATURE)) body.harnessLibrary = HARNESS_LIBRARY_FEATURE;
     if (this.serverAccepts.has(DIRECTORY_FEATURE)) body.directoryBrowser = DIRECTORY_FEATURE;
     if (!capsV2) return body;
     const logPath = runtimeEnv('NODE_LOG')?.trim() || null;
@@ -154,18 +164,25 @@ export class NodeAgent {
     const activeJobIds = [...new Set([...this.active.keys(), ...pending])];
     const max = Math.max(0, (this.config.maxConcurrent ?? 2) - activeJobIds.length);
     const capabilities = await this.capabilities();
-    const lease = await this.api('/lease', { capabilities, activeJobIds, max }) as { jobs: LeasedJob[]; cancel: string[]; accepts?: unknown; nodeId?: unknown; harness?: unknown; directoryRequests?: unknown };
+    const lease = await this.api('/lease', { capabilities, activeJobIds, max }) as { jobs: LeasedJob[]; cancel: string[]; accepts?: unknown; nodeId?: unknown;
+      harness?: unknown; harnesses?: unknown; harnessReads?: unknown; directoryRequests?: unknown };
     this.serverAccepts = new Set(Array.isArray(lease.accepts) ? lease.accepts.filter((item): item is string => typeof item === 'string') : []);
     if (typeof lease.nodeId === 'string' && lease.nodeId) await this.writeState(lease.nodeId).catch((error) => console.error(`[wwa-node] 无法写入 state.json：${this.summary(error)}`));
     if (this.stopped) return 0;
-    if (lease.harness && capabilities.harnessSessions && this.serverAccepts.has(HARNESS_FEATURE) && typeof lease.nodeId === 'string') {
+    if (capabilities.harnessSessions && this.serverAccepts.has(HARNESS_FEATURE) && typeof lease.nodeId === 'string') {
       const assignment = harnessLeaseSchema.safeParse(lease.harness);
-      if (assignment.success) {
-        const controller = this.harness ??= new HarnessController(
-          this.config.dataDir, this.config.server + '/' + lease.nodeId, this.config.roots,
-          (id, payload) => this.api(`/harness-sessions/${encodeURIComponent(id)}/sync`, payload) as Promise<{ snapshotRequested?: boolean }>,
-        );
-        void controller.consume(assignment.data, this.serverAccepts.has(HARNESS_TIMELINE_FEATURE))?.catch((error) => this.rememberError(error));
+      if (assignment.success) this.consumeHarness(lease.nodeId, assignment.data, false);
+      if (capabilities.harnessLibrary && this.serverAccepts.has(HARNESS_LIBRARY_FEATURE)) {
+        if (Array.isArray(lease.harnesses)) for (const raw of lease.harnesses.slice(0, HARNESS_LIBRARY_LEASES)) {
+          const parsed = harnessLibraryLeaseSchema.safeParse(raw);
+          if (parsed.success) this.consumeHarness(lease.nodeId, parsed.data, parsed.data.library);
+        }
+        if (Array.isArray(lease.harnessReads)) for (const raw of lease.harnessReads.slice(0, HARNESS_LIBRARY_READS)) {
+          const parsed = harnessReadTaskSchema.safeParse(raw);
+          if (parsed.success && !this.readingHarnesses.has(parsed.data.id) && this.readingHarnesses.size < HARNESS_LIBRARY_READS) {
+            void this.answerHarnessRead(parsed.data);
+          }
+        }
       }
     }
     for (const id of lease.cancel) { await (await this.runner()).requestCancel(id).catch(() => undefined); }
@@ -180,7 +197,33 @@ export class NodeAgent {
         if (parsed.success && !this.readingDirectories.has(parsed.data.id)) void this.answerDirectory(parsed.data);
       }
     }
+    const parking = [];
+    for (const [id, controller] of this.harnesses) {
+      const task = controller.parkIfIdle();
+      if (task) parking.push(task.catch((error) => this.rememberError(error)).finally(() => this.harnesses.delete(id)));
+    }
+    await Promise.all(parking);
     return lease.jobs.length;
+  }
+  private consumeHarness(nodeId: string, lease: HarnessLease & { nativeCwd?: string }, library: boolean) {
+    let controller = library ? this.harnesses.get(lease.sessionId) : this.harness;
+    if (!controller) {
+      // Keep the original storage key for the pre-upgrade conversation and its command receipts.
+      const binding = `${this.config.server}/${nodeId}${library ? `/${lease.sessionId}` : ''}`;
+      controller = new HarnessController(this.config.dataDir, binding, this.config.roots,
+        (id, payload) => this.api(`/harness-sessions/${encodeURIComponent(id)}/sync`, payload) as Promise<{ snapshotRequested?: boolean }>, library);
+      if (library) this.harnesses.set(lease.sessionId, controller);
+      else this.harness = controller;
+    }
+    void controller.consume(lease, this.serverAccepts.has(HARNESS_TIMELINE_FEATURE))?.catch((error) => this.rememberError(error));
+  }
+  private async answerHarnessRead(task: HarnessReadTask) {
+    this.readingHarnesses.add(task.id);
+    try {
+      const reply = await readHarnessLibrary(task, this.config.roots).catch((error) => ({ error: this.summary(error) || '无法读取 Codex 对话' }));
+      if (!this.stopped) await this.api('/harness-library/' + task.id, reply);
+    } catch (error) { this.rememberError(error); }
+    finally { this.readingHarnesses.delete(task.id); }
   }
   private readonly readingDirectories = new Set<string>();
   private async answerDirectory(task: DirectoryTask) {
@@ -229,7 +272,7 @@ export class NodeAgent {
   /** Stop pulling, cancel unfinished runs, and mark their journals abandoned so they are never reported again. */
   private async quiesce() {
     this.stopped = true;
-    await this.harness?.close();
+    await Promise.all([this.harness?.close(), ...[...this.harnesses.values()].map((controller) => controller.close())]);
     const runner = await this.runnerApi();
     const waiting: string[] = [];
     for (const entry of await this.journals()) {

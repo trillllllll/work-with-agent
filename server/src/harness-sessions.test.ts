@@ -79,6 +79,11 @@ it('preserves one thread across browsers, receipt loss, an expired target and ex
     projectId, nodeId: first.node.id, path: root, status: 'verified', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
   } });
   const config = { server: origin, token: first.token, roots: [root], dataDir: join(folder, 'node'), maxConcurrent: 1 };
+  const legacyFetch: typeof fetch = (url, init) => {
+    const headers = new Headers(init?.headers);
+    headers.delete('X-Dovun-Harness-Library');
+    return fetch(url, { ...init, headers });
+  };
   let dropReceipt = true;
   const fetchWithLoss: typeof fetch = async (url, init) => {
     const payload = typeof init?.body === 'string' ? JSON.parse(init.body) : null;
@@ -86,7 +91,7 @@ it('preserves one thread across browsers, receipt loss, an expired target and ex
       dropReceipt = false;
       throw new Error('test lost receipt');
     }
-    return fetch(url, init);
+    return legacyFetch(url, init);
   };
   let agent = new NodeAgent(config, fetchWithLoss);
   agents.push(agent);

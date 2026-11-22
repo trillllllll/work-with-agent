@@ -1,22 +1,29 @@
 import { createInterface } from 'node:readline';
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 if (process.argv.includes('--version')) {
   console.log('codex-cli 0.166.0');
   process.exit();
 }
 
-const threadId = 'fixture-thread';
+let threadId = 'fixture-thread';
 const historyPath = process.env.HARNESS_TEST_HISTORY;
-const history = existsSync(historyPath) ? JSON.parse(readFileSync(historyPath, 'utf8')) : [];
+const library = process.env.HARNESS_TEST_LIBRARY;
+const file = (id) => join(library, encodeURIComponent(id) + '.json');
+const read = (path) => existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : undefined;
+const get = (id) => library ? read(file(id)) : id === threadId ? { thread, turns: read(historyPath) ?? [] } : undefined;
+let thread = { id: threadId, cwd: process.cwd(), updatedAt: 0 };
+let history = read(historyPath) ?? [];
 let active;
 let requestId = 800;
 
 const send = (data) => console.log(JSON.stringify(data));
 const reply = (id, result) => send({ id, result });
 const notify = (method, params) => send({ method, params: { threadId, ...params } });
-const persist = () => writeFileSync(historyPath, JSON.stringify(history));
+const persist = () => library ? writeFileSync(file(threadId), JSON.stringify({ thread, turns: history }))
+  : writeFileSync(historyPath, JSON.stringify(history));
 function log(kind) { appendFileSync(process.env.HARNESS_TEST_CALLS, kind + '\n'); }
 function pushUser(params) {
   const item = { type: 'userMessage', id: params.clientUserMessageId, clientId: params.clientUserMessageId, content: params.input };
@@ -59,9 +66,50 @@ for await (const line of createInterface({ input: process.stdin })) {
   switch (method) {
     case 'initialize': reply(id, { userAgent: 'fixture' }); break;
     case 'initialized': break;
-    case 'thread/start': log('thread/start'); log('cwd ' + params.cwd); reply(id, { thread: { id: threadId } }); break;
-    case 'thread/resume': log('thread/resume'); reply(id, { thread: { id: threadId } }); break;
-    case 'thread/turns/list': reply(id, { data: [...history].reverse() }); break;
+    case 'thread/start':
+      log('thread/start'); log('cwd ' + params.cwd);
+      if (library) {
+        threadId = randomUUID();
+        thread = { id: threadId, cwd: params.cwd, updatedAt: Math.floor(Date.now() / 1000) };
+        history = [];
+      }
+      reply(id, { thread });
+      break;
+    case 'thread/name/set':
+      thread.name = params.name;
+      persist();
+      reply(id, {});
+      break;
+    case 'thread/resume': {
+      const stored = get(params.threadId);
+      if (!stored) { send({ id, error: { code: -32602, message: 'fixture thread missing' } }); break; }
+      log('thread/resume'); log('resume ' + params.threadId);
+      thread = stored.thread;
+      threadId = thread.id;
+      history = stored.turns;
+      reply(id, { thread });
+      break;
+    }
+    case 'thread/read': {
+      const stored = get(params.threadId);
+      if (stored) reply(id, { thread: stored.thread });
+      else send({ id, error: { code: -32602, message: 'fixture thread missing' } });
+      break;
+    }
+    case 'thread/list': {
+      const all = library ? readdirSync(library).map((name) => read(join(library, name)).thread).sort((a, b) => b.updatedAt - a.updatedAt) : [];
+      const offset = Number(params.cursor ?? 0);
+      const data = all.slice(offset, offset + params.limit);
+      reply(id, { data, nextCursor: offset + data.length < all.length ? String(offset + data.length) : null });
+      break;
+    }
+    case 'thread/turns/list': {
+      const rows = [...(params.threadId === threadId ? history : get(params.threadId)?.turns ?? [])].reverse();
+      const offset = params.cursor ? rows.findIndex((row) => row.id === params.cursor) + 1 : 0;
+      const data = rows.slice(offset, offset + params.limit);
+      reply(id, { data, nextCursor: offset + data.length < rows.length ? data.at(-1).id : null });
+      break;
+    }
     case 'turn/start': {
       log('turn/start');
       active = { id: 'turn-' + (history.length + 1), status: 'inProgress', items: [] };
@@ -71,6 +119,11 @@ for await (const line of createInterface({ input: process.stdin })) {
       pushUser(params);
       if (params.input[0].text === '画一张 SVG 测试图') {
         void diagramTurn(active);
+      } else if (library && params.input[0].text.startsWith('完成测试：')) {
+        const item = { type: 'agentMessage', id: 'reply-' + active.id, text: params.input[0].text + ' 已回复', phase: 'final_answer' };
+        active.items.push(item);
+        notify('item/completed', { turnId: active.id, item });
+        finish('completed');
       } else if (params.input[0].text === 'permission') {
         send({ id: ++requestId, method: 'item/commandExecution/requestApproval', params: {
           itemId: 'command-item', threadId, turnId: active.id, command: 'printf fixture', availableDecisions: ['accept', 'decline'],
