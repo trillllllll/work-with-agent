@@ -105,6 +105,7 @@ test('历史 Markdown 和富媒体文字块里的 SVG 可预览、查看源码�
   await expect(page.locator('pre', { hasText: 'const keep = 1' })).toBeVisible();
   await expect(previews.nth(2).getByRole('alert')).toBeVisible();
   await expect(previews.nth(2).getByRole('img')).toHaveCount(0);
+  await expect(previews.nth(2).getByText('正在渲染图形…', { exact: true })).toHaveCount(0);
   const first = previews.first();
   await first.getByRole('button', { name: '查看源码', exact: true }).click();
   await expect(first.locator('pre')).toContainText('<svg');
@@ -129,7 +130,7 @@ test('历史 Markdown 和富媒体文字块里的 SVG 可预览、查看源码�
   await expect(page.locator('[data-svg-block] img')).toHaveCount(2);
 });
 
-test('浏览器 SVG 过滤保留内部箭头，拒绝脚本、外链、样式、非法 XML 和超大内容', async ({ page }) => {
+test('浏览器 SVG 过滤保留内部箭头，拒绝脚本、外链、不安全样式、非法 XML 和超大内容', async ({ page }) => {
   await page.goto('/#/chat');
   const result = await page.evaluate(async (modulePath) => {
     const { safeSvg } = await import(modulePath);

@@ -104,7 +104,11 @@ export default memo(function VisualizationBlock({ block }: { block: ContentBlock
       toast.success(t('visualization.exported'));
     } catch (reason) { toast.error(reason instanceof Error ? reason.message : t('visualization.exportFailed')); }
   };
-  const preview = (enlarged: boolean) => graphic ? <>{error && <p role="alert" className="p-4 text-xs text-destructive">{t('visualization.graphicFailed', { error })}</p>}{url ? <div className="overflow-auto p-4"><img src={url} alt={block.alt || title} className="mx-auto h-auto max-h-[50dvh] w-full" style={enlarged ? { minWidth: `${zoom * 100}%`, maxHeight: 'none' } : undefined} /></div> : <p role="status" className="p-4 text-xs text-muted-foreground">{t('visualization.rendering')}</p>}</> : null;
+  const preview = (enlarged: boolean) => graphic ? <>
+    {error && <p role="alert" className="p-4 text-xs text-destructive">{t('visualization.graphicFailed', { error })}</p>}
+    {!error && block.status === 'ready' && !complete && <p role="status" className="p-4 text-xs text-muted-foreground">{t('visualization.rendering')}</p>}
+    {url && <div className="overflow-auto p-4"><img src={url} alt={block.alt || title} className="mx-auto h-auto max-h-[50dvh] w-full" style={enlarged ? { minWidth: `${zoom * 100}%`, maxHeight: 'none' } : undefined} /></div>}
+  </> : null;
   // Stable callbacks keep chart instances alive while surrounding text streams.
   const mainReady = useRef((chart: EChartsType | null) => { chartRef.current = chart; }).current;
   const expandedReady = useRef((chart: EChartsType | null) => { largeChartRef.current = chart; }).current;
@@ -112,7 +116,7 @@ export default memo(function VisualizationBlock({ block }: { block: ContentBlock
   const provenance = spec?.provenance;
   const caption = provenance ? t(provenance.kind === 'simulated' ? 'visualization.captionSimulated' : provenance.kind === 'tool' ? 'visualization.captionVerified' : 'visualization.captionUnverified', { label: provenance.label }) : block.type === 'image_search' ? t('visualization.captionSearch') : block.alt;
   return <VisualFrame title={title} source={source} caption={caption} actions={block.type !== 'image_search' && <><Button size="icon-xs" variant="ghost" title={t('visualization.enlarge')} aria-label={t('visualization.enlarge')} onClick={() => { setZoom(1); setLarge(true); }}><Maximize2 /></Button><Button size="icon-xs" variant="ghost" title={t('visualization.exportPng')} aria-label={t('visualization.exportPng')} onClick={() => void exported(true)}><Download /></Button>{graphic && <Button size="xs" variant="ghost" onClick={() => void exported(false)}>SVG</Button>}</>}>
-    {(block.status === 'pending' || (graphic && block.status === 'ready' && !complete && !error)) && <p role="status" className="px-3 py-2 text-xs text-muted-foreground">{t(block.status === 'pending' ? 'messageBlocks.generating' : 'visualization.rendering')}</p>}
+    {block.status === 'pending' && <p role="status" className="px-3 py-2 text-xs text-muted-foreground">{t('messageBlocks.generating')}</p>}
     {block.type === 'image_search' ? <ImageGallery items={block.items ?? []} layout={block.layout} /> : renderPreview(false)}
     <Dialog open={large} onOpenChange={setLarge}><DialogContent data-assistant-floating className="max-w-[min(1000px,calc(100vw-2rem))]"><DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>{graphic && <div className="flex items-center gap-2"><Button variant="ghost" size="icon-sm" aria-label={t('visualization.zoomOut')} disabled={zoom <= 0.5} onClick={() => setZoom((value) => value - .25)}><Minus /></Button><span className="text-xs">{Math.round(zoom * 100)}%</span><Button variant="ghost" size="icon-sm" aria-label={t('visualization.zoomIn')} disabled={zoom >= 3} onClick={() => setZoom((value) => value + .25)}><Plus /></Button></div>}<div className="max-h-[65dvh] overflow-auto">{renderPreview(true)}</div><Button variant="outline" size="sm" onClick={() => void exported(true)}>{t('visualization.exportPng')}</Button></DialogContent></Dialog>
   </VisualFrame>;

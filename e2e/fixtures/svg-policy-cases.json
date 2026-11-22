@@ -672,9 +672,39 @@
     "allow": false
   },
   {
-    "name": "CSS样式表",
-    "group": "统一策略边界",
+    "name": "CSS简单元素选择器",
+    "group": "安全样式",
     "source": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 200 80\" ><style>rect{fill:red}</style><rect width=\"20\" height=\"20\"/></svg>",
+    "allow": true
+  },
+  {
+    "name": "CSS样式表外链即使没有匹配元素也拒绝",
+    "group": "统一策略边界",
+    "source": "<svg><style>.label{fill:url(https://blocked.invalid/x.svg)}</style><rect width=\"10\" height=\"10\"/></svg>",
+    "allow": false
+  },
+  {
+    "name": "CSS样式表导入",
+    "group": "统一策略边界",
+    "source": "<svg><style>@import url(https://blocked.invalid/x.css);text{fill:red}</style><text>A</text></svg>",
+    "allow": false
+  },
+  {
+    "name": "CSS样式表颜色回退外链",
+    "group": "统一策略边界",
+    "source": "<svg><style>.label{fill:url(#paint) url(https://blocked.invalid/x.svg)}</style><text>A</text></svg>",
+    "allow": false
+  },
+  {
+    "name": "CSS复杂选择器",
+    "group": "统一策略边界",
+    "source": "<svg><style>g > .label{fill:red}</style><g><text class=\"label\">A</text></g></svg>",
+    "allow": false
+  },
+  {
+    "name": "CSS静态样式引用的箭头循环",
+    "group": "统一策略边界",
+    "source": "<svg><defs><style>.edge{marker-end:url(#a)}</style><marker id=\"a\"><path class=\"edge\" d=\"M0 0L10 10\"/></marker></defs><path class=\"edge\" d=\"M0 0L10 10\"/></svg>",
     "allow": false
   },
   {

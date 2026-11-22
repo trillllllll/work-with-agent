@@ -76,11 +76,23 @@ function parts(rows: Row[]) {
   return result;
 }
 
+const visualizationDirective = '\uE200visualize\uE202';
+
+function harnessReplyText(content: string) {
+  const text = content.replace(/\uE200visualize\uE202[^\uE200\uE201\r\n]*\uE201/g, '');
+  const start = text.lastIndexOf('\uE200');
+  if (start === -1) return text;
+  const tail = text.slice(start);
+  // A streaming delta can stop inside a directive. Keep it out of the visible reply as well.
+  if (visualizationDirective.startsWith(tail) || (tail.startsWith(visualizationDirective) && !/[\uE201\r\n]/.test(tail))) return text.slice(0, start);
+  return text;
+}
+
 function HarnessMarkdown({ message, active, liveMessageId }: { message: HarnessMessage; active: boolean; liveMessageId?: string }) {
   const { t } = useTranslation('workspace');
   const streaming = active && message.streaming !== false;
   return <div className={streaming ? 'streaming-caret' : undefined}>
-    <MarkdownView content={message.text} streaming={streaming} revealAdditions={message.id === liveMessageId} responsiveTables diagrams
+    <MarkdownView content={harnessReplyText(message.text)} streaming={streaming} revealAdditions={message.id === liveMessageId} responsiveTables diagrams
       components={{
         img: ({ alt }) => alt ? <span>{alt}</span> : null,
         a: ({ href, children }) => !href || (/\.svg(?:$|#)/i.test(href) && !/^https?:\/\//i.test(href))

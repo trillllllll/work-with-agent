@@ -210,7 +210,14 @@ test('desktop and phone open and control the same Harness session', async ({ bro
     await phone.screenshot({ path: testInfo.outputPath('phone-command-stream.png'), scale: 'css' });
     await writeFile(join(folder, 'diagram-finish'), '');
     await expect(diagram.getByText('画好了。', { exact: false })).toBeVisible();
+    await expect(diagram).not.toContainText('visualize');
+    await writeFile(join(folder, 'diagram-reply'), '');
     await expect(activity).not.toHaveAttribute('open', '');
+    const inline = diagram.locator('[data-svg-block]').first();
+    await expect(inline.locator('img')).toBeVisible();
+    await expect.poll(() => inline.locator('img').evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
+    await expect(diagram).not.toContainText('architecture.html');
+    await expect(inline.getByRole('alert')).toHaveCount(0);
     const artifact = diagram.locator('[data-harness-artifact]');
     await expect(artifact).toContainText('architecture.svg');
     await artifact.locator('summary').tap();
@@ -218,6 +225,8 @@ test('desktop and phone open and control the same Harness session', async ({ bro
     await phone.screenshot({ path: testInfo.outputPath('phone-svg-artifact.png'), scale: 'css' });
     await phone.reload();
     await expect(diagram.locator('.harness-turn-byline')).toHaveCount(1);
+    await expect(inline.locator('img')).toBeVisible();
+    await expect(diagram).not.toContainText('visualize');
     await expect(artifact).toHaveCount(1);
     await activity.locator(':scope > summary').tap();
     await command.locator('summary').tap();

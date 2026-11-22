@@ -1,5 +1,5 @@
 /** Static SVG policy shared by Node and the browser. No platform parser or I/O here. */
-export const svgLimits = { bytes: 65536, nodes: 500, depth: 24, dimension: 4096, resources: 32, referenceDepth: 8, geometryTokens: 8192, transforms: 128, expandedGeometry: 50000 } as const;
+export const svgLimits = { bytes: 65536, nodes: 500, depth: 24, dimension: 4096, resources: 32, referenceDepth: 8, geometryTokens: 8192, transforms: 128, expandedGeometry: 50000, stylesheetCharacters: 8192, stylesheetRules: 64 } as const;
 const namespace = 'http://www.w3.org/2000/svg';
 const xlinkNamespace = 'http://www.w3.org/1999/xlink';
 type XmlNode = { nodeType: number; nodeName: string; nodeValue?: string | null; namespaceURI?: string | null; localName?: string | null; attributes?: ArrayLike<{ name: string; value: string }>; childNodes?: ArrayLike<XmlNode> };
@@ -48,6 +48,7 @@ const numeric = '[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?';
 const numberPattern = new RegExp(`^${numeric}$`);
 const lengthPattern = new RegExp(`^(${numeric})(px|em|rem|ex|ch|pt|pc|cm|mm|in|%)?$`, 'i');
 const idPattern = /^[\p{L}_][\p{L}\p{N}_.:-]{0,127}$/u;
+const localPaintReference = /^url\(\s*(?:"#([^"\s]+)"|'#([^'\s]+)'|#([^\s'"()]+))\s*\)(?:\s+(.+))?$/i;
 const colors = new Set(words('aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk crimson cyan darkblue darkcyan darkgoldenrod darkgray darkgrey darkgreen darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue dimgray dimgrey dodgerblue firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite gold goldenrod gray grey green greenyellow honeydew hotpink indianred indigo ivory khaki lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan lightgoldenrodyellow lightgray lightgrey lightgreen lightpink lightsalmon lightseagreen lightskyblue lightslategray lightslategrey lightsteelblue lightyellow lime limegreen linen magenta maroon mediumaquamarine mediumblue mediumorchid mediumpurple mediumseagreen mediumslateblue mediumspringgreen mediumturquoise mediumvioletred midnightblue mintcream mistyrose moccasin navajowhite navy oldlace olive olivedrab orange orangered orchid palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown seagreen seashell sienna silver skyblue slateblue slategray slategrey snow springgreen steelblue tan teal thistle tomato turquoise violet wheat white whitesmoke yellow yellowgreen transparent currentcolor'));
 export const svgAllowedTags = Object.keys(elements);
 export const svgAllowedAttributes = [...new Set(['xmlns', 'id', 'role', 'xml:space', ...textAttributes, ...ariaAttributes, ...presentation, ...Object.values(elements).flat()])];
@@ -87,7 +88,7 @@ function validateColor(value: string, attr: string) {
   invalid(attr);
 }
 /** Split declarations without breaking quoted font names or functional values. */
-function styleDeclarations(value: string, tag: string): [string, string][] {
+function styleDeclarations(value: string, tag?: string): [string, string][] {
   const entries: string[] = []; let part = ''; let quote = ''; let depth = 0;
   for (const char of value) {
     if (quote) { if (char === quote) quote = ''; }
@@ -103,7 +104,13 @@ function styleDeclarations(value: string, tag: string): [string, string][] {
     if (colon < 1) invalid('style');
     const attr = entry.slice(0, colon).trim().toLowerCase(); const content = entry.slice(colon + 1).trim();
     if (['transform', 'd'].includes(attr)) invalid('style');
-    if (!(presentation.includes(attr) || (elements[tag].includes(attr) && ['x', 'y', 'width', 'height', 'cx', 'cy', 'r', 'rx', 'ry', 'd'].includes(attr))) || !content || /[!@\\\u0000-\u001f\u007f]/.test(content)) invalid('style');
+    const inlineGeometry = tag && elements[tag].includes(attr) && ['x', 'y', 'width', 'height', 'cx', 'cy', 'r', 'rx', 'ry'].includes(attr);
+    if (!(presentation.includes(attr) || inlineGeometry) || !content || /[!@\\\u0000-\u001f\u007f]/.test(content)) invalid('style');
+    if (!tag && /\burl\s*\(/i.test(content)) {
+      const reference = localPaintReference.exec(content);
+      if (!reference) invalid('style');
+      if (reference[4] && reference[4] !== 'none') validateColor(reference[4], attr);
+    }
     // CSS lengths require units where SVG presentation attributes accept bare numbers.
     if (['font-size', 'width', 'height', 'x', 'y', 'cx', 'cy', 'r', 'rx', 'ry', 'letter-spacing', 'word-spacing', 'baseline-shift', 'transform-origin'].includes(attr)) {
       for (const token of content.split(/\s+/)) if (numberPattern.test(token) && Number(token) !== 0) invalid('style');
@@ -111,6 +118,45 @@ function styleDeclarations(value: string, tag: string): [string, string][] {
     return [attr, content];
   });
 }
+
+/** Convert simple static rules under svg or defs to presentation attributes. */
+function embeddedStyles(root: XmlNode) {
+  const children = (node: XmlNode) => Array.from(node.childNodes || []).filter((child) => child.nodeType === 1);
+  const tagOf = (node: XmlNode) => node.localName || node.nodeName;
+  const sheets = new Set(children(root).flatMap((child) => {
+    if (tagOf(child) === 'style') return [child];
+    return tagOf(child) === 'defs' ? children(child).filter((item) => tagOf(item) === 'style') : [];
+  }));
+  const rules: { selector: string; declarations: [string, string][] }[] = [];
+  let characters = 0;
+  for (const sheet of sheets) {
+    if ((sheet.namespaceURI && sheet.namespaceURI !== namespace) || Array.from(sheet.attributes || []).some((attr) => attr.name !== 'type' || attr.value !== 'text/css')) invalid('style');
+    let source = '';
+    for (const child of Array.from(sheet.childNodes || [])) {
+      if (child.nodeType === 3 || child.nodeType === 4) source += child.nodeValue || '';
+      else if (child.nodeType !== 8) invalid('style');
+    }
+    characters += source.length;
+    if (characters > svgLimits.stylesheetCharacters) invalid('style');
+    let rest = source.trim();
+    while (rest) {
+      const rule = /^([^{}]+)\{([^{}]*)\}/.exec(rest);
+      if (!rule) invalid('style');
+      const declarations = [...new Map(styleDeclarations(rule[2]))];
+      for (const raw of rule[1].split(',')) {
+        const selector = raw.trim();
+        if (!/^\.[a-zA-Z_][\w-]{0,127}$/.test(selector) && !Object.prototype.hasOwnProperty.call(elements, selector)) invalid('style');
+        rules.push({ selector, declarations });
+        if (rules.length > svgLimits.stylesheetRules) invalid('style');
+      }
+      rest = rest.slice(rule[0].length).trimStart();
+    }
+  }
+  // Class selectors override element selectors. Rules of equal specificity retain document order.
+  rules.sort((a, b) => Number(a.selector.startsWith('.')) - Number(b.selector.startsWith('.')));
+  return { sheets, rules };
+}
+
 function escapeXml(value: string, attribute = false) {
   const text = value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return attribute ? text.replace(/"/g, '&quot;').replace(/\r/g, '&#13;').replace(/\n/g, '&#10;').replace(/\t/g, '&#9;') : text.replace(/\r/g, '&#13;');
@@ -122,7 +168,11 @@ function serialize(node: SvgNode): string {
 
 /** Read either XML DOM into the same tree, validate it and serialize deterministically. */
 export function normalizeSvgDocument(document: XmlNode): string {
-  let nodes = 0; let geometryTokens = 0; let transforms = 0;
+  const top = Array.from(document.childNodes || []);
+  const roots = top.filter((node) => node.nodeType === 1);
+  if (roots.length !== 1 || (roots[0].localName || roots[0].nodeName) !== 'svg' || top.some((node) => ![1, 8].includes(node.nodeType) && !(node.nodeType === 3 && !node.nodeValue?.trim()))) invalid();
+  const { sheets, rules } = embeddedStyles(roots[0]);
+  let nodes = sheets.size; let geometryTokens = 0; let transforms = 0;
   const ids = new Map<string, SvgNode>(); const references: Reference[] = []; const resources: SvgNode[] = [];
   function read(input: XmlNode, depth: number): SvgNode {
     const tag = input.localName || input.nodeName;
@@ -140,7 +190,15 @@ export function normalizeSvgDocument(document: XmlNode): string {
       if (Object.prototype.hasOwnProperty.call(node.attrs, attr) && node.attrs[attr] !== value) invalid(attr);
       node.attrs[attr] = value;
     }
-    // CSS declarations override presentation attributes; the last declaration wins.
+    if (rules.length) {
+      const classes = new Set(original.class?.split(/[\t\n\f\r ]+/));
+      for (const { selector, declarations } of rules) {
+        if (selector.startsWith('.') ? classes.has(selector.slice(1)) : selector === tag) {
+          for (const [name, value] of declarations) node.attrs[name] = value;
+        }
+      }
+    }
+    // Inline declarations have the highest priority.
     if (original.style) for (const [key, value] of styleDeclarations(original.style, tag)) node.attrs[key] = value;
     for (const [attr, raw] of Object.entries(node.attrs)) {
       const value = raw.trim();
@@ -160,7 +218,7 @@ export function normalizeSvgDocument(document: XmlNode): string {
       if (['fill', 'stroke', 'marker-start', 'marker-mid', 'marker-end', 'clip-path'].includes(attr)) {
         if (['none', 'inherit', 'initial', 'unset'].includes(value)) continue;
         if (/^url\(/i.test(value)) {
-          const match = /^url\(\s*(?:"#([^"\s]+)"|'#([^'\s]+)'|#([^\s'"()]+))\s*\)(?:\s+(.+))?$/i.exec(value);
+          const match = localPaintReference.exec(value);
           const id = match && (match[1] || match[2] || match[3]);
           if (!id || !idPattern.test(id)) invalid(attr);
           const paint = ['fill', 'stroke'].includes(attr);
@@ -221,6 +279,7 @@ export function normalizeSvgDocument(document: XmlNode): string {
       invalid(attr);
     }
     for (const child of Array.from(input.childNodes || [])) {
+      if (sheets.has(child)) continue;
       if (child.nodeType === 1) {
         const childTag = child.localName || child.nodeName;
         if (['title', 'desc', 'metadata'].includes(tag)) invalid();
@@ -234,9 +293,6 @@ export function normalizeSvgDocument(document: XmlNode): string {
     }
     return node;
   }
-  const top = Array.from(document.childNodes || []);
-  const roots = top.filter((node) => node.nodeType === 1);
-  if (roots.length !== 1 || (roots[0].localName || roots[0].nodeName) !== 'svg' || top.some((node) => ![1, 8].includes(node.nodeType) && !(node.nodeType === 3 && !node.nodeValue?.trim()))) invalid();
   const root = read(roots[0], 0);
   root.attrs.xmlns = namespace;
   const dependencies = new Map(resources.map((node) => [node, new Set<SvgNode>()]));

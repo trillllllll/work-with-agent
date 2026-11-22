@@ -58,11 +58,19 @@ async function diagramTurn(current) {
   if (!await gate('diagram-next')) return;
   output('连线已写入\n');
   if (!await gate('diagram-finish')) return;
-  writeFileSync(join(process.cwd(), 'architecture.svg'),
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 60"><rect x="1" y="1" width="118" height="58" fill="#416d5a"/><text x="12" y="34" fill="#fff">Dovun</text></svg>');
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 60">'
+    + '<defs><style>rect{fill:#416d5a} .label{fill:#fff;font-size:17px}</style></defs>'
+    + '<rect x="1" y="1" width="118" height="58"/><text class="label" x="12" y="34">Dovun</text></svg>';
+  writeFileSync(join(process.cwd(), 'architecture.svg'), svg);
   append({ ...command, status: 'completed', exitCode: 0, aggregatedOutput: '正在画框\n连线已写入\n' });
   append({ type: 'fileChange', id: 'file-' + current.id, status: 'completed', changes: [{ path: 'architecture.svg' }] });
-  append({ type: 'agentMessage', id: 'final-' + current.id, phase: 'final_answer', text: '画好了。[查看架构图](architecture.svg)' });
+  const final = { type: 'agentMessage', id: 'final-' + current.id, phase: 'final_answer' };
+  const prose = '画好了。[查看架构图](architecture.svg)';
+  const directive = '\uE200visualize\uE202{"path":"/private/tmp/architecture.html","title":"Dovun"}\uE201';
+  notify('item/started', { turnId: current.id, item: { ...final, text: '' } });
+  notify('item/agentMessage/delta', { turnId: current.id, itemId: final.id, delta: prose + '\n\n' + directive.slice(0, -1) });
+  if (!await gate('diagram-reply')) return;
+  append({ ...final, text: prose + '\n\n' + directive + '\n\n```svg\n' + svg + '\n```' });
   finish('completed');
 }
 for await (const line of createInterface({ input: process.stdin })) {

@@ -10,6 +10,21 @@ describe('shared static SVG policy matrix', () => {
     const clean = sanitizeSvg(source);
     expect(sanitizeSvg(clean)).toBe(clean);
     const parser = new DOMParser();
-    expect(parser.parseFromString(clean, 'image/svg+xml').documentElement?.textContent).toBe(parser.parseFromString(source, 'image/svg+xml').documentElement?.textContent);
+    const original = parser.parseFromString(source, 'image/svg+xml');
+    for (const sheet of Array.from(original.getElementsByTagName('style'))) sheet.parentNode?.removeChild(sheet);
+    expect(parser.parseFromString(clean, 'image/svg+xml').documentElement?.textContent).toBe(original.documentElement?.textContent);
+  });
+
+  it('resolves styles in the SVG cascade and keeps their internal marker references', () => {
+    const source = '<svg><defs><marker id="a"><path d="M0 0L2 2"/></marker><style>'
+      + '.label{fill:blue} text{fill:red} .label{fill:green;font-size:17px} .edge{marker-end:url(#a)}'
+      + '</style></defs><text class="label" fill="yellow">标题</text>'
+      + '<text class="label" style="fill:purple">节点</text><path class="edge" d="M0 0L10 10"/></svg>';
+    const clean = sanitizeSvg(source);
+    expect(clean).not.toContain('<style');
+    expect(clean).toContain('fill="green" font-size="17px">标题');
+    expect(clean).toContain('fill="purple" font-size="17px">节点');
+    expect(clean).toContain('marker-end="url(#a)"');
+    expect(sanitizeSvg(clean)).toBe(clean);
   });
 });
