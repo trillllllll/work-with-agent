@@ -20,6 +20,10 @@ test('静态SVG组合在消息、源码、放大、SVG与PNG导出和重载中�
   await e2eDatabase.message.create({ data: { conversationId: conversation.id, role: 'assistant', content: fence(source) } });
   await e2eDatabase.message.create({ data: { conversationId: conversation.id, role: 'assistant', content: '共享静态图示', blocksJson: JSON.stringify({ schemaVersion: 1, blocks: [{ id: 'static-showcase', index: 0, type: 'svg', status: 'ready', title: '共享静态图示', source: canonical }] }) } });
   await page.addInitScript((id) => localStorage.setItem('dovun.conversationId', id), conversation.id);
+  await page.route('**/', async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, headers: { ...response.headers(), 'Content-Security-Policy': "img-src 'self' data:" } });
+  });
   await page.goto('/#/chat');
   const preview = page.locator('[data-svg-block]').first();
   for (const image of [preview.getByRole('img'), page.locator('[data-block-type=svg]').getByRole('img')]) {

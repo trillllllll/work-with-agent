@@ -4,6 +4,7 @@ import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from 'next-themes';
 import { useProgressiveSvg } from '@/lib/use-progressive-svg.js';
+import { svgImageUrl } from '@/lib/safe-svg.js';
 import { Code, Copy, Download, Maximize2, Minus, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button.js';
@@ -17,17 +18,14 @@ export function save(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 async function savePng(svg: string, name: string) {
-  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
-  try {
-    const img = new Image(); img.src = url; await img.decode();
-    const canvas = document.createElement('canvas');
-    const scale = Math.min(2, 4096 / Math.max(img.naturalWidth || 800, img.naturalHeight || 500));
-    canvas.width = Math.ceil((img.naturalWidth || 800) * scale); canvas.height = Math.ceil((img.naturalHeight || 500) * scale);
-    const ctx = canvas.getContext('2d'); if (!ctx) throw new Error(t('chat:visualization.canvasFailed'));
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error(t('chat:visualization.exportFailed'))), 'image/png'));
-    save(blob, name);
-  } finally { URL.revokeObjectURL(url); }
+  const img = new Image(); img.src = svgImageUrl(svg); await img.decode();
+  const canvas = document.createElement('canvas');
+  const scale = Math.min(2, 4096 / Math.max(img.naturalWidth || 800, img.naturalHeight || 500));
+  canvas.width = Math.ceil((img.naturalWidth || 800) * scale); canvas.height = Math.ceil((img.naturalHeight || 500) * scale);
+  const ctx = canvas.getContext('2d'); if (!ctx) throw new Error(t('chat:visualization.canvasFailed'));
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error(t('chat:visualization.exportFailed'))), 'image/png'));
+  save(blob, name);
 }
 function chartOption(spec: ChartSpec, dark: boolean): EChartsCoreOption {
   const colors = dark ? ['#a9c3ce', '#d6b98c', '#acc5a6', '#c3add5'] : ['#416e85', '#a77634', '#5a8050', '#805ca1'];

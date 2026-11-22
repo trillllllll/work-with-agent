@@ -10,7 +10,7 @@ function normalize(source: string): string {
 
 function sanitize(source: string): string {
   const canonical = normalize(prepareSvgSource(source));
-  // Only static SVG in a Blob image, never inserted into the page's document.
+  // Only static SVG for an isolated image, without inserting markup into the page.
   const clean = DOMPurify.sanitize(canonical, { ALLOWED_TAGS: [...svgAllowedTags], ALLOWED_ATTR: [...svgAllowedAttributes], ALLOW_DATA_ATTR: true, ALLOW_ARIA_ATTR: true, SANITIZE_DOM: false, RETURN_DOM_FRAGMENT: true });
   const verified = normalizeSvgDocument(clean);
   if (verified !== canonical) throw new Error(t('chat:visualization.sanitizerChanged'));
@@ -26,4 +26,8 @@ export function safeSvg(source: string): string {
     }
     throw reason;
   }
+}
+
+export function svgImageUrl(svg: string): string {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }

@@ -1,7 +1,7 @@
 import { mermaidHasContent } from '../../../server/src/shared/mermaid-policy.js';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { renderMermaid } from './mermaid-render.js';
-import { safeSvg } from './safe-svg.js';
+import { safeSvg, svgImageUrl } from './safe-svg.js';
 import { svgCandidate } from '../../../server/src/shared/streaming-markup.js';
 import type { ContentBlock } from './message-blocks.js';
 
@@ -39,11 +39,6 @@ export function useProgressiveSvg(block: ContentBlock, dark: boolean) {
     const timer = window.setInterval(() => void tick(), 160); void tick();
     return () => { disposed = true; window.clearInterval(timer); };
   }, [block.id, block.type]);
-  const [url, setUrl] = useState('');
-  useEffect(() => {
-    if (!result.svg) return;
-    const next = URL.createObjectURL(new Blob([result.svg], { type: 'image/svg+xml' })); setUrl(next);
-    return () => URL.revokeObjectURL(next);
-  }, [result.svg]);
+  const url = useMemo(() => result.svg ? svgImageUrl(result.svg) : '', [result.svg]);
   return { ...result, url, complete: block.status === 'ready' && result.complete && result.identity === block.source };
 }
