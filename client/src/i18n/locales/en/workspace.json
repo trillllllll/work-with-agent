@@ -391,6 +391,31 @@
     "conversation": "Conversation messages",
     "empty": "Start a conversation with {{harness}}",
     "activity": "Run activity",
+    "tool": {
+      "command": "Run command",
+      "fileChange": "File changes",
+      "webSearch": "Web search",
+      "tool": "Tool call",
+      "image": "Image operation",
+      "count_one": "{{count}} step",
+      "count_other": "{{count}} steps",
+      "output": "Command output",
+      "waitingOutput": "Waiting for command output…",
+      "noOutput": "This command produced no output",
+      "tail": "Showing the latest output",
+      "exitCode": "Exit code {{code}}"
+    },
+    "toolStatus": {
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed",
+      "interrupted": "Stopped",
+      "unknown": "Result unconfirmed"
+    },
+    "artifact": {
+      "preview": "Preview SVG",
+      "localFile": "Local file"
+    },
     "waitingApproval": "Needs approval",
     "allow": "Allow once",
     "decline": "Decline",

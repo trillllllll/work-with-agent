@@ -390,6 +390,30 @@
     "conversation": "会话消息",
     "empty": "开始一条 {{harness}} 对话",
     "activity": "执行过程",
+    "tool": {
+      "command": "运行命令",
+      "fileChange": "文件变更",
+      "webSearch": "网页搜索",
+      "tool": "调用工具",
+      "image": "处理图像",
+      "count": "{{count}} 步",
+      "output": "命令输出",
+      "waitingOutput": "等待命令输出…",
+      "noOutput": "这条命令没有输出",
+      "tail": "仅显示最近的输出",
+      "exitCode": "退出码 {{code}}"
+    },
+    "toolStatus": {
+      "running": "执行中",
+      "completed": "已完成",
+      "failed": "失败",
+      "interrupted": "已停止",
+      "unknown": "结果待确认"
+    },
+    "artifact": {
+      "preview": "预览 SVG",
+      "localFile": "本机文件"
+    },
     "waitingApproval": "待确认",
     "allow": "允许一次",
     "decline": "拒绝",

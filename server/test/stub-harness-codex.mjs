@@ -1,5 +1,6 @@
 import { createInterface } from 'node:readline';
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 if (process.argv.includes('--version')) {
   console.log('codex-cli 0.166.0');
@@ -29,6 +30,29 @@ function finish(status) {
   notify('turn/completed', { turn: active });
   active = undefined;
 }
+async function diagramTurn(current) {
+  const directory = dirname(historyPath);
+  const command = { type: 'commandExecution', id: 'draw-' + current.id, status: 'inProgress', command: 'draw fixture' };
+  const commentary = { type: 'agentMessage', id: 'intro-' + current.id, phase: 'commentary', text: '我先生成架构图。' };
+  const append = (item) => { current.items.push(item); persist(); notify('item/completed', { turnId: current.id, item }); };
+  const output = (delta) => notify('item/commandExecution/outputDelta', { turnId: current.id, itemId: command.id, delta });
+  async function gate(name) {
+    while (active === current && !existsSync(join(directory, name))) await new Promise((resolve) => setTimeout(resolve, 35));
+    return active === current;
+  }
+  append(commentary);
+  notify('item/started', { turnId: current.id, item: command });
+  output('正在画框\n');
+  if (!await gate('diagram-next')) return;
+  output('连线已写入\n');
+  if (!await gate('diagram-finish')) return;
+  writeFileSync(join(process.cwd(), 'architecture.svg'),
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 60"><rect x="1" y="1" width="118" height="58" fill="#416d5a"/><text x="12" y="34" fill="#fff">Dovun</text></svg>');
+  append({ ...command, status: 'completed', exitCode: 0, aggregatedOutput: '正在画框\n连线已写入\n' });
+  append({ type: 'fileChange', id: 'file-' + current.id, status: 'completed', changes: [{ path: 'architecture.svg' }] });
+  append({ type: 'agentMessage', id: 'final-' + current.id, phase: 'final_answer', text: '画好了。[查看架构图](architecture.svg)' });
+  finish('completed');
+}
 for await (const line of createInterface({ input: process.stdin })) {
   const request = JSON.parse(line);
   const { id, method, params } = request;
@@ -45,7 +69,9 @@ for await (const line of createInterface({ input: process.stdin })) {
       reply(id, { turn: active });
       notify('turn/started', { turn: active });
       pushUser(params);
-      if (params.input[0].text === 'permission') {
+      if (params.input[0].text === '画一张 SVG 测试图') {
+        void diagramTurn(active);
+      } else if (params.input[0].text === 'permission') {
         send({ id: ++requestId, method: 'item/commandExecution/requestApproval', params: {
           itemId: 'command-item', threadId, turnId: active.id, command: 'printf fixture', availableDecisions: ['accept', 'decline'],
         } });

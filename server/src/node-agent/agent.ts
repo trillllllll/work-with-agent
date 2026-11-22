@@ -11,7 +11,7 @@ import { NODE_PROTOCOL_VERSION, NODE_RESULT_FEATURES, cleanupPayloadSchema, inve
 import { assertAllowed, assertManagedWorktree, cleanupWorktrees, collectFacts, createPullRequest, fetchRef, ghAvailable, gitDirs, hooksFingerprint, git, inventory, NodeError, prepareWorktree, probe, pushBranch } from './git.js';
 import { createLocalLaunchSpec, localProviders } from './cli.js';
 import { HarnessController } from './harness-controller.js';
-import { HARNESS_FEATURE, harnessLeaseSchema } from './harness-protocol.js';
+import { HARNESS_FEATURE, HARNESS_TIMELINE_FEATURE, harnessLeaseSchema } from './harness-protocol.js';
 import { DIRECTORY_FEATURE, directoryTaskSchema, type DirectoryTask } from './directory-protocol.js';
 import { readDirectory } from './directories.js';
 
@@ -93,7 +93,8 @@ export class NodeAgent {
       response = await this.http(`${this.config.server.replace(/\/$/, '')}/api/v1/node${path}`, {
         method: 'POST', headers: {
           'Content-Type': 'application/json', Authorization: `Node ${this.config.token}`,
-          ...(path === '/lease' ? { 'X-Dovun-Node-Features': HARNESS_FEATURE, 'X-Dovun-Directory-Browser': DIRECTORY_FEATURE } : {}),
+          ...(path === '/lease' ? { 'X-Dovun-Node-Features': HARNESS_FEATURE, 'X-Dovun-Directory-Browser': DIRECTORY_FEATURE,
+            'X-Dovun-Harness-Timeline': HARNESS_TIMELINE_FEATURE } : {}),
         },
         body: JSON.stringify(body),
         ...(path.startsWith('/harness-sessions/') || path.startsWith('/directories/') ? { signal: AbortSignal.timeout(8_000) } : {}),
@@ -164,7 +165,7 @@ export class NodeAgent {
           this.config.dataDir, this.config.server + '/' + lease.nodeId, this.config.roots,
           (id, payload) => this.api(`/harness-sessions/${encodeURIComponent(id)}/sync`, payload) as Promise<{ snapshotRequested?: boolean }>,
         );
-        void controller.consume(assignment.data)?.catch((error) => this.rememberError(error));
+        void controller.consume(assignment.data, this.serverAccepts.has(HARNESS_TIMELINE_FEATURE))?.catch((error) => this.rememberError(error));
       }
     }
     for (const id of lease.cancel) { await (await this.runner()).requestCancel(id).catch(() => undefined); }

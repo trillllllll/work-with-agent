@@ -24,8 +24,6 @@
   padding-top: env(safe-area-inset-top);
 }
 .harness-thread .assistant-thread .assistant-message { margin-top: 0; }
-.harness-thread .assistant-process { margin-bottom: 0; }
-.harness-thread .assistant-process-trigger { min-height: 44px; }
 
 @container harness-workspace (min-width: 740px) {
   .harness-workspace-panes { grid-template-columns: minmax(300px, 355px) minmax(0, 1fr); }

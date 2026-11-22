@@ -1,7 +1,7 @@
 import { test, expect, devices, type APIResponse } from '@playwright/test';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { HarnessSnapshot } from '../server/src/node-agent/harness-protocol.js';
@@ -191,6 +191,43 @@ test('desktop and phone open and control the same Harness session', async ({ bro
     expect(new URL(phone.url()).hash).toBe(phoneHash);
     const listed = await data<{ sessions: Array<{ id: string }> }>(await request.get(apiUrl));
     expect(listed.sessions.map((session) => session.id)).toEqual([sessionId]);
+
+    await input.fill('画一张 SVG 测试图');
+    await phoneChat.getByRole('button', { name: '发送', exact: true }).tap();
+    const diagram = phoneChat.locator('[data-harness-turn]').filter({ hasText: '画一张 SVG 测试图' });
+    const activity = diagram.locator('[data-harness-process]');
+    const output = diagram.getByLabel('命令输出');
+    const command = diagram.locator('[data-harness-tool]').first();
+    await expect(output).toHaveText('正在画框');
+    await expect(command.locator('[data-tool-status]')).toHaveText('执行中');
+    await writeFile(join(folder, 'diagram-next'), '');
+    await expect(output).toContainText('连线已写入');
+    await expect(command.locator('[data-tool-status]')).toHaveText('执行中');
+    expect(await command.locator('summary').evaluate((element) =>
+      element.getBoundingClientRect().right <= element.closest('[data-chat-scroll]')!.getBoundingClientRect().right)).toBe(true);
+    await expect(diagram.locator('.harness-turn-byline')).toHaveCount(1);
+    await phone.screenshot({ path: testInfo.outputPath('phone-command-stream.png'), scale: 'css' });
+    await writeFile(join(folder, 'diagram-finish'), '');
+    await expect(diagram.getByText('画好了。', { exact: false })).toBeVisible();
+    await expect(activity).not.toHaveAttribute('open', '');
+    const artifact = diagram.locator('[data-harness-artifact]');
+    await expect(artifact).toContainText('architecture.svg');
+    await artifact.locator('summary').tap();
+    await expect(artifact.locator('[data-svg-block] img')).toBeVisible();
+    await phone.screenshot({ path: testInfo.outputPath('phone-svg-artifact.png'), scale: 'css' });
+    await phone.reload();
+    await expect(diagram.locator('.harness-turn-byline')).toHaveCount(1);
+    await expect(artifact).toHaveCount(1);
+    await activity.locator(':scope > summary').tap();
+    await command.locator('summary').tap();
+    await expect(output).toContainText('连线已写入');
+    await expect(command.getByText('退出码 0')).toBeVisible();
+    await expect(diagram.locator('[data-harness-tool]')).toHaveCount(2);
+    const legacy = await data<{ snapshot: { view: { messages: Array<{ text: string }> } } }>(await request.get(`${apiUrl}/${sessionId}`));
+    expect(legacy.snapshot.view.messages.some((message) => message.text.includes('画好了。'))).toBe(true);
+    expect(legacy.snapshot.view).not.toHaveProperty('tools');
+    expect(legacy.snapshot.view).not.toHaveProperty('artifacts');
+    expect((await detail()).threadId).toBe('fixture-thread');
   } finally {
     if (agent && agent.exitCode === null && agent.signalCode === null) {
       const exited = once(agent, 'exit');

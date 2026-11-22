@@ -3,10 +3,13 @@ import { mkdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/prom
 import { dirname, resolve } from 'node:path';
 import { exclusiveDataGuard } from '../shared/data-guard.js';
 import { asObject, CodexAppServer, CodexRejected } from './harness-codex.js';
+import { readHarnessArtifacts } from './harness-artifacts.js';
+import { codexHarnessTool, harnessFilePaths, harnessOutput } from './harness-tools.js';
 import { assertAllowed } from './git.js';
 import {
-  applyHarnessEvent, HARNESS_EVENTS, HARNESS_TEXT_LIMIT,
-  type HarnessDelivery, type HarnessEvent, type HarnessLease, type HarnessMessage,
+  applyHarnessEvent, HARNESS_ARTIFACTS, HARNESS_EVENTS, HARNESS_TEXT_LIMIT,
+  harnessMessagePhase, legacyHarnessEvent, legacyHarnessSnapshot,
+  type HarnessArtifact, type HarnessDelivery, type HarnessEvent, type HarnessLease, type HarnessMessage,
   type HarnessReceipt, type HarnessSnapshot, type HarnessSync, type HarnessTurn, type HarnessView,
 } from './harness-protocol.js';
 
@@ -33,10 +36,14 @@ async function writeJson(file: string, value: unknown) {
   await rename(temp, file);
 }
 
-function message(item: Record<string, unknown>, turnId: string): HarnessMessage | null {
+function message(item: Record<string, unknown>, turnId: string, streaming = false): HarnessMessage | null {
   const id = text(item.id);
   if (!id || !turnId) return null;
-  if (item.type === 'agentMessage') return { id, turnId, role: 'assistant', text: text(item.text).slice(0, HARNESS_TEXT_LIMIT) };
+  if (item.type === 'agentMessage') {
+    const phase = harnessMessagePhase.safeParse(item.phase);
+    return { id, turnId, role: 'assistant', text: text(item.text).slice(0, HARNESS_TEXT_LIMIT), streaming,
+      ...(phase.success ? { phase: phase.data } : {}) };
+  }
   if (item.type === 'userMessage') {
     return { id, turnId, role: 'user', text: items(item.content).filter((part) => part.type === 'text').map((part) => text(part.text)).join('\n').slice(0, HARNESS_TEXT_LIMIT) };
   }
@@ -75,6 +82,7 @@ export class HarnessController {
   private work: Promise<void> | null = null;
   private retryAt = 0;
   private stopped = false;
+  private timeline = false;
 
   constructor(dataDir: string, nodeKey: string, private readonly roots: string[], private readonly sync: Sync) {
     this.directory = resolve(dataDir, 'harness', digest(nodeKey));
@@ -82,14 +90,20 @@ export class HarnessController {
 
   private get bindingPath() { return resolve(this.directory, 'session.json'); }
 
-  consume(lease: HarnessLease) {
+  consume(lease: HarnessLease, timeline = false) {
     if (this.stopped || this.work) return;
-    this.work = this.processLease(lease).finally(() => { this.work = null; });
+    this.work = this.processLease(lease, timeline).finally(() => { this.work = null; });
     return this.work;
   }
 
-  private async processLease(lease: HarnessLease) {
+  private async processLease(lease: HarnessLease, timeline: boolean) {
     if (!this.release) this.release = await exclusiveDataGuard([resolve(this.directory, 'owner')]);
+    if (this.timeline !== timeline) {
+      await this.upload?.catch(() => undefined);
+      this.timeline = timeline;
+      this.events = [];
+      this.snapshotNeeded = true;
+    }
     if (this.stopped) { await this.close(); return; }
     if (this.binding?.sessionId !== lease.sessionId) {
       if (this.app) await this.dropApp();
@@ -144,16 +158,36 @@ export class HarnessController {
       this.restoredClients.clear();
       this.fileChanges.clear();
       this.approvals.clear();
+      const artifactMessages: HarnessMessage[] = [];
       for (const entry of items(history.data).reverse()) {
         const restored = turn(entry);
         if (!restored) continue;
+        let lastAnswer: HarnessMessage | undefined;
         for (const item of items(entry.items)) {
           if (item.type === 'userMessage' && typeof item.clientId === 'string') this.restoredClients.add(item.clientId);
           const restoredMessage = message(item, restored.id);
-          if (restoredMessage) this.view = applyHarnessEvent(this.view, { kind: 'message', message: restoredMessage });
+          if (restoredMessage) {
+            this.view = applyHarnessEvent(this.view, { kind: 'message', message: restoredMessage });
+            if (restoredMessage.role === 'assistant' && restoredMessage.phase !== 'commentary') lastAnswer = restoredMessage;
+          }
+          const restoredTool = codexHarnessTool(item, restored.id, true);
+          if (restoredTool) this.view = applyHarnessEvent(this.view, { kind: 'tool', tool: restoredTool });
         }
-        this.view.turn = restored.status === 'inProgress' ? { ...restored, status: 'unknown' } : restored;
+        const status = restored.status === 'inProgress' ? { ...restored, status: 'unknown' as const } : restored;
+        this.view = applyHarnessEvent(this.view, { kind: 'turn', turn: status });
+        if (lastAnswer?.text && restored.status !== 'inProgress') {
+          artifactMessages.push(lastAnswer);
+        }
       }
+      const retainedMessages = new Set(this.view.messages.map((item) => item.id));
+      const artifacts: HarnessArtifact[] = [];
+      for (const answer of artifactMessages.reverse()) {
+        if (!retainedMessages.has(answer.id)) continue;
+        const found = await readHarnessArtifacts(answer, cwd, this.roots);
+        artifacts.unshift(...found.slice(0, HARNESS_ARTIFACTS - artifacts.length));
+        if (artifacts.length === HARNESS_ARTIFACTS) break;
+      }
+      for (const artifact of artifacts) this.view = applyHarnessEvent(this.view, { kind: 'artifact', artifact });
       await this.setBinding({ ...prior, epoch: Math.max(prior.epoch, lease.epoch) + 1, pid: app.pid });
     } catch (error) { await this.dropApp(); throw error; }
   }
@@ -279,16 +313,26 @@ export class HarnessController {
       if (method === 'turn/completed' && this.view.turn?.id !== change.id) return;
       if (method === 'turn/completed') this.approvals.clear();
       this.emit({ kind: 'turn', turn: change });
+      if (change.status === 'completed') this.captureArtifacts(change.id);
     } else if (method === 'item/agentMessage/delta' && text(params.itemId) && turnId) {
       this.emit({ kind: 'delta', id: text(params.itemId), turnId, delta: text(params.delta).slice(0, HARNESS_TEXT_LIMIT) });
     } else if ((method === 'item/started' || method === 'item/completed') && turnId) {
       const item = asObject(params.item);
-      const value = message(item, turnId);
-      if (value && (value.role === 'user' || method === 'item/completed')) this.emit({ kind: 'message', message: value });
+      const completed = method === 'item/completed';
+      const value = message(completed ? item : { ...item, text: '' }, turnId, !completed);
+      if (value && (value.role === 'user' || completed || this.timeline)) this.emit({ kind: 'message', message: value });
+      const tool = codexHarnessTool(item, turnId, completed);
+      if (tool) this.emit({ kind: 'tool', tool });
       if (item.type === 'fileChange') {
         if (method === 'item/completed') this.fileChanges.delete(text(item.id));
         else this.fileChanges.set(text(item.id), items(item.changes).map((change) => text(change.path)).join('\n').slice(0, 7_000));
       }
+    } else if ((method === 'item/commandExecution/outputDelta' || method === 'item/fileChange/outputDelta') && turnId && text(params.itemId)) {
+      const { output, truncated } = harnessOutput(params.delta);
+      if (output) this.emit({ kind: 'toolOutput', id: text(params.itemId), turnId, delta: output, ...(truncated ? { truncated } : {}) });
+    } else if (method === 'item/fileChange/patchUpdated' && turnId) {
+      const tool = this.view.tools?.find((item) => item.id === params.itemId && item.turnId === turnId && item.kind === 'fileChange' && item.status === 'running');
+      if (tool) this.emit({ kind: 'tool', tool: { ...tool, files: harnessFilePaths(params.changes) } });
     } else if (method === 'serverRequest/resolved' && (typeof params.requestId === 'string' || typeof params.requestId === 'number')) {
       const ack = this.approvalAcks.get(params.requestId);
       const requestId = ack?.requestId ?? [...this.approvals].find(([, request]) => request.id === params.requestId)?.[0];
@@ -298,6 +342,16 @@ export class HarnessController {
         this.emit({ kind: 'approvalResolved', id: requestId });
       }
     }
+  }
+
+  private captureArtifacts(turnId: string) {
+    const binding = this.binding;
+    const answer = this.view.messages.filter((item) => item.turnId === turnId && item.role === 'assistant' && item.phase !== 'commentary').at(-1);
+    if (!binding || !answer?.text) return;
+    void readHarnessArtifacts(answer, binding.cwd, this.roots).then((artifacts) => {
+      if (this.binding !== binding || !this.app || this.stopped) return;
+      for (const artifact of artifacts) this.emit({ kind: 'artifact', artifact });
+    }).catch(() => undefined);
   }
 
   private receiveRequest(method: string, params: Record<string, unknown>, id: RpcId) {
@@ -324,7 +378,9 @@ export class HarnessController {
 
   private emit(event: HarnessEvent) {
     this.view = applyHarnessEvent(this.view, event);
-    this.events.push({ seq: ++this.seq, event });
+    const wire = this.timeline ? event : legacyHarnessEvent(event);
+    if (!wire) return;
+    this.events.push({ seq: ++this.seq, event: wire });
     if (this.events.length > HARNESS_EVENTS) {
       this.events = this.events.slice(-HARNESS_EVENTS);
       this.snapshotNeeded = true;
@@ -350,7 +406,8 @@ export class HarnessController {
       const snapshot: HarnessSnapshot = { type: 'snapshot', threadId: binding.threadId, epoch: binding.epoch, seq: this.seq, view: this.view };
       const sendingSnapshot = this.snapshotNeeded;
       const sequence = sendingSnapshot ? snapshot.seq : batch.at(-1)!.seq;
-      const result = await this.sync(binding.sessionId, sendingSnapshot ? snapshot : { type: 'events', epoch: binding.epoch, events: batch });
+      const result = await this.sync(binding.sessionId, sendingSnapshot ? (this.timeline ? snapshot : legacyHarnessSnapshot(snapshot))
+        : { type: 'events', epoch: binding.epoch, events: batch });
       if (this.binding !== binding) return;
       if (result.snapshotRequested) {
         this.snapshotNeeded = true;

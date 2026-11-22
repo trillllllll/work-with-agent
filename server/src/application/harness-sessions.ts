@@ -5,6 +5,7 @@ import { isOnline } from './orchestration/nodes.js';
 import { canBrowse } from './harness-directories.js';
 import {
   applyHarnessEvent, HARNESS_EVENTS, HARNESS_FEATURE, harnessCommandSchema, harnessCreateSchema, harnessSyncSchema,
+  legacyHarnessEvent, legacyHarnessSnapshot,
   type HarnessDelivery, type HarnessEvent, type HarnessLease, type HarnessReceipt, type HarnessSnapshot,
 } from '../node-agent/harness-protocol.js';
 
@@ -82,12 +83,14 @@ export async function listHarnessSessions() {
     sessions: sessions.map((session) => sessionDto(session, available.get(session.nodeId) ?? null)),
   };
 }
-export async function readHarnessSession(id: string) {
+export async function readHarnessSession(id: string, timeline = false) {
   const row = await prisma.harnessSession.findUnique({ where: { id }, include: { commands: titleCommand } });
   if (!row) throw new DomainError('HARNESS_NOT_FOUND', '会话不存在', 404);
   const node = await prisma.agentNode.findUnique({ where: { id: row.nodeId } });
   const view = cache.get(id);
-  return { ...sessionDto(row, node), snapshot: view?.snapshot.epoch === row.epoch ? view.snapshot : null, current: !!view && !view.stale && view.snapshot.epoch === row.epoch };
+  const snapshot = view?.snapshot.epoch === row.epoch ? view.snapshot : null;
+  return { ...sessionDto(row, node), snapshot: snapshot && !timeline ? legacyHarnessSnapshot(snapshot) : snapshot,
+    current: !!view && !view.stale && view.snapshot.epoch === row.epoch };
 }
 export async function createHarnessSession(body: unknown) {
   const input = harnessCreateSchema.parse(body);
@@ -285,20 +288,47 @@ export async function syncHarness(node: AgentNode, id: string, raw: unknown) {
   return { seq: current.snapshot.seq };
 }
 
-export function subscribeHarness(id: string, after: { epoch: number; seq: number } | null, emit: (event: StreamEvent) => void) {
+export function subscribeHarness(id: string, after: { epoch: number; seq: number } | null, emit: (event: StreamEvent) => void, timeline = false) {
+  let cursor = after;
+  const send = (frame: StreamEvent) => {
+    if (frame.type === 'snapshot') {
+      cursor = frame;
+      emit(timeline ? frame : legacyHarnessSnapshot(frame));
+      return;
+    }
+    if (frame.type === 'event') {
+      const event = timeline ? frame.event : legacyHarnessEvent(frame.event);
+      if (!event) return;
+      // An old browser cannot apply a tool event. At the next visible update jump
+      // across those frames with one legacy snapshot instead of exposing a gap.
+      if (!timeline && cursor && (cursor.epoch !== frame.epoch || cursor.seq + 1 !== frame.seq)) {
+        const snapshot = cache.get(id)?.snapshot;
+        if (snapshot) send(snapshot);
+        return;
+      }
+      cursor = frame;
+      emit({ ...frame, event });
+      return;
+    }
+    emit(frame);
+  };
   let subscribed = listeners.get(id);
   if (!subscribed) { subscribed = new Set(); listeners.set(id, subscribed); }
-  subscribed.add(emit);
+  subscribed.add(send);
   const current = cache.get(id);
   if (current && !current.stale) {
-    if (!after) emit(current.snapshot);
+    if (!after) send(current.snapshot);
     else if (current.snapshot.epoch === after.epoch && after.seq <= current.snapshot.seq && after.seq >= (current.frames[0]?.seq ?? current.snapshot.seq + 1) - 1) {
-      for (const frame of current.frames) if (frame.seq > after.seq) emit({ type: 'event', epoch: after.epoch, ...frame });
-      emit({ type: 'caughtUp', epoch: current.snapshot.epoch, seq: current.snapshot.seq });
+      const later = current.frames.filter((frame) => frame.seq > after.seq);
+      if (!timeline && later.some((frame) => !legacyHarnessEvent(frame.event))) send(current.snapshot);
+      else {
+        for (const frame of later) send({ type: 'event', epoch: after.epoch, ...frame });
+        send({ type: 'caughtUp', epoch: current.snapshot.epoch, seq: current.snapshot.seq });
+      }
     } else refresh.add(id);
   } else refresh.add(id);
   return () => {
-    subscribed.delete(emit);
+    subscribed.delete(send);
     if (!subscribed.size) listeners.delete(id);
   };
 }

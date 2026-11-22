@@ -7,7 +7,7 @@ import { assertTimeZone } from '../application/reviews-clock.js';
 import { WorktreeService } from '../application/orchestration/worktrees.js';
 import { isServerMode, publicWorkspaceUrl } from '../application/desktop-paths.js';
 import { leaseHarness, syncHarness } from '../application/harness-sessions.js';
-import { HARNESS_FEATURE } from '../node-agent/harness-protocol.js';
+import { HARNESS_FEATURE, HARNESS_TIMELINE_FEATURE } from '../node-agent/harness-protocol.js';
 import { DIRECTORY_FEATURE } from '../node-agent/directory-protocol.js';
 import { pendingDirectories, reportDirectory } from '../application/harness-directories.js';
 
@@ -93,6 +93,7 @@ export function createNodeRouter() {
     if (req.get('X-Dovun-Node-Features') !== HARNESS_FEATURE) return response;
     const harness = req.body.capabilities.harnessSessions === HARNESS_FEATURE ? await leaseHarness(node.id, node.tokenHash) : undefined;
     const accepts = [...response.accepts, HARNESS_FEATURE];
+    if (req.get('X-Dovun-Harness-Timeline') === HARNESS_TIMELINE_FEATURE) accepts.push(HARNESS_TIMELINE_FEATURE);
     if (req.get('X-Dovun-Directory-Browser') === DIRECTORY_FEATURE) accepts.push(DIRECTORY_FEATURE);
     const directoryRequests = accepts.includes(DIRECTORY_FEATURE) && req.body.capabilities.directoryBrowser === DIRECTORY_FEATURE ? pendingDirectories(node) : [];
     return { ...response, accepts, ...(harness ? { harness } : {}), ...(directoryRequests.length ? { directoryRequests } : {}) };

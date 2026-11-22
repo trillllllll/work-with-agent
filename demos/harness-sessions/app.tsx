@@ -226,7 +226,7 @@ function ChatView({ conversation, draft, now, back, chooseProject, write, send, 
             if (message.kind === 'activity') return <li className="harness-process-record" key={message.id}><ToolActivity message={message} /></li>;
             if (message.kind === 'approval') return <li className="assistant-message" key={message.id}><ApprovalCard approval={message} decide={(decision) => approve(message.id, decision)} /></li>;
             if (message.kind === 'stream') return <StreamReply key={message.id + '-' + message.startedAt} message={message}
-              harness={conversation.harness} name={name} now={now} icon={<HarnessIcon harness={conversation.harness} className="size-3.5" />}
+              harness={conversation.harness} name={name} now={now}
               replay={message.script === 'checks' && latest?.id === message.id ? () => replay(message.id) : undefined} />;
             return <li className="assistant-message" data-role="assistant" key={message.id}>
               <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><HarnessIcon harness={conversation.harness} className="size-3.5" />{name}</div>

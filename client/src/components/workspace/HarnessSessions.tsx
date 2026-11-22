@@ -1,20 +1,19 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { ArrowDown, ChevronRight, CircleAlert, ListChecks, LoaderCircle, MessageSquare, ShieldQuestion, Terminal } from 'lucide-react';
+import { ArrowDown, ChevronRight, CircleAlert, LoaderCircle, MessageSquare, ShieldQuestion, Terminal } from 'lucide-react';
 import { ApiError, api } from '@/lib/api.js';
 import { json } from '@/lib/platform.js';
 import { intlLocale } from '@/i18n/index.js';
 import { ChatComposer } from '@/components/chat/ChatComposer.js';
 import { createBottomPin } from '@/components/chat/bottom-pin.js';
-import { MarkdownView } from '@/components/shared/MarkdownView.js';
 import { Badge } from '@/components/ui/badge.js';
 import { Button } from '@/components/ui/button.js';
 import { ChoiceList } from '@/components/ui/choice-list.js';
-import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure.js';
 import { BackButton } from '@/components/ui/nav-buttons.js';
 import { Surface } from '@/components/ui/surface.js';
 import { HarnessStartDialog } from './HarnessStartDialog.js';
+import { HarnessTimeline } from './HarnessTimeline.js';
 import { ChatProjectButton, HarnessProjectPicker, type HarnessProject, type ProjectComputer } from './HarnessProjectPicker.js';
 import type { DirectoryPage } from '../../../../server/src/node-agent/directory-protocol.js';
 import { applyHarnessEvent, HARNESS_TEXT_LIMIT, type HarnessCommand, type HarnessEvent, type HarnessSnapshot } from '../../../../server/src/node-agent/harness-protocol.js';
@@ -55,9 +54,9 @@ function message(error: unknown, fallback: string) { return error instanceof Err
 function delivering(receipt: Receipt) { return receipt.status === 'queued' || receipt.status === 'dispatched'; }
 
 function useHarnessStream(id: string) {
-  const snapshotKey = `dovun-harness-snapshot:${id}`;
-  const [{ snapshot, liveText }, setOutput] = useState(() => ({
-    snapshot: load<HarnessSnapshot>(snapshotKey), liveText: false,
+  const snapshotKey = `dovun-harness-timeline:${id}`;
+  const [{ snapshot, liveMessageId }, setOutput] = useState<{ snapshot: HarnessSnapshot | null; liveMessageId?: string }>(() => ({
+    snapshot: load<HarnessSnapshot>(snapshotKey),
   }));
   const [ready, setReady] = useState(false);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
@@ -70,8 +69,8 @@ function useHarnessStream(id: string) {
       setReady(false);
       let live = false;
       const view = current.current;
-      const after = !reset && view ? `?after=${view.epoch}:${view.seq}` : '';
-      source = new EventSource(`${base}/${encodeURIComponent(id)}/events${after}`);
+      const after = !reset && view ? `&after=${view.epoch}:${view.seq}` : '';
+      source = new EventSource(`${base}/${encodeURIComponent(id)}/events?timeline=1${after}`);
       source.onerror = () => { live = false; setReady(false); };
       source.onmessage = (event) => {
         let data: HarnessSnapshot | { type: 'event'; epoch: number; seq: number; event: HarnessEvent } | { type: 'receipt'; receipt: Receipt } | { type: 'unavailable'; epoch: number; error: string } | { type: 'caughtUp'; epoch: number; seq: number };
@@ -89,7 +88,7 @@ function useHarnessStream(id: string) {
         if (data.type === 'snapshot') {
           if (previous && (data.epoch < previous.epoch || data.epoch === previous.epoch && data.seq < previous.seq)) return;
           current.current = data;
-          setOutput({ snapshot: data, liveText: false });
+          setOutput({ snapshot: data });
           live = true;
           setUnavailable(null);
           setReady(true);
@@ -99,7 +98,7 @@ function useHarnessStream(id: string) {
         if (!previous || previous.epoch !== data.epoch || data.seq !== previous.seq + 1) { connect(true); return; }
         const next = { ...previous, seq: data.seq, view: applyHarnessEvent(previous.view, data.event) };
         current.current = next;
-        setOutput({ snapshot: next, liveText: live && data.event.kind === 'delta' });
+        setOutput({ snapshot: next, liveMessageId: live && data.event.kind === 'delta' ? data.event.id : undefined });
       };
     }
     const remember = () => save(snapshotKey, current.current);
@@ -119,7 +118,7 @@ function useHarnessStream(id: string) {
       window.removeEventListener('offline', offline);
     };
   }, [id, snapshotKey]);
-  return { snapshot, liveText, ready, receipt, unavailable };
+  return { snapshot, liveMessageId, ready, receipt, unavailable };
 }
 
 function SessionList({ sessions, selectedId, open }: { sessions: Session[]; selectedId?: string; open: (id: string) => void }) {
@@ -322,7 +321,7 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
   const threadRef = useRef<HTMLDivElement>(null);
   const [pin] = useState(createBottomPin);
   const [showLatest, setShowLatest] = useState(false);
-  const detail = useQuery({ queryKey: ['harness-session', id], queryFn: () => api<Detail>(path), refetchInterval: 4_000 });
+  const detail = useQuery({ queryKey: ['harness-session', id], queryFn: () => api<Detail>(path + '?timeline=1'), refetchInterval: 4_000 });
   const stream = useHarnessStream(id);
   const snapshot = stream.snapshot ?? detail.data?.snapshot;
   const view = snapshot?.view;
@@ -419,10 +418,18 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
   const status = !session ? 'reconnecting' : !session.online ? 'offline' : enabled ? 'ready'
     : stream.unavailable ? 'unavailable' : session.status === 'ready' ? 'reconnecting' : session.status;
   const detailError = detail.error?.message ?? stream.unavailable ?? detail.data?.error;
-  const messages = view?.messages ?? [];
-  const latestReply = inProgress ? messages.filter((item) => item.turnId === currentTurn.id && item.role === 'assistant').pop() : undefined;
-  const approvals = view?.approvals ?? [];
-  const turnStatus = currentTurn && t('harness.turn.' + currentTurn.status);
+  const approvalControls = view?.approvals.map((request) => <Surface as="section" tone="subtle" className="space-y-2.5 rounded-xl p-3" key={request.id} aria-label={t('harness.approval.' + request.kind)}>
+    <h3 className="flex items-center gap-2 text-sm font-medium text-warning">
+      <ShieldQuestion className="size-4" aria-hidden="true" />{t('harness.approval.' + request.kind)}
+    </h3>
+    {request.details && <p className="font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">{request.details}</p>}
+    <div className="flex flex-wrap justify-end gap-2">
+      <Button type="button" className="min-h-11" variant="outline" disabled={actionsDisabled}
+        onClick={() => act({ operation: 'resolveApproval', requestId: request.id, decision: 'decline' })}>{t('harness.decline')}</Button>
+      {request.canAccept && <Button type="button" className="min-h-11" disabled={actionsDisabled}
+        onClick={() => act({ operation: 'resolveApproval', requestId: request.id, decision: 'accept' })}>{t('harness.allow')}</Button>}
+    </div>
+  </Surface>);
   const visibleReceipt = receipt && (waitingForStart || receipt.commandId !== startCommandId) ? receipt : null;
 
   return <section className="dovun-assistant harness-thread flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
@@ -444,50 +451,11 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
       }}
         className="glass-scrollbar h-full min-w-0 overflow-y-auto overscroll-contain">
         <div ref={threadRef} className="assistant-thread flex min-w-0 flex-col gap-4">
-          {messages.length ? <ol aria-label={t('harness.conversation')} className="flex min-w-0 flex-col gap-4">
-            {messages.map((item) => item.role === 'user' ? (
-              <li className="assistant-message assistant-user-message ml-auto" key={item.id} data-role="user">
-                <div className="assistant-user-bubble whitespace-pre-wrap [overflow-wrap:anywhere]">{item.text}</div>
-              </li>
-            ) : (
-              <li className="assistant-message" key={item.id} data-role="assistant">
-                <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                  <Terminal className="size-3.5" aria-hidden="true" />{harnessName}
-                </div>
-                <div className={item.id === latestReply?.id ? 'streaming-caret' : undefined}>
-                  <MarkdownView content={item.text} streaming={item.id === latestReply?.id} revealAdditions={stream.liveText} responsiveTables
-                    components={{ img: ({ alt }) => alt ? <span>{alt}</span> : null }} />
-                </div>
-              </li>
-            ))}
-          </ol> : !detailError && <div className="dovun-assistant-welcome">
+          {view && (view.messages.length || view.turn) ? <HarnessTimeline view={view} name={harnessName} liveMessageId={stream.liveMessageId}
+            approvalControls={approvalControls} /> : !detailError && <div className="dovun-assistant-welcome">
             <h3>{t('harness.empty', { harness: harnessName })}</h3>
           </div>}
-          {currentTurn?.error ? <Disclosure className="assistant-process group">
-            <DisclosureTrigger className="assistant-process-trigger">
-              <ListChecks className="size-4" aria-hidden="true" />
-              <span className="assistant-process-title">{t('harness.activity')}</span>
-              <span>{turnStatus}</span>
-              <ChevronRight className="assistant-process-chevron group-open:rotate-90" aria-hidden="true" />
-            </DisclosureTrigger>
-            <p className="assistant-process-body text-xs" role="status">{currentTurn.error}</p>
-          </Disclosure> : turnStatus && <p role="status" className="assistant-process flex items-center gap-2 text-xs">
-            {inProgress ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-              : <ListChecks className="size-4" aria-hidden="true" />}
-            {turnStatus}
-          </p>}
-          {approvals.map((request) => <Surface as="section" tone="subtle" className="space-y-2.5 rounded-xl p-3" key={request.id} aria-label={t('harness.approval.' + request.kind)}>
-            <h3 className="flex items-center gap-2 text-sm font-medium text-warning">
-              <ShieldQuestion className="size-4" aria-hidden="true" />{t('harness.approval.' + request.kind)}
-            </h3>
-            {request.details && <p className="font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">{request.details}</p>}
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button type="button" className="min-h-11" variant="outline" disabled={actionsDisabled}
-                onClick={() => act({ operation: 'resolveApproval', requestId: request.id, decision: 'decline' })}>{t('harness.decline')}</Button>
-              {request.canAccept && <Button type="button" className="min-h-11" disabled={actionsDisabled}
-                onClick={() => act({ operation: 'resolveApproval', requestId: request.id, decision: 'accept' })}>{t('harness.allow')}</Button>}
-            </div>
-          </Surface>)}
+          {!currentTurn && approvalControls}
         </div>
       </div>
       {showLatest && <Button type="button" variant="secondary" size="sm"
