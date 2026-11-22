@@ -268,18 +268,20 @@ test('opens saved Codex history and keeps multiple chats in the same project ind
     }));
     const updatedAt = Math.floor(Date.now() / 1000);
     await writeFile(join(library, `${nativeId}.json`), JSON.stringify({
-      thread: { id: nativeId, cwd: repo, name: 'Mac 上的原 Codex 对话', updatedAt }, turns,
+      thread: { id: nativeId, cwd: repo, name: 'Mac 上的原 Codex 对话', updatedAt, modelProvider: 'original-codex' }, turns,
     }));
     await writeFile(join(library, 'other-thread.json'), JSON.stringify({
       thread: { id: 'other-thread', cwd: sibling, name: '另一个项目的私有对话', updatedAt }, turns,
     }));
     const node = await data<{ node: { id: string }; token: string }>(await request.post('/api/nodes', { data: { name: '历史测试 Mac' } }));
     nodeId = node.node.id;
-    agent = spawn(process.execPath, ['--import', 'tsx', resolve('server/src/node-agent/index.ts'), '--server', process.env.E2E_API_URL!,
+    const startAgent = () => spawn(process.execPath, ['--import', 'tsx', resolve('server/src/node-agent/index.ts'), '--server', process.env.E2E_API_URL!,
       '--roots', root, '--data', join(root, 'node')], { stdio: 'ignore', env: {
       ...process.env, DOVUN_NODE_TOKEN: node.token, DOVUN_CODEX_BIN: resolve('server/test/stub-harness-codex.mjs'),
       HARNESS_TEST_LIBRARY: library, HARNESS_TEST_CALLS: join(root, 'calls'), HARNESS_TEST_HISTORY: join(root, 'unused.json'),
+      HARNESS_TEST_TURNS: join(root, 'turns'),
     } });
+    agent = startAgent();
     await expect.poll(async () => (await data<{ nodes: Array<{ id: string; harnessLibrary?: boolean }> }>(await request.get(apiUrl)))
       .nodes.find((entry) => entry.id === node.node.id)?.harnessLibrary, { timeout: 15_000 }).toBe(true);
     const location = await data<{ id: string }>(await request.post(apiUrl + '/directories/select', { data: { nodeId: node.node.id, path: repo } }));
@@ -300,6 +302,18 @@ test('opens saved Codex history and keeps multiple chats in the same project ind
     const back = () => chat.getByRole('button', { name: '返回会话列表' }).tap();
     const sessionId = () => new URLSearchParams(new URL(phone.url()).hash.split('?')[1]).get('sessionId')!;
     const details = (id: string) => request.get(`${apiUrl}/${id}?timeline=1`).then((response) => data<{ threadId: string }>(response));
+    const fullDetail = async (id: string) => (await data<{ snapshot: HarnessSnapshot }>(
+      await request.get(`${apiUrl}/${id}?timeline=1&settings=1`))).snapshot;
+    const toggleSettings = () => chat.getByRole('button', { name: '会话设置' }).tap();
+    const panel = phone.getByRole('dialog', { name: '会话设置' });
+    const option = (name: string) => panel.getByRole('radio', { name, exact: true });
+    const select = async (name: string) => {
+      const item = panel.getByRole('radio', { name: new RegExp('^' + name) });
+      await item.tap();
+      await expect(item).toBeChecked({ timeout: 12_000 });
+    };
+    const closeSettings = () => panel.getByRole('button', { name: 'Close' }).tap();
+    const appliedTurns = async () => (await readFile(join(root, 'turns'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
     const send = async (text: string) => {
       await chat.getByRole('textbox', { name: '输入消息' }).fill(text);
       await chat.getByRole('button', { name: '发送', exact: true }).tap();
@@ -317,9 +331,37 @@ test('opens saved Codex history and keeps multiple chats in the same project ind
     await scroller.evaluate((element) => { element.scrollTop = 0; });
     await expect(chat.getByText('历史回答 1', { exact: true })).toBeAttached({ timeout: 12_000 });
     await expect(chat.locator('[data-harness-turn]')).toHaveCount(turnCount);
+    const beforeSettings = await fullDetail(originalSessionId);
+    const legacyView = await data<{ snapshot: HarnessSnapshot }>(await request.get(`${apiUrl}/${originalSessionId}?timeline=1`));
+    expect(legacyView.snapshot.view.settings).toBeUndefined();
+    await phone.addInitScript(({ id, snapshot }) => {
+      const key = `dovun-harness-timeline:${id}`;
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, 'legacy-cache-seeded');
+      localStorage.setItem(key, JSON.stringify(snapshot));
+    }, { id: originalSessionId, snapshot: legacyView.snapshot });
+    await phone.reload();
+    await ready();
+    await toggleSettings();
+    await expect(option('常规模型')).toBeChecked();
+    await select('精细模型');
+    await expect(option('低')).toBeChecked();
+    await select('高');
+    await select('计划模式');
+    await closeSettings();
+    const stale = await request.post(`${apiUrl}/${originalSessionId}/commands`, { data: {
+      operation: 'configure', commandId: crypto.randomUUID(), expectedEpoch: beforeSettings.epoch,
+      expectedSettingsRevision: beforeSettings.view.settings!.revision, changes: { model: 'fixture-default' },
+    } });
+    expect(stale.status()).toBe(409);
     await send('完成测试：从手机继续旧会话');
     await expect(chat.getByText('完成测试：从手机继续旧会话 已回复', { exact: true })).toBeVisible({ timeout: 12_000 });
     expect((await details(originalSessionId)).threadId).toBe(nativeId);
+    expect((await appliedTurns()).at(-1)).toMatchObject({
+      threadId: nativeId, provider: 'original-codex', model: 'fixture-precise', effort: 'high',
+      collaborationMode: { mode: 'plan', settings: { model: 'fixture-precise', reasoning_effort: 'high' } },
+      approvalPolicy: 'never', sandboxPolicy: { type: 'readOnly' },
+    });
     const calls = await readFile(join(root, 'calls'), 'utf8');
     expect(calls).toContain(`resume ${nativeId}`);
     expect(calls).not.toContain('thread/start');
@@ -337,8 +379,17 @@ test('opens saved Codex history and keeps multiple chats in the same project ind
     const first = await newChat();
     await send('第一条新对话仍在运行');
     await expect(chat.getByText('streamed', { exact: true })).toBeVisible({ timeout: 12_000 });
+    await toggleSettings();
+    await select('精细模型');
+    await select('只读');
+    await closeSettings();
+    expect((await appliedTurns()).at(-1)).toMatchObject({ model: 'fixture-default', sandboxPolicy: { type: 'workspaceWrite' } });
     await back();
     const second = await newChat();
+    await toggleSettings();
+    await expect(option('常规模型')).toBeChecked();
+    await expect(option('中')).toBeChecked();
+    await closeSettings();
     await send('完成测试：第二条独立对话');
     await expect(chat.getByText('完成测试：第二条独立对话 已回复', { exact: true })).toBeVisible({ timeout: 12_000 });
     await expect(chat.getByText('第一条新对话仍在运行', { exact: true })).toHaveCount(0);
@@ -348,6 +399,26 @@ test('opens saved Codex history and keeps multiple chats in the same project ind
     expect(sessionId()).toBe(first);
     await expect(chat.getByText('streamed', { exact: true })).toBeVisible();
     await expect(chat.getByText('完成测试：第二条独立对话 已回复', { exact: true })).toHaveCount(0);
+    await chat.getByRole('button', { name: '打断当前轮', exact: true }).tap();
+    await send('完成测试：使用第一条会话的新设置');
+    await expect(chat.getByText('完成测试：使用第一条会话的新设置 已回复', { exact: true })).toBeVisible({ timeout: 12_000 });
+    expect((await appliedTurns()).at(-1)).toMatchObject({
+      threadId: (await details(first)).threadId, model: 'fixture-precise', effort: 'low',
+      collaborationMode: { mode: 'default' }, approvalPolicy: 'never', sandboxPolicy: { type: 'readOnly' },
+    });
+
+    const originalEpoch = (await fullDetail(originalSessionId)).epoch;
+    const exited = once(agent, 'exit');
+    agent.kill('SIGTERM');
+    await exited;
+    agent = startAgent();
+    await phone.goto(`${projectUrl}&sessionId=${originalSessionId}`);
+    await expect.poll(async () => (await fullDetail(originalSessionId)).epoch, { timeout: 15_000 }).toBeGreaterThan(originalEpoch);
+    await ready();
+    await toggleSettings();
+    await expect(option('精细模型')).toBeChecked();
+    await expect(option('高')).toBeChecked();
+    await expect(panel.getByRole('radio', { name: /^计划模式/ })).toBeChecked();
   } finally {
     if (agent && agent.exitCode === null && agent.signalCode === null) {
       const exited = once(agent, 'exit');

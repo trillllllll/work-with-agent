@@ -6,9 +6,9 @@ import { isOnline } from './orchestration/nodes.js';
 import { canBrowse } from './harness-directories.js';
 import { requestHarnessRead, supportsHarnessLibrary } from './harness-library.js';
 import {
-  applyHarnessEvent, HARNESS_EVENTS, HARNESS_FEATURE, HARNESS_LIBRARY_LEASES, harnessCommandSchema, harnessCreateSchema, harnessSyncSchema,
+  applyHarnessEvent, HARNESS_EVENTS, HARNESS_FEATURE, HARNESS_LIBRARY_LEASES, HARNESS_SETTINGS_FEATURE, harnessCommandSchema, harnessCreateSchema, harnessSyncSchema,
   harnessCatalogQuerySchema, harnessHistoryQuerySchema, harnessOpenThreadSchema, harnessStartSchema,
-  legacyHarnessEvent, legacyHarnessSnapshot,
+  harnessEventForClient, harnessSnapshotForClient,
   type HarnessDelivery, type HarnessEvent, type HarnessLease, type HarnessLibraryLease, type HarnessReceipt, type HarnessSnapshot,
 } from '../node-agent/harness-protocol.js';
 
@@ -61,6 +61,7 @@ function sessionDto(session: HarnessSession & { commands: Array<{ payload: strin
     id: session.id, harness: codex.id, nodeId: session.nodeId, nodeName: node?.name ?? null,
     online: Boolean(node && isOnline(node) && (!session.library || supportsHarnessLibrary(node))),
     historyAvailable: Boolean(node && isOnline(node) && supportsHarnessLibrary(node) && session.threadId),
+    settingsAvailable: Boolean(node && supportsHarnessSettings(node)),
     native: session.nativeTitle !== null,
     title: session.nativeTitle || (title.length ? title.slice(0, 48).join('') + (title.length > 48 ? '…' : '') : null),
     activity: view?.approvals.length ? 'approval' : view?.turn?.status === 'inProgress' ? 'running' : null,
@@ -81,6 +82,10 @@ function requireAvailable(node: AgentNode | null) {
 
 export function supportsHarness(node: Pick<AgentNode, 'capabilitiesJson'>) {
   try { return JSON.parse(node.capabilitiesJson).harnessSessions === HARNESS_FEATURE; }
+  catch { return false; }
+}
+function supportsHarnessSettings(node: Pick<AgentNode, 'capabilitiesJson'>) {
+  try { return JSON.parse(node.capabilitiesJson).harnessSettings === HARNESS_SETTINGS_FEATURE; }
   catch { return false; }
 }
 async function projectLocation(db: Prisma.TransactionClient, nodeId: string, locationId: string) {
@@ -150,13 +155,13 @@ export async function listHarnessSessions() {
     sessions: sessions.map((session) => sessionDto(session, available.get(session.nodeId) ?? null)),
   };
 }
-export async function readHarnessSession(id: string, timeline = false) {
+export async function readHarnessSession(id: string, timeline = false, settings = false) {
   const row = await prisma.harnessSession.findUnique({ where: { id }, include: { commands: titleCommand } });
   if (!row) throw new DomainError('HARNESS_NOT_FOUND', '会话不存在', 404);
   const node = await prisma.agentNode.findUnique({ where: { id: row.nodeId } });
   const view = cache.get(id);
   const snapshot = view?.snapshot.epoch === row.epoch ? view.snapshot : null;
-  return { ...sessionDto(row, node), snapshot: snapshot && !timeline ? legacyHarnessSnapshot(snapshot) : snapshot,
+  return { ...sessionDto(row, node), snapshot: snapshot && harnessSnapshotForClient(snapshot, timeline, settings),
     current: !!view && !view.stale && view.snapshot.epoch === row.epoch };
 }
 export async function createHarnessSession(body: unknown) {
@@ -209,6 +214,12 @@ export async function queueHarnessCommand(id: string, body: unknown) {
     if (!session.activeNodeId || (session.library && (!node || !supportsHarnessLibrary(node)))
         || session.status !== 'ready' || session.epoch !== input.expectedEpoch || !view || view.stale || view.snapshot.epoch !== session.epoch) {
       throw new DomainError('HARNESS_SESSION_STALE', '会话正在恢复，请刷新后重试', 409);
+    }
+    if ('expectedSettingsRevision' in input) {
+      if (!node || !supportsHarnessSettings(node)) throw new DomainError('HARNESS_SETTINGS_UNSUPPORTED', '本机执行器暂不支持会话设置', 409);
+      if (view.snapshot.view.settings?.revision !== input.expectedSettingsRevision) {
+        throw new DomainError('HARNESS_SETTINGS_STALE', '会话设置已变更，请刷新后重试', 409);
+      }
     }
     const now = new Date();
     return commandDto(await tx.harnessCommand.create({ data: {
@@ -282,8 +293,12 @@ async function dispatchHarness(id: string, nodeId: string, tokenHash: string, li
     if (!node || node.status !== 'active' || node.deletedAt || node.tokenHash !== tokenHash || !row || !supportsHarness(node)
         || (library ? !supportsHarnessLibrary(node) : row.library)) return;
     const dispatchTime = new Date().toISOString();
+    // Old executors parse the whole lease strictly, including commands left by a newer executor.
+    const unsupportedSettings: Prisma.HarnessCommandWhereInput = supportsHarnessSettings(node) ? {} : { NOT: [
+      { payload: { contains: '"operation":"configure"' } }, { payload: { contains: '"expectedSettingsRevision":' } },
+    ] };
     const commands = await tx.harnessCommand.findMany({
-      where: { sessionId: row.id, OR: [{ status: 'dispatched' }, { status: 'queued', expiresAt: { gt: dispatchTime } }] },
+      where: { ...unsupportedSettings, sessionId: row.id, OR: [{ status: 'dispatched' }, { status: 'queued', expiresAt: { gt: dispatchTime } }] },
       orderBy: [{ createdAt: 'asc' }, { commandId: 'asc' }], take: 16,
     });
     await tx.harnessCommand.updateMany({
@@ -388,20 +403,21 @@ export async function syncHarness(node: AgentNode, id: string, raw: unknown) {
   return { seq: current.snapshot.seq };
 }
 
-export function subscribeHarness(id: string, after: { epoch: number; seq: number } | null, emit: (event: StreamEvent) => void, timeline = false, library = false) {
+export function subscribeHarness(id: string, after: { epoch: number; seq: number } | null, emit: (event: StreamEvent) => void,
+  timeline = false, library = false, settings = false) {
   let cursor = after;
+  const projectEvent = (event: HarnessEvent) => harnessEventForClient(event, timeline, settings);
   const send = (frame: StreamEvent) => {
     if (frame.type === 'snapshot') {
       cursor = frame;
-      emit(timeline ? frame : legacyHarnessSnapshot(frame));
+      emit(harnessSnapshotForClient(frame, timeline, settings));
       return;
     }
     if (frame.type === 'event') {
-      const event = timeline ? frame.event : legacyHarnessEvent(frame.event);
+      const event = projectEvent(frame.event);
       if (!event) return;
-      // An old browser cannot apply a tool event. At the next visible update jump
-      // across those frames with one legacy snapshot instead of exposing a gap.
-      if (!timeline && cursor && (cursor.epoch !== frame.epoch || cursor.seq + 1 !== frame.seq)) {
+      // A client may skip optional events. The next visible update must then supply a full snapshot.
+      if (cursor && (cursor.epoch !== frame.epoch || cursor.seq + 1 !== frame.seq)) {
         const snapshot = cache.get(id)?.snapshot;
         if (snapshot) send(snapshot);
         return;
@@ -421,7 +437,7 @@ export function subscribeHarness(id: string, after: { epoch: number; seq: number
     if (!after) send(current.snapshot);
     else if (current.snapshot.epoch === after.epoch && after.seq <= current.snapshot.seq && after.seq >= (current.frames[0]?.seq ?? current.snapshot.seq + 1) - 1) {
       const later = current.frames.filter((frame) => frame.seq > after.seq);
-      if (!timeline && later.some((frame) => !legacyHarnessEvent(frame.event))) send(current.snapshot);
+      if (later.some((frame) => !projectEvent(frame.event))) send(current.snapshot);
       else {
         for (const frame of later) send({ type: 'event', epoch: after.epoch, ...frame });
         send({ type: 'caughtUp', epoch: current.snapshot.epoch, seq: current.snapshot.seq });

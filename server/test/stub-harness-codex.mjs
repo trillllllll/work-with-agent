@@ -11,6 +11,9 @@ if (process.argv.includes('--version')) {
 let threadId = 'fixture-thread';
 const historyPath = process.env.HARNESS_TEST_HISTORY;
 const library = process.env.HARNESS_TEST_LIBRARY;
+const turnsLog = process.env.HARNESS_TEST_TURNS;
+const providerArg = process.argv.find((arg) => arg.startsWith('model_provider='));
+const modelProvider = providerArg ? JSON.parse(providerArg.slice('model_provider='.length)) : 'fixture-codex';
 const file = (id) => join(library, encodeURIComponent(id) + '.json');
 const read = (path) => existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : undefined;
 const get = (id) => library ? read(file(id)) : id === threadId ? { thread, turns: read(historyPath) ?? [] } : undefined;
@@ -21,6 +24,8 @@ let requestId = 800;
 
 const send = (data) => console.log(JSON.stringify(data));
 const reply = (id, result) => send({ id, result });
+const sessionInfo = () => ({ thread, modelProvider, model: thread.model ?? 'fixture-default',
+  reasoningEffort: thread.effort ?? 'medium', sandbox: { type: 'workspaceWrite' } });
 const notify = (method, params) => send({ method, params: { threadId, ...params } });
 const persist = () => library ? writeFileSync(file(threadId), JSON.stringify({ thread, turns: history }))
   : writeFileSync(historyPath, JSON.stringify(history));
@@ -66,6 +71,15 @@ for await (const line of createInterface({ input: process.stdin })) {
   switch (method) {
     case 'initialize': reply(id, { userAgent: 'fixture' }); break;
     case 'initialized': break;
+    case 'model/list':
+      reply(id, { data: [
+        { model: 'fixture-default', displayName: '常规模型', defaultReasoningEffort: 'medium',
+          supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'medium' }] },
+        { model: 'fixture-precise', displayName: '精细模型', defaultReasoningEffort: 'low',
+          supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] },
+      ] });
+      break;
+    case 'collaborationMode/list': reply(id, { data: [{ mode: 'default' }, { mode: 'plan' }] }); break;
     case 'thread/start':
       log('thread/start'); log('cwd ' + params.cwd);
       if (library) {
@@ -73,7 +87,7 @@ for await (const line of createInterface({ input: process.stdin })) {
         thread = { id: threadId, cwd: params.cwd, updatedAt: Math.floor(Date.now() / 1000) };
         history = [];
       }
-      reply(id, { thread });
+      reply(id, sessionInfo());
       break;
     case 'thread/name/set':
       thread.name = params.name;
@@ -83,11 +97,14 @@ for await (const line of createInterface({ input: process.stdin })) {
     case 'thread/resume': {
       const stored = get(params.threadId);
       if (!stored) { send({ id, error: { code: -32602, message: 'fixture thread missing' } }); break; }
+      if (stored.thread.modelProvider && stored.thread.modelProvider !== modelProvider) {
+        send({ id, error: { code: -32600, message: 'original provider is required to resume' } }); break;
+      }
       log('thread/resume'); log('resume ' + params.threadId);
       thread = stored.thread;
       threadId = thread.id;
       history = stored.turns;
-      reply(id, { thread });
+      reply(id, sessionInfo());
       break;
     }
     case 'thread/read': {
@@ -112,6 +129,7 @@ for await (const line of createInterface({ input: process.stdin })) {
     }
     case 'turn/start': {
       log('turn/start');
+      if (turnsLog) appendFileSync(turnsLog, JSON.stringify({ ...params, provider: modelProvider }) + '\n');
       active = { id: 'turn-' + (history.length + 1), status: 'inProgress', items: [] };
       history.push(active);
       reply(id, { turn: active });

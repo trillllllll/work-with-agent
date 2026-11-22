@@ -13,7 +13,7 @@ import { createLocalLaunchSpec, localProviders } from './cli.js';
 import { HarnessController } from './harness-controller.js';
 import { readHarnessLibrary } from './harness-library.js';
 import {
-  HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_LIBRARY_LEASES, HARNESS_LIBRARY_READS, HARNESS_TIMELINE_FEATURE,
+  HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_LIBRARY_LEASES, HARNESS_LIBRARY_READS, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE,
   harnessLeaseSchema, harnessLibraryLeaseSchema, harnessReadTaskSchema, type HarnessLease, type HarnessReadTask,
 } from './harness-protocol.js';
 import { DIRECTORY_FEATURE, directoryTaskSchema, type DirectoryTask } from './directory-protocol.js';
@@ -100,7 +100,8 @@ export class NodeAgent {
         method: 'POST', headers: {
           'Content-Type': 'application/json', Authorization: `Node ${this.config.token}`,
           ...(path === '/lease' ? { 'X-Dovun-Node-Features': HARNESS_FEATURE, 'X-Dovun-Directory-Browser': DIRECTORY_FEATURE,
-            'X-Dovun-Harness-Timeline': HARNESS_TIMELINE_FEATURE, 'X-Dovun-Harness-Library': HARNESS_LIBRARY_FEATURE } : {}),
+            'X-Dovun-Harness-Timeline': HARNESS_TIMELINE_FEATURE, 'X-Dovun-Harness-Library': HARNESS_LIBRARY_FEATURE,
+            'X-Dovun-Harness-Settings': HARNESS_SETTINGS_FEATURE } : {}),
         },
         body: JSON.stringify(body),
         ...(/^\/(harness-sessions|harness-library|directories)\//.test(path) ? { signal: AbortSignal.timeout(8_000) } : {}),
@@ -120,6 +121,7 @@ export class NodeAgent {
       if (path === '/lease' && response.status === 400) {
         this.serverAccepts.delete(DIRECTORY_FEATURE);
         this.serverAccepts.delete(HARNESS_LIBRARY_FEATURE);
+        this.serverAccepts.delete(HARNESS_SETTINGS_FEATURE);
       }
       const error = Object.assign(new Error(`服务端返回 ${response.status} ${code ?? ''}`), { status: response.status, code });
       this.rememberError(error);
@@ -141,6 +143,7 @@ export class NodeAgent {
     const version = /(\d+)\.(\d+)\.\d+/.exec(codex?.version ?? '');
     if (this.serverAccepts.has(HARNESS_FEATURE) && version && (Number(version[1]) > 0 || Number(version[2]) >= 166)) body.harnessSessions = HARNESS_FEATURE;
     if (body.harnessSessions && this.serverAccepts.has(HARNESS_LIBRARY_FEATURE)) body.harnessLibrary = HARNESS_LIBRARY_FEATURE;
+    if (body.harnessSessions && this.serverAccepts.has(HARNESS_SETTINGS_FEATURE)) body.harnessSettings = HARNESS_SETTINGS_FEATURE;
     if (this.serverAccepts.has(DIRECTORY_FEATURE)) body.directoryBrowser = DIRECTORY_FEATURE;
     if (!capsV2) return body;
     const logPath = runtimeEnv('NODE_LOG')?.trim() || null;
@@ -215,7 +218,8 @@ export class NodeAgent {
       if (library) this.harnesses.set(lease.sessionId, controller);
       else this.harness = controller;
     }
-    void controller.consume(lease, this.serverAccepts.has(HARNESS_TIMELINE_FEATURE))?.catch((error) => this.rememberError(error));
+    void controller.consume(lease, this.serverAccepts.has(HARNESS_TIMELINE_FEATURE), this.serverAccepts.has(HARNESS_SETTINGS_FEATURE))
+      ?.catch((error) => this.rememberError(error));
   }
   private async answerHarnessRead(task: HarnessReadTask) {
     this.readingHarnesses.add(task.id);

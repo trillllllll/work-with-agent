@@ -8,7 +8,7 @@ import { WorktreeService } from '../application/orchestration/worktrees.js';
 import { isServerMode, publicWorkspaceUrl } from '../application/desktop-paths.js';
 import { leaseHarness, leaseHarnessLibrary, syncHarness } from '../application/harness-sessions.js';
 import { pendingHarnessReads, reportHarnessRead } from '../application/harness-library.js';
-import { HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_TIMELINE_FEATURE } from '../node-agent/harness-protocol.js';
+import { HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE } from '../node-agent/harness-protocol.js';
 import { DIRECTORY_FEATURE } from '../node-agent/directory-protocol.js';
 import { pendingDirectories, reportDirectory } from '../application/harness-directories.js';
 
@@ -94,6 +94,7 @@ export function createNodeRouter() {
     if (req.get('X-Dovun-Node-Features') !== HARNESS_FEATURE) return response;
     const accepts = [...response.accepts, HARNESS_FEATURE];
     if (req.get('X-Dovun-Harness-Library') === HARNESS_LIBRARY_FEATURE) accepts.push(HARNESS_LIBRARY_FEATURE);
+    if (req.get('X-Dovun-Harness-Settings') === HARNESS_SETTINGS_FEATURE) accepts.push(HARNESS_SETTINGS_FEATURE);
     if (req.get('X-Dovun-Harness-Timeline') === HARNESS_TIMELINE_FEATURE) accepts.push(HARNESS_TIMELINE_FEATURE);
     if (req.get('X-Dovun-Directory-Browser') === DIRECTORY_FEATURE) accepts.push(DIRECTORY_FEATURE);
     const supportsHarness = req.body.capabilities.harnessSessions === HARNESS_FEATURE;

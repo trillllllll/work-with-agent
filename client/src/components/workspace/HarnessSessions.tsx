@@ -13,6 +13,7 @@ import { ChoiceList } from '@/components/ui/choice-list.js';
 import { BackButton } from '@/components/ui/nav-buttons.js';
 import { Surface } from '@/components/ui/surface.js';
 import { HarnessStartDialog } from './HarnessStartDialog.js';
+import { HarnessSettings } from './HarnessSettings.js';
 import { HarnessTimeline } from './HarnessTimeline.js';
 import { ChatProjectButton, HarnessProjectPicker, type HarnessProject, type ProjectComputer } from './HarnessProjectPicker.js';
 import type { DirectoryPage } from '../../../../server/src/node-agent/directory-protocol.js';
@@ -30,7 +31,7 @@ type Session = {
   id: string; nodeId: string; nodeName: string | null; online: boolean; projectName: string;
   threadId: string | null; epoch: number; status: string; error: string | null; startCommandId: string;
   harness?: string; locationId: string; title?: string | null; activity?: 'approval' | 'running' | null; updatedAt: string;
-  native?: boolean; historyAvailable?: boolean;
+  native?: boolean; historyAvailable?: boolean; settingsAvailable?: boolean;
 };
 type SessionRow = Pick<Session, 'id' | 'nodeName' | 'online' | 'projectName' | 'status' | 'title' | 'activity' | 'updatedAt'> & { nativeThreadId?: string };
 type Detail = Session & { snapshot: HarnessSnapshot | null; current: boolean };
@@ -41,7 +42,7 @@ type List = {
   sessions: Session[];
 };
 type Project = { id: string; name: string; locations: Array<{ id: string; nodeId: string; path: string; status: string }> };
-type Receipt = { commandId: string; status: string; error: string | null };
+type Receipt = { commandId: string; status: string; error: string | null; settings?: boolean };
 type Pending = { command: HarnessCommand };
 type StartCommand = { nodeId: string; locationId: string; commandId: string };
 
@@ -73,8 +74,9 @@ function useHarnessStream(id: string) {
       setReady(false);
       let live = false;
       const view = current.current;
-      const after = !reset && view ? `&after=${view.epoch}:${view.seq}` : '';
-      source = new EventSource(`${base}/${encodeURIComponent(id)}/events?timeline=1${after}`);
+      // Cached snapshots from builds that did not request settings need a full refresh.
+      const after = !reset && view?.view.settings ? `&after=${view.epoch}:${view.seq}` : '';
+      source = new EventSource(`${base}/${encodeURIComponent(id)}/events?timeline=1&settings=1${after}`);
       source.onerror = () => { live = false; setReady(false); };
       source.onmessage = (event) => {
         let data: HarnessSnapshot | { type: 'event'; epoch: number; seq: number; event: HarnessEvent } | { type: 'receipt'; receipt: Receipt } | { type: 'unavailable'; epoch: number; error: string } | { type: 'caughtUp'; epoch: number; seq: number };
@@ -368,15 +370,17 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
   const sendGate = useRef(false);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const historyAnchor = useRef<{ row: HTMLElement; top: number; pages: number } | null>(null);
   const [pin] = useState(createBottomPin);
   const [showLatest, setShowLatest] = useState(false);
-  const detail = useQuery({ queryKey: ['harness-session', id], queryFn: () => api<Detail>(path + '?timeline=1'), refetchInterval: 4_000 });
+  const detail = useQuery({ queryKey: ['harness-session', id], queryFn: () => api<Detail>(path + '?timeline=1&settings=1'), refetchInterval: 4_000 });
   const stream = useHarnessStream(id);
   const snapshot = stream.snapshot ?? detail.data?.snapshot;
   const view = snapshot?.view;
+  const settings = detail.data?.settingsAvailable ? view?.settings : undefined;
   const historyEnabled = Boolean(detail.data?.historyAvailable && (detail.data.native || detail.data.title || view?.messages.length));
   const history = useInfiniteQuery({
     queryKey: ['harness-history', id, detail.data?.threadId], enabled: historyEnabled,
@@ -409,10 +413,14 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
     if (next.commandId !== expected) return;
     setReceipt((previous) => {
       if (previous?.commandId === next.commandId && delivering(next) && previous.status !== 'queued') return previous;
-      return next;
+      return { ...next, settings: active?.command.operation === 'configure' };
     });
     if (next.commandId === startCommandId && !delivering(next)) void detail.refetch();
     if (!active || delivering(next)) return;
+    if (active.command.operation === 'configure') {
+      setSettingsError(next.status === 'accepted' ? null : next.error ?? t('harness.requestFailed'));
+      if (next.status !== 'accepted') void detail.refetch();
+    }
     if (next.status === 'accepted' && 'text' in active.command) {
       const text = active.command.text;
       setDraft((value) => {
@@ -477,14 +485,18 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
     sendGate.current = true;
     setSending(true);
     setError(null);
+    if (command.operation === 'configure') setSettingsError(null);
     try { observe(await api<Receipt>(`${path}/commands`, { method: 'POST', body: json(command) })); }
     catch (failure) {
-      setError(message(failure, t('harness.requestFailed')));
+      const reason = message(failure, t('harness.requestFailed'));
+      setError(reason);
+      if (command.operation === 'configure') setSettingsError(reason);
       if (failure instanceof ApiError && failure.status && failure.status < 500) updatePending(null);
     } finally { sendGate.current = false; setSending(false); }
   }
   function act(action: Omit<Extract<HarnessCommand, { operation: 'send' }>, 'commandId' | 'expectedEpoch'>
     | Omit<Extract<HarnessCommand, { operation: 'steer' }>, 'commandId' | 'expectedEpoch'>
+    | Omit<Extract<HarnessCommand, { operation: 'configure' }>, 'commandId' | 'expectedEpoch'>
     | Omit<Extract<HarnessCommand, { operation: 'interrupt' }>, 'commandId' | 'expectedEpoch'>
     | Omit<Extract<HarnessCommand, { operation: 'resolveApproval' }>, 'commandId' | 'expectedEpoch'>) {
     if (!enabled || !snapshot || pendingRef.current || sendGate.current) return;
@@ -559,7 +571,10 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
     <div className="assistant-composer-area shrink-0">
       {(visibleReceipt || error || pending && !sending && tracked.error) && (
         <div className="mb-2 flex flex-wrap items-center gap-2 px-2 text-xs text-muted-foreground">
-          {visibleReceipt && <p role="status" className="[overflow-wrap:anywhere]">{t('harness.receipt.' + visibleReceipt.status)}{visibleReceipt.error && ' · ' + visibleReceipt.error}</p>}
+          {visibleReceipt && <p role="status" className="[overflow-wrap:anywhere]">
+            {t(visibleReceipt.settings && visibleReceipt.status === 'accepted' ? 'harness.settings.saved' : 'harness.receipt.' + visibleReceipt.status)}
+            {visibleReceipt.error && ' · ' + visibleReceipt.error}
+          </p>}
           {error && <p role="alert" className="text-destructive [overflow-wrap:anywhere]">{error}</p>}
           {pending && !sending && tracked.error && <Button size="sm" variant="outline" type="button" onClick={() => void post(pending.command)}>{t('harness.retry')}</Button>}
         </div>
@@ -568,13 +583,15 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
         actionsDisabled={actionsDisabled} allowSendWhileBusy listenForAssistantFocus={false}
         labels={{ input: t('harness.draft'), send: t(inProgress ? 'harness.steer' : 'harness.send'), stop: t('harness.interrupt') }}
         placeholder={inProgress ? t('harness.steer') : t('harness.placeholder', { harness: harnessName })}
+        toolbar={settings && <HarnessSettings settings={settings} disabled={actionsDisabled} saving={pending?.command.operation === 'configure'}
+          error={settingsError} onChange={(changes) => act({ operation: 'configure', expectedSettingsRevision: settings.revision, changes })} />}
         model={projectName && <ChatProjectButton name={projectName} open={chooseProject} />}
         onSend={(event) => {
           event.preventDefault();
           const text = draft.trim();
           if (!text) return;
           if (inProgress) act({ operation: 'steer', turnId: currentTurn.id, text });
-          else act({ operation: 'send', text });
+          else act({ operation: 'send', text, ...(settings ? { expectedSettingsRevision: settings.revision } : {}) });
         }}
         onStop={inProgress ? () => act({ operation: 'interrupt', turnId: currentTurn.id }) : undefined} />
     </div>

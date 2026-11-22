@@ -58,14 +58,17 @@ export class CodexAppServer {
     });
   }
 
-  static async open(cwd: string, onMessage: (method: string, params: JsonObject, id?: RpcId) => void, onExit: () => void) {
+  static async open(cwd: string, onMessage: (method: string, params: JsonObject, id?: RpcId) => void, onExit: () => void,
+    options: { modelProvider?: string; experimental?: boolean } = {}) {
     const cli = await resolveLocalCli('codex');
-    const child = spawn(cli.command, [...cli.prefix, 'app-server', '--listen', 'stdio://'], {
+    const provider = options.modelProvider ? ['-c', 'model_provider=' + JSON.stringify(options.modelProvider)] : [];
+    const child = spawn(cli.command, [...cli.prefix, ...provider, 'app-server', '--listen', 'stdio://'], {
       cwd, env: providerEnvironment(), windowsHide: true, stdio: 'pipe',
     });
     const app = new CodexAppServer(child, onMessage, onExit);
     try {
-      await app.request('initialize', { clientInfo: { name: 'dovun', title: 'Dovun', version: '1' } });
+      await app.request('initialize', { clientInfo: { name: 'dovun', title: 'Dovun', version: '1' },
+        ...(options.experimental ? { capabilities: { experimentalApi: true } } : {}) });
       await app.write({ method: 'initialized' });
       return app;
     } catch (error) {

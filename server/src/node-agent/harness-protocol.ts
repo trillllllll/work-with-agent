@@ -3,6 +3,8 @@ import { z } from 'zod';
 export const HARNESS_FEATURE = 'harness_sessions_v1';
 export const HARNESS_TIMELINE_FEATURE = 'harness_timeline_v1';
 export const HARNESS_LIBRARY_FEATURE = 'harness_library_v1';
+export const HARNESS_SETTINGS_FEATURE = 'harness_settings_v1';
+export const HARNESS_MODELS = 500;
 export const HARNESS_LIBRARY_LEASES = 12;
 export const HARNESS_LIBRARY_READS = 6;
 export const HARNESS_MESSAGES = 40;
@@ -27,8 +29,22 @@ export const harnessHistoryQuerySchema = z.object({ cursor: cursor.optional() })
 const commandId = { commandId: id, expectedEpoch: epoch };
 const turnId = { turnId: id };
 
+const settingsFields = {
+  model: id, effort: id.nullable(), mode: z.enum(['default', 'plan']), permission: z.enum(['readOnly', 'workspace']),
+};
+const settingsChange = z.object(settingsFields).strict().partial();
+const settingsSelection = z.object({ ...settingsFields, revision: sequence }).strict();
+const modelOption = z.object({
+  id, label: z.string().min(1).max(200), defaultEffort: id.nullable(),
+  efforts: z.array(id).max(32),
+}).strict();
+const settingsView = settingsSelection.extend({
+  models: z.array(modelOption).max(HARNESS_MODELS), planAvailable: z.boolean(), catalogAvailable: z.boolean(),
+});
+
 export const harnessCommandSchema = z.discriminatedUnion('operation', [
-  z.object({ ...commandId, operation: z.literal('send'), text: input }).strict(),
+  z.object({ ...commandId, operation: z.literal('send'), text: input, expectedSettingsRevision: sequence.optional() }).strict(),
+  z.object({ ...commandId, operation: z.literal('configure'), expectedSettingsRevision: sequence, changes: settingsChange }).strict(),
   z.object({ ...commandId, ...turnId, operation: z.literal('steer'), text: input }).strict(),
   z.object({ ...commandId, ...turnId, operation: z.literal('interrupt') }).strict(),
   z.object({ ...commandId, operation: z.literal('resolveApproval'), requestId: id, decision: z.enum(['accept', 'decline']) }).strict(),
@@ -82,6 +98,7 @@ const state = z.object({
   turns: z.array(turn).max(HARNESS_MESSAGES).optional(),
   tools: z.array(tool).max(HARNESS_TOOLS).optional(),
   artifacts: z.array(artifact).max(HARNESS_ARTIFACTS).optional(),
+  settings: settingsView.optional(),
 }).strict();
 export const harnessCatalogThreadSchema = z.object({
   threadId: id, title: z.string().max(160), updatedAt: z.string().datetime(),
@@ -107,6 +124,7 @@ export const harnessEventSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('tool'), tool }).strict(),
   z.object({ kind: z.literal('toolOutput'), turnId: id, id, delta: z.string().max(HARNESS_OUTPUT_LIMIT), truncated: z.boolean().optional() }).strict(),
   z.object({ kind: z.literal('artifact'), artifact }).strict(),
+  z.object({ kind: z.literal('settings'), settings: settingsView }).strict(),
 ]);
 
 export const harnessSyncSchema = z.discriminatedUnion('type', [
@@ -117,6 +135,10 @@ export const harnessSyncSchema = z.discriminatedUnion('type', [
 ]);
 
 export type HarnessCommand = z.infer<typeof harnessCommandSchema>;
+export type HarnessSettingsChange = z.infer<typeof settingsChange>;
+export type HarnessSettingsSelection = z.infer<typeof settingsSelection>;
+export type HarnessSettingsView = z.infer<typeof settingsView>;
+export type HarnessModelOption = z.infer<typeof modelOption>;
 export type HarnessDelivery = z.infer<typeof harnessDeliverySchema>;
 export type HarnessLease = z.infer<typeof harnessLeaseSchema>;
 export type HarnessLibraryLease = z.infer<typeof harnessLibraryLeaseSchema>;
@@ -147,7 +169,7 @@ function nextOrder(view: HarnessView) {
 }
 
 export function legacyHarnessEvent(event: HarnessEvent): HarnessEvent | null {
-  if (event.kind === 'tool' || event.kind === 'toolOutput' || event.kind === 'artifact') return null;
+  if (event.kind === 'tool' || event.kind === 'toolOutput' || event.kind === 'artifact' || event.kind === 'settings') return null;
   if (event.kind !== 'message') return event;
   const { id, turnId, role, text } = event.message;
   return { kind: 'message', message: { id, turnId, role, text } };
@@ -158,8 +180,23 @@ export function legacyHarnessSnapshot(snapshot: HarnessSnapshot): HarnessSnapsho
   return { ...snapshot, view: { messages: messages.map(({ id, turnId, role, text }) => ({ id, turnId, role, text })), turn, approvals, error } };
 }
 
+export function harnessEventForClient(event: HarnessEvent, timeline: boolean, settings: boolean): HarnessEvent | null {
+  if (event.kind === 'settings') return settings ? event : null;
+  return timeline ? event : legacyHarnessEvent(event);
+}
+
+export function harnessSnapshotForClient(snapshot: HarnessSnapshot, timeline: boolean, settings: boolean): HarnessSnapshot {
+  const projected = timeline ? snapshot : legacyHarnessSnapshot(snapshot);
+  if (settings && snapshot.view.settings) return { ...projected, view: { ...projected.view, settings: snapshot.view.settings } };
+  if (!projected.view.settings) return projected;
+  const { settings: _settings, ...view } = projected.view;
+  return { ...projected, view };
+}
+
 export function applyHarnessEvent(view: HarnessView, event: HarnessEvent): HarnessView {
   switch (event.kind) {
+    case 'settings':
+      return { ...view, settings: event.settings };
     case 'turn': {
       const running = event.turn.status === 'inProgress';
       const tools = running ? view.tools : view.tools?.map((item): HarnessTool =>

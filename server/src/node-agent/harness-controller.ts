@@ -6,15 +6,19 @@ import { asObject, CodexAppServer, CodexRejected } from './harness-codex.js';
 import { readHarnessArtifacts } from './harness-artifacts.js';
 import { codexText as text, codexItems as items, codexMessage as message, codexTurn as turn, projectCodexHistory } from './harness-history.js';
 import { assertNativeThreadIdle, readProjectThread } from './harness-library.js';
+import { changeCodexSelection, codexModelId, codexTurnSettings, readCodexSelection, readCodexSettings } from './harness-settings.js';
 import { codexHarnessTool, harnessFilePaths, harnessOutput } from './harness-tools.js';
 import { assertAllowed } from './git.js';
 import {
-  applyHarnessEvent, HARNESS_EVENTS, HARNESS_TEXT_LIMIT, legacyHarnessEvent, legacyHarnessSnapshot,
+  applyHarnessEvent, HARNESS_EVENTS, HARNESS_TEXT_LIMIT, harnessEventForClient, harnessSnapshotForClient,
   type HarnessDelivery, type HarnessEvent, type HarnessLease,
-  type HarnessReceipt, type HarnessSnapshot, type HarnessSync, type HarnessView,
+  type HarnessReceipt, type HarnessSettingsSelection, type HarnessSnapshot, type HarnessSync, type HarnessView,
 } from './harness-protocol.js';
 
-type Binding = { sessionId: string; threadId: string; cwd: string; epoch: number; pid?: number; native?: true; parked?: true };
+type Binding = {
+  sessionId: string; threadId: string; cwd: string; epoch: number; pid?: number; native?: true; parked?: true;
+  modelProvider?: string; settings?: HarnessSettingsSelection; settingsCommand?: string;
+};
 type Assignment = HarnessLease & { nativeCwd?: string };
 type SavedCommand = { hash: string; receipt: HarnessReceipt | null };
 type Sync = (sessionId: string, payload: HarnessSync) => Promise<{ snapshotRequested?: boolean }>;
@@ -62,6 +66,8 @@ export class HarnessController {
   private retryAt = 0;
   private stopped = false;
   private timeline = false;
+  private settingsEnabled = false;
+  private workspaceSandbox: Record<string, unknown> = {};
   private lastWork = Date.now();
 
   constructor(dataDir: string, nodeKey: string, private readonly roots: string[], private readonly sync: Sync, private readonly library = false) {
@@ -70,17 +76,18 @@ export class HarnessController {
 
   private get bindingPath() { return resolve(this.directory, 'session.json'); }
 
-  consume(lease: Assignment, timeline = false) {
+  consume(lease: Assignment, timeline = false, settings = false) {
     if (this.stopped || this.work) return;
-    this.work = this.processLease(lease, timeline).finally(() => { this.work = null; this.lastWork = Date.now(); });
+    this.work = this.processLease(lease, timeline, settings).finally(() => { this.work = null; this.lastWork = Date.now(); });
     return this.work;
   }
 
-  private async processLease(lease: Assignment, timeline: boolean) {
+  private async processLease(lease: Assignment, timeline: boolean, settings: boolean) {
     if (!this.release) this.release = await exclusiveDataGuard([resolve(this.directory, 'owner')]);
-    if (this.timeline !== timeline) {
+    if (this.timeline !== timeline || this.settingsEnabled !== settings) {
       await this.upload?.catch(() => undefined);
       this.timeline = timeline;
+      this.settingsEnabled = settings;
       this.events = [];
       this.snapshotNeeded = true;
     }
@@ -104,6 +111,10 @@ export class HarnessController {
         await this.sync(lease.sessionId, { type: 'unavailable', epoch: lease.epoch, error: failure(error) });
       }
     }
+    if (this.settingsEnabled && this.app && this.binding?.settings && !this.view.settings) {
+      this.emit({ kind: 'settings', settings: await readCodexSettings(this.app, this.binding.settings) });
+      this.snapshotNeeded = true;
+    }
     if (lease.snapshotRequested && this.app) this.snapshotNeeded = true;
     await this.flush();
     for (const delivery of lease.commands) {
@@ -112,13 +123,13 @@ export class HarnessController {
     }
   }
 
-  private async open(cwd: string) {
+  private async open(cwd: string, modelProvider?: string) {
     this.opening = CodexAppServer.open(cwd, (method, params, id) => this.receive(method, params, id), () => {
       const binding = this.binding;
       this.app = null;
       this.approvals.clear();
       if (binding && !this.stopped) void this.sync(binding.sessionId, { type: 'unavailable', epoch: binding.epoch, error: '本机 Codex 连接已断开，正在恢复原会话' }).catch(() => undefined);
-    });
+    }, { modelProvider, experimental: true });
     try {
       this.app = await this.opening;
       if (this.stopped) { await this.dropApp(); throw new CodexRejected('执行器已停止'); }
@@ -131,21 +142,33 @@ export class HarnessController {
     if (prior.pid && isAlive(prior.pid)) throw new Error('正在等待原 Codex 进程退出');
     const cwd = await assertAllowed(prior.cwd, this.roots);
     if (cwd !== prior.cwd) throw new Error('项目路径已变化，无法恢复原会话');
-    const app = await this.open(cwd);
+    let modelProvider = prior.modelProvider;
+    let app = await this.open(cwd, modelProvider);
     try {
-      if (prior.native) {
+      if (prior.native || this.settingsEnabled && !modelProvider) {
         const thread = await readProjectThread(app, prior.threadId, cwd, this.roots);
-        await assertNativeThreadIdle(app, thread, prior.threadId);
+        if (prior.native) await assertNativeThreadIdle(app, thread, prior.threadId);
+        const original = codexModelId(thread.modelProvider);
+        if (original && original !== modelProvider) {
+          await this.dropApp();
+          modelProvider = original;
+          app = await this.open(cwd, original);
+        }
       }
       const reopened = await app.request('thread/resume', { ...sessionOptions, cwd, threadId: prior.threadId, excludeTurns: true });
       if (asObject(reopened.thread).id !== prior.threadId) throw new Error('Codex 返回了不同的线程');
       const history = await app.request('thread/turns/list', { threadId: prior.threadId, limit: 20, sortDirection: 'desc', itemsView: 'full' });
       const { view, clients } = await projectCodexHistory(history.data, cwd, this.roots, true);
       this.view = view;
+      this.workspaceSandbox = asObject(reopened.sandbox);
       this.restoredClients = clients;
       this.fileChanges.clear();
       this.approvals.clear();
-      await this.setBinding({ ...prior, parked: undefined, epoch: Math.max(prior.epoch, lease.epoch) + 1, pid: app.pid });
+      await this.setBinding({
+        ...prior, parked: undefined, epoch: Math.max(prior.epoch, lease.epoch) + 1, pid: app.pid,
+        modelProvider: codexModelId(reopened.modelProvider) ?? modelProvider,
+        settings: prior.settings ?? readCodexSelection(reopened),
+      });
       return prior.parked === true && prior.epoch === lease.epoch && view.turn?.status !== 'unknown';
     } catch (error) { await this.dropApp(); throw error; }
   }
@@ -166,7 +189,15 @@ export class HarnessController {
       // Naming materializes an empty Codex thread so it can be resumed after execution restarts.
       if (this.library) await app.request('thread/name/set', { threadId: id, name: 'Dovun' });
       this.view = emptyView();
-      await this.setBinding({ sessionId, cwd: await realpath(cwd), threadId: id, epoch: epoch + 1, pid: app.pid });
+      this.workspaceSandbox = asObject(started.sandbox);
+      const settings = readCodexSelection(started);
+      await this.setBinding({
+        sessionId, cwd: await realpath(cwd), threadId: id, epoch: epoch + 1, pid: app.pid,
+        modelProvider: codexModelId(started.modelProvider) ?? undefined, settings,
+      });
+      if (this.settingsEnabled && settings) {
+        this.view = { ...this.view, settings: await readCodexSettings(app, settings) };
+      }
     } catch (error) { await this.dropApp(); throw error; }
   }
 
@@ -186,7 +217,9 @@ export class HarnessController {
     let receipt: HarnessReceipt = { type: 'receipt', commandId: command.commandId, status: 'accepted' };
     if (prior) {
       if (hash !== prior.hash) throw new Error('原操作 ID 的内容已变化');
-      receipt = prior.receipt ?? (this.restoredClients.has(command.commandId) || command.operation === 'start' && this.binding?.sessionId === sessionId
+      const applied = this.restoredClients.has(command.commandId) || command.operation === 'start' && this.binding?.sessionId === sessionId
+        || command.operation === 'configure' && this.binding?.settingsCommand === command.commandId;
+      receipt = prior.receipt ?? (applied
         ? receipt : { ...receipt, status: 'unknown', error: '操作可能已交给 Codex，等待核实' });
     } else {
       if (Date.parse(delivery.expiresAt) <= Date.now()) receipt = { ...receipt, status: 'expired', error: '指令已过期，未执行' };
@@ -211,10 +244,24 @@ export class HarnessController {
 
   private async action(command: Exclude<HarnessDelivery['command'], { operation: 'start' }>, parkedEpoch?: number) {
     const app = this.app, binding = this.binding;
-    const resumesIdle = command.operation === 'send' && parkedEpoch === command.expectedEpoch;
+    const resumesIdle = (command.operation === 'send' || command.operation === 'configure') && parkedEpoch === command.expectedEpoch;
     if (!app || !binding || (binding.epoch !== command.expectedEpoch && !resumesIdle)) throw new CodexRejected('会话已重连，请刷新后重试');
     const { threadId } = binding;
     const current = this.view.turn;
+    if ('expectedSettingsRevision' in command && binding.settings?.revision !== command.expectedSettingsRevision) {
+      throw new CodexRejected('会话设置已变更，请刷新后重试');
+    }
+    if (command.operation === 'configure') {
+      const before = this.view.settings;
+      if (!this.settingsEnabled || !before) throw new CodexRejected('本机执行器暂不支持会话设置');
+      const settings = changeCodexSelection(before, command.changes);
+      const view = Object.keys(command.changes).length ? { ...before, ...settings } : await readCodexSettings(app, settings);
+      await writeJson(this.bindingPath, { ...binding, settings, settingsCommand: command.commandId });
+      binding.settings = settings;
+      binding.settingsCommand = command.commandId;
+      this.emit({ kind: 'settings', settings: view });
+      return;
+    }
     if (command.operation === 'resolveApproval') {
       const match = this.approvals.get(command.requestId);
       const displayed = this.view.approvals.find((approval) => approval.id === command.requestId);
@@ -231,8 +278,12 @@ export class HarnessController {
     if (command.operation === 'send') {
       if (current?.status === 'inProgress') throw new CodexRejected('当前轮仍在运行，请使用追加');
       const nameFirstTurn = this.library && !binding.native && !current;
+      const settings = binding.settings;
+      const overrides = settings && (this.settingsEnabled || settings.revision > 0)
+        ? codexTurnSettings(settings, binding.cwd, this.workspaceSandbox, this.view.settings?.planAvailable === true) : {};
       const response = await app.request('turn/start', {
         threadId, input: [{ type: 'text', text: command.text }], clientUserMessageId: command.commandId,
+        ...overrides,
       });
       const started = turn(asObject(response.turn));
       if (started && this.view.turn?.id !== started.id) this.emit({ kind: 'turn', turn: started });
@@ -344,7 +395,7 @@ export class HarnessController {
 
   private emit(event: HarnessEvent) {
     this.view = applyHarnessEvent(this.view, event);
-    const wire = this.timeline ? event : legacyHarnessEvent(event);
+    const wire = harnessEventForClient(event, this.timeline, this.settingsEnabled);
     if (!wire) return;
     this.events.push({ seq: ++this.seq, event: wire });
     if (this.events.length > HARNESS_EVENTS) {
@@ -372,7 +423,7 @@ export class HarnessController {
       const snapshot: HarnessSnapshot = { type: 'snapshot', threadId: binding.threadId, epoch: binding.epoch, seq: this.seq, view: this.view };
       const sendingSnapshot = this.snapshotNeeded;
       const sequence = sendingSnapshot ? snapshot.seq : batch.at(-1)!.seq;
-      const result = await this.sync(binding.sessionId, sendingSnapshot ? (this.timeline ? snapshot : legacyHarnessSnapshot(snapshot))
+      const result = await this.sync(binding.sessionId, sendingSnapshot ? harnessSnapshotForClient(snapshot, this.timeline, this.settingsEnabled)
         : { type: 'events', epoch: binding.epoch, events: batch });
       if (this.binding !== binding) return;
       if (result.snapshotRequested) {
