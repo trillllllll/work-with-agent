@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 const output = (value) => console.log(JSON.stringify(value));
 const args = process.argv.slice(2);
 if (args.includes('--version')) {
-  console.log('zcode 0.18.0');
+  console.log('0.18.0');
   process.exit();
 }
 

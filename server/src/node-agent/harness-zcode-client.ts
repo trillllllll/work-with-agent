@@ -45,7 +45,7 @@ export async function zcodeAvailable() {
   try {
     const { node, script, env } = await resolveZCode();
     const { stdout } = await exec(node, [script, '--version'], { env, timeout: 5_000, windowsHide: true });
-    const version = /^zcode\s+(\d+)\.(\d+)\.\d+\s*$/i.exec(stdout);
+    const version = /^(?:zcode\s+)?(\d+)\.(\d+)\.\d+$/i.exec(stdout.trim());
     return !!version && (Number(version[1]) > 0 || Number(version[2]) >= 18);
   } catch { return false; }
 }
