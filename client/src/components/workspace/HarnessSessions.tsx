@@ -91,7 +91,7 @@ function useHarnessStream(id: string) {
       const view = current.current;
       // Cached snapshots from builds that did not request settings need a full refresh.
       const after = !reset && view?.view.settings ? `&after=${view.epoch}:${view.seq}` : '';
-      source = new EventSource(`${base}/${encodeURIComponent(id)}/events?timeline=1&settings=1&workspace=1&permissions=1${after}`);
+      source = new EventSource(`${base}/${encodeURIComponent(id)}/events?timeline=1&settings=1&workspace=1&permissions=1&advancedPermissions=1${after}`);
       source.onerror = () => { live = false; setReady(false); };
       source.onmessage = (event) => {
         let data: HarnessSnapshot | { type: 'event'; epoch: number; seq: number; event: HarnessEvent } | { type: 'receipt'; receipt: Receipt } | { type: 'unavailable'; epoch: number; error: string } | { type: 'caughtUp'; epoch: number; seq: number };
@@ -520,7 +520,7 @@ function HarnessDetail({ id, summary, harness, back, chooseProject, openSession 
   const historyAnchor = useRef<{ row: HTMLElement; top: number; pages: number } | null>(null);
   const [pin] = useState(createBottomPin);
   const [showLatest, setShowLatest] = useState(false);
-  const detail = useQuery({ queryKey: ['harness-session', id], queryFn: () => api<Detail>(path + '?timeline=1&settings=1&workspace=1&permissions=1'), refetchInterval: 4_000 });
+  const detail = useQuery({ queryKey: ['harness-session', id], queryFn: () => api<Detail>(path + '?timeline=1&settings=1&workspace=1&permissions=1&advancedPermissions=1'), refetchInterval: 4_000 });
   const stream = useHarnessStream(id);
   const snapshot = stream.snapshot ?? detail.data?.snapshot;
   const view = snapshot?.view;
@@ -646,7 +646,7 @@ function HarnessDetail({ id, summary, harness, back, chooseProject, openSession 
     setSending(true);
     setError(null);
     if (command.operation === 'configure') setSettingsError(null);
-    try { observe(await api<Receipt>(`${path}/commands`, { method: 'POST', body: json(command) })); }
+    try { observe(await api<Receipt>(`${path}/commands?advancedPermissions=1`, { method: 'POST', body: json(command) })); }
     catch (failure) {
       const reason = message(failure, t('harness.requestFailed'));
       setError(reason);

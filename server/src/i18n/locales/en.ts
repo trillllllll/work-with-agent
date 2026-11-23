@@ -62,6 +62,8 @@ export const en: Record<string, string> = {
   "本机 Codex 共享连接不可用": "The local Codex shared connection is unavailable.",
   "消息可能已交给本机会话，请核对历史": "The local session may already have received this message. Check the conversation history.",
   "本机不支持这个会话操作": "This computer does not support this operation.",
+  "此权限模式需要新版页面和电脑执行器，请刷新后重试": "This permission mode requires the updated page and computer executor. Refresh and try again.",
+  "当前模型或本机策略不支持所选 Claude Code 权限模式": "The current model or local policy does not support the selected Claude Code permission mode.",
   "本机未找到支持会话接入的 ZCode": "A compatible installation of ZCode was not found on this computer.",
   "找不到本机 ZCode 原会话": "The original ZCode conversation was not found on the computer.",
   "无法核对本机 ZCode 会话状态": "Could not verify the ZCode conversation on the computer.",

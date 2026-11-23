@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button.js';
 import { ChoiceList } from '@/components/ui/choice-list.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog.js';
 import { Input } from '@/components/ui/input.js';
-import type { HarnessKind, HarnessSettingsChange, HarnessSettingsView } from '../../../../server/src/node-agent/harness-protocol.js';
+import { harnessNames, type HarnessKind, type HarnessSettingsChange, type HarnessSettingsView } from '../../../../server/src/node-agent/harness-protocol.js';
 
 export function HarnessSettings({ settings, harness, disabled, saving, error, onChange, onForkProvider }: {
   settings: HarnessSettingsView;
@@ -20,7 +20,7 @@ export function HarnessSettings({ settings, harness, disabled, saving, error, on
   const { t } = useTranslation('workspace');
   const [query, setQuery] = useState('');
   const [provider, setProvider] = useState('');
-  const [confirmFullAccess, setConfirmFullAccess] = useState(false);
+  const [fullAccess, setFullAccess] = useState<{ changes: HarnessSettingsChange; revision: number } | null>(null);
   const selected = settings.models.find((model) => model.id === settings.model);
   const modelName = selected?.label ?? settings.model;
   const models = selected ? settings.models : [{ id: settings.model, label: modelName }, ...settings.models];
@@ -32,10 +32,19 @@ export function HarnessSettings({ settings, harness, disabled, saving, error, on
   const permissionModes = settings.permissionModes;
   const sandboxChoices = settings.sandboxChoices ?? (['readOnly', 'workspace'] as const);
   const readOnly = settings.permission === 'readOnly' || settings.mode === 'plan';
+  const codexFullAccess = settings.permission === 'fullAccess' && !readOnly;
+  const fixedApprovalPolicy = readOnly || codexFullAccess;
   const mode = claude && readOnly ? 'plan' : settings.mode;
   const showWorkMode = (!claude || !permissionModes) && (settings.planAvailable || mode === 'plan');
+  const modeLabel = (id: string) => t('harness.settings.nativeModes.' + id + '.label');
+  const chooseFullAccess = (changes: HarnessSettingsChange) => setFullAccess({ changes, revision: settings.revision });
+  const sandboxOptions = {
+    readOnly: { label: t('harness.settings.readOnly') },
+    workspace: { label: t('harness.settings.workspace'), description: t(settings.sandboxChoices ? 'harness.settings.sandboxWorkspaceHint' : 'harness.settings.workspaceHint') },
+    fullAccess: { label: t('harness.settings.fullAccess'), description: t('harness.settings.codexFullAccessHint') },
+  };
 
-  return <><Dialog onOpenChange={(open) => { if (!open) { setQuery(''); setProvider(''); setConfirmFullAccess(false); } }}>
+  return <><Dialog onOpenChange={(open) => { if (!open) { setQuery(''); setProvider(''); setFullAccess(null); } }}>
     <DialogTrigger asChild>
       <Button type="button" variant="ghost" size="sm"
         className="min-h-11 max-w-[40vw] shrink-0 justify-start gap-1.5 px-2 sm:max-w-56"
@@ -74,29 +83,36 @@ export function HarnessSettings({ settings, harness, disabled, saving, error, on
             ...(claude && id === 'default' && settings.permission === 'readOnly' ? { permission: 'workspace' } : {}) })} disabled={disabled} />}
         {permissionModes?.length ? <div className="space-y-1.5">
           <ChoiceList label={t('harness.settings.permissionMode')} value={settings.permissionMode ?? ''}
-            options={permissionModes.map((id) => ({ id, label: t('harness.settings.nativeModes.' + id + '.label'),
+            options={permissionModes.map((id) => ({ id, label: modeLabel(id),
               description: t('harness.settings.nativeModes.' + id + '.description') }))}
             disabled={disabled || zcode && mode === 'plan'} onChange={(id) => {
               const permissionMode = permissionModes.find((value) => value === id);
-              if (permissionMode === 'yolo') setConfirmFullAccess(true);
+              if (permissionMode === 'yolo' || permissionMode === 'bypassPermissions') chooseFullAccess({ permissionMode });
               else if (permissionMode) onChange({ permissionMode });
             }} />
           {zcode && mode === 'plan' && <p className="text-xs text-muted-foreground">{t('harness.settings.modeAfterPlan')}</p>}
+          {settings.permissionMode && !permissionModes.includes(settings.permissionMode) && <p className="text-xs text-muted-foreground">
+            {t('harness.settings.permissionModeUnavailable', { mode: modeLabel(settings.permissionMode) })}
+          </p>}
         </div> : null}
         {!zcode && !claude && sandboxChoices.length > 0 && <ChoiceList
           label={t(settings.sandboxChoices ? 'harness.settings.sandbox' : 'harness.settings.permission')} value={settings.permission}
-          options={sandboxChoices.map((id) => id === 'readOnly' ? { id, label: t('harness.settings.readOnly') }
-            : { id, label: t('harness.settings.workspace'), description: t(settings.sandboxChoices ? 'harness.settings.sandboxWorkspaceHint' : 'harness.settings.workspaceHint') })}
-          onChange={(permission) => onChange({ permission: permission === 'readOnly' ? 'readOnly' : 'workspace' })} disabled={disabled} />}
+          options={sandboxChoices.filter((id) => id !== 'fullAccess' || mode !== 'plan').map((id) => ({ id, ...sandboxOptions[id] }))}
+          onChange={(id) => {
+            const permission = sandboxChoices.find((value) => value === id);
+            if (permission === 'fullAccess') chooseFullAccess({ permission });
+            else if (permission) onChange({ permission });
+          }} disabled={disabled} />}
         {settings.approvalPolicies?.length ? <div className="space-y-1.5">
-          <ChoiceList label={t('harness.settings.approvalPolicy')} value={readOnly ? 'never' : settings.approvalPolicy ?? 'on-request'}
+          <ChoiceList label={t('harness.settings.approvalPolicy')} value={fixedApprovalPolicy ? 'never' : settings.approvalPolicy ?? 'on-request'}
             options={settings.approvalPolicies.map((id) => ({ id, label: t('harness.settings.approvalPolicies.' + id + '.label'),
               description: t('harness.settings.approvalPolicies.' + id + '.description') }))}
-            disabled={disabled || readOnly} onChange={(id) => {
+            disabled={disabled || fixedApprovalPolicy} onChange={(id) => {
               const approvalPolicy = settings.approvalPolicies?.find((value) => value === id);
               if (approvalPolicy) onChange({ approvalPolicy });
             }} />
           {readOnly && <p className="text-xs text-muted-foreground">{t('harness.settings.readOnlyApprovals')}</p>}
+          {codexFullAccess && <p className="text-xs text-muted-foreground">{t('harness.settings.codexFullAccessHint')}</p>}
         </div> : null}
         {onForkProvider && (settings.providers?.length ?? 0) > 1 && <>
           <ChoiceList label={t('harness.settings.provider')} value={provider || settings.provider || ''}
@@ -109,11 +125,16 @@ export function HarnessSettings({ settings, harness, disabled, saving, error, on
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </DialogContent>
   </Dialog>
-    {confirmFullAccess && <ConfirmDialog title={t('harness.settings.fullAccessTitle')}
-      description={t('harness.settings.fullAccessDescription')} confirmLabel={t('harness.settings.fullAccessConfirm')}
-      onCancel={() => setConfirmFullAccess(false)} onConfirm={() => {
-        setConfirmFullAccess(false);
-        if (!disabled && settings.mode !== 'plan' && settings.permissionModes?.includes('yolo')) onChange({ permissionMode: 'yolo' });
+    {fullAccess && <ConfirmDialog title={t('harness.settings.fullAccessTitle', { harness: harnessNames[harness ?? 'codex'] })}
+      description={t('harness.settings.fullAccessDescriptions.' + (harness ?? 'codex'))} confirmLabel={t('harness.settings.fullAccessConfirm')}
+      onCancel={() => setFullAccess(null)} onConfirm={() => {
+        const { changes, revision } = fullAccess;
+        setFullAccess(null);
+        if (disabled || revision !== settings.revision) return;
+        if (changes.permission ? mode !== 'plan' && sandboxChoices.includes(changes.permission)
+          : changes.permissionMode && (!zcode || mode !== 'plan') && permissionModes?.includes(changes.permissionMode)) {
+          onChange(changes);
+        }
       }} />}
   </>;
 }

@@ -47,7 +47,7 @@ async function readModels(app: HarnessRuntime) {
 }
 
 export async function readCodexSettings(app: HarnessRuntime, selection: HarnessSettingsSelection,
-  workspace?: { cwd: string; provider?: string }, nativePermissions = false): Promise<HarnessSettingsView> {
+  workspace?: { cwd: string; provider?: string }, nativePermissions = false, advancedPermissions = false): Promise<HarnessSettingsView> {
   const [models, modes, config, requirements] = await Promise.all([
     readModels(app).catch(() => null), app.request('collaborationMode/list', {}).catch(() => null),
     workspace ? app.request('config/read', { cwd: workspace.cwd }).catch(() => null) : null,
@@ -58,9 +58,11 @@ export async function readCodexSettings(app: HarnessRuntime, selection: HarnessS
   const policy = requirements && Object.hasOwn(requirements, 'requirements') ? asObject(requirements.requirements) : null;
   const approvalPolicies = policy && codexApprovalPolicy.options.filter((value) =>
     !Array.isArray(policy.allowedApprovalPolicies) || policy.allowedApprovalPolicies.includes(value));
-  const sandboxChoices = policy && (['readOnly', 'workspace'] as const).filter((value) =>
-    (value !== 'readOnly' || approvalPolicies && approvalPolicies.includes('never'))
-    && (!Array.isArray(policy.allowedSandboxModes) || policy.allowedSandboxModes.includes(value === 'readOnly' ? 'read-only' : 'workspace-write')));
+  const sandboxModes = { readOnly: 'read-only', workspace: 'workspace-write', fullAccess: 'danger-full-access' } as const;
+  const sandboxChoices = policy && (Object.keys(sandboxModes) as Array<keyof typeof sandboxModes>).filter((value) =>
+    (value !== 'fullAccess' || advancedPermissions)
+    && (value === 'workspace' || approvalPolicies && approvalPolicies.includes('never'))
+    && (!Array.isArray(policy.allowedSandboxModes) || policy.allowedSandboxModes.includes(sandboxModes[value])));
   return {
     ...selection, models: models ?? [], catalogAvailable: models !== null,
     planAvailable: codexItems(modes?.data).some((item) => item.mode === 'plan') && (!sandboxChoices || sandboxChoices.includes('readOnly')),
@@ -69,11 +71,19 @@ export async function readCodexSettings(app: HarnessRuntime, selection: HarnessS
   };
 }
 
-export async function readClaudeSettings(app: HarnessRuntime, selection: HarnessSettingsSelection, nativePermissions: boolean) {
+export async function readClaudePermissionModes(app: HarnessRuntime, model: string, advanced: boolean): Promise<NonNullable<HarnessSettingsView['permissionModes']>> {
+  const base = claudePermissionMode.options.filter((mode) => mode !== 'auto' && mode !== 'bypassPermissions');
+  if (!advanced) return base;
+  const options = await app.request('permissionMode/list', { model }).catch(() => null);
+  const available = options?.data;
+  return Array.isArray(available) ? claudePermissionMode.options.filter((mode) => base.some((value) => value === mode) || available.includes(mode)) : base;
+}
+
+export async function readClaudeSettings(app: HarnessRuntime, selection: HarnessSettingsSelection, nativePermissions: boolean, advanced = false) {
   const view = await readCodexSettings(app, selection);
   if (!nativePermissions) return view;
   const mode = claudePermissionMode.safeParse(selection.permissionMode);
-  return { ...view, permissionModes: claudePermissionMode.options,
+  return { ...view, permissionModes: await readClaudePermissionModes(app, selection.model, advanced),
     permissionMode: selection.mode === 'plan' || selection.permission === 'readOnly' ? 'plan' as const : mode.data ?? 'default' as const };
 }
 
@@ -97,17 +107,20 @@ function changeSelection(current: HarnessSettingsView, changes: HarnessSettingsC
 }
 
 export function changeCodexSelection(current: HarnessSettingsView, changes: HarnessSettingsChange) {
-  const readOnly = (changes.mode ?? current.mode) === 'plan' || (changes.permission ?? current.permission) === 'readOnly';
+  const mode = changes.mode ?? current.mode;
+  const permission = changes.permission ?? current.permission;
+  const usesFixedPolicy = mode === 'plan' || permission === 'readOnly' || permission === 'fullAccess';
   if (changes.permissionMode !== undefined
+      || changes.permission === 'fullAccess' && (mode === 'plan' || !current.sandboxChoices?.includes('fullAccess'))
       || changes.permission && current.sandboxChoices && !current.sandboxChoices.includes(changes.permission)
-      || changes.approvalPolicy && (readOnly || !current.approvalPolicies?.includes(changes.approvalPolicy))) {
+      || changes.approvalPolicy && (usesFixedPolicy || !current.approvalPolicies?.includes(changes.approvalPolicy))) {
     throw new CodexRejected('本机不支持这个会话操作');
   }
   return changeSelection(current, changes);
 }
 
 export function changeClaudeSelection(current: HarnessSettingsView, changes: HarnessSettingsChange) {
-  if (changes.approvalPolicy !== undefined) throw new CodexRejected('本机不支持这个会话操作');
+  if (changes.approvalPolicy !== undefined || changes.permission === 'fullAccess') throw new CodexRejected('本机不支持这个会话操作');
   if (changes.permissionMode !== undefined) {
     const requested = claudePermissionMode.safeParse(changes.permissionMode);
     if (!requested.success || !current.permissionModes?.includes(requested.data) || changes.mode || changes.permission) {
@@ -117,16 +130,21 @@ export function changeClaudeSelection(current: HarnessSettingsView, changes: Har
   }
   if (!current.permissionModes) return changeSelection(current, changes);
   const plan = (changes.mode ?? current.mode) === 'plan' || (changes.permission ?? current.permission) === 'readOnly';
+  if (!plan && (current.permissionMode === 'auto' || current.permissionMode === 'bypassPermissions') && !current.permissionModes.includes(current.permissionMode)) {
+    throw new CodexRejected('当前模型或本机策略不支持所选 Claude Code 权限模式');
+  }
   return changeSelection(current, { ...changes, permissionMode: plan ? 'plan' : current.permissionMode === 'plan' ? 'default' : current.permissionMode });
 }
 
 export function codexTurnSettings(selection: HarnessSettingsSelection, cwd: string, workspaceSandbox: Record<string, unknown>, planAvailable: boolean) {
   const readOnly = selection.mode === 'plan' || selection.permission === 'readOnly';
+  const fullAccess = selection.permission === 'fullAccess';
   const sandboxPolicy = readOnly ? { type: 'readOnly' }
-    : workspaceSandbox.type === 'workspaceWrite' ? workspaceSandbox : { type: 'workspaceWrite', writableRoots: [cwd] };
+    : fullAccess ? { type: 'dangerFullAccess' }
+      : workspaceSandbox.type === 'workspaceWrite' ? workspaceSandbox : { type: 'workspaceWrite', writableRoots: [cwd] };
   return {
     model: selection.model, effort: selection.effort,
-    sandboxPolicy, approvalPolicy: readOnly ? 'never' : selection.approvalPolicy ?? 'on-request',
+    sandboxPolicy, approvalPolicy: readOnly || fullAccess ? 'never' : selection.approvalPolicy ?? 'on-request',
     ...(planAvailable || selection.mode === 'plan' ? { collaborationMode: {
       mode: selection.mode, settings: { model: selection.model, reasoning_effort: selection.effort, developer_instructions: null },
     } } : {}),

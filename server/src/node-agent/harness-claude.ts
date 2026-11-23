@@ -21,6 +21,8 @@ export class ClaudeHarnessRuntime implements HarnessRuntime {
   private turn: ActiveTurn | null = null;
   private model = 'default';
   private permissionMode = 'default';
+  private canEnableBypass = false;
+  private bypassEnabled = false;
   private models: Frame[] = [];
   private requests = new Map<string, (result: Frame | Error) => void>();
   private tools = new Map<string, NativeTool>();
@@ -54,13 +56,20 @@ export class ClaudeHarnessRuntime implements HarnessRuntime {
     });
   }
 
-  private async launch(threadId: string, resume: boolean) {
+  private async launch(threadId: string, resume: boolean, enableBypass = false) {
     this.threadId = threadId;
     const cli = await resolveLocalCli('claude');
     const env = providerEnvironment();
     delete env.DOVUN_NODE_TOKEN;
+    const restricted = /^(?:1|true|yes|on)$/i.test(env.CLAUDE_CODE_RESTRICTED ?? '');
+    this.canEnableBypass = process.getuid?.() !== 0 && !restricted;
+    if (enableBypass && !this.canEnableBypass) throw new CodexRejected('当前模型或本机策略不支持所选 Claude Code 权限模式');
+    this.bypassEnabled = enableBypass;
+    this.model = 'default';
+    this.permissionMode = 'default';
     const child = spawn(cli.command, [...cli.prefix, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json',
       '--verbose', '--permission-mode', 'default', '--permission-prompt-tool', 'stdio', '--include-partial-messages',
+      ...(enableBypass ? ['--allow-dangerously-skip-permissions'] : []),
       resume ? '--resume' : '--session-id', threadId,
     ], { cwd: this.cwd, env, stdio: 'pipe', windowsHide: true });
     this.child = child;
@@ -84,6 +93,7 @@ export class ClaudeHarnessRuntime implements HarnessRuntime {
     });
     const hello = await this.control('initialize');
     this.models = items(hello.models);
+    this.permissionMode = claudePermissionMode.safeParse(hello.current_permission_mode).data ?? 'default';
     const previous = resume ? (await readClaudeTurns(threadId, this.cwd, null, 1)).data[0] : null;
     return {
       thread: { id: threadId, cwd: this.cwd, status: { type: 'idle' } },
@@ -92,12 +102,38 @@ export class ClaudeHarnessRuntime implements HarnessRuntime {
     };
   }
 
+  private async advancedModes(model: string) {
+    const settings = await this.control('get_settings').catch(() => null);
+    if (!settings?.effective || typeof settings.effective !== 'object' || Array.isArray(settings.effective)) return [];
+    const permissions = asObject(asObject(settings.effective).permissions);
+    const option = this.models.find((item) => item.value === model);
+    return [
+      ...(option?.supportsAutoMode === true && permissions.disableAutoMode !== 'disable' ? ['auto'] : []),
+      ...(this.canEnableBypass && permissions.disableBypassPermissionsMode !== 'disable' ? ['bypassPermissions'] : []),
+    ];
+  }
+
+  private async reopenWithBypass(enabled: boolean) {
+    await this.close();
+    this.closing = false;
+    try {
+      await this.launch(this.threadId, Boolean(await readClaudeThread(this.threadId, this.cwd)), enabled);
+    } catch (error) {
+      await this.close();
+      this.onExit();
+      throw error;
+    }
+  }
+
   private receive(frame: Frame) {
     if (frame.type === 'control_response') {
       const response = asObject(frame.response);
       const finish = this.requests.get(text(response.request_id));
       finish?.(response.subtype === 'success' ? asObject(response.response) : new CodexRejected('Claude Code 拒绝了操作'));
       return;
+    }
+    if (frame.type === 'system' && (frame.subtype === 'init' || frame.subtype === 'status') && this.threadId === frame.session_id) {
+      this.permissionMode = claudePermissionMode.safeParse(frame.permissionMode).data ?? this.permissionMode;
     }
     const turn = this.turn;
     if (!turn || frame.session_id && frame.session_id !== this.threadId) return;
@@ -191,6 +227,7 @@ export class ClaudeHarnessRuntime implements HarnessRuntime {
     if (method === 'thread/turns/list') return readClaudeTurns(threadId, this.cwd, text(params.cursor) || null, Number(params.limit) || 20);
     if (method === 'model/list') return { data: this.models.map((model) => ({ model: model.value, displayName: model.displayName })) };
     if (method === 'collaborationMode/list') return { data: [{ mode: 'default' }, { mode: 'plan' }] };
+    if (method === 'permissionMode/list') return { data: await this.advancedModes(text(params.model) || this.model) };
     if (method === 'turn/start') return this.send(params);
     if (method === 'turn/interrupt' && this.turn && params.turnId === this.turn.id) {
       this.turn.interrupted = true;
@@ -202,15 +239,26 @@ export class ClaudeHarnessRuntime implements HarnessRuntime {
 
   private async send(params: Frame) {
     if (this.turn) throw new CodexRejected('当前轮仍在运行');
-    const model = text(params.model);
+    const model = text(params.model) || this.model;
+    const nativeMode = claudePermissionMode.safeParse(params.permissionMode);
+    const mode = nativeMode.data ?? (asObject(params.sandboxPolicy).type === 'readOnly' ? 'plan' : 'default');
+    const advanced = mode === 'auto' || mode === 'bypassPermissions';
+    if (advanced && !(await this.advancedModes(model)).includes(mode)) {
+      throw new CodexRejected('当前模型或本机策略不支持所选 Claude Code 权限模式');
+    }
+    // The opt-in flag is needed only while this conversation uses bypassPermissions.
+    const bypass = mode === 'bypassPermissions';
+    if (bypass !== this.bypassEnabled) await this.reopenWithBypass(bypass);
     if (model && model !== this.model) {
       await this.control('set_model', { model });
       this.model = model;
     }
-    const nativeMode = claudePermissionMode.safeParse(params.permissionMode);
-    const mode = nativeMode.data ?? (asObject(params.sandboxPolicy).type === 'readOnly' ? 'plan' : 'default');
     if (nativeMode.success || mode !== this.permissionMode) {
-      await this.control('set_permission_mode', { mode });
+      const result = await this.control('set_permission_mode', { mode }).catch((error: unknown) => {
+        if (advanced && error instanceof CodexRejected) throw new CodexRejected('当前模型或本机策略不支持所选 Claude Code 权限模式');
+        throw error;
+      });
+      if (advanced && result.mode !== mode) throw new CodexRejected('当前模型或本机策略不支持所选 Claude Code 权限模式');
       this.permissionMode = mode;
     }
     const inputs = items(params.input);

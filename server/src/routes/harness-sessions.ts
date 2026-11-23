@@ -26,11 +26,11 @@ harnessSessionsRouter.post('/harness-sessions/native/index', route((req) => inde
 harnessSessionsRouter.post('/harness-sessions/native/open', route((req) => openNativeHarnessThread(req.body)));
 harnessSessionsRouter.post('/harness-sessions', route((req) => createHarnessSession(req.body)));
 harnessSessionsRouter.get('/harness-sessions/:id', route((req) =>
-  readHarnessSession(String(req.params.id), req.query.timeline === '1', req.query.settings === '1', req.query.workspace === '1', req.query.permissions === '1')));
+  readHarnessSession(String(req.params.id), req.query.timeline === '1', req.query.settings === '1', req.query.workspace === '1', req.query.permissions === '1', req.query.advancedPermissions === '1')));
 harnessSessionsRouter.patch('/harness-sessions/:id', route((req) => updateHarnessMetadata(String(req.params.id), req.body)));
 harnessSessionsRouter.post('/harness-sessions/:id/history', route((req) => readHarnessHistory(String(req.params.id), req.body)));
 harnessSessionsRouter.post('/harness-sessions/:id/files', route((req) => readHarnessWorkspaceFiles(String(req.params.id), req.body)));
-harnessSessionsRouter.post('/harness-sessions/:id/commands', route((req) => queueHarnessCommand(String(req.params.id), req.body)));
+harnessSessionsRouter.post('/harness-sessions/:id/commands', route((req) => queueHarnessCommand(String(req.params.id), req.body, req.query.advancedPermissions === '1')));
 harnessSessionsRouter.get('/harness-sessions/:id/commands/:commandId', route((req) => readHarnessReceipt(String(req.params.id), String(req.params.commandId))));
 harnessSessionsRouter.get('/harness-sessions/:id/events', async (req, res, next) => {
   const id = String(req.params.id);
@@ -50,7 +50,7 @@ harnessSessionsRouter.get('/harness-sessions/:id/events', async (req, res, next)
     const stop = subscribeHarness(id, cursor(req.get('Last-Event-ID') ?? after), (event) => {
       const marker = event.type === 'snapshot' || event.type === 'event' ? `id: ${event.epoch}:${event.seq}\n` : '';
       write(`${marker}data: ${JSON.stringify(event)}\n\n`);
-    }, req.query.timeline === '1', session.historyAvailable, req.query.settings === '1', req.query.workspace === '1', req.query.permissions === '1');
+    }, req.query.timeline === '1', session.historyAvailable, req.query.settings === '1', req.query.workspace === '1', req.query.permissions === '1', req.query.advancedPermissions === '1');
     const keepAlive = setInterval(() => write(': heartbeat\n\n'), 15_000);
     res.on('close', () => { stop(); clearInterval(keepAlive); });
   } catch (error) { next(error); }

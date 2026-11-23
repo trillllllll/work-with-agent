@@ -16,6 +16,12 @@ const show = (frame) => console.log(JSON.stringify(frame));
 const persist = (frame) => appendFileSync(file, JSON.stringify({ ...frame, cwd, sessionId: threadId, isSidechain: false, timestamp: new Date().toISOString() }) + '\n');
 let pendingApproval;
 let permissionMode = 'default';
+let model = 'default';
+const canBypass = process.argv.includes('--allow-dangerously-skip-permissions');
+const models = [
+  { value: 'default', displayName: 'Fixture Claude', supportsAutoMode: true },
+  { value: 'legacy', displayName: 'Fixture Claude Legacy', supportsAutoMode: false },
+];
 
 function complete(prompt) {
   const id = randomUUID();
@@ -31,8 +37,19 @@ function complete(prompt) {
 for await (const line of createInterface({ input: process.stdin })) {
   const frame = JSON.parse(line);
   if (frame.type === 'control_request') {
-    if (frame.request.subtype === 'set_permission_mode') permissionMode = frame.request.mode;
-    const response = frame.request.subtype === 'initialize' ? { models: [{ value: 'default', displayName: 'Fixture Claude' }] } : {};
+    const { subtype, mode } = frame.request;
+    let response = {};
+    if (subtype === 'initialize') response = { models, current_permission_mode: permissionMode };
+    if (subtype === 'get_settings') response = { effective: {} };
+    if (subtype === 'set_model') model = frame.request.model;
+    if (subtype === 'set_permission_mode') {
+      if (mode === 'bypassPermissions' && !canBypass || mode === 'auto' && !models.find((option) => option.value === model)?.supportsAutoMode) {
+        show({ type: 'control_response', response: { request_id: frame.request_id, subtype: 'error', error: 'Fixture mode is unavailable' } });
+        continue;
+      }
+      permissionMode = mode;
+      response = { mode };
+    }
     show({ type: 'control_response', response: { request_id: frame.request_id, subtype: 'success', response } });
     continue;
   }
@@ -44,7 +61,7 @@ for await (const line of createInterface({ input: process.stdin })) {
   }
   if (frame.type !== 'user') continue;
   if (frame.session_id !== threadId) throw new Error('The fixture received a different native session ID');
-  persist({ type: 'user', uuid: frame.uuid, message: frame.message, permissionMode });
+  persist({ type: 'user', uuid: frame.uuid, message: frame.message, permissionMode, canBypass });
   const prompt = frame.message.content.find((part) => part.type === 'text').text;
   if (prompt === '同一个项目的 Claude 对话') {
     pendingApproval = { id: randomUUID(), prompt };

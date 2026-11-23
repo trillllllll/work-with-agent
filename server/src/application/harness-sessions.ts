@@ -7,10 +7,10 @@ import { isOnline } from './orchestration/nodes.js';
 import { canBrowse } from './harness-directories.js';
 import { nodeHarnesses, requestHarnessRead, supportsHarnessLibrary, supportsHarnessWorkspace } from './harness-library.js';
 import {
-  applyHarnessEvent, HARNESS_EVENTS, HARNESS_LIBRARY_LEASES, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_ZCODE_LIVE_FEATURE, harnessCommandSchema, harnessCreateSchema, harnessSyncSchema,
+  applyHarnessEvent, HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_EVENTS, HARNESS_LIBRARY_LEASES, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_ZCODE_LIVE_FEATURE, harnessCommandSchema, harnessCreateSchema, harnessSyncSchema,
   harnessCatalogQuerySchema, harnessFilesQuerySchema, harnessHistoryQuerySchema, harnessIndexQuerySchema, harnessMetadataSchema,
   harnessOpenThreadSchema, harnessStartSchema, harnessKind, harnessNames,
-  harnessEventForClient, harnessSnapshotForClient, HARNESS_WORKSPACE_OPERATIONS, requiresHarnessWorkspace, requiresNativePermissionSettings,
+  harnessEventForClient, harnessSnapshotForClient, HARNESS_WORKSPACE_OPERATIONS, requiresAdvancedPermissions, requiresHarnessWorkspace, requiresNativePermissionSettings,
   type HarnessDelivery, type HarnessEvent, type HarnessKind, type HarnessLease, type HarnessLibraryLease, type HarnessReceipt, type HarnessSnapshot,
 } from '../node-agent/harness-protocol.js';
 
@@ -104,6 +104,10 @@ function supportsZCodeLive(node: Pick<AgentNode, 'capabilitiesJson'>) {
 }
 function supportsHarnessPermissions(node: Pick<AgentNode, 'capabilitiesJson'>) {
   try { return JSON.parse(node.capabilitiesJson).harnessPermissions === HARNESS_PERMISSIONS_FEATURE; }
+  catch { return false; }
+}
+function supportsAdvancedPermissions(node: Pick<AgentNode, 'capabilitiesJson'>) {
+  try { return JSON.parse(node.capabilitiesJson).harnessAdvancedPermissions === HARNESS_ADVANCED_PERMISSIONS_FEATURE; }
   catch { return false; }
 }
 async function projectLocation(db: Prisma.TransactionClient, nodeId: string, locationId: string) {
@@ -257,13 +261,13 @@ export async function listHarnessSessions(raw: unknown = {}) {
     nextCursor: hasMore ? sessions.at(-1)!.id : null,
   };
 }
-export async function readHarnessSession(id: string, timeline = false, settings = false, workspace = false, permissions = false) {
+export async function readHarnessSession(id: string, timeline = false, settings = false, workspace = false, permissions = false, advanced = false) {
   const row = await prisma.harnessSession.findUnique({ where: { id }, include: { commands: titleCommand } });
   if (!row) throw new DomainError('HARNESS_NOT_FOUND', '会话不存在', 404);
   const node = await prisma.agentNode.findUnique({ where: { id: row.nodeId } });
   const view = cache.get(id);
   const snapshot = view?.snapshot.epoch === row.epoch ? view.snapshot : null;
-  return { ...sessionDto(row, node), snapshot: snapshot && harnessSnapshotForClient(snapshot, timeline, settings, workspace, permissions),
+  return { ...sessionDto(row, node), snapshot: snapshot && harnessSnapshotForClient(snapshot, timeline, settings, workspace, permissions, advanced),
     current: !!view && !view.stale && view.snapshot.epoch === row.epoch };
 }
 export async function createHarnessSession(body: unknown) {
@@ -301,7 +305,7 @@ export async function createHarnessSession(body: unknown) {
 }
 function conflict(): never { throw new DomainError('HARNESS_COMMAND_CONFLICT', '同一个操作 ID 的内容已变化', 409); }
 
-export async function queueHarnessCommand(id: string, body: unknown) {
+export async function queueHarnessCommand(id: string, body: unknown, advanced = false) {
   const input = harnessCommandSchema.parse(body);
   const payload = JSON.stringify(input);
   return prisma.$transaction(async (tx) => {
@@ -337,6 +341,13 @@ export async function queueHarnessCommand(id: string, body: unknown) {
     if (!session.activeNodeId || (session.library && (!node || !supportsHarnessLibrary(node)))
         || session.status !== 'ready' || session.epoch !== input.expectedEpoch || !view || view.stale || view.snapshot.epoch !== session.epoch) {
       throw new DomainError('HARNESS_SESSION_STALE', '会话正在恢复，请刷新后重试', 409);
+    }
+    const startsWork = ['send', 'steer', 'rerun', 'approvePlan', 'enqueue', 'sendQueuedNow'].includes(input.operation);
+    const queuedSettings = input.operation === 'sendQueuedNow' ? view.snapshot.view.queue?.items.find((item) => item.id === input.itemId)?.settings : undefined;
+    if ((input.operation === 'configure' && requiresAdvancedPermissions(input.changes)
+        || startsWork && (requiresAdvancedPermissions(view.snapshot.view.settings) || requiresAdvancedPermissions(queuedSettings)))
+        && (!advanced || !node || !supportsAdvancedPermissions(node))) {
+      throw new DomainError('HARNESS_ADVANCED_PERMISSIONS_UNSUPPORTED', '此权限模式需要新版页面和电脑执行器，请刷新后重试', 409);
     }
     if ('expectedSettingsRevision' in input) {
       if (!node || !supportsHarnessSettings(node)) throw new DomainError('HARNESS_SETTINGS_UNSUPPORTED', '本机执行器暂不支持会话设置', 409);
@@ -426,6 +437,10 @@ async function dispatchHarness(id: string, nodeId: string, tokenHash: string, li
     const dispatchTime = new Date().toISOString();
     // Old executors parse the whole lease strictly, including commands left by a newer executor.
     const excluded: Prisma.HarnessCommandWhereInput[] = [];
+    if (!supportsAdvancedPermissions(node)) {
+      excluded.push({ payload: { contains: '"permission":"fullAccess"' } },
+        { payload: { contains: '"permissionMode":"auto"' } }, { payload: { contains: '"permissionMode":"bypassPermissions"' } });
+    }
     if (!supportsHarnessPermissions(node)) {
       excluded.push({ payload: { contains: '"operation":"choosePermission"' } },
         { payload: { contains: '"permissionMode":' } }, { payload: { contains: '"approvalPolicy":' } });
@@ -570,18 +585,24 @@ export async function syncHarness(node: AgentNode, id: string, raw: unknown) {
 }
 
 export function subscribeHarness(id: string, after: { epoch: number; seq: number } | null, emit: (event: StreamEvent) => void,
-  timeline = false, library = false, settings = false, workspace = false, permissions = false) {
+  timeline = false, library = false, settings = false, workspace = false, permissions = false, advanced = false) {
   let cursor = after;
-  const projectEvent = (event: HarnessEvent) => harnessEventForClient(event, timeline, settings, workspace, permissions);
+  const projectEvent = (event: HarnessEvent) => harnessEventForClient(event, timeline, settings, workspace, permissions, advanced);
   const send = (frame: StreamEvent) => {
     if (frame.type === 'snapshot') {
       cursor = frame;
-      emit(harnessSnapshotForClient(frame, timeline, settings, workspace, permissions));
+      emit(harnessSnapshotForClient(frame, timeline, settings, workspace, permissions, advanced));
       return;
     }
     if (frame.type === 'event') {
       const event = projectEvent(frame.event);
-      if (!event) return;
+      if (!event) {
+        if (frame.event.kind === 'settings' && settings && requiresAdvancedPermissions(frame.event.settings)) {
+          const snapshot = cache.get(id)?.snapshot;
+          if (snapshot) send(snapshot);
+        }
+        return;
+      }
       // A client may skip optional events. The next visible update must then supply a full snapshot.
       if (cursor && (cursor.epoch !== frame.epoch || cursor.seq + 1 !== frame.seq)) {
         const snapshot = cache.get(id)?.snapshot;

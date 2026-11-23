@@ -397,7 +397,7 @@ test('desktop and phone open and control the same Harness session', async ({ bro
 
 test('opens saved Codex history and keeps multiple chats in the same project independent', async ({ browser, page, request, baseURL, extraHTTPHeaders }, testInfo) => {
   test.skip(testInfo.project.name === 'mobile', 'The test opens a phone viewport itself.');
-  test.setTimeout(120_000);
+  test.setTimeout(150_000);
   await resetE2eDatabase();
   const folder = await mkdtemp(join(tmpdir(), 'dovun-codex-library-'));
   const phoneContext = await browser.newContext({ ...devices['iPhone 13'], baseURL, extraHTTPHeaders, locale: 'zh-CN',
@@ -458,7 +458,7 @@ test('opens saved Codex history and keeps multiple chats in the same project ind
     const sessionId = () => new URLSearchParams(new URL(phone.url()).hash.split('?')[1]).get('sessionId')!;
     const details = (id: string) => request.get(`${apiUrl}/${id}?timeline=1`).then((response) => data<{ threadId: string }>(response));
     const fullDetail = async (id: string) => (await data<{ snapshot: HarnessSnapshot }>(
-      await request.get(`${apiUrl}/${id}?timeline=1&settings=1&permissions=1`))).snapshot;
+      await request.get(`${apiUrl}/${id}?timeline=1&settings=1&permissions=1&advancedPermissions=1`))).snapshot;
     const toggleSettings = () => chat.getByRole('button', { name: '会话设置' }).tap();
     const panel = phone.getByRole('dialog', { name: '会话设置' });
     const option = (name: string) => panel.getByRole('radio', { name, exact: true });
@@ -468,6 +468,11 @@ test('opens saved Codex history and keeps multiple chats in the same project ind
       await expect(item).toBeChecked({ timeout: 12_000 });
     };
     const closeSettings = () => panel.getByRole('button', { name: 'Close' }).tap();
+    const requestFullAccess = async (name: string) => {
+      const option = panel.getByRole('radio', { name: /^完全访问/ });
+      await option.tap();
+      return phone.getByRole('dialog', { name: `要对这条 ${name} 会话启用完全访问吗？` });
+    };
     const appliedTurns = async () => (await readFile(join(root, 'turns'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
     const send = async (text: string) => {
       await chat.getByRole('textbox', { name: '输入消息' }).fill(text);
@@ -548,9 +553,21 @@ test('opens saved Codex history and keeps multiple chats in the same project ind
     await expect(option('常规模型')).toBeChecked();
     await expect(option('中')).toBeChecked();
     await expect(panel.getByRole('radio', { name: /^按需询问/ })).toBeChecked();
+    const cancel = await requestFullAccess('Codex');
+    await cancel.getByRole('button', { name: '取消', exact: true }).tap();
+    expect((await fullDetail(second)).view.settings?.permission).toBe('workspace');
+    const confirm = await requestFullAccess('Codex');
+    await confirm.getByRole('button', { name: '启用完全访问', exact: true }).tap();
+    await expect(panel.getByRole('radio', { name: /^完全访问/ })).toBeChecked({ timeout: 12_000 });
+    const legacyFullAccess = await data<{ snapshot: HarnessSnapshot }>(await request.get(`${apiUrl}/${second}?timeline=1&settings=1&permissions=1`));
+    expect(legacyFullAccess.snapshot.view.settings).toBeUndefined();
+    expect((await request.post(`${apiUrl}/${second}/commands`, { data: {
+      operation: 'send', text: '旧页面不能发起完全访问轮次', commandId: crypto.randomUUID(), expectedEpoch: legacyFullAccess.snapshot.epoch,
+    } })).status()).toBe(409);
     await closeSettings();
     await send('完成测试：第二条独立对话');
     await expect(chat.getByText('完成测试：第二条独立对话 已回复', { exact: true })).toBeVisible({ timeout: 12_000 });
+    expect((await appliedTurns()).at(-1)).toMatchObject({ approvalPolicy: 'never', sandboxPolicy: { type: 'dangerFullAccess' } });
     await expect(chat.getByText('第一条新对话仍在运行', { exact: true })).toHaveCount(0);
     expect(new Set([nativeId, (await details(first)).threadId, (await details(second)).threadId]).size).toBe(3);
     await back();
@@ -605,9 +622,38 @@ test('opens saved Codex history and keeps multiple chats in the same project ind
     await closeSettings();
     await send('使用 Claude Code 的不询问模式');
     await expect(chat.getByText('使用 Claude Code 的不询问模式 · Claude 已回复', { exact: true })).toBeVisible({ timeout: 12_000 });
+    await toggleSettings();
+    await select('Fixture Claude Legacy');
+    await expect(panel.getByRole('radio', { name: /^自动审批/ })).toHaveCount(0);
+    await option('Fixture Claude').tap();
+    await expect(option('Fixture Claude')).toBeChecked({ timeout: 12_000 });
+    await select('自动审批');
+    await closeSettings();
+    await send('使用 Claude Code 的自动审批');
+    await expect(chat.getByText('使用 Claude Code 的自动审批 · Claude 已回复', { exact: true })).toBeVisible({ timeout: 12_000 });
+    const expectedModes = [
+      { permissionMode: 'acceptEdits', canBypass: false },
+      { permissionMode: 'dontAsk', canBypass: false },
+      { permissionMode: 'auto', canBypass: false },
+    ];
+    if (process.getuid?.() !== 0) {
+      await toggleSettings();
+      await (await requestFullAccess('Claude Code')).getByRole('button', { name: '启用完全访问', exact: true }).tap();
+      await expect(panel.getByRole('radio', { name: /^完全访问/ })).toBeChecked({ timeout: 12_000 });
+      await closeSettings();
+      await send('在原 Claude Code 会话使用完全访问');
+      await expect(chat.getByText('在原 Claude Code 会话使用完全访问 · Claude 已回复', { exact: true })).toBeVisible({ timeout: 12_000 });
+      await toggleSettings();
+      await select('手动审批');
+      await closeSettings();
+      await send('在原 Claude Code 会话恢复手动审批');
+      await expect(chat.getByText('在原 Claude Code 会话恢复手动审批 · Claude 已回复', { exact: true })).toBeVisible({ timeout: 12_000 });
+      expectedModes.push({ permissionMode: 'bypassPermissions', canBypass: true }, { permissionMode: 'default', canBypass: false });
+    }
+    expect((await details(claude)).threadId).toBe(claudeThread);
     const claudeHistory = await readFile(join(root, 'claude-home', 'projects', repo.replace(/[^a-zA-Z0-9-]/g, '-'), claudeThread + '.jsonl'), 'utf8');
     expect(claudeHistory.trim().split('\n').map((line) => JSON.parse(line)).filter((frame) => frame.type === 'user')
-      .map((frame) => frame.permissionMode)).toEqual(['acceptEdits', 'dontAsk']);
+      .map(({ permissionMode, canBypass }) => ({ permissionMode, canBypass }))).toEqual(expectedModes);
     await back();
     await expect(phone.getByRole('button', { name: /Mac 上的原 Codex 对话/ })).toHaveCount(0);
   } finally {

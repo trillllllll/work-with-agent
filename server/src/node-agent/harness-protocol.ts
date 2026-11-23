@@ -5,6 +5,7 @@ export const HARNESS_TIMELINE_FEATURE = 'harness_timeline_v1';
 export const HARNESS_LIBRARY_FEATURE = 'harness_library_v1';
 export const HARNESS_SETTINGS_FEATURE = 'harness_settings_v1';
 export const HARNESS_PERMISSIONS_FEATURE = 'harness_permissions_v1';
+export const HARNESS_ADVANCED_PERMISSIONS_FEATURE = 'harness_advanced_permissions_v1';
 export const HARNESS_WORKSPACE_FEATURE = 'harness_workspace_v1';
 export const HARNESS_ZCODE_LIVE_FEATURE = 'harness_zcode_live_v1';
 export const HARNESS_MODELS = 500;
@@ -40,10 +41,10 @@ export const harnessKind = z.enum(['codex', 'claude', 'zcode']);
 export type HarnessKind = z.infer<typeof harnessKind>;
 export const harnessNames: Record<HarnessKind, string> = { codex: 'Codex', claude: 'Claude Code', zcode: 'ZCode' };
 export const codexApprovalPolicy = z.enum(['on-request', 'untrusted', 'never']);
-export const claudePermissionMode = z.enum(['default', 'acceptEdits', 'plan', 'dontAsk']);
+export const claudePermissionMode = z.enum(['default', 'acceptEdits', 'plan', 'dontAsk', 'auto', 'bypassPermissions']);
 export const zcodePermissionMode = z.enum(['build', 'edit', 'guarded', 'yolo']);
 const permissionMode = z.union([claudePermissionMode, zcodePermissionMode]);
-const sandboxChoice = z.enum(['readOnly', 'workspace']);
+const sandboxChoice = z.enum(['readOnly', 'workspace', 'fullAccess']);
 export const harnessCreateSchema = z.object({ nodeId: id, locationId: id, commandId: id, harness: harnessKind.optional() }).strict();
 export const harnessCatalogQuerySchema = z.object({ nodeId: id, locationId: id, cursor: cursor.optional(), harness: harnessKind.optional() }).strict();
 export const harnessOpenThreadSchema = z.object({ nodeId: id, locationId: id, threadId: id, harness: harnessKind.optional() }).strict();
@@ -74,7 +75,7 @@ const settingsView = settingsSelection.extend({
   provider: id.optional(), providers: z.array(id).max(50).optional(),
   permissionModes: z.array(permissionMode).max(8).optional(),
   approvalPolicies: z.array(codexApprovalPolicy).max(3).optional(),
-  sandboxChoices: z.array(sandboxChoice).max(2).optional(),
+  sandboxChoices: z.array(sandboxChoice).max(3).optional(),
 });
 const queueItem = z.object({
   id, text: input, settings: settingsSelection.optional(), status: z.enum(['queued', 'starting', 'blocked']),
@@ -288,24 +289,38 @@ function legacyPermissionSettings<T extends HarnessSettingsSelection>(settings: 
   return legacy;
 }
 
-function projectPermissionSettings(settings: HarnessSettingsView, permissions: boolean): HarnessSettingsView {
-  if (permissions) return settings;
+export function requiresAdvancedPermissions(settings?: HarnessSettingsChange) {
+  return settings?.permission === 'fullAccess' || settings?.permissionMode === 'auto' || settings?.permissionMode === 'bypassPermissions';
+}
+
+function projectPermissionSettings(settings: HarnessSettingsView, permissions: boolean, advanced: boolean): HarnessSettingsView | undefined {
+  if (!advanced && requiresAdvancedPermissions(settings)) return;
+  if (permissions) return advanced ? settings : {
+    ...settings,
+    permissionModes: settings.permissionModes?.filter((permissionMode) => !requiresAdvancedPermissions({ permissionMode })),
+    sandboxChoices: settings.sandboxChoices?.filter((permission) => !requiresAdvancedPermissions({ permission })),
+  };
   const { permissionModes: _modes, approvalPolicies: _policies, sandboxChoices: _sandboxes, ...legacy } = settings;
   return legacyPermissionSettings(legacy);
 }
 
-function projectQueuePermissions(queue: HarnessQueue, permissions: boolean): HarnessQueue {
-  if (permissions) return queue;
-  return { ...queue, items: queue.items.map((item) => item.settings ? { ...item, settings: legacyPermissionSettings(item.settings) } : item) };
+function projectQueuePermissions(queue: HarnessQueue, permissions: boolean, advanced: boolean): HarnessQueue {
+  if (permissions && advanced) return queue;
+  return { ...queue, items: queue.items.map(({ settings, ...item }) => ({ ...item,
+    ...(settings && !requiresAdvancedPermissions(settings) ? { settings: permissions ? settings : legacyPermissionSettings(settings) } : {}),
+  })) };
 }
 
-export function harnessEventForClient(event: HarnessEvent, timeline: boolean, settings: boolean, workspace = false, permissions = false): HarnessEvent | null {
+export function harnessEventForClient(event: HarnessEvent, timeline: boolean, settings: boolean, workspace = false, permissions = false, advanced = false): HarnessEvent | null {
   if (event.kind === 'approval' && event.approval.options && !permissions) return null;
-  if (event.kind === 'queue') return workspace ? { ...event, queue: projectQueuePermissions(event.queue, permissions) } : null;
+  if (event.kind === 'queue') return workspace ? { ...event, queue: projectQueuePermissions(event.queue, permissions, advanced) } : null;
   if (event.kind === 'plan' || event.kind === 'usage' || event.kind === 'approval' && event.approval.kind === 'question') {
     return workspace ? event : null;
   }
-  if (event.kind === 'settings') return settings ? { ...event, settings: projectPermissionSettings(event.settings, permissions) } : null;
+  if (event.kind === 'settings') {
+    const projected = settings && projectPermissionSettings(event.settings, permissions, advanced);
+    return projected ? { ...event, settings: projected } : null;
+  }
   if (!workspace && event.kind === 'message' && event.message.attachmentNames) {
     const { attachmentNames: _attachments, ...message } = event.message;
     return timeline ? { kind: 'message', message } : legacyHarnessEvent(event);
@@ -321,7 +336,7 @@ export function harnessEventForClient(event: HarnessEvent, timeline: boolean, se
   return timeline ? event : legacyHarnessEvent(event);
 }
 
-export function harnessSnapshotForClient(snapshot: HarnessSnapshot, timeline: boolean, settings: boolean, workspace = false, permissions = false): HarnessSnapshot {
+export function harnessSnapshotForClient(snapshot: HarnessSnapshot, timeline: boolean, settings: boolean, workspace = false, permissions = false, advanced = false): HarnessSnapshot {
   if (!workspace) {
     const { queue: _queue, plan: _plan, usage: _usage, ...rest } = snapshot.view;
     snapshot = { ...snapshot, view: { ...rest, approvals: rest.approvals.filter((item) => item.kind !== 'question').map(({ decisions: _decisions, ...item }) => item),
@@ -331,15 +346,16 @@ export function harnessSnapshotForClient(snapshot: HarnessSnapshot, timeline: bo
   }
   const projected = timeline ? snapshot : legacyHarnessSnapshot(snapshot);
   const { settings: _settings, ...view } = projected.view;
+  const selection = settings && snapshot.view.settings && projectPermissionSettings(snapshot.view.settings, permissions, advanced);
   return { ...projected, view: { ...view,
     approvals: permissions ? view.approvals : view.approvals.filter((item) => !item.options),
-    ...(view.queue ? { queue: projectQueuePermissions(view.queue, permissions) } : {}),
-    ...(settings && snapshot.view.settings ? { settings: projectPermissionSettings(snapshot.view.settings, permissions) } : {}),
+    ...(view.queue ? { queue: projectQueuePermissions(view.queue, permissions, advanced) } : {}),
+    ...(selection ? { settings: selection } : {}),
   } };
 }
 
 export function requiresNativePermissionSettings(changes: HarnessSettingsChange) {
-  return changes.permissionMode !== undefined || changes.approvalPolicy !== undefined;
+  return changes.permissionMode !== undefined || changes.approvalPolicy !== undefined || changes.permission === 'fullAccess';
 }
 
 export function applyHarnessEvent(view: HarnessView, event: HarnessEvent): HarnessView {

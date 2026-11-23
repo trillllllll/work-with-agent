@@ -8,7 +8,7 @@ import { WorktreeService } from '../application/orchestration/worktrees.js';
 import { isServerMode, publicWorkspaceUrl } from '../application/desktop-paths.js';
 import { leaseHarness, leaseHarnessLibrary, syncHarness } from '../application/harness-sessions.js';
 import { pendingHarnessReads, reportHarnessRead } from '../application/harness-library.js';
-import { HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE } from '../node-agent/harness-protocol.js';
+import { HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE } from '../node-agent/harness-protocol.js';
 import { DIRECTORY_FEATURE } from '../node-agent/directory-protocol.js';
 import { pendingDirectories, reportDirectory } from '../application/harness-directories.js';
 
@@ -96,6 +96,7 @@ export function createNodeRouter() {
     if (req.get('X-Dovun-Harness-Library') === HARNESS_LIBRARY_FEATURE) accepts.push(HARNESS_LIBRARY_FEATURE);
     if (req.get('X-Dovun-Harness-Settings') === HARNESS_SETTINGS_FEATURE) accepts.push(HARNESS_SETTINGS_FEATURE);
     if (req.get('X-Dovun-Harness-Permissions') === HARNESS_PERMISSIONS_FEATURE) accepts.push(HARNESS_PERMISSIONS_FEATURE);
+    if (req.get('X-Dovun-Harness-Advanced-Permissions') === HARNESS_ADVANCED_PERMISSIONS_FEATURE) accepts.push(HARNESS_ADVANCED_PERMISSIONS_FEATURE);
     if (req.get('X-Dovun-Harness-Timeline') === HARNESS_TIMELINE_FEATURE) accepts.push(HARNESS_TIMELINE_FEATURE);
     if (req.get('X-Dovun-Harness-Workspace') === HARNESS_WORKSPACE_FEATURE) accepts.push(HARNESS_WORKSPACE_FEATURE);
     if (req.get('X-Dovun-Harness-ZCode-Live') === HARNESS_ZCODE_LIVE_FEATURE) accepts.push(HARNESS_ZCODE_LIVE_FEATURE);

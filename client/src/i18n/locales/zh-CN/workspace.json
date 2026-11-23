@@ -457,6 +457,9 @@
       "workspace": "工作区可写",
       "workspaceHint": "可以修改项目文件，额外权限按需询问。",
       "sandboxWorkspaceHint": "允许在工作区内写文件。",
+      "fullAccess": "完全访问",
+      "codexFullAccessHint": "移除 Codex 沙箱，命令无需逐次审批。",
+      "permissionModeUnavailable": "当前模型或本机策略已不支持「{{mode}}」，请重新选择权限模式。",
       "approvalPolicy": "审批策略",
       "readOnlyApprovals": "只读和计划模式均禁止通过审批扩大权限。",
       "approvalPolicies": {
@@ -466,16 +469,22 @@
       },
       "nativeModes": {
         "default": { "label": "手动审批", "description": "按照 Claude Code 的规则，在需要时确认工具调用。" },
-        "acceptEdits": { "label": "自动接受编辑", "description": "自动接受允许目录内的文件编辑及常见文件操作，其他工具按规则审批。" },
+        "acceptEdits": { "label": "自动接受编辑", "description": "自动批准允许目录内的编辑和常见文件操作。Bash 等调用仍按 Claude Code 的规则审批。" },
         "plan": { "label": "计划模式", "description": "先查看项目并制定计划，执行前等待批准。" },
         "dontAsk": { "label": "不询问", "description": "直接拒绝需要询问的工具调用。" },
+        "auto": { "label": "自动审批", "description": "Claude Code 使用分类器审核工具调用。明确需要确认的操作仍会询问。" },
+        "bypassPermissions": { "label": "完全访问", "description": "跳过常规的工具审批。Claude Code 的沙箱与强制保护仍然生效。" },
         "build": { "label": "变更前确认", "description": "修改文件前先询问。" },
         "edit": { "label": "自动编辑", "description": "使用这条旧会话的原有编辑权限。" },
         "guarded": { "label": "自主模式", "description": "遇到有风险的操作时询问。" },
         "yolo": { "label": "完全访问", "description": "允许 ZCode 直接执行操作，无需逐次确认。" }
       },
-      "fullAccessTitle": "要对这条 ZCode 会话启用完全访问吗？",
-      "fullAccessDescription": "启用后，ZCode 可以直接修改可访问的文件、运行终端命令、访问网络和调用已连接的工具，无需逐次确认。",
+      "fullAccessTitle": "要对这条 {{harness}} 会话启用完全访问吗？",
+      "fullAccessDescriptions": {
+        "codex": "从下一轮起，Codex 会移除沙箱和命令审批。文件和命令访问由 Mac 系统账户权限决定。",
+        "claude": "从下一轮起，Claude Code 跳过常规工具审批。配置的沙箱和原生强制保护仍由 Claude Code 执行。",
+        "zcode": "启用后，ZCode 可以直接修改可访问的文件、运行终端命令、访问网络和调用已连接的工具，无需逐次确认。"
+      },
       "fullAccessConfirm": "启用完全访问",
       "saving": "正在保存会话设置…",
       "saved": "已保存会话设置"

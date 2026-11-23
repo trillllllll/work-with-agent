@@ -458,6 +458,9 @@
       "workspace": "Workspace write",
       "workspaceHint": "Edit project files and ask for extra permissions when needed.",
       "sandboxWorkspaceHint": "Allow writes within the workspace.",
+      "fullAccess": "Full access",
+      "codexFullAccessHint": "Remove the Codex sandbox and run commands without individual approvals.",
+      "permissionModeUnavailable": "The current model or local policy no longer supports {{mode}}. Choose a permission mode to continue.",
       "approvalPolicy": "Approval policy",
       "readOnlyApprovals": "Read-only and plan modes prevent requests to expand sandbox access.",
       "approvalPolicies": {
@@ -467,16 +470,22 @@
       },
       "nativeModes": {
         "default": { "label": "Manual", "description": "Follow Claude Code rules and ask for tool approval when required." },
-        "acceptEdits": { "label": "Accept edits", "description": "Auto-approve edits and common file operations in allowed directories. Other tools follow permission rules." },
+        "acceptEdits": { "label": "Accept edits", "description": "Auto-approve edits and common file operations in allowed directories. Bash and other tools follow Claude Code permission rules." },
         "plan": { "label": "Plan mode", "description": "Inspect the project and prepare a plan. Wait for approval before executing it." },
         "dontAsk": { "label": "Don't ask", "description": "Automatically deny tool calls that require approval." },
+        "auto": { "label": "Auto approval", "description": "Claude Code uses a classifier to review tool calls. Actions that explicitly require approval still prompt." },
+        "bypassPermissions": { "label": "Full access", "description": "Skip routine tool approvals. Claude Code sandboxing and mandatory safeguards still apply." },
         "build": { "label": "Confirm changes", "description": "Ask before changing files." },
         "edit": { "label": "Auto-edit", "description": "Keep the editing permissions of this existing conversation." },
         "guarded": { "label": "Guarded", "description": "Ask before risky actions." },
         "yolo": { "label": "Full access", "description": "Let ZCode take actions without prompting for each one." }
       },
-      "fullAccessTitle": "Enable full access for this ZCode conversation?",
-      "fullAccessDescription": "ZCode can change accessible files, run terminal commands, access the network, and call connected tools without asking each time.",
+      "fullAccessTitle": "Enable full access for this {{harness}} conversation?",
+      "fullAccessDescriptions": {
+        "codex": "Starting next turn, Codex removes its sandbox and command approvals. File and command access follows your Mac account permissions.",
+        "claude": "Starting next turn, Claude Code skips routine tool approvals. Claude Code still enforces its configured sandbox and mandatory safeguards.",
+        "zcode": "ZCode can change accessible files, run terminal commands, access the network, and call connected tools without asking each time."
+      },
       "fullAccessConfirm": "Enable full access",
       "saving": "Saving session settings…",
       "saved": "Session settings saved"
