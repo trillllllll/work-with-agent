@@ -15,6 +15,29 @@ export function harnessFilePaths(changes: unknown): string[] {
   return changes.slice(0, 8).map((change) => text(asObject(change).path).slice(0, 600)).filter(Boolean);
 }
 
+export function harnessFileDiffs(changes: unknown): NonNullable<HarnessTool['diffs']> {
+  if (!Array.isArray(changes)) return [];
+  return changes.slice(0, 8).map(asObject).flatMap((change) => {
+    const path = text(change.path).slice(0, 600);
+    const diff = text(change.diff);
+    if (!path || !diff) return [];
+    const kind = asObject(change.kind).type;
+    const lines = diff.split('\n');
+    if (lines.at(-1) === '') lines.pop();
+    let inHunk = lines.some((line) => line.startsWith('@@ ')) ? false : kind === 'update';
+    let added = 0, removed = 0;
+    for (const line of lines) {
+      if (line.startsWith('@@ ')) { inHunk = true; continue; }
+      if (!inHunk) continue;
+      if (line.startsWith('+')) added += 1;
+      if (line.startsWith('-')) removed += 1;
+    }
+    if (!inHunk && kind === 'add') added = lines.length;
+    if (!inHunk && kind === 'delete') removed = lines.length;
+    return [{ path, added, removed, patch: diff.slice(0, 1500), truncated: diff.length > 1500 }];
+  });
+}
+
 /** Only project user-visible fields from the executor. Raw tool arguments and results stay local. */
 export function codexHarnessTool(item: Record<string, unknown>, turnId: string, completed: boolean): HarnessTool | null {
   const id = text(item.id);
@@ -31,7 +54,7 @@ export function codexHarnessTool(item: Record<string, unknown>, turnId: string, 
         ...(exitCode === undefined ? {} : { exitCode }), ...output };
     }
     case 'fileChange':
-      return { ...base, kind: 'fileChange', title: '', files: harnessFilePaths(item.changes) };
+      return { ...base, kind: 'fileChange', title: '', files: harnessFilePaths(item.changes), diffs: harnessFileDiffs(item.changes) };
     case 'mcpToolCall':
     case 'dynamicToolCall':
       return { ...base, kind: 'tool', title: text(item.tool).slice(0, 1_000) };

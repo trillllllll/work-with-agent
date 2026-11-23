@@ -121,6 +121,23 @@ for await (const line of createInterface({ input: process.stdin })) {
       else send({ id, error: { code: -32602, message: 'fixture thread missing' } });
       break;
     }
+    case 'thread/fork': {
+      const stored = get(params.threadId);
+      const index = params.lastTurnId ? stored?.turns.findIndex((turn) => turn.id === params.lastTurnId) : undefined;
+      if (!library || !stored || index === -1) { send({ id, error: { code: -32602 } }); break; }
+      const branch = { ...stored.thread, id: randomUUID(), modelProvider: params.modelProvider ?? modelProvider };
+      writeFileSync(file(branch.id), JSON.stringify({ thread: branch, turns: index === undefined ? stored.turns : stored.turns.slice(0, index + 1) }));
+      reply(id, { thread: branch, modelProvider: branch.modelProvider });
+      break;
+    }
+    case 'thread/revert': {
+      const index = history.findIndex((turn) => turn.id === params.beforeTurnId);
+      if (index < 0 || active) { send({ id, error: { code: -32602 } }); break; }
+      history = history.slice(0, index);
+      persist();
+      reply(id, sessionInfo());
+      break;
+    }
     case 'thread/list': {
       const all = library ? readdirSync(library).map((name) => read(join(library, name)).thread).sort((a, b) => b.updatedAt - a.updatedAt) : [];
       const offset = Number(params.cursor ?? 0);

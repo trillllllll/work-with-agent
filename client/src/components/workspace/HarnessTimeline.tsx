@@ -140,7 +140,19 @@ function ToolRow({ tool }: { tool: HarnessTool }) {
       <DisclosureTrigger className="harness-tool-trigger">{summary}<ChevronRight className={open ? 'size-3.5 rotate-90' : 'size-3.5'} aria-hidden="true" /></DisclosureTrigger>
       <Surface tone="subtle" className="harness-tool-detail">
         {tool.kind === 'command' && tool.title && <code className="block whitespace-pre-wrap [overflow-wrap:anywhere]">{tool.title}</code>}
-        {tool.files?.length ? <ul className="space-y-1">{tool.files.map((file, index) => <li key={file + index}><code className="[overflow-wrap:anywhere]">{file}</code></li>)}</ul> : null}
+        {tool.files?.length ? <ul className="space-y-1">{tool.files.map((file, index) => {
+          const diff = tool.diffs?.find((item) => item.path === file);
+          return <li key={file + index}>
+            {!diff ? <code className="[overflow-wrap:anywhere]">{file}</code> : <Disclosure>
+              <DisclosureTrigger className="flex flex-wrap items-center gap-2 text-left">
+                <code className="min-w-0 [overflow-wrap:anywhere]">{file}</code>
+                <span className="text-xs tabular-nums text-muted-foreground">+{diff.added} / −{diff.removed}</span>
+              </DisclosureTrigger>
+              <ToolOutput result={diff.patch} label={t('harness.files.diff')} />
+              {diff.truncated && <p className="text-xs text-muted-foreground">{t('harness.files.diffTruncated')}</p>}
+            </Disclosure>}
+          </li>;
+        })}</ul> : null}
         {tool.output ? <>
           {tool.truncated && <p className="text-muted-foreground">{t('harness.tool.tail')}</p>}
           <ToolOutput result={tool.output} label={t('harness.tool.output')} />
@@ -187,8 +199,9 @@ function ArtifactCard({ artifact }: { artifact: HarnessArtifact }) {
   </Disclosure>;
 }
 
-export function HarnessTimeline({ view, history, name, liveMessageId, approvalControls }: {
+export function HarnessTimeline({ view, history, name, liveMessageId, approvalControls, turnControls }: {
   view: HarnessView; history?: HarnessView[]; name: string; liveMessageId?: string; approvalControls?: ReactNode;
+  turnControls?: (turn: HarnessTurn, firstMessage?: HarnessMessage) => ReactNode;
 }) {
   const { t } = useTranslation('workspace');
   const past = useMemo(() => (history ?? []).flatMap(groupTurns), [history]);
@@ -212,7 +225,11 @@ export function HarnessTimeline({ view, history, name, liveMessageId, approvalCo
       return <li key={turn.id} data-harness-turn={turn.id} className="flex min-w-0 flex-col gap-3">
         {content.map((part, index) => {
           if (part.kind === 'user') return <div className="assistant-message assistant-user-message ml-auto" key={part.message.id} data-role="user">
-            <div className="assistant-user-bubble whitespace-pre-wrap [overflow-wrap:anywhere]">{part.message.text}</div>
+            <div className="assistant-user-bubble whitespace-pre-wrap [overflow-wrap:anywhere]">{part.message.text}
+              {part.message.attachmentNames?.map((file, position) => <span key={position} className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <FileText className="size-3.5" />{file}
+              </span>)}
+            </div>
           </div>;
           const key = part.kind === 'reply' ? part.message.id : part.rows[0].item.id;
           return <div className="assistant-message min-w-0" key={key} data-role="assistant">
@@ -225,6 +242,7 @@ export function HarnessTimeline({ view, history, name, liveMessageId, approvalCo
         {turn.status?.error && <p role="status" className="flex items-center gap-2 text-xs text-destructive"><CircleAlert className="size-4" aria-hidden="true" />{turn.status.error}</p>}
         {turn.artifacts.map((artifact) => <ArtifactCard key={artifact.id} artifact={artifact} />)}
         {turn.id === view.turn?.id && approvalControls}
+        {turn.status && turnControls?.(turn.status, content.find((part) => part.kind === 'user')?.message)}
       </li>;
     })}
   </ol>;

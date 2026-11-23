@@ -1,4 +1,4 @@
-import { asObject, CodexRejected, type CodexAppServer } from './harness-codex.js';
+import { asObject, CodexRejected, type HarnessRuntime } from './harness-codex.js';
 import { codexItems, codexText } from './harness-history.js';
 import {
   HARNESS_MODELS, type HarnessModelOption, type HarnessSettingsChange, type HarnessSettingsSelection, type HarnessSettingsView,
@@ -19,7 +19,7 @@ export function readCodexSelection(result: Record<string, unknown>): HarnessSett
   };
 }
 
-async function readModels(app: CodexAppServer) {
+async function readModels(app: HarnessRuntime) {
   const models = new Map<string, HarnessModelOption>();
   const seen = new Set<string>();
   let cursor: string | undefined;
@@ -45,12 +45,16 @@ async function readModels(app: CodexAppServer) {
   return [...models.values()];
 }
 
-export async function readCodexSettings(app: CodexAppServer, selection: HarnessSettingsSelection): Promise<HarnessSettingsView> {
+export async function readCodexSettings(app: HarnessRuntime, selection: HarnessSettingsSelection, workspace?: { cwd: string; provider?: string }): Promise<HarnessSettingsView> {
   const [models, modes] = await Promise.allSettled([readModels(app), app.request('collaborationMode/list', {})]);
+  const config = workspace && await app.request('config/read', { cwd: workspace.cwd }).catch(() => null);
+  const configured = Object.keys(asObject(asObject(config?.config).model_providers)).map(codexModelId).filter((id): id is string => id !== null);
+  const providers = workspace ? [...new Set([...(workspace.provider ? [workspace.provider] : []), ...configured])].slice(0, 50) : undefined;
   return {
     ...selection, models: models.status === 'fulfilled' ? models.value : [],
     catalogAvailable: models.status === 'fulfilled',
     planAvailable: modes.status === 'fulfilled' && codexItems(modes.value.data).some((item) => item.mode === 'plan'),
+    ...(workspace ? { provider: workspace.provider, providers } : {}),
   };
 }
 

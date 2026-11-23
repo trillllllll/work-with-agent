@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, mkdir } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -25,6 +25,7 @@ let projectId: string;
 
 beforeAll(async () => {
   folder = await mkdtemp(join(tmpdir(), 'dovun-harness-test-'));
+  process.env.CODEX_HOME = join(folder, 'codex-home');
   process.env.DOVUN_CODEX_BIN = fileURLToPath(new URL('../test/stub-harness-codex.mjs', import.meta.url));
   process.env.HARNESS_TEST_CALLS = join(folder, 'calls');
   process.env.HARNESS_TEST_HISTORY = join(folder, 'history.json');
@@ -37,12 +38,13 @@ afterAll(async () => {
   server?.closeAllConnections();
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
   await prisma.harnessSession.deleteMany({ where: { nodeId: { in: nodeIds } } });
+  await prisma.harnessDirectory.deleteMany({ where: { nodeId: { in: nodeIds } } });
   if (projectId) {
     await prisma.projectLocation.deleteMany({ where: { projectId } });
     await prisma.project.delete({ where: { id: projectId } });
   }
   await prisma.agentNode.deleteMany({ where: { id: { in: nodeIds } } });
-  for (const key of ['DOVUN_CODEX_BIN', 'DOVUN_RUNNER_DIR', 'HARNESS_TEST_CALLS', 'HARNESS_TEST_HISTORY']) {
+  for (const key of ['CODEX_HOME', 'DOVUN_CODEX_BIN', 'DOVUN_RUNNER_DIR', 'HARNESS_TEST_CALLS', 'HARNESS_TEST_HISTORY', 'HARNESS_TEST_LIBRARY', 'HARNESS_TEST_TURNS']) {
     if (savedEnv[key] === undefined) delete process.env[key]; else process.env[key] = savedEnv[key];
   }
   if (folder) await rm(folder, { recursive: true, force: true, maxRetries: 3 });
@@ -236,3 +238,103 @@ it('accepts a directory listing only from the paired computer handling the reque
   expect(await browsing).toEqual(reply.page);
   expect((await lease(target.token)).directoryRequests).toBeUndefined();
 });
+
+it('indexes approved projects and promotes a frozen queue exactly once before branching the original session', async () => {
+  const owner = ownerRequest(app);
+  const { node, token } = data(await owner.post('/api/nodes').send({ name: 'Workspace computer' }));
+  nodeIds.push(node.id);
+  const project = join(folder, 'indexed');
+  const outside = join(folder, 'outside');
+  const library = join(folder, 'codex-library');
+  await Promise.all([mkdir(project), mkdir(outside), mkdir(library)]);
+  const cwd = await realpath(project);
+  const turns = join(folder, 'workspace-turns');
+  process.env.HARNESS_TEST_LIBRARY = library;
+  process.env.HARNESS_TEST_TURNS = turns;
+  await writeFile(join(project, 'notes.txt'), 'Authorized file');
+  await writeFile(join(outside, 'private.txt'), 'Outside project');
+  await symlink(join(outside, 'private.txt'), join(project, 'outside.txt'));
+  const date = new Date();
+  await Promise.all([[cwd, 'allowed-thread'], [outside, 'outside-thread']].map(([location, id]) =>
+    writeFile(join(library, id + '.json'), JSON.stringify({
+      thread: { id, cwd: location, name: id, updatedAt: Math.floor(date.getTime() / 1000) }, turns: [],
+    }))));
+  let loseReceipt = true;
+  const http: typeof fetch = async (url, init) => {
+    const payload = typeof init?.body === 'string' ? JSON.parse(init.body) : null;
+    if (payload?.type === 'receipt' && payload.commandId === 'queue-first' && loseReceipt) {
+      loseReceipt = false;
+      throw new Error('lost queue receipt');
+    }
+    return fetch(url, init);
+  };
+  const agent = new NodeAgent({ server: origin, token, roots: [project], dataDir: join(folder, 'workspace-node') }, http);
+  agents.push(agent);
+  await until(agent, async () => data(await owner.get(base)).nodes.find((entry: { id: string }) => entry.id === node.id)?.harnessWorkspace);
+  async function fetchWhilePolling(request: PromiseLike<{ status: number; body: { data: any; error: unknown } }>) {
+    let finished = false;
+    const result = Promise.resolve(request).finally(() => { finished = true; });
+    await until(agent, async () => finished);
+    return result;
+  }
+  data(await fetchWhilePolling(owner.post(base + '/native/index').send({ nodeId: node.id })));
+  const indexed = data(await owner.get(base)).sessions.filter((row: { nodeId: string }) => row.nodeId === node.id);
+  expect(indexed).toHaveLength(1);
+  expect(indexed[0]).toMatchObject({ projectName: 'indexed', threadId: 'allowed-thread', title: 'allowed-thread' });
+  const { locationId } = indexed[0];
+  const created = data(await owner.post(base).send({ nodeId: node.id, locationId, commandId: 'workspace-start' }));
+  const url = base + '/' + created.sessionId;
+  const detail = async () => data<{ snapshot: HarnessSnapshot }>(await owner.get(url + '?timeline=1&settings=1&workspace=1'));
+  const receipt = async (id: string) => data(await owner.get(url + '/commands/' + id));
+  await until(agent, async () => (await receipt('workspace-start')).status === 'accepted');
+  const epoch = (await detail()).snapshot.epoch;
+  const send = async (command: Record<string, unknown>) => owner.post(url + '/commands').send({ expectedEpoch: epoch, ...command });
+  await send({ operation: 'send', commandId: 'workspace-running', text: 'hold turn' }).then(data);
+  await until(agent, async () => Boolean((await detail()).snapshot.view.turn));
+  const configure = { operation: 'configure', commandId: 'set-precise', expectedSettingsRevision: 0, changes: { model: 'fixture-precise' } };
+  await send(configure).then(data);
+  await until(agent, async () => (await receipt('set-precise')).status === 'accepted');
+  const input = { operation: 'enqueue', commandId: 'queue-first', text: '完成测试：queued', expectedSettingsRevision: 1,
+    attachments: [{ kind: 'projectFile', path: 'notes.txt', name: 'notes.txt' }] };
+  await send(input).then(data);
+  await until(agent, async () => (await receipt('queue-first')).status === 'accepted');
+  expect(loseReceipt).toBe(false);
+  expect((await detail()).snapshot.view.queue?.items).toEqual([expect.objectContaining({
+    id: 'queue-first', attachmentNames: ['notes.txt'], settings: expect.objectContaining({ model: 'fixture-precise' }),
+  })]);
+  expect((await send({ operation: 'removeQueued', commandId: 'stale-queue', itemId: 'queue-first', expectedQueueRevision: 0 })).status).toBe(409);
+  await send({ ...configure, commandId: 'reset-model', expectedSettingsRevision: 1, changes: { model: 'fixture-default' } }).then(data);
+  await until(agent, async () => (await receipt('reset-model')).status === 'accepted');
+  const revision = (await detail()).snapshot.view.queue!.revision;
+  await send({ operation: 'sendQueuedNow', commandId: 'promote', itemId: 'queue-first', expectedQueueRevision: revision }).then(data);
+  await until(agent, async () => (await detail()).snapshot.view.turn?.status === 'completed' && !(await detail()).snapshot.view.queue?.items.length);
+  const recorded = (await readFile(turns, 'utf8')).trim().split('\n').map((line) => JSON.parse(line)).filter((call) => call.clientUserMessageId === 'queue-first');
+  expect(recorded).toHaveLength(1);
+  expect(recorded[0]).toMatchObject({ model: 'fixture-precise', input: [{ type: 'text', text: input.text }, expect.objectContaining({ text: expect.stringContaining('notes.txt') })] });
+  expect((await detail()).snapshot.view.messages.find((item) => item.id === 'queue-first')).toMatchObject({ text: input.text, attachmentNames: ['notes.txt'] });
+  const turnId = (await detail()).snapshot.view.turn!.id;
+  await send({ operation: 'fork', commandId: 'branch', turnId }).then(data);
+  await until(agent, async () => (await receipt('branch')).status === 'accepted');
+  const branchId = (await receipt('branch')).resultSessionId;
+  expect(data(await owner.get(base + '/' + branchId))).toMatchObject({ sourceSessionId: created.sessionId, sourceTurnId: turnId });
+  expect(data(await owner.get(base + '/' + branchId)).threadId).not.toBe((await detail()).snapshot.threadId);
+  expect(data(await fetchWhilePolling(owner.post(url + '/files').send({ path: 'notes.txt', preview: true })))).toMatchObject({ content: 'Authorized file' });
+  expect((await fetchWhilePolling(owner.post(url + '/files').send({ path: 'outside.txt', preview: true }))).status).toBe(409);
+
+  data(await owner.patch(url).send({ title: 'Renamed workspace chat', archived: true, pinned: true }));
+  expect(data(await owner.get(base + '?archived=1')).sessions).toContainEqual(expect.objectContaining({ id: created.sessionId, title: 'Renamed workspace chat', pinned: true }));
+  expect(data(await owner.get(base)).sessions).not.toContainEqual(expect.objectContaining({ id: created.sessionId }));
+
+  const timestamp = date.toISOString();
+  await prisma.harnessSession.createMany({ data: Array.from({ length: 105 }, (_, index) => ({
+    nodeId: node.id, locationId, projectName: 'indexed', status: 'stored', cwd,
+    startCommandId: 'paged-start-' + index, threadId: 'paged-thread-' + index,
+    createdAt: timestamp, updatedAt: timestamp, library: true,
+  })) });
+  const filter = base + '?locationId=' + encodeURIComponent(locationId);
+  const firstPage = data(await owner.get(filter));
+  const secondPage = data(await owner.get(filter + '&cursor=' + encodeURIComponent(firstPage.nextCursor)));
+  expect(firstPage.sessions).toHaveLength(100);
+  expect(secondPage.nextCursor).toBeNull();
+  expect(new Set([...firstPage.sessions, ...secondPage.sessions].map((row) => row.id)).size).toBe(107);
+}, 25_000);

@@ -2,7 +2,7 @@ import { asObject } from './harness-codex.js';
 import { readHarnessArtifacts } from './harness-artifacts.js';
 import { codexHarnessTool } from './harness-tools.js';
 import {
-  HARNESS_ARTIFACTS, HARNESS_MESSAGES, HARNESS_TEXT_LIMIT, HARNESS_TOOLS, harnessMessagePhase,
+  HARNESS_ARTIFACTS, HARNESS_ATTACHMENT_TEXT_PREFIX, HARNESS_MESSAGES, HARNESS_TEXT_LIMIT, HARNESS_TOOLS, harnessMessagePhase,
   type HarnessArtifact, type HarnessMessage, type HarnessTool, type HarnessTurn, type HarnessView,
 } from './harness-protocol.js';
 
@@ -18,8 +18,15 @@ export function codexMessage(item: Record<string, unknown>, turnId: string, stre
       ...(phase.success ? { phase: phase.data } : {}) };
   }
   if (item.type === 'userMessage') {
-    const text = codexItems(item.content).filter((part) => part.type === 'text').map((part) => codexText(part.text)).join('\n');
-    return { id, turnId, role: 'user', text: text.slice(0, HARNESS_TEXT_LIMIT) };
+    const parts = codexItems(item.content).filter((part) => part.type === 'text').map((part) => codexText(part.text));
+    const names: string[] = [];
+    const text = parts.filter((part, index) => {
+      if (index === 0 || !part.startsWith(HARNESS_ATTACHMENT_TEXT_PREFIX)) return true;
+      const name = part.slice(HARNESS_ATTACHMENT_TEXT_PREFIX.length).split('\n', 1)[0].slice(0, 255);
+      if (name) names.push(name);
+      return false;
+    }).join('\n');
+    return { id, turnId, role: 'user', text: text.slice(0, HARNESS_TEXT_LIMIT), ...(names.length ? { attachmentNames: names.slice(0, 2) } : {}) };
   }
   return null;
 }
@@ -34,17 +41,18 @@ export function codexTurn(value: Record<string, unknown>): HarnessTurn | null {
 }
 
 /** A live snapshot fits the event window; a history page keeps all of its message rows. */
-export async function projectCodexHistory(data: unknown, cwd: string, roots: string[], liveSnapshot: boolean) {
+export async function projectCodexHistory(data: unknown, cwd: string, roots: string[], liveSnapshot: boolean, subscribed = false) {
   const messages: HarnessMessage[] = [];
   const tools: HarnessTool[] = [];
   const turns: HarnessTurn[] = [];
+  let plan: HarnessView['plan'];
   const clients = new Set<string>();
   const artifactMessages: HarnessMessage[] = [];
   let order = 0;
   for (const entry of codexItems(data).reverse()) {
     const raw = codexTurn(entry);
     if (!raw) continue;
-    const turn: HarnessTurn = liveSnapshot && raw.status === 'inProgress' ? { ...raw, status: 'unknown' } : raw;
+    const turn: HarnessTurn = liveSnapshot && !subscribed && raw.status === 'inProgress' ? { ...raw, status: 'unknown' } : raw;
     turns.push(turn);
     let answer: HarnessMessage | undefined;
     for (const item of codexItems(entry.items)) {
@@ -57,6 +65,9 @@ export async function projectCodexHistory(data: unknown, cwd: string, roots: str
       const tool = codexHarnessTool(item, turn.id, true);
       if (tool) tools.push({ ...tool, order: ++order, status: tool.status !== 'running' || turn.status === 'inProgress'
         ? tool.status : turn.status === 'interrupted' ? 'interrupted' : 'unknown' });
+      if (item.type === 'plan' && typeof item.text === 'string') {
+        plan = { turnId: turn.id, text: item.text.slice(0, HARNESS_TEXT_LIMIT), ready: turn.status === 'completed', steps: [] };
+      }
     }
     if (answer?.text && raw.status !== 'inProgress') artifactMessages.push(answer);
   }
@@ -69,7 +80,7 @@ export async function projectCodexHistory(data: unknown, cwd: string, roots: str
     artifacts.unshift(...found.slice(0, HARNESS_ARTIFACTS - artifacts.length));
     if (artifacts.length === HARNESS_ARTIFACTS) break;
   }
-  const view: HarnessView = { messages: visible, tools: tools.slice(-HARNESS_TOOLS), turns, artifacts,
+  const view: HarnessView = { messages: visible, tools: tools.slice(-HARNESS_TOOLS), turns, artifacts, ...(plan ? { plan } : {}),
     turn: liveSnapshot ? turns.at(-1) ?? null : null, approvals: [], error: null };
   return { view, clients };
 }

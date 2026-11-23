@@ -13,8 +13,8 @@ import { createLocalLaunchSpec, localProviders } from './cli.js';
 import { HarnessController } from './harness-controller.js';
 import { readHarnessLibrary } from './harness-library.js';
 import {
-  HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_LIBRARY_LEASES, HARNESS_LIBRARY_READS, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE,
-  harnessLeaseSchema, harnessLibraryLeaseSchema, harnessReadTaskSchema, type HarnessLease, type HarnessReadTask,
+  HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_LIBRARY_LEASES, HARNESS_LIBRARY_READS, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE,
+  harnessLeaseSchema, harnessLibraryLeaseSchema, harnessReadTaskSchema, type HarnessKind, type HarnessLease, type HarnessReadTask,
 } from './harness-protocol.js';
 import { DIRECTORY_FEATURE, directoryTaskSchema, type DirectoryTask } from './directory-protocol.js';
 import { readDirectory } from './directories.js';
@@ -101,7 +101,7 @@ export class NodeAgent {
           'Content-Type': 'application/json', Authorization: `Node ${this.config.token}`,
           ...(path === '/lease' ? { 'X-Dovun-Node-Features': HARNESS_FEATURE, 'X-Dovun-Directory-Browser': DIRECTORY_FEATURE,
             'X-Dovun-Harness-Timeline': HARNESS_TIMELINE_FEATURE, 'X-Dovun-Harness-Library': HARNESS_LIBRARY_FEATURE,
-            'X-Dovun-Harness-Settings': HARNESS_SETTINGS_FEATURE } : {}),
+            'X-Dovun-Harness-Settings': HARNESS_SETTINGS_FEATURE, 'X-Dovun-Harness-Workspace': HARNESS_WORKSPACE_FEATURE } : {}),
         },
         body: JSON.stringify(body),
         ...(/^\/(harness-sessions|harness-library|directories)\//.test(path) ? { signal: AbortSignal.timeout(8_000) } : {}),
@@ -122,6 +122,7 @@ export class NodeAgent {
         this.serverAccepts.delete(DIRECTORY_FEATURE);
         this.serverAccepts.delete(HARNESS_LIBRARY_FEATURE);
         this.serverAccepts.delete(HARNESS_SETTINGS_FEATURE);
+        this.serverAccepts.delete(HARNESS_WORKSPACE_FEATURE);
       }
       const error = Object.assign(new Error(`服务端返回 ${response.status} ${code ?? ''}`), { status: response.status, code });
       this.rememberError(error);
@@ -141,9 +142,22 @@ export class NodeAgent {
     const body: NodeCapabilities = { protocol: NODE_PROTOCOL_VERSION, version: this.config.version ?? '', platform: `${os.platform()}-${os.arch()}`, providers, maxConcurrent: this.config.maxConcurrent ?? 2, allowedRoots: this.config.roots, freeBytes: await this.freeBytes(), gh: this.gh };
     const codex = providers.find((provider) => provider.provider === 'codex' && provider.available);
     const version = /(\d+)\.(\d+)\.\d+/.exec(codex?.version ?? '');
-    if (this.serverAccepts.has(HARNESS_FEATURE) && version && (Number(version[1]) > 0 || Number(version[2]) >= 166)) body.harnessSessions = HARNESS_FEATURE;
+    const installed: HarnessKind[] = [];
+    if (version && (Number(version[1]) > 0 || Number(version[2]) >= 166)) installed.push('codex');
+    const claude = providers.find((provider) => provider.provider === 'claude' && provider.available);
+    const claudeVersion = /^(\d+)\.(\d+)\.(\d+)/.exec(claude?.version ?? '');
+    const workspace = this.serverAccepts.has(HARNESS_WORKSPACE_FEATURE) && this.serverAccepts.has(HARNESS_LIBRARY_FEATURE);
+    if (workspace && claudeVersion) {
+      const [major, minor, patch] = claudeVersion.slice(1).map(Number);
+      if (major > 2 || major === 2 && (minor > 1 || minor === 1 && patch >= 328)) installed.push('claude');
+    }
+    if (this.serverAccepts.has(HARNESS_FEATURE) && installed.length) body.harnessSessions = HARNESS_FEATURE;
     if (body.harnessSessions && this.serverAccepts.has(HARNESS_LIBRARY_FEATURE)) body.harnessLibrary = HARNESS_LIBRARY_FEATURE;
     if (body.harnessSessions && this.serverAccepts.has(HARNESS_SETTINGS_FEATURE)) body.harnessSettings = HARNESS_SETTINGS_FEATURE;
+    if (body.harnessLibrary && workspace) {
+      body.harnessWorkspace = HARNESS_WORKSPACE_FEATURE;
+      body.harnessKinds = installed;
+    }
     if (this.serverAccepts.has(DIRECTORY_FEATURE)) body.directoryBrowser = DIRECTORY_FEATURE;
     if (!capsV2) return body;
     const logPath = runtimeEnv('NODE_LOG')?.trim() || null;
@@ -208,17 +222,18 @@ export class NodeAgent {
     await Promise.all(parking);
     return lease.jobs.length;
   }
-  private consumeHarness(nodeId: string, lease: HarnessLease & { nativeCwd?: string }, library: boolean) {
+  private consumeHarness(nodeId: string, lease: HarnessLease & { nativeCwd?: string; harness?: HarnessKind }, library: boolean) {
     let controller = library ? this.harnesses.get(lease.sessionId) : this.harness;
     if (!controller) {
       // Keep the original storage key for the pre-upgrade conversation and its command receipts.
       const binding = `${this.config.server}/${nodeId}${library ? `/${lease.sessionId}` : ''}`;
       controller = new HarnessController(this.config.dataDir, binding, this.config.roots,
-        (id, payload) => this.api(`/harness-sessions/${encodeURIComponent(id)}/sync`, payload) as Promise<{ snapshotRequested?: boolean }>, library);
+        (id, payload) => this.api(`/harness-sessions/${encodeURIComponent(id)}/sync`, payload) as Promise<{ snapshotRequested?: boolean }>, library, lease.harness);
       if (library) this.harnesses.set(lease.sessionId, controller);
       else this.harness = controller;
     }
-    void controller.consume(lease, this.serverAccepts.has(HARNESS_TIMELINE_FEATURE), this.serverAccepts.has(HARNESS_SETTINGS_FEATURE))
+    void controller.consume(lease, this.serverAccepts.has(HARNESS_TIMELINE_FEATURE), this.serverAccepts.has(HARNESS_SETTINGS_FEATURE),
+      library && this.serverAccepts.has(HARNESS_WORKSPACE_FEATURE))
       ?.catch((error) => this.rememberError(error));
   }
   private async answerHarnessRead(task: HarnessReadTask) {

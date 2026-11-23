@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { ArrowDown, ChevronRight, CircleAlert, LoaderCircle, MessageSquare, ShieldQuestion, Terminal } from 'lucide-react';
+import { Archive, ArrowDown, ChevronRight, CircleAlert, Ellipsis, FolderOpen, ListOrdered, LoaderCircle, MessageSquare, Pin, ShieldQuestion, Terminal } from 'lucide-react';
 import { ApiError, api } from '@/lib/api.js';
 import { json } from '@/lib/platform.js';
 import { intlLocale } from '@/i18n/index.js';
@@ -12,13 +12,18 @@ import { Button } from '@/components/ui/button.js';
 import { ChoiceList } from '@/components/ui/choice-list.js';
 import { BackButton } from '@/components/ui/nav-buttons.js';
 import { Surface } from '@/components/ui/surface.js';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu.js';
+import { Input } from '@/components/ui/input.js';
 import { HarnessStartDialog } from './HarnessStartDialog.js';
 import { HarnessSettings } from './HarnessSettings.js';
+import { HarnessContext, HarnessPlan, HarnessQuestion, HarnessQueueControls, HarnessTurnControls, type HarnessAction } from './HarnessRunControls.js';
+import { HarnessWorkspaceTools } from './HarnessWorkspaceTools.js';
 import { HarnessTimeline } from './HarnessTimeline.js';
 import { ChatProjectButton, HarnessProjectPicker, type HarnessProject, type ProjectComputer } from './HarnessProjectPicker.js';
 import type { DirectoryPage } from '../../../../server/src/node-agent/directory-protocol.js';
-import { applyHarnessEvent, HARNESS_TEXT_LIMIT, type HarnessCatalogPage, type HarnessHistoryPage,
-  type HarnessCommand, type HarnessEvent, type HarnessSnapshot, type HarnessView } from '../../../../server/src/node-agent/harness-protocol.js';
+import { applyHarnessEvent, HARNESS_TEXT_LIMIT, harnessKind, harnessNames, type HarnessKind, type HarnessCatalogPage, type HarnessHistoryPage,
+  type HarnessCommand, type HarnessEvent, type HarnessInputAttachment, type HarnessSnapshot, type HarnessView } from '../../../../server/src/node-agent/harness-protocol.js';
 import '@/components/chat/conversation.css';
 import './harness-sessions.css';
 
@@ -31,20 +36,25 @@ type Session = {
   id: string; nodeId: string; nodeName: string | null; online: boolean; projectName: string;
   threadId: string | null; epoch: number; status: string; error: string | null; startCommandId: string;
   harness?: string; locationId: string; title?: string | null; activity?: 'approval' | 'running' | null; updatedAt: string;
-  native?: boolean; historyAvailable?: boolean; settingsAvailable?: boolean;
+  native?: boolean; historyAvailable?: boolean; settingsAvailable?: boolean; workspaceAvailable?: boolean;
+  pinned?: boolean; archived?: boolean; unread?: boolean;
+  sourceSessionId?: string | null;
 };
-type SessionRow = Pick<Session, 'id' | 'nodeName' | 'online' | 'projectName' | 'status' | 'title' | 'activity' | 'updatedAt'> & { nativeThreadId?: string };
+type SessionRow = Pick<Session, 'id' | 'nodeName' | 'online' | 'projectName' | 'status' | 'title' | 'activity' | 'updatedAt' | 'pinned' | 'archived' | 'unread'> & {
+  nativeThreadId?: string; projectKey: string; projectPath?: string;
+};
 type Detail = Session & { snapshot: HarnessSnapshot | null; current: boolean };
 type List = {
   harnesses?: Harness[];
-  nodes: Array<ProjectComputer & { supportsHarness: boolean; harnessLibrary?: boolean }>;
+  nodes: Array<ProjectComputer & { supportsHarness: boolean; harnessLibrary?: boolean; harnessWorkspace?: boolean; harnesses?: HarnessKind[] }>;
   directories?: HarnessProject[];
   sessions: Session[];
+  nextCursor?: string | null;
 };
 type Project = { id: string; name: string; locations: Array<{ id: string; nodeId: string; path: string; status: string }> };
-type Receipt = { commandId: string; status: string; error: string | null; settings?: boolean };
+type Receipt = { commandId: string; status: string; error: string | null; settings?: boolean; resultSessionId?: string };
 type Pending = { command: HarnessCommand };
-type StartCommand = { nodeId: string; locationId: string; commandId: string };
+type StartCommand = { nodeId: string; locationId: string; commandId: string; harness?: string };
 
 function load<T>(key: string): T | null {
   try { return JSON.parse(sessionStorage.getItem(key) ?? 'null') as T; } catch { return null; }
@@ -76,7 +86,7 @@ function useHarnessStream(id: string) {
       const view = current.current;
       // Cached snapshots from builds that did not request settings need a full refresh.
       const after = !reset && view?.view.settings ? `&after=${view.epoch}:${view.seq}` : '';
-      source = new EventSource(`${base}/${encodeURIComponent(id)}/events?timeline=1&settings=1${after}`);
+      source = new EventSource(`${base}/${encodeURIComponent(id)}/events?timeline=1&settings=1&workspace=1${after}`);
       source.onerror = () => { live = false; setReady(false); };
       source.onmessage = (event) => {
         let data: HarnessSnapshot | { type: 'event'; epoch: number; seq: number; event: HarnessEvent } | { type: 'receipt'; receipt: Receipt } | { type: 'unavailable'; epoch: number; error: string } | { type: 'caughtUp'; epoch: number; seq: number };
@@ -127,38 +137,61 @@ function useHarnessStream(id: string) {
   return { snapshot, liveMessageId, ready, receipt, unavailable };
 }
 
-function SessionList({ sessions, selectedId, opening, open }: { sessions: SessionRow[]; selectedId?: string; opening?: string | null; open: (row: SessionRow) => void }) {
+type SessionMetadata = { title?: string; pinned?: boolean; archived?: boolean; read?: boolean };
+
+function SessionList({ sessions, groupByProject, selectedId, opening, open, update }: {
+  sessions: SessionRow[]; groupByProject: boolean; selectedId?: string; opening?: string | null;
+  open: (row: SessionRow) => void; update: (id: string, change: SessionMetadata) => void;
+}) {
   const { t } = useTranslation('workspace');
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  const groups = { today: [] as SessionRow[], yesterday: [] as SessionRow[], earlier: [] as SessionRow[] };
-  const clock = new Intl.DateTimeFormat(intlLocale(), { hour: '2-digit', minute: '2-digit' });
+  const [renaming, setRenaming] = useState<SessionRow | null>(null);
+  const [title, setTitle] = useState('');
+  const groups = new Map<string, SessionRow[]>();
+  const clock = new Intl.DateTimeFormat(intlLocale(), { month: 'short', day: 'numeric' });
   for (const session of sessions) {
-    const time = Date.parse(session.updatedAt);
-    groups[time >= today.valueOf() ? 'today' : time >= yesterday.valueOf() ? 'yesterday' : 'earlier'].push(session);
+    const key = groupByProject ? session.projectKey : '';
+    const rows = groups.get(key) ?? [];
+    rows.push(session);
+    groups.set(key, rows);
+  }
+  const headings = new Map<string, number>();
+  for (const [group, [session]] of groups) {
+    if (!group) continue;
+    const label = session.projectName + '\0' + session.nodeName;
+    headings.set(label, (headings.get(label) ?? 0) + 1);
   }
 
-  return <Surface tone="sheet" className="workspace-rows">
-    {Object.entries(groups).filter(([, entries]) => entries.length).map(([group, entries]) => <section className="harness-session-group" key={group}>
-      <h2 className="px-2 pt-3.5 pb-1 text-xs font-medium text-muted-foreground">{t('harness.group.' + group)}</h2>
+  return <><Surface tone="sheet" className="workspace-rows">
+    {[...groups].map(([group, entries]) => <section className="harness-session-group" key={group}>
+      {groupByProject && <div className="px-2 pt-3.5 pb-1">
+        <h2 className="flex min-w-0 items-center gap-2 text-xs font-medium">
+          <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" /><span className="truncate">{entries[0].projectName}</span>
+          <span className="truncate font-normal text-muted-foreground">{entries[0].nodeName}</span>
+        </h2>
+        {(headings.get(entries[0].projectName + '\0' + entries[0].nodeName) ?? 0) > 1 && entries[0].projectPath &&
+          <p className="mt-0.5 pl-5 text-xs text-muted-foreground [overflow-wrap:anywhere]">{entries[0].projectPath}</p>}
+      </div>}
       {entries.map((session) => {
         const running = session.online && session.activity === 'running';
         const approval = session.online && session.activity === 'approval';
         const status = !session.online ? t('harness.status.offline') : session.status !== 'ready' ? t('harness.status.' + session.status)
           : approval ? t('harness.waitingApproval') : running ? t('harness.turn.inProgress') : '';
         const nodeName = session.nodeName ?? t('harness.unknownComputer');
-        return <Button key={session.id} type="button" variant="row" size="bare"
-          className="workspace-row flex min-h-[55px] w-full items-center gap-2.5 px-2 py-2 text-left"
+        return <div key={session.id} className="flex min-w-0 items-center">
+          <Button type="button" variant="row" size="bare"
+          className="workspace-row flex min-h-[55px] min-w-0 flex-1 items-center gap-2.5 px-2 py-2 text-left"
           aria-current={selectedId === session.id ? 'page' : undefined} data-selected={selectedId === session.id || undefined}
           disabled={Boolean(session.nativeThreadId && (!session.online || opening))} aria-busy={opening === session.id || undefined}
           onClick={() => open(session)}>
           {approval ? <CircleAlert className="size-4 shrink-0 text-warning" aria-hidden="true" />
             : running || opening === session.id ? <LoaderCircle className="size-4 shrink-0 animate-spin text-brand-link motion-reduce:animate-none" aria-hidden="true" />
-              : <MessageSquare className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
+              : session.pinned ? <Pin className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                : <MessageSquare className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-medium">{session.title || session.projectName}</span>
+            <span className="flex items-center gap-1.5 text-sm font-medium">
+              <span className="truncate">{session.title || session.projectName}</span>
+              {session.unread && <span className="size-1.5 shrink-0 rounded-full bg-brand-link" aria-label={t('harness.unread')} />}
+            </span>
             <span className="flex items-center gap-2 text-xs text-muted-foreground">
               <span className="truncate">{session.title ? session.projectName + ' · ' + nodeName : nodeName}</span>
               {status && <span className={'shrink-0 ' + (approval ? 'text-warning' : '')}>{status}</span>}
@@ -166,10 +199,32 @@ function SessionList({ sessions, selectedId, opening, open }: { sessions: Sessio
           </span>
           {Number.isFinite(Date.parse(session.updatedAt)) && <time dateTime={session.updatedAt} className="shrink-0 text-xs text-muted-foreground tabular-nums">{clock.format(new Date(session.updatedAt))}</time>}
           <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-        </Button>;
+          </Button>
+          {!session.nativeThreadId && <DropdownMenu>
+            <DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon" aria-label={t('harness.sessionActions')}><Ellipsis /></Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => { setTitle(session.title || session.projectName); setRenaming(session); }}>{t('harness.rename')}</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => update(session.id, { pinned: !session.pinned })}>{t(session.pinned ? 'harness.unpin' : 'harness.pin')}</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => update(session.id, { archived: !session.archived })}>{t(session.archived ? 'harness.unarchive' : 'harness.archive')}</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => update(session.id, { read: Boolean(session.unread) })}>{t(session.unread ? 'harness.markRead' : 'harness.markUnread')}</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>}
+        </div>;
       })}
     </section>)}
-  </Surface>;
+  </Surface><Dialog open={!!renaming} onOpenChange={(next) => { if (!next) setRenaming(null); }}>
+    <DialogContent>
+      <DialogHeader><DialogTitle>{t('harness.rename')}</DialogTitle></DialogHeader>
+      <form className="grid gap-4" onSubmit={(event) => {
+        event.preventDefault();
+        if (renaming && title.trim()) update(renaming.id, { title: title.trim() });
+        setRenaming(null);
+      }}>
+        <Input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={160} aria-label={t('harness.sessionTitle')} />
+        <DialogFooter><Button type="submit" disabled={!title.trim()}>{t('settings:actions.save')}</Button></DialogFooter>
+      </form>
+    </DialogContent>
+  </Dialog></>;
 }
 
 export function HarnessSessions({ id, harness, project, navigation, open, selectHarness, selectProject }: {
@@ -182,12 +237,27 @@ export function HarnessSessions({ id, harness, project, navigation, open, select
   selectProject: (id: string | null) => void;
 }) {
   const { t } = useTranslation('workspace');
-  const list = useQuery({ queryKey: ['harness-sessions'], queryFn: () => api<List>(base), refetchInterval: 5_000 });
   const queryClient = useQueryClient();
-  const harnesses = list.data?.harnesses?.length ? list.data.harnesses : [codex];
+  const [mode, setMode] = useState<'project' | 'recent' | 'archive'>('project');
+  const list = useInfiniteQuery({
+    queryKey: ['harness-sessions', harness ?? codex.id, project ?? null, mode === 'archive'],
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) => {
+      const params = new URLSearchParams({ harness: harness ?? codex.id });
+      if (project) params.set('locationId', project);
+      if (mode === 'archive') params.set('archived', '1');
+      if (pageParam) params.set('cursor', pageParam);
+      return api<List>(base + '?' + params, { signal });
+    },
+    getNextPageParam: (page) => page.nextCursor,
+    refetchInterval: (query) => (query.state.data?.pages.length ?? 0) < 2 ? 5_000 : false,
+  });
+  const listData = list.data?.pages[0];
+  const allSessions = list.data?.pages.flatMap((page) => page.sessions) ?? [];
+  const harnesses = listData?.harnesses?.length ? listData.harnesses : [codex];
   const selected = harnesses.find((item) => item.id === harness) ?? harnesses[0];
-  const sessions = (list.data?.sessions ?? []).filter((session) => (session.harness ?? codex.id) === selected.id);
-  const current = list.data?.sessions.find((session) => session.id === id);
+  const sessions = allSessions.filter((session) => (session.harness ?? codex.id) === selected.id);
+  const current = allSessions.find((session) => session.id === id);
   const [createOpen, setCreateOpen] = useState(false);
   const [picker, setPicker] = useState<'list' | 'new' | 'chat' | null>(null);
   const projects = useQuery({ queryKey: ['harness-projects'], queryFn: () => api<Project[]>('/api/projects') });
@@ -198,14 +268,37 @@ export function HarnessSessions({ id, harness, project, navigation, open, select
   const [nativeError, setNativeError] = useState<{ project: string; text: string } | null>(null);
   const startGate = useRef(false);
   const openGate = useRef(false);
-  const nodes = new Map(list.data?.nodes.map((node) => [node.id, node]));
-  const busyNodes = new Set(list.data?.sessions.filter((session) => session.status !== 'failed').map((session) => session.nodeId));
+  const nodes = new Map(listData?.nodes.map((node) => [node.id, node]));
+  const busyNodes = new Set(allSessions.filter((session) => session.status !== 'failed').map((session) => session.nodeId));
+  const supportsSelected = (node?: List['nodes'][number]) => node?.harnesses
+    ? node.harnesses.some((harness) => harness === selected.id) : node?.supportsHarness && selected.id === codex.id;
+  const discoverNodes = (listData?.nodes ?? []).filter((node) => node.online && node.harnessWorkspace && supportsSelected(node)).map((node) => node.id).sort();
+  const discovery = useInfiniteQuery({
+    queryKey: ['harness-index', selected.id, discoverNodes], enabled: discoverNodes.length > 0 && mode !== 'archive',
+    initialPageParam: null as Record<string, string> | null, staleTime: 30_000, retry: false,
+    queryFn: async ({ pageParam, signal }) => {
+      const pending = pageParam ? Object.entries(pageParam) : discoverNodes.map((nodeId) => [nodeId, null] as const);
+      const results = await Promise.allSettled(pending.map(async ([nodeId, cursor]) => {
+        const page = await api<{ nextCursor: string | null }>(base + '/native/index', { method: 'POST', signal, body: json({ nodeId, cursor,
+          ...(selected.id === codex.id ? {} : { harness: selected.id }),
+        }) });
+        return [nodeId, page.nextCursor === cursor ? null : page.nextCursor] as const;
+      }));
+      const errors = results.flatMap((result) => result.status === 'rejected' ? [message(result.reason, t('harness.requestFailed'))] : []);
+      const next = Object.fromEntries(results.flatMap((result) => result.status === 'fulfilled' && result.value[1] ? [[result.value[0], result.value[1]]] : [])) as Record<string, string>;
+      return { next, errors };
+    },
+    getNextPageParam: (page) => Object.keys(page.next).length ? page.next : null,
+  });
+  useEffect(() => {
+    if (discovery.dataUpdatedAt) void queryClient.invalidateQueries({ queryKey: ['harness-sessions'] });
+  }, [discovery.dataUpdatedAt, queryClient]);
   const registered = projects.data?.flatMap((project) => project.locations.flatMap((location) => {
     const node = nodes.get(location.nodeId);
     return location.status === 'verified' && node
       ? [{ ...location, projectName: project.name, computerName: node.name }] : [];
   })) ?? [];
-  const directories = list.data?.directories ?? [];
+  const directories = listData?.directories ?? [];
   const allLocations: HarnessProject[] = [...registered, ...directories];
   const catalog = [...registered, ...directories.filter((dir) => !registered.some((item) => item.nodeId === dir.nodeId && item.path === dir.path))];
   const chosenLocation = allLocations.find((item) => item.id === project);
@@ -217,14 +310,14 @@ export function HarnessSessions({ id, harness, project, navigation, open, select
   const visibleSessions = sessions.filter((session) => matchesProject(session.locationId));
   const verifiedLocations = catalog.filter((item) => {
     const node = nodes.get(item.nodeId);
-    return selected.id === codex.id && node?.online && node.supportsHarness && (!project || item.id === selectedProject?.id);
+    return node?.online && supportsSelected(node) && (!project || item.id === selectedProject?.id);
   });
   const locations = verifiedLocations.filter((location) => nodes.get(location.nodeId)?.harnessLibrary || !busyNodes.has(location.nodeId));
   const choice = locations.find((location) => location.id === locationId);
   const verifiedNodes = new Set(verifiedLocations.map((location) => location.nodeId));
   const occupied = sessions.filter((session) => session.status !== 'failed' && verifiedNodes.has(session.nodeId) && !nodes.get(session.nodeId)?.harnessLibrary)
     .map((session) => ({ id: session.id, title: session.title || session.projectName, computerName: (session.title ? session.projectName + ' · ' : '') + (session.nodeName ?? t('harness.unknownComputer')) }));
-  const nativeEnabled = Boolean(selected.id === codex.id && selectedProject && projectComputer?.online && projectComputer.harnessLibrary);
+  const nativeEnabled = Boolean(mode !== 'archive' && selected.id === codex.id && selectedProject && projectComputer?.online && projectComputer.harnessLibrary && !projectComputer.harnessWorkspace);
   const native = useInfiniteQuery({
     queryKey: ['harness-native', selectedProject?.nodeId, selectedProject?.id], enabled: nativeEnabled,
     initialPageParam: null as string | null, staleTime: 20_000, retry: false,
@@ -233,19 +326,38 @@ export function HarnessSessions({ id, harness, project, navigation, open, select
     getNextPageParam: (page, _pages, cursor) => page.nextCursor === cursor ? null : page.nextCursor,
   });
   const seen = new Set(sessions.filter((session) => session.nodeId === selectedProject?.nodeId && session.status !== 'failed').map((session) => session.threadId));
-  const rows: SessionRow[] = [...visibleSessions];
+  const projectPaths = new Map(allLocations.map((location) => [location.id, location.path]));
+  const projectKey = (id: string, nodeId: string) => nodeId + '\0' + (projectPaths.get(id) ?? id);
+  const rows: SessionRow[] = visibleSessions.map((session) => ({ ...session, projectPath: projectPaths.get(session.locationId), projectKey: projectKey(session.locationId, session.nodeId) }));
   if (selectedProject && selected.id === codex.id) {
     for (const page of native.data?.pages ?? []) for (const thread of page.threads) {
       if (seen.has(thread.threadId)) continue;
       seen.add(thread.threadId);
       rows.push({ id: 'native:' + thread.threadId, nativeThreadId: thread.threadId, nodeName: selectedProject.computerName,
-        online: nativeEnabled, projectName: selectedProject.projectName, title: thread.title, status: 'ready', updatedAt: thread.updatedAt });
+        online: nativeEnabled, projectName: selectedProject.projectName, title: thread.title, status: 'ready', updatedAt: thread.updatedAt,
+        projectKey: projectKey(selectedProject.id, selectedProject.nodeId), projectPath: selectedProject.path });
     }
   }
-  rows.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
+  const indexed = new Map(rows.map((row) => [row.id, row]));
+  const uniqueRows = [...indexed.values()].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
+  const [metadataError, setMetadataError] = useState<string | null>(null);
+  async function updateMetadata(sessionId: string, change: SessionMetadata) {
+    setMetadataError(null);
+    try {
+      await api(`${base}/${encodeURIComponent(sessionId)}`, { method: 'PATCH', body: json(change) });
+      void list.refetch();
+      void queryClient.invalidateQueries({ queryKey: ['harness-session', sessionId] });
+    } catch (failure) {
+      setMetadataError(message(failure, t('harness.requestFailed')));
+    }
+  }
 
   async function openRow(row: SessionRow) {
-    if (!row.nativeThreadId) { open(row.id); return; }
+    if (!row.nativeThreadId) {
+      open(row.id);
+      if (row.unread) void updateMetadata(row.id, { read: true });
+      return;
+    }
     if (!nativeEnabled || !selectedProject || openGate.current) return;
     openGate.current = true;
     setOpening(row.id);
@@ -283,8 +395,8 @@ export function HarnessSessions({ id, harness, project, navigation, open, select
     setError(null);
     const origin = window.location.hash;
     const saved = load<StartCommand>(createKey);
-    const command = saved?.locationId === choice.id && saved.nodeId === choice.nodeId ? saved
-      : { nodeId: choice.nodeId, locationId: choice.id, commandId: crypto.randomUUID() };
+    const command = saved?.locationId === choice.id && saved.nodeId === choice.nodeId && (saved.harness ?? codex.id) === selected.id ? saved
+      : { nodeId: choice.nodeId, locationId: choice.id, commandId: crypto.randomUUID(), ...(selected.id === codex.id ? {} : { harness: selected.id }) };
     save(createKey, command);
     try {
       const created = await api<{ sessionId: string }>(base, { method: 'POST', body: json(command) });
@@ -310,7 +422,7 @@ export function HarnessSessions({ id, harness, project, navigation, open, select
             <HarnessStartDialog open={createOpen} onOpenChange={changeCreateOpen} harnessName={selected.name}
               locations={locations} value={choice?.id ?? ''} onSelect={setLocationId} onStart={start}
               unavailable={projectComputer && (!projectComputer.online ? t('harness.selectedOffline', { computer: projectComputer.name })
-                : !projectComputer.supportsHarness ? t('harness.selectedUnsupported', { computer: projectComputer.name, harness: selected.name }) : undefined)}
+                : !supportsSelected(projectComputer) ? t('harness.selectedUnsupported', { computer: projectComputer.name, harness: selected.name }) : undefined)}
               onChooseProject={() => { setCreateOpen(false); setPicker('new'); }}
               occupied={occupied} onResume={(sessionId) => { setCreateOpen(false); open(sessionId); }}
               loading={list.isLoading || projects.isLoading} starting={starting} error={locationError} />
@@ -321,49 +433,72 @@ export function HarnessSessions({ id, harness, project, navigation, open, select
             <HarnessProjectPicker open={picker !== null} onOpenChange={(next) => {
               if (!next && picker === 'new') setCreateOpen(true);
               setPicker(next ? 'list' : null);
-            }} projects={catalog} computers={list.data?.nodes ?? []} value={picker === 'chat' ? current?.locationId : selectedProject?.id}
+            }} projects={catalog} computers={listData?.nodes ?? []} value={picker === 'chat' ? current?.locationId : selectedProject?.id}
               loading={projects.isLoading || list.isLoading} error={projects.error?.message}
               browse={(nodeId, path) => api<DirectoryPage>(base + '/directories/browse', { method: 'POST', body: json({ nodeId, path }) })}
               selectDirectory={(nodeId, path) => api<HarnessProject>(base + '/directories/select', { method: 'POST', body: json({ nodeId, path }) })}
               onChange={(item) => {
                 if (item && !catalog.some((p) => p.id === item.id)) {
-                  queryClient.setQueryData<List>(['harness-sessions'], (data) => data && { ...data, directories: [...(data.directories ?? []), item] });
                   void list.refetch();
                   void projects.refetch();
                 }
                 if (picker !== 'chat' || !item || item.id !== current?.locationId) selectProject(item?.id ?? null);
                 setLocationId(item?.id ?? '');
               }} />
+            <div className="flex flex-wrap gap-1" role="group" aria-label={t('harness.listView')}>
+              {(['project', 'recent', 'archive'] as const).map((view) => <Button key={view} type="button" size="sm" className="min-h-11"
+                variant={mode === view ? 'secondary' : 'ghost'} aria-pressed={mode === view} onClick={() => {
+                  setMode(view);
+                  if (view === 'recent' && project) selectProject(null);
+                }}>
+                {view === 'archive' && <Archive />} {t('harness.view.' + view)}
+              </Button>)}
+            </div>
           </div>
           {list.error && <p role="alert" className="mb-3 text-sm text-destructive">{list.error.message}</p>}
+          {metadataError && <p role="alert" className="mb-3 text-sm text-destructive">{metadataError}</p>}
           {nativeError && nativeError.project === selectedProject?.id && <p role="alert" className="mb-3 text-sm text-destructive">{nativeError.text}</p>}
-          {rows.length > 0 && <SessionList sessions={rows} selectedId={id} opening={opening} open={(row) => void openRow(row)} />}
-          {(list.isLoading || nativeEnabled && native.isPending) && <p role="status" className="px-2 py-4 text-sm text-muted-foreground">{t('harness.loading')}</p>}
+          {uniqueRows.length > 0 && <SessionList sessions={uniqueRows} groupByProject={mode !== 'recent' && !selectedProject}
+            selectedId={id} opening={opening} open={(row) => void openRow(row)} update={(sessionId, change) => void updateMetadata(sessionId, change)} />}
+          {(list.isLoading || nativeEnabled && native.isPending || discovery.isLoading) && <p role="status" className="px-2 py-4 text-sm text-muted-foreground">{t('harness.loading')}</p>}
           {nativeEnabled && native.error && <div className="flex flex-wrap items-center gap-2 px-2 py-3">
             <p role="alert" className="text-sm text-destructive">{native.error.message}</p>
             <Button type="button" variant="outline" size="sm" onClick={() => void native.refetch()}>{t('harness.retry')}</Button>
           </div>}
-          {!list.isLoading && !list.error && !rows.length && (!nativeEnabled || !native.isPending && !native.error && !native.hasNextPage) &&
+          {!list.isLoading && !list.error && !discovery.isFetching && !rows.length && (!nativeEnabled || !native.isPending && !native.error && !native.hasNextPage) &&
             <p className="px-2 py-6 text-sm text-muted-foreground">{t(selectedProject ? 'harness.noProjectSessions' : 'harness.noSessions', { harness: selected.name, project: selectedProject?.projectName })}</p>}
+          {list.hasNextPage && <Button type="button" variant="ghost" className="mt-2 min-h-11 w-full"
+            disabled={list.isFetching} onClick={() => void list.fetchNextPage()}>{t(list.isFetchingNextPage ? 'harness.loading' : 'harness.moreSessions')}</Button>}
+          {mode !== 'archive' && discovery.hasNextPage && <Button type="button" variant="ghost" className="mt-2 min-h-11 w-full"
+            disabled={discovery.isFetching} onClick={() => void discovery.fetchNextPage()}>{t(discovery.isFetchingNextPage ? 'harness.loading' : 'harness.moreNative')}</Button>}
+          {mode !== 'archive' && discovery.data?.pages.some((page) => page.errors.length) && <div className="flex items-center gap-2 px-2 py-3">
+            <p role="status" className="text-sm text-muted-foreground">{t('harness.indexError')}</p>
+            <Button type="button" variant="outline" size="sm" onClick={() => void discovery.refetch()}>{t('harness.retry')}</Button>
+          </div>}
           {nativeEnabled && native.hasNextPage && <Button type="button" variant="ghost" className="mt-2 min-h-11 w-full"
             disabled={native.isFetching} onClick={() => void native.fetchNextPage()}>{t(native.isFetchingNextPage ? 'harness.loading' : 'harness.moreSessions')}</Button>}
         </div>
       </div>
       <div className="harness-detail-pane min-h-0 min-w-0">
-        {id ? <HarnessDetail key={id} id={id} summary={current} harnessName={chatHarness.name} back={() => open()} chooseProject={() => setPicker('chat')} />
+        {id ? <HarnessDetail key={id} id={id} summary={current} harnessName={chatHarness.name} back={() => open()} chooseProject={() => setPicker('chat')} openSession={open} />
           : <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{t('harness.chooseSession')}</div>}
       </div>
     </div>
   </section>;
 }
 
-function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: string; summary?: Session; harnessName: string; back: () => void; chooseProject: () => void }) {
+function HarnessDetail({ id, summary, harnessName, back, chooseProject, openSession }: {
+  id: string; summary?: Session; harnessName: string; back: () => void; chooseProject: () => void; openSession: (id: string) => void;
+}) {
   const { t } = useTranslation(['workspace', 'chat']);
   const queryClient = useQueryClient();
   const path = `${base}/${encodeURIComponent(id)}`;
   const draftKey = `dovun-harness-draft:${id}`;
+  const attachmentKey = `dovun-harness-attachments:${id}`;
   const pendingKey = `dovun-harness-pending:${id}`;
   const [draft, setDraft] = useState(() => load<string>(draftKey) ?? '');
+  const [attachments, setAttachments] = useState(() => load<HarnessInputAttachment[]>(attachmentKey) ?? []);
+  const [toolRequest, setToolRequest] = useState<'files' | 'commands' | null>(null);
   const [pending, setPending] = useState(() => load<Pending>(pendingKey));
   const pendingRef = useRef(pending);
   const [sending, setSending] = useState(false);
@@ -376,14 +511,14 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
   const historyAnchor = useRef<{ row: HTMLElement; top: number; pages: number } | null>(null);
   const [pin] = useState(createBottomPin);
   const [showLatest, setShowLatest] = useState(false);
-  const detail = useQuery({ queryKey: ['harness-session', id], queryFn: () => api<Detail>(path + '?timeline=1&settings=1'), refetchInterval: 4_000 });
+  const detail = useQuery({ queryKey: ['harness-session', id], queryFn: () => api<Detail>(path + '?timeline=1&settings=1&workspace=1'), refetchInterval: 4_000 });
   const stream = useHarnessStream(id);
   const snapshot = stream.snapshot ?? detail.data?.snapshot;
   const view = snapshot?.view;
   const settings = detail.data?.settingsAvailable ? view?.settings : undefined;
   const historyEnabled = Boolean(detail.data?.historyAvailable && (detail.data.native || detail.data.title || view?.messages.length));
   const history = useInfiniteQuery({
-    queryKey: ['harness-history', id, detail.data?.threadId], enabled: historyEnabled,
+    queryKey: ['harness-history', id, detail.data?.threadId, snapshot?.epoch], enabled: historyEnabled,
     initialPageParam: null as string | null, staleTime: 30_000, retry: false, refetchOnWindowFocus: false,
     queryFn: ({ pageParam, signal }) => api<HarnessHistoryPage>(path + '/history', { method: 'POST', signal, body: json({ cursor: pageParam }) }),
     getNextPageParam: (page, _pages, cursor) => page.nextCursor === cursor ? null : page.nextCursor,
@@ -405,7 +540,21 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
     refetchInterval: 2_000, retry: false,
   });
 
-  function updateDraft(value: string) { setDraft(value); save(draftKey, value); }
+  function updateDraft(value: string) {
+    setDraft(value);
+    save(draftKey, value);
+    if (detail.data?.workspaceAvailable && !actionsDisabled) {
+      if (/(^|\s)@$/.test(value)) setToolRequest('files');
+      if (value === '/') setToolRequest('commands');
+    }
+  }
+  function editAttachments(change: (files: HarnessInputAttachment[]) => HarnessInputAttachment[]) {
+    setAttachments((previous) => {
+      const updated = change(previous);
+      save(attachmentKey, updated.length ? updated : null);
+      return updated;
+    });
+  }
   function updatePending(value: Pending | null) { pendingRef.current = value; setPending(value); save(pendingKey, value); }
   function observe(next: Receipt) {
     const active = pendingRef.current;
@@ -421,13 +570,15 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
       setSettingsError(next.status === 'accepted' ? null : next.error ?? t('harness.requestFailed'));
       if (next.status !== 'accepted') void detail.refetch();
     }
-    if (next.status === 'accepted' && 'text' in active.command) {
+    if (next.status === 'accepted' && (active.command.operation === 'send' || active.command.operation === 'steer' || active.command.operation === 'enqueue')) {
       const text = active.command.text;
+      const sent = active.command.attachments;
       setDraft((value) => {
         if (value.trim() !== text) return value;
         save(draftKey, '');
         return '';
       });
+      if (sent?.length) editAttachments((files) => JSON.stringify(files) === JSON.stringify(sent) ? [] : files);
     }
     updatePending(null);
   }
@@ -494,11 +645,7 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
       if (failure instanceof ApiError && failure.status && failure.status < 500) updatePending(null);
     } finally { sendGate.current = false; setSending(false); }
   }
-  function act(action: Omit<Extract<HarnessCommand, { operation: 'send' }>, 'commandId' | 'expectedEpoch'>
-    | Omit<Extract<HarnessCommand, { operation: 'steer' }>, 'commandId' | 'expectedEpoch'>
-    | Omit<Extract<HarnessCommand, { operation: 'configure' }>, 'commandId' | 'expectedEpoch'>
-    | Omit<Extract<HarnessCommand, { operation: 'interrupt' }>, 'commandId' | 'expectedEpoch'>
-    | Omit<Extract<HarnessCommand, { operation: 'resolveApproval' }>, 'commandId' | 'expectedEpoch'>) {
+  function act(action: HarnessAction) {
     if (!enabled || !snapshot || pendingRef.current || sendGate.current) return;
     if ('text' in action) jumpToLatest();
     const command = { ...action, commandId: crypto.randomUUID(), expectedEpoch: snapshot.epoch };
@@ -508,24 +655,39 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
   }
 
   const session = detail.data ?? summary;
+  const provider = harnessKind.safeParse(session?.harness);
+  const name = provider.success ? harnessNames[provider.data] : harnessName;
   const projectName = session?.projectName;
   const nodeName = session?.nodeName ?? t('harness.unknownComputer');
   const status = !session ? 'reconnecting' : !session.online ? 'offline' : enabled ? 'ready'
     : stream.unavailable ? 'unavailable' : session.status === 'ready' ? 'reconnecting' : session.status;
   const detailError = detail.error?.message ?? stream.unavailable ?? detail.data?.error;
-  const approvalControls = view?.approvals.map((request) => <Surface as="section" tone="subtle" className="space-y-2.5 rounded-xl p-3" key={request.id} aria-label={t('harness.approval.' + request.kind)}>
+  const approvalControls = view?.approvals.map((request) => request.kind === 'question'
+    ? <HarnessQuestion key={request.id} request={request} disabled={actionsDisabled} answer={act} />
+    : <Surface as="section" tone="subtle" className="space-y-2.5 rounded-xl p-3" key={request.id} aria-label={t('harness.approval.' + request.kind)}>
     <h3 className="flex items-center gap-2 text-sm font-medium text-warning">
       <ShieldQuestion className="size-4" aria-hidden="true" />{t('harness.approval.' + request.kind)}
     </h3>
     {request.details && <p className="font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">{request.details}</p>}
     <div className="flex flex-wrap justify-end gap-2">
-      <Button type="button" className="min-h-11" variant="outline" disabled={actionsDisabled}
-        onClick={() => act({ operation: 'resolveApproval', requestId: request.id, decision: 'decline' })}>{t('harness.decline')}</Button>
-      {request.canAccept && <Button type="button" className="min-h-11" disabled={actionsDisabled}
-        onClick={() => act({ operation: 'resolveApproval', requestId: request.id, decision: 'accept' })}>{t('harness.allow')}</Button>}
+      {(request.decisions ?? (request.canAccept ? ['decline', 'accept'] as const : ['decline'] as const)).map((decision) => <Button
+        key={decision} type="button" className="min-h-11" variant={decision === 'accept' ? 'default' : 'outline'} disabled={actionsDisabled}
+        onClick={() => act({ operation: 'resolveApproval', requestId: request.id, decision })}>
+        {t(decision === 'accept' ? 'harness.allow' : decision === 'decline' ? 'harness.decline'
+          : decision === 'cancel' ? 'harness.cancelApproval' : 'harness.allowInSession')}
+      </Button>)}
     </div>
   </Surface>);
   const visibleReceipt = receipt && (waitingForStart || receipt.commandId !== startCommandId) ? receipt : null;
+  const workspace = session?.workspaceAvailable === true;
+  const codexControls = workspace && name === harnessNames.codex;
+  const attachmentInput = workspace && attachments.length ? { attachments } : {};
+  const currentPlan = workspace && view?.plan?.turnId === currentTurn?.id ? view?.plan : undefined;
+  const planControls = currentPlan && <HarnessPlan plan={currentPlan}
+    canApprove={!actionsDisabled && currentPlan.ready && currentTurn?.status === 'completed' && settings?.mode === 'plan' && !view?.queue?.items.length}
+    approve={() => {
+      if (settings) act({ operation: 'approvePlan', turnId: currentPlan.turnId, expectedSettingsRevision: settings.revision });
+    }} />;
 
   return <section className="dovun-assistant harness-thread flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
     data-presentation="direct" aria-label={t('harness.detail')}>
@@ -534,8 +696,9 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
       <Badge variant="secondary" className="size-8 p-0 text-muted-foreground"><Terminal className="size-4" aria-hidden="true" /></Badge>
       <div className="assistant-identity min-w-0 flex-1">
         <h2 title={session?.title ?? projectName}>{session?.title || projectName || t('harness.tab')}</h2>
-        <p className="truncate text-xs text-muted-foreground" title={nodeName}>{harnessName}{session && ' · ' + nodeName}</p>
+        <p className="truncate text-xs text-muted-foreground" title={nodeName}>{name}{session && ' · ' + nodeName}</p>
       </div>
+      {session?.sourceSessionId && <Button type="button" variant="ghost" size="sm" onClick={() => openSession(session.sourceSessionId!)}>{t('harness.sourceSession')}</Button>}
       <span className="max-w-[34%] text-right text-xs leading-tight text-muted-foreground" role="status">{t('harness.status.' + status)}</span>
     </header>
     {detailError && <p role="alert" className="shrink-0 px-4 pt-2 text-sm text-destructive [overflow-wrap:anywhere]">{detailError}</p>}
@@ -556,9 +719,12 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
             {!history.hasNextPage && <Button type="button" size="sm" variant="outline" onClick={() => void history.refetch()}>{t('harness.retry')}</Button>}
           </div>}
           {historyLoading && !hasMessages && <p role="status" className="text-center text-sm text-muted-foreground">{t('harness.loadingHistory')}</p>}
-          {hasMessages ? <HarnessTimeline view={view ?? emptyTimeline} history={historicalViews} name={harnessName} liveMessageId={stream.liveMessageId}
-            approvalControls={approvalControls} /> : !detailError && !historyLoading && !history.error && <div className="dovun-assistant-welcome">
-            <h3>{t('harness.empty', { harness: harnessName })}</h3>
+          {hasMessages ? <HarnessTimeline view={view ?? emptyTimeline} history={historicalViews} name={name} liveMessageId={stream.liveMessageId}
+            approvalControls={<>{planControls}{approvalControls}</>}
+            turnControls={codexControls ? (turn, firstMessage) => turn.status !== 'inProgress' && turn.status !== 'unknown' && <HarnessTurnControls
+              turn={turn} prompt={firstMessage?.text} disabled={actionsDisabled} settingsRevision={settings?.revision}
+              canRerun={currentTurn?.id === turn.id && !view?.queue?.items.length} act={act} /> : undefined} /> : !detailError && !historyLoading && !history.error && <div className="dovun-assistant-welcome">
+            <h3>{t('harness.empty', { harness: name })}</h3>
           </div>}
           {!currentTurn && approvalControls}
         </div>
@@ -569,29 +735,54 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject }: { id: 
       </Button>}
     </div>
     <div className="assistant-composer-area shrink-0">
+      {workspace && view?.queue && <HarnessQueueControls queue={view.queue} running={inProgress} disabled={actionsDisabled} act={act} />}
+      {workspace && attachments.length > 0 && <div className="mx-4 flex flex-wrap gap-1">
+        {attachments.map((file, index) => <Button type="button" key={index} size="sm" variant="secondary" className="max-w-full"
+          aria-label={t('harness.files.remove', { name: file.name })} disabled={actionsDisabled}
+          onClick={() => editAttachments((files) => files.filter((_, position) => position !== index))}><span className="truncate">{file.name} ×</span></Button>)}
+      </div>}
       {(visibleReceipt || error || pending && !sending && tracked.error) && (
         <div className="mb-2 flex flex-wrap items-center gap-2 px-2 text-xs text-muted-foreground">
           {visibleReceipt && <p role="status" className="[overflow-wrap:anywhere]">
             {t(visibleReceipt.settings && visibleReceipt.status === 'accepted' ? 'harness.settings.saved' : 'harness.receipt.' + visibleReceipt.status)}
             {visibleReceipt.error && ' · ' + visibleReceipt.error}
           </p>}
+          {visibleReceipt?.resultSessionId && <Button type="button" size="sm" variant="outline"
+            onClick={() => openSession(visibleReceipt.resultSessionId!)}>{t('harness.openFork')}</Button>}
           {error && <p role="alert" className="text-destructive [overflow-wrap:anywhere]">{error}</p>}
           {pending && !sending && tracked.error && <Button size="sm" variant="outline" type="button" onClick={() => void post(pending.command)}>{t('harness.retry')}</Button>}
         </div>
       )}
       <ChatComposer input={draft} onChange={updateDraft} maxLength={HARNESS_TEXT_LIMIT} busy={inProgress}
         actionsDisabled={actionsDisabled} allowSendWhileBusy listenForAssistantFocus={false}
-        labels={{ input: t('harness.draft'), send: t(inProgress ? 'harness.steer' : 'harness.send'), stop: t('harness.interrupt') }}
-        placeholder={inProgress ? t('harness.steer') : t('harness.placeholder', { harness: harnessName })}
-        toolbar={settings && <HarnessSettings settings={settings} disabled={actionsDisabled} saving={pending?.command.operation === 'configure'}
-          error={settingsError} onChange={(changes) => act({ operation: 'configure', expectedSettingsRevision: settings.revision, changes })} />}
+        labels={{ input: t('harness.draft'), send: t(inProgress ? provider.data === 'claude' ? 'harness.queue.enqueue' : 'harness.steer' : 'harness.send'), stop: t('harness.interrupt') }}
+        placeholder={inProgress ? t(provider.data === 'claude' ? 'harness.queue.enqueue' : 'harness.steer') : t('harness.placeholder', { harness: name })}
+        toolbar={<>{workspace && <HarnessWorkspaceTools endpoint={path} disabled={actionsDisabled} capacity={Math.max(0, 2 - attachments.length)}
+          requested={toolRequest} clearRequest={() => {
+            if (toolRequest === 'commands' && draft === '/') updateDraft('');
+            if (toolRequest === 'files' && /(^|\s)@$/.test(draft)) updateDraft(draft.slice(0, -1).trimEnd());
+            setToolRequest(null);
+          }} attach={(file) => editAttachments((files) => files.length >= 2 ? files : [...files, file])}
+          running={inProgress || Boolean(view?.queue?.items.length)} compact={codexControls ? () => act({ operation: 'compact' }) : undefined}
+          configurePlan={settings?.planAvailable ? () => act({ operation: 'configure', expectedSettingsRevision: settings.revision, changes: { mode: 'plan' } }) : undefined} />}
+          {settings && <HarnessSettings settings={settings} disabled={actionsDisabled} saving={pending?.command.operation === 'configure'}
+          error={settingsError} onChange={(changes) => act({ operation: 'configure', expectedSettingsRevision: settings.revision, changes })}
+          onForkProvider={codexControls && !inProgress ? (modelProvider) => act({ operation: 'fork', modelProvider }) : undefined} />}
+          {codexControls && inProgress && <Button type="button" variant="ghost" size="icon" aria-label={t('harness.queue.enqueue')} title={t('harness.queue.enqueue')}
+            disabled={actionsDisabled || !draft.trim()} onClick={() => act({ operation: 'enqueue', text: draft.trim(), ...attachmentInput,
+              ...(settings ? { expectedSettingsRevision: settings.revision } : {}) })}><ListOrdered /></Button>}
+        </>}
+        contextUsage={codexControls && <HarnessContext usage={view?.usage} disabled={actionsDisabled || inProgress || Boolean(view?.queue?.items.length)}
+          compact={() => act({ operation: 'compact' })} />}
         model={projectName && <ChatProjectButton name={projectName} open={chooseProject} />}
         onSend={(event) => {
           event.preventDefault();
           const text = draft.trim();
           if (!text) return;
-          if (inProgress) act({ operation: 'steer', turnId: currentTurn.id, text });
-          else act({ operation: 'send', text, ...(settings ? { expectedSettingsRevision: settings.revision } : {}) });
+          if (attachments.length && !workspace) { setError(t('harness.files.update')); return; }
+          if (inProgress && provider.data !== 'claude') act({ operation: 'steer', turnId: currentTurn.id, text, ...attachmentInput });
+          else if (inProgress) act({ operation: 'enqueue', text, ...attachmentInput, ...(settings ? { expectedSettingsRevision: settings.revision } : {}) });
+          else act({ operation: 'send', text, ...attachmentInput, ...(settings ? { expectedSettingsRevision: settings.revision } : {}) });
         }}
         onStop={inProgress ? () => act({ operation: 'interrupt', turnId: currentTurn.id }) : undefined} />
     </div>

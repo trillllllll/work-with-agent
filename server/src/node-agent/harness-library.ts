@@ -1,11 +1,13 @@
 import { execFile } from 'node:child_process';
 import { stat } from 'node:fs/promises';
-import { isAbsolute } from 'node:path';
+import { basename, isAbsolute } from 'node:path';
 import { promisify } from 'node:util';
 import { assertAllowed } from './git.js';
-import { asObject, CodexAppServer, CodexRejected } from './harness-codex.js';
+import { asObject, CodexAppServer, CodexRejected, type HarnessRuntime } from './harness-codex.js';
+import { listClaudeThreads, readClaudeThread, readClaudeTurns } from './harness-claude-library.js';
 import { codexItems, codexText, projectCodexHistory } from './harness-history.js';
 import type { HarnessCatalogThread, HarnessReadTask } from './harness-protocol.js';
+import { readHarnessFiles } from './harness-files.js';
 
 const exec = promisify(execFile);
 
@@ -14,27 +16,27 @@ async function belongsToProject(thread: Record<string, unknown>, cwd: string, ro
     && await assertAllowed(thread.cwd, roots).catch(() => null) === cwd;
 }
 
-export async function readProjectThread(app: CodexAppServer, threadId: string, cwd: string, roots: string[]) {
+export async function readProjectThread(app: HarnessRuntime, threadId: string, cwd: string, roots: string[]) {
   const { thread: result } = await app.request('thread/read', { threadId, includeTurns: false });
   const thread = asObject(result);
   if (thread.id !== threadId || !await belongsToProject(thread, cwd, roots)) {
-    throw new CodexRejected('这条 Codex 对话不在所选项目目录中');
+    throw new CodexRejected('这条对话不在所选项目目录中');
   }
   return thread;
 }
 
-export async function assertNativeThreadIdle(app: CodexAppServer, thread: Record<string, unknown>, threadId: string) {
+export async function assertNativeThreadIdle(app: HarnessRuntime, thread: Record<string, unknown>, threadId: string) {
   const page = await app.request('thread/turns/list', { threadId, limit: 1, sortDirection: 'desc', itemsView: 'summary' });
   const latest = codexItems(page.data)[0];
   let busy = asObject(thread.status).type === 'active' || latest?.status === 'inProgress';
   // Another Mac Codex process reports an unfinished turn as interrupted when read from disk.
-  if (!busy && latest?.status === 'interrupted' && latest.startedAt != null && latest.completedAt == null
+  if (!busy && (thread.modelProvider === 'claude' || latest?.status === 'interrupted' && latest.startedAt != null && latest.completedAt == null)
       && process.platform === 'darwin' && typeof thread.path === 'string' && isAbsolute(thread.path)) {
     const { stdout } = await exec('/usr/sbin/lsof', ['-w', '-Fa', '--', thread.path], { timeout: 2_000, maxBuffer: 32_768 })
       .catch(() => ({ stdout: '' }));
     busy = stdout.split('\n').some((field) => field === 'aw' || field === 'au');
   }
-  if (busy) throw new CodexRejected('原 Codex 会话正在运行，结束后可以继续');
+  if (busy) throw new CodexRejected('原会话正在运行，结束后可以继续');
 }
 
 function summary(thread: Record<string, unknown>): HarnessCatalogThread {
@@ -44,8 +46,45 @@ function summary(thread: Record<string, unknown>): HarnessCatalogThread {
 }
 
 export async function readHarnessLibrary(task: HarnessReadTask, roots: string[]) {
+  if ('harness' in task && task.harness === 'zcode') throw new CodexRejected('本机不支持这个会话操作');
+  if ('harness' in task && task.harness === 'claude') {
+    if (task.kind === 'index') {
+      const page = await listClaudeThreads(roots, task.cursor);
+      return { threads: page.data.map((thread) => ({ ...summary(thread), cwd: thread.cwd, name: (basename(thread.cwd) || thread.cwd).slice(0, 255) })),
+        nextCursor: page.nextCursor };
+    }
+    const cwd = await assertAllowed(task.cwd, roots);
+    if (task.kind === 'catalog') {
+      const page = await listClaudeThreads([cwd], task.cursor, cwd);
+      return { threads: page.data.map(summary), nextCursor: page.nextCursor };
+    }
+    const thread = await readClaudeThread(task.threadId, cwd);
+    if (!thread) throw new CodexRejected('这条对话不在所选项目目录中');
+    if (task.kind === 'thread') return summary(thread);
+    const page = await readClaudeTurns(task.threadId, cwd, task.cursor, 12);
+    return { view: (await projectCodexHistory(page.data, cwd, roots, false)).view, nextCursor: page.nextCursor };
+  }
+  if (task.kind === 'index') {
+    const app = await CodexAppServer.open(roots[0], () => undefined, () => undefined);
+    try {
+      const { data, nextCursor } = await app.request('thread/list', {
+        limit: 30, sortKey: 'updated_at', modelProviders: [], cursor: task.cursor,
+      });
+      const threads = [];
+      for (const thread of codexItems(data)) {
+        if (thread.ephemeral === true || !codexText(thread.id) || typeof thread.cwd !== 'string' || !isAbsolute(thread.cwd)) continue;
+        const cwd = await assertAllowed(thread.cwd, roots).catch(() => null);
+        if (!cwd || !(await stat(cwd).catch(() => null))?.isDirectory()) continue;
+        threads.push({ ...summary(thread), cwd, name: (basename(cwd) || cwd).slice(0, 255) });
+      }
+      return { threads, nextCursor: codexText(nextCursor) || null };
+    } finally {
+      await app.close();
+    }
+  }
   const cwd = await assertAllowed(task.cwd, roots);
   if (!(await stat(cwd)).isDirectory()) throw new CodexRejected('项目位置不是目录');
+  if (task.kind === 'files') return readHarnessFiles(cwd, task.path, task.preview);
   const app = await CodexAppServer.open(cwd, () => undefined, () => undefined);
   try {
     if (task.kind === 'catalog') {

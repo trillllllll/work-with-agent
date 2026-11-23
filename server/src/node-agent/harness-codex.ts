@@ -1,10 +1,16 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { realpath, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { resolve } from 'node:path';
 import { createInterface } from 'node:readline';
+import { Agent, WebSocket } from 'undici';
 import { providerEnvironment } from '../runner/environment.js';
 import { resolveLocalCli } from './cli.js';
 
 type RpcId = string | number;
 type JsonObject = Record<string, unknown>;
+export type HarnessNotification = (method: string, params: JsonObject, id?: RpcId) => void;
+export type HarnessRuntime = Pick<CodexAppServer, 'request' | 'reply' | 'unsupported' | 'pid' | 'close'>;
 
 export function asObject(value: unknown): JsonObject {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};
@@ -21,51 +27,56 @@ export class CodexAppServer {
     reject: (error: Error) => void;
     timer: NodeJS.Timeout;
   }>();
-  private readonly exited: Promise<void>;
-
   private constructor(
-    private readonly child: ChildProcessWithoutNullStreams,
-    onMessage: (method: string, params: JsonObject, id?: RpcId) => void,
-    onExit: () => void,
-  ) {
+    private readonly send: (json: string) => Promise<void>,
+    private readonly closeTransport: () => Promise<void>,
+    readonly pid?: number,
+  ) {}
+
+  private static stdio(child: ChildProcessWithoutNullStreams, onMessage: HarnessNotification, onExit: () => void) {
     const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
     // App Server diagnostics can include local account and configuration details.
     child.stderr.resume();
-    child.stdin.on('error', () => this.fail());
-    child.once('error', () => this.fail());
-    this.exited = new Promise((resolve) => child.once('close', () => {
+    const exited = new Promise<void>((resolve) => child.once('close', () => {
       lines.close();
-      const unexpected = !this.closing;
-      this.fail();
-      if (unexpected) onExit();
+      app.disconnected(onExit);
       resolve();
     }));
-    lines.on('line', (line) => {
-      let message: JsonObject;
-      try { message = asObject(JSON.parse(line)); } catch { return; }
-      if (typeof message.method === 'string') {
-        const id = typeof message.id === 'string' || typeof message.id === 'number' ? message.id : undefined;
-        onMessage(message.method, asObject(message.params), id);
-        return;
-      }
-      if (typeof message.id !== 'number') return;
-      const pending = this.pending.get(message.id);
-      if (!pending) return;
-      this.pending.delete(message.id);
-      clearTimeout(pending.timer);
-      if (message.error) pending.reject(new CodexRejected('Codex 拒绝了操作，请刷新会话状态后重试'));
-      else pending.resolve(asObject(message.result));
-    });
+    const app = new CodexAppServer((json) => new Promise((resolve, reject) => {
+      child.stdin.write(json + '\n', (error) => error ? reject(error) : resolve());
+    }), async () => {
+      child.stdin.end();
+      if (child.exitCode !== null || child.signalCode !== null) return exited;
+      const terminate = setTimeout(() => child.kill('SIGTERM'), 500);
+      const kill = setTimeout(() => child.kill('SIGKILL'), 2_000);
+      try { await exited; } finally { clearTimeout(terminate); clearTimeout(kill); }
+    }, child.pid);
+    child.stdin.on('error', () => app.fail());
+    child.once('error', () => app.fail());
+    lines.on('line', (line) => app.receive(line, onMessage));
+    return app;
   }
 
-  static async open(cwd: string, onMessage: (method: string, params: JsonObject, id?: RpcId) => void, onExit: () => void,
-    options: { modelProvider?: string; experimental?: boolean } = {}) {
-    const cli = await resolveLocalCli('codex');
-    const provider = options.modelProvider ? ['-c', 'model_provider=' + JSON.stringify(options.modelProvider)] : [];
-    const child = spawn(cli.command, [...cli.prefix, ...provider, 'app-server', '--listen', 'stdio://'], {
-      cwd, env: providerEnvironment(), windowsHide: true, stdio: 'pipe',
-    });
-    const app = new CodexAppServer(child, onMessage, onExit);
+  private receive(json: string, onMessage: HarnessNotification) {
+    let message: JsonObject;
+    try { message = asObject(JSON.parse(json)); } catch { return; }
+    if (typeof message.method === 'string') {
+      const id = typeof message.id === 'string' || typeof message.id === 'number' ? message.id : undefined;
+      onMessage(message.method, asObject(message.params), id);
+      return;
+    }
+    if (typeof message.id !== 'number') return;
+    const pending = this.pending.get(message.id);
+    if (!pending) return;
+    this.pending.delete(message.id);
+    clearTimeout(pending.timer);
+    if (message.error) pending.reject(new CodexRejected('Codex 拒绝了操作，请刷新会话状态后重试'));
+    else pending.resolve(asObject(message.result));
+  }
+
+  static async open(cwd: string, onMessage: HarnessNotification, onExit: () => void,
+    options: { modelProvider?: string; experimental?: boolean; shared?: boolean } = {}) {
+    const app = options.shared ? await this.shared(onMessage, onExit) : await this.spawn(cwd, onMessage, onExit, options.modelProvider);
     try {
       await app.request('initialize', { clientInfo: { name: 'dovun', title: 'Dovun', version: '1' },
         ...(options.experimental ? { capabilities: { experimentalApi: true } } : {}) });
@@ -75,6 +86,46 @@ export class CodexAppServer {
       await app.close();
       throw error;
     }
+  }
+
+  private static async spawn(cwd: string, onMessage: HarnessNotification, onExit: () => void, modelProvider?: string) {
+    const cli = await resolveLocalCli('codex');
+    const provider = modelProvider ? ['-c', 'model_provider=' + JSON.stringify(modelProvider)] : [];
+    const child = spawn(cli.command, [...cli.prefix, ...provider, 'app-server', '--listen', 'stdio://'], {
+      cwd, env: providerEnvironment(), windowsHide: true, stdio: 'pipe',
+    });
+    return this.stdio(child, onMessage, onExit);
+  }
+
+  private static async shared(onMessage: HarnessNotification, onExit: () => void) {
+    const socketPath = await realpath(resolve(process.env.CODEX_HOME || resolve(homedir(), '.codex'), 'app-server-control', 'app-server-control.sock'));
+    const info = await stat(socketPath);
+    if (!info.isSocket() || info.uid !== process.getuid?.()) throw new CodexRejected('本机 Codex 共享连接不可用');
+    const dispatcher = new Agent({ connect: { socketPath, timeout: 2_000 } });
+    const socket = new WebSocket('ws://localhost/', { dispatcher });
+    const app = new CodexAppServer(async (json) => { socket.send(json); }, async () => {
+      socket.close();
+      await dispatcher.destroy();
+    });
+    socket.addEventListener('message', (event) => { if (typeof event.data === 'string') app.receive(event.data, onMessage); });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const failed = () => { clearTimeout(timeout); reject(new CodexRejected('本机 Codex 共享连接不可用')); };
+        const timeout = setTimeout(failed, 2_500);
+        socket.addEventListener('open', () => { clearTimeout(timeout); resolve(); }, { once: true });
+        socket.addEventListener('error', failed, { once: true });
+      });
+      socket.addEventListener('close', () => app.disconnected(onExit), { once: true });
+      return app;
+    } catch (error) {
+      await app.close();
+      throw error;
+    }
+  }
+
+  private disconnected(onExit: () => void) {
+    this.fail();
+    if (!this.closing) onExit();
   }
 
   private fail() {
@@ -87,13 +138,8 @@ export class CodexAppServer {
   }
 
   private write(frame: JsonObject) {
-    return new Promise<void>((resolve, reject) => {
-      if (!this.active || !this.child.stdin.writable) {
-        reject(new Error('Codex 连接已断开，操作结果待核实'));
-        return;
-      }
-      this.child.stdin.write(JSON.stringify(frame) + '\n', (error) => error ? reject(error) : resolve());
-    });
+    if (!this.active) return Promise.reject(new Error('Codex 连接已断开，操作结果待核实'));
+    return this.send(JSON.stringify(frame));
   }
 
   request(method: string, params: JsonObject) {
@@ -110,15 +156,9 @@ export class CodexAppServer {
 
   reply(id: RpcId, result: JsonObject) { return this.write({ id, result }); }
   unsupported(id: RpcId) { return this.write({ id, error: { code: -32601, message: 'Unsupported request' } }); }
-  get pid() { return this.child.pid; }
-
   async close() {
     this.closing = true;
     this.fail();
-    this.child.stdin.end();
-    if (this.child.exitCode !== null || this.child.signalCode !== null) return this.exited;
-    const terminate = setTimeout(() => this.child.kill('SIGTERM'), 500);
-    const kill = setTimeout(() => this.child.kill('SIGKILL'), 2_000);
-    try { await this.exited; } finally { clearTimeout(terminate); clearTimeout(kill); }
+    await this.closeTransport();
   }
 }

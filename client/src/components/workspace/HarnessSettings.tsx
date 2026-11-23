@@ -7,15 +7,17 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from '@/components/ui/input.js';
 import type { HarnessSettingsChange, HarnessSettingsView } from '../../../../server/src/node-agent/harness-protocol.js';
 
-export function HarnessSettings({ settings, disabled, saving, error, onChange }: {
+export function HarnessSettings({ settings, disabled, saving, error, onChange, onForkProvider }: {
   settings: HarnessSettingsView;
   disabled: boolean;
   saving: boolean;
   error: string | null;
   onChange: (changes: HarnessSettingsChange) => void;
+  onForkProvider?: (provider: string) => void;
 }) {
   const { t } = useTranslation('workspace');
   const [query, setQuery] = useState('');
+  const [provider, setProvider] = useState('');
   const selected = settings.models.find((model) => model.id === settings.model);
   const modelName = selected?.label ?? settings.model;
   const models = selected ? settings.models : [{ id: settings.model, label: modelName }, ...settings.models];
@@ -23,7 +25,7 @@ export function HarnessSettings({ settings, disabled, saving, error, onChange }:
   const filtered = models.filter((model) => (model.label + ' ' + model.id).toLocaleLowerCase().includes(search));
   const effortName = (id: string) => t('harness.settings.efforts.' + id, { defaultValue: id });
 
-  return <Dialog onOpenChange={(open) => { if (!open) setQuery(''); }}>
+  return <Dialog onOpenChange={(open) => { if (!open) { setQuery(''); setProvider(''); } }}>
     <DialogTrigger asChild>
       <Button type="button" variant="ghost" size="sm"
         className="min-h-11 max-w-[40vw] shrink-0 justify-start gap-1.5 px-2 sm:max-w-56"
@@ -64,6 +66,12 @@ export function HarnessSettings({ settings, disabled, saving, error, onChange }:
             { id: 'workspace', label: t('harness.settings.workspace'), description: t('harness.settings.workspaceHint') },
           ]}
           onChange={(permission) => onChange({ permission: permission === 'readOnly' ? 'readOnly' : 'workspace' })} disabled={disabled} />
+        {onForkProvider && (settings.providers?.length ?? 0) > 1 && <>
+          <ChoiceList label={t('harness.settings.provider')} value={provider || settings.provider || ''}
+            options={settings.providers!.map((id) => ({ id, label: id }))} onChange={setProvider} disabled={disabled} />
+          {provider && provider !== settings.provider && <Button type="button" variant="outline" disabled={disabled}
+            onClick={() => onForkProvider(provider)}>{t('harness.settings.forkProvider')}</Button>}
+        </>}
       </div>
       {saving && <p role="status" className="text-sm text-muted-foreground">{t('harness.settings.saving')}</p>}
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}

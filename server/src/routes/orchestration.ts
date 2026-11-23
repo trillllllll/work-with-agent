@@ -8,7 +8,7 @@ import { WorktreeService } from '../application/orchestration/worktrees.js';
 import { isServerMode, publicWorkspaceUrl } from '../application/desktop-paths.js';
 import { leaseHarness, leaseHarnessLibrary, syncHarness } from '../application/harness-sessions.js';
 import { pendingHarnessReads, reportHarnessRead } from '../application/harness-library.js';
-import { HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE } from '../node-agent/harness-protocol.js';
+import { HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE } from '../node-agent/harness-protocol.js';
 import { DIRECTORY_FEATURE } from '../node-agent/directory-protocol.js';
 import { pendingDirectories, reportDirectory } from '../application/harness-directories.js';
 
@@ -96,12 +96,15 @@ export function createNodeRouter() {
     if (req.get('X-Dovun-Harness-Library') === HARNESS_LIBRARY_FEATURE) accepts.push(HARNESS_LIBRARY_FEATURE);
     if (req.get('X-Dovun-Harness-Settings') === HARNESS_SETTINGS_FEATURE) accepts.push(HARNESS_SETTINGS_FEATURE);
     if (req.get('X-Dovun-Harness-Timeline') === HARNESS_TIMELINE_FEATURE) accepts.push(HARNESS_TIMELINE_FEATURE);
+    if (req.get('X-Dovun-Harness-Workspace') === HARNESS_WORKSPACE_FEATURE) accepts.push(HARNESS_WORKSPACE_FEATURE);
     if (req.get('X-Dovun-Directory-Browser') === DIRECTORY_FEATURE) accepts.push(DIRECTORY_FEATURE);
     const supportsHarness = req.body.capabilities.harnessSessions === HARNESS_FEATURE;
     const library = supportsHarness && accepts.includes(HARNESS_LIBRARY_FEATURE) && req.body.capabilities.harnessLibrary === HARNESS_LIBRARY_FEATURE;
     const harness = supportsHarness && !library ? await leaseHarness(node.id, node.tokenHash) : undefined;
     const harnesses = library ? await leaseHarnessLibrary(node.id, node.tokenHash) : [];
-    const harnessReads = library ? pendingHarnessReads(node) : [];
+    const workspace = accepts.includes(HARNESS_WORKSPACE_FEATURE) && req.body.capabilities.harnessWorkspace === HARNESS_WORKSPACE_FEATURE;
+    const harnessReads = library ? pendingHarnessReads(node).filter((task) =>
+      workspace || task.kind !== 'index' && task.kind !== 'files' && !task.harness) : [];
     const directoryRequests = accepts.includes(DIRECTORY_FEATURE) && req.body.capabilities.directoryBrowser === DIRECTORY_FEATURE ? pendingDirectories(node) : [];
     return { ...response, accepts, ...(harness ? { harness } : {}), ...(harnesses.length ? { harnesses } : {}),
       ...(harnessReads.length ? { harnessReads } : {}), ...(directoryRequests.length ? { directoryRequests } : {}) };

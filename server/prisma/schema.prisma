@@ -722,6 +722,7 @@ model HarnessDirectory {
 model HarnessSession {
   id             String           @id @default(cuid())
   nodeId         String
+  harness        String           @default("codex")
   activeNodeId   String?
   locationId     String
   projectName    String
@@ -730,6 +731,13 @@ model HarnessSession {
   library        Boolean           @default(false)
   cwd            String?
   nativeTitle    String?
+  title          String?
+  pinnedAt       String?
+  archivedAt     String?
+  readAt         String?
+  hasQueuedInput Boolean          @default(false)
+  sourceSessionId String?
+  sourceTurnId     String?
   epoch          Int              @default(0)
   status         String           @default("creating")
   error          String?
@@ -737,8 +745,9 @@ model HarnessSession {
   updatedAt      String
   commands       HarnessCommand[]
 
+  @@unique([nodeId, harness, threadId])
   @@index([activeNodeId, library])
-  @@unique([nodeId, threadId])
+  @@index([harness, archivedAt, updatedAt, id])
   @@map("harness_sessions")
 }
 
@@ -751,6 +760,7 @@ model HarnessCommand {
   createdAt    String
   expiresAt    String
   dispatchedAt String?
+  resultSessionId String?
   session      HarnessSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@id([sessionId, commandId])

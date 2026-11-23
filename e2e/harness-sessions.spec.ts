@@ -45,6 +45,7 @@ test('desktop and phone open and control the same Harness session', async ({ bro
       env: {
         ...process.env, DOVUN_NODE_TOKEN: node.token, DOVUN_NODE_MANAGED: 'cli',
         DOVUN_CODEX_BIN: resolve('server/test/stub-harness-codex.mjs'),
+        DOVUN_CLAUDE_BIN: join(folder, 'missing-claude'),
         HARNESS_TEST_CALLS: join(folder, 'calls'), HARNESS_TEST_HISTORY: join(folder, 'history.json'),
       },
     });
@@ -286,7 +287,8 @@ test('opens saved Codex history and keeps multiple chats in the same project ind
     nodeId = node.node.id;
     const startAgent = () => spawn(process.execPath, ['--import', 'tsx', resolve('server/src/node-agent/index.ts'), '--server', process.env.E2E_API_URL!,
       '--roots', root, '--data', join(root, 'node')], { stdio: 'ignore', env: {
-      ...process.env, DOVUN_NODE_TOKEN: node.token, DOVUN_CODEX_BIN: resolve('server/test/stub-harness-codex.mjs'),
+      ...process.env, CODEX_HOME: join(root, 'codex-home'), DOVUN_NODE_TOKEN: node.token, DOVUN_CODEX_BIN: resolve('server/test/stub-harness-codex.mjs'),
+      DOVUN_CLAUDE_BIN: resolve('server/test/stub-harness-claude.mjs'), CLAUDE_CONFIG_DIR: join(root, 'claude-home'),
       HARNESS_TEST_LIBRARY: library, HARNESS_TEST_CALLS: join(root, 'calls'), HARNESS_TEST_HISTORY: join(root, 'unused.json'),
       HARNESS_TEST_TURNS: join(root, 'turns'),
     } });
@@ -296,6 +298,9 @@ test('opens saved Codex history and keeps multiple chats in the same project ind
     const location = await data<{ id: string }>(await request.post(apiUrl + '/directories/select', { data: { nodeId: node.node.id, path: repo } }));
     const projectUrl = `${listUrl}&project=${location.id}`;
     const phone = await phoneContext.newPage();
+    await phone.goto(listUrl);
+    await expect(phone.getByRole('heading', { name: /^repo/ })).toBeVisible({ timeout: 12_000 });
+    await expect(phone.getByRole('button', { name: /Mac 上的原 Codex 对话/ })).toBeVisible();
     await phone.goto(projectUrl);
     const original = phone.getByRole('button', { name: /Mac 上的原 Codex 对话/ });
     await expect(original).toBeVisible({ timeout: 12_000 });
@@ -428,6 +433,19 @@ test('opens saved Codex history and keeps multiple chats in the same project ind
     await expect(option('精细模型')).toBeChecked();
     await expect(option('高')).toBeChecked();
     await expect(panel.getByRole('radio', { name: /^计划模式/ })).toBeChecked();
+    await closeSettings();
+    await back();
+    const harnesses = phone.getByRole('radiogroup', { name: 'Harness' });
+    await harnesses.getByRole('radio', { name: 'Claude Code', exact: true }).tap();
+    await phone.getByRole('button', { name: '新建会话' }).tap();
+    await phone.getByRole('dialog', { name: '新建会话' }).getByRole('button', { name: '开启 Claude Code 会话' }).tap();
+    await ready();
+    const claude = sessionId();
+    await send('同一个项目的 Claude 对话');
+    await expect(chat.getByText('同一个项目的 Claude 对话 · Claude 已回复', { exact: true })).toBeVisible({ timeout: 12_000 });
+    expect((await details(claude)).threadId).not.toBe(nativeId);
+    await back();
+    await expect(phone.getByRole('button', { name: /Mac 上的原 Codex 对话/ })).toHaveCount(0);
   } finally {
     if (agent && agent.exitCode === null && agent.signalCode === null) {
       const exited = once(agent, 'exit');
