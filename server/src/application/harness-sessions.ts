@@ -7,7 +7,7 @@ import { isOnline } from './orchestration/nodes.js';
 import { canBrowse } from './harness-directories.js';
 import { nodeHarnesses, requestHarnessRead, supportsHarnessLibrary, supportsHarnessWorkspace } from './harness-library.js';
 import {
-  applyHarnessEvent, HARNESS_EVENTS, HARNESS_LIBRARY_LEASES, HARNESS_SETTINGS_FEATURE, harnessCommandSchema, harnessCreateSchema, harnessSyncSchema,
+  applyHarnessEvent, HARNESS_EVENTS, HARNESS_LIBRARY_LEASES, HARNESS_SETTINGS_FEATURE, HARNESS_ZCODE_LIVE_FEATURE, harnessCommandSchema, harnessCreateSchema, harnessSyncSchema,
   harnessCatalogQuerySchema, harnessFilesQuerySchema, harnessHistoryQuerySchema, harnessIndexQuerySchema, harnessMetadataSchema,
   harnessOpenThreadSchema, harnessStartSchema, harnessKind, harnessNames,
   harnessEventForClient, harnessSnapshotForClient, HARNESS_WORKSPACE_OPERATIONS, requiresHarnessWorkspace,
@@ -68,7 +68,7 @@ function sessionDto(session: HarnessSession & { commands: Array<{ payload: strin
     id: session.id, harness: session.harness, nodeId: session.nodeId, nodeName: node?.name ?? null,
     online: Boolean(node && isOnline(node) && supportsHarness(node, session.harness) && (!session.library || supportsHarnessLibrary(node))),
     historyAvailable: Boolean(node && isOnline(node) && supportsHarness(node, session.harness) && supportsHarnessLibrary(node) && session.threadId),
-    settingsAvailable: Boolean(session.harness !== 'zcode' && node && supportsHarnessSettings(node)),
+    settingsAvailable: Boolean(node && supportsHarnessSettings(node) && (session.harness !== 'zcode' || supportsZCodeLive(node))),
     workspaceAvailable: Boolean(session.harness !== 'zcode' && node && supportsHarnessWorkspace(node)),
     native: session.nativeTitle !== null,
     title: session.title || session.nativeTitle || (title.length ? title.slice(0, 48).join('') + (title.length > 48 ? '…' : '') : null),
@@ -96,6 +96,10 @@ export function supportsHarness(node: Pick<AgentNode, 'capabilitiesJson'>, harne
 }
 function supportsHarnessSettings(node: Pick<AgentNode, 'capabilitiesJson'>) {
   try { return JSON.parse(node.capabilitiesJson).harnessSettings === HARNESS_SETTINGS_FEATURE; }
+  catch { return false; }
+}
+function supportsZCodeLive(node: Pick<AgentNode, 'capabilitiesJson'>) {
+  try { return JSON.parse(node.capabilitiesJson).harnessZCodeLive === HARNESS_ZCODE_LIVE_FEATURE; }
   catch { return false; }
 }
 async function projectLocation(db: Prisma.TransactionClient, nodeId: string, locationId: string) {
@@ -306,8 +310,12 @@ export async function queueHarnessCommand(id: string, body: unknown) {
     if (!session) throw new DomainError('HARNESS_NOT_FOUND', '会话不存在', 404);
     const node = await tx.agentNode.findUnique({ where: { id: session.nodeId } });
     requireAvailable(node, session.harness);
-    if (session.harness === 'zcode' && (input.operation !== 'send' && input.operation !== 'interrupt' || requiresHarnessWorkspace(input) || 'expectedSettingsRevision' in input)) {
-      throw new DomainError('HARNESS_WORKSPACE_UNSUPPORTED', '本机不支持这个会话操作', 409);
+    if (session.harness === 'zcode') {
+      const modelOnly = input.operation === 'configure' && Object.keys(input.changes).every((key) => key === 'model');
+      if (requiresHarnessWorkspace(input) || !modelOnly && input.operation !== 'send' && input.operation !== 'interrupt'
+          || 'expectedSettingsRevision' in input && (!node || !supportsZCodeLive(node))) {
+        throw new DomainError('HARNESS_WORKSPACE_UNSUPPORTED', '本机不支持这个会话操作', 409);
+      }
     }
     if (requiresHarnessWorkspace(input) && (!node || !supportsHarnessWorkspace(node))) {
       throw new DomainError('HARNESS_WORKSPACE_UNSUPPORTED', '请更新这台电脑的执行器以使用这个会话功能', 409);

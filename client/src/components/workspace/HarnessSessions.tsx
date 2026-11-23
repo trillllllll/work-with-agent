@@ -755,7 +755,7 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject, openSess
         </div>
       )}
       <ChatComposer input={draft} onChange={updateDraft} maxLength={HARNESS_TEXT_LIMIT} busy={inProgress}
-        actionsDisabled={actionsDisabled} allowSendWhileBusy={!zcode} listenForAssistantFocus={false}
+        actionsDisabled={actionsDisabled} allowSendWhileBusy={!zcode || Boolean(settings)} listenForAssistantFocus={false}
         labels={{ input: t('harness.draft'), send: t(inProgress && !zcode ? provider.data === 'claude' ? 'harness.queue.enqueue' : 'harness.steer' : 'harness.send'), stop: t('harness.interrupt') }}
         placeholder={inProgress && !zcode ? t(provider.data === 'claude' ? 'harness.queue.enqueue' : 'harness.steer') : t('harness.placeholder', { harness: name })}
         toolbar={<>{workspace && <HarnessWorkspaceTools endpoint={path} disabled={actionsDisabled} capacity={Math.max(0, 2 - attachments.length)}
@@ -766,7 +766,7 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject, openSess
           }} attach={(file) => editAttachments((files) => files.length >= 2 ? files : [...files, file])}
           running={inProgress || Boolean(view?.queue?.items.length)} compact={codexControls ? () => act({ operation: 'compact' }) : undefined}
           configurePlan={settings?.planAvailable ? () => act({ operation: 'configure', expectedSettingsRevision: settings.revision, changes: { mode: 'plan' } }) : undefined} />}
-          {settings && <HarnessSettings settings={settings} disabled={actionsDisabled} saving={pending?.command.operation === 'configure'}
+          {settings && <HarnessSettings settings={settings} modelOnly={zcode} disabled={actionsDisabled} saving={pending?.command.operation === 'configure'}
           error={settingsError} onChange={(changes) => act({ operation: 'configure', expectedSettingsRevision: settings.revision, changes })}
           onForkProvider={codexControls && !inProgress ? (modelProvider) => act({ operation: 'fork', modelProvider }) : undefined} />}
           {codexControls && inProgress && <Button type="button" variant="ghost" size="icon" aria-label={t('harness.queue.enqueue')} title={t('harness.queue.enqueue')}
@@ -779,9 +779,10 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject, openSess
         onSend={(event) => {
           event.preventDefault();
           const text = draft.trim();
-          if (!text || zcode && inProgress) return;
+          if (!text || zcode && inProgress && !settings) return;
           if (attachments.length && !workspace) { setError(t('harness.files.update')); return; }
-          if (inProgress && provider.data !== 'claude') act({ operation: 'steer', turnId: currentTurn.id, text, ...attachmentInput });
+          if (zcode) act({ operation: 'send', text, ...(settings ? { expectedSettingsRevision: settings.revision } : {}) });
+          else if (inProgress && provider.data !== 'claude') act({ operation: 'steer', turnId: currentTurn.id, text, ...attachmentInput });
           else if (inProgress) act({ operation: 'enqueue', text, ...attachmentInput, ...(settings ? { expectedSettingsRevision: settings.revision } : {}) });
           else act({ operation: 'send', text, ...attachmentInput, ...(settings ? { expectedSettingsRevision: settings.revision } : {}) });
         }}

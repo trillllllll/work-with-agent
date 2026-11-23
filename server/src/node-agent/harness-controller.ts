@@ -130,7 +130,7 @@ export class HarnessController {
         await this.sync(lease.sessionId, { type: 'unavailable', epoch: lease.epoch, error: failure(error) });
       }
     }
-    if (this.settingsEnabled && this.app && this.binding?.settings && !this.view.settings) {
+    if (this.settingsEnabled && this.harness !== 'zcode' && this.app && this.binding?.settings && !this.view.settings) {
       this.emit({ kind: 'settings', settings: await this.settings(this.app, this.binding.settings, this.binding) });
       this.snapshotNeeded = true;
     }
@@ -163,7 +163,9 @@ export class HarnessController {
       if (binding && !this.stopped) void this.sync(binding.sessionId, { type: 'unavailable', epoch: binding.epoch, error: '本机会话已断开' }).catch(() => undefined);
     };
     this.opening = this.harness === 'claude' ? Promise.resolve(new ClaudeHarnessRuntime(cwd, notification, disconnected))
-      : this.harness === 'zcode' ? Promise.resolve(new ZCodeHarnessRuntime(cwd, notification, (id, view) => this.replaceZCodeHistory(id, view)))
+      : this.harness === 'zcode' ? Promise.resolve(new ZCodeHarnessRuntime(cwd, notification,
+        (id, view) => this.replaceZCodeHistory(id, view),
+        (id, view, clients) => this.replaceLiveZCodeView(id, view, clients), disconnected, this.settingsEnabled))
       : CodexAppServer.open(cwd, notification, disconnected, { modelProvider, experimental: true, shared });
     try {
       this.app = await this.opening;
@@ -193,6 +195,25 @@ export class HarnessController {
     return true;
   }
 
+  private zcodeSelection(settings?: HarnessView['settings']): HarnessSettingsSelection | undefined {
+    if (!settings) return;
+    const { model, effort, mode, permission, revision } = settings;
+    return { model, effort, mode, permission, revision };
+  }
+
+  private async replaceLiveZCodeView(threadId: string, view: HarnessView, clients: Set<string>) {
+    await this.upload?.catch(() => undefined);
+    const binding = this.binding;
+    if (this.stopped || binding?.threadId !== threadId || !(this.app instanceof ZCodeHarnessRuntime) || !this.app.attached) return;
+    binding.settings = this.zcodeSelection(view.settings);
+    this.restoredClients = clients;
+    this.view = view;
+    this.events = [];
+    this.seq++;
+    this.snapshotNeeded = true;
+    void this.flush().catch(() => undefined);
+  }
+
   private async restore(lease: HarnessLease, prior: Binding) {
     if (lease.threadId && lease.threadId !== prior.threadId) throw new Error('本机保存的线程与服务器绑定不一致');
     if (prior.pid && isAlive(prior.pid)) throw new Error('正在等待原 Codex 进程退出');
@@ -216,7 +237,8 @@ export class HarnessController {
       const reopened = await app.request('thread/resume', { ...(owner ? {} : { ...sessionOptions, cwd }), threadId: prior.threadId, excludeTurns: true });
       if (asObject(reopened.thread).id !== prior.threadId) throw new Error('Codex 返回了不同的线程');
       const history = await app.request('thread/turns/list', { threadId: prior.threadId, limit: 20, sortDirection: 'desc', itemsView: 'full' });
-      const { view, clients } = await projectCodexHistory(history.data, cwd, this.roots, true, Boolean(owner));
+      const liveView = app instanceof ZCodeHarnessRuntime ? await app.liveView() : undefined;
+      const { view, clients } = liveView ?? await projectCodexHistory(history.data, cwd, this.roots, true, Boolean(owner));
       this.view = view;
       this.workspaceSandbox = asObject(reopened.sandbox);
       this.restoredClients = clients;
@@ -231,7 +253,7 @@ export class HarnessController {
       await this.setBinding({
         ...prior, parked: undefined, epoch: Math.max(prior.epoch, lease.epoch) + 1, pid: app.pid,
         modelProvider: codexModelId(reopened.modelProvider) ?? modelProvider,
-        settings: prior.settings ?? readCodexSelection(reopened), queue,
+        settings: app instanceof ZCodeHarnessRuntime ? this.zcodeSelection(view.settings) : prior.settings ?? readCodexSelection(reopened), queue,
       });
       const notifications = this.attaching?.notifications ?? [];
       this.attaching = null;
@@ -342,6 +364,17 @@ export class HarnessController {
     if (command.operation === 'configure') {
       const before = this.view.settings;
       if (!this.settingsEnabled || !before) throw new CodexRejected('本机执行器暂不支持会话设置');
+      if (app instanceof ZCodeHarnessRuntime) {
+        if (Object.keys(command.changes).some((key) => key !== 'model')) throw new CodexRejected('本机不支持这个会话操作');
+        const view = await app.selectModel(command.changes.model, command.commandId, command.expectedSettingsRevision);
+        if (!view) throw new Error('ZCode 原会话更新超时，操作结果待核实');
+        const settings = this.zcodeSelection(view);
+        await writeJson(this.bindingPath, { ...binding, settings, settingsCommand: command.commandId });
+        binding.settings = settings;
+        binding.settingsCommand = command.commandId;
+        this.emit({ kind: 'settings', settings: view });
+        return;
+      }
       const settings = changeCodexSelection(before, command.changes);
       const view = Object.keys(command.changes).length ? { ...before, ...settings } : await this.settings(app, settings, binding);
       await writeJson(this.bindingPath, { ...binding, settings, settingsCommand: command.commandId });
@@ -434,13 +467,17 @@ export class HarnessController {
       return;
     }
     if (command.operation === 'send') {
-      if (current?.status === 'inProgress') throw new CodexRejected('当前轮仍在运行，请使用追加');
+      if (current?.status === 'inProgress' && !(app instanceof ZCodeHarnessRuntime && app.attached)) {
+        throw new CodexRejected('当前轮仍在运行，请使用追加');
+      }
       if (binding.queue?.items[0]?.status === 'queued') throw new CodexRejected('已有排队消息等待执行');
       await this.startTurn(command.text, command.commandId, binding.settings, command.attachments);
       return;
     }
     if (current?.status !== 'inProgress' || current.id !== command.turnId) throw new CodexRejected('该轮已结束，请刷新会话');
-    if (command.operation === 'interrupt') await app.request('turn/interrupt', { threadId, turnId: command.turnId });
+    if (command.operation === 'interrupt') await app.request('turn/interrupt', {
+      threadId, turnId: command.turnId, ...(app instanceof ZCodeHarnessRuntime ? { commandId: command.commandId } : {}),
+    });
     else await app.request('turn/steer', {
       threadId, expectedTurnId: command.turnId, input: await codexInput(binding.cwd, command.text, command.attachments), clientUserMessageId: command.commandId,
     });
@@ -460,11 +497,12 @@ export class HarnessController {
     const app = this.app, binding = this.binding;
     if (!app || !binding) throw new CodexRejected('本机会话已断开');
     const nameFirstTurn = this.library && this.harness === 'codex' && !binding.native && !this.view.turn;
-    const overrides = settings && (this.settingsEnabled || settings.revision > 0)
+    const overrides = this.harness !== 'zcode' && settings && (this.settingsEnabled || settings.revision > 0)
       ? codexTurnSettings(settings, binding.cwd, this.workspaceSandbox, this.view.settings?.planAvailable === true) : {};
     const response = await app.request('turn/start', {
       threadId: binding.threadId, input: await codexInput(binding.cwd, value, attachments), clientUserMessageId: commandId, ...overrides,
     });
+    if (app instanceof ZCodeHarnessRuntime && response.nativeDelivery === true) return;
     const started = turn(asObject(response.turn));
     if (!started) throw new Error('本机开始新一轮的结果待核实');
     if (this.view.turn?.id !== started.id) this.emit({ kind: 'turn', turn: started });

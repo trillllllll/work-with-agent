@@ -5,6 +5,7 @@ export const HARNESS_TIMELINE_FEATURE = 'harness_timeline_v1';
 export const HARNESS_LIBRARY_FEATURE = 'harness_library_v1';
 export const HARNESS_SETTINGS_FEATURE = 'harness_settings_v1';
 export const HARNESS_WORKSPACE_FEATURE = 'harness_workspace_v1';
+export const HARNESS_ZCODE_LIVE_FEATURE = 'harness_zcode_live_v1';
 export const HARNESS_MODELS = 500;
 export const HARNESS_LIBRARY_LEASES = 12;
 export const HARNESS_LIBRARY_READS = 6;

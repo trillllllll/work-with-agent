@@ -7,11 +7,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from '@/components/ui/input.js';
 import type { HarnessSettingsChange, HarnessSettingsView } from '../../../../server/src/node-agent/harness-protocol.js';
 
-export function HarnessSettings({ settings, disabled, saving, error, onChange, onForkProvider }: {
+export function HarnessSettings({ settings, disabled, saving, error, modelOnly = false, onChange, onForkProvider }: {
   settings: HarnessSettingsView;
   disabled: boolean;
   saving: boolean;
   error: string | null;
+  modelOnly?: boolean;
   onChange: (changes: HarnessSettingsChange) => void;
   onForkProvider?: (provider: string) => void;
 }) {
@@ -51,21 +52,21 @@ export function HarnessSettings({ settings, disabled, saving, error, onChange, o
           <p className="text-sm text-muted-foreground">{t('harness.settings.catalogUnavailable')}</p>
           <Button type="button" size="sm" variant="outline" disabled={disabled} onClick={() => onChange({})}>{t('harness.retry')}</Button>
         </div>}
-        {selected?.efforts.length ? <ChoiceList label={t('harness.settings.effort')} value={settings.effort ?? ''}
+        {!modelOnly && selected?.efforts.length ? <ChoiceList label={t('harness.settings.effort')} value={settings.effort ?? ''}
           options={selected.efforts.map((id) => ({ id, label: effortName(id) }))}
           onChange={(effort) => onChange({ effort })} disabled={disabled} /> : null}
-        {(settings.planAvailable || settings.mode === 'plan') && <ChoiceList label={t('harness.settings.mode')} value={settings.mode}
+        {!modelOnly && (settings.planAvailable || settings.mode === 'plan') && <ChoiceList label={t('harness.settings.mode')} value={settings.mode}
           options={[
             { id: 'default', label: t('harness.settings.defaultMode') },
             { id: 'plan', label: t('harness.settings.planMode'), description: t('harness.settings.planHint') },
           ]}
           onChange={(mode) => onChange({ mode: mode === 'plan' ? 'plan' : 'default' })} disabled={disabled} />}
-        <ChoiceList label={t('harness.settings.permission')} value={settings.permission}
+        {!modelOnly && <ChoiceList label={t('harness.settings.permission')} value={settings.permission}
           options={[
             { id: 'readOnly', label: t('harness.settings.readOnly') },
             { id: 'workspace', label: t('harness.settings.workspace'), description: t('harness.settings.workspaceHint') },
           ]}
-          onChange={(permission) => onChange({ permission: permission === 'readOnly' ? 'readOnly' : 'workspace' })} disabled={disabled} />
+          onChange={(permission) => onChange({ permission: permission === 'readOnly' ? 'readOnly' : 'workspace' })} disabled={disabled} />}
         {onForkProvider && (settings.providers?.length ?? 0) > 1 && <>
           <ChoiceList label={t('harness.settings.provider')} value={provider || settings.provider || ''}
             options={settings.providers!.map((id) => ({ id, label: id }))} onChange={setProvider} disabled={disabled} />

@@ -13,8 +13,9 @@ import { createLocalLaunchSpec, localProviders } from './cli.js';
 import { HarnessController } from './harness-controller.js';
 import { readHarnessLibrary } from './harness-library.js';
 import { zcodeAvailable } from './harness-zcode-client.js';
+import { zcodeRemoteConfigured } from './harness-zcode-account.js';
 import {
-  HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_LIBRARY_LEASES, HARNESS_LIBRARY_READS, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE,
+  HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_LIBRARY_LEASES, HARNESS_LIBRARY_READS, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE,
   harnessLeaseSchema, harnessLibraryLeaseSchema, harnessReadTaskSchema, type HarnessKind, type HarnessLease, type HarnessReadTask,
 } from './harness-protocol.js';
 import { DIRECTORY_FEATURE, directoryTaskSchema, type DirectoryTask } from './directory-protocol.js';
@@ -103,7 +104,8 @@ export class NodeAgent {
           'Content-Type': 'application/json', Authorization: `Node ${this.config.token}`,
           ...(path === '/lease' ? { 'X-Dovun-Node-Features': HARNESS_FEATURE, 'X-Dovun-Directory-Browser': DIRECTORY_FEATURE,
             'X-Dovun-Harness-Timeline': HARNESS_TIMELINE_FEATURE, 'X-Dovun-Harness-Library': HARNESS_LIBRARY_FEATURE,
-            'X-Dovun-Harness-Settings': HARNESS_SETTINGS_FEATURE, 'X-Dovun-Harness-Workspace': HARNESS_WORKSPACE_FEATURE } : {}),
+            'X-Dovun-Harness-Settings': HARNESS_SETTINGS_FEATURE, 'X-Dovun-Harness-Workspace': HARNESS_WORKSPACE_FEATURE,
+            'X-Dovun-Harness-ZCode-Live': HARNESS_ZCODE_LIVE_FEATURE } : {}),
         },
         body: JSON.stringify(body),
         ...(/^\/(harness-sessions|harness-library|directories)\//.test(path) ? { signal: AbortSignal.timeout(8_000) } : {}),
@@ -125,6 +127,7 @@ export class NodeAgent {
         this.serverAccepts.delete(HARNESS_LIBRARY_FEATURE);
         this.serverAccepts.delete(HARNESS_SETTINGS_FEATURE);
         this.serverAccepts.delete(HARNESS_WORKSPACE_FEATURE);
+        this.serverAccepts.delete(HARNESS_ZCODE_LIVE_FEATURE);
       }
       const error = Object.assign(new Error(`服务端返回 ${response.status} ${code ?? ''}`), { status: response.status, code });
       this.rememberError(error);
@@ -160,6 +163,9 @@ export class NodeAgent {
     if (body.harnessLibrary && workspace) {
       body.harnessWorkspace = HARNESS_WORKSPACE_FEATURE;
       body.harnessKinds = installed;
+      if (installed.includes('zcode') && this.serverAccepts.has(HARNESS_ZCODE_LIVE_FEATURE) && await zcodeRemoteConfigured()) {
+        body.harnessZCodeLive = HARNESS_ZCODE_LIVE_FEATURE;
+      }
     }
     if (this.serverAccepts.has(DIRECTORY_FEATURE)) body.directoryBrowser = DIRECTORY_FEATURE;
     if (!capsV2) return body;
@@ -236,7 +242,8 @@ export class NodeAgent {
       else this.harness = controller;
     }
     const zcode = lease.harness === 'zcode';
-    void controller.consume(lease, this.serverAccepts.has(HARNESS_TIMELINE_FEATURE), !zcode && this.serverAccepts.has(HARNESS_SETTINGS_FEATURE),
+    void controller.consume(lease, this.serverAccepts.has(HARNESS_TIMELINE_FEATURE),
+      this.serverAccepts.has(HARNESS_SETTINGS_FEATURE) && (!zcode || this.serverAccepts.has(HARNESS_ZCODE_LIVE_FEATURE)),
       !zcode && library && this.serverAccepts.has(HARNESS_WORKSPACE_FEATURE))
       ?.catch((error) => this.rememberError(error));
   }
