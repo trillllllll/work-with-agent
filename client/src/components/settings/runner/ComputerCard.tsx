@@ -14,12 +14,13 @@ import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog.js';
 import { locationStatusLabels } from '@/components/orchestration/labels.js';
 import { relativeTime } from '@/components/workspace/memory-view.js';
 import { AddComputerDialog } from './AddComputerDialog.js';
+import { SharedDirectories } from './SharedDirectories.js';
 import { copyText, engineLabel, formatBytes, LOW_DISK_BYTES } from './logic.js';
 import type { Computer, IssuedNode, NodeCapabilities, ProviderCapability } from './types.js';
 
 type CreatedNode = { node: { id: string; name: string }; token: string; serverUrl: string; command: string };
 
-export function ComputerCard({ computer, thisComputer, onDisconnect }: { computer: Computer; thisComputer: boolean; onDisconnect: () => void }) {
+export function ComputerCard({ computer, thisComputer, sharedRoots, onDisconnect }: { computer: Computer; thisComputer: boolean; sharedRoots?: string[]; onDisconnect: () => void }) {
   const { t } = useTranslation('settings');
   const capabilities = computer.capabilities ?? {};
   const snapshot = !computer.online && !!computer.lastSeenAt;
@@ -98,6 +99,7 @@ export function ComputerCard({ computer, thisComputer, onDisconnect }: { compute
         <Button type="button" size="sm" variant="outline" onClick={() => { setAutoStart(false); setReissue('regenerate'); }}>{t('computers.card.regenerate')}</Button>
         {thisComputer ? (
           <>
+            {sharedRoots && <SharedDirectories nodeId={computer.id} initialRoots={sharedRoots} />}
             <Button type="button" size="sm" variant="outline" onClick={() => { setAutoStart(true); setReissue('modify'); }}>{t('computers.card.modify')}</Button>
             <Button type="button" size="sm" variant="ghost" className="text-destructive" onClick={onDisconnect}>{t('computers.card.disconnect')}</Button>
           </>

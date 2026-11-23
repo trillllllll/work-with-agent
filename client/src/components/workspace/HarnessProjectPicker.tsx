@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import { Surface } from '@/components/ui/surface.js';
+import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog.js';
 import type { DirectoryPage } from '../../../../server/src/node-agent/directory-protocol.js';
 
 export type HarnessProject = { id: string; nodeId: string; path: string; projectName: string; computerName: string };
@@ -108,6 +109,7 @@ function ComputerFolders({ computer, browse, selectDirectory, back, onChoose }: 
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState('');
+  const [confirming, setConfirming] = useState(false);
   const seq = useRef(0);
   const lastPath = useRef<string | null>(null);
   async function load(path: string | null) {
@@ -159,12 +161,17 @@ function ComputerFolders({ computer, browse, selectDirectory, back, onChoose }: 
         </Button>)}
       </Surface>
       {busy ? <p role="status" className="px-2 py-3 text-sm text-muted-foreground">{t('harness.loading')}</p>
-        : failure ? <div className="space-y-2 py-2"><p role="alert" className="text-sm text-destructive">{failure}</p>
+        : failure && !confirming ? <div className="space-y-2 py-2"><p role="alert" className="text-sm text-destructive">{failure}</p>
           <Button type="button" variant="outline" onClick={() => void load(lastPath.current)}>{t('settings:actions.retry')}</Button></div>
           : page && (!page.entries.length || page.truncated) && <p className="px-2 py-3 text-sm text-muted-foreground">{t(page.truncated ? 'harness.folderLimit' : page.directory ? 'harness.emptyFolder' : 'harness.noRoots')}</p>}
     </div>
-    <Button type="button" className="min-h-11" disabled={busy || !!failure || !page?.directory || input !== page.directory.path} onClick={choose}>
+    <Button type="button" className="min-h-11" disabled={busy || !!failure || !page?.directory || input !== page.directory.path} onClick={() => setConfirming(true)}>
       <Folders />{t('harness.useFolder')}
     </Button>
+    {confirming && page?.directory && <ConfirmDialog title={t('harness.confirmProjectTitle')} itemName={page.directory.path}
+      description={t('harness.confirmProjectHint', { computer: computer.name })} confirmLabel={t('harness.confirmProject')}
+      tone="default" busy={busy} onCancel={() => { setConfirming(false); setFailure(''); }} onConfirm={() => void choose()}>
+      {failure && <p role="alert" className="text-sm text-destructive">{failure}</p>}
+    </ConfirmDialog>}
   </>;
 }

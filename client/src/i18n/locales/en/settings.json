@@ -519,6 +519,17 @@
     "aria": "Controller and computers settings",
     "lead": "The controller assigns work, reads reports, and accepts results. Computers run Codex / Claude locally. The server never sees your files.",
     "loadFailed": "Could not load computers",
+    "directories": {
+      "localExecutor": "Local executor",
+      "manage": "Manage shared folders",
+      "hint": "Browse these folders and their subfolders on your phone to add projects. Changes take effect within a few seconds.",
+      "add": "Add shared folders",
+      "remove": "Remove",
+      "removePath": "Remove shared folder {{path}}",
+      "keepOne": "Keep at least one shared folder.",
+      "waiting": "Continue in the desktop dialog.",
+      "timeout": "The desktop app did not respond. Try again."
+    },
     "list": {
       "add": "Add computer",
       "empty": "No computers yet. Add one and it will connect here to pick up work.",

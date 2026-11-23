@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 import { runtimeEnv, assertCurrentEnvironment } from '../shared/runtime-env.js';
 /** dovun-node entry: `node dist/node-agent/index.js --server URL --token TOKEN --roots DIR[,DIR] [--data DIR] [--max N]`; with only `--data DIR` it runs from the saved config (desktop auto-start). */
 import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -65,20 +66,43 @@ async function adoptLoginShellPath() {
 }
 
 function arg(name: string) { const index = process.argv.indexOf(`--${name}`); return index >= 0 ? process.argv[index + 1] : undefined; }
+
+function rootsFromConfig(values: unknown) {
+  if (!Array.isArray(values)) return [];
+  return [...new Set(values.filter((item): item is string => typeof item === 'string' && !!item.trim())
+    .map((item) => resolve(item.replace(/^~(?=$|[\\/])/, homedir()))))];
+}
+
+export async function readDesktopRoots(configPath: string, token: string, server: string) {
+  try {
+    const saved = JSON.parse(await readFile(configPath, 'utf8')) as Record<string, unknown>;
+    if (saved.token === token && saved.server === server && !saved.revokedAt) return rootsFromConfig(saved.roots);
+  } catch { /* Never keep the old grants if the desktop configuration is unavailable. */ }
+  return [];
+}
+
 async function main() {
   assertCurrentEnvironment();
   const dataDir = resolve(arg('data') ?? runtimeEnv('NODE_DATA') ?? defaultNodeDataDir());
   await mkdir(dataDir, { recursive: true });
   const configPath = resolve(dataDir, 'config.json');
   const saved = await readFile(configPath, 'utf8').then((text) => JSON.parse(text) as Record<string, unknown>, () => ({} as Record<string, unknown>));
-  if (runtimeEnv('NODE_MANAGED') === 'desktop') await registerDataWriter(dirname(dataDir));
+  const desktop = runtimeEnv('NODE_MANAGED') === 'desktop';
+  if (desktop) await registerDataWriter(dirname(dataDir));
   const token = arg('token') ?? runtimeEnv('NODE_TOKEN') ?? String(saved.token ?? '');
   if (refuseRevokedStart(saved, token, process.exit)) return;
+  const revokedTokenPath = resolve(dataDir, 'revoked-token.sha256');
+  const tokenDigest = createHash('sha256').update(token).digest('hex');
+  if (desktop && await readFile(revokedTokenPath, 'utf8').catch(() => '') === tokenDigest) {
+    console.error(`[wwa-node] ${REVOKED_HINT}`);
+    process.exit(3);
+  }
+  const rootsArg = desktop ? undefined : arg('roots') ?? runtimeEnv('NODE_ROOTS');
   const config = {
     server: arg('server') ?? runtimeEnv('NODE_SERVER') ?? String(saved.server ?? ''),
     token,
     // Allowed roots live only in this machine's config; the server can never widen them.
-    roots: (arg('roots') ?? runtimeEnv('NODE_ROOTS') ?? (Array.isArray(saved.roots) ? (saved.roots as string[]).join(',') : '')).split(',').map((item) => item.trim()).filter(Boolean).map((item) => resolve(item.replace(/^~(?=$|[\\/])/, homedir()))),
+    roots: rootsFromConfig(rootsArg?.split(',').map((item) => item.trim()) ?? saved.roots),
     maxConcurrent: Math.min(4, Math.max(1, Number(arg('max') ?? saved.maxConcurrent ?? 2))),
     dataDir,
     version: await readPackageVersion(),
@@ -88,8 +112,12 @@ async function main() {
     process.exit(2);
   }
   if (runtimeEnv('NODE_LOGIN_PATH') === '1') await adoptLoginShellPath();
-  await writeFile(configPath, JSON.stringify({ server: config.server, token: config.token, roots: config.roots, maxConcurrent: config.maxConcurrent }, null, 2), { mode: 0o600 });
-  const agent = new NodeAgent(config, fetch, { onRevoked: () => markConfigRevoked(configPath) });
+  // The desktop shell owns config.json. The executor marks a revoked credential separately so it cannot overwrite a local roots edit.
+  if (!desktop) await writeFile(configPath, JSON.stringify({ server: config.server, token: config.token, roots: config.roots, maxConcurrent: config.maxConcurrent }, null, 2), { mode: 0o600 });
+  const agent = new NodeAgent(config, fetch, desktop ? {
+    readRoots: () => readDesktopRoots(configPath, config.token, config.server),
+    onRevoked: () => writeFile(revokedTokenPath, tokenDigest, { mode: 0o600 }),
+  } : { onRevoked: () => markConfigRevoked(configPath) });
   console.log(`[wwa-node] 已连接 ${config.server}，允许目录：${config.roots.join(', ')}，并发 ${config.maxConcurrent}`);
   let stopping = false;
   const onSignal = () => {

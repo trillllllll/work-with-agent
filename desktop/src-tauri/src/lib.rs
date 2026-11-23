@@ -17,7 +17,7 @@ use std::os::windows::process::CommandExt;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, LogicalSize, Manager, RunEvent, Url, WindowEvent};
-use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_window_state::StateFlags;
 
@@ -32,6 +32,7 @@ struct ServerProcess(Mutex<Option<Child>>);
 struct NodeProcess(Mutex<Option<Child>>);
 /// Cleared on exit or unpair so the watcher does not restart the executor.
 static NODE_WANTED: AtomicBool = AtomicBool::new(false);
+static NODE_CONFIG_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -82,9 +83,14 @@ pub fn run() {
                         notify(webview.app_handle(), &title, &body);
                         return false;
                     }
-                    if path == "/dovun-node-status" {
-                        let script = desktop_event_script(&node_status_detail(webview.app_handle()));
-                        let _ = webview.eval(script);
+                    if matches!(path, "/dovun-node-status" | "/dovun-node-roots") {
+                        let source = webview.url().ok().filter(|current| webview.label() == "main" && current.origin() == url.origin());
+                        if path == "/dovun-node-status" {
+                            let script = desktop_event_script(&node_status_detail(webview.app_handle(), source.as_ref()));
+                            let _ = webview.eval(script);
+                        } else if let Some(source) = source {
+                            edit_node_roots(webview.app_handle(), source, url);
+                        }
                         return false;
                     }
                     if path == "/dovun-node-pair" {
@@ -744,12 +750,18 @@ fn desktop_event_script(detail: &serde_json::Value) -> String {
 }
 
 fn emit_desktop(app: &AppHandle, detail: &serde_json::Value) {
+    emit_desktop_for(app, detail, None);
+}
+
+fn emit_desktop_for(app: &AppHandle, detail: &serde_json::Value, source: Option<Url>) {
     let script = desktop_event_script(detail);
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         // WebviewWindow::eval forwards to the webview. `get_webview` is behind Tauri's unstable feature.
         if let Some(window) = handle.get_webview_window("main") {
-            let _ = window.eval(script);
+            if source.as_ref().map_or(true, |origin| window.url().is_ok_and(|current| current.origin() == origin.origin())) {
+                let _ = window.eval(script);
+            }
         }
     });
 }
@@ -763,10 +775,21 @@ fn node_process_running(app: &AppHandle) -> bool {
     }
 }
 
-fn node_status_detail(app: &AppHandle) -> serde_json::Value {
+fn can_access_shared_roots(server: &str, source: &Url) -> bool {
+    let local_workspace = source.scheme() == "http" && source.host_str() == Some("127.0.0.1")
+        && source.port() == Some(DESKTOP_PORT);
+    local_workspace || server.parse::<Url>().is_ok_and(|server| server.origin() == source.origin())
+}
+
+fn node_status_detail(app: &AppHandle, source: Option<&Url>) -> serde_json::Value {
     let data = data_dir().ok();
     let configured = data.as_ref().is_some_and(|dir| node_dir(dir).join("config.json").exists());
     let state = data.as_ref().and_then(|dir| read_node_state(dir));
+    let shared_roots = source.and_then(|url| {
+        let state = state.as_ref().filter(|state| can_access_shared_roots(&state.server, url))?;
+        let config = read_node_config(data.as_ref()?).ok()?;
+        (config.server.trim_end_matches('/') == state.server).then_some(config.roots)
+    });
     let log_path = data.as_ref().map(|dir| dir.join("logs/node.log").display().to_string());
     serde_json::json!({
         "type": "node-status",
@@ -775,6 +798,7 @@ fn node_status_detail(app: &AppHandle) -> serde_json::Value {
         "running": node_process_running(app),
         "configured": configured,
         "logPath": log_path,
+        "sharedRoots": shared_roots,
     })
 }
 
@@ -874,18 +898,114 @@ fn validate_pairing(server: &str, token: &str) -> Result<String, String> {
     Ok(server)
 }
 
-fn write_node_config(data: &Path, config: &NodeAgentConfig) -> Result<(), String> {
+fn write_node_config(data: &Path, config: &impl Serialize) -> Result<(), String> {
     let dir = node_dir(data);
     fs::create_dir_all(&dir).map_err(|error| format!("无法创建执行端目录：{error}"))?;
-    let path = dir.join("config.json");
-    let text = serde_json::to_string_pretty(config).map_err(|error| error.to_string())?;
-    fs::write(&path, text).map_err(|error| format!("无法保存执行端配置：{error}"))?;
+    let text = serde_json::to_vec_pretty(config).map_err(|error| error.to_string())?;
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
+    let pending = dir.join(format!(".config-{}-{stamp}.tmp", std::process::id()));
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
     }
-    Ok(())
+    let mut file = options.open(&pending).map_err(|error| format!("无法保存执行端配置：{error}"))?;
+    let result = file.write_all(&text).and_then(|()| file.sync_all());
+    drop(file);
+    let result = result.and_then(|()| fs::rename(&pending, dir.join("config.json")));
+    if result.is_err() { let _ = fs::remove_file(&pending); }
+    result.map_err(|error| format!("无法保存执行端配置：{error}"))
+}
+
+enum SharedRootsEdit {
+    Add(Vec<PathBuf>),
+    Remove(String),
+}
+
+fn next_shared_roots(mut roots: Vec<String>, edit: SharedRootsEdit) -> Result<Vec<String>, String> {
+    match edit {
+        SharedRootsEdit::Add(folders) => {
+            for folder in folders {
+                let actual = fs::canonicalize(&folder).map_err(|_| tr!("无法打开所选目录", "Could not open the selected folder"))?;
+                let path = if cfg!(windows) { &folder } else { &actual };
+                let path = path.to_str().filter(|path| path.len() <= 4096 && actual.is_dir())
+                    .ok_or_else(|| tr!("所选目录无效", "The selected folder is invalid"))?;
+                if !roots.iter().any(|root| root == path || fs::canonicalize(root).ok().as_ref() == Some(&actual)) {
+                    roots.push(path.to_string());
+                }
+            }
+            if roots.len() > 50 { return Err(tr!("最多可以共享 50 个目录", "You can share up to 50 folders")); }
+        }
+        SharedRootsEdit::Remove(path) => {
+            roots.retain(|root| root != &path);
+            if roots.is_empty() { return Err(tr!("请至少保留一个共享目录", "Keep at least one shared folder")); }
+        }
+    }
+    Ok(roots)
+}
+
+fn check_shared_roots_pairing(data: &Path, node: &str, source: &Url) -> Result<NodeState, String> {
+    read_node_state(data).filter(|state| state.node_id == node && can_access_shared_roots(&state.server, source))
+        .ok_or_else(|| tr!("这台电脑的配对已变化，请刷新设置", "This computer's pairing changed. Refresh settings."))
+}
+
+fn save_shared_roots(data: &Path, node: &str, source: &Url, token: &str, edit: SharedRootsEdit) -> Result<Vec<String>, String> {
+    let _lock = NODE_CONFIG_LOCK.lock().expect("node config lock");
+    let state = check_shared_roots_pairing(data, node, source)?;
+    let text = fs::read_to_string(node_dir(data).join("config.json")).map_err(|error| error.to_string())?;
+    let mut document = serde_json::from_str::<serde_json::Value>(&text).map_err(|error| error.to_string())?;
+    let current = serde_json::from_value::<NodeAgentConfig>(document.clone()).map_err(|error| error.to_string())?;
+    if current.token != token || current.server.trim_end_matches('/') != state.server
+        || document.get("revokedAt").and_then(|value| value.as_str()).is_some_and(|value| !value.is_empty()) {
+        return Err(tr!("这台电脑的配对已变化，请刷新设置", "This computer's pairing changed. Refresh settings."));
+    }
+    let roots = next_shared_roots(current.roots, edit)?;
+    if document["roots"] != serde_json::json!(roots) {
+        document["roots"] = serde_json::json!(roots);
+        write_node_config(data, &document)?;
+    }
+    Ok(roots)
+}
+
+fn edit_node_roots(app: &AppHandle, source: Url, url: &Url) {
+    let Some(request_id) = query_value(url, "request").filter(|id| !id.is_empty() && id.len() <= 100) else { return };
+    let node = query_value(url, "node").unwrap_or_default();
+    let pairing = data_dir().and_then(|data| {
+        let _lock = NODE_CONFIG_LOCK.lock().expect("node config lock");
+        let state = check_shared_roots_pairing(&data, &node, &source)?;
+        let original = read_node_config(&data)?;
+        if original.server.trim_end_matches('/') != state.server {
+            return Err(tr!("这台电脑的配对已变化，请刷新设置", "This computer's pairing changed. Refresh settings."));
+        }
+        Ok((data, original.token))
+    });
+    let invalid_pairing = pairing.is_err();
+    let handle = app.clone();
+    let complete = move |edit: Option<SharedRootsEdit>| {
+        let result = pairing.and_then(|(data, token)| {
+            edit.map(|edit| save_shared_roots(&data, &node, &source, &token, edit)).transpose()
+        });
+        let detail = match result {
+            Ok(Some(roots)) => serde_json::json!({ "status": "saved", "roots": roots }),
+            Ok(None) => serde_json::json!({ "status": "cancelled" }),
+            Err(message) => serde_json::json!({ "status": "error", "message": message }),
+        };
+        emit_desktop_for(&handle, &serde_json::json!({ "type": "node-roots", "requestId": request_id, "result": detail }), Some(source));
+    };
+    if invalid_pairing { complete(None); return; }
+    match query_value(url, "action").as_deref() {
+        Some("add") => app.dialog().file().set_title(tr!("添加共享目录", "Add shared folders"))
+            .pick_folders(move |folders| complete(folders.map(|folders| SharedRootsEdit::Add(folders.into_iter().filter_map(|folder| folder.into_path().ok()).collect())))),
+        Some("remove") => {
+            let Some(path) = query_value(url, "path").filter(|path| !path.is_empty() && path.len() <= 4096) else { complete(None); return };
+            let message = tr!("停止共享这个目录？\n{path}", "Stop sharing this folder?\n{path}");
+            app.dialog().message(message).buttons(MessageDialogButtons::OkCancel)
+                .show(move |confirmed| complete(confirmed.then_some(SharedRootsEdit::Remove(path))));
+        }
+        _ => complete(None),
+    }
 }
 
 fn pair_node(app: &AppHandle, server: String, token: String, node: String) {
@@ -906,6 +1026,7 @@ fn pair_node(app: &AppHandle, server: String, token: String, node: String) {
         };
         // state.json is written before the process starts, so the page can recognize this computer before the first heartbeat.
         let result = data_dir().and_then(|data| {
+            let _lock = NODE_CONFIG_LOCK.lock().expect("node config lock");
             if !node.is_empty() { write_node_state(&data, &node, &server)?; }
             write_node_config(&data, &NodeAgentConfig { server: server.clone(), token: token.clone(), roots: vec![folder.display().to_string()], max_concurrent: 2 })?;
             Ok(())
@@ -934,6 +1055,7 @@ fn unpair_node(app: &AppHandle, node: String) {
 }
 
 fn perform_unpair(app: &AppHandle, node: &str) -> serde_json::Value {
+    let _lock = NODE_CONFIG_LOCK.lock().expect("node config lock");
     let data = data_dir().ok();
     let state = data.as_ref().and_then(|dir| read_node_state(dir));
     if !unpair_targets_local(node, state.as_ref().map(|item| item.node_id.as_str())) {
@@ -948,6 +1070,7 @@ fn perform_unpair(app: &AppHandle, node: &str) -> serde_json::Value {
     let config_removed = if let Some(dir) = &data {
         let config = node_dir(dir).join("config.json");
         let _ = fs::remove_file(&config);
+        let _ = fs::remove_file(node_dir(dir).join("revoked-token.sha256"));
         let _ = fs::remove_file(state_path(dir));
         !config.exists()
     } else {
@@ -1162,6 +1285,36 @@ mod tests {
         assert_eq!(value["roots"][0], "/code");
         assert_eq!(value["maxConcurrent"], 2);
         let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn shared_folders_keep_the_pairing_and_require_the_same_node_origin_and_token() {
+        let data = std::env::temp_dir().join(format!("dovun-shared-roots-{}", std::process::id()));
+        let first = data.join("first");
+        let second = data.join("next,project");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&second).unwrap();
+        let server = "https://workspace.example";
+        let source = format!("{server}/#/settings").parse::<Url>().unwrap();
+        let first = first.to_str().unwrap().to_string();
+        let config = serde_json::json!({"server": server, "token": "current", "roots": [first], "maxConcurrent": 3, "futureField": true});
+        write_node_state(&data, "mac-1", server).unwrap();
+        write_node_config(&data, &config).unwrap();
+
+        let add = || SharedRootsEdit::Add(vec![second.clone(), second.clone()]);
+        assert!(save_shared_roots(&data, "mac-2", &source, "current", add()).is_err());
+        assert!(save_shared_roots(&data, "mac-1", &"https://other.example".parse().unwrap(), "current", add()).is_err());
+        assert!(save_shared_roots(&data, "mac-1", &source, "stale", add()).is_err());
+        let local_workspace = format!("http://127.0.0.1:{DESKTOP_PORT}/#/settings").parse().unwrap();
+        let roots = save_shared_roots(&data, "mac-1", &local_workspace, "current", add()).unwrap();
+        assert_eq!(roots.len(), 2);
+        assert_eq!(roots[0], first);
+        assert_eq!(save_shared_roots(&data, "mac-1", &source, "current", add()).unwrap(), roots);
+        assert_eq!(save_shared_roots(&data, "mac-1", &source, "current", SharedRootsEdit::Remove(roots[1].clone())).unwrap(), vec![first.clone()]);
+        assert!(save_shared_roots(&data, "mac-1", &source, "current", SharedRootsEdit::Remove(first)).is_err());
+        let saved: serde_json::Value = serde_json::from_slice(&fs::read(node_dir(&data).join("config.json")).unwrap()).unwrap();
+        assert_eq!(saved, config);
+        fs::remove_dir_all(data).unwrap();
     }
 
     #[test]

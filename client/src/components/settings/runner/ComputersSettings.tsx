@@ -5,11 +5,13 @@ import { api, type View } from '@/lib/api.js';
 import { isThisComputer, useLocalNode } from '@/lib/desktop-node.js';
 import { Button } from '@/components/ui/button.js';
 import { Skeleton } from '@/components/ui/skeleton.js';
+import { Surface } from '@/components/ui/surface.js';
 import { AddComputerDialog } from './AddComputerDialog.js';
 import { ComputerCard } from './ComputerCard.js';
 import { ControllerCard } from './ControllerCard.js';
 import { DisconnectDialog } from './DisconnectDialog.js';
 import { RevokedComputers } from './RevokedComputers.js';
+import { SharedDirectories } from './SharedDirectories.js';
 import type { Computer } from './types.js';
 
 export function ComputersSettings({ onNavigate }: { onNavigate: (view: View) => void }) {
@@ -21,10 +23,17 @@ export function ComputersSettings({ onNavigate }: { onNavigate: (view: View) => 
   const [disconnect, setDisconnect] = useState<Computer | null>(null);
   const active = (nodes.data ?? []).filter((computer) => computer.status === 'active');
   const revoked = (nodes.data ?? []).filter((computer) => computer.status !== 'active');
+  const localCard = active.find((computer) => isThisComputer(computer.id, local, origin));
   return (
     <section aria-label={t('computers.aria')}>
       <p className="text-[13px] leading-relaxed text-muted-foreground">{t('computers.lead')}</p>
       <div className="mt-4"><ControllerCard origin={origin} /></div>
+      {!localCard && local?.nodeId && local.sharedRoots && (
+        <Surface as="article" tone="subtle" className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl p-4">
+          <h4 className="font-medium">{t('computers.directories.localExecutor')}</h4>
+          <SharedDirectories nodeId={local.nodeId} initialRoots={local.sharedRoots} />
+        </Surface>
+      )}
       <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-lg font-semibold">{t('computers.list.title', { count: active.length })}</h3>
         <Button type="button" size="sm" onClick={() => setAdding(true)}>{t('computers.list.add')}</Button>
@@ -35,9 +44,11 @@ export function ComputersSettings({ onNavigate }: { onNavigate: (view: View) => 
         <p className="mt-3 text-sm text-muted-foreground">{t('computers.list.empty')}</p>
       ) : (
         <div className="mt-3 space-y-3">
-          {active.map((computer) => (
-            <ComputerCard key={computer.id} computer={computer} thisComputer={isThisComputer(computer.id, local, origin)} onDisconnect={() => setDisconnect(computer)} />
-          ))}
+          {active.map((computer) => {
+            const thisComputer = computer.id === localCard?.id;
+            return <ComputerCard key={computer.id} computer={computer} thisComputer={thisComputer}
+              sharedRoots={thisComputer ? local?.sharedRoots : undefined} onDisconnect={() => setDisconnect(computer)} />;
+          })}
         </div>
       )}
       {nodes.data && <RevokedComputers computers={revoked} />}

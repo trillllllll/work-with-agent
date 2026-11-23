@@ -14,6 +14,7 @@ export type LocalNodeStatus = {
   running: boolean;
   configured: boolean;
   logPath: string | null;
+  sharedRoots?: string[];
 };
 
 export type NodeUnpairResult = {
@@ -25,6 +26,9 @@ export type NodeUnpairResult = {
 };
 
 export type NodePairResult = { ok: boolean; message: string };
+
+type SharedRootsEdit = { action: 'add' } | { action: 'remove'; path: string };
+type SharedRootsResult = { status: 'saved'; roots: string[] } | { status: 'cancelled' } | { status: 'error'; message: string };
 
 export type DisconnectResult = {
   cancelledJobIds: string[];
@@ -51,9 +55,14 @@ function textOrNull(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+function readRoots(value: unknown): string[] | null {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : null;
+}
+
 export function parseDesktopEvent(detail: unknown): DesktopEvent | null {
   if (!isRecord(detail) || typeof detail.type !== 'string') return null;
   if (detail.type === 'node-status') {
+    const sharedRoots = readRoots(detail.sharedRoots);
     return {
       type: 'node-status',
       status: {
@@ -62,6 +71,7 @@ export function parseDesktopEvent(detail: unknown): DesktopEvent | null {
         running: detail.running === true,
         configured: detail.configured === true,
         logPath: textOrNull(detail.logPath),
+        ...(sharedRoots ? { sharedRoots } : {}),
       },
     };
   }
@@ -134,6 +144,19 @@ export function requestLocalNodeStatus(timeoutMs = STATUS_TIMEOUT_MS): Promise<L
     const parsed = parseDesktopEvent(detail);
     return parsed?.type === 'node-status' ? parsed.status : undefined;
   }, timeoutMs, () => { window.location.assign(desktopSentinel('node-status')); }).promise;
+}
+
+export function editLocalSharedRoots(nodeId: string, edit: SharedRootsEdit): Promise<SharedRootsResult | null> {
+  const requestId = crypto.randomUUID();
+  const params = new URLSearchParams({ node: nodeId, request: requestId, ...edit });
+  return waitForDesktop<SharedRootsResult>((detail) => {
+    if (!isRecord(detail) || detail.type !== 'node-roots' || detail.requestId !== requestId || !isRecord(detail.result)) return;
+    const { status, roots, message } = detail.result;
+    if (status === 'cancelled') return { status };
+    if (status === 'error' && typeof message === 'string') return { status, message };
+    const paths = readRoots(roots);
+    if (status === 'saved' && paths) return { status, roots: paths };
+  }, PAIR_TIMEOUT_MS, () => { window.location.assign(`${desktopSentinel('node-roots')}?${params.toString()}`); }).promise;
 }
 
 /** Polls only inside the desktop shell. Elsewhere it stays null and does not touch the network. */

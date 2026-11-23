@@ -33,7 +33,9 @@ export type NodeAgentHooks = {
   /** Defaults to `process.exit`. Tests pass a fake so a revocation does not kill the runner. */
   exit?: (code: number) => void;
   runner?: NodeRunner;
-  /** Runs after the revocation message and before exit 3. The CLI writes `revokedAt` here. */
+  /** Re-read the locally configured roots before each desktop lease. */
+  readRoots?: () => Promise<string[]>;
+  /** Records the rejected credential before exit 3. */
   onRevoked?: () => Promise<void> | void;
 };
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
@@ -186,6 +188,11 @@ export class NodeAgent {
   }
   async pollOnce() {
     if (this.stopped) return 0;
+    if (this.hooks.readRoots) {
+      const roots = await this.hooks.readRoots();
+      // Existing Harness controllers share this array, including while a conversation is open.
+      this.config.roots.splice(0, this.config.roots.length, ...roots);
+    }
     const pending = (await this.journals()).filter((entry) => this.open(entry)).map((entry) => entry.job.id);
     const activeJobIds = [...new Set([...this.active.keys(), ...pending])];
     const max = Math.max(0, (this.config.maxConcurrent ?? 2) - activeJobIds.length);
@@ -250,7 +257,9 @@ export class NodeAgent {
   private async answerHarnessRead(task: HarnessReadTask) {
     this.readingHarnesses.add(task.id);
     try {
-      const reply = await readHarnessLibrary(task, this.config.roots).catch((error) => ({ error: this.summary(error) || '无法读取 Codex 对话' }));
+      const reply = this.config.roots.length
+        ? await readHarnessLibrary(task, this.config.roots).catch((error) => ({ error: this.summary(error) || '无法读取 Codex 对话' }))
+        : { error: '这台电脑当前没有共享目录' };
       if (!this.stopped) await this.api('/harness-library/' + task.id, reply);
     } catch (error) { this.rememberError(error); }
     finally { this.readingHarnesses.delete(task.id); }

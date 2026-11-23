@@ -267,6 +267,39 @@ test.describe('桌面', () => {
     await expect(result).toContainText('已取消 1 个任务');
   });
 
+  test('本地桌面工作区可管理配对到服务器的执行器共享目录', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('dovun-desktop-shell', '1'));
+    let roots = ['/work/first'];
+    const edits: string[] = [];
+    await page.route('**/dovun-node-*', async (route) => {
+      const url = new URL(route.request().url());
+      await route.fulfill({ status: 204 });
+      if (url.pathname === '/dovun-node-status') {
+        const detail = { type: 'node-status', nodeId: 'remote-pair', server: 'https://dovun.example', running: true, configured: true, sharedRoots: roots };
+        await page.evaluate((value) => window.dispatchEvent(new CustomEvent('dovun-desktop', { detail: value })), detail);
+      } else if (url.pathname === '/dovun-node-roots') {
+        const action = url.searchParams.get('action');
+        const path = url.searchParams.get('path');
+        expect(url.searchParams.get('node')).toBe('remote-pair');
+        edits.push(`${action}:${path ?? ''}`);
+        roots = action === 'add' ? [...roots, '/work/AfterSend'] : roots.filter((root) => root !== path);
+        const detail = { type: 'node-roots', requestId: url.searchParams.get('request'), result: { status: 'saved', roots } };
+        await page.evaluate((value) => window.dispatchEvent(new CustomEvent('dovun-desktop', { detail: value })), detail);
+      }
+    });
+    await page.goto('/#/settings/local');
+    const local = computerCard(page, '本机执行器');
+    await local.getByRole('button', { name: '管理共享目录' }).click();
+    const dialog = page.getByRole('dialog', { name: '管理共享目录' });
+    await expect(dialog.getByText('/work/first', { exact: true })).toBeVisible();
+    await dialog.getByRole('button', { name: '添加共享目录' }).click();
+    await expect(dialog.getByText('/work/AfterSend', { exact: true })).toBeVisible();
+    await dialog.getByRole('button', { name: '移除共享目录 /work/first' }).click();
+    await expect(dialog.getByText('/work/first', { exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole('button', { name: '移除共享目录 /work/AfterSend' })).toBeDisabled();
+    expect(edits).toEqual(['add:', 'remove:/work/first']);
+  });
+
   test('通知开关在页面底部，并写明只对这台设备生效', async ({ page }) => {
     await page.goto('/#/settings/local');
     const section = page.getByRole('region', { name: '主控与电脑设置' });

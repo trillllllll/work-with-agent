@@ -31,6 +31,7 @@ export const en: Record<string, string> = {
   "本机 Codex 暂不支持计划模式": "Plan mode is unavailable in local Codex",
   "找不到原会话的项目位置": "The original project location could not be found",
   "无法读取 Codex 对话": "Could not read the Codex conversation",
+  "这台电脑当前没有共享目录": "This computer does not currently share any folders",
   "这轮历史超出一次读取的大小，请在 Codex 中查看": "This turn is too large to load in one request. Open it in Codex",
   "这台电脑没有会话权限": "This computer cannot access the session",
   "原 Codex 线程与绑定不一致": "The Codex thread does not match the session binding",

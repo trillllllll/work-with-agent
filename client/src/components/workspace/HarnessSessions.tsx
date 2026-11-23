@@ -436,7 +436,11 @@ export function HarnessSessions({ id, harness, project, navigation, open, select
             }} projects={catalog} computers={listData?.nodes ?? []} value={picker === 'chat' ? current?.locationId : selectedProject?.id}
               loading={projects.isLoading || list.isLoading} error={projects.error?.message}
               browse={(nodeId, path) => api<DirectoryPage>(base + '/directories/browse', { method: 'POST', body: json({ nodeId, path }) })}
-              selectDirectory={(nodeId, path) => api<HarnessProject>(base + '/directories/select', { method: 'POST', body: json({ nodeId, path }) })}
+              selectDirectory={async (nodeId, path) => {
+                const added = await api<HarnessProject>(base + '/directories/select', { method: 'POST', body: json({ nodeId, path }) });
+                void queryClient.invalidateQueries({ queryKey: ['harness-index', selected.id] });
+                return added;
+              }}
               onChange={(item) => {
                 if (item && !catalog.some((p) => p.id === item.id)) {
                   void list.refetch();

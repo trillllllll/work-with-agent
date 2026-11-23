@@ -1,7 +1,7 @@
 import { test, expect, devices, type APIResponse } from '@playwright/test';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { join, resolve } from 'node:path';
@@ -140,18 +140,26 @@ test('desktop and phone open and control the same Harness session', async ({ bro
     await mkdir(repo, { recursive: true });
     execFileSync('git', ['init', '--quiet', repo]);
     const root = await realpath(workspace);
-    const customPath = join(root, '手机自选项目');
-    await mkdir(customPath);
+    const sibling = join(await realpath(folder), '另一组项目,共享目录');
+    const customPath = join(sibling, '手机自选项目');
+    await mkdir(customPath, { recursive: true });
     const node = await data<{ node: { id: string }; token: string }>(await request.post('/api/nodes', { data: { name: '测试电脑' } }));
     nodeId = node.node.id;
     const project = await data<{ id: string }>(await request.post('/api/projects', { data: { name: '会话测试项目', defaultParallel: 1 } }));
     const registeredPath = await realpath(repo);
     const registered = await data<{ location: { id: string } }>(await request.post('/api/projects/' + project.id + '/locations', { data: { nodeId: node.node.id, path: registeredPath } }));
-    agent = spawn(process.execPath, ['--import', 'tsx', resolve('server/src/node-agent/index.ts'), '--server', process.env.E2E_API_URL!,
-      '--roots', root, '--data', join(folder, 'node'), '--max', '1'], {
+    const nodeDir = join(folder, 'desktop', 'node');
+    await mkdir(nodeDir, { recursive: true });
+    const configFile = join(nodeDir, 'config.json');
+    async function shareFolders(roots: string[]) {
+      await writeFile(configFile + '.tmp', JSON.stringify({ server: process.env.E2E_API_URL!, token: node.token, roots, maxConcurrent: 1 }), { mode: 0o600 });
+      await rename(configFile + '.tmp', configFile);
+    }
+    await shareFolders([root]);
+    agent = spawn(process.execPath, ['--import', 'tsx', resolve('server/src/node-agent/index.ts'), '--data', nodeDir], {
       stdio: 'ignore',
       env: {
-        ...process.env, DOVUN_NODE_TOKEN: node.token, DOVUN_NODE_MANAGED: 'cli',
+        ...process.env, DOVUN_NODE_MANAGED: 'desktop',
         DOVUN_CODEX_BIN: resolve('server/test/stub-harness-codex.mjs'),
         DOVUN_CLAUDE_BIN: join(folder, 'missing-claude'),
         HARNESS_TEST_CALLS: join(folder, 'calls'), HARNESS_TEST_HISTORY: join(folder, 'history.json'),
@@ -186,11 +194,28 @@ test('desktop and phone open and control the same Harness session', async ({ bro
     await phone.getByRole('button', { name: '选择项目', exact: true }).tap();
     const projectPicker = phone.getByRole('dialog');
     await projectPicker.getByRole('button', { name: '测试电脑', exact: true }).tap();
-    await projectPicker.getByRole('button', { name: /^workspace.*\/workspace$/ }).tap();
+    const pathInput = projectPicker.getByRole('textbox', { name: '电脑上的目录' });
+    await expect(projectPicker.getByRole('button', { name: /^workspace/ })).toBeVisible({ timeout: 12_000 });
+    await pathInput.fill(customPath);
+    await projectPicker.getByRole('button', { name: '前往' }).tap();
+    await expect(projectPicker.getByRole('alert')).toContainText('路径不在这台电脑允许的目录内', { timeout: 12_000 });
+    await expect(projectPicker.getByRole('button', { name: '添加此目录' })).toBeDisabled();
+    await shareFolders([root, sibling]);
+    await projectPicker.getByRole('button', { name: '选择项目' }).tap();
+    await projectPicker.getByRole('button', { name: '测试电脑', exact: true }).tap();
+    await projectPicker.getByRole('button', { name: /^另一组项目,共享目录/ }).tap({ timeout: 12_000 });
     await projectPicker.getByRole('button', { name: '手机自选项目', exact: true }).tap();
-    await expect(projectPicker.getByRole('textbox', { name: '电脑上的目录' })).toHaveValue(customPath);
+    await expect(pathInput).toHaveValue(customPath);
     await phone.screenshot({ path: testInfo.outputPath('phone-folders.png'), scale: 'css', animations: 'disabled' });
-    await projectPicker.getByRole('button', { name: '使用此目录' }).tap();
+    const trust = phone.getByRole('dialog', { name: '信任并添加项目？' });
+    await projectPicker.getByRole('button', { name: '添加此目录' }).tap();
+    await expect(trust).toContainText(customPath);
+    expect(await e2eDatabase.harnessDirectory.count({ where: { nodeId, path: customPath } })).toBe(0);
+    await trust.getByRole('button', { name: '取消' }).tap();
+    await expect(trust).toBeHidden();
+    await expect(pathInput).toHaveValue(customPath);
+    await projectPicker.getByRole('button', { name: '添加此目录' }).tap();
+    await trust.getByRole('button', { name: '信任并添加', exact: true }).tap();
     await expect(projectPicker).toBeHidden();
     await expect(phone.getByRole('button', { name: '选择项目', exact: true })).toContainText('手机自选项目');
     await phone.reload();
@@ -347,6 +372,14 @@ test('desktop and phone open and control the same Harness session', async ({ bro
     expect(legacy.snapshot.view).not.toHaveProperty('tools');
     expect(legacy.snapshot.view).not.toHaveProperty('artifacts');
     expect((await detail()).threadId).toBe('fixture-thread');
+
+    await shareFolders([root]);
+    const restricted = await request.post(apiUrl + '/directories/browse', { data: { nodeId, path: customPath } });
+    expect(restricted.status()).toBe(409);
+    expect((await restricted.json()).error).toContain('路径不在这台电脑允许的目录内');
+    await input.fill('停止共享后的新消息');
+    await phoneChat.getByRole('button', { name: '发送', exact: true }).tap();
+    await expect(phoneChat.getByText(/操作已拒绝.*路径不在这台电脑允许的目录内/)).toBeVisible({ timeout: 12_000 });
   } finally {
     if (agent && agent.exitCode === null && agent.signalCode === null) {
       const exited = once(agent, 'exit');

@@ -353,6 +353,9 @@ export class HarnessController {
     const resumesIdle = (command.operation === 'send' || command.operation === 'configure' || command.operation === 'enqueue')
       && parkedEpoch === command.expectedEpoch;
     if (!app || !binding || (binding.epoch !== command.expectedEpoch && !resumesIdle)) throw new CodexRejected('会话已重连，请刷新后重试');
+    if (command.operation !== 'interrupt') {
+      await assertAllowed(binding.cwd, this.roots).catch((error) => { throw new CodexRejected(failure(error)); });
+    }
     const { threadId } = binding;
     const current = this.view.turn;
     if (requiresHarnessWorkspace(command) && !this.workspace) throw new CodexRejected('本机不支持这个会话操作');
@@ -578,6 +581,7 @@ export class HarnessController {
   }
 
   private async promoteQueue(queue: SavedQueue, item: SavedQueueItem) {
+    await assertAllowed(this.binding!.cwd, this.roots);
     const rest = queue.items.slice(1);
     await this.saveQueue({ revision: queue.revision + 1, items: [{ ...item, status: 'starting' }, ...rest] });
     if (this.view.turn?.status === 'inProgress') {
