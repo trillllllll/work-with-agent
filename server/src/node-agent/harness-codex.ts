@@ -31,9 +31,10 @@ export class CodexAppServer {
     private readonly send: (json: string) => Promise<void>,
     private readonly closeTransport: () => Promise<void>,
     readonly pid?: number,
+    private readonly name = 'Codex',
   ) {}
 
-  private static stdio(child: ChildProcessWithoutNullStreams, onMessage: HarnessNotification, onExit: () => void) {
+  static fromStdio(child: ChildProcessWithoutNullStreams, onMessage: HarnessNotification, onExit: () => void, name = 'Codex') {
     const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
     // App Server diagnostics can include local account and configuration details.
     child.stderr.resume();
@@ -50,7 +51,7 @@ export class CodexAppServer {
       const terminate = setTimeout(() => child.kill('SIGTERM'), 500);
       const kill = setTimeout(() => child.kill('SIGKILL'), 2_000);
       try { await exited; } finally { clearTimeout(terminate); clearTimeout(kill); }
-    }, child.pid);
+    }, child.pid, name);
     child.stdin.on('error', () => app.fail());
     child.once('error', () => app.fail());
     lines.on('line', (line) => app.receive(line, onMessage));
@@ -70,7 +71,7 @@ export class CodexAppServer {
     if (!pending) return;
     this.pending.delete(message.id);
     clearTimeout(pending.timer);
-    if (message.error) pending.reject(new CodexRejected('Codex 拒绝了操作，请刷新会话状态后重试'));
+    if (message.error) pending.reject(new CodexRejected(`${this.name} 拒绝了操作，请刷新会话状态后重试`));
     else pending.resolve(asObject(message.result));
   }
 
@@ -94,7 +95,7 @@ export class CodexAppServer {
     const child = spawn(cli.command, [...cli.prefix, ...provider, 'app-server', '--listen', 'stdio://'], {
       cwd, env: providerEnvironment(), windowsHide: true, stdio: 'pipe',
     });
-    return this.stdio(child, onMessage, onExit);
+    return this.fromStdio(child, onMessage, onExit);
   }
 
   private static async shared(onMessage: HarnessNotification, onExit: () => void) {
@@ -132,13 +133,13 @@ export class CodexAppServer {
     this.active = false;
     for (const entry of this.pending.values()) {
       clearTimeout(entry.timer);
-      entry.reject(new Error('Codex 连接已断开，操作结果待核实'));
+      entry.reject(new Error(`${this.name} 连接已断开，操作结果待核实`));
     }
     this.pending.clear();
   }
 
   private write(frame: JsonObject) {
-    if (!this.active) return Promise.reject(new Error('Codex 连接已断开，操作结果待核实'));
+    if (!this.active) return Promise.reject(new Error(`${this.name} 连接已断开，操作结果待核实`));
     return this.send(JSON.stringify(frame));
   }
 
@@ -147,7 +148,7 @@ export class CodexAppServer {
     return new Promise<JsonObject>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error('Codex 响应超时，操作结果待核实'));
+        reject(new Error(`${this.name} 响应超时，操作结果待核实`));
       }, 15_000);
       this.pending.set(id, { resolve, reject, timer });
       void this.write({ id, method, params }).catch(() => this.fail());

@@ -12,6 +12,7 @@ import { assertAllowed, assertManagedWorktree, cleanupWorktrees, collectFacts, c
 import { createLocalLaunchSpec, localProviders } from './cli.js';
 import { HarnessController } from './harness-controller.js';
 import { readHarnessLibrary } from './harness-library.js';
+import { zcodeAvailable } from './harness-zcode-client.js';
 import {
   HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_LIBRARY_LEASES, HARNESS_LIBRARY_READS, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE,
   harnessLeaseSchema, harnessLibraryLeaseSchema, harnessReadTaskSchema, type HarnessKind, type HarnessLease, type HarnessReadTask,
@@ -51,6 +52,7 @@ export class NodeAgent {
   private active = new Map<string, Promise<void>>();
   private stopped = false;
   private providers: Awaited<ReturnType<typeof localProviders>> | null = null;
+  private zcode: Promise<boolean> | null = null;
   /** Feature ids from the latest lease response. Missing `accepts` means an old server: report the old result shape. */
   private serverAccepts = new Set<string>();
   private gh: boolean | null = null;
@@ -151,6 +153,7 @@ export class NodeAgent {
       const [major, minor, patch] = claudeVersion.slice(1).map(Number);
       if (major > 2 || major === 2 && (minor > 1 || minor === 1 && patch >= 328)) installed.push('claude');
     }
+    if (workspace && await (this.zcode ??= zcodeAvailable())) installed.push('zcode');
     if (this.serverAccepts.has(HARNESS_FEATURE) && installed.length) body.harnessSessions = HARNESS_FEATURE;
     if (body.harnessSessions && this.serverAccepts.has(HARNESS_LIBRARY_FEATURE)) body.harnessLibrary = HARNESS_LIBRARY_FEATURE;
     if (body.harnessSessions && this.serverAccepts.has(HARNESS_SETTINGS_FEATURE)) body.harnessSettings = HARNESS_SETTINGS_FEATURE;
@@ -232,8 +235,9 @@ export class NodeAgent {
       if (library) this.harnesses.set(lease.sessionId, controller);
       else this.harness = controller;
     }
-    void controller.consume(lease, this.serverAccepts.has(HARNESS_TIMELINE_FEATURE), this.serverAccepts.has(HARNESS_SETTINGS_FEATURE),
-      library && this.serverAccepts.has(HARNESS_WORKSPACE_FEATURE))
+    const zcode = lease.harness === 'zcode';
+    void controller.consume(lease, this.serverAccepts.has(HARNESS_TIMELINE_FEATURE), !zcode && this.serverAccepts.has(HARNESS_SETTINGS_FEATURE),
+      !zcode && library && this.serverAccepts.has(HARNESS_WORKSPACE_FEATURE))
       ?.catch((error) => this.rememberError(error));
   }
   private async answerHarnessRead(task: HarnessReadTask) {

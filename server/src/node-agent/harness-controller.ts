@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { exclusiveDataGuard } from '../shared/data-guard.js';
 import { asObject, CodexAppServer, CodexRejected, type HarnessNotification, type HarnessRuntime } from './harness-codex.js';
 import { ClaudeHarnessRuntime } from './harness-claude.js';
+import { ZCodeHarnessRuntime } from './harness-zcode.js';
 import { readHarnessArtifacts } from './harness-artifacts.js';
 import { codexInput } from './harness-files.js';
 import { codexText as text, codexItems as items, codexMessage as message, codexTurn as turn, projectCodexHistory } from './harness-history.js';
@@ -146,7 +147,6 @@ export class HarnessController {
   }
 
   private async open(cwd: string, modelProvider?: string, shared = false) {
-    if (this.harness === 'zcode') throw new CodexRejected('本机不支持这个会话操作');
     const notification: HarnessNotification = (method, params, id) => {
       if (this.attaching) {
         if (params.threadId === this.attaching.threadId) {
@@ -163,6 +163,7 @@ export class HarnessController {
       if (binding && !this.stopped) void this.sync(binding.sessionId, { type: 'unavailable', epoch: binding.epoch, error: '本机会话已断开' }).catch(() => undefined);
     };
     this.opening = this.harness === 'claude' ? Promise.resolve(new ClaudeHarnessRuntime(cwd, notification, disconnected))
+      : this.harness === 'zcode' ? Promise.resolve(new ZCodeHarnessRuntime(cwd, notification, (id, view) => this.replaceZCodeHistory(id, view)))
       : CodexAppServer.open(cwd, notification, disconnected, { modelProvider, experimental: true, shared });
     try {
       this.app = await this.opening;
@@ -181,6 +182,17 @@ export class HarnessController {
     return null;
   }
 
+  private async replaceZCodeHistory(turnId: string, view: HarnessView) {
+    await this.upload?.catch(() => undefined);
+    if (this.stopped || this.view.turn?.id !== turnId) return false;
+    this.view = view;
+    this.events = [];
+    this.seq++;
+    this.snapshotNeeded = true;
+    void this.flush().catch(() => undefined);
+    return true;
+  }
+
   private async restore(lease: HarnessLease, prior: Binding) {
     if (lease.threadId && lease.threadId !== prior.threadId) throw new Error('本机保存的线程与服务器绑定不一致');
     if (prior.pid && isAlive(prior.pid)) throw new Error('正在等待原 Codex 进程退出');
@@ -191,7 +203,7 @@ export class HarnessController {
       const owner = prior.native && this.harness === 'codex' ? await this.openSharedThread(cwd, prior.threadId) : null;
       let app = owner ?? await this.open(cwd, modelProvider);
       if (owner) this.attaching = { threadId: prior.threadId, notifications: [] };
-      if (!owner && (prior.native || this.settingsEnabled && !modelProvider)) {
+      if (!owner && this.harness !== 'zcode' && (prior.native || this.settingsEnabled && !modelProvider)) {
         const thread = await readProjectThread(app, prior.threadId, cwd, this.roots);
         if (prior.native) await assertNativeThreadIdle(app, thread, prior.threadId);
         const original = codexModelId(thread.modelProvider);
@@ -563,6 +575,7 @@ export class HarnessController {
     if (method === 'turn/started' || method === 'turn/completed') {
       const change = turn(asObject(params.turn));
       if (!change) return;
+      if (this.harness === 'zcode' && change.status === 'failed') change.error = new Error('ZCode 当前轮执行失败，请检查本机模型和登录状态').message;
       if (method === 'turn/completed' && this.view.turn?.id !== change.id) return;
       if (method === 'turn/completed') this.approvals.clear();
       this.emit({ kind: 'turn', turn: change });

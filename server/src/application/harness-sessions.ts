@@ -68,8 +68,8 @@ function sessionDto(session: HarnessSession & { commands: Array<{ payload: strin
     id: session.id, harness: session.harness, nodeId: session.nodeId, nodeName: node?.name ?? null,
     online: Boolean(node && isOnline(node) && supportsHarness(node, session.harness) && (!session.library || supportsHarnessLibrary(node))),
     historyAvailable: Boolean(node && isOnline(node) && supportsHarness(node, session.harness) && supportsHarnessLibrary(node) && session.threadId),
-    settingsAvailable: Boolean(node && supportsHarnessSettings(node)),
-    workspaceAvailable: Boolean(node && supportsHarnessWorkspace(node)),
+    settingsAvailable: Boolean(session.harness !== 'zcode' && node && supportsHarnessSettings(node)),
+    workspaceAvailable: Boolean(session.harness !== 'zcode' && node && supportsHarnessWorkspace(node)),
     native: session.nativeTitle !== null,
     title: session.title || session.nativeTitle || (title.length ? title.slice(0, 48).join('') + (title.length > 48 ? '…' : '') : null),
     pinned: session.pinnedAt !== null, archived: session.archivedAt !== null,
@@ -271,6 +271,7 @@ export async function createHarnessSession(body: unknown) {
     const { cwd, projectName } = await projectLocation(tx, input.nodeId, input.locationId);
     const node = await tx.agentNode.findFirst({ where: { id: input.nodeId, status: 'active', deletedAt: null } });
     requireAvailable(node, harness);
+    if (harness === 'zcode') throw new DomainError('HARNESS_WORKSPACE_UNSUPPORTED', '请先在本机 ZCode 中开始对话', 409);
     const library = Boolean(node && supportsHarnessLibrary(node));
     if (!library && await tx.harnessSession.findFirst({ where: { activeNodeId: input.nodeId } })) {
       throw new DomainError('HARNESS_ACTIVE', '这台电脑已有会话，请打开原会话', 409);
@@ -305,6 +306,9 @@ export async function queueHarnessCommand(id: string, body: unknown) {
     if (!session) throw new DomainError('HARNESS_NOT_FOUND', '会话不存在', 404);
     const node = await tx.agentNode.findUnique({ where: { id: session.nodeId } });
     requireAvailable(node, session.harness);
+    if (session.harness === 'zcode' && (input.operation !== 'send' && input.operation !== 'interrupt' || requiresHarnessWorkspace(input) || 'expectedSettingsRevision' in input)) {
+      throw new DomainError('HARNESS_WORKSPACE_UNSUPPORTED', '本机不支持这个会话操作', 409);
+    }
     if (requiresHarnessWorkspace(input) && (!node || !supportsHarnessWorkspace(node))) {
       throw new DomainError('HARNESS_WORKSPACE_UNSUPPORTED', '请更新这台电脑的执行器以使用这个会话功能', 409);
     }

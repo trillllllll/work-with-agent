@@ -8,6 +8,7 @@ import { listClaudeThreads, readClaudeThread, readClaudeTurns } from './harness-
 import { codexItems, codexText, projectCodexHistory } from './harness-history.js';
 import type { HarnessCatalogThread, HarnessReadTask } from './harness-protocol.js';
 import { readHarnessFiles } from './harness-files.js';
+import { readZCodeLibrary } from './harness-zcode-library.js';
 
 const exec = promisify(execFile);
 
@@ -46,7 +47,7 @@ function summary(thread: Record<string, unknown>): HarnessCatalogThread {
 }
 
 export async function readHarnessLibrary(task: HarnessReadTask, roots: string[]) {
-  if ('harness' in task && task.harness === 'zcode') throw new CodexRejected('本机不支持这个会话操作');
+  if ('harness' in task && task.harness === 'zcode') return readZCodeLibrary(task, roots);
   if ('harness' in task && task.harness === 'claude') {
     if (task.kind === 'index') {
       const page = await listClaudeThreads(roots, task.cursor);

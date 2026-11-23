@@ -419,13 +419,13 @@ export function HarnessSessions({ id, harness, project, navigation, open, select
           {navigation}
           <header className="flex items-center justify-between gap-2">
             <h1>{t('harness.tab')}</h1>
-            <HarnessStartDialog open={createOpen} onOpenChange={changeCreateOpen} harnessName={selected.name}
+            {selected.id !== 'zcode' && <HarnessStartDialog open={createOpen} onOpenChange={changeCreateOpen} harnessName={selected.name}
               locations={locations} value={choice?.id ?? ''} onSelect={setLocationId} onStart={start}
               unavailable={projectComputer && (!projectComputer.online ? t('harness.selectedOffline', { computer: projectComputer.name })
                 : !supportsSelected(projectComputer) ? t('harness.selectedUnsupported', { computer: projectComputer.name, harness: selected.name }) : undefined)}
               onChooseProject={() => { setCreateOpen(false); setPicker('new'); }}
               occupied={occupied} onResume={(sessionId) => { setCreateOpen(false); open(sessionId); }}
-              loading={list.isLoading || projects.isLoading} starting={starting} error={locationError} />
+              loading={list.isLoading || projects.isLoading} starting={starting} error={locationError} />}
           </header>
           <div className="mb-5 grid gap-3">
             <ChoiceList label={t('harness.filter')} value={selected.id} onChange={selectHarness}
@@ -657,6 +657,7 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject, openSess
   const session = detail.data ?? summary;
   const provider = harnessKind.safeParse(session?.harness);
   const name = provider.success ? harnessNames[provider.data] : harnessName;
+  const zcode = provider.data === 'zcode';
   const projectName = session?.projectName;
   const nodeName = session?.nodeName ?? t('harness.unknownComputer');
   const status = !session ? 'reconnecting' : !session.online ? 'offline' : enabled ? 'ready'
@@ -754,9 +755,9 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject, openSess
         </div>
       )}
       <ChatComposer input={draft} onChange={updateDraft} maxLength={HARNESS_TEXT_LIMIT} busy={inProgress}
-        actionsDisabled={actionsDisabled} allowSendWhileBusy listenForAssistantFocus={false}
-        labels={{ input: t('harness.draft'), send: t(inProgress ? provider.data === 'claude' ? 'harness.queue.enqueue' : 'harness.steer' : 'harness.send'), stop: t('harness.interrupt') }}
-        placeholder={inProgress ? t(provider.data === 'claude' ? 'harness.queue.enqueue' : 'harness.steer') : t('harness.placeholder', { harness: name })}
+        actionsDisabled={actionsDisabled} allowSendWhileBusy={!zcode} listenForAssistantFocus={false}
+        labels={{ input: t('harness.draft'), send: t(inProgress && !zcode ? provider.data === 'claude' ? 'harness.queue.enqueue' : 'harness.steer' : 'harness.send'), stop: t('harness.interrupt') }}
+        placeholder={inProgress && !zcode ? t(provider.data === 'claude' ? 'harness.queue.enqueue' : 'harness.steer') : t('harness.placeholder', { harness: name })}
         toolbar={<>{workspace && <HarnessWorkspaceTools endpoint={path} disabled={actionsDisabled} capacity={Math.max(0, 2 - attachments.length)}
           requested={toolRequest} clearRequest={() => {
             if (toolRequest === 'commands' && draft === '/') updateDraft('');
@@ -778,7 +779,7 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject, openSess
         onSend={(event) => {
           event.preventDefault();
           const text = draft.trim();
-          if (!text) return;
+          if (!text || zcode && inProgress) return;
           if (attachments.length && !workspace) { setError(t('harness.files.update')); return; }
           if (inProgress && provider.data !== 'claude') act({ operation: 'steer', turnId: currentTurn.id, text, ...attachmentInput });
           else if (inProgress) act({ operation: 'enqueue', text, ...attachmentInput, ...(settings ? { expectedSettingsRevision: settings.revision } : {}) });

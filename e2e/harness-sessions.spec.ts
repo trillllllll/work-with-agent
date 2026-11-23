@@ -3,6 +3,7 @@ import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { DatabaseSync } from 'node:sqlite';
 import { join, resolve } from 'node:path';
 import type { HarnessSnapshot } from '../server/src/node-agent/harness-protocol.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
@@ -14,6 +15,88 @@ async function data<T>(response: APIResponse): Promise<T> {
   expect(response.ok(), await response.text()).toBe(true);
   return (await response.json()).data as T;
 }
+
+test('opens a project ZCode history on a phone and continues its original session', async ({ browser, page, request, baseURL, extraHTTPHeaders }, testInfo) => {
+  test.skip(testInfo.project.name === 'mobile', 'The test opens a phone viewport itself.');
+  test.setTimeout(65_000);
+  await resetE2eDatabase();
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'dovun-zcode-browser-')));
+  const context = await browser.newContext({ ...devices['iPhone 13'], baseURL, extraHTTPHeaders, locale: 'zh-CN',
+    storageState: await page.context().storageState() });
+  let agent: ChildProcess | undefined;
+  let nodeId: string | undefined;
+  try {
+    const project = join(root, 'zcode-project');
+    const other = join(root, 'zcode-other-project');
+    await Promise.all([mkdir(project), mkdir(other)]);
+    const threadId = 'sess_zcode_mac_original';
+    const store = join(root, 'zcode-store.json');
+    const state = join(root, 'zcode-guard.db');
+    const db = new DatabaseSync(state);
+    db.exec('CREATE TABLE session_runtime_presence (session_id TEXT, process_id INTEGER)');
+    db.exec('CREATE TABLE session (id TEXT PRIMARY KEY, permission TEXT, time_deleted INTEGER)');
+    db.prepare('INSERT INTO session (id) VALUES (?)').run(threadId);
+    db.close();
+    await writeFile(store, JSON.stringify([project, other].map((cwd, index) => ({
+      sessionId: index ? 'sess_zcode_other' : threadId,
+      workspace: { workspacePath: cwd, workspaceKey: cwd }, updatedAt: Date.now(),
+      title: index ? '另一个项目的 ZCode 对话' : 'Mac 上的原 ZCode 对话',
+      rows: Array.from({ length: 44 }, (_, i) => ({
+        rowId: i + 1, kind: 'userInput', turnId: 'turn-history-' + i, entityId: 'input-history-' + i,
+        text: 'ZCode 历史消息 ' + i,
+      })),
+    }))));
+    const node = await data<{ node: { id: string }; token: string }>(await request.post('/api/nodes', { data: { name: 'ZCode 测试 Mac' } }));
+    nodeId = node.node.id;
+    agent = spawn(process.execPath, ['--import', 'tsx', resolve('server/src/node-agent/index.ts'), '--server', process.env.E2E_API_URL!,
+      '--roots', root, '--data', join(root, 'node')], { stdio: 'ignore', env: {
+      ...process.env, DOVUN_NODE_TOKEN: node.token, DOVUN_CODEX_BIN: resolve('server/test/stub-harness-codex.mjs'),
+      DOVUN_ZCODE_BIN: resolve('server/test/stub-harness-zcode.mjs'), ZCODE_SESSION_DB_PATH: state, HARNESS_TEST_ZCODE_STORE: store,
+    } });
+    const phone = await context.newPage();
+    await phone.goto(listUrl);
+    const choice = phone.getByRole('radio', { name: 'ZCode', exact: true });
+    await expect(choice).toBeVisible({ timeout: 18_000 });
+    await choice.tap();
+    const original = phone.getByRole('button', { name: /Mac 上的原 ZCode 对话/ });
+    await expect(original).toBeVisible({ timeout: 15_000 });
+    await expect(phone.getByRole('heading', { name: /^zcode-project/ })).toBeVisible();
+    await expect(phone.getByRole('heading', { name: /^zcode-other-project/ })).toBeVisible();
+    await original.tap();
+    const chat = phone.getByRole('region', { name: '会话详情' });
+    await expect(chat.locator('header [role=status]')).toHaveText('已连接', { timeout: 15_000 });
+    await expect(chat.getByText('ZCode 历史消息 43', { exact: true })).toBeVisible();
+    const oldest = chat.getByText('ZCode 历史消息 0', { exact: true });
+    const more = chat.getByRole('button', { name: '加载更早的消息' });
+    // WebKit can load the older page while scrolling the button into view.
+    await expect.poll(async () => {
+      if (await oldest.count()) return true;
+      if (await more.count()) await more.click({ timeout: 1_000 }).catch(() => undefined);
+      return (await oldest.count()) > 0;
+    }, { timeout: 12_000 }).toBe(true);
+    await chat.getByRole('textbox', { name: '输入消息' }).fill('从手机接着聊');
+    await chat.getByRole('button', { name: '发送', exact: true }).tap();
+    await expect(chat.getByText('ZCode remembers ZCode 历史消息 0 · 从手机接着聊', { exact: true })).toBeVisible({ timeout: 12_000 });
+    const id = new URLSearchParams(new URL(phone.url()).hash.split('?')[1]).get('sessionId');
+    const detail = async () => data<{ threadId: string; snapshot: HarnessSnapshot | null }>(await request.get(apiUrl + '/' + id + '?timeline=1'));
+    expect((await detail()).threadId).toBe(threadId);
+    await expect.poll(async () => (await detail()).snapshot?.view.turn?.id).toMatch(/^stored-/);
+    await phone.reload();
+    await expect(chat.getByText('ZCode remembers ZCode 历史消息 0 · 从手机接着聊', { exact: true })).toHaveCount(1);
+  } finally {
+    if (agent && agent.exitCode === null && agent.signalCode === null) {
+      const exited = once(agent, 'exit');
+      agent.kill('SIGTERM');
+      await exited;
+    }
+    if (nodeId) {
+      await e2eDatabase.harnessSession.deleteMany({ where: { nodeId } });
+      await e2eDatabase.harnessDirectory.deleteMany({ where: { nodeId } });
+    }
+    await context.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test('desktop and phone open and control the same Harness session', async ({ browser, page, request, baseURL, extraHTTPHeaders }, testInfo) => {
   test.skip(testInfo.project.name === 'mobile', 'The test opens desktop and mobile viewports in the same browser project.');

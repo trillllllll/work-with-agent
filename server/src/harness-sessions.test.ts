@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
@@ -337,4 +338,103 @@ it('indexes approved projects and promotes a frozen queue exactly once before br
   expect(firstPage.sessions).toHaveLength(100);
   expect(secondPage.nextCursor).toBeNull();
   expect(new Set([...firstPage.sessions, ...secondPage.sessions].map((row) => row.id)).size).toBe(107);
+}, 25_000);
+
+it('indexes ZCode by project and resumes the native session without sending a duplicate', async () => {
+  const owner = ownerRequest(app);
+  const { node, token } = data(await owner.post('/api/nodes').send({ name: 'ZCode computer' }));
+  nodeIds.push(node.id);
+  const root = await realpath(folder);
+  const cwd = join(root, 'zcode-project');
+  const outside = await mkdtemp(join(tmpdir(), 'dovun-zcode-outside-'));
+  const database = join(root, 'zcode-guard.db');
+  const store = join(root, 'zcode-store.json');
+  const oldId = 'sess_original_zcode';
+  const env = { DOVUN_ZCODE_BIN: fileURLToPath(new URL('../test/stub-harness-zcode.mjs', import.meta.url)),
+    ZCODE_SESSION_DB_PATH: database, HARNESS_TEST_ZCODE_STORE: store };
+  const previous = Object.fromEntries(Object.keys(env).map((name) => [name, process.env[name]]));
+  Object.assign(process.env, env);
+  const presence = new DatabaseSync(database);
+  presence.exec('CREATE TABLE session_runtime_presence (session_id TEXT, process_id INTEGER)');
+  presence.exec('CREATE TABLE session (id TEXT PRIMARY KEY, permission TEXT, time_deleted INTEGER)');
+  presence.prepare('INSERT INTO session (id,permission) VALUES (?,?)').run(oldId, '{"mode":"plan"}');
+  await mkdir(cwd);
+  const sessions = [cwd, outside].map((path, index) => ({
+    sessionId: index ? 'sess_outside_zcode' : oldId, workspace: { workspacePath: path, workspaceKey: path },
+    title: index ? 'Outside project' : 'Existing ZCode conversation', updatedAt: Date.now(),
+    rows: Array.from({ length: 45 }, (_, i) => ({
+      rowId: i + 1, kind: 'userInput', turnId: 'original-' + i, entityId: 'history-' + i, text: 'Old ZCode message ' + i,
+    })),
+  }));
+  await writeFile(store, JSON.stringify(sessions));
+  let loseReceipt = true;
+  const config = { server: origin, token, roots: [cwd], dataDir: join(folder, 'zcode-node') };
+  const agent = new NodeAgent(config, async (url, init) => {
+    const payload = typeof init?.body === 'string' ? JSON.parse(init.body) : null;
+    if (payload?.type === 'receipt' && payload.commandId === 'continue-zcode' && loseReceipt) {
+      loseReceipt = false;
+      throw new Error('test lost receipt');
+    }
+    return fetch(url, init);
+  });
+  agents.push(agent);
+  async function whilePolling(request: PromiseLike<{ status: number; body: { data: any; error: unknown } }>) {
+    let finished = false;
+    const result = Promise.resolve(request).finally(() => { finished = true; });
+    await until(agent, async () => finished);
+    return data(await result);
+  }
+  try {
+    await until(agent, async () => data(await owner.get(base)).nodes.find((row: { id: string }) => row.id === node.id)?.harnesses.includes('zcode'));
+    await whilePolling(owner.post(base + '/native/index').send({ nodeId: node.id, harness: 'zcode' }));
+    const listed = data(await owner.get(base + '?harness=zcode'));
+    const indexed = listed.sessions.filter(({ nodeId }: { nodeId: string }) => nodeId === node.id);
+    expect(indexed).toMatchObject([{ harness: 'zcode', threadId: oldId, projectName: 'zcode-project' }]);
+    const id = indexed[0].id;
+    const url = base + '/' + id;
+    const latest = await whilePolling(owner.post(url + '/history').send({}));
+    expect(latest.view.messages.at(-1).text).toBe('Old ZCode message 44');
+    const earlier = await whilePolling(owner.post(url + '/history').send({ cursor: latest.nextCursor }));
+    expect(earlier.view.messages[0].text).toBe('Old ZCode message 0');
+    const detail = async () => data(await owner.get(url + '?timeline=1&settings=1&workspace=1'));
+    // Opening the same native thread through the project catalog keeps the original Dovun conversation.
+    expect(await whilePolling(owner.post(base + '/native/open').send({ nodeId: node.id, locationId: indexed[0].locationId, threadId: oldId, harness: 'zcode' })))
+      .toMatchObject({ sessionId: id });
+    const auth = await ownerSession(app);
+    const stream = await fetch(origin + url + '/events?timeline=1', {
+      headers: { Cookie: auth.cookie }, signal: AbortSignal.timeout(12_000),
+    });
+    const reader = stream.body!.getReader();
+    try {
+      await until(agent, async () => Boolean((await detail()).snapshot));
+      const expectedEpoch = (await detail()).snapshot.epoch;
+      const send = (commandId: string, text: string) => ({ expectedEpoch, commandId, operation: 'send', text });
+      presence.prepare('INSERT INTO session_runtime_presence VALUES (?, ?)').run(oldId, process.pid);
+      data(await owner.post(url + '/commands').send(send('zcode-open-on-mac', 'Do not send while open')));
+      const receipt = (commandId: string) => owner.get(url + '/commands/' + commandId).then(data);
+      await until(agent, async () => (await receipt('zcode-open-on-mac')).status === 'rejected');
+      expect((await receipt('zcode-open-on-mac')).error).toMatch(/ZCode/);
+      presence.prepare('DELETE FROM session_runtime_presence WHERE session_id=?').run(oldId);
+      const command = send('continue-zcode', 'Continue the original chat');
+      data(await owner.post(url + '/commands').send(command));
+      await until(agent, async () => (await receipt('continue-zcode')).status === 'accepted');
+      data(await owner.post(url + '/commands').send(command));
+      await until(agent, async () => (await detail()).snapshot?.view.turn?.status === 'completed');
+      expect(loseReceipt).toBe(false);
+      const final = await detail();
+      expect(final.threadId).toBe(oldId);
+      expect(final.snapshot.view.turn.id).toMatch(/^stored-/);
+      expect(final.snapshot.view.messages.at(-1).text).toBe('ZCode remembers Old ZCode message 0 · Continue the original chat');
+      const history = await whilePolling(owner.post(url + '/history').send({}));
+      expect(history.view.messages.filter((row: { text: string }) => row.text === command.text)).toHaveLength(1);
+      expect(JSON.parse(await readFile(store, 'utf8'))).toHaveLength(2);
+    } finally { await reader.cancel(); }
+  } finally {
+    await agent.shutdown('signal');
+    presence.close();
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    await rm(outside, { recursive: true, force: true });
+  }
 }, 25_000);
