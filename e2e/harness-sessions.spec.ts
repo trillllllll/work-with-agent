@@ -70,6 +70,13 @@ test('opens a project ZCode history on a phone and continues its original sessio
     await original.tap();
     const chat = phone.getByRole('region', { name: '会话详情' });
     await expect(chat.locator('header [role=status]')).toHaveText('已连接', { timeout: 15_000 });
+    await chat.getByRole('button', { name: '会话设置' }).tap();
+    const settings = phone.getByRole('dialog', { name: '会话设置' });
+    await settings.getByRole('radio', { name: 'Fixture ZCode B' }).tap();
+    await expect(settings.getByRole('radio', { name: 'Fixture ZCode B' })).toBeChecked();
+    await settings.getByRole('radio', { name: /^自主模式/ }).tap();
+    await expect(settings.getByRole('radio', { name: /^自主模式/ })).toBeChecked();
+    await phone.keyboard.press('Escape');
     await expect(chat.getByText('ZCode 历史消息 43', { exact: true })).toBeVisible();
     const oldest = chat.getByText('ZCode 历史消息 0', { exact: true });
     const more = chat.getByRole('button', { name: '加载更早的消息' });
@@ -102,6 +109,7 @@ test('opens a project ZCode history on a phone and continues its original sessio
     await expect.poll(async () => (await detail()).snapshot?.view.turn?.id).toMatch(/^stored-/);
     await phone.reload();
     await expect(chat.getByText('ZCode remembers ZCode 历史消息 0 · 从手机接着聊', { exact: true })).toHaveCount(1);
+    await expect(chat.getByRole('button', { name: '会话设置' })).toHaveText('Fixture ZCode B');
     const completedProcess = liveTurn.locator('[data-harness-process]');
     await completedProcess.locator(':scope > summary').tap();
     await expect(completedProcess.locator('[data-harness-tool]')).toHaveCount(1);

@@ -1,11 +1,9 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { DatabaseSync } from 'node:sqlite';
 import { asObject, CodexRejected, type HarnessNotification } from './harness-codex.js';
 import { codexItems as items, codexText as text, projectCodexHistory } from './harness-history.js';
-import { zcodeRemoteConfigured } from './harness-zcode-account.js';
 import { resolveZCode, withZCode } from './harness-zcode-client.js';
 import { readZCodeRows, readZCodeThread, zcodeTurns } from './harness-zcode-library.js';
 import { ZCodeLiveConversation } from './harness-zcode-live.js';
@@ -23,30 +21,31 @@ const readPrompt = `
   })().catch(() => { process.exitCode = 1; });
 `;
 
-async function readLaunchMode(installation: Awaited<ReturnType<typeof resolveZCode>>, cwd: string, id: string, liveEnabled: boolean) {
+async function readLaunchMode(installation: Awaited<ReturnType<typeof resolveZCode>>, cwd: string, id: string, currentPid?: number) {
   const { home, env } = installation;
   const storage = env.ZCODE_STORAGE_DIR || resolve(home, '.zcode');
   const expand = (value: string) => value.startsWith('~/') ? resolve(home, value.slice(2)) : resolve(cwd, value);
   const path = expand(env.ZCODE_SESSION_DB_PATH || env.ZCODE_SESSION_DB || resolve(expand(storage), 'cli/db/db.sqlite'));
-  await access(path);
-  const db = new DatabaseSync(path, { readOnly: true });
+  let db: DatabaseSync | undefined;
   try {
+    db = new DatabaseSync(path, { readOnly: true });
     db.exec('PRAGMA busy_timeout=1000');
     const session = db.prepare('SELECT permission FROM session WHERE id = ? AND time_deleted IS NULL').get(id);
     if (!session) throw new CodexRejected('找不到本机 ZCode 原会话');
     const owners = db.prepare('SELECT process_id FROM session_runtime_presence WHERE session_id = ?').all(id);
     const busy = owners.some(({ process_id: pid }) => {
-      if (typeof pid !== 'number' || !Number.isSafeInteger(pid) || pid <= 0) return false;
+      if (typeof pid !== 'number' || !Number.isSafeInteger(pid) || pid <= 0 || pid === currentPid) return false;
       try { process.kill(pid, 0); return true; }
       catch (error) { return (error as NodeJS.ErrnoException).code !== 'ESRCH'; }
     });
-    if (busy) throw new CodexRejected(liveEnabled
-      ? '请连接 Mac 上 ZCode 的网页远控，再向已打开的原会话发送消息'
-      : '这条对话正在 ZCode 中使用，请关闭本机对应的对话后再继续');
+    if (busy) throw new CodexRejected('这条对话正在 ZCode 中使用，请关闭本机对应的对话后再继续');
     const permission = typeof session.permission === 'string' ? asObject(JSON.parse(session.permission)) : {};
     // Build keeps the project's permission checks and Plan retains an existing plan mode.
     return permission.mode === 'plan' ? 'plan' : 'build';
-  } finally { db.close(); }
+  } catch (error) {
+    if (error instanceof CodexRejected) throw error;
+    throw new CodexRejected('无法核对本机 ZCode 会话状态');
+  } finally { db?.close(); }
 }
 
 type Running = {
@@ -75,8 +74,8 @@ export class ZCodeHarnessRuntime {
   liveView() { return this.live?.connected ? this.live.view() : undefined; }
 
   private async resume(threadId: string) {
-    await withZCode(this.cwd, (app) => readZCodeThread(app, threadId, this.cwd));
-    if (!this.live && this.liveEnabled && await zcodeRemoteConfigured()) {
+    if (!this.live && this.liveEnabled) {
+      const installation = await resolveZCode();
       this.live = await ZCodeLiveConversation.open(this.cwd, threadId, () => {
         const current = this.live;
         const update = ++this.liveUpdate;
@@ -87,23 +86,23 @@ export class ZCodeHarnessRuntime {
         if (!this.live) return;
         this.live = null;
         this.disconnected();
-      }, this.nativePermissions).catch(() => null);
-    }
+      }, this.nativePermissions, async (pid) => { await readLaunchMode(installation, this.cwd, threadId, pid); });
+    } else if (!this.live) await withZCode(this.cwd, (app) => readZCodeThread(app, threadId, this.cwd));
     return { thread: { id: threadId, cwd: this.cwd, status: { type: this.attached ? 'idle' : 'notLoaded' } } };
   }
 
   async selectModel(model: string | undefined, commandId: string, expectedSettingsRevision: number) {
-    if (!this.live?.connected) throw new CodexRejected('请在 Mac 的 ZCode 中为该项目开启网页远控');
+    if (!this.live?.connected) throw new CodexRejected('本机 ZCode 会话未连接，请重新打开会话');
     return this.live.selectModel(model, commandId, expectedSettingsRevision);
   }
 
   async selectPermission(changes: HarnessSettingsChange, commandId: string, expectedSettingsRevision: number) {
-    if (!this.live?.connected) throw new CodexRejected('请在 Mac 的 ZCode 中为该项目开启网页远控');
+    if (!this.live?.connected) throw new CodexRejected('本机 ZCode 会话未连接，请重新打开会话');
     return this.live.selectPermission(changes, commandId, expectedSettingsRevision);
   }
 
   async choosePermission(requestId: string, optionId: string, commandId: string) {
-    if (!this.live?.connected) throw new CodexRejected('请在 Mac 的 ZCode 中为该项目开启网页远控');
+    if (!this.live?.connected) throw new CodexRejected('本机 ZCode 会话未连接，请重新打开会话');
     await this.live.choosePermission(requestId, optionId, commandId);
   }
 
@@ -135,10 +134,7 @@ export class ZCodeHarnessRuntime {
   private async start(threadId: string, prompt: string) {
     if (!threadId || !prompt.trim() || this.running) throw new CodexRejected('本机不支持这个会话操作');
     const installation = await resolveZCode();
-    const mode = await readLaunchMode(installation, this.cwd, threadId, this.liveEnabled && process.platform === 'darwin').catch((error) => {
-      if (error instanceof CodexRejected) throw error;
-      throw new CodexRejected('无法核对本机 ZCode 会话状态');
-    });
+    const mode = await readLaunchMode(installation, this.cwd, threadId);
     const { node, script, env } = installation;
     const child = spawn(node, ['-e', readPrompt, script, '--resume', threadId, '--output-format', 'stream-json',
       '--mode', mode, '--no-color'], { cwd: this.cwd, env, windowsHide: true, stdio: 'pipe' });
@@ -269,7 +265,7 @@ export class ZCodeHarnessRuntime {
   async close() {
     const live = this.live;
     this.live = null;
-    live?.close();
+    await live?.close();
     const run = this.running;
     if (!run) return;
     run.interrupted = true;

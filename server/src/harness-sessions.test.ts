@@ -381,7 +381,12 @@ it('indexes ZCode by project and resumes the native session without sending a du
       loseReceipt = false;
       throw new Error('test lost receipt');
     }
-    return fetch(url, init);
+    const response = await fetch(url, init);
+    if (typeof url !== 'string' || !url.endsWith('/lease') || !response.ok) return response;
+    // Keep exercising the history and CLI fallback on servers without interactive ZCode settings.
+    const lease = await response.json();
+    lease.data.accepts = lease.data.accepts.filter((feature: string) => feature !== HARNESS_ZCODE_LIVE_FEATURE);
+    return Response.json(lease);
   });
   agents.push(agent);
   async function whilePolling(request: PromiseLike<{ status: number; body: { data: any; error: unknown } }>) {
@@ -430,7 +435,10 @@ it('indexes ZCode by project and resumes the native session without sending a du
       data(await owner.post(url + '/commands').send(command));
       await until(agent, async () => (await receipt('continue-zcode')).status === 'accepted');
       data(await owner.post(url + '/commands').send(command));
-      await until(agent, async () => (await detail()).snapshot?.view.turn?.status === 'completed');
+      await until(agent, async () => {
+        const turn = (await detail()).snapshot?.view.turn;
+        return turn?.status === 'completed' && turn.id.startsWith('stored-');
+      });
       expect(loseReceipt).toBe(false);
       const final = await detail();
       expect(final.threadId).toBe(oldId);

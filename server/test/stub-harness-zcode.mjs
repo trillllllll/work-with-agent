@@ -52,10 +52,61 @@ if (promptArgument !== undefined) {
   process.exit();
 }
 
+const subscriptions = new Map();
+const defaultConfig = { provider: 'fixture', model: 'model-a', thought: '', mode: 'build', planEnabled: false };
+const modelOptions = ['model-a', 'model-b'].map((modelId, index) => ({
+  ref: { providerId: 'fixture', modelId },
+  label: 'Fixture ZCode ' + (index ? 'B' : 'A'),
+}));
+
+function publish(session) {
+  const topic = 'conversation/' + session.sessionId;
+  const subscriptionId = subscriptions.get(topic);
+  if (!subscriptionId) return;
+  output({ method: 'v4/conversation/frame', params: { wireVersion: 3, kind: 'complete', topic, subscriptionId, frame: {
+    topic, subscriptionId, fromSeq: 0, toSeq: session.revision ?? 0, payload: { kind: 'snapshot', snapshot: {
+      sessionId: session.sessionId, revision: session.revision ?? 0, config: session.config ?? defaultConfig,
+      rows: { window: session.rows }, pendingInteractions: [],
+    } },
+  } } });
+}
+
+async function liveTurn(sessionId, commandId, prompt) {
+  const data = read();
+  const session = data.find((item) => item.sessionId === sessionId);
+  const rowId = Math.max(0, ...session.rows.map((row) => row.rowId)) + 1;
+  const turnId = 'stored-turn-' + rowId;
+  session.rows.push(
+    { rowId, kind: 'turnHeader', state: 'running', turnId },
+    { rowId: rowId + 1, kind: 'userInput', text: prompt, turnId, sourceCommandId: commandId },
+    { rowId: rowId + 2, kind: 'toolCall', toolName: 'Bash', input: { command: 'printf fixture' },
+      status: 'running', outputPreview: { fullText: '正在执行命令', totalLines: 1 }, turnId },
+  );
+  session.revision = (session.revision ?? 0) + 1;
+  save(data);
+  publish(session);
+  const gate = process.env.HARNESS_TEST_ZCODE_TOOL_FINISH;
+  for (let attempt = 0; gate && !existsSync(gate) && attempt < 180; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  const updated = read();
+  const current = updated.find((item) => item.sessionId === sessionId);
+  current.rows.find((row) => row.rowId === rowId).state = 'completedSuccess';
+  const tool = current.rows.find((row) => row.rowId === rowId + 2);
+  Object.assign(tool, { status: 'success', output: { text: '命令执行完成' } });
+  delete tool.outputPreview;
+  const answer = 'ZCode remembers ' + current.rows.find((row) => row.kind === 'userInput')?.text + ' · ' + prompt;
+  current.rows.push({ rowId: rowId + 3, kind: 'assistantText', text: answer, turnId });
+  current.revision++;
+  save(updated);
+  publish(current);
+}
+
 for await (const line of createInterface({ input: process.stdin })) {
   const { id, method, params } = JSON.parse(line);
   const data = read();
   let result;
+  let notify;
   if (method === 'session/list') {
     const sameProject = ({ workspace, sessionId }) =>
       (!params.workspace || params.workspace.workspacePath === workspace.workspacePath) &&
@@ -63,6 +114,38 @@ for await (const line of createInterface({ input: process.stdin })) {
     result = { sessions: data.filter(sameProject).slice(0, params.limit).map(({ rows, ...session }) => session) };
   }
   if (method === 'v4/conversation/subscribe' && params.historyFirst) result = { ack: { topic: params.topic } };
+  if (method === 'session/resume') {
+    const session = data.find(({ sessionId }) => sessionId === params.sessionId);
+    if (session) result = { session: { sessionId: session.sessionId }, settings: { model: { available: modelOptions } } };
+  }
+  if (method === 'v4/conversation/subscribe' && !params.historyFirst || method === 'v4/conversation/resync') {
+    const session = data.find(({ sessionId }) => params.topic === 'conversation/' + sessionId);
+    if (session) {
+      const subscriptionId = subscriptions.get(params.topic) ?? 'subscription-' + session.sessionId;
+      subscriptions.set(params.topic, subscriptionId);
+      result = { ack: { subscriptionId } };
+      notify = () => publish(session);
+    }
+  }
+  if (method === 'v4/command') {
+    const session = data.find(({ sessionId }) => sessionId === params.sessionId);
+    if (session) {
+      const { commandId, type, payload } = params;
+      session.receipts ??= [];
+      const duplicate = session.receipts.includes(commandId);
+      result = { commandId, status: duplicate ? 'duplicate' : 'accepted' };
+      if (!duplicate) {
+        session.receipts.push(commandId);
+        if (type === 'sendText') notify = () => { void liveTurn(session.sessionId, commandId, payload.text); };
+        if (type === 'switchModelConfig' || type === 'switchCollaborationMode') {
+          session.config = { ...(session.config ?? defaultConfig), ...payload };
+          session.revision = (session.revision ?? 0) + 1;
+          notify = () => publish(session);
+        }
+        save(data);
+      }
+    }
+  }
   if (method === 'v4/conversation/rowsRange') {
     const session = data.find(({ sessionId }) => sessionId === params.sessionId);
     if (session) {
@@ -71,4 +154,5 @@ for await (const line of createInterface({ input: process.stdin })) {
     }
   }
   output(result ? { id, result } : { id, error: { code: -32602, message: 'Test request rejected' } });
+  notify?.();
 }

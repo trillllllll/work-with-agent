@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { providerEnvironment } from '../runner/environment.js';
 import { runtimeEnv } from '../shared/runtime-env.js';
-import { CodexAppServer, CodexRejected } from './harness-codex.js';
+import { CodexAppServer, CodexRejected, type HarnessNotification } from './harness-codex.js';
 
 const exec = promisify(execFile);
 const helper = 'Frameworks/ZCode Helper.app/Contents/MacOS/ZCode Helper';
@@ -19,6 +19,7 @@ export function zcodeWorkspace(cwd: string) {
 export async function resolveZCode() {
   const configured = runtimeEnv('ZCODE_BIN');
   const env = providerEnvironment();
+  delete env.DOVUN_NODE_TOKEN;
   const home = env.ZCODE_DATA_BASE_DIR?.trim() || homedir();
   env.ZCODE_PERSONAL_PROVIDER_CONFIG_FILE ||= resolve(home, '.zcode/v2/provider_config.json');
   if (configured) {
@@ -50,12 +51,22 @@ export async function zcodeAvailable() {
   } catch { return false; }
 }
 
-export async function withZCode<T>(cwd: string, action: (app: CodexAppServer) => Promise<T>) {
+export async function openZCode(cwd: string, onMessage: HarnessNotification, onExit: () => void) {
   const { node, script, env } = await resolveZCode();
   const child = spawn(node, [script, 'app-server', '--surface', 'desktop'], { cwd, env, windowsHide: true, stdio: 'pipe' });
-  const app = CodexAppServer.fromStdio(child, (_method, _params, id) => {
-    if (id !== undefined) void app.unsupported(id).catch(() => undefined);
-  }, () => undefined, 'ZCode');
+  const app = CodexAppServer.fromStdio(child, (method, params, id) => {
+    if (id === undefined) { onMessage(method, params); return; }
+    // The CLI obtains its policies from local config. Host-only search requires a separate integration.
+    const response = method === 'session/requestRuntimePreferences'
+      ? app.reply(id, { nativeSearchEnhancementsEnabled: false })
+      : method === 'session/readReplyLanguage' ? app.reply(id, { language: null }) : app.unsupported(id);
+    void response.catch(() => undefined);
+  }, onExit, 'ZCode');
+  return app;
+}
+
+export async function withZCode<T>(cwd: string, action: (app: CodexAppServer) => Promise<T>) {
+  const app = await openZCode(cwd, () => undefined, () => undefined);
   try { return await action(app); }
   finally { await app.close(); }
 }

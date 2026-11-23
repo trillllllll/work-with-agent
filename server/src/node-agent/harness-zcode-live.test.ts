@@ -1,9 +1,12 @@
 import { expect, it, vi } from 'vitest';
 import { HARNESS_OUTPUT_LIMIT } from './harness-protocol.js';
 import { ZCodeLiveConversation } from './harness-zcode-live.js';
-import { acquireZCodeRelay } from './harness-zcode-relay.js';
+import { openZCode } from './harness-zcode-client.js';
 
-vi.mock('./harness-zcode-relay.js', () => ({ acquireZCodeRelay: vi.fn() }));
+vi.mock('./harness-zcode-client.js', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./harness-zcode-client.js')>(),
+  openZCode: vi.fn(),
+}));
 
 it('preserves the desktop conversation, command IDs and streaming tool rows across updates', async () => {
   const cwd = process.cwd();
@@ -25,7 +28,11 @@ it('preserves the desktop conversation, command IDs and streaming tool rows acro
     ] } });
   let pending: Record<string, unknown>[] = [];
   let deduped = false;
-  const release = vi.fn();
+  let busy = false;
+  const close = vi.fn(async () => undefined);
+  const assertAvailable = vi.fn(async () => {
+    if (busy) throw new Error('ZCode 会话已被另一个进程打开');
+  });
   const frame = (fromSeq: number, toSeq: number, payload: unknown) => emit({
     topic, subscriptionId, wireVersion: 3, kind: 'complete', frame: { topic, subscriptionId, fromSeq, toSeq, payload },
   });
@@ -33,18 +40,24 @@ it('preserves the desktop conversation, command IDs and streaming tool rows acro
     kind: 'snapshot', snapshot: { sessionId: threadId, revision, config: { provider: 'local', model, mode, planEnabled },
       rows: { window: [] }, pendingInteractions: pending },
   });
-  const call = vi.fn(async (name: string, arg?: Record<string, unknown>) => {
-    if (name === 'getView') return { providers: [{ providerId: 'local', models: ['model-a', 'model-b'].map((modelId) => ({ modelId })) }] };
-    if (name === 'subscribeConversationV4' || name === 'resyncConversationV4') {
+  const request = vi.fn(async (name: string, arg: Record<string, unknown>) => {
+    if (name === 'session/list') return { sessions: [{ sessionId: threadId, workspace, updatedAt: 1 }] };
+    if (name === 'session/resume') return { session: { sessionId: threadId }, settings: { model: {
+      available: ['model-a', 'model-b'].map((modelId) => ({ ref: { providerId: 'local', modelId },
+        reasoning: { defaultLevel: 'high', levels: [{ value: 'low' }, { value: 'high' }] },
+      })),
+    } } };
+    if (name === 'v4/conversation/subscribe' || name === 'v4/conversation/resync') {
+      expect(arg.topic).toBe(topic);
+      if (name === 'v4/conversation/resync') expect(arg).not.toHaveProperty('workspace');
       snapshot();
       return { ack: { subscriptionId } };
     }
-    if (name === 'unsubscribeConversationV4') return;
-    expect(name).toBe('sendConversationCommandV4');
-    const envelope = arg!.envelope as Record<string, unknown>;
-    expect(envelope).toMatchObject({ workspace, sessionId: threadId, clientId: 'paired-mac' });
+    expect(name).toBe('v4/command');
+    const envelope = arg;
+    expect(envelope).toMatchObject({ workspace, sessionId: threadId, clientId: 'dovun' });
     if (envelope.type === 'switchModelConfig') {
-      expect(envelope).toMatchObject({ baseRevision: revision, commandId: 'switch-1', payload: { provider: 'local', model: 'model-b', thought: '' } });
+      expect(envelope).toMatchObject({ baseRevision: revision, commandId: 'switch-1', payload: { provider: 'local', model: 'model-b', thought: 'high' } });
       model = 'model-b';
       revision++;
       return { commandId: 'switch-1', status: 'accepted' };
@@ -81,12 +94,12 @@ it('preserves the desktop conversation, command IDs and streaming tool rows acro
     ] });
     return { commandId: 'message-1', status: 'accepted' };
   });
-  vi.mocked(acquireZCodeRelay).mockResolvedValue({ release, relay: {
-    workspace, clientId: 'paired-mac', closed: false, call, onDisconnect: () => vi.fn(),
-    listen: (_name: string, handler: typeof emit) => { emit = handler; return vi.fn(); },
-  } as unknown as Awaited<ReturnType<typeof acquireZCodeRelay>>['relay'] });
+  vi.mocked(openZCode).mockImplementation(async (_cwd, onMessage) => {
+    emit = (wire) => onMessage('v4/conversation/frame', wire);
+    return { request, close } as unknown as Awaited<ReturnType<typeof openZCode>>;
+  });
 
-  const live = await ZCodeLiveConversation.open(cwd, threadId, vi.fn(), vi.fn(), () => true);
+  const live = await ZCodeLiveConversation.open(cwd, threadId, vi.fn(), vi.fn(), () => true, assertAvailable);
   try {
     const initial = live.settings()!;
     expect(initial.models.map(({ id }) => id)).toEqual(['local/model-a', 'local/model-b']);
@@ -101,6 +114,11 @@ it('preserves the desktop conversation, command IDs and streaming tool rows acro
     await expect(live.selectPermission({ permissionMode: 'build' }, 'change-in-plan', plan.revision)).rejects.toThrow('本机不支持');
     const leftPlan = await live.selectPermission({ mode: 'default' }, 'leave-plan', plan.revision);
     expect(leftPlan).toMatchObject({ mode: 'default', permissionMode: 'guarded' });
+    busy = true;
+    const beforeBusySend = request.mock.calls.length;
+    await expect(live.send('continue here', 'message-1')).rejects.toThrow('ZCode 会话已被另一个进程打开');
+    expect(request).toHaveBeenCalledTimes(beforeBusySend);
+    busy = false;
     await live.send('continue here', 'message-1');
     await live.send('continue here', 'message-1');
     const { view, clients } = await live.view();
@@ -147,6 +165,6 @@ it('preserves the desktop conversation, command IDs and streaming tool rows acro
     });
     await live.choosePermission('plan', 'approve', 'approve-plan');
     expect((await live.view()).view.approvals.map(({ id }) => id)).toEqual(['session']);
-  } finally { live.close(); }
-  expect(release).toHaveBeenCalledOnce();
+  } finally { await live.close(); }
+  expect(close).toHaveBeenCalledOnce();
 });

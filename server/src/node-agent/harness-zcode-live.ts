@@ -1,16 +1,18 @@
+import { randomUUID } from 'node:crypto';
 import { crc32 } from 'node:zlib';
-import { asObject, CodexRejected } from './harness-codex.js';
+import { asObject, CodexRejected, type CodexAppServer } from './harness-codex.js';
 import { codexItems as items, codexText as text, projectCodexHistory } from './harness-history.js';
 import { HARNESS_MODELS, HARNESS_OUTPUT_LIMIT, HARNESS_TEXT_LIMIT, zcodePermissionMode,
   type HarnessApproval, type HarnessSettingsChange, type HarnessSettingsView } from './harness-protocol.js';
-import { acquireZCodeRelay, type ZCodeDesktopRelay } from './harness-zcode-relay.js';
-import { zcodeTurns } from './harness-zcode-library.js';
+import { openZCode, zcodeWorkspace } from './harness-zcode-client.js';
+import { readZCodeThread, zcodeTurns } from './harness-zcode-library.js';
 import { zcodeHarnessTool } from './harness-zcode-tools.js';
 
 type Fields = Record<string, unknown>;
 const timeout = () => new Error('ZCode 原会话更新超时，操作结果待核实');
 const nativeRows = 120;
 const limitBytes = 16 * 1024 * 1024;
+const clientMode = 'desktop-continuous';
 
 function waitUntil(check: () => boolean) {
   return new Promise<void>((resolve, reject) => {
@@ -45,7 +47,7 @@ function topicFrame(topic: TopicState, wire: Fields): Fields | undefined {
   const checksum = asObject(wire.checksum);
   if (full.length !== logicalBytes || checksum.algorithm !== 'crc32'
       || checksum.value !== crc32(full).toString(16).padStart(8, '0')) return;
-  return asObject(JSON.parse(full.toString('utf8')));
+  try { return asObject(JSON.parse(full.toString('utf8'))); } catch { return; }
 }
 
 const optionId = (provider: string, model: string) => [provider, model].map(encodeURIComponent).join('/');
@@ -65,8 +67,9 @@ function zcodePermissionOption(raw: Fields): PermissionOption | undefined {
 }
 
 export class ZCodeLiveConversation {
+  private readonly connectionId = randomUUID();
+  private readonly workspace: ReturnType<typeof zcodeWorkspace>;
   private readonly conversation: TopicState = { id: '' };
-  private readonly dispose: Array<() => void> = [];
   private rows = new Map<number, Fields>();
   private config: Fields = {};
   private control: Fields = {};
@@ -76,34 +79,40 @@ export class ZCodeLiveConversation {
   private snapshotNumber = 0;
   private repairing = false;
   private ended = false;
+  private closing?: Promise<void>;
   private update?: ReturnType<typeof setTimeout>;
 
-  private constructor(private readonly relay: ZCodeDesktopRelay, private readonly release: () => void,
-    private readonly cwd: string, readonly threadId: string, private readonly changed: () => void,
-    private readonly offline: () => void, private readonly nativePermissions: () => boolean) {}
-
-  static async open(cwd: string, threadId: string, changed: () => void, offline: () => void, nativePermissions = () => false) {
-    const { relay, release } = await acquireZCodeRelay(cwd);
-    const live = new ZCodeLiveConversation(relay, release, cwd, threadId, changed, offline, nativePermissions);
-    try {
-      live.dispose.push(relay.onDisconnect(() => { live.close(); live.offline(); }));
-      live.dispose.push(relay.listen('onDynamicConversationFrame', (wire) => {
-        if (wire.topic === 'conversation/' + threadId) live.accept(wire);
-      }));
-      const conversation = asObject(await relay.call('subscribeConversationV4', {
-        ...relay.workspace, sessionId: threadId, visibility: 'foreground',
-      }));
-      live.conversation.id = text(asObject(conversation.ack).subscriptionId);
-      if (!live.conversation.id) throw timeout();
-      await Promise.all([waitUntil(() => live.ended || live.snapshotNumber > 0), live.readModels().catch(() => undefined)]);
-      if (live.ended) throw timeout();
-      return live;
-    } catch (error) { live.close(); throw error; }
+  private constructor(private readonly app: CodexAppServer, private readonly cwd: string,
+    readonly threadId: string, private readonly changed: () => void, private readonly offline: () => void,
+    private readonly nativePermissions: () => boolean, private readonly assertAvailable: (pid?: number) => Promise<void>) {
+    this.workspace = zcodeWorkspace(cwd);
   }
 
-  get connected() { return !this.ended && !this.relay.closed; }
+  static async open(cwd: string, threadId: string, changed: () => void, offline: () => void,
+    nativePermissions: () => boolean, assertAvailable: (pid?: number) => Promise<void>) {
+    let conversation: ZCodeLiveConversation | undefined;
+    const app = await openZCode(cwd, (method, wire) => {
+      if (method === 'v4/conversation/frame') conversation?.accept(wire);
+    }, () => conversation?.connectionLost());
+    const live = conversation = new ZCodeLiveConversation(app, cwd, threadId, changed, offline, nativePermissions, assertAvailable);
+    try {
+      await readZCodeThread(app, threadId, cwd);
+      await live.readModels();
+      const result = await app.request('v4/conversation/subscribe', {
+        workspace: live.workspace, topic: 'conversation/' + threadId, connectionId: live.connectionId, clientMode,
+      });
+      live.conversation.id = text(asObject(result.ack).subscriptionId);
+      if (!live.conversation.id) throw timeout();
+      await waitUntil(() => live.ended || live.snapshotNumber > 0);
+      if (live.ended) throw timeout();
+      return live;
+    } catch (error) { await live.close(); throw error; }
+  }
+
+  get connected() { return !this.ended; }
 
   private accept(wire: Fields) {
+    if (this.ended || wire.topic !== 'conversation/' + this.threadId) return;
     const topic = this.conversation;
     const frame = topicFrame(topic, wire);
     if (!frame || frame.subscriptionId !== wire.subscriptionId || frame.topic !== wire.topic) return;
@@ -124,7 +133,7 @@ export class ZCodeLiveConversation {
     } else if (payload.kind === 'deltas') {
       if (topic.seq !== undefined && sequence <= topic.seq) return;
       if (frame.fromSeq !== topic.seq) {
-        void this.refresh().catch(() => this.relay.close());
+        void this.refresh().catch(() => this.connectionLost());
         return;
       }
       for (const delta of items(payload.deltas)) this.apply(delta);
@@ -204,25 +213,25 @@ export class ZCodeLiveConversation {
   }
 
   private async readModels() {
-    // This is the same filtered catalogue used by ZCode's mobile model picker.
-    // Do not keep or relay provider connection settings contained in the response.
-    const view = asObject(await this.relay.call('getView', undefined, 'model-selection'));
-    const preferred = asObject(view.preferredSelection);
+    await this.assertAvailable(this.app.pid);
+    const resumed = await this.app.request('session/resume', { sessionId: this.threadId, workspace: this.workspace });
+    await this.assertAvailable(this.app.pid);
+    const session = asObject(resumed.session);
+    if ((session.sessionId ?? session.id) !== this.threadId) throw new CodexRejected('ZCode 返回了不同的会话');
+    const catalogue = asObject(asObject(resumed.settings).model);
     const options: NativeModel[] = [];
-    for (const entry of items(view.providers)) {
-      const provider = text(entry.providerId);
-      if (!provider || asObject(asObject(entry.config).access).entitled === false) continue;
-      for (const row of items(entry.models)) {
-        const model = text(row.modelId);
-        const id = optionId(provider, model);
-        const config = asObject(row.config);
-        if (!model || id.length > 200 || config.enabled === false) continue;
-        const label = text(asObject(config.properties).displayName) || model;
-        const thought = preferred.providerId === provider && preferred.modelId === model
-          ? text(asObject(preferred.options).reasoningLevel) : '';
-        options.push({ id, provider, model, label: label.slice(0, 200), thought });
-        if (options.length >= HARNESS_MODELS) break;
-      }
+    // Keep only the model identifiers, display labels and native default effort.
+    for (const entry of items(catalogue.available)) {
+      const ref = asObject(entry.ref);
+      const provider = text(ref.providerId), model = text(ref.modelId);
+      const id = optionId(provider, model);
+      if (!provider || !model || id.length > 200) continue;
+      const label = text(entry.label) || model;
+      const reasoning = asObject(entry.reasoning);
+      const levels = items(reasoning.levels).map((level) => text(level.value)).filter(Boolean);
+      const preferred = text(asObject(ref.options).reasoningLevel) || text(reasoning.defaultLevel);
+      const thought = levels.includes(preferred) ? preferred : levels[0] ?? '';
+      options.push({ id, provider, model, label: label.slice(0, 200), thought });
       if (options.length >= HARNESS_MODELS) break;
     }
     this.options = options;
@@ -255,8 +264,9 @@ export class ZCodeLiveConversation {
     if (!this.repairing) {
       this.repairing = true;
       try {
-        await this.relay.call('resyncConversationV4', {
-          ...this.relay.workspace, subscriptionId: this.conversation.id, base: null, forceSnapshot: true,
+        await this.app.request('v4/conversation/resync', {
+          topic: 'conversation/' + this.threadId, connectionId: this.connectionId,
+          subscriptionId: this.conversation.id, base: null, forceSnapshot: true,
         });
         await waitUntil(() => !this.connected || this.snapshotNumber > previous);
       } finally { this.repairing = false; }
@@ -265,14 +275,14 @@ export class ZCodeLiveConversation {
   }
 
   private async command(commandId: string, type: 'sendText' | 'switchModelConfig' | 'switchCollaborationMode' | 'resolveInteraction' | 'stop', payload: Fields, revision?: number) {
-    const ack = asObject(await this.relay.call('sendConversationCommandV4', {
-      ...this.relay.workspace,
-      envelope: { workspace: this.relay.workspace, sessionId: this.threadId, clientId: this.relay.clientId, commandId,
-        type, payload, issuedAt: Date.now(), ...(revision !== undefined ? { baseRevision: revision } : {}) },
-    }));
+    await this.assertAvailable(this.app.pid);
+    const ack = await this.app.request('v4/command', {
+      workspace: this.workspace, sessionId: this.threadId, clientId: 'dovun', commandId,
+      type, payload, issuedAt: Date.now(), ...(revision !== undefined ? { baseRevision: revision } : {}),
+    });
     if (ack.commandId !== commandId) throw timeout();
     if (ack.status === 'stale') throw new CodexRejected('ZCode 原会话已变化，请刷新后重试');
-    if (ack.status === 'rejected') throw new CodexRejected('ZCode 桌面拒绝了会话操作');
+    if (ack.status === 'rejected' || ack.status === 'failed') throw new CodexRejected('本机 ZCode 拒绝了会话操作');
     if (ack.status !== 'accepted' && ack.status !== 'duplicate' && ack.status !== 'noop') throw timeout();
     return ack.status;
   }
@@ -293,7 +303,11 @@ export class ZCodeLiveConversation {
   }
 
   async selectModel(model: string | undefined, commandId: string, expectedSettingsRevision?: number) {
-    await Promise.all([this.refresh(), this.readModels()]);
+    if (model === undefined) {
+      await this.app.request('provider/refreshRegistry', { reason: 'dovun-model-picker' });
+      await this.readModels();
+    }
+    await this.refresh();
     const current = this.settings();
     if (expectedSettingsRevision !== undefined && expectedSettingsRevision !== current?.revision) {
       throw new CodexRejected('会话设置已变更，请刷新后重试');
@@ -343,14 +357,19 @@ export class ZCodeLiveConversation {
     if (status === 'noop') throw new CodexRejected('这条权限请求已处理或决定无效');
   }
 
-  close() {
-    if (this.ended) return;
-    this.ended = true;
-    clearTimeout(this.update);
-    for (const dispose of this.dispose.reverse()) dispose();
-    if (!this.relay.closed && this.conversation.id) {
-      void this.relay.call('unsubscribeConversationV4', { ...this.relay.workspace, subscriptionId: this.conversation.id }).catch(() => undefined);
+  private connectionLost() {
+    if (!this.ended) {
+      void this.close().catch(() => undefined);
+      this.offline();
     }
-    this.release();
+  }
+
+  close() {
+    if (!this.closing) {
+      this.ended = true;
+      clearTimeout(this.update);
+      this.closing = this.app.close();
+    }
+    return this.closing;
   }
 }

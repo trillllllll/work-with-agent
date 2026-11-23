@@ -13,7 +13,6 @@ import { createLocalLaunchSpec, localProviders } from './cli.js';
 import { HarnessController } from './harness-controller.js';
 import { readHarnessLibrary } from './harness-library.js';
 import { zcodeAvailable } from './harness-zcode-client.js';
-import { zcodeRemoteConfigured } from './harness-zcode-account.js';
 import {
   HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_LIBRARY_LEASES, HARNESS_LIBRARY_READS, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE,
   harnessLeaseSchema, harnessLibraryLeaseSchema, harnessReadTaskSchema, type HarnessKind, type HarnessLease, type HarnessReadTask,
@@ -173,7 +172,7 @@ export class NodeAgent {
     if (body.harnessLibrary && workspace) {
       body.harnessWorkspace = HARNESS_WORKSPACE_FEATURE;
       body.harnessKinds = installed;
-      if (installed.includes('zcode') && this.serverAccepts.has(HARNESS_ZCODE_LIVE_FEATURE) && await zcodeRemoteConfigured()) {
+      if (installed.includes('zcode') && this.serverAccepts.has(HARNESS_ZCODE_LIVE_FEATURE)) {
         body.harnessZCodeLive = HARNESS_ZCODE_LIVE_FEATURE;
       }
     }
