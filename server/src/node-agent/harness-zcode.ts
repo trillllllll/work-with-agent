@@ -9,7 +9,8 @@ import { zcodeRemoteConfigured } from './harness-zcode-account.js';
 import { resolveZCode, withZCode } from './harness-zcode-client.js';
 import { readZCodeRows, readZCodeThread, zcodeTurns } from './harness-zcode-library.js';
 import { ZCodeLiveConversation } from './harness-zcode-live.js';
-import { HARNESS_TEXT_LIMIT, type HarnessView } from './harness-protocol.js';
+import { zcodeHarnessTool } from './harness-zcode-tools.js';
+import { HARNESS_OUTPUT_LIMIT, HARNESS_TEXT_LIMIT, HARNESS_TOOLS, type HarnessView } from './harness-protocol.js';
 
 // Invoke ZCode's own authenticated headless entry. Send the prompt over the pipe so it stays out of the OS command line.
 const readPrompt = `
@@ -56,6 +57,7 @@ type Running = {
   sawResult: boolean;
   failed: boolean;
   receivedText: boolean;
+  tools: Map<string, { toolName: string; input: { command?: string } }>;
 };
 
 export class ZCodeHarnessRuntime {
@@ -140,7 +142,7 @@ export class ZCodeHarnessRuntime {
     });
     const deadline = setTimeout(() => unknown(new Error('ZCode 开始新一轮的结果待核实')), 15_000);
     const current: Running = {
-      child, turnId: '', interrupted: false, sawResult: false, failed: false, receivedText: false,
+      child, turnId: '', interrupted: false, sawResult: false, failed: false, receivedText: false, tools: new Map(),
       done: new Promise((resolve) => child.once('close', (code) => {
         clearTimeout(deadline);
         lines.close();
@@ -174,7 +176,7 @@ export class ZCodeHarnessRuntime {
       try {
         // CLI stream IDs and the conversation projection's persisted IDs belong to different timelines.
         const result = await withZCode(this.cwd, (app) => readZCodeRows(app, threadId, this.cwd, null, 36));
-        const { view } = await projectCodexHistory(zcodeTurns(result.rows), this.cwd, [this.cwd], true);
+        const { view } = await projectCodexHistory(zcodeTurns(result.rows), this.cwd, [this.cwd], true, false, zcodeHarnessTool);
         if (view.turn?.status === 'completed' && await this.replaceHistory(run.turnId, view)) return;
       } catch { /* Keep the streamed response available when the history read fails. */ }
     }
@@ -198,10 +200,49 @@ export class ZCodeHarnessRuntime {
       this.emit('item/agentMessage/delta', { threadId, turnId, itemId, delta: payload.delta });
     }
     if (event.type === 'turn.failed') run.failed = true;
+    if (event.type === 'tool.updated') this.receiveTool(run, threadId, payload);
     if (event.type === 'result') {
       run.sawResult = true;
       const response = text(event.response).slice(0, HARNESS_TEXT_LIMIT);
       if (response || run.receivedText) this.emit('item/completed', { threadId, turnId, item: { id: itemId, type: 'agentMessage', text: response } });
+    }
+  }
+
+  private receiveTool(run: Running, threadId: string, payload: Record<string, unknown>) {
+    const callId = text(payload.toolCallId);
+    const id = `${run.turnId}:tool:${callId}`;
+    if (!callId || id.length > 200) return;
+    const previous = run.tools.get(callId);
+    const toolName = text(payload.toolName).slice(0, 1_000) || previous?.toolName;
+    if (!toolName) return;
+    const input = previous?.input ?? (toolName.toLowerCase() === 'bash'
+      ? { command: text(asObject(payload.input).command).slice(0, 1_000) } : {});
+    const item = { kind: 'toolCall', id, toolName, input };
+    const params = { threadId, turnId: run.turnId };
+    switch (payload.kind) {
+      case 'scheduled':
+      case 'started':
+        run.tools.set(callId, { toolName, input });
+        if (run.tools.size > HARNESS_TOOLS) run.tools.delete(run.tools.keys().next().value!);
+        this.emit('item/started', { ...params, item: { ...item, status: 'running' } });
+        return;
+      case 'progress': {
+        if (!previous) return;
+        const tail = [text(payload.stdoutTail), text(payload.stderrTail)].filter(Boolean).join('\n').slice(-HARNESS_OUTPUT_LIMIT);
+        this.emit('item/started', { ...params, item: { ...item, status: 'running', outputPreview: payload.outputPreview,
+          progress: { previewLine: tail, message: payload.message } } });
+        return;
+      }
+      case 'result': {
+        run.tools.delete(callId);
+        const result = asObject(payload.result);
+        this.emit('item/completed', { ...params, item: { ...item, status: result.success === false ? 'error' : 'success',
+          output: { text: result.content, display: result.display, truncated: result.truncated }, error: result.error } });
+        return;
+      }
+      case 'error':
+        run.tools.delete(callId);
+        this.emit('item/completed', { ...params, item: { ...item, status: 'error', error: payload.error } });
     }
   }
 

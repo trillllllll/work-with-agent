@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -29,12 +29,23 @@ if (promptArgument !== undefined) {
   const text = 'ZCode remembers ' + original.rows.find((row) => row.kind === 'userInput')?.text + ' · ' + prompt;
   const event = (type, payload) => output({ type, sessionId: threadId, turnId, payload });
   event('turn.started');
-  await new Promise((resolve) => setTimeout(resolve, 150));
+  const toolCallId = 'local-command';
+  const command = 'printf fixture';
+  event('tool.updated', { kind: 'scheduled', toolCallId, toolName: 'Bash', input: { command } });
+  event('tool.updated', { kind: 'started', toolCallId });
+  event('tool.updated', { kind: 'progress', toolCallId, outputPreview: { fullText: '正在执行命令', totalLines: 1 } });
+  const gate = process.env.HARNESS_TEST_ZCODE_TOOL_FINISH;
+  for (let attempt = 0; gate && !existsSync(gate) && attempt < 180; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  event('tool.updated', { kind: 'result', toolCallId, result: { success: true, content: '命令执行完成' } });
   event('model.streaming', { kind: 'text_delta', delta: text });
   original.rows.push(
     { rowId: original.rows.length + 1, kind: 'turnHeader', state: 'completedSuccess', turnId: 'stored-' + turnId },
     { rowId: original.rows.length + 2, kind: 'userInput', entityId: turnId + ':native-input', text: prompt, turnId: 'stored-' + turnId },
-    { rowId: original.rows.length + 3, kind: 'assistantText', entityId: turnId + ':native-answer', text, turnId: 'stored-' + turnId },
+    { rowId: original.rows.length + 3, kind: 'toolCall', entityId: turnId + ':native-tool', turnId: 'stored-' + turnId,
+      toolName: 'Bash', input: { command }, status: 'success', output: { text: '命令执行完成' } },
+    { rowId: original.rows.length + 4, kind: 'assistantText', entityId: turnId + ':native-answer', text, turnId: 'stored-' + turnId },
   );
   save(data);
   output({ type: 'result', sessionId: threadId, turnId, response: text });

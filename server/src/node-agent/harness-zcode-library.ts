@@ -4,6 +4,7 @@ import { assertAllowed } from './git.js';
 import { asObject, CodexRejected, type HarnessRuntime } from './harness-codex.js';
 import { codexItems as items, codexText as text, projectCodexHistory } from './harness-history.js';
 import { withZCode, zcodeWorkspace } from './harness-zcode-client.js';
+import { zcodeHarnessTool } from './harness-zcode-tools.js';
 import { HARNESS_TEXT_LIMIT, type HarnessCatalogThread, type HarnessReadTask, type HarnessTurn } from './harness-protocol.js';
 
 const pageSize = 30;
@@ -62,7 +63,7 @@ export function zcodeTurns(rows: unknown) {
   for (const row of items(rows)) {
     const id = text(row.productTurnId) || text(row.turnId);
     if (!id) continue;
-    if (row.kind !== 'turnHeader' && row.kind !== 'userInput' && row.kind !== 'assistantText') continue;
+    if (row.kind !== 'turnHeader' && row.kind !== 'userInput' && row.kind !== 'assistantText' && row.kind !== 'toolCall') continue;
     const turn = turns.get(id) ?? { id, status: 'completed', items: [] };
     turns.set(id, turn);
     if (row.kind === 'turnHeader') {
@@ -70,6 +71,10 @@ export function zcodeTurns(rows: unknown) {
       continue;
     }
     const itemId = text(row.entityId) || (Number.isSafeInteger(row.rowId) ? 'zcode-row-' + row.rowId : '');
+    if (row.kind === 'toolCall') {
+      if (itemId) turn.items.push({ ...row, id: itemId });
+      continue;
+    }
     const body = text(row.text).slice(0, HARNESS_TEXT_LIMIT);
     if (!itemId || !body) continue;
     turn.items.push(row.kind === 'userInput'
@@ -100,7 +105,7 @@ export async function readZCodeLibrary(task: Extract<HarnessReadTask, { kind: 'i
     if (task.kind === 'thread') return { threadId, title, updatedAt };
     for (const limit of [36, 18, 9, 4, 1]) {
       const page = await readZCodeRows(app, threadId, cwd, task.cursor, limit);
-      const { view } = await projectCodexHistory(zcodeTurns(page.rows), cwd, roots, false);
+      const { view } = await projectCodexHistory(zcodeTurns(page.rows), cwd, roots, false, false, zcodeHarnessTool);
       const first = items(page.rows)[0]?.rowId;
       const nextCursor = page.hasMore === true && Number.isSafeInteger(first) ? String(first) : null;
       const result = { view, nextCursor };

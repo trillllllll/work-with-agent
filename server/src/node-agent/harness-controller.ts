@@ -5,6 +5,7 @@ import { exclusiveDataGuard } from '../shared/data-guard.js';
 import { asObject, CodexAppServer, CodexRejected, type HarnessNotification, type HarnessRuntime } from './harness-codex.js';
 import { ClaudeHarnessRuntime } from './harness-claude.js';
 import { ZCodeHarnessRuntime } from './harness-zcode.js';
+import { zcodeHarnessTool } from './harness-zcode-tools.js';
 import { readHarnessArtifacts } from './harness-artifacts.js';
 import { codexInput } from './harness-files.js';
 import { codexText as text, codexItems as items, codexMessage as message, codexTurn as turn, projectCodexHistory } from './harness-history.js';
@@ -238,7 +239,8 @@ export class HarnessController {
       if (asObject(reopened.thread).id !== prior.threadId) throw new Error('Codex 返回了不同的线程');
       const history = await app.request('thread/turns/list', { threadId: prior.threadId, limit: 20, sortDirection: 'desc', itemsView: 'full' });
       const liveView = app instanceof ZCodeHarnessRuntime ? await app.liveView() : undefined;
-      const { view, clients } = liveView ?? await projectCodexHistory(history.data, cwd, this.roots, true, Boolean(owner));
+      const { view, clients } = liveView ?? await projectCodexHistory(history.data, cwd, this.roots, true, Boolean(owner),
+        app instanceof ZCodeHarnessRuntime ? zcodeHarnessTool : undefined);
       this.view = view;
       this.workspaceSandbox = asObject(reopened.sandbox);
       this.restoredClients = clients;
@@ -627,7 +629,7 @@ export class HarnessController {
       const value = message(completed ? item : { ...item, text: '' }, turnId, !completed);
       if (value && (value.role === 'user' || completed || this.timeline)) this.emit({ kind: 'message', message: value });
       if (this.workspace && completed && item.type === 'plan') this.updatePlan(turnId, text(item.text).slice(0, HARNESS_TEXT_LIMIT), true);
-      const tool = codexHarnessTool(item, turnId, completed);
+      const tool = this.harness === 'zcode' ? zcodeHarnessTool(item, turnId) : codexHarnessTool(item, turnId, completed);
       if (tool) this.emit({ kind: 'tool', tool });
       if (item.type === 'fileChange') {
         if (method === 'item/completed') this.fileChanges.delete(text(item.id));

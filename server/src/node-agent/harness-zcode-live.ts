@@ -1,9 +1,10 @@
 import { crc32 } from 'node:zlib';
 import { asObject, CodexRejected } from './harness-codex.js';
 import { codexItems as items, codexText as text, projectCodexHistory } from './harness-history.js';
-import { HARNESS_MODELS, HARNESS_TEXT_LIMIT, type HarnessSettingsView } from './harness-protocol.js';
+import { HARNESS_MODELS, HARNESS_OUTPUT_LIMIT, HARNESS_TEXT_LIMIT, type HarnessSettingsView } from './harness-protocol.js';
 import { acquireZCodeRelay, type ZCodeDesktopRelay } from './harness-zcode-relay.js';
 import { zcodeTurns } from './harness-zcode-library.js';
+import { zcodeHarnessTool } from './harness-zcode-tools.js';
 
 type Fields = Record<string, unknown>;
 const timeout = () => new Error('ZCode 原会话更新超时，操作结果待核实');
@@ -131,9 +132,17 @@ export class ZCodeLiveConversation {
     if (delta.op === 'row.removed' && typeof delta.fromRowId === 'number') {
       for (const id of this.rows.keys()) if (id >= delta.fromRowId) this.rows.delete(id);
     }
-    if (delta.op === 'row.delta' && delta.path === 'text' && typeof delta.rowId === 'number') {
+    if (delta.op === 'row.delta' && typeof delta.rowId === 'number') {
       const row = this.rows.get(delta.rowId);
-      if (row?.kind === 'assistantText') this.put({ ...row, text: (text(row.text) + text(delta.append)).slice(0, HARNESS_TEXT_LIMIT) });
+      if (row?.kind === 'assistantText' && delta.path === 'text') {
+        this.put({ ...row, text: (text(row.text) + text(delta.append)).slice(0, HARNESS_TEXT_LIMIT) });
+      }
+      if (row?.kind === 'toolCall' && row.output && delta.path === 'output.text') {
+        const output = asObject(row.output);
+        const value = text(output.text) + text(delta.append);
+        this.put({ ...row, output: { ...output, text: value.slice(-HARNESS_OUTPUT_LIMIT * 2),
+          truncated: output.truncated || value.length > HARNESS_OUTPUT_LIMIT * 2 } });
+      }
     }
     if (delta.op === 'state.updated') {
       const patch = asObject(delta.patch);
@@ -182,7 +191,7 @@ export class ZCodeLiveConversation {
   turns() { return zcodeTurns([...this.rows.values()]); }
 
   async view() {
-    const { view, clients } = await projectCodexHistory(this.turns(), this.cwd, [this.cwd], true, true);
+    const { view, clients } = await projectCodexHistory(this.turns(), this.cwd, [this.cwd], true, true, zcodeHarnessTool);
     return { view: { ...view, settings: this.settings() }, clients };
   }
 

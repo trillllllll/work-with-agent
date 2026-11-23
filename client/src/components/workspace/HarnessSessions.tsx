@@ -411,7 +411,7 @@ export function HarnessSessions({ id, harness, project, navigation, open, select
   }
 
   const locationError = error ?? projects.error?.message ?? list.error?.message;
-  const chatHarness = harnesses.find((item) => item.id === (current?.harness ?? codex.id)) ?? selected;
+  const chatHarness = harnesses.find((item) => item.id === current?.harness) ?? selected;
   return <section className="harness-workspace h-full min-h-0">
     <div className="harness-workspace-panes" data-session-open={Boolean(id)}>
       <div className="harness-list-pane glass-scrollbar min-h-0 min-w-0 overflow-y-auto overscroll-contain">
@@ -480,15 +480,15 @@ export function HarnessSessions({ id, harness, project, navigation, open, select
         </div>
       </div>
       <div className="harness-detail-pane min-h-0 min-w-0">
-        {id ? <HarnessDetail key={id} id={id} summary={current} harnessName={chatHarness.name} back={() => open()} chooseProject={() => setPicker('chat')} openSession={open} />
+        {id ? <HarnessDetail key={id} id={id} summary={current} harness={chatHarness} back={() => open()} chooseProject={() => setPicker('chat')} openSession={open} />
           : <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{t('harness.chooseSession')}</div>}
       </div>
     </div>
   </section>;
 }
 
-function HarnessDetail({ id, summary, harnessName, back, chooseProject, openSession }: {
-  id: string; summary?: Session; harnessName: string; back: () => void; chooseProject: () => void; openSession: (id: string) => void;
+function HarnessDetail({ id, summary, harness, back, chooseProject, openSession }: {
+  id: string; summary?: Session; harness: Harness; back: () => void; chooseProject: () => void; openSession: (id: string) => void;
 }) {
   const { t } = useTranslation(['workspace', 'chat']);
   const queryClient = useQueryClient();
@@ -525,7 +525,7 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject, openSess
   });
   const historicalViews = useMemo(() => (history.data?.pages ?? []).slice().reverse().map((page) => page.view), [history.data]);
   const historyLoading = historyEnabled && history.isPending;
-  const hasMessages = Boolean(view?.messages.length || view?.turn || historicalViews.some((page) => page.messages.length));
+  const hasMessages = Boolean(view?.messages.length || view?.turn || historicalViews.some((page) => page.messages.length || page.tools?.length));
   const currentTurn = view?.turn;
   const inProgress = currentTurn?.status === 'inProgress';
   const awaitingApproval = Boolean(view?.approvals.length);
@@ -655,9 +655,10 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject, openSess
   }
 
   const session = detail.data ?? summary;
-  const provider = harnessKind.safeParse(session?.harness);
-  const name = provider.success ? harnessNames[provider.data] : harnessName;
-  const zcode = provider.data === 'zcode';
+  const provider = harnessKind.safeParse(detail.data?.harness ?? summary?.harness).data ?? harnessKind.safeParse(harness.id).data;
+  const name = provider ? harnessNames[provider] : harness.name;
+  const zcode = provider === 'zcode';
+  const sendLabel = inProgress && !zcode ? provider === 'claude' ? 'harness.queue.enqueue' : 'harness.steer' : 'harness.send';
   const projectName = session?.projectName;
   const nodeName = session?.nodeName ?? t('harness.unknownComputer');
   const status = !session ? 'reconnecting' : !session.online ? 'offline' : enabled ? 'ready'
@@ -745,7 +746,7 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject, openSess
       {(visibleReceipt || error || pending && !sending && tracked.error) && (
         <div className="mb-2 flex flex-wrap items-center gap-2 px-2 text-xs text-muted-foreground">
           {visibleReceipt && <p role="status" className="[overflow-wrap:anywhere]">
-            {t(visibleReceipt.settings && visibleReceipt.status === 'accepted' ? 'harness.settings.saved' : 'harness.receipt.' + visibleReceipt.status)}
+            {t(visibleReceipt.settings && visibleReceipt.status === 'accepted' ? 'harness.settings.saved' : 'harness.receipt.' + visibleReceipt.status, { harness: name })}
             {visibleReceipt.error && ' · ' + visibleReceipt.error}
           </p>}
           {visibleReceipt?.resultSessionId && <Button type="button" size="sm" variant="outline"
@@ -756,8 +757,8 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject, openSess
       )}
       <ChatComposer input={draft} onChange={updateDraft} maxLength={HARNESS_TEXT_LIMIT} busy={inProgress}
         actionsDisabled={actionsDisabled} allowSendWhileBusy={!zcode || Boolean(settings)} listenForAssistantFocus={false}
-        labels={{ input: t('harness.draft'), send: t(inProgress && !zcode ? provider.data === 'claude' ? 'harness.queue.enqueue' : 'harness.steer' : 'harness.send'), stop: t('harness.interrupt') }}
-        placeholder={inProgress && !zcode ? t(provider.data === 'claude' ? 'harness.queue.enqueue' : 'harness.steer') : t('harness.placeholder', { harness: name })}
+        labels={{ input: t('harness.draft'), send: t(sendLabel), stop: t('harness.interrupt') }}
+        placeholder={sendLabel === 'harness.send' ? t('harness.placeholder', { harness: name }) : t(sendLabel)}
         toolbar={<>{workspace && <HarnessWorkspaceTools endpoint={path} disabled={actionsDisabled} capacity={Math.max(0, 2 - attachments.length)}
           requested={toolRequest} clearRequest={() => {
             if (toolRequest === 'commands' && draft === '/') updateDraft('');
@@ -782,7 +783,7 @@ function HarnessDetail({ id, summary, harnessName, back, chooseProject, openSess
           if (!text || zcode && inProgress && !settings) return;
           if (attachments.length && !workspace) { setError(t('harness.files.update')); return; }
           if (zcode) act({ operation: 'send', text, ...(settings ? { expectedSettingsRevision: settings.revision } : {}) });
-          else if (inProgress && provider.data !== 'claude') act({ operation: 'steer', turnId: currentTurn.id, text, ...attachmentInput });
+          else if (inProgress && provider !== 'claude') act({ operation: 'steer', turnId: currentTurn.id, text, ...attachmentInput });
           else if (inProgress) act({ operation: 'enqueue', text, ...attachmentInput, ...(settings ? { expectedSettingsRevision: settings.revision } : {}) });
           else act({ operation: 'send', text, ...attachmentInput, ...(settings ? { expectedSettingsRevision: settings.revision } : {}) });
         }}

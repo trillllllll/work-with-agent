@@ -460,6 +460,7 @@
       "image": "处理图像",
       "count": "{{count}} 步",
       "output": "命令输出",
+      "result": "工具输出",
       "waitingOutput": "等待命令输出…",
       "noOutput": "这条命令没有输出",
       "tail": "仅显示最近的输出",
@@ -513,7 +514,7 @@
     "receipt": {
       "queued": "服务器已收到",
       "dispatched": "指令已发往电脑",
-      "accepted": "Codex 已受理",
+      "accepted": "{{harness}} 已受理",
       "rejected": "操作已拒绝",
       "expired": "指令已过期",
       "unknown": "操作结果待核实"

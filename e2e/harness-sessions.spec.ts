@@ -31,6 +31,7 @@ test('opens a project ZCode history on a phone and continues its original sessio
     await Promise.all([mkdir(project), mkdir(other)]);
     const threadId = 'sess_zcode_mac_original';
     const store = join(root, 'zcode-store.json');
+    const finishTool = join(root, 'finish-zcode-tool');
     const state = join(root, 'zcode-guard.db');
     const db = new DatabaseSync(state);
     db.exec('CREATE TABLE session_runtime_presence (session_id TEXT, process_id INTEGER)');
@@ -41,10 +42,13 @@ test('opens a project ZCode history on a phone and continues its original sessio
       sessionId: index ? 'sess_zcode_other' : threadId,
       workspace: { workspacePath: cwd, workspaceKey: cwd }, updatedAt: Date.now(),
       title: index ? '另一个项目的 ZCode 对话' : 'Mac 上的原 ZCode 对话',
-      rows: Array.from({ length: 44 }, (_, i) => ({
-        rowId: i + 1, kind: 'userInput', turnId: 'turn-history-' + i, entityId: 'input-history-' + i,
-        text: 'ZCode 历史消息 ' + i,
-      })),
+      rows: Array.from({ length: 44 }, (_, i) => [
+        { kind: 'userInput', turnId: 'turn-history-' + i, entityId: 'input-history-' + i, text: 'ZCode 历史消息 ' + i },
+        ...(!index && i === 0 ? Array.from({ length: 60 }, (_, tool) => ({
+          kind: 'toolCall', turnId: 'turn-history-0', entityId: 'history-tool-' + tool, toolName: 'Bash', status: 'success',
+          input: { command: 'printf history-' + tool }, output: { text: 'ZCode 历史输出 ' + tool },
+        })) : []),
+      ]).flat().map((row, position) => ({ ...row, rowId: position + 1 })),
     }))));
     const node = await data<{ node: { id: string }; token: string }>(await request.post('/api/nodes', { data: { name: 'ZCode 测试 Mac' } }));
     nodeId = node.node.id;
@@ -52,6 +56,7 @@ test('opens a project ZCode history on a phone and continues its original sessio
       '--roots', root, '--data', join(root, 'node')], { stdio: 'ignore', env: {
       ...process.env, DOVUN_NODE_TOKEN: node.token, DOVUN_CODEX_BIN: resolve('server/test/stub-harness-codex.mjs'),
       DOVUN_ZCODE_BIN: resolve('server/test/stub-harness-zcode.mjs'), ZCODE_SESSION_DB_PATH: state, HARNESS_TEST_ZCODE_STORE: store,
+      HARNESS_TEST_ZCODE_TOOL_FINISH: finishTool,
     } });
     const phone = await context.newPage();
     await phone.goto(listUrl);
@@ -73,16 +78,36 @@ test('opens a project ZCode history on a phone and continues its original sessio
       if (await oldest.count()) return true;
       if (await more.count()) await more.click({ timeout: 1_000 }).catch(() => undefined);
       return (await oldest.count()) > 0;
-    }, { timeout: 12_000 }).toBe(true);
-    await chat.getByRole('textbox', { name: '输入消息' }).fill('从手机接着聊');
+    }, { timeout: 18_000 }).toBe(true);
+    const oldProcess = chat.locator('[data-harness-turn="turn-history-0"] [data-harness-process]');
+    await expect(oldProcess.locator('[data-harness-tool]')).toHaveCount(60);
+    await oldProcess.locator(':scope > summary').tap();
+    const oldTool = oldProcess.locator('[data-harness-tool="history-tool-0"]');
+    await oldTool.locator('summary').tap();
+    await expect(oldTool.getByLabel('命令输出')).toHaveText('ZCode 历史输出 0');
+    const composer = chat.getByRole('textbox', { name: '输入消息' });
+    await expect(composer).toHaveAttribute('placeholder', '发消息给 ZCode');
+    await composer.fill('从手机接着聊');
     await chat.getByRole('button', { name: '发送', exact: true }).tap();
+    const liveTurn = chat.locator('[data-harness-turn]').filter({ hasText: '从手机接着聊' });
+    await expect(liveTurn.getByLabel('命令输出')).toHaveText('正在执行命令');
+    await expect(liveTurn.locator('[data-tool-status]')).toHaveText('执行中');
+    await expect(composer).toHaveAttribute('placeholder', '发消息给 ZCode');
+    await writeFile(finishTool, '');
     await expect(chat.getByText('ZCode remembers ZCode 历史消息 0 · 从手机接着聊', { exact: true })).toBeVisible({ timeout: 12_000 });
+    await expect(chat.getByRole('status').getByText('ZCode 已受理', { exact: true })).toBeVisible();
     const id = new URLSearchParams(new URL(phone.url()).hash.split('?')[1]).get('sessionId');
     const detail = async () => data<{ threadId: string; snapshot: HarnessSnapshot | null }>(await request.get(apiUrl + '/' + id + '?timeline=1'));
     expect((await detail()).threadId).toBe(threadId);
     await expect.poll(async () => (await detail()).snapshot?.view.turn?.id).toMatch(/^stored-/);
     await phone.reload();
     await expect(chat.getByText('ZCode remembers ZCode 历史消息 0 · 从手机接着聊', { exact: true })).toHaveCount(1);
+    const completedProcess = liveTurn.locator('[data-harness-process]');
+    await completedProcess.locator(':scope > summary').tap();
+    await expect(completedProcess.locator('[data-harness-tool]')).toHaveCount(1);
+    await completedProcess.locator('[data-harness-tool] summary').tap();
+    await expect(completedProcess.getByLabel('命令输出')).toHaveText('命令执行完成');
+    await expect(completedProcess.locator('[data-tool-status]')).toHaveText('已完成');
   } finally {
     if (agent && agent.exitCode === null && agent.signalCode === null) {
       const exited = once(agent, 'exit');

@@ -1,15 +1,18 @@
 import { expect, it, vi } from 'vitest';
+import { HARNESS_OUTPUT_LIMIT } from './harness-protocol.js';
 import { ZCodeLiveConversation } from './harness-zcode-live.js';
 import { acquireZCodeRelay } from './harness-zcode-relay.js';
 
 vi.mock('./harness-zcode-relay.js', () => ({ acquireZCodeRelay: vi.fn() }));
 
-it('switches models and streams replies from the desktop conversation with its original command ID', async () => {
+it('preserves the desktop conversation, command IDs and streaming tool rows across updates', async () => {
   const cwd = process.cwd();
   const threadId = 'sess_original';
   const workspace = { workspacePath: cwd, workspaceKey: cwd };
   const subscriptionId = 'subscription';
   const topic = 'conversation/' + threadId;
+  const tool = { rowId: 3, entityId: 'native-bash', kind: 'toolCall', turnId: 'turn-1', toolName: 'Bash',
+    input: { command: 'printf fixture', privateInput: 'not displayed' } };
   let emit: (wire: Record<string, unknown>) => void;
   let revision = 17;
   let model = 'model-a';
@@ -43,8 +46,10 @@ it('switches models and streams replies from the desktop conversation with its o
     frame(revision, revision + 1, { kind: 'deltas', deltas: [
       { op: 'row.appended', row: { rowId: 1, kind: 'turnHeader', turnId: 'turn-1', state: 'running' } },
       { op: 'row.appended', row: { rowId: 2, kind: 'userInput', turnId: 'turn-1', text: 'continue here', sourceCommandId: 'message-1' } },
-      { op: 'row.appended', row: { rowId: 3, kind: 'assistantText', turnId: 'turn-1', text: 'first' } },
-      { op: 'row.delta', rowId: 3, path: 'text', append: ' second' },
+      { op: 'row.appended', row: { ...tool, status: 'inputStreaming' } },
+      { op: 'row.upserted', row: { ...tool, status: 'running', outputPreview: { fullText: 'first line', totalLines: 1 } } },
+      { op: 'row.appended', row: { rowId: 4, kind: 'assistantText', turnId: 'turn-1', text: 'first' } },
+      { op: 'row.delta', rowId: 4, path: 'text', append: ' second' },
     ] });
     return { commandId: 'message-1', status: 'accepted' };
   });
@@ -66,6 +71,21 @@ it('switches models and streams replies from the desktop conversation with its o
     expect(view.messages.map(({ text }) => text)).toEqual(['continue here', 'first second']);
     expect(view.turn?.status).toBe('inProgress');
     expect(clients.has('message-1')).toBe(true);
+    expect(view.tools).toMatchObject([{ id: 'native-bash', kind: 'command', title: 'printf fixture', status: 'running', output: 'first line' }]);
+    frame(revision + 1, revision + 2, { kind: 'deltas', deltas: [
+      { op: 'row.upserted', row: { ...tool, status: 'running', output: { text: 'prefix' } } },
+      { op: 'row.delta', rowId: tool.rowId, path: 'output.text', append: '\nnext line' },
+    ] });
+    expect((await live.view()).view.tools).toMatchObject([{ id: 'native-bash', status: 'running', output: 'prefix\nnext line' }]);
+    frame(revision + 2, revision + 3, { kind: 'deltas', deltas: [
+      { op: 'row.upserted', row: { ...tool, status: 'success', output: {
+        text: 'fallback', display: { kind: 'bash_output', output: 'x'.repeat(HARNESS_OUTPUT_LIMIT) + '\u001b[32mfinal\u001b[0m' },
+      } } },
+    ] });
+    const updated = (await live.view()).view;
+    expect(updated.tools).toMatchObject([{ id: 'native-bash', status: 'completed', truncated: true,
+      output: 'x'.repeat(HARNESS_OUTPUT_LIMIT - 5) + 'final' }]);
+    expect(JSON.stringify(updated)).not.toContain('not displayed');
   } finally { live.close(); }
   expect(release).toHaveBeenCalledOnce();
 });

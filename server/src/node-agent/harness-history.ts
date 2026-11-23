@@ -41,7 +41,8 @@ export function codexTurn(value: Record<string, unknown>): HarnessTurn | null {
 }
 
 /** A live snapshot fits the event window; a history page keeps all of its message rows. */
-export async function projectCodexHistory(data: unknown, cwd: string, roots: string[], liveSnapshot: boolean, subscribed = false) {
+export async function projectCodexHistory(data: unknown, cwd: string, roots: string[], liveSnapshot: boolean,
+  subscribed = false, projectTool = codexHarnessTool) {
   const messages: HarnessMessage[] = [];
   const tools: HarnessTool[] = [];
   const turns: HarnessTurn[] = [];
@@ -62,7 +63,7 @@ export async function projectCodexHistory(data: unknown, cwd: string, roots: str
         messages.push({ ...message, order: ++order });
         if (message.role === 'assistant' && message.phase !== 'commentary') answer = message;
       }
-      const tool = codexHarnessTool(item, turn.id, true);
+      const tool = projectTool(item, turn.id, true);
       if (tool) tools.push({ ...tool, order: ++order, status: tool.status !== 'running' || turn.status === 'inProgress'
         ? tool.status : turn.status === 'interrupted' ? 'interrupted' : 'unknown' });
       if (item.type === 'plan' && typeof item.text === 'string') {
@@ -80,7 +81,8 @@ export async function projectCodexHistory(data: unknown, cwd: string, roots: str
     artifacts.unshift(...found.slice(0, HARNESS_ARTIFACTS - artifacts.length));
     if (artifacts.length === HARNESS_ARTIFACTS) break;
   }
-  const view: HarnessView = { messages: visible, tools: tools.slice(-HARNESS_TOOLS), turns, artifacts, ...(plan ? { plan } : {}),
+  const view: HarnessView = { messages: visible, tools: tools.slice(-HARNESS_TOOLS),
+    turns: liveSnapshot ? turns.slice(-HARNESS_MESSAGES) : turns, artifacts, ...(plan ? { plan } : {}),
     turn: liveSnapshot ? turns.at(-1) ?? null : null, approvals: [], error: null };
   return { view, clients };
 }

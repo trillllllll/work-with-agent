@@ -13,7 +13,7 @@ type Row = { kind: 'message'; item: HarnessMessage } | { kind: 'tool'; item: Har
 type Part = { kind: 'user'; message: HarnessMessage } | { kind: 'reply'; message: HarnessMessage } | { kind: 'process'; rows: Row[] };
 type Turn = { id: string; rows: Row[]; status?: HarnessTurn; artifacts: HarnessArtifact[] };
 
-function groupTurns(view: HarnessView) {
+function groupTurns(view: HarnessView, includeToolOnlyTurns = false) {
   const turns = new Map<string, Turn>();
   const rows: Row[] = [
     ...view.messages.map((item, index) => ({ kind: 'message' as const, item: item.order === undefined ? { ...item, order: index + 1 } : item })),
@@ -23,7 +23,7 @@ function groupTurns(view: HarnessView) {
   if (view.turn) visible.add(view.turn.id);
   for (const row of rows.sort((a, b) => (a.item.order ?? 0) - (b.item.order ?? 0))) {
     const id = row.item.turnId;
-    if (!visible.has(id)) continue;
+    if (!includeToolOnlyTurns && !visible.has(id)) continue;
     const turn = turns.get(id) ?? { id, rows: [], artifacts: [] };
     turn.rows.push(row);
     turns.set(id, turn);
@@ -57,6 +57,14 @@ function mergeOrdered<T>(history: T[], live: T[], key: (value: T) => string, mer
     ordered.set(id, merge(previous, value));
   }
   return [...[...ordered].flatMap(([id, value]) => [...(before.get(id) ?? []), value]), ...unanchored];
+}
+
+function mergeTurns(history: Turn[], current: Turn[]) {
+  return mergeOrdered(history, current, (turn) => turn.id, (older, newer) => ({
+    ...newer, status: newer.status ?? older.status,
+    rows: mergeOrdered(older.rows, newer.rows, (row) => row.item.id, (_older, row) => row),
+    artifacts: mergeOrdered(older.artifacts, newer.artifacts, (artifact) => artifact.id, (_older, artifact) => artifact),
+  }));
 }
 
 function parts(rows: Row[]) {
@@ -155,7 +163,7 @@ function ToolRow({ tool }: { tool: HarnessTool }) {
         })}</ul> : null}
         {tool.output ? <>
           {tool.truncated && <p className="text-muted-foreground">{t('harness.tool.tail')}</p>}
-          <ToolOutput result={tool.output} label={t('harness.tool.output')} />
+          <ToolOutput result={tool.output} label={t(tool.kind === 'command' ? 'harness.tool.output' : 'harness.tool.result')} />
         </> : tool.kind === 'command' && <p className="text-muted-foreground">{t(running ? 'harness.tool.waitingOutput' : 'harness.tool.noOutput')}</p>}
         {tool.exitCode !== undefined && <p className="text-muted-foreground">{t('harness.tool.exitCode', { code: tool.exitCode })}</p>}
       </Surface>
@@ -204,12 +212,8 @@ export function HarnessTimeline({ view, history, name, liveMessageId, approvalCo
   turnControls?: (turn: HarnessTurn, firstMessage?: HarnessMessage) => ReactNode;
 }) {
   const { t } = useTranslation('workspace');
-  const past = useMemo(() => (history ?? []).flatMap(groupTurns), [history]);
-  const turns = mergeOrdered(past, groupTurns(view), (turn) => turn.id, (older, current) => ({
-    ...current, status: current.status ?? older.status,
-    rows: mergeOrdered(older.rows, current.rows, (row) => row.item.id, (_older, newer) => newer),
-    artifacts: mergeOrdered(older.artifacts, current.artifacts, (artifact) => artifact.id, (_older, newer) => newer),
-  }));
+  const past = useMemo(() => (history ?? []).reduce<Turn[]>((turns, page) => mergeTurns(turns, groupTurns(page, true)), []), [history]);
+  const turns = mergeTurns(past, groupTurns(view));
   return <ol aria-label={t('harness.conversation')} className="harness-conversation flex min-w-0 flex-col gap-5">
     {turns.map((turn) => {
       const active = turn.status?.status === 'inProgress';

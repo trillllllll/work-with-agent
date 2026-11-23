@@ -462,6 +462,7 @@
       "count_one": "{{count}} step",
       "count_other": "{{count}} steps",
       "output": "Command output",
+      "result": "Tool output",
       "waitingOutput": "Waiting for command output…",
       "noOutput": "This command produced no output",
       "tail": "Showing the latest output",
@@ -515,7 +516,7 @@
     "receipt": {
       "queued": "Received by the server",
       "dispatched": "Sent to the computer",
-      "accepted": "Accepted by Codex",
+      "accepted": "Accepted by {{harness}}",
       "rejected": "Operation rejected",
       "expired": "Operation expired",
       "unknown": "Operation outcome unknown"
