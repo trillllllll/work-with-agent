@@ -7,10 +7,10 @@ import { isOnline } from './orchestration/nodes.js';
 import { canBrowse } from './harness-directories.js';
 import { nodeHarnesses, requestHarnessRead, supportsHarnessLibrary, supportsHarnessWorkspace } from './harness-library.js';
 import {
-  applyHarnessEvent, HARNESS_EVENTS, HARNESS_LIBRARY_LEASES, HARNESS_SETTINGS_FEATURE, HARNESS_ZCODE_LIVE_FEATURE, harnessCommandSchema, harnessCreateSchema, harnessSyncSchema,
+  applyHarnessEvent, HARNESS_EVENTS, HARNESS_LIBRARY_LEASES, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_ZCODE_LIVE_FEATURE, harnessCommandSchema, harnessCreateSchema, harnessSyncSchema,
   harnessCatalogQuerySchema, harnessFilesQuerySchema, harnessHistoryQuerySchema, harnessIndexQuerySchema, harnessMetadataSchema,
   harnessOpenThreadSchema, harnessStartSchema, harnessKind, harnessNames,
-  harnessEventForClient, harnessSnapshotForClient, HARNESS_WORKSPACE_OPERATIONS, requiresHarnessWorkspace,
+  harnessEventForClient, harnessSnapshotForClient, HARNESS_WORKSPACE_OPERATIONS, requiresHarnessWorkspace, requiresNativePermissionSettings,
   type HarnessDelivery, type HarnessEvent, type HarnessKind, type HarnessLease, type HarnessLibraryLease, type HarnessReceipt, type HarnessSnapshot,
 } from '../node-agent/harness-protocol.js';
 
@@ -100,6 +100,10 @@ function supportsHarnessSettings(node: Pick<AgentNode, 'capabilitiesJson'>) {
 }
 function supportsZCodeLive(node: Pick<AgentNode, 'capabilitiesJson'>) {
   try { return JSON.parse(node.capabilitiesJson).harnessZCodeLive === HARNESS_ZCODE_LIVE_FEATURE; }
+  catch { return false; }
+}
+function supportsHarnessPermissions(node: Pick<AgentNode, 'capabilitiesJson'>) {
+  try { return JSON.parse(node.capabilitiesJson).harnessPermissions === HARNESS_PERMISSIONS_FEATURE; }
   catch { return false; }
 }
 async function projectLocation(db: Prisma.TransactionClient, nodeId: string, locationId: string) {
@@ -253,13 +257,13 @@ export async function listHarnessSessions(raw: unknown = {}) {
     nextCursor: hasMore ? sessions.at(-1)!.id : null,
   };
 }
-export async function readHarnessSession(id: string, timeline = false, settings = false, workspace = false) {
+export async function readHarnessSession(id: string, timeline = false, settings = false, workspace = false, permissions = false) {
   const row = await prisma.harnessSession.findUnique({ where: { id }, include: { commands: titleCommand } });
   if (!row) throw new DomainError('HARNESS_NOT_FOUND', '会话不存在', 404);
   const node = await prisma.agentNode.findUnique({ where: { id: row.nodeId } });
   const view = cache.get(id);
   const snapshot = view?.snapshot.epoch === row.epoch ? view.snapshot : null;
-  return { ...sessionDto(row, node), snapshot: snapshot && harnessSnapshotForClient(snapshot, timeline, settings, workspace),
+  return { ...sessionDto(row, node), snapshot: snapshot && harnessSnapshotForClient(snapshot, timeline, settings, workspace, permissions),
     current: !!view && !view.stale && view.snapshot.epoch === row.epoch };
 }
 export async function createHarnessSession(body: unknown) {
@@ -310,10 +314,19 @@ export async function queueHarnessCommand(id: string, body: unknown) {
     if (!session) throw new DomainError('HARNESS_NOT_FOUND', '会话不存在', 404);
     const node = await tx.agentNode.findUnique({ where: { id: session.nodeId } });
     requireAvailable(node, session.harness);
+    const permissions = node && supportsHarnessPermissions(node);
+    if ((input.operation === 'choosePermission' && (!permissions || session.harness !== 'zcode'))
+        || input.operation === 'configure' && requiresNativePermissionSettings(input.changes) && !permissions) {
+      throw new DomainError('HARNESS_WORKSPACE_UNSUPPORTED', '本机不支持这个会话操作', 409);
+    }
     if (session.harness === 'zcode') {
-      const modelOnly = input.operation === 'configure' && Object.keys(input.changes).every((key) => key === 'model');
-      if (requiresHarnessWorkspace(input) || !modelOnly && input.operation !== 'send' && input.operation !== 'interrupt'
-          || 'expectedSettingsRevision' in input && (!node || !supportsZCodeLive(node))) {
+      const keys = input.operation === 'configure' ? Object.keys(input.changes) : [];
+      const configure = input.operation === 'configure' && keys.length <= 1
+        && keys.every((key) => key === 'model' || permissions && (key === 'mode' || key === 'permissionMode'));
+      const liveOperation = configure || input.operation === 'choosePermission';
+      if (requiresHarnessWorkspace(input)
+          || (liveOperation || 'expectedSettingsRevision' in input) && (!node || !supportsZCodeLive(node))
+          || !liveOperation && input.operation !== 'send' && input.operation !== 'interrupt') {
         throw new DomainError('HARNESS_WORKSPACE_UNSUPPORTED', '本机不支持这个会话操作', 409);
       }
     }
@@ -333,6 +346,10 @@ export async function queueHarnessCommand(id: string, body: unknown) {
     }
     if ('expectedQueueRevision' in input && input.expectedQueueRevision !== view.snapshot.view.queue?.revision) {
       throw new DomainError('HARNESS_QUEUE_STALE', '消息队列已变化，请刷新后重试', 409);
+    }
+    if (input.operation === 'choosePermission' && !view.snapshot.view.approvals.some((approval) =>
+      approval.id === input.requestId && approval.options?.some((option) => option.id === input.optionId))) {
+      throw new DomainError('HARNESS_PERMISSION_STALE', '这条权限请求已处理或决定无效', 409);
     }
     const now = new Date();
     return commandDto(await tx.harnessCommand.create({ data: {
@@ -409,6 +426,11 @@ async function dispatchHarness(id: string, nodeId: string, tokenHash: string, li
     const dispatchTime = new Date().toISOString();
     // Old executors parse the whole lease strictly, including commands left by a newer executor.
     const excluded: Prisma.HarnessCommandWhereInput[] = [];
+    if (!supportsHarnessPermissions(node)) {
+      excluded.push({ payload: { contains: '"operation":"choosePermission"' } },
+        { payload: { contains: '"permissionMode":' } }, { payload: { contains: '"approvalPolicy":' } });
+      if (row.harness === 'zcode') excluded.push({ payload: { contains: '"mode":' } });
+    }
     if (!supportsHarnessSettings(node)) excluded.push({ payload: { contains: '"operation":"configure"' } }, { payload: { contains: '"expectedSettingsRevision":' } });
     if (!supportsHarnessWorkspace(node)) excluded.push({ payload: { contains: '"attachments":' } }, { payload: { contains: '"decision":"acceptForSession"' } },
       { payload: { contains: '"decision":"cancel"' } },
@@ -548,13 +570,13 @@ export async function syncHarness(node: AgentNode, id: string, raw: unknown) {
 }
 
 export function subscribeHarness(id: string, after: { epoch: number; seq: number } | null, emit: (event: StreamEvent) => void,
-  timeline = false, library = false, settings = false, workspace = false) {
+  timeline = false, library = false, settings = false, workspace = false, permissions = false) {
   let cursor = after;
-  const projectEvent = (event: HarnessEvent) => harnessEventForClient(event, timeline, settings, workspace);
+  const projectEvent = (event: HarnessEvent) => harnessEventForClient(event, timeline, settings, workspace, permissions);
   const send = (frame: StreamEvent) => {
     if (frame.type === 'snapshot') {
       cursor = frame;
-      emit(harnessSnapshotForClient(frame, timeline, settings, workspace));
+      emit(harnessSnapshotForClient(frame, timeline, settings, workspace, permissions));
       return;
     }
     if (frame.type === 'event') {

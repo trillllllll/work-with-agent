@@ -1,7 +1,8 @@
 import { crc32 } from 'node:zlib';
 import { asObject, CodexRejected } from './harness-codex.js';
 import { codexItems as items, codexText as text, projectCodexHistory } from './harness-history.js';
-import { HARNESS_MODELS, HARNESS_OUTPUT_LIMIT, HARNESS_TEXT_LIMIT, type HarnessSettingsView } from './harness-protocol.js';
+import { HARNESS_MODELS, HARNESS_OUTPUT_LIMIT, HARNESS_TEXT_LIMIT, zcodePermissionMode,
+  type HarnessApproval, type HarnessSettingsChange, type HarnessSettingsView } from './harness-protocol.js';
 import { acquireZCodeRelay, type ZCodeDesktopRelay } from './harness-zcode-relay.js';
 import { zcodeTurns } from './harness-zcode-library.js';
 import { zcodeHarnessTool } from './harness-zcode-tools.js';
@@ -49,6 +50,19 @@ function topicFrame(topic: TopicState, wire: Fields): Fields | undefined {
 
 const optionId = (provider: string, model: string) => [provider, model].map(encodeURIComponent).join('/');
 type NativeModel = { id: string; provider: string; model: string; label: string; thought: string };
+type PermissionOption = NonNullable<HarnessApproval['options']>[number];
+
+function zcodePermissionOption(raw: Fields): PermissionOption | undefined {
+  const id = text(raw.optionId);
+  if (raw.kind === 'allowOnce' && (id === 'allowOnce' || id === 'allow_once')) return { id, scope: 'once' };
+  if (raw.kind === 'allowAlways') {
+    if (id === 'allowSession') return { id, scope: 'session' };
+    if (id === 'allowAlways' || id === 'allow_project') {
+      return { id, scope: raw.label === 'Always allow Computer Use in this project' ? 'projectComputerUse' : 'project' };
+    }
+  }
+  if (raw.kind === 'deny' && id === 'deny') return { id, scope: 'deny' };
+}
 
 export class ZCodeLiveConversation {
   private readonly conversation: TopicState = { id: '' };
@@ -56,6 +70,7 @@ export class ZCodeLiveConversation {
   private rows = new Map<number, Fields>();
   private config: Fields = {};
   private control: Fields = {};
+  private permissions: HarnessApproval[] = [];
   private options: NativeModel[] = [];
   private revision = 0;
   private snapshotNumber = 0;
@@ -65,11 +80,11 @@ export class ZCodeLiveConversation {
 
   private constructor(private readonly relay: ZCodeDesktopRelay, private readonly release: () => void,
     private readonly cwd: string, readonly threadId: string, private readonly changed: () => void,
-    private readonly offline: () => void) {}
+    private readonly offline: () => void, private readonly nativePermissions: () => boolean) {}
 
-  static async open(cwd: string, threadId: string, changed: () => void, offline: () => void) {
+  static async open(cwd: string, threadId: string, changed: () => void, offline: () => void, nativePermissions = () => false) {
     const { relay, release } = await acquireZCodeRelay(cwd);
-    const live = new ZCodeLiveConversation(relay, release, cwd, threadId, changed, offline);
+    const live = new ZCodeLiveConversation(relay, release, cwd, threadId, changed, offline, nativePermissions);
     try {
       live.dispose.push(relay.onDisconnect(() => { live.close(); live.offline(); }));
       live.dispose.push(relay.listen('onDynamicConversationFrame', (wire) => {
@@ -102,6 +117,7 @@ export class ZCodeLiveConversation {
         for (const row of items(asObject(snapshot.rows).window).slice(-nativeRows)) this.put(row);
         this.config = asObject(snapshot.config);
         this.control = asObject(snapshot.control);
+        this.updatePermissions(snapshot.pendingInteractions);
         this.revision = typeof snapshot.revision === 'number' && Number.isSafeInteger(snapshot.revision) ? snapshot.revision : 0;
         this.snapshotNumber++;
       } else return;
@@ -148,8 +164,43 @@ export class ZCodeLiveConversation {
       const patch = asObject(delta.patch);
       if (patch.config) this.config = asObject(patch.config);
       if (patch.control) this.control = asObject(patch.control);
+      if (Array.isArray(patch.pendingInteractions)) this.updatePermissions(patch.pendingInteractions);
       if (typeof patch.revision === 'number' && Number.isSafeInteger(patch.revision)) this.revision = Math.max(this.revision, patch.revision);
     }
+  }
+
+  private updatePermissions(pending: unknown) {
+    this.permissions = items(pending).flatMap<HarnessApproval>((request) => {
+      const id = text(request.interactionId);
+      const payload = asObject(request.payload);
+      if (!id || id.length > 200 || request.kind !== payload.kind) return [];
+      const row = typeof request.anchorRowId === 'number' ? this.rows.get(request.anchorRowId) : undefined;
+      const turnId = text(row?.turnId).slice(0, 200) || id;
+      if (request.kind === 'userInput' && asObject(payload.schema).interaction === 'plan_approval') {
+        const input = asObject(payload.input);
+        const plan = text(input.plan).trim();
+        const prompts = items(input.allowedPrompts).map((item) => `${text(item.tool)} · ${text(item.prompt)}`);
+        const details = [plan, ...prompts].filter(Boolean).join('\n\n');
+        const canAccept = plan.length > 0 && details.length <= HARNESS_TEXT_LIMIT && items(payload.questions).some((question) =>
+          items(question.options).some((option) => option.value === 'approve'));
+        return [{ id, turnId, kind: 'plan', details: details.slice(0, HARNESS_TEXT_LIMIT) || text(payload.prompt).slice(0, 8_000), canAccept,
+          options: [{ id: 'decline', scope: 'deny' }, ...(canAccept ? [{ id: 'approve', scope: 'approvePlan' } as const] : [])] }];
+      }
+      if (request.kind !== 'permission') return [];
+      const options = new Map<string, PermissionOption>();
+      for (const raw of items(payload.options)) {
+        const option = zcodePermissionOption(raw);
+        if (option && !options.has(option.scope)) options.set(option.scope, option);
+      }
+      if (!options.size) return [];
+      const tool = text(payload.toolName);
+      const input = asObject(payload.detail);
+      const kind = tool.toLowerCase() === 'bash' ? 'command'
+        : ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(tool) ? 'fileChange' : 'permissions';
+      const details = [tool, text(payload.summary), text(input.command), text(input.file_path) || text(input.path) || text(input.url)];
+      return [{ id, turnId, kind, details: [...new Set(details.filter(Boolean))].join('\n').slice(0, 8_000),
+        canAccept: [...options.keys()].some((scope) => scope !== 'deny'), options: [...options.values()] }];
+    }).slice(0, 32);
   }
 
   private async readModels() {
@@ -182,17 +233,20 @@ export class ZCodeLiveConversation {
     const id = optionId(provider, model);
     if (!provider || !model || id.length > 200) return;
     const models = [...new Map(this.options.map(({ id, label }) => [id, { id, label, efforts: [], defaultEffort: null }])).values()];
-    // Dovun compares the effective model setting. ZCode's separate CAS revision also changes during a turn.
-    const revision = crc32(Buffer.from(JSON.stringify([id, this.config.thought])));
-    return { model: id, revision, effort: null, mode: 'default', permission: 'workspace',
-      models, planAvailable: false, catalogAvailable: models.length > 0 };
+    const permissionMode = this.nativePermissions() ? zcodePermissionMode.safeParse(this.config.mode).data : undefined;
+    const mode = permissionMode && this.config.planEnabled === true ? 'plan' : 'default';
+    // Compare effective settings separately from the conversation revision used by ZCode's CAS.
+    const revision = crc32(Buffer.from(JSON.stringify(permissionMode ? [id, this.config.thought, permissionMode, mode] : [id, this.config.thought])));
+    return { model: id, revision, effort: null, mode, permission: 'workspace',
+      models, planAvailable: Boolean(permissionMode), catalogAvailable: models.length > 0,
+      ...(permissionMode ? { permissionMode, permissionModes: zcodePermissionMode.options.filter((value) => value !== 'edit' || permissionMode === 'edit') } : {}) };
   }
 
   turns() { return zcodeTurns([...this.rows.values()]); }
 
   async view() {
     const { view, clients } = await projectCodexHistory(this.turns(), this.cwd, [this.cwd], true, true, zcodeHarnessTool);
-    return { view: { ...view, settings: this.settings() }, clients };
+    return { view: { ...view, settings: this.settings(), approvals: this.nativePermissions() ? this.permissions : view.approvals }, clients };
   }
 
   private async refresh() {
@@ -210,7 +264,7 @@ export class ZCodeLiveConversation {
     if (!this.connected) throw timeout();
   }
 
-  private async command(commandId: string, type: 'sendText' | 'switchModelConfig' | 'stop', payload: Fields, revision?: number) {
+  private async command(commandId: string, type: 'sendText' | 'switchModelConfig' | 'switchCollaborationMode' | 'resolveInteraction' | 'stop', payload: Fields, revision?: number) {
     const ack = asObject(await this.relay.call('sendConversationCommandV4', {
       ...this.relay.workspace,
       envelope: { workspace: this.relay.workspace, sessionId: this.threadId, clientId: this.relay.clientId, commandId,
@@ -220,6 +274,7 @@ export class ZCodeLiveConversation {
     if (ack.status === 'stale') throw new CodexRejected('ZCode 原会话已变化，请刷新后重试');
     if (ack.status === 'rejected') throw new CodexRejected('ZCode 桌面拒绝了会话操作');
     if (ack.status !== 'accepted' && ack.status !== 'duplicate' && ack.status !== 'noop') throw timeout();
+    return ack.status;
   }
 
   send(value: string, commandId: string) {
@@ -253,6 +308,39 @@ export class ZCodeLiveConversation {
       if (this.settings()?.model !== model) throw timeout();
     }
     return this.settings();
+  }
+
+  async selectPermission(changes: HarnessSettingsChange, commandId: string, expectedSettingsRevision: number) {
+    await this.refresh();
+    const current = this.settings();
+    if (expectedSettingsRevision !== current?.revision) throw new CodexRejected('会话设置已变更，请刷新后重试');
+    const base = zcodePermissionMode.safeParse(current.permissionMode).data;
+    const requested = changes.permissionMode ?? base;
+    if (!base || !requested || !current.permissionModes?.includes(requested) || changes.permissionMode && current.mode === 'plan') {
+      throw new CodexRejected('本机不支持这个会话操作');
+    }
+    const mode = changes.mode ?? 'default';
+    if (mode === current.mode && requested === base) return current;
+    await this.command(commandId, 'switchCollaborationMode', { mode: mode === 'plan' ? 'plan' : requested }, this.revision);
+    await this.refresh();
+    const updated = this.settings();
+    if (updated?.mode !== mode || updated.permissionMode !== requested) throw timeout();
+    return updated;
+  }
+
+  async choosePermission(interactionId: string, optionId: string, commandId: string) {
+    await this.refresh();
+    const request = this.permissions.find((item) => item.id === interactionId);
+    const option = request?.options?.find((item) => item.id === optionId);
+    if (!this.nativePermissions() || !option) {
+      throw new CodexRejected('这条权限请求已处理或决定无效');
+    }
+    const answer = request?.kind === 'plan'
+      ? option.scope === 'approvePlan' ? { action: 'accept', content: { answer: optionId } } : { action: 'decline' }
+      : { optionId };
+    const status = await this.command(commandId, 'resolveInteraction', { interactionId, answer });
+    await this.refresh();
+    if (status === 'noop') throw new CodexRejected('这条权限请求已处理或决定无效');
   }
 
   close() {

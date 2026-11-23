@@ -384,6 +384,8 @@
     "submitAnswers": "Submit answers",
     "cancelApproval": "Cancel request",
     "allowInSession": "Allow for this conversation",
+    "allowInProject": "Allow matching actions in this project",
+    "allowComputerUseInProject": "Allow Computer Use in this project",
     "plan": { "title": "Plan", "pending": "Pending", "inProgress": "In progress", "completed": "Done", "approve": "Confirm and execute" },
     "context": { "title": "Context", "usedWithLimit": "{{used}} / {{limit}} tokens", "used": "{{used}} tokens used", "usageUnavailable": "Waiting for the harness to report usage", "compact": "Compact context" },
     "queue": {
@@ -436,6 +438,7 @@
       "forkProvider": "Branch with history and switch",
       "title": "Session settings",
       "nextTurn": "Settings apply to the next turn in this session.",
+      "zcodeLive": "Settings sync to this ZCode conversation on your Mac.",
       "model": "Model",
       "search": "Search models",
       "noMatch": "No matching models.",
@@ -446,10 +449,35 @@
       "defaultMode": "Execute",
       "planMode": "Plan mode",
       "planHint": "Build a plan with read-only access.",
+      "zcodePlan": "Make a plan before editing.",
+      "modeAfterPlan": "The selected permission mode resumes when plan mode ends.",
       "permission": "Permissions",
+      "permissionMode": "Permission mode",
+      "sandbox": "Sandbox scope",
       "readOnly": "Read only",
       "workspace": "Workspace write",
       "workspaceHint": "Edit project files and ask for extra permissions when needed.",
+      "sandboxWorkspaceHint": "Allow writes within the workspace.",
+      "approvalPolicy": "Approval policy",
+      "readOnlyApprovals": "Read-only and plan modes prevent requests to expand sandbox access.",
+      "approvalPolicies": {
+        "on-request": { "label": "On request", "description": "Codex can ask for approval when a command needs access outside the sandbox." },
+        "untrusted": { "label": "Ask for untrusted commands", "description": "Only commands trusted by Codex can run without approval." },
+        "never": { "label": "Never ask", "description": "Prevent requests to expand sandbox access." }
+      },
+      "nativeModes": {
+        "default": { "label": "Manual", "description": "Follow Claude Code rules and ask for tool approval when required." },
+        "acceptEdits": { "label": "Accept edits", "description": "Auto-approve edits and common file operations in allowed directories. Other tools follow permission rules." },
+        "plan": { "label": "Plan mode", "description": "Inspect the project and prepare a plan. Wait for approval before executing it." },
+        "dontAsk": { "label": "Don't ask", "description": "Automatically deny tool calls that require approval." },
+        "build": { "label": "Confirm changes", "description": "Ask before changing files." },
+        "edit": { "label": "Auto-edit", "description": "Keep the editing permissions of this existing conversation." },
+        "guarded": { "label": "Guarded", "description": "Ask before risky actions." },
+        "yolo": { "label": "Full access", "description": "Let ZCode take actions without prompting for each one." }
+      },
+      "fullAccessTitle": "Enable full access for this ZCode conversation?",
+      "fullAccessDescription": "ZCode can change accessible files, run terminal commands, access the network, and call connected tools without asking each time.",
+      "fullAccessConfirm": "Enable full access",
       "saving": "Saving session settings…",
       "saved": "Session settings saved"
     },
@@ -512,9 +540,10 @@
       "unknown": "Previous turn outcome unknown"
     },
     "approval": {
-      "command": "Codex requested a command",
-      "fileChange": "Codex requested a file change",
-      "permissions": "Codex requested permissions"
+      "command": "{{harness}} requested a command",
+      "fileChange": "{{harness}} requested a file change",
+      "permissions": "{{harness}} requested permissions",
+      "plan": "{{harness}} requested plan approval"
     },
     "receipt": {
       "queued": "Received by the server",

@@ -10,11 +10,11 @@ import { readHarnessArtifacts } from './harness-artifacts.js';
 import { codexInput } from './harness-files.js';
 import { codexText as text, codexItems as items, codexMessage as message, codexTurn as turn, projectCodexHistory } from './harness-history.js';
 import { assertNativeThreadIdle, readProjectThread } from './harness-library.js';
-import { changeCodexSelection, codexModelId, codexTurnSettings, readCodexSelection, readCodexSettings } from './harness-settings.js';
+import { changeClaudeSelection, changeCodexSelection, codexModelId, codexTurnSettings, readClaudeSettings, readCodexSelection, readCodexSettings } from './harness-settings.js';
 import { codexHarnessTool, harnessFilePaths, harnessFileDiffs, harnessOutput } from './harness-tools.js';
 import { assertAllowed } from './git.js';
 import {
-  applyHarnessEvent, HARNESS_ATTACHMENT_TEXT_PREFIX, HARNESS_EVENTS, HARNESS_TEXT_LIMIT, harnessEventForClient, harnessSnapshotForClient, requiresHarnessWorkspace,
+  applyHarnessEvent, HARNESS_ATTACHMENT_TEXT_PREFIX, HARNESS_EVENTS, HARNESS_TEXT_LIMIT, harnessEventForClient, harnessSnapshotForClient, requiresHarnessWorkspace, requiresNativePermissionSettings,
   type HarnessDelivery, type HarnessEvent, type HarnessLease,
   type HarnessApproval, type HarnessCommand, type HarnessInputAttachment, type HarnessKind, type HarnessQueue, type HarnessQueueItem, type HarnessReceipt,
   type HarnessSettingsSelection, type HarnessSnapshot, type HarnessSync, type HarnessView,
@@ -80,6 +80,7 @@ export class HarnessController {
   private timeline = false;
   private settingsEnabled = false;
   private workspace = false;
+  private permissionsEnabled = false;
   private workspaceSandbox: Record<string, unknown> = {};
   private attaching: { threadId: string; notifications: Notification[] } | null = null;
   private lastWork = Date.now();
@@ -91,9 +92,9 @@ export class HarnessController {
 
   private get bindingPath() { return resolve(this.directory, 'session.json'); }
 
-  consume(lease: Assignment, timeline = false, settings = false, workspace = false) {
+  consume(lease: Assignment, timeline = false, settings = false, workspace = false, permissions = false) {
     if (this.stopped || this.work) return;
-    this.work = this.processLease(lease, timeline, settings, workspace).finally(() => {
+    this.work = this.processLease(lease, timeline, settings, workspace, permissions).finally(() => {
       this.work = null;
       this.lastWork = Date.now();
       this.drainQueue();
@@ -101,13 +102,15 @@ export class HarnessController {
     return this.work;
   }
 
-  private async processLease(lease: Assignment, timeline: boolean, settings: boolean, workspace: boolean) {
+  private async processLease(lease: Assignment, timeline: boolean, settings: boolean, workspace: boolean, permissions: boolean) {
     if (!this.release) this.release = await exclusiveDataGuard([resolve(this.directory, 'owner')]);
-    if (this.timeline !== timeline || this.settingsEnabled !== settings || this.workspace !== workspace) {
+    const permissionsChanged = this.permissionsEnabled !== permissions;
+    if (this.timeline !== timeline || this.settingsEnabled !== settings || this.workspace !== workspace || permissionsChanged) {
       await this.upload?.catch(() => undefined);
       this.timeline = timeline;
       this.settingsEnabled = settings;
       this.workspace = workspace;
+      this.permissionsEnabled = permissions;
       this.events = [];
       this.snapshotNeeded = true;
     }
@@ -131,9 +134,13 @@ export class HarnessController {
         await this.sync(lease.sessionId, { type: 'unavailable', epoch: lease.epoch, error: failure(error) });
       }
     }
-    if (this.settingsEnabled && this.harness !== 'zcode' && this.app && this.binding?.settings && !this.view.settings) {
+    if (this.settingsEnabled && this.harness !== 'zcode' && this.app && this.binding?.settings && (!this.view.settings || permissionsChanged)) {
       this.emit({ kind: 'settings', settings: await this.settings(this.app, this.binding.settings, this.binding) });
       this.snapshotNeeded = true;
+    }
+    if (permissionsChanged && this.app instanceof ZCodeHarnessRuntime && this.binding) {
+      const live = await this.app.liveView();
+      if (live) await this.replaceLiveZCodeView(this.binding.threadId, live.view, live.clients);
     }
     if (this.workspace && this.binding && !this.view.queue) {
       this.view = { ...this.view, queue: queueView(this.binding.queue) };
@@ -166,7 +173,7 @@ export class HarnessController {
     this.opening = this.harness === 'claude' ? Promise.resolve(new ClaudeHarnessRuntime(cwd, notification, disconnected))
       : this.harness === 'zcode' ? Promise.resolve(new ZCodeHarnessRuntime(cwd, notification,
         (id, view) => this.replaceZCodeHistory(id, view),
-        (id, view, clients) => this.replaceLiveZCodeView(id, view, clients), disconnected, this.settingsEnabled))
+        (id, view, clients) => this.replaceLiveZCodeView(id, view, clients), disconnected, this.settingsEnabled, () => this.permissionsEnabled))
       : CodexAppServer.open(cwd, notification, disconnected, { modelProvider, experimental: true, shared });
     try {
       this.app = await this.opening;
@@ -198,8 +205,8 @@ export class HarnessController {
 
   private zcodeSelection(settings?: HarnessView['settings']): HarnessSettingsSelection | undefined {
     if (!settings) return;
-    const { model, effort, mode, permission, revision } = settings;
-    return { model, effort, mode, permission, revision };
+    const { model, effort, mode, permission, revision, permissionMode } = settings;
+    return { model, effort, mode, permission, revision, ...(permissionMode ? { permissionMode } : {}) };
   }
 
   private async replaceLiveZCodeView(threadId: string, view: HarnessView, clients: Set<string>) {
@@ -308,7 +315,8 @@ export class HarnessController {
   }
 
   private settings(app: HarnessRuntime, selection: HarnessSettingsSelection, binding: Binding) {
-    return readCodexSettings(app, selection, this.workspace && this.harness === 'codex' ? { cwd: binding.cwd, provider: binding.modelProvider } : undefined);
+    if (this.harness === 'claude') return readClaudeSettings(app, selection, this.permissionsEnabled);
+    return readCodexSettings(app, selection, this.workspace ? { cwd: binding.cwd, provider: binding.modelProvider } : undefined, this.permissionsEnabled);
   }
 
   private async execute(delivery: HarnessDelivery, epoch: number, threadId: string | null, parkedEpoch?: number) {
@@ -323,7 +331,7 @@ export class HarnessController {
         || command.operation === 'configure' && this.binding?.settingsCommand === command.commandId
         || this.binding?.queueCommand === command.commandId || this.binding?.queue?.items.some((item) => item.id === command.commandId);
       receipt = prior.receipt ?? (applied
-        ? receipt : { ...receipt, status: 'unknown', error: '操作可能已交给 Codex，等待核实' });
+        ? receipt : { ...receipt, status: 'unknown', error: '操作可能已交给本机执行器，等待核实' });
     } else {
       if (Date.parse(delivery.expiresAt) <= Date.now()) receipt = { ...receipt, status: 'expired', error: '指令已过期，未执行' };
       else {
@@ -369,9 +377,15 @@ export class HarnessController {
     if (command.operation === 'configure') {
       const before = this.view.settings;
       if (!this.settingsEnabled || !before) throw new CodexRejected('本机执行器暂不支持会话设置');
+      if (!this.permissionsEnabled && requiresNativePermissionSettings(command.changes)) throw new CodexRejected('本机不支持这个会话操作');
       if (app instanceof ZCodeHarnessRuntime) {
-        if (Object.keys(command.changes).some((key) => key !== 'model')) throw new CodexRejected('本机不支持这个会话操作');
-        const view = await app.selectModel(command.changes.model, command.commandId, command.expectedSettingsRevision);
+        const keys = Object.keys(command.changes);
+        if (keys.length > 1 || keys.some((key) => key !== 'model' && (!this.permissionsEnabled || key !== 'mode' && key !== 'permissionMode'))) {
+          throw new CodexRejected('本机不支持这个会话操作');
+        }
+        const view = command.changes.mode || command.changes.permissionMode
+          ? await app.selectPermission(command.changes, command.commandId, command.expectedSettingsRevision)
+          : await app.selectModel(command.changes.model, command.commandId, command.expectedSettingsRevision);
         if (!view) throw new Error('ZCode 原会话更新超时，操作结果待核实');
         const settings = this.zcodeSelection(view);
         await writeJson(this.bindingPath, { ...binding, settings, settingsCommand: command.commandId });
@@ -380,7 +394,7 @@ export class HarnessController {
         this.emit({ kind: 'settings', settings: view });
         return;
       }
-      const settings = changeCodexSelection(before, command.changes);
+      const settings = this.harness === 'claude' ? changeClaudeSelection(before, command.changes) : changeCodexSelection(before, command.changes);
       const view = Object.keys(command.changes).length ? { ...before, ...settings } : await this.settings(app, settings, binding);
       await writeJson(this.bindingPath, { ...binding, settings, settingsCommand: command.commandId });
       binding.settings = settings;
@@ -457,6 +471,11 @@ export class HarnessController {
       });
       return;
     }
+    if (command.operation === 'choosePermission') {
+      if (!this.permissionsEnabled || !(app instanceof ZCodeHarnessRuntime)) throw new CodexRejected('本机不支持这个会话操作');
+      await app.choosePermission(command.requestId, command.optionId, command.commandId);
+      return;
+    }
     if (command.operation === 'resolveApproval') {
       const match = this.approvals.get(command.requestId);
       const displayed = this.view.approvals.find((approval) => approval.id === command.requestId);
@@ -506,6 +525,7 @@ export class HarnessController {
       ? codexTurnSettings(settings, binding.cwd, this.workspaceSandbox, this.view.settings?.planAvailable === true) : {};
     const response = await app.request('turn/start', {
       threadId: binding.threadId, input: await codexInput(binding.cwd, value, attachments), clientUserMessageId: commandId, ...overrides,
+      ...(this.harness === 'claude' && settings?.permissionMode ? { permissionMode: settings.permissionMode } : {}),
     });
     if (app instanceof ZCodeHarnessRuntime && response.nativeDelivery === true) return;
     const started = turn(asObject(response.turn));
@@ -691,7 +711,7 @@ export class HarnessController {
   private receiveRequest(method: string, params: Record<string, unknown>, id: RpcId) {
     const kind = method === 'item/commandExecution/requestApproval' ? 'command'
       : method === 'item/fileChange/requestApproval' ? 'fileChange'
-      : method === 'item/permissions/requestApproval' ? 'permissions'
+      : method === 'item/permissions/requestApproval' || method === 'item/tool/requestApproval' ? 'permissions'
       : this.workspace && method === 'item/tool/requestUserInput' ? 'question' : null;
     const turnId = text(params.turnId);
     const requestId = digest(JSON.stringify([turnId, id]));
@@ -715,10 +735,10 @@ export class HarnessController {
     }
     const permissions = asObject(params.permissions);
     const context = asObject(params.networkApprovalContext);
-    const details = [text(params.reason), text(params.command), text(params.cwd), text(params.grantRoot),
+    const details = [text(params.reason), text(params.command), text(params.cwd), text(params.grantRoot), text(params.description),
       this.fileChanges.get(text(params.itemId)) ?? '',
       Object.keys(context).length ? JSON.stringify(context) : '',
-      kind === 'permissions' ? JSON.stringify(permissions) : '',
+      method === 'item/permissions/requestApproval' ? JSON.stringify(permissions) : '',
     ].filter(Boolean).join('\n').slice(0, 8_000);
     this.approvals.set(requestId, { id, method, permissions });
     const advertised = params.availableDecisions;
@@ -735,7 +755,7 @@ export class HarnessController {
 
   private emit(event: HarnessEvent) {
     this.view = applyHarnessEvent(this.view, event);
-    const wire = harnessEventForClient(event, this.timeline, this.settingsEnabled, this.workspace);
+    const wire = harnessEventForClient(event, this.timeline, this.settingsEnabled, this.workspace, this.permissionsEnabled);
     if (!wire) return;
     this.events.push({ seq: ++this.seq, event: wire });
     if (this.events.length > HARNESS_EVENTS) {
@@ -763,7 +783,7 @@ export class HarnessController {
       const snapshot: HarnessSnapshot = { type: 'snapshot', threadId: binding.threadId, epoch: binding.epoch, seq: this.seq, view: this.view };
       const sendingSnapshot = this.snapshotNeeded;
       const sequence = sendingSnapshot ? snapshot.seq : batch.at(-1)!.seq;
-      const result = await this.sync(binding.sessionId, sendingSnapshot ? harnessSnapshotForClient(snapshot, this.timeline, this.settingsEnabled, this.workspace)
+      const result = await this.sync(binding.sessionId, sendingSnapshot ? harnessSnapshotForClient(snapshot, this.timeline, this.settingsEnabled, this.workspace, this.permissionsEnabled)
         : { type: 'events', epoch: binding.epoch, events: batch });
       if (this.binding !== binding) return;
       if (result.snapshotRequested) {

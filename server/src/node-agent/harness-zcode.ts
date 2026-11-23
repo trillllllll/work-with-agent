@@ -10,7 +10,7 @@ import { resolveZCode, withZCode } from './harness-zcode-client.js';
 import { readZCodeRows, readZCodeThread, zcodeTurns } from './harness-zcode-library.js';
 import { ZCodeLiveConversation } from './harness-zcode-live.js';
 import { zcodeHarnessTool } from './harness-zcode-tools.js';
-import { HARNESS_OUTPUT_LIMIT, HARNESS_TEXT_LIMIT, HARNESS_TOOLS, type HarnessView } from './harness-protocol.js';
+import { HARNESS_OUTPUT_LIMIT, HARNESS_TEXT_LIMIT, HARNESS_TOOLS, type HarnessSettingsChange, type HarnessView } from './harness-protocol.js';
 
 // Invoke ZCode's own authenticated headless entry. Send the prompt over the pipe so it stays out of the OS command line.
 const readPrompt = `
@@ -68,7 +68,7 @@ export class ZCodeHarnessRuntime {
   constructor(private readonly cwd: string, private readonly emit: HarnessNotification,
     private readonly replaceHistory: (turnId: string, view: HarnessView) => Promise<boolean>,
     private readonly replaceLive: (threadId: string, view: HarnessView, clients: Set<string>) => Promise<void>,
-    private readonly disconnected: () => void, private readonly liveEnabled: boolean) {}
+    private readonly disconnected: () => void, private readonly liveEnabled: boolean, private readonly nativePermissions = () => false) {}
 
   get attached() { return this.live?.connected === true; }
 
@@ -87,7 +87,7 @@ export class ZCodeHarnessRuntime {
         if (!this.live) return;
         this.live = null;
         this.disconnected();
-      }).catch(() => null);
+      }, this.nativePermissions).catch(() => null);
     }
     return { thread: { id: threadId, cwd: this.cwd, status: { type: this.attached ? 'idle' : 'notLoaded' } } };
   }
@@ -95,6 +95,16 @@ export class ZCodeHarnessRuntime {
   async selectModel(model: string | undefined, commandId: string, expectedSettingsRevision: number) {
     if (!this.live?.connected) throw new CodexRejected('请在 Mac 的 ZCode 中为该项目开启网页远控');
     return this.live.selectModel(model, commandId, expectedSettingsRevision);
+  }
+
+  async selectPermission(changes: HarnessSettingsChange, commandId: string, expectedSettingsRevision: number) {
+    if (!this.live?.connected) throw new CodexRejected('请在 Mac 的 ZCode 中为该项目开启网页远控');
+    return this.live.selectPermission(changes, commandId, expectedSettingsRevision);
+  }
+
+  async choosePermission(requestId: string, optionId: string, commandId: string) {
+    if (!this.live?.connected) throw new CodexRejected('请在 Mac 的 ZCode 中为该项目开启网页远控');
+    await this.live.choosePermission(requestId, optionId, commandId);
   }
 
   request(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {

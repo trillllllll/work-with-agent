@@ -383,6 +383,8 @@
     "submitAnswers": "提交答案",
     "cancelApproval": "取消请求",
     "allowInSession": "本会话内允许",
+    "allowInProject": "本项目内允许匹配操作",
+    "allowComputerUseInProject": "本项目内允许 Computer Use",
     "plan": { "title": "计划", "pending": "待办", "inProgress": "进行中", "completed": "已完成", "approve": "确认并执行" },
     "context": { "title": "上下文", "usedWithLimit": "{{used}} / {{limit}} token", "used": "已用 {{used}} token", "usageUnavailable": "等待本机会话报告用量", "compact": "压缩上下文" },
     "queue": {
@@ -435,6 +437,7 @@
       "forkProvider": "带历史新建分支并切换",
       "title": "会话设置",
       "nextTurn": "设置对这条会话的下一轮生效。",
+      "zcodeLive": "设置会同步到 Mac 上的这条 ZCode 会话。",
       "model": "模型",
       "search": "搜索模型",
       "noMatch": "没有匹配的模型。",
@@ -445,10 +448,35 @@
       "defaultMode": "执行模式",
       "planMode": "计划模式",
       "planHint": "先制定计划，使用只读权限。",
+      "zcodePlan": "编辑前先制定计划。",
+      "modeAfterPlan": "退出计划模式后恢复所选权限档位。",
       "permission": "执行权限",
+      "permissionMode": "权限模式",
+      "sandbox": "沙箱范围",
       "readOnly": "只读",
       "workspace": "工作区可写",
       "workspaceHint": "可以修改项目文件，额外权限按需询问。",
+      "sandboxWorkspaceHint": "允许在工作区内写文件。",
+      "approvalPolicy": "审批策略",
+      "readOnlyApprovals": "只读和计划模式均禁止通过审批扩大权限。",
+      "approvalPolicies": {
+        "on-request": { "label": "按需询问", "description": "Codex 需要在沙箱外执行时可请求批准。" },
+        "untrusted": { "label": "非受信命令先询问", "description": "只有 Codex 已信任的命令可以直接运行。" },
+        "never": { "label": "从不询问", "description": "禁止通过审批扩大沙箱权限。" }
+      },
+      "nativeModes": {
+        "default": { "label": "手动审批", "description": "按照 Claude Code 的规则，在需要时确认工具调用。" },
+        "acceptEdits": { "label": "自动接受编辑", "description": "自动接受允许目录内的文件编辑及常见文件操作，其他工具按规则审批。" },
+        "plan": { "label": "计划模式", "description": "先查看项目并制定计划，执行前等待批准。" },
+        "dontAsk": { "label": "不询问", "description": "直接拒绝需要询问的工具调用。" },
+        "build": { "label": "变更前确认", "description": "修改文件前先询问。" },
+        "edit": { "label": "自动编辑", "description": "使用这条旧会话的原有编辑权限。" },
+        "guarded": { "label": "自主模式", "description": "遇到有风险的操作时询问。" },
+        "yolo": { "label": "完全访问", "description": "允许 ZCode 直接执行操作，无需逐次确认。" }
+      },
+      "fullAccessTitle": "要对这条 ZCode 会话启用完全访问吗？",
+      "fullAccessDescription": "启用后，ZCode 可以直接修改可访问的文件、运行终端命令、访问网络和调用已连接的工具，无需逐次确认。",
+      "fullAccessConfirm": "启用完全访问",
       "saving": "正在保存会话设置…",
       "saved": "已保存会话设置"
     },
@@ -510,9 +538,10 @@
       "unknown": "上一轮结果待核实"
     },
     "approval": {
-      "command": "Codex 请求执行命令",
-      "fileChange": "Codex 请求修改文件",
-      "permissions": "Codex 请求权限"
+      "command": "{{harness}} 请求执行命令",
+      "fileChange": "{{harness}} 请求修改文件",
+      "permissions": "{{harness}} 请求权限",
+      "plan": "{{harness}} 请求批准计划"
     },
     "receipt": {
       "queued": "服务器已收到",

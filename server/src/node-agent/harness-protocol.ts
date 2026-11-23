@@ -4,6 +4,7 @@ export const HARNESS_FEATURE = 'harness_sessions_v1';
 export const HARNESS_TIMELINE_FEATURE = 'harness_timeline_v1';
 export const HARNESS_LIBRARY_FEATURE = 'harness_library_v1';
 export const HARNESS_SETTINGS_FEATURE = 'harness_settings_v1';
+export const HARNESS_PERMISSIONS_FEATURE = 'harness_permissions_v1';
 export const HARNESS_WORKSPACE_FEATURE = 'harness_workspace_v1';
 export const HARNESS_ZCODE_LIVE_FEATURE = 'harness_zcode_live_v1';
 export const HARNESS_MODELS = 500;
@@ -38,6 +39,11 @@ export type HarnessInputAttachment = z.infer<typeof attachment>;
 export const harnessKind = z.enum(['codex', 'claude', 'zcode']);
 export type HarnessKind = z.infer<typeof harnessKind>;
 export const harnessNames: Record<HarnessKind, string> = { codex: 'Codex', claude: 'Claude Code', zcode: 'ZCode' };
+export const codexApprovalPolicy = z.enum(['on-request', 'untrusted', 'never']);
+export const claudePermissionMode = z.enum(['default', 'acceptEdits', 'plan', 'dontAsk']);
+export const zcodePermissionMode = z.enum(['build', 'edit', 'guarded', 'yolo']);
+const permissionMode = z.union([claudePermissionMode, zcodePermissionMode]);
+const sandboxChoice = z.enum(['readOnly', 'workspace']);
 export const harnessCreateSchema = z.object({ nodeId: id, locationId: id, commandId: id, harness: harnessKind.optional() }).strict();
 export const harnessCatalogQuerySchema = z.object({ nodeId: id, locationId: id, cursor: cursor.optional(), harness: harnessKind.optional() }).strict();
 export const harnessOpenThreadSchema = z.object({ nodeId: id, locationId: id, threadId: id, harness: harnessKind.optional() }).strict();
@@ -54,7 +60,8 @@ const commandId = { commandId: id, expectedEpoch: epoch };
 const turnId = { turnId: id };
 
 const settingsFields = {
-  model: id, effort: id.nullable(), mode: z.enum(['default', 'plan']), permission: z.enum(['readOnly', 'workspace']),
+  model: id, effort: id.nullable(), mode: z.enum(['default', 'plan']), permission: sandboxChoice,
+  permissionMode: permissionMode.optional(), approvalPolicy: codexApprovalPolicy.optional(),
 };
 const settingsChange = z.object(settingsFields).strict().partial();
 const settingsSelection = z.object({ ...settingsFields, revision: sequence }).strict();
@@ -65,6 +72,9 @@ const modelOption = z.object({
 const settingsView = settingsSelection.extend({
   models: z.array(modelOption).max(HARNESS_MODELS), planAvailable: z.boolean(), catalogAvailable: z.boolean(),
   provider: id.optional(), providers: z.array(id).max(50).optional(),
+  permissionModes: z.array(permissionMode).max(8).optional(),
+  approvalPolicies: z.array(codexApprovalPolicy).max(3).optional(),
+  sandboxChoices: z.array(sandboxChoice).max(2).optional(),
 });
 const queueItem = z.object({
   id, text: input, settings: settingsSelection.optional(), status: z.enum(['queued', 'starting', 'blocked']),
@@ -93,6 +103,7 @@ export const harnessCommandSchema = z.discriminatedUnion('operation', [
   z.object({ ...commandId, ...turnId, operation: z.literal('steer'), text: input, attachments }).strict(),
   z.object({ ...commandId, ...turnId, operation: z.literal('interrupt') }).strict(),
   z.object({ ...commandId, operation: z.literal('resolveApproval'), requestId: id, decision: approvalDecision }).strict(),
+  z.object({ ...commandId, operation: z.literal('choosePermission'), requestId: id, optionId: id }).strict(),
   z.object({ ...commandId, operation: z.literal('enqueue'), text: input, attachments, expectedSettingsRevision: sequence.optional() }).strict(),
   z.object({ ...queueTarget, operation: z.literal('editQueued'), text: input }).strict(),
   z.object({ ...queueTarget, operation: z.literal('moveQueued'), direction: z.enum(['up', 'down']) }).strict(),
@@ -152,10 +163,11 @@ const artifact = z.object({
   href: z.string().min(1).max(4_096), source: z.string().min(1).max(HARNESS_SVG_LIMIT),
 }).strict();
 const approval = z.object({
-  id, turnId: id, kind: z.enum(['command', 'fileChange', 'permissions', 'question']),
-  details: z.string().max(8_000), canAccept: z.boolean(),
+  id, turnId: id, kind: z.enum(['command', 'fileChange', 'permissions', 'question', 'plan']),
+  details: text, canAccept: z.boolean(),
   questions: z.array(question).min(1).max(8).optional(),
   decisions: z.array(approvalDecision).max(4).optional(),
+  options: z.array(z.object({ id, scope: z.enum(['once', 'session', 'project', 'projectComputerUse', 'approvePlan', 'deny']) }).strict()).min(1).max(4).optional(),
 }).strict();
 const state = z.object({
   messages: z.array(message).max(HARNESS_MESSAGES), turn: turn.nullable(),
@@ -271,11 +283,29 @@ export function legacyHarnessSnapshot(snapshot: HarnessSnapshot): HarnessSnapsho
   return { ...snapshot, view: { messages: messages.map(({ id, turnId, role, text }) => ({ id, turnId, role, text })), turn, approvals, error } };
 }
 
-export function harnessEventForClient(event: HarnessEvent, timeline: boolean, settings: boolean, workspace = false): HarnessEvent | null {
-  if (event.kind === 'queue' || event.kind === 'plan' || event.kind === 'usage' || event.kind === 'approval' && event.approval.kind === 'question') {
+function legacyPermissionSettings<T extends HarnessSettingsSelection>(settings: T) {
+  const { permissionMode: _mode, approvalPolicy: _policy, ...legacy } = settings;
+  return legacy;
+}
+
+function projectPermissionSettings(settings: HarnessSettingsView, permissions: boolean): HarnessSettingsView {
+  if (permissions) return settings;
+  const { permissionModes: _modes, approvalPolicies: _policies, sandboxChoices: _sandboxes, ...legacy } = settings;
+  return legacyPermissionSettings(legacy);
+}
+
+function projectQueuePermissions(queue: HarnessQueue, permissions: boolean): HarnessQueue {
+  if (permissions) return queue;
+  return { ...queue, items: queue.items.map((item) => item.settings ? { ...item, settings: legacyPermissionSettings(item.settings) } : item) };
+}
+
+export function harnessEventForClient(event: HarnessEvent, timeline: boolean, settings: boolean, workspace = false, permissions = false): HarnessEvent | null {
+  if (event.kind === 'approval' && event.approval.options && !permissions) return null;
+  if (event.kind === 'queue') return workspace ? { ...event, queue: projectQueuePermissions(event.queue, permissions) } : null;
+  if (event.kind === 'plan' || event.kind === 'usage' || event.kind === 'approval' && event.approval.kind === 'question') {
     return workspace ? event : null;
   }
-  if (event.kind === 'settings') return settings ? event : null;
+  if (event.kind === 'settings') return settings ? { ...event, settings: projectPermissionSettings(event.settings, permissions) } : null;
   if (!workspace && event.kind === 'message' && event.message.attachmentNames) {
     const { attachmentNames: _attachments, ...message } = event.message;
     return timeline ? { kind: 'message', message } : legacyHarnessEvent(event);
@@ -291,7 +321,7 @@ export function harnessEventForClient(event: HarnessEvent, timeline: boolean, se
   return timeline ? event : legacyHarnessEvent(event);
 }
 
-export function harnessSnapshotForClient(snapshot: HarnessSnapshot, timeline: boolean, settings: boolean, workspace = false): HarnessSnapshot {
+export function harnessSnapshotForClient(snapshot: HarnessSnapshot, timeline: boolean, settings: boolean, workspace = false, permissions = false): HarnessSnapshot {
   if (!workspace) {
     const { queue: _queue, plan: _plan, usage: _usage, ...rest } = snapshot.view;
     snapshot = { ...snapshot, view: { ...rest, approvals: rest.approvals.filter((item) => item.kind !== 'question').map(({ decisions: _decisions, ...item }) => item),
@@ -301,7 +331,15 @@ export function harnessSnapshotForClient(snapshot: HarnessSnapshot, timeline: bo
   }
   const projected = timeline ? snapshot : legacyHarnessSnapshot(snapshot);
   const { settings: _settings, ...view } = projected.view;
-  return { ...projected, view: { ...view, ...(settings && snapshot.view.settings ? { settings: snapshot.view.settings } : {}) } };
+  return { ...projected, view: { ...view,
+    approvals: permissions ? view.approvals : view.approvals.filter((item) => !item.options),
+    ...(view.queue ? { queue: projectQueuePermissions(view.queue, permissions) } : {}),
+    ...(settings && snapshot.view.settings ? { settings: projectPermissionSettings(snapshot.view.settings, permissions) } : {}),
+  } };
+}
+
+export function requiresNativePermissionSettings(changes: HarnessSettingsChange) {
+  return changes.permissionMode !== undefined || changes.approvalPolicy !== undefined;
 }
 
 export function applyHarnessEvent(view: HarnessView, event: HarnessEvent): HarnessView {

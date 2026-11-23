@@ -56,7 +56,7 @@ test('opens a project ZCode history on a phone and continues its original sessio
       '--roots', root, '--data', join(root, 'node')], { stdio: 'ignore', env: {
       ...process.env, DOVUN_NODE_TOKEN: node.token, DOVUN_CODEX_BIN: resolve('server/test/stub-harness-codex.mjs'),
       DOVUN_ZCODE_BIN: resolve('server/test/stub-harness-zcode.mjs'), ZCODE_SESSION_DB_PATH: state, HARNESS_TEST_ZCODE_STORE: store,
-      HARNESS_TEST_ZCODE_TOOL_FINISH: finishTool,
+      HARNESS_TEST_ZCODE_TOOL_FINISH: finishTool, ZCODE_DATA_BASE_DIR: root,
     } });
     const phone = await context.newPage();
     await phone.goto(listUrl);
@@ -458,7 +458,7 @@ test('opens saved Codex history and keeps multiple chats in the same project ind
     const sessionId = () => new URLSearchParams(new URL(phone.url()).hash.split('?')[1]).get('sessionId')!;
     const details = (id: string) => request.get(`${apiUrl}/${id}?timeline=1`).then((response) => data<{ threadId: string }>(response));
     const fullDetail = async (id: string) => (await data<{ snapshot: HarnessSnapshot }>(
-      await request.get(`${apiUrl}/${id}?timeline=1&settings=1`))).snapshot;
+      await request.get(`${apiUrl}/${id}?timeline=1&settings=1&permissions=1`))).snapshot;
     const toggleSettings = () => chat.getByRole('button', { name: '会话设置' }).tap();
     const panel = phone.getByRole('dialog', { name: '会话设置' });
     const option = (name: string) => panel.getByRole('radio', { name, exact: true });
@@ -502,7 +502,10 @@ test('opens saved Codex history and keeps multiple chats in the same project ind
     await select('精细模型');
     await expect(option('低')).toBeChecked();
     await select('高');
+    await select('非受信命令先询问');
     await select('计划模式');
+    await expect(panel.getByRole('radio', { name: /^从不询问/ })).toBeChecked();
+    await expect(panel.getByRole('radio', { name: /^按需询问/ })).toBeDisabled();
     await closeSettings();
     const stale = await request.post(`${apiUrl}/${originalSessionId}/commands`, { data: {
       operation: 'configure', commandId: crypto.randomUUID(), expectedEpoch: beforeSettings.epoch,
@@ -544,6 +547,7 @@ test('opens saved Codex history and keeps multiple chats in the same project ind
     await toggleSettings();
     await expect(option('常规模型')).toBeChecked();
     await expect(option('中')).toBeChecked();
+    await expect(panel.getByRole('radio', { name: /^按需询问/ })).toBeChecked();
     await closeSettings();
     await send('完成测试：第二条独立对话');
     await expect(chat.getByText('完成测试：第二条独立对话 已回复', { exact: true })).toBeVisible({ timeout: 12_000 });
@@ -574,6 +578,7 @@ test('opens saved Codex history and keeps multiple chats in the same project ind
     await expect(option('精细模型')).toBeChecked();
     await expect(option('高')).toBeChecked();
     await expect(panel.getByRole('radio', { name: /^计划模式/ })).toBeChecked();
+    expect((await fullDetail(originalSessionId)).view.settings?.approvalPolicy).toBe('untrusted');
     await closeSettings();
     await back();
     const harnesses = phone.getByRole('radiogroup', { name: 'Harness' });
@@ -582,9 +587,27 @@ test('opens saved Codex history and keeps multiple chats in the same project ind
     await phone.getByRole('dialog', { name: '新建会话' }).getByRole('button', { name: '开启 Claude Code 会话' }).tap();
     await ready();
     const claude = sessionId();
+    await toggleSettings();
+    await expect(panel.getByRole('radio', { name: /^手动审批/ })).toBeChecked();
+    await select('自动接受编辑');
+    await closeSettings();
     await send('同一个项目的 Claude 对话');
+    const claudeApproval = chat.getByRole('region', { name: 'Claude Code 请求执行命令' });
+    await expect(claudeApproval.getByRole('heading', { name: 'Claude Code 请求执行命令' })).toBeVisible({ timeout: 12_000 });
+    await expect(claudeApproval.getByText('printf claude-fixture', { exact: true })).toBeVisible();
+    await claudeApproval.getByRole('button', { name: '允许一次', exact: true }).tap();
+    await expect(claudeApproval).toBeHidden({ timeout: 12_000 });
     await expect(chat.getByText('同一个项目的 Claude 对话 · Claude 已回复', { exact: true })).toBeVisible({ timeout: 12_000 });
-    expect((await details(claude)).threadId).not.toBe(nativeId);
+    const claudeThread = (await details(claude)).threadId;
+    expect(claudeThread).not.toBe(nativeId);
+    await toggleSettings();
+    await select('不询问');
+    await closeSettings();
+    await send('使用 Claude Code 的不询问模式');
+    await expect(chat.getByText('使用 Claude Code 的不询问模式 · Claude 已回复', { exact: true })).toBeVisible({ timeout: 12_000 });
+    const claudeHistory = await readFile(join(root, 'claude-home', 'projects', repo.replace(/[^a-zA-Z0-9-]/g, '-'), claudeThread + '.jsonl'), 'utf8');
+    expect(claudeHistory.trim().split('\n').map((line) => JSON.parse(line)).filter((frame) => frame.type === 'user')
+      .map((frame) => frame.permissionMode)).toEqual(['acceptEdits', 'dontAsk']);
     await back();
     await expect(phone.getByRole('button', { name: /Mac 上的原 Codex 对话/ })).toHaveCount(0);
   } finally {

@@ -88,6 +88,7 @@ for await (const line of createInterface({ input: process.stdin })) {
       ] });
       break;
     case 'collaborationMode/list': reply(id, { data: [{ mode: 'default' }, { mode: 'plan' }] }); break;
+    case 'configRequirements/read': reply(id, { requirements: null }); break;
     case 'thread/start':
       log('thread/start'); log('cwd ' + params.cwd);
       if (library) {

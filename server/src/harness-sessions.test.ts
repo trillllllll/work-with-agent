@@ -12,7 +12,7 @@ import { app } from './app.js';
 import { prisma } from './infrastructure/prisma.js';
 import ownerRequest, { ownerSession } from './test-auth.js';
 import { NodeAgent } from './node-agent/agent.js';
-import { HARNESS_EVENTS, HARNESS_FEATURE, type HarnessSnapshot } from './node-agent/harness-protocol.js';
+import { HARNESS_EVENTS, HARNESS_FEATURE, HARNESS_ZCODE_LIVE_FEATURE, type HarnessSnapshot } from './node-agent/harness-protocol.js';
 import { DIRECTORY_FEATURE } from './node-agent/directory-protocol.js';
 
 const base = '/api/v1/harness-sessions';
@@ -285,14 +285,15 @@ it('indexes approved projects and promotes a frozen queue exactly once before br
   const { locationId } = indexed[0];
   const created = data(await owner.post(base).send({ nodeId: node.id, locationId, commandId: 'workspace-start' }));
   const url = base + '/' + created.sessionId;
-  const detail = async () => data<{ snapshot: HarnessSnapshot }>(await owner.get(url + '?timeline=1&settings=1&workspace=1'));
+  const detail = async (permissions = true) => data<{ snapshot: HarnessSnapshot }>(await owner.get(url + '?timeline=1&settings=1&workspace=1' + (permissions ? '&permissions=1' : '')));
   const receipt = async (id: string) => data(await owner.get(url + '/commands/' + id));
   await until(agent, async () => (await receipt('workspace-start')).status === 'accepted');
   const epoch = (await detail()).snapshot.epoch;
   const send = async (command: Record<string, unknown>) => owner.post(url + '/commands').send({ expectedEpoch: epoch, ...command });
   await send({ operation: 'send', commandId: 'workspace-running', text: 'hold turn' }).then(data);
   await until(agent, async () => Boolean((await detail()).snapshot.view.turn));
-  const configure = { operation: 'configure', commandId: 'set-precise', expectedSettingsRevision: 0, changes: { model: 'fixture-precise' } };
+  const configure = { operation: 'configure', commandId: 'set-precise', expectedSettingsRevision: 0,
+    changes: { model: 'fixture-precise', approvalPolicy: 'untrusted' } };
   await send(configure).then(data);
   await until(agent, async () => (await receipt('set-precise')).status === 'accepted');
   const input = { operation: 'enqueue', commandId: 'queue-first', text: '完成测试：queued', expectedSettingsRevision: 1,
@@ -301,17 +302,22 @@ it('indexes approved projects and promotes a frozen queue exactly once before br
   await until(agent, async () => (await receipt('queue-first')).status === 'accepted');
   expect(loseReceipt).toBe(false);
   expect((await detail()).snapshot.view.queue?.items).toEqual([expect.objectContaining({
-    id: 'queue-first', attachmentNames: ['notes.txt'], settings: expect.objectContaining({ model: 'fixture-precise' }),
+    id: 'queue-first', attachmentNames: ['notes.txt'], settings: expect.objectContaining({ model: 'fixture-precise', approvalPolicy: 'untrusted' }),
   })]);
+  const legacy = (await detail(false)).snapshot.view;
+  expect(legacy.settings?.approvalPolicies).toBeUndefined();
+  expect(legacy.queue?.items[0].settings?.approvalPolicy).toBeUndefined();
   expect((await send({ operation: 'removeQueued', commandId: 'stale-queue', itemId: 'queue-first', expectedQueueRevision: 0 })).status).toBe(409);
-  await send({ ...configure, commandId: 'reset-model', expectedSettingsRevision: 1, changes: { model: 'fixture-default' } }).then(data);
+  await send({ ...configure, commandId: 'reset-model', expectedSettingsRevision: 1,
+    changes: { model: 'fixture-default', approvalPolicy: 'on-request' } }).then(data);
   await until(agent, async () => (await receipt('reset-model')).status === 'accepted');
   const revision = (await detail()).snapshot.view.queue!.revision;
   await send({ operation: 'sendQueuedNow', commandId: 'promote', itemId: 'queue-first', expectedQueueRevision: revision }).then(data);
   await until(agent, async () => (await detail()).snapshot.view.turn?.status === 'completed' && !(await detail()).snapshot.view.queue?.items.length);
   const recorded = (await readFile(turns, 'utf8')).trim().split('\n').map((line) => JSON.parse(line)).filter((call) => call.clientUserMessageId === 'queue-first');
   expect(recorded).toHaveLength(1);
-  expect(recorded[0]).toMatchObject({ model: 'fixture-precise', input: [{ type: 'text', text: input.text }, expect.objectContaining({ text: expect.stringContaining('notes.txt') })] });
+  expect(recorded[0]).toMatchObject({ model: 'fixture-precise', approvalPolicy: 'untrusted',
+    input: [{ type: 'text', text: input.text }, expect.objectContaining({ text: expect.stringContaining('notes.txt') })] });
   expect((await detail()).snapshot.view.messages.find((item) => item.id === 'queue-first')).toMatchObject({ text: input.text, attachmentNames: ['notes.txt'] });
   const turnId = (await detail()).snapshot.view.turn!.id;
   await send({ operation: 'fork', commandId: 'branch', turnId }).then(data);
@@ -351,7 +357,7 @@ it('indexes ZCode by project and resumes the native session without sending a du
   const store = join(root, 'zcode-store.json');
   const oldId = 'sess_original_zcode';
   const env = { DOVUN_ZCODE_BIN: fileURLToPath(new URL('../test/stub-harness-zcode.mjs', import.meta.url)),
-    ZCODE_SESSION_DB_PATH: database, HARNESS_TEST_ZCODE_STORE: store };
+    ZCODE_SESSION_DB_PATH: database, HARNESS_TEST_ZCODE_STORE: store, ZCODE_DATA_BASE_DIR: root };
   const previous = Object.fromEntries(Object.keys(env).map((name) => [name, process.env[name]]));
   Object.assign(process.env, env);
   const presence = new DatabaseSync(database);
@@ -409,6 +415,11 @@ it('indexes ZCode by project and resumes the native session without sending a du
       await until(agent, async () => Boolean((await detail()).snapshot));
       const expectedEpoch = (await detail()).snapshot.epoch;
       const send = (commandId: string, text: string) => ({ expectedEpoch, commandId, operation: 'send', text });
+      const unconnected = send('zcode-with-desktop-controls', 'Do not send with unavailable desktop controls');
+      expect((await owner.post(url + '/commands').send({ ...unconnected, expectedSettingsRevision: 0 })).status).toBe(409);
+      expect((await owner.post(url + '/commands').send({ ...unconnected,
+        attachments: [{ kind: 'textFile', name: 'fixture.txt', content: 'fixture' }],
+      })).status).toBe(409);
       presence.prepare('INSERT INTO session_runtime_presence VALUES (?, ?)').run(oldId, process.pid);
       data(await owner.post(url + '/commands').send(send('zcode-open-on-mac', 'Do not send while open')));
       const receipt = (commandId: string) => owner.get(url + '/commands/' + commandId).then(data);
@@ -428,6 +439,22 @@ it('indexes ZCode by project and resumes the native session without sending a du
       const history = await whilePolling(owner.post(url + '/history').send({}));
       expect(history.view.messages.filter((row: { text: string }) => row.text === command.text)).toHaveLength(1);
       expect(JSON.parse(await readFile(store, 'utf8'))).toHaveLength(2);
+
+      const approval = { id: 'zcode-request', turnId: final.snapshot.view.turn.id, kind: 'command', details: 'printf approval',
+        canAccept: true, options: [{ id: 'allowOnce', scope: 'once' }, { id: 'deny', scope: 'deny' }] };
+      data(await supertest(app).post(`/api/v1/node/harness-sessions/${id}/sync`)
+        .set('Authorization', 'Node ' + token).send({ ...final.snapshot, seq: final.snapshot.seq + 1,
+          view: { ...final.snapshot.view, approvals: [approval] } }));
+      const choose = { operation: 'choosePermission', expectedEpoch, commandId: 'native-approval', requestId: approval.id, optionId: 'allowOnce' };
+      expect((await owner.post(url + '/commands').send(choose)).status).toBe(409);
+      const known = await prisma.agentNode.findUniqueOrThrow({ where: { id: node.id } });
+      await prisma.agentNode.update({ where: { id: node.id }, data: { capabilitiesJson: JSON.stringify({
+        ...JSON.parse(known.capabilitiesJson), harnessZCodeLive: HARNESS_ZCODE_LIVE_FEATURE,
+      }) } });
+      expect((await detail()).snapshot.view.approvals).toEqual([]);
+      expect(data(await owner.get(url + '?timeline=1&permissions=1')).snapshot.view.approvals).toEqual([approval]);
+      expect((await owner.post(url + '/commands').send({ ...choose, optionId: 'allowSession' })).status).toBe(409);
+      expect(data(await owner.post(url + '/commands').send(choose))).toMatchObject({ commandId: choose.commandId, status: 'queued' });
     } finally { await reader.cancel(); }
   } finally {
     await agent.shutdown('signal');

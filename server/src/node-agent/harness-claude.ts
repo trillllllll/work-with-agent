@@ -6,6 +6,7 @@ import { resolveLocalCli } from './cli.js';
 import { asObject, CodexRejected, type HarnessNotification, type HarnessRuntime } from './harness-codex.js';
 import { readClaudeThread, readClaudeTurns } from './harness-claude-library.js';
 import { codexItems as items, codexText as text } from './harness-history.js';
+import { claudePermissionMode } from './harness-protocol.js';
 
 type Frame = Record<string, unknown>;
 type NativeTool = { input: Frame; toolUseId?: string; questions?: string[] };
@@ -173,8 +174,11 @@ export class ClaudeHarnessRuntime implements HarnessRuntime {
       return;
     }
     this.tools.set(id, { input, toolUseId });
-    this.emit('item/commandExecution/requestApproval', {
-      turnId, command: text(input.command) || [name, text(input.file_path)].filter(Boolean).join(' '),
+    const method = name === 'Bash' ? 'item/commandExecution/requestApproval'
+      : ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(name) ? 'item/fileChange/requestApproval' : 'item/tool/requestApproval';
+    this.emit(method, {
+      turnId, command: text(input.command),
+      description: name === 'Bash' ? undefined : [name, text(input.file_path) || text(input.notebook_path)].filter(Boolean).join(' '),
       reason: text(request.decision_reason), availableDecisions: ['accept', 'decline'],
     }, id);
   }
@@ -203,8 +207,9 @@ export class ClaudeHarnessRuntime implements HarnessRuntime {
       await this.control('set_model', { model });
       this.model = model;
     }
-    const mode = asObject(params.sandboxPolicy).type === 'readOnly' ? 'plan' : 'default';
-    if (mode !== this.permissionMode) {
+    const nativeMode = claudePermissionMode.safeParse(params.permissionMode);
+    const mode = nativeMode.data ?? (asObject(params.sandboxPolicy).type === 'readOnly' ? 'plan' : 'default');
+    if (nativeMode.success || mode !== this.permissionMode) {
       await this.control('set_permission_mode', { mode });
       this.permissionMode = mode;
     }

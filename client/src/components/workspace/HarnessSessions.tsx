@@ -7,6 +7,7 @@ import { json } from '@/lib/platform.js';
 import { intlLocale } from '@/i18n/index.js';
 import { ChatComposer } from '@/components/chat/ChatComposer.js';
 import { createBottomPin } from '@/components/chat/bottom-pin.js';
+import { MarkdownView } from '@/components/shared/MarkdownView.js';
 import { Badge } from '@/components/ui/badge.js';
 import { Button } from '@/components/ui/button.js';
 import { ChoiceList } from '@/components/ui/choice-list.js';
@@ -31,6 +32,10 @@ const base = '/api/v1/harness-sessions';
 const codex = { id: 'codex', name: 'Codex' };
 const createKey = 'dovun-harness-create';
 const emptyTimeline: HarnessView = { messages: [], turn: null, approvals: [], error: null };
+const approvalLabels = {
+  once: 'harness.allow', session: 'harness.allowInSession', project: 'harness.allowInProject',
+  projectComputerUse: 'harness.allowComputerUseInProject', approvePlan: 'harness.plan.approve', deny: 'harness.decline',
+} as const;
 type Harness = typeof codex;
 type Session = {
   id: string; nodeId: string; nodeName: string | null; online: boolean; projectName: string;
@@ -86,7 +91,7 @@ function useHarnessStream(id: string) {
       const view = current.current;
       // Cached snapshots from builds that did not request settings need a full refresh.
       const after = !reset && view?.view.settings ? `&after=${view.epoch}:${view.seq}` : '';
-      source = new EventSource(`${base}/${encodeURIComponent(id)}/events?timeline=1&settings=1&workspace=1${after}`);
+      source = new EventSource(`${base}/${encodeURIComponent(id)}/events?timeline=1&settings=1&workspace=1&permissions=1${after}`);
       source.onerror = () => { live = false; setReady(false); };
       source.onmessage = (event) => {
         let data: HarnessSnapshot | { type: 'event'; epoch: number; seq: number; event: HarnessEvent } | { type: 'receipt'; receipt: Receipt } | { type: 'unavailable'; epoch: number; error: string } | { type: 'caughtUp'; epoch: number; seq: number };
@@ -515,7 +520,7 @@ function HarnessDetail({ id, summary, harness, back, chooseProject, openSession 
   const historyAnchor = useRef<{ row: HTMLElement; top: number; pages: number } | null>(null);
   const [pin] = useState(createBottomPin);
   const [showLatest, setShowLatest] = useState(false);
-  const detail = useQuery({ queryKey: ['harness-session', id], queryFn: () => api<Detail>(path + '?timeline=1&settings=1&workspace=1'), refetchInterval: 4_000 });
+  const detail = useQuery({ queryKey: ['harness-session', id], queryFn: () => api<Detail>(path + '?timeline=1&settings=1&workspace=1&permissions=1'), refetchInterval: 4_000 });
   const stream = useHarnessStream(id);
   const snapshot = stream.snapshot ?? detail.data?.snapshot;
   const view = snapshot?.view;
@@ -668,22 +673,31 @@ function HarnessDetail({ id, summary, harness, back, chooseProject, openSession 
   const status = !session ? 'reconnecting' : !session.online ? 'offline' : enabled ? 'ready'
     : stream.unavailable ? 'unavailable' : session.status === 'ready' ? 'reconnecting' : session.status;
   const detailError = detail.error?.message ?? stream.unavailable ?? detail.data?.error;
-  const approvalControls = view?.approvals.map((request) => request.kind === 'question'
-    ? <HarnessQuestion key={request.id} request={request} disabled={actionsDisabled} answer={act} />
-    : <Surface as="section" tone="subtle" className="space-y-2.5 rounded-xl p-3" key={request.id} aria-label={t('harness.approval.' + request.kind)}>
-    <h3 className="flex items-center gap-2 text-sm font-medium text-warning">
-      <ShieldQuestion className="size-4" aria-hidden="true" />{t('harness.approval.' + request.kind)}
-    </h3>
-    {request.details && <p className="font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">{request.details}</p>}
-    <div className="flex flex-wrap justify-end gap-2">
-      {(request.decisions ?? (request.canAccept ? ['decline', 'accept'] as const : ['decline'] as const)).map((decision) => <Button
-        key={decision} type="button" className="min-h-11" variant={decision === 'accept' ? 'default' : 'outline'} disabled={actionsDisabled}
-        onClick={() => act({ operation: 'resolveApproval', requestId: request.id, decision })}>
-        {t(decision === 'accept' ? 'harness.allow' : decision === 'decline' ? 'harness.decline'
-          : decision === 'cancel' ? 'harness.cancelApproval' : 'harness.allowInSession')}
-      </Button>)}
-    </div>
-  </Surface>);
+  const approvalControls = view?.approvals.map((request) => {
+    if (request.kind === 'question') {
+      return <HarnessQuestion key={request.id} request={request} disabled={actionsDisabled} answer={act} />;
+    }
+    const title = t('harness.approval.' + request.kind, { harness: name });
+    return <Surface as="section" tone="subtle" className="space-y-2.5 rounded-xl p-3" key={request.id} aria-label={title}>
+      <h3 className="flex items-center gap-2 text-sm font-medium text-warning">
+        <ShieldQuestion className="size-4" aria-hidden="true" />{title}
+      </h3>
+      {request.details && (request.kind === 'plan' ? <MarkdownView content={request.details} responsiveTables />
+        : <p className="font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">{request.details}</p>)}
+      <div className="flex flex-wrap justify-end gap-2">
+        {request.options ? request.options.map(({ id, scope }) => <Button key={id} type="button" className="min-h-11"
+          variant={scope === 'once' || scope === 'approvePlan' ? 'default' : 'outline'} disabled={actionsDisabled}
+          onClick={() => act({ operation: 'choosePermission', requestId: request.id, optionId: id })}>
+          {t(approvalLabels[scope])}
+        </Button>) : (request.decisions ?? (request.canAccept ? ['decline', 'accept'] as const : ['decline'] as const)).map((decision) => <Button
+          key={decision} type="button" className="min-h-11" variant={decision === 'accept' ? 'default' : 'outline'} disabled={actionsDisabled}
+          onClick={() => act({ operation: 'resolveApproval', requestId: request.id, decision })}>
+          {t(decision === 'accept' ? 'harness.allow' : decision === 'decline' ? 'harness.decline'
+            : decision === 'cancel' ? 'harness.cancelApproval' : 'harness.allowInSession')}
+        </Button>)}
+      </div>
+    </Surface>;
+  });
   const visibleReceipt = receipt && (waitingForStart || receipt.commandId !== startCommandId) ? receipt : null;
   const workspace = session?.workspaceAvailable === true;
   const codexControls = workspace && name === harnessNames.codex;
@@ -771,7 +785,7 @@ function HarnessDetail({ id, summary, harness, back, chooseProject, openSession 
           }} attach={(file) => editAttachments((files) => files.length >= 2 ? files : [...files, file])}
           running={inProgress || Boolean(view?.queue?.items.length)} compact={codexControls ? () => act({ operation: 'compact' }) : undefined}
           configurePlan={settings?.planAvailable ? () => act({ operation: 'configure', expectedSettingsRevision: settings.revision, changes: { mode: 'plan' } }) : undefined} />}
-          {settings && <HarnessSettings settings={settings} modelOnly={zcode} disabled={actionsDisabled} saving={pending?.command.operation === 'configure'}
+          {settings && <HarnessSettings settings={settings} harness={provider} disabled={actionsDisabled} saving={pending?.command.operation === 'configure'}
           error={settingsError} onChange={(changes) => act({ operation: 'configure', expectedSettingsRevision: settings.revision, changes })}
           onForkProvider={codexControls && !inProgress ? (modelProvider) => act({ operation: 'fork', modelProvider }) : undefined} />}
           {codexControls && inProgress && <Button type="button" variant="ghost" size="icon" aria-label={t('harness.queue.enqueue')} title={t('harness.queue.enqueue')}

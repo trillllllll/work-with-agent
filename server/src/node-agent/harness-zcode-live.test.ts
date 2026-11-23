@@ -16,13 +16,22 @@ it('preserves the desktop conversation, command IDs and streaming tool rows acro
   let emit: (wire: Record<string, unknown>) => void;
   let revision = 17;
   let model = 'model-a';
+  let mode = 'build';
+  let planEnabled = false;
+  const permission = (interactionId: string, optionId: string) => ({ interactionId, kind: 'permission', anchorRowId: 3,
+    payload: { kind: 'permission', toolName: 'Bash', summary: 'Approve the next command', detail: tool.input, options: [
+      { optionId: 'allowOnce', kind: 'allowOnce' }, { optionId, kind: 'allowAlways', response: { opaque: 'private rules' } },
+      { optionId: 'deny', kind: 'deny' }, { optionId: 'fullAccess', kind: 'custom' },
+    ] } });
+  let pending: Record<string, unknown>[] = [];
   let deduped = false;
   const release = vi.fn();
   const frame = (fromSeq: number, toSeq: number, payload: unknown) => emit({
     topic, subscriptionId, wireVersion: 3, kind: 'complete', frame: { topic, subscriptionId, fromSeq, toSeq, payload },
   });
   const snapshot = () => frame(0, revision, {
-    kind: 'snapshot', snapshot: { sessionId: threadId, revision, config: { provider: 'local', model }, rows: { window: [] } },
+    kind: 'snapshot', snapshot: { sessionId: threadId, revision, config: { provider: 'local', model, mode, planEnabled },
+      rows: { window: [] }, pendingInteractions: pending },
   });
   const call = vi.fn(async (name: string, arg?: Record<string, unknown>) => {
     if (name === 'getView') return { providers: [{ providerId: 'local', models: ['model-a', 'model-b'].map((modelId) => ({ modelId })) }] };
@@ -39,6 +48,25 @@ it('preserves the desktop conversation, command IDs and streaming tool rows acro
       model = 'model-b';
       revision++;
       return { commandId: 'switch-1', status: 'accepted' };
+    }
+    if (envelope.type === 'switchCollaborationMode') {
+      const target = new Map([['guarded-1', 'guarded'], ['plan-1', 'plan'], ['leave-plan', 'guarded']]).get(String(envelope.commandId));
+      expect(target).toBeDefined();
+      expect(envelope).toMatchObject({ baseRevision: revision, payload: { mode: target } });
+      planEnabled = target === 'plan';
+      if (!planEnabled) mode = target!;
+      revision++;
+      return { commandId: envelope.commandId, status: 'accepted' };
+    }
+    if (envelope.type === 'resolveInteraction') {
+      const plan = envelope.commandId === 'approve-plan';
+      const interactionId = plan ? 'plan' : 'project';
+      expect(envelope).toMatchObject({ commandId: plan ? 'approve-plan' : 'permit-project', payload: { interactionId,
+        answer: plan ? { action: 'accept', content: { answer: 'approve' } } : { optionId: 'allowAlways' },
+      } });
+      pending = pending.filter((item) => item.interactionId !== interactionId);
+      revision++;
+      return { commandId: envelope.commandId, status: 'accepted' };
     }
     expect(envelope).toMatchObject({ type: 'sendText', commandId: 'message-1', payload: { text: 'continue here' } });
     if (deduped) return { commandId: 'message-1', status: 'duplicate' };
@@ -58,13 +86,21 @@ it('preserves the desktop conversation, command IDs and streaming tool rows acro
     listen: (_name: string, handler: typeof emit) => { emit = handler; return vi.fn(); },
   } as unknown as Awaited<ReturnType<typeof acquireZCodeRelay>>['relay'] });
 
-  const live = await ZCodeLiveConversation.open(cwd, threadId, vi.fn(), vi.fn());
+  const live = await ZCodeLiveConversation.open(cwd, threadId, vi.fn(), vi.fn(), () => true);
   try {
     const initial = live.settings()!;
     expect(initial.models.map(({ id }) => id)).toEqual(['local/model-a', 'local/model-b']);
     const changed = await live.selectModel('local/model-b', 'switch-1', initial.revision);
     expect(changed?.model).toBe('local/model-b');
     await expect(live.selectModel('local/model-a', 'stale', initial.revision)).rejects.toThrow('会话设置已变更');
+    expect(changed).toMatchObject({ permissionMode: 'build', permissionModes: ['build', 'guarded', 'yolo'], planAvailable: true });
+    const guarded = await live.selectPermission({ permissionMode: 'guarded' }, 'guarded-1', changed!.revision);
+    expect(guarded.permissionMode).toBe('guarded');
+    const plan = await live.selectPermission({ mode: 'plan' }, 'plan-1', guarded.revision);
+    expect(plan).toMatchObject({ mode: 'plan', permissionMode: 'guarded' });
+    await expect(live.selectPermission({ permissionMode: 'build' }, 'change-in-plan', plan.revision)).rejects.toThrow('本机不支持');
+    const leftPlan = await live.selectPermission({ mode: 'default' }, 'leave-plan', plan.revision);
+    expect(leftPlan).toMatchObject({ mode: 'default', permissionMode: 'guarded' });
     await live.send('continue here', 'message-1');
     await live.send('continue here', 'message-1');
     const { view, clients } = await live.view();
@@ -86,6 +122,31 @@ it('preserves the desktop conversation, command IDs and streaming tool rows acro
     expect(updated.tools).toMatchObject([{ id: 'native-bash', status: 'completed', truncated: true,
       output: 'x'.repeat(HARNESS_OUTPUT_LIMIT - 5) + 'final' }]);
     expect(JSON.stringify(updated)).not.toContain('not displayed');
+    pending = [permission('project', 'allowAlways'), permission('session', 'allowSession')];
+    frame(revision + 3, revision + 4, { kind: 'deltas', deltas: [{ op: 'state.updated', patch: { pendingInteractions: pending } }] });
+    const approvals = (await live.view()).view.approvals;
+    expect(approvals).toMatchObject([
+      { id: 'project', turnId: 'turn-1', kind: 'command', details: expect.stringContaining(tool.input.command), options: [
+        { id: 'allowOnce', scope: 'once' }, { id: 'allowAlways', scope: 'project' }, { id: 'deny', scope: 'deny' },
+      ] },
+      { id: 'session', options: [
+        { id: 'allowOnce', scope: 'once' }, { id: 'allowSession', scope: 'session' }, { id: 'deny', scope: 'deny' },
+      ] },
+    ]);
+    expect(JSON.stringify(approvals)).not.toMatch(/private rules|privateInput|fullAccess/);
+    await expect(live.choosePermission('session', 'allowAlways', 'wrong-scope')).rejects.toThrow('这条权限请求已处理');
+    await live.choosePermission('project', 'allowAlways', 'permit-project');
+    expect((await live.view()).view.approvals.map(({ id }) => id)).toEqual(['session']);
+    await expect(live.choosePermission('project', 'allowAlways', 'already-answered')).rejects.toThrow('这条权限请求已处理');
+    pending.push({ interactionId: 'plan', kind: 'userInput', payload: { kind: 'userInput', schema: { interaction: 'plan_approval' },
+      input: { plan: 'Review the changes, then run the tests.' }, questions: [{ options: [{ value: 'approve' }] }],
+    } });
+    frame(revision, revision + 1, { kind: 'deltas', deltas: [{ op: 'state.updated', patch: { pendingInteractions: pending } }] });
+    expect((await live.view()).view.approvals[1]).toMatchObject({ id: 'plan', kind: 'plan',
+      details: 'Review the changes, then run the tests.', options: [{ id: 'decline', scope: 'deny' }, { id: 'approve', scope: 'approvePlan' }],
+    });
+    await live.choosePermission('plan', 'approve', 'approve-plan');
+    expect((await live.view()).view.approvals.map(({ id }) => id)).toEqual(['session']);
   } finally { live.close(); }
   expect(release).toHaveBeenCalledOnce();
 });
