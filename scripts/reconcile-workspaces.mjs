@@ -24,6 +24,7 @@ export function reconcile(target, source, label, options = {}) {
  const tables=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all().map(r=>r.name);
  const sourceTables=new Set(from.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(r=>r.name));
  const archiveOnly=new Set(['NodeJob','WorktreeCleanup','ReviewBatch','AutoMemoryJob','AutoMemoryTurn','OrganizationRequest','Orchestration','OrchestrationStep','OrchestrationEvent','HandoffReview','CodeApplication','Proposal']);
+ const versionParents={MemoryVersion:['Memory','memoryId'],MaterialVersion:['Material','materialId'],SkillVersion:['Skill','skillId']};
  const selected=tables.filter(table=>(!excluded.has(table)||archiveOnly.has(table))&&!table.startsWith('sync_')&&table!=='app_data_migrations'&&sourceTables.has(table)).sort();
  const importId=digest([selected.map(t=>[t,from.prepare('SELECT * FROM '+q(t)).all().map(stable).sort()]), options.includeArchives ? ['sync_imports','sync_import_archive'].filter(t=>sourceTables.has(t)).map(t=>[t,from.prepare('SELECT * FROM '+q(t)).all().map(stable).sort()]) : null]);
  let inserted=0, archived=0;const at=new Date().toISOString();const proof=fingerprint(from);
@@ -48,12 +49,16 @@ export function reconcile(target, source, label, options = {}) {
   if(stable(cols)!==stable(incoming)) throw Error('Schema mismatch: '+table);
   const keys=info.filter(c=>c.pk).sort((a,b)=>a.pk-b.pk).map(c=>c.name);
   if(!keys.length) throw Error('Missing primary key: '+table);
+  const parent=versionParents[table];
+  const parentRevision=parent?db.prepare('SELECT revision FROM '+q(parent[0])+' WHERE id=?'):null;
   const find=db.prepare('SELECT * FROM '+q(table)+' WHERE '+keys.map(k=>q(k)+' IS ?').join(' AND '));
   const put=db.prepare('INSERT INTO '+q(table)+' ('+cols.map(q).join(',')+') VALUES ('+cols.map(()=>'?').join(',')+')');
   added.set(table,new Set());
   for(const row of from.prepare('SELECT * FROM '+q(table)).all()) {
    const key=keys.map(k=>row[k]), old=find.get(...key);
    if(old && stable(old)===stable(row)) continue;
+   // A version page ahead of the body we keep would split the pair; archive it with the discarded body.
+   if(parentRevision) {const body=parentRevision.get(row[parent[1]]);if(body&&body.revision<row.revision) {archive(table,row,key);continue;}}
    if(archiveOnly.has(table)) {archive(table,row,key);continue;}
    if(!old) {
     // Historical local work must never restart when imported into the cloud.

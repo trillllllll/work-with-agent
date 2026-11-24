@@ -57,9 +57,12 @@ try {
     db.exec('CREATE TEMP TABLE versions_before (id TEXT PRIMARY KEY)');
     db.exec('INSERT INTO versions_before SELECT id FROM main."MaterialVersion"');
   }
+  const versionParents = { MaterialVersion: ['Material', 'materialId'], MemoryVersion: ['Memory', 'memoryId'], SkillVersion: ['Skill', 'skillId'] };
   for (const table of mainTables) {
     if (skip.has(table) || derived.has(table) || !incomingTables.has(table)) continue;
-    insert(table, '');
+    const parent = versionParents[table];
+    // A page ahead of the body we keep would split the pair; leave it out and count it as skipped.
+    insert(table, parent ? 'WHERE NOT EXISTS (SELECT 1 FROM main.' + q(parent[0]) + ' b WHERE b.id = src.' + q(parent[1]) + ' AND b.revision < src.revision)' : '');
   }
   db.exec('CREATE TEMP TABLE merged_material_versions (id TEXT PRIMARY KEY, materialId TEXT, revision INTEGER)');
   if (mainTables.has('MaterialVersion')) {

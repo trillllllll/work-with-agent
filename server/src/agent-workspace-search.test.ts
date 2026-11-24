@@ -73,7 +73,7 @@ describe('workspace search pages', () => {
   it('matches the current material body, keeps global scope global, and rejects a stale cursor', async () => {
     const created = stamp();
     const topic = await prisma.topic.create({ data: { id: 'repair-topic-scope', name: '范围清单', createdAt: created, updatedAt: created } });
-    await prisma.material.create({ data: { id: 'repair-old-material', kind: 'note', title: '旧资料', createdAt: created, updatedAt: created } });
+    await prisma.material.create({ data: { id: 'repair-old-material', kind: 'note', title: '旧资料', revision: 2, createdAt: created, updatedAt: created } });
     await prisma.materialVersion.create({ data: { id: 'repair-old-v1', materialId: 'repair-old-material', revision: 1, content: 'repairoldonly', contentHash: 'old', createdAt: created } });
     await prisma.materialVersion.create({ data: { id: 'repair-old-v2', materialId: 'repair-old-material', revision: 2, content: 'current plain', contentHash: 'new', createdAt: created } });
     await prisma.material.create({ data: { id: 'repair-current-material', kind: 'note', title: '新资料', createdAt: created, updatedAt: created } });
