@@ -64,8 +64,10 @@ export function useTasks(params: Record<string, string>, enabled = true) {
   const query = new URLSearchParams(params).toString();
   return useQuery<Task[]>({ queryKey: queryKeys.taskList(query), queryFn: ({ signal }) => api(`/api/tasks?${query}`, { signal }), enabled });
 }
+/** 任务不存在（已进回收站或被别处删除）时重试也不会成功：立刻落定，删除后的收尾不必等重试。 */
+export const retryUnlessMissing = (count: number, error: unknown) => count < 3 && !(error instanceof ApiError && error.status === 404);
 export function useTask(id: string) {
-  return useQuery<Task>({ queryKey: queryKeys.task(id), queryFn: ({ signal }) => api(`/api/tasks/${id}?includeArchived=true`, { signal }), enabled: Boolean(id), structuralSharing: (old, next) => keepNewestTask(old as Task | undefined, next as Task) });
+  return useQuery<Task>({ queryKey: queryKeys.task(id), queryFn: ({ signal }) => api(`/api/tasks/${id}?includeArchived=true`, { signal }), enabled: Boolean(id), structuralSharing: (old, next) => keepNewestTask(old as Task | undefined, next as Task), retry: retryUnlessMissing });
 }
 export function useLocalDate() {
   const [today, setToday] = useState(localDate);

@@ -432,6 +432,43 @@ test.describe('无需模型的基础 Todo（桌面与移动）', () => {
     await expect(page.getByTestId(`task-row-${child.id}`)).toBeVisible();
   });
 
+  test('任务详情的任务操作菜单可移入回收站，并在横幅里撤销', async ({ page, request }) => {
+    const created = await data(await request.post(`${apiUrl}/api/tasks`, { data: { title: '详情里删除' } }));
+    const trash = async () => (await data(await request.get(`${apiUrl}/api/trash/tasks`))).map((value: any) => value.id);
+    await page.goto('/#/inbox');
+    const row = page.getByTestId(`task-row-${created.id}`);
+    await row.getByRole('button', { name: '详情里删除', exact: true }).click();
+    const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
+    await expect(detail).toBeVisible();
+    await detail.getByRole('button', { name: '任务操作：详情里删除', exact: true }).click();
+    await expect(page.getByRole('menuitem', { name: '状态', exact: true })).toBeVisible();
+    await page.getByRole('menuitem', { name: '删除任务：详情里删除', exact: true }).click();
+    await page.getByRole('dialog', { name: '删除任务', exact: true }).getByRole('button', { name: '移入回收站', exact: true }).click();
+    await expect(detail).toBeHidden();
+    await expect(row).toBeHidden();
+    await expect.poll(trash).toEqual([created.id]);
+    await expect(page.getByText('已移入回收站 1 项任务', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '撤销', exact: true }).click();
+    await expect(row).toBeVisible();
+    await expect.poll(trash).toEqual([]);
+  });
+
+  test('任务详情的上移与任务行同一分组，提交时带上已完成的兄弟', async ({ page, request }) => {
+    const list = await data(await request.post(`${apiUrl}/api/topics`, { data: { name: '详情排序' } }));
+    const first = await data(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: list.id, title: '第一条' } }));
+    const second = await data(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: list.id, title: '第二条' } }));
+    const finished = await data(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: list.id, title: '已完成的' } }));
+    await request.patch(`${apiUrl}/api/tasks/${finished.id}`, { data: { status: 'done' } });
+    const manual = async () => (await data(await request.get(`${apiUrl}/api/tasks?topicId=${list.id}&sort=manual&status=all`))).map((value: any) => value.id);
+    expect(await manual()).toEqual([first.id, second.id, finished.id]);
+    await page.goto(`/#/board?topicId=${list.id}`);
+    await page.getByTestId(`task-row-${second.id}`).getByRole('button', { name: '第二条', exact: true }).click();
+    const detail = page.getByRole('dialog', { name: '任务详情', exact: true });
+    await detail.getByRole('button', { name: '任务操作：第二条', exact: true }).click();
+    await page.getByRole('menuitem', { name: '上移任务：第二条', exact: true }).click();
+    await expect.poll(manual).toEqual([second.id, first.id, finished.id]);
+  });
+
   test('归档清单保留任务归属，恢复后重新显示任务', async ({ page, request }) => {
     const list = await data(await request.post(`${apiUrl}/api/topics`, { data: { name: '保留结构' } }));
     const item = await data(await request.post(`${apiUrl}/api/tasks`, { data: { topicId: list.id, title: '需要保留的任务' } }));

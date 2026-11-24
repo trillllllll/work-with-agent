@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { completeSiblingIds, projectTaskDrop, reorderTaskGroup, withSortOrder, type OrderRow } from './task-order.js';
+import { completeReorder, completeSiblingIds, menuSiblings, projectTaskDrop, reorderTaskGroup, sortTasks, withSortOrder, type OrderRow } from './task-order.js';
 
 const group = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
 
@@ -38,6 +38,77 @@ describe('completeSiblingIds', () => {
   it('appends hidden siblings without rearranging the proposal', () => {
     expect(completeSiblingIds(['P'], ['P', 'Q'])).toEqual(['P', 'Q']);
     expect(completeSiblingIds(['C', 'A'], ['A', 'B', 'C'])).toEqual(['C', 'A', 'B']);
+  });
+});
+
+describe('sortTasks', () => {
+  it('orders by sortOrder, breaks ties by id and leaves the input alone', () => {
+    const tasks = [{ id: 'b', sortOrder: 2 }, { id: 'c', sortOrder: 1 }, { id: 'a', sortOrder: 1 }];
+    expect(sortTasks(tasks).map((task) => task.id)).toEqual(['a', 'c', 'b']);
+    expect(tasks.map((task) => task.id)).toEqual(['b', 'c', 'a']);
+  });
+});
+
+type Entry = { id: string; parentId: string | null; status: string };
+const list: Entry[] = [
+  { id: 'A', parentId: null, status: 'todo' },
+  { id: 'a1', parentId: 'A', status: 'todo' },
+  { id: 'a2', parentId: 'A', status: 'done' },
+  { id: 'B', parentId: null, status: 'done' },
+  { id: 'C', parentId: null, status: 'todo' },
+  { id: 'orphan', parentId: 'gone', status: 'todo' },
+];
+const ids = (tasks: Array<{ id: string }>) => tasks.map((task) => task.id);
+
+describe('menuSiblings', () => {
+  it('groups open roots the way the list shows them and keeps a parentless task among them', () => {
+    const open = menuSiblings(list, 'C', true);
+    expect(ids(open!.group)).toEqual(['A', 'C', 'orphan']);
+    expect(open!.index).toBe(1);
+  });
+
+  it('keeps a folded completed root with the other completed roots', () => {
+    expect(menuSiblings(list, 'B', true)).toEqual({ group: [list[3]], index: 0 });
+  });
+
+  it('includes completed roots when they are not folded', () => {
+    const open = menuSiblings(list, 'C', false);
+    expect(ids(open!.group)).toEqual(['A', 'B', 'C', 'orphan']);
+    expect(open!.index).toBe(2);
+  });
+
+  it('groups a subtask under its parent whether or not it is completed', () => {
+    const child = menuSiblings(list, 'a2', true);
+    expect(ids(child!.group)).toEqual(['a1', 'a2']);
+    expect(child!.index).toBe(1);
+  });
+
+  it('returns null for a task that is not in the list', () => {
+    expect(menuSiblings(list, 'missing', true)).toBeNull();
+  });
+});
+
+describe('completeReorder', () => {
+  it('keeps the proposal and appends the siblings it left out', () => {
+    expect(ids(completeReorder(list, [list[4], list[0]], null))).toEqual(['C', 'A', 'B']);
+  });
+
+  it('leaves a task whose parent is missing out of the root scope unless it moved itself', () => {
+    expect(ids(completeReorder(list, [list[0], list[5], list[4]], null))).toEqual(['A', 'orphan', 'C', 'B']);
+  });
+
+  it('limits the scope to the given parent and keeps the moved copy', () => {
+    const moved = [{ ...list[2], revision: 7 }];
+    const complete = completeReorder(list, moved, 'A');
+    expect(ids(complete)).toEqual(['a2', 'a1']);
+    expect(complete[0]).toBe(moved[0]);
+  });
+
+  it('submits the folded completed sibling when a menu move only saw the open roots', () => {
+    const { group } = menuSiblings(list, 'C', true)!;
+    const moved = reorderTaskGroup(group, 'C', 'A')!;
+    expect(ids(moved)).toEqual(['C', 'A', 'orphan']);
+    expect(ids(completeReorder(list, moved, null))).toEqual(['C', 'A', 'orphan', 'B']);
   });
 });
 

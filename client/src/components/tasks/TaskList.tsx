@@ -18,7 +18,7 @@ import { inlineSchedule } from './task-inline.js';
 import { scheduleLabel } from '@/lib/schedule.js';
 import { recurrenceLabel } from '@/lib/recurrence.js';
 import { cn } from '@/lib/utils.js';
-import { completeSiblingIds, dragIndentOffset, projectTaskDrop, reorderTaskGroup, type OrderRow } from './task-order.js';
+import { completeReorder, completeSiblingIds, dragIndentOffset, projectTaskDrop, reorderTaskGroup, sortTasks, type OrderRow } from './task-order.js';
 import { useTaskCollapse } from './task-collapse.js';
 import { TaskActions, TaskMenuButton, type TaskActionProps } from './TaskActionsMenu.js';
 
@@ -46,7 +46,6 @@ const levelCollision: CollisionDetection = (args) => {
     return (a ? a.width * a.height : Number.POSITIVE_INFINITY) - (b ? b.width * b.height : Number.POSITIVE_INFINITY);
   }).slice(0, 1);
 };
-const sortTasks = (tasks: Task[]) => [...tasks].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id.localeCompare(b.id));
 function stopDrag(event: { stopPropagation: () => void }) { event.stopPropagation(); }
 
 export function TaskList({ tasks, topics, tags, onOpen, onToggle, onMove, onDelete, onSave, onCreate, onReorder, onNest, onDragSettled, hierarchical = false, foldDone = false, readonly = false, busy, selectedTaskId, textDirty }: Props) {
@@ -91,14 +90,9 @@ export function TaskList({ tasks, topics, tags, onOpen, onToggle, onMove, onDele
     const siblingIds = ordered.filter((task) => (task.parentId ?? null) === parentId).map((task) => task.id);
     return completeSiblingIds(proposedIds, siblingIds);
   }
-  function tasksInOrder(ids: string[], preferred: Task[]) {
-    const byId = new Map<string, Task>([...ordered.map((task) => [task.id, task] as const), ...preferred.map((task) => [task.id, task] as const)]);
-    return ids.map((id) => byId.get(id)).filter((task): task is Task => Boolean(task));
-  }
   const submitReorder = (group: Task[], parentId: string | null): Promise<unknown> => {
     if (!onReorder) return Promise.resolve();
-    const ids = completeScope(group.map((task) => task.id), parentId);
-    return onReorder(tasksInOrder(ids, group), parentId);
+    return onReorder(completeReorder(ordered, group, parentId), parentId);
   };
   const submitNest = (task: Task, parentId: string | null, orderedIds: string[]) => onNest ? onNest(task, parentId, completeScope(orderedIds, parentId)) : Promise.resolve();
   const actions = { ...resting, onReorder: onReorder ? submitReorder : undefined, onNest: onNest ? submitNest : undefined, dropParentId: projection?.parentId ?? '' };

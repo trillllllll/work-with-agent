@@ -29,6 +29,30 @@ export function completeSiblingIds(proposedIds: string[], siblingIds: string[]):
   return [...proposedIds, ...siblingIds.filter((id) => !present.has(id))];
 }
 
+export const sortTasks = <T extends { id: string; sortOrder?: number }>(tasks: T[]) => [...tasks].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id.localeCompare(b.id));
+
+/** 把“上移/下移”得到的分组补全成完整同级顺序：保留提案里的先后，再接上没包含的兄弟（折叠、已完成或没显示的）。 */
+export function completeReorder<T extends { id: string; parentId?: string | null }>(ordered: T[], moved: T[], parentId: string | null): T[] {
+  const siblingIds = ordered.filter((task) => (task.parentId ?? null) === parentId).map((task) => task.id);
+  const byId = new Map([...ordered, ...moved].map((task) => [task.id, task] as const));
+  return completeSiblingIds(moved.map((task) => task.id), siblingIds).flatMap((id) => byId.get(id) ?? []);
+}
+
+/**
+ * 某个任务在手动排序列表里的同级分组与位置，和任务行“上移/下移”用的一致：
+ * 根任务（含父任务不在列表里的）一组，折叠已完成时已完成的另算；子任务按父任务分组。任务不在列表里时返回 null。
+ */
+export function menuSiblings<T extends { id: string; parentId?: string | null; status?: string }>(ordered: T[], taskId: string, foldDone: boolean): { group: T[]; index: number } | null {
+  const nested = (task: T) => Boolean(task.parentId) && ordered.some((parent) => parent.id === task.parentId);
+  const task = ordered.find((item) => item.id === taskId);
+  if (!task) return null;
+  const group = nested(task)
+    ? ordered.filter((item) => (item.parentId ?? null) === task.parentId)
+    : ordered.filter((item) => !nested(item) && (!foldDone || (item.status === 'done') === (task.status === 'done')));
+  const index = group.findIndex((item) => item.id === taskId);
+  return index < 0 ? null : { group, index };
+}
+
 export function projectTaskDrop(rows: OrderRow[], activeId: string, overId: string, deltaX: number): DropProjection | null {
   const active = rows.find((row) => row.id === activeId);
   const overIsVisible = rows.some((row) => row.id === overId);

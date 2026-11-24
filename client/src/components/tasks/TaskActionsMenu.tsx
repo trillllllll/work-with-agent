@@ -133,6 +133,11 @@ export function TaskActions({ task, group = [], index = 0, children, ...actions 
   </MenuContext.Provider>;
 }
 
+/** 任务行以外的单个任务入口（任务详情）：同一个「任务操作」菜单，同一套处理函数。 */
+export function TaskMenu({ task, group = [], index = 0, ...actions }: TaskActionProps & { task: Task; group?: Task[]; index?: number }) {
+  return <TaskActions task={task} group={group} index={index} {...actions}><TaskMenuButton /></TaskActions>;
+}
+
 function TaskDialogs({ dialog, onOpenChange, tasks }: { dialog: DialogKind; onOpenChange: (kind: DialogKind) => void; tasks: Task[] }) {
   const { t } = useTranslation('tasks');
   const menu = useMenu();

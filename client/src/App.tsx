@@ -36,7 +36,9 @@ import { WorktreesPage } from './components/orchestration/WorktreesPage.js';
 import { ReviewsPage } from './components/workspace/ReviewsPage.js';
 import { TopicListPage } from './components/topics/TopicList.js';
 import { TopicModal } from './components/topics/TopicModal.js';
-import { TaskDetailPane, type TaskDetailHandle } from './components/tasks/TaskExpand.js';
+import { TaskDetailPane, type TaskDetailHandle, type TaskDetailMenu } from './components/tasks/TaskExpand.js';
+import { type TaskActionProps } from './components/tasks/TaskActionsMenu.js';
+import { completeReorder, menuSiblings, sortTasks } from './components/tasks/task-order.js';
 import { SummaryPanel } from './components/board/SummaryPanel.js';
 import { BodyText } from './components/shared/BodyText.js';
 import { BoardColumn, TaskCard } from './components/board/BoardColumn.js';
@@ -532,7 +534,14 @@ function ScopedApp({scope}:{scope:string|undefined}) {
     await actions.write(`/api/trash/tasks/${task.id}/permanent`, 'DELETE', undefined, [task.id, ...descendants.keys()], t('shell.taskDeletedForever'));
   };
   const run = (work: Promise<unknown>) => { void work.catch((error) => { if (!(error instanceof ApiError)) toast.error(error instanceof Error ? error.message : t('action.failed')); }); };
-  const listProps = { topics, tags, onOpen: openTask, onToggle: toggleTask, onMove: moveTask, onDelete: (task: Task) => run(deleteTask(task)), onSave: patchTask, onCreate: createTask, readonly: archived, busy: actions.pending, selectedTaskId: taskId, textDirty: detailDirty };
+  const rowMenu: TaskActionProps = { topics, tags, onOpen: openTask, onToggle: toggleTask, onMove: moveTask, onDelete: (task: Task) => run(deleteTask(task)), onSave: patchTask, onCreate: createTask, readonly: archived, busy: actions.pending, textDirty: detailDirty };
+  const listProps = { ...rowMenu, selectedTaskId: taskId };
+  // 详情页的「任务操作」与任务行共用处理函数；“上移/下移”取同一分组，提交前同样补全成完整同级顺序。
+  const foldDone = scoped && !hasFilters;
+  const manualSort = foldDone && sortMode === 'manual';
+  const siblings = taskId && manualSort ? menuSiblings(sortTasks(tasks), taskId, foldDone) : null;
+  const reorderSiblings = (moved: Task[], parentId: string | null) => reorder(completeReorder(sortTasks(tasks), moved, parentId), parentId);
+  const detailMenu: TaskDetailMenu = { ...rowMenu, onReorder: siblings && !archived ? reorderSiblings : undefined, group: siblings?.group ?? [], index: siblings?.index ?? 0 };
   const planProps = { onCreate: createTask, topics, tags, onOpen: openTask, onToggle: toggleTask, onSave: patchTask, onDelete: (task: Task) => run(deleteTask(task)), busy: actions.pending };
 
   const title = page === 'board' ? detail?.name ?? t('shell.selectList') : navigationItems.find((item) => item.view === page)?.label ?? t('shell.workspace');
@@ -545,7 +554,7 @@ function ScopedApp({scope}:{scope:string|undefined}) {
   const filterSummary = page === 'board' ? describeTaskFilters(page, scoped, filters, topics, tags).summary : '';
   const briefNotes = (briefNotesQuery.data?.manualNotes ?? '').trim();
   const filterBar = <TaskFilterBar page={page} scoped={scoped} filters={filters} sortMode={sortMode} topics={topics} tags={tags} open={filtersOpen} onOpenChange={setFiltersOpen} onChange={updateFilter} onSort={setSortMode} onClear={() => setFilters(emptyFilters)} presentation={page === 'board' || page === 'inbox' ? 'popover' : 'bar'} />;
-  const taskList = <TaskList {...listProps} tasks={tasks} foldDone={scoped && !hasFilters} hierarchical={scoped && !hasFilters && sortMode === 'manual'} onDragSettled={markDragHint} onReorder={scoped && !hasFilters && !archived && sortMode === 'manual' ? reorder : undefined} onNest={scoped && !hasFilters && !archived && sortMode === 'manual' ? nest : undefined} />;
+  const taskList = <TaskList {...listProps} tasks={tasks} foldDone={foldDone} hierarchical={manualSort} onDragSettled={markDragHint} onReorder={manualSort && !archived ? reorder : undefined} onNest={manualSort && !archived ? nest : undefined} />;
   const taskContent = <div className={`dovun-task-content mx-auto max-w-5xl p-4 pb-10 sm:p-6${page === 'today' ? ' is-today' : ''}${page === 'inbox' ? ' dovun-inbox' : ''}`}>
     <ListPageHeader page={page} title={title} scoped={scoped} archived={archived} today={today} detail={detail} briefNotes={briefNotes} filterSummary={filterSummary} layout={layout} onLayout={setLayout} onOpenKnowledge={() => navigateSafely('knowledge')} onEditTopic={() => { if (detail) setTopicForm(detail); }} onNewTask={() => captureRef.current?.focus()} filterBar={filterBar} />
     {page === 'board' && detail && <SummaryPanel detail={detail} busy={actions.pending} onConfirm={archived ? undefined : (action) => run(actions.write(`/api/topics/${detail.id}/summary/${action}`, 'POST', undefined, [detail.id], action === 'confirm' ? t('shell.summaryConfirmed') : t('shell.draftDiscarded')))} />}
@@ -597,7 +606,7 @@ function ScopedApp({scope}:{scope:string|undefined}) {
     window.addEventListener('dovun-open-task', handler);
     return () => window.removeEventListener('dovun-open-task', handler);
   }, []);
-  const detailPane = taskId ? <TaskDetailPane key={taskId} ref={detailRef} id={taskId} fallback={tasks.find((task) => task.id === taskId)} tags={tags} topics={topics} readonly={archived} showClose={!taskRail} presentation={isDesktop || taskRail ? 'panel' : showChat ? 'retained' : 'modal'} panelSlot={detailSlot} onSave={patchTask} onClose={closeTask} onDirtyChange={setDetailDirty} onToggleTask={toggleTask} onCreateTask={createTask} onOpenTask={openTask} /> : null;
+  const detailPane = taskId ? <TaskDetailPane key={taskId} ref={detailRef} id={taskId} fallback={tasks.find((task) => task.id === taskId)} tags={tags} topics={topics} readonly={archived} showClose={!taskRail} presentation={isDesktop || taskRail ? 'panel' : showChat ? 'retained' : 'modal'} panelSlot={detailSlot} onSave={patchTask} onClose={closeTask} onDirtyChange={setDetailDirty} onToggleTask={toggleTask} onCreateTask={createTask} onOpenTask={openTask} menu={detailMenu} /> : null;
   const hasAccessory = !isAssistantPage && (showChat || focusSide || taskRail);
 
   return <FocusProvider>

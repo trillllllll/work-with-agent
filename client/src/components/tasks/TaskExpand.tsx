@@ -27,6 +27,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { TaskActivityDialog } from './TaskActivityDialog.js';
+import { TaskMenu, type TaskActionProps } from './TaskActionsMenu.js';
 import { OrchestrationButton } from '@/components/orchestration/OrchestrationPanel.js';
 import { AiHistoryDialog } from '@/components/orchestration/AiHistoryDialog.js';
 import { placeDescriptionCaret, readDescriptionCaret } from './DescriptionEditor.js';
@@ -724,7 +725,7 @@ function DetailFrame({ presentation, panelSlot, children }: { presentation: 'pan
   </>;
 }
 
-function TaskAssistantActions({ showAssistant = true }: { showAssistant?: boolean }) {
+function TaskAssistantActions({ showAssistant = true, menu }: { showAssistant?: boolean; menu: TaskDetailMenu }) {
   const { t } = useTranslation('tasks');
   const edit = useEdit();
   const [history, setHistory] = useState(false);
@@ -734,10 +735,14 @@ function TaskAssistantActions({ showAssistant = true }: { showAssistant?: boolea
     <Button size="sm" variant="ghost" data-testid="task-ai-history" onClick={() => setHistory(true)}>{t('taskExpand.aiHistory')}</Button>
     {!edit.task.parentId && <OrchestrationButton taskId={edit.taskId} disabled={edit.readonly} />}
     <AiHistoryDialog taskId={edit.taskId} open={history} onOpenChange={setHistory} />
+    <TaskMenu {...menu} task={edit.task} />
   </div>;
 }
 
-export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children' | 'fallback'> & { fallback?: Task; presentation: 'panel' | 'modal' | 'retained'; panelSlot: HTMLElement | null; showClose?: boolean }>(function TaskDetailPane({ presentation, panelSlot, fallback, showClose = true, ...props }, ref) {
+/** 详情页「任务操作」菜单的接线：处理函数与任务行相同，group/index 是它在当前列表里的同级分组与位置。 */
+export type TaskDetailMenu = TaskActionProps & { group: Task[]; index: number };
+
+export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children' | 'fallback'> & { fallback?: Task; presentation: 'panel' | 'modal' | 'retained'; panelSlot: HTMLElement | null; showClose?: boolean; menu: TaskDetailMenu }>(function TaskDetailPane({ presentation, panelSlot, fallback, showClose = true, menu, ...props }, ref) {
   const [activity, setActivity] = useState(false);
   const [section, setSection] = useState<DetailSection>('details');
   const { t } = useTranslation('app');
@@ -768,7 +773,7 @@ export const TaskDetailPane = forwardRef<TaskDetailHandle, Omit<Props, 'children
           </Button>)}
         </div>
         <header className="task-detail-header">
-          <TaskAssistantActions showAssistant={presentation !== 'panel'} />
+          <TaskAssistantActions showAssistant={presentation !== 'panel'} menu={menu} />
           <ParentTaskLink />
           <div data-testid="task-detail-title-row" className="flex min-w-0 items-start gap-2">{showClose && <CloseDetailButton />}<TaskStatusCheckbox /><div className="min-w-0 flex-1"><TaskTitleField /></div><ActivityButton onOpen={() => setActivity(true)} /></div>
         </header>
