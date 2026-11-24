@@ -353,7 +353,9 @@
   },
   "harness": {
     "listView": "会话视图",
-    "view": { "project": "按项目", "recent": "最近更新", "archive": "归档" },
+    "view": { "project": "按项目", "group": "分组", "tag": "标签", "recent": "最近更新", "archive": "归档" },
+    "ungrouped": "未分组",
+    "pinnedProject": "已置顶项目",
     "sessionActions": "会话操作",
     "sessionTitle": "会话名称",
     "rename": "重命名",

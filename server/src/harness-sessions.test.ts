@@ -346,6 +346,71 @@ it('indexes approved projects and promotes a frozen queue exactly once before br
   expect(new Set([...firstPage.sessions, ...secondPage.sessions].map((row) => row.id)).size).toBe(107);
 }, 25_000);
 
+it('imports old native pins, group changes and archive moves without changing the Dovun session ID', async () => {
+  const owner = ownerRequest(app);
+  const { node, token } = data(await owner.post('/api/nodes').send({ name: 'Native organization computer' }));
+  nodeIds.push(node.id);
+  const basePath = await realpath(folder);
+  const cwd = join(basePath, 'organized-project');
+  const outside = join(basePath, 'unshared-project');
+  const library = join(basePath, 'organized-library');
+  const desktopState = join(process.env.CODEX_HOME!, '.codex-global-state.json');
+  const previousLibrary = process.env.HARNESS_TEST_LIBRARY;
+  await Promise.all([mkdir(cwd), mkdir(outside), mkdir(library), mkdir(process.env.CODEX_HOME!, { recursive: true })]);
+  process.env.HARNESS_TEST_LIBRARY = library;
+  const seedThread = (id: string, path: string, fields: Record<string, unknown>) => writeFile(join(library, id + '.json'), JSON.stringify({
+    thread: { id, cwd: path, name: id, updatedAt: 1_700_000_000, ...fields }, turns: [],
+  }));
+  const first = 'organized-first';
+  const second = 'organized-second';
+  const group = { id: 'review-group', name: 'Review' };
+  const project = { projectId: 'native-project', section: group };
+  const writePins = (pinned: string[]) => writeFile(desktopState, JSON.stringify({ 'pinned-thread-ids': pinned, 'pinned-project-ids': ['native-project', 'hidden-project'] }));
+  const agent = new NodeAgent({ server: origin, token, roots: [cwd], dataDir: join(folder, 'organized-node') });
+  agents.push(agent);
+  try {
+    await Promise.all([
+      seedThread(first, cwd, project), seedThread(second, cwd, { ...project, updatedAt: 1_700_000_001 }), writePins([first, second, 'hidden-0']),
+      ...Array.from({ length: 30 }, (_, index) => seedThread('hidden-' + index, outside, { projectId: 'hidden-project', updatedAt: 1_700_000_010 })),
+    ]);
+    await until(agent, async () => data(await owner.get(base)).nodes.find((entry: { id: string }) => entry.id === node.id)?.harnessOrganization);
+    const index = async (archived = false) => {
+      let settled = false;
+      const request = Promise.resolve(owner.post(base + '/native/index').send({ nodeId: node.id, archived })).finally(() => { settled = true; });
+      await until(agent, async () => settled);
+      data(await request);
+    };
+    let locationId = '';
+    const list = async (archived = false) => data(await owner.get(base + '?harness=codex' + (archived ? '&archived=1' : '') +
+      (locationId ? '&locationId=' + encodeURIComponent(locationId) : '')));
+    const rows = (page: { sessions: any[] }) => page.sessions.filter((row) => row.nodeId === node.id);
+    await index();
+    const initial = await list();
+    expect(initial.projectPins).toContainEqual({ nodeId: node.id, cwd, order: 0 });
+    expect(initial.projectPins.some((pin: { cwd: string }) => pin.cwd === outside)).toBe(false);
+    expect(rows(initial).map((row) => row.threadId)).toEqual([first, second]);
+    const [oldFirst, oldSecond] = rows(initial);
+    locationId = oldFirst.locationId;
+    expect(oldFirst).toMatchObject({ pinned: true, pinOrder: 0, organization: { group } });
+    const secondUrl = base + '/' + oldSecond.id;
+    data(await owner.patch(secondUrl).send({ pinned: false }));
+
+    await Promise.all([seedThread(first, cwd, { ...project, section: null, archived: true }), writePins([second])]);
+    await index();
+    expect(rows(await list())).toEqual([expect.objectContaining({ id: oldSecond.id, pinned: false, organization: { pinned: true, pinOrder: 0, archived: false, group } })]);
+    expect(rows(await list(true))).toEqual([expect.objectContaining({ id: oldFirst.id, pinned: false, archived: true,
+      updatedAt: oldFirst.updatedAt, organization: { pinned: false, pinOrder: null, archived: true, group: null } })]);
+    await seedThread(first, cwd, { ...project, section: { ...group, name: 'Renamed group' } });
+    await index(true);
+    expect(rows(await list(true))).toHaveLength(0);
+    expect(rows(await list()).find((row) => row.id === oldFirst.id)).toMatchObject({ organization: { group: { name: 'Renamed group' } } });
+  } finally {
+    await agent.shutdown('signal');
+    if (previousLibrary === undefined) delete process.env.HARNESS_TEST_LIBRARY; else process.env.HARNESS_TEST_LIBRARY = previousLibrary;
+    await rm(desktopState, { force: true });
+  }
+}, 25_000);
+
 it('indexes ZCode by project and resumes the native session without sending a duplicate', async () => {
   const owner = ownerRequest(app);
   const { node, token } = data(await owner.post('/api/nodes').send({ name: 'ZCode computer' }));

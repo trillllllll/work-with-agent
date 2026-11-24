@@ -22,7 +22,7 @@ const openJobStatuses = ['queued', 'leased', 'lost'] as const;
 type LocationBrief = { id: string; projectId: string; path: string; status: string; project?: { name: string } | null };
 
 export function nodeDto(row: AgentNode, locations: LocationBrief[] = [], activeJobs = 0) {
-  const { tokenHash: _hash, capabilitiesJson, inventoryJson: _inventory, ...value } = row;
+  const { tokenHash: _hash, capabilitiesJson, inventoryJson: _inventory, harnessProjectPinsJson: _projectPins, ...value } = row;
   return {
     ...value,
     capabilities: JSON.parse(capabilitiesJson),

@@ -17,6 +17,10 @@ export function zcodeWorkspace(cwd: string) {
   return { workspacePath: cwd, workspaceKey: cwd };
 }
 
+export function zcodeDataHome(env: NodeJS.ProcessEnv = process.env) {
+  return env.ZCODE_DATA_BASE_DIR?.trim() || homedir();
+}
+
 async function zcodeAccountHost(installation: string) {
   const dir = runtimeEnv('ZCODE_ACCOUNT_HOST_DIR')?.trim()
     || fileURLToPath(new URL('../../zcode-account-host/', import.meta.url));
@@ -36,7 +40,7 @@ export async function resolveZCode(accountAware = false) {
   const configured = runtimeEnv('ZCODE_BIN');
   const env = providerEnvironment();
   delete env.DOVUN_NODE_TOKEN;
-  const home = env.ZCODE_DATA_BASE_DIR?.trim() || homedir();
+  const home = zcodeDataHome(env);
   env.ZCODE_PERSONAL_PROVIDER_CONFIG_FILE ||= resolve(home, '.zcode/v2/provider_config.json');
   if (configured) {
     const script = resolve(configured);

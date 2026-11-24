@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Folder, FolderOpen, Folders, Laptop, List } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Folder, FolderOpen, Folders, Laptop, List, Pin } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button.js';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog.js';
@@ -9,7 +9,7 @@ import { Surface } from '@/components/ui/surface.js';
 import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog.js';
 import type { DirectoryPage } from '../../../../server/src/node-agent/directory-protocol.js';
 
-export type HarnessProject = { id: string; nodeId: string; path: string; projectName: string; computerName: string };
+export type HarnessProject = { id: string; nodeId: string; path: string; projectName: string; computerName: string; pinOrder?: number };
 export type ProjectComputer = { id: string; name: string; online: boolean; canBrowse?: boolean };
 type Props = {
   open: boolean;
@@ -90,6 +90,7 @@ export function HarnessProjectPicker({ open, onOpenChange, projects, computers, 
                 <span className="block break-words text-sm font-medium">{item.projectName}</span>
                 <span className="block text-xs text-muted-foreground [overflow-wrap:anywhere]">{item.computerName} · {item.path}</span>
               </span>
+              {item.pinOrder !== undefined && <Pin className="size-4 shrink-0 text-muted-foreground" aria-label={t('harness.pinnedProject')} />}
               {item.id === value && <Check className="size-4 text-brand-link" />}
             </Button>)}
           </Surface>

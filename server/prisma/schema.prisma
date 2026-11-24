@@ -734,6 +734,10 @@ model HarnessSession {
   title          String?
   pinnedAt       String?
   archivedAt     String?
+  nativeOrganizationJson String?
+  nativePinOrder Float?
+  pinnedOverride Boolean?
+  archivedOverride Boolean?
   readAt         String?
   hasQueuedInput Boolean          @default(false)
   sourceSessionId String?
@@ -776,6 +780,7 @@ model AgentNode {
   platform         String  @default("")
   version          String  @default("")
   capabilitiesJson String  @default("{}")
+  harnessProjectPinsJson String?
   inventoryJson    String  @default("null")
   inventoryAt      String?
   lastSeenAt       String?

@@ -1,6 +1,6 @@
 ---
 name: harness-adaptation
-description: Add, fix, or verify local coding harness integrations. Use when adapting Harness 模型、权限、审批、历史对话或原会话续聊 for Codex, Claude Code, ZCode, or a new harness in a shared executor.
+description: Add, fix, or verify local coding harness integrations. Use when adapting Harness 模型、权限、审批、历史对话、原会话续聊、置顶或分组 for Codex, Claude Code, ZCode, or a new harness in a shared executor.
 ---
 
 # Harness 适配
@@ -32,6 +32,10 @@ description: Add, fix, or verify local coding harness integrations. Use when ada
 - Claude Code 使用实际 CLI 的流式接口或 Agent SDK，核对生效权限和会话 UUID。[Claude Code 接入参考](references/claude-code.md)
 - ZCode 分别核对本机 V4 会话协议、当前模型目录和负责账号鉴权的宿主。[ZCode 接入参考](references/zcode.md)
 - 接入其他 Harness 时，先按以上方法验证对应的原生能力，再决定哪些字段可以映射到共用契约。使用该 Harness 当前版本支持的启动方式、数据源和权限值。
+
+## 读取原生会话组织信息
+
+分别验证项目归属、项目与会话置顶、置顶顺序、自定义分组、标签和归档。用已授权项目内的原生会话 ID 关联，记录来源和支持的字段。列表沿用现有项目选择与会话组件。只在原生来源返回明确值时覆盖默认显示，缺失字段保留 Dovun 已有行为。读原生状态和更改原生状态分别验证。[会话置顶与分组](references/session-organization.md)
 
 ## 验证续聊
 

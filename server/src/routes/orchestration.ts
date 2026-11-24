@@ -8,7 +8,7 @@ import { WorktreeService } from '../application/orchestration/worktrees.js';
 import { isServerMode, publicWorkspaceUrl } from '../application/desktop-paths.js';
 import { leaseHarness, leaseHarnessLibrary, syncHarness } from '../application/harness-sessions.js';
 import { pendingHarnessReads, reportHarnessRead } from '../application/harness-library.js';
-import { HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE } from '../node-agent/harness-protocol.js';
+import { HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_ORGANIZATION_FEATURE, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE } from '../node-agent/harness-protocol.js';
 import { DIRECTORY_FEATURE } from '../node-agent/directory-protocol.js';
 import { pendingDirectories, reportDirectory } from '../application/harness-directories.js';
 
@@ -94,6 +94,7 @@ export function createNodeRouter() {
     if (req.get('X-Dovun-Node-Features') !== HARNESS_FEATURE) return response;
     const accepts = [...response.accepts, HARNESS_FEATURE];
     if (req.get('X-Dovun-Harness-Library') === HARNESS_LIBRARY_FEATURE) accepts.push(HARNESS_LIBRARY_FEATURE);
+    if (req.get('X-Dovun-Harness-Organization') === HARNESS_ORGANIZATION_FEATURE) accepts.push(HARNESS_ORGANIZATION_FEATURE);
     if (req.get('X-Dovun-Harness-Settings') === HARNESS_SETTINGS_FEATURE) accepts.push(HARNESS_SETTINGS_FEATURE);
     if (req.get('X-Dovun-Harness-Permissions') === HARNESS_PERMISSIONS_FEATURE) accepts.push(HARNESS_PERMISSIONS_FEATURE);
     if (req.get('X-Dovun-Harness-Advanced-Permissions') === HARNESS_ADVANCED_PERMISSIONS_FEATURE) accepts.push(HARNESS_ADVANCED_PERMISSIONS_FEATURE);
@@ -106,8 +107,10 @@ export function createNodeRouter() {
     const harness = supportsHarness && !library ? await leaseHarness(node.id, node.tokenHash) : undefined;
     const harnesses = library ? await leaseHarnessLibrary(node.id, node.tokenHash) : [];
     const workspace = accepts.includes(HARNESS_WORKSPACE_FEATURE) && req.body.capabilities.harnessWorkspace === HARNESS_WORKSPACE_FEATURE;
+    const organization = accepts.includes(HARNESS_ORGANIZATION_FEATURE) && req.body.capabilities.harnessOrganization === HARNESS_ORGANIZATION_FEATURE;
     const harnessReads = library ? pendingHarnessReads(node).filter((task) =>
-      workspace || task.kind !== 'index' && task.kind !== 'files' && !task.harness) : [];
+      (workspace || task.kind !== 'index' && task.kind !== 'files' && !task.harness) &&
+      (organization || !('organization' in task && task.organization))) : [];
     const directoryRequests = accepts.includes(DIRECTORY_FEATURE) && req.body.capabilities.directoryBrowser === DIRECTORY_FEATURE ? pendingDirectories(node) : [];
     return { ...response, accepts, ...(harness ? { harness } : {}), ...(harnesses.length ? { harnesses } : {}),
       ...(harnessReads.length ? { harnessReads } : {}), ...(directoryRequests.length ? { directoryRequests } : {}) };

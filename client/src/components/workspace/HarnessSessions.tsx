@@ -23,7 +23,7 @@ import { HarnessWorkspaceTools } from './HarnessWorkspaceTools.js';
 import { HarnessTimeline } from './HarnessTimeline.js';
 import { ChatProjectButton, HarnessProjectPicker, type HarnessProject, type ProjectComputer } from './HarnessProjectPicker.js';
 import type { DirectoryPage } from '../../../../server/src/node-agent/directory-protocol.js';
-import { applyHarnessEvent, HARNESS_TEXT_LIMIT, harnessKind, harnessNames, type HarnessKind, type HarnessCatalogPage, type HarnessHistoryPage,
+import { applyHarnessEvent, HARNESS_TEXT_LIMIT, harnessKind, harnessNames, type HarnessKind, type HarnessCatalogPage, type HarnessHistoryPage, type HarnessOrganization,
   type HarnessCommand, type HarnessEvent, type HarnessInputAttachment, type HarnessSnapshot, type HarnessView } from '../../../../server/src/node-agent/harness-protocol.js';
 import '@/components/chat/conversation.css';
 import './harness-sessions.css';
@@ -43,16 +43,18 @@ type Session = {
   harness?: string; locationId: string; title?: string | null; activity?: 'approval' | 'running' | null; updatedAt: string;
   native?: boolean; historyAvailable?: boolean; settingsAvailable?: boolean; workspaceAvailable?: boolean;
   pinned?: boolean; archived?: boolean; unread?: boolean;
+  pinOrder?: number; organization?: HarnessOrganization;
   sourceSessionId?: string | null;
 };
-type SessionRow = Pick<Session, 'id' | 'nodeName' | 'online' | 'projectName' | 'status' | 'title' | 'activity' | 'updatedAt' | 'pinned' | 'archived' | 'unread'> & {
-  nativeThreadId?: string; projectKey: string; projectPath?: string;
+type SessionRow = Pick<Session, 'id' | 'nodeId' | 'nodeName' | 'online' | 'projectName' | 'status' | 'title' | 'activity' | 'updatedAt' | 'pinned' | 'archived' | 'unread' | 'organization' | 'pinOrder'> & {
+  nativeThreadId?: string; projectKey: string; projectPath?: string; projectPinOrder?: number;
 };
 type Detail = Session & { snapshot: HarnessSnapshot | null; current: boolean };
 type List = {
   harnesses?: Harness[];
-  nodes: Array<ProjectComputer & { supportsHarness: boolean; harnessLibrary?: boolean; harnessWorkspace?: boolean; harnesses?: HarnessKind[] }>;
+  nodes: Array<ProjectComputer & { supportsHarness: boolean; harnessLibrary?: boolean; harnessWorkspace?: boolean; harnessOrganization?: boolean; harnesses?: HarnessKind[] }>;
   directories?: HarnessProject[];
+  projectPins?: Array<{ nodeId: string; cwd: string; order: number }>;
   sessions: Session[];
   nextCursor?: string | null;
 };
@@ -144,8 +146,22 @@ function useHarnessStream(id: string) {
 
 type SessionMetadata = { title?: string; pinned?: boolean; archived?: boolean; read?: boolean };
 
-function SessionList({ sessions, groupByProject, selectedId, opening, open, update }: {
-  sessions: SessionRow[]; groupByProject: boolean; selectedId?: string; opening?: string | null;
+function compareOrder(left?: number, right?: number) {
+  if (left === right) return 0;
+  return left === undefined ? 1 : right === undefined ? -1 : left - right;
+}
+function comparePinned(left: SessionRow, right: SessionRow) {
+  return Number(!!right.pinned) - Number(!!left.pinned) || compareOrder(left.pinOrder, right.pinOrder);
+}
+function organizationGroup(session: SessionRow) {
+  const { group, tag } = session.organization ?? {};
+  if (group) return { key: JSON.stringify([session.nodeId, 'group', group.id]), name: group.name, order: group.order };
+  if (tag) return { key: JSON.stringify([session.nodeId, 'tag', tag]), name: tag, order: undefined };
+  return null;
+}
+
+function SessionList({ sessions, groupBy, selectedId, opening, open, update }: {
+  sessions: SessionRow[]; groupBy: 'project' | 'organization' | null; selectedId?: string; opening?: string | null;
   open: (row: SessionRow) => void; update: (id: string, change: SessionMetadata) => void;
 }) {
   const { t } = useTranslation('workspace');
@@ -154,23 +170,40 @@ function SessionList({ sessions, groupByProject, selectedId, opening, open, upda
   const groups = new Map<string, SessionRow[]>();
   const clock = new Intl.DateTimeFormat(intlLocale(), { month: 'short', day: 'numeric' });
   for (const session of sessions) {
-    const key = groupByProject ? session.projectKey : '';
+    const key = groupBy === 'project' ? session.projectKey : groupBy === 'organization' ? organizationGroup(session)?.key ?? '' : '';
     const rows = groups.get(key) ?? [];
     rows.push(session);
     groups.set(key, rows);
   }
   const headings = new Map<string, number>();
   for (const [group, [session]] of groups) {
-    if (!group) continue;
+    if (!group || groupBy !== 'project') continue;
     const label = session.projectName + '\0' + session.nodeName;
     headings.set(label, (headings.get(label) ?? 0) + 1);
   }
 
+  const sections = [...groups];
+  if (groupBy === 'project') {
+    sections.sort(([, [left]], [, [right]]) => compareOrder(left.projectPinOrder, right.projectPinOrder));
+  }
+  if (groupBy === 'organization') {
+    sections.sort(([left, [first]], [right, [second]]) => Number(!!right) - Number(!!left) ||
+      compareOrder(organizationGroup(first)?.order, organizationGroup(second)?.order));
+    for (const [, entries] of sections) entries.sort((left, right) => comparePinned(left, right) ||
+      compareOrder(left.organization?.group?.memberOrder, right.organization?.group?.memberOrder));
+  }
+
   return <><Surface tone="sheet" className="workspace-rows">
-    {[...groups].map(([group, entries]) => <section className="harness-session-group" key={group}>
-      {groupByProject && <div className="px-2 pt-3.5 pb-1">
+    {sections.map(([group, entries]) => <section className="harness-session-group" key={group}>
+      {groupBy === 'organization' && <h2 className="px-2 pb-1 pt-3.5 text-xs font-medium">
+        {organizationGroup(entries[0])?.name ?? t('harness.ungrouped')}
+        {group && <span className="ml-2 font-normal text-muted-foreground">{entries[0].nodeName}</span>}
+      </h2>}
+      {groupBy === 'project' && <div className="px-2 pt-3.5 pb-1">
         <h2 className="flex min-w-0 items-center gap-2 text-xs font-medium">
-          <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" /><span className="truncate">{entries[0].projectName}</span>
+          {entries[0].projectPinOrder !== undefined ? <Pin className="size-3.5 shrink-0 text-muted-foreground" aria-label={t('harness.pinnedProject')} />
+            : <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
+          <span className="truncate">{entries[0].projectName}</span>
           <span className="truncate font-normal text-muted-foreground">{entries[0].nodeName}</span>
         </h2>
         {(headings.get(entries[0].projectName + '\0' + entries[0].nodeName) ?? 0) > 1 && entries[0].projectPath &&
@@ -243,7 +276,8 @@ export function HarnessSessions({ id, harness, project, navigation, open, select
 }) {
   const { t } = useTranslation('workspace');
   const queryClient = useQueryClient();
-  const [mode, setMode] = useState<'project' | 'recent' | 'archive'>('project');
+  const [mode, setMode] = useState<'project' | 'group' | 'recent' | 'archive'>('project');
+  const archived = mode === 'archive';
   const list = useInfiniteQuery({
     queryKey: ['harness-sessions', harness ?? codex.id, project ?? null, mode === 'archive'],
     initialPageParam: null as string | null,
@@ -277,15 +311,21 @@ export function HarnessSessions({ id, harness, project, navigation, open, select
   const busyNodes = new Set(allSessions.filter((session) => session.status !== 'failed').map((session) => session.nodeId));
   const supportsSelected = (node?: List['nodes'][number]) => node?.harnesses
     ? node.harnesses.some((harness) => harness === selected.id) : node?.supportsHarness && selected.id === codex.id;
-  const discoverNodes = (listData?.nodes ?? []).filter((node) => node.online && node.harnessWorkspace && supportsSelected(node)).map((node) => node.id).sort();
+  const discoverNodes = (listData?.nodes ?? []).filter((node) => node.online && node.harnessWorkspace && supportsSelected(node) &&
+    (!archived || node.harnessOrganization && selected.id !== 'claude')).map((node) => node.id).sort();
+  const organizationAvailable = sessions.some((session) => session.organization?.group || session.organization?.tag) ||
+    (listData?.nodes ?? []).some((node) => node.harnessOrganization && supportsSelected(node));
+  const activeView = mode === 'group' && !organizationAvailable ? 'project' : mode;
+  const views = organizationAvailable ? (['project', 'group', 'recent', 'archive'] as const) : (['project', 'recent', 'archive'] as const);
   const discovery = useInfiniteQuery({
-    queryKey: ['harness-index', selected.id, discoverNodes], enabled: discoverNodes.length > 0 && mode !== 'archive',
+    queryKey: ['harness-index', selected.id, discoverNodes, archived], enabled: discoverNodes.length > 0,
     initialPageParam: null as Record<string, string> | null, staleTime: 30_000, retry: false,
     queryFn: async ({ pageParam, signal }) => {
       const pending = pageParam ? Object.entries(pageParam) : discoverNodes.map((nodeId) => [nodeId, null] as const);
       const results = await Promise.allSettled(pending.map(async ([nodeId, cursor]) => {
         const page = await api<{ nextCursor: string | null }>(base + '/native/index', { method: 'POST', signal, body: json({ nodeId, cursor,
           ...(selected.id === codex.id ? {} : { harness: selected.id }),
+          ...(archived ? { archived: true } : {}),
         }) });
         return [nodeId, page.nextCursor === cursor ? null : page.nextCursor] as const;
       }));
@@ -294,6 +334,7 @@ export function HarnessSessions({ id, harness, project, navigation, open, select
       return { next, errors };
     },
     getNextPageParam: (page) => Object.keys(page.next).length ? page.next : null,
+    refetchInterval: (query) => organizationAvailable && (query.state.data?.pages.length ?? 0) < 2 ? 30_000 : false,
   });
   useEffect(() => {
     if (discovery.dataUpdatedAt) void queryClient.invalidateQueries({ queryKey: ['harness-sessions'] });
@@ -304,8 +345,13 @@ export function HarnessSessions({ id, harness, project, navigation, open, select
       ? [{ ...location, projectName: project.name, computerName: node.name }] : [];
   })) ?? [];
   const directories = listData?.directories ?? [];
+  const pathKey = (nodeId: string, path: string) => nodeId + '\0' + path;
+  const projectPins = new Map(listData?.projectPins?.map((pin) => [pathKey(pin.nodeId, pin.cwd), pin.order]));
   const allLocations: HarnessProject[] = [...registered, ...directories];
-  const catalog = [...registered, ...directories.filter((dir) => !registered.some((item) => item.nodeId === dir.nodeId && item.path === dir.path))];
+  const registeredPaths = new Set(registered.map((item) => pathKey(item.nodeId, item.path)));
+  const catalog = [...registered, ...directories.filter((dir) => !registeredPaths.has(pathKey(dir.nodeId, dir.path)))]
+    .map((item) => ({ ...item, pinOrder: projectPins.get(pathKey(item.nodeId, item.path)) }))
+    .sort((left, right) => compareOrder(left.pinOrder, right.pinOrder));
   const chosenLocation = allLocations.find((item) => item.id === project);
   const selectedProject = chosenLocation && (catalog.find((item) => item.id === project)
     ?? catalog.find((item) => item.nodeId === chosenLocation.nodeId && item.path === chosenLocation.path));
@@ -332,19 +378,23 @@ export function HarnessSessions({ id, harness, project, navigation, open, select
   });
   const seen = new Set(sessions.filter((session) => session.nodeId === selectedProject?.nodeId && session.status !== 'failed').map((session) => session.threadId));
   const projectPaths = new Map(allLocations.map((location) => [location.id, location.path]));
-  const projectKey = (id: string, nodeId: string) => nodeId + '\0' + (projectPaths.get(id) ?? id);
-  const rows: SessionRow[] = visibleSessions.map((session) => ({ ...session, projectPath: projectPaths.get(session.locationId), projectKey: projectKey(session.locationId, session.nodeId) }));
+  const projectKey = (id: string, nodeId: string) => pathKey(nodeId, projectPaths.get(id) ?? id);
+  const rows: SessionRow[] = visibleSessions.map((session) => {
+    const key = projectKey(session.locationId, session.nodeId);
+    return { ...session, projectPath: projectPaths.get(session.locationId), projectKey: key, projectPinOrder: projectPins.get(key) };
+  });
   if (selectedProject && selected.id === codex.id) {
     for (const page of native.data?.pages ?? []) for (const thread of page.threads) {
       if (seen.has(thread.threadId)) continue;
       seen.add(thread.threadId);
-      rows.push({ id: 'native:' + thread.threadId, nativeThreadId: thread.threadId, nodeName: selectedProject.computerName,
+      rows.push({ id: 'native:' + thread.threadId, nativeThreadId: thread.threadId, nodeId: selectedProject.nodeId, nodeName: selectedProject.computerName,
         online: nativeEnabled, projectName: selectedProject.projectName, title: thread.title, status: 'ready', updatedAt: thread.updatedAt,
-        projectKey: projectKey(selectedProject.id, selectedProject.nodeId), projectPath: selectedProject.path });
+        projectKey: projectKey(selectedProject.id, selectedProject.nodeId), projectPath: selectedProject.path, organization: thread.organization,
+        pinned: thread.organization?.pinned, pinOrder: thread.organization?.pinOrder ?? undefined });
     }
   }
   const indexed = new Map(rows.map((row) => [row.id, row]));
-  const uniqueRows = [...indexed.values()].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
+  const uniqueRows = [...indexed.values()].sort((a, b) => comparePinned(a, b) || b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
   const [metadataError, setMetadataError] = useState<string | null>(null);
   async function updateMetadata(sessionId: string, change: SessionMetadata) {
     setMetadataError(null);
@@ -455,19 +505,20 @@ export function HarnessSessions({ id, harness, project, navigation, open, select
                 setLocationId(item?.id ?? '');
               }} />
             <div className="flex flex-wrap gap-1" role="group" aria-label={t('harness.listView')}>
-              {(['project', 'recent', 'archive'] as const).map((view) => <Button key={view} type="button" size="sm" className="min-h-11"
-                variant={mode === view ? 'secondary' : 'ghost'} aria-pressed={mode === view} onClick={() => {
+              {views.map((view) => <Button key={view} type="button" size="sm" className="min-h-11"
+                variant={activeView === view ? 'secondary' : 'ghost'} aria-pressed={activeView === view} onClick={() => {
                   setMode(view);
                   if (view === 'recent' && project) selectProject(null);
                 }}>
-                {view === 'archive' && <Archive />} {t('harness.view.' + view)}
+                  {view === 'archive' && <Archive />} {t(view === 'group' && selected.id === 'claude' ? 'harness.view.tag' : 'harness.view.' + view)}
               </Button>)}
             </div>
           </div>
           {list.error && <p role="alert" className="mb-3 text-sm text-destructive">{list.error.message}</p>}
           {metadataError && <p role="alert" className="mb-3 text-sm text-destructive">{metadataError}</p>}
           {nativeError && nativeError.project === selectedProject?.id && <p role="alert" className="mb-3 text-sm text-destructive">{nativeError.text}</p>}
-          {uniqueRows.length > 0 && <SessionList sessions={uniqueRows} groupByProject={mode !== 'recent' && !selectedProject}
+          {uniqueRows.length > 0 && <SessionList sessions={uniqueRows}
+            groupBy={activeView === 'group' ? 'organization' : activeView !== 'recent' && !selectedProject ? 'project' : null}
             selectedId={id} opening={opening} open={(row) => void openRow(row)} update={(sessionId, change) => void updateMetadata(sessionId, change)} />}
           {(list.isLoading || nativeEnabled && native.isPending || discovery.isLoading) && <p role="status" className="px-2 py-4 text-sm text-muted-foreground">{t('harness.loading')}</p>}
           {nativeEnabled && native.error && <div className="flex flex-wrap items-center gap-2 px-2 py-3">
@@ -478,9 +529,9 @@ export function HarnessSessions({ id, harness, project, navigation, open, select
             <p className="px-2 py-6 text-sm text-muted-foreground">{t(selectedProject ? 'harness.noProjectSessions' : 'harness.noSessions', { harness: selected.name, project: selectedProject?.projectName })}</p>}
           {list.hasNextPage && <Button type="button" variant="ghost" className="mt-2 min-h-11 w-full"
             disabled={list.isFetching} onClick={() => void list.fetchNextPage()}>{t(list.isFetchingNextPage ? 'harness.loading' : 'harness.moreSessions')}</Button>}
-          {mode !== 'archive' && discovery.hasNextPage && <Button type="button" variant="ghost" className="mt-2 min-h-11 w-full"
+          {discovery.hasNextPage && <Button type="button" variant="ghost" className="mt-2 min-h-11 w-full"
             disabled={discovery.isFetching} onClick={() => void discovery.fetchNextPage()}>{t(discovery.isFetchingNextPage ? 'harness.loading' : 'harness.moreNative')}</Button>}
-          {mode !== 'archive' && discovery.data?.pages.some((page) => page.errors.length) && <div className="flex items-center gap-2 px-2 py-3">
+          {discovery.data?.pages.some((page) => page.errors.length) && <div className="flex items-center gap-2 px-2 py-3">
             <p role="status" className="text-sm text-muted-foreground">{t('harness.indexError')}</p>
             <Button type="button" variant="outline" size="sm" onClick={() => void discovery.refetch()}>{t('harness.retry')}</Button>
           </div>}

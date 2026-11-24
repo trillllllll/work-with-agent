@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs';
-import { lstat, readdir, stat } from 'node:fs/promises';
+import { lstat, open, readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -28,7 +28,27 @@ function content(value: unknown) {
   return typeof value === 'string' ? value : items(value).filter((entry) => entry.type === 'text').map((entry) => text(entry.text)).join('\n');
 }
 
-async function thread(path: string, id: string, roots: string[]) {
+async function sessionTag(path: string, size: number, sessionId: string) {
+  const length = Math.min(size, 2 * 1024 * 1024);
+  const start = size - length;
+  const file = await open(path, 'r');
+  try {
+    const buffer = Buffer.alloc(length);
+    const { bytesRead } = await file.read(buffer, 0, length, start);
+    const lines = buffer.toString('utf8', 0, bytesRead).split('\n');
+    for (let i = lines.length - 1; i >= (start === 0 ? 0 : 1); i--) {
+      if (!lines[i].includes('"tag"')) continue;
+      let row: Record<string, unknown>;
+      try { row = asObject(JSON.parse(lines[i])); } catch { continue; }
+      if (row.type !== 'tag' || row.sessionId !== sessionId || row.isSidechain) continue;
+      if (typeof row.tag === 'string') return row.tag.trim().slice(0, 255) || null;
+      if (row.tag == null) return null;
+    }
+    return start === 0 && bytesRead === length ? null : undefined;
+  } finally { await file.close(); }
+}
+
+async function thread(path: string, id: string, roots: string[], organization = false) {
   const at = await lstat(path).catch(() => null);
   if (!at?.isFile()) return null;
   const verified = await assertAllowed(path, [transcriptDirectory()]).catch(() => null);
@@ -38,17 +58,21 @@ async function thread(path: string, id: string, roots: string[]) {
     const cwd = await assertAllowed(row.cwd, roots).catch(() => null);
     if (!cwd) return null;
     const prompt = content(asObject(row.message).content).replace(/\s+/g, ' ').trim().slice(0, 160);
-    if (prompt) return { id, name: prompt, cwd, path: verified, modelProvider: 'claude', updatedAt: Math.floor(at.mtimeMs / 1000), status: { type: 'notLoaded' } };
+    if (prompt) {
+      const tag = organization ? await sessionTag(verified, at.size, id).catch(() => undefined) : undefined;
+      return { id, name: prompt, cwd, path: verified, modelProvider: 'claude', updatedAt: Math.floor(at.mtimeMs / 1000), status: { type: 'notLoaded' },
+        organization: tag === undefined ? undefined : { tag } };
+    }
   }
   return null;
 }
 
-export async function readClaudeThread(id: string, cwd: string) {
+export async function readClaudeThread(id: string, cwd: string, organization = false) {
   if (!uuid.test(id)) return null;
-  return thread(resolve(transcriptDirectory(), projectKey(cwd), id + '.jsonl'), id, [cwd]);
+  return thread(resolve(transcriptDirectory(), projectKey(cwd), id + '.jsonl'), id, [cwd], organization);
 }
 
-export async function listClaudeThreads(roots: string[], cursor: string | null, cwd?: string) {
+export async function listClaudeThreads(roots: string[], cursor: string | null, cwd?: string, organization = false) {
   const base = transcriptDirectory();
   const dirs = cwd ? [projectKey(cwd)] : (await readdir(base, { withFileTypes: true }).catch(() => []))
     .filter((entry) => entry.isDirectory()).map((entry) => entry.name);
@@ -69,7 +93,7 @@ export async function listClaudeThreads(roots: string[], cursor: string | null, 
   if (offset === -1) return { data: [], nextCursor: null };
   const page = candidates.slice(offset, offset + 30);
   const data = await Promise.all(page
-    .map(async ({ path, id }) => thread(path, id, roots).catch(() => null)));
+    .map(async ({ path, id }) => thread(path, id, roots, organization).catch(() => null)));
   const last = page.at(-1);
   return { data: data.filter((row): row is NonNullable<typeof row> => row !== null),
     nextCursor: last && offset + page.length < candidates.length ? `${last.at}:${last.id}` : null };

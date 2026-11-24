@@ -1,16 +1,18 @@
 import { stat } from 'node:fs/promises';
 import { basename, isAbsolute } from 'node:path';
+import type { DatabaseSync } from 'node:sqlite';
 import { assertAllowed } from './git.js';
 import { asObject, CodexRejected, type HarnessRuntime } from './harness-codex.js';
 import { codexItems as items, codexText as text, projectCodexHistory } from './harness-history.js';
 import { withZCode, zcodeWorkspace } from './harness-zcode-client.js';
+import { openZCodeDesktopIndex, readZCodeOrganization, readZCodePriorityIds, readZCodeProjectPins } from './harness-zcode-organization.js';
 import { zcodeHarnessTool } from './harness-zcode-tools.js';
 import { HARNESS_TEXT_LIMIT, type HarnessCatalogThread, type HarnessReadTask, type HarnessTurn } from './harness-protocol.js';
 
 const pageSize = 30;
 const projectSessionKinds = new Set(['interactive', 'fork', 'workflow_parent']);
 
-async function threadSummary(value: Record<string, unknown>, roots: string[], project?: string) {
+async function threadSummary(value: Record<string, unknown>, roots: string[], project?: string, index?: DatabaseSync | null) {
   const workspace = asObject(value.workspace);
   const path = text(workspace.workspacePath);
   const id = text(value.sessionId);
@@ -24,13 +26,14 @@ async function threadSummary(value: Record<string, unknown>, roots: string[], pr
     title: text(value.title).replace(/\s+/g, ' ').trim().slice(0, 160),
     updatedAt: new Date(updated).toISOString(),
   };
-  return { ...summary, cwd, name: (basename(cwd) || cwd).slice(0, 255) };
+  const organization = index ? readZCodeOrganization(index, id, path, cwd) : undefined;
+  return { ...summary, cwd, name: (basename(cwd) || cwd).slice(0, 255), ...(organization ? { organization } : {}) };
 }
 
-export async function readZCodeThread(app: HarnessRuntime, id: string, cwd: string) {
+export async function readZCodeThread(app: HarnessRuntime, id: string, cwd: string, index?: DatabaseSync | null) {
   const result = await app.request('session/list', { sessionIds: [id], workspace: zcodeWorkspace(cwd) });
   const entry = items(result.sessions).find((item) => item.sessionId === id);
-  const verified = entry && await threadSummary(entry, [cwd], cwd);
+  const verified = entry && await threadSummary(entry, [cwd], cwd, index);
   if (!verified) throw new CodexRejected('这条对话不在所选项目目录中');
   return verified;
 }
@@ -84,25 +87,42 @@ export function zcodeTurns(rows: unknown) {
   return [...turns.values()].reverse();
 }
 
+async function readZCodeList(app: HarnessRuntime, task: Extract<HarnessReadTask, { kind: 'index' | 'catalog' }>, roots: string[], cwd: string, index: DatabaseSync | null) {
+  const offset = task.cursor === null ? 0 : Number(task.cursor);
+  if (!/^\d+$/.test(task.cursor ?? '0') || !Number.isSafeInteger(offset) || offset < 0 || offset > 10_000) {
+    throw new CodexRejected('会话列表已变化，请从第一页重新读取');
+  }
+  const project = task.kind === 'catalog' ? cwd : undefined;
+  // Keep the cursor over raw rows so filtered projects cannot skip a page.
+  const { sessions } = await app.request('session/list', { limit: offset + pageSize + 1, ...(project ? { workspace: zcodeWorkspace(project) } : {}) });
+  const page = items(sessions).slice(offset, offset + pageSize + 1);
+  const projectThreads = async (rows: Record<string, unknown>[]) => (await Promise.all(rows.map((row) => threadSummary(row, roots, project, index))))
+    .filter((row) => row !== null);
+  const threads = await projectThreads(page.slice(0, pageSize));
+  const nextCursor = page.length > pageSize && offset + pageSize <= 10_000 ? String(offset + pageSize) : null;
+  if (task.kind === 'catalog') return { threads: threads.map(({ cwd: _cwd, name: _name, ...thread }) => thread), nextCursor };
+  if (!index || offset !== 0) return { threads, nextCursor };
+  const [priority, projectPins] = await Promise.all([readZCodePriorityIds(index, roots, task.archived === true), readZCodeProjectPins(index, roots)]);
+  const known = new Set(threads.map((thread) => thread.threadId));
+  const ids = [...new Set([...priority, ...(task.recheckThreadIds ?? [])])].filter((id) => !known.has(id));
+  const priorityThreads = ids.length ? await app.request('session/list', { sessionIds: ids })
+    .then((result) => projectThreads(items(result.sessions).filter((thread) => ids.includes(text(thread.sessionId))).slice(0, ids.length)))
+    .catch(() => undefined) : undefined;
+  return { threads, nextCursor, priorityThreads, projectPins };
+}
+
 export async function readZCodeLibrary(task: Extract<HarnessReadTask, { kind: 'index' | 'catalog' | 'thread' | 'history' }>, roots: string[]) {
   const cwd = await assertAllowed(task.kind === 'index' ? roots[0] : task.cwd, roots);
   return withZCode(cwd, async (app) => {
-    if (task.kind === 'index' || task.kind === 'catalog') {
-      const offset = task.cursor === null ? 0 : Number(task.cursor);
-      if (!/^\d+$/.test(task.cursor ?? '0') || !Number.isSafeInteger(offset) || offset < 0 || offset > 10_000) {
-        throw new CodexRejected('会话列表已变化，请从第一页重新读取');
-      }
-      const project = task.kind === 'catalog' ? cwd : undefined;
-      // ZCode's session/list has a limit and no cursor. Keep the cursor over raw rows so filtered projects cannot skip a page.
-      const { sessions } = await app.request('session/list', { limit: offset + pageSize + 1, ...(project ? { workspace: zcodeWorkspace(project) } : {}) });
-      const page = items(sessions).slice(offset, offset + pageSize + 1);
-      const threads = (await Promise.all(page.slice(0, pageSize).map((row) => threadSummary(row, roots, project))))
-        .filter((row) => row !== null);
-      const nextCursor = page.length > pageSize && offset + pageSize <= 10_000 ? String(offset + pageSize) : null;
-      return { threads: project ? threads.map(({ threadId, title, updatedAt }) => ({ threadId, title, updatedAt })) : threads, nextCursor };
+    if (task.kind !== 'history') {
+      const index = task.organization ? openZCodeDesktopIndex() : null;
+      try {
+        if (task.kind === 'index' || task.kind === 'catalog') return await readZCodeList(app, task, roots, cwd, index);
+        const { threadId, title, updatedAt, organization } = await readZCodeThread(app, task.threadId, cwd, index);
+        return { threadId, title, updatedAt, organization };
+      } finally { index?.close(); }
     }
-    const { threadId, title, updatedAt } = await readZCodeThread(app, task.threadId, cwd);
-    if (task.kind === 'thread') return { threadId, title, updatedAt };
+    const { threadId } = await readZCodeThread(app, task.threadId, cwd);
     for (const limit of [36, 18, 9, 4, 1]) {
       const page = await readZCodeRows(app, threadId, cwd, task.cursor, limit);
       const { view } = await projectCodexHistory(zcodeTurns(page.rows), cwd, roots, false, false, zcodeHarnessTool, 'zcode');
