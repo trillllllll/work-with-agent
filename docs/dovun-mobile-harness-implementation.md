@@ -121,3 +121,13 @@ sequenceDiagram
 | 兼容与权限 | 分别验证新旧节点与服务端混用。用其他节点凭据回传和用未授权目录启动时均失败。管理员撤销电脑后不能继续投递。 |
 
 服务和执行器回归沿用 [节点代理测试](../server/src/node-agent/agent.test.ts)及[现有编排测试](../e2e/orchestration.e2e.ts)的测试入口。真机结果与受控运行分别记录，发版前再按仓库规范更新应用功能手册。
+
+## ZCode 本机账号模型
+
+Mac 执行器仍使用 ZCode 的 V4 会话协议、原生会话 ID 和原会话占用检查。恢复会话时，执行器可启动与本机 ZCode 版本匹配的账号宿主。宿主自行解析 ZCode 当前版本的模型目录、检查 CLI 账号授权，并在本机完成模型请求鉴权。手机模型列表取原生会话返回的可选项。通过原生刷新入口可以重新读取目录与授权。
+
+当前宿主基于 ZCode v4.0.0。将该版本检出到临时目录，用 Node 24 执行 `node scripts/zcode-account-host/build.mjs <检出目录>`，产物进入 `.cache/zcode-account-host`。Mac 打包时校验并收录该产物。Mac 缺少对应宿主时，执行器继续使用安装的 ZCode CLI。
+
+账号宿主默认读取 ZCode CLI 的账号授权。为 Dovun 单独授权时，将官方 CLI 的 `ZCODE_CREDENTIALS_FILE` 指到 `~/.zcode/v2/dovun-account/credentials.json`，将本次登录的 `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` 指到同目录的 `provider_config.json`，执行 `login bigmodel`。首次授权时，系统钥匙串不可用的场景可以使用 ZCode 原生支持的同目录 `credential-secret` 私有文件，权限设为 `0600`。执行器发现专用凭据库后，会优先用它授权账号模型，并继续读取 ZCode 的个人模型目录。
+
+验收需分别验证读取项目下的旧对话、恢复原会话 ID、刷新后显示已授权的模型、切换模型后同会话发送并收到流式回复，以及旧模型不可用时能切换到实际可用的模型。

@@ -8,6 +8,11 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from '@/components/ui/input.js';
 import { harnessNames, type HarnessKind, type HarnessSettingsChange, type HarnessSettingsView } from '../../../../server/src/node-agent/harness-protocol.js';
 
+function zcodeModelName(id: string) {
+  const model = id.slice(id.indexOf('/') + 1);
+  try { return decodeURIComponent(model); } catch { return model; }
+}
+
 export function HarnessSettings({ settings, harness, disabled, saving, error, onChange, onForkProvider }: {
   settings: HarnessSettingsView;
   harness?: HarnessKind;
@@ -21,13 +26,14 @@ export function HarnessSettings({ settings, harness, disabled, saving, error, on
   const [query, setQuery] = useState('');
   const [provider, setProvider] = useState('');
   const [fullAccess, setFullAccess] = useState<{ changes: HarnessSettingsChange; revision: number } | null>(null);
+  const zcode = harness === 'zcode';
   const selected = settings.models.find((model) => model.id === settings.model);
-  const modelName = selected?.label ?? settings.model;
-  const models = selected ? settings.models : [{ id: settings.model, label: modelName }, ...settings.models];
+  const modelName = selected?.label ?? (zcode ? zcodeModelName(settings.model) : settings.model);
+  const unavailable = zcode && !selected;
+  const models = selected || zcode ? settings.models : [{ id: settings.model, label: modelName }, ...settings.models];
   const search = query.trim().toLocaleLowerCase();
   const filtered = models.filter((model) => (model.label + ' ' + model.id).toLocaleLowerCase().includes(search));
   const effortName = (id: string) => t('harness.settings.efforts.' + id, { defaultValue: id });
-  const zcode = harness === 'zcode';
   const claude = harness === 'claude';
   const permissionModes = settings.permissionModes;
   const sandboxChoices = settings.sandboxChoices ?? (['readOnly', 'workspace'] as const);
@@ -60,15 +66,20 @@ export function HarnessSettings({ settings, harness, disabled, saving, error, on
         <DialogDescription>{t(zcode ? 'harness.settings.zcodeLive' : 'harness.settings.nextTurn')}</DialogDescription>
       </DialogHeader>
       <div className="glass-scrollbar min-h-0 space-y-4 overflow-y-auto">
+        {unavailable && <p role="status" className="text-sm text-muted-foreground">
+          {t('harness.settings.currentModelUnavailable', { model: modelName })}
+        </p>}
         {models.length > 10 && <Input value={query} onChange={(event) => setQuery(event.target.value)}
           aria-label={t('harness.settings.search')} placeholder={t('harness.settings.search')} />}
         {filtered.length ? <div className="glass-scrollbar max-h-52 overflow-y-auto">
           <ChoiceList label={t('harness.settings.model')} options={filtered} value={settings.model} disabled={disabled}
             onChange={(model) => onChange({ model })} />
-        </div> : <p role="status" className="text-sm text-muted-foreground">{t('harness.settings.noMatch')}</p>}
-        {!settings.catalogAvailable && <div className="flex flex-wrap items-center gap-2">
-          <p className="text-sm text-muted-foreground">{t('harness.settings.catalogUnavailable')}</p>
-          <Button type="button" size="sm" variant="outline" disabled={disabled} onClick={() => onChange({})}>{t('harness.retry')}</Button>
+        </div> : models.length > 0 && <p role="status" className="text-sm text-muted-foreground">{t('harness.settings.noMatch')}</p>}
+        {(zcode || !settings.catalogAvailable) && <div className="flex flex-wrap items-center gap-2">
+          {!settings.catalogAvailable && <p className="text-sm text-muted-foreground">{t('harness.settings.catalogUnavailable')}</p>}
+          <Button type="button" size="sm" variant="outline" disabled={disabled || saving} onClick={() => onChange({})}>
+            {t(zcode ? 'harness.settings.refreshModels' : 'harness.retry')}
+          </Button>
         </div>}
         {!zcode && selected?.efforts.length ? <ChoiceList label={t('harness.settings.effort')} value={settings.effort ?? ''}
           options={selected.efforts.map((id) => ({ id, label: effortName(id) }))}

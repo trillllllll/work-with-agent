@@ -442,6 +442,8 @@
       "search": "搜索模型",
       "noMatch": "没有匹配的模型。",
       "catalogUnavailable": "暂时读不到 Mac 上的模型列表。",
+      "currentModelUnavailable": "当前模型 {{model}} 在 Mac 上暂不可用。",
+      "refreshModels": "刷新模型列表",
       "effort": "思考档位",
       "efforts": { "none": "关闭", "minimal": "最低", "low": "低", "medium": "中", "high": "高", "xhigh": "极高", "max": "最高" },
       "mode": "工作模式",

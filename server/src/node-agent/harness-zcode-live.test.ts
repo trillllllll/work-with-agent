@@ -18,7 +18,7 @@ it('preserves the desktop conversation, command IDs and streaming tool rows acro
     input: { command: 'printf fixture', privateInput: 'not displayed' } };
   let emit: (wire: Record<string, unknown>) => void;
   let revision = 17;
-  let model = 'model-a';
+  let model = 'old-model';
   let mode = 'build';
   let planEnabled = false;
   const permission = (interactionId: string, optionId: string) => ({ interactionId, kind: 'permission', anchorRowId: 3,
@@ -29,6 +29,7 @@ it('preserves the desktop conversation, command IDs and streaming tool rows acro
   let pending: Record<string, unknown>[] = [];
   let deduped = false;
   let busy = false;
+  let refreshed = false;
   const close = vi.fn(async () => undefined);
   const assertAvailable = vi.fn(async () => {
     if (busy) throw new Error('ZCode 会话已被另一个进程打开');
@@ -43,10 +44,17 @@ it('preserves the desktop conversation, command IDs and streaming tool rows acro
   const request = vi.fn(async (name: string, arg: Record<string, unknown>) => {
     if (name === 'session/list') return { sessions: [{ sessionId: threadId, workspace, updatedAt: 1 }] };
     if (name === 'session/resume') return { session: { sessionId: threadId }, settings: { model: {
-      available: ['model-a', 'model-b'].map((modelId) => ({ ref: { providerId: 'local', modelId },
-        reasoning: { defaultLevel: 'high', levels: [{ value: 'low' }, { value: 'high' }] },
-      })),
+      available: [
+        ...['model-a', 'model-b'].map((modelId) => ({ ref: { providerId: 'local', modelId },
+          reasoning: { defaultLevel: 'high', levels: [{ value: 'low' }, { value: 'high' }] },
+        })),
+        ...(refreshed ? [{ ref: { providerId: 'account:fixture', modelId: 'GLM-5.4' }, label: 'GLM-5.4' }] : []),
+      ],
     } } };
+    if (name === 'provider/refreshRegistry') {
+      refreshed = true;
+      return {};
+    }
     if (name === 'v4/conversation/subscribe' || name === 'v4/conversation/resync') {
       expect(arg.topic).toBe(topic);
       if (name === 'v4/conversation/resync') expect(arg).not.toHaveProperty('workspace');
@@ -103,6 +111,11 @@ it('preserves the desktop conversation, command IDs and streaming tool rows acro
   try {
     const initial = live.settings()!;
     expect(initial.models.map(({ id }) => id)).toEqual(['local/model-a', 'local/model-b']);
+    const beforeUnavailableSend = request.mock.calls.length;
+    await expect(live.send('continue here', 'missing-model')).rejects.toThrow('当前 ZCode 模型在 Mac 上不可用');
+    expect(request).toHaveBeenCalledTimes(beforeUnavailableSend);
+    const reloaded = await live.selectModel(undefined, 'reload-models', initial.revision);
+    expect(reloaded?.models.map(({ id }) => id)).toEqual(['local/model-a', 'local/model-b', 'account%3Afixture/GLM-5.4']);
     const changed = await live.selectModel('local/model-b', 'switch-1', initial.revision);
     expect(changed?.model).toBe('local/model-b');
     await expect(live.selectModel('local/model-a', 'stale', initial.revision)).rejects.toThrow('会话设置已变更');

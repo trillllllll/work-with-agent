@@ -105,7 +105,7 @@ export async function readZCodeLibrary(task: Extract<HarnessReadTask, { kind: 'i
     if (task.kind === 'thread') return { threadId, title, updatedAt };
     for (const limit of [36, 18, 9, 4, 1]) {
       const page = await readZCodeRows(app, threadId, cwd, task.cursor, limit);
-      const { view } = await projectCodexHistory(zcodeTurns(page.rows), cwd, roots, false, false, zcodeHarnessTool);
+      const { view } = await projectCodexHistory(zcodeTurns(page.rows), cwd, roots, false, false, zcodeHarnessTool, 'zcode');
       const first = items(page.rows)[0]?.rowId;
       const nextCursor = page.hasMore === true && Number.isSafeInteger(first) ? String(first) : null;
       const result = { view, nextCursor };

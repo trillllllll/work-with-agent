@@ -42,7 +42,9 @@ test('opens a project ZCode history on a phone and continues its original sessio
       sessionId: index ? 'sess_zcode_other' : threadId,
       workspace: { workspacePath: cwd, workspaceKey: cwd }, updatedAt: Date.now(),
       title: index ? '另一个项目的 ZCode 对话' : 'Mac 上的原 ZCode 对话',
+      ...(index === 0 ? { config: { provider: 'account:old-coding-plan', model: 'GLM-5.4', thought: '', mode: 'build', planEnabled: false } } : {}),
       rows: Array.from({ length: 44 }, (_, i) => [
+        ...(!index && i === 43 ? [{ kind: 'turnHeader', turnId: 'turn-history-' + i, state: 'failed' }] : []),
         { kind: 'userInput', turnId: 'turn-history-' + i, entityId: 'input-history-' + i, text: 'ZCode 历史消息 ' + i },
         ...(!index && i === 0 ? Array.from({ length: 60 }, (_, tool) => ({
           kind: 'toolCall', turnId: 'turn-history-0', entityId: 'history-tool-' + tool, toolName: 'Bash', status: 'success',
@@ -70,8 +72,15 @@ test('opens a project ZCode history on a phone and continues its original sessio
     await original.tap();
     const chat = phone.getByRole('region', { name: '会话详情' });
     await expect(chat.locator('header [role=status]')).toHaveText('已连接', { timeout: 15_000 });
+    await expect(chat.getByText('ZCode 当前轮执行失败', { exact: true })).toBeVisible();
+    await expect(chat.getByRole('button', { name: '会话设置' })).toHaveText('GLM-5.4');
     await chat.getByRole('button', { name: '会话设置' }).tap();
     const settings = phone.getByRole('dialog', { name: '会话设置' });
+    await expect(settings.getByText('当前模型 GLM-5.4 在 Mac 上暂不可用。')).toBeVisible();
+    await expect(settings.getByRole('radiogroup', { name: '模型', exact: true }).getByRole('radio')).toHaveText([
+      'Fixture ZCode A', 'Fixture ZCode B',
+    ]);
+    await expect(settings.getByRole('button', { name: '刷新模型列表' })).toBeEnabled();
     await settings.getByRole('radio', { name: 'Fixture ZCode B' }).tap();
     await expect(settings.getByRole('radio', { name: 'Fixture ZCode B' })).toBeChecked();
     await settings.getByRole('radio', { name: /^自主模式/ }).tap();

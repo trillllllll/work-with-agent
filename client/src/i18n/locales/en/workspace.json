@@ -443,6 +443,8 @@
       "search": "Search models",
       "noMatch": "No matching models.",
       "catalogUnavailable": "Could not read the model list from the Mac.",
+      "currentModelUnavailable": "The current model, {{model}}, is unavailable on the Mac.",
+      "refreshModels": "Refresh model list",
       "effort": "Reasoning effort",
       "efforts": { "none": "Off", "minimal": "Minimal", "low": "Low", "medium": "Medium", "high": "High", "xhigh": "Extra high", "max": "Maximum" },
       "mode": "Mode",

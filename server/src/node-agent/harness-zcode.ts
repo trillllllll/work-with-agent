@@ -182,7 +182,7 @@ export class ZCodeHarnessRuntime {
       try {
         // CLI stream IDs and the conversation projection's persisted IDs belong to different timelines.
         const result = await withZCode(this.cwd, (app) => readZCodeRows(app, threadId, this.cwd, null, 36));
-        const { view } = await projectCodexHistory(zcodeTurns(result.rows), this.cwd, [this.cwd], true, false, zcodeHarnessTool);
+        const { view } = await projectCodexHistory(zcodeTurns(result.rows), this.cwd, [this.cwd], true, false, zcodeHarnessTool, 'zcode');
         if (view.turn?.status === 'completed' && await this.replaceHistory(run.turnId, view)) return;
       } catch { /* Keep the streamed response available when the history read fails. */ }
     }

@@ -249,7 +249,7 @@ export class HarnessController {
       const history = await app.request('thread/turns/list', { threadId: prior.threadId, limit: 20, sortDirection: 'desc', itemsView: 'full' });
       const liveView = app instanceof ZCodeHarnessRuntime ? await app.liveView() : undefined;
       const { view, clients } = liveView ?? await projectCodexHistory(history.data, cwd, this.roots, true, Boolean(owner),
-        app instanceof ZCodeHarnessRuntime ? zcodeHarnessTool : undefined);
+        app instanceof ZCodeHarnessRuntime ? zcodeHarnessTool : undefined, this.harness);
       this.view = view;
       this.workspaceSandbox = asObject(reopened.sandbox);
       this.restoredClients = clients;

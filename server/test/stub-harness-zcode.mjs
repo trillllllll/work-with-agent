@@ -55,7 +55,7 @@ if (promptArgument !== undefined) {
 const subscriptions = new Map();
 const defaultConfig = { provider: 'fixture', model: 'model-a', thought: '', mode: 'build', planEnabled: false };
 const modelOptions = ['model-a', 'model-b'].map((modelId, index) => ({
-  ref: { providerId: 'fixture', modelId },
+  ref: { providerId: index ? 'account:fixture-coding-plan' : 'fixture', modelId },
   label: 'Fixture ZCode ' + (index ? 'B' : 'A'),
 }));
 
@@ -118,6 +118,7 @@ for await (const line of createInterface({ input: process.stdin })) {
     const session = data.find(({ sessionId }) => sessionId === params.sessionId);
     if (session) result = { session: { sessionId: session.sessionId }, settings: { model: { available: modelOptions } } };
   }
+  if (method === 'provider/refreshRegistry') result = {};
   if (method === 'v4/conversation/subscribe' && !params.historyFirst || method === 'v4/conversation/resync') {
     const session = data.find(({ sessionId }) => params.topic === 'conversation/' + sessionId);
     if (session) {

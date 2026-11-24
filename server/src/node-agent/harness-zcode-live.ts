@@ -74,7 +74,7 @@ export class ZCodeLiveConversation {
   private config: Fields = {};
   private control: Fields = {};
   private permissions: HarnessApproval[] = [];
-  private options: NativeModel[] = [];
+  private options = new Map<string, NativeModel>();
   private revision = 0;
   private snapshotNumber = 0;
   private repairing = false;
@@ -93,7 +93,7 @@ export class ZCodeLiveConversation {
     let conversation: ZCodeLiveConversation | undefined;
     const app = await openZCode(cwd, (method, wire) => {
       if (method === 'v4/conversation/frame') conversation?.accept(wire);
-    }, () => conversation?.connectionLost());
+    }, () => conversation?.connectionLost(), true);
     const live = conversation = new ZCodeLiveConversation(app, cwd, threadId, changed, offline, nativePermissions, assertAvailable);
     try {
       await readZCodeThread(app, threadId, cwd);
@@ -219,29 +219,35 @@ export class ZCodeLiveConversation {
     const session = asObject(resumed.session);
     if ((session.sessionId ?? session.id) !== this.threadId) throw new CodexRejected('ZCode 返回了不同的会话');
     const catalogue = asObject(asObject(resumed.settings).model);
-    const options: NativeModel[] = [];
+    const options = new Map<string, NativeModel>();
     // Keep only the model identifiers, display labels and native default effort.
     for (const entry of items(catalogue.available)) {
       const ref = asObject(entry.ref);
       const provider = text(ref.providerId), model = text(ref.modelId);
       const id = optionId(provider, model);
-      if (!provider || !model || id.length > 200) continue;
-      const label = text(entry.label) || model;
+      if (!provider || !model || id.length > 200 || options.has(id)) continue;
+      const label = text(entry.label).trim() || model;
       const reasoning = asObject(entry.reasoning);
       const levels = items(reasoning.levels).map((level) => text(level.value)).filter(Boolean);
       const preferred = text(asObject(ref.options).reasoningLevel) || text(reasoning.defaultLevel);
       const thought = levels.includes(preferred) ? preferred : levels[0] ?? '';
-      options.push({ id, provider, model, label: label.slice(0, 200), thought });
-      if (options.length >= HARNESS_MODELS) break;
+      options.set(id, { id, provider, model, label: label.slice(0, 200), thought });
     }
     this.options = options;
   }
 
-  settings(): HarnessSettingsView | undefined {
+  private currentModelId() {
     const provider = text(this.config.provider), model = text(this.config.model);
-    const id = optionId(provider, model);
-    if (!provider || !model || id.length > 200) return;
-    const models = [...new Map(this.options.map(({ id, label }) => [id, { id, label, efforts: [], defaultEffort: null }])).values()];
+    return provider && model ? optionId(provider, model) : '';
+  }
+
+  settings(): HarnessSettingsView | undefined {
+    const id = this.currentModelId();
+    if (!id || id.length > 200) return;
+    const catalogue = [...this.options.values()].slice(0, HARNESS_MODELS);
+    const selected = this.options.get(id);
+    if (selected && !catalogue.includes(selected)) catalogue[catalogue.length - 1] = selected;
+    const models = catalogue.map(({ id, label }) => ({ id, label, efforts: [], defaultEffort: null }));
     const permissionMode = this.nativePermissions() ? zcodePermissionMode.safeParse(this.config.mode).data : undefined;
     const mode = permissionMode && this.config.planEnabled === true ? 'plan' : 'default';
     // Compare effective settings separately from the conversation revision used by ZCode's CAS.
@@ -254,7 +260,7 @@ export class ZCodeLiveConversation {
   turns() { return zcodeTurns([...this.rows.values()]); }
 
   async view() {
-    const { view, clients } = await projectCodexHistory(this.turns(), this.cwd, [this.cwd], true, true, zcodeHarnessTool);
+    const { view, clients } = await projectCodexHistory(this.turns(), this.cwd, [this.cwd], true, true, zcodeHarnessTool, 'zcode');
     return { view: { ...view, settings: this.settings(), approvals: this.nativePermissions() ? this.permissions : view.approvals }, clients };
   }
 
@@ -276,6 +282,10 @@ export class ZCodeLiveConversation {
 
   private async command(commandId: string, type: 'sendText' | 'switchModelConfig' | 'switchCollaborationMode' | 'resolveInteraction' | 'stop', payload: Fields, revision?: number) {
     await this.assertAvailable(this.app.pid);
+    const model = this.currentModelId();
+    if (type === 'sendText' && model && model.length <= 200 && !this.options.has(model)) {
+      throw new CodexRejected('当前 ZCode 模型在 Mac 上不可用，请先切换模型');
+    }
     const ack = await this.app.request('v4/command', {
       workspace: this.workspace, sessionId: this.threadId, clientId: 'dovun', commandId,
       type, payload, issuedAt: Date.now(), ...(revision !== undefined ? { baseRevision: revision } : {}),
@@ -313,7 +323,7 @@ export class ZCodeLiveConversation {
       throw new CodexRejected('会话设置已变更，请刷新后重试');
     }
     if (model !== undefined && current?.model !== model) {
-      const next = this.options.find((option) => option.id === model);
+      const next = this.options.get(model);
       if (!next) throw new CodexRejected('这个模型在本机 ZCode 中不可用');
       await this.command(commandId, 'switchModelConfig', {
         provider: next.provider, model: next.model, thought: next.thought,

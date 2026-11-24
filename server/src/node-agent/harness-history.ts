@@ -2,8 +2,8 @@ import { asObject } from './harness-codex.js';
 import { readHarnessArtifacts } from './harness-artifacts.js';
 import { codexHarnessTool } from './harness-tools.js';
 import {
-  HARNESS_ARTIFACTS, HARNESS_ATTACHMENT_TEXT_PREFIX, HARNESS_MESSAGES, HARNESS_TEXT_LIMIT, HARNESS_TOOLS, harnessMessagePhase,
-  type HarnessArtifact, type HarnessMessage, type HarnessTool, type HarnessTurn, type HarnessView,
+  HARNESS_ARTIFACTS, HARNESS_ATTACHMENT_TEXT_PREFIX, HARNESS_MESSAGES, HARNESS_TEXT_LIMIT, HARNESS_TOOLS, harnessMessagePhase, harnessNames,
+  type HarnessArtifact, type HarnessKind, type HarnessMessage, type HarnessTool, type HarnessTurn, type HarnessView,
 } from './harness-protocol.js';
 
 export const codexText = (value: unknown) => typeof value === 'string' ? value : '';
@@ -31,18 +31,18 @@ export function codexMessage(item: Record<string, unknown>, turnId: string, stre
   return null;
 }
 
-export function codexTurn(value: Record<string, unknown>): HarnessTurn | null {
+export function codexTurn(value: Record<string, unknown>, harness: HarnessKind = 'codex'): HarnessTurn | null {
   const id = codexText(value.id);
   if (!id) return null;
   const status = value.status;
   if (status === 'inProgress' || status === 'completed' || status === 'interrupted') return { id, status };
-  if (status === 'failed') return { id, status, error: 'Codex 当前轮执行失败' };
+  if (status === 'failed') return { id, status, error: `${harnessNames[harness]} 当前轮执行失败` };
   return { id, status: 'unknown' };
 }
 
 /** A live snapshot fits the event window; a history page keeps all of its message rows. */
 export async function projectCodexHistory(data: unknown, cwd: string, roots: string[], liveSnapshot: boolean,
-  subscribed = false, projectTool = codexHarnessTool) {
+  subscribed = false, projectTool = codexHarnessTool, harness: HarnessKind = 'codex') {
   const messages: HarnessMessage[] = [];
   const tools: HarnessTool[] = [];
   const turns: HarnessTurn[] = [];
@@ -51,7 +51,7 @@ export async function projectCodexHistory(data: unknown, cwd: string, roots: str
   const artifactMessages: HarnessMessage[] = [];
   let order = 0;
   for (const entry of codexItems(data).reverse()) {
-    const raw = codexTurn(entry);
+    const raw = codexTurn(entry, harness);
     if (!raw) continue;
     const turn: HarnessTurn = liveSnapshot && !subscribed && raw.status === 'inProgress' ? { ...raw, status: 'unknown' } : raw;
     turns.push(turn);

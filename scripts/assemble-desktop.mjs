@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createWriteStream, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { chmod, cp, mkdir, rm } from 'node:fs/promises';
 import { get } from 'node:https';
@@ -87,10 +88,33 @@ await rm(resolve(serverDir, 'prisma/migrations'), { recursive: true, force: true
 await cp(resolve(root, 'server/prisma/migrations'), resolve(serverDir, 'prisma/migrations'), { recursive: true });
 await rm(resolve(serverDir, 'dist'), { recursive: true, force: true });
 await cp(resolve(root, 'server/dist'), resolve(serverDir, 'dist'), { recursive: true });
+await stageZCodeAccountHost();
 await rm(resolve(resources, 'client'), { recursive: true, force: true });
 await cp(resolve(root, 'client/dist'), resolve(resources, 'client'), { recursive: true });
 run(process.execPath, [resolve(serverDir, 'node_modules/prisma/build/index.js'), 'generate', '--schema', resolve(serverDir, 'prisma/schema.prisma')], serverDir);
 console.log(`桌面运行时已组装到 ${resources}`);
+
+async function stageZCodeAccountHost() {
+  const output = resolve(serverDir, 'zcode-account-host');
+  const source = resolve(process.env.DOVUN_ZCODE_ACCOUNT_HOST_DIR || resolve(root, '.cache/zcode-account-host'));
+  const manifestPath = resolve(source, 'manifest.json');
+  if (source === output) throw new Error('ZCode 账号宿主的产物目录不能是桌面组装输出目录');
+  await rm(output, { recursive: true, force: true });
+  if (platform !== 'darwin') return;
+  if (!existsSync(manifestPath) && !process.env.DOVUN_ZCODE_ACCOUNT_HOST_DIR) {
+    console.log('未准备 ZCode 账号宿主，使用本机 ZCode CLI 的个人配置');
+    return;
+  }
+  const { sha256, patchSha256 } = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  const hash = (path) => createHash('sha256').update(readFileSync(path)).digest('hex');
+  if (hash(resolve(source, 'zcode.cjs')) !== sha256 || hash(resolve(root, 'scripts/zcode-account-host/upstream.patch')) !== patchSha256) {
+    throw new Error('ZCode 账号宿主与当前源码或构建记录不一致，请重新构建宿主');
+  }
+  await mkdir(resolve(output, 'provider'), { recursive: true });
+  for (const name of ['manifest.json', 'zcode.cjs', 'provider/zcode-builtin.json', 'LICENSE', 'THIRD-PARTY-NOTICES.md']) {
+    await cp(resolve(source, name), resolve(output, name));
+  }
+}
 
 async function ensureNode() {
   const binary = resolve(resources, 'node.exe');

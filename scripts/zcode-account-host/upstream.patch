@@ -1,0 +1,63 @@
+diff --git a/apps/zcode-cli/packages/bootstrap/src/app/official-plugin-runtime.ts b/apps/zcode-cli/packages/bootstrap/src/app/official-plugin-runtime.ts
+index 062a4423..a874a2cc 100644
+--- a/apps/zcode-cli/packages/bootstrap/src/app/official-plugin-runtime.ts
++++ b/apps/zcode-cli/packages/bootstrap/src/app/official-plugin-runtime.ts
+@@ -120,5 +120,5 @@ export function officialPluginHostPrefixArgs(): string[] | undefined {
+   if (isSeaRuntime()) return [ZCODE_PLUGIN_HOST_COMMAND];
+
+-  const entrypoint = process.argv[1];
++  const entrypoint = process.env.DOVUN_ZCODE_BUNDLED_CLI ?? process.argv[1];
+   if (!entrypoint) return undefined;
+
+@@ -164,4 +164,6 @@ function runtimeDir(): string | undefined {
+
+ function entrypointDir(): string | undefined {
+-  return process.argv[1] ? dirname(process.argv[1]) : undefined;
++  // Dovun 的账号宿主单独打包，仍由已安装的 ZCode 提供原版内置插件和技能。
++  const entrypoint = process.env.DOVUN_ZCODE_BUNDLED_CLI ?? process.argv[1];
++  return entrypoint ? dirname(entrypoint) : undefined;
+ }
+diff --git a/apps/zcode-cli/packages/bootstrap/src/zcode-protocol-entrypoint.ts b/apps/zcode-cli/packages/bootstrap/src/zcode-protocol-entrypoint.ts
+index 53b13be4..205a976c 100644
+--- a/apps/zcode-cli/packages/bootstrap/src/zcode-protocol-entrypoint.ts
++++ b/apps/zcode-cli/packages/bootstrap/src/zcode-protocol-entrypoint.ts
+@@ -213,5 +213,6 @@ export async function runZCodeProtocolAgent(
+       signal: options.lifecycle?.signal,
+       logger,
+-      create: () => startProcessProviderRegistryRuntime(runtimeEnv),
++      // Dovun 的本机 App Server 独立管理 CLI 账号，与 V4 会话共用进程。
++      create: () => startProcessProviderRegistryRuntime(runtimeEnv, { standalone: {} }),
+       disposeLate: (runtime) => runtime.dispose(),
+     });
+@@ -385,4 +386,5 @@ export async function runZCodeProtocolAgent(
+             ...(telemetryDeviceMid ? { ZCODE_TELEMETRY_DEVICE_MID: telemetryDeviceMid } : {}),
+           },
++          providerRuntimeHeadersPort: activeProviderRegistryRuntime.providerRuntimeHeadersPort,
+           ...(nodeReplBrowserBroker ? { nodeReplBrowserBroker } : {}),
+           ...(mcpConnectionPool
+@@ -421,6 +423,7 @@ export async function runZCodeProtocolAgent(
+           getProjectMemoryRoot(protocolCliStorageRoot, workspacePath, workspaceIdentity),
+       }),
+-      syncAccountProviderConfig: activeProviderRegistryRuntime.syncAccountProviderConfig,
+       refreshProviderRegistry: async (reason) => {
++        const accountSource = activeProviderRegistryRuntime.accountSource;
++        if ("refresh" in accountSource) await accountSource.refresh(reason);
+         await activeProviderRegistryRuntime.runtime.registryService.refresh(reason);
+       },
+diff --git a/apps/zcode-cli/packages/cli/scripts/build.mjs b/apps/zcode-cli/packages/cli/scripts/build.mjs
+index 76c3b2f8..f4448a8f 100644
+--- a/apps/zcode-cli/packages/cli/scripts/build.mjs
++++ b/apps/zcode-cli/packages/cli/scripts/build.mjs
+@@ -168,4 +168,5 @@ export const buildCli = async ({
+ } = {}) => {
+   const cliVersion = await version;
++  const appVersion = await readRootPackageVersion({ root: resolve(rootDirectory, "../..") });
+   const outfile = resolve(cliDirectory, "dist/zcode.cjs");
+   const sourcemapFile = `${outfile}.map`;
+@@ -184,4 +185,6 @@ export const buildCli = async ({
+     define: {
+       __CLI_VERSION__: JSON.stringify(cliVersion),
++      // 本机账号宿主和桌面版读取同一产品版本的模型目录。
++      __ZCODE_VERSION__: JSON.stringify(appVersion),
+     },
+     entryPoints: [resolve(cliDirectory, "src/main.ts")],
