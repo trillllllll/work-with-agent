@@ -333,6 +333,57 @@ describe('description codec', () => {
     expect(nested?.map((node) => node.type)).toEqual(['bulletList', 'taskList']);
   });
 
+  const emptyItem: JSONContent = { type: 'listItem', content: [{ type: 'paragraph' }] };
+  const emptyTask: JSONContent = { type: 'taskItem', attrs: { checked: false }, content: [{ type: 'paragraph' }] };
+  const emptyDone: JSONContent = { ...emptyTask, attrs: { checked: true } };
+  const load = (markdown: string) => parseDescription(markdown, 'task-a').doc.content ?? [];
+
+  it('空列表项照常渲染为列表，不落成原文片段', () => {
+    expect(docTypes('1. ')).toEqual(['orderedList']);
+    expect(docTypes('1.')).toEqual(['orderedList']);
+    expect(docTypes('1. 查日志\n2. ')).toEqual(['orderedList']);
+    expect(docTypes('- ')).toEqual(['bulletList']);
+    expect(docTypes('- - 甲')).toEqual(['bulletList']);
+    expect(docTypes('1. \n\n后面一段')).toEqual(['orderedList', 'paragraph']);
+    expect(load('1. 查日志\n2. ')[0]?.content?.[1]).toEqual(emptyItem);
+  });
+
+  it('清单里空的勾选项仍按勾选项读', () => {
+    expect(docTypes('- [ ] 甲\n- [ ] ')).toEqual(['taskList']);
+    expect(load('- [ ] 甲\n- [ ] ')[0]?.content?.[1]).toEqual(emptyTask);
+    expect(load('- [x] 甲\n- [ ] ')[0]?.content?.[1]).toEqual(emptyTask);
+    expect(load('- [ ] 甲\n- [x] ')[0]?.content?.[1]).toEqual(emptyDone);
+    // 混入没有勾选框的普通项，或整张清单都是空的勾选项，读取行为不变。
+    expect(docTypes('- 甲\n- [ ] 乙\n- [ ] ')).toEqual(['rawMarkdown']);
+    expect(docTypes('- [ ] ')).toEqual(['bulletList']);
+  });
+
+  it('刚敲完序号或回车新起一项时保存的内容，重新载入仍是列表', () => {
+    const { model } = parseDescription('', 'task-a');
+    const doc = (content: JSONContent[]): JSONContent => ({ type: 'doc', content });
+
+    const onlyMarker = serializeDescription(model, doc([listOf('orderedList', [emptyItem])]));
+    expect(onlyMarker).toBe('1. ');
+    expect(load(onlyMarker)).toEqual([{ type: 'orderedList', attrs: { start: 1 }, content: [emptyItem] }]);
+
+    const withNewItem = serializeDescription(model, doc([listOf('orderedList', [bulletItem('第一步'), emptyItem])]));
+    expect(withNewItem).toBe('1. 第一步\n2. ');
+    expect(load(withNewItem)).toEqual([{ type: 'orderedList', attrs: { start: 1 }, content: [bulletItem('第一步'), emptyItem] }]);
+
+    const withNewTask = serializeDescription(model, doc([listOf('taskList', [taskEntry(false, '甲'), emptyTask])]));
+    expect(withNewTask).toBe('- [ ] 甲\n- [ ] ');
+    expect(load(withNewTask)).toEqual([listOf('taskList', [taskEntry(false, '甲'), emptyTask])]);
+  });
+
+  it('只含子列表的列表项补空段落后，往返结构不变', () => {
+    const source = '- - 甲\n\n尾段';
+    const { model, doc } = parseDescription(source, 'task-a');
+    const edited: JSONContent = { type: 'doc', content: [...(doc.content ?? []).slice(0, 1), { type: 'paragraph', content: [{ type: 'text', text: '改过的尾段' }] }] };
+    const output = serializeDescription(model, edited);
+    expect(output).toContain('- \n  - 甲');
+    expect(parseDescription(output, 'task-a').doc).toEqual(edited);
+  });
+
   it('混合列表来源仍整体保留为原文片段（解析端行为不变）', () => {
     const source = '- 甲\n\n- [ ] 乙\n';
     const { doc } = parseDescription(source, 'task-a');

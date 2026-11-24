@@ -147,10 +147,21 @@ function convertBlock(node: Content, source: string): JSONContent | null {
   }
 }
 
+/** 空的任务项没有勾选状态可读，只剩一段「[ ]」或「[x]」文字；不是这种形态时返回 null。 */
+function emptyTaskCheck(item: Extract<Content, { type: 'listItem' }>): boolean | null {
+  const [only] = item.children;
+  const text = only?.type === 'paragraph' && only.children.length === 1 ? only.children[0] : undefined;
+  if (text?.type !== 'text' || !/^\[[ xX]\]$/.test(text.value)) return null;
+  return text.value[1] !== ' ';
+}
+
 function convertList(node: Extract<Content, { type: 'list' }>): JSONContent | null {
   const items = node.children;
   if (!items.length) return null;
-  const tasked = items.filter((item) => typeof item.checked === 'boolean');
+  // 同列表已有任务项时，空的「[ ]」项按任务项读，否则整张清单会被判成混合列表。
+  const hasTask = items.some((item) => typeof item.checked === 'boolean');
+  const checkedOf = (item: Extract<Content, { type: 'listItem' }>) => typeof item.checked === 'boolean' ? item.checked : hasTask ? emptyTaskCheck(item) : null;
+  const tasked = items.filter((item) => checkedOf(item) !== null);
   // 有序任务列表不是 GFM 语法；混合勾选与普通项的列表也保留原文。
   if (node.ordered && tasked.length) return null;
   const mixed = tasked.length > 0 && tasked.length < items.length;
@@ -166,6 +177,8 @@ function convertList(node: Extract<Content, { type: 'list' }>): JSONContent | nu
       if (child.type === 'paragraph') {
         paragraphs += 1;
         if (paragraphs > 1) return null;
+        // 空任务项的「[ ]」是勾选标记本身，不是正文。
+        if (isTask && typeof item.checked !== 'boolean') continue;
         const converted = convertInline(child.children, false);
         if (!converted) return null;
         inline.push(...converted);
@@ -175,10 +188,10 @@ function convertList(node: Extract<Content, { type: 'list' }>): JSONContent | nu
         nested.push(converted);
       } else return null;
     }
-    if (!inline.length) return null;
-    const itemContent: JSONContent[] = [{ type: 'paragraph', content: inline }];
+    // 空列表项照常渲染：刚敲完序号、回车新起或清空的一项，在编辑器里是一个空段落。
+    const itemContent: JSONContent[] = [{ type: 'paragraph', ...(inline.length ? { content: inline } : {}) }];
     itemContent.push(...nested);
-    if (isTask) content.push({ type: 'taskItem', attrs: { checked: item.checked === true }, content: itemContent });
+    if (isTask) content.push({ type: 'taskItem', attrs: { checked: checkedOf(item) === true }, content: itemContent });
     else content.push({ type: 'listItem', content: itemContent });
   }
   if (isTask) return { type: 'taskList', content };
