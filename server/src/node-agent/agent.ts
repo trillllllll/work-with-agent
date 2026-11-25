@@ -13,6 +13,7 @@ import { createLocalLaunchSpec, localProviders } from './cli.js';
 import { HarnessController } from './harness-controller.js';
 import { readHarnessLibrary } from './harness-library.js';
 import { zcodeAvailable } from './harness-zcode-client.js';
+import { grokHarnessAvailable } from './harness-runtimes.js';
 import {
   HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_FEATURE, HARNESS_LARGE_IMAGES_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_LIBRARY_LEASES, HARNESS_LIBRARY_READS, HARNESS_ORGANIZATION_FEATURE, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE,
   harnessLeaseSchema, harnessLibraryLeaseSchema, harnessReadTaskSchema, type HarnessKind, type HarnessLease, type HarnessReadTask,
@@ -56,6 +57,7 @@ export class NodeAgent {
   private stopped = false;
   private providers: Awaited<ReturnType<typeof localProviders>> | null = null;
   private zcode: Promise<boolean> | null = null;
+  private grok: Promise<boolean> | null = null;
   /** Feature ids from the latest lease response. Missing `accepts` means an old server: report the old result shape. */
   private serverAccepts = new Set<string>();
   private harnessWakeCursor: string | undefined;
@@ -174,6 +176,8 @@ export class NodeAgent {
       if (major > 2 || major === 2 && (minor > 1 || minor === 1 && patch >= 328)) installed.push('claude');
     }
     if (workspace && await (this.zcode ??= zcodeAvailable())) installed.push('zcode');
+    if (workspace) this.grok ??= grokHarnessAvailable().then((probe) => probe !== null);
+    if (workspace && await this.grok) installed.push('grok');
     if (this.serverAccepts.has(HARNESS_FEATURE) && installed.length) body.harnessSessions = HARNESS_FEATURE;
     if (body.harnessSessions && this.serverAccepts.has(HARNESS_LIBRARY_FEATURE)) body.harnessLibrary = HARNESS_LIBRARY_FEATURE;
     if (body.harnessSessions && this.serverAccepts.has(HARNESS_MESSAGE_ORIGIN_FEATURE)) body.harnessMessageOrigin = HARNESS_MESSAGE_ORIGIN_FEATURE;

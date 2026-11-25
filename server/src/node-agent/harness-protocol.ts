@@ -54,13 +54,15 @@ const attachments = z.array(attachment).min(1).max(HARNESS_ATTACHMENT_LIMIT)
   .refine((files) => files.reduce((bytes, file) => bytes + (file.kind === 'imageFile' ? imageAttachmentBytes(file.content) : 0), 0)
     <= HARNESS_MESSAGE_IMAGE_LIMIT).optional();
 export type HarnessInputAttachment = z.infer<typeof attachment>;
-export const harnessKind = z.enum(['codex', 'claude', 'zcode']);
+export const harnessKind = z.enum(['codex', 'claude', 'zcode', 'grok']);
 export type HarnessKind = z.infer<typeof harnessKind>;
-export const harnessNames: Record<HarnessKind, string> = { codex: 'Codex', claude: 'Claude Code', zcode: 'ZCode' };
+export const harnessNames: Record<HarnessKind, string> = { codex: 'Codex', claude: 'Claude Code', zcode: 'ZCode', grok: 'Grok' };
 export const codexApprovalPolicy = z.enum(['on-request', 'untrusted', 'never']);
 export const claudePermissionMode = z.enum(['default', 'acceptEdits', 'plan', 'dontAsk', 'auto', 'bypassPermissions']);
 export const zcodePermissionMode = z.enum(['build', 'edit', 'guarded', 'yolo']);
-const permissionMode = z.union([claudePermissionMode, zcodePermissionMode]);
+// Grok exposes ask / auto-review / always-approve over ACP; its plan runs as a session mode, not a permission mode.
+export const grokPermissionMode = z.enum(['default', 'auto', 'bypassPermissions']);
+const permissionMode = z.union([claudePermissionMode, zcodePermissionMode, grokPermissionMode]);
 const sandboxChoice = z.enum(['readOnly', 'workspace', 'fullAccess']);
 export const harnessCreateSchema = z.object({ nodeId: id, locationId: id, commandId: id, harness: harnessKind.optional() }).strict();
 export const harnessCatalogQuerySchema = z.object({ nodeId: id, locationId: id, cursor: cursor.optional(), harness: harnessKind.optional() }).strict();
