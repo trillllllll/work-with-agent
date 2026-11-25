@@ -102,7 +102,7 @@ it('rejects a second send while the turn runs and reports an interrupted turn', 
   const threadId = await started(app);
   await app.request('turn/start', { threadId, clientUserMessageId: 'cmd-hold',
     input: [{ type: 'text', text: '慢一点' }] });
-  const approval = await until(() => find('item/commandExecution/requestApproval'), 15_000).then(() =>
+  const approval = await until(() => Boolean(find('item/commandExecution/requestApproval')), 15_000).then(() =>
     find('item/commandExecution/requestApproval'));
   await app.reply(approval!.id!, { decision: 'accept' });
   await until(() => methods('item/started').some((entry) => itemOf(entry)?.type === 'commandExecution'));
@@ -120,7 +120,7 @@ it('maps shell approvals to command decisions and resolves after replying', asyn
   const threadId = await started(app);
   await app.request('turn/start', { threadId, clientUserMessageId: 'cmd-ask',
     input: [{ type: 'text', text: '运行命令' }] });
-  const approval = await until(() => find('item/commandExecution/requestApproval'), 15_000).then(() =>
+  const approval = await until(() => Boolean(find('item/commandExecution/requestApproval')), 15_000).then(() =>
     find('item/commandExecution/requestApproval'));
   expect(approval?.params).toMatchObject({
     turnId: 'cmd-ask', command: 'printf hello', availableDecisions: ['accept', 'acceptForSession', 'decline'],
