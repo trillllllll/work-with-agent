@@ -248,7 +248,8 @@ export class HarnessController {
       const owner = prior.native && this.harness === 'codex' ? await this.openSharedThread(cwd, prior.threadId) : null;
       let app = owner ?? await this.open(cwd, modelProvider);
       if (owner) this.attaching = { threadId: prior.threadId, notifications: [] };
-      if (!owner && this.harness !== 'zcode' && (prior.native || this.settingsEnabled && !modelProvider)) {
+      // OpenCode sessions live in a shared service the executor attaches to, so a running native session resumes live.
+      if (!owner && this.harness !== 'zcode' && this.harness !== 'opencode' && (prior.native || this.settingsEnabled && !modelProvider)) {
         const thread = await readProjectThread(app, prior.threadId, cwd, this.roots);
         if (prior.native) await assertNativeThreadIdle(app, thread, prior.threadId);
         const original = codexModelId(thread.modelProvider);

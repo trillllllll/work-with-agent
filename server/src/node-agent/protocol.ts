@@ -155,7 +155,7 @@ export const capabilitiesSchema = z.object({
   harnessLargeImages: z.literal(HARNESS_LARGE_IMAGES_FEATURE).optional(),
   harnessZCodeLive: z.literal(HARNESS_ZCODE_LIVE_FEATURE).optional(),
   harnessZCodeCreate: z.literal(HARNESS_ZCODE_CREATE_FEATURE).optional(),
-  harnessKinds: z.array(harnessKind).max(3).optional(),
+  harnessKinds: z.array(harnessKind).max(4).optional(),
   protocol: z.number().int(),
   version: z.string().max(100).default(''),
   platform: z.string().max(100).default(''),

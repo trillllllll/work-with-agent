@@ -207,6 +207,89 @@ test('opens a project ZCode history on a phone and continues its original sessio
   }
 });
 
+test('opens a project OpenCode history on a phone and continues its original session', async ({ browser, page, request, baseURL, extraHTTPHeaders }, testInfo) => {
+  test.skip(testInfo.project.name === 'mobile', 'The test opens a phone viewport itself.');
+  test.setTimeout(60_000);
+  await resetE2eDatabase();
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'dovun-opencode-browser-')));
+  const context = await browser.newContext({ ...devices['iPhone 13'], baseURL, extraHTTPHeaders, locale: 'zh-CN',
+    storageState: await page.context().storageState() });
+  let agent: ChildProcess | undefined;
+  let service: ChildProcess | undefined;
+  let nodeId: string | undefined;
+  try {
+    const project = join(root, 'opencode-project');
+    await mkdir(project);
+    const threadId = 'ses_opencode_mac_original';
+    const store = join(root, 'opencode-store.json');
+    await writeFile(store, JSON.stringify({ counters: { session: 1 }, sessions: [{
+      id: threadId, title: 'Mac 上的原 OpenCode 对话', agent: 'build', outcome: 'succeeded', running: false,
+      model: { id: 'stub-model', providerID: 'opencode' }, location: { directory: project }, permissions: [],
+      time: { created: 1, updated: 2 }, messages: [
+        { id: 'user-original', type: 'user', text: '原 OpenCode 历史消息', time: { created: 1 } },
+        { id: 'assistant-original', type: 'assistant', content: [{ type: 'text', text: '原 OpenCode 历史回复' }], time: { created: 2 } },
+        { id: 'idle-original', type: 'idle', outcome: 'succeeded', time: { created: 2 } },
+      ] }] }));
+    service = spawn(process.execPath, [resolve('server/test/stub-opencode-service.mjs'), '--port=0'], {
+      env: { ...process.env, HARNESS_TEST_OPENCODE_STORE: store }, stdio: ['ignore', 'pipe', 'inherit'] });
+    const port = await new Promise<number>((resolve) => {
+      service!.stdout!.on('data', (chunk) => {
+        const match = /"port":(\d+)/.exec(String(chunk));
+        if (match) resolve(Number(match[1]));
+      });
+    });
+    const node = await data<{ node: { id: string }; token: string }>(await request.post('/api/nodes', { data: { name: 'OpenCode 测试 Mac' } }));
+    nodeId = node.node.id;
+    agent = spawn(process.execPath, ['--import', 'tsx', resolve('server/src/node-agent/index.ts'), '--server', process.env.E2E_API_URL!,
+      '--roots', root, '--data', join(root, 'node')], { stdio: 'ignore', env: {
+      ...process.env, DOVUN_NODE_TOKEN: node.token,
+      OPENCODE_SERVICE_URL: `http://127.0.0.1:${port}`, OPENCODE_BIN: resolve('server/test/stub-opencode-service.mjs'),
+    } });
+    const phone = await context.newPage();
+    await phone.goto(listUrl);
+    await phone.getByRole('radio', { name: 'OpenCode', exact: true }).tap();
+    const original = phone.getByRole('button', { name: /Mac 上的原 OpenCode 对话/ });
+    await expect(original).toBeVisible({ timeout: 18_000 });
+    await original.tap();
+    const chat = phone.getByRole('region', { name: '会话详情' });
+    await expect(chat.locator('header [role=status]')).toHaveText('已连接', { timeout: 15_000 });
+    await expect(chat.getByText('原 OpenCode 历史回复', { exact: true })).toBeVisible();
+    const composer = chat.getByRole('textbox', { name: '输入消息' });
+    await expect(composer).toHaveAttribute('placeholder', '发消息给 OpenCode');
+    await composer.fill('从手机接着聊');
+    await chat.getByRole('button', { name: '发送', exact: true }).tap();
+    await expect(chat.getByText('OpenCode stub 记得 从手机接着聊', { exact: true })).toBeVisible({ timeout: 12_000 });
+    await expect(chat.getByText('从手机接着聊', { exact: true })).toHaveCount(1);
+    const id = new URLSearchParams(new URL(phone.url()).hash.split('?')[1]).get('sessionId');
+    expect((await data<{ threadId: string }>(await request.get(apiUrl + '/' + id))).threadId).toBe(threadId);
+    await phone.reload();
+    await expect(chat.getByText('OpenCode stub 记得 从手机接着聊', { exact: true })).toHaveCount(1);
+    await phone.goto(listUrl + '&harness=opencode');
+    await phone.getByRole('button', { name: '新建会话', exact: true }).tap();
+    const newSession = phone.getByRole('dialog', { name: '新建会话' });
+    await newSession.getByRole('radio', { name: /opencode-project/ }).tap();
+    await newSession.getByRole('button', { name: '开启 OpenCode 会话' }).tap();
+    await expect(phone).toHaveURL(/sessionId=/);
+    const newId = new URLSearchParams(new URL(phone.url()).hash.split('?')[1]).get('sessionId');
+    expect(newId).not.toBe(id);
+    await expect.poll(async () => (await data<{ threadId: string }>(await request.get(apiUrl + '/' + newId))).threadId).toMatch(/^ses_test_/);
+  } finally {
+    for (const child of [agent, service]) {
+      if (child && child.exitCode === null && child.signalCode === null) {
+        const exited = once(child, 'exit');
+        child.kill('SIGTERM');
+        await exited;
+      }
+    }
+    if (nodeId) {
+      await e2eDatabase.harnessSession.deleteMany({ where: { nodeId } });
+      await e2eDatabase.harnessDirectory.deleteMany({ where: { nodeId } });
+    }
+    await context.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('desktop and phone open and control the same Harness session', async ({ browser, page, request, baseURL, extraHTTPHeaders }, testInfo) => {
   test.skip(testInfo.project.name === 'mobile', 'The test opens desktop and mobile viewports in the same browser project.');
   test.setTimeout(120_000);
