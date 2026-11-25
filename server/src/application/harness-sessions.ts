@@ -79,7 +79,8 @@ function storedJson(value: string | null | undefined): unknown {
   try { return value ? JSON.parse(value) : null; } catch { return null; }
 }
 const projectPinsByHarness = z.object({
-  codex: harnessProjectPinsSchema.optional(), claude: harnessProjectPinsSchema.optional(), zcode: harnessProjectPinsSchema.optional(),
+  codex: harnessProjectPinsSchema.optional(), claude: harnessProjectPinsSchema.optional(),
+  zcode: harnessProjectPinsSchema.optional(), grok: harnessProjectPinsSchema.optional(),
 });
 
 function nativeOrganizationUpdate(organization: HarnessOrganization | undefined, session?: HarnessSession | null) {

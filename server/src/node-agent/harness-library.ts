@@ -6,6 +6,7 @@ import { assertAllowed } from './git.js';
 import { asObject, CodexAppServer, CodexRejected, type HarnessRuntime } from './harness-codex.js';
 import { codexOrganization, readCodexPins, readCodexProjectPins } from './harness-codex-organization.js';
 import { listClaudeThreads, readClaudeThread, readClaudeTurns } from './harness-claude-library.js';
+import { listGrokThreads, readGrokThread, readGrokTurns } from './harness-grok-library.js';
 import { codexItems, codexText, projectCodexHistory } from './harness-history.js';
 import type { HarnessCatalogThread, HarnessReadTask } from './harness-protocol.js';
 import { readHarnessFiles } from './harness-files.js';
@@ -49,6 +50,23 @@ function summary(thread: Record<string, unknown>): HarnessCatalogThread {
 
 export async function readHarnessLibrary(task: HarnessReadTask, roots: string[]) {
   if ('harness' in task && task.harness === 'zcode') return readZCodeLibrary(task, roots);
+  if ('harness' in task && task.harness === 'grok') {
+    if (task.kind === 'index') {
+      const page = await listGrokThreads(roots, task.cursor);
+      return { threads: page.data.map((thread) => ({ ...summary(thread), cwd: thread.cwd, name: (basename(thread.cwd) || thread.cwd).slice(0, 255) })),
+        nextCursor: page.nextCursor };
+    }
+    const cwd = await assertAllowed(task.cwd, roots);
+    if (task.kind === 'catalog') {
+      const page = await listGrokThreads([cwd], task.cursor, cwd);
+      return { threads: page.data.map((thread) => summary(thread)), nextCursor: page.nextCursor };
+    }
+    const thread = await readGrokThread(task.threadId, cwd);
+    if (!thread) throw new CodexRejected('这条对话不在所选项目目录中');
+    if (task.kind === 'thread') return summary(thread);
+    const page = await readGrokTurns(task.threadId, cwd, task.cursor, 12);
+    return { view: (await projectCodexHistory(page.data, cwd, roots, false, false, undefined, 'grok')).view, nextCursor: page.nextCursor };
+  }
   if ('harness' in task && task.harness === 'claude') {
     if (task.kind === 'index') {
       const page = await listClaudeThreads(roots, task.cursor, undefined, task.organization);

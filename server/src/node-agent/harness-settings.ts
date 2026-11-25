@@ -1,7 +1,7 @@
 import { asObject, CodexRejected, type HarnessRuntime } from './harness-codex.js';
 import { codexItems, codexText } from './harness-history.js';
 import {
-  HARNESS_MODELS, claudePermissionMode, codexApprovalPolicy, type HarnessModelOption, type HarnessSettingsChange,
+  HARNESS_MODELS, claudePermissionMode, codexApprovalPolicy, grokPermissionMode, type HarnessModelOption, type HarnessSettingsChange,
   type HarnessSettingsSelection, type HarnessSettingsView,
 } from './harness-protocol.js';
 
@@ -87,6 +87,15 @@ export async function readClaudeSettings(app: HarnessRuntime, selection: Harness
     permissionMode: selection.mode === 'plan' || selection.permission === 'readOnly' ? 'plan' as const : mode.data ?? 'default' as const };
 }
 
+/** Grok: models come from initialize, permission modes are ask / auto / always-approve; plan runs as a session mode. */
+export async function readGrokSettings(app: HarnessRuntime, selection: HarnessSettingsSelection, nativePermissions: boolean) {
+  const view = await readCodexSettings(app, selection);
+  if (!nativePermissions) return view;
+  const mode = grokPermissionMode.safeParse(selection.permissionMode);
+  return { ...view, permissionModes: [...grokPermissionMode.options],
+    permissionMode: selection.mode === 'plan' || selection.permission === 'readOnly' ? 'plan' as const : mode.data ?? 'default' as const };
+}
+
 function changeSelection(current: HarnessSettingsView, changes: HarnessSettingsChange): HarnessSettingsSelection {
   const model = changes.model ?? current.model;
   const option = current.models.find((item) => item.id === model);
@@ -134,6 +143,19 @@ export function changeClaudeSelection(current: HarnessSettingsView, changes: Har
     throw new CodexRejected('当前模型或本机策略不支持所选 Claude Code 权限模式');
   }
   return changeSelection(current, { ...changes, permissionMode: plan ? 'plan' : current.permissionMode === 'plan' ? 'default' : current.permissionMode });
+}
+
+/** Grok keeps its sandbox fixed per session; only model, effort, plan mode and the three ACP permission modes change. */
+export function changeGrokSelection(current: HarnessSettingsView, changes: HarnessSettingsChange) {
+  if (changes.approvalPolicy !== undefined || changes.permission !== undefined) throw new CodexRejected('本机不支持这个会话操作');
+  if (changes.permissionMode !== undefined) {
+    const requested = grokPermissionMode.safeParse(changes.permissionMode);
+    if (!requested.success || !current.permissionModes?.includes(requested.data)) {
+      throw new CodexRejected('本机不支持这个会话操作');
+    }
+    return changeSelection(current, { ...changes, mode: changes.mode ?? (current.permissionMode === 'plan' ? current.mode : undefined) ?? current.mode });
+  }
+  return changeSelection(current, changes);
 }
 
 export function codexTurnSettings(selection: HarnessSettingsSelection, cwd: string, workspaceSandbox: Record<string, unknown>, planAvailable: boolean) {

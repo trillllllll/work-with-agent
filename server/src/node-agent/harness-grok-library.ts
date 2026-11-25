@@ -1,0 +1,222 @@
+import { createReadStream } from 'node:fs';
+import { lstat, readdir, readFile, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { resolve } from 'node:path';
+import { createInterface } from 'node:readline';
+import { assertAllowed } from './git.js';
+import { asObject, CodexRejected } from './harness-codex.js';
+import { codexItems as items, codexText as text } from './harness-history.js';
+import { HARNESS_TEXT_LIMIT } from './harness-protocol.js';
+
+const sessionIdPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+/** Grok keeps everything under `$GROK_HOME` (default `~/.grok`): config, auth, and the session store. */
+export const grokHome = () => process.env.GROK_HOME ? resolve(process.env.GROK_HOME) : resolve(homedir(), '.grok');
+export const grokSessionsDirectory = () => resolve(grokHome(), 'sessions');
+export const grokSessionDirectory = (cwd: string, id: string) => resolve(grokSessionsDirectory(), encodeURIComponent(cwd), id);
+
+type Summary = {
+  info: { id: string; cwd: string };
+  session_summary?: string;
+  generated_title?: string;
+  created_at?: string;
+  updated_at?: string;
+  num_chat_messages?: number;
+  current_model_id?: string;
+  reasoning_effort?: string;
+};
+
+async function readSummary(cwd: string, id: string): Promise<{ summary: Summary; path: string } | null> {
+  const directory = grokSessionDirectory(cwd, id);
+  const at = await lstat(resolve(directory, 'summary.json')).catch(() => null);
+  if (!at?.isFile()) return null;
+  const raw = await readFile(resolve(directory, 'summary.json'), 'utf8').catch(() => null);
+  if (raw === null) return null;
+  const summary = asObject(JSON.parse(raw)) as unknown as Summary;
+  if (summary?.info?.id !== id || summary?.info?.cwd !== cwd) return null;
+  return { summary, path: directory };
+}
+
+/** Existence check that also accepts freshly created sessions with no messages yet. */
+export async function grokSessionExists(cwd: string, id: string) {
+  if (!sessionIdPattern.test(id)) return false;
+  return readSummary(cwd, id).then((found) => found !== null);
+}
+
+function title(summary: Summary) {
+  return (summary.generated_title ?? summary.session_summary ?? '').replace(/\s+/g, ' ').trim().slice(0, 160);
+}
+
+function updatedSeconds(summary: Summary) {
+  const at = Date.parse(summary.updated_at ?? summary.created_at ?? '');
+  return Number.isSafeInteger(at) && at > 0 ? Math.floor(at / 1000) : 0;
+}
+
+/** A native Grok session is busy while its TUI/agent process still holds it open in `active_sessions.json`. */
+export async function isGrokSessionActive(id: string) {
+  const raw = await readFile(resolve(grokHome(), 'active_sessions.json'), 'utf8').catch(() => null);
+  return raw !== null && raw.includes('"' + id + '"');
+}
+
+async function threadRow(cwd: string, id: string, roots: string[]) {
+  const found = await readSummary(cwd, id);
+  if (!found || (found.summary.num_chat_messages ?? 0) < 1) return null;
+  const verified = await assertAllowed(cwd, roots).catch(() => null);
+  if (!verified) return null;
+  const active = await isGrokSessionActive(id).catch(() => false);
+  return {
+    id, cwd: verified, name: title(found.summary) || 'Grok 会话', preview: title(found.summary),
+    modelProvider: 'grok', ephemeral: false, updatedAt: updatedSeconds(found.summary),
+    status: { type: active ? 'active' : 'idle' },
+    model: text(found.summary.current_model_id), effort: text(found.summary.reasoning_effort),
+  };
+}
+
+export async function readGrokThread(id: string, cwd: string) {
+  if (!sessionIdPattern.test(id)) return null;
+  return threadRow(cwd, id, [cwd]);
+}
+
+/** Lists Grok sessions on disk. `cwd` narrows the scan to one project; otherwise every allowed root is scanned. */
+export async function listGrokThreads(roots: string[], cursor: string | null, cwd?: string) {
+  const base = grokSessionsDirectory();
+  const decode = (name: string) => { try { return decodeURIComponent(name); } catch { return ''; } };
+  const dirs = cwd
+    ? [encodeURIComponent(cwd)]
+    : (await readdir(base, { withFileTypes: true }).catch(() => []))
+      .filter((entry) => entry.isDirectory() && decode(entry.name))
+      .map((entry) => entry.name);
+  const candidates: Array<{ dir: string; id: string; at: number }> = [];
+  for (const dir of dirs) {
+    const directory = resolve(base, dir);
+    for (const entry of await readdir(directory, { withFileTypes: true }).catch(() => [])) {
+      if (!entry.isDirectory() || !sessionIdPattern.test(entry.name)) continue;
+      const at = await stat(resolve(directory, entry.name)).catch(() => null);
+      if (at) candidates.push({ dir, id: entry.name, at: at.mtimeMs });
+    }
+  }
+  candidates.sort((a, b) => b.at - a.at || a.id.localeCompare(b.id));
+  const after = cursor ? /^(\d+(?:\.\d+)?):([0-9a-f-]+)$/i.exec(cursor) : null;
+  const offset = after ? candidates.findIndex((row) => row.at < Number(after[1]) || row.at === Number(after[1]) && row.id > after[2]) : 0;
+  if (offset === -1) return { data: [], nextCursor: null };
+  const page = candidates.slice(offset, offset + 30);
+  const data = (await Promise.all(page
+    .map(async ({ dir, id }) => threadRow(decode(dir), id, roots).catch(() => null))))
+    .filter((row): row is NonNullable<typeof row> => row !== null);
+  const last = page.at(-1);
+  return { data, nextCursor: last && offset + page.length < candidates.length ? `${last.at}:${last.id}` : null };
+}
+
+type TurnRow = { id: string; status: 'completed' | 'interrupted'; items: Array<Record<string, unknown>> };
+
+const toolContent = (update: Record<string, unknown>) => items(update.content)
+  .filter((block) => block.type === 'text').map((block) => text(block.text)).join('\n');
+const toolLocations = (update: Record<string, unknown>) => items(update.locations)
+  .map((location) => text(location.path)).filter(Boolean).slice(0, 8);
+
+function toolItem(update: Record<string, unknown>, kind: unknown, toolName: string, completed: boolean, extra: Record<string, unknown>) {
+  const id = text(update.toolCallId);
+  if (!id) return null;
+  const output = toolContent(update);
+  const status = update.status === 'completed' ? 'completed' : update.status === 'failed' ? 'failed' : 'inProgress';
+  if (kind === 'execute') {
+    const command = text(update.title) || toolName;
+    return { id, type: 'commandExecution', status, command,
+      ...(completed && output ? { aggregatedOutput: output } : {}), ...extra };
+  }
+  if (kind === 'edit' || kind === 'delete' || kind === 'move' || toolName === 'search_replace') {
+    const diff = /^@@ |^diff --git |^--- .*\n\+\+\+ /m.test(output) ? output : '';
+    return { id, type: 'fileChange', status,
+      changes: toolLocations(update).map((path) => ({ path, ...(diff ? { diff, kind: { type: 'update' } } : {}) })), ...extra };
+  }
+  if (toolName === 'web_search') {
+    return { id, type: 'webSearch', status, query: text(update.title) || toolName, ...extra };
+  }
+  return { id, type: 'dynamicToolCall', status, tool: toolName, ...(completed && output ? { output } : {}), ...extra };
+}
+
+/** Projects `updates.jsonl` — Grok's authoritative ACP update stream — into Codex-shaped turn rows. */
+export async function readGrokTurns(id: string, cwd: string, cursor: string | null, limit: number) {
+  const summary = await readSummary(cwd, id);
+  if (!summary) return { data: [] as TurnRow[], nextCursor: null };
+  const path = resolve(summary.path, 'updates.jsonl');
+  if (!(await stat(path).catch(() => null))?.isFile()) return { data: [], nextCursor: null };
+  if ((await stat(path)).size > 64 * 1024 * 1024) throw new CodexRejected('这条 Grok 历史过大，请在本机查看');
+
+  const turns: TurnRow[] = [];
+  let current: TurnRow | undefined;
+  let messageRun: { id: string; text: string; thought: boolean } | undefined;
+  let foundCursor = !cursor;
+
+  const closeRun = (final: boolean) => {
+    if (!current || !messageRun) return;
+    const phase = messageRun.thought || !final ? 'commentary' : 'final_answer';
+    const item = { id: messageRun.id, type: 'agentMessage', text: messageRun.text.slice(0, HARNESS_TEXT_LIMIT), phase };
+    const index = current.items.findIndex((existing) => existing.id === item.id);
+    if (index === -1) current.items.push(item); else current.items[index] = item;
+    messageRun = undefined;
+  };
+
+  const rows = createInterface({ input: createReadStream(path, { encoding: 'utf8' }), crlfDelay: Infinity });
+  try {
+    for await (const line of rows) {
+      let row: Record<string, unknown>;
+      try { row = asObject(JSON.parse(line)); } catch { continue; }
+      if (row.method !== 'session/update') continue;
+      const params = asObject(row.params);
+      if (params.sessionId !== id) continue;
+      const update = asObject(params.update);
+      const kind = update.sessionUpdate;
+      const meta = asObject(update._meta);
+      const promptId = text(meta.promptId);
+      if (kind === 'user_message_chunk') {
+        closeRun(true);
+        const body = text(asObject(update.content).text).trim();
+        if (!body) continue;
+        const turnId = promptId || `grok-turn-${turns.length + 1}`;
+        if (turnId === cursor) { foundCursor = true; break; }
+        current = { id: turnId, status: 'interrupted', items: [
+          { id: turnId + ':user', type: 'userMessage', content: [{ type: 'text', text: body.slice(0, HARNESS_TEXT_LIMIT) }] },
+        ] };
+        turns.push(current);
+        if (turns.length > limit + 1) turns.shift();
+      } else if (!current) {
+        continue;
+      } else if (kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') {
+        const chunk = text(asObject(update.content).text);
+        if (!chunk) continue;
+        const thought = kind === 'agent_thought_chunk';
+        if (!messageRun || messageRun.thought !== thought) {
+          closeRun(false);
+          messageRun = { id: `${current.id}:${thought ? 'thought' : 'answer'}:${current.items.length}`, text: '', thought };
+        }
+        messageRun.text += chunk;
+      } else if (kind === 'tool_call' || kind === 'tool_call_update') {
+        closeRun(false);
+        const toolMeta = asObject(asObject(update._meta)['x.ai/tool']);
+        const toolName = text(toolMeta.name) || text(update.title) || 'tool';
+        const kindHint = text(update.kind) || text(toolMeta.kind);
+        const nativeKind = kind === 'tool_call' && (toolName === 'bash' || toolName === 'run_terminal_cmd' || toolName === 'sh') ? 'execute'
+          : toolName === 'web_search' ? 'search'
+          : toolName === 'search_replace' ? 'edit' : kindHint;
+        const item = toolItem(update, nativeKind, toolName, kind === 'tool_call_update', {});
+        if (item) {
+          const index = current.items.findIndex((existing) => existing.id === item.id);
+          if (index === -1) current.items.push(item); else current.items[index] = { ...current.items[index], ...item };
+        }
+      } else if (kind === 'plan') {
+        closeRun(false);
+        const body = items(update.entries).map((entry) => text(asObject(entry.content).text)).filter(Boolean).join('\n');
+        if (body) current.items.push({ id: `${current.id}:plan`, type: 'plan', text: body.slice(0, HARNESS_TEXT_LIMIT) });
+      }
+    }
+  } finally {
+    rows.close();
+  }
+  closeRun(true);
+  if (!foundCursor) throw new CodexRejected('历史页已变化，请从最新一页重新读取');
+  for (const turn of turns) {
+    if (turn.items.some((item) => item.type === 'agentMessage')) turn.status = 'completed';
+  }
+  const data = turns.reverse().slice(0, limit);
+  return { data, nextCursor: turns.length > limit ? data.at(-1)?.id ?? null : null };
+}

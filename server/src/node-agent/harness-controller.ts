@@ -12,7 +12,7 @@ import { readHarnessArtifacts } from './harness-artifacts.js';
 import { codexInput } from './harness-files.js';
 import { codexText as text, codexItems as items, codexMessage as message, codexTurn as turn, projectCodexHistory } from './harness-history.js';
 import { assertNativeThreadIdle, readProjectThread } from './harness-library.js';
-import { changeClaudeSelection, changeCodexSelection, codexModelId, codexTurnSettings, readClaudePermissionModes, readClaudeSettings, readCodexSelection, readCodexSettings } from './harness-settings.js';
+import { changeClaudeSelection, changeCodexSelection, changeGrokSelection, codexModelId, codexTurnSettings, readClaudePermissionModes, readClaudeSettings, readCodexSelection, readCodexSettings, readGrokSettings } from './harness-settings.js';
 import { codexHarnessTool, harnessFilePaths, harnessFileDiffs, harnessOutput } from './harness-tools.js';
 import { assertAllowed } from './git.js';
 import {
@@ -339,6 +339,7 @@ export class HarnessController {
 
   private settings(app: HarnessRuntime, selection: HarnessSettingsSelection, binding: Binding) {
     if (this.harness === 'claude') return readClaudeSettings(app, selection, this.permissionsEnabled, this.advancedPermissions);
+    if (this.harness === 'grok') return readGrokSettings(app, selection, this.permissionsEnabled);
     return readCodexSettings(app, selection, this.workspace ? { cwd: binding.cwd, provider: binding.modelProvider } : undefined,
       this.permissionsEnabled, this.advancedPermissions);
   }
@@ -430,7 +431,8 @@ export class HarnessController {
         before = { ...before, permissionModes: await readClaudePermissionModes(app, command.changes.model ?? before.model, true) };
       }
       const settings = !configuring && binding.settings ? binding.settings
-        : this.harness === 'claude' ? changeClaudeSelection(before, command.changes) : changeCodexSelection(before, command.changes);
+        : this.harness === 'claude' ? changeClaudeSelection(before, command.changes)
+          : this.harness === 'grok' ? changeGrokSelection(before, command.changes) : changeCodexSelection(before, command.changes);
       const view = configuring ? { ...before, ...settings } : await this.settings(app, settings, binding);
       await writeJson(this.bindingPath, { ...binding, settings, settingsCommand: command.commandId });
       binding.settings = settings;
@@ -578,7 +580,7 @@ export class HarnessController {
     try {
       response = await app.request('turn/start', {
         threadId: binding.threadId, input, clientUserMessageId: commandId, ...overrides,
-        ...(this.harness === 'claude' && settings?.permissionMode ? { permissionMode: settings.permissionMode } : {}),
+        ...(this.harness !== 'codex' && this.harness !== 'zcode' && settings?.permissionMode ? { permissionMode: settings.permissionMode } : {}),
       });
     } catch (error) {
       if (draftCommandId && error instanceof CodexRejected && this.binding === binding) {
