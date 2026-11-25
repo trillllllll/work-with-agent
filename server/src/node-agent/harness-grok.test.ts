@@ -70,8 +70,9 @@ lines.on('line', (line) => {
     update({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Considering.' } });
     update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Hello ' } });
     update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'there' } });
-    update({ sessionUpdate: 'tool_call', toolCallId: 'tc-1', title: 'bash', rawInput: { command: 'echo hi' }, _meta: { 'x.ai/tool': { name: 'bash', kind: 'execute' } } });
-    update({ sessionUpdate: 'tool_call_update', toolCallId: 'tc-1', kind: 'execute', title: 'Run echo hi', status: 'completed', content: [{ type: 'text', text: 'hi' }] });
+    update({ sessionUpdate: 'tool_call', toolCallId: 'tc-1', title: 'bash', rawInput: { command: 'echo hi' }, _meta: { 'x.ai/tool': { name: 'bash' } } });
+    update({ sessionUpdate: 'tool_call_update', toolCallId: 'tc-1', kind: 'execute', title: 'Run echo hi', content: [{ type: 'content', content: { type: 'text', text: 'Running echo hi' } }] });
+    update({ sessionUpdate: 'tool_call_update', toolCallId: 'tc-1', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'hi' } }] });
     update({ sessionUpdate: 'plan', entries: [{ content: { type: 'text', text: 'Only step' }, state: 'in_progress' }] });
     update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'All done.' } });
     send({ id: message.id, result: { stopReason: 'end_turn' } });
@@ -115,9 +116,9 @@ it('starts a session, streams a turn and maps native updates onto the shared con
     const started = await setup.runtime.request('thread/start', { cwd: setup.project });
     expect(started).toMatchObject({ thread: { id: sessionId }, model: 'grok-test', reasoningEffort: 'low', modelProvider: 'grok' });
 
-    const models = await setup.runtime.request('model/list', {});
+    const models = await setup.runtime.request('model/list', {}) as { data: Array<Record<string, unknown>> };
     expect(models.data[0]).toMatchObject({ model: 'grok-test', displayName: 'Grok Test', defaultReasoningEffort: 'low' });
-    expect((models.data[0] as { supportedReasoningEfforts: Array<{ reasoningEffort: string }> }).supportedReasoningEfforts)
+    expect((models.data[0].supportedReasoningEfforts as Array<{ reasoningEffort: string }>))
       .toEqual([{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }]);
     const modes = await setup.runtime.request('collaborationMode/list', {});
     expect((modes.data as Array<{ mode: string }>).map((mode) => mode.mode)).toEqual(['default', 'plan']);
@@ -164,9 +165,10 @@ it('translates permission decisions and acknowledges them locally', async () => 
     const resolved = await setup.until((entry) => entry.method === 'serverRequest/resolved');
     expect(resolved?.params.requestId).toBe(request.id);
     await setup.until((entry) => entry.method === 'turn/completed');
-    const outcome = (await import('node:fs')).readFileSync(setup.log, 'utf8').trim().split('\n')
-      .map((line) => JSON.parse(line)).findLast((entry) => entry.permissionReply);
-    expect(outcome.permissionReply).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } });
+    const outcome = ((await import('node:fs')).readFileSync(setup.log, 'utf8').trim().split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>) as Array<Record<string, unknown>>)
+      .filter((entry) => entry.permissionReply !== undefined).at(-1);
+    expect(outcome?.permissionReply).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } });
   } finally {
     await setup.runtime.close();
     vi.unstubAllEnvs();

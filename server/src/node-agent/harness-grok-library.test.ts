@@ -27,12 +27,15 @@ async function grokHome() {
     update('user_message_chunk', { content: { type: 'text', text: 'Look at this project' }, _meta: { promptId: 'p-1' } }),
     update('agent_thought_chunk', { content: { type: 'text', text: 'Browsing the tree.' } }),
     update('agent_message_chunk', { content: { type: 'text', text: 'I will inspect the files.' } }),
-    update('tool_call', { toolCallId: 'tc-1', title: 'bash', rawInput: { command: 'ls -la' }, _meta: { 'x.ai/tool': { name: 'bash', kind: 'execute' } } }),
-    update('tool_call_update', { toolCallId: 'tc-1', kind: 'execute', title: 'Run `ls -la`', status: 'completed', content: [{ type: 'text', text: 'README.md' }], locations: [] }),
-    update('tool_call', { toolCallId: 'tc-2', title: 'search_replace', rawInput: {}, _meta: { 'x.ai/tool': { name: 'search_replace', kind: 'edit' } } }),
-    update('tool_call_update', { toolCallId: 'tc-2', kind: 'edit', title: 'Edit `src/a.ts`', status: 'completed', content: [{ type: 'text', text: '@@ -1 +1 @@\n-old\n+new' }], locations: [{ path: join(project, 'src/a.ts') }] }),
-    update('tool_call', { toolCallId: 'tc-3', title: 'web_search', rawInput: { query: 'docs' }, _meta: { 'x.ai/tool': { name: 'web_search', kind: 'search' } } }),
-    update('tool_call_update', { toolCallId: 'tc-3', kind: 'search', title: 'web_search for docs', status: 'completed', content: [], _meta: { 'x.ai/tool': { name: 'web_search', kind: 'search' } } }),
+    update('tool_call', { toolCallId: 'tc-1', title: 'bash', rawInput: { command: 'ls -la' }, _meta: { 'x.ai/tool': { name: 'bash' } } }),
+    update('tool_call_update', { toolCallId: 'tc-1', kind: 'execute', title: 'Run `ls -la`', content: [{ type: 'content', content: { type: 'text', text: 'Listing files' } }] }),
+    update('tool_call_update', { toolCallId: 'tc-1', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'README.md' } }] }),
+    update('tool_call', { toolCallId: 'tc-2', title: 'search_replace', rawInput: {}, _meta: { 'x.ai/tool': { name: 'search_replace' } } }),
+    update('tool_call_update', { toolCallId: 'tc-2', kind: 'edit', title: 'Edit `src/a.ts`',
+      content: [{ type: 'diff', path: join(project, 'src/a.ts'), oldText: 'old', newText: 'new' }], locations: [{ path: join(project, 'src/a.ts') }] }),
+    update('tool_call_update', { toolCallId: 'tc-2', status: 'completed', content: [{ type: 'diff', path: join(project, 'src/a.ts'), oldText: 'old', newText: 'new' }] }),
+    update('tool_call', { toolCallId: 'tc-3', title: 'web_search', rawInput: { query: 'docs' }, _meta: { 'x.ai/tool': { name: 'web_search' } } }),
+    update('tool_call_update', { toolCallId: 'tc-3', kind: 'search', title: 'web_search for docs', status: 'completed', content: [] }),
     update('plan', { entries: [{ content: { type: 'text', text: 'Step one' }, state: 'pending' }, { content: { type: 'text', text: 'Step two' }, state: 'completed' }] }),
     update('user_message_chunk', { content: { type: 'text', text: 'Second question' }, _meta: { promptId: 'p-2' } }),
     update('agent_message_chunk', { content: { type: 'text', text: 'Second answer.' }, _meta: { promptId: 'p-2' } }),
@@ -64,8 +67,10 @@ it('lists only real Grok sessions inside allowed roots, sorted with a stable cur
     expect(page.data[0]).toMatchObject({ id: threadId, cwd: setup.project, name: 'Title 01a21348' });
     expect(await isGrokSessionActive(threadId)).toBe(false);
     const catalog = await readHarnessLibrary({ kind: 'catalog', id: 'read', cwd: setup.project, harness: 'grok', cursor: null }, [setup.project]);
+    if (!('threads' in catalog) || !catalog.threads) throw new Error('expected a catalog page');
     expect(catalog.threads.map((thread) => thread.threadId)).toEqual([threadId]);
     const index = await readHarnessLibrary({ kind: 'index', id: 'read', harness: 'grok', cursor: null }, [setup.project]);
+    if (!('threads' in index) || !index.threads) throw new Error('expected an index page');
     expect(index.threads.map((thread) => thread.threadId)).toEqual([threadId]);
     expect(index.threads[0]).toMatchObject({ cwd: setup.project, title: 'Title 01a21348' });
   } finally {

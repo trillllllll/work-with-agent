@@ -108,30 +108,89 @@ export async function listGrokThreads(roots: string[], cursor: string | null, cw
 
 type TurnRow = { id: string; status: 'completed' | 'interrupted'; items: Array<Record<string, unknown>> };
 
-const toolContent = (update: Record<string, unknown>) => items(update.content)
-  .filter((block) => block.type === 'text').map((block) => text(block.text)).join('\n');
-const toolLocations = (update: Record<string, unknown>) => items(update.locations)
-  .map((location) => text(location.path)).filter(Boolean).slice(0, 8);
+/** Tool state accumulated across a tool call's `tool_call` / `tool_call_update` rows. */
+export type GrokToolState = {
+  id: string;
+  order: number;
+  name?: string;
+  kind?: string;
+  title?: string;
+  status?: 'completed' | 'failed' | 'inProgress';
+  text?: string;
+  diffs?: Array<{ path: string; oldText: string; newText: string }>;
+  locations?: string[];
+};
 
-function toolItem(update: Record<string, unknown>, kind: unknown, toolName: string, completed: boolean, extra: Record<string, unknown>) {
+/**
+ * Grok streams one tool call as several rows: `tool_call` carries the tool name in
+ * `x.ai/tool` metadata, later `tool_call_update` rows carry the kind and title, and the
+ * final row only carries `status` plus content — so classification must accumulate per
+ * tool call instead of reading any single row.
+ */
+export function grokToolFeed(states: Map<string, GrokToolState>, update: Record<string, unknown>): GrokToolState | null {
   const id = text(update.toolCallId);
   if (!id) return null;
-  const output = toolContent(update);
-  const status = update.status === 'completed' ? 'completed' : update.status === 'failed' ? 'failed' : 'inProgress';
+  const meta = asObject(asObject(update._meta)['x.ai/tool']);
+  const state = states.get(id) ?? { id, order: states.size };
+  const name = text(meta.name);
+  if (name) state.name = name;
+  const kind = text(update.kind) || text(meta.kind);
+  if (kind) state.kind = kind;
+  const title = text(update.title);
+  if (title) state.title = title;
+  if (update.status === 'completed' || update.status === 'failed') state.status = update.status;
+  else if (!state.status) state.status = 'inProgress';
+  const texts = items(update.content).flatMap((block) => block.type === 'content' ? [text(asObject(block.content).text)]
+    : block.type === 'text' ? [text(block.text)] : []);
+  if (texts.length && texts.some((part) => part)) state.text = texts.join('\n');
+  const diffs = items(update.content).flatMap((block) => {
+    const path = text(block.path);
+    return block.type === 'diff' && path ? [{ path, oldText: text(block.oldText), newText: text(block.newText) }] : [];
+  });
+  if (diffs.length) state.diffs = diffs;
+  const locations = items(update.locations).map((location) => text(location.path)).filter(Boolean).slice(0, 8);
+  if (locations.length) state.locations = locations;
+  states.set(id, state);
+  return state;
+}
+
+/** A unified-style patch for one edit, shaped for `harnessFileDiffs` counting. */
+function grokPatch(change: { oldText: string; newText: string }) {
+  const old = change.oldText ? change.oldText.split('\n') : [];
+  const next = change.newText ? change.newText.split('\n') : [];
+  return `@@ -1,${old.length} +1,${next.length} @@\n`
+    + old.map((line) => '-' + line).join('\n') + (old.length ? '\n' : '')
+    + next.map((line) => '+' + line).join('\n');
+}
+
+/** Coarse tool category the harness contract and approval UI share. */
+export function grokToolCategory(state: Pick<GrokToolState, 'name' | 'kind'>) {
+  if (state.kind === 'execute' || ['bash', 'run_terminal_command', 'run_terminal_cmd', 'sh'].includes(state.name ?? '')) return 'execute' as const;
+  if (state.kind === 'edit' || state.kind === 'delete' || state.kind === 'move' || state.name === 'search_replace') return 'edit' as const;
+  if (state.name === 'web_search') return 'search' as const;
+  return (state.kind ?? 'other') as string;
+}
+
+/** Projects an accumulated tool state onto the Codex-shaped item the harness contract expects. */
+export function grokToolItem(state: GrokToolState, completed: boolean): Record<string, unknown> | null {
+  const name = state.name ?? state.title ?? 'tool';
+  const kind = grokToolCategory(state);
+  const status = completed ? state.status ?? 'completed' : 'inProgress';
+  const base = { id: state.id, status };
   if (kind === 'execute') {
-    const command = text(update.title) || toolName;
-    return { id, type: 'commandExecution', status, command,
-      ...(completed && output ? { aggregatedOutput: output } : {}), ...extra };
+    return { ...base, type: 'commandExecution', command: state.title ?? name,
+      ...(completed && state.text ? { aggregatedOutput: state.text } : {}) };
   }
-  if (kind === 'edit' || kind === 'delete' || kind === 'move' || toolName === 'search_replace') {
-    const diff = /^@@ |^diff --git |^--- .*\n\+\+\+ /m.test(output) ? output : '';
-    return { id, type: 'fileChange', status,
-      changes: toolLocations(update).map((path) => ({ path, ...(diff ? { diff, kind: { type: 'update' } } : {}) })), ...extra };
+  if (kind === 'edit') {
+    return { ...base, type: 'fileChange',
+      changes: state.diffs?.length ? state.diffs.slice(0, 8).map((change) => ({
+        path: change.path, diff: grokPatch(change), kind: { type: change.oldText ? 'update' : 'add' },
+      })) : (state.locations ?? []).map((path) => ({ path })) };
   }
-  if (toolName === 'web_search') {
-    return { id, type: 'webSearch', status, query: text(update.title) || toolName, ...extra };
+  if (kind === 'search' && name === 'web_search') {
+    return { ...base, type: 'webSearch', query: state.title ?? name };
   }
-  return { id, type: 'dynamicToolCall', status, tool: toolName, ...(completed && output ? { output } : {}), ...extra };
+  return { ...base, type: 'dynamicToolCall', tool: name, ...(completed && state.text ? { output: state.text } : {}) };
 }
 
 /** Projects `updates.jsonl` — Grok's authoritative ACP update stream — into Codex-shaped turn rows. */
@@ -144,6 +203,7 @@ export async function readGrokTurns(id: string, cwd: string, cursor: string | nu
 
   const turns: TurnRow[] = [];
   let current: TurnRow | undefined;
+  let tools = new Map<string, GrokToolState>();
   let messageRun: { id: string; text: string; thought: boolean } | undefined;
   let foundCursor = !cursor;
 
@@ -177,6 +237,7 @@ export async function readGrokTurns(id: string, cwd: string, cursor: string | nu
         current = { id: turnId, status: 'interrupted', items: [
           { id: turnId + ':user', type: 'userMessage', content: [{ type: 'text', text: body.slice(0, HARNESS_TEXT_LIMIT) }] },
         ] };
+        tools = new Map();
         turns.push(current);
         if (turns.length > limit + 1) turns.shift();
       } else if (!current) {
@@ -192,16 +253,13 @@ export async function readGrokTurns(id: string, cwd: string, cursor: string | nu
         messageRun.text += chunk;
       } else if (kind === 'tool_call' || kind === 'tool_call_update') {
         closeRun(false);
-        const toolMeta = asObject(asObject(update._meta)['x.ai/tool']);
-        const toolName = text(toolMeta.name) || text(update.title) || 'tool';
-        const kindHint = text(update.kind) || text(toolMeta.kind);
-        const nativeKind = kind === 'tool_call' && (toolName === 'bash' || toolName === 'run_terminal_cmd' || toolName === 'sh') ? 'execute'
-          : toolName === 'web_search' ? 'search'
-          : toolName === 'search_replace' ? 'edit' : kindHint;
-        const item = toolItem(update, nativeKind, toolName, kind === 'tool_call_update', {});
+        const state = grokToolFeed(tools, update);
+        if (!state) continue;
+        const completed = state.status === 'completed' || state.status === 'failed';
+        const item = grokToolItem(state, completed);
         if (item) {
           const index = current.items.findIndex((existing) => existing.id === item.id);
-          if (index === -1) current.items.push(item); else current.items[index] = { ...current.items[index], ...item };
+          if (index === -1) current.items.push(item); else current.items[index] = item;
         }
       } else if (kind === 'plan') {
         closeRun(false);

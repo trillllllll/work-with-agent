@@ -8,7 +8,7 @@ import { providerEnvironment } from '../runner/environment.js';
 import { runtimeEnv } from '../shared/runtime-env.js';
 import { asObject, CodexRejected, type HarnessNotification, type HarnessRuntime } from './harness-codex.js';
 import { codexItems as items, codexText as text } from './harness-history.js';
-import { grokSessionExists, readGrokThread, readGrokTurns } from './harness-grok-library.js';
+import { grokSessionExists, grokToolCategory, grokToolFeed, grokToolItem, readGrokThread, readGrokTurns, type GrokToolState } from './harness-grok-library.js';
 import { HARNESS_TEXT_LIMIT, grokPermissionMode } from './harness-protocol.js';
 
 const exec = promisify(execFile);
@@ -73,6 +73,7 @@ export class GrokAgentRuntime implements HarnessRuntime {
   private models: Array<Record<string, unknown>> = [];
   private authMethods: string[] = [];
   private turn: TurnState | null = null;
+  private tools = new Map<string, GrokToolState>();
   private lastTurnId = '';
   private readonly approvals = new Map<RpcId, Array<Record<string, unknown>>>();
 
@@ -215,38 +216,6 @@ export class GrokAgentRuntime implements HarnessRuntime {
     this.emit('item/agentMessage/delta', { turnId: turn.id, itemId: turn.run.id, delta: chunk.slice(0, HARNESS_TEXT_LIMIT) });
   }
 
-  private static toolKind(update: Record<string, unknown>) {
-    const meta = asObject(asObject(update._meta)['x.ai/tool']);
-    const name = text(meta.name) || text(update.title);
-    if (name === 'bash' || name === 'run_terminal_cmd' || name === 'sh' || text(update.kind) === 'execute') return { kind: 'execute', name };
-    if (name === 'web_search') return { kind: 'search', name };
-    if (name === 'search_replace') return { kind: 'edit', name };
-    const hint = text(update.kind) || text(meta.kind);
-    return { kind: hint || 'other', name: name || 'tool' };
-  }
-
-  private toolItem(update: Record<string, unknown>, completed: boolean) {
-    const { kind, name } = GrokAgentRuntime.toolKind(update);
-    const id = text(update.toolCallId);
-    if (!id || !this.turn) return null;
-    const status = update.status === 'completed' ? 'completed' : update.status === 'failed' ? 'failed' : 'inProgress';
-    const output = items(update.content).filter((block) => block.type === 'text').map((block) => text(block.text)).join('\n');
-    const locations = items(update.locations).map((location) => text(location.path)).filter(Boolean).slice(0, 8);
-    const base = { id, status: completed ? status : 'inProgress' };
-    if (kind === 'execute') {
-      return { ...base, type: 'commandExecution', command: text(update.title) || name,
-        ...(completed && output ? { aggregatedOutput: output } : {}) };
-    }
-    if (kind === 'edit' || kind === 'delete' || kind === 'move') {
-      const diff = /^@@ |^diff --git /m.test(output) ? output : '';
-      return { ...base, type: 'fileChange', changes: locations.map((path) => ({ path, ...(diff ? { diff, kind: { type: 'update' } } : {}) })) };
-    }
-    if (kind === 'search' && name === 'web_search') {
-      return { ...base, type: 'webSearch', query: text(update.title) || name };
-    }
-    return { ...base, type: 'dynamicToolCall', tool: name, ...(completed && output ? { output } : {}) };
-  }
-
   private onNative(method: string, params: Record<string, unknown>, id?: RpcId) {
     if (method === 'session/request_permission' && id !== undefined) {
       this.onPermissionRequest(params, id);
@@ -283,9 +252,15 @@ export class GrokAgentRuntime implements HarnessRuntime {
       case 'tool_call_update': {
         if (!turn) return;
         this.closeMessageRun(false);
-        const completed = kind === 'tool_call_update' && (update.status === 'completed' || update.status === 'failed');
-        const item = this.toolItem(update, completed);
-        if (item) this.emit(completed ? 'item/completed' : 'item/started', { turnId: turn.id, item });
+        const known = this.tools.has(text(update.toolCallId));
+        const state = grokToolFeed(this.tools, update);
+        if (!state) return;
+        const done = state.status === 'completed' || state.status === 'failed';
+        const item = grokToolItem(state, done);
+        if (!item) return;
+        // A tool call streams several rows; only the first and the finishing row become contract events.
+        if (!known) this.emit('item/started', { turnId: turn.id, item });
+        else if (done) this.emit('item/completed', { turnId: turn.id, item });
         return;
       }
       case 'plan': {
@@ -311,10 +286,9 @@ export class GrokAgentRuntime implements HarnessRuntime {
     const turn = this.turn;
     const toolCall = asObject(params.toolCall);
     const options = items(params.options);
-    const { kind } = GrokAgentRuntime.toolKind(toolCall);
-    const method = kind === 'execute' ? 'item/commandExecution/requestApproval'
-      : kind === 'edit' || kind === 'delete' || kind === 'move' ? 'item/fileChange/requestApproval'
-        : 'item/tool/requestApproval';
+    const category = grokToolCategory(grokToolFeed(new Map(), toolCall) ?? { name: '', kind: '' });
+    const method = category === 'execute' ? 'item/commandExecution/requestApproval'
+      : category === 'edit' ? 'item/fileChange/requestApproval' : 'item/tool/requestApproval';
     if (!turn || !options.length) {
       void this.unsupported(id).catch(() => undefined);
       return;
@@ -322,7 +296,7 @@ export class GrokAgentRuntime implements HarnessRuntime {
     this.approvals.set(id, options);
     const title = text(toolCall.title);
     this.notify(method, {
-      threadId: this.sessionId, turnId: turn.id, ...(kind === 'execute' ? { command: title } : { description: title }),
+      threadId: this.sessionId, turnId: turn.id, ...(category === 'execute' ? { command: title } : { description: title }),
       reason: '', itemId: text(toolCall.toolCallId), availableDecisions: ['accept', 'decline', 'cancel'],
     }, id);
   }
@@ -407,6 +381,7 @@ export class GrokAgentRuntime implements HarnessRuntime {
     await this.applyTurnSettings(params);
     const turnId = randomUUID();
     this.turn = { id: turnId, clientMessageId: text(params.clientUserMessageId) || undefined, runs: 0, run: null };
+    this.tools.clear();
     const item = { id: `${turnId}:user`, type: 'userMessage',
       content: [{ type: 'text', text: prompt.map((block) => block.text).join('\n').slice(0, HARNESS_TEXT_LIMIT) }],
       ...(this.turn.clientMessageId ? { clientId: this.turn.clientMessageId } : {}) };
