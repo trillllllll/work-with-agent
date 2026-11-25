@@ -3,6 +3,7 @@ import type { AgentNode } from '@prisma/client';
 import type { z } from 'zod';
 import { DomainError } from '../domain/task.js';
 import { isOnline } from './orchestration/nodes.js';
+import { notifyHarnessNode } from './harness-wake.js';
 import {
   HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_LIBRARY_READS, HARNESS_ORGANIZATION_FEATURE, HARNESS_WORKSPACE_FEATURE, harnessKind,
   harnessReadTaskSchema, harnessReadResultSchemas, harnessReadErrorSchema,
@@ -66,6 +67,7 @@ export async function requestHarnessRead<K extends keyof Results>(node: AgentNod
   const organization = (kind === 'index' || kind === 'catalog' || kind === 'thread') && supportsHarnessOrganization(node);
   const task = harnessReadTaskSchema.parse({ ...input, id, kind, ...(organization ? { organization: true } : {}) });
   const result = new Promise<Results[keyof Results]>((resolve, reject) => pending.set(id, { nodeId: node.id, tokenHash: node.tokenHash, task, resolve, reject }));
+  notifyHarnessNode(node.id);
   const timer = setTimeout(() => pending.get(id)?.reject(new DomainError('HARNESS_READ_TIMEOUT', '电脑未及时返回对话，请重试', 504)), 22_000);
   try { return await result as Results[K]; } finally { clearTimeout(timer); pending.delete(id); }
 }

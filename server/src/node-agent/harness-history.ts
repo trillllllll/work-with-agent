@@ -26,7 +26,10 @@ export function codexMessage(item: Record<string, unknown>, turnId: string, stre
       if (name) names.push(name);
       return false;
     }).join('\n');
-    return { id, turnId, role: 'user', text: text.slice(0, HARNESS_TEXT_LIMIT), ...(names.length ? { attachmentNames: names.slice(0, 2) } : {}) };
+    const clientCommandId = codexText(item.clientId);
+    return { id, turnId, role: 'user', text: text.slice(0, HARNESS_TEXT_LIMIT),
+      ...(clientCommandId && clientCommandId.length <= 200 ? { clientCommandId } : {}),
+      ...(names.length ? { attachmentNames: names.slice(0, 2) } : {}) };
   }
   return null;
 }

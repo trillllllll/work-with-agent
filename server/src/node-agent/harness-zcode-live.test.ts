@@ -1,12 +1,28 @@
 import { expect, it, vi } from 'vitest';
-import { HARNESS_OUTPUT_LIMIT } from './harness-protocol.js';
-import { ZCodeLiveConversation } from './harness-zcode-live.js';
+import { applyHarnessEvent, HARNESS_OUTPUT_LIMIT, type HarnessView } from './harness-protocol.js';
+import { zcodeStreamEvents, ZCodeLiveConversation } from './harness-zcode-live.js';
 import { openZCode } from './harness-zcode-client.js';
 
 vi.mock('./harness-zcode-client.js', async (importOriginal) => ({
   ...await importOriginal<typeof import('./harness-zcode-client.js')>(),
   openZCode: vi.fn(),
 }));
+
+it('projects appended ZCode text and tool output through the shared stream and falls back on a changed window', () => {
+  const previous: HarnessView = {
+    turn: { id: 'turn', status: 'inProgress' }, approvals: [], error: null,
+    messages: [{ id: 'answer', turnId: 'turn', role: 'assistant', text: 'first', streaming: true, order: 1 }],
+    tools: [{ id: 'tool', turnId: 'turn', kind: 'command', status: 'running', title: 'fixture', output: 'first', truncated: false, order: 2 }],
+  };
+  const current: HarnessView = {
+    ...previous, messages: [{ ...previous.messages[0], text: 'first second' }],
+    tools: [{ ...previous.tools![0], output: 'first line' }],
+  };
+  const events = zcodeStreamEvents(previous, current);
+  expect(events).toMatchObject([{ kind: 'delta', delta: ' second' }, { kind: 'toolOutput', delta: ' line' }]);
+  expect(events?.reduce(applyHarnessEvent, previous)).toEqual(current);
+  expect(zcodeStreamEvents(current, { ...current, messages: [] })).toBeNull();
+});
 
 it('preserves the desktop conversation, command IDs and streaming tool rows across updates', async () => {
   const cwd = process.cwd();

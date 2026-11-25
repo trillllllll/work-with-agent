@@ -556,7 +556,9 @@
       "permissions": "{{harness}} 请求权限",
       "plan": "{{harness}} 请求批准计划"
     },
+    "restoreDraft": "恢复到输入框",
     "receipt": {
+      "waitingForComputer": "待 Mac 接收",
       "queued": "服务器已收到",
       "dispatched": "指令已发往电脑",
       "accepted": "{{harness}} 已受理",

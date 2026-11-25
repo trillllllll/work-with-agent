@@ -3,6 +3,24 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
 import { readHarnessLibrary } from './harness-library.js';
+import { ClaudeHarnessRuntime } from './harness-claude.js';
+
+it('refuses to start an empty Claude Code session in place of a missing original transcript', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dovun-claude-resume-'));
+  vi.stubEnv('CLAUDE_CONFIG_DIR', join(root, 'profile'));
+  vi.stubEnv('DOVUN_CLAUDE_BIN', join(root, 'missing-claude'));
+  const runtime = new ClaudeHarnessRuntime(root, vi.fn(), vi.fn());
+  try {
+    await expect(runtime.request('thread/resume', {
+      threadId: '2b9b642c-df99-47ed-86e6-8cbd19036eb7', requireNativeHistory: true,
+    })).rejects.toThrow('找不到 Claude Code 原会话');
+    expect(runtime.pid).toBeUndefined();
+  } finally {
+    await runtime.close();
+    vi.unstubAllEnvs();
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 it('projects the latest Claude Code tag and its explicit removal without changing thread identity', async () => {
   const temporary = await mkdtemp(join(tmpdir(), 'dovun-claude-tags-'));

@@ -5,9 +5,11 @@ import { prisma } from '../infrastructure/prisma.js';
 import { DomainError } from '../domain/task.js';
 import { isOnline } from './orchestration/nodes.js';
 import { canBrowse } from './harness-directories.js';
+import { notifyHarnessNode } from './harness-wake.js';
 import { nodeHarnesses, requestHarnessRead, supportsHarnessLibrary, supportsHarnessOrganization, supportsHarnessWorkspace } from './harness-library.js';
 import {
   applyHarnessEvent, HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_EVENTS, HARNESS_LIBRARY_LEASES, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_ZCODE_LIVE_FEATURE, harnessCommandSchema, harnessCreateSchema, harnessSyncSchema,
+  HARNESS_MESSAGE_ORIGIN_FEATURE, HARNESS_ZCODE_CREATE_FEATURE,
   harnessCatalogQuerySchema, harnessFilesQuerySchema, harnessHistoryQuerySchema, harnessIndexQuerySchema, harnessMetadataSchema,
   harnessOpenThreadSchema, harnessStartSchema, harnessKind, harnessNames, harnessOrganizationSchema, harnessProjectPinsSchema,
   harnessEventForClient, harnessSnapshotForClient, HARNESS_WORKSPACE_OPERATIONS, requiresAdvancedPermissions, requiresHarnessWorkspace, requiresNativePermissionSettings,
@@ -94,6 +96,8 @@ function sessionDto(session: HarnessSession & { commands: Array<{ payload: strin
     online: Boolean(node && isOnline(node) && supportsHarness(node, session.harness) && (!session.library || supportsHarnessLibrary(node))),
     historyAvailable: Boolean(node && isOnline(node) && supportsHarness(node, session.harness) && supportsHarnessLibrary(node) && session.threadId),
     settingsAvailable: Boolean(node && supportsHarnessSettings(node) && (session.harness !== 'zcode' || supportsZCodeLive(node))),
+    messageOriginAvailable: Boolean(node && supportsHarnessMessageOrigin(node)
+      && (session.harness !== 'zcode' || supportsZCodeLive(node))),
     workspaceAvailable: Boolean(session.harness !== 'zcode' && node && supportsHarnessWorkspace(node)),
     native: session.nativeTitle !== null,
     title: session.title || session.nativeTitle || (title.length ? title.slice(0, 48).join('') + (title.length > 48 ? '…' : '') : null),
@@ -121,12 +125,20 @@ function requireAvailable(node: AgentNode | null, harness = 'codex') {
 export function supportsHarness(node: Pick<AgentNode, 'capabilitiesJson'>, harness = 'codex') {
   return nodeHarnesses(node).some((item) => item === harness);
 }
+
+function supportsHarnessMessageOrigin(node: Pick<AgentNode, 'capabilitiesJson'>) {
+  try { return JSON.parse(node.capabilitiesJson).harnessMessageOrigin === HARNESS_MESSAGE_ORIGIN_FEATURE; } catch { return false; }
+}
 function supportsHarnessSettings(node: Pick<AgentNode, 'capabilitiesJson'>) {
   try { return JSON.parse(node.capabilitiesJson).harnessSettings === HARNESS_SETTINGS_FEATURE; }
   catch { return false; }
 }
 function supportsZCodeLive(node: Pick<AgentNode, 'capabilitiesJson'>) {
   try { return JSON.parse(node.capabilitiesJson).harnessZCodeLive === HARNESS_ZCODE_LIVE_FEATURE; }
+  catch { return false; }
+}
+function supportsZCodeCreate(node: Pick<AgentNode, 'capabilitiesJson'>) {
+  try { return JSON.parse(node.capabilitiesJson).harnessZCodeCreate === HARNESS_ZCODE_CREATE_FEATURE && supportsZCodeLive(node); }
   catch { return false; }
 }
 function supportsHarnessPermissions(node: Pick<AgentNode, 'capabilitiesJson'>) {
@@ -303,7 +315,7 @@ export async function listHarnessSessions(raw: unknown = {}) {
     harnesses: [...new Set<HarnessKind>(['codex', ...nodes.flatMap(nodeHarnesses)])].map((id) => ({ id, name: harnessNames[id] })),
     nodes: nodes.map((node) => ({ id: node.id, name: node.name, online: isOnline(node), supportsHarness: supportsHarness(node),
       harnessLibrary: supportsHarnessLibrary(node), harnessWorkspace: supportsHarnessWorkspace(node), harnessOrganization: supportsHarnessOrganization(node),
-      harnesses: nodeHarnesses(node), canBrowse: canBrowse(node) })),
+      harnesses: nodeHarnesses(node), zcodeCreate: supportsZCodeCreate(node), canBrowse: canBrowse(node) })),
     projectPins: harness ? nodes.flatMap((node) => (projectPinsByHarness.safeParse(storedJson(node.harnessProjectPinsJson)).data?.[harness] ?? [])
       .map((pin) => ({ nodeId: node.id, ...pin }))) : [],
     directories: directories.map((dir) => ({ id: dir.id, nodeId: dir.nodeId, path: dir.path, projectName: dir.name, computerName: available.get(dir.nodeId)!.name })),
@@ -333,7 +345,9 @@ export async function createHarnessSession(body: unknown) {
     const { cwd, projectName } = await projectLocation(tx, input.nodeId, input.locationId);
     const node = await tx.agentNode.findFirst({ where: { id: input.nodeId, status: 'active', deletedAt: null } });
     requireAvailable(node, harness);
-    if (harness === 'zcode') throw new DomainError('HARNESS_WORKSPACE_UNSUPPORTED', '请先在本机 ZCode 中开始对话', 409);
+    if (harness === 'zcode' && (!node || !supportsZCodeCreate(node))) {
+      throw new DomainError('HARNESS_WORKSPACE_UNSUPPORTED', '请更新这台电脑的执行器以新建 ZCode 会话', 409);
+    }
     const library = Boolean(node && supportsHarnessLibrary(node));
     if (!library && await tx.harnessSession.findFirst({ where: { activeNodeId: input.nodeId } })) {
       throw new DomainError('HARNESS_ACTIVE', '这台电脑已有会话，请打开原会话', 409);
@@ -351,6 +365,7 @@ export async function createHarnessSession(body: unknown) {
     } });
     return { sessionId: session.id, receipt: commandDto(command) };
   });
+  if (result.receipt.status === 'queued') notifyHarnessNode(input.nodeId);
   return result;
 }
 function conflict(): never { throw new DomainError('HARNESS_COMMAND_CONFLICT', '同一个操作 ID 的内容已变化', 409); }
@@ -358,7 +373,8 @@ function conflict(): never { throw new DomainError('HARNESS_COMMAND_CONFLICT', '
 export async function queueHarnessCommand(id: string, body: unknown, advanced = false) {
   const input = harnessCommandSchema.parse(body);
   const payload = JSON.stringify(input);
-  return prisma.$transaction(async (tx) => {
+  let recipient: string | null = null;
+  const receipt = await prisma.$transaction(async (tx) => {
     const prior = await tx.harnessCommand.findUnique({ where: { sessionId_commandId: { sessionId: id, commandId: input.commandId } } });
     if (prior) {
       if (prior.payload !== payload) conflict();
@@ -413,11 +429,14 @@ export async function queueHarnessCommand(id: string, body: unknown, advanced = 
       throw new DomainError('HARNESS_PERMISSION_STALE', '这条权限请求已处理或决定无效', 409);
     }
     const now = new Date();
+    recipient = session.activeNodeId;
     return commandDto(await tx.harnessCommand.create({ data: {
       sessionId: id, commandId: input.commandId, payload, createdAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + expiresAfter).toISOString(),
     } }));
   });
+  if (recipient) notifyHarnessNode(recipient);
+  return receipt;
 }
 export async function readHarnessReceipt(sessionId: string, commandId: string) {
   const row = await prisma.harnessCommand.findUnique({ where: { sessionId_commandId: { sessionId, commandId } } });

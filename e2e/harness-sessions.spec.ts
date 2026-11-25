@@ -135,12 +135,33 @@ test('opens a project ZCode history on a phone and continues its original sessio
     const oldTool = oldProcess.locator('[data-harness-tool="history-tool-0"]');
     await oldTool.locator('summary').tap();
     await expect(oldTool.getByLabel('命令输出')).toHaveText('ZCode 历史输出 0');
+    await phone.reload();
+    await expect(oldProcess).toHaveAttribute('open', '');
+    await expect(oldTool.getByLabel('命令输出')).toHaveText('ZCode 历史输出 0');
+    await expect(oldTool.locator('summary')).toBeInViewport();
     const composer = chat.getByRole('textbox', { name: '输入消息' });
     await expect(composer).toHaveAttribute('placeholder', '发消息给 ZCode');
+    const sendRoute = /\/harness-sessions\/[^/]+\/commands\?advancedPermissions=1$/;
+    await phone.route(sendRoute, (route) => route.fulfill({ status: 409, json: { data: null, error: 'Fixture rejected send' } }));
+    await composer.fill('保留发送失败的草稿');
+    await chat.getByRole('button', { name: '发送', exact: true }).tap();
+    await chat.getByRole('button', { name: '恢复到输入框' }).tap();
+    await expect(composer).toHaveValue('保留发送失败的草稿');
+    await phone.unroute(sendRoute);
+    let unblock!: () => void;
+    const delayed = new Promise<void>((resolve) => { unblock = resolve; });
+    await phone.route(sendRoute, async (route) => { await delayed; await route.continue(); });
     await composer.fill('从手机接着聊');
     await chat.getByRole('button', { name: '发送', exact: true }).tap();
+    try {
+      await expect(composer).toHaveValue('');
+      await expect(chat.locator('[data-harness-outgoing]')).toContainText('待 Mac 接收');
+      await expect(chat.getByText('从手机接着聊', { exact: true })).toHaveCount(1);
+    } finally { unblock(); }
     const liveTurn = chat.locator('[data-harness-turn]').filter({ hasText: '从手机接着聊' });
     await expect(liveTurn.getByLabel('命令输出')).toHaveText('正在执行命令');
+    await phone.unroute(sendRoute);
+    await expect(chat.getByText('从手机接着聊', { exact: true })).toHaveCount(1);
     await expect(liveTurn.locator('[data-tool-status]')).toHaveText('执行中');
     await expect(composer).toHaveAttribute('placeholder', '发消息给 ZCode');
     await writeFile(finishTool, '');
@@ -159,6 +180,16 @@ test('opens a project ZCode history on a phone and continues its original sessio
     await completedProcess.locator('[data-harness-tool] summary').tap();
     await expect(completedProcess.getByLabel('命令输出')).toHaveText('命令执行完成');
     await expect(completedProcess.locator('[data-tool-status]')).toHaveText('已完成');
+    await phone.goto(listUrl + '&harness=zcode');
+    await phone.getByRole('button', { name: '新建会话', exact: true }).tap();
+    const newSession = phone.getByRole('dialog', { name: '新建会话' });
+    await newSession.getByRole('radio', { name: /zcode-project/ }).tap();
+    await newSession.getByRole('button', { name: '开启 ZCode 会话' }).tap();
+    await expect(phone).toHaveURL(/sessionId=/);
+    const newId = new URLSearchParams(new URL(phone.url()).hash.split('?')[1]).get('sessionId');
+    expect(newId).not.toBe(id);
+    await expect.poll(async () => (await data<{ threadId: string }>(await request.get(apiUrl + '/' + newId))).threadId).toMatch(/^sess_created_/);
+    expect((await detail()).threadId).toBe(threadId);
   } finally {
     if (agent && agent.exitCode === null && agent.signalCode === null) {
       const exited = once(agent, 'exit');

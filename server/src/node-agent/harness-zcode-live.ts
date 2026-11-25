@@ -1,18 +1,42 @@
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { crc32 } from 'node:zlib';
 import { asObject, CodexRejected, type CodexAppServer } from './harness-codex.js';
 import { codexItems as items, codexText as text, projectCodexHistory } from './harness-history.js';
-import { HARNESS_MODELS, HARNESS_OUTPUT_LIMIT, HARNESS_TEXT_LIMIT, zcodePermissionMode,
-  type HarnessApproval, type HarnessSettingsChange, type HarnessSettingsView } from './harness-protocol.js';
+import { applyHarnessEvent, HARNESS_MODELS, HARNESS_OUTPUT_LIMIT, HARNESS_TEXT_LIMIT, zcodePermissionMode,
+  type HarnessApproval, type HarnessEvent, type HarnessSettingsChange, type HarnessSettingsView, type HarnessView } from './harness-protocol.js';
 import { openZCode, zcodeWorkspace } from './harness-zcode-client.js';
 import { readZCodeThread, zcodeTurns } from './harness-zcode-library.js';
 import { zcodeHarnessTool } from './harness-zcode-tools.js';
 
 type Fields = Record<string, unknown>;
+export type ZCodeSessionTarget = string | { createCommandId: string; threadId?: string; config?: Fields };
 const timeout = () => new Error('ZCode 原会话更新超时，操作结果待核实');
 const nativeRows = 120;
 const limitBytes = 16 * 1024 * 1024;
 const clientMode = 'desktop-continuous';
+
+/** Use the shared delta channel whenever it reproduces the native window exactly. */
+export function zcodeStreamEvents(previous: HarnessView, next: HarnessView): HarnessEvent[] | null {
+  const updates: HarnessEvent[] = [];
+  const messages = new Map(previous.messages.map((message) => [message.id, message]));
+  for (const message of next.messages) {
+    const old = messages.get(message.id);
+    if (old && message.role === 'assistant' && message.streaming && message.text.length > old.text.length
+        && message.text.startsWith(old.text)) {
+      updates.push({ kind: 'delta', id: message.id, turnId: message.turnId, delta: message.text.slice(old.text.length) });
+    }
+  }
+  const tools = new Map((previous.tools ?? []).map((tool) => [tool.id, tool]));
+  for (const tool of next.tools ?? []) {
+    const old = tools.get(tool.id);
+    const output = old?.output ?? '';
+    if (old?.status === 'running' && tool.output && tool.output.length > output.length && tool.output.startsWith(output)) {
+      updates.push({ kind: 'toolOutput', id: tool.id, turnId: tool.turnId, delta: tool.output.slice(output.length), truncated: Boolean(tool.truncated) });
+    }
+  }
+  return isDeepStrictEqual(updates.reduce(applyHarnessEvent, previous), next) ? updates : null;
+}
 
 function waitUntil(check: () => boolean) {
   return new Promise<void>((resolve, reject) => {
@@ -84,19 +108,20 @@ export class ZCodeLiveConversation {
 
   private constructor(private readonly app: CodexAppServer, private readonly cwd: string,
     readonly threadId: string, private readonly changed: () => void, private readonly offline: () => void,
-    private readonly nativePermissions: () => boolean, private readonly assertAvailable: (pid?: number) => Promise<void>) {
+    private readonly nativePermissions: () => boolean, private readonly assertAvailable: (pid: number | undefined, threadId: string) => Promise<void>) {
     this.workspace = zcodeWorkspace(cwd);
   }
 
-  static async open(cwd: string, threadId: string, changed: () => void, offline: () => void,
-    nativePermissions: () => boolean, assertAvailable: (pid?: number) => Promise<void>) {
+  static async open(cwd: string, target: ZCodeSessionTarget, changed: () => void, offline: () => void,
+    nativePermissions: () => boolean, assertAvailable: (pid: number | undefined, threadId: string) => Promise<void>) {
     let conversation: ZCodeLiveConversation | undefined;
     const app = await openZCode(cwd, (method, wire) => {
       if (method === 'v4/conversation/frame') conversation?.accept(wire);
     }, () => conversation?.connectionLost(), true);
-    const live = conversation = new ZCodeLiveConversation(app, cwd, threadId, changed, offline, nativePermissions, assertAvailable);
     try {
-      await readZCodeThread(app, threadId, cwd);
+      const threadId = typeof target === 'string' ? target : await this.createNativeSession(app, cwd, target);
+      const live = conversation = new ZCodeLiveConversation(app, cwd, threadId, changed, offline, nativePermissions, assertAvailable);
+      if (typeof target === 'string') await readZCodeThread(app, threadId, cwd);
       await live.readModels();
       const result = await app.request('v4/conversation/subscribe', {
         workspace: live.workspace, topic: 'conversation/' + threadId, connectionId: live.connectionId, clientMode,
@@ -106,7 +131,26 @@ export class ZCodeLiveConversation {
       await waitUntil(() => live.ended || live.snapshotNumber > 0);
       if (live.ended) throw timeout();
       return live;
-    } catch (error) { await live.close(); throw error; }
+    } catch (error) {
+      if (conversation) await conversation.close();
+      else await app.close();
+      throw error;
+    }
+  }
+
+  private static async createNativeSession(app: CodexAppServer, cwd: string, { createCommandId: commandId, threadId: expected, config }: Exclude<ZCodeSessionTarget, string>) {
+    const workspace = zcodeWorkspace(cwd);
+    const ack = await app.request('v4/command', { workspace, sessionId: null, clientId: 'dovun', commandId,
+      type: 'createSession', payload: { workspaceId: workspace.workspaceKey, ...(expected ? { sessionId: expected } : {}), ...(config ? { config } : {}) },
+      issuedAt: Date.now() });
+    if (ack.commandId !== commandId) throw timeout();
+    if (ack.status === 'rejected' || ack.status === 'failed') throw new CodexRejected('本机 ZCode 拒绝新建会话');
+    const result = asObject(ack.result);
+    const threadId = text(result.sessionId);
+    if ((ack.status !== 'accepted' && ack.status !== 'duplicate') || result.type !== 'createSession'
+        || !threadId || threadId.length > 200) throw timeout();
+    if (expected && threadId !== expected) throw new CodexRejected('ZCode 返回了不同的会话');
+    return threadId;
   }
 
   get connected() { return !this.ended; }
@@ -213,9 +257,9 @@ export class ZCodeLiveConversation {
   }
 
   private async readModels() {
-    await this.assertAvailable(this.app.pid);
+    await this.assertAvailable(this.app.pid, this.threadId);
     const resumed = await this.app.request('session/resume', { sessionId: this.threadId, workspace: this.workspace });
-    await this.assertAvailable(this.app.pid);
+    await this.assertAvailable(this.app.pid, this.threadId);
     const session = asObject(resumed.session);
     if ((session.sessionId ?? session.id) !== this.threadId) throw new CodexRejected('ZCode 返回了不同的会话');
     const catalogue = asObject(asObject(resumed.settings).model);
@@ -261,6 +305,10 @@ export class ZCodeLiveConversation {
 
   async view() {
     const { view, clients } = await projectCodexHistory(this.turns(), this.cwd, [this.cwd], true, true, zcodeHarnessTool, 'zcode');
+    if (view.turn?.status === 'inProgress') {
+      const latest = view.messages.filter((item) => item.role === 'assistant' && item.turnId === view.turn?.id).at(-1);
+      if (latest) view.messages = view.messages.map((item) => item === latest ? { ...item, streaming: true } : item);
+    }
     return { view: { ...view, settings: this.settings(), approvals: this.nativePermissions() ? this.permissions : view.approvals }, clients };
   }
 
@@ -281,7 +329,7 @@ export class ZCodeLiveConversation {
   }
 
   private async command(commandId: string, type: 'sendText' | 'switchModelConfig' | 'switchCollaborationMode' | 'resolveInteraction' | 'stop', payload: Fields, revision?: number) {
-    await this.assertAvailable(this.app.pid);
+    await this.assertAvailable(this.app.pid, this.threadId);
     const model = this.currentModelId();
     if (type === 'sendText' && model && model.length <= 200 && !this.options.has(model)) {
       throw new CodexRejected('当前 ZCode 模型在 Mac 上不可用，请先切换模型');

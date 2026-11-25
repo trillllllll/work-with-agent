@@ -23,6 +23,7 @@ export class ClaudeHarnessRuntime implements HarnessRuntime {
   private permissionMode = 'default';
   private canEnableBypass = false;
   private bypassEnabled = false;
+  private needsNativeHistory = false;
   private models: Frame[] = [];
   private requests = new Map<string, (result: Frame | Error) => void>();
   private tools = new Map<string, NativeTool>();
@@ -117,12 +118,19 @@ export class ClaudeHarnessRuntime implements HarnessRuntime {
     await this.close();
     this.closing = false;
     try {
-      await this.launch(this.threadId, Boolean(await readClaudeThread(this.threadId, this.cwd)), enabled);
+      await this.resume(this.threadId, enabled);
     } catch (error) {
       await this.close();
       this.onExit();
       throw error;
     }
+  }
+
+  private async resume(threadId: string, enableBypass = false) {
+    const found = Boolean(await readClaudeThread(threadId, this.cwd));
+    if (!found && this.needsNativeHistory) throw new CodexRejected('找不到 Claude Code 原会话，无法恢复');
+    this.needsNativeHistory ||= found;
+    return this.launch(threadId, found, enableBypass);
   }
 
   private receive(frame: Frame) {
@@ -223,7 +231,10 @@ export class ClaudeHarnessRuntime implements HarnessRuntime {
     const threadId = text(params.threadId);
     if (method === 'thread/start') return this.launch(randomUUID(), false);
     if (method === 'thread/read') return { thread: await readClaudeThread(threadId, this.cwd) };
-    if (method === 'thread/resume') return this.launch(threadId, !!await readClaudeThread(threadId, this.cwd));
+    if (method === 'thread/resume') {
+      this.needsNativeHistory ||= params.requireNativeHistory === true;
+      return this.resume(threadId);
+    }
     if (method === 'thread/turns/list') return readClaudeTurns(threadId, this.cwd, text(params.cursor) || null, Number(params.limit) || 20);
     if (method === 'model/list') return { data: this.models.map((model) => ({ model: model.value, displayName: model.displayName })) };
     if (method === 'collaborationMode/list') return { data: [{ mode: 'default' }, { mode: 'plan' }] };
@@ -272,8 +283,9 @@ export class ClaudeHarnessRuntime implements HarnessRuntime {
     this.turn = { id, messageId: '', interrupted: false };
     const turn = { id, status: 'inProgress' };
     this.emit('turn/started', { turn });
-    this.emit('item/completed', { turnId: id, item: { id, type: 'userMessage', content: inputs } });
+    this.emit('item/completed', { turnId: id, item: { id, clientId: id, type: 'userMessage', content: inputs } });
     await this.write({ type: 'user', uuid: id, session_id: this.threadId, parent_tool_use_id: null, message: { role: 'user', content } });
+    this.needsNativeHistory = true;
     return { turn };
   }
 

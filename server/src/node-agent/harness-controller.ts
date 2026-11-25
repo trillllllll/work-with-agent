@@ -2,9 +2,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { exclusiveDataGuard } from '../shared/data-guard.js';
-import { asObject, CodexAppServer, CodexRejected, type HarnessNotification, type HarnessRuntime } from './harness-codex.js';
+import { asObject, CodexRejected, type HarnessNotification, type HarnessRuntime } from './harness-codex.js';
 import { ClaudeHarnessRuntime } from './harness-claude.js';
 import { ZCodeHarnessRuntime } from './harness-zcode.js';
+import { zcodeStreamEvents } from './harness-zcode-live.js';
+import { harnessInstanceId, openHarnessRuntime } from './harness-runtimes.js';
 import { zcodeHarnessTool } from './harness-zcode-tools.js';
 import { readHarnessArtifacts } from './harness-artifacts.js';
 import { codexInput } from './harness-files.js';
@@ -14,7 +16,7 @@ import { changeClaudeSelection, changeCodexSelection, codexModelId, codexTurnSet
 import { codexHarnessTool, harnessFilePaths, harnessFileDiffs, harnessOutput } from './harness-tools.js';
 import { assertAllowed } from './git.js';
 import {
-  applyHarnessEvent, HARNESS_ATTACHMENT_TEXT_PREFIX, HARNESS_EVENTS, HARNESS_TEXT_LIMIT, harnessEventForClient, harnessSnapshotForClient, requiresAdvancedPermissions, requiresHarnessWorkspace, requiresNativePermissionSettings,
+  applyHarnessEvent, HARNESS_ATTACHMENT_TEXT_PREFIX, HARNESS_EVENTS, HARNESS_TEXT_LIMIT, harnessEventForClient, harnessNames, harnessSnapshotForClient, requiresAdvancedPermissions, requiresHarnessWorkspace, requiresNativePermissionSettings,
   type HarnessDelivery, type HarnessEvent, type HarnessLease,
   type HarnessApproval, type HarnessCommand, type HarnessInputAttachment, type HarnessKind, type HarnessQueue, type HarnessQueueItem, type HarnessReceipt,
   type HarnessSettingsSelection, type HarnessSnapshot, type HarnessSync, type HarnessView,
@@ -24,6 +26,9 @@ type SavedQueueItem = HarnessQueueItem & { attachments?: HarnessInputAttachment[
 type SavedQueue = { revision: number; items: SavedQueueItem[] };
 type Binding = {
   sessionId: string; threadId: string; cwd: string; epoch: number; pid?: number; native?: true; parked?: true;
+  instanceId?: string;
+  claudeStarted?: true;
+  zcodeDraftCommandId?: string;
   modelProvider?: string; settings?: HarnessSettingsSelection; settingsCommand?: string;
   queue?: SavedQueue; queueCommand?: string;
 };
@@ -172,11 +177,12 @@ export class HarnessController {
       this.approvals.clear();
       if (binding && !this.stopped) void this.sync(binding.sessionId, { type: 'unavailable', epoch: binding.epoch, error: '本机会话已断开' }).catch(() => undefined);
     };
-    this.opening = this.harness === 'claude' ? Promise.resolve(new ClaudeHarnessRuntime(cwd, notification, disconnected))
-      : this.harness === 'zcode' ? Promise.resolve(new ZCodeHarnessRuntime(cwd, notification,
-        (id, view) => this.replaceZCodeHistory(id, view),
-        (id, view, clients) => this.replaceLiveZCodeView(id, view, clients), disconnected, this.settingsEnabled, () => this.permissionsEnabled))
-      : CodexAppServer.open(cwd, notification, disconnected, { modelProvider, experimental: true, shared });
+    this.opening = openHarnessRuntime(this.harness, {
+      cwd, notify: notification, disconnected, modelProvider, shared, settingsEnabled: this.settingsEnabled,
+      permissionsEnabled: () => this.permissionsEnabled,
+      replaceHistory: (id, view) => this.replaceZCodeHistory(id, view),
+      replaceLive: (id, view, clients) => this.replaceLiveZCodeView(id, view, clients),
+    });
     try {
       this.app = await this.opening;
       if (this.stopped) { await this.dropApp(); throw new CodexRejected('执行器已停止'); }
@@ -217,6 +223,12 @@ export class HarnessController {
     if (this.stopped || binding?.threadId !== threadId || !(this.app instanceof ZCodeHarnessRuntime) || !this.app.attached) return;
     binding.settings = this.zcodeSelection(view.settings);
     this.restoredClients = clients;
+    const updates = zcodeStreamEvents(this.view, view);
+    if (updates) {
+      for (const event of updates) this.emit(event, false);
+      if (updates.length) void this.flush().catch(() => undefined);
+      return;
+    }
     this.view = view;
     this.events = [];
     this.seq++;
@@ -226,9 +238,11 @@ export class HarnessController {
 
   private async restore(lease: HarnessLease, prior: Binding) {
     if (lease.threadId && lease.threadId !== prior.threadId) throw new Error('本机保存的线程与服务器绑定不一致');
-    if (prior.pid && isAlive(prior.pid)) throw new Error('正在等待原 Codex 进程退出');
+    if (prior.pid && isAlive(prior.pid)) throw new Error(`正在等待原 ${harnessNames[this.harness]} 进程退出`);
     const cwd = await assertAllowed(prior.cwd, this.roots);
     if (cwd !== prior.cwd) throw new Error('项目路径已变化，无法恢复原会话');
+    const instanceId = await harnessInstanceId(this.harness, cwd);
+    if (prior.instanceId && prior.instanceId !== instanceId) throw new CodexRejected(`本机 ${harnessNames[this.harness]} 会话目录已变化，无法恢复原会话`);
     let modelProvider = prior.modelProvider;
     try {
       const owner = prior.native && this.harness === 'codex' ? await this.openSharedThread(cwd, prior.threadId) : null;
@@ -244,8 +258,11 @@ export class HarnessController {
           app = await this.open(cwd, original);
         }
       }
-      const reopened = await app.request('thread/resume', { ...(owner ? {} : { ...sessionOptions, cwd }), threadId: prior.threadId, excludeTurns: true });
-      if (asObject(reopened.thread).id !== prior.threadId) throw new Error('Codex 返回了不同的线程');
+      const reopened = await app.request('thread/resume', { ...(owner ? {} : { ...sessionOptions, cwd }), threadId: prior.threadId, excludeTurns: true,
+        ...(app instanceof ClaudeHarnessRuntime && (prior.native || prior.claudeStarted) ? { requireNativeHistory: true } : {}),
+        ...(app instanceof ZCodeHarnessRuntime && prior.zcodeDraftCommandId
+          ? { draftCommandId: prior.zcodeDraftCommandId, draftSettings: prior.settings } : {}) });
+      if (asObject(reopened.thread).id !== prior.threadId) throw new Error(`${harnessNames[this.harness]} 返回了不同的会话`);
       const history = await app.request('thread/turns/list', { threadId: prior.threadId, limit: 20, sortDirection: 'desc', itemsView: 'full' });
       const liveView = app instanceof ZCodeHarnessRuntime ? await app.liveView() : undefined;
       const { view, clients } = liveView ?? await projectCodexHistory(history.data, cwd, this.roots, true, Boolean(owner),
@@ -262,7 +279,7 @@ export class HarnessController {
           return clients.has(item.id) ? [] : [{ ...item, status: 'blocked', error: '消息可能已交给本机会话，请核对历史' }];
         }) } : pending;
       await this.setBinding({
-        ...prior, parked: undefined, epoch: Math.max(prior.epoch, lease.epoch) + 1, pid: app.pid,
+        ...prior, instanceId, parked: undefined, epoch: Math.max(prior.epoch, lease.epoch) + 1, pid: app.pid,
         modelProvider: codexModelId(reopened.modelProvider) ?? modelProvider,
         settings: app instanceof ZCodeHarnessRuntime ? this.zcodeSelection(view.settings) : prior.settings ?? readCodexSelection(reopened), queue,
       });
@@ -279,8 +296,8 @@ export class HarnessController {
     finally { this.attaching = null; }
   }
 
-  private async start(sessionId: string, requested: string, epoch: number, threadId: string | null) {
-    if (threadId || this.binding) throw new CodexRejected('该会话已绑定到原 Codex 线程');
+  private async start(sessionId: string, requested: string, epoch: number, threadId: string | null, commandId: string) {
+    if (threadId || this.binding) throw new CodexRejected(`该会话已绑定到原 ${harnessNames[this.harness]} 会话`);
     let cwd: string;
     try {
       cwd = await assertAllowed(requested, this.roots);
@@ -289,20 +306,24 @@ export class HarnessController {
     } catch (error) { throw new CodexRejected(failure(error)); }
     const app = this.app!;
     try {
-      const started = await app.request('thread/start', { ...sessionOptions, cwd, ephemeral: false });
+      const started = await app.request('thread/start', { ...sessionOptions, cwd, ephemeral: false,
+        ...(app instanceof ZCodeHarnessRuntime ? { commandId } : {}) });
       const id = text(asObject(started.thread).id);
-      if (!id) throw new Error('Codex 线程创建结果待核实');
+      if (!id) throw new Error(`${harnessNames[this.harness]} 会话创建结果待核实`);
       // Naming materializes an empty Codex thread so it can be resumed after execution restarts.
       if (this.library && this.harness === 'codex') await app.request('thread/name/set', { threadId: id, name: 'Dovun' });
-      this.view = emptyView();
+      const native = app instanceof ZCodeHarnessRuntime ? await app.liveView() : undefined;
+      this.view = native?.view ?? emptyView();
       this.workspaceSandbox = asObject(started.sandbox);
-      const settings = readCodexSelection(started);
+      const settings = native ? this.zcodeSelection(native.view.settings) : readCodexSelection(started);
       await this.setBinding({
         sessionId, cwd: await realpath(cwd), threadId: id, epoch: epoch + 1, pid: app.pid,
+        instanceId: await harnessInstanceId(this.harness, cwd),
         modelProvider: codexModelId(started.modelProvider) ?? undefined, settings,
+        ...(native ? { zcodeDraftCommandId: commandId } : {}),
       });
       if (this.workspace) this.view = { ...this.view, queue: { revision: 0, items: [] } };
-      if (this.settingsEnabled && settings) {
+      if (this.settingsEnabled && settings && !native) {
         this.view = { ...this.view, settings: await this.settings(app, settings, this.binding!) };
       }
     } catch (error) { await this.dropApp(); throw error; }
@@ -342,7 +363,7 @@ export class HarnessController {
         await writeJson(file, { hash, receipt: null });
         try {
           if (this.stopped) throw new CodexRejected('执行器已停止');
-          if (command.operation === 'start') await this.start(sessionId, command.cwd, epoch, threadId);
+          if (command.operation === 'start') await this.start(sessionId, command.cwd, epoch, threadId, command.commandId);
           else {
             const forkedThreadId = await this.action(command, parkedEpoch);
             if (forkedThreadId) receipt = { ...receipt, forkedThreadId };
@@ -541,10 +562,31 @@ export class HarnessController {
     const nameFirstTurn = this.library && this.harness === 'codex' && !binding.native && !this.view.turn;
     const overrides = this.harness !== 'zcode' && settings && (this.settingsEnabled || settings.revision > 0)
       ? codexTurnSettings(settings, binding.cwd, this.workspaceSandbox, this.view.settings?.planAvailable === true) : {};
-    const response = await app.request('turn/start', {
-      threadId: binding.threadId, input: await codexInput(binding.cwd, value, attachments), clientUserMessageId: commandId, ...overrides,
-      ...(this.harness === 'claude' && settings?.permissionMode ? { permissionMode: settings.permissionMode } : {}),
-    });
+    const input = await codexInput(binding.cwd, value, attachments);
+    if (app instanceof ClaudeHarnessRuntime && !binding.native && !binding.claudeStarted) {
+      // Once an input may have reached Claude, a missing transcript must not create an empty session with the same UUID.
+      await writeJson(this.bindingPath, { ...binding, claudeStarted: true });
+      binding.claudeStarted = true;
+    }
+    const draftCommandId = binding.zcodeDraftCommandId;
+    // ZCode persists empty drafts on first input. After an uncertain send, we can only reopen the stored session.
+    if (draftCommandId) {
+      await writeJson(this.bindingPath, { ...binding, zcodeDraftCommandId: undefined });
+      delete binding.zcodeDraftCommandId;
+    }
+    let response: Record<string, unknown>;
+    try {
+      response = await app.request('turn/start', {
+        threadId: binding.threadId, input, clientUserMessageId: commandId, ...overrides,
+        ...(this.harness === 'claude' && settings?.permissionMode ? { permissionMode: settings.permissionMode } : {}),
+      });
+    } catch (error) {
+      if (draftCommandId && error instanceof CodexRejected && this.binding === binding) {
+        await writeJson(this.bindingPath, { ...binding, zcodeDraftCommandId: draftCommandId });
+        binding.zcodeDraftCommandId = draftCommandId;
+      }
+      throw error;
+    }
     if (app instanceof ZCodeHarnessRuntime && response.nativeDelivery === true) return;
     const started = turn(asObject(response.turn));
     if (!started) throw new Error('本机开始新一轮的结果待核实');
@@ -771,7 +813,7 @@ export class HarnessController {
     } });
   }
 
-  private emit(event: HarnessEvent) {
+  private emit(event: HarnessEvent, schedule = true) {
     this.view = applyHarnessEvent(this.view, event);
     const wire = harnessEventForClient(event, this.timeline, this.settingsEnabled, this.workspace, this.permissionsEnabled, this.advancedPermissions);
     if (!wire) return;
@@ -780,7 +822,7 @@ export class HarnessController {
       this.events = this.events.slice(-HARNESS_EVENTS);
       this.snapshotNeeded = true;
     }
-    if (!this.timer) this.timer = setTimeout(() => {
+    if (schedule && !this.timer) this.timer = setTimeout(() => {
       this.timer = null;
       void this.flush().catch(() => undefined);
     }, 80);

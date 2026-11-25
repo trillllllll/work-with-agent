@@ -8,7 +8,9 @@ export const HARNESS_PERMISSIONS_FEATURE = 'harness_permissions_v1';
 export const HARNESS_ADVANCED_PERMISSIONS_FEATURE = 'harness_advanced_permissions_v1';
 export const HARNESS_WORKSPACE_FEATURE = 'harness_workspace_v1';
 export const HARNESS_ZCODE_LIVE_FEATURE = 'harness_zcode_live_v1';
+export const HARNESS_ZCODE_CREATE_FEATURE = 'harness_zcode_create_v1';
 export const HARNESS_ORGANIZATION_FEATURE = 'harness_organization_v1';
+export const HARNESS_MESSAGE_ORIGIN_FEATURE = 'harness_message_origin_v1';
 export const HARNESS_MODELS = 500;
 export const HARNESS_LIBRARY_LEASES = 12;
 export const HARNESS_LIBRARY_READS = 6;
@@ -146,6 +148,7 @@ export const harnessLibraryLeaseSchema = harnessLeaseSchema.extend({ library: z.
 export const harnessMessagePhase = z.enum(['commentary', 'partial_answer', 'final_answer']);
 const message = z.object({
   id, turnId: id, role: z.enum(['user', 'assistant']), text,
+  clientCommandId: id.optional(),
   phase: harnessMessagePhase.optional(), order: sequence.optional(), streaming: z.boolean().optional(),
   attachmentNames: z.array(z.string().min(1).max(255)).max(2).optional(),
 }).strict();
@@ -269,6 +272,20 @@ export type HarnessApproval = z.infer<typeof approval>;
 export type HarnessQueue = z.infer<typeof queueView>;
 export type HarnessQueueItem = z.infer<typeof queueItem>;
 export type HarnessReceipt = Extract<HarnessSync, { type: 'receipt' }>;
+
+function withoutMessageOrigin({ clientCommandId: _origin, ...message }: HarnessMessage) { return message; }
+
+export function withoutHarnessMessageOrigins(view: HarnessView): HarnessView {
+  return { ...view, messages: view.messages.map(withoutMessageOrigin) };
+}
+
+export function withoutHarnessSyncMessageOrigins(sync: HarnessSync): HarnessSync {
+  if (sync.type === 'snapshot') return { ...sync, view: withoutHarnessMessageOrigins(sync.view) };
+  if (sync.type !== 'events') return sync;
+  return { ...sync, events: sync.events.map((entry) => entry.event.kind === 'message'
+    ? { ...entry, event: { ...entry.event, message: withoutMessageOrigin(entry.event.message) } }
+    : entry) };
+}
 export function requiresHarnessWorkspace(command: HarnessCommand) {
   return HARNESS_WORKSPACE_OPERATIONS.some((operation) => operation === command.operation)
     || ('attachments' in command && Boolean(command.attachments?.length))

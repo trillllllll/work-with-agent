@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronRight, CircleAlert, FileText, ImageIcon, ListChecks, LoaderCircle, Search, Terminal, Wrench } from 'lucide-react';
 import { createBottomPin } from '@/components/chat/bottom-pin.js';
@@ -96,11 +96,11 @@ function harnessReplyText(content: string) {
   return text;
 }
 
-function HarnessMarkdown({ message, active, liveMessageId }: { message: HarnessMessage; active: boolean; liveMessageId?: string }) {
+const HarnessMarkdown = memo(function HarnessMarkdown({ message, active, reveal }: { message: HarnessMessage; active: boolean; reveal: boolean }) {
   const { t } = useTranslation('workspace');
   const streaming = active && message.streaming !== false;
   return <div className={streaming ? 'streaming-caret' : undefined}>
-    <MarkdownView content={harnessReplyText(message.text)} streaming={streaming} revealAdditions={message.id === liveMessageId} responsiveTables diagrams
+    <MarkdownView content={harnessReplyText(message.text)} streaming={streaming} revealAdditions={reveal} responsiveTables diagrams
       components={{
         img: ({ alt }) => alt ? <span>{alt}</span> : null,
         a: ({ href, children }) => !href || (/\.svg(?:$|#)/i.test(href) && !/^https?:\/\//i.test(href))
@@ -108,7 +108,7 @@ function HarnessMarkdown({ message, active, liveMessageId }: { message: HarnessM
           : <a href={href} target="_blank" rel="noreferrer" className="text-brand-link underline underline-offset-2">{children}</a>,
       }} />
   </div>;
-}
+});
 
 function ToolOutput({ result, label }: { result: string; label: string }) {
   const scroll = useRef<HTMLPreElement>(null);
@@ -125,12 +125,26 @@ function ToolOutput({ result, label }: { result: string; label: string }) {
 
 const toolIcons = { command: Terminal, fileChange: FileText, webSearch: Search, tool: Wrench, image: ImageIcon };
 
-function ToolRow({ tool }: { tool: HarnessTool }) {
+function useDisclosureChoice(key: string) {
+  const storageKey = 'dovun-harness-disclosure:' + key;
+  const [choice, setChoice] = useState<boolean | undefined>(() => {
+    try {
+      const saved = sessionStorage.getItem(storageKey);
+      return saved === null ? undefined : saved === 'open';
+    } catch { return undefined; }
+  });
+  return [choice, (open: boolean) => {
+    setChoice(open);
+    try { sessionStorage.setItem(storageKey, open ? 'open' : 'closed'); } catch { /* Keep the current selection in memory. */ }
+  }] as const;
+}
+
+const ToolRow = memo(function ToolRow({ tool, sessionId }: { tool: HarnessTool; sessionId: string }) {
   const { t } = useTranslation('workspace');
   const Icon = toolIcons[tool.kind];
   const running = tool.status === 'running';
   const status = t('harness.toolStatus.' + tool.status);
-  const [choice, setChoice] = useState<boolean>();
+  const [choice, setChoice] = useDisclosureChoice(sessionId + ':tool:' + tool.turnId + ':' + tool.id);
   const open = choice ?? (running && tool.kind === 'command');
   const detailed = tool.kind === 'command' || Boolean(tool.files?.length || tool.output);
   const summary = <>
@@ -169,11 +183,12 @@ function ToolRow({ tool }: { tool: HarnessTool }) {
       </Surface>
     </Disclosure> : <div className="harness-tool-trigger">{summary}</div>}
   </li>;
-}
+});
 
-function Process({ rows, active, liveMessageId }: { rows: Row[]; active: boolean; liveMessageId?: string }) {
+function Process({ rows, active, liveMessageId, sessionId }: { rows: Row[]; active: boolean; liveMessageId?: string; sessionId: string }) {
   const { t } = useTranslation('workspace');
-  const [choice, setChoice] = useState<boolean>();
+  const first = rows[0].item;
+  const [choice, setChoice] = useDisclosureChoice(sessionId + ':process:' + first.turnId + ':' + first.id);
   const open = choice ?? active;
   const tools = rows.filter((row) => row.kind === 'tool').length;
   return <Disclosure className="assistant-process" data-harness-process open={open} onToggle={(event) => {
@@ -187,8 +202,8 @@ function Process({ rows, active, liveMessageId }: { rows: Row[]; active: boolean
       <ChevronRight className={'assistant-process-chevron ' + (open ? 'rotate-90' : '')} aria-hidden="true" />
     </DisclosureTrigger>
     <ol className="harness-process-items assistant-process-body">
-      {rows.map((row) => row.kind === 'tool' ? <ToolRow key={row.item.id} tool={row.item} />
-        : <li key={row.item.id}><HarnessMarkdown message={row.item} active={active} liveMessageId={liveMessageId} /></li>)}
+      {rows.map((row) => row.kind === 'tool' ? <ToolRow key={row.item.id} tool={row.item} sessionId={sessionId} />
+        : <li key={row.item.id}><HarnessMarkdown message={row.item} active={active} reveal={liveMessageId === row.item.id} /></li>)}
     </ol>
   </Disclosure>;
 }
@@ -207,9 +222,24 @@ function ArtifactCard({ artifact }: { artifact: HarnessArtifact }) {
   </Disclosure>;
 }
 
-export function HarnessTimeline({ view, history, name, liveMessageId, approvalControls, turnControls }: {
+export function HarnessUserMessage({ message, children }: {
+  message: Pick<HarnessMessage, 'text' | 'attachmentNames'>; children?: ReactNode;
+}) {
+  return <div className="assistant-message assistant-user-message ml-auto" data-role="user">
+    <div className="assistant-user-bubble whitespace-pre-wrap [overflow-wrap:anywhere]">{message.text}
+      {message.attachmentNames?.map((file, index) => <span key={index} className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+        <FileText className="size-3.5" />{file}
+      </span>)}
+    </div>
+    {children}
+  </div>;
+}
+
+export function HarnessTimeline({ view, history, name, liveMessageId, approvalControls, turnControls, outgoing, sessionId }: {
   view: HarnessView; history?: HarnessView[]; name: string; liveMessageId?: string; approvalControls?: ReactNode;
+  sessionId: string;
   turnControls?: (turn: HarnessTurn, firstMessage?: HarnessMessage) => ReactNode;
+  outgoing?: ReactNode;
 }) {
   const { t } = useTranslation('workspace');
   const past = useMemo(() => (history ?? []).reduce<Turn[]>((turns, page) => mergeTurns(turns, groupTurns(page, true)), []), [history]);
@@ -228,18 +258,12 @@ export function HarnessTimeline({ view, history, name, liveMessageId, approvalCo
       </div>;
       return <li key={turn.id} data-harness-turn={turn.id} className="flex min-w-0 flex-col gap-3">
         {content.map((part, index) => {
-          if (part.kind === 'user') return <div className="assistant-message assistant-user-message ml-auto" key={part.message.id} data-role="user">
-            <div className="assistant-user-bubble whitespace-pre-wrap [overflow-wrap:anywhere]">{part.message.text}
-              {part.message.attachmentNames?.map((file, position) => <span key={position} className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                <FileText className="size-3.5" />{file}
-              </span>)}
-            </div>
-          </div>;
+          if (part.kind === 'user') return <HarnessUserMessage key={part.message.id} message={part.message} />;
           const key = part.kind === 'reply' ? part.message.id : part.rows[0].item.id;
           return <div className="assistant-message min-w-0" key={key} data-role="assistant">
             {index === firstAssistant && byline}
-            {part.kind === 'process' ? <Process rows={part.rows} active={active} liveMessageId={liveMessageId} />
-              : <HarnessMarkdown message={part.message} active={active} liveMessageId={liveMessageId} />}
+            {part.kind === 'process' ? <Process rows={part.rows} active={active} liveMessageId={liveMessageId} sessionId={sessionId} />
+              : <HarnessMarkdown message={part.message} active={active} reveal={liveMessageId === part.message.id} />}
           </div>;
         })}
         {firstAssistant < 0 && turn.status && <div className="assistant-message">{byline}</div>}
@@ -249,5 +273,6 @@ export function HarnessTimeline({ view, history, name, liveMessageId, approvalCo
         {turn.status && turnControls?.(turn.status, content.find((part) => part.kind === 'user')?.message)}
       </li>;
     })}
+    {outgoing}
   </ol>;
 }
