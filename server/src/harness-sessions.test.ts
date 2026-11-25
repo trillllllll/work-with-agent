@@ -12,7 +12,12 @@ import { app } from './app.js';
 import { prisma } from './infrastructure/prisma.js';
 import ownerRequest, { ownerSession } from './test-auth.js';
 import { NodeAgent } from './node-agent/agent.js';
-import { HARNESS_EVENTS, HARNESS_FEATURE, HARNESS_ZCODE_LIVE_FEATURE, type HarnessSnapshot } from './node-agent/harness-protocol.js';
+import {
+  HARNESS_EVENTS, HARNESS_FEATURE, HARNESS_IMAGE_FILE_LIMIT, HARNESS_LARGE_IMAGES_FEATURE, HARNESS_LIBRARY_FEATURE,
+  HARNESS_LEGACY_IMAGE_LIMIT, HARNESS_PREVIEW_FILE_LIMIT, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE, harnessCommandSchema, type HarnessSnapshot,
+} from './node-agent/harness-protocol.js';
+import { leaseHarnessLibrary } from './application/harness-sessions.js';
+import { codexInput, readHarnessFiles } from './node-agent/harness-files.js';
 import { DIRECTORY_FEATURE } from './node-agent/directory-protocol.js';
 
 const base = '/api/v1/harness-sessions';
@@ -538,3 +543,54 @@ it('indexes ZCode by project and resumes the native session without sending a du
     await rm(outside, { recursive: true, force: true });
   }
 }, 25_000);
+
+it('separates image uploads from preview limits and bounds batched Mac delivery', async () => {
+  const owner = ownerRequest(app);
+  const { node } = data(await owner.post('/api/nodes').send({ name: 'Image upload executor' }));
+  nodeIds.push(node.id);
+  const root = await realpath(await mkdtemp(join(folder, 'images-')));
+  const png = Buffer.alloc(HARNESS_IMAGE_FILE_LIMIT);
+  Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(png);
+  await writeFile(join(root, 'wide.png'), png.subarray(0, HARNESS_PREVIEW_FILE_LIMIT + 1));
+  await expect(readHarnessFiles(root, 'wide.png', true)).rejects.toThrow('256 KB');
+  const image = (bytes: Buffer, name = 'wide.png') => ({ kind: 'imageFile' as const, mediaType: 'image/png' as const, name, content: bytes.toString('base64') });
+  const attachments = [image(png), image(png, 'second.png')];
+  const send = (commandId: string, files = attachments) => ({ operation: 'send', commandId, text: 'Image prompt', expectedEpoch: 1, attachments: files });
+  expect(harnessCommandSchema.safeParse(send('valid')).success).toBe(true);
+  expect(harnessCommandSchema.safeParse(send('over', [image(Buffer.concat([png, Buffer.of(0)]))])).success).toBe(false);
+  expect(harnessCommandSchema.safeParse(send('third', [...attachments, image(png)])).success).toBe(false);
+  expect((await codexInput(root, 'Image prompt', attachments)).filter((part) => part.type === 'image')).toHaveLength(2);
+
+  const baseCapabilities = { harnessSessions: HARNESS_FEATURE, harnessLibrary: HARNESS_LIBRARY_FEATURE, harnessWorkspace: HARNESS_WORKSPACE_FEATURE, harnessKinds: ['codex'] };
+  let executor = await prisma.agentNode.update({ where: { id: node.id }, data: { lastSeenAt: new Date().toISOString(), capabilitiesJson: JSON.stringify(baseCapabilities) } });
+  const session = async (id: string, createdAt: string) => prisma.harnessSession.create({ data: {
+    id, nodeId: node.id, activeNodeId: node.id, locationId: id, startCommandId: id, projectName: 'Images',
+    threadId: id, cwd: root, library: true, epoch: 1, status: 'ready', createdAt, updatedAt: createdAt,
+  } });
+  const earlier = await session('image-batch-earlier', '2026-01-01T00:00:01.000Z');
+  const later = await session('image-batch-later', '2026-01-01T00:00:02.000Z');
+  expect(data(await owner.get(base + '/' + earlier.id)).attachmentImageLimit).toBe(HARNESS_LEGACY_IMAGE_LIMIT);
+  expect((await owner.post(base + '/' + earlier.id + '/commands').send(send('old-executor'))).body.code).toBe('HARNESS_IMAGE_LIMIT');
+
+  executor = await prisma.agentNode.update({ where: { id: node.id }, data: {
+    capabilitiesJson: JSON.stringify({ ...baseCapabilities, harnessLargeImages: HARNESS_LARGE_IMAGES_FEATURE }),
+  } });
+  expect(data(await owner.get(base + '/' + earlier.id)).attachmentImageLimit).toBe(HARNESS_IMAGE_FILE_LIMIT);
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 120_000).toISOString();
+  const small = send('small-image', [image(png.subarray(0, 128))]);
+  await prisma.harnessCommand.createMany({ data: [
+    { sessionId: earlier.id, commandId: 'first-large', payload: JSON.stringify(send('first-large')), createdAt, expiresAt },
+    { sessionId: later.id, commandId: 'second-large', payload: JSON.stringify(send('second-large')), createdAt, expiresAt },
+    { sessionId: later.id, commandId: small.commandId, payload: JSON.stringify(small), createdAt: new Date(Date.now() + 10).toISOString(), expiresAt },
+  ] });
+  const leasedIds = async () => (await leaseHarnessLibrary(node.id, executor.tokenHash)).flatMap((lease) => lease.commands.map(({ command }) => command.commandId));
+  expect(await leasedIds()).toEqual(['first-large']);
+  expect(await leasedIds()).toEqual(['first-large']);
+  await prisma.harnessCommand.update({ where: { sessionId_commandId: { sessionId: earlier.id, commandId: 'first-large' } }, data: { status: 'accepted' } });
+  expect(data(await owner.get(base + '/' + earlier.id)).title).toBe('Image prompt');
+  expect(await leasedIds()).toEqual(['second-large', small.commandId]);
+
+  await prisma.agentNode.update({ where: { id: node.id }, data: { capabilitiesJson: JSON.stringify(baseCapabilities) } });
+  expect(await leasedIds()).toEqual([small.commandId]);
+}, 20_000);

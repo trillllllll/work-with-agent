@@ -26,6 +26,7 @@ type ChatComposerProps = {
   placeholder?: string;
   maxLength?: number;
   actionsDisabled?: boolean;
+  sendDisabled?: boolean;
   allowSendWhileBusy?: boolean;
   listenForAssistantFocus?: boolean;
   labels?: { input?: string; send?: string; stop?: string };
@@ -33,7 +34,7 @@ type ChatComposerProps = {
 
 export function ChatComposer({
   input, busy, reference, onChange, onSend, onCancelReference, toolbar, contextUsage, model, onStop, stopping,
-  placeholder, maxLength, actionsDisabled, allowSendWhileBusy, labels, listenForAssistantFocus = true,
+  placeholder, maxLength, actionsDisabled, sendDisabled, allowSendWhileBusy, labels, listenForAssistantFocus = true,
 }: ChatComposerProps) {
   const { t } = useTranslation('chat');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -96,7 +97,7 @@ export function ChatComposer({
   };
   useEffect(resize, [input, expanded]);
   const showSend = !busy || allowSendWhileBusy;
-  const canSend = showSend && !actionsDisabled && !!input.trim();
+  const canSend = showSend && !actionsDisabled && !sendDisabled && !!input.trim();
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !composing.current && !isCompositionKey(event.nativeEvent)) {
       event.preventDefault();
@@ -104,7 +105,7 @@ export function ChatComposer({
     }
   };
   const handleSubmit = (event: FormEvent) => {
-    if (actionsDisabled) { event.preventDefault(); return; }
+    if (actionsDisabled || sendDisabled) { event.preventDefault(); return; }
     if (canSend) setJustSent(true);
     onSend(event);
   };

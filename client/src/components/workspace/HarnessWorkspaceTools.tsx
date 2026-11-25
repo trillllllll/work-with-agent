@@ -9,31 +9,45 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu.js';
 import { Input } from '@/components/ui/input.js';
 import { Surface } from '@/components/ui/surface.js';
-import { HARNESS_FILE_LIMIT, HARNESS_TEXT_LIMIT, type HarnessFilesPage, type HarnessInputAttachment } from '../../../../server/src/node-agent/harness-protocol.js';
+import { compressHarnessImage } from '@/lib/harness-image.js';
+import { keepHarnessImage } from '@/lib/harness-image-drafts.js';
+import { fileToBase64 } from '@/lib/task-image.js';
+import { HARNESS_LEGACY_IMAGE_LIMIT, HARNESS_TEXT_FILE_LIMIT, HARNESS_TEXT_LIMIT, type HarnessFilesPage, type HarnessInputAttachment } from '../../../../server/src/node-agent/harness-protocol.js';
 
-async function attachmentOf(file: File): Promise<HarnessInputAttachment> {
-  const name = file.name.slice(0, 255);
-  if (file.type === 'image/png' || file.type === 'image/jpeg') {
-    if (file.size > HARNESS_FILE_LIMIT) throw new Error('file size');
-    const mediaType = file.type;
-    const content = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result).split(',', 2)[1] ?? '');
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(file);
-    });
-    return { kind: 'imageFile', name, mediaType, content };
-  }
-  if (file.size > HARNESS_FILE_LIMIT) throw new Error('file size');
-  const content = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());
-  if (content.includes('\0') || content.length > HARNESS_TEXT_LIMIT) throw new Error('file encoding');
-  return { kind: 'textFile', name, content };
+type FileIssue = 'largeImageUpdate' | 'imageStillTooLarge' | 'imageFormat' | 'textSize' | 'textEncoding';
+class AttachmentError extends Error {
+  constructor(readonly issue: FileIssue) { super(issue); }
 }
 
-export function HarnessWorkspaceTools({ endpoint, disabled, capacity, requested, clearRequest, attach, compact, configurePlan, running }: {
+async function attachmentOf(file: File, imageLimit: number): Promise<HarnessInputAttachment> {
+  if (file.type === 'image/png' || file.type === 'image/jpeg') {
+    if (file.size > imageLimit && imageLimit === HARNESS_LEGACY_IMAGE_LIMIT) throw new AttachmentError('largeImageUpdate');
+    const image = file.size > imageLimit ? await compressHarnessImage(file, imageLimit) : file;
+    if (!image) throw new AttachmentError('imageStillTooLarge');
+    const mediaType = image.type === 'image/png' ? 'image/png' : 'image/jpeg';
+    return { kind: 'imageFile', name: image.name.slice(0, 255), mediaType, content: await fileToBase64(image) };
+  }
+  if (file.type.startsWith('image/')) throw new AttachmentError('imageFormat');
+  if (file.size > HARNESS_TEXT_FILE_LIMIT) throw new AttachmentError('textSize');
+  let content;
+  try { content = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer()); }
+  catch { throw new AttachmentError('textEncoding'); }
+  if (content.includes('\0')) throw new AttachmentError('textEncoding');
+  if (content.length > HARNESS_TEXT_LIMIT) throw new AttachmentError('textSize');
+  return { kind: 'textFile', name: file.name.slice(0, 255), content };
+}
+
+export type HarnessAttachmentNotice = { text: string; error?: true };
+
+export function HarnessWorkspaceTools({ endpoint, disabled, capacity, imageLimit, processing, onProcessing, onNotice,
+  requested, clearRequest, attach, compact, configurePlan, running }: {
   endpoint: string;
   disabled: boolean;
   capacity: number;
+  imageLimit: number;
+  processing: boolean;
+  onProcessing: (processing: boolean) => void;
+  onNotice: (notice: HarnessAttachmentNotice | null) => void;
   requested: 'files' | 'commands' | null;
   clearRequest: () => void;
   attach: (attachment: HarnessInputAttachment) => void;
@@ -47,8 +61,24 @@ export function HarnessWorkspaceTools({ endpoint, disabled, capacity, requested,
   const [folder, setFolder] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
-  const [uploadError, setUploadError] = useState(false);
-  const [loadingFile, setLoadingFile] = useState(false);
+  async function addFile(file: File) {
+    if (disabled || !capacity || processing) return;
+    onProcessing(true);
+    onNotice(imageLimit > HARNESS_LEGACY_IMAGE_LIMIT && file.type.startsWith('image/') && file.size > imageLimit
+      ? { text: t('harness.files.compressing') } : null);
+    try {
+      const attachment = await attachmentOf(file, imageLimit);
+      if (attachment.kind === 'imageFile') {
+        // The image can still be sent from this tab if browser draft storage is unavailable.
+        await keepHarnessImage(attachment).catch(() => undefined);
+      }
+      attach(attachment);
+      onNotice(null);
+    } catch (error) {
+      const issue = error instanceof AttachmentError ? error.issue : 'readFailed';
+      onNotice({ error: true, text: t('harness.files.' + issue, { max: imageLimit / (1024 * 1024) }) });
+    } finally { onProcessing(false); }
+  }
   const active = requested ?? section;
   const browsing = active === 'files';
   const files = useQuery({
@@ -62,7 +92,7 @@ export function HarnessWorkspaceTools({ endpoint, disabled, capacity, requested,
     <DropdownMenu>
       <DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon" aria-label={t('harness.files.tools')}><Plus /></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="start">
-        <DropdownMenuItem disabled={disabled || !capacity || loadingFile} onSelect={() => fileInput.current?.click()}>{t('harness.files.upload')}</DropdownMenuItem>
+        <DropdownMenuItem disabled={disabled || !capacity || processing} onSelect={() => fileInput.current?.click()}>{t('harness.files.upload')}</DropdownMenuItem>
         <DropdownMenuItem disabled={disabled} onSelect={() => setSection('files')}>{t('harness.files.title')}</DropdownMenuItem>
         <DropdownMenuItem disabled={disabled} onSelect={() => setSection('commands')}>{t('harness.files.commands')}</DropdownMenuItem>
       </DropdownMenuContent>
@@ -71,12 +101,8 @@ export function HarnessWorkspaceTools({ endpoint, disabled, capacity, requested,
       onChange={(event) => {
         const file = event.target.files?.[0];
         event.target.value = '';
-        if (!file) return;
-        setUploadError(false);
-        setLoadingFile(true);
-        void attachmentOf(file).then(attach, () => setUploadError(true)).finally(() => setLoadingFile(false));
+        if (file) void addFile(file);
       }} />
-    {uploadError && <span role="alert" className="text-xs text-destructive">{t('harness.files.uploadError')}</span>}
     <Dialog open={browsing} onOpenChange={(next) => { if (!next) close(); }}>
       <DialogContent className="flex max-h-[85dvh] flex-col overflow-hidden">
         <DialogHeader><DialogTitle>{t('harness.files.title')}</DialogTitle></DialogHeader>
@@ -103,7 +129,7 @@ export function HarnessWorkspaceTools({ endpoint, disabled, capacity, requested,
             ? <pre className="min-w-0 whitespace-pre-wrap break-words text-xs">{files.data.content}</pre>
             : <img className="max-h-80 w-auto max-w-full object-contain" alt={files.data.path} src={'data:' + files.data.mediaType + ';base64,' + files.data.content} />)}
         </div>
-        {selected && files.data?.kind === 'file' && <Button type="button" className="min-h-11 self-end" disabled={!capacity || disabled} onClick={() => {
+        {selected && files.data?.kind === 'file' && <Button type="button" className="min-h-11 self-end" disabled={!capacity || disabled || processing} onClick={() => {
           attach({ kind: 'projectFile', path: selected, name: selected.slice(selected.lastIndexOf('/') + 1) });
           close();
         }}>{t('harness.files.attach')}</Button>}

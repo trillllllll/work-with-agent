@@ -381,7 +381,15 @@
       "tools": "Conversation tools", "upload": "Add an attachment", "title": "Project files", "commands": "Conversation commands", "search": "Search this folder",
       "attach": "Reference this file", "remove": "Remove {{name}}", "limited": "Showing the first 200 entries",
       "diff": "File diff", "diffTruncated": "Showing the beginning of this diff",
-      "uploadError": "Use PNG or JPEG up to 256 KB, or a small UTF-8 text file", "update": "Update this computer to send attachments"
+      "compressing": "Compressing image…",
+      "largeImageUpdate": "Update this computer’s executor to send larger images",
+      "imageStillTooLarge": "This image cannot fit within {{max}} MiB while keeping the text readable. Try sending the screenshot in sections.",
+      "imageFormat": "Choose a PNG or JPEG image",
+      "textSize": "Text files can be up to 256 KiB and 24,000 characters",
+      "textEncoding": "Choose a UTF-8 text file",
+      "readFailed": "This attachment could not be read or saved. Choose it again.",
+      "restoreFailed": "Some attachments could not be restored. Choose them again.",
+      "update": "Update this computer to send attachments"
     },
     "submitAnswers": "Submit answers",
     "cancelApproval": "Cancel request",

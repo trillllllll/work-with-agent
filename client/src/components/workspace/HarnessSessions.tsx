@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Archive, ArrowDown, ChevronRight, CircleAlert, Ellipsis, FolderOpen, ListOrdered, LoaderCircle, MessageSquare, Pin, ShieldQuestion, Terminal } from 'lucide-react';
 import { ApiError, api } from '@/lib/api.js';
 import { json } from '@/lib/platform.js';
+import { readHarnessDraft, writeHarnessDraft } from '@/lib/harness-image-drafts.js';
 import { intlLocale } from '@/i18n/index.js';
 import { ChatComposer } from '@/components/chat/ChatComposer.js';
 import { createBottomPin } from '@/components/chat/bottom-pin.js';
@@ -19,11 +20,11 @@ import { Input } from '@/components/ui/input.js';
 import { HarnessStartDialog } from './HarnessStartDialog.js';
 import { HarnessSettings } from './HarnessSettings.js';
 import { HarnessContext, HarnessPlan, HarnessQuestion, HarnessQueueControls, HarnessTurnControls, type HarnessAction } from './HarnessRunControls.js';
-import { HarnessWorkspaceTools } from './HarnessWorkspaceTools.js';
+import { HarnessWorkspaceTools, type HarnessAttachmentNotice } from './HarnessWorkspaceTools.js';
 import { HarnessTimeline, HarnessUserMessage } from './HarnessTimeline.js';
 import { ChatProjectButton, HarnessProjectPicker, type HarnessProject, type ProjectComputer } from './HarnessProjectPicker.js';
 import type { DirectoryPage } from '../../../../server/src/node-agent/directory-protocol.js';
-import { applyHarnessEvent, HARNESS_TEXT_LIMIT, harnessKind, harnessNames, type HarnessKind, type HarnessCatalogPage, type HarnessHistoryPage, type HarnessOrganization,
+import { applyHarnessEvent, HARNESS_ATTACHMENT_LIMIT, HARNESS_LEGACY_IMAGE_LIMIT, HARNESS_TEXT_LIMIT, imageAttachmentBytes, harnessKind, harnessNames, type HarnessKind, type HarnessCatalogPage, type HarnessHistoryPage, type HarnessOrganization,
   type HarnessCommand, type HarnessEvent, type HarnessInputAttachment, type HarnessSnapshot, type HarnessView } from '../../../../server/src/node-agent/harness-protocol.js';
 import '@/components/chat/conversation.css';
 import './harness-sessions.css';
@@ -42,7 +43,7 @@ type Session = {
   threadId: string | null; epoch: number; status: string; error: string | null; startCommandId: string;
   harness?: string; locationId: string; title?: string | null; activity?: 'approval' | 'running' | null; updatedAt: string;
   native?: boolean; historyAvailable?: boolean; settingsAvailable?: boolean; workspaceAvailable?: boolean;
-  messageOriginAvailable?: boolean;
+  messageOriginAvailable?: boolean; attachmentImageLimit?: number;
   pinned?: boolean; archived?: boolean; unread?: boolean;
   pinOrder?: number; organization?: HarnessOrganization;
   sourceSessionId?: string | null;
@@ -574,10 +575,13 @@ function HarnessDetail({ id, summary, harness, back, chooseProject, openSession 
   const outgoingKey = `dovun-harness-outgoing:${id}`;
   const readingKey = `dovun-harness-reading:${id}`;
   const [draft, setDraft] = useState(() => load<string>(draftKey) ?? '');
-  const [attachments, setAttachments] = useState(() => load<HarnessInputAttachment[]>(attachmentKey) ?? []);
+  const [attachments, setAttachments] = useState<HarnessInputAttachment[]>([]);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [attachmentBusy, setAttachmentBusy] = useState(false);
+  const [attachmentNotice, setAttachmentNotice] = useState<HarnessAttachmentNotice | null>(null);
   const [toolRequest, setToolRequest] = useState<'files' | 'commands' | null>(null);
-  const [pending, setPending] = useState(() => load<Pending>(pendingKey));
-  const [outgoing, setOutgoing] = useState(() => load<LocalMessage[]>(outgoingKey) ?? []);
+  const [pending, setPending] = useState<Pending | null>(null);
+  const [outgoing, setOutgoing] = useState<LocalMessage[]>([]);
   const outgoingRef = useRef(outgoing);
   const pendingRef = useRef(pending);
   const [sending, setSending] = useState(false);
@@ -619,7 +623,7 @@ function HarnessDetail({ id, summary, harness, back, chooseProject, openSession 
   const currentTurn = view?.turn;
   const inProgress = currentTurn?.status === 'inProgress';
   const awaitingApproval = Boolean(view?.approvals.length);
-  const enabled = !!detail.data?.online && !!snapshot && stream.ready && !stream.unavailable && detail.data.status !== 'failed';
+  const enabled = draftRestored && !!detail.data?.online && !!snapshot && stream.ready && !stream.unavailable && detail.data.status !== 'failed';
   const actionsDisabled = !enabled || !!pending || sending;
   const startCommandId = detail.data?.startCommandId;
   const waitingForStart = !snapshot && detail.data?.status === 'creating' && !detail.data.native;
@@ -630,9 +634,34 @@ function HarnessDetail({ id, summary, harness, back, chooseProject, openSession 
     refetchInterval: 2_000, retry: false,
   });
 
+  useEffect(() => {
+    let active = true;
+    void Promise.allSettled([
+      readHarnessDraft<HarnessInputAttachment[]>(attachmentKey),
+      readHarnessDraft<Pending>(pendingKey),
+      readHarnessDraft<LocalMessage[]>(outgoingKey),
+    ]).then(([savedAttachments, savedPending, savedOutgoing]) => {
+      if (!active) return;
+      if (savedAttachments.status === 'fulfilled') setAttachments(savedAttachments.value ?? []);
+      if (savedPending.status === 'fulfilled') {
+        pendingRef.current = savedPending.value;
+        setPending(savedPending.value);
+      }
+      if (savedOutgoing.status === 'fulfilled') {
+        outgoingRef.current = savedOutgoing.value ?? [];
+        setOutgoing(outgoingRef.current);
+      }
+      if ([savedAttachments, savedPending, savedOutgoing].some((saved) => saved.status === 'rejected')) {
+        setAttachmentNotice({ error: true, text: t('harness.files.restoreFailed') });
+      }
+      setDraftRestored(true);
+    });
+    return () => { active = false; };
+  }, [attachmentKey, pendingKey, outgoingKey, t]);
+
   const updateOutgoing = useCallback((messages: LocalMessage[]) => {
     outgoingRef.current = messages;
-    save(outgoingKey, messages);
+    writeHarnessDraft(outgoingKey, messages);
     setOutgoing(messages);
   }, [outgoingKey]);
   function rememberMessage(message: LocalMessage) {
@@ -654,11 +683,11 @@ function HarnessDetail({ id, summary, harness, back, chooseProject, openSession 
   function editAttachments(change: (files: HarnessInputAttachment[]) => HarnessInputAttachment[]) {
     setAttachments((previous) => {
       const updated = change(previous);
-      save(attachmentKey, updated.length ? updated : null);
+      writeHarnessDraft(attachmentKey, updated.length ? updated : null);
       return updated;
     });
   }
-  function updatePending(value: Pending | null) { pendingRef.current = value; setPending(value); save(pendingKey, value); }
+  function updatePending(value: Pending | null) { pendingRef.current = value; setPending(value); writeHarnessDraft(pendingKey, value); }
   function observe(next: Receipt) {
     const active = pendingRef.current;
     const expected = active?.command.commandId ?? (waitingForStart ? startCommandId : undefined);
@@ -791,6 +820,11 @@ function HarnessDetail({ id, summary, harness, back, chooseProject, openSession 
   }
   function act(action: HarnessAction) {
     if (!enabled || !snapshot || pendingRef.current || sendGate.current) return;
+    if ('attachments' in action && action.attachments?.some((file) =>
+      file.kind === 'imageFile' && imageAttachmentBytes(file.content) > (detail.data?.attachmentImageLimit ?? HARNESS_LEGACY_IMAGE_LIMIT))) {
+      setAttachmentNotice({ error: true, text: t('harness.files.largeImageUpdate') });
+      return;
+    }
     if ('text' in action) jumpToLatest();
     const command = { ...action, commandId: crypto.randomUUID(), expectedEpoch: snapshot.epoch };
     const localMessage = Boolean(detail.data?.messageOriginAvailable && isMessageCommand(command));
@@ -848,6 +882,7 @@ function HarnessDetail({ id, summary, harness, back, chooseProject, openSession 
   const visibleReceipt = receipt && (waitingForStart || receipt.commandId !== startCommandId)
     && !visibleOutgoing.some(({ command }) => command.commandId === receipt.commandId) ? receipt : null;
   const workspace = session?.workspaceAvailable === true;
+  const imageLimit = session?.attachmentImageLimit ?? HARNESS_LEGACY_IMAGE_LIMIT;
   const codexControls = workspace && name === harnessNames.codex;
   const attachmentInput = workspace && attachments.length ? { attachments } : {};
   const currentPlan = workspace && view?.plan?.turnId === currentTurn?.id ? view?.plan : undefined;
@@ -935,23 +970,26 @@ function HarnessDetail({ id, summary, harness, back, chooseProject, openSession 
           {pending && !sending && tracked.error && <Button size="sm" variant="outline" type="button" onClick={() => void post(pending.command)}>{t('harness.retry')}</Button>}
         </div>
       )}
+      {attachmentNotice && <p role={attachmentNotice.error ? 'alert' : 'status'}
+        className={`mx-4 mb-2 text-xs ${attachmentNotice.error ? 'text-destructive' : 'text-muted-foreground'}`}>{attachmentNotice.text}</p>}
       <ChatComposer input={draft} onChange={updateDraft} maxLength={HARNESS_TEXT_LIMIT} busy={inProgress}
-        actionsDisabled={actionsDisabled} allowSendWhileBusy={!zcode || Boolean(settings)} listenForAssistantFocus={false}
+        actionsDisabled={actionsDisabled} sendDisabled={attachmentBusy} allowSendWhileBusy={!zcode || Boolean(settings)} listenForAssistantFocus={false}
         labels={{ input: t('harness.draft'), send: t(sendLabel), stop: t('harness.interrupt') }}
         placeholder={sendLabel === 'harness.send' ? t('harness.placeholder', { harness: name }) : t(sendLabel)}
-        toolbar={<>{workspace && <HarnessWorkspaceTools endpoint={path} disabled={actionsDisabled} capacity={Math.max(0, 2 - attachments.length)}
+        toolbar={<>{workspace && <HarnessWorkspaceTools endpoint={path} disabled={actionsDisabled} capacity={Math.max(0, HARNESS_ATTACHMENT_LIMIT - attachments.length)}
+          imageLimit={imageLimit} processing={attachmentBusy} onProcessing={setAttachmentBusy} onNotice={setAttachmentNotice}
           requested={toolRequest} clearRequest={() => {
             if (toolRequest === 'commands' && draft === '/') updateDraft('');
             if (toolRequest === 'files' && /(^|\s)@$/.test(draft)) updateDraft(draft.slice(0, -1).trimEnd());
             setToolRequest(null);
-          }} attach={(file) => editAttachments((files) => files.length >= 2 ? files : [...files, file])}
+          }} attach={(file) => editAttachments((files) => files.length >= HARNESS_ATTACHMENT_LIMIT ? files : [...files, file])}
           running={inProgress || Boolean(view?.queue?.items.length)} compact={codexControls ? () => act({ operation: 'compact' }) : undefined}
           configurePlan={settings?.planAvailable ? () => act({ operation: 'configure', expectedSettingsRevision: settings.revision, changes: { mode: 'plan' } }) : undefined} />}
           {settings && <HarnessSettings settings={settings} harness={provider} disabled={actionsDisabled} saving={pending?.command.operation === 'configure'}
           error={settingsError} onChange={(changes) => act({ operation: 'configure', expectedSettingsRevision: settings.revision, changes })}
           onForkProvider={codexControls && !inProgress ? (modelProvider) => act({ operation: 'fork', modelProvider }) : undefined} />}
           {codexControls && inProgress && <Button type="button" variant="ghost" size="icon" aria-label={t('harness.queue.enqueue')} title={t('harness.queue.enqueue')}
-            disabled={actionsDisabled || !draft.trim()} onClick={() => act({ operation: 'enqueue', text: draft.trim(), ...attachmentInput,
+            disabled={actionsDisabled || attachmentBusy || !draft.trim()} onClick={() => act({ operation: 'enqueue', text: draft.trim(), ...attachmentInput,
               ...(settings ? { expectedSettingsRevision: settings.revision } : {}) })}><ListOrdered /></Button>}
         </>}
         contextUsage={codexControls && <HarnessContext usage={view?.usage} disabled={actionsDisabled || inProgress || Boolean(view?.queue?.items.length)}
@@ -960,7 +998,7 @@ function HarnessDetail({ id, summary, harness, back, chooseProject, openSession 
         onSend={(event) => {
           event.preventDefault();
           const text = draft.trim();
-          if (!text || zcode && inProgress && !settings) return;
+          if (attachmentBusy || !text || zcode && inProgress && !settings) return;
           if (attachments.length && !workspace) { setError(t('harness.files.update')); return; }
           if (zcode) act({ operation: 'send', text, ...(settings ? { expectedSettingsRevision: settings.revision } : {}) });
           else if (inProgress && provider !== 'claude') act({ operation: 'steer', turnId: currentTurn.id, text, ...attachmentInput });

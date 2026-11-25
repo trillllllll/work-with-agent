@@ -14,7 +14,7 @@ import { HarnessController } from './harness-controller.js';
 import { readHarnessLibrary } from './harness-library.js';
 import { zcodeAvailable } from './harness-zcode-client.js';
 import {
-  HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_LIBRARY_LEASES, HARNESS_LIBRARY_READS, HARNESS_ORGANIZATION_FEATURE, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE,
+  HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_FEATURE, HARNESS_LARGE_IMAGES_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_LIBRARY_LEASES, HARNESS_LIBRARY_READS, HARNESS_ORGANIZATION_FEATURE, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE,
   harnessLeaseSchema, harnessLibraryLeaseSchema, harnessReadTaskSchema, type HarnessKind, type HarnessLease, type HarnessReadTask,
   HARNESS_MESSAGE_ORIGIN_FEATURE, HARNESS_ZCODE_CREATE_FEATURE, withoutHarnessMessageOrigins, withoutHarnessSyncMessageOrigins,
 } from './harness-protocol.js';
@@ -108,6 +108,7 @@ export class NodeAgent {
           ...(path === '/lease' ? { 'X-Dovun-Node-Features': HARNESS_FEATURE, 'X-Dovun-Directory-Browser': DIRECTORY_FEATURE,
             'X-Dovun-Harness-Timeline': HARNESS_TIMELINE_FEATURE, 'X-Dovun-Harness-Library': HARNESS_LIBRARY_FEATURE,
             'X-Dovun-Harness-Settings': HARNESS_SETTINGS_FEATURE, 'X-Dovun-Harness-Workspace': HARNESS_WORKSPACE_FEATURE,
+            'X-Dovun-Harness-Large-Images': HARNESS_LARGE_IMAGES_FEATURE,
             'X-Dovun-Harness-Permissions': HARNESS_PERMISSIONS_FEATURE,
             'X-Dovun-Harness-Advanced-Permissions': HARNESS_ADVANCED_PERMISSIONS_FEATURE,
             'X-Dovun-Harness-Organization': HARNESS_ORGANIZATION_FEATURE,
@@ -141,6 +142,7 @@ export class NodeAgent {
         this.serverAccepts.delete(HARNESS_PERMISSIONS_FEATURE);
         this.serverAccepts.delete(HARNESS_ADVANCED_PERMISSIONS_FEATURE);
         this.serverAccepts.delete(HARNESS_WORKSPACE_FEATURE);
+        this.serverAccepts.delete(HARNESS_LARGE_IMAGES_FEATURE);
         this.serverAccepts.delete(HARNESS_ZCODE_LIVE_FEATURE);
         this.serverAccepts.delete(HARNESS_ZCODE_CREATE_FEATURE);
       }
@@ -182,6 +184,7 @@ export class NodeAgent {
     }
     if (body.harnessLibrary && workspace) {
       body.harnessWorkspace = HARNESS_WORKSPACE_FEATURE;
+      if (this.serverAccepts.has(HARNESS_LARGE_IMAGES_FEATURE)) body.harnessLargeImages = HARNESS_LARGE_IMAGES_FEATURE;
       body.harnessKinds = installed;
       if (this.serverAccepts.has(HARNESS_ORGANIZATION_FEATURE)) body.harnessOrganization = HARNESS_ORGANIZATION_FEATURE;
       if (installed.includes('zcode') && this.serverAccepts.has(HARNESS_ZCODE_LIVE_FEATURE)) {

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { AgentNode, HarnessCommand as CommandRow, HarnessSession, Prisma } from '@prisma/client';
+import { Prisma, type AgentNode, type HarnessSession } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../infrastructure/prisma.js';
 import { DomainError } from '../domain/task.js';
@@ -9,7 +9,8 @@ import { notifyHarnessNode } from './harness-wake.js';
 import { nodeHarnesses, requestHarnessRead, supportsHarnessLibrary, supportsHarnessOrganization, supportsHarnessWorkspace } from './harness-library.js';
 import {
   applyHarnessEvent, HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_EVENTS, HARNESS_LIBRARY_LEASES, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_ZCODE_LIVE_FEATURE, harnessCommandSchema, harnessCreateSchema, harnessSyncSchema,
-  HARNESS_MESSAGE_ORIGIN_FEATURE, HARNESS_ZCODE_CREATE_FEATURE,
+  HARNESS_IMAGE_FILE_LIMIT, HARNESS_LARGE_IMAGES_FEATURE, HARNESS_LEGACY_IMAGE_LIMIT, HARNESS_MESSAGE_ORIGIN_FEATURE, HARNESS_ZCODE_CREATE_FEATURE,
+  imageAttachmentBytes,
   harnessCatalogQuerySchema, harnessFilesQuerySchema, harnessHistoryQuerySchema, harnessIndexQuerySchema, harnessMetadataSchema,
   harnessOpenThreadSchema, harnessStartSchema, harnessKind, harnessNames, harnessOrganizationSchema, harnessProjectPinsSchema,
   harnessEventForClient, harnessSnapshotForClient, HARNESS_WORKSPACE_OPERATIONS, requiresAdvancedPermissions, requiresHarnessWorkspace, requiresNativePermissionSettings,
@@ -29,16 +30,30 @@ const cache = new Map<string, Cache>();
 const refresh = new Set<string>();
 const listeners = new Map<string, Set<(event: StreamEvent) => void>>();
 const expiresAfter = 30_000;
+const leaseCommandBytes = 8 * 1024 * 1024;
+const legacyImageEncodedLimit = Math.ceil(HARNESS_LEGACY_IMAGE_LIMIT / 3) * 4;
 const listQuery = z.object({
   cursor: z.string().min(1).max(200).optional(), locationId: z.string().min(1).max(200).optional(),
   archived: z.enum(['0', '1']).optional(), harness: harnessKind.optional(),
 }).strip();
-const titleCommand = {
-  where: { status: 'accepted', payload: { contains: '"operation":"send"' } },
-  orderBy: [{ createdAt: 'asc' }, { commandId: 'asc' }],
-  select: { payload: true },
-  take: 1,
-} satisfies Prisma.HarnessSession$commandsArgs;
+const receiptFields = { commandId: true, status: true, error: true, createdAt: true, expiresAt: true, resultSessionId: true } as const;
+type ReceiptRow = Prisma.HarnessCommandGetPayload<{ select: typeof receiptFields }>;
+
+async function firstPrompts(sessions: HarnessSession[]) {
+  const ids = sessions.filter((session) => !session.title && !session.nativeTitle).map((session) => session.id);
+  if (!ids.length) return new Map<string, string>();
+  // The first prompt supplies an untitled session's label. Only load its text, since it can contain image attachments.
+  const prompts = await prisma.$queryRaw<Array<{ id: string; text: string | null }>>`
+    SELECT s."id", (
+      SELECT CASE WHEN json_valid(c."payload") THEN json_extract(c."payload", '$.text') END
+      FROM "harness_commands" c
+      WHERE c."sessionId" = s."id" AND c."status" = 'accepted' AND instr(c."payload", '"operation":"send"') > 0
+      ORDER BY c."createdAt", c."commandId" LIMIT 1
+    ) AS "text"
+    FROM "harness_sessions" s WHERE s."id" IN (${Prisma.join(ids)})
+  `;
+  return new Map(prompts.map(({ id, text }) => [id, typeof text === 'string' ? text : '']));
+}
 
 function publish(id: string, event: StreamEvent) {
   for (const listener of listeners.get(id) ?? []) listener(event);
@@ -51,7 +66,7 @@ function pruneInactiveSnapshots() {
     if (cache.size <= 48) break;
   }
 }
-function commandDto(row: CommandRow) {
+function commandDto(row: ReceiptRow) {
   return { commandId: row.commandId, status: row.status, error: row.error, createdAt: row.createdAt, expiresAt: row.expiresAt,
     ...(row.resultSessionId ? { resultSessionId: row.resultSessionId } : {}),
   };
@@ -84,10 +99,8 @@ function nativeOrganizationUpdate(organization: HarnessOrganization | undefined,
     ...(followsArchive && archivedAt !== session?.archivedAt ? { archivedAt } : {}),
   };
 }
-function sessionDto(session: HarnessSession & { commands: Array<{ payload: string }> }, node: AgentNode | null) {
-  const first = session.commands[0];
-  const command = first ? readStoredCommand(first.payload) : null;
-  const title = command?.operation === 'send' ? Array.from(command.text.replace(/\s+/g, ' ')) : [];
+function sessionDto(session: HarnessSession, node: AgentNode | null, firstPrompt = '') {
+  const title = Array.from(firstPrompt.replace(/\s+/g, ' '));
   const state = cache.get(session.id);
   const view = state && !state.stale && state.snapshot.epoch === session.epoch ? state.snapshot.view : null;
   const organization = harnessOrganizationSchema.safeParse(storedJson(session.nativeOrganizationJson)).data;
@@ -99,6 +112,7 @@ function sessionDto(session: HarnessSession & { commands: Array<{ payload: strin
     messageOriginAvailable: Boolean(node && supportsHarnessMessageOrigin(node)
       && (session.harness !== 'zcode' || supportsZCodeLive(node))),
     workspaceAvailable: Boolean(session.harness !== 'zcode' && node && supportsHarnessWorkspace(node)),
+    attachmentImageLimit: node ? imageLimitForNode(node) : HARNESS_LEGACY_IMAGE_LIMIT,
     native: session.nativeTitle !== null,
     title: session.title || session.nativeTitle || (title.length ? title.slice(0, 48).join('') + (title.length > 48 ? '…' : '') : null),
     pinned: session.pinnedAt !== null, archived: session.archivedAt !== null,
@@ -133,6 +147,11 @@ function supportsHarnessSettings(node: Pick<AgentNode, 'capabilitiesJson'>) {
   try { return JSON.parse(node.capabilitiesJson).harnessSettings === HARNESS_SETTINGS_FEATURE; }
   catch { return false; }
 }
+function imageLimitForNode(node: Pick<AgentNode, 'capabilitiesJson'>) {
+  const capabilities = storedJson(node.capabilitiesJson) as { harnessLargeImages?: string } | null;
+  return capabilities?.harnessLargeImages === HARNESS_LARGE_IMAGES_FEATURE ? HARNESS_IMAGE_FILE_LIMIT : HARNESS_LEGACY_IMAGE_LIMIT;
+}
+
 function supportsZCodeLive(node: Pick<AgentNode, 'capabilitiesJson'>) {
   try { return JSON.parse(node.capabilitiesJson).harnessZCodeLive === HARNESS_ZCODE_LIVE_FEATURE; }
   catch { return false; }
@@ -307,10 +326,11 @@ export async function listHarnessSessions(raw: unknown = {}) {
       ...(locationId ? { OR: [{ locationId }, ...(location ? [{ nodeId: location.nodeId, cwd: location.path }] : [])] } : {}),
     },
     orderBy: [{ nativePinOrder: { sort: 'asc', nulls: 'last' } }, { pinnedAt: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
-    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}), take: 101, include: { commands: titleCommand },
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}), take: 101,
   });
   const hasMore = sessions.length > 100;
   if (hasMore) sessions.pop();
+  const prompts = await firstPrompts(sessions);
   return {
     harnesses: [...new Set<HarnessKind>(['codex', ...nodes.flatMap(nodeHarnesses)])].map((id) => ({ id, name: harnessNames[id] })),
     nodes: nodes.map((node) => ({ id: node.id, name: node.name, online: isOnline(node), supportsHarness: supportsHarness(node),
@@ -319,17 +339,17 @@ export async function listHarnessSessions(raw: unknown = {}) {
     projectPins: harness ? nodes.flatMap((node) => (projectPinsByHarness.safeParse(storedJson(node.harnessProjectPinsJson)).data?.[harness] ?? [])
       .map((pin) => ({ nodeId: node.id, ...pin }))) : [],
     directories: directories.map((dir) => ({ id: dir.id, nodeId: dir.nodeId, path: dir.path, projectName: dir.name, computerName: available.get(dir.nodeId)!.name })),
-    sessions: sessions.map((session) => sessionDto(session, available.get(session.nodeId) ?? null)),
+    sessions: sessions.map((session) => sessionDto(session, available.get(session.nodeId) ?? null, prompts.get(session.id))),
     nextCursor: hasMore ? sessions.at(-1)!.id : null,
   };
 }
 export async function readHarnessSession(id: string, timeline = false, settings = false, workspace = false, permissions = false, advanced = false) {
-  const row = await prisma.harnessSession.findUnique({ where: { id }, include: { commands: titleCommand } });
+  const row = await prisma.harnessSession.findUnique({ where: { id } });
   if (!row) throw new DomainError('HARNESS_NOT_FOUND', '会话不存在', 404);
   const node = await prisma.agentNode.findUnique({ where: { id: row.nodeId } });
   const view = cache.get(id);
   const snapshot = view?.snapshot.epoch === row.epoch ? view.snapshot : null;
-  return { ...sessionDto(row, node), snapshot: snapshot && harnessSnapshotForClient(snapshot, timeline, settings, workspace, permissions, advanced),
+  return { ...sessionDto(row, node, (await firstPrompts([row])).get(id)), snapshot: snapshot && harnessSnapshotForClient(snapshot, timeline, settings, workspace, permissions, advanced),
     current: !!view && !view.stale && view.snapshot.epoch === row.epoch };
 }
 export async function createHarnessSession(body: unknown) {
@@ -403,6 +423,10 @@ export async function queueHarnessCommand(id: string, body: unknown, advanced = 
     if (requiresHarnessWorkspace(input) && (!node || !supportsHarnessWorkspace(node))) {
       throw new DomainError('HARNESS_WORKSPACE_UNSUPPORTED', '请更新这台电脑的执行器以使用这个会话功能', 409);
     }
+    if (node && 'attachments' in input && input.attachments?.some((file) =>
+      file.kind === 'imageFile' && imageAttachmentBytes(file.content) > imageLimitForNode(node))) {
+      throw new DomainError('HARNESS_IMAGE_LIMIT', '请更新这台电脑的执行器以发送大图', 409);
+    }
     const view = cache.get(id);
     if (!session.activeNodeId || (session.library && (!node || !supportsHarnessLibrary(node)))
         || session.status !== 'ready' || session.epoch !== input.expectedEpoch || !view || view.stale || view.snapshot.epoch !== session.epoch) {
@@ -439,11 +463,11 @@ export async function queueHarnessCommand(id: string, body: unknown, advanced = 
   return receipt;
 }
 export async function readHarnessReceipt(sessionId: string, commandId: string) {
-  const row = await prisma.harnessCommand.findUnique({ where: { sessionId_commandId: { sessionId, commandId } } });
+  const row = await prisma.harnessCommand.findUnique({ where: { sessionId_commandId: { sessionId, commandId } }, select: receiptFields });
   if (!row) throw new DomainError('HARNESS_COMMAND_NOT_FOUND', '未找到这次操作', 404);
   if (row.status === 'queued' && Date.parse(row.expiresAt) <= Date.now()) {
     await expireQueued(sessionId);
-    return commandDto(await prisma.harnessCommand.findUniqueOrThrow({ where: { sessionId_commandId: { sessionId, commandId } } }));
+    return commandDto(await prisma.harnessCommand.findUniqueOrThrow({ where: { sessionId_commandId: { sessionId, commandId } }, select: receiptFields }));
   }
   return commandDto(row);
 }
@@ -451,7 +475,7 @@ export async function readHarnessReceipt(sessionId: string, commandId: string) {
 async function expireQueued(sessionId: string) {
   const at = new Date().toISOString();
   const expired = await prisma.$transaction(async (tx) => {
-    const rows = await tx.harnessCommand.findMany({ where: { sessionId, status: 'queued', expiresAt: { lte: at } } });
+    const rows = await tx.harnessCommand.findMany({ where: { sessionId, status: 'queued', expiresAt: { lte: at } }, select: receiptFields });
     if (!rows.length) return [];
     await tx.harnessCommand.updateMany({ where: { sessionId, status: 'queued', expiresAt: { lte: at } }, data: { status: 'expired', error: '指令已过期，未送达电脑' } });
     await tx.harnessSession.updateMany({
@@ -466,9 +490,9 @@ async function expireQueued(sessionId: string) {
 export async function leaseHarness(nodeId: string, tokenHash: string): Promise<HarnessLease | undefined> {
   const session = await prisma.harnessSession.findFirst({ where: { activeNodeId: nodeId, library: false }, orderBy: { createdAt: 'asc' } });
   if (!session) return;
-  const assignment = await dispatchHarness(session.id, nodeId, tokenHash, false);
+  const assignment = await dispatchHarness(session.id, nodeId, tokenHash, false, leaseCommandBytes);
   if (!assignment) return;
-  const { library: _library, nativeCwd: _cwd, harness: _harness, ...lease } = assignment;
+  const { library: _library, nativeCwd: _cwd, harness: _harness, ...lease } = assignment.lease;
   return lease;
 }
 
@@ -489,14 +513,18 @@ export async function leaseHarnessLibrary(nodeId: string, tokenHash: string): Pr
     }));
   }
   const leases: HarnessLibraryLease[] = [];
+  let remainingBytes = leaseCommandBytes;
   for (const row of rows) {
-    const lease = await dispatchHarness(row.id, nodeId, tokenHash, true);
-    if (lease) leases.push(lease);
+    const assignment = await dispatchHarness(row.id, nodeId, tokenHash, true, remainingBytes);
+    if (!assignment) continue;
+    remainingBytes -= assignment.bytes;
+    leases.push(assignment.lease);
   }
   return leases;
 }
 
-async function dispatchHarness(id: string, nodeId: string, tokenHash: string, library: boolean): Promise<HarnessLibraryLease | undefined> {
+async function dispatchHarness(id: string, nodeId: string, tokenHash: string, library: boolean, byteBudget: number):
+  Promise<{ lease: HarnessLibraryLease; bytes: number } | undefined> {
   await expireQueued(id);
   return prisma.$transaction(async (tx) => {
     const node = await tx.agentNode.findUnique({ where: { id: nodeId } });
@@ -519,22 +547,50 @@ async function dispatchHarness(id: string, nodeId: string, tokenHash: string, li
     if (!supportsHarnessWorkspace(node)) excluded.push({ payload: { contains: '"attachments":' } }, { payload: { contains: '"decision":"acceptForSession"' } },
       { payload: { contains: '"decision":"cancel"' } },
       ...HARNESS_WORKSPACE_OPERATIONS.map((operation) => ({ payload: { contains: '"operation":"' + operation + '"' } })));
-    const commands = await tx.harnessCommand.findMany({
+    const candidates = await tx.harnessCommand.findMany({
       where: { NOT: excluded, sessionId: row.id, OR: [{ status: 'dispatched' }, { status: 'queued', expiresAt: { gt: dispatchTime } }] },
-      orderBy: [{ createdAt: 'asc' }, { commandId: 'asc' }], take: 16,
+      orderBy: [{ createdAt: 'asc' }, { commandId: 'asc' }], take: 16, select: { commandId: true },
     });
-    await tx.harnessCommand.updateMany({
-      where: { sessionId: row.id, commandId: { in: commands.map((command) => command.commandId) }, status: 'queued' },
+    const ids: string[] = [];
+    let bytes = 0;
+    if (candidates.length && byteBudget > 0) {
+      // Read sizes before loading payloads so an image backlog cannot fill one poll response.
+      const sizes = await tx.$queryRaw<Array<{ commandId: string; bytes: bigint | number }>>`
+        SELECT "commandId", length(CAST("payload" AS BLOB)) AS "bytes" FROM "harness_commands"
+        WHERE "sessionId" = ${row.id} AND "commandId" IN (${Prisma.join(candidates.map(({ commandId }) => commandId))})
+        ${imageLimitForNode(node) === HARNESS_LEGACY_IMAGE_LIMIT ? Prisma.sql`
+          AND NOT EXISTS (
+            SELECT 1 FROM json_each("payload", '$.attachments') AS attachment
+            WHERE json_extract(attachment.value, '$.kind') = 'imageFile'
+              AND length(json_extract(attachment.value, '$.content')) > ${legacyImageEncodedLimit}
+          )` : Prisma.empty}
+      `;
+      const sizesById = new Map(sizes.map((item) => [item.commandId, Number(item.bytes)]));
+      for (const { commandId } of candidates) {
+        const size = sizesById.get(commandId);
+        if (size === undefined) continue;
+        if (bytes + size > byteBudget) break;
+        bytes += size;
+        ids.push(commandId);
+      }
+    }
+    const commands = ids.length ? await tx.harnessCommand.findMany({
+      where: { sessionId: row.id, commandId: { in: ids } },
+      orderBy: [{ createdAt: 'asc' }, { commandId: 'asc' }],
+      select: { sessionId: true, expiresAt: true, payload: true },
+    }) : [];
+    if (ids.length) await tx.harnessCommand.updateMany({
+      where: { sessionId: row.id, commandId: { in: ids }, status: 'queued' },
       data: { status: 'dispatched', dispatchedAt: dispatchTime },
     });
-    return {
+    return { bytes, lease: {
       sessionId: row.id, threadId: row.threadId, epoch: row.epoch,
       snapshotRequested: row.status === 'unavailable' || refresh.has(row.id) || !cache.has(row.id),
       commands: commands.map(({ sessionId, expiresAt, payload }) => ({ sessionId, expiresAt, command: JSON.parse(payload) as HarnessDelivery['command'] })),
       library: row.library,
       ...(row.harness === 'codex' ? {} : { harness: harnessKind.parse(row.harness) }),
       ...(row.epoch === 0 && row.threadId && row.cwd && row.nativeTitle !== null ? { nativeCwd: row.cwd } : {}),
-    };
+    } };
   });
 }
 

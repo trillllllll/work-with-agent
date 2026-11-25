@@ -380,7 +380,15 @@
       "tools": "会话工具", "upload": "添加附件", "title": "项目文件", "commands": "会话命令", "search": "查找当前目录",
       "attach": "引用此文件", "remove": "移除 {{name}}", "limited": "当前仅显示前 200 项",
       "diff": "文件差异", "diffTruncated": "差异较长，这里显示开头",
-      "uploadError": "支持 256 KB 以内的 PNG、JPEG 和小型 UTF-8 文本", "update": "这台电脑需要更新才能接收附件"
+      "compressing": "正在压缩图片…",
+      "largeImageUpdate": "请更新这台电脑的执行器以发送大图",
+      "imageStillTooLarge": "压缩后的图片仍无法在保持清晰的情况下压到 {{max}} MiB 以内。可把长截图分段后再发。",
+      "imageFormat": "请选择 PNG 或 JPEG 图片",
+      "textSize": "文本附件最多 256 KiB，内容最多 24,000 字符",
+      "textEncoding": "请选择 UTF-8 文本文件",
+      "readFailed": "无法读取或保存这个附件，请重新选择",
+      "restoreFailed": "部分附件无法恢复，请重新选择",
+      "update": "这台电脑需要更新才能接收附件"
     },
     "submitAnswers": "提交答案",
     "cancelApproval": "取消请求",

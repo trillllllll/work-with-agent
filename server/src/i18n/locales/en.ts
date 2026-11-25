@@ -58,6 +58,7 @@ export const en: Record<string, string> = {
   "该轮已结束，请刷新会话": "That turn has ended. Refresh the session.",
   "请更新这台电脑的执行器以使用项目会话工具": "Update this computer's executor to use project conversation tools.",
   "请更新这台电脑的执行器以使用这个会话功能": "Update this computer's executor to use this conversation feature.",
+  "请更新这台电脑的执行器以发送大图": "Update this computer’s executor to send larger images.",
   "请更新这台电脑的执行器以新建 ZCode 会话": "Update this computer's executor to create a ZCode conversation.",
   "消息队列已变化，请刷新后重试": "The queue changed. Refresh the conversation and try again.",
   "没有收到原会话的有效分支": "The executor did not return a valid branch of the original conversation.",

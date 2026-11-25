@@ -8,7 +8,7 @@ import { WorktreeService } from '../application/orchestration/worktrees.js';
 import { isServerMode, publicWorkspaceUrl } from '../application/desktop-paths.js';
 import { leaseHarness, leaseHarnessLibrary, syncHarness } from '../application/harness-sessions.js';
 import { pendingHarnessReads, reportHarnessRead } from '../application/harness-library.js';
-import { HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_MESSAGE_ORIGIN_FEATURE, HARNESS_ORGANIZATION_FEATURE, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_CREATE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE } from '../node-agent/harness-protocol.js';
+import { HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_MESSAGE_ORIGIN_FEATURE, HARNESS_ORGANIZATION_FEATURE, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_LARGE_IMAGES_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_CREATE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE } from '../node-agent/harness-protocol.js';
 import { DIRECTORY_FEATURE } from '../node-agent/directory-protocol.js';
 import { pendingDirectories, reportDirectory } from '../application/harness-directories.js';
 import { harnessWakeCursor, waitForHarnessWork } from '../application/harness-wake.js';
@@ -119,7 +119,10 @@ export function createNodeRouter() {
     if (req.get('X-Dovun-Harness-Permissions') === HARNESS_PERMISSIONS_FEATURE) accepts.push(HARNESS_PERMISSIONS_FEATURE);
     if (req.get('X-Dovun-Harness-Advanced-Permissions') === HARNESS_ADVANCED_PERMISSIONS_FEATURE) accepts.push(HARNESS_ADVANCED_PERMISSIONS_FEATURE);
     if (req.get('X-Dovun-Harness-Timeline') === HARNESS_TIMELINE_FEATURE) accepts.push(HARNESS_TIMELINE_FEATURE);
-    if (req.get('X-Dovun-Harness-Workspace') === HARNESS_WORKSPACE_FEATURE) accepts.push(HARNESS_WORKSPACE_FEATURE);
+    if (req.get('X-Dovun-Harness-Workspace') === HARNESS_WORKSPACE_FEATURE) {
+      accepts.push(HARNESS_WORKSPACE_FEATURE);
+      if (req.get('X-Dovun-Harness-Large-Images') === HARNESS_LARGE_IMAGES_FEATURE) accepts.push(HARNESS_LARGE_IMAGES_FEATURE);
+    }
     if (req.get('X-Dovun-Harness-ZCode-Live') === HARNESS_ZCODE_LIVE_FEATURE) accepts.push(HARNESS_ZCODE_LIVE_FEATURE);
     if (req.get('X-Dovun-Harness-ZCode-Create') === HARNESS_ZCODE_CREATE_FEATURE) accepts.push(HARNESS_ZCODE_CREATE_FEATURE);
     if (req.get('X-Dovun-Directory-Browser') === DIRECTORY_FEATURE) accepts.push(DIRECTORY_FEATURE);

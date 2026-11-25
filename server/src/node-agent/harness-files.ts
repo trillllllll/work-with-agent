@@ -3,7 +3,7 @@ import { open, readdir, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { CodexRejected } from './harness-codex.js';
 import { assertAllowed } from './git.js';
-import { HARNESS_ATTACHMENT_TEXT_PREFIX, HARNESS_FILE_LIMIT, type HarnessFilesPage, type HarnessInputAttachment } from './harness-protocol.js';
+import { HARNESS_ATTACHMENT_TEXT_PREFIX, HARNESS_IMAGE_FILE_LIMIT, HARNESS_PREVIEW_FILE_LIMIT, type HarnessFilesPage, type HarnessInputAttachment } from './harness-protocol.js';
 
 function imageType(bytes: Buffer) {
   if (bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return 'image/png';
@@ -29,18 +29,18 @@ export async function readHarnessFiles(cwd: string, path: string, preview: boole
       limited: entries.length > 200,
     };
   }
-  if (!info.isFile() || info.size > HARNESS_FILE_LIMIT) throw new CodexRejected('只可预览 256 KB 以内的文本、PNG 和 JPEG 文件');
+  if (!info.isFile() || info.size > HARNESS_PREVIEW_FILE_LIMIT) throw new CodexRejected('只可预览 256 KB 以内的文本、PNG 和 JPEG 文件');
   const file = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     if (!(await file.stat()).isFile()) throw new CodexRejected('此路径不是可预览文件');
-    const buffer = Buffer.alloc(HARNESS_FILE_LIMIT + 1);
+    const buffer = Buffer.alloc(HARNESS_PREVIEW_FILE_LIMIT + 1);
     let offset = 0;
     while (offset < buffer.length) {
       const { bytesRead } = await file.read(buffer, offset, buffer.length - offset, offset);
       if (!bytesRead) break;
       offset += bytesRead;
     }
-    if (offset > HARNESS_FILE_LIMIT) throw new CodexRejected('文件预览大小超过 256 KB');
+    if (offset > HARNESS_PREVIEW_FILE_LIMIT) throw new CodexRejected('文件预览大小超过 256 KB');
     const bytes = buffer.subarray(0, offset);
     const mediaType = imageType(bytes);
     if (mediaType) return { kind: 'file', path: projectPath, content: bytes.toString('base64'), mediaType };
@@ -65,7 +65,7 @@ export async function codexInput(cwd: string, value: string, files: HarnessInput
       input.push({ type: 'text', text: header + '\n工作区相对路径：' + relative(cwd, path) });
     } else if (attachment.kind === 'imageFile') {
       const bytes = Buffer.from(attachment.content, 'base64');
-      if (bytes.length > HARNESS_FILE_LIMIT || imageType(bytes) !== attachment.mediaType) throw new CodexRejected('图片格式无效');
+      if (bytes.length > HARNESS_IMAGE_FILE_LIMIT || imageType(bytes) !== attachment.mediaType) throw new CodexRejected('图片格式无效');
       input.push({ type: 'text', text: header }, { type: 'image', url: 'data:' + attachment.mediaType + ';base64,' + bytes.toString('base64') });
     } else {
       if (attachment.content.includes('\0')) throw new CodexRejected('附件不是有效文本');

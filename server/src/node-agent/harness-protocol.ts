@@ -7,6 +7,7 @@ export const HARNESS_SETTINGS_FEATURE = 'harness_settings_v1';
 export const HARNESS_PERMISSIONS_FEATURE = 'harness_permissions_v1';
 export const HARNESS_ADVANCED_PERMISSIONS_FEATURE = 'harness_advanced_permissions_v1';
 export const HARNESS_WORKSPACE_FEATURE = 'harness_workspace_v1';
+export const HARNESS_LARGE_IMAGES_FEATURE = 'harness_large_images_v1';
 export const HARNESS_ZCODE_LIVE_FEATURE = 'harness_zcode_live_v1';
 export const HARNESS_ZCODE_CREATE_FEATURE = 'harness_zcode_create_v1';
 export const HARNESS_ORGANIZATION_FEATURE = 'harness_organization_v1';
@@ -21,7 +22,12 @@ export const HARNESS_TOOLS = 64;
 export const HARNESS_OUTPUT_LIMIT = 4_096;
 export const HARNESS_ARTIFACTS = 4;
 export const HARNESS_SVG_LIMIT = 64 * 1024;
-export const HARNESS_FILE_LIMIT = 256 * 1024;
+export const HARNESS_PREVIEW_FILE_LIMIT = 256 * 1024;
+export const HARNESS_TEXT_FILE_LIMIT = 256 * 1024;
+export const HARNESS_LEGACY_IMAGE_LIMIT = 256 * 1024;
+export const HARNESS_IMAGE_FILE_LIMIT = 2 * 1024 * 1024;
+export const HARNESS_MESSAGE_IMAGE_LIMIT = 4 * 1024 * 1024;
+export const HARNESS_ATTACHMENT_LIMIT = 2;
 export const HARNESS_ATTACHMENT_TEXT_PREFIX = '[Dovun 附件] ';
 
 const id = z.string().min(1).max(200);
@@ -31,14 +37,22 @@ const sequence = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const epoch = sequence.min(1);
 const text = z.string().max(HARNESS_TEXT_LIMIT);
 const input = z.string().trim().min(1).max(HARNESS_TEXT_LIMIT);
+export function imageAttachmentBytes(content: string) {
+  const padding = content.endsWith('==') ? 2 : content.endsWith('=') ? 1 : 0;
+  return Math.floor((content.length - padding) * 3 / 4);
+}
+
 const attachment = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('projectFile'), path: z.string().min(1).max(4_096), name: z.string().min(1).max(255) }).strict(),
   z.object({ kind: z.literal('textFile'), name: z.string().min(1).max(255), content: z.string().max(HARNESS_TEXT_LIMIT) }).strict(),
   z.object({ kind: z.literal('imageFile'), name: z.string().min(1).max(255), mediaType: z.enum(['image/png', 'image/jpeg']),
-    content: z.string().max(Math.ceil(HARNESS_FILE_LIMIT / 3) * 4).regex(/^[A-Za-z0-9+/]+={0,2}$/),
+    content: z.string().max(Math.ceil(HARNESS_IMAGE_FILE_LIMIT / 3) * 4).regex(/^[A-Za-z0-9+/]+={0,2}$/)
+      .refine((content) => imageAttachmentBytes(content) <= HARNESS_IMAGE_FILE_LIMIT),
   }).strict(),
 ]);
-const attachments = z.array(attachment).min(1).max(2).optional();
+const attachments = z.array(attachment).min(1).max(HARNESS_ATTACHMENT_LIMIT)
+  .refine((files) => files.reduce((bytes, file) => bytes + (file.kind === 'imageFile' ? imageAttachmentBytes(file.content) : 0), 0)
+    <= HARNESS_MESSAGE_IMAGE_LIMIT).optional();
 export type HarnessInputAttachment = z.infer<typeof attachment>;
 export const harnessKind = z.enum(['codex', 'claude', 'zcode']);
 export type HarnessKind = z.infer<typeof harnessKind>;

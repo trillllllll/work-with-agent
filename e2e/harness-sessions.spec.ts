@@ -1,3 +1,5 @@
+import { createCanvas } from '@napi-rs/canvas';
+import sharp from 'sharp';
 import { test, expect, devices, type APIResponse } from '@playwright/test';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
@@ -748,6 +750,125 @@ test('opens saved Codex history and keeps multiple chats in the same project ind
       await e2eDatabase.harnessSession.deleteMany({ where: { nodeId } });
       await e2eDatabase.harnessDirectory.deleteMany({ where: { nodeId } });
     }
+    await phoneContext.close();
+    await rm(folder, { recursive: true, force: true });
+  }
+});
+
+test('compresses a long phone screenshot with readable text and restores image drafts', async ({ browser, page, request, baseURL, extraHTTPHeaders }, testInfo) => {
+  test.skip(testInfo.project.name === 'mobile', 'The test opens a phone viewport itself.');
+  test.setTimeout(95_000);
+  await resetE2eDatabase();
+  const folder = await realpath(await mkdtemp(join(tmpdir(), 'dovun-harness-images-')));
+  execFileSync('git', ['init', '--quiet', folder]);
+  const phoneContext = await browser.newContext({ ...devices['iPhone 13'], baseURL, extraHTTPHeaders, locale: 'zh-CN',
+    storageState: await page.context().storageState() });
+  let agent: ChildProcess | undefined;
+  let nodeId: string | undefined;
+  try {
+    const node = await data<{ node: { id: string }; token: string }>(await request.post('/api/nodes', { data: { name: '图片测试电脑' } }));
+    nodeId = node.node.id;
+    const project = await data<{ id: string }>(await request.post('/api/projects', { data: { name: '手机图片会话' } }));
+    const { location } = await data<{ location: { id: string } }>(await request.post('/api/projects/' + project.id + '/locations',
+      { data: { nodeId, path: folder } }));
+    agent = spawn(process.execPath, ['--import', 'tsx', resolve('server/src/node-agent/index.ts'), '--server', process.env.E2E_API_URL!,
+      '--roots', folder, '--data', join(folder, 'node')], { stdio: 'ignore', env: {
+      ...process.env, DOVUN_NODE_TOKEN: node.token, DOVUN_CODEX_BIN: resolve('server/test/stub-harness-codex.mjs'),
+      DOVUN_CLAUDE_BIN: resolve('server/test/stub-harness-claude.mjs'), DOVUN_ZCODE_BIN: join(folder, 'missing-zcode'),
+      CLAUDE_CONFIG_DIR: join(folder, 'claude'),
+    } });
+    await expect.poll(async () => {
+      const saved = await data<{ locations: Array<{ status: string }> }>(await request.get('/api/projects/' + project.id));
+      return saved.locations[0].status;
+    }, { timeout: 20_000 }).toBe('verified');
+    const { sessionId } = await data<{ sessionId: string }>(await request.post(apiUrl, {
+      data: { nodeId, locationId: location.id, commandId: 'mobile-image-session', harness: 'claude' },
+    }));
+    const phone = await phoneContext.newPage();
+    await phone.goto(listUrl + '&sessionId=' + encodeURIComponent(sessionId));
+    const chat = phone.getByRole('region', { name: '会话详情' });
+    await expect(chat.locator('header [role=status]')).toHaveText('已连接', { timeout: 16_000 });
+    const fileInput = chat.locator('input[type=file]');
+    const maxBytes = 2 * 1024 * 1024;
+    async function send(prompt: string) {
+      const sent = phone.waitForRequest((req) => req.method() === 'POST' && req.url().includes('/commands?'));
+      await chat.getByRole('textbox', { name: '输入消息' }).fill(prompt);
+      await chat.getByRole('button', { name: '发送', exact: true }).tap();
+      const requestBody = (await sent).postDataJSON() as { attachments: Array<{ content: string; mediaType: string }> };
+      await expect(chat.getByText(prompt + ' · Claude 已回复', { exact: true })).toBeVisible({ timeout: 16_000 });
+      return requestBody.attachments;
+    }
+
+    const width = 1080, height = 12_000;
+    const rows = [120, 6050, 11_950];
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = '#152739';
+    ctx.font = '32px sans-serif';
+    rows.forEach((y, index) => ctx.fillText('Long screenshot 订单备注 A19B  ' + String(index + 1), 48, y));
+    const photo = ctx.createImageData(width, 1200);
+    let seed = 8123;
+    for (let i = 0; i < photo.data.length; i += 4) {
+      for (let channel = 0; channel < 3; channel++) {
+        seed = (Math.imul(1_664_525, seed) + 1_013_904_223) >>> 0;
+        photo.data[i + channel] = seed >>> 24;
+      }
+      photo.data[i + 3] = 255;
+    }
+    ctx.putImageData(photo, 0, 1000);
+    const screenshot = canvas.toBuffer('image/png');
+    expect(screenshot.length).toBeGreaterThan(maxBytes);
+    await fileInput.setInputFiles({ name: '长截图.png', mimeType: 'image/png', buffer: screenshot });
+    await expect(chat.getByRole('button', { name: '移除 长截图.jpg' })).toBeVisible({ timeout: 16_000 });
+    const [image] = await send('完成测试：压缩长截图');
+    expect(image.mediaType).toBe('image/jpeg');
+    const compressed = Buffer.from(image.content, 'base64');
+    expect(compressed.length).toBeLessThanOrEqual(maxBytes);
+    expect(await sharp(compressed).metadata()).toMatchObject({ width, height });
+    for (const row of rows) {
+      const crop = { left: 36, top: row - 38, width: 720, height: 48 };
+      const pixels = (bytes: Buffer) => sharp(bytes).extract(crop).greyscale().raw().toBuffer();
+      const [original, output] = await Promise.all([pixels(screenshot), pixels(compressed)]);
+      const dark = original.reduce((count, value) => count + Number(value < 96), 0);
+      const retained = original.reduce((count, value, index) => count + Number(value < 96 && output[index] < 128), 0);
+      expect(dark).toBeGreaterThan(200);
+      expect(retained / dark).toBeGreaterThan(0.97);
+    }
+    await writeFile(testInfo.outputPath('long-screenshot-compressed.jpg'), compressed);
+
+    const nearLimit = await sharp({ create: { width: 1000, height: 680, channels: 3, background: '#d8e0e9' } })
+      .png({ compressionLevel: 0 }).toBuffer();
+    expect(nearLimit.length).toBeLessThanOrEqual(maxBytes);
+    for (const name of ['截图一.png', '截图二.png']) {
+      await fileInput.setInputFiles({ name, mimeType: 'image/png', buffer: nearLimit });
+      await expect(chat.getByRole('button', { name: '移除 ' + name })).toBeVisible();
+    }
+    await phone.reload();
+    await expect(chat.getByRole('button', { name: '移除 截图一.png' })).toBeVisible();
+    await expect(chat.getByRole('button', { name: '移除 截图二.png' })).toBeVisible();
+    const uploaded = await send('完成测试：刷新后发两张图');
+    expect(uploaded.map((item) => Buffer.from(item.content, 'base64').length)).toEqual([nearLimit.length, nearLimit.length]);
+    expect(uploaded.reduce((total, item) => total + item.content.length, 0)).toBeGreaterThan(5 * 1024 * 1024);
+    const { threadId } = await data<{ threadId: string }>(await request.get(apiUrl + '/' + sessionId));
+    const nativeHistory = await readFile(join(folder, 'claude', 'projects', folder.replace(/[^a-zA-Z0-9-]/g, '-'), threadId + '.jsonl'), 'utf8');
+    const nativePictures = nativeHistory.trim().split('\n').flatMap((line) => {
+      const row = JSON.parse(line);
+      return row.type === 'user' ? row.message.content.filter((part: { type: string }) => part.type === 'image') : [];
+    }).map((item) => ({ mime: item.source.media_type, bytes: Buffer.from(item.source.data, 'base64').length }));
+    expect(nativePictures).toEqual([
+      { mime: 'image/jpeg', bytes: compressed.length },
+      { mime: 'image/png', bytes: nearLimit.length },
+      { mime: 'image/png', bytes: nearLimit.length },
+    ]);
+  } finally {
+    if (agent && agent.exitCode === null && agent.signalCode === null) {
+      const exited = once(agent, 'exit');
+      agent.kill('SIGTERM');
+      await exited;
+    }
+    if (nodeId) await e2eDatabase.harnessSession.deleteMany({ where: { nodeId } });
     await phoneContext.close();
     await rm(folder, { recursive: true, force: true });
   }
