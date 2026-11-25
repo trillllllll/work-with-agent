@@ -54,9 +54,9 @@ const attachments = z.array(attachment).min(1).max(HARNESS_ATTACHMENT_LIMIT)
   .refine((files) => files.reduce((bytes, file) => bytes + (file.kind === 'imageFile' ? imageAttachmentBytes(file.content) : 0), 0)
     <= HARNESS_MESSAGE_IMAGE_LIMIT).optional();
 export type HarnessInputAttachment = z.infer<typeof attachment>;
-export const harnessKind = z.enum(['codex', 'claude', 'zcode']);
+export const harnessKind = z.enum(['codex', 'claude', 'zcode', 'opencode']);
 export type HarnessKind = z.infer<typeof harnessKind>;
-export const harnessNames: Record<HarnessKind, string> = { codex: 'Codex', claude: 'Claude Code', zcode: 'ZCode' };
+export const harnessNames: Record<HarnessKind, string> = { codex: 'Codex', claude: 'Claude Code', zcode: 'ZCode', opencode: 'OpenCode' };
 export const codexApprovalPolicy = z.enum(['on-request', 'untrusted', 'never']);
 export const claudePermissionMode = z.enum(['default', 'acceptEdits', 'plan', 'dontAsk', 'auto', 'bypassPermissions']);
 export const zcodePermissionMode = z.enum(['build', 'edit', 'guarded', 'yolo']);

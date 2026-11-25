@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -537,6 +538,107 @@ it('indexes ZCode by project and resumes the native session without sending a du
   } finally {
     await agent.shutdown('signal');
     presence.close();
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    await rm(outside, { recursive: true, force: true });
+  }
+}, 25_000);
+
+it('indexes OpenCode by project and resumes the native session without sending a duplicate', async () => {
+  const owner = ownerRequest(app);
+  const { node, token } = data(await owner.post('/api/nodes').send({ name: 'OpenCode computer' }));
+  nodeIds.push(node.id);
+  const root = await realpath(folder);
+  const cwd = join(root, 'opencode-project');
+  const outside = await mkdtemp(join(tmpdir(), 'dovun-opencode-outside-'));
+  const store = join(root, 'opencode-store.json');
+  const stubBin = fileURLToPath(new URL('../test/stub-opencode-service.mjs', import.meta.url));
+  const oldId = 'ses_test_seed';
+  await mkdir(cwd);
+  await writeFile(store, JSON.stringify({ counters: { session: 2 }, sessions: [
+    { id: oldId, title: 'Existing OpenCode conversation', agent: 'build', outcome: 'succeeded', running: false,
+      model: { id: 'stub-model', providerID: 'opencode' }, location: { directory: cwd }, permissions: [],
+      time: { created: 1, updated: 2 }, messages: [
+        { id: 'user-old', type: 'user', text: 'Old OpenCode message', time: { created: 1 } },
+        { id: 'assistant-old', type: 'assistant', content: [{ type: 'text', text: 'Old OpenCode answer' }], time: { created: 2 } },
+        { id: 'idle-old', type: 'idle', outcome: 'succeeded', time: { created: 2 } },
+      ] },
+    { id: 'ses_test_outside', title: 'Outside project', agent: 'build', outcome: 'succeeded', running: false,
+      model: { id: 'stub-model', providerID: 'opencode' }, location: { directory: outside }, permissions: [],
+      time: { created: 1, updated: 2 }, messages: [] },
+  ] }));
+  const service = spawn(process.execPath, [stubBin, '--port=0'], {
+    env: { ...process.env, HARNESS_TEST_OPENCODE_STORE: store }, stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  const port = await new Promise<number>((resolve) => {
+    service.stdout!.on('data', (chunk) => {
+      const match = /"port":(\d+)/.exec(String(chunk));
+      if (match) resolve(Number(match[1]));
+    });
+  });
+  const previous = { OPENCODE_SERVICE_URL: process.env.OPENCODE_SERVICE_URL, OPENCODE_BIN: process.env.OPENCODE_BIN };
+  process.env.OPENCODE_SERVICE_URL = `http://127.0.0.1:${port}`;
+  process.env.OPENCODE_BIN = stubBin;
+  let loseReceipt = true;
+  const config = { server: origin, token, roots: [cwd], dataDir: join(folder, 'opencode-node') };
+  const agent = new NodeAgent(config, async (url, init) => {
+    const payload = typeof init?.body === 'string' ? JSON.parse(init.body) : null;
+    if (payload?.type === 'receipt' && payload.commandId === 'continue-opencode' && loseReceipt) {
+      loseReceipt = false;
+      throw new Error('test lost receipt');
+    }
+    return fetch(url, init);
+  });
+  agents.push(agent);
+  async function whilePolling(request: PromiseLike<{ status: number; body: { data: any; error: unknown } }>) {
+    let finished = false;
+    const result = Promise.resolve(request).finally(() => { finished = true; });
+    await until(agent, async () => finished);
+    return data(await result);
+  }
+  try {
+    await until(agent, async () => data(await owner.get(base)).nodes.find((row: { id: string }) => row.id === node.id)?.harnesses.includes('opencode'));
+    await whilePolling(owner.post(base + '/native/index').send({ nodeId: node.id, harness: 'opencode' }));
+    const listed = data(await owner.get(base + '?harness=opencode'));
+    const indexed = listed.sessions.filter(({ nodeId }: { nodeId: string }) => nodeId === node.id);
+    expect(indexed).toMatchObject([{ harness: 'opencode', threadId: oldId, title: 'Existing OpenCode conversation', projectName: 'opencode-project' }]);
+    const id = indexed[0].id;
+    const url = base + '/' + id;
+    const latest = await whilePolling(owner.post(url + '/history').send({}));
+    expect(latest.view.messages.map((row: { text: string }) => row.text)).toEqual(['Old OpenCode message', 'Old OpenCode answer']);
+    // Opening the same native thread through the project catalog keeps the original Dovun conversation.
+    expect(await whilePolling(owner.post(base + '/native/open').send({ nodeId: node.id, locationId: indexed[0].locationId, threadId: oldId, harness: 'opencode' })))
+      .toMatchObject({ sessionId: id });
+    const detail = async () => data(await owner.get(url + '?timeline=1&settings=1&workspace=1'));
+    const auth = await ownerSession(app);
+    const stream = await fetch(origin + url + '/events?timeline=1', {
+      headers: { Cookie: auth.cookie }, signal: AbortSignal.timeout(12_000),
+    });
+    const reader = stream.body!.getReader();
+    try {
+      await until(agent, async () => Boolean((await detail()).snapshot));
+      const expectedEpoch = (await detail()).snapshot.epoch;
+      const command = { expectedEpoch, commandId: 'continue-opencode', operation: 'send', text: 'Continue the original chat' };
+      data(await owner.post(url + '/commands').send(command));
+      await until(agent, async () => (await owner.get(url + '/commands/' + command.commandId).then(data)).status === 'accepted');
+      data(await owner.post(url + '/commands').send(command));
+      await until(agent, async () => {
+        const turn = (await detail()).snapshot?.view.turn;
+        return turn?.status === 'completed' && turn.id === 'continue-opencode';
+      });
+      expect(loseReceipt).toBe(false);
+      const final = await detail();
+      expect(final.threadId).toBe(oldId);
+      expect(final.snapshot.view.messages.at(-1).text).toBe('OpenCode stub 记得 Continue the original chat');
+      const history = await whilePolling(owner.post(url + '/history').send({}));
+      expect(history.view.messages.filter((row: { text: string }) => row.text === command.text)).toHaveLength(1);
+      const state = JSON.parse(await readFile(store, 'utf8')) as { sessions: Array<{ messages: Array<Record<string, unknown>> }> };
+      expect(state.sessions[0].messages.filter((message) => message.id === 'msg_continue-opencode')).toHaveLength(1);
+    } finally { await reader.cancel(); }
+  } finally {
+    await agent.shutdown('signal');
+    service.kill();
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key]; else process.env[key] = value;
     }
