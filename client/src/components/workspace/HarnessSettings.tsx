@@ -35,6 +35,7 @@ export function HarnessSettings({ settings, harness, disabled, saving, error, on
   const filtered = models.filter((model) => (model.label + ' ' + model.id).toLocaleLowerCase().includes(search));
   const effortName = (id: string) => t('harness.settings.efforts.' + id, { defaultValue: id });
   const claude = harness === 'claude';
+  const grok = harness === 'grok';
   const permissionModes = settings.permissionModes;
   const sandboxChoices = settings.sandboxChoices ?? (['readOnly', 'workspace'] as const);
   const readOnly = settings.permission === 'readOnly' || settings.mode === 'plan';
@@ -95,7 +96,7 @@ export function HarnessSettings({ settings, harness, disabled, saving, error, on
         {permissionModes?.length ? <div className="space-y-1.5">
           <ChoiceList label={t('harness.settings.permissionMode')} value={settings.permissionMode ?? ''}
             options={permissionModes.map((id) => ({ id, label: modeLabel(id),
-              description: t('harness.settings.nativeModes.' + id + '.description') }))}
+              description: t((grok ? 'harness.settings.grokModes.' : 'harness.settings.nativeModes.') + id + '.description') }))}
             disabled={disabled || zcode && mode === 'plan'} onChange={(id) => {
               const permissionMode = permissionModes.find((value) => value === id);
               if (permissionMode === 'yolo' || permissionMode === 'bypassPermissions') chooseFullAccess({ permissionMode });
@@ -106,7 +107,7 @@ export function HarnessSettings({ settings, harness, disabled, saving, error, on
             {t('harness.settings.permissionModeUnavailable', { mode: modeLabel(settings.permissionMode) })}
           </p>}
         </div> : null}
-        {!zcode && !claude && sandboxChoices.length > 0 && <ChoiceList
+        {!zcode && !claude && !grok && sandboxChoices.length > 0 && <ChoiceList
           label={t(settings.sandboxChoices ? 'harness.settings.sandbox' : 'harness.settings.permission')} value={settings.permission}
           options={sandboxChoices.filter((id) => id !== 'fullAccess' || mode !== 'plan').map((id) => ({ id, ...sandboxOptions[id] }))}
           onChange={(id) => {
