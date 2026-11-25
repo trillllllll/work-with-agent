@@ -140,10 +140,22 @@ for await (const line of createInterface({ input: process.stdin })) {
       break;
     }
     case 'thread/list': {
-      const all = library ? readdirSync(library).map((name) => read(join(library, name)).thread).sort((a, b) => b.updatedAt - a.updatedAt) : [];
+      const all = library ? readdirSync(library).map((name) => read(join(library, name)).thread)
+        .filter((thread) => Boolean(thread.archived) === (params.archived === true) &&
+          (!params.includedThreadIds || params.includedThreadIds.includes(thread.id)))
+        .sort((a, b) => b.updatedAt - a.updatedAt) : [];
       const offset = Number(params.cursor ?? 0);
       const data = all.slice(offset, offset + params.limit);
       reply(id, { data, nextCursor: offset + data.length < all.length ? String(offset + data.length) : null });
+      break;
+    }
+    case 'project/list': {
+      const projects = new Map();
+      for (const name of library ? readdirSync(library) : []) {
+        const { thread } = read(join(library, name));
+        if (thread.projectId) projects.set(thread.projectId, { id: thread.projectId, roots: [{ path: thread.cwd }] });
+      }
+      reply(id, { data: [...projects.values()], nextCursor: null });
       break;
     }
     case 'thread/turns/list': {

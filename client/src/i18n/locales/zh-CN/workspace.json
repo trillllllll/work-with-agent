@@ -353,7 +353,9 @@
   },
   "harness": {
     "listView": "会话视图",
-    "view": { "project": "按项目", "recent": "最近更新", "archive": "归档" },
+    "view": { "project": "按项目", "group": "分组", "tag": "标签", "recent": "最近更新", "archive": "归档" },
+    "ungrouped": "未分组",
+    "pinnedProject": "已置顶项目",
     "sessionActions": "会话操作",
     "sessionTitle": "会话名称",
     "rename": "重命名",
@@ -554,7 +556,9 @@
       "permissions": "{{harness}} 请求权限",
       "plan": "{{harness}} 请求批准计划"
     },
+    "restoreDraft": "恢复到输入框",
     "receipt": {
+      "waitingForComputer": "待 Mac 接收",
       "queued": "服务器已收到",
       "dispatched": "指令已发往电脑",
       "accepted": "{{harness}} 已受理",

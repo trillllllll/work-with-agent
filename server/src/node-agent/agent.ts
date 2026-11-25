@@ -14,8 +14,9 @@ import { HarnessController } from './harness-controller.js';
 import { readHarnessLibrary } from './harness-library.js';
 import { zcodeAvailable } from './harness-zcode-client.js';
 import {
-  HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_LIBRARY_LEASES, HARNESS_LIBRARY_READS, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE,
+  HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_LIBRARY_LEASES, HARNESS_LIBRARY_READS, HARNESS_ORGANIZATION_FEATURE, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE,
   harnessLeaseSchema, harnessLibraryLeaseSchema, harnessReadTaskSchema, type HarnessKind, type HarnessLease, type HarnessReadTask,
+  HARNESS_MESSAGE_ORIGIN_FEATURE, HARNESS_ZCODE_CREATE_FEATURE, withoutHarnessMessageOrigins, withoutHarnessSyncMessageOrigins,
 } from './harness-protocol.js';
 import { DIRECTORY_FEATURE, directoryTaskSchema, type DirectoryTask } from './directory-protocol.js';
 import { readDirectory } from './directories.js';
@@ -57,6 +58,7 @@ export class NodeAgent {
   private zcode: Promise<boolean> | null = null;
   /** Feature ids from the latest lease response. Missing `accepts` means an old server: report the old result shape. */
   private serverAccepts = new Set<string>();
+  private harnessWakeCursor: string | undefined;
   private gh: boolean | null = null;
   private runnerModule: Promise<typeof import('../runner/supervisor.js')> | null = null;
   private readonly startedAt = new Date().toISOString();
@@ -97,7 +99,7 @@ export class NodeAgent {
     const text = this.summary(error);
     this.lastError = text || null;
   }
-  private async api(path: string, body: unknown) {
+  private async api(path: string, body: unknown, harnessWaitMs = 0) {
     let response: Response;
     try {
       response = await this.http(`${this.config.server.replace(/\/$/, '')}/api/v1/node${path}`, {
@@ -108,7 +110,12 @@ export class NodeAgent {
             'X-Dovun-Harness-Settings': HARNESS_SETTINGS_FEATURE, 'X-Dovun-Harness-Workspace': HARNESS_WORKSPACE_FEATURE,
             'X-Dovun-Harness-Permissions': HARNESS_PERMISSIONS_FEATURE,
             'X-Dovun-Harness-Advanced-Permissions': HARNESS_ADVANCED_PERMISSIONS_FEATURE,
-            'X-Dovun-Harness-ZCode-Live': HARNESS_ZCODE_LIVE_FEATURE } : {}),
+            'X-Dovun-Harness-Organization': HARNESS_ORGANIZATION_FEATURE,
+            'X-Dovun-Harness-Message-Origin': HARNESS_MESSAGE_ORIGIN_FEATURE,
+            'X-Dovun-Harness-ZCode-Live': HARNESS_ZCODE_LIVE_FEATURE,
+            'X-Dovun-Harness-ZCode-Create': HARNESS_ZCODE_CREATE_FEATURE,
+            'X-Dovun-Harness-Wake': this.harnessWakeCursor ?? 'initial',
+            ...(harnessWaitMs > 0 ? { 'X-Dovun-Harness-Wait-Ms': String(harnessWaitMs) } : {}) } : {}),
         },
         body: JSON.stringify(body),
         ...(/^\/(harness-sessions|harness-library|directories)\//.test(path) ? { signal: AbortSignal.timeout(8_000) } : {}),
@@ -128,11 +135,14 @@ export class NodeAgent {
       if (path === '/lease' && response.status === 400) {
         this.serverAccepts.delete(DIRECTORY_FEATURE);
         this.serverAccepts.delete(HARNESS_LIBRARY_FEATURE);
+        this.serverAccepts.delete(HARNESS_ORGANIZATION_FEATURE);
+        this.serverAccepts.delete(HARNESS_MESSAGE_ORIGIN_FEATURE);
         this.serverAccepts.delete(HARNESS_SETTINGS_FEATURE);
         this.serverAccepts.delete(HARNESS_PERMISSIONS_FEATURE);
         this.serverAccepts.delete(HARNESS_ADVANCED_PERMISSIONS_FEATURE);
         this.serverAccepts.delete(HARNESS_WORKSPACE_FEATURE);
         this.serverAccepts.delete(HARNESS_ZCODE_LIVE_FEATURE);
+        this.serverAccepts.delete(HARNESS_ZCODE_CREATE_FEATURE);
       }
       const error = Object.assign(new Error(`服务端返回 ${response.status} ${code ?? ''}`), { status: response.status, code });
       this.rememberError(error);
@@ -164,6 +174,7 @@ export class NodeAgent {
     if (workspace && await (this.zcode ??= zcodeAvailable())) installed.push('zcode');
     if (this.serverAccepts.has(HARNESS_FEATURE) && installed.length) body.harnessSessions = HARNESS_FEATURE;
     if (body.harnessSessions && this.serverAccepts.has(HARNESS_LIBRARY_FEATURE)) body.harnessLibrary = HARNESS_LIBRARY_FEATURE;
+    if (body.harnessSessions && this.serverAccepts.has(HARNESS_MESSAGE_ORIGIN_FEATURE)) body.harnessMessageOrigin = HARNESS_MESSAGE_ORIGIN_FEATURE;
     if (body.harnessSessions && this.serverAccepts.has(HARNESS_SETTINGS_FEATURE)) body.harnessSettings = HARNESS_SETTINGS_FEATURE;
     if (body.harnessSettings && this.serverAccepts.has(HARNESS_PERMISSIONS_FEATURE)) body.harnessPermissions = HARNESS_PERMISSIONS_FEATURE;
     if (body.harnessPermissions && this.serverAccepts.has(HARNESS_ADVANCED_PERMISSIONS_FEATURE)) {
@@ -172,8 +183,10 @@ export class NodeAgent {
     if (body.harnessLibrary && workspace) {
       body.harnessWorkspace = HARNESS_WORKSPACE_FEATURE;
       body.harnessKinds = installed;
+      if (this.serverAccepts.has(HARNESS_ORGANIZATION_FEATURE)) body.harnessOrganization = HARNESS_ORGANIZATION_FEATURE;
       if (installed.includes('zcode') && this.serverAccepts.has(HARNESS_ZCODE_LIVE_FEATURE)) {
         body.harnessZCodeLive = HARNESS_ZCODE_LIVE_FEATURE;
+        if (this.serverAccepts.has(HARNESS_ZCODE_CREATE_FEATURE)) body.harnessZCodeCreate = HARNESS_ZCODE_CREATE_FEATURE;
       }
     }
     if (this.serverAccepts.has(DIRECTORY_FEATURE)) body.directoryBrowser = DIRECTORY_FEATURE;
@@ -193,22 +206,29 @@ export class NodeAgent {
       if (!this.active.has(entry.job.id)) this.active.set(entry.job.id, this.execute(entry).finally(() => this.active.delete(entry.job.id)));
     }
   }
-  async pollOnce() {
-    if (this.stopped) return 0;
+  private async refreshSharedRoots() {
     if (this.hooks.readRoots) {
       const roots = await this.hooks.readRoots();
       // Existing Harness controllers share this array, including while a conversation is open.
       this.config.roots.splice(0, this.config.roots.length, ...roots);
     }
+  }
+
+  async pollOnce(harnessWaitMs = 0) {
+    if (this.stopped) return 0;
+    await this.refreshSharedRoots();
     const pending = (await this.journals()).filter((entry) => this.open(entry)).map((entry) => entry.job.id);
     const activeJobIds = [...new Set([...this.active.keys(), ...pending])];
     const max = Math.max(0, (this.config.maxConcurrent ?? 2) - activeJobIds.length);
     const capabilities = await this.capabilities();
-    const lease = await this.api('/lease', { capabilities, activeJobIds, max }) as { jobs: LeasedJob[]; cancel: string[]; accepts?: unknown; nodeId?: unknown;
-      harness?: unknown; harnesses?: unknown; harnessReads?: unknown; directoryRequests?: unknown };
+    const lease = await this.api('/lease', { capabilities, activeJobIds, max }, harnessWaitMs) as { jobs: LeasedJob[]; cancel: string[]; accepts?: unknown; nodeId?: unknown;
+      harness?: unknown; harnesses?: unknown; harnessReads?: unknown; directoryRequests?: unknown; harnessWakeCursor?: unknown };
+    this.harnessWakeCursor = typeof lease.harnessWakeCursor === 'string' ? lease.harnessWakeCursor : undefined;
     this.serverAccepts = new Set(Array.isArray(lease.accepts) ? lease.accepts.filter((item): item is string => typeof item === 'string') : []);
     if (typeof lease.nodeId === 'string' && lease.nodeId) await this.writeState(lease.nodeId).catch((error) => console.error(`[wwa-node] 无法写入 state.json：${this.summary(error)}`));
     if (this.stopped) return 0;
+    // Shared roots can change while a lease is waiting on the server.
+    if (harnessWaitMs > 0) await this.refreshSharedRoots();
     if (capabilities.harnessSessions && this.serverAccepts.has(HARNESS_FEATURE) && typeof lease.nodeId === 'string') {
       const assignment = harnessLeaseSchema.safeParse(lease.harness);
       if (assignment.success) this.consumeHarness(lease.nodeId, assignment.data, false);
@@ -251,7 +271,9 @@ export class NodeAgent {
       // Keep the original storage key for the pre-upgrade conversation and its command receipts.
       const binding = `${this.config.server}/${nodeId}${library ? `/${lease.sessionId}` : ''}`;
       controller = new HarnessController(this.config.dataDir, binding, this.config.roots,
-        (id, payload) => this.api(`/harness-sessions/${encodeURIComponent(id)}/sync`, payload) as Promise<{ snapshotRequested?: boolean }>, library, lease.harness);
+        (id, payload) => this.api(`/harness-sessions/${encodeURIComponent(id)}/sync`,
+          this.serverAccepts.has(HARNESS_MESSAGE_ORIGIN_FEATURE) ? payload : withoutHarnessSyncMessageOrigins(payload)
+        ) as Promise<{ snapshotRequested?: boolean }>, library, lease.harness);
       if (library) this.harnesses.set(lease.sessionId, controller);
       else this.harness = controller;
     }
@@ -268,7 +290,9 @@ export class NodeAgent {
       const reply = this.config.roots.length
         ? await readHarnessLibrary(task, this.config.roots).catch((error) => ({ error: this.summary(error) || '无法读取 Codex 对话' }))
         : { error: '这台电脑当前没有共享目录' };
-      if (!this.stopped) await this.api('/harness-library/' + task.id, reply);
+      const body = 'view' in reply && !this.serverAccepts.has(HARNESS_MESSAGE_ORIGIN_FEATURE)
+        ? { ...reply, view: withoutHarnessMessageOrigins(reply.view) } : reply;
+      if (!this.stopped) await this.api('/harness-library/' + task.id, body);
     } catch (error) { this.rememberError(error); }
     finally { this.readingHarnesses.delete(task.id); }
   }
@@ -295,9 +319,13 @@ export class NodeAgent {
     if (this.stopped) return;
     await this.resume();
     while (!this.stopped) {
-      try { await this.pollOnce(); } catch (error) { if (this.stopped) return; this.rememberError(error); console.error(`[wwa-node] 拉取失败：${this.summary(error)}`); }
+      const interval = this.config.pollMs ?? 3000;
+      try {
+        await this.pollOnce(this.harnessWakeCursor ? interval : 0);
+        if (this.harnessWakeCursor) continue;
+      } catch (error) { if (this.stopped) return; this.rememberError(error); console.error(`[wwa-node] 拉取失败：${this.summary(error)}`); }
       if (this.stopped) return;
-      await sleep(this.config.pollMs ?? 3000);
+      await sleep(interval);
     }
   }
   stop() { this.stopped = true; }

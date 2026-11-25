@@ -4,6 +4,7 @@ import { basename, isAbsolute } from 'node:path';
 import { promisify } from 'node:util';
 import { assertAllowed } from './git.js';
 import { asObject, CodexAppServer, CodexRejected, type HarnessRuntime } from './harness-codex.js';
+import { codexOrganization, readCodexPins, readCodexProjectPins } from './harness-codex-organization.js';
 import { listClaudeThreads, readClaudeThread, readClaudeTurns } from './harness-claude-library.js';
 import { codexItems, codexText, projectCodexHistory } from './harness-history.js';
 import type { HarnessCatalogThread, HarnessReadTask } from './harness-protocol.js';
@@ -50,35 +51,59 @@ export async function readHarnessLibrary(task: HarnessReadTask, roots: string[])
   if ('harness' in task && task.harness === 'zcode') return readZCodeLibrary(task, roots);
   if ('harness' in task && task.harness === 'claude') {
     if (task.kind === 'index') {
-      const page = await listClaudeThreads(roots, task.cursor);
-      return { threads: page.data.map((thread) => ({ ...summary(thread), cwd: thread.cwd, name: (basename(thread.cwd) || thread.cwd).slice(0, 255) })),
+      const page = await listClaudeThreads(roots, task.cursor, undefined, task.organization);
+      return { threads: page.data.map((thread) => ({ ...summary(thread), organization: thread.organization, cwd: thread.cwd, name: (basename(thread.cwd) || thread.cwd).slice(0, 255) })),
         nextCursor: page.nextCursor };
     }
     const cwd = await assertAllowed(task.cwd, roots);
     if (task.kind === 'catalog') {
-      const page = await listClaudeThreads([cwd], task.cursor, cwd);
-      return { threads: page.data.map(summary), nextCursor: page.nextCursor };
+      const page = await listClaudeThreads([cwd], task.cursor, cwd, task.organization);
+      return { threads: page.data.map((thread) => ({ ...summary(thread), organization: thread.organization })), nextCursor: page.nextCursor };
     }
-    const thread = await readClaudeThread(task.threadId, cwd);
+    const thread = await readClaudeThread(task.threadId, cwd, task.kind === 'thread' && task.organization);
     if (!thread) throw new CodexRejected('这条对话不在所选项目目录中');
-    if (task.kind === 'thread') return summary(thread);
+    if (task.kind === 'thread') return { ...summary(thread), organization: thread.organization };
     const page = await readClaudeTurns(task.threadId, cwd, task.cursor, 12);
     return { view: (await projectCodexHistory(page.data, cwd, roots, false)).view, nextCursor: page.nextCursor };
   }
   if (task.kind === 'index') {
-    const app = await CodexAppServer.open(roots[0], () => undefined, () => undefined);
+    const app = await CodexAppServer.open(roots[0], () => undefined, () => undefined, { experimental: task.organization });
     try {
-      const { data, nextCursor } = await app.request('thread/list', {
-        limit: 30, sortKey: 'updated_at', modelProviders: [], cursor: task.cursor,
-      });
-      const threads = [];
-      for (const thread of codexItems(data)) {
-        if (thread.ephemeral === true || !codexText(thread.id) || typeof thread.cwd !== 'string' || !isAbsolute(thread.cwd)) continue;
-        const cwd = await assertAllowed(thread.cwd, roots).catch(() => null);
-        if (!cwd || !(await stat(cwd).catch(() => null))?.isDirectory()) continue;
-        threads.push({ ...summary(thread), cwd, name: (basename(cwd) || cwd).slice(0, 255) });
-      }
-      return { threads, nextCursor: codexText(nextCursor) || null };
+      const pins = task.organization ? await readCodexPins() : {};
+      const archived = task.archived === true;
+      const filter = { limit: 30, sortKey: 'updated_at', modelProviders: [], ...(task.organization ? { archived } : {}) };
+      const { data, nextCursor } = await app.request('thread/list', { ...filter, cursor: task.cursor });
+      const project = async (value: unknown, fromArchive: boolean) => {
+        const threads = [];
+        for (const thread of codexItems(value)) {
+          if (thread.ephemeral === true || !codexText(thread.id) || typeof thread.cwd !== 'string' || !isAbsolute(thread.cwd)) continue;
+          const cwd = await assertAllowed(thread.cwd, roots).catch(() => null);
+          if (!cwd || !(await stat(cwd).catch(() => null))?.isDirectory()) continue;
+          const organization = task.organization ? codexOrganization(thread, pins.threads, fromArchive) : undefined;
+          threads.push({ ...summary(thread), cwd, name: (basename(cwd) || cwd).slice(0, 255), ...(organization ? { organization } : {}) });
+        }
+        return threads;
+      };
+      const threads = await project(data, archived);
+      if (task.cursor || !task.organization) return { threads, nextCursor: codexText(nextCursor) || null };
+      const recheck = task.recheckThreadIds ?? [];
+      const pinned = archived ? [] : pins.threads?.slice(0, 30) ?? [];
+      const known = new Set(threads.map((thread) => thread.threadId));
+      const loadPriority = async (ids: string[], fromArchive: boolean) => {
+        if (!ids.length) return [];
+        try {
+          const page = await app.request('thread/list', { ...filter, limit: ids.length,
+            archived: fromArchive, includedThreadIds: ids, useStateDbOnly: true });
+          return await project(codexItems(page.data).filter((thread) => ids.includes(codexText(thread.id))), fromArchive);
+        } catch { return []; }
+      };
+      const [priority, projectPins] = await Promise.all([
+        loadPriority([...new Set([...pinned, ...recheck])].filter((id) => !known.has(id)), archived),
+        readCodexProjectPins(app, pins.projects, roots),
+      ]);
+      for (const thread of priority) known.add(thread.threadId);
+      const moved = await loadPriority(recheck.filter((id) => !known.has(id)), !archived);
+      return { threads, nextCursor: codexText(nextCursor) || null, priorityThreads: [...priority, ...moved], projectPins };
     } finally {
       await app.close();
     }
@@ -88,18 +113,25 @@ export async function readHarnessLibrary(task: HarnessReadTask, roots: string[])
   if (task.kind === 'files') return readHarnessFiles(cwd, task.path, task.preview);
   const app = await CodexAppServer.open(cwd, () => undefined, () => undefined);
   try {
+    const pins = 'organization' in task && task.organization ? await readCodexPins() : {};
     if (task.kind === 'catalog') {
       const { data, nextCursor } = await app.request('thread/list', {
         cwd: [...new Set([task.cwd, cwd])], limit: 30, sortKey: 'updated_at', modelProviders: [], cursor: task.cursor,
       });
       const threads: HarnessCatalogThread[] = [];
       for (const thread of codexItems(data)) {
-        if (codexText(thread.id) && await belongsToProject(thread, cwd, roots)) threads.push(summary(thread));
+        if (codexText(thread.id) && await belongsToProject(thread, cwd, roots)) {
+          const organization = task.organization ? codexOrganization(thread, pins.threads, false) : undefined;
+          threads.push({ ...summary(thread), ...(organization ? { organization } : {}) });
+        }
       }
       return { threads, nextCursor: codexText(nextCursor) || null };
     }
     const thread = await readProjectThread(app, task.threadId, cwd, roots);
-    if (task.kind === 'thread') return summary(thread);
+    if (task.kind === 'thread') {
+      const organization = task.organization ? codexOrganization(thread, pins.threads) : undefined;
+      return { ...summary(thread), ...(organization ? { organization } : {}) };
+    }
     // Use Codex's opaque cursor even when the returned page has to be smaller.
     for (let limit = 12; limit >= 1; limit = Math.floor(limit / 2)) {
       const page = await app.request('thread/turns/list', { threadId: task.threadId, cursor: task.cursor,

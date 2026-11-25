@@ -30,6 +30,8 @@ test('opens a project ZCode history on a phone and continues its original sessio
     const other = join(root, 'zcode-other-project');
     await Promise.all([mkdir(project), mkdir(other)]);
     const threadId = 'sess_zcode_mac_original';
+    const otherId = 'sess_zcode_other';
+    const archivedId = 'sess_zcode_archived';
     const store = join(root, 'zcode-store.json');
     const finishTool = join(root, 'finish-zcode-tool');
     const state = join(root, 'zcode-guard.db');
@@ -38,10 +40,34 @@ test('opens a project ZCode history on a phone and continues its original sessio
     db.exec('CREATE TABLE session (id TEXT PRIMARY KEY, permission TEXT, time_deleted INTEGER)');
     db.prepare('INSERT INTO session (id) VALUES (?)').run(threadId);
     db.close();
-    await writeFile(store, JSON.stringify([project, other].map((cwd, index) => ({
-      sessionId: index ? 'sess_zcode_other' : threadId,
+    const indexDir = join(root, '.zcode/v2');
+    await mkdir(indexDir, { recursive: true });
+    const desktopIndex = new DatabaseSync(join(indexDir, 'tasks-index.sqlite'));
+    try {
+      desktopIndex.exec(`CREATE TABLE tasks (workspace_key TEXT, workspace_path TEXT, task_id TEXT, host_id TEXT DEFAULT 'local',
+        workspace_identity TEXT, pinned INTEGER DEFAULT 0, archived INTEGER DEFAULT 0, deleted INTEGER DEFAULT 0, cli_deleted INTEGER DEFAULT 0,
+        sort_order INTEGER, cli_updated_at INTEGER, updated_at INTEGER DEFAULT 1);
+        CREATE TABLE task_groups (group_id TEXT, title TEXT);
+        CREATE TABLE task_group_members (group_id TEXT, workspace_key TEXT, task_id TEXT, sort_order INTEGER, added_at INTEGER);
+        CREATE TABLE task_group_view_node_orders (node_type TEXT, node_key TEXT, sort_order INTEGER);
+        CREATE TABLE projects (project_id TEXT, host_id TEXT, pinned INTEGER, deleted INTEGER, position INTEGER);
+        CREATE TABLE project_roots (project_id TEXT, root_path TEXT, position INTEGER);
+        INSERT INTO task_groups VALUES ('desktop-group', '桌面原生分组');
+        INSERT INTO task_group_view_node_orders VALUES ('group','desktop-group',0);
+        INSERT INTO projects VALUES ('pinned-project','local',1,0,0)`);
+      desktopIndex.prepare('INSERT INTO project_roots VALUES (?,?,0)').run('pinned-project', other);
+      const task = desktopIndex.prepare('INSERT INTO tasks (workspace_key, workspace_path, task_id, pinned, archived, sort_order) VALUES (?, ?, ?, ?, ?, ?)');
+      task.run(project, project, threadId, 1, 0, 0);
+      task.run(other, other, otherId, 0, 0, 1);
+      task.run(project, project, archivedId, 0, 1, 2);
+      const member = desktopIndex.prepare('INSERT INTO task_group_members VALUES (?,?,?,?,0)');
+      member.run('desktop-group', project, threadId, 0);
+      member.run('desktop-group', other, otherId, 1);
+    } finally { desktopIndex.close(); }
+    await writeFile(store, JSON.stringify([project, other, project].map((cwd, index) => ({
+      sessionId: [threadId, otherId, archivedId][index],
       workspace: { workspacePath: cwd, workspaceKey: cwd }, updatedAt: Date.now(),
-      title: index ? '另一个项目的 ZCode 对话' : 'Mac 上的原 ZCode 对话',
+      title: ['Mac 上的原 ZCode 对话', '另一个项目的 ZCode 对话', 'Mac 上的归档 ZCode 对话'][index],
       ...(index === 0 ? { config: { provider: 'account:old-coding-plan', model: 'GLM-5.4', thought: '', mode: 'build', planEnabled: false } } : {}),
       rows: Array.from({ length: 44 }, (_, i) => [
         ...(!index && i === 43 ? [{ kind: 'turnHeader', turnId: 'turn-history-' + i, state: 'failed' }] : []),
@@ -68,7 +94,15 @@ test('opens a project ZCode history on a phone and continues its original sessio
     const original = phone.getByRole('button', { name: /Mac 上的原 ZCode 对话/ });
     await expect(original).toBeVisible({ timeout: 15_000 });
     await expect(phone.getByRole('heading', { name: /^zcode-project/ })).toBeVisible();
-    await expect(phone.getByRole('heading', { name: /^zcode-other-project/ })).toBeVisible();
+    await expect(phone.locator('.harness-session-group').first().getByRole('heading', { name: /^已置顶项目 zcode-other-project/ })).toBeVisible();
+    await expect(phone.getByRole('button', { name: /Mac 上的归档 ZCode 对话/ })).toHaveCount(0);
+    await phone.getByRole('button', { name: '分组', exact: true }).tap();
+    const nativeGroup = phone.locator('.harness-session-group').filter({ has: phone.getByRole('heading', { name: /^桌面原生分组/ }) });
+    await expect(nativeGroup.getByRole('button', { name: /Mac 上的原 ZCode 对话/ })).toBeVisible();
+    await expect(nativeGroup.getByRole('button', { name: /另一个项目的 ZCode 对话/ })).toBeVisible();
+    await phone.getByRole('button', { name: '归档', exact: true }).tap();
+    await expect(phone.getByRole('button', { name: /Mac 上的归档 ZCode 对话/ })).toBeVisible();
+    await phone.getByRole('button', { name: '按项目', exact: true }).tap();
     await original.tap();
     const chat = phone.getByRole('region', { name: '会话详情' });
     await expect(chat.locator('header [role=status]')).toHaveText('已连接', { timeout: 15_000 });
@@ -101,12 +135,33 @@ test('opens a project ZCode history on a phone and continues its original sessio
     const oldTool = oldProcess.locator('[data-harness-tool="history-tool-0"]');
     await oldTool.locator('summary').tap();
     await expect(oldTool.getByLabel('命令输出')).toHaveText('ZCode 历史输出 0');
+    await phone.reload();
+    await expect(oldProcess).toHaveAttribute('open', '');
+    await expect(oldTool.getByLabel('命令输出')).toHaveText('ZCode 历史输出 0');
+    await expect(oldTool.locator('summary')).toBeInViewport();
     const composer = chat.getByRole('textbox', { name: '输入消息' });
     await expect(composer).toHaveAttribute('placeholder', '发消息给 ZCode');
+    const sendRoute = /\/harness-sessions\/[^/]+\/commands\?advancedPermissions=1$/;
+    await phone.route(sendRoute, (route) => route.fulfill({ status: 409, json: { data: null, error: 'Fixture rejected send' } }));
+    await composer.fill('保留发送失败的草稿');
+    await chat.getByRole('button', { name: '发送', exact: true }).tap();
+    await chat.getByRole('button', { name: '恢复到输入框' }).tap();
+    await expect(composer).toHaveValue('保留发送失败的草稿');
+    await phone.unroute(sendRoute);
+    let unblock!: () => void;
+    const delayed = new Promise<void>((resolve) => { unblock = resolve; });
+    await phone.route(sendRoute, async (route) => { await delayed; await route.continue(); });
     await composer.fill('从手机接着聊');
     await chat.getByRole('button', { name: '发送', exact: true }).tap();
+    try {
+      await expect(composer).toHaveValue('');
+      await expect(chat.locator('[data-harness-outgoing]')).toContainText('待 Mac 接收');
+      await expect(chat.getByText('从手机接着聊', { exact: true })).toHaveCount(1);
+    } finally { unblock(); }
     const liveTurn = chat.locator('[data-harness-turn]').filter({ hasText: '从手机接着聊' });
     await expect(liveTurn.getByLabel('命令输出')).toHaveText('正在执行命令');
+    await phone.unroute(sendRoute);
+    await expect(chat.getByText('从手机接着聊', { exact: true })).toHaveCount(1);
     await expect(liveTurn.locator('[data-tool-status]')).toHaveText('执行中');
     await expect(composer).toHaveAttribute('placeholder', '发消息给 ZCode');
     await writeFile(finishTool, '');
@@ -125,6 +180,16 @@ test('opens a project ZCode history on a phone and continues its original sessio
     await completedProcess.locator('[data-harness-tool] summary').tap();
     await expect(completedProcess.getByLabel('命令输出')).toHaveText('命令执行完成');
     await expect(completedProcess.locator('[data-tool-status]')).toHaveText('已完成');
+    await phone.goto(listUrl + '&harness=zcode');
+    await phone.getByRole('button', { name: '新建会话', exact: true }).tap();
+    const newSession = phone.getByRole('dialog', { name: '新建会话' });
+    await newSession.getByRole('radio', { name: /zcode-project/ }).tap();
+    await newSession.getByRole('button', { name: '开启 ZCode 会话' }).tap();
+    await expect(phone).toHaveURL(/sessionId=/);
+    const newId = new URLSearchParams(new URL(phone.url()).hash.split('?')[1]).get('sessionId');
+    expect(newId).not.toBe(id);
+    await expect.poll(async () => (await data<{ threadId: string }>(await request.get(apiUrl + '/' + newId))).threadId).toMatch(/^sess_created_/);
+    expect((await detail()).threadId).toBe(threadId);
   } finally {
     if (agent && agent.exitCode === null && agent.signalCode === null) {
       const exited = once(agent, 'exit');

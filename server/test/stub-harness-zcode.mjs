@@ -74,6 +74,9 @@ function publish(session) {
 async function liveTurn(sessionId, commandId, prompt) {
   const data = read();
   const session = data.find((item) => item.sessionId === sessionId);
+  const db = new DatabaseSync(process.env.ZCODE_SESSION_DB_PATH);
+  try { db.prepare('INSERT OR IGNORE INTO session (id) VALUES (?)').run(sessionId); }
+  finally { db.close(); }
   const rowId = Math.max(0, ...session.rows.map((row) => row.rowId)) + 1;
   const turnId = 'stored-turn-' + rowId;
   session.rows.push(
@@ -129,6 +132,17 @@ for await (const line of createInterface({ input: process.stdin })) {
     }
   }
   if (method === 'v4/command') {
+    if (params.type === 'createSession' && params.sessionId === null) {
+      const { commandId, payload, workspace } = params;
+      let created = data.find((item) => item.createCommandId === commandId);
+      if (!created) {
+        created = { sessionId: payload.sessionId ?? 'sess_created_' + commandId, createCommandId: commandId, workspace,
+          title: '', updatedAt: Date.now(), rows: [], config: { ...defaultConfig, ...payload.config } };
+        data.push(created);
+        save(data);
+      }
+      result = { commandId, status: 'accepted', result: { type: 'createSession', sessionId: created.sessionId } };
+    }
     const session = data.find(({ sessionId }) => sessionId === params.sessionId);
     if (session) {
       const { commandId, type, payload } = params;

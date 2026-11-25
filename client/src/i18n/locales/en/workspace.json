@@ -354,7 +354,9 @@
   },
   "harness": {
     "listView": "Conversation view",
-    "view": { "project": "By project", "recent": "Recently updated", "archive": "Archived" },
+    "view": { "project": "By project", "group": "Groups", "tag": "Tags", "recent": "Recently updated", "archive": "Archived" },
+    "ungrouped": "Ungrouped",
+    "pinnedProject": "Pinned project",
     "sessionActions": "Conversation actions",
     "sessionTitle": "Conversation name",
     "rename": "Rename",
@@ -556,7 +558,9 @@
       "permissions": "{{harness}} requested permissions",
       "plan": "{{harness}} requested plan approval"
     },
+    "restoreDraft": "Restore to composer",
     "receipt": {
+      "waitingForComputer": "Waiting for the computer",
       "queued": "Received by the server",
       "dispatched": "Sent to the computer",
       "accepted": "Accepted by {{harness}}",

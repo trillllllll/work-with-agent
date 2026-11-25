@@ -1,5 +1,5 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
-import { NodeService, getNode, nodeMiddleware } from '../application/orchestration/nodes.js';
+import { NodeService, authenticateNode, getNode, nodeMiddleware } from '../application/orchestration/nodes.js';
 import { ProjectService } from '../application/orchestration/projects.js';
 import { OrchestrationService } from '../application/orchestration/service.js';
 import { dispatchStats, parseStatsQuery } from '../application/orchestration/stats.js';
@@ -8,11 +8,17 @@ import { WorktreeService } from '../application/orchestration/worktrees.js';
 import { isServerMode, publicWorkspaceUrl } from '../application/desktop-paths.js';
 import { leaseHarness, leaseHarnessLibrary, syncHarness } from '../application/harness-sessions.js';
 import { pendingHarnessReads, reportHarnessRead } from '../application/harness-library.js';
-import { HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE } from '../node-agent/harness-protocol.js';
+import { HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_MESSAGE_ORIGIN_FEATURE, HARNESS_ORGANIZATION_FEATURE, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_CREATE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE } from '../node-agent/harness-protocol.js';
 import { DIRECTORY_FEATURE } from '../node-agent/directory-protocol.js';
 import { pendingDirectories, reportDirectory } from '../application/harness-directories.js';
+import { harnessWakeCursor, waitForHarnessWork } from '../application/harness-wake.js';
 
-const route = (action: (req: Request) => Promise<unknown>) => async (req: Request, res: Response, next: NextFunction) => { try { res.json({ data: await action(req), error: null }); } catch (error) { next(error); } };
+const route = (action: (req: Request, res: Response) => Promise<unknown>) => async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await action(req, res);
+    if (!res.destroyed) res.json({ data, error: null });
+  } catch (error) { next(error); }
+};
 const nodes = new NodeService();
 const projects = new ProjectService();
 const orchestrations = new OrchestrationService();
@@ -88,28 +94,46 @@ export function createOrchestrationRouter() {
 export function createNodeRouter() {
   const router = Router();
   router.use(nodeMiddleware);
-  router.post('/lease', route(async (req) => {
-    const node = getNode(req);
+  router.post('/lease', route(async (req, res) => {
+    let node = getNode(req);
+    const wakeAfter = req.body?.capabilities?.harnessSessions === HARNESS_FEATURE ? req.get('X-Dovun-Harness-Wake') : undefined;
+    const waitMs = Math.max(0, Math.min(3_000, Number(req.get('X-Dovun-Harness-Wait-Ms')) || 0));
+    if (wakeAfter && waitMs && !res.destroyed) {
+      const disconnected = new AbortController();
+      const abort = () => disconnected.abort();
+      res.once('close', abort);
+      try { await waitForHarnessWork(node.id, wakeAfter, waitMs, disconnected.signal); }
+      finally { res.off('close', abort); }
+      if (res.destroyed) return;
+      node = await authenticateNode(req);
+    }
+    // A command committed during this lease invalidates the cursor for the next request.
+    const cursor = wakeAfter ? harnessWakeCursor() : undefined;
     const response = await nodes.lease(node, req.body);
     if (req.get('X-Dovun-Node-Features') !== HARNESS_FEATURE) return response;
     const accepts = [...response.accepts, HARNESS_FEATURE];
     if (req.get('X-Dovun-Harness-Library') === HARNESS_LIBRARY_FEATURE) accepts.push(HARNESS_LIBRARY_FEATURE);
+    if (req.get('X-Dovun-Harness-Organization') === HARNESS_ORGANIZATION_FEATURE) accepts.push(HARNESS_ORGANIZATION_FEATURE);
+    if (req.get('X-Dovun-Harness-Message-Origin') === HARNESS_MESSAGE_ORIGIN_FEATURE) accepts.push(HARNESS_MESSAGE_ORIGIN_FEATURE);
     if (req.get('X-Dovun-Harness-Settings') === HARNESS_SETTINGS_FEATURE) accepts.push(HARNESS_SETTINGS_FEATURE);
     if (req.get('X-Dovun-Harness-Permissions') === HARNESS_PERMISSIONS_FEATURE) accepts.push(HARNESS_PERMISSIONS_FEATURE);
     if (req.get('X-Dovun-Harness-Advanced-Permissions') === HARNESS_ADVANCED_PERMISSIONS_FEATURE) accepts.push(HARNESS_ADVANCED_PERMISSIONS_FEATURE);
     if (req.get('X-Dovun-Harness-Timeline') === HARNESS_TIMELINE_FEATURE) accepts.push(HARNESS_TIMELINE_FEATURE);
     if (req.get('X-Dovun-Harness-Workspace') === HARNESS_WORKSPACE_FEATURE) accepts.push(HARNESS_WORKSPACE_FEATURE);
     if (req.get('X-Dovun-Harness-ZCode-Live') === HARNESS_ZCODE_LIVE_FEATURE) accepts.push(HARNESS_ZCODE_LIVE_FEATURE);
+    if (req.get('X-Dovun-Harness-ZCode-Create') === HARNESS_ZCODE_CREATE_FEATURE) accepts.push(HARNESS_ZCODE_CREATE_FEATURE);
     if (req.get('X-Dovun-Directory-Browser') === DIRECTORY_FEATURE) accepts.push(DIRECTORY_FEATURE);
     const supportsHarness = req.body.capabilities.harnessSessions === HARNESS_FEATURE;
     const library = supportsHarness && accepts.includes(HARNESS_LIBRARY_FEATURE) && req.body.capabilities.harnessLibrary === HARNESS_LIBRARY_FEATURE;
     const harness = supportsHarness && !library ? await leaseHarness(node.id, node.tokenHash) : undefined;
     const harnesses = library ? await leaseHarnessLibrary(node.id, node.tokenHash) : [];
     const workspace = accepts.includes(HARNESS_WORKSPACE_FEATURE) && req.body.capabilities.harnessWorkspace === HARNESS_WORKSPACE_FEATURE;
+    const organization = accepts.includes(HARNESS_ORGANIZATION_FEATURE) && req.body.capabilities.harnessOrganization === HARNESS_ORGANIZATION_FEATURE;
     const harnessReads = library ? pendingHarnessReads(node).filter((task) =>
-      workspace || task.kind !== 'index' && task.kind !== 'files' && !task.harness) : [];
+      (workspace || task.kind !== 'index' && task.kind !== 'files' && !task.harness) &&
+      (organization || !('organization' in task && task.organization))) : [];
     const directoryRequests = accepts.includes(DIRECTORY_FEATURE) && req.body.capabilities.directoryBrowser === DIRECTORY_FEATURE ? pendingDirectories(node) : [];
-    return { ...response, accepts, ...(harness ? { harness } : {}), ...(harnesses.length ? { harnesses } : {}),
+    return { ...response, accepts, ...(cursor ? { harnessWakeCursor: cursor } : {}), ...(harness ? { harness } : {}), ...(harnesses.length ? { harnesses } : {}),
       ...(harnessReads.length ? { harnessReads } : {}), ...(directoryRequests.length ? { directoryRequests } : {}) };
   }));
   router.post('/directories/:id', route(async (req) => reportDirectory(getNode(req), String(req.params.id), req.body)));

@@ -1,12 +1,11 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { DatabaseSync } from 'node:sqlite';
 import { asObject, CodexRejected, type HarnessNotification } from './harness-codex.js';
 import { codexItems as items, codexText as text, projectCodexHistory } from './harness-history.js';
-import { resolveZCode, withZCode } from './harness-zcode-client.js';
+import { resolveZCode, withZCode, zcodeSessionStore } from './harness-zcode-client.js';
 import { readZCodeRows, readZCodeThread, zcodeTurns } from './harness-zcode-library.js';
-import { ZCodeLiveConversation } from './harness-zcode-live.js';
+import { ZCodeLiveConversation, type ZCodeSessionTarget } from './harness-zcode-live.js';
 import { zcodeHarnessTool } from './harness-zcode-tools.js';
 import { HARNESS_OUTPUT_LIMIT, HARNESS_TEXT_LIMIT, HARNESS_TOOLS, type HarnessSettingsChange, type HarnessView } from './harness-protocol.js';
 
@@ -21,17 +20,15 @@ const readPrompt = `
   })().catch(() => { process.exitCode = 1; });
 `;
 
-async function readLaunchMode(installation: Awaited<ReturnType<typeof resolveZCode>>, cwd: string, id: string, currentPid?: number) {
-  const { home, env } = installation;
-  const storage = env.ZCODE_STORAGE_DIR || resolve(home, '.zcode');
-  const expand = (value: string) => value.startsWith('~/') ? resolve(home, value.slice(2)) : resolve(cwd, value);
-  const path = expand(env.ZCODE_SESSION_DB_PATH || env.ZCODE_SESSION_DB || resolve(expand(storage), 'cli/db/db.sqlite'));
+async function readNativeSessionState(installation: Awaited<ReturnType<typeof resolveZCode>>, cwd: string, id: string,
+  currentPid?: number, allowEmptyDraft = false) {
+  const path = zcodeSessionStore(installation, cwd);
   let db: DatabaseSync | undefined;
   try {
     db = new DatabaseSync(path, { readOnly: true });
     db.exec('PRAGMA busy_timeout=1000');
-    const session = db.prepare('SELECT permission FROM session WHERE id = ? AND time_deleted IS NULL').get(id);
-    if (!session) throw new CodexRejected('找不到本机 ZCode 原会话');
+    const session = db.prepare('SELECT permission, time_deleted FROM session WHERE id = ?').get(id);
+    if (session?.time_deleted != null || !session && !allowEmptyDraft) throw new CodexRejected('找不到本机 ZCode 原会话');
     const owners = db.prepare('SELECT process_id FROM session_runtime_presence WHERE session_id = ?').all(id);
     const busy = owners.some(({ process_id: pid }) => {
       if (typeof pid !== 'number' || !Number.isSafeInteger(pid) || pid <= 0 || pid === currentPid) return false;
@@ -39,9 +36,9 @@ async function readLaunchMode(installation: Awaited<ReturnType<typeof resolveZCo
       catch (error) { return (error as NodeJS.ErrnoException).code !== 'ESRCH'; }
     });
     if (busy) throw new CodexRejected('这条对话正在 ZCode 中使用，请关闭本机对应的对话后再继续');
-    const permission = typeof session.permission === 'string' ? asObject(JSON.parse(session.permission)) : {};
+    const permission = typeof session?.permission === 'string' ? asObject(JSON.parse(session.permission)) : {};
     // Build keeps the project's permission checks and Plan retains an existing plan mode.
-    return permission.mode === 'plan' ? 'plan' : 'build';
+    return { mode: permission.mode === 'plan' ? 'plan' : 'build', stored: Boolean(session) };
   } catch (error) {
     if (error instanceof CodexRejected) throw error;
     throw new CodexRejected('无法核对本机 ZCode 会话状态');
@@ -73,22 +70,49 @@ export class ZCodeHarnessRuntime {
 
   liveView() { return this.live?.connected ? this.live.view() : undefined; }
 
-  private async resume(threadId: string) {
+  private async connect(target: ZCodeSessionTarget) {
+    const installation = await resolveZCode();
+    if (typeof target === 'string') await readNativeSessionState(installation, this.cwd, target);
+    this.live = await ZCodeLiveConversation.open(this.cwd, target, () => {
+      const current = this.live;
+      const update = ++this.liveUpdate;
+      if (current?.connected) void current.view().then(({ view, clients }) => {
+        if (this.live === current && update === this.liveUpdate) return this.replaceLive(current.threadId, view, clients);
+      }).catch(() => undefined);
+    }, () => {
+      if (!this.live) return;
+      this.live = null;
+      this.disconnected();
+    }, this.nativePermissions, async (pid, threadId) => {
+      await readNativeSessionState(installation, this.cwd, threadId, pid, typeof target !== 'string');
+    });
+    return this.live.threadId;
+  }
+
+  private async resume(threadId: string, draftCommandId?: string, settings?: Record<string, unknown>) {
     if (!this.live && this.liveEnabled) {
-      const installation = await resolveZCode();
-      this.live = await ZCodeLiveConversation.open(this.cwd, threadId, () => {
-        const current = this.live;
-        const update = ++this.liveUpdate;
-        if (current?.connected) void current.view().then(({ view, clients }) => {
-          if (this.live === current && update === this.liveUpdate) return this.replaceLive(threadId, view, clients);
-        }).catch(() => undefined);
-      }, () => {
-        if (!this.live) return;
-        this.live = null;
-        this.disconnected();
-      }, this.nativePermissions, async (pid) => { await readLaunchMode(installation, this.cwd, threadId, pid); });
+      let target: ZCodeSessionTarget = threadId;
+      if (draftCommandId) {
+        const state = await readNativeSessionState(await resolveZCode(), this.cwd, threadId, undefined, true);
+        if (!state.stored) {
+          const modelId = text(settings?.model).split('/');
+          const config = settings ? {
+            ...(modelId.length === 2 ? { provider: decodeURIComponent(modelId[0]), model: decodeURIComponent(modelId[1]) } : {}),
+            ...(typeof settings.permissionMode === 'string' ? { mode: settings.permissionMode } : {}),
+            planEnabled: settings.mode === 'plan',
+          } : undefined;
+          target = { createCommandId: draftCommandId, threadId, config };
+        }
+      }
+      await this.connect(target);
     } else if (!this.live) await withZCode(this.cwd, (app) => readZCodeThread(app, threadId, this.cwd));
     return { thread: { id: threadId, cwd: this.cwd, status: { type: this.attached ? 'idle' : 'notLoaded' } } };
+  }
+
+  private async create(commandId: string) {
+    if (!this.liveEnabled || !commandId || this.live) throw new CodexRejected('本机 ZCode 无法新建会话');
+    const id = await this.connect({ createCommandId: commandId });
+    return { thread: { id, cwd: this.cwd, status: { type: 'idle' } } };
   }
 
   async selectModel(model: string | undefined, commandId: string, expectedSettingsRevision: number) {
@@ -109,9 +133,12 @@ export class ZCodeHarnessRuntime {
   request(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
     const threadId = text(params.threadId);
     switch (method) {
+      case 'thread/start':
+        return this.create(text(params.commandId));
       case 'thread/read':
-      case 'thread/resume':
         return this.resume(threadId);
+      case 'thread/resume':
+        return this.resume(threadId, text(params.draftCommandId) || undefined, params.draftSettings ? asObject(params.draftSettings) : undefined);
       case 'thread/turns/list':
         if (this.live?.connected) return Promise.resolve({ data: this.live.turns() });
         return withZCode(this.cwd, async (app) => {
@@ -134,7 +161,7 @@ export class ZCodeHarnessRuntime {
   private async start(threadId: string, prompt: string) {
     if (!threadId || !prompt.trim() || this.running) throw new CodexRejected('本机不支持这个会话操作');
     const installation = await resolveZCode();
-    const mode = await readLaunchMode(installation, this.cwd, threadId);
+    const { mode } = await readNativeSessionState(installation, this.cwd, threadId);
     const { node, script, env } = installation;
     const child = spawn(node, ['-e', readPrompt, script, '--resume', threadId, '--output-format', 'stream-json',
       '--mode', mode, '--no-color'], { cwd: this.cwd, env, windowsHide: true, stdio: 'pipe' });

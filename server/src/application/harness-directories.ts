@@ -3,6 +3,7 @@ import type { AgentNode } from '@prisma/client';
 import { DomainError } from '../domain/task.js';
 import { prisma } from '../infrastructure/prisma.js';
 import { isOnline } from './orchestration/nodes.js';
+import { notifyHarnessNode } from './harness-wake.js';
 import { directoryQuerySchema, directoryReplySchema, DIRECTORY_FEATURE, type DirectoryPage, type DirectoryTask } from '../node-agent/directory-protocol.js';
 
 type Pending = {
@@ -40,6 +41,7 @@ async function requestDirectory(nodeId: string, path: string | null, inspectOnly
   const result = new Promise<DirectoryPage>((resolve, reject) => {
     pending.set(id, { task: { id, path, inspectOnly }, nodeId, tokenHash: node.tokenHash, resolve, reject });
   });
+  notifyHarnessNode(node.id);
   const timer = setTimeout(() => pending.get(id)?.reject(new DomainError('DIRECTORY_TIMEOUT', '电脑未及时返回目录，请重试', 504)), 12_000);
   try { return { page: await result, tokenHash: node.tokenHash }; } finally { clearTimeout(timer); pending.delete(id); }
 }
