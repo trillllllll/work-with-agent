@@ -4,7 +4,7 @@ import { test, expect } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
 
-// 行为基准：单行 ≈ 28px（20px 行高 + 8px 上下内边距），展开 3 行 ≈ 68px，8 行封顶 ≈ 168px。
+// 行为基准：单行 ≈ 28px（20px 行高 + 8px 上下内边距），展开 4 行 ≈ 88px，8 行封顶 ≈ 168px。
 const COLLAPSED_MAX = 34;
 const EXPANDED_MIN = 58;
 const EXPANDED_MAX = 174;

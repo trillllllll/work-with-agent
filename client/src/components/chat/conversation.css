@@ -61,13 +61,35 @@
 .assistant-source-number { width: 18px; flex-shrink: 0; font-size: 10px; text-align: center; }
 .assistant-inline-citation { display: inline-grid; place-items: center; min-width: 22px; height: 22px; margin-inline: 4px; padding-inline: 4px; position: relative; top: -1px; border-radius: 5px; background: var(--muted); color: var(--muted-foreground); font-size: 10px; line-height: 1; vertical-align: baseline; }
 .assistant-source-preview { overflow-wrap: anywhere; }
-.dovun-assistant .assistant-composer-area { width: min(100%, 792px); margin-inline: auto; padding: 0 16px max(12px, env(safe-area-inset-bottom)); position: relative; background: var(--background); }
+.dovun-assistant .assistant-composer-area { width: min(100%, 792px); margin-inline: auto; padding: 0 16px max(12px, env(safe-area-inset-bottom)); position: relative; background: transparent; }
 .assistant-composer-area::before { content: ''; pointer-events: none; height: 18px; position: absolute; inset: -18px 0 auto; background: linear-gradient(transparent, var(--background)); }
 .dovun-assistant .assistant-composer { width: 100%; padding: 0; }
-.dovun-assistant .assistant-input-box { padding: 11px 12px 9px; border: 1px solid var(--border); border-radius: 22px; background: color-mix(in srgb, var(--muted) 48%, var(--background)); box-shadow: none; }
+/* 输入卡片：毛玻璃 + 收起胶囊/展开大圆角（ChatGPT 形态）。玻璃 token 由 approved-tokens.json 生成。 */
+.dovun-assistant .assistant-input-box {
+  --composer-motion: 240ms cubic-bezier(0.23, 1, 0.32, 1);
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-input-glass);
+  backdrop-filter: blur(var(--surface-input-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--surface-input-blur)) saturate(1.4);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 8px 28px -8px rgb(20 28 44 / 0.14);
+  transition: border-radius var(--composer-motion), padding var(--composer-motion), box-shadow var(--composer-motion), background-color var(--composer-motion);
+}
+.dark .dovun-assistant .assistant-input-box { box-shadow: inset 0 1px 0 var(--glass-highlight), 0 8px 28px -8px rgb(0 0 0 / 0.35); }
+.dovun-assistant .assistant-input-box[data-tools='open'] { padding: 12px 14px; border-radius: 26px; }
 .dovun-assistant .assistant-input-box:focus-within { border-color: color-mix(in srgb, var(--muted-foreground) 50%, var(--border)); }
 .dovun-assistant .assistant-input-box textarea { font-size: 15px; }
-.dovun-assistant .assistant-input-box > div:last-child { gap: 3px; }
+/* 输入行：textarea 在左，上下文入口常驻右端（收起胶囊也保留，发送后可直接固定参考范围）。 */
+.dovun-assistant .assistant-input-box .composer-field { display: flex; align-items: flex-end; gap: 8px; }
+.dovun-assistant .assistant-input-box .composer-tools {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition: grid-template-rows var(--composer-motion), opacity 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.dovun-assistant .assistant-input-box[data-tools='folded'] .composer-tools { grid-template-rows: 0fr; opacity: 0; }
+.dovun-assistant .assistant-input-box .composer-tools > div { overflow: hidden; min-height: 0; margin-top: 8px; gap: 3px; }
 .assistant-context-trigger { display: flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 7px; font-size: 11px; color: var(--muted-foreground); }
 .assistant-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .assistant-attachment { display: flex; align-items: center; gap: 7px; min-width: 0; max-width: 100%; padding: 3px 6px 3px 10px; border: 1px solid var(--border); border-radius: 9px; font-size: 11px; }
@@ -94,3 +116,4 @@
 .markdown-table-record dd { margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 640px) { .dovun-assistant .assistant-header { padding-inline: 10px; } .dovun-assistant .assistant-messages [data-chat-scroll] { padding: 23px 21px 30px; } .dovun-assistant .assistant-composer-area { padding-inline: 12px; } .assistant-user-message { max-width: 94%; } }
 @media (prefers-reduced-motion: reduce) { .assistant-reasoning svg, .assistant-tool-run svg { animation: none; transition: none; } }
+@media (prefers-reduced-motion: reduce) { .dovun-assistant .assistant-input-box, .dovun-assistant .assistant-input-box .composer-tools { transition: none; } }

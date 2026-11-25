@@ -67,7 +67,9 @@
         "shadowSpread": 0,
         "shadowOpacity": 10,
         "hoverLift": 0,
-        "pressedOffset": 0
+        "pressedOffset": 0,
+        "blur": 18,
+        "glassOpacity": 62
       },
       "card": {
         "paddingX": 14,
@@ -156,7 +158,9 @@
         "shadowSpread": 0,
         "shadowOpacity": 30,
         "hoverLift": 0,
-        "pressedOffset": 0
+        "pressedOffset": 0,
+        "blur": 20,
+        "glassOpacity": 62
       },
       "card": {
         "paddingX": 14,

@@ -136,7 +136,6 @@
 .dovun-assistant { background: var(--background); }
 .workspace-chat-prompts { width: min(100%, 760px); margin: 18px auto 24px; }
 .workspace-chat-prompts button { min-height: 48px; font-size: 13px; }
-.dovun-assistant .assistant-composer .assistant-input-box { border: 1px solid transparent; border-radius: 12px; background: var(--workspace-sheet-paint); box-shadow: var(--workspace-sheet-shadow); }
 .dovun-assistant .assistant-composer .assistant-input-box:focus-within { border-color: var(--ring); }
 .dovun-rail-header, .assistant-header { border-bottom-color: var(--workspace-divider); }
 
@@ -334,7 +333,7 @@
   font-size: 15px;
 }
 
-:root:not(.dark) .dovun-assistant :is(.workspace-chat-prompts, .assistant-input-box) {
+:root:not(.dark) .dovun-assistant .workspace-chat-prompts {
   border: 1px solid var(--porcelain-rule);
   background: var(--porcelain-sheet);
   box-shadow: var(--porcelain-lift);

@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea.js';
 
 const LINE_HEIGHT = 20;
 const INPUT_PAD = 8;
-const EXPANDED_LINES = 3;
+const EXPANDED_LINES = 4;
 const MAX_LINES = 8;
 
 type ChatComposerProps = {
@@ -20,6 +20,7 @@ type ChatComposerProps = {
   onCancelReference?: () => void;
   toolbar?: ReactNode;
   contextUsage?: ReactNode;
+  contextPill?: ReactNode;
   model?: ReactNode;
   onStop?: () => void;
   stopping?: boolean;
@@ -33,7 +34,7 @@ type ChatComposerProps = {
 };
 
 export function ChatComposer({
-  input, busy, reference, onChange, onSend, onCancelReference, toolbar, contextUsage, model, onStop, stopping,
+  input, busy, reference, onChange, onSend, onCancelReference, toolbar, contextUsage, contextPill, model, onStop, stopping,
   placeholder, maxLength, actionsDisabled, sendDisabled, allowSendWhileBusy, labels, listenForAssistantFocus = true,
 }: ChatComposerProps) {
   const { t } = useTranslation('chat');
@@ -117,28 +118,33 @@ export function ChatComposer({
           <Button variant="plain" size="bare" type="button" className="shrink-0" onClick={onCancelReference}>{t('composer.removeReference')}</Button>
         </div>
       )}
-      <Surface as="div" tone="input" className="assistant-input-box p-3">
-        <Textarea variant="inline"
-          ref={textareaRef}
-          aria-label={labels?.input ?? t('composer.askAi')}
-          value={input}
-          rows={1}
-          maxLength={maxLength}
-          placeholder={placeholder ?? t('composer.placeholder')}
-          className="w-full resize-none px-1 py-1 text-[13px] leading-5 transition-[height] duration-150 ease-out"
-          onFocus={() => { cancelCollapse.current(); setFocused(true); setJustSent(false); }}
-          onBlur={handleBlur}
-          onChange={(event) => { setJustSent(false); onChange(event.target.value); }}
-          onCompositionStart={() => { composing.current = true; }}
-          onCompositionEnd={() => { composing.current = false; }}
-          onKeyDown={onKeyDown}
-        />
-        <div className="mt-2 flex min-w-0 items-center gap-2">
-          {toolbar}
-          <span className="flex min-w-0 flex-1 items-center truncate text-[11px] text-muted-foreground">{model}</span>
+      <Surface as="div" tone="input" className="assistant-input-box" data-tools={expanded || busy ? 'open' : 'folded'}>
+        <div className="composer-field">
+          <Textarea variant="inline"
+            ref={textareaRef}
+            aria-label={labels?.input ?? t('composer.askAi')}
+            value={input}
+            rows={1}
+            maxLength={maxLength}
+            placeholder={placeholder ?? t('composer.placeholder')}
+            className="min-w-0 flex-1 resize-none px-1 py-1 text-[13px] leading-5 transition-[height] duration-[240ms] ease-[cubic-bezier(0.23,1,0.32,1)]"
+            onFocus={() => { cancelCollapse.current(); setFocused(true); setJustSent(false); }}
+            onBlur={handleBlur}
+            onChange={(event) => { setJustSent(false); onChange(event.target.value); }}
+            onCompositionStart={() => { composing.current = true; }}
+            onCompositionEnd={() => { composing.current = false; }}
+            onKeyDown={onKeyDown}
+          />
+          {contextPill}
           {contextUsage}
-          {busy && <Button type="button" size="icon" className="size-8 rounded-full" onClick={onStop} disabled={stopping || actionsDisabled} aria-label={labels?.stop ?? t('composer.stop')} title={labels?.stop}><Square className="size-3 fill-current" /></Button>}
-          {showSend && <Button type="submit" size="icon" className="size-8 rounded-full" disabled={!canSend} aria-label={labels?.send ?? t('composer.send')} title={labels?.send}><ArrowUp /></Button>}
+        </div>
+        <div className="composer-tools">
+          <div className="flex min-w-0 items-center gap-2">
+            {toolbar}
+            <span className="flex min-w-0 flex-1 items-center truncate text-[11px] text-muted-foreground">{model}</span>
+            {busy && <Button type="button" size="icon" className="size-8 rounded-full" onClick={onStop} disabled={stopping || actionsDisabled} aria-label={labels?.stop ?? t('composer.stop')} title={labels?.stop}><Square className="size-3 fill-current" /></Button>}
+            {showSend && <Button type="submit" size="icon" className="size-8 rounded-full" disabled={!canSend} aria-label={labels?.send ?? t('composer.send')} title={labels?.send}><ArrowUp /></Button>}
+          </div>
         </div>
       </Surface>
       {stopping && <p className="text-center text-[10px] text-muted-foreground">{t('composer.stopping')}</p>}

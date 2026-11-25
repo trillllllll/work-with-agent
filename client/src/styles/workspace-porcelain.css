@@ -166,11 +166,11 @@
   font-size: 15px;
 }
 
-:root .dovun-assistant :is(.workspace-chat-prompts, .assistant-input-box) {
+:root .dovun-assistant .workspace-chat-prompts {
   border: 1px solid var(--workspace-divider);
 }
 
-:root:not(.dark) .dovun-assistant :is(.workspace-chat-prompts, .assistant-input-box) {
+:root:not(.dark) .dovun-assistant .workspace-chat-prompts {
   background: var(--porcelain-sheet);
   box-shadow: var(--preview-lift);
 }

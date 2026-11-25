@@ -109,6 +109,8 @@
   --surface-input-height: 36px;
   --surface-input-duration: 140ms;
   --surface-input-disabled-opacity: 0.4;
+  --surface-input-blur: 18px;
+  --surface-input-glass: rgb(242 239 232 / 0.62);
   --surface-card-bg: #fffdf8;
   --surface-card-paint: linear-gradient(175deg, color-mix(in srgb, #fffdf8 92%, #ffffff), color-mix(in srgb, #fffdf8 96.4%, #000000));
   --surface-card-border: 1px solid rgb(86 98 111 / 0.23);
@@ -257,6 +259,8 @@
   --surface-input-height: 36px;
   --surface-input-duration: 140ms;
   --surface-input-disabled-opacity: 0.4;
+  --surface-input-blur: 20px;
+  --surface-input-glass: rgb(27 34 42 / 0.62);
   --surface-card-bg: #2a333e;
   --surface-card-paint: linear-gradient(175deg, color-mix(in srgb, #2a333e 97%, #ffffff), color-mix(in srgb, #2a333e 98.65%, #000000));
   --surface-card-border: 1px solid rgb(148 163 183 / 0.18);

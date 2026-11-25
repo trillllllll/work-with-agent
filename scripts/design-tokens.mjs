@@ -79,6 +79,9 @@ for (const name of ['light', 'dark']) {
       'surface-button-pressed-shadow': shadow({ ...p, shadowY: 1, shadowBlur: Math.max(2, p.shadowBlur * .5), shadowSpread: 0 }, dark, true),
       'surface-button-hover-brightness': p.hoverBrightness / 100, 'surface-button-hover-offset': `${-p.hoverLift}px`, 'surface-button-pressed-offset': `${p.pressedOffset}px`,
     });
+    if (role === 'input') Object.assign(vars, {
+      'surface-input-blur': `${p.blur}px`, 'surface-input-glass': rgba(p.background, p.glassOpacity / 100),
+    });
     if (role === 'overlay') Object.assign(vars, { 'overlay-width': `${p.dialogWidth}px`, 'overlay-backdrop': rgba(p.backdropColor, p.backdropOpacity / 100), 'overlay-backdrop-blur': `${p.backdropBlur}px` });
   }
   vars['glass-shadow'] = 'var(--surface-card-shadow)';

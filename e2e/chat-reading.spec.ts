@@ -104,6 +104,8 @@ test('context settings navigation closes usage details and long model names fit 
   await request.patch(`${api}/api/settings`, { data: { model: `model-${'long-name-'.repeat(25)}` } });
   await page.setViewportSize({ width: 320, height: 740 });
   await page.goto('/#/chat');
+  // 模型入口在收起态随工具行折叠，展开输入框后再点。
+  await page.getByRole('textbox', { name: '向 AI 提问' }).focus();
   await page.getByTestId('assistant-model-trigger').click();
   const models = page.getByRole('listbox', { name: '获取模型列表' });
   const bounds = (await models.boundingBox())!;
@@ -125,6 +127,7 @@ test('composer model picker switches and persists the active profile model', asy
   await page.goto('/#/chat');
   const trigger = page.getByTestId('assistant-model-trigger');
   await expect(trigger).toHaveText('mock-model');
+  await page.getByRole('textbox', { name: '向 AI 提问' }).focus();
   await trigger.click();
   await page.getByRole('button', { name: '获取模型列表', exact: true }).click();
   await page.getByRole('option', { name: /mock-model-next/ }).click();
