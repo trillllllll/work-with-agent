@@ -40,6 +40,10 @@ export function isIndependentLearningWrite(method: string, path: string) {
 export function isReadOnlyRelayPost(method: string, path: string) {
   return method === 'POST' && path === '/api/chat/context-preview';
 }
+/** Stopping an existing cloud run must not wait for unrelated task edits. */
+function isCloudRunStop(method: string, path: string) {
+  return method === 'POST' && /^\/api\/agent\/runs\/[^/%]+\/stop\/?$/i.test(path);
+}
 const canCache = (path: string) => !/event-stream|\/resources\/receipts\//.test(path) && /^\/api\/(?:conversations(?:\/|$)|v1\/(?:knowledge|library|artifacts)(?:\/|$)|tasks\/[^/]+\/(?:images\/|activity$|topic-history$|ai-history$))/.test(path);
 
 /** Pairing grants a full workspace replica, never a computer execution credential.
@@ -117,7 +121,9 @@ export async function relayBoundWorkspace(req: Request, res: Response, next: Nex
     if (modelSettings === 'unsupported') throw new DomainError('MODEL_SETTINGS_ROUTE_UNSUPPORTED', '配对后的模型设置只支持已开放的云端操作', 405);
     const sendsBody = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
     const writing = sendsBody && !isReadOnlyRelayPost(req.method, path);
-    if (writing && !bearer && modelSettings !== 'hub' && !isIndependentLearningWrite(req.method, path)) {
+    const requiresTaskSync = writing && !bearer && modelSettings !== 'hub'
+      && !isIndependentLearningWrite(req.method, path) && !isCloudRunStop(req.method, path);
+    if (requiresTaskSync) {
       await syncBoundReplicaNow();
       if (await prisma.syncOutbox.count({ where: { state: 'pending' } })) throw new DomainError('SYNC_PENDING', '请等待本机修改同步完成后重试', 409);
     }
@@ -173,7 +179,7 @@ export async function relayBoundWorkspace(req: Request, res: Response, next: Nex
       await writeFile(temp, JSON.stringify(entry), { mode: 0o600 }); await rename(temp, file);
       res.setHeader('X-Dovun-Offline-Available', '1'); res.end(Buffer.concat(chunks));
     } else res.end();
-    if (writing && !bearer && response.ok && modelSettings !== 'hub' && !path.includes('/preview') && !isIndependentLearningWrite(req.method, path)) await syncBoundReplicaNow().catch(() => {});
+    if (requiresTaskSync && response.ok && !path.includes('/preview')) await syncBoundReplicaNow().catch(() => {});
   } catch (error) {
     if (res.headersSent) { if (!res.writableEnded) res.end(); return; }
     if (ownerAuthenticated && !bearer && req.method === 'GET' && canCache(path) && !(error instanceof DomainError && error.code === 'SYNC_AUTH_FAILED') && !await cacheIsDenied(binding)) {

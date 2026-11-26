@@ -1,4 +1,5 @@
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
+import { createServer, request as httpRequest } from 'node:http';
 import { createRequire } from 'node:module';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -57,9 +58,41 @@ async function stop(peer: Peer) {
   });
 }
 
+async function selectiveSyncFailure(hubPort: number) {
+  let enabled = false;
+  const server = createServer((incoming, response) => {
+    const path = incoming.url ?? '/';
+    if (enabled && path.startsWith('/api/v1/sync/') && !path.startsWith('/api/v1/sync/relay/')) {
+      response.writeHead(409, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ data: null, error: 'forced task sync mismatch', code: 'SCHEMA_MISMATCH' }));
+      return;
+    }
+    const upstream = httpRequest({ hostname: '127.0.0.1', port: hubPort, path, method: incoming.method, headers: { ...incoming.headers, host: `127.0.0.1:${hubPort}` } }, remote => {
+      response.writeHead(remote.statusCode ?? 502, remote.headers);
+      remote.pipe(response);
+    });
+    upstream.on('error', () => { response.writeHead(502); response.end(); });
+    incoming.pipe(upstream);
+  });
+  await new Promise<void>((accept, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => { server.off('error', reject); accept(); });
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Missing sync failure gate address');
+  return {
+    url: `http://127.0.0.1:${address.port}`,
+    enable() { enabled = true; },
+    async close() {
+      server.closeAllConnections();
+      await new Promise<void>((accept, reject) => server.close(error => error ? reject(error) : accept()));
+    },
+  };
+}
+
 describe('task sync across independent HTTP processes', () => {
   beforeAll(() => {
-    for (const name of ['hub', 'local', 'hub-shared', 'local-shared']) {
+    for (const name of ['hub', 'local', 'hub-shared', 'local-shared', 'hub-stop', 'local-stop']) {
       const data = join(directory, name); mkdirSync(data);
       writeFileSync(join(data, 'test.db'), '');
       execFileSync(process.execPath, [require.resolve('prisma/build/index.js'), 'migrate', 'deploy', '--schema', 'prisma/schema.prisma'], { cwd: root, env: { ...process.env, DATABASE_URL: `file:${join(data, 'test.db')}` }, stdio: 'pipe' });
@@ -220,5 +253,46 @@ describe('task sync across independent HTTP processes', () => {
     const afterRestart = await fetch(url, { headers: { cookie: local.cookie } });
     expect(afterRestart.status).toBe(502); expect(afterRestart.headers.get('x-dovun-offline')).toBe(null);
     await stop(local);
+  }, 60_000);
+
+  it('stops the real hub run while task synchronization is failing', async () => {
+    const hub = await start('hub-stop'), local = await start('local-stop');
+    const hubDb = new PrismaClient({ datasourceUrl: `file:${join(directory, 'hub-stop', 'test.db')}` });
+    const localDb = new PrismaClient({ datasourceUrl: `file:${join(directory, 'local-stop', 'test.db')}` });
+    let gate: Awaited<ReturnType<typeof selectiveSyncFailure>> | null = null;
+    try {
+      const stamp = new Date().toISOString();
+      await hubDb.conversation.create({ data: { id: 'stop-http-conversation', createdAt: stamp, updatedAt: stamp } });
+      const user = await hubDb.message.create({ data: { id: 'stop-http-user', conversationId: 'stop-http-conversation', role: 'user', content: 'stop over relay', createdAt: stamp } });
+      const assistant = await hubDb.message.create({ data: { id: 'stop-http-assistant', conversationId: 'stop-http-conversation', role: 'assistant', content: 'partial reply', status: 'streaming', createdAt: stamp } });
+      const run = await hubDb.agentRun.create({ data: {
+        id: 'stop-http-run', conversationId: 'stop-http-conversation', sourceUserMessageId: user.id,
+        requestKey: 'stop-http-request', requestHash: 'stop-http-hash', state: 'queued', contextJson: '{}', modelMessagesJson: '[]',
+        cursorJson: JSON.stringify({ schemaVersion: 1, phase: 'model', round: 0, budgetEndRound: 16, assistantMessageId: assistant.id, nextToolIndex: 0 }), createdAt: stamp, updatedAt: stamp,
+      } });
+      await hubDb.conversation.update({ where: { id: 'stop-http-conversation' }, data: { activeRunId: run.id } });
+      const paired = (await hub.request('/api/v1/sync/devices', { name: 'stop-fixture' })).data;
+      gate = await selectiveSyncFailure(hub.port);
+      expect((await local.request('/api/v1/sync/bind', { url: gate.url, token: paired.token })).status).toBe(200);
+      expect((await local.request('/api/v1/sync/run', {})).status).toBe(200);
+      expect(await localDb.agentRun.count()).toBe(0);
+
+      gate.enable();
+      expect(await local.request('/api/v1/sync/run', {})).toMatchObject({ status: 502, code: 'SYNC_FAILED' });
+      expect((await local.request(`/api/agent/runs/${run.id}/resume`, {})).status).toBe(502);
+      expect((await hubDb.agentRun.findUniqueOrThrow({ where: { id: run.id } })).state).toBe('queued');
+
+      const stopped = await local.request(`/api/agent/runs/${run.id}/stop`, {});
+      expect(stopped).toMatchObject({ status: 200, data: { id: run.id, state: 'paused', pauseReason: 'user_stopped' } });
+      expect(await localDb.agentRun.count()).toBe(0);
+      expect(await hubDb.agentRun.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({ state: 'paused', pauseReason: 'user_stopped' });
+      expect((await hubDb.message.findUniqueOrThrow({ where: { id: assistant.id } })).status).toBe('completed');
+      const event = await hubDb.agentRunEvent.findFirstOrThrow({ where: { runId: run.id, type: 'run_state' }, orderBy: { seq: 'desc' } });
+      expect(JSON.parse(event.dataJson)).toMatchObject({ state: 'paused', pauseReason: 'user_stopped' });
+    } finally {
+      await gate?.close();
+      await localDb.$disconnect(); await hubDb.$disconnect();
+      await stop(local); await stop(hub);
+    }
   }, 60_000);
 });
