@@ -848,7 +848,9 @@ function HarnessDetail({ id, summary, harness, back, chooseProject, openSession 
   const provider = harnessKind.safeParse(detail.data?.harness ?? summary?.harness).data ?? harnessKind.safeParse(harness.id).data;
   const name = provider ? harnessNames[provider] : harness.name;
   const zcode = provider === 'zcode';
-  const sendLabel = inProgress && !zcode ? provider === 'claude' ? 'harness.queue.enqueue' : 'harness.steer' : 'harness.send';
+  // Claude Code and DSH take no steer, so a message sent during a running turn joins Dovun's queue instead.
+  const queued = provider === 'claude' || provider === 'dsh';
+  const sendLabel = inProgress && !zcode ? queued ? 'harness.queue.enqueue' : 'harness.steer' : 'harness.send';
   const projectName = session?.projectName;
   const nodeName = session?.nodeName ?? t('harness.unknownComputer');
   const status = !session ? 'reconnecting' : !session.online ? 'offline' : enabled ? 'ready'
@@ -1001,7 +1003,7 @@ function HarnessDetail({ id, summary, harness, back, chooseProject, openSession 
           if (attachmentBusy || !text || zcode && inProgress && !settings) return;
           if (attachments.length && !workspace) { setError(t('harness.files.update')); return; }
           if (zcode) act({ operation: 'send', text, ...(settings ? { expectedSettingsRevision: settings.revision } : {}) });
-          else if (inProgress && provider !== 'claude') act({ operation: 'steer', turnId: currentTurn.id, text, ...attachmentInput });
+          else if (inProgress && !queued) act({ operation: 'steer', turnId: currentTurn.id, text, ...attachmentInput });
           else if (inProgress) act({ operation: 'enqueue', text, ...attachmentInput, ...(settings ? { expectedSettingsRevision: settings.revision } : {}) });
           else act({ operation: 'send', text, ...attachmentInput, ...(settings ? { expectedSettingsRevision: settings.revision } : {}) });
         }}

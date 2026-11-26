@@ -20,6 +20,7 @@ import {
 import { leaseHarnessLibrary } from './application/harness-sessions.js';
 import { codexInput, readHarnessFiles } from './node-agent/harness-files.js';
 import { DIRECTORY_FEATURE } from './node-agent/directory-protocol.js';
+import { writeSession } from '../test/dsh-fixtures.mjs';
 
 const base = '/api/v1/harness-sessions';
 const savedEnv = { ...process.env };
@@ -643,6 +644,95 @@ it('indexes OpenCode by project and resumes the native session without sending a
       if (value === undefined) delete process.env[key]; else process.env[key] = value;
     }
     await rm(outside, { recursive: true, force: true });
+  }
+}, 25_000);
+
+it('indexes DSH by project and resumes the native session without sending a duplicate', async () => {
+  const owner = ownerRequest(app);
+  const { node, token } = data(await owner.post('/api/nodes').send({ name: 'DSH computer' }));
+  nodeIds.push(node.id);
+  const root = await realpath(folder);
+  const cwd = join(root, 'dsh-project');
+  const home = join(root, 'dsh-home');
+  const oldId = 'session-dsh-seed';
+  await mkdir(cwd);
+  // A conversation the DSH desktop app wrote earlier, kept in its own on-disk layout.
+  const at = Date.now();
+  await writeSession(home, { cwd, id: oldId, title: 'Existing DSH conversation', lastPromptAt: at, records: [
+    { type: 'session', version: 4, id: oldId, createdAt: at - 1_000, cwd, isSeeded: false, delegationDepth: 0 },
+    { type: 'user/message', data: { content: [{ type: 'text', text: 'Old DSH message' }], source: { kind: 'user' }, role: 'user', id: 'user-old' } },
+    { type: 'turn/start', data: { turn: 1 } },
+    { type: 'assistant/message', data: { turn: 1, step: 1, message: { id: 'assistant-old', role: 'assistant', content: [{ type: 'text', text: 'Old DSH answer' }] } } },
+    { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+  ] });
+  const names = ['DOVUN_DSH_BIN', 'DSH_HOME', 'HARNESS_TEST_DSH_STORE'] as const;
+  const previous = Object.fromEntries(names.map((key) => [key, process.env[key]]));
+  process.env.DOVUN_DSH_BIN = fileURLToPath(new URL('../test/stub-dsh-acp.mjs', import.meta.url));
+  process.env.DSH_HOME = home;
+  process.env.HARNESS_TEST_DSH_STORE = join(root, 'dsh-store.json');
+  let loseReceipt = true;
+  const config = { server: origin, token, roots: [cwd], dataDir: join(folder, 'dsh-node') };
+  const agent = new NodeAgent(config, async (url, init) => {
+    const payload = typeof init?.body === 'string' ? JSON.parse(init.body) : null;
+    if (payload?.type === 'receipt' && payload.commandId === 'continue-dsh' && loseReceipt) {
+      loseReceipt = false;
+      throw new Error('test lost receipt');
+    }
+    return fetch(url, init);
+  });
+  agents.push(agent);
+  async function whilePolling(request: PromiseLike<{ status: number; body: { data: any; error: unknown } }>) {
+    let finished = false;
+    const result = Promise.resolve(request).finally(() => { finished = true; });
+    await until(agent, async () => finished);
+    return data(await result);
+  }
+  try {
+    // The kind is reported only after the server accepted the DSH feature for this executor.
+    await until(agent, async () => data(await owner.get(base)).nodes.find((row: { id: string }) => row.id === node.id)?.harnesses.includes('dsh'));
+    await whilePolling(owner.post(base + '/native/index').send({ nodeId: node.id, harness: 'dsh' }));
+    const listed = data(await owner.get(base + '?harness=dsh'));
+    const indexed = listed.sessions.filter(({ nodeId }: { nodeId: string }) => nodeId === node.id);
+    expect(indexed).toMatchObject([{ harness: 'dsh', threadId: oldId, title: 'Existing DSH conversation', projectName: 'dsh-project',
+      settingsAvailable: true, workspaceAvailable: true }]);
+    const id = indexed[0].id;
+    const url = base + '/' + id;
+    const latest = await whilePolling(owner.post(url + '/history').send({}));
+    expect(latest.view.messages.map((row: { text: string }) => row.text)).toEqual(['Old DSH message', 'Old DSH answer']);
+    // Opening the same native thread through the project catalog keeps the original Dovun conversation.
+    expect(await whilePolling(owner.post(base + '/native/open').send({ nodeId: node.id, locationId: indexed[0].locationId, threadId: oldId, harness: 'dsh' })))
+      .toMatchObject({ sessionId: id });
+    const detail = async () => data(await owner.get(url + '?timeline=1&settings=1&workspace=1&permissions=1'));
+    const auth = await ownerSession(app);
+    const stream = await fetch(origin + url + '/events?timeline=1', {
+      headers: { Cookie: auth.cookie }, signal: AbortSignal.timeout(12_000),
+    });
+    const reader = stream.body!.getReader();
+    try {
+      await until(agent, async () => Boolean((await detail()).snapshot));
+      // The bridge plugin joined this launch, so presets can be chosen; full access waits for the advanced flag.
+      expect((await detail()).snapshot.view.settings).toMatchObject({ planAvailable: false, sandboxChoices: ['readOnly', 'workspace'] });
+      const expectedEpoch = (await detail()).snapshot.epoch;
+      const command = { expectedEpoch, commandId: 'continue-dsh', operation: 'send', text: 'Continue the original chat' };
+      data(await owner.post(url + '/commands').send(command));
+      await until(agent, async () => (await owner.get(url + '/commands/' + command.commandId).then(data)).status === 'accepted');
+      data(await owner.post(url + '/commands').send(command));
+      await until(agent, async () => {
+        const turn = (await detail()).snapshot?.view.turn;
+        return turn?.status === 'completed' && turn.id === 'continue-dsh';
+      });
+      expect(loseReceipt).toBe(false);
+      const final = await detail();
+      expect(final.threadId).toBe(oldId);
+      expect(final.snapshot.view.messages.at(-1).text).toBe('DSH stub 记得 Continue the original chat');
+      const history = await whilePolling(owner.post(url + '/history').send({}));
+      expect(history.view.messages.filter((row: { text: string }) => row.text === command.text)).toHaveLength(1);
+    } finally { await reader.cancel(); }
+  } finally {
+    await agent.shutdown('signal');
+    for (const key of names) {
+      if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key];
+    }
   }
 }, 25_000);
 

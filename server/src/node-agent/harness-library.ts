@@ -6,6 +6,7 @@ import { assertAllowed } from './git.js';
 import { asObject, CodexAppServer, CodexRejected, type HarnessRuntime } from './harness-codex.js';
 import { codexOrganization, readCodexPins, readCodexProjectPins } from './harness-codex-organization.js';
 import { listClaudeThreads, readClaudeThread, readClaudeTurns } from './harness-claude-library.js';
+import { readDshLibrary } from './harness-dsh-library.js';
 import { listGrokThreads, readGrokThread, readGrokTurns } from './harness-grok-library.js';
 import { codexItems, codexText, projectCodexHistory } from './harness-history.js';
 import type { HarnessCatalogThread, HarnessReadTask } from './harness-protocol.js';
@@ -52,6 +53,7 @@ function summary(thread: Record<string, unknown>): HarnessCatalogThread {
 export async function readHarnessLibrary(task: HarnessReadTask, roots: string[]) {
   if ('harness' in task && task.harness === 'zcode') return readZCodeLibrary(task, roots);
   if ('harness' in task && task.harness === 'opencode') return readOpenCodeLibrary(task, roots);
+  if ('harness' in task && task.harness === 'dsh') return readDshLibrary(task, roots);
   if ('harness' in task && task.harness === 'grok') {
     if (task.kind === 'index') {
       const page = await listGrokThreads(roots, task.cursor);

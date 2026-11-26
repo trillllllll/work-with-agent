@@ -1,6 +1,6 @@
 /** Wire contract between the WWA server and a local executor (wwa-node). Shared by both sides. */
 import { z } from 'zod';
-import { HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_MESSAGE_ORIGIN_FEATURE, HARNESS_ORGANIZATION_FEATURE, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_LARGE_IMAGES_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_CREATE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE, harnessKind } from './harness-protocol.js';
+import { HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_DSH_FEATURE, HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_MESSAGE_ORIGIN_FEATURE, HARNESS_ORGANIZATION_FEATURE, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_LARGE_IMAGES_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_CREATE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE, harnessKind } from './harness-protocol.js';
 import { DIRECTORY_FEATURE } from './directory-protocol.js';
 import { permissionsSchema, providerSchema, resultSchema } from '../runner/contracts.js';
 
@@ -155,7 +155,7 @@ export const capabilitiesSchema = z.object({
   harnessLargeImages: z.literal(HARNESS_LARGE_IMAGES_FEATURE).optional(),
   harnessZCodeLive: z.literal(HARNESS_ZCODE_LIVE_FEATURE).optional(),
   harnessZCodeCreate: z.literal(HARNESS_ZCODE_CREATE_FEATURE).optional(),
-  harnessKinds: z.array(harnessKind).max(5).optional(),
+  harnessKinds: z.array(harnessKind).max(6).optional(),
   protocol: z.number().int(),
   version: z.string().max(100).default(''),
   platform: z.string().max(100).default(''),

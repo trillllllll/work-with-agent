@@ -12,6 +12,8 @@ export const HARNESS_ZCODE_LIVE_FEATURE = 'harness_zcode_live_v1';
 export const HARNESS_ZCODE_CREATE_FEATURE = 'harness_zcode_create_v1';
 export const HARNESS_ORGANIZATION_FEATURE = 'harness_organization_v1';
 export const HARNESS_MESSAGE_ORIGIN_FEATURE = 'harness_message_origin_v1';
+/** Negotiated before the executor reports the `dsh` kind, so older servers never parse a kind they reject. */
+export const HARNESS_DSH_FEATURE = 'harness_dsh_v1';
 export const HARNESS_MODELS = 500;
 export const HARNESS_LIBRARY_LEASES = 12;
 export const HARNESS_LIBRARY_READS = 6;
@@ -54,9 +56,9 @@ const attachments = z.array(attachment).min(1).max(HARNESS_ATTACHMENT_LIMIT)
   .refine((files) => files.reduce((bytes, file) => bytes + (file.kind === 'imageFile' ? imageAttachmentBytes(file.content) : 0), 0)
     <= HARNESS_MESSAGE_IMAGE_LIMIT).optional();
 export type HarnessInputAttachment = z.infer<typeof attachment>;
-export const harnessKind = z.enum(['codex', 'claude', 'zcode', 'opencode', 'grok']);
+export const harnessKind = z.enum(['codex', 'claude', 'zcode', 'opencode', 'grok', 'dsh']);
 export type HarnessKind = z.infer<typeof harnessKind>;
-export const harnessNames: Record<HarnessKind, string> = { codex: 'Codex', claude: 'Claude Code', zcode: 'ZCode', opencode: 'OpenCode', grok: 'Grok' };
+export const harnessNames: Record<HarnessKind, string> = { codex: 'Codex', claude: 'Claude Code', zcode: 'ZCode', opencode: 'OpenCode', grok: 'Grok', dsh: 'DSH' };
 export const codexApprovalPolicy = z.enum(['on-request', 'untrusted', 'never']);
 export const claudePermissionMode = z.enum(['default', 'acceptEdits', 'plan', 'dontAsk', 'auto', 'bypassPermissions']);
 export const zcodePermissionMode = z.enum(['build', 'edit', 'guarded', 'yolo']);
