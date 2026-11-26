@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ArrowUp, Brain, Check, CheckCheck, ChevronRight, CircleAlert, LoaderCircle, Moon, Play, Sun } from 'lucide-react';
+import { ArrowUp, Brain, Check, CheckCheck, ChevronRight, CircleAlert, LoaderCircle, Moon, Play, Sun, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button.js';
 import { Surface } from '@/components/ui/surface.js';
 import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure.js';
@@ -22,20 +22,31 @@ const steps = [
 
 function Process({ mode, progress }: { mode: Mode; progress: number }) {
   const [open, setOpen] = useState(false);
+  const peekRef = useRef<HTMLDivElement>(null);
+  const hoveringRef = useRef(false);
   const visible = mode === 'running' ? steps.slice(0, progress + 1) : steps;
+  const preview = visible.filter((_, index) => mode !== 'error' || index !== steps.length - 1);
   const count = visible.filter(step => step.kind === 'tool').length;
-  const current = visible[visible.length - 1];
-  return <Disclosure className="process" open={open} onToggle={event => setOpen(event.currentTarget.open)} data-state={mode}>
+  function scrollToLatest() {
+    const viewport = peekRef.current;
+    if (!viewport) return;
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    viewport.scrollTo({ top: viewport.scrollHeight, behavior: reducedMotion ? 'auto' : 'smooth' });
+  }
+  useEffect(() => {
+    if (!open && mode !== 'done' && !hoveringRef.current) scrollToLatest();
+  }, [open, preview.length, mode]);
+  return <div className="process" data-state={mode}><Disclosure className="process-disclosure" open={open} onToggle={event => setOpen(event.currentTarget.open)}>
     <DisclosureTrigger className="process-trigger">
       <span className={`process-status ${mode}`}>
-        {mode === 'running' ? <LoaderCircle className="spin" /> : mode === 'error' ? <CircleAlert /> : <CheckCheck />}
+        {mode === 'running' ? <LoaderCircle className="spin" /> : mode === 'done' ? <CheckCheck /> : <Wrench />}
       </span>
-      <span className="process-title">{mode === 'running' ? current.title : mode === 'error' ? '有 1 项查询未完成' : '已完成查询'}</span>
-      <span className="process-count">{mode === 'running' ? `已查询 ${count} 项` : mode === 'error' ? '4 / 5 项' : '5 项 · 思考 2 次'}</span>
+      <span className="process-title">工具调用</span>
+      <span className="process-count">{mode === 'running' ? `已进行 ${count} 项` : `${count} 项 · 思考 2 次`}</span>
       <span className="process-time">{mode === 'running' ? `${progress + 1} 秒` : '4 秒'}</span>
       <ChevronRight className={`process-chevron ${open ? 'expanded' : ''}`} />
     </DisclosureTrigger>
-    <div className="process-body">
+    {open && <div className="process-body">
       <p className="process-caption">执行过程<span>按发生顺序</span></p>
       <ol className="process-steps">
         {visible.map((step, index) => {
@@ -54,9 +65,27 @@ function Process({ mode, progress }: { mode: Mode; progress: number }) {
           </li>;
         })}
       </ol>
-      {mode === 'error' && <p className="process-error">这次回答未包含任务备注，结果可能不完整。</p>}
-    </div>
-  </Disclosure>;
+    </div>}
+  </Disclosure>
+  {!open && mode !== 'done' && <div
+    className="process-peek"
+    ref={peekRef}
+    aria-label="执行历史预览，失败记录仅在展开后展示"
+    onMouseEnter={() => { hoveringRef.current = true; }}
+    onMouseLeave={() => { hoveringRef.current = false; scrollToLatest(); }}
+  >
+    <ol className="peek-track">
+      {preview.map((step, index) => {
+        const active = mode === 'running' && index === preview.length - 1;
+        return <li className={active ? 'peek-line active' : 'peek-line'} key={step.title}>
+          <span className="peek-dot" />
+          <span className="peek-message">{active ? `正在${step.title}` : step.title}</span>
+          <span className="peek-time">{active ? '进行中' : step.time}</span>
+        </li>;
+      })}
+    </ol>
+  </div>}
+  </div>;
 }
 
 function Original() {
@@ -69,7 +98,7 @@ function Original() {
 }
 
 function Demo() {
-  const [mode, setMode] = useState<Mode>('done');
+  const [mode, setMode] = useState<Mode>('running');
   const [progress, setProgress] = useState(0);
   const [original, setOriginal] = useState(false);
   const [dark, setDark] = useState(false);
@@ -84,7 +113,7 @@ function Demo() {
   return <div className="demo-page">
     <header className="demo-header"><a href="/process-demo.html" className="demo-brand">dovun<span>/</span><span>交互实验</span></a><div className="demo-header-right"><span className="demo-badge">DEMO</span><Button variant="ghost" size="icon-sm" aria-label={dark ? '切换浅色' : '切换深色'} onClick={() => setDark(value => !value)}>{dark ? <Sun /> : <Moon />}</Button></div></header>
     <main className="demo-main">
-      <div className="demo-intro"><p className="eyebrow">CHAT / 执行过程</p><h1>过程收起来，重点留下来。</h1><p>多次思考与查询合为一条记录，需要时再展开。</p></div>
+      <div className="demo-intro"><p className="eyebrow">CHAT / 执行过程</p><h1>过程收起来，进展还在流动。</h1><p>执行中滚动播放有效进展，完成后自动收起，失败只留在执行历史。</p></div>
       <div className="demo-toolbar">
         <div className="demo-switch" aria-label="展示方案">{['优化后', '原样对照'].map((label, index) => <Button key={label} variant="plain" size="sm" aria-pressed={original === Boolean(index)} onClick={() => setOriginal(Boolean(index))}>{label}</Button>)}</div>
         <Button variant="ghost" size="sm" onClick={replay} disabled={mode === 'running'}><Play />重播过程</Button>
@@ -101,14 +130,13 @@ function Demo() {
               <div className="answer-task"><span>1</span><div><strong>确认首页方案</strong><p>今天到期 · 产品迭代</p></div><span className="task-tag">优先处理</span></div>
               <div className="answer-task"><span>2</span><div><strong>整理评审反馈</strong><p>今天到期 · 日常工作</p></div></div>
               <p className="answer-end">其他 3 项没有临近截止日期，可以安排在这两件之后。</p>
-              {mode === 'error' && !original && <div className="retry-note"><span><CircleAlert />有 1 项查询失败，建议补查后再安排。</span><Button variant="outline" size="xs" onClick={replay}>重试查询</Button></div>}
             </>}
           </div>
         </div>
         <div className="composer"><span>输入消息…</span><span className="send-placeholder"><ArrowUp size={16} /></span></div>
       </Surface>
       <div className="state-controls"><span>查看状态</span>{([['done', '已完成'], ['running', '执行中'], ['error', '部分失败']] as const).map(([value, label]) => <Button key={value} variant="plain" size="sm" aria-pressed={mode === value} onClick={() => { setOriginal(false); if (value === 'running') replay(); else setMode(value); }}>{label}</Button>)}</div>
-      <div className="design-notes"><div><span>01</span><p><strong>一轮回答，一条过程</strong>连续调用不再撑开聊天记录。</p></div><div><span>02</span><p><strong>正在做什么，一眼看到</strong>执行时显示当前步骤，完成后收敛。</p></div><div><span>03</span><p><strong>细节保留，异常露出</strong>逐项展开，失败不会藏在折叠里。</p></div></div>
+      <div className="design-notes"><div><span>01</span><p><strong>一轮回答，一条过程</strong>连续调用不再撑开聊天记录。</p></div><div><span>02</span><p><strong>完成后自动收敛</strong>执行中滚动跟随，完成后只留摘要。</p></div><div><span>03</span><p><strong>失败只留在历史</strong>不提示、不重试，展开后可查看原因。</p></div></div>
       <p className="demo-footnote">仅展示交互方案 · 所有任务和执行记录均为模拟数据</p>
     </main>
   </div>;

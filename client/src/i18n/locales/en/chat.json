@@ -594,15 +594,12 @@
   "process": {
     "completed": "Queries completed",
     "finished": "Process completed",
-    "failed": "{{count}} queries failed",
-    "interrupted": "Process interrupted",
     "queries": "{{count}} queries",
     "thoughts": "{{count}} thoughts",
     "skills": "{{count}} skills",
     "title": "Execution process",
+    "preview": "Execution history preview. Failed records are only shown when expanded.",
     "order": "In chronological order",
-    "incomplete": "Some queries failed. The answer may be incomplete. Expand the corresponding record for details.",
-    "stopped": "This run was interrupted. Received content has been preserved.",
     "responding": "Preparing response",
     "queried": "Queried {{count}} items"
   },

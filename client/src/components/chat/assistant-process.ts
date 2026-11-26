@@ -28,3 +28,32 @@ export function processState(messages: ChatMessage[], runActive = false) {
   return { tools, reasoning, runningTool, thinking, processing: runActive || messages.some(message => message.status === 'streaming'), interrupted, failed: tools.filter(tool => tool.status === 'error').length,
     queries: tools.filter(tool => tool.name !== 'load_skill').length, skills: tools.filter(tool => tool.name === 'load_skill').length };
 }
+
+export type ProcessPreviewEntry =
+  | { id: string; kind: 'reasoning'; active: boolean }
+  | { id: string; kind: 'tool'; active: boolean; tool: ToolActivity }
+  | { id: string; kind: 'responding'; active: true };
+
+export function processPreview(messages: ChatMessage[], runActive = false): ProcessPreviewEntry[] {
+  const entries: ProcessPreviewEntry[] = [];
+  messages.forEach((message, index) => {
+    const reasoning = message.reasoning;
+    if (reasoning?.text) {
+      const reasoningActive = message.status === 'streaming' && reasoning.status === 'streaming';
+      const reasoningInterrupted = reasoning.status === 'interrupted' || (message.status !== 'streaming' && reasoning.status === 'streaming');
+      if (!reasoningInterrupted) entries.push({ id: `reasoning:${message.id ?? index}`, kind: 'reasoning', active: reasoningActive });
+    }
+    for (const tool of (message.tools ?? []).filter(isProcessTool)) {
+      if (tool.status === 'error' || tool.status === 'rejected') continue;
+      const toolActive = tool.status === 'running' && (runActive || message.status === 'streaming');
+      if (tool.status === 'running' && !toolActive) continue;
+      entries.push({ id: `tool:${tool.toolCallId}`, kind: 'tool', active: toolActive, tool });
+    }
+  });
+  const processing = runActive || messages.some(message => message.status === 'streaming');
+  if (processing && !entries.some(entry => entry.active)) {
+    const index = messages.length - 1;
+    entries.push({ id: `responding:${messages[index]?.id ?? index}`, kind: 'responding', active: true });
+  }
+  return entries;
+}

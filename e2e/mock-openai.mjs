@@ -86,6 +86,17 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { model: body.model + '-actual', choices: [{ message: { role: 'assistant', content: JSON.stringify(output) }, finish_reason: 'stop' }], ...(body.model === 'mock-no-usage' ? {} : { usage: { prompt_tokens: 120, completion_tokens: 30, total_tokens: 150 } }) });
   }
   if (!body.stream) return json(res, 200, { choices: [{ message: { role: 'assistant', content: '连接成功' }, finish_reason: 'stop' }] });
+  if (latestUser.includes('执行过程滚动验收') || latestUser.includes('执行过程失败验收')) {
+    const failed = latestUser.includes('执行过程失败验收');
+    const lastUser = messages.findLastIndex(item => item.role === 'user');
+    const toolRounds = messages.slice(lastUser + 1).filter(item => item.role === 'tool').length;
+    const call = (id, name, args) => [{ choices: [{ delta: { tool_calls: [{ index: 0, id, function: { name, arguments: JSON.stringify(args) } }] }, finish_reason: 'tool_calls' }] }];
+    await new Promise(resolve => setTimeout(resolve, 900));
+    if (toolRounds === 0) return stream(res, call('process-knowledge', 'read_app_knowledge', { page: 'plan' }));
+    if (toolRounds === 1) return stream(res, call('process-page', 'read_page_state', failed ? { unexpected: true } : {}));
+    if (!failed && toolRounds === 2) return stream(res, call('process-time', 'get_time', {}));
+    return stream(res, [{ choices: [{ delta: { content: failed ? '执行过程失败验收完成。' : '执行过程滚动验收完成。' }, finish_reason: 'stop' }] }]);
+  }
   if (latestUser.includes('上下文统计验收')) {
     const alreadyRead = messages.some(m => m.role === 'tool' && String(m.content).includes('query_tasks'));
     if (!alreadyRead) return stream(res, [{ choices: [{ delta: { tool_calls: [{ index: 0, id: 'context-tasks', function: { name: 'query_tasks', arguments: JSON.stringify({ action: 'list' }) } }] }, finish_reason: 'tool_calls' }] }]);
