@@ -86,6 +86,10 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { model: body.model + '-actual', choices: [{ message: { role: 'assistant', content: JSON.stringify(output) }, finish_reason: 'stop' }], ...(body.model === 'mock-no-usage' ? {} : { usage: { prompt_tokens: 120, completion_tokens: 30, total_tokens: 150 } }) });
   }
   if (!body.stream) return json(res, 200, { choices: [{ message: { role: 'assistant', content: '连接成功' }, finish_reason: 'stop' }] });
+  if (latestUser.includes('普通输出占位验收')) {
+    await new Promise(resolve => setTimeout(resolve, 900));
+    return stream(res, [{ choices: [{ delta: { content: '普通输出占位验收完成。' }, finish_reason: 'stop' }] }]);
+  }
   if (latestUser.includes('执行过程滚动验收') || latestUser.includes('执行过程失败验收')) {
     const failed = latestUser.includes('执行过程失败验收');
     const lastUser = messages.findLastIndex(item => item.role === 'user');

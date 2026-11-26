@@ -115,11 +115,12 @@ export function MessageItem({ message, processMessages, hideProcess = false, pro
   const label = roleLabels[role] ?? role;
   const streaming = message.status === 'streaming';
   const failed = message.status === 'failed';
-  const content = message.content || (streaming && !message.reasoning?.text && !message.tools?.length ? t('messageItem.streaming') : '');
+  const process = processMessages ?? [message];
+  const turnHasProcess = process.some(item => item.reasoning?.text || item.tools?.some(isProcessTool));
+  const content = message.content || (streaming && !turnHasProcess && !message.reasoning?.text && !message.tools?.length ? t('messageItem.streaming') : '');
   const approvalFor = (activity: ToolActivity) => approvals.find((item) => item.approvalId === activity.approvalId || item.toolCallId === activity.toolCallId);
   const tools = (message.tools ?? []).filter(tool => !isProcessTool(tool));
-  const process = processMessages ?? [message];
-  const hasProcess = !hideProcess && process.some(item => item.reasoning?.text || item.tools?.some(isProcessTool));
+  const hasProcess = !hideProcess && turnHasProcess;
   if (role === 'assistant' && !content && !failed && tools.length === 0 && !hasProcess && !message.parts?.length && !message.blocks?.length && !message.sources?.length) return null;
 
   return (

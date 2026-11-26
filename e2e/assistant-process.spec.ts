@@ -30,12 +30,12 @@ test('running history scrolls and a successful completion keeps only the summary
   const assistant = panel(page);
   const peek = assistant.getByTestId('assistant-process-peek');
   await expect(peek).toBeVisible({ timeout: 15_000 });
-  if (!isMobile) {
-    await expect(peek.locator('li')).toHaveCount(2, { timeout: 15_000 });
-    await peek.hover();
-  }
+  await expect(peek.locator('li')).toHaveCount(2, { timeout: 15_000 });
+  await expect(assistant.getByText('正在输出…', { exact: true })).toHaveCount(0);
+  if (!isMobile) await peek.hover();
   await expect(peek.locator('li')).toHaveCount(4, { timeout: 15_000 });
   await expect(peek.locator('li').last()).toContainText('正在整理回答');
+  await expect(assistant.getByText('正在输出…', { exact: true })).toHaveCount(0);
   await expect.poll(() => peek.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
   if (!isMobile) {
     expect(await peek.evaluate(element => element.scrollTop)).toBe(0);
@@ -52,6 +52,16 @@ test('running history scrolls and a successful completion keeps only the summary
   await openAssistant(page);
   await expect(assistant.getByText('执行过程滚动验收完成。', { exact: true })).toBeVisible();
   await expect(assistant.getByTestId('assistant-process-peek')).toHaveCount(0);
+});
+
+test('an empty first response keeps the original streaming placeholder without a process', async ({ page }) => {
+  await page.goto('/#/inbox');
+  await ask(page, '普通输出占位验收');
+  const assistant = panel(page);
+  await expect(assistant.getByText('正在输出…', { exact: true })).toBeVisible({ timeout: 10_000 });
+  await expect(assistant.getByTestId('assistant-process-peek')).toHaveCount(0);
+  await expect(assistant.getByText('普通输出占位验收完成。', { exact: true })).toBeVisible({ timeout: 10_000 });
+  await expect(assistant.getByText('正在输出…', { exact: true })).toHaveCount(0);
 });
 
 test('a failed query stays only in expanded history without alerts or retry', async ({ page }) => {
