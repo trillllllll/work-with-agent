@@ -12,7 +12,7 @@ import { readHarnessArtifacts } from './harness-artifacts.js';
 import { codexInput } from './harness-files.js';
 import { codexText as text, codexItems as items, codexMessage as message, codexTurn as turn, projectCodexHistory } from './harness-history.js';
 import { assertNativeThreadIdle, readProjectThread } from './harness-library.js';
-import { changeClaudeSelection, changeCodexSelection, codexModelId, codexTurnSettings, readClaudePermissionModes, readClaudeSettings, readCodexSelection, readCodexSettings } from './harness-settings.js';
+import { changeClaudeSelection, changeCodexSelection, codexModelId, codexTurnSettings, readClaudePermissionModes, readClaudeSettings, readCodexSelection, readCodexSettings, readDshSettings } from './harness-settings.js';
 import { codexHarnessTool, harnessFilePaths, harnessFileDiffs, harnessOutput } from './harness-tools.js';
 import { assertAllowed } from './git.js';
 import {
@@ -179,7 +179,7 @@ export class HarnessController {
     };
     this.opening = openHarnessRuntime(this.harness, {
       cwd, notify: notification, disconnected, modelProvider, shared, settingsEnabled: this.settingsEnabled,
-      permissionsEnabled: () => this.permissionsEnabled,
+      permissionsEnabled: () => this.permissionsEnabled, advancedPermissions: () => this.advancedPermissions,
       replaceHistory: (id, view) => this.replaceZCodeHistory(id, view),
       replaceLive: (id, view, clients) => this.replaceLiveZCodeView(id, view, clients),
     });
@@ -249,7 +249,8 @@ export class HarnessController {
       let app = owner ?? await this.open(cwd, modelProvider);
       if (owner) this.attaching = { threadId: prior.threadId, notifications: [] };
       // OpenCode sessions live in a shared service the executor attaches to, so a running native session resumes live.
-      if (!owner && this.harness !== 'zcode' && this.harness !== 'opencode' && (prior.native || this.settingsEnabled && !modelProvider)) {
+      // A DSH session that another process holds is refused by its own write lock when the runtime resumes it.
+      if (!owner && this.harness !== 'zcode' && this.harness !== 'opencode' && this.harness !== 'dsh' && (prior.native || this.settingsEnabled && !modelProvider)) {
         const thread = await readProjectThread(app, prior.threadId, cwd, this.roots);
         if (prior.native) await assertNativeThreadIdle(app, thread, prior.threadId);
         const original = codexModelId(thread.modelProvider);
@@ -340,6 +341,7 @@ export class HarnessController {
 
   private settings(app: HarnessRuntime, selection: HarnessSettingsSelection, binding: Binding) {
     if (this.harness === 'claude') return readClaudeSettings(app, selection, this.permissionsEnabled, this.advancedPermissions);
+    if (this.harness === 'dsh') return readDshSettings(app, selection, this.advancedPermissions);
     return readCodexSettings(app, selection, this.workspace ? { cwd: binding.cwd, provider: binding.modelProvider } : undefined,
       this.permissionsEnabled, this.advancedPermissions);
   }

@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { join, resolve } from 'node:path';
 import type { HarnessSnapshot } from '../server/src/node-agent/harness-protocol.js';
+import { writeSession } from '../server/test/dsh-fixtures.mjs';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
 const listUrl = '/#/runs?tab=sessions';
@@ -280,6 +281,78 @@ test('opens a project OpenCode history on a phone and continues its original ses
         child.kill('SIGTERM');
         await exited;
       }
+    }
+    if (nodeId) {
+      await e2eDatabase.harnessSession.deleteMany({ where: { nodeId } });
+      await e2eDatabase.harnessDirectory.deleteMany({ where: { nodeId } });
+    }
+    await context.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('opens a project DSH history on a phone and continues its original session', async ({ browser, page, request, baseURL, extraHTTPHeaders }, testInfo) => {
+  test.skip(testInfo.project.name === 'mobile', 'The test opens a phone viewport itself.');
+  test.setTimeout(60_000);
+  await resetE2eDatabase();
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'dovun-dsh-browser-')));
+  const context = await browser.newContext({ ...devices['iPhone 13'], baseURL, extraHTTPHeaders, locale: 'zh-CN',
+    storageState: await page.context().storageState() });
+  let agent: ChildProcess | undefined;
+  let nodeId: string | undefined;
+  try {
+    const project = join(root, 'dsh-project');
+    await mkdir(project);
+    const threadId = 'session-dsh_mac_original';
+    const home = join(root, 'dsh-home');
+    // A conversation the DSH desktop app wrote earlier, in its own on-disk layout.
+    await writeSession(home, { cwd: project, id: threadId, title: 'Mac 上的原 DSH 对话', lastPromptAt: Date.now(), records: [
+      { type: 'session', version: 4, id: threadId, createdAt: Date.now(), cwd: project, isSeeded: false, delegationDepth: 0 },
+      { type: 'user/message', data: { content: [{ type: 'text', text: '原 DSH 历史消息' }], source: { kind: 'user' }, role: 'user', id: 'user-original' } },
+      { type: 'turn/start', data: { turn: 1 } },
+      { type: 'assistant/message', data: { turn: 1, step: 1, message: { id: 'assistant-original', role: 'assistant', content: [{ type: 'text', text: '原 DSH 历史回复' }] } } },
+      { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ] });
+    const node = await data<{ node: { id: string }; token: string }>(await request.post('/api/nodes', { data: { name: 'DSH 测试 Mac' } }));
+    nodeId = node.node.id;
+    agent = spawn(process.execPath, ['--import', 'tsx', resolve('server/src/node-agent/index.ts'), '--server', process.env.E2E_API_URL!,
+      '--roots', root, '--data', join(root, 'node')], { stdio: 'ignore', env: {
+      ...process.env, DOVUN_NODE_TOKEN: node.token,
+      DOVUN_DSH_BIN: resolve('server/test/stub-dsh-acp.mjs'), DSH_HOME: home, HARNESS_TEST_DSH_STORE: join(root, 'dsh-store.json'),
+    } });
+    const phone = await context.newPage();
+    await phone.goto(listUrl);
+    await phone.getByRole('radio', { name: 'DSH', exact: true }).tap();
+    const original = phone.getByRole('button', { name: /Mac 上的原 DSH 对话/ });
+    await expect(original).toBeVisible({ timeout: 18_000 });
+    await original.tap();
+    const chat = phone.getByRole('region', { name: '会话详情' });
+    await expect(chat.locator('header [role=status]')).toHaveText('已连接', { timeout: 15_000 });
+    await expect(chat.getByText('原 DSH 历史回复', { exact: true })).toBeVisible();
+    const composer = chat.getByRole('textbox', { name: '输入消息' });
+    await expect(composer).toHaveAttribute('placeholder', '发消息给 DSH');
+    await composer.fill('从手机接着聊');
+    await chat.getByRole('button', { name: '发送', exact: true }).tap();
+    await expect(chat.getByText('DSH stub 记得 从手机接着聊', { exact: true })).toBeVisible({ timeout: 12_000 });
+    await expect(chat.getByText('从手机接着聊', { exact: true })).toHaveCount(1);
+    const id = new URLSearchParams(new URL(phone.url()).hash.split('?')[1]).get('sessionId');
+    expect((await data<{ threadId: string }>(await request.get(apiUrl + '/' + id))).threadId).toBe(threadId);
+    await phone.reload();
+    await expect(chat.getByText('DSH stub 记得 从手机接着聊', { exact: true })).toHaveCount(1);
+    await phone.goto(listUrl + '&harness=dsh');
+    await phone.getByRole('button', { name: '新建会话', exact: true }).tap();
+    const newSession = phone.getByRole('dialog', { name: '新建会话' });
+    await newSession.getByRole('radio', { name: /dsh-project/ }).tap();
+    await newSession.getByRole('button', { name: '开启 DSH 会话' }).tap();
+    await expect(phone).toHaveURL(/sessionId=/);
+    const newId = new URLSearchParams(new URL(phone.url()).hash.split('?')[1]).get('sessionId');
+    expect(newId).not.toBe(id);
+    await expect.poll(async () => (await data<{ threadId: string }>(await request.get(apiUrl + '/' + newId))).threadId).toMatch(/^session-/);
+  } finally {
+    if (agent && agent.exitCode === null && agent.signalCode === null) {
+      const exited = once(agent, 'exit');
+      agent.kill('SIGTERM');
+      await exited;
     }
     if (nodeId) {
       await e2eDatabase.harnessSession.deleteMany({ where: { nodeId } });

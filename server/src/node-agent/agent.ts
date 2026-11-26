@@ -12,10 +12,11 @@ import { assertAllowed, assertManagedWorktree, cleanupWorktrees, collectFacts, c
 import { createLocalLaunchSpec, localProviders } from './cli.js';
 import { HarnessController } from './harness-controller.js';
 import { readHarnessLibrary } from './harness-library.js';
+import { dshAvailable } from './harness-dsh-client.js';
 import { opencodeAvailable } from './harness-opencode-client.js';
 import { zcodeAvailable } from './harness-zcode-client.js';
 import {
-  HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_FEATURE, HARNESS_LARGE_IMAGES_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_LIBRARY_LEASES, HARNESS_LIBRARY_READS, HARNESS_ORGANIZATION_FEATURE, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE,
+  HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_DSH_FEATURE, HARNESS_FEATURE, HARNESS_LARGE_IMAGES_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_LIBRARY_LEASES, HARNESS_LIBRARY_READS, HARNESS_ORGANIZATION_FEATURE, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE,
   harnessLeaseSchema, harnessLibraryLeaseSchema, harnessReadTaskSchema, type HarnessKind, type HarnessLease, type HarnessReadTask,
   HARNESS_MESSAGE_ORIGIN_FEATURE, HARNESS_ZCODE_CREATE_FEATURE, withoutHarnessMessageOrigins, withoutHarnessSyncMessageOrigins,
 } from './harness-protocol.js';
@@ -58,6 +59,8 @@ export class NodeAgent {
   private providers: Awaited<ReturnType<typeof localProviders>> | null = null;
   private zcode: Promise<boolean> | null = null;
   private opencode: Promise<boolean> | null = null;
+  private dsh: Promise<void> | null = null;
+  private dshInstalled = false;
   /** Feature ids from the latest lease response. Missing `accepts` means an old server: report the old result shape. */
   private serverAccepts = new Set<string>();
   private harnessWakeCursor: string | undefined;
@@ -117,6 +120,7 @@ export class NodeAgent {
             'X-Dovun-Harness-Message-Origin': HARNESS_MESSAGE_ORIGIN_FEATURE,
             'X-Dovun-Harness-ZCode-Live': HARNESS_ZCODE_LIVE_FEATURE,
             'X-Dovun-Harness-ZCode-Create': HARNESS_ZCODE_CREATE_FEATURE,
+            'X-Dovun-Harness-DSH': HARNESS_DSH_FEATURE,
             'X-Dovun-Harness-Wake': this.harnessWakeCursor ?? 'initial',
             ...(harnessWaitMs > 0 ? { 'X-Dovun-Harness-Wait-Ms': String(harnessWaitMs) } : {}) } : {}),
         },
@@ -147,6 +151,7 @@ export class NodeAgent {
         this.serverAccepts.delete(HARNESS_LARGE_IMAGES_FEATURE);
         this.serverAccepts.delete(HARNESS_ZCODE_LIVE_FEATURE);
         this.serverAccepts.delete(HARNESS_ZCODE_CREATE_FEATURE);
+        this.serverAccepts.delete(HARNESS_DSH_FEATURE);
       }
       const error = Object.assign(new Error(`服务端返回 ${response.status} ${code ?? ''}`), { status: response.status, code });
       this.rememberError(error);
@@ -177,6 +182,12 @@ export class NodeAgent {
     }
     if (workspace && await (this.zcode ??= zcodeAvailable())) installed.push('zcode');
     if (workspace && await (this.opencode ??= opencodeAvailable())) installed.push('opencode');
+    // Reported only after the server accepted the DSH feature, because a server that rejects the kind fails the whole lease.
+    // Probing starts the DeepSeek Harness app and takes about a second, so it runs beside leasing and reports on a later lease.
+    if (workspace && this.serverAccepts.has(HARNESS_DSH_FEATURE)) {
+      this.dsh ??= dshAvailable().then((available) => { this.dshInstalled = available; });
+      if (this.dshInstalled) installed.push('dsh');
+    }
     if (this.serverAccepts.has(HARNESS_FEATURE) && installed.length) body.harnessSessions = HARNESS_FEATURE;
     if (body.harnessSessions && this.serverAccepts.has(HARNESS_LIBRARY_FEATURE)) body.harnessLibrary = HARNESS_LIBRARY_FEATURE;
     if (body.harnessSessions && this.serverAccepts.has(HARNESS_MESSAGE_ORIGIN_FEATURE)) body.harnessMessageOrigin = HARNESS_MESSAGE_ORIGIN_FEATURE;

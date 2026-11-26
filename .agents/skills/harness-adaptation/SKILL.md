@@ -32,6 +32,7 @@ description: Add, fix, or verify local coding harness integrations. Use when ada
 - Claude Code 使用实际 CLI 的流式接口或 Agent SDK，核对生效权限和会话 UUID。[Claude Code 接入参考](references/claude-code.md)
 - ZCode 分别核对本机 V4 会话协议、当前模型目录和负责账号鉴权的宿主。[ZCode 接入参考](references/zcode.md)
 - OpenCode 附接本机共享服务（HTTP + SSE），会话由服务持有；核对注册表、Basic 鉴权、`msg_` 消息 ID 约束和审批端点。[OpenCode 接入参考](references/opencode.md)
+- DSH（DeepSeek Harness）使用 `dsh --profile acp` 的 ACP over stdio，并用 `--patch` 临时挂入桥接插件补上权限档位、模型目录和逐字增量；核对会话写锁和多帧 zstd 日志。[DSH 接入参考](references/dsh.md)
 - 接入其他 Harness 时，先按以上方法验证对应的原生能力，再决定哪些字段可以映射到共用契约。使用该 Harness 当前版本支持的启动方式、数据源和权限值。
 
 ## 读取原生会话组织信息

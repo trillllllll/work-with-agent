@@ -47,7 +47,8 @@ export function HarnessSettings({ settings, harness, disabled, saving, error, on
   const sandboxOptions = {
     readOnly: { label: t('harness.settings.readOnly') },
     workspace: { label: t('harness.settings.workspace'), description: t(settings.sandboxChoices ? 'harness.settings.sandboxWorkspaceHint' : 'harness.settings.workspaceHint') },
-    fullAccess: { label: t('harness.settings.fullAccess'), description: t('harness.settings.codexFullAccessHint') },
+    fullAccess: { label: t('harness.settings.fullAccess'),
+      description: t(harness === 'dsh' ? 'harness.settings.dshFullAccessHint' : 'harness.settings.codexFullAccessHint') },
   };
 
   return <><Dialog onOpenChange={(open) => { if (!open) { setQuery(''); setProvider(''); setFullAccess(null); } }}>

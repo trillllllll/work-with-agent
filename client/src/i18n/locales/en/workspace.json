@@ -456,7 +456,7 @@
       "currentModelUnavailable": "The current model, {{model}}, is unavailable on the Mac.",
       "refreshModels": "Refresh model list",
       "effort": "Reasoning effort",
-      "efforts": { "none": "Off", "minimal": "Minimal", "low": "Low", "medium": "Medium", "high": "High", "xhigh": "Extra high", "max": "Maximum" },
+      "efforts": { "off": "Off", "none": "Off", "minimal": "Minimal", "low": "Low", "medium": "Medium", "high": "High", "xhigh": "Extra high", "max": "Maximum" },
       "mode": "Mode",
       "defaultMode": "Execute",
       "planMode": "Plan mode",
@@ -472,6 +472,7 @@
       "sandboxWorkspaceHint": "Allow writes within the workspace.",
       "fullAccess": "Full access",
       "codexFullAccessHint": "Remove the Codex sandbox and run commands without individual approvals.",
+      "dshFullAccessHint": "DSH runs in full access and stops asking for tool approvals.",
       "permissionModeUnavailable": "The current model or local policy no longer supports {{mode}}. Choose a permission mode to continue.",
       "approvalPolicy": "Approval policy",
       "readOnlyApprovals": "Read-only and plan modes prevent requests to expand sandbox access.",
@@ -496,7 +497,8 @@
       "fullAccessDescriptions": {
         "codex": "Starting next turn, Codex removes its sandbox and command approvals. File and command access follows your Mac account permissions.",
         "claude": "Starting next turn, Claude Code skips routine tool approvals. Claude Code still enforces its configured sandbox and mandatory safeguards.",
-        "zcode": "ZCode can change accessible files, run terminal commands, access the network, and call connected tools without asking each time."
+        "zcode": "ZCode can change accessible files, run terminal commands, access the network, and call connected tools without asking each time.",
+        "dsh": "Starting next turn, DSH runs in full access and no longer asks for tool approvals. File and command access follows your Mac account permissions."
       },
       "fullAccessConfirm": "Enable full access",
       "saving": "Saving session settings…",

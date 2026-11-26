@@ -1,4 +1,5 @@
 import { asObject, CodexRejected, type HarnessRuntime } from './harness-codex.js';
+import { DshHarnessRuntime } from './harness-dsh.js';
 import { codexItems, codexText } from './harness-history.js';
 import {
   HARNESS_MODELS, claudePermissionMode, codexApprovalPolicy, type HarnessModelOption, type HarnessSettingsChange,
@@ -13,10 +14,11 @@ export function codexModelId(value: unknown) {
 export function readCodexSelection(result: Record<string, unknown>): HarnessSettingsSelection | undefined {
   const model = codexModelId(result.model);
   if (!model) return;
+  const sandbox = asObject(result.sandbox).type;
   return {
     revision: 0, model, effort: codexModelId(result.reasoningEffort),
     mode: asObject(result.collaborationMode).mode === 'plan' ? 'plan' : 'default',
-    permission: asObject(result.sandbox).type === 'readOnly' ? 'readOnly' : 'workspace',
+    permission: sandbox === 'readOnly' ? 'readOnly' : sandbox === 'dangerFullAccess' ? 'fullAccess' : 'workspace',
   };
 }
 
@@ -69,6 +71,15 @@ export async function readCodexSettings(app: HarnessRuntime, selection: HarnessS
     ...(workspace ? { provider: workspace.provider, providers } : {}),
     ...(approvalPolicies && sandboxChoices ? { approvalPolicies, sandboxChoices } : {}),
   };
+}
+
+/** DSH has no plan mode and ties approval to its three presets, so only the sandbox choices are offered. */
+export async function readDshSettings(app: HarnessRuntime, selection: HarnessSettingsSelection, advanced: boolean): Promise<HarnessSettingsView> {
+  const models = await readModels(app).catch(() => null);
+  // Presets can only change while the bridge plugin joined the launch; without it the page shows no choice.
+  const sandboxChoices: NonNullable<HarnessSettingsView['sandboxChoices']> = app instanceof DshHarnessRuntime && app.bridgeReady
+    ? advanced ? ['readOnly', 'workspace', 'fullAccess'] : ['readOnly', 'workspace'] : [];
+  return { ...selection, models: models ?? [], catalogAvailable: models !== null, planAvailable: false, sandboxChoices };
 }
 
 export async function readClaudePermissionModes(app: HarnessRuntime, model: string, advanced: boolean): Promise<NonNullable<HarnessSettingsView['permissionModes']>> {

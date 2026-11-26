@@ -80,7 +80,7 @@ function storedJson(value: string | null | undefined): unknown {
 }
 const projectPinsByHarness = z.object({
   codex: harnessProjectPinsSchema.optional(), claude: harnessProjectPinsSchema.optional(), zcode: harnessProjectPinsSchema.optional(),
-  opencode: harnessProjectPinsSchema.optional(),
+  opencode: harnessProjectPinsSchema.optional(), dsh: harnessProjectPinsSchema.optional(),
 });
 
 function nativeOrganizationUpdate(organization: HarnessOrganization | undefined, session?: HarnessSession | null) {

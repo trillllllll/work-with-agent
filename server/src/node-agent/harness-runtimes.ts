@@ -4,6 +4,8 @@ import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { ClaudeHarnessRuntime } from './harness-claude.js';
 import { CodexAppServer, type HarnessNotification, type HarnessRuntime } from './harness-codex.js';
+import { DshHarnessRuntime } from './harness-dsh.js';
+import { DSH_HOME } from './harness-dsh-client.js';
 import { OPENCODE_DATA_DIR } from './harness-opencode-client.js';
 import { OpenCodeHarnessRuntime } from './harness-opencode.js';
 import { ZCodeHarnessRuntime } from './harness-zcode.js';
@@ -18,6 +20,7 @@ type RuntimeOptions = {
   modelProvider?: string;
   settingsEnabled: boolean;
   permissionsEnabled: () => boolean;
+  advancedPermissions?: () => boolean;
   replaceHistory: (turnId: string, view: HarnessView) => Promise<boolean>;
   replaceLive: (threadId: string, view: HarnessView, clients: Set<string>) => Promise<void>;
 };
@@ -43,6 +46,11 @@ const runtimes: Record<HarnessKind, {
   opencode: {
     open: async ({ cwd, notify, disconnected }) => new OpenCodeHarnessRuntime(cwd, notify, disconnected),
     store: () => OPENCODE_DATA_DIR(),
+  },
+  dsh: {
+    open: async ({ cwd, notify, disconnected, advancedPermissions }) =>
+      new DshHarnessRuntime(cwd, notify, disconnected, advancedPermissions),
+    store: () => DSH_HOME(),
   },
 };
 

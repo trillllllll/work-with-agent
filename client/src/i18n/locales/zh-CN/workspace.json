@@ -455,7 +455,7 @@
       "currentModelUnavailable": "当前模型 {{model}} 在 Mac 上暂不可用。",
       "refreshModels": "刷新模型列表",
       "effort": "思考档位",
-      "efforts": { "none": "关闭", "minimal": "最低", "low": "低", "medium": "中", "high": "高", "xhigh": "极高", "max": "最高" },
+      "efforts": { "off": "关闭", "none": "关闭", "minimal": "最低", "low": "低", "medium": "中", "high": "高", "xhigh": "极高", "max": "最高" },
       "mode": "工作模式",
       "defaultMode": "执行模式",
       "planMode": "计划模式",
@@ -471,6 +471,7 @@
       "sandboxWorkspaceHint": "允许在工作区内写文件。",
       "fullAccess": "完全访问",
       "codexFullAccessHint": "移除 Codex 沙箱，命令无需逐次审批。",
+      "dshFullAccessHint": "DSH 以完全访问运行，不再逐次请求工具审批。",
       "permissionModeUnavailable": "当前模型或本机策略已不支持「{{mode}}」，请重新选择权限模式。",
       "approvalPolicy": "审批策略",
       "readOnlyApprovals": "只读和计划模式均禁止通过审批扩大权限。",
@@ -495,7 +496,8 @@
       "fullAccessDescriptions": {
         "codex": "从下一轮起，Codex 会移除沙箱和命令审批。文件和命令访问由 Mac 系统账户权限决定。",
         "claude": "从下一轮起，Claude Code 跳过常规工具审批。配置的沙箱和原生强制保护仍由 Claude Code 执行。",
-        "zcode": "启用后，ZCode 可以直接修改可访问的文件、运行终端命令、访问网络和调用已连接的工具，无需逐次确认。"
+        "zcode": "启用后，ZCode 可以直接修改可访问的文件、运行终端命令、访问网络和调用已连接的工具，无需逐次确认。",
+        "dsh": "从下一轮起，DSH 以完全访问运行，不再逐次请求工具审批。文件和命令访问由 Mac 系统账户权限决定。"
       },
       "fullAccessConfirm": "启用完全访问",
       "saving": "正在保存会话设置…",
