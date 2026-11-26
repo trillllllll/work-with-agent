@@ -85,7 +85,7 @@ export function HarnessSettings({ settings, harness, disabled, saving, error, on
             {t(zcode ? 'harness.settings.refreshModels' : 'harness.retry')}
           </Button>
         </div>}
-        {!zcode && selected?.efforts.length ? <ChoiceList label={t('harness.settings.effort')} value={settings.effort ?? ''}
+        {selected?.efforts.length ? <ChoiceList label={t('harness.settings.effort')} value={settings.effort ?? ''}
           options={selected.efforts.map((id) => ({ id, label: effortName(id) }))}
           onChange={(effort) => onChange({ effort })} disabled={disabled} /> : null}
         {showWorkMode && <ChoiceList label={t('harness.settings.mode')} value={mode}

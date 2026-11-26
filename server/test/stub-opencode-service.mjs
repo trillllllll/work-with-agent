@@ -224,7 +224,11 @@ const server = createServer(async (request, response) => {
     return send(204);
   }
   if (request.method === 'GET' && url.pathname === '/api/model') {
-    return send(200, { data: [{ id: 'stub-model', name: 'Stub Model', providerID: 'opencode', enabled: true }] });
+    return send(200, { data: [
+      { id: 'stub-model', name: 'Stub Model', providerID: 'opencode', enabled: true,
+        variants: [{ id: 'low', settings: { reasoningEffort: 'low' } }, { id: 'high', settings: { reasoningEffort: 'high' } }] },
+      { id: 'stub-plain', name: 'Stub Plain', providerID: 'opencode', enabled: true },
+    ] });
   }
   if (request.method === 'GET' && url.pathname === '/api/agent') {
     return send(200, { data: [{ id: 'build', name: 'Build', mode: 'primary' }, { id: 'plan', name: 'Plan', mode: 'primary' }] });

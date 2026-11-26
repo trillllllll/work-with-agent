@@ -21,7 +21,9 @@ const sessionDirectory = (session: OpenCodeSession) => codexText(asObject(sessio
 function sessionModelId(session: OpenCodeSession) {
   const model = asObject(session.model);
   const id = codexText(model.id), provider = codexText(model.providerID);
-  return id && provider ? `${provider}/${id}` : '';
+  // Variant references keep the base model id before a "#variant" suffix.
+  const base = id.split('#', 2)[0];
+  return base && provider ? `${provider}/${base}` : '';
 }
 
 function sessionAgent(session: OpenCodeSession) {

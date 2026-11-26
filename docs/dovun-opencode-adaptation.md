@@ -45,7 +45,7 @@
 - **审批**：`once→accept`、`always→acceptForSession`、`reject→decline`；`shell` 动作映射命令审批（resources 为命令），`edit/write/patch/multiedit` 映射文件变更，其余映射工具审批。
 - **占用语义**：共享服务持有会话，无「等原进程退出」问题；runtime `pid` 为 undefined，恢复时不做 idle 阻断，`session/active` 判忙、接回正在运行的轮（桌面同时打开同一会话可旁观点赞续）。
 - **暂缓**：`fork/steer/rerun/compact/approvePlan`（controller 对非 codex 已统一拒绝）；组织置顶/分组（opencode 无对应来源，pins 留空键）；`files[].uri` 图片附件代码路径已写但未在真实服务验证，未写入手册。
-- **模型**：`providerID/id` 拼接为 Dovun 模型 ID；effort 无对应（OpenCode 用 variants），保持 null。
+- **模型**：`providerID/id` 拼接为 Dovun 模型 ID；思考档位映射 OpenCode 的模型 variant：目录 `/api/model` 每项的 `variants[].id` 输出为 efforts，切换时 POST `provider/model#variant`（2026-11-26 实测 204，服务端不校验引用存在性，校验放 Dovun 侧），读回时从 `session.model.id` 的 `#` 后缀剥出档位、基础 ID 不带 variant。
 
 ## 真实验收（2026-11-25，桌面 2.3.2 服务 + deepseek-v4.1-flash）
 
@@ -53,7 +53,7 @@
 
 ## 测试资产
 
-- `server/src/node-agent/harness-opencode.test.ts`：5 例（创建+流式+完成、严格恢复、忙拒+打断、审批映射+幂等、历史分页+重发去重），打真实 stub HTTP 服务。
+- `server/src/node-agent/harness-opencode.test.ts`：9 例（创建+流式+完成、严格恢复、忙拒+打断、审批映射+幂等、原生设置裁剪、接回运行轮、响应丢失恢复、档位→variant 映射+恢复剥后缀、历史分页+重发去重），打真实 stub HTTP 服务。
 - `server/test/stub-opencode-service.mjs`：最小共享服务 stub（HTTP+SSE+JSON 存储；`HARNESS_TEST_OPENCODE_ASK` 出审批、`HARNESS_TEST_OPENCODE_HOLD` 卡工具门控）。
 - `server/src/harness-sessions.test.ts` 新增云端集成 1 例；`e2e/harness-sessions.spec.ts` 新增手机用例 1 例（Chromium 通过）。
 

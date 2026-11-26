@@ -20,6 +20,8 @@ export class OpenCodeHarnessRuntime implements HarnessRuntime {
   private turn: string | null = null;
   private pendingEvents: Frame[] | null = null;
   private model = '';
+  // OpenCode picks a reasoning level through a "provider/model#variant" reference; the variant is the effort id.
+  private variant: string | null = null;
   private agent = 'build';
   private models: Frame[] | null = null;
 
@@ -60,8 +62,11 @@ export class OpenCodeHarnessRuntime implements HarnessRuntime {
   private threadResult(session: Frame) {
     const model = asObject(session.model);
     const provider = codexText(model.providerID), id = codexText(model.id);
+    // The service reports the chosen variant inside the model id as a "#variant" suffix.
+    const [base, variant = null] = id.split('#', 2) as [string, string | undefined];
     const agent = codexText(session.agent) || 'build';
-    this.model = provider && id ? `${provider}/${id}` : this.model;
+    this.model = provider && base ? `${provider}/${base}` : this.model;
+    this.variant = provider && base ? variant || null : this.variant;
     this.agent = agent;
     return {
       thread: { id: codexText(session.id), cwd: this.cwd, status: { type: 'idle' } },
@@ -97,18 +102,22 @@ export class OpenCodeHarnessRuntime implements HarnessRuntime {
     } finally { this.replay(events); }
   }
 
-  private async switchModel(model: string) {
+  private async switchModel(model: string, variant: string | null) {
     const split = /^([^/]+)\/(.+)$/.exec(model);
     if (!split || !split[2]) throw new CodexRejected('这个模型在本机不可用');
     const options = this.models ?? [];
     if (options.length && !options.some((option) => codexText(option.model) === model)) throw new CodexRejected('这个模型在本机不可用');
+    if (variant && !options.some((option) => codexText(option.model) === model && variantEfforts(option).includes(variant))) {
+      throw new CodexRejected('这个模型不支持所选思考档位');
+    }
     const service = await this.connect();
     await openCodeRequest(service, 'POST', `/api/session/${encodeURIComponent(this.threadId)}/model`,
-      { model: { id: split[2], providerID: split[1] } }).catch((error: unknown) => {
+      { model: { id: variant ? `${split[2]}#${variant}` : split[2], providerID: split[1] } }).catch((error: unknown) => {
         if (error instanceof OpenCodeError) throw new CodexRejected('这个模型在本机不可用');
         throw error;
       });
     this.model = model;
+    this.variant = variant;
   }
 
   private async switchAgent(mode: string) {
@@ -152,7 +161,14 @@ export class OpenCodeHarnessRuntime implements HarnessRuntime {
       const page = await openCodeRequest<{ data?: Frame[] }>(service, 'GET',
         `/api/model?location%5Bdirectory%5D=${encodeURIComponent(this.cwd)}`);
       this.models = codexItems(page.data).filter((model) => codexText(model.id) && model.enabled !== false)
-        .map((model) => ({ model: `${codexText(model.providerID)}/${codexText(model.id)}`, displayName: codexText(model.name) }));
+        .map((model) => {
+          const efforts = variantEfforts(model);
+          return {
+            model: `${codexText(model.providerID)}/${codexText(model.id)}`,
+            displayName: codexText(model.name),
+            ...(efforts.length ? { supportedReasoningEfforts: efforts.map((effort) => ({ reasoningEffort: effort })) } : {}),
+          };
+        });
       return { data: this.models };
     }
     if (method === 'collaborationMode/list') return { data: [{ mode: 'default' }, { mode: 'plan' }] };
@@ -169,8 +185,10 @@ export class OpenCodeHarnessRuntime implements HarnessRuntime {
   private async send(params: Frame) {
     if (this.turn || this.pendingEvents) throw new CodexRejected('当前轮仍在运行，请稍候再试');
     const model = codexText(params.model);
+    const effort = codexText(params.effort) || null;
     const mode = asObject(params.collaborationMode).mode === 'plan' ? 'plan' : 'default';
-    if (model && model !== this.model) await this.switchModel(model);
+    const target = model || this.model;
+    if (target && (target !== this.model || effort !== this.variant)) await this.switchModel(target, effort);
     await this.switchAgent(mode);
     const inputs = codexItems(params.input);
     const text = inputs.filter((part) => part.type === 'text').map((part) => codexText(part.text)).join('\n');
@@ -302,4 +320,11 @@ export class OpenCodeHarnessRuntime implements HarnessRuntime {
 
 function textItemId(data: Frame) {
   return `${codexText(data.assistantMessageID)}#${typeof data.ordinal === 'number' ? data.ordinal : 0}`;
+}
+
+/** Reasoning levels are variant ids: raw catalog entries carry "variants", mapped options carry codex-shaped efforts. */
+function variantEfforts(option: Frame) {
+  const mapped = codexItems(option.supportedReasoningEfforts).map((effort) => codexText(effort.reasoningEffort));
+  const ids = mapped.length ? mapped : codexItems(option.variants).map((variant) => codexText(variant.id));
+  return [...new Set(ids)].filter(Boolean);
 }

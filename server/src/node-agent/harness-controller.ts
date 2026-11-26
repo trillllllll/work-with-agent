@@ -426,12 +426,12 @@ export class HarnessController {
       }
       if (app instanceof ZCodeHarnessRuntime) {
         const keys = Object.keys(command.changes);
-        if (keys.length > 1 || keys.some((key) => key !== 'model' && (!this.permissionsEnabled || key !== 'mode' && key !== 'permissionMode'))) {
+        if (keys.length > 1 || keys.some((key) => key !== 'model' && key !== 'effort' && (!this.permissionsEnabled || key !== 'mode' && key !== 'permissionMode'))) {
           throw new CodexRejected('本机不支持这个会话操作');
         }
         const view = command.changes.mode || command.changes.permissionMode
           ? await app.selectPermission(command.changes, command.commandId, command.expectedSettingsRevision)
-          : await app.selectModel(command.changes.model, command.commandId, command.expectedSettingsRevision);
+          : await app.selectModel(command.changes.model, command.commandId, command.expectedSettingsRevision, command.changes.effort);
         if (!view) throw new Error('ZCode 原会话更新超时，操作结果待核实');
         const settings = this.zcodeSelection(view);
         await writeJson(this.bindingPath, { ...binding, settings, settingsCommand: command.commandId });
@@ -589,7 +589,7 @@ export class HarnessController {
     }
     const nameFirstTurn = this.library && this.harness === 'codex' && !binding.native && !this.view.turn;
     const overrides = this.harness !== 'zcode' && settings && (this.settingsEnabled || settings.revision > 0)
-      ? this.harness === 'opencode' ? { model: settings.model, collaborationMode: { mode: settings.mode } }
+      ? this.harness === 'opencode' ? { model: settings.model, effort: settings.effort, collaborationMode: { mode: settings.mode } }
         : codexTurnSettings(settings, binding.cwd, this.workspaceSandbox, this.view.settings?.planAvailable === true)
       : {};
     const input = await codexInput(binding.cwd, value, attachments);

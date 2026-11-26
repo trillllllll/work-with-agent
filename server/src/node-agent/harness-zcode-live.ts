@@ -75,7 +75,7 @@ function topicFrame(topic: TopicState, wire: Fields): Fields | undefined {
 }
 
 const optionId = (provider: string, model: string) => [provider, model].map(encodeURIComponent).join('/');
-type NativeModel = { id: string; provider: string; model: string; label: string; thought: string };
+type NativeModel = { id: string; provider: string; model: string; label: string; thought: string; levels: string[]; defaultLevel: string };
 type PermissionOption = NonNullable<HarnessApproval['options']>[number];
 
 function zcodePermissionOption(raw: Fields): PermissionOption | undefined {
@@ -264,7 +264,7 @@ export class ZCodeLiveConversation {
     if ((session.sessionId ?? session.id) !== this.threadId) throw new CodexRejected('ZCode 返回了不同的会话');
     const catalogue = asObject(asObject(resumed.settings).model);
     const options = new Map<string, NativeModel>();
-    // Keep only the model identifiers, display labels and native default effort.
+    // Keep only the model identifiers, display labels and native reasoning levels.
     for (const entry of items(catalogue.available)) {
       const ref = asObject(entry.ref);
       const provider = text(ref.providerId), model = text(ref.modelId);
@@ -272,10 +272,12 @@ export class ZCodeLiveConversation {
       if (!provider || !model || id.length > 200 || options.has(id)) continue;
       const label = text(entry.label).trim() || model;
       const reasoning = asObject(entry.reasoning);
-      const levels = items(reasoning.levels).map((level) => text(level.value)).filter(Boolean);
+      const levels = [...new Set(items(reasoning.levels).map((level) => text(level.value)).filter(Boolean))].slice(0, 32);
       const preferred = text(asObject(ref.options).reasoningLevel) || text(reasoning.defaultLevel);
       const thought = levels.includes(preferred) ? preferred : levels[0] ?? '';
-      options.set(id, { id, provider, model, label: label.slice(0, 200), thought });
+      const declared = text(reasoning.defaultLevel);
+      const defaultLevel = levels.includes(declared) ? declared : thought;
+      options.set(id, { id, provider, model, label: label.slice(0, 200), thought, levels, defaultLevel });
     }
     this.options = options;
   }
@@ -291,12 +293,13 @@ export class ZCodeLiveConversation {
     const catalogue = [...this.options.values()].slice(0, HARNESS_MODELS);
     const selected = this.options.get(id);
     if (selected && !catalogue.includes(selected)) catalogue[catalogue.length - 1] = selected;
-    const models = catalogue.map(({ id, label }) => ({ id, label, efforts: [], defaultEffort: null }));
+    const models = catalogue.map(({ id, label, levels, defaultLevel }) =>
+      ({ id, label, efforts: levels, defaultEffort: defaultLevel || null }));
     const permissionMode = this.nativePermissions() ? zcodePermissionMode.safeParse(this.config.mode).data : undefined;
     const mode = permissionMode && this.config.planEnabled === true ? 'plan' : 'default';
     // Compare effective settings separately from the conversation revision used by ZCode's CAS.
     const revision = crc32(Buffer.from(JSON.stringify(permissionMode ? [id, this.config.thought, permissionMode, mode] : [id, this.config.thought])));
-    return { model: id, revision, effort: null, mode, permission: 'workspace',
+    return { model: id, revision, effort: text(this.config.thought) || null, mode, permission: 'workspace',
       models, planAvailable: Boolean(permissionMode), catalogAvailable: models.length > 0,
       ...(permissionMode ? { permissionMode, permissionModes: zcodePermissionMode.options.filter((value) => value !== 'edit' || permissionMode === 'edit') } : {}) };
   }
@@ -360,8 +363,8 @@ export class ZCodeLiveConversation {
     await this.command(commandId, 'stop', { expectedForegroundExecutionId: executionId });
   }
 
-  async selectModel(model: string | undefined, commandId: string, expectedSettingsRevision?: number) {
-    if (model === undefined) {
+  async selectModel(model: string | undefined, commandId: string, expectedSettingsRevision?: number, effort?: string | null) {
+    if (model === undefined && effort === undefined) {
       await this.app.request('provider/refreshRegistry', { reason: 'dovun-model-picker' });
       await this.readModels();
     }
@@ -370,14 +373,23 @@ export class ZCodeLiveConversation {
     if (expectedSettingsRevision !== undefined && expectedSettingsRevision !== current?.revision) {
       throw new CodexRejected('会话设置已变更，请刷新后重试');
     }
-    if (model !== undefined && current?.model !== model) {
-      const next = this.options.get(model);
-      if (!next) throw new CodexRejected('这个模型在本机 ZCode 中不可用');
+    const currentId = current?.model ?? '';
+    const next = model !== undefined ? this.options.get(model) : undefined;
+    if (model !== undefined && model !== currentId && !next) throw new CodexRejected('这个模型在本机 ZCode 中不可用');
+    const modelChanged = Boolean(next) && model !== currentId;
+    const target = next ?? (currentId ? this.options.get(currentId) : undefined);
+    const currentThought = text(this.config.thought);
+    // An explicit effort wins; otherwise a model change adopts the new model's native default thought.
+    const targetThought = effort ? effort : modelChanged && target ? target.thought : currentThought;
+    if (target && (modelChanged || targetThought !== currentThought)) {
+      if (targetThought && !target.levels.includes(targetThought)) throw new CodexRejected('这个模型不支持所选思考档位');
       await this.command(commandId, 'switchModelConfig', {
-        provider: next.provider, model: next.model, thought: next.thought,
+        provider: target.provider, model: target.model, thought: targetThought,
       }, this.revision);
       await this.refresh();
-      if (this.settings()?.model !== model) throw timeout();
+      const after = this.settings();
+      if (modelChanged && after?.model !== model) throw timeout();
+      if (!modelChanged && after?.effort !== (targetThought || null)) throw timeout();
     }
     return this.settings();
   }

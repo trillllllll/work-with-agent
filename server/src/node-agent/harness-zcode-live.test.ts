@@ -35,6 +35,7 @@ it('preserves the desktop conversation, command IDs and streaming tool rows acro
   let emit: (wire: Record<string, unknown>) => void;
   let revision = 17;
   let model = 'old-model';
+  let thought = '';
   let mode = 'build';
   let planEnabled = false;
   const permission = (interactionId: string, optionId: string) => ({ interactionId, kind: 'permission', anchorRowId: 3,
@@ -54,7 +55,7 @@ it('preserves the desktop conversation, command IDs and streaming tool rows acro
     topic, subscriptionId, wireVersion: 3, kind: 'complete', frame: { topic, subscriptionId, fromSeq, toSeq, payload },
   });
   const snapshot = () => frame(0, revision, {
-    kind: 'snapshot', snapshot: { sessionId: threadId, revision, config: { provider: 'local', model, mode, planEnabled },
+    kind: 'snapshot', snapshot: { sessionId: threadId, revision, config: { provider: 'local', model, mode, planEnabled, thought },
       rows: { window: [] }, pendingInteractions: pending },
   });
   const request = vi.fn(async (name: string, arg: Record<string, unknown>) => {
@@ -81,10 +82,18 @@ it('preserves the desktop conversation, command IDs and streaming tool rows acro
     const envelope = arg;
     expect(envelope).toMatchObject({ workspace, sessionId: threadId, clientId: 'dovun' });
     if (envelope.type === 'switchModelConfig') {
-      expect(envelope).toMatchObject({ baseRevision: revision, commandId: 'switch-1', payload: { provider: 'local', model: 'model-b', thought: 'high' } });
-      model = 'model-b';
+      const payload = envelope.payload as { thought?: string };
+      expect(payload).toMatchObject({ provider: 'local', model: 'model-b' });
+      thought = String(payload.thought);
+      if (envelope.commandId === 'switch-1') {
+        expect(envelope).toMatchObject({ baseRevision: revision, commandId: 'switch-1', payload: { thought: 'high' } });
+        model = 'model-b';
+      } else {
+        expect(envelope.commandId).toBe('switch-effort');
+        expect(payload).toMatchObject({ thought: 'low' });
+      }
       revision++;
-      return { commandId: 'switch-1', status: 'accepted' };
+      return { commandId: envelope.commandId, status: 'accepted' };
     }
     if (envelope.type === 'switchCollaborationMode') {
       const target = new Map([['guarded-1', 'guarded'], ['plan-1', 'plan'], ['leave-plan', 'guarded']]).get(String(envelope.commandId));
@@ -127,6 +136,8 @@ it('preserves the desktop conversation, command IDs and streaming tool rows acro
   try {
     const initial = live.settings()!;
     expect(initial.models.map(({ id }) => id)).toEqual(['local/model-a', 'local/model-b']);
+    expect(initial.models.find((entry) => entry.id === 'local/model-b')).toMatchObject({ efforts: ['low', 'high'], defaultEffort: 'high' });
+    expect(initial.effort).toBeNull();
     const beforeUnavailableSend = request.mock.calls.length;
     await expect(live.send('continue here', 'missing-model')).rejects.toThrow('当前 ZCode 模型在 Mac 上不可用');
     expect(request).toHaveBeenCalledTimes(beforeUnavailableSend);
@@ -134,9 +145,13 @@ it('preserves the desktop conversation, command IDs and streaming tool rows acro
     expect(reloaded?.models.map(({ id }) => id)).toEqual(['local/model-a', 'local/model-b', 'account%3Afixture/GLM-5.4']);
     const changed = await live.selectModel('local/model-b', 'switch-1', initial.revision);
     expect(changed?.model).toBe('local/model-b');
+    expect(changed?.effort).toBe('high');
     await expect(live.selectModel('local/model-a', 'stale', initial.revision)).rejects.toThrow('会话设置已变更');
+    const effortPicked = await live.selectModel(undefined, 'switch-effort', changed!.revision, 'low');
+    expect(effortPicked).toMatchObject({ model: 'local/model-b', effort: 'low' });
+    await expect(live.selectModel(undefined, 'bad-effort', effortPicked!.revision, 'bogus')).rejects.toThrow('这个模型不支持所选思考档位');
     expect(changed).toMatchObject({ permissionMode: 'build', permissionModes: ['build', 'guarded', 'yolo'], planAvailable: true });
-    const guarded = await live.selectPermission({ permissionMode: 'guarded' }, 'guarded-1', changed!.revision);
+    const guarded = await live.selectPermission({ permissionMode: 'guarded' }, 'guarded-1', effortPicked!.revision);
     expect(guarded.permissionMode).toBe('guarded');
     const plan = await live.selectPermission({ mode: 'plan' }, 'plan-1', guarded.revision);
     expect(plan).toMatchObject({ mode: 'plan', permissionMode: 'guarded' });

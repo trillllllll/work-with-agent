@@ -115,9 +115,9 @@ export class ZCodeHarnessRuntime {
     return { thread: { id, cwd: this.cwd, status: { type: 'idle' } } };
   }
 
-  async selectModel(model: string | undefined, commandId: string, expectedSettingsRevision: number) {
+  async selectModel(model: string | undefined, commandId: string, expectedSettingsRevision: number, effort?: string | null) {
     if (!this.live?.connected) throw new CodexRejected('本机 ZCode 会话未连接，请重新打开会话');
-    return this.live.selectModel(model, commandId, expectedSettingsRevision);
+    return this.live.selectModel(model, commandId, expectedSettingsRevision, effort);
   }
 
   async selectPermission(changes: HarnessSettingsChange, commandId: string, expectedSettingsRevision: number) {

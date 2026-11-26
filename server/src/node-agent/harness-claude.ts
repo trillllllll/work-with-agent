@@ -11,6 +11,8 @@ import { claudePermissionMode } from './harness-protocol.js';
 type Frame = Record<string, unknown>;
 type NativeTool = { input: Frame; toolUseId?: string; questions?: string[] };
 type ActiveTurn = { id: string; messageId: string; interrupted: boolean };
+// Claude Code has no per-model effort catalog; the CLI itself clamps levels a model does not support.
+const claudeEfforts = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 
 // The controller uses one thread/turn interface. Claude keeps its own UUIDs and control requests.
 export class ClaudeHarnessRuntime implements HarnessRuntime {
@@ -23,6 +25,7 @@ export class ClaudeHarnessRuntime implements HarnessRuntime {
   private permissionMode = 'default';
   private canEnableBypass = false;
   private bypassEnabled = false;
+  private effort: string | null = null;
   private needsNativeHistory = false;
   private models: Frame[] = [];
   private requests = new Map<string, (result: Frame | Error) => void>();
@@ -57,7 +60,7 @@ export class ClaudeHarnessRuntime implements HarnessRuntime {
     });
   }
 
-  private async launch(threadId: string, resume: boolean, enableBypass = false) {
+  private async launch(threadId: string, resume: boolean, enableBypass = false, effort: string | null = null) {
     this.threadId = threadId;
     const cli = await resolveLocalCli('claude');
     const env = providerEnvironment();
@@ -66,11 +69,14 @@ export class ClaudeHarnessRuntime implements HarnessRuntime {
     this.canEnableBypass = process.getuid?.() !== 0 && !restricted;
     if (enableBypass && !this.canEnableBypass) throw new CodexRejected('当前模型或本机策略不支持所选 Claude Code 权限模式');
     this.bypassEnabled = enableBypass;
+    this.effort = effort;
     this.model = 'default';
     this.permissionMode = 'default';
     const child = spawn(cli.command, [...cli.prefix, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json',
       '--verbose', '--permission-mode', 'default', '--permission-prompt-tool', 'stdio', '--include-partial-messages',
       ...(enableBypass ? ['--allow-dangerously-skip-permissions'] : []),
+      // Effort only exists as a launch flag; a changed level relaunches and resumes the same session.
+      ...(effort ? ['--effort', effort] : []),
       resume ? '--resume' : '--session-id', threadId,
     ], { cwd: this.cwd, env, stdio: 'pipe', windowsHide: true });
     this.child = child;
@@ -114,11 +120,11 @@ export class ClaudeHarnessRuntime implements HarnessRuntime {
     ];
   }
 
-  private async reopenWithBypass(enabled: boolean) {
+  private async reopen(enableBypass: boolean, effort: string | null) {
     await this.close();
     this.closing = false;
     try {
-      await this.resume(this.threadId, enabled);
+      await this.resume(this.threadId, enableBypass, effort);
     } catch (error) {
       await this.close();
       this.onExit();
@@ -126,11 +132,11 @@ export class ClaudeHarnessRuntime implements HarnessRuntime {
     }
   }
 
-  private async resume(threadId: string, enableBypass = false) {
+  private async resume(threadId: string, enableBypass = false, effort: string | null = this.effort) {
     const found = Boolean(await readClaudeThread(threadId, this.cwd));
     if (!found && this.needsNativeHistory) throw new CodexRejected('找不到 Claude Code 原会话，无法恢复');
     this.needsNativeHistory ||= found;
-    return this.launch(threadId, found, enableBypass);
+    return this.launch(threadId, found, enableBypass, effort);
   }
 
   private receive(frame: Frame) {
@@ -236,7 +242,10 @@ export class ClaudeHarnessRuntime implements HarnessRuntime {
       return this.resume(threadId);
     }
     if (method === 'thread/turns/list') return readClaudeTurns(threadId, this.cwd, text(params.cursor) || null, Number(params.limit) || 20);
-    if (method === 'model/list') return { data: this.models.map((model) => ({ model: model.value, displayName: model.displayName })) };
+    if (method === 'model/list') return { data: this.models.map((model) => ({
+      model: model.value, displayName: model.displayName,
+      supportedReasoningEfforts: claudeEfforts.map((effort) => ({ reasoningEffort: effort })),
+    })) };
     if (method === 'collaborationMode/list') return { data: [{ mode: 'default' }, { mode: 'plan' }] };
     if (method === 'permissionMode/list') return { data: await this.advancedModes(text(params.model) || this.model) };
     if (method === 'turn/start') return this.send(params);
@@ -259,7 +268,8 @@ export class ClaudeHarnessRuntime implements HarnessRuntime {
     }
     // The opt-in flag is needed only while this conversation uses bypassPermissions.
     const bypass = mode === 'bypassPermissions';
-    if (bypass !== this.bypassEnabled) await this.reopenWithBypass(bypass);
+    const effort = text(params.effort) || null;
+    if (bypass !== this.bypassEnabled || effort !== this.effort) await this.reopen(bypass, effort);
     if (model && model !== this.model) {
       await this.control('set_model', { model });
       this.model = model;

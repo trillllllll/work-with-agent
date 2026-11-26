@@ -192,6 +192,30 @@ it('reopens the accepted native prompt by its original id when its HTTP response
   await restored.close();
 });
 
+it('maps the effort choice to a model variant and keeps the base model on resume', async () => {
+  await startService();
+  const app = runtime();
+  const result = await app.request('thread/start', { cwd });
+  const threadId = (result.thread as Record<string, unknown>).id as string;
+  const settings = await readOpenCodeSettings(app, readCodexSelection(result)!);
+  expect(settings.models.find((model) => model.id === 'opencode/stub-model'))
+    .toMatchObject({ defaultEffort: null, efforts: ['low', 'high'] });
+  expect(settings.models.find((model) => model.id === 'opencode/stub-plain')).toMatchObject({ efforts: [] });
+  const changed = changeCodexSelection(settings, { effort: 'high' });
+  expect(changed.effort).toBe('high');
+  expect(() => changeCodexSelection(settings, { effort: 'max' })).toThrow('这个模型不支持所选思考档位');
+  await app.request('turn/start', { threadId, clientUserMessageId: 'cmd-effort',
+    model: changed.model, effort: changed.effort, input: [{ type: 'text', text: '深度思考' }] });
+  await until(() => Boolean(find('turn/completed')?.params.turn));
+  const svc = await resolveOpenCodeService();
+  const stored = await openCodeRequest<{ data?: { model?: Record<string, unknown> } }>(svc, 'GET', `/api/session/${threadId}`);
+  expect(stored.data?.model).toMatchObject({ id: 'stub-model#high', providerID: 'opencode' });
+  await app.close();
+  const resumed = runtime();
+  await expect(resumed.request('thread/resume', { threadId })).resolves.toMatchObject({ model: 'opencode/stub-model' });
+  await resumed.close();
+});
+
 it('delivers a repeated command id only once and converts paged history at turn boundaries', async () => {
   const directory = await startService();
   const store = join(directory, 'store.json');
