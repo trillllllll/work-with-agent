@@ -13,6 +13,7 @@ import { activeSyncBinding, syncBoundReplicaNow, type SyncBinding } from './sync
 import { isReplicaRequest, markReplicaRequest } from './replica-identity.js';
 import { canonicalSyncRow, isSyncEntityType, syncRowsEqual, type SyncEntityType } from './sync-merge.js';
 import { readLive } from './sync-log.js';
+import { modelSettingsRoutePolicy } from './model-settings-route-policy.js';
 
 const PREFIX = '/api/v1/sync/relay';
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
@@ -22,7 +23,11 @@ const ownerFamilies = /^\/api\/(?:chat(?:\/|$)|conversations(?:\/|$)|agent(?:\/|
 const taskExtras = /^\/api\/tasks\/[^/]+\/(?:images(?:\/[^/]+)?|ai-history|activity|topic-history)$/;
 const scopedFamilies = /^\/api\/v1\/(?:tasks|topics|tags|changes|commands|proposals|knowledge|library|learning|handoffs|runs|runners|artifacts|plan|identity|tools)(?:\/|$)|^\/api\/v1\/trash\/tasks(?:\/|$)/;
 const ordinaryTaskCommand = (body: any) => Array.isArray(body?.commands) && body.commands.length > 0 && body.commands.every((command: any) => /^(?:task|topic|tag)\./.test(command.kind) && command.kind !== 'task.reference_materials');
-export function relayPathAllowed(path: string) { return previewAcknowledgement.test(path) || ownerFamilies.test(path) || taskExtras.test(path) || /^\/api\/(?:tasks|topics|tags)(?:\/|$)/.test(path); }
+export function relayPathAllowed(path: string, method = 'GET') {
+  const modelSettings = modelSettingsRoutePolicy(method, path);
+  if (modelSettings) return modelSettings === 'hub';
+  return previewAcknowledgement.test(path) || ownerFamilies.test(path) || taskExtras.test(path) || /^\/api\/(?:tasks|topics|tags)(?:\/|$)/.test(path);
+}
 /** These owner-only endpoints operate exclusively on the shared learning store.
  * Generic commands, proposals and chat still wait for local task synchronization. */
 export function isIndependentLearningWrite(method: string, path: string) {
@@ -43,7 +48,7 @@ export async function acceptReplicaRelay(req: Request, _res: Response, next: Nex
   if (!req.url.startsWith(PREFIX + '/')) { next(); return; }
   try {
     const path = req.url.slice(PREFIX.length);
-    if (!relayPathAllowed(new URL(path, 'http://replica').pathname)) throw new DomainError('SCOPE_DENIED', '同步凭据不能访问这个入口', 403);
+    if (!relayPathAllowed(new URL(path, 'http://replica').pathname, req.method)) throw new DomainError('SCOPE_DENIED', '同步凭据不能访问这个入口', 403);
     await syncDevice(req);
     markReplicaRequest(req);
     req.url = path;
@@ -93,7 +98,8 @@ export async function relayBoundWorkspace(req: Request, res: Response, next: Nex
   if (!binding || isReplicaRequest(req)) { next(); return; }
   const path = new URL(req.url, 'http://local').pathname;
   const bearer = typeof req.headers.authorization === 'string' && req.headers.authorization.startsWith('Bearer ');
-  const allowed = bearer ? scopedFamilies.test(path) : previewAcknowledgement.test(path) || ownerFamilies.test(path) || taskExtras.test(path);
+  const modelSettings = bearer ? null : modelSettingsRoutePolicy(req.method, path);
+  const allowed = bearer ? scopedFamilies.test(path) : modelSettings !== null || previewAcknowledgement.test(path) || ownerFamilies.test(path) || taskExtras.test(path);
   if (!allowed || !bearer && /^\/api\/v1\/commands(?:\/preview)?$/.test(path) && ordinaryTaskCommand(req.body)) { next(); return; }
   // Task undo belongs to the durable local command record; cloud material/AI
   // changes must be undone against the cloud record that created them.
@@ -108,9 +114,10 @@ export async function relayBoundWorkspace(req: Request, res: Response, next: Nex
   let ownerAuthenticated = false;
   try {
     if (!bearer) { await requireOwner(req); ownerAuthenticated = true; }
+    if (modelSettings === 'unsupported') throw new DomainError('MODEL_SETTINGS_ROUTE_UNSUPPORTED', '配对后的模型设置只支持已开放的云端操作', 405);
     const sendsBody = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
     const writing = sendsBody && !isReadOnlyRelayPost(req.method, path);
-    if (writing && !bearer && !isIndependentLearningWrite(req.method, path)) {
+    if (writing && !bearer && modelSettings !== 'hub' && !isIndependentLearningWrite(req.method, path)) {
       await syncBoundReplicaNow();
       if (await prisma.syncOutbox.count({ where: { state: 'pending' } })) throw new DomainError('SYNC_PENDING', '请等待本机修改同步完成后重试', 409);
     }
@@ -119,7 +126,7 @@ export async function relayBoundWorkspace(req: Request, res: Response, next: Nex
     for (const name of ['content-type', 'accept', 'accept-language', 'x-dovun-language', 'x-request-id', 'last-event-id']) if (typeof req.headers[name] === 'string') headers.set(name, req.headers[name] as string);
     const target = new URL((bearer ? '' : PREFIX) + req.url, binding.url);
     const binaryUpload = req.method === 'PUT' && /^\/api\/v1\/library\/uploads\/[^/]+\/content$/.test(path);
-    const payload = sendsBody && !binaryUpload ? bearer || !writing ? req.body : await remapVersions(req, binding) : undefined;
+    const payload = sendsBody && !binaryUpload ? bearer || !writing || modelSettings === 'hub' ? req.body : await remapVersions(req, binding) : undefined;
     const disconnected = new AbortController();
     res.once('close', () => disconnected.abort());
     const response = await fetch(target, { method: req.method, headers, ...(binaryUpload ? {body:req as unknown as BodyInit,duplex:'half'} : payload !== undefined ? { body: JSON.stringify(payload) } : {}), signal: AbortSignal.any([disconnected.signal, AbortSignal.timeout(path === '/api/chat' ? 10 * 60_000 : 30_000)]), redirect: 'error' });
@@ -140,7 +147,7 @@ export async function relayBoundWorkspace(req: Request, res: Response, next: Nex
     res.setHeader('Cache-Control', 'no-store');
     if (disposition) res.setHeader('content-disposition', disposition);
     for (const [header, value] of Object.entries(securityHeaders)) res.setHeader(header, value);
-    if (!bearer && /^\/api\/settings(?:$|\/api-key$)/.test(path) && response.ok && type.includes('application/json')) {
+    if (!bearer && /^\/api\/settings(?:\/api-key)?\/?$/i.test(path) && response.ok && type.includes('application/json')) {
       const body=await response.json();if(body.data)body.data.cli=await cliSettings();res.json(body);return;
     }
     if (!bearer && /^\/api\/v1\/connections(?:\/[^/]+\/config)?$/.test(path) && response.ok && type.includes('application/json')) {
@@ -166,7 +173,7 @@ export async function relayBoundWorkspace(req: Request, res: Response, next: Nex
       await writeFile(temp, JSON.stringify(entry), { mode: 0o600 }); await rename(temp, file);
       res.setHeader('X-Dovun-Offline-Available', '1'); res.end(Buffer.concat(chunks));
     } else res.end();
-    if (writing && !bearer && response.ok && !path.includes('/preview') && !isIndependentLearningWrite(req.method, path)) await syncBoundReplicaNow().catch(() => {});
+    if (writing && !bearer && response.ok && modelSettings !== 'hub' && !path.includes('/preview') && !isIndependentLearningWrite(req.method, path)) await syncBoundReplicaNow().catch(() => {});
   } catch (error) {
     if (res.headersSent) { if (!res.writableEnded) res.end(); return; }
     if (ownerAuthenticated && !bearer && req.method === 'GET' && canCache(path) && !(error instanceof DomainError && error.code === 'SYNC_AUTH_FAILED') && !await cacheIsDenied(binding)) {

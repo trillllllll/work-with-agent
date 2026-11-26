@@ -38,6 +38,12 @@ To add a new category, add its id to `SETTINGS_CATEGORIES` and `SETTINGS_CATEGOR
 - Switching category discards unsaved input, the same as closing the modal.
 - If `/api/settings` fails, only the model form and the local AI commands show the error and a retry button. The other blocks keep working.
 
+## Paired desktop model settings
+
+- After a Mac pairs with a server, model settings are authoritative on that hub. Reads, profile create/update/delete/activate/copy, the legacy settings save and API-key clear, model catalog requests, and context-window probes all run there. They do not wait for or trigger task synchronization. Hub errors and offline state surface to the user without a fallback write to the local settings database.
+- Local AI command discovery and paths remain device-local. They are added to successful settings responses on the Mac but are not sent to the hub. Model settings and keys never enter task outboxes or task snapshots.
+- Profiles written only to the local database by older paired versions remain there; this fix does not delete, upload, migrate, or background-copy them. The first recovery path is for the user to explicitly re-create the intended profile in the fixed settings screen or the server web UI, entering its key directly again. There is no automated migration or plaintext-key export.
+
 ## Phone tab bar rows
 
 Each row is a drag handle, an icon, a name and a switch. The move up and move down buttons are gone. Ways to reorder:
