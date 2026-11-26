@@ -6,6 +6,8 @@ import { ClaudeHarnessRuntime } from './harness-claude.js';
 import { CodexAppServer, type HarnessNotification, type HarnessRuntime } from './harness-codex.js';
 import { OPENCODE_DATA_DIR } from './harness-opencode-client.js';
 import { OpenCodeHarnessRuntime } from './harness-opencode.js';
+import { GrokAgentRuntime, grokAvailable } from './harness-grok.js';
+import { grokHome } from './harness-grok-library.js';
 import { ZCodeHarnessRuntime } from './harness-zcode.js';
 import { resolveZCode, zcodeSessionStore } from './harness-zcode-client.js';
 import type { HarnessKind, HarnessView } from './harness-protocol.js';
@@ -44,7 +46,14 @@ const runtimes: Record<HarnessKind, {
     open: async ({ cwd, notify, disconnected }) => new OpenCodeHarnessRuntime(cwd, notify, disconnected),
     store: () => OPENCODE_DATA_DIR(),
   },
+  grok: {
+    open: async ({ cwd, notify, disconnected }) => GrokAgentRuntime.open(cwd, notify, disconnected),
+    store: () => grokHome(),
+  },
 };
+
+/** Node capability probe shared by the agent connection; version-gates the harness kind. */
+export const grokHarnessAvailable = grokAvailable;
 
 export function openHarnessRuntime(harness: HarnessKind, options: RuntimeOptions) {
   return runtimes[harness].open(options);
