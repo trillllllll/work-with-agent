@@ -1,17 +1,18 @@
-import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { access, chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer, type Server, type Socket } from 'node:net';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { createInterface } from 'node:readline';
 import { promisify } from 'node:util';
 import { providerEnvironment } from '../runner/environment.js';
 import { runtimeEnv } from '../shared/runtime-env.js';
+import { AcpConnection, type AcpMessage } from './harness-acp.js';
 import { CodexRejected } from './harness-codex.js';
 
 const exec = promisify(execFile);
+const asRecord = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const bundle = 'DeepSeek Harness.app/Contents';
 const launcher = 'runtime/cli/bin/dsh';
 
@@ -55,106 +56,11 @@ export async function dshAvailable() {
   } catch { return false; }
 }
 
-export class AcpError extends Error {
-  constructor(readonly code: number, message: string, readonly data: unknown) { super(message); }
-}
-
-type Pending = { resolve: (value: Record<string, unknown>) => void; reject: (error: Error) => void; timer?: NodeJS.Timeout };
-type AgentMessage = (method: string, params: Record<string, unknown>, id?: number | string) => void;
-const asRecord = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
-
-/** Newline-delimited JSON-RPC to `dsh --profile acp`. The prompt request settles only when the turn ends, so it has no timer. */
-export class AcpConnection {
-  private cursor = 0;
-  private readonly pending = new Map<number, Pending>();
-  private closing = false;
-  readonly exited: Promise<void>;
-
-  constructor(readonly child: ChildProcessWithoutNullStreams, onMessage: AgentMessage) {
-    child.stderr.resume();
-    const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
-    let spawned = false;
-    child.once('spawn', () => { spawned = true; });
-    this.exited = new Promise<void>((done) => {
-      const exit = () => {
-        lines.close();
-        for (const entry of this.pending.values()) {
-          clearTimeout(entry.timer);
-          entry.reject(new Error('DSH 连接已断开，操作结果待核实'));
-        }
-        this.pending.clear();
-        done();
-      };
-      child.once('close', exit);
-      // A process that never starts does not reach close. Nothing was sent, so its requests are plain rejections.
-      child.once('error', () => {
-        for (const entry of this.pending.values()) {
-          clearTimeout(entry.timer);
-          entry.reject(spawned ? new Error('DSH 连接已断开，操作结果待核实') : new CodexRejected('本机无法启动 DSH，请确认已安装 DeepSeek Harness'));
-        }
-        this.pending.clear();
-        if (!spawned) exit();
-      });
-    });
-    child.stdin.on('error', () => undefined);
-    lines.on('line', (line) => {
-      let message: Record<string, unknown>;
-      try { message = asRecord(JSON.parse(line)); } catch { return; }
-      if (typeof message.method === 'string') {
-        onMessage(message.method, asRecord(message.params), typeof message.id === 'number' || typeof message.id === 'string' ? message.id : undefined);
-        return;
-      }
-      if (typeof message.id !== 'number') return;
-      const entry = this.pending.get(message.id);
-      if (!entry) return;
-      this.pending.delete(message.id);
-      clearTimeout(entry.timer);
-      const error = asRecord(message.error);
-      if (Object.keys(error).length) {
-        entry.reject(new AcpError(typeof error.code === 'number' ? error.code : 0,
-          typeof error.message === 'string' ? error.message : 'DSH 拒绝了操作', error.data));
-      } else entry.resolve(asRecord(message.result));
-    });
-  }
-
-  static open(cwd: string, overlay: string, onMessage: AgentMessage) {
-    return resolveDshCli().then((cli) => new AcpConnection(spawn(cli.command, [...cli.prefix, '--profile', 'acp', '--patch', overlay],
-      { cwd, env: dshEnvironment(), windowsHide: true, stdio: 'pipe' }), onMessage));
-  }
-
-  get pid() { return this.child.pid; }
-
-  request<T extends Record<string, unknown> = Record<string, unknown>>(method: string, params: Record<string, unknown>, timeoutMs = 15_000) {
-    const id = ++this.cursor;
-    return new Promise<T>((resolve, reject) => {
-      const entry: Pending = { resolve: (value) => resolve(value as T), reject };
-      if (timeoutMs) entry.timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error('DSH 响应超时，操作结果待核实'));
-      }, timeoutMs);
-      this.pending.set(id, entry);
-      this.child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n', (error) => {
-        if (error) { clearTimeout(entry.timer); this.pending.delete(id); reject(new Error('DSH 连接已断开，操作结果待核实')); }
-      });
-    });
-  }
-
-  notify(method: string, params: Record<string, unknown>) {
-    if (!this.closing) this.child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method, params }) + '\n');
-  }
-
-  respond(id: number | string, result: Record<string, unknown>) {
-    this.child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\n');
-  }
-
-  async close() {
-    if (this.closing) return this.exited;
-    this.closing = true;
-    this.child.stdin.end();
-    const terminate = setTimeout(() => this.child.kill('SIGTERM'), 500);
-    const kill = setTimeout(() => this.child.kill('SIGKILL'), 2_000);
-    try { await this.exited; } finally { clearTimeout(terminate); clearTimeout(kill); }
-  }
+export function openDshAcp(cwd: string, overlay: string, onMessage: AcpMessage) {
+  return resolveDshCli().then((cli) => AcpConnection.open({
+    command: cli.command, args: [...cli.prefix, '--profile', 'acp', '--patch', overlay], cwd, env: dshEnvironment(), onMessage,
+    label: 'DSH',
+  }));
 }
 
 /**

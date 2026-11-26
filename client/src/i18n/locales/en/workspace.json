@@ -499,13 +499,19 @@
         "auto": { "description": "Grok auto-reviews routine tool calls; calls it cannot clear still ask." },
         "bypassPermissions": { "description": "Skips routine tool approvals. Grok sandbox and enforced protections still apply." }
       },
+      "kimiModes": {
+        "default": { "description": "Confirm tool calls manually as Kimi Code requires them." },
+        "auto": { "description": "Kimi Code auto-approves safe operations; other actions still ask." },
+        "bypassPermissions": { "description": "Kimi Code auto-approves every tool operation without asking each time." }
+      },
       "fullAccessTitle": "Enable full access for this {{harness}} conversation?",
       "fullAccessDescriptions": {
         "codex": "Starting next turn, Codex removes its sandbox and command approvals. File and command access follows your Mac account permissions.",
         "claude": "Starting next turn, Claude Code skips routine tool approvals. Claude Code still enforces its configured sandbox and mandatory safeguards.",
         "zcode": "ZCode can change accessible files, run terminal commands, access the network, and call connected tools without asking each time.",
         "grok": "Starting next turn, Grok skips routine tool approvals. Configured deny rules and enforced protections still run in Grok.",
-        "dsh": "Starting next turn, DSH runs in full access and no longer asks for tool approvals. File and command access follows your Mac account permissions."
+        "dsh": "Starting next turn, DSH runs in full access and no longer asks for tool approvals. File and command access follows your Mac account permissions.",
+        "kimi": "Starting next turn, Kimi Code auto-approves every tool operation, including file changes, commands, and connected tools, without asking each time."
       },
       "fullAccessConfirm": "Enable full access",
       "saving": "Saving session settings…",

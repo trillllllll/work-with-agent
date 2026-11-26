@@ -8,7 +8,7 @@ import { WorktreeService } from '../application/orchestration/worktrees.js';
 import { isServerMode, publicWorkspaceUrl } from '../application/desktop-paths.js';
 import { leaseHarness, leaseHarnessLibrary, syncHarness } from '../application/harness-sessions.js';
 import { pendingHarnessReads, reportHarnessRead } from '../application/harness-library.js';
-import { HARNESS_ADAPTERS_FEATURE, HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_DSH_FEATURE, HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_MESSAGE_ORIGIN_FEATURE, HARNESS_ORGANIZATION_FEATURE, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_LARGE_IMAGES_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_CREATE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE } from '../node-agent/harness-protocol.js';
+import { HARNESS_ADAPTERS_FEATURE, HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_DSH_FEATURE, HARNESS_FEATURE, HARNESS_KIMI_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_MESSAGE_ORIGIN_FEATURE, HARNESS_ORGANIZATION_FEATURE, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_LARGE_IMAGES_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_CREATE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE } from '../node-agent/harness-protocol.js';
 import { DIRECTORY_FEATURE } from '../node-agent/directory-protocol.js';
 import { pendingDirectories, reportDirectory } from '../application/harness-directories.js';
 import { harnessWakeCursor, waitForHarnessWork } from '../application/harness-wake.js';
@@ -127,6 +127,7 @@ export function createNodeRouter() {
     if (req.get('X-Dovun-Harness-ZCode-Create') === HARNESS_ZCODE_CREATE_FEATURE) accepts.push(HARNESS_ZCODE_CREATE_FEATURE);
     if (req.get('X-Dovun-Harness-DSH') === HARNESS_DSH_FEATURE) accepts.push(HARNESS_DSH_FEATURE);
     if (req.get('X-Dovun-Harness-Adapters') === HARNESS_ADAPTERS_FEATURE) accepts.push(HARNESS_ADAPTERS_FEATURE);
+    if (req.get('X-Dovun-Harness-Kimi') === HARNESS_KIMI_FEATURE) accepts.push(HARNESS_KIMI_FEATURE);
     if (req.get('X-Dovun-Directory-Browser') === DIRECTORY_FEATURE) accepts.push(DIRECTORY_FEATURE);
     const supportsHarness = req.body.capabilities.harnessSessions === HARNESS_FEATURE;
     const library = supportsHarness && accepts.includes(HARNESS_LIBRARY_FEATURE) && req.body.capabilities.harnessLibrary === HARNESS_LIBRARY_FEATURE;

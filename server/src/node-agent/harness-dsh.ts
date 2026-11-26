@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { asObject, CodexRejected, type HarnessNotification, type HarnessRuntime } from './harness-codex.js';
-import { AcpConnection, AcpError, DshBridge } from './harness-dsh-client.js';
+import { AcpConnection, AcpError } from './harness-acp.js';
+import { DshBridge, openDshAcp } from './harness-dsh-client.js';
 import { dshRecordedPreset, dshToolKind, readDshTurns } from './harness-dsh-library.js';
 import { codexItems, codexText } from './harness-history.js';
 
@@ -51,7 +52,7 @@ export class DshHarnessRuntime implements HarnessRuntime {
     if (this.closing) throw new CodexRejected('本机会话已断开');
     const bridge = this.bridge ??= await DshBridge.start();
     bridge.onEvent = (event, params) => this.onBridge(event, params);
-    const acp = this.acp = await AcpConnection.open(this.cwd, bridge.overlay, (method, params, id) => this.onMessage(method, params, id));
+    const acp = this.acp = await openDshAcp(this.cwd, bridge.overlay, (method, params, id) => this.onMessage(method, params, id));
     void acp.exited.then(() => {
       this.acp = null;
       if (!this.closing) this.onExit();

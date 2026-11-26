@@ -80,7 +80,7 @@ function storedJson(value: string | null | undefined): unknown {
 }
 const projectPinsByHarness = z.object({
   codex: harnessProjectPinsSchema.optional(), claude: harnessProjectPinsSchema.optional(), zcode: harnessProjectPinsSchema.optional(),
-  opencode: harnessProjectPinsSchema.optional(), grok: harnessProjectPinsSchema.optional(), dsh: harnessProjectPinsSchema.optional(),
+  opencode: harnessProjectPinsSchema.optional(), grok: harnessProjectPinsSchema.optional(), dsh: harnessProjectPinsSchema.optional(), kimi: harnessProjectPinsSchema.optional(),
 });
 
 function nativeOrganizationUpdate(organization: HarnessOrganization | undefined, session?: HarnessSession | null) {
@@ -407,7 +407,8 @@ export async function queueHarnessCommand(id: string, body: unknown, advanced = 
     requireAvailable(node, session.harness);
     const permissions = node && supportsHarnessPermissions(node);
     const openCode = session.harness === 'opencode';
-    if ((input.operation === 'choosePermission' && (!permissions || session.harness !== 'zcode' && !openCode))
+    const kimi = session.harness === 'kimi';
+    if ((input.operation === 'choosePermission' && (!permissions || session.harness !== 'zcode' && !openCode && !kimi))
         || openCode && input.operation === 'resolveApproval' && input.decision === 'acceptForSession'
         || openCode && input.operation === 'configure' && (
           input.changes.permission !== undefined || requiresNativePermissionSettings(input.changes))

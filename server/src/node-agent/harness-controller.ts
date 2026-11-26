@@ -13,7 +13,7 @@ import { readHarnessArtifacts } from './harness-artifacts.js';
 import { codexInput } from './harness-files.js';
 import { codexText as text, codexItems as items, codexMessage as message, codexTurn as turn, projectCodexHistory } from './harness-history.js';
 import { assertNativeThreadIdle, readProjectThread } from './harness-library.js';
-import { changeClaudeSelection, changeCodexSelection, changeGrokSelection, codexModelId, codexTurnSettings, openCodeSelection, readClaudePermissionModes, readClaudeSettings, readCodexSelection, readCodexSettings, readDshSettings, readGrokSettings, readOpenCodeSettings } from './harness-settings.js';
+import { changeClaudeSelection, changeCodexSelection, changeGrokSelection, changeKimiSelection, codexModelId, codexTurnSettings, openCodeSelection, readClaudePermissionModes, readClaudeSettings, readCodexSelection, readCodexSettings, readDshSettings, readGrokSettings, readKimiSettings, readOpenCodeSettings } from './harness-settings.js';
 import { codexHarnessTool, harnessFilePaths, harnessFileDiffs, harnessOutput } from './harness-tools.js';
 import { assertAllowed } from './git.js';
 import {
@@ -88,7 +88,7 @@ export class HarnessController {
   private workspace = false;
   private permissionsEnabled = false;
   private advancedPermissions = false;
-  private openCodeApprovalOptions = false;
+  private nativeApprovalOptions = false;
   private workspaceSandbox: Record<string, unknown> = {};
   private attaching: { threadId: string; notifications: Notification[] } | null = null;
   private lastWork = Date.now();
@@ -103,7 +103,7 @@ export class HarnessController {
   consume(lease: Assignment, timeline = false, settings = false, workspace = false, permissions = false, advancedPermissions = false,
     adapterOptions = false) {
     if (this.stopped || this.work) return;
-    this.openCodeApprovalOptions = this.harness === 'opencode' && permissions && adapterOptions;
+    this.nativeApprovalOptions = (this.harness === 'opencode' || this.harness === 'kimi') && permissions && adapterOptions;
     this.work = this.processLease(lease, timeline, settings, workspace, permissions, permissions && advancedPermissions).finally(() => {
       this.work = null;
       this.lastWork = Date.now();
@@ -255,7 +255,7 @@ export class HarnessController {
       if (owner || openCode) this.attaching = { threadId: prior.threadId, notifications: [] };
       // OpenCode sessions live in a shared service the executor attaches to, so a running native session resumes live.
       // A DSH session that another process holds is refused by its own write lock when the runtime resumes it.
-      if (!owner && this.harness !== 'zcode' && this.harness !== 'opencode' && this.harness !== 'dsh' && (prior.native || this.settingsEnabled && !modelProvider)) {
+      if (!owner && this.harness !== 'zcode' && this.harness !== 'opencode' && this.harness !== 'dsh' && this.harness !== 'kimi' && (prior.native || this.settingsEnabled && !modelProvider)) {
         const thread = await readProjectThread(app, prior.threadId, cwd, this.roots);
         if (prior.native) await assertNativeThreadIdle(app, thread, prior.threadId);
         const original = codexModelId(thread.modelProvider);
@@ -352,6 +352,7 @@ export class HarnessController {
   private settings(app: HarnessRuntime, selection: HarnessSettingsSelection, binding: Binding) {
     if (this.harness === 'claude') return readClaudeSettings(app, selection, this.permissionsEnabled, this.advancedPermissions);
     if (this.harness === 'grok') return readGrokSettings(app, selection, this.permissionsEnabled);
+    if (this.harness === 'kimi') return readKimiSettings(app, selection, this.permissionsEnabled);
     if (this.harness === 'dsh') return readDshSettings(app, selection, this.advancedPermissions);
     if (this.harness === 'opencode') return readOpenCodeSettings(app, selection);
     return readCodexSettings(app, selection, this.workspace ? { cwd: binding.cwd, provider: binding.modelProvider } : undefined,
@@ -407,7 +408,7 @@ export class HarnessController {
     const current = this.view.turn;
     if (requiresHarnessWorkspace(command) && !this.workspace) throw new CodexRejected('本机不支持这个会话操作');
     if (this.harness !== 'codex' && (command.operation === 'steer' || command.operation === 'rerun'
-        || command.operation === 'fork' || command.operation === 'compact' || command.operation === 'approvePlan')) {
+        || command.operation === 'fork' && this.harness !== 'kimi' || command.operation === 'compact' || command.operation === 'approvePlan')) {
       throw new CodexRejected('本机不支持这个会话操作');
     }
     if ('expectedSettingsRevision' in command && binding.settings?.revision !== command.expectedSettingsRevision) {
@@ -446,7 +447,8 @@ export class HarnessController {
       }
       const settings = !configuring && binding.settings ? binding.settings
         : this.harness === 'claude' ? changeClaudeSelection(before, command.changes)
-          : this.harness === 'grok' ? changeGrokSelection(before, command.changes) : changeCodexSelection(before, command.changes);
+          : this.harness === 'grok' ? changeGrokSelection(before, command.changes)
+            : this.harness === 'kimi' ? changeKimiSelection(before, command.changes) : changeCodexSelection(before, command.changes);
       const view = configuring ? { ...before, ...settings } : await this.settings(app, settings, binding);
       await writeJson(this.bindingPath, { ...binding, settings, settingsCommand: command.commandId });
       binding.settings = settings;
@@ -528,7 +530,7 @@ export class HarnessController {
         await app.choosePermission(command.requestId, command.optionId, command.commandId);
         return;
       }
-      if (!this.openCodeApprovalOptions || !(app instanceof OpenCodeHarnessRuntime)) {
+      if (!this.nativeApprovalOptions || this.harness !== 'opencode' && this.harness !== 'kimi') {
         throw new CodexRejected('本机不支持这个会话操作');
       }
       const match = this.approvals.get(command.requestId);
@@ -836,15 +838,21 @@ export class HarnessController {
       .filter((decision) => Array.isArray(advertised) ? advertised.includes(decision)
         : decision === 'accept' || decision === 'decline' || decision === 'cancel' && (kind === 'command' || kind === 'fileChange'));
     const canAccept = !Array.isArray(advertised) || advertised.includes('accept');
-    const options: HarnessApproval['options'] = this.openCodeApprovalOptions ? [
-      { id: 'reject', scope: 'deny' },
-      ...(params.projectApproval === true ? [{ id: 'always', scope: 'project' } as const] : []),
-      { id: 'once', scope: 'once' },
-    ] : undefined;
+    const options: HarnessApproval['options'] = this.nativeApprovalOptions ? this.harness === 'kimi'
+      ? items(params.availableOptions).flatMap<NonNullable<HarnessApproval['options']>[number]>((option) => {
+        const id = text(option.id), kind = text(option.kind), name = text(option.name);
+        const scope: NonNullable<HarnessApproval['options']>[number]['scope'] | null = /approve.*plan|批准.*计划/i.test(name) ? 'approvePlan'
+          : kind === 'allow_once' ? 'once' : kind === 'allow_always' ? 'session' : kind.startsWith('reject') ? 'deny' : null;
+        return id && scope ? [{ id, scope }] : [];
+      }).slice(0, 4) : [
+        { id: 'reject', scope: 'deny' },
+        ...(params.projectApproval === true ? [{ id: 'always', scope: 'project' } as const] : []),
+        { id: 'once', scope: 'once' },
+      ] : undefined;
     // Permission grants use a different response shape, with turn-only scope here.
     const available = this.workspace && (kind === 'command' || kind === 'fileChange') ? decisions : undefined;
     this.emit({ kind: 'approval', approval: { id: requestId, turnId, kind, details, canAccept,
-      ...(questions ? { questions } : {}), ...(options ? { options } : available ? { decisions: available } : {}),
+      ...(questions ? { questions } : {}), ...(options?.length ? { options } : available ? { decisions: available } : {}),
     } });
   }
 

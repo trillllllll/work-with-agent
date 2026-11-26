@@ -17,9 +17,10 @@ import { NodeAgent } from './node-agent/agent.js';
 import * as openCode from './node-agent/harness-opencode-client.js';
 import * as runtimes from './node-agent/harness-runtimes.js';
 import * as dsh from './node-agent/harness-dsh-client.js';
+import * as kimi from './node-agent/harness-kimi-client.js';
 import { capabilitiesSchema } from './node-agent/protocol.js';
 import {
-  HARNESS_ADAPTERS_FEATURE, HARNESS_DSH_FEATURE, HARNESS_EVENTS, HARNESS_FEATURE, HARNESS_IMAGE_FILE_LIMIT, HARNESS_LARGE_IMAGES_FEATURE, HARNESS_LIBRARY_FEATURE,
+  HARNESS_ADAPTERS_FEATURE, HARNESS_DSH_FEATURE, HARNESS_KIMI_FEATURE, HARNESS_EVENTS, HARNESS_FEATURE, HARNESS_IMAGE_FILE_LIMIT, HARNESS_LARGE_IMAGES_FEATURE, HARNESS_LIBRARY_FEATURE,
   HARNESS_LEGACY_IMAGE_LIMIT, HARNESS_PREVIEW_FILE_LIMIT, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE, harnessCommandSchema, type HarnessSnapshot,
 } from './node-agent/harness-protocol.js';
 import { leaseHarnessLibrary } from './application/harness-sessions.js';
@@ -94,6 +95,7 @@ it('keeps the 0.6.18 capability list on older relays and re-enables the installe
   const code = vi.spyOn(openCode, 'opencodeAvailable').mockResolvedValue(true);
   const grok = vi.spyOn(runtimes, 'grokHarnessAvailable').mockResolvedValue({ path: 'fixture', version: '1.0.50' });
   const deepseek = vi.spyOn(dsh, 'dshAvailable').mockResolvedValue(true);
+  const kimiCode = vi.spyOn(kimi, 'kimiAvailable').mockResolvedValue(true);
   try {
     await node.pollOnce();
     for (let poll = 0; poll < 3; poll++) {
@@ -113,6 +115,12 @@ it('keeps the 0.6.18 capability list on older relays and re-enables the installe
     await node.pollOnce();
     await node.pollOnce();
     expect(kinds).toEqual(expect.arrayContaining(['opencode', 'grok', 'dsh']));
+    expect(kinds).not.toContain('kimi');
+    expect(kimiCode).not.toHaveBeenCalled();
+    accepts = [...legacy, HARNESS_KIMI_FEATURE];
+    await node.pollOnce();
+    await node.pollOnce();
+    expect(kinds).toContain('kimi');
     accepts = legacy;
     await expect(node.pollOnce()).rejects.toThrow('400');
     await node.pollOnce();
@@ -120,10 +128,12 @@ it('keeps the 0.6.18 capability list on older relays and re-enables the installe
     expect(library).toBe(true);
     expect(kinds).toContain('codex');
     expect(kinds).not.toContain('opencode');
+    expect(kinds).not.toContain('kimi');
   } finally {
     code.mockRestore();
     grok.mockRestore();
     deepseek.mockRestore();
+    kimiCode.mockRestore();
     await node.shutdown('signal');
   }
 });

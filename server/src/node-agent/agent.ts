@@ -16,8 +16,9 @@ import { dshAvailable } from './harness-dsh-client.js';
 import { opencodeAvailable } from './harness-opencode-client.js';
 import { zcodeAvailable } from './harness-zcode-client.js';
 import { grokHarnessAvailable } from './harness-runtimes.js';
+import { kimiAvailable } from './harness-kimi-client.js';
 import {
-  HARNESS_ADAPTERS_FEATURE, HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_DSH_FEATURE, HARNESS_FEATURE, HARNESS_LARGE_IMAGES_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_LIBRARY_LEASES, HARNESS_LIBRARY_READS, HARNESS_ORGANIZATION_FEATURE, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE,
+  HARNESS_ADAPTERS_FEATURE, HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_DSH_FEATURE, HARNESS_FEATURE, HARNESS_KIMI_FEATURE, HARNESS_LARGE_IMAGES_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_LIBRARY_LEASES, HARNESS_LIBRARY_READS, HARNESS_ORGANIZATION_FEATURE, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE,
   harnessLeaseSchema, harnessLibraryLeaseSchema, harnessReadTaskSchema, type HarnessKind, type HarnessLease, type HarnessReadTask,
   HARNESS_MESSAGE_ORIGIN_FEATURE, HARNESS_ZCODE_CREATE_FEATURE, withoutHarnessMessageOrigins, withoutHarnessSyncMessageOrigins,
 } from './harness-protocol.js';
@@ -61,6 +62,7 @@ export class NodeAgent {
   private zcode: Promise<boolean> | null = null;
   private opencode: Promise<boolean> | null = null;
   private grok: Promise<boolean> | null = null;
+  private kimi: Promise<boolean> | null = null;
   private dsh: Promise<void> | null = null;
   private dshInstalled = false;
   /** Feature ids from the latest lease response. Missing `accepts` means an old server: report the old result shape. */
@@ -124,6 +126,7 @@ export class NodeAgent {
             'X-Dovun-Harness-ZCode-Create': HARNESS_ZCODE_CREATE_FEATURE,
             'X-Dovun-Harness-DSH': HARNESS_DSH_FEATURE,
             'X-Dovun-Harness-Adapters': HARNESS_ADAPTERS_FEATURE,
+            'X-Dovun-Harness-Kimi': HARNESS_KIMI_FEATURE,
             'X-Dovun-Harness-Wake': this.harnessWakeCursor ?? 'initial',
             ...(harnessWaitMs > 0 ? { 'X-Dovun-Harness-Wait-Ms': String(harnessWaitMs) } : {}) } : {}),
         },
@@ -156,6 +159,7 @@ export class NodeAgent {
         this.serverAccepts.delete(HARNESS_ZCODE_CREATE_FEATURE);
         this.serverAccepts.delete(HARNESS_DSH_FEATURE);
         this.serverAccepts.delete(HARNESS_ADAPTERS_FEATURE);
+        this.serverAccepts.delete(HARNESS_KIMI_FEATURE);
       }
       const error = Object.assign(new Error(`服务端返回 ${response.status} ${code ?? ''}`), { status: response.status, code });
       this.rememberError(error);
@@ -195,6 +199,10 @@ export class NodeAgent {
       // Probing launches DeepSeek Harness, so report it on a later heartbeat.
       this.dsh ??= dshAvailable().then((available) => { this.dshInstalled = available; });
       if (this.dshInstalled) installed.push('dsh');
+    }
+    if (workspace && this.serverAccepts.has(HARNESS_KIMI_FEATURE)) {
+      this.kimi ??= kimiAvailable();
+      if (await this.kimi) installed.push('kimi');
     }
     if (this.serverAccepts.has(HARNESS_FEATURE) && installed.length) body.harnessSessions = HARNESS_FEATURE;
     if (body.harnessSessions && this.serverAccepts.has(HARNESS_LIBRARY_FEATURE)) body.harnessLibrary = HARNESS_LIBRARY_FEATURE;
@@ -306,7 +314,8 @@ export class NodeAgent {
     void controller.consume(lease, this.serverAccepts.has(HARNESS_TIMELINE_FEATURE),
       this.serverAccepts.has(HARNESS_SETTINGS_FEATURE) && (!zcode || this.serverAccepts.has(HARNESS_ZCODE_LIVE_FEATURE)),
       !zcode && library && this.serverAccepts.has(HARNESS_WORKSPACE_FEATURE), this.serverAccepts.has(HARNESS_PERMISSIONS_FEATURE),
-      this.serverAccepts.has(HARNESS_ADVANCED_PERMISSIONS_FEATURE), this.serverAccepts.has(HARNESS_ADAPTERS_FEATURE))
+      this.serverAccepts.has(HARNESS_ADVANCED_PERMISSIONS_FEATURE),
+      this.serverAccepts.has(HARNESS_ADAPTERS_FEATURE) || this.serverAccepts.has(HARNESS_KIMI_FEATURE))
       ?.catch((error) => this.rememberError(error));
   }
   private async answerHarnessRead(task: HarnessReadTask) {

@@ -12,6 +12,8 @@ import { GrokAgentRuntime, grokAvailable } from './harness-grok.js';
 import { grokHome } from './harness-grok-library.js';
 import { ZCodeHarnessRuntime } from './harness-zcode.js';
 import { resolveZCode, zcodeSessionStore } from './harness-zcode-client.js';
+import { KimiHarnessRuntime } from './harness-kimi.js';
+import { KIMI_HOME } from './harness-kimi-client.js';
 import type { HarnessKind, HarnessView } from './harness-protocol.js';
 
 type RuntimeOptions = {
@@ -57,6 +59,10 @@ const runtimes: Record<HarnessKind, {
     open: async ({ cwd, notify, disconnected, advancedPermissions }) =>
       new DshHarnessRuntime(cwd, notify, disconnected, advancedPermissions),
     store: () => DSH_HOME(),
+  },
+  kimi: {
+    open: async ({ cwd, notify, disconnected }) => new KimiHarnessRuntime(cwd, notify, disconnected),
+    store: () => KIMI_HOME(),
   },
 };
 

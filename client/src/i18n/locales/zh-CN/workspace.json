@@ -498,13 +498,19 @@
         "auto": { "description": "Grok 自动审核常规工具调用，明确需要确认的操作仍会询问。" },
         "bypassPermissions": { "description": "跳过常规的工具审批，Grok 的沙箱与强制保护仍然生效。" }
       },
+      "kimiModes": {
+        "default": { "description": "按照 Kimi Code 的规则手动确认工具调用。" },
+        "auto": { "description": "Kimi Code 自动批准安全操作，其他需要确认的操作仍会询问。" },
+        "bypassPermissions": { "description": "Kimi Code 自动批准所有工具操作，不再逐次询问。" }
+      },
       "fullAccessTitle": "要对这条 {{harness}} 会话启用完全访问吗？",
       "fullAccessDescriptions": {
         "codex": "从下一轮起，Codex 会移除沙箱和命令审批。文件和命令访问由 Mac 系统账户权限决定。",
         "claude": "从下一轮起，Claude Code 跳过常规工具审批。配置的沙箱和原生强制保护仍由 Claude Code 执行。",
         "zcode": "启用后，ZCode 可以直接修改可访问的文件、运行终端命令、访问网络和调用已连接的工具，无需逐次确认。",
         "grok": "从下一轮起，Grok 跳过常规工具审批。已配置的拒绝规则和强制保护仍由 Grok 执行。",
-        "dsh": "从下一轮起，DSH 以完全访问运行，不再逐次请求工具审批。文件和命令访问由 Mac 系统账户权限决定。"
+        "dsh": "从下一轮起，DSH 以完全访问运行，不再逐次请求工具审批。文件和命令访问由 Mac 系统账户权限决定。",
+        "kimi": "从下一轮起，Kimi Code 自动批准所有工具操作，可以修改文件、运行命令和调用已连接的工具，不再逐次询问。"
       },
       "fullAccessConfirm": "启用完全访问",
       "saving": "正在保存会话设置…",

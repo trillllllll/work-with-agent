@@ -116,6 +116,17 @@ export async function readGrokSettings(app: HarnessRuntime, selection: HarnessSe
     permissionMode: selection.mode === 'plan' || selection.permission === 'readOnly' ? 'plan' as const : mode.data ?? 'default' as const };
 }
 
+export async function readKimiSettings(app: HarnessRuntime, selection: HarnessSettingsSelection, nativePermissions: boolean) {
+  const view = await readCodexSettings(app, selection);
+  if (!nativePermissions) return view;
+  const native = await app.request('permissionMode/list', {}).catch(() => null);
+  const nativeModes = native?.data;
+  const available = Array.isArray(nativeModes) ? grokPermissionMode.options.filter((mode) => nativeModes.includes(mode)) : [...grokPermissionMode.options];
+  const current = grokPermissionMode.safeParse(native?.current ?? selection.permissionMode);
+  return { ...view, sandboxChoices: [], permissionModes: available,
+    permissionMode: selection.mode === 'plan' || selection.permission === 'readOnly' ? 'plan' as const : current.data ?? 'default' as const };
+}
+
 function changeSelection(current: HarnessSettingsView, changes: HarnessSettingsChange): HarnessSettingsSelection {
   const model = changes.model ?? current.model;
   const option = current.models.find((item) => item.id === model);
@@ -177,6 +188,8 @@ export function changeGrokSelection(current: HarnessSettingsView, changes: Harne
   }
   return changeSelection(current, changes);
 }
+
+export const changeKimiSelection = changeGrokSelection;
 
 export function codexTurnSettings(selection: HarnessSettingsSelection, cwd: string, workspaceSandbox: Record<string, unknown>, planAvailable: boolean) {
   const readOnly = selection.mode === 'plan' || selection.permission === 'readOnly';

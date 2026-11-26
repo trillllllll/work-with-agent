@@ -19,7 +19,7 @@ function harnessFixtureEnvironment(root: string) {
   return {
     ...process.env,
     DOVUN_CODEX_BIN: missing, DOVUN_CLAUDE_BIN: missing, DOVUN_ZCODE_BIN: missing,
-    OPENCODE_BIN: missing, DOVUN_GROK_BIN: missing, DOVUN_DSH_BIN: missing,
+    OPENCODE_BIN: missing, DOVUN_GROK_BIN: missing, DOVUN_DSH_BIN: missing, DOVUN_KIMI_BIN: missing,
   };
 }
 
@@ -373,6 +373,93 @@ test('opens a project DSH history on a phone and continues its original session'
     const newId = new URLSearchParams(new URL(phone.url()).hash.split('?')[1]).get('sessionId');
     expect(newId).not.toBe(id);
     await expect.poll(async () => (await data<{ threadId: string }>(await request.get(apiUrl + '/' + newId))).threadId).toMatch(/^session-/);
+  } finally {
+    if (agent && agent.exitCode === null && agent.signalCode === null) {
+      const exited = once(agent, 'exit');
+      agent.kill('SIGTERM');
+      await exited;
+    }
+    if (nodeId) {
+      await e2eDatabase.harnessSession.deleteMany({ where: { nodeId } });
+      await e2eDatabase.harnessDirectory.deleteMany({ where: { nodeId } });
+    }
+    await context.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('opens Kimi Code history, approves a native tool, and continues on a phone', async ({ browser, page, request, baseURL, extraHTTPHeaders }, testInfo) => {
+  test.skip(testInfo.project.name === 'mobile', 'The test opens a phone viewport itself.');
+  test.setTimeout(65_000);
+  await resetE2eDatabase();
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'dovun-kimi-browser-')));
+  const context = await browser.newContext({ ...devices['iPhone 13'], baseURL, extraHTTPHeaders, locale: 'zh-CN',
+    storageState: await page.context().storageState() });
+  let agent: ChildProcess | undefined;
+  let nodeId: string | undefined;
+  try {
+    const project = join(root, 'kimi-project');
+    await mkdir(project);
+    const threadId = 'session-kimi-original';
+    const store = join(root, 'kimi-store.json');
+    await writeFile(store, JSON.stringify({ sessions: { [threadId]: {
+      id: threadId, cwd: project, title: 'Mac 上的原 Kimi 对话', updatedAt: new Date().toISOString(),
+      model: 'kimi-code/k3.1-pro', thinking: 'high', mode: 'default', running: false,
+      turns: [{ user: [{ type: 'text', text: '原 Kimi 历史消息' }], items: [{ type: 'answer', text: '原 Kimi 历史回复' }] }],
+    } } }));
+    const node = await data<{ node: { id: string }; token: string }>(await request.post('/api/nodes', { data: { name: 'Kimi 测试 Mac' } }));
+    nodeId = node.node.id;
+    agent = spawn(process.execPath, ['--import', 'tsx', resolve('server/src/node-agent/index.ts'), '--server', process.env.E2E_API_URL!,
+      '--roots', root, '--data', join(root, 'node')], { stdio: 'ignore', env: {
+      ...harnessFixtureEnvironment(root), DOVUN_NODE_TOKEN: node.token,
+      DOVUN_KIMI_BIN: resolve('server/test/stub-kimi-acp.mjs'), KIMI_CODE_HOME: join(root, 'kimi-home'),
+      HARNESS_TEST_KIMI_STORE: store, HARNESS_TEST_KIMI_ASK: '1',
+    } });
+    const phone = await context.newPage();
+    await phone.goto(listUrl);
+    await phone.getByRole('radio', { name: 'Kimi Code', exact: true }).tap();
+    const original = phone.getByRole('button', { name: /Mac 上的原 Kimi 对话/ });
+    await expect(original).toBeVisible({ timeout: 18_000 });
+    await original.tap();
+    const chat = phone.getByRole('region', { name: '会话详情' });
+    await expect(chat.locator('header [role=status]')).toHaveText('已连接', { timeout: 15_000 });
+    await expect(chat.getByText('原 Kimi 历史回复', { exact: true })).toBeVisible();
+    const composer = chat.getByRole('textbox', { name: '输入消息' });
+    await expect(composer).toHaveAttribute('placeholder', '发消息给 Kimi Code');
+    await composer.fill('从手机接着聊');
+    await chat.getByRole('button', { name: '发送', exact: true }).tap();
+    const approval = chat.getByRole('region', { name: 'Kimi Code 请求执行命令' });
+    await expect(approval).toBeVisible({ timeout: 12_000 });
+    await expect(approval.getByRole('button', { name: '本会话内允许' })).toBeVisible();
+    await approval.getByRole('button', { name: '允许一次', exact: true }).tap();
+    await expect(chat.getByText('Kimi stub 记得 从手机接着聊', { exact: true })).toBeVisible({ timeout: 12_000 });
+    await expect(chat.getByText('从手机接着聊', { exact: true })).toHaveCount(1);
+    const id = new URLSearchParams(new URL(phone.url()).hash.split('?')[1]).get('sessionId');
+    expect((await data<{ threadId: string }>(await request.get(apiUrl + '/' + id))).threadId).toBe(threadId);
+    await chat.getByRole('button', { name: '会话设置' }).focus();
+    await phone.keyboard.press('Enter');
+    const settings = phone.getByRole('dialog', { name: '会话设置' });
+    await settings.getByRole('radio', { name: 'K2.8 Preview', exact: true }).tap();
+    await settings.getByRole('radio', { name: /^自动审批/ }).tap();
+    await phone.keyboard.press('Escape');
+    await chat.getByRole('button', { name: '会话设置' }).focus();
+    await phone.keyboard.press('Enter');
+    await expect(settings.getByRole('radio', { name: 'K2.8 Preview', exact: true })).toBeChecked();
+    await expect(settings.getByRole('radio', { name: /^自动审批/ })).toBeChecked();
+    await phone.keyboard.press('Escape');
+    await phone.reload();
+    await expect(chat.locator('header [role=status]')).toHaveText('已连接', { timeout: 15_000 });
+    await expect(chat.getByText('Kimi stub 记得 从手机接着聊', { exact: true })).toHaveCount(1);
+    await expect(chat.getByRole('button', { name: '会话设置' })).toHaveText('K2.8 Preview');
+    await phone.goto(listUrl + '&harness=kimi');
+    await phone.getByRole('button', { name: '新建会话', exact: true }).tap();
+    const newSession = phone.getByRole('dialog', { name: '新建会话' });
+    await newSession.getByRole('radio', { name: /kimi-project/ }).tap();
+    await newSession.getByRole('button', { name: '开启 Kimi Code 会话' }).tap();
+    await expect(phone).toHaveURL(/sessionId=/);
+    const newId = new URLSearchParams(new URL(phone.url()).hash.split('?')[1]).get('sessionId');
+    expect(newId).not.toBe(id);
+    await expect.poll(async () => (await data<{ threadId: string }>(await request.get(apiUrl + '/' + newId))).threadId).toMatch(/^session_/);
   } finally {
     if (agent && agent.exitCode === null && agent.signalCode === null) {
       const exited = once(agent, 'exit');
