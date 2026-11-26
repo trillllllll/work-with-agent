@@ -45,7 +45,7 @@ export async function grokAvailable() {
     const cli = await resolveGrokCli();
     if (!(await stat(cli.command).catch(() => null))?.isFile()) return null;
     const { stdout } = await exec(cli.command, [...cli.prefix, '--version'], { timeout: 15_000, windowsHide: true });
-    const version = /^(\d+)\.(\d+)\.(\d+)/.exec(stdout.trim());
+    const version = /^(?:grok\s+)?v?(\d+)\.(\d+)\.(\d+)/i.exec(stdout.trim());
     if (!version || Number(version[1]) < 1) return null;
     return { path: (cli.prefix[0] ?? cli.command).slice(0, 200), version: stdout.trim().slice(0, 200) };
   } catch { return null; }

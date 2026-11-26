@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
-import { GrokAgentRuntime } from './harness-grok.js';
+import { GrokAgentRuntime, grokAvailable } from './harness-grok.js';
 
 const sessionId = '01a21348-ae50-7260-9166-0480e752ad35';
 
@@ -10,6 +10,10 @@ const sessionId = '01a21348-ae50-7260-9166-0480e752ad35';
 // protocol surface the adapter consumes, scripted per prompt prefix.
 const fakeAgent = `import { appendFileSync, readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
+if (process.argv.includes('--version')) {
+  console.log('grok 1.0.50 (fixture)');
+  process.exit(0);
+}
 const sessionId = '${sessionId}';
 const log = process.env.DOVUN_FAKE_GROK_LOG ?? '/dev/null';
 const note = (entry) => appendFileSync(log, JSON.stringify(entry) + '\\n');
@@ -113,6 +117,7 @@ async function harness() {
 it('starts a session, streams a turn and maps native updates onto the shared contract', async () => {
   const setup = await harness();
   try {
+    expect(await grokAvailable()).toMatchObject({ version: 'grok 1.0.50 (fixture)' });
     const started = await setup.runtime.request('thread/start', { cwd: setup.project });
     expect(started).toMatchObject({ thread: { id: sessionId }, model: 'grok-test', reasoningEffort: 'low', modelProvider: 'grok' });
 
