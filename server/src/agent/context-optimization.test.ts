@@ -4,7 +4,7 @@ import { ContextService, replayWindow, type StoredMessage } from '../application
 import { prisma } from '../infrastructure/prisma.js';
 import { builtinToolDefinitions } from './capabilities.js';
 import { loadedFamilies, toolsForGroups } from './tool-loading.js';
-import { buildContextStats, contextTotals } from './context-stats.js';
+import { buildContextStats, contextTotals, type ContextStats } from './context-stats.js';
 import { HISTORY_TOKEN_BUDGET, backgroundMessage, messagesTokens, packModelMessages, projectToolContent, textTokens } from './context-budget.js';
 import { approveAppChanges, readEnvelope } from './decision.js';
 import { resumeRun, scheduleRun } from './runs.js';
@@ -146,14 +146,47 @@ describe('context optimization contracts', () => {
   it('persists provider usage separately from estimates, including reported zero', async () => {
     let round = 0;
     const agent = agentWith(async function* () {
-      if (round++ === 0) { yield { usage: { inputTokens: 0, outputTokens: 0, model: 'fixture' }, toolCalls: [tool('time', 'get_time')] }; return; }
-      yield { text: '已读取时间。', usage: { inputTokens: 65, outputTokens: 5, cachedInputTokens: 10, model: 'fixture' } };
+      if (round++ === 0) {
+        yield { usage: { inputTokens: 0, outputTokens: 0, model: 'fixture', semantics: 'cumulative' } };
+        yield { usage: { inputTokens: 0, outputTokens: 0, model: 'fixture', semantics: 'cumulative' }, toolCalls: [tool('time', 'get_time')] };
+        return;
+      }
+      yield { usage: { inputTokens: 40, outputTokens: 3, model: 'fixture', semantics: 'cumulative' } };
+      yield { text: '已读取时间。', usage: { inputTokens: 65, outputTokens: 5, cachedInputTokens: 10, model: 'fixture', semantics: 'cumulative' } };
     });
     const result = await agent.chat({ message: '读取当前时间' });
     const snapshot = await agent.snapshot(result.conversationId!);
-    expect(snapshot.contextStats.totals).toMatchObject({ requests: 2, actualInputTokens: 65, actualOutputTokens: 5, cachedInputTokens: null, usageComplete: true });
+    expect(snapshot.contextStats.totals).toMatchObject({ requests: 2, usageReceipts: 2, actualInputTokens: 65, actualOutputTokens: 5, cachedInputTokens: 10, cachedInputReports: 1, reasoningOutputTokens: null, usageComplete: true });
+    expect(snapshot.contextStats.attemptId).toBeTruthy();
+    expect(snapshot.contextStats.phase).toBe('final');
+    expect(new Set(result.events.filter(event => event.type === 'context_stats').map(event => event.contextStats?.attemptId)).size).toBe(2);
     const run = await prisma.agentRun.findFirstOrThrow({ where: { conversationId: result.conversationId! } });
     expect(run).toMatchObject({ inputTokens: 65, outputTokens: 5, cachedInputTokens: 10, model: 'fixture' });
+  });
+
+  it('records a recovered same-round resend as a new attempt and retains the missing receipt estimate', async () => {
+    let calls = 0;
+    const agent = agentWith(async function* () {
+      if (calls++ === 0) { yield { text: '未完成' }; throw new Error('fixture interrupted'); }
+      yield { text: '恢复完成。', usage: { inputTokens: 20, outputTokens: 4, semantics: 'cumulative' } };
+    });
+    const result = await agent.chat({ message: '中断后恢复同一轮' });
+    const run = await prisma.agentRun.findFirstOrThrow({ where: { conversationId: result.conversationId! } });
+    expect(run.state).toBe('failed');
+    await prisma.agentRun.update({ where: { id: run.id }, data: { state: 'paused', pauseReason: 'interrupted' } });
+    await agent.resume(run.id);
+    for (let i = 0; i < 100; i++) { if ((await prisma.agentRun.findUniqueOrThrow({ where: { id: run.id } })).state === 'completed') break; await new Promise(resolve => setTimeout(resolve, 10)); }
+    const events = (await agent.listRunEvents(run.id)).filter(event => event.type === 'context_stats');
+    const attempts = events.map(event => event.data.contextStats as ContextStats);
+    expect(attempts).toHaveLength(4);
+    expect(new Set(attempts.map(attempt => attempt.round)).size).toBe(1);
+    expect(new Set(attempts.map(attempt => attempt.attemptId)).size).toBe(2);
+    const final = attempts.at(-1)!;
+    expect(final.phase).toBe('final');
+    expect(final.totals).toMatchObject({ requests: 2, usageReceipts: 1, actualInputTokens: 20, actualOutputTokens: 4 });
+    expect(final.totals.input.estimatedGapTokens).toBeGreaterThan(0);
+    const stored = await prisma.agentRun.findUniqueOrThrow({ where: { id: run.id } });
+    expect(stored).toMatchObject({ inputTokens: 20, outputTokens: 4 });
   });
 
   it('keeps the offered schema frozen when recovering midway through a tool batch', async () => {

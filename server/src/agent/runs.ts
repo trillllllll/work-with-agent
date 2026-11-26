@@ -39,6 +39,7 @@ import { builtinToolMessageId } from './ids.js';
 import { waitRuns } from './wake.js';
 import { TextBatcher } from './text-batcher.js';
 import { currentLocale } from '../i18n/index.js';
+import { hasModelUsage, mergeModelUsage } from './model-usage.js';
 
 const LEASE_MS = 120_000;
 const MODEL_TIMEOUT_MS = 90_000;
@@ -182,6 +183,27 @@ async function addRunUsage(runId: string, token: string, usage: import('../agent
       ...(typeof usage.outputTokens === 'number' ? { outputTokens: (run.outputTokens ?? 0) + usage.outputTokens } : {}),
       ...(usage.model ? { model: usage.model } : {}), updatedAt: nowIso(),
     } });
+  });
+}
+
+async function recordFinalContextStats(runId: string, token: string, stats: ContextStats, summaries: SummaryMetric[]) {
+  await prisma.$transaction(async tx => {
+    const run = await tx.agentRun.findUniqueOrThrow({ where: { id: runId } });
+    if (run.leaseToken !== token || run.state !== 'running' || !run.leaseExpiresAt || run.leaseExpiresAt <= nowIso()) throw new DomainError('LEASE_LOST', '这次请求已经失去执行权', 409);
+    const earlier = await tx.agentRunEvent.findMany({ where: { runId, type: 'context_stats' }, orderBy: { seq: 'asc' }, select: { dataJson: true } });
+    const rounds = earlier.map(event => (JSON.parse(event.dataJson) as { contextStats: ContextStats }).contextStats);
+    if (stats.attemptId && rounds.some(row => row.attemptId === stats.attemptId && row.phase === 'final')) return;
+    stats.totals = contextTotals([...rounds, stats], summaries);
+    const usage = stats.actual;
+    if (usage) {
+      await tx.agentRun.update({ where: { id: runId }, data: {
+        ...(typeof usage.inputTokens === 'number' ? { inputTokens: (run.inputTokens ?? 0) + usage.inputTokens } : {}),
+        ...(typeof usage.cachedInputTokens === 'number' ? { cachedInputTokens: (run.cachedInputTokens ?? 0) + usage.cachedInputTokens } : {}),
+        ...(typeof usage.outputTokens === 'number' ? { outputTokens: (run.outputTokens ?? 0) + usage.outputTokens } : {}),
+        ...(usage.model ? { model: usage.model } : {}), updatedAt: nowIso(),
+      } });
+    }
+    await appendRunEvent(tx, runId, 'context_stats', { type: 'context_stats', contextStats: stats, conversationId: run.conversationId, runId });
   });
 }
 
@@ -366,13 +388,11 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
   const offered = new Set(tools.map(t => t.function.name));
   if (cursor.toolGroups?.includes('media') && !String(messages[0]?.content).includes('【富媒体表达】\nSVG')) messages.splice(1, 0, { role: 'system', content: `【按需富媒体规则】\n${mediaInstructionsFor(identityId)}\n${htmlBlockPrompt(await htmlBlockPolicy())}` });
   await saveMessages(runId, token, messages.filter(m => !(m.role === 'system' && (String(m.content).startsWith('【本次可引用来源】') || String(m.content).startsWith('【按需富媒体规则】') || String(m.content).startsWith('【本任务联网预算】') || String(m.content).startsWith('【本会话联网搜索已开启】') || String(m.content).startsWith('本次资料检索已进入最后作答轮')))));
-  const stats = buildContextStats({ runId, round: cursor.round, messages, tools, fullTools: identityId === 'work' ? builtinToolDefinitions({ loadSkill: cursor.loadSkill }) : toolsForGroups(scopeGroupsFor(identityId, [...toolGroupNames]), cursor.loadSkill, identityId), loadedGroups: cursor.toolGroups ?? ['legacy-all'], summaryCalls: cursor.summaryCalls, contextWindow: await modelSettings.contextWindow(identityId) });
-  const publishStats = async () => {
-    const earlier = await prisma.agentRunEvent.findMany({ where: { runId, type: 'context_stats' }, orderBy: { seq: 'asc' }, select: { dataJson: true } });
-    stats.totals = contextTotals([...earlier.map(e => (JSON.parse(e.dataJson) as { contextStats: ContextStats }).contextStats), stats], cursor.summaryCalls);
-    await recordEvent(runId, token, { type: 'context_stats', contextStats: stats });
-  };
-  await publishStats();
+  const earlier = await prisma.agentRunEvent.findMany({ where: { runId, type: 'context_stats' }, orderBy: { seq: 'asc' }, select: { dataJson: true } });
+  const previousAttempts = earlier.map(event => (JSON.parse(event.dataJson) as { contextStats: ContextStats }).contextStats);
+  const stats = buildContextStats({ runId, round: cursor.round, attemptId: randomUUID(), messages, tools, fullTools: identityId === 'work' ? builtinToolDefinitions({ loadSkill: cursor.loadSkill }) : toolsForGroups(scopeGroupsFor(identityId, [...toolGroupNames]), cursor.loadSkill, identityId), loadedGroups: cursor.toolGroups ?? ['legacy-all'], summaryCalls: cursor.summaryCalls, contextWindow: await modelSettings.contextWindow(identityId), previousAttempts });
+  stats.totals = contextTotals([...previousAttempts, stats], cursor.summaryCalls);
+  await recordEvent(runId, token, { type: 'context_stats', contextStats: stats });
   const modelStarted = Date.now();
   const assistant = await prisma.message.create({ data: { conversationId: owned.conversationId, role: 'assistant', content: '', status: 'streaming', partsJson: JSON.stringify([{ type: 'assistant_citations', runId, sources: citationSources }]), createdAt: nowIso() } });
   const nextCursor = { ...cursor, assistantMessageId: assistant.id, offeredToolGroups: cursor.toolGroups };
@@ -444,9 +464,8 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
       }
       if (chunk.toolCalls) calls.push(...chunk.toolCalls);
       if (chunk.usage) {
-        stats.actual ??= {};
-        for (const key of ['inputTokens', 'cachedInputTokens', 'outputTokens'] as const) if (typeof chunk.usage[key] === 'number') stats.actual[key] = (stats.actual[key] ?? 0) + chunk.usage[key]!;
-        if (chunk.usage.model) stats.actual.model = chunk.usage.model;
+        const usage = mergeModelUsage(stats.actual, chunk.usage);
+        if (hasModelUsage(usage)) stats.actual = usage;
       }
     }
     await finishReasoning('completed');
@@ -469,7 +488,9 @@ async function modelTurn(runId: string, token: string, stream: ModelStream, cont
   } finally {
     stats.durationMs = Date.now() - modelStarted;
     stats.estimatedOutputTokens = textTokens(rawText) + (partialCalls.size ? textTokens(JSON.stringify([...partialCalls.values()])) : textTokens(JSON.stringify(calls)));
-    try { if (stats.actual) await addRunUsage(runId, token, stats.actual); await publishStats(); } catch (error) { if (!isLeaseLoss(error)) throw error; }
+    stats.phase = 'final';
+    stats.recordedAt = nowIso();
+    try { await recordFinalContextStats(runId, token, stats, cursor.summaryCalls ?? []); } catch (error) { if (!isLeaseLoss(error)) throw error; }
     clearTimeout(timer);
     if (activeModelControllers.get(runId) === controller) activeModelControllers.delete(runId);
   }

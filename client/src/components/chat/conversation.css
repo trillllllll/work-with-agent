@@ -105,6 +105,7 @@
 .dovun-assistant .assistant-input-box[data-tools='folded'] .composer-tools { grid-template-rows: 0fr; opacity: 0; }
 .dovun-assistant .assistant-input-box .composer-tools > div { overflow: hidden; min-height: 0; margin-top: 8px; gap: 3px; }
 .assistant-context-trigger { display: flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 7px; font-size: 11px; color: var(--muted-foreground); }
+.assistant-context-ring-trigger { width: 36px; height: 36px; padding: 2px; border-radius: 999px; }
 .assistant-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .assistant-attachment { display: flex; align-items: center; gap: 7px; min-width: 0; max-width: 100%; padding: 3px 6px 3px 10px; border: 1px solid var(--border); border-radius: 9px; font-size: 11px; }
 .assistant-usage-dialog { width: min(460px, calc(100vw - 32px)); }

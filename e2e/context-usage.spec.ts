@@ -21,6 +21,8 @@ test('real requests record context composition; floating controls work in both t
   await request.post(`${api}/api/tasks`, { data: { title: '整理产品资料，核对任务安排' } });
   await page.goto('/#/chat');
   const trigger = page.getByTestId('context-usage-trigger');
+  await expect(trigger.getByTestId('context-usage-ring')).not.toHaveAttribute('data-percent', /./);
+  await expect(trigger.getByTestId('context-usage-ring')).not.toContainText('%');
   await openUsage(page);
   await expect(page.getByTestId('context-usage-popover')).toContainText('发送前预估');
   await page.keyboard.press('Escape');
@@ -36,8 +38,17 @@ test('real requests record context composition; floating controls work in both t
   expect(snapshot.contextStats.categories.reduce((sum: number, c: any) => sum + c.tokens, 0)).toBe(snapshot.contextStats.estimatedInputTokens);
   expect(snapshot.contextStats.totals.requests).toBe(2);
   expect(snapshot.contextStats.totals.actualInputTokens).toBeNull();
+  expect(snapshot.contextStats.totals.usageReceipts).toBe(0);
+  expect(snapshot.contextStats.totals.toolActions).toBe(1);
+  expect(snapshot.contextStats.totals.firstToolResultTokens).toBeGreaterThan(0);
+  expect(snapshot.contextStats.categories.find((c: any) => c.id === 'toolResults').tokens).toBeGreaterThan(0);
   expect(snapshot.contextStats.tools.some((t: any) => t.name === 'propose_changes')).toBe(false);
   expect(snapshot.contextStats.baseline.toolTokens).toBeGreaterThan(snapshot.contextStats.categories.find((c: any) => c.id === 'tools').tokens * 2);
+  const contextRun = await e2eDatabase.agentRun.findFirstOrThrow({ where: { conversationId: conversationId! } });
+  const contextEvents = await e2eDatabase.agentRunEvent.findMany({ where: { runId: contextRun.id, type: 'context_stats' }, orderBy: { seq: 'asc' } });
+  expect(contextEvents).toHaveLength(4);
+  expect(new Set(contextEvents.map(event => JSON.parse(event.dataJson).contextStats.attemptId)).size).toBe(2);
+  expect(contextEvents.filter(event => JSON.parse(event.dataJson).contextStats.phase === 'final')).toHaveLength(2);
   await mkdir(evidence, { recursive: true });
   for (const theme of ['light', 'dark']) for (const width of [1586, 1280, 1024, 390]) {
     await page.setViewportSize({ width, height: 992 });
@@ -48,6 +59,8 @@ test('real requests record context composition; floating controls work in both t
     await expect(popup).toContainText('工具定义');
     await expect(popup).toContainText('未填写模型上下文上限');
     await expect(popup).toContainText('未返回');
+    await expect(popup).toContainText('0/2 次有回执');
+    await expect(popup).toContainText('工具动作');
     await expect(page.getByRole('dialog')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const bounds = (await popup.boundingBox())!;
@@ -74,6 +87,8 @@ test('real requests record context composition; floating controls work in both t
   expect({ messages: await e2eDatabase.message.count(), conversations: await e2eDatabase.conversation.count(), runs: await e2eDatabase.agentRun.count() }).toEqual(before);
   await page.reload();
   await page.getByRole('textbox', { name: '向 AI 提问' }).fill('下一条草稿');
+  await expect(trigger.getByTestId('context-usage-ring')).toHaveAttribute('data-percent', /./);
+  await expect(trigger.getByTestId('context-usage-ring')).toContainText('%');
   await openUsage(page);
   await expect(page.getByTestId('context-usage-total')).toContainText('/ 128,000');
   await page.keyboard.press('Escape');

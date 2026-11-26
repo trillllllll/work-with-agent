@@ -24,6 +24,9 @@ import { builtinToolDefinitions } from './agent/capabilities.js';
 import { approveAppChanges, readEnvelope, rejectAppChanges, repreviewApproval, undoPreview, type DecisionInput } from './agent/decision.js';
 import { activeRunView, followRun, resumeRun, runEvents, runView, scheduleRun, startChat, startRunScheduler, stopRun } from './agent/runs.js';
 import { approvalView } from './agent/views.js';
+import { mergeModelUsage, readOpenAIUsage, type ModelUsage, type ModelUsageFrame } from './agent/model-usage.js';
+
+export type { ModelUsage } from './agent/model-usage.js';
 
 export type PageContext = { topicId?: string | null; taskId?: string | null; page?: string | null };
 export type ChatEvent = {
@@ -73,23 +76,7 @@ function serializeToolCalls(calls: ToolCall[]) {
   return JSON.stringify(calls.map((call) => ({ id: call.id, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.arguments ?? {}) } })));
 }
 export type ModelToolDelta = { index: number; id: string; name: string; argumentsDelta: string };
-export type ModelUsage = { inputTokens?: number; cachedInputTokens?: number; outputTokens?: number; model?: string };
-export type ModelDelta = { reasoning?: string; text?: string; toolCalls?: ToolCall[]; toolDelta?: ModelToolDelta; usage?: ModelUsage };
-
-function readUsage(chunk: any, model: string): ModelUsage | undefined {
-  const usage = chunk?.usage;
-  if (!usage || typeof usage !== 'object') return undefined;
-  const input = usage.prompt_tokens ?? usage.input_tokens;
-  const output = usage.completion_tokens ?? usage.output_tokens;
-  const cached = usage.prompt_cache_hit_tokens ?? usage.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens;
-  if (typeof input !== 'number' && typeof output !== 'number' && typeof cached !== 'number') return undefined;
-  return {
-    ...(typeof input === 'number' ? { inputTokens: input } : {}),
-    ...(typeof output === 'number' ? { outputTokens: output } : {}),
-    ...(typeof cached === 'number' ? { cachedInputTokens: cached } : {}),
-    model,
-  };
-}
+export type ModelDelta = { reasoning?: string; text?: string; toolCalls?: ToolCall[]; toolDelta?: ModelToolDelta; usage?: ModelUsageFrame };
 export type ModelToolDefinition = { type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } };
 
 const modelError = (message: string, code = 'MODEL_ERROR') => Object.assign(new Error(message), { code });
@@ -169,7 +156,7 @@ export class ModelAdapter {
           const calls = emitToolCalls();
           if (calls.length) yield { toolCalls: calls };
         }
-        const usage = readUsage(chunk, config.model);
+        const usage = readOpenAIUsage(chunk, config.model);
         if (usage) yield { usage };
       }
     };
@@ -190,15 +177,14 @@ export class ModelAdapter {
   async complete(messages: ModelMessage[], signal?: AbortSignal, includeTools = false, tools?: ModelToolDefinition[], identityId?: string) {
     let text = '';
     const toolCalls: ToolCall[] = [];
-    const usage: ModelUsage = {};
+    let usage: ModelUsage = {};
     let sawUsage = false;
     for await (const delta of this.stream(messages, signal, includeTools, tools, identityId)) {
       text += delta.text ?? '';
       if (delta.toolCalls) toolCalls.push(...delta.toolCalls);
       if (delta.usage) {
         sawUsage = true;
-        for (const key of ['inputTokens', 'cachedInputTokens', 'outputTokens'] as const) if (typeof delta.usage[key] === 'number') usage[key] = (usage[key] ?? 0) + delta.usage[key]!;
-        if (delta.usage.model) usage.model = delta.usage.model;
+        usage = mergeModelUsage(usage, delta.usage);
       }
     }
     return { text, toolCalls, ...(sawUsage ? { usage } : {}) };
