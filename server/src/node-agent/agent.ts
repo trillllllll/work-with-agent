@@ -17,7 +17,7 @@ import { opencodeAvailable } from './harness-opencode-client.js';
 import { zcodeAvailable } from './harness-zcode-client.js';
 import { grokHarnessAvailable } from './harness-runtimes.js';
 import {
-  HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_DSH_FEATURE, HARNESS_FEATURE, HARNESS_LARGE_IMAGES_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_LIBRARY_LEASES, HARNESS_LIBRARY_READS, HARNESS_ORGANIZATION_FEATURE, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE,
+  HARNESS_ADAPTERS_FEATURE, HARNESS_ADVANCED_PERMISSIONS_FEATURE, HARNESS_DSH_FEATURE, HARNESS_FEATURE, HARNESS_LARGE_IMAGES_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_LIBRARY_LEASES, HARNESS_LIBRARY_READS, HARNESS_ORGANIZATION_FEATURE, HARNESS_PERMISSIONS_FEATURE, HARNESS_SETTINGS_FEATURE, HARNESS_TIMELINE_FEATURE, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE,
   harnessLeaseSchema, harnessLibraryLeaseSchema, harnessReadTaskSchema, type HarnessKind, type HarnessLease, type HarnessReadTask,
   HARNESS_MESSAGE_ORIGIN_FEATURE, HARNESS_ZCODE_CREATE_FEATURE, withoutHarnessMessageOrigins, withoutHarnessSyncMessageOrigins,
 } from './harness-protocol.js';
@@ -123,6 +123,7 @@ export class NodeAgent {
             'X-Dovun-Harness-ZCode-Live': HARNESS_ZCODE_LIVE_FEATURE,
             'X-Dovun-Harness-ZCode-Create': HARNESS_ZCODE_CREATE_FEATURE,
             'X-Dovun-Harness-DSH': HARNESS_DSH_FEATURE,
+            'X-Dovun-Harness-Adapters': HARNESS_ADAPTERS_FEATURE,
             'X-Dovun-Harness-Wake': this.harnessWakeCursor ?? 'initial',
             ...(harnessWaitMs > 0 ? { 'X-Dovun-Harness-Wait-Ms': String(harnessWaitMs) } : {}) } : {}),
         },
@@ -154,6 +155,7 @@ export class NodeAgent {
         this.serverAccepts.delete(HARNESS_ZCODE_LIVE_FEATURE);
         this.serverAccepts.delete(HARNESS_ZCODE_CREATE_FEATURE);
         this.serverAccepts.delete(HARNESS_DSH_FEATURE);
+        this.serverAccepts.delete(HARNESS_ADAPTERS_FEATURE);
       }
       const error = Object.assign(new Error(`服务端返回 ${response.status} ${code ?? ''}`), { status: response.status, code });
       this.rememberError(error);
@@ -183,12 +185,14 @@ export class NodeAgent {
       if (major > 2 || major === 2 && (minor > 1 || minor === 1 && patch >= 328)) installed.push('claude');
     }
     if (workspace && await (this.zcode ??= zcodeAvailable())) installed.push('zcode');
-    if (workspace && await (this.opencode ??= opencodeAvailable())) installed.push('opencode');
-    if (workspace) this.grok ??= grokHarnessAvailable().then((probe) => probe !== null);
-    if (workspace && await this.grok) installed.push('grok');
-    // Reported only after the server accepted the DSH feature, because a server that rejects the kind fails the whole lease.
-    // Probing starts the DeepSeek Harness app and takes about a second, so it runs beside leasing and reports on a later lease.
-    if (workspace && this.serverAccepts.has(HARNESS_DSH_FEATURE)) {
+    // 0.6.19 understood all three kinds but only acknowledged the DSH header.
+    // Earlier relays reject the whole heartbeat if any of these kinds are present.
+    const extendedKinds = this.serverAccepts.has(HARNESS_ADAPTERS_FEATURE) || this.serverAccepts.has(HARNESS_DSH_FEATURE);
+    if (workspace && extendedKinds) {
+      if (await (this.opencode ??= opencodeAvailable())) installed.push('opencode');
+      this.grok ??= grokHarnessAvailable().then((probe) => probe !== null);
+      if (await this.grok) installed.push('grok');
+      // Probing launches DeepSeek Harness, so report it on a later heartbeat.
       this.dsh ??= dshAvailable().then((available) => { this.dshInstalled = available; });
       if (this.dshInstalled) installed.push('dsh');
     }
@@ -302,7 +306,7 @@ export class NodeAgent {
     void controller.consume(lease, this.serverAccepts.has(HARNESS_TIMELINE_FEATURE),
       this.serverAccepts.has(HARNESS_SETTINGS_FEATURE) && (!zcode || this.serverAccepts.has(HARNESS_ZCODE_LIVE_FEATURE)),
       !zcode && library && this.serverAccepts.has(HARNESS_WORKSPACE_FEATURE), this.serverAccepts.has(HARNESS_PERMISSIONS_FEATURE),
-      this.serverAccepts.has(HARNESS_ADVANCED_PERMISSIONS_FEATURE))
+      this.serverAccepts.has(HARNESS_ADVANCED_PERMISSIONS_FEATURE), this.serverAccepts.has(HARNESS_ADAPTERS_FEATURE))
       ?.catch((error) => this.rememberError(error));
   }
   private async answerHarnessRead(task: HarnessReadTask) {

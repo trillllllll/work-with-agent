@@ -106,7 +106,11 @@ export async function listGrokThreads(roots: string[], cursor: string | null, cw
   return { data, nextCursor: last && offset + page.length < candidates.length ? `${last.at}:${last.id}` : null };
 }
 
-type TurnRow = { id: string; status: 'completed' | 'interrupted'; items: Array<Record<string, unknown>> };
+export function grokTurnStatus(reason: string) {
+  return reason === 'end_turn' ? 'completed' : reason === 'cancelled' ? 'interrupted' : 'failed';
+}
+
+type TurnRow = { id: string; status: ReturnType<typeof grokTurnStatus>; items: Array<Record<string, unknown>> };
 
 /** Tool state accumulated across a tool call's `tool_call` / `tool_call_update` rows. */
 export type GrokToolState = {
@@ -203,6 +207,8 @@ export async function readGrokTurns(id: string, cwd: string, cursor: string | nu
 
   const turns: TurnRow[] = [];
   let current: TurnRow | undefined;
+  let currentPrompt = '';
+  let turnNumber = 0;
   let tools = new Map<string, GrokToolState>();
   let messageRun: { id: string; text: string; thought: boolean } | undefined;
   let foundCursor = !cursor;
@@ -221,18 +227,21 @@ export async function readGrokTurns(id: string, cwd: string, cursor: string | nu
     for await (const line of rows) {
       let row: Record<string, unknown>;
       try { row = asObject(JSON.parse(line)); } catch { continue; }
-      if (row.method !== 'session/update') continue;
+      if (row.method !== 'session/update' && row.method !== '_x.ai/session/update') continue;
       const params = asObject(row.params);
       if (params.sessionId !== id) continue;
       const update = asObject(params.update);
       const kind = update.sessionUpdate;
+      if (row.method === '_x.ai/session/update' && kind !== 'turn_completed') continue;
       const meta = asObject(update._meta);
       const promptId = text(meta.promptId);
       if (kind === 'user_message_chunk') {
         closeRun(true);
         const body = text(asObject(update.content).text).trim();
         if (!body) continue;
-        const turnId = promptId || `grok-turn-${turns.length + 1}`;
+        currentPrompt = promptId;
+        turnNumber++;
+        const turnId = promptId || `grok-turn-${turnNumber}`;
         if (turnId === cursor) { foundCursor = true; break; }
         current = { id: turnId, status: 'interrupted', items: [
           { id: turnId + ':user', type: 'userMessage', content: [{ type: 'text', text: body.slice(0, HARNESS_TEXT_LIMIT) }] },
@@ -242,6 +251,15 @@ export async function readGrokTurns(id: string, cwd: string, cursor: string | nu
         if (turns.length > limit + 1) turns.shift();
       } else if (!current) {
         continue;
+      } else if (kind === 'turn_completed') {
+        const finishedPrompt = text(update.prompt_id) || promptId;
+        const reason = text(update.stop_reason);
+        // Some native logs only supply the prompt id on their terminal row.
+        if (reason && (!finishedPrompt || !currentPrompt || finishedPrompt === currentPrompt)) {
+          current.status = grokTurnStatus(reason);
+          closeRun(current.status === 'completed');
+          current = undefined;
+        }
       } else if (kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') {
         const chunk = text(asObject(update.content).text);
         if (!chunk) continue;
@@ -272,9 +290,6 @@ export async function readGrokTurns(id: string, cwd: string, cursor: string | nu
   }
   closeRun(true);
   if (!foundCursor) throw new CodexRejected('历史页已变化，请从最新一页重新读取');
-  for (const turn of turns) {
-    if (turn.items.some((item) => item.type === 'agentMessage')) turn.status = 'completed';
-  }
   const data = turns.reverse().slice(0, limit);
   return { data, nextCursor: turns.length > limit ? data.at(-1)?.id ?? null : null };
 }

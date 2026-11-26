@@ -14,6 +14,8 @@ export const HARNESS_ORGANIZATION_FEATURE = 'harness_organization_v1';
 export const HARNESS_MESSAGE_ORIGIN_FEATURE = 'harness_message_origin_v1';
 /** Negotiated before the executor reports the `dsh` kind, so older servers never parse a kind they reject. */
 export const HARNESS_DSH_FEATURE = 'harness_dsh_v1';
+/** The relay accepts the extended kind list and OpenCode's native approval options. */
+export const HARNESS_ADAPTERS_FEATURE = 'harness_adapters_v2';
 export const HARNESS_MODELS = 500;
 export const HARNESS_LIBRARY_LEASES = 12;
 export const HARNESS_LIBRARY_READS = 6;

@@ -14,7 +14,8 @@ import { readDshSettings } from './harness-settings.js';
 vi.setConfig({ testTimeout: 15_000 });
 
 const stub = fileURLToPath(new URL('../../test/stub-dsh-acp.mjs', import.meta.url));
-const knobs = ['HARNESS_TEST_DSH_LOCKED', 'HARNESS_TEST_DSH_ASK', 'HARNESS_TEST_DSH_HOLD', 'HARNESS_TEST_DSH_NO_BRIDGE'];
+const knobs = ['HARNESS_TEST_DSH_LOCKED', 'HARNESS_TEST_DSH_ASK', 'HARNESS_TEST_DSH_HOLD', 'HARNESS_TEST_DSH_NO_BRIDGE',
+  'HARNESS_TEST_DSH_COMMIT_ORDER'];
 const model = '["stub","stub-model"]';
 
 type Recorded = { method: string; params: Record<string, unknown>; id?: number | string };
@@ -75,8 +76,8 @@ afterEach(async () => {
   directory = '';
 });
 
-it('starts a session, streams the answer through the bridge and completes the turn', async () => {
-  await start();
+it.each(['bridge-first', 'acp-first', 'acp-only-commit'])('streams and commits one answer with %s delivery', async (order) => {
+  await start({ HARNESS_TEST_DSH_COMMIT_ORDER: order });
   const app = runtime();
   const begun = await app.request('thread/start', { cwd });
   const threadId = (begun.thread as Record<string, unknown>).id as string;

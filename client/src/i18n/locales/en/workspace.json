@@ -448,6 +448,7 @@
       "forkProvider": "Branch with history and switch",
       "title": "Session settings",
       "nextTurn": "Settings apply to the next turn in this session.",
+      "openCodePermissions": "Model and work mode apply to the next turn. Tool permissions follow the OpenCode project rules on your Mac.",
       "zcodeLive": "Settings sync to this ZCode conversation on your Mac.",
       "model": "Model",
       "search": "Search models",

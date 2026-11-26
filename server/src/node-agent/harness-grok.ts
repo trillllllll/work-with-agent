@@ -8,7 +8,7 @@ import { providerEnvironment } from '../runner/environment.js';
 import { runtimeEnv } from '../shared/runtime-env.js';
 import { asObject, CodexRejected, type HarnessNotification, type HarnessRuntime } from './harness-codex.js';
 import { codexItems as items, codexText as text } from './harness-history.js';
-import { grokSessionExists, grokToolCategory, grokToolFeed, grokToolItem, readGrokThread, readGrokTurns, type GrokToolState } from './harness-grok-library.js';
+import { grokSessionExists, grokToolCategory, grokToolFeed, grokToolItem, grokTurnStatus, readGrokThread, readGrokTurns, type GrokToolState } from './harness-grok-library.js';
 import { HARNESS_TEXT_LIMIT, grokPermissionMode } from './harness-protocol.js';
 
 const exec = promisify(execFile);
@@ -397,12 +397,9 @@ export class GrokAgentRuntime implements HarnessRuntime {
     this.pending.set(id, {
       resolve: (result) => {
         clearTimeout(timer);
-        this.closeMessageRun(text(result.stopReason) === 'end_turn');
-        const stop = text(result.stopReason);
-        const turn = stop === 'end_turn'
-          ? { id: turnId, status: 'completed' as const }
-          : stop === 'cancelled' ? { id: turnId, status: 'interrupted' as const }
-            : { id: turnId, status: 'failed' as const, error: `${GROK} 当前轮执行失败` };
+        const status = grokTurnStatus(text(result.stopReason));
+        this.closeMessageRun(status === 'completed');
+        const turn = { id: turnId, status, ...(status === 'failed' ? { error: `${GROK} 当前轮执行失败` } : {}) };
         this.turn = null;
         this.lastTurnId = turnId;
         this.emit('turn/completed', { turn });

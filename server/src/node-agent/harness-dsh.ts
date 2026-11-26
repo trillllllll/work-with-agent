@@ -23,7 +23,7 @@ export class DshHarnessRuntime implements HarnessRuntime {
   private bridge: DshBridge | null = null;
   private closing = false;
   private threadId = '';
-  private turn: { id: string; cancelled: boolean } | null = null;
+  private turn: { id: string; cancelled: boolean; bridged: boolean } | null = null;
   private config: Frame[] = [];
   private catalog: Frame[] | null = null;
   private image = false;
@@ -33,6 +33,7 @@ export class DshHarnessRuntime implements HarnessRuntime {
   private attempts = 0;
   private settled = new Set<string>();
   private plain = new Map<string, string>();
+  private pendingText = new Map<string, { texts: string[]; commentary: boolean }>();
 
   constructor(private readonly cwd: string, private readonly notify: HarnessNotification, private readonly onExit: () => void,
     private readonly advanced: () => boolean = () => false) {}
@@ -184,16 +185,30 @@ export class DshHarnessRuntime implements HarnessRuntime {
     const text = inputs.filter((part) => part.type === 'text').map((part) => codexText(part.text)).join('\n');
     // The prompt request settles when the turn ends, so it is observed apart from the start result.
     const settled = acp.request('session/prompt', { sessionId: this.threadId, prompt: [{ type: 'text', text }, ...images] }, 0);
-    this.turn = { id, cancelled: false };
+    this.turn = { id, cancelled: false, bridged: this.bridgeReady };
     this.emit('turn/started', { turn: { id, status: 'inProgress' } });
     this.emit('item/completed', { turnId: id, item: { id, clientId: id, type: 'userMessage', content: inputs.filter((part) => part.type === 'text') } });
     void settled.then((result) => this.finish(codexText(result.stopReason)), (error: Error) => this.finish('', error));
     return { turn: { id, status: 'inProgress' } };
   }
 
-  private finish(stopReason: string, error?: Error) {
+  private async finish(stopReason: string, error?: Error) {
     const turn = this.turn;
     if (!turn) return;
+    // The plugin queues its commits on an independent socket. Its next reply comes after those commits.
+    if (this.pendingText.size || this.stream) await this.bridge?.call('ping', {}, 1_000);
+    const last = [...this.pendingText.keys()].at(-1);
+    for (const [messageId, { texts, commentary }] of this.pendingText) {
+      this.settled.add(messageId);
+      for (const [index, text] of texts.entries()) {
+        const block = messageId === last && [...this.stream?.blocks.entries() ?? []]
+          .find(([, value]) => text.startsWith(value.text));
+        if (block) this.stream?.blocks.delete(block[0]);
+        this.emit('item/completed', { turnId: turn.id, item: { id: block ? block[1].id : `${messageId}#${index}`, type: 'agentMessage',
+          text, phase: commentary ? 'commentary' : 'final_answer' } });
+      }
+    }
+    this.pendingText.clear();
     // Streamed text that never committed is kept as commentary so no placeholder stays open.
     this.closeStream();
     this.turn = null;
@@ -215,7 +230,7 @@ export class DshHarnessRuntime implements HarnessRuntime {
 
   private onBridge(event: string, params: Frame) {
     const turn = this.turn;
-    if (!turn || params.sessionId !== this.threadId) return;
+    if (!turn?.bridged || params.sessionId !== this.threadId) return;
     if (event === 'stream-start') {
       this.closeStream();
       this.stream = { attempt: ++this.attempts, open: true, blocks: new Map() };
@@ -233,6 +248,8 @@ export class DshHarnessRuntime implements HarnessRuntime {
       this.emit('item/agentMessage/delta', { turnId: turn.id, itemId: block.id, delta });
     } else if (event === 'message') {
       const messageId = codexText(params.messageId);
+      if (this.settled.has(messageId)) return;
+      this.pendingText.delete(messageId);
       if (messageId) this.settled.add(messageId);
       for (const { index, text } of codexItems(params.texts)) {
         const streamed = this.stream?.blocks.get(Number(index));
@@ -256,11 +273,18 @@ export class DshHarnessRuntime implements HarnessRuntime {
     const turn = this.turn;
     switch (update.sessionUpdate) {
       case 'agent_message_chunk': {
-        if (!turn || this.settled.has(codexText(update.messageId))) return;
+        const messageId = codexText(update.messageId);
+        if (!turn || this.settled.has(messageId)) return;
         const content = asObject(update.content);
         if (content.type !== 'text') return;
-        const itemId = `${codexText(update.messageId)}#${this.plain.size}`;
         const text = codexText(content.text).slice(0, 24_000);
+        if (turn.bridged && messageId) {
+          const pending = this.pendingText.get(messageId) ?? { texts: [], commentary: false };
+          pending.texts.push(text);
+          this.pendingText.set(messageId, pending);
+          return;
+        }
+        const itemId = `${messageId}#${this.plain.size}`;
         this.plain.set(itemId, text);
         this.emit('item/completed', { turnId: turn.id, item: { id: itemId, type: 'agentMessage', text, phase: 'final_answer' } });
         return;
@@ -268,6 +292,7 @@ export class DshHarnessRuntime implements HarnessRuntime {
       case 'tool_call': {
         if (!turn) return;
         // Text that precedes a tool call in the same step is commentary rather than the answer.
+        for (const pending of this.pendingText.values()) pending.commentary = true;
         for (const [itemId, text] of this.plain) {
           this.emit('item/completed', { turnId: turn.id, item: { id: itemId, type: 'agentMessage', text, phase: 'commentary' } });
         }

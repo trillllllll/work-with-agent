@@ -36,6 +36,7 @@ export function HarnessSettings({ settings, harness, disabled, saving, error, on
   const effortName = (id: string) => t('harness.settings.efforts.' + id, { defaultValue: id });
   const claude = harness === 'claude';
   const grok = harness === 'grok';
+  const opencode = harness === 'opencode';
   const permissionModes = settings.permissionModes;
   const sandboxChoices = settings.sandboxChoices ?? (['readOnly', 'workspace'] as const);
   const readOnly = settings.permission === 'readOnly' || settings.mode === 'plan';
@@ -65,7 +66,8 @@ export function HarnessSettings({ settings, harness, disabled, saving, error, on
     <DialogContent className="flex max-h-[85dvh] flex-col overflow-hidden">
       <DialogHeader>
         <DialogTitle>{t('harness.settings.title')}</DialogTitle>
-        <DialogDescription>{t(zcode ? 'harness.settings.zcodeLive' : 'harness.settings.nextTurn')}</DialogDescription>
+        <DialogDescription>{t(zcode ? 'harness.settings.zcodeLive'
+          : opencode ? 'harness.settings.openCodePermissions' : 'harness.settings.nextTurn')}</DialogDescription>
       </DialogHeader>
       <div className="glass-scrollbar min-h-0 space-y-4 overflow-y-auto">
         {unavailable && <p role="status" className="text-sm text-muted-foreground">
@@ -108,7 +110,7 @@ export function HarnessSettings({ settings, harness, disabled, saving, error, on
             {t('harness.settings.permissionModeUnavailable', { mode: modeLabel(settings.permissionMode) })}
           </p>}
         </div> : null}
-        {!zcode && !claude && !grok && sandboxChoices.length > 0 && <ChoiceList
+        {!zcode && !claude && !grok && !opencode && sandboxChoices.length > 0 && <ChoiceList
           label={t(settings.sandboxChoices ? 'harness.settings.sandbox' : 'harness.settings.permission')} value={settings.permission}
           options={sandboxChoices.filter((id) => id !== 'fullAccess' || mode !== 'plan').map((id) => ({ id, ...sandboxOptions[id] }))}
           onChange={(id) => {
@@ -116,7 +118,7 @@ export function HarnessSettings({ settings, harness, disabled, saving, error, on
             if (permission === 'fullAccess') chooseFullAccess({ permission });
             else if (permission) onChange({ permission });
           }} disabled={disabled} />}
-        {settings.approvalPolicies?.length ? <div className="space-y-1.5">
+        {!opencode && settings.approvalPolicies?.length ? <div className="space-y-1.5">
           <ChoiceList label={t('harness.settings.approvalPolicy')} value={fixedApprovalPolicy ? 'never' : settings.approvalPolicy ?? 'on-request'}
             options={settings.approvalPolicies.map((id) => ({ id, label: t('harness.settings.approvalPolicies.' + id + '.label'),
               description: t('harness.settings.approvalPolicies.' + id + '.description') }))}

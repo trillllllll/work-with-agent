@@ -14,6 +14,15 @@ import { e2eDatabase, resetE2eDatabase } from './database.js';
 const listUrl = '/#/runs?tab=sessions';
 const apiUrl = '/api/v1/harness-sessions';
 
+function harnessFixtureEnvironment(root: string) {
+  const missing = join(root, 'uninstalled-harness');
+  return {
+    ...process.env,
+    DOVUN_CODEX_BIN: missing, DOVUN_CLAUDE_BIN: missing, DOVUN_ZCODE_BIN: missing,
+    OPENCODE_BIN: missing, DOVUN_GROK_BIN: missing, DOVUN_DSH_BIN: missing,
+  };
+}
+
 async function data<T>(response: APIResponse): Promise<T> {
   expect(response.ok(), await response.text()).toBe(true);
   return (await response.json()).data as T;
@@ -85,7 +94,7 @@ test('opens a project ZCode history on a phone and continues its original sessio
     nodeId = node.node.id;
     agent = spawn(process.execPath, ['--import', 'tsx', resolve('server/src/node-agent/index.ts'), '--server', process.env.E2E_API_URL!,
       '--roots', root, '--data', join(root, 'node')], { stdio: 'ignore', env: {
-      ...process.env, DOVUN_NODE_TOKEN: node.token, DOVUN_CODEX_BIN: resolve('server/test/stub-harness-codex.mjs'),
+      ...harnessFixtureEnvironment(root), DOVUN_NODE_TOKEN: node.token, DOVUN_CODEX_BIN: resolve('server/test/stub-harness-codex.mjs'),
       DOVUN_ZCODE_BIN: resolve('server/test/stub-harness-zcode.mjs'), ZCODE_SESSION_DB_PATH: state, HARNESS_TEST_ZCODE_STORE: store,
       HARNESS_TEST_ZCODE_TOOL_FINISH: finishTool, ZCODE_DATA_BASE_DIR: root,
     } });
@@ -232,18 +241,23 @@ test('opens a project OpenCode history on a phone and continues its original ses
         { id: 'idle-original', type: 'idle', outcome: 'succeeded', time: { created: 2 } },
       ] }] }));
     service = spawn(process.execPath, [resolve('server/test/stub-opencode-service.mjs'), '--port=0'], {
-      env: { ...process.env, HARNESS_TEST_OPENCODE_STORE: store }, stdio: ['ignore', 'pipe', 'inherit'] });
+      env: { ...process.env, HARNESS_TEST_OPENCODE_STORE: store, HARNESS_TEST_OPENCODE_ASK: '1' }, stdio: ['ignore', 'pipe', 'inherit'] });
     const port = await new Promise<number>((resolve) => {
       service!.stdout!.on('data', (chunk) => {
         const match = /"port":(\d+)/.exec(String(chunk));
         if (match) resolve(Number(match[1]));
       });
     });
+    const startedOnMac = await fetch(`http://127.0.0.1:${port}/api/session/${threadId}/prompt`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: 'msg_native-running', text: 'Mac 已经发出的问题' }),
+    });
+    expect(startedOnMac.ok).toBe(true);
     const node = await data<{ node: { id: string }; token: string }>(await request.post('/api/nodes', { data: { name: 'OpenCode 测试 Mac' } }));
     nodeId = node.node.id;
     agent = spawn(process.execPath, ['--import', 'tsx', resolve('server/src/node-agent/index.ts'), '--server', process.env.E2E_API_URL!,
       '--roots', root, '--data', join(root, 'node')], { stdio: 'ignore', env: {
-      ...process.env, DOVUN_NODE_TOKEN: node.token,
+      ...harnessFixtureEnvironment(root), DOVUN_NODE_TOKEN: node.token,
       OPENCODE_SERVICE_URL: `http://127.0.0.1:${port}`, OPENCODE_BIN: resolve('server/test/stub-opencode-service.mjs'),
     } });
     const phone = await context.newPage();
@@ -255,10 +269,21 @@ test('opens a project OpenCode history on a phone and continues its original ses
     const chat = phone.getByRole('region', { name: '会话详情' });
     await expect(chat.locator('header [role=status]')).toHaveText('已连接', { timeout: 15_000 });
     await expect(chat.getByText('原 OpenCode 历史回复', { exact: true })).toBeVisible();
+    await expect(chat.getByText('Mac 已经发出的问题', { exact: true })).toBeVisible();
+    const projectAllow = chat.getByRole('button', { name: '本项目内允许匹配操作', exact: true });
+    await expect(projectAllow).toBeVisible();
+    await expect(chat.getByRole('button', { name: '本会话内允许', exact: true })).toHaveCount(0);
+    await chat.getByRole('button', { name: '会话设置' }).tap();
+    const settings = phone.getByRole('dialog', { name: '会话设置' });
+    await expect(settings.getByText(/工具权限由 Mac 上的 OpenCode 项目规则决定/)).toBeVisible();
+    await expect(settings.getByText('只读', { exact: true })).toHaveCount(0);
+    await phone.keyboard.press('Escape');
+    await expect(settings).toBeHidden();
     const composer = chat.getByRole('textbox', { name: '输入消息' });
-    await expect(composer).toHaveAttribute('placeholder', '发消息给 OpenCode');
     await composer.fill('从手机接着聊');
-    await chat.getByRole('button', { name: '发送', exact: true }).tap();
+    await chat.getByRole('button', { name: '排到下一轮', exact: true }).tap();
+    await expect(chat.getByText('从手机接着聊', { exact: true }).first()).toBeVisible();
+    await projectAllow.tap();
     await expect(chat.getByText('OpenCode stub 记得 从手机接着聊', { exact: true })).toBeVisible({ timeout: 12_000 });
     await expect(chat.getByText('从手机接着聊', { exact: true })).toHaveCount(1);
     const id = new URLSearchParams(new URL(phone.url()).hash.split('?')[1]).get('sessionId');
@@ -317,7 +342,7 @@ test('opens a project DSH history on a phone and continues its original session'
     nodeId = node.node.id;
     agent = spawn(process.execPath, ['--import', 'tsx', resolve('server/src/node-agent/index.ts'), '--server', process.env.E2E_API_URL!,
       '--roots', root, '--data', join(root, 'node')], { stdio: 'ignore', env: {
-      ...process.env, DOVUN_NODE_TOKEN: node.token,
+      ...harnessFixtureEnvironment(root), DOVUN_NODE_TOKEN: node.token,
       DOVUN_DSH_BIN: resolve('server/test/stub-dsh-acp.mjs'), DSH_HOME: home, HARNESS_TEST_DSH_STORE: join(root, 'dsh-store.json'),
     } });
     const phone = await context.newPage();
@@ -399,9 +424,8 @@ test('desktop and phone open and control the same Harness session', async ({ bro
     agent = spawn(process.execPath, ['--import', 'tsx', resolve('server/src/node-agent/index.ts'), '--data', nodeDir], {
       stdio: 'ignore',
       env: {
-        ...process.env, DOVUN_NODE_MANAGED: 'desktop',
+        ...harnessFixtureEnvironment(folder), DOVUN_NODE_MANAGED: 'desktop',
         DOVUN_CODEX_BIN: resolve('server/test/stub-harness-codex.mjs'),
-        DOVUN_CLAUDE_BIN: join(folder, 'missing-claude'),
         HARNESS_TEST_CALLS: join(folder, 'calls'), HARNESS_TEST_HISTORY: join(folder, 'history.json'),
       },
     });
@@ -668,7 +692,7 @@ test('opens saved Codex history and keeps multiple chats in the same project ind
     nodeId = node.node.id;
     const startAgent = () => spawn(process.execPath, ['--import', 'tsx', resolve('server/src/node-agent/index.ts'), '--server', process.env.E2E_API_URL!,
       '--roots', root, '--data', join(root, 'node')], { stdio: 'ignore', env: {
-      ...process.env, CODEX_HOME: join(root, 'codex-home'), DOVUN_NODE_TOKEN: node.token, DOVUN_CODEX_BIN: resolve('server/test/stub-harness-codex.mjs'),
+      ...harnessFixtureEnvironment(root), CODEX_HOME: join(root, 'codex-home'), DOVUN_NODE_TOKEN: node.token, DOVUN_CODEX_BIN: resolve('server/test/stub-harness-codex.mjs'),
       DOVUN_CLAUDE_BIN: resolve('server/test/stub-harness-claude.mjs'), CLAUDE_CONFIG_DIR: join(root, 'claude-home'),
       HARNESS_TEST_LIBRARY: library, HARNESS_TEST_CALLS: join(root, 'calls'), HARNESS_TEST_HISTORY: join(root, 'unused.json'),
       HARNESS_TEST_TURNS: join(root, 'turns'),
@@ -929,8 +953,8 @@ test('compresses a long phone screenshot with readable text and restores image d
       { data: { nodeId, path: folder } }));
     agent = spawn(process.execPath, ['--import', 'tsx', resolve('server/src/node-agent/index.ts'), '--server', process.env.E2E_API_URL!,
       '--roots', folder, '--data', join(folder, 'node')], { stdio: 'ignore', env: {
-      ...process.env, DOVUN_NODE_TOKEN: node.token, DOVUN_CODEX_BIN: resolve('server/test/stub-harness-codex.mjs'),
-      DOVUN_CLAUDE_BIN: resolve('server/test/stub-harness-claude.mjs'), DOVUN_ZCODE_BIN: join(folder, 'missing-zcode'),
+      ...harnessFixtureEnvironment(folder), DOVUN_NODE_TOKEN: node.token, DOVUN_CODEX_BIN: resolve('server/test/stub-harness-codex.mjs'),
+      DOVUN_CLAUDE_BIN: resolve('server/test/stub-harness-claude.mjs'),
       CLAUDE_CONFIG_DIR: join(folder, 'claude'),
     } });
     await expect.poll(async () => {

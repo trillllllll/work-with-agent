@@ -848,8 +848,7 @@ function HarnessDetail({ id, summary, harness, back, chooseProject, openSession 
   const provider = harnessKind.safeParse(detail.data?.harness ?? summary?.harness).data ?? harnessKind.safeParse(harness.id).data;
   const name = provider ? harnessNames[provider] : harness.name;
   const zcode = provider === 'zcode';
-  // Claude Code and DSH take no steer, so a message sent during a running turn joins Dovun's queue instead.
-  const queued = provider === 'claude' || provider === 'dsh';
+  const queued = provider !== undefined && provider !== 'codex' && !zcode;
   const sendLabel = inProgress && !zcode ? queued ? 'harness.queue.enqueue' : 'harness.steer' : 'harness.send';
   const projectName = session?.projectName;
   const nodeName = session?.nodeName ?? t('harness.unknownComputer');
@@ -872,7 +871,8 @@ function HarnessDetail({ id, summary, harness, back, chooseProject, openSession 
           variant={scope === 'once' || scope === 'approvePlan' ? 'default' : 'outline'} disabled={actionsDisabled}
           onClick={() => act({ operation: 'choosePermission', requestId: request.id, optionId: id })}>
           {t(approvalLabels[scope])}
-        </Button>) : (request.decisions ?? (request.canAccept ? ['decline', 'accept'] as const : ['decline'] as const)).map((decision) => <Button
+        </Button>) : (request.decisions ?? (request.canAccept ? ['decline', 'accept'] as const : ['decline'] as const))
+          .filter((decision) => provider !== 'opencode' || decision !== 'acceptForSession').map((decision) => <Button
           key={decision} type="button" className="min-h-11" variant={decision === 'accept' ? 'default' : 'outline'} disabled={actionsDisabled}
           onClick={() => act({ operation: 'resolveApproval', requestId: request.id, decision })}>
           {t(decision === 'accept' ? 'harness.allow' : decision === 'decline' ? 'harness.decline'

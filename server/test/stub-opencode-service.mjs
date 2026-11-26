@@ -16,6 +16,9 @@ const portArg = process.argv.find((argument) => argument.startsWith('--port='));
 const port = Number(portArg?.slice('--port='.length) ?? 0);
 const subscribers = new Set();
 const waiting = new Map(); // permission id -> resolve(decision)
+const pendingPermissions = new Map();
+const approvedProjects = new Set();
+let dropPromptResponse = process.env.HARNESS_TEST_OPENCODE_DROP === '1';
 
 const emit = (event) => {
   const frame = `data: ${JSON.stringify({ id: 'evt_' + randomUUID(), ...event })}\n\n`;
@@ -49,11 +52,17 @@ async function run(sessionId, text) {
   emit({ type: 'session.text.delta', data: { sessionID: sessionId, assistantMessageID: assistant, ordinal: 0,
     delta: 'OpenCode stub 记得 ' + text } });
   const content = [{ type: 'text', text: 'OpenCode stub 记得 ' + text }];
-  if (process.env.HARNESS_TEST_OPENCODE_ASK) {
+  const project = read().sessions.find((row) => row.id === sessionId)?.location.directory;
+  if (process.env.HARNESS_TEST_OPENCODE_ASK && !approvedProjects.has(project)) {
     const permission = 'per_' + randomUUID().slice(0, 8);
-    emit({ type: 'permission.asked', data: { id: permission, sessionID: sessionId, action: 'shell',
-      resources: ['printf hello'], save: ['*'], source: { type: 'tool', messageID: assistant, id: 'call_shell' } } });
+    const request = { id: permission, sessionID: sessionId, action: 'shell', resources: ['printf hello'],
+      save: ['printf hello'], source: { type: 'tool', messageID: assistant, id: 'call_shell' } };
+    pendingPermissions.set(permission, request);
+    emit({ type: 'permission.asked', data: request });
     const decision = await new Promise((resolve) => waiting.set(permission, resolve));
+    pendingPermissions.delete(permission);
+    if (!isRunning(sessionId)) return;
+    if (decision === 'always') approvedProjects.add(project);
     const call = 'call_' + randomUUID().slice(0, 8);
     emit({ type: 'session.tool.called', data: { sessionID: sessionId, assistantMessageID: assistant,
       id: call, name: 'shell', input: { command: 'printf hello' } } });
@@ -164,6 +173,10 @@ const server = createServer(async (request, response) => {
     }
     emit({ type: 'session.inbox.enqueued', data: { sessionID: row.id, inboxID: body.id } });
     void run(row.id, body.text);
+    if (dropPromptResponse) {
+      dropPromptResponse = false;
+      return response.destroy();
+    }
     return send(200, { data: { id: body.id, sessionID: row.id, time: { created: Date.now() },
       type: 'user', payload: { text: body.text }, delivery: isRunning(row.id) ? 'queue' : 'steer' } });
   }
@@ -180,8 +193,18 @@ const server = createServer(async (request, response) => {
         save(data);
       }
       emit({ type: 'session.execution.interrupted', data: { sessionID: row.id, reason: 'user' } });
+      for (const [id, pending] of pendingPermissions) {
+        if (pending.sessionID !== row.id) continue;
+        waiting.get(id)?.('reject');
+        waiting.delete(id);
+      }
     }
     return send(200, { interrupted: true });
+  }
+  if (request.method === 'GET' && url.pathname.startsWith('/api/session/') && url.pathname.endsWith('/permission')) {
+    const row = find();
+    if (!row) return send(404, { _tag: 'SessionNotFoundError' });
+    return send(200, { data: [...pendingPermissions.values()].filter((pending) => pending.sessionID === row.id) });
   }
   if (request.method === 'POST' && url.pathname.includes('/permission/')) {
     const requestId = segments()[5];

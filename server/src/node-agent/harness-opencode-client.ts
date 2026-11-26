@@ -101,30 +101,42 @@ export class OpenCodeError extends Error {
   }
 }
 
+const openCodeOutcomeUnknown = () => new Error('OpenCode 连接中断或响应超时，操作结果待核实');
+
 export async function openCodeRequest<T = Record<string, unknown>>(service: OpenCodeService, method: 'GET' | 'POST' | 'PATCH',
   path: string, body?: Record<string, unknown>): Promise<T> {
   const response = await fetch(service.url + path, {
     method, headers: authHeaders(service), signal: AbortSignal.timeout(30_000),
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  }).catch(() => { throw new CodexRejected('本机 OpenCode 服务连接失败'); });
+  }).catch(() => {
+    if (method !== 'GET') throw openCodeOutcomeUnknown();
+    throw new CodexRejected('本机 OpenCode 服务连接失败');
+  });
   if (response.status === 204) return {} as T;
   const payload = await response.json().catch(() => null) as (Record<string, unknown> | null);
   if (!response.ok) {
+    if (method !== 'GET' && (response.status === 408 || response.status >= 500)) throw openCodeOutcomeUnknown();
     if (response.status === 404) throw new OpenCodeError(404, typeof payload?._tag === 'string' ? payload._tag : '', typeof payload?.message === 'string' ? payload.message : 'OpenCode 会话不存在');
     if (response.status === 401) throw new CodexRejected('本机 OpenCode 服务鉴权失败，请重新打开 OpenCode');
     const message = typeof payload?.message === 'string' && payload.message ? payload.message : `OpenCode 请求失败（${response.status}）`;
     throw new CodexRejected(message);
   }
+  if (method !== 'GET' && !payload) throw openCodeOutcomeUnknown();
   return (payload ?? {}) as T;
 }
 
 /** The global event stream is one SSE connection filtered here by session. */
 export async function subscribeOpenCodeEvents(service: OpenCodeService, onEvent: (event: Record<string, unknown>) => void,
   signal: AbortSignal, onLoss: () => void) {
-  try {
-    const response = await fetch(service.url + '/api/event', { headers: authHeaders(service), signal });
-    if (!response.ok || !response.body) throw new Error('stream refused');
-    const reader = response.body.getReader();
+  const response = await fetch(service.url + '/api/event', { headers: authHeaders(service), signal })
+    .catch(() => { throw new CodexRejected('本机 OpenCode 实时连接失败'); });
+  if (!response.ok || !response.body) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new CodexRejected('本机 OpenCode 实时连接失败');
+  }
+  const reader = response.body.getReader();
+  // Resolve once the connection is ready so a prompt cannot outrun its event subscription.
+  void (async () => {
     const decoder = new TextDecoder();
     let buffer = '';
     for (;;) {
@@ -140,9 +152,7 @@ export async function subscribeOpenCodeEvents(service: OpenCodeService, onEvent:
         try { onEvent(JSON.parse(line.slice(5).trim()) as Record<string, unknown>); } catch { /* ignore malformed frames */ }
       }
     }
-  } catch {
-    // Losing the stream hands the session back to the controller's reconnect path.
-  } finally {
+  })().catch(() => undefined).finally(() => {
     if (!signal.aborted) onLoss();
-  }
+  });
 }

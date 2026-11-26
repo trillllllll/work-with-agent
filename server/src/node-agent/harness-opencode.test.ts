@@ -5,9 +5,10 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, expect, it } from 'vitest';
 import { CodexRejected, type HarnessNotification } from './harness-codex.js';
-import { resolveOpenCodeService } from './harness-opencode-client.js';
+import { openCodeRequest, resolveOpenCodeService } from './harness-opencode-client.js';
 import { OpenCodeHarnessRuntime } from './harness-opencode.js';
 import { readOpenCodeTurns } from './harness-opencode-library.js';
+import { changeCodexSelection, readCodexSelection, readOpenCodeSettings } from './harness-settings.js';
 
 type Recorded = { method: string; params: Record<string, unknown>; id?: string };
 
@@ -71,6 +72,7 @@ it('starts a session, streams the answer and completes the turn through the shar
   const app = runtime();
   const threadId = await started(app);
   expect(threadId).toMatch(/^ses_test_/);
+  await app.request('model/list', {});
   const sent = await app.request('turn/start', {
     threadId, clientUserMessageId: 'cmd-first', input: [{ type: 'text', text: '你好' }],
   });
@@ -80,9 +82,10 @@ it('starts a session, streams the answer and completes the turn through the shar
   const user = methods('item/completed').map((entry) => itemOf(entry)).find((item) => item?.type === 'userMessage');
   expect(user).toMatchObject({ id: 'cmd-first', clientId: 'cmd-first', type: 'userMessage' });
   expect(find('item/agentMessage/delta')?.params.delta).toBe('OpenCode stub 记得 你好');
+  expect(methods('item/agentMessage/delta')).toHaveLength(1);
   expect(find('turn/completed')?.params.turn).toEqual({ id: 'cmd-first', status: 'completed' });
   const page = await app.request('thread/turns/list', { threadId, limit: 20 });
-  expect(page.data).toMatchObject([{ id: 'msg_cmd-first', status: 'completed' }]);
+  expect(page.data).toMatchObject([{ id: 'cmd-first', status: 'completed' }]);
   await app.close();
 });
 
@@ -123,8 +126,9 @@ it('maps shell approvals to command decisions and resolves after replying', asyn
   const approval = await until(() => Boolean(find('item/commandExecution/requestApproval')), 15_000).then(() =>
     find('item/commandExecution/requestApproval'));
   expect(approval?.params).toMatchObject({
-    turnId: 'cmd-ask', command: 'printf hello', availableDecisions: ['accept', 'acceptForSession', 'decline'],
+    turnId: 'cmd-ask', command: 'printf hello', availableDecisions: ['accept', 'decline'], projectApproval: true,
   });
+  await expect(app.reply(approval!.id!, { decision: 'acceptForSession' })).rejects.toThrow('决定无效');
   await app.reply(approval!.id!, { decision: 'accept' });
   await until(() => Boolean(find('turn/completed')?.params.turn));
   expect(notifications.some((entry) => entry.method === 'serverRequest/resolved'
@@ -134,6 +138,58 @@ it('maps shell approvals to command decisions and resolves after replying', asyn
   expect(tool).toMatchObject({ type: 'commandExecution', command: 'printf hello',
     aggregatedOutput: 'once：hello', exitCode: 0, status: 'completed' });
   await app.close();
+});
+
+it('only offers native OpenCode settings and drops settings saved by older Dovun versions', async () => {
+  await startService();
+  const app = runtime();
+  const result = await app.request('thread/start', { cwd });
+  const settings = await readOpenCodeSettings(app, { ...readCodexSelection(result)!, permission: 'readOnly', approvalPolicy: 'never' });
+  expect(settings).toMatchObject({ permission: 'workspace', sandboxChoices: [], planAvailable: true });
+  expect(settings).not.toHaveProperty('approvalPolicy');
+  expect(settings).not.toHaveProperty('approvalPolicies');
+  expect(() => changeCodexSelection(settings, { permission: 'readOnly' })).toThrow(CodexRejected);
+  expect(() => changeCodexSelection(settings, { approvalPolicy: 'never' })).toThrow(CodexRejected);
+  expect(changeCodexSelection(settings, { mode: 'plan' }).mode).toBe('plan');
+  await app.close();
+});
+
+it('reattaches to the native running turn and recovers a pending approval before interrupting', async () => {
+  await startService({ HARNESS_TEST_OPENCODE_ASK: '1' });
+  const original = runtime();
+  const threadId = await started(original);
+  await original.close();
+  const service = await resolveOpenCodeService();
+  await openCodeRequest(service, 'POST', `/api/session/${threadId}/prompt`, { id: 'msg_native-turn', text: 'Mac starts first' });
+
+  const attached = runtime();
+  await attached.request('thread/resume', { threadId });
+  const page = await attached.request('thread/turns/list', { threadId, limit: 20 });
+  expect(page.data).toMatchObject([{ id: 'native-turn', status: 'inProgress' }]);
+  expect(find('item/commandExecution/requestApproval')?.params).toMatchObject({ turnId: 'native-turn', projectApproval: true });
+  await attached.request('turn/interrupt', { threadId, turnId: 'native-turn' });
+  await until(() => find('turn/completed')?.params.turn !== undefined);
+  expect(find('turn/completed')?.params.turn).toEqual({ id: 'native-turn', status: 'interrupted' });
+  await attached.close();
+});
+
+it('reopens the accepted native prompt by its original id when its HTTP response is lost', async () => {
+  await startService({ HARNESS_TEST_OPENCODE_DROP: '1' });
+  let disconnected = false;
+  const app = runtime(() => { disconnected = true; });
+  const threadId = await started(app);
+  const failed = await app.request('turn/start', {
+    threadId, clientUserMessageId: 'response-lost', input: [{ type: 'text', text: 'only once' }],
+  }).catch((error: unknown) => error);
+  expect(failed).toBeInstanceOf(Error);
+  expect(failed).not.toBeInstanceOf(CodexRejected);
+  expect(disconnected).toBe(true);
+  const restored = runtime();
+  await restored.request('thread/resume', { threadId });
+  const page = await restored.request('thread/turns/list', { threadId, limit: 20 });
+  expect(page.data).toMatchObject([{ id: 'response-lost', status: 'completed',
+    items: [expect.objectContaining({ type: 'userMessage', clientId: 'response-lost' }), expect.any(Object)] }]);
+  await restored.close();
 });
 
 it('delivers a repeated command id only once and converts paged history at turn boundaries', async () => {
@@ -159,7 +215,7 @@ it('delivers a repeated command id only once and converts paged history at turn 
   const app = runtime();
   const svc = await resolveOpenCodeService();
   await expect(app.request('thread/resume', { threadId: 'ses_test_seed' })).resolves.toMatchObject({
-    model: 'opencode/stub-model', sandbox: { type: 'workspaceWrite' } });
+    model: 'opencode/stub-model', collaborationMode: { mode: 'default' } });
   const first = await readOpenCodeTurns(svc, 'ses_test_seed', null, 1, false);
   expect(first.data).toMatchObject([{ id: 'user-new', status: 'completed' }]);
   expect(first.data[0].items.map((item) => (item as Record<string, unknown>).type))

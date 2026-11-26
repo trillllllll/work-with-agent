@@ -6,15 +6,20 @@ import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import supertest from 'supertest';
+import { z } from 'zod';
 
 import { app } from './app.js';
 import { prisma } from './infrastructure/prisma.js';
 import ownerRequest, { ownerSession } from './test-auth.js';
 import { NodeAgent } from './node-agent/agent.js';
+import * as openCode from './node-agent/harness-opencode-client.js';
+import * as runtimes from './node-agent/harness-runtimes.js';
+import * as dsh from './node-agent/harness-dsh-client.js';
+import { capabilitiesSchema } from './node-agent/protocol.js';
 import {
-  HARNESS_EVENTS, HARNESS_FEATURE, HARNESS_IMAGE_FILE_LIMIT, HARNESS_LARGE_IMAGES_FEATURE, HARNESS_LIBRARY_FEATURE,
+  HARNESS_ADAPTERS_FEATURE, HARNESS_DSH_FEATURE, HARNESS_EVENTS, HARNESS_FEATURE, HARNESS_IMAGE_FILE_LIMIT, HARNESS_LARGE_IMAGES_FEATURE, HARNESS_LIBRARY_FEATURE,
   HARNESS_LEGACY_IMAGE_LIMIT, HARNESS_PREVIEW_FILE_LIMIT, HARNESS_WORKSPACE_FEATURE, HARNESS_ZCODE_LIVE_FEATURE, harnessCommandSchema, type HarnessSnapshot,
 } from './node-agent/harness-protocol.js';
 import { leaseHarnessLibrary } from './application/harness-sessions.js';
@@ -70,6 +75,58 @@ async function until(agent: NodeAgent, check: () => Promise<boolean>) {
   }
   throw new Error('Harness condition timed out');
 }
+
+it('keeps the 0.6.18 capability list on older relays and re-enables the installed kinds after upgrading', async () => {
+  const oldCapabilities = capabilitiesSchema.extend({ harnessKinds: z.array(z.enum(['codex', 'claude', 'zcode'])).max(3).optional() });
+  const legacy = [HARNESS_FEATURE, HARNESS_LIBRARY_FEATURE, HARNESS_WORKSPACE_FEATURE];
+  let accepts: string[] = legacy;
+  let kinds: string[] = [];
+  let library = false;
+  const node = new NodeAgent({ server: origin, token: 'fixture', roots: [folder], dataDir: join(folder, 'compatible-node') },
+    async (_url, init) => {
+      const capabilities = JSON.parse(init!.body as string).capabilities;
+      kinds = capabilities.harnessKinds ?? [];
+      library = capabilities.harnessLibrary === HARNESS_LIBRARY_FEATURE;
+      return accepts === legacy && !oldCapabilities.safeParse(capabilities).success
+        ? Response.json({ code: 'VALIDATION_ERROR' }, { status: 400 })
+        : Response.json({ data: { accepts, jobs: [], cancel: [] } });
+    });
+  const code = vi.spyOn(openCode, 'opencodeAvailable').mockResolvedValue(true);
+  const grok = vi.spyOn(runtimes, 'grokHarnessAvailable').mockResolvedValue({ path: 'fixture', version: '1.0.50' });
+  const deepseek = vi.spyOn(dsh, 'dshAvailable').mockResolvedValue(true);
+  try {
+    await node.pollOnce();
+    for (let poll = 0; poll < 3; poll++) {
+      await node.pollOnce();
+      expect(kinds).toContain('codex');
+      expect(kinds).not.toContain('opencode');
+      expect(kinds).not.toContain('grok');
+      expect(library).toBe(true);
+    }
+    expect(code).not.toHaveBeenCalled();
+    accepts = [...legacy, HARNESS_DSH_FEATURE];
+    await node.pollOnce();
+    await node.pollOnce();
+    await node.pollOnce();
+    expect(kinds).toEqual(expect.arrayContaining(['opencode', 'grok', 'dsh']));
+    accepts = [...legacy, HARNESS_ADAPTERS_FEATURE];
+    await node.pollOnce();
+    await node.pollOnce();
+    expect(kinds).toEqual(expect.arrayContaining(['opencode', 'grok', 'dsh']));
+    accepts = legacy;
+    await expect(node.pollOnce()).rejects.toThrow('400');
+    await node.pollOnce();
+    await node.pollOnce();
+    expect(library).toBe(true);
+    expect(kinds).toContain('codex');
+    expect(kinds).not.toContain('opencode');
+  } finally {
+    code.mockRestore();
+    grok.mockRestore();
+    deepseek.mockRestore();
+    await node.shutdown('signal');
+  }
+});
 
 it('preserves one thread across browsers, receipt loss, an expired target and executor restart', async () => {
   const owner = ownerRequest(app);
@@ -621,6 +678,9 @@ it('indexes OpenCode by project and resumes the native session without sending a
       await until(agent, async () => Boolean((await detail()).snapshot));
       const expectedEpoch = (await detail()).snapshot.epoch;
       const command = { expectedEpoch, commandId: 'continue-opencode', operation: 'send', text: 'Continue the original chat' };
+      const settings = (await detail()).snapshot.view.settings;
+      expect((await owner.post(url + '/commands').send({ expectedEpoch, commandId: 'invalid-opencode-sandbox',
+        operation: 'configure', expectedSettingsRevision: settings.revision, changes: { permission: 'readOnly' } })).status).toBe(409);
       data(await owner.post(url + '/commands').send(command));
       await until(agent, async () => (await owner.get(url + '/commands/' + command.commandId).then(data)).status === 'accepted');
       data(await owner.post(url + '/commands').send(command));

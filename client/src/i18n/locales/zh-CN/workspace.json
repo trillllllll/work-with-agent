@@ -447,6 +447,7 @@
       "forkProvider": "带历史新建分支并切换",
       "title": "会话设置",
       "nextTurn": "设置对这条会话的下一轮生效。",
+      "openCodePermissions": "模型和工作模式对下一轮生效。工具权限由 Mac 上的 OpenCode 项目规则决定。",
       "zcodeLive": "设置会同步到 Mac 上的这条 ZCode 会话。",
       "model": "模型",
       "search": "搜索模型",

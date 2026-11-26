@@ -73,6 +73,15 @@ export async function readCodexSettings(app: HarnessRuntime, selection: HarnessS
   };
 }
 
+export function openCodeSelection(selection: HarnessSettingsSelection): HarnessSettingsSelection {
+  const { model, effort, mode, revision } = selection;
+  return { model, effort, mode, revision, permission: 'workspace' };
+}
+
+export async function readOpenCodeSettings(app: HarnessRuntime, selection: HarnessSettingsSelection): Promise<HarnessSettingsView> {
+  return { ...await readCodexSettings(app, openCodeSelection(selection)), sandboxChoices: [] };
+}
+
 /** DSH has no plan mode and ties approval to its three presets, so only the sandbox choices are offered. */
 export async function readDshSettings(app: HarnessRuntime, selection: HarnessSettingsSelection, advanced: boolean): Promise<HarnessSettingsView> {
   const models = await readModels(app).catch(() => null);

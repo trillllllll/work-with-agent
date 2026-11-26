@@ -98,9 +98,14 @@ async function stream(current, text, tools) {
   if (tools) content.push({ type: 'tool-call', id: 'call_pending', name: 'bash', arguments: '{}' });
   record(current, { type: 'assistant/message', data: { turn: current.turn, step: current.step, usage: { inputTokens: 900, outputTokens: 20 },
     message: { id: messageId, role: 'assistant', content } } });
-  toBridge({ event: 'message', sessionId: current.id, messageId, turn: current.turn, step: current.step, tools, texts: [{ index: 0, text }] });
-  // The stock plugin sends a committed message over ACP only after it has notified its own listeners.
+  const commit = { event: 'message', sessionId: current.id, messageId, turn: current.turn, step: current.step, tools, texts: [{ index: 0, text }] };
+  const order = process.env.HARNESS_TEST_DSH_COMMIT_ORDER;
+  if (order !== 'acp-first' && order !== 'acp-only-commit') toBridge(commit);
   update(current.id, { sessionUpdate: 'agent_message_chunk', messageId, content: { type: 'text', text } });
+  if (order === 'acp-first') {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    toBridge(commit);
+  }
   toBridge({ event: 'stream-end', sessionId: current.id, outcome: 'committed' });
 }
 

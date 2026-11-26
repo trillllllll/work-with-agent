@@ -406,7 +406,11 @@ export async function queueHarnessCommand(id: string, body: unknown, advanced = 
     const node = await tx.agentNode.findUnique({ where: { id: session.nodeId } });
     requireAvailable(node, session.harness);
     const permissions = node && supportsHarnessPermissions(node);
-    if ((input.operation === 'choosePermission' && (!permissions || session.harness !== 'zcode'))
+    const openCode = session.harness === 'opencode';
+    if ((input.operation === 'choosePermission' && (!permissions || session.harness !== 'zcode' && !openCode))
+        || openCode && input.operation === 'resolveApproval' && input.decision === 'acceptForSession'
+        || openCode && input.operation === 'configure' && (
+          input.changes.permission !== undefined || requiresNativePermissionSettings(input.changes))
         || input.operation === 'configure' && requiresNativePermissionSettings(input.changes) && !permissions) {
       throw new DomainError('HARNESS_WORKSPACE_UNSUPPORTED', '本机不支持这个会话操作', 409);
     }

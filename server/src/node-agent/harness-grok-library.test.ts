@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
 import { readHarnessLibrary } from './harness-library.js';
-import { grokSessionExists, isGrokSessionActive, listGrokThreads } from './harness-grok-library.js';
+import { grokSessionExists, isGrokSessionActive, listGrokThreads, readGrokTurns } from './harness-grok-library.js';
 
 const threadId = '01a21348-ae50-7260-9166-0480e752ad35';
 const otherId = '01a21349-9c9a-7902-8d0d-b02d7d35ff3c';
@@ -39,7 +39,7 @@ async function grokHome() {
     update('plan', { entries: [{ content: { type: 'text', text: 'Step one' }, state: 'pending' }, { content: { type: 'text', text: 'Step two' }, state: 'completed' }] }),
     update('user_message_chunk', { content: { type: 'text', text: 'Second question' }, _meta: { promptId: 'p-2' } }),
     update('agent_message_chunk', { content: { type: 'text', text: 'Second answer.' }, _meta: { promptId: 'p-2' } }),
-    update('turn_completed', {}),
+    update('turn_completed', { prompt_id: 'p-2', stop_reason: 'end_turn' }).replace('"session/update"', '"_x.ai/session/update"'),
   ];
   const session = (cwd: string, id: string, messages: number, updates?: string[]) => {
     const directory = join(home, 'sessions', encodeURIComponent(cwd), id);
@@ -73,6 +73,31 @@ it('lists only real Grok sessions inside allowed roots, sorted with a stable cur
     if (!('threads' in index) || !index.threads) throw new Error('expected an index page');
     expect(index.threads.map((thread) => thread.threadId)).toEqual([threadId]);
     expect(index.threads[0]).toMatchObject({ cwd: setup.project, title: 'Title 01a21348' });
+  } finally {
+    vi.unstubAllEnvs();
+    await rm(setup.temporary, { recursive: true, force: true });
+  }
+});
+
+it('uses the native Grok stop reason even when an interrupted or failed turn produced text', async () => {
+  const setup = await grokHome();
+  try {
+    vi.stubEnv('GROK_HOME', setup.home);
+    const path = join(setup.home, 'sessions', encodeURIComponent(setup.project), threadId, 'updates.jsonl');
+    const prompts = ['end_turn', 'cancelled', 'error', 'missing'];
+    await writeFile(path, prompts.flatMap((reason) => [
+      update('user_message_chunk', { content: { type: 'text', text: reason },
+        ...(reason === 'cancelled' ? {} : { _meta: { promptId: reason } }) }),
+      update('agent_thought_chunk', { content: { type: 'text', text: 'thinking' } }),
+      ...(reason === 'missing' ? [] : [
+        update('agent_message_chunk', { content: { type: 'text', text: 'reply' } }),
+        update('turn_completed', { prompt_id: reason, stop_reason: reason }).replace('"session/update"', '"_x.ai/session/update"'),
+      ]),
+    ]).map(row).join(''));
+    const history = await readGrokTurns(threadId, setup.project, null, 5);
+    expect(history.data.map(({ id, status }) => [id, status])).toEqual([
+      ['missing', 'interrupted'], ['error', 'failed'], ['grok-turn-2', 'interrupted'], ['end_turn', 'completed'],
+    ]);
   } finally {
     vi.unstubAllEnvs();
     await rm(setup.temporary, { recursive: true, force: true });

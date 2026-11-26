@@ -28,8 +28,8 @@ function sessionAgent(session: OpenCodeSession) {
   return codexText(session.agent) || 'build';
 }
 
-async function sessionBusy(service: OpenCodeService, threadId: string) {
-  const active = await openCodeRequest<{ data?: Record<string, unknown> }>(service, 'GET', '/api/session/active').catch(() => null);
+export async function openCodeSessionBusy(service: OpenCodeService, threadId: string) {
+  const active = await openCodeRequest<{ data?: Record<string, unknown> }>(service, 'GET', '/api/session/active');
   return Boolean(active?.data && threadId in active.data);
 }
 
@@ -37,10 +37,6 @@ function threadSummary(session: OpenCodeSession): HarnessCatalogThread {
   const time = asObject(session.time);
   const updated = typeof time.updated === 'number' && Number.isFinite(time.updated) ? new Date(time.updated).toISOString() : new Date().toISOString();
   return { threadId: codexText(session.id), title: (codexText(session.title).trim() || '未命名会话').replace(/\s+/g, ' ').slice(0, 160), updatedAt: updated };
-}
-
-function textOfContent(value: unknown, limit: number) {
-  return codexItems(value).filter((part) => part.type === 'text').map((part) => codexText(part.text)).join('').slice(0, limit);
 }
 
 function outputOfContent(value: unknown, limit: number) {
@@ -72,10 +68,16 @@ function toolItem(part: OpenCodeMessage, completed: boolean): OpenCodeMessage | 
   return { id, ...kind, ...(completed ? openCodeToolResult(state) : {}) };
 }
 
-function agentMessageItem(message: OpenCodeMessage) {
+export function openCodeTurnId(messageId: string) {
+  return messageId.startsWith('msg_') ? messageId.slice(4) : messageId;
+}
+
+export function openCodeUserItem(message: OpenCodeMessage) {
+  const nativeId = codexText(message.id);
+  const id = openCodeTurnId(nativeId);
   return {
-    id: codexText(message.id), type: 'agentMessage',
-    text: textOfContent(message.content, 24_000), phase: 'final_answer',
+    id, ...(nativeId.startsWith('msg_') ? { clientId: id } : {}), type: 'userMessage',
+    content: [{ type: 'text', text: codexText(message.text).slice(0, 24_000) }],
   };
 }
 
@@ -84,13 +86,14 @@ type TurnDraft = { id: string; status: string; items: OpenCodeMessage[] };
 function assistantItems(message: OpenCodeMessage): OpenCodeMessage[] {
   const items: OpenCodeMessage[] = [];
   const tools: OpenCodeMessage[] = [];
-  for (const part of codexItems(message.content)) {
+  for (const [ordinal, part] of codexItems(message.content).entries()) {
+    if (part.type === 'text') items.push({ id: `${codexText(message.id)}#${ordinal}`, type: 'agentMessage',
+      text: codexText(part.text).slice(0, 24_000), phase: 'final_answer' });
     if (part.type === 'tool') {
       const item = toolItem(part, true);
       if (item) tools.push(item);
     }
   }
-  items.push(agentMessageItem(message));
   items.push(...tools);
   return items;
 }
@@ -112,17 +115,12 @@ export async function readOpenCodeTurns(service: OpenCodeService, threadId: stri
     tail.length = 0;
     const idle = following.find((row) => codexText(row.type) === 'idle');
     const outcome = codexText(asObject(idle).outcome);
-    const id = codexText(user.id);
-    // Dovun-issued prompts carry the command id behind the required "msg_" prefix.
-    const clientId = id.startsWith('msg_') ? id.slice(4) : undefined;
-    const items: OpenCodeMessage[] = [{
-      id, ...(clientId ? { clientId } : {}), type: 'userMessage',
-      content: [{ type: 'text', text: codexText(user.text).slice(0, 24_000) }],
-    }];
+    const item = openCodeUserItem(user);
+    const items: OpenCodeMessage[] = [item];
     for (const row of following) {
       if (codexText(row.type) === 'assistant') items.push(...assistantItems(row));
     }
-    turns.push({ id: codexText(user.id), status: outcome === 'succeeded' ? 'completed' : outcome, items });
+    turns.push({ id: item.id, status: outcome === 'succeeded' ? 'completed' : outcome, items });
   };
   while (turns.length <= limit && batches < 40) {
     batches += 1;
@@ -136,7 +134,7 @@ export async function readOpenCodeTurns(service: OpenCodeService, threadId: stri
         continue;
       }
       const id = codexText(message.id);
-      if (!boundary && id && id === cursor) { boundary = true; matched = true; tail.length = 0; continue; }
+      if (!boundary && id && (id === cursor || openCodeTurnId(id) === cursor)) { boundary = true; matched = true; tail.length = 0; continue; }
       if (boundary && id) {
         closeTurn(message);
         if (turns.length > limit) break;
@@ -147,7 +145,7 @@ export async function readOpenCodeTurns(service: OpenCodeService, threadId: stri
     if (!walk) break;
   }
   if (!matched) throw new CodexRejected('历史页已变化，请从最新一页重新读取');
-  const running = await sessionBusy(service, threadId).catch(() => false);
+  const running = lastRunning && !cursor && await openCodeSessionBusy(service, threadId);
   for (const [index, turn] of turns.entries()) {
     if (turn.status === 'completed' || turn.status === 'failed' || turn.status === 'interrupted') continue;
     turn.status = index === 0 && running && lastRunning ? 'inProgress' : 'completed';
