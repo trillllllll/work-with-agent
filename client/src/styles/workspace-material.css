@@ -316,7 +316,7 @@
   padding-top: 3px;
 }
 
-:root:not(.dark) .dovun-assistant .assistant-header {
+:root:not(.dark) .dovun-assistant:not(.assistant-glass) .assistant-header {
   background: var(--porcelain-face);
 }
 

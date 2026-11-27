@@ -9,6 +9,33 @@ test.beforeEach(async ({ page, request }) => {
 });
 test.afterAll(() => db.$disconnect());
 
+test('assistant header remains frosted in light and dark themes', async ({ page }) => {
+  await page.goto('/#/chat');
+  const header = page.getByTestId('ai-assistant').locator('.assistant-header');
+  await expect(header).toHaveCSS('position', 'absolute');
+
+  for (const dark of [false, true]) {
+    await page.evaluate(dark => document.documentElement.classList.toggle('dark', dark), dark);
+    const { alpha, backdrop, reduced } = await header.evaluate(element => {
+      const style = getComputedStyle(element);
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 1;
+      const ctx = canvas.getContext('2d')!;
+      // Convert computed colors to one alpha value across Chromium and WebKit.
+      ctx.fillStyle = style.backgroundColor;
+      ctx.fillRect(0, 0, 1, 1);
+      return {
+        alpha: ctx.getImageData(0, 0, 1, 1).data[3] / 255,
+        backdrop: style.backdropFilter || style.getPropertyValue('-webkit-backdrop-filter'),
+        reduced: matchMedia('(prefers-reduced-transparency: reduce)').matches,
+      };
+    });
+    const theme = dark ? 'dark' : 'light';
+    expect(alpha, `${theme} header tint must not be opaque`).toBeCloseTo(reduced ? 0.96 : 0.55, 2);
+    expect(backdrop, `${theme} header must blur messages behind it`).toMatch(/blur\([1-9]/);
+  }
+});
+
 test('思考实时追加、停止保留、完成折叠和刷新恢复', async ({ page }) => {
   await page.goto('/#/chat'); const panel = page.getByTestId('ai-assistant');
   await panel.getByLabel('向 AI 提问').fill('对话思考验收：开始');
