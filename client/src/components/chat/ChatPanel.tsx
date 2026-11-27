@@ -17,7 +17,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
 import { ChatHistory, ChatReferencePicker } from './ChatPickers.js';
 import { Button } from '@/components/ui/button.js';
 import { MessageList } from './MessageList.js';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { openSkillEditor } from '@/components/skills/skill-format.js';
 import { ContextUsageDetails } from './ContextUsageDetails.js';
@@ -58,6 +58,21 @@ export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose
   const [inputToolsOpen, setInputToolsOpen] = useState(false);
   const [briefingOpen, setBriefingOpen] = useState(false);
   const toolsTrigger = useRef<HTMLButtonElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
+  const [scrolled, setScrolled] = useState(false);
+  // The header and the dock float over the message list; the list reserves the dock's live height.
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    const dock = dockRef.current;
+    if (!root || !dock) return;
+    const sync = () => root.style.setProperty('--assistant-dock-height', `${dock.offsetHeight}px`);
+    sync();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(sync);
+    observer.observe(dock);
+    return () => observer.disconnect();
+  }, []);
   const studyMoreTrigger = useRef<HTMLButtonElement>(null);
   const usageTrigger = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -119,7 +134,7 @@ export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose
       )}
   </>;
   return (
-    <div className="dovun-assistant flex h-full min-h-0 min-w-0 flex-col" data-testid="ai-assistant" data-presentation={presentation}>
+    <div ref={rootRef} className="dovun-assistant assistant-glass flex h-full min-h-0 min-w-0 flex-col" data-testid="ai-assistant" data-presentation={presentation} data-scrolled={scrolled || undefined}>
       <header className="assistant-header flex shrink-0 items-center gap-1 px-3 py-3" data-chat-tools-region="header">
         <div className="assistant-identity min-w-0 flex-1">
           <h2 className="truncate">{t(identityId === 'study' ? 'chatPanel.identityStudy' : 'chatPanel.identityWork')}</h2>
@@ -160,7 +175,8 @@ export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose
       <AssistantInputProvider setInput={setInput}><MessageList emptyState={<>
       <div className="dovun-assistant-welcome"><img src={mark} alt="" /><h3>{t(identityId === 'study' ? 'chatPanel.studyWelcomeTitle' : 'chatPanel.title')}</h3><p>{t(identityId === 'study' ? 'chatPanel.studyGreeting' : 'chatPanel.greeting')}</p></div>
       <Surface tone="sheet" className="dovun-assistant-suggestions workspace-chat-prompts workspace-rows">{(identityId === 'study' ? studySuggestions() : suggestions(chat.context?.page ?? '')).map((item) => <Button key={item} size="sm" variant="row" className="workspace-row h-auto whitespace-normal text-left" onClick={() => setInput(input.trim() ? `${input}\n\n${item}` : item)}>{item}</Button>)}</Surface>
-      </>} messages={messages} activeRunId={chat.activeRunId} approvals={approvals} approvalPending={approve.isPending || reject.isPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} unresolvedApprovalIds={unresolvedApprovalIds} phase={decisionPhase} onApprove={(id) => approve.mutate(id)} onReject={(id) => reject.mutate(id)} onChanged={refreshApprovals} onRepreviewed={showRepreview} sendSeq={sendSeq} notice={conversationNotice} /></AssistantInputProvider>
+      </>} messages={messages} activeRunId={chat.activeRunId} approvals={approvals} approvalPending={approve.isPending || reject.isPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} unresolvedApprovalIds={unresolvedApprovalIds} phase={decisionPhase} onApprove={(id) => approve.mutate(id)} onReject={(id) => reject.mutate(id)} onChanged={refreshApprovals} onRepreviewed={showRepreview} sendSeq={sendSeq} notice={conversationNotice} onScrolledChange={setScrolled} /></AssistantInputProvider>
+      <div ref={dockRef} className="assistant-dock">
       {identityId === 'study' && <StudyTopicBar topicId={topicId} focusNodeId={focusNodeId} disabled={chat.switchingBlocked} onSelectTopic={(id) => void chat.selectTopic(id)} onNewTopic={newTopic} moreTrigger={studyMoreTrigger} onBriefing={() => setBriefingOpen(true)}
         onOpenNode={(hash) => { window.location.hash = hash; if (mobile) onClose(); }} onAsk={(prompt) => setInput(input.trim() ? `${input}\n\n${prompt}` : prompt)} />}
 
@@ -169,6 +185,7 @@ export function ChatPanel({ chat, identityId = 'work', onSwitchIdentity, onClose
         <ChatComposer input={input} busy={busy} reference={referencedApproval} onChange={setInput} onSend={send} placeholder={messages.length ? t('composer.continuePlaceholder') : t('composer.placeholder')} onStop={() => void chat.stop()} stopping={chat.stopping}
           compactTools={<Button ref={toolsTrigger} type="button" variant="ghost" size="icon" className="size-11 shrink-0" data-testid="assistant-input-tools" aria-haspopup="dialog" aria-expanded={inputToolsOpen} aria-label={t('chatPanel.inputTools')} title={chat.contextCleared ? t('chatPanel.noReference') : chat.context?.label} onClick={() => setInputToolsOpen(true)}><Ellipsis />{(materialCount > 0 || referencedApproval) && <span className="assistant-tools-indicator" aria-hidden="true" />}</Button>}
           contextUsage={<Button ref={usageTrigger} type="button" variant="plain" size="bare" className="assistant-context-trigger assistant-context-ring-trigger shrink-0" data-testid="context-usage-trigger" aria-label={`${t('usage.open')} · ${usageValue}`} title={`${t('usage.open')} · ${usageValue}`} onClick={() => setUsageOpen(true)}><ContextUsageRing stats={usageShown} pending={busy} /></Button>} />
+      </div>
       </div>
       {identityId === 'study' && topicId && briefingOpen && <Modal title={t('briefing.title')} onClose={() => setBriefingOpen(false)} onCloseAutoFocus={event => {
         const trigger = studyMoreTrigger.current;

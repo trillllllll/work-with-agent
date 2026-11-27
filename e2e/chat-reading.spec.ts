@@ -28,7 +28,7 @@ test('same-content conversation stays readable across container widths and theme
   const panel = page.getByTestId('ai-assistant');
   await expect(panel.getByLabel('向 AI 提问')).toHaveAttribute('placeholder', '继续聊聊…');
   await expect(panel.locator('.assistant-message[data-role=user]')).toContainText(question);
-  await expect(panel.locator('.assistant-header')).toHaveCSS('position', 'relative');
+  await expect(panel.locator('.assistant-header')).toHaveCSS('position', 'absolute');
   const evidence = '/tmp/dovun-chat-reading-acceptance'; await mkdir(evidence, { recursive: true });
   for (const width of [320, 390, 520, 1280]) for (const theme of ['light', 'dark']) {
     await page.setViewportSize({ width, height: 960 });
@@ -49,6 +49,15 @@ test('same-content conversation stays readable across container widths and theme
     await expect(panel.locator('[data-chat-tools-region]')).toHaveCount(2);
     await expect(panel.locator('[data-chat-tools-region=header] button:visible')).toHaveCount(3);
     await expect(panel.locator('[data-chat-tools-region=composer] button:visible')).toHaveCount(3);
+    await panel.locator('[data-chat-scroll]').evaluate(element => { element.scrollTop = 0; });
+    // The glass header and dock float over the list; the reserved padding keeps both ends readable.
+    const header = (await panel.locator('.assistant-header').boundingBox())!;
+    expect((await panel.locator('.assistant-message').first().boundingBox())!.y).toBeGreaterThanOrEqual(header.y + header.height);
+    await expect(panel).not.toHaveAttribute('data-scrolled');
+    await panel.locator('[data-chat-scroll]').evaluate(element => { element.scrollTop = element.scrollHeight; });
+    const last = (await panel.locator('.assistant-message').last().boundingBox())!;
+    expect(last.y + last.height).toBeLessThanOrEqual((await panel.locator('.assistant-dock').boundingBox())!.y);
+    if (await panel.locator('[data-chat-scroll]').evaluate(element => element.scrollTop > 2)) await expect(panel).toHaveAttribute('data-scrolled', 'true');
     await panel.locator('[data-chat-scroll]').evaluate(element => { element.scrollTop = 0; });
     await page.screenshot({ path: `${evidence}/${info.project.name}-${theme}-${width}.png`, animations: 'disabled' });
   }

@@ -49,7 +49,7 @@ test('旧对话来源去重、正文编号打开原文、查询分组和窄屏�
   ] });
   await page.addInitScript(id => localStorage.setItem('dovun.conversationId', id), id);
   await page.goto('/#/chat'); const panel = page.getByTestId('ai-assistant');
-  await expect(panel.locator('.assistant-header')).toHaveCSS('position', 'relative');
+  await expect(panel.locator('.assistant-header')).toHaveCSS('position', 'absolute');
   await expect(panel.getByTestId('assistant-sources')).toHaveCount(1);
   await panel.getByRole('button', { name: /查看来源 1/ }).click();
   const dialog = page.getByRole('dialog', { name: '参考来源', exact: true });

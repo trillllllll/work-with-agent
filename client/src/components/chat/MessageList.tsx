@@ -29,9 +29,11 @@ type MessageListProps = {
   onRepreviewed?: (body: { approvalId?: string; previewHash?: string; supersedesApprovalId?: string; approval?: { id: string; status: string; toolName: string; conversationId?: string | null; envelope?: unknown } }) => void;
   /** Bumped by each send so the list re-pins and jumps to the just-appended message. */
   sendSeq?: number;
+  /** Reports whether content has scrolled under the floating header. */
+  onScrolledChange?: (scrolled: boolean) => void;
 };
 
-export function MessageList({ messages, activeRunId, emptyState, notice, approvals, approvalPending, executingApprovalId, unknownApprovalIds, unresolvedApprovalIds, phase, onApprove, onReject, onChanged, onRepreviewed, sendSeq = 0 }: MessageListProps) {
+export function MessageList({ messages, activeRunId, emptyState, notice, approvals, approvalPending, executingApprovalId, unknownApprovalIds, unresolvedApprovalIds, phase, onApprove, onReject, onChanged, onRepreviewed, sendSeq = 0, onScrolledChange }: MessageListProps) {
   const { t } = useTranslation('chat');
   const scrollRef = useRef<HTMLDivElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
@@ -76,6 +78,7 @@ export function MessageList({ messages, activeRunId, emptyState, notice, approva
     // wheel/touch/key/scrollbar movement arriving in the same frame as streamed content growth.
     pin.onScroll(metrics(el), performance.now() <= intent.until && el.scrollTop < intent.top - 1);
     intent.top = el.scrollTop;
+    onScrolledChange?.(el.scrollTop > 2);
     setShowJump(!pin.isPinned() && el.scrollHeight > el.clientHeight * 1.5);
   };
 
@@ -166,7 +169,7 @@ export function MessageList({ messages, activeRunId, emptyState, notice, approva
         </div>
       </div>
       {showJump && (
-        <Button size="sm" variant="secondary" className="absolute right-3 bottom-3 rounded-full shadow-card" onClick={jumpToBottom}>
+        <Button size="sm" variant="secondary" className="assistant-jump absolute right-3 bottom-3 rounded-full shadow-card" onClick={jumpToBottom}>
           <ArrowDown />{t('messageList.jumpToBottom')}
         </Button>
       )}

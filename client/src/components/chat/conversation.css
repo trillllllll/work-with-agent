@@ -169,3 +169,60 @@
     border-radius: 18px 18px 0 0;
   }
 }
+
+/* Glass chrome: the header and the dock (study bar + composer) float over the message list,
+   so text scrolls under them and shows through. Tint follows the pane color; the light
+   porcelain skin paints the pane with --preview-face rather than the darker --background.
+   The doubled class outranks the skins' `:root:not(.dark) .dovun-assistant .assistant-header`. */
+.dovun-assistant.assistant-glass {
+  --assistant-glass-base: var(--background);
+  --assistant-glass-tint: 55%;
+  --assistant-glass-blur: 6px;
+  --assistant-scroll-pad-top: 26px;
+  --assistant-scroll-pad-bottom: 30px;
+}
+:root:not(.dark) .dovun-assistant.assistant-glass { --assistant-glass-base: var(--preview-face, var(--background)); }
+.dovun-assistant.assistant-glass.assistant-glass .assistant-header {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 20;
+  border-bottom-color: transparent;
+  background: color-mix(in srgb, var(--assistant-glass-base) var(--assistant-glass-tint), transparent);
+  backdrop-filter: blur(var(--assistant-glass-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--assistant-glass-blur)) saturate(1.4);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+/* The hairline only appears once content has actually scrolled under the header. */
+.dovun-assistant.assistant-glass.assistant-glass[data-scrolled] .assistant-header {
+  border-bottom-color: color-mix(in srgb, var(--border) 45%, transparent);
+  box-shadow: inset 0 -1px 0 var(--glass-highlight);
+}
+.dovun-assistant .assistant-dock { display: flex; flex-shrink: 0; flex-direction: column; min-width: 0; }
+.dovun-assistant.assistant-glass .assistant-dock { position: absolute; inset: auto 0 0; z-index: 20; pointer-events: none; }
+.dovun-assistant.assistant-glass .assistant-dock > * { pointer-events: auto; }
+/* A short fade under the composer so text never shows below its bottom edge. */
+.dovun-assistant.assistant-glass .assistant-dock::before {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  z-index: -1;
+  height: calc(max(12px, env(safe-area-inset-bottom)) + 26px);
+  background: var(--assistant-glass-base);
+  -webkit-mask-image: linear-gradient(transparent, #000 60%);
+  mask-image: linear-gradient(transparent, #000 60%);
+}
+.dovun-assistant.assistant-glass .assistant-study-tools {
+  background: color-mix(in srgb, color-mix(in srgb, var(--primary) 6%, var(--assistant-glass-base)) var(--assistant-glass-tint), transparent);
+  backdrop-filter: blur(var(--assistant-glass-blur)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--assistant-glass-blur)) saturate(1.4);
+}
+/* The list runs under both panes; reserve their height so nothing starts hidden. */
+.dovun-assistant.assistant-glass .assistant-messages [data-chat-scroll] {
+  padding-top: calc(var(--assistant-header-height) + var(--assistant-scroll-pad-top));
+  padding-bottom: calc(var(--assistant-dock-height, 96px) + var(--assistant-scroll-pad-bottom));
+  scroll-padding-top: var(--assistant-header-height);
+  scroll-padding-bottom: var(--assistant-dock-height, 96px);
+}
+.dovun-assistant.assistant-glass .assistant-jump { bottom: calc(var(--assistant-dock-height, 96px) + 12px); z-index: 21; }
+@media (max-width: 640px) { .dovun-assistant.assistant-glass { --assistant-scroll-pad-top: 23px; } }
+@media (prefers-reduced-transparency: reduce) { .dovun-assistant.assistant-glass { --assistant-glass-tint: 96%; } }
