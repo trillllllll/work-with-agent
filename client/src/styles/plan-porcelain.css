@@ -255,12 +255,17 @@
     display: contents;
   }
 
-  :root .plan-date-cluster { grid-area: date; }
-  :root .plan-toolbar-row { grid-area: controls; }
-  :root .plan-layout { grid-area: calendar; }
-  :root .plan-footer { grid-area: footer; }
+  /* Named areas only exist when the wide page grid is active. */
+  :root .dovun-workspace:not(:has(.dovun-work-rail:is([data-task], [data-chat]), .plan-layout[data-tray-open])) .plan-page:has(.plan-layout) .plan-layout {
+    grid-area: calendar;
+  }
+
+  :root .dovun-workspace:not(:has(.dovun-work-rail:is([data-task], [data-chat]), .plan-layout[data-tray-open])) .plan-page:has(.plan-layout) .plan-footer {
+    grid-area: footer;
+  }
 
   :root .dovun-workspace:not(:has(.dovun-work-rail:is([data-task], [data-chat]), .plan-layout[data-tray-open])) .plan-page:has(.plan-layout) .plan-date-cluster {
+    grid-area: date;
     flex-direction: column;
     align-items: flex-start;
     gap: 17px;
@@ -281,6 +286,7 @@
   }
 
   :root .dovun-workspace:not(:has(.dovun-work-rail:is([data-task], [data-chat]), .plan-layout[data-tray-open])) .plan-page:has(.plan-layout) .plan-toolbar-row {
+    grid-area: controls;
     min-height: 55px;
   }
 }

@@ -70,3 +70,46 @@ test('narrow task and settings dialogs use the shared layout', async ({ page }) 
   await page.goto('/#/settings/model');
   await expect(page.locator('.workspace-modal-detail-title')).toHaveCSS('font-family', /Songti SC/);
 });
+
+test('planning date title and controls do not overlap when opening the AI assistant', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop assistant rail');
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.addInitScript(() => {
+    localStorage.setItem('dovun.plan.mode', 'day');
+    localStorage.setItem('dovun.plan.anchor', '2026-11-27');
+  });
+
+  for (const colorScheme of ['dark', 'light'] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.goto('/#/plan');
+    await expect(page.getByTestId('calendar-horizontal-scroll')).toBeVisible();
+    const assistant = page.getByRole('button', { name: '打开 AI 助手', exact: true });
+    const rail = page.locator('.dovun-work-rail[data-chat]');
+    await expect(rail).toHaveCount(0);
+    await page.getByRole('button', { name: '日', exact: true }).click();
+    const title = page.locator('.plan-date-title');
+    const visibleDate = async () => {
+      const titleBox = (await title.boundingBox())!;
+      const toolbar = (await page.locator('.plan-toolbar-row').boundingBox())!;
+      // Either one horizontal row with enough room, or two separate rows.
+      expect(titleBox.x + titleBox.width <= toolbar.x + 1 ||
+        titleBox.y + titleBox.height <= toolbar.y + 1).toBe(true);
+      expect(await title.evaluate(element => {
+        const rect = element.getBoundingClientRect();
+        return element.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+      })).toBe(true);
+    };
+
+    await visibleDate();
+    await assistant.click();
+    await expect(rail).toBeVisible();
+    await expect.poll(async () => (await page.locator('.plan-page').boundingBox())!.width).toBeLessThan(1000);
+    await visibleDate();
+    await page.getByRole('button', { name: '周', exact: true }).click();
+    await visibleDate();
+    await rail.getByTestId('assistant-more-actions').click();
+    await page.getByRole('menuitem', { name: '关闭聊天', exact: true }).click();
+    await expect(rail).toHaveCount(0);
+    await visibleDate();
+  }
+});
