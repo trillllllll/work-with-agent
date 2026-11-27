@@ -888,6 +888,7 @@ function HarnessDetail({ id, summary, harness, back, chooseProject, openSession 
   const workspace = session?.workspaceAvailable === true;
   const imageLimit = session?.attachmentImageLimit ?? HARNESS_LEGACY_IMAGE_LIMIT;
   const codexControls = workspace && name === harnessNames.codex;
+  const showContextUsage = codexControls || workspace && (provider === 'kimi' || provider === 'dsh');
   const attachmentInput = workspace && attachments.length ? { attachments } : {};
   const currentPlan = workspace && view?.plan?.turnId === currentTurn?.id ? view?.plan : undefined;
   const planControls = currentPlan && <HarnessPlan plan={currentPlan}
@@ -996,8 +997,8 @@ function HarnessDetail({ id, summary, harness, back, chooseProject, openSession 
             disabled={actionsDisabled || attachmentBusy || !draft.trim()} onClick={() => act({ operation: 'enqueue', text: draft.trim(), ...attachmentInput,
               ...(settings ? { expectedSettingsRevision: settings.revision } : {}) })}><ListOrdered /></Button>}
         </>}
-        contextUsage={codexControls && <HarnessContext usage={view?.usage} disabled={actionsDisabled || inProgress || Boolean(view?.queue?.items.length)}
-          compact={() => act({ operation: 'compact' })} />}
+        contextUsage={showContextUsage && <HarnessContext usage={view?.usage} disabled={actionsDisabled || inProgress || Boolean(view?.queue?.items.length)}
+          compact={codexControls ? () => act({ operation: 'compact' }) : undefined} />}
         model={projectName && <ChatProjectButton name={projectName} open={chooseProject} />}
         onSend={(event) => {
           event.preventDefault();

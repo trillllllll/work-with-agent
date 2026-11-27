@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button.js';
 import { ChoiceList } from '@/components/ui/choice-list.js';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu.js';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.js';
 import { Surface } from '@/components/ui/surface.js';
 import { Textarea } from '@/components/ui/textarea.js';
 import { HARNESS_TEXT_LIMIT, type HarnessApproval, type HarnessCommand, type HarnessQueue, type HarnessTurn, type HarnessView } from '../../../../server/src/node-agent/harness-protocol.js';
@@ -145,15 +146,26 @@ export function HarnessPlan({ plan, canApprove, approve }: {
 }
 
 export function HarnessContext({ usage, disabled, compact }: {
-  usage?: HarnessView['usage']; disabled: boolean; compact: () => void;
+  usage?: HarnessView['usage']; disabled: boolean; compact?: () => void;
 }) {
   const { t } = useTranslation('workspace');
+  const title = t('harness.context.title');
+  const label = usage
+    ? t(usage.limit ? 'harness.context.usedWithLimit' : 'harness.context.used', { used: usage.used.toLocaleString(), limit: usage.limit?.toLocaleString() })
+    : t('harness.context.usageUnavailable');
+  const trigger = <Button size="icon" variant="ghost" type="button" className="min-h-11" aria-label={title}><CircleGauge /></Button>;
+
+  if (!compact) return <Popover>
+    <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+    <PopoverContent align="end" side="top" aria-label={title}>
+      <p className="px-2 py-1.5 text-sm font-medium" role="status">{label}</p>
+    </PopoverContent>
+  </Popover>;
+
   return <DropdownMenu>
-    <DropdownMenuTrigger asChild><Button size="icon" variant="ghost" type="button" className="min-h-11" aria-label={t('harness.context.title')}><CircleGauge /></Button></DropdownMenuTrigger>
+    <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
     <DropdownMenuContent align="end">
-      <DropdownMenuLabel>{usage
-        ? t(usage.limit ? 'harness.context.usedWithLimit' : 'harness.context.used', { used: usage.used.toLocaleString(), limit: usage.limit?.toLocaleString() })
-        : t('harness.context.usageUnavailable')}</DropdownMenuLabel>
+      <DropdownMenuLabel>{label}</DropdownMenuLabel>
       <DropdownMenuItem disabled={disabled} onSelect={compact}>{t('harness.context.compact')}</DropdownMenuItem>
     </DropdownMenuContent>
   </DropdownMenu>;
