@@ -38,6 +38,19 @@ async function run(sessionId, text) {
     save(data);
   }
   emit({ type: 'session.execution.started', data: { sessionID: sessionId } });
+  if (text === '模拟 OpenCode 执行失败') {
+    // Let turn/start bind the original prompt before delivering the terminal event.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const data = read();
+    const row = data.sessions.find((item) => item.id === sessionId);
+    row.running = false;
+    row.outcome = 'failed';
+    row.time.updated = row.time.idle = Date.now();
+    row.messages.push(message('msg_idle_' + randomUUID().slice(0, 8), 'idle', { outcome: 'failed' }));
+    save(data);
+    emit({ type: 'session.execution.failed', data: { sessionID: sessionId } });
+    return;
+  }
   const assistant = 'msg_run_' + randomUUID().slice(0, 8);
   {
     const data = read();

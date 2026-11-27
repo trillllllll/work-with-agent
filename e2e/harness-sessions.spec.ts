@@ -288,8 +288,13 @@ test('opens a project OpenCode history on a phone and continues its original ses
     await expect(chat.getByText('从手机接着聊', { exact: true })).toHaveCount(1);
     const id = new URLSearchParams(new URL(phone.url()).hash.split('?')[1]).get('sessionId');
     expect((await data<{ threadId: string }>(await request.get(apiUrl + '/' + id))).threadId).toBe(threadId);
+    await composer.fill('模拟 OpenCode 执行失败');
+    await chat.getByRole('button', { name: '发送', exact: true }).tap();
+    const failedTurn = chat.locator('[data-harness-turn]').filter({ hasText: '模拟 OpenCode 执行失败' });
+    await expect(failedTurn.getByText('OpenCode 当前轮执行失败', { exact: true })).toBeVisible({ timeout: 12_000 });
     await phone.reload();
     await expect(chat.getByText('OpenCode stub 记得 从手机接着聊', { exact: true })).toHaveCount(1);
+    await expect(failedTurn.getByText('OpenCode 当前轮执行失败', { exact: true })).toBeVisible();
     await phone.goto(listUrl + '&harness=opencode');
     await phone.getByRole('button', { name: '新建会话', exact: true }).tap();
     const newSession = phone.getByRole('dialog', { name: '新建会话' });

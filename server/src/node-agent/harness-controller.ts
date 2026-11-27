@@ -620,7 +620,7 @@ export class HarnessController {
       throw error;
     }
     if (app instanceof ZCodeHarnessRuntime && response.nativeDelivery === true) return;
-    const started = turn(asObject(response.turn));
+    const started = turn(asObject(response.turn), this.harness);
     if (!started) throw new Error('本机开始新一轮的结果待核实');
     if (this.view.turn?.id !== started.id) this.emit({ kind: 'turn', turn: started });
     if (nameFirstTurn) {
@@ -729,7 +729,7 @@ export class HarnessController {
     }
     const turnId = text(params.turnId);
     if (method === 'turn/started' || method === 'turn/completed') {
-      const change = turn(asObject(params.turn));
+      const change = turn(asObject(params.turn), this.harness);
       if (!change) return;
       if (this.harness === 'zcode' && change.status === 'failed') change.error = new Error('ZCode 当前轮执行失败，请检查本机模型和登录状态').message;
       if (method === 'turn/completed' && this.view.turn?.id !== change.id) return;
