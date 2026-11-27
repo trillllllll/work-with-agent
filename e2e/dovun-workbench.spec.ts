@@ -1,3 +1,4 @@
+import { assistantMenuItem } from './assistant-toolbar.js';
 import { test, expect } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
@@ -42,7 +43,7 @@ test('shared rail preserves chat draft and keeps all header controls reachable a
   const assistant = page.getByTestId('ai-assistant');
   const input = assistant.getByRole('textbox', { name: '向 AI 提问', exact: true });
   await input.fill('未发送的原草稿');
-  await assistant.getByRole('button', { name: '关闭聊天', exact: true }).click();
+  await (await assistantMenuItem(page, '关闭聊天')).click();
   await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
   await expect(input).toHaveValue('未发送的原草稿');
   const task = (await (await request.post(api + '/api/tasks', { data: { title: '右栏验收任务', topicId: null } })).json()).data;

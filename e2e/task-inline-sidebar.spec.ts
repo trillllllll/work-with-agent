@@ -1,3 +1,4 @@
+import { assistantMenuItem } from './assistant-toolbar.js';
 import { test, expect } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
@@ -109,7 +110,7 @@ test('assistant task sources open the task tab from side and expanded presentati
   await expect(page.getByLabel('任务标题', { exact: true })).toHaveValue(task.title);
   await expect(page.getByRole('tab', { name: '任务', exact: true })).toHaveAttribute('aria-selected', 'true');
   await page.getByRole('button', { name: '问 AI', exact: true }).click();
-  await page.getByRole('button', { name: '放大到独立页', exact: true }).click();
+  await (await assistantMenuItem(page, '放大到独立页')).click();
   await expect(page.getByTestId('assistant-page')).toBeVisible();
   await expect(page.getByTestId('ai-assistant')).toHaveAttribute('data-presentation', 'expanded');
   await page.evaluate(id => window.dispatchEvent(new CustomEvent('dovun-open-source', { detail: { kind: 'task', id, title: '来自助手的任务' } })), task.id);

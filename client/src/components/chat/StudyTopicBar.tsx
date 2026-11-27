@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type Ref } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { Check, ChevronDown, Map as MapIcon, Plus, X } from 'lucide-react';
+import { Check, ChevronDown, Ellipsis, Map as MapIcon, Plus, X } from 'lucide-react';
 import { api } from '@/lib/api.js';
 import { askAssistant, contextLabel } from '@/lib/assistant-context.js';
 import { learningHash } from '@/lib/learning-navigation.js';
@@ -9,6 +9,7 @@ import { useEditorRuntime } from '@/lib/task-editor-runtime.js';
 import { Button } from '@/components/ui/button.js';
 import { ActionMenu, ActionMenuItem } from '@/components/ui/action-menu.js';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover.js';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu.js';
 import { LearningFigure } from '@/components/learning/LearningFigure.js';
 import { MasteryBadge } from '@/components/learning/MasteryDisplay.js';
 import { flattenTree, type LearningMapAggregate, type LearningMapSummary } from '@/components/learning/learning-model.js';
@@ -16,9 +17,10 @@ import { isFigureShortcut } from './study-shortcuts.js';
 import { LEARNING_FIGURE_EVENT, navigateLearning } from './learning-events.js';
 
 /** Topic switcher and the 学习主图 sheet for the study assistant. The figure is one keystroke (M) away while learning. */
-export function StudyTopicBar({ topicId, focusNodeId, disabled, onSelectTopic, onNewTopic, onOpenNode, onAsk }: {
+export function StudyTopicBar({ topicId, focusNodeId, disabled, onSelectTopic, onNewTopic, onBriefing, moreTrigger, onOpenNode, onAsk }: {
   topicId: string; focusNodeId?: string; disabled?: boolean;
-  onSelectTopic: (mapId: string) => void; onNewTopic: () => void; onOpenNode: (hash: string) => void; onAsk: (prompt: string) => void;
+  moreTrigger?: Ref<HTMLButtonElement>;
+  onSelectTopic: (mapId: string) => void; onNewTopic: () => void; onBriefing: () => void; onOpenNode: (hash: string) => void; onAsk: (prompt: string) => void;
 }) {
   const { t } = useTranslation('chat');
   const scope = useEditorRuntime()?.scopeKey;
@@ -55,20 +57,31 @@ export function StudyTopicBar({ topicId, focusNodeId, disabled, onSelectTopic, o
   };
   const missing = (figure?.missingNodeIds.length ?? 0) + (figure?.removedNodeIds.length ?? 0);
   return <Popover open={open} onOpenChange={setOpen}>
-    <PopoverAnchor asChild><div className="study-topic-bar flex shrink-0 items-center gap-1 border-b px-3 py-1.5" data-testid="study-topic-bar">
-      <ActionMenu open={menu} onOpenChange={setMenu} trigger={<Button variant="ghost" size="sm" className="h-8 min-w-0 max-w-[60%] gap-1 px-2 font-medium" disabled={disabled} aria-label={t('studyTopic.switch')} title={t('studyTopic.switch')}>
+    <PopoverAnchor asChild><div className="assistant-study-tools" role="group" aria-label={t('studyTopic.tools')} data-testid="study-topic-bar" data-chat-tools-region="study">
+      <ActionMenu open={menu} onOpenChange={setMenu} trigger={<Button variant="ghost" size="sm" className="min-h-11 min-w-0 gap-1 px-2 font-medium" disabled={disabled} aria-label={t('studyTopic.switch')} title={t('studyTopic.switch')}>
         <span className="truncate">{current?.title ?? t('studyTopic.none')}</span><ChevronDown className="size-3.5 shrink-0" />
       </Button>}>
         {maps.data?.maps.map(map => <ActionMenuItem key={map.id} onSelect={() => onSelectTopic(map.id)}>
           <span className="min-w-0 flex-1 truncate">{map.title}</span><span className="text-xs text-muted-foreground">{map.stats.itemsDone}/{map.stats.items}</span>{map.id === topicId && <Check />}
         </ActionMenuItem>)}
-        <ActionMenuItem onSelect={onNewTopic}><Plus />{t('studyTopic.new')}</ActionMenuItem>
       </ActionMenu>
       <Button ref={figureButton} variant="ghost" size="sm" className="min-h-11 gap-1 px-2" disabled={!current} aria-expanded={open} aria-haspopup="dialog" aria-keyshortcuts="M" title={t('studyTopic.figureShortcut')} onClick={() => { setPicked(''); setOpen(value => !value); }}>
         <MapIcon />{t('studyTopic.figure')}<kbd className="study-topic-kbd">M</kbd>
       </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild><Button ref={moreTrigger} variant="ghost" size="icon-sm" className="size-11 shrink-0" data-testid="study-more-actions" aria-label={t('studyTopic.moreTools')}><Ellipsis /></Button></DropdownMenuTrigger>
+        <DropdownMenuContent data-assistant-floating side="top" align="end">
+          <DropdownMenuGroup><DropdownMenuLabel>{t('studyTopic.reviewGroup')}</DropdownMenuLabel>
+            <DropdownMenuItem disabled={!current} onSelect={onBriefing}>{t('briefing.title')}</DropdownMenuItem>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup><DropdownMenuLabel>{t('studyTopic.topicGroup')}</DropdownMenuLabel>
+            <DropdownMenuItem disabled={disabled} onSelect={onNewTopic}><Plus />{t('studyTopic.new')}</DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div></PopoverAnchor>
-    <PopoverContent data-assistant-floating align="start" onCloseAutoFocus={event => { event.preventDefault(); if (document.activeElement === document.body || !document.activeElement?.isConnected) figureButton.current?.focus(); }} className="w-[min(640px,calc(100vw-1.5rem))] max-h-[min(70dvh,560px)] overflow-y-auto p-3" aria-label={t('studyTopic.figureOf', { title: current?.title ?? '' })} data-testid="study-figure-sheet">
+    <PopoverContent data-assistant-floating side="top" align="start" onCloseAutoFocus={event => { event.preventDefault(); if (document.activeElement === document.body || !document.activeElement?.isConnected) figureButton.current?.focus(); }} className="w-[min(640px,calc(100vw-1.5rem))] max-h-[min(70dvh,560px)] overflow-y-auto p-3" aria-label={t('studyTopic.figureOf', { title: current?.title ?? '' })} data-testid="study-figure-sheet">
       <div className="mb-2 flex items-center gap-2"><h3 className="min-w-0 flex-1 truncate text-sm font-semibold">{t('studyTopic.figureOf', { title: current?.title ?? '' })}</h3><Button variant="ghost" size="icon-sm" aria-label={t('learningCard.collapse')} onClick={() => setOpen(false)}><X /></Button></div>
       {aggregate.isLoading ? <p role="status" className="py-6 text-center text-xs text-muted-foreground">{t('studyTopic.loading')}</p>
         : aggregate.isError ? <div role="alert"><p className="text-xs">{aggregate.error.message}</p><Button variant="outline" onClick={() => void aggregate.refetch()}>{t('retry')}</Button></div>

@@ -1,3 +1,4 @@
+import { assistantMenuItem, assistantInputTools } from './assistant-toolbar.js';
 import { test, expect } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
@@ -23,15 +24,17 @@ test('同一助手放大缩小保留输入、手动附件及页面，直接进�
   const assistant = page.getByTestId('ai-assistant');
   await assistant.getByLabel('向 AI 提问').fill('保留这段没有发送的草稿');
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('dovun-open-assistant', { detail: { attachment: { id: 'reference-draft', title: '手动附加', kind: 'draft', text: '尚未保存', unsaved: true } } })));
-  await assistant.getByRole('button', { name: '放大到独立页' }).click();
+  await (await assistantMenuItem(page, '放大到独立页')).click();
   await expect(page).toHaveURL(/#\/chat$/);
   await expect(assistant).toHaveAttribute('data-presentation', 'expanded');
   expect(await page.evaluate(() => (window as any).__assistantTransitions)).toBe(isMobile ? 0 : 1);
   await expect(assistant.getByLabel('向 AI 提问')).toHaveValue('保留这段没有发送的草稿');
-  await expect(assistant.getByText('手动附加 · 未保存草稿', { exact: true })).toBeVisible();
+  const tools = await assistantInputTools(page);
+  await expect(tools.getByText('手动附加 · 未保存草稿', { exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(page.getByRole('button', { name: '打开 AI 助手', exact: true })).toHaveCount(0);
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await assistant.getByRole('button', { name: '缩小回原页面' }).click();
+  await (await assistantMenuItem(page, '缩小回原页面')).click();
   await expect(page).toHaveURL(/#\/plan$/);
   await expect(assistant).toHaveAttribute('data-presentation', 'side');
   expect(await page.evaluate(() => (window as any).__assistantTransitions)).toBe(isMobile ? 0 : 1);
@@ -57,12 +60,12 @@ test('助手放大缩小后回到原设置页，模型配置卡片保持', async
   await expect(category.getByText('https://example.invalid/saved').first()).toBeVisible();
   // 桌面是设置弹层头部的 AI 助手按钮，手机是工作区悬浮球
   await page.getByRole('button', { name: 'AI 助手', exact: true }).click();
-  await page.getByRole('button', { name: '放大到独立页' }).click();
+  await (await assistantMenuItem(page, '放大到独立页')).click();
   await expect(page.getByTestId('assistant-page')).toBeVisible();
-  await page.getByRole('button', { name: '缩小回原页面' }).click();
+  await (await assistantMenuItem(page, '缩小回原页面')).click();
   await expect(page).toHaveURL(/#\/settings\/model$/);
   // 手机上缩回后助手会以浮层重新打开，关掉它再验收设置页
-  await page.getByRole('button', { name: /^(关闭聊天|返回当前页面)$/ }).click({ timeout: 5_000 }).catch(() => undefined);
+  await (await assistantMenuItem(page, /^(关闭聊天|返回当前页面)$/)).click({ timeout: 5_000 }).catch(() => undefined);
   await expect(category.getByText('https://example.invalid/saved').first()).toBeVisible();
 });
 
@@ -153,9 +156,9 @@ test('任务编辑器放大缩小时保留同一个节点和草稿', async ({ pa
   await title.fill('保留编辑草稿');
   await title.evaluate((element) => (element as any).__retainedMarker = 'original');
   await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
-  await page.getByRole('button', { name: '放大到独立页' }).click();
+  await (await assistantMenuItem(page, '放大到独立页')).click();
   await expect(title).toBeHidden();
-  await page.getByRole('button', { name: '缩小回原页面' }).click();
+  await (await assistantMenuItem(page, '缩小回原页面')).click();
   await page.getByRole('tab', { name: '任务', exact: true }).click();
   await expect(title).toHaveValue('保留编辑草稿');
   expect(await title.evaluate((element) => (element as any).__retainedMarker)).toBe('original');
@@ -187,10 +190,10 @@ test('知识页新建的文档在放大缩小后保留标题、未确认保存�
     await expect(page).toHaveURL(/#\/library\?resource=/);
     const route = page.url();
     await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
-    await page.getByRole('button', { name: '放大到独立页' }).click();
-    await page.getByRole('button', { name: '缩小回原页面' }).click();
+    await (await assistantMenuItem(page, '放大到独立页')).click();
+    await (await assistantMenuItem(page, '缩小回原页面')).click();
     await expect(page).toHaveURL(route);
-    await page.getByRole('button', { name: /^(关闭聊天|返回当前页面)$/ }).click();
+    await (await assistantMenuItem(page, /^(关闭聊天|返回当前页面)$/)).click();
     await expect(title).toHaveValue('未提交材料标题');
     await expect(body).toHaveText(text);
     await expect(body).toHaveAttribute('data-regression-instance', 'original');
@@ -211,9 +214,9 @@ test('规划日期、模式和时间网格滚动在放大缩小后保持', async
   await scroller.evaluate((node) => { node.scrollTop = 350; (node as any).__preserved = true; });
   const day = await page.getByTestId('time-band-day').first().getAttribute('data-date');
   await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
-  await page.getByRole('button', { name: '放大到独立页' }).click();
-  await page.getByRole('button', { name: '缩小回原页面' }).click();
-  await page.getByRole('button', { name: /^(关闭聊天|返回当前页面)$/ }).click();
+  await (await assistantMenuItem(page, '放大到独立页')).click();
+  await (await assistantMenuItem(page, '缩小回原页面')).click();
+  await (await assistantMenuItem(page, /^(关闭聊天|返回当前页面)$/)).click();
   await expect(page.locator('[data-plan-mode=day]')).toHaveAttribute('aria-pressed', 'true');
   expect(await page.getByTestId('time-band-day').first().getAttribute('data-date')).toBe(day);
   expect(await scroller.evaluate((node) => ({ top: node.scrollTop, retained: (node as any).__preserved }))).toEqual({ top: 350, retained: true });

@@ -46,11 +46,16 @@ test('same-content conversation stays readable across container widths and theme
     }
     expect(await panel.locator('.assistant-user-bubble').evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThan(150);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    if (width < 1024) await expect(page.getByRole('button', { name: '主导航', exact: true })).toBeVisible();
+    await expect(panel.locator('[data-chat-tools-region]')).toHaveCount(2);
+    await expect(panel.locator('[data-chat-tools-region=header] button:visible')).toHaveCount(3);
+    await expect(panel.locator('[data-chat-tools-region=composer] button:visible')).toHaveCount(3);
     await panel.locator('[data-chat-scroll]').evaluate(element => { element.scrollTop = 0; });
     await page.screenshot({ path: `${evidence}/${info.project.name}-${theme}-${width}.png`, animations: 'disabled' });
   }
+  await panel.getByTestId('assistant-input-tools').click();
   await expect(page.getByTestId('assistant-model-trigger')).toHaveText('mock-model');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
   await page.getByTestId('context-usage-trigger').click();
   await expect(page.getByTestId('context-usage-popover')).toBeVisible();
   await page.keyboard.press('Escape');
@@ -66,7 +71,8 @@ test('mobile navigation returns to chat without losing its draft', async ({ page
   await page.goto('/#/chat');
   const panel = page.getByTestId('ai-assistant');
   await panel.getByLabel('向 AI 提问').fill('暂时不发送的草稿');
-  await page.getByRole('button', { name: '主导航', exact: true }).click();
+  await panel.getByTestId('assistant-more-actions').click();
+  await page.getByRole('menuitem', { name: '主导航', exact: true }).click();
   const navigation = page.getByRole('dialog');
   await expect(navigation.locator('.app-sidebar')).toBeVisible();
   await navigation.getByRole('button', { name: '收集箱', exact: true }).click();
@@ -104,14 +110,14 @@ test('context settings navigation closes usage details and long model names fit 
   await request.patch(`${api}/api/settings`, { data: { model: `model-${'long-name-'.repeat(25)}` } });
   await page.setViewportSize({ width: 320, height: 740 });
   await page.goto('/#/chat');
-  // 模型入口在收起态随工具行折叠，展开输入框后再点。
-  await page.getByRole('textbox', { name: '向 AI 提问' }).focus();
+  await page.getByTestId('assistant-input-tools').click();
   await page.getByTestId('assistant-model-trigger').click();
   const models = page.getByRole('listbox', { name: '获取模型列表' });
   const bounds = (await models.boundingBox())!;
   expect(bounds.x).toBeGreaterThanOrEqual(0);
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(320);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
   await page.getByTestId('context-usage-trigger').click();
   await page.getByTestId('context-usage-popover').getByRole('link').click();
@@ -125,9 +131,9 @@ test('composer model picker switches and persists the active profile model', asy
     await route.fulfill({ json: { data: { models: [{ id: 'mock-model' }, { id: 'mock-model-next', contextWindow: 128000 }] }, error: null } });
   });
   await page.goto('/#/chat');
+  await page.getByTestId('assistant-input-tools').click();
   const trigger = page.getByTestId('assistant-model-trigger');
   await expect(trigger).toHaveText('mock-model');
-  await page.getByRole('textbox', { name: '向 AI 提问' }).focus();
   await trigger.click();
   await page.getByRole('button', { name: '获取模型列表', exact: true }).click();
   await page.getByRole('option', { name: /mock-model-next/ }).click();
@@ -136,6 +142,7 @@ test('composer model picker switches and persists the active profile model', asy
   expect(settings.model).toBe('mock-model-next');
   expect(settings.profiles.find((profile: { id: string }) => profile.id === settings.activeProfileId).model).toBe('mock-model-next');
   await page.reload();
+  await page.getByTestId('assistant-input-tools').click();
   await expect(trigger).toHaveText('mock-model-next');
   await expect(page.getByTestId('context-usage-trigger')).toBeVisible();
 });

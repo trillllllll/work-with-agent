@@ -39,7 +39,7 @@ export function ChatReferencePicker({ selectedIds, onSelect }: { selectedIds: st
     queryFn: ({ signal, pageParam }) => api<Page<LibraryRow>>(`${query ? `/api/v1/library/search?q=${encodeURIComponent(query)}` : '/api/v1/library/materials?archived=exclude'}&limit=30&cursor=${pageParam}`, { signal }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
-  return <Popover open={open} onOpenChange={setOpen}><PopoverTrigger asChild><Button type="button" size="icon-sm" variant="ghost" aria-label={t('chatPickers.addReference')} title={t('chatPickers.addReference')}><Plus /></Button></PopoverTrigger><PopoverContent data-assistant-floating className="w-80 max-w-[calc(100vw-2rem)] p-3" side="top">
+  return <Popover open={open} onOpenChange={setOpen}><PopoverTrigger asChild><Button type="button" size="sm" variant="ghost" aria-label={t('chatPickers.addReference')} title={t('chatPickers.addReference')}><Plus />{t('chatPickers.addReference')}</Button></PopoverTrigger><PopoverContent data-assistant-floating className="w-80 max-w-[calc(100vw-2rem)] p-3" side="top">
     <h3 className="mb-2 text-sm font-semibold">{t('chatPickers.addReference')}</h3>
     <Input variant="inline" aria-label={t('chatPickers.searchReferences')} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('chatPickers.searchSaved')} className="mb-2 w-full rounded-lg border bg-transparent p-2 text-xs" />
     <p className="mb-2 text-[11px] text-muted-foreground">{t('chatPickers.savedVersionHint')}</p>

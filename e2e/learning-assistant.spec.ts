@@ -6,7 +6,7 @@ const panel = (page: Page) => page.getByTestId('ai-assistant');
 async function open(page: Page) { await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click(); await expect(panel(page)).toBeVisible(); }
 
 async function switchToStudy(page: Page) {
-  await panel(page).getByRole('button', { name: '切换助手', exact: true }).click();
+  await panel(page).getByTestId('assistant-more-actions').click();
   await page.getByRole('menuitem', { name: '学习助手', exact: true }).click();
   await expect(panel(page).getByRole('heading', { name: '学习助手' })).toBeVisible();
 }
@@ -25,7 +25,10 @@ test('study assistant keeps its own session and writes learning maps through app
   await switchToStudy(page);
 
   // 手机上助手全屏；先收起再看学习地图空态。
-  if (isMobile) await panel(page).getByRole('button', { name: '返回当前页面', exact: true }).click();
+  if (isMobile) {
+    await panel(page).getByTestId('assistant-more-actions').click();
+    await page.getByRole('menuitem', { name: /^(返回当前页面|返回学习)$/ }).click();
+  }
   await page.evaluate(() => { location.hash = '/learning'; });
   await expect(page.getByRole('heading', { name: '还没有学习主题' })).toBeVisible();
   await page.getByRole('button', { name: '问学习助手', exact: true }).click();
@@ -44,7 +47,10 @@ test('study assistant keeps its own session and writes learning maps through app
   await expect(panel(page).getByText('学习地图已创建，可以到学习地图页查看。', { exact: true })).toBeVisible({ timeout: 20_000 });
 
   // 地图落地后学习地图页展示目标、统计与图谱。手机上面板全屏，先收起再看页面。
-  if (isMobile) await panel(page).getByRole('button', { name: '返回当前页面', exact: true }).click();
+  if (isMobile) {
+    await panel(page).getByTestId('assistant-more-actions').click();
+    await page.getByRole('menuitem', { name: /^(返回当前页面|返回学习)$/ }).click();
+  }
   await expect(page.getByRole('heading', { name: '学习地图', exact: true })).toBeVisible();
   await expect(page.getByText('掌握 Rust 基础')).toBeVisible();
   await expect(page.getByText('已掌握 0 / 1',{ exact: true }).first()).toBeVisible();
@@ -60,7 +66,7 @@ test('study assistant keeps its own session and writes learning maps through app
   await page.keyboard.press('Escape');
 
   // 切回工作助手后标题恢复，且开始新会话。
-  await panel(page).getByRole('button', { name: '切换助手', exact: true }).click();
+  await panel(page).getByTestId('assistant-more-actions').click();
   await page.getByRole('menuitem', { name: '工作助手', exact: true }).click();
   await expect(panel(page).getByRole('heading', { name: '工作助手', level: 2 })).toBeVisible();
 

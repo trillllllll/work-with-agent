@@ -1,3 +1,4 @@
+import { assistantMenuItem, assistantInputTools } from './assistant-toolbar.js';
 import { test, expect, type Page } from './fixtures.js';
 import { randomUUID } from 'node:crypto';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
@@ -42,9 +43,11 @@ test('all pages share one assistant; workspace modal, shortcuts, sources and his
   expect(second.conversationId).toBeTruthy();
   expect(second.context.pageState.dateFrom).toBeTruthy();
   expect(second.context.taskFilter.scheduledFrom).toBe(second.context.pageState.dateFrom);
-  await panel(page).getByTestId('assistant-context-trigger').click();
+  await assistantInputTools(page);
+  await page.getByTestId('assistant-context-trigger').click();
   await page.getByRole('button', { name: '固定当前参考范围', exact: true }).click();
-  await panel(page).getByTestId('assistant-context-trigger').click();
+  await page.getByTestId('assistant-context-trigger').click();
+  await page.keyboard.press('Escape');
   await page.evaluate(() => { location.hash = '/settings'; });
   if (isMobile) {
     // 手机上进入工作区弹窗会收起助手（否则助手盖住弹窗内容），用弹窗内的 AI 助手按钮重新打开。
@@ -54,15 +57,19 @@ test('all pages share one assistant; workspace modal, shortcuts, sources and his
   await expect(panel(page)).toBeVisible();
   const fixed = await ask(page, 'AI验收固定规划');
   expect(fixed.context.page).toBe('plan');
-  await panel(page).getByTestId('assistant-context-trigger').click();
+  await assistantInputTools(page);
+  await page.getByTestId('assistant-context-trigger').click();
   await page.getByRole('button', { name: '清除参考', exact: true }).click();
   await expect(page.getByText('未添加页面参考', { exact: true }).last()).toBeVisible();
-  await panel(page).getByTestId('assistant-context-trigger').click();
+  await page.getByTestId('assistant-context-trigger').click();
+  await page.keyboard.press('Escape');
   const cleared = await ask(page, 'AI验收清除参考');
   expect(cleared.context).toMatchObject({ page: 'chat', scope: { kind: 'all' }, mode: 'cleared', taskFilter: null, selectedTaskIds: [], selectedMaterialIds: [], attachments: [] });
-  await panel(page).getByTestId('assistant-context-trigger').click();
+  await assistantInputTools(page);
+  await page.getByTestId('assistant-context-trigger').click();
   await page.getByRole('button', { name: '固定当前参考范围', exact: true }).click();
-  await panel(page).getByTestId('assistant-context-trigger').click();
+  await page.getByTestId('assistant-context-trigger').click();
+  await page.keyboard.press('Escape');
   const settings = await ask(page, 'AI验收设置');
   expect(settings.context.page).toBe('settings');
   if (isMobile) { const box = await panel(page).boundingBox(); expect(box!.x).toBeGreaterThanOrEqual(0); expect(box!.y).toBeGreaterThanOrEqual(0); expect((await page.locator('.assistant-workspace-open').boundingBox())!.width).toBe(page.viewportSize()!.width); await page.screenshot({ path: '/tmp/wwa-ai-mobile-settings.png' }); }
@@ -82,7 +89,7 @@ test('all pages share one assistant; workspace modal, shortcuts, sources and his
   await expect(page.getByTestId('context-summary')).toContainText('收集箱');
   await page.keyboard.press('Escape');
   if (!isMobile) {
-    await panel(page).getByRole('button', { name: '关闭聊天', exact: true }).click();
+    await (await assistantMenuItem(page, '关闭聊天')).click();
     await page.keyboard.press('Control+Shift+L');
     await expect(panel(page).getByRole('textbox', { name: '向 AI 提问' })).toBeFocused();
   }
@@ -97,11 +104,13 @@ test('task and AI switch, manual draft attachment and return preserve editor', a
   await expect(panel(page)).toBeVisible();
   if (isMobile) { await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: '/tmp/wwa-ai-390.png' }); }
   await expect(page.getByRole('textbox', { name: '详情', exact: true })).toBeHidden();
-  await expect(page.getByTestId('assistant-context')).toContainText('未保存');
+  await expect((await assistantInputTools(page)).getByText(/未保存草稿/)).toBeVisible();
+  await page.keyboard.press('Escape');
   const sent = await ask(page, 'AI验收当前草稿');
   expect(sent.context.taskId).toBe(task.id);
   expect(sent.context.attachments[0].text).toContain('已保存的正文');
-  await expect(page.getByTestId('assistant-context').getByRole('button', { name: /^移除/ })).toHaveCount(0);
+  await expect((await assistantInputTools(page)).getByRole('button', { name: /^移除/ })).toHaveCount(0);
+  await page.keyboard.press('Escape');
   await page.getByRole('tab', { name: '任务', exact: true }).click();
   await expect(page.getByRole('textbox', { name: '详情', exact: true })).toBeVisible();
   await expect(page.getByRole('textbox', { name: '详情', exact: true })).toContainText('已保存的正文');
@@ -295,7 +304,10 @@ for (const route of ['inbox', 'chat']) test(`mobile full-page swipes open naviga
   try {
     // CDP delivers browser touch input; Android's OS back gesture still needs a real-device check.
     await page.goto(`/#/${route}`);
-    await expect(page.getByRole('button', { name: '主导航', exact: true })).toBeVisible();
+    if (route === 'chat') {
+      await expect(await assistantMenuItem(page, '主导航')).toBeVisible();
+      await page.keyboard.press('Escape');
+    } else await expect(page.getByRole('button', { name: '主导航', exact: true })).toBeVisible();
     if (route === 'inbox') {
       await test.step('the populated task list still scrolls vertically', async () => {
         const scroller = page.locator('main.app-main');

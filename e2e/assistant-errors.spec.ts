@@ -1,3 +1,4 @@
+import { assistantInputTools } from './assistant-toolbar.js';
 import { test, expect } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
@@ -139,12 +140,13 @@ test('retry keeps a newer draft and its context until the box is cleared', async
   release();
   const retry = assistant.getByRole('button', { name: '重试', exact: true });
   await expect(retry).toBeVisible();
-  const context = assistant.getByTestId('assistant-context-trigger');
-  const before = await context.innerText();
+  const context = assistant.getByTestId('assistant-input-tools');
+  const before = await context.getAttribute('title');
   await retry.click();
   await expect(input).toHaveValue('新的独立草稿');
-  await expect(context).toHaveText(before);
-  await expect(assistant.getByTestId('assistant-context').getByText('新草稿附件 · 未保存草稿', { exact: true })).toBeVisible();
+  await expect(context).toHaveAttribute('title', before!);
+  await expect((await assistantInputTools(page)).getByText('新草稿附件 · 未保存草稿', { exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(retry).toBeVisible();
   await input.fill('');
   await retry.click();
@@ -169,5 +171,6 @@ test('retry after a rejection does not mix the restored text with historical att
   await expect(input).toHaveValue('本次被拒原文');
   await assistant.getByRole('button', { name: '重试', exact: true }).click();
   await expect(input).toHaveValue('本次被拒原文');
-  await expect(assistant.getByTestId('assistant-context').getByText('本次被拒附件 · 未保存草稿', { exact: true })).toBeVisible();
+  await expect((await assistantInputTools(page)).getByText('本次被拒附件 · 未保存草稿', { exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
 });

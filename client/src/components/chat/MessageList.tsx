@@ -16,6 +16,7 @@ type MessageListProps = {
   messages: ChatMessage[];
   activeRunId?: string;
   emptyState?: ReactNode;
+  notice?: ReactNode;
   approvals: Approval[];
   approvalPending: boolean;
   executingApprovalId: string;
@@ -30,7 +31,7 @@ type MessageListProps = {
   sendSeq?: number;
 };
 
-export function MessageList({ messages, activeRunId, emptyState, approvals, approvalPending, executingApprovalId, unknownApprovalIds, unresolvedApprovalIds, phase, onApprove, onReject, onChanged, onRepreviewed, sendSeq = 0 }: MessageListProps) {
+export function MessageList({ messages, activeRunId, emptyState, notice, approvals, approvalPending, executingApprovalId, unknownApprovalIds, unresolvedApprovalIds, phase, onApprove, onReject, onChanged, onRepreviewed, sendSeq = 0 }: MessageListProps) {
   const { t } = useTranslation('chat');
   const scrollRef = useRef<HTMLDivElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
@@ -161,6 +162,7 @@ export function MessageList({ messages, activeRunId, emptyState, approvals, appr
         <div ref={threadRef} className="assistant-thread flex min-w-0 max-w-full flex-col gap-5">
           {assistantTurns(presentChatMessages(messages)).map((turn, turnIndex) => <div key={turn[0].id ?? turnIndex} className="assistant-turn">{turn.map((message, index) => <MessageItem key={message.id ?? index} message={message} processActive={Boolean(activeRunId && turn.some(item => item.runId === activeRunId))} processMessages={turn} hideProcess={index > 0} approvals={approvals} approvalPending={approvalPending} executingApprovalId={executingApprovalId} unknownApprovalIds={unknownApprovalIds} unresolvedApprovalIds={unresolvedApprovalIds} phase={phase} onApprove={onApprove} onReject={onReject} onChanged={onChanged} onRepreviewed={onRepreviewed} />)}</div>)}
           {unplacedApprovals(messages, approvals).filter((approval) => isTaskBatchApproval(approval) || isAppChangeApproval(approval) || !approval.status || approval.status === 'pending').map((approval) => isAppChangeApproval(approval) ? <ReviewCard key={approval.approvalId} approval={approval} phase={approval.approvalId === executingApprovalId ? phase : ''} unknown={unknownApprovalIds.includes(approval.approvalId)} unresolved={unresolvedApprovalIds.includes(approval.approvalId)} onApprove={onApprove} onReject={onReject} onChanged={onChanged} onRepreviewed={onRepreviewed} /> : isTaskBatchApproval(approval) ? <TaskBatchCard key={approval.approvalId} approval={approval} executing={approval.approvalId === executingApprovalId} unknown={unknownApprovalIds.includes(approval.approvalId)} onApprove={onApprove} onReject={onReject} /> : <ApprovalCard key={approval.approvalId} approval={approval} pending={approvalPending} onApprove={onApprove} onReject={onReject} />)}
+          {notice}
         </div>
       </div>
       {showJump && (

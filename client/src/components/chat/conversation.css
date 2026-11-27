@@ -3,9 +3,7 @@
 .dovun-assistant .assistant-header { position: relative; flex-shrink: 0; min-height: var(--assistant-header-height); height: var(--assistant-header-height); padding: 0 14px; border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent); background: transparent; }
 .dovun-assistant .assistant-header::after { display: none; }
 .dovun-assistant .assistant-header + *:not(.assistant-messages) { margin-top: 0; }
-.assistant-identity-trigger { display: flex; align-items: center; gap: 7px; min-height: 36px; max-width: 100%; }
 .assistant-identity h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; }
-.assistant-identity-trigger > svg { flex-shrink: 0; color: var(--muted-foreground); }
 .dovun-assistant .assistant-messages [data-chat-scroll] { padding: 26px 24px 30px; }
 .dovun-assistant .assistant-thread { width: min(100%, 760px); max-width: 760px; margin-inline: auto; padding: 0; gap: 30px; container: assistant-thread / inline-size; }
 .assistant-turn { min-width: 0; }
@@ -132,3 +130,42 @@
 @media (max-width: 640px) { .dovun-assistant .assistant-header { padding-inline: 10px; } .dovun-assistant .assistant-messages [data-chat-scroll] { padding: 23px 21px 30px; } .dovun-assistant .assistant-composer-area { padding-inline: 12px; } .assistant-user-message { max-width: 94%; } }
 @media (prefers-reduced-motion: reduce) { .assistant-reasoning svg, .assistant-tool-run svg { animation: none; transition: none; } }
 @media (prefers-reduced-motion: reduce) { .dovun-assistant .assistant-input-box, .dovun-assistant .assistant-input-box .composer-tools { transition: none; } }
+
+/* Built-in assistant: one header, an optional study dock, and the composer. */
+[data-testid='ai-assistant'] .assistant-header button { min-inline-size: 44px; min-block-size: 44px; }
+[data-testid='ai-assistant'] .assistant-compact-footer { padding-block-start: 0; }
+.assistant-compact-footer::before { display: none; }
+.assistant-study-tools {
+  display: flex;
+  flex: 0 0 auto;
+  align-self: flex-start;
+  align-items: center;
+  gap: 2px;
+  max-inline-size: calc(100% - 32px);
+  margin: 4px 16px 6px;
+  margin-inline-start: max(16px, calc((100% - 760px) / 2));
+  padding-inline: 3px;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--primary) 6%, var(--background));
+}
+.assistant-study-tools button:not(:first-child) { flex-shrink: 0; }
+.dovun-assistant .assistant-input-box[data-compact-composer] { padding: 3px 5px 3px 12px; border-radius: 17px; }
+.dovun-assistant .assistant-input-box[data-compact-composer] .composer-field { gap: 2px; align-items: flex-end; }
+.dovun-assistant .assistant-input-box[data-compact-composer] textarea { align-self: center; }
+.dovun-assistant .assistant-input-box[data-compact-composer] .composer-field > button { width: 44px; height: 44px; flex-shrink: 0; }
+.assistant-tools-indicator { position: absolute; top: 7px; right: 7px; width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
+[data-testid='assistant-input-tools'] { position: relative; }
+@media (max-width: 640px) {
+  .assistant-study-tools { margin-inline: 12px; max-inline-size: calc(100% - 24px); }
+  .assistant-tools-sheet[data-slot='dialog-content'] {
+    top: auto;
+    bottom: 0;
+    width: 100%;
+    max-width: 100%;
+    translate: -50% 0;
+    max-height: 82dvh;
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    border-radius: 18px 18px 0 0;
+  }
+}

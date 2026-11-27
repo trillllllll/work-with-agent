@@ -1,3 +1,4 @@
+import { assistantMenuItem } from './assistant-toolbar.js';
 import { test, expect } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
@@ -17,9 +18,9 @@ test('真实页面在回复完成前显示文字和图形，切换布局不重�
   await expect(page.locator('[data-block-type=text]').first()).toContainText('文字流式前缀😀');
   await expect(page.getByRole('button', { name: '停止生成' })).toBeVisible();
   const conversationId = await page.evaluate(() => localStorage.getItem('dovun.conversationId'));
-  await page.getByRole('button', { name: '放大到独立页' }).click();
+  await (await assistantMenuItem(page, '放大到独立页')).click();
   await expect(page.locator('[data-block-type=mermaid]')).toHaveAttribute('data-block-status', 'ready');
-  await page.getByRole('button', { name: '缩小回原页面' }).click();
+  await (await assistantMenuItem(page, '缩小回原页面')).click();
   await expect(page.getByRole('button', { name: '停止生成' })).toHaveCount(0);
   await expect(page.locator('[data-block-type=text]').last()).toContainText('最后一段');
   await expect(page.getByRole('img', { name: '处理流程', exact: true })).toBeVisible();
@@ -31,7 +32,7 @@ test('真实页面在回复完成前显示文字和图形，切换布局不重�
   await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
   await expect(page.locator('[data-block-id]')).toHaveCount(7);
   expect(await page.locator('[data-block-id]').evaluateAll((nodes) => nodes.map((node) => ({ id: node.getAttribute('data-block-id'), type: node.getAttribute('data-block-type'), status: node.getAttribute('data-block-status') })))).toEqual(before);
-  await page.getByRole('button', { name: '放大到独立页' }).click();
+  await (await assistantMenuItem(page, '放大到独立页')).click();
   const chart = page.locator('[data-block-type=chart]'); await expect(chart.locator('canvas')).toBeVisible();
   const download = page.waitForEvent('download'); await chart.getByRole('button', { name: '导出 PNG', exact: true }).click();
   expect((await download).suggestedFilename()).toBe('chart.png');

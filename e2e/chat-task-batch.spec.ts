@@ -1,3 +1,4 @@
+import { assistantMenuItem } from './assistant-toolbar.js';
 import { test, expect, type APIRequestContext, type Locator, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
@@ -35,8 +36,9 @@ async function openChat(page: Page) {
 }
 
 async function closeChat(page: Page) {
-  const close = page.getByRole('button', { name: /^(关闭聊天|返回当前页面)$/ });
+  const close = await assistantMenuItem(page, /^(关闭聊天|返回当前页面)$/);
   if (await close.isVisible()) await close.click();
+  else await page.keyboard.press('Escape');
 }
 
 async function ask(page: Page, message: string) {

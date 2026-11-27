@@ -187,6 +187,11 @@
     "continuePlaceholder": "Continue the conversation…"
   },
   "chatPanel": {
+    "layoutGroup": "Layout and navigation",
+    "saveGroup": "Save conversation",
+    "inputTools": "Input tools",
+    "referenceGroup": "References and materials",
+    "generationGroup": "Generation settings",
     "title": "Dovun assistant",
     "newConversation": "New conversation",
     "moreActions": "More conversation actions",
@@ -619,6 +624,10 @@
     "queried": "Queried {{count}} items"
   },
   "studyTopic": {
+    "tools": "Study tools",
+    "moreTools": "More study tools",
+    "reviewGroup": "Review materials",
+    "topicGroup": "Learning topics",
     "switch": "Switch topic",
     "none": "No topic selected",
     "new": "New topic…",

@@ -1,3 +1,4 @@
+import { assistantMenuItem } from './assistant-toolbar.js';
 import { randomUUID } from 'node:crypto';
 import { test, expect, type APIRequestContext, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
@@ -11,7 +12,7 @@ async function command(request: APIRequestContext, commands: unknown[]) {
 }
 async function outline(page: Page) { await page.getByRole('button', { name: '知识目录',exact: true }).click(); }
 async function openNote(page: Page) { await outline(page); await page.getByRole('button', { name: new RegExp(title) }).click(); await expect(page.getByTestId('learning-note-reading').or(page.getByTestId('learning-note-editor'))).toBeVisible(); if (await page.getByTestId('learning-note-reading').isVisible()) await page.getByRole('button', { name: '编辑笔记', exact: true }).click(); await expect(page.getByTestId('learning-note-editor').getByRole('textbox')).toBeVisible(); }
-async function closeAssistant(page: Page,isMobile: boolean) { if (isMobile) await page.getByTestId('ai-assistant').getByRole('button',{ name: '返回当前页面',exact: true }).click(); }
+async function closeAssistant(page: Page,isMobile: boolean) { if (isMobile) await (await assistantMenuItem(page, /^(返回当前页面|返回学习)$/)).click(); }
 test.beforeEach(async ({ page,request }) => {
   await resetE2eDatabase();
   await request.patch(`${api}/api/settings`, { data: { baseUrl: 'http://127.0.0.1:4010/v1',model: 'mock-model',apiKey: 'e2e-key' } });
@@ -228,7 +229,7 @@ test('deep hierarchies retain separated tile columns and long titles in a scroll
     const width = await graph.evaluate(element => element.parentElement!.clientWidth);
     await page.getByRole('button',{ name: '问学习助手',exact: true }).click();
     await expect.poll(() => graph.evaluate(element => element.parentElement!.clientWidth)).toBeLessThan(width);
-    await page.getByTestId('ai-assistant').getByRole('button',{ name: '关闭聊天',exact: true }).click();
+    await (await assistantMenuItem(page, /^(关闭聊天|返回学习)$/)).click();
     await expect.poll(() => graph.evaluate(element => element.parentElement!.clientWidth)).toBe(width);
   }
 });

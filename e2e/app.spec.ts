@@ -1,3 +1,4 @@
+import { assistantMenuItem } from './assistant-toolbar.js';
 import { test, expect, type APIRequestContext, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 
@@ -169,14 +170,15 @@ test.describe('Agent 工作室 MVP', () => {
     await expect(chatHeading).toBeHidden();
     await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
     await expect(chatHeading).toBeVisible();
-    await expect(page.getByRole('button', { name: '关闭聊天' })).toBeVisible();
+    await expect(await assistantMenuItem(page, '关闭聊天')).toBeVisible();
+    await page.keyboard.press('Escape');
     const composer = page.getByRole('textbox', { name: composerName });
     await composer.fill('关闭后仍然保留');
     const boardWidthBeforeClose = (await boardSection.boundingBox())?.width;
     expect(boardWidthBeforeClose).toBeGreaterThan(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
 
-    await page.getByRole('button', { name: '关闭聊天' }).click();
+    await (await assistantMenuItem(page, '关闭聊天')).click();
     await expect(chatHeading).toBeHidden();
     await expect(page.getByRole('button', { name: '打开 AI 助手' })).toBeVisible();
     const boardWidthAfterClose = (await boardSection.boundingBox())?.width;
@@ -185,7 +187,8 @@ test.describe('Agent 工作室 MVP', () => {
 
     await page.getByRole('button', { name: '打开 AI 助手' }).click();
     await expect(chatHeading).toBeVisible();
-    await expect(page.getByRole('button', { name: '关闭聊天' })).toBeVisible();
+    await expect(await assistantMenuItem(page, '关闭聊天')).toBeVisible();
+    await page.keyboard.press('Escape');
     await expect(composer).toHaveValue('关闭后仍然保留');
   });
 
@@ -232,7 +235,8 @@ test.describe('Agent 工作室 MVP', () => {
     await expect(chatHeading).toBeVisible();
     // 打开 AI 助手只拉开侧栏，不会 navigate 到 #/chat，因此地址仍是收集箱，并出现「返回当前页面」。
     await expect(page).toHaveURL(/#\/inbox$/);
-    await expect(page.getByRole('button', { name: '返回当前页面' })).toBeVisible();
+    await expect(await assistantMenuItem(page, '返回当前页面')).toBeVisible();
+    await page.keyboard.press('Escape');
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
   });
 

@@ -1,3 +1,4 @@
+import { assistantMenuItem } from './assistant-toolbar.js';
 import { randomUUID } from 'node:crypto';
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 
@@ -21,7 +22,7 @@ async function openStudy(page: Page) {
   await page.goto('/#/inbox');
   await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();
   const panel = page.getByTestId('ai-assistant');
-  await panel.getByRole('button', { name: '切换助手', exact: true }).click();
+  await panel.getByTestId('assistant-more-actions').click();
   await page.getByRole('menuitem', { name: '学习助手', exact: true }).click();
   await expect(panel.getByTestId('study-topic-bar')).toBeVisible(); return panel;
 }
@@ -39,6 +40,41 @@ async function send(page: Page, text: string) {
 }
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => { localStorage.setItem('dovun.theme', 'light'); (window as any).__REACT_GRAB_DISABLED__ = true; });
+});
+
+test('both built-in assistants share one header and a maximum of three controls per region', async ({ page, request }) => {
+  const topic = await seed(request);
+  await page.setViewportSize({ width: 390, height: 740 });
+  const panel = await openStudy(page);
+  await selectTopic(page, topic.title);
+  const regionCounts = () => panel.locator('[data-chat-tools-region]').evaluateAll(nodes =>
+    nodes.map(node => [node.getAttribute('data-chat-tools-region'), node.querySelectorAll('button').length]),
+  );
+  await expect(panel.locator('header.assistant-header')).toHaveCount(1);
+  expect(await regionCounts()).toEqual([['header', 3], ['study', 3], ['composer', 3]]);
+  const dock = panel.getByTestId('study-topic-bar');
+  expect((await dock.boundingBox())!.y).toBeGreaterThan((await panel.locator('[data-chat-scroll]').boundingBox())!.y);
+  expect((await dock.boundingBox())!.y).toBeLessThan((await panel.getByTestId('assistant-context').boundingBox())!.y);
+  await expect(page.getByTestId('study-briefing')).toHaveCount(0);
+  await dock.getByRole('button', { name: /主图/ }).click();
+  const figure = page.getByTestId('study-figure-sheet');
+  await expect(figure.locator('[data-figure-status]')).toBeVisible();
+  await figure.getByRole('button', { name: '收起', exact: true }).click();
+
+  const more = dock.getByTestId('study-more-actions');
+  await more.click();
+  const menu = page.getByRole('menu');
+  await expect(menu.getByText('复习资料', { exact: true })).toBeVisible();
+  await expect(menu.getByText('学习主题', { exact: true })).toBeVisible();
+  await menu.getByRole('menuitem', { name: '学习简报', exact: true }).click();
+  await expect(page.getByTestId('study-briefing')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(more).toBeFocused();
+
+  await (await assistantMenuItem(page, '工作助手')).click();
+  await expect(panel.getByTestId('study-topic-bar')).toHaveCount(0);
+  expect(await regionCounts()).toEqual([['header', 3], ['composer', 3]]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
 test('topic conversation, live node card, figure keyboard navigation and archive survive refresh', async ({ page, request, isMobile }, testInfo) => {
@@ -68,7 +104,7 @@ test('topic conversation, live node card, figure keyboard navigation and archive
   await expect(page.getByTestId('learning-card-node')).toBeVisible();
   await page.getByTestId('learning-card-node').getByRole('button', { name: '看笔记', exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`map=${topic.mapId}.*node=${topic.nodeId}`));
-  if (!isMobile) await page.getByTestId('ai-assistant').getByRole('button', { name: '关闭聊天', exact: true }).click();
+  if (!isMobile) await (await assistantMenuItem(page, /^(关闭聊天|返回学习)$/)).click();
   await expect(page.getByTestId('learning-workspace')).toBeVisible();
   await page.getByTestId('learning-archive-figure').getByRole('button', { name: '学习主图', exact: true }).click();
   await expect(page.getByTestId('learning-archive-figure').getByTestId('learning-figure')).toBeVisible();
@@ -141,7 +177,7 @@ test('a delayed topic selection cannot override a newer choice or an identity sw
   await page.route(`**/api/conversations?identityId=study&learningMapId=${a.mapId}`, async route => { await identityGate; await route.continue(); });
   await page.getByTestId('study-topic-bar').getByRole('button', { name: '切换主题', exact: true }).click();
   await page.getByRole('menuitem').filter({ hasText: a.title }).click();
-  await page.getByTestId('ai-assistant').getByRole('button', { name: '切换助手', exact: true }).click();
+  await page.getByTestId('ai-assistant').getByTestId('assistant-more-actions').click();
   await page.getByRole('menuitem', { name: '工作助手', exact: true }).click();
   const returned = page.waitForResponse(response => response.url().includes(`learningMapId=${a.mapId}`)); release(); await returned;
   const work = await send(page, '继续工作'); expect(work.identityId).toBe('work'); expect(work.learningMapId).toBeUndefined();

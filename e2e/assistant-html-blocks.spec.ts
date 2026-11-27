@@ -1,3 +1,4 @@
+import { assistantMenuItem } from './assistant-toolbar.js';
 import { test, expect, type Page } from './fixtures.js';
 import { e2eDatabase, resetE2eDatabase } from './database.js';
 const api = process.env.E2E_API_URL ?? 'http://127.0.0.1:3015';
@@ -458,7 +459,7 @@ test('懒加载：换位置和收起面板后照常加载', async ({ page }, tes
     await scrollUntilNewlyLoaded(page, false);
     await expect(page.getByText(blockedText, { exact: true })).toHaveCount(0);
   }
-  await page.locator('button[title="收起助手"]').click();
+  await (await assistantMenuItem(page, /^(收起助手|关闭聊天|返回当前页面)$/)).click();
   await page.reload();
   await expect(page.locator('[data-testid="html-block"]')).toHaveCount(8, { timeout: 15_000 });
   await page.getByRole('button', { name: '打开 AI 助手', exact: true }).click();

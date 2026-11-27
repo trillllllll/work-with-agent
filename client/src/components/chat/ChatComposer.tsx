@@ -19,6 +19,8 @@ type ChatComposerProps = {
   onSend: (event: FormEvent) => void;
   onCancelReference?: () => void;
   toolbar?: ReactNode;
+  /** Inline, always-visible controls for the shared built-in assistant layout. */
+  compactTools?: ReactNode;
   contextUsage?: ReactNode;
   contextPill?: ReactNode;
   model?: ReactNode;
@@ -34,7 +36,7 @@ type ChatComposerProps = {
 };
 
 export function ChatComposer({
-  input, busy, reference, onChange, onSend, onCancelReference, toolbar, contextUsage, contextPill, model, onStop, stopping,
+  input, busy, reference, onChange, onSend, onCancelReference, toolbar, compactTools, contextUsage, contextPill, model, onStop, stopping,
   placeholder, maxLength, actionsDisabled, sendDisabled, allowSendWhileBusy, labels, listenForAssistantFocus = true,
 }: ChatComposerProps) {
   const { t } = useTranslation('chat');
@@ -110,15 +112,19 @@ export function ChatComposer({
     if (canSend) setJustSent(true);
     onSend(event);
   };
+  const submitControls = <>
+            {busy && <Button type="button" size="icon" className="size-8 rounded-full" onClick={onStop} disabled={stopping || actionsDisabled} aria-label={labels?.stop ?? t('composer.stop')} title={labels?.stop}><Square className="size-3 fill-current" /></Button>}
+            {showSend && <Button type="submit" size="icon" className="size-8 rounded-full" disabled={!canSend} aria-label={labels?.send ?? t('composer.send')} title={labels?.send}><ArrowUp /></Button>}
+  </>;
   return (
     <form className="assistant-composer flex shrink-0 flex-col gap-2 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2" onSubmit={handleSubmit}>
-      {reference && (
+      {reference && !compactTools && (
         <div className="flex items-center justify-between gap-3 text-xs">
           <span>{t('composer.adjusting', { title: reference.title })}</span>
           <Button variant="plain" size="bare" type="button" className="shrink-0" onClick={onCancelReference}>{t('composer.removeReference')}</Button>
         </div>
       )}
-      <Surface as="div" tone="input" className="assistant-input-box" data-tools={expanded || busy ? 'open' : 'folded'}>
+      <Surface as="div" tone="input" className="assistant-input-box" data-compact-composer={compactTools ? true : undefined} data-tools={expanded || busy ? 'open' : 'folded'}>
         <div className="composer-field">
           <Textarea variant="inline"
             ref={textareaRef}
@@ -135,17 +141,18 @@ export function ChatComposer({
             onCompositionEnd={() => { composing.current = false; }}
             onKeyDown={onKeyDown}
           />
+          {compactTools}
           {contextPill}
           {contextUsage}
+          {compactTools && submitControls}
         </div>
-        <div className="composer-tools">
+        {!compactTools && <div className="composer-tools">
           <div className="flex min-w-0 items-center gap-2">
             {toolbar}
             <span className="flex min-w-0 flex-1 items-center truncate text-[11px] text-muted-foreground">{model}</span>
-            {busy && <Button type="button" size="icon" className="size-8 rounded-full" onClick={onStop} disabled={stopping || actionsDisabled} aria-label={labels?.stop ?? t('composer.stop')} title={labels?.stop}><Square className="size-3 fill-current" /></Button>}
-            {showSend && <Button type="submit" size="icon" className="size-8 rounded-full" disabled={!canSend} aria-label={labels?.send ?? t('composer.send')} title={labels?.send}><ArrowUp /></Button>}
+            {submitControls}
           </div>
-        </div>
+        </div>}
       </Surface>
       {stopping && <p className="text-center text-[10px] text-muted-foreground">{t('composer.stopping')}</p>}
     </form>
