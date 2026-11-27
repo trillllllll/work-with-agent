@@ -1,0 +1,682 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Dovun · Harness 会话入口原型</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --background: #eae6de;
+      --foreground: #293535;
+      --card: #fffdf8;
+      --primary: #43618c;
+      --primary-foreground: #fffdf8;
+      --secondary: #f4f3ed;
+      --muted: #f2efe8;
+      --muted-foreground: #5f6a64;
+      --accent: #e7eef8;
+      --warning: #866027;
+      --warning-bg: #f5efdf;
+      --success: #3e6d52;
+      --success-bg: #e7efe7;
+      --danger: #a44840;
+      --danger-bg: #f8e9e5;
+      --border: rgb(86 98 111 / .23);
+      --border-soft: rgb(86 98 111 / .115);
+      --surface-panel: #f6f4ee;
+      --shadow: 0 20px 50px rgb(38 45 42 / .13);
+      --radius: 17px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--foreground);
+      background: var(--background);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; }
+    button, input, textarea, select { font: inherit; }
+    button, select { cursor: pointer; }
+    button { color: inherit; }
+    button:disabled { cursor: not-allowed; opacity: .45; }
+    button:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible {
+      outline: 2px solid #7d97c4;
+      outline-offset: 2px;
+    }
+    .icon { width: 18px; height: 18px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+    .prototype-bar {
+      min-height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      max-width: 1220px;
+      margin: 0 auto;
+      padding: 10px 18px;
+    }
+    .prototype-title { display: flex; align-items: center; gap: 9px; min-width: 0; }
+    .prototype-title strong { font-size: 14px; white-space: nowrap; }
+    .prototype-title span { color: var(--muted-foreground); font-size: 12px; }
+    .prototype-actions { display: flex; gap: 6px; padding: 3px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--surface-panel); }
+    .prototype-actions button { min-height: 32px; padding: 4px 11px; border: 0; border-radius: 7px; background: transparent; font-size: 12px; }
+    .prototype-actions button[aria-pressed="true"] { background: var(--card); color: var(--primary); box-shadow: 0 1px 4px rgb(38 45 42 / .1); }
+    .stage { display: grid; place-items: start center; padding: 0 18px 16px; }
+    .device {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--surface-panel);
+      box-shadow: var(--shadow);
+      transition: width 160ms ease;
+    }
+    .device.mobile { width: 390px; max-width: 100%; height: min(790px, calc(100dvh - 92px)); min-height: 610px; border-radius: 28px; }
+    .device.desktop { width: min(1180px, calc(100vw - 36px)); height: min(780px, calc(100dvh - 92px)); min-height: 610px; border-radius: 18px; }
+    .app { height: 100%; min-height: 0; background: var(--surface-panel); }
+    .desktop .app { display: grid; grid-template-columns: 218px minmax(0, 1fr); }
+    .mobile .app { display: flex; flex-direction: column; }
+    .sidebar { min-height: 0; display: flex; flex-direction: column; padding: 18px 12px 12px; background: var(--background); border-right: 1px solid var(--border-soft); }
+    .mobile .sidebar { display: none; }
+    .brand { display: flex; align-items: center; gap: 9px; padding: 0 8px 22px; font-size: 18px; font-weight: 650; letter-spacing: -.02em; }
+    .brand-mark { display: grid; place-items: center; width: 29px; height: 29px; border-radius: 9px; color: var(--primary-foreground); background: var(--primary); font-size: 13px; }
+    .side-section { margin: 8px 8px 5px; color: var(--muted-foreground); font-size: 11px; font-weight: 550; }
+    .side-link { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 42px; padding: 8px 10px; border: 0; border-radius: 9px; background: transparent; text-align: left; font-size: 13px; }
+    .side-link:hover { background: var(--accent); }
+    .side-link[aria-current="page"] { color: var(--primary); background: var(--accent); font-weight: 600; }
+    .side-link .icon { width: 16px; height: 16px; }
+    .side-recent { margin: auto 2px 0; padding: 11px; border: 1px solid var(--border-soft); border-radius: 12px; background: rgb(255 253 248 / .55); }
+    .side-recent > span { display: block; margin-bottom: 5px; color: var(--muted-foreground); font-size: 11px; }
+    .side-recent button { width: 100%; padding: 0; border: 0; background: transparent; text-align: left; }
+    .side-recent strong { display: block; font-size: 12px; }
+    .side-recent small { display: block; margin-top: 3px; color: var(--muted-foreground); }
+    .workspace { min-width: 0; min-height: 0; }
+    .desktop .workspace { display: grid; grid-template-columns: minmax(320px, 380px) minmax(0, 1fr); }
+    .mobile .workspace { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+    .list-pane { min-width: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; background: var(--surface-panel); }
+    .desktop .list-pane { border-right: 1px solid var(--border-soft); }
+    .mobile .list-pane { flex: 1; }
+    .list-content { padding: 16px 16px 26px; }
+    .list-header { display: flex; align-items: center; gap: 8px; min-height: 44px; margin-bottom: 12px; }
+    .list-header h1 { flex: 1; margin: 0; font-size: 21px; letter-spacing: -.02em; }
+    .header-back { width: 44px; height: 44px; margin-left: -9px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 10px; background: transparent; }
+    .header-back:hover { background: var(--accent); }
+    .desktop .header-back { display: none; }
+    .button { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 7px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--secondary); font-weight: 500; }
+    .button:hover:not(:disabled) { filter: brightness(1.025); background: var(--accent); }
+    .button.primary { border-color: var(--primary); color: var(--primary-foreground); background: var(--primary); }
+    .button.primary:hover:not(:disabled) { background: #385579; }
+    .button.ghost { border-color: transparent; background: transparent; }
+    .button.small { min-height: 36px; padding: 5px 10px; font-size: 12px; }
+    .new-button { min-height: 44px; }
+    .recent-card {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-height: 70px;
+      margin-bottom: 16px;
+      padding: 11px 12px;
+      border: 1px solid rgb(67 97 140 / .25);
+      border-radius: 13px;
+      background: var(--accent);
+      text-align: left;
+    }
+    .recent-card:hover { border-color: var(--primary); }
+    .recent-card .recent-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; color: var(--primary); background: var(--card); }
+    .recent-card .recent-copy { min-width: 0; flex: 1; }
+    .recent-card small { display: block; color: var(--primary); font-size: 11px; font-weight: 600; }
+    .recent-card strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+    .recent-card .recent-meta { display: block; color: var(--muted-foreground); font-size: 11px; font-weight: 400; }
+    .filter-block { margin-bottom: 12px; }
+    .filter-label { display: block; margin: 0 0 6px 2px; color: var(--muted-foreground); font-size: 11px; font-weight: 550; }
+    .chips { display: flex; gap: 6px; overflow-x: auto; padding: 2px; scrollbar-width: none; }
+    .chips::-webkit-scrollbar { display: none; }
+    .chip { flex: 0 0 auto; min-height: 36px; padding: 5px 11px; border: 1px solid var(--border-soft); border-radius: 9px; background: var(--muted); font-size: 12px; }
+    .chip[aria-pressed="true"] { border-color: rgb(67 97 140 / .35); color: var(--primary); background: var(--accent); font-weight: 600; }
+    .filter-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; }
+    .select { width: 100%; min-height: 38px; padding: 6px 28px 6px 10px; border: 1px solid var(--border); border-radius: 9px; color: var(--foreground); background: var(--muted); font-size: 12px; }
+    .segmented { display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--muted); }
+    .segmented button { min-height: 32px; padding: 4px 9px; border: 0; border-radius: 7px; background: transparent; color: var(--muted-foreground); font-size: 11px; }
+    .segmented button[aria-pressed="true"] { color: var(--foreground); background: var(--card); box-shadow: 0 1px 3px rgb(38 45 42 / .08); }
+    .session-sheet { overflow: hidden; border: 1px solid var(--border-soft); border-radius: 13px; background: var(--card); }
+    .project-heading { display: flex; align-items: center; gap: 6px; margin: 0; padding: 12px 12px 6px; color: var(--muted-foreground); font-size: 11px; font-weight: 600; background: var(--surface-panel); border-bottom: 1px solid var(--border-soft); }
+    .project-heading .icon { width: 14px; height: 14px; }
+    .session-row { position: relative; display: flex; align-items: flex-start; gap: 9px; width: 100%; min-height: 100px; padding: 12px; border: 0; border-bottom: 1px solid var(--border-soft); background: transparent; text-align: left; }
+    .session-row:last-child { border-bottom: 0; }
+    .session-row:hover { background: var(--accent); }
+    .session-row[aria-current="page"] { background: var(--accent); box-shadow: inset 3px 0 var(--primary); }
+    .session-symbol { display: grid; place-items: center; width: 31px; height: 31px; margin-top: 1px; border-radius: 9px; color: var(--muted-foreground); background: var(--muted); }
+    .session-symbol .icon { width: 16px; height: 16px; }
+    .session-main { min-width: 0; flex: 1; }
+    .session-title-line { display: flex; align-items: center; gap: 6px; }
+    .session-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+    .session-time { color: var(--muted-foreground); font-size: 10px; white-space: nowrap; }
+    .harness-name { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; color: var(--primary); font-size: 11px; font-weight: 550; }
+    .session-project { display: block; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-size: 11px; }
+    .session-path { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9px; }
+    .session-status-line { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 6px; }
+    .badge { display: inline-flex; align-items: center; gap: 4px; min-height: 21px; padding: 2px 7px; border-radius: 999px; color: var(--muted-foreground); background: var(--muted); font-size: 10px; font-weight: 550; white-space: nowrap; }
+    .badge.success { color: var(--success); background: var(--success-bg); }
+    .badge.warning { color: var(--warning); background: var(--warning-bg); }
+    .badge.danger { color: var(--danger); background: var(--danger-bg); }
+    .badge.accent { color: var(--primary); background: var(--accent); }
+    .computer { color: var(--muted-foreground); font-size: 10px; }
+    .row-chevron { align-self: center; width: 15px; color: var(--muted-foreground); }
+    .empty { padding: 34px 20px; text-align: center; color: var(--muted-foreground); }
+    .empty .icon { width: 28px; height: 28px; margin-bottom: 8px; }
+    .empty strong { display: block; margin-bottom: 5px; color: var(--foreground); font-size: 14px; }
+    .empty p { margin: 0; font-size: 12px; }
+    .detail-pane { min-width: 0; min-height: 0; background: var(--card); }
+    .mobile .detail-pane { flex: 1; }
+    .detail-placeholder { height: 100%; display: grid; place-items: center; padding: 30px; color: var(--muted-foreground); text-align: center; }
+    .detail-placeholder .icon { width: 30px; height: 30px; margin-bottom: 8px; }
+    .detail-placeholder strong { display: block; color: var(--foreground); font-weight: 550; }
+    .detail-placeholder p { margin: 4px 0 0; font-size: 12px; }
+    .chat { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+    .chat-header { min-height: 70px; display: flex; align-items: center; gap: 10px; padding: 10px 15px; border-bottom: 1px solid var(--border-soft); background: var(--card); }
+    .chat-back { display: none; width: 44px; height: 44px; margin-left: -10px; place-items: center; border: 0; border-radius: 10px; background: transparent; }
+    .mobile .chat-back { display: grid; }
+    .chat-avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; color: var(--primary); background: var(--accent); }
+    .chat-identity { min-width: 0; flex: 1; }
+    .chat-identity h2 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; }
+    .chat-identity p { margin: 2px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-size: 11px; }
+    .chat-project { padding: 8px 16px; border-bottom: 1px solid var(--border-soft); background: var(--surface-panel); }
+    .chat-project strong { display: block; font-size: 11px; font-weight: 550; }
+    .chat-project span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
+    .state-notice { display: flex; align-items: flex-start; gap: 8px; margin: 10px 14px 0; padding: 9px 10px; border: 1px solid var(--border-soft); border-radius: 10px; color: var(--muted-foreground); background: var(--muted); font-size: 11px; }
+    .state-notice.warning { color: var(--warning); border-color: rgb(134 96 39 / .2); background: var(--warning-bg); }
+    .state-notice.danger { color: var(--danger); border-color: rgb(164 72 64 / .18); background: var(--danger-bg); }
+    .state-notice .icon { width: 16px; height: 16px; margin-top: 1px; }
+    .state-notice p { margin: 0; }
+    .state-notice strong { font-weight: 650; }
+    .messages { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 18px 16px 24px; }
+    .message { display: flex; flex-direction: column; margin-bottom: 17px; }
+    .message.user { align-items: flex-end; }
+    .message.assistant { align-items: flex-start; }
+    .message-label { margin-bottom: 5px; color: var(--muted-foreground); font-size: 10px; }
+    .bubble { max-width: min(88%, 580px); padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: 5px 14px 14px 14px; background: var(--surface-panel); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+    .user .bubble { border-color: rgb(67 97 140 / .15); border-radius: 14px 5px 14px 14px; background: var(--accent); }
+    .message-tools { margin-top: 4px; }
+    .message-tools button { min-height: 30px; padding: 2px 6px; border: 0; color: var(--muted-foreground); background: transparent; font-size: 10px; }
+    .new-welcome { max-width: 420px; margin: 12vh auto 0; text-align: center; color: var(--muted-foreground); }
+    .new-welcome .chat-avatar { margin: 0 auto 10px; }
+    .new-welcome h3 { margin: 0 0 6px; color: var(--foreground); font-size: 17px; }
+    .new-welcome p { margin: 0; font-size: 12px; }
+    .new-summary { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 14px; }
+    .composer-area { flex: 0 0 auto; padding: 9px 12px max(12px, env(safe-area-inset-bottom)); border-top: 1px solid var(--border-soft); background: var(--card); }
+    .permission-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 2px 7px; color: var(--muted-foreground); font-size: 10px; }
+    .permission-line span { display: inline-flex; align-items: center; gap: 4px; }
+    .permission-line .icon { width: 12px; height: 12px; }
+    .composer { display: flex; align-items: flex-end; gap: 7px; }
+    .composer textarea { min-width: 0; min-height: 44px; max-height: 110px; flex: 1; resize: none; padding: 10px 11px; border: 1px solid var(--border); border-radius: 11px; color: var(--foreground); background: var(--muted); font-size: 16px; line-height: 1.4; }
+    .composer textarea::placeholder { color: var(--muted-foreground); }
+    .send-button { min-width: 74px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--primary); border-radius: 11px; color: var(--primary-foreground); background: var(--primary); font-size: 12px; font-weight: 600; }
+    .unavailable-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+    .unavailable-actions .button { flex: 1; min-height: 42px; font-size: 11px; }
+    .mobile-nav { flex: 0 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); min-height: 63px; padding: 5px 7px max(6px, env(safe-area-inset-bottom)); border-top: 1px solid var(--border-soft); background: var(--card); }
+    .desktop .mobile-nav { display: none; }
+    .mobile-nav button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 48px; border: 0; border-radius: 9px; color: var(--muted-foreground); background: transparent; font-size: 10px; }
+    .mobile-nav button[aria-current="page"] { color: var(--primary); background: var(--accent); }
+    .mobile-nav .icon { width: 19px; height: 19px; }
+    .home { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 15px 24px; background: var(--surface-panel); }
+    .home-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin: 0 2px 17px; }
+    .home-header h1 { margin: 0; font-size: 25px; letter-spacing: -.03em; }
+    .home-header p { margin: 2px 0 0; color: var(--muted-foreground); font-size: 12px; }
+    .offline-pill { padding: 4px 8px; border: 1px solid var(--border-soft); border-radius: 999px; color: var(--muted-foreground); background: var(--muted); font-size: 10px; white-space: nowrap; }
+    .assistant-entry, .home-entry { width: 100%; display: flex; align-items: center; gap: 11px; border: 1px solid var(--border-soft); background: var(--card); text-align: left; }
+    .assistant-entry { min-height: 58px; padding: 9px 12px; border-radius: 14px; }
+    .entry-icon { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; border-radius: 10px; color: var(--muted-foreground); background: var(--muted); }
+    .entry-copy { min-width: 0; flex: 1; }
+    .entry-copy strong { display: block; font-size: 14px; font-weight: 600; }
+    .entry-copy small { display: block; margin-top: 1px; color: var(--muted-foreground); font-size: 11px; }
+    .entry-chevron { width: 16px; color: var(--muted-foreground); }
+    .home-group-title { margin: 21px 4px 7px; color: var(--muted-foreground); font-size: 11px; font-weight: 600; }
+    .home-shortcuts { display: grid; gap: 8px; }
+    .home-entry { min-height: 68px; padding: 10px 12px; border-radius: 14px; }
+    .home-entry.primary-entry { min-height: 76px; border-color: rgb(67 97 140 / .28); background: var(--accent); }
+    .home-entry.primary-entry .entry-icon { color: var(--primary-foreground); background: var(--primary); }
+    .home-entry.primary-entry strong { color: var(--primary); font-size: 16px; }
+    .home-entry:hover { border-color: var(--primary); }
+    .home-nav-sheet { overflow: hidden; border: 1px solid var(--border-soft); border-radius: 14px; background: var(--card); }
+    .home-nav-row { min-height: 48px; display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 13px; border: 0; border-bottom: 1px solid var(--border-soft); background: transparent; text-align: left; }
+    .home-nav-row:last-child { border-bottom: 0; }
+    .home-nav-row span { flex: 1; }
+    .home-nav-row small { color: var(--muted-foreground); font-size: 10px; }
+    .home-note { margin: 15px 4px 0; color: var(--muted-foreground); font-size: 10px; }
+    .overlay { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: rgb(21 32 48 / .28); backdrop-filter: blur(3px); }
+    .dialog { width: min(480px, 100%); max-height: 92%; overflow-y: auto; padding: 20px; border: 1px solid var(--border); border-radius: 18px; background: var(--card); box-shadow: var(--shadow); }
+    .mobile .overlay { align-items: end; padding: 0; }
+    .mobile .dialog { width: 100%; max-height: 94%; padding: 19px 17px max(20px, env(safe-area-inset-bottom)); border-radius: 20px 20px 0 0; }
+    .dialog-header { margin-bottom: 16px; }
+    .dialog-header h2 { margin: 0; font-size: 20px; }
+    .dialog-header p { margin: 4px 0 0; color: var(--muted-foreground); font-size: 12px; }
+    .dialog fieldset { min-width: 0; margin: 0 0 15px; padding: 0; border: 0; }
+    .dialog legend { margin-bottom: 7px; font-size: 12px; font-weight: 600; }
+    .choice-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+    .choice { min-height: 46px; padding: 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--muted); font-size: 12px; }
+    .choice[aria-pressed="true"] { border-color: var(--primary); color: var(--primary); background: var(--accent); font-weight: 600; }
+    .project-choices { display: grid; gap: 7px; }
+    .project-choice { display: flex; align-items: flex-start; gap: 9px; width: 100%; min-height: 62px; padding: 9px 10px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--muted); text-align: left; }
+    .project-choice[aria-pressed="true"] { border-color: var(--primary); background: var(--accent); }
+    .project-choice .icon { margin-top: 2px; }
+    .project-choice span { min-width: 0; flex: 1; }
+    .project-choice strong { display: block; font-size: 12px; }
+    .project-choice small { display: block; color: var(--muted-foreground); font-size: 10px; }
+    .project-choice code { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-size: 9px; }
+    .confirm-summary { padding: 11px; border: 1px solid rgb(67 97 140 / .2); border-radius: 11px; background: var(--accent); }
+    .confirm-summary > span { display: block; color: var(--primary); font-size: 10px; font-weight: 600; }
+    .confirm-summary strong { display: block; margin-top: 3px; font-size: 13px; }
+    .confirm-summary p { margin: 3px 0 0; color: var(--muted-foreground); font-size: 11px; }
+    .permission-note { display: flex; gap: 6px; margin: 11px 2px; color: var(--muted-foreground); font-size: 10px; }
+    .permission-note .icon { width: 14px; height: 14px; }
+    .dialog-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+    .dialog-footer .button { min-height: 44px; }
+    .toast { position: absolute; z-index: 50; left: 50%; bottom: 22px; transform: translateX(-50%); width: max-content; max-width: calc(100% - 30px); padding: 9px 13px; border-radius: 10px; color: var(--primary-foreground); background: rgb(41 53 53 / .94); box-shadow: var(--shadow); font-size: 11px; text-align: center; }
+    .mobile:has(.mobile-nav) .toast { bottom: 76px; }
+    .acceptance { max-width: 1180px; margin: 0 auto 24px; padding: 0 18px; color: var(--muted-foreground); font-size: 12px; }
+    .acceptance summary { width: fit-content; min-height: 38px; padding: 8px 0; cursor: pointer; color: var(--foreground); font-weight: 600; }
+    .acceptance-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .acceptance section { padding: 12px 15px; border: 1px solid var(--border-soft); border-radius: 12px; background: var(--surface-panel); }
+    .acceptance h2 { margin: 0; color: var(--foreground); font-size: 13px; }
+    .acceptance ol { margin: 6px 0 0; padding-left: 20px; }
+    .prototype-foot { max-width: 1180px; margin: 0 auto; padding: 0 18px 22px; color: var(--muted-foreground); font-size: 10px; text-align: center; }
+    @media (max-width: 600px) {
+      .prototype-bar { min-height: 54px; padding: 8px 10px; }
+      .prototype-title span { display: none; }
+      .prototype-title strong { font-size: 12px; }
+      .prototype-actions button { padding-inline: 8px; }
+      .stage { padding: 0; }
+      .device.mobile { width: 100%; height: calc(100dvh - 54px); min-height: 580px; border: 0; border-radius: 0; box-shadow: none; }
+      .acceptance { padding-inline: 12px; }
+      .acceptance-grid { grid-template-columns: 1fr; }
+    }
+    @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
+  </style>
+</head>
+<body>
+  <svg aria-hidden="true" width="0" height="0" style="position:absolute">
+    <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 9 3 3-3 3m5 0h5"/></symbol>
+    <symbol id="i-message" viewBox="0 0 24 24"><path d="M20 15a3 3 0 0 1-3 3H9l-5 3v-6a3 3 0 0 1-1-2V7a3 3 0 0 1 3-3h11a3 3 0 0 1 3 3z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="i-computer" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></symbol>
+    <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="14" rx="3"/><path d="M12 2v4M8 11h.01M16 11h.01M8 16h8"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4m8-4v4M3 10h18"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M4 4h16l2 12v4H2v-4z"/><path d="M2 16h6l2 2h4l2-2h6"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 21h20z"/><path d="M12 9v5m0 3h.01"/></symbol>
+    <symbol id="i-plug" viewBox="0 0 24 24"><path d="m8 12 8-8m-4 0 4 4m-8 8-4 4m8-6-4 4m-4-8 6 6"/></symbol>
+  </svg>
+
+  <header class="prototype-bar">
+    <div class="prototype-title"><strong>Dovun · Harness 会话</strong><span>离线交互原型 / 虚构数据</span></div>
+    <div class="prototype-actions" aria-label="原型视口">
+      <button type="button" data-action="viewport" data-value="mobile" aria-pressed="true">手机 390</button>
+      <button type="button" data-action="viewport" data-value="desktop" aria-pressed="false">桌面分屏</button>
+      <button type="button" data-action="reset">重置</button>
+    </div>
+  </header>
+
+  <main class="stage"><div id="device" class="device mobile"></div></main>
+
+  <details class="acceptance">
+    <summary>本 HTML 的两条验收路径</summary>
+    <div class="acceptance-grid">
+      <section><h2>回访：找到同一条历史</h2><ol><li>手机首页点「Harness 会话」。</li><li>按 Codex + Dovun 找到「核对移动端续聊入口」。</li><li>打开后核对“移动端历史锚点”；离线只读样例仍可查看、复制，但不能发送。</li></ol></section>
+      <section><h2>首次：确认后再发送</h2><ol><li>进入「Harness 会话」→「新建会话」。</li><li>选择 Harness 与项目，核对确认区。</li><li>打开空会话，输入后点「模拟发送」。只产生本地模拟回复。</li></ol></section>
+    </div>
+  </details>
+  <footer class="prototype-foot">无外部资源、网络请求、模型调用或真实进程操作。仅设计 Dovun 已管理的会话，不提供任意终端历史导入。</footer>
+
+  <script>
+    const sessions = [
+      {
+        id: 'latest', title: '核对移动端续聊入口', harness: 'codex', harnessName: 'Codex', project: 'dovun', projectName: 'Dovun',
+        path: '~/WorkSpace/Dovun', computer: '设计 Mac', online: true, state: 'ready', status: '已连接', permission: '工作区可写', time: '10:24',
+        history: [
+          ['user', '请把 Android 续聊验收压缩成两步。'],
+          ['assistant', '先打开 Harness 会话，再按 Codex 和 Dovun 找到原会话。'],
+          ['user', '移动端历史锚点：保留这条消息，用来确认打开的是同一条历史。'],
+          ['assistant', '已记录。新建时会先确认 Harness 和项目，再发送。']
+        ]
+      },
+      {
+        id: 'running', title: '整理 Android 验收路径', harness: 'claude', harnessName: 'Claude Code', project: 'dovun', projectName: 'Dovun',
+        path: '~/WorkSpace/Dovun', computer: '设计 Mac', online: true, state: 'running', status: '运行中', permission: '工作区可写', time: '09:58',
+        history: [
+          ['user', '检查 390px 首屏能否直接找到 Harness 会话。'],
+          ['assistant', '我会先核对首页入口，再检查会话标题、Harness 和项目是否清楚。'],
+          ['assistant', '当前正在整理验收路径。这条 Claude Code 会话支持把下一条消息排到下一轮。']
+        ]
+      },
+      {
+        id: 'offline', title: '检查离线缓存说明', harness: 'codex', harnessName: 'Codex', project: 'dovun', projectName: 'Dovun',
+        path: '~/WorkSpace/Dovun', computer: '工作室 PC', online: false, state: 'offline', status: '电脑离线', permission: '只读', time: '昨天',
+        history: [
+          ['user', '离线时还可以检查哪些内容？'],
+          ['assistant', '可以查看已经缓存的消息并复制内容。未同步的历史可能不完整，发送和审批要等工作室 PC 上线。'],
+          ['user', '权限保持只读，不在恢复连接时自动修改。']
+        ]
+      },
+      {
+        id: 'unavailable', title: '旧版会话迁移核对', harness: 'zcode', harnessName: 'ZCode', project: 'docs', projectName: '文档站',
+        path: '~/Projects/docs', computer: '设计 Mac', online: true, state: 'unavailable', status: '无法续聊', permission: '只读', time: '周一',
+        history: [
+          ['user', '保留这次迁移核对的结论。'],
+          ['assistant', '这段历史可以取回，但原会话当前不可用。需要继续工作时，应重新确认 Harness 和项目后新建会话。']
+        ]
+      }
+    ];
+    const projects = [
+      { id: 'dovun', name: 'Dovun', path: '~/WorkSpace/Dovun', computer: '设计 Mac', online: true },
+      { id: 'docs', name: '文档站', path: '~/Projects/docs', computer: '设计 Mac', online: true },
+      { id: 'archive', name: '归档 Demo', path: '~/Projects/archive-demo', computer: '工作室 PC', online: false }
+    ];
+    const harnessNames = { codex: 'Codex', claude: 'Claude Code', zcode: 'ZCode' };
+    const state = {
+      viewport: 'mobile', screen: 'home', sessionId: null, harness: 'all', project: 'all', viewMode: 'recent',
+      newOpen: false, newHarness: 'codex', newProject: 'dovun', newMessages: [], toast: '', toastTimer: null
+    };
+
+    function icon(name, extra = '') {
+      return `<svg class="icon ${extra}" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
+    }
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
+    }
+    function selectedSession() {
+      if (state.sessionId === 'new') {
+        const project = projects.find(item => item.id === state.newProject);
+        return {
+          id: 'new', title: '新的 Harness 会话', harness: state.newHarness, harnessName: harnessNames[state.newHarness],
+          project: project.id, projectName: project.name, path: project.path, computer: project.computer,
+          online: true, state: 'new', status: '已连接', permission: '沿用当前设置', history: state.newMessages
+        };
+      }
+      return sessions.find(item => item.id === state.sessionId);
+    }
+    function statusClass(session) {
+      if (session.state === 'ready' || session.state === 'new') return 'success';
+      if (session.state === 'running') return 'accent';
+      if (session.state === 'offline') return 'warning';
+      return 'danger';
+    }
+    function nav(active = false) {
+      return `<nav class="mobile-nav" aria-label="手机主导航">
+        <button type="button" data-action="unimplemented" data-label="今天">${icon('calendar')}<span>今天</span></button>
+        <button type="button" data-action="unimplemented" data-label="收集箱">${icon('inbox')}<span>收集箱</span></button>
+        <button type="button" data-action="unimplemented" data-label="清单">${icon('folder')}<span>清单</span></button>
+        <button type="button" data-action="home" ${active ? 'aria-current="page"' : ''}>${icon('more')}<span>更多</span></button>
+      </nav>`;
+    }
+    function sidebar() {
+      return `<aside class="sidebar">
+        <div class="brand"><span class="brand-mark">D</span>Dovun</div>
+        <div class="side-section">AI 协作</div>
+        <button class="side-link" type="button" data-action="unimplemented" data-label="内置 AI 助手">${icon('message')}AI 助手</button>
+        <button class="side-link" type="button" data-action="open-list" ${state.screen !== 'home' ? 'aria-current="page"' : ''}>${icon('terminal')}Harness 会话</button>
+        <button class="side-link" type="button" data-action="runs-info">${icon('bot')}AI 执行</button>
+        <button class="side-link" type="button" data-action="connections-info">${icon('plug')}AI 连接</button>
+        <div class="side-recent"><span>继续最近会话</span><button type="button" data-action="continue-recent"><strong>核对移动端续聊入口</strong><small>Codex · Dovun · 设计 Mac</small></button></div>
+      </aside>`;
+    }
+    function home() {
+      return `<div class="home">
+        <header class="home-header"><div><h1>更多</h1><p>工作区与 AI 协作</p></div><span class="offline-pill">原型预览</span></header>
+        <button class="assistant-entry" type="button" data-action="unimplemented" data-label="内置 AI 助手">
+          <span class="entry-icon">${icon('message')}</span><span class="entry-copy"><strong>AI 助手</strong><small>内置工作助手，与 Harness 会话分开</small></span>${icon('chevron', 'entry-chevron')}
+        </button>
+        <h2 class="home-group-title">AI 协作</h2>
+        <div class="home-shortcuts">
+          <button class="home-entry primary-entry" type="button" data-action="open-list">
+            <span class="entry-icon">${icon('terminal')}</span><span class="entry-copy"><strong>Harness 会话</strong><small>选择或继续 Codex、Claude Code、ZCode</small></span>${icon('chevron', 'entry-chevron')}
+          </button>
+          <button class="home-entry" type="button" data-action="continue-recent">
+            <span class="entry-icon">${icon('clock')}</span><span class="entry-copy"><strong>继续最近：核对移动端续聊入口</strong><small>Codex · Dovun · 设计 Mac</small></span>${icon('chevron', 'entry-chevron')}
+          </button>
+        </div>
+        <div class="home-nav-sheet" style="margin-top:16px">
+          <button class="home-nav-row" type="button" data-action="runs-info">${icon('bot')}<span>AI 执行</span><small>编排、接力与统计</small>${icon('chevron', 'entry-chevron')}</button>
+          <button class="home-nav-row" type="button" data-action="connections-info">${icon('plug')}<span>AI 连接</span><small>配置与授权</small>${icon('chevron', 'entry-chevron')}</button>
+        </div>
+        <p class="home-note">主入口直达会话列表；旧「AI 执行 → 会话」入口与历史深链保留。</p>
+      </div>${nav(true)}`;
+    }
+    function sessionRow(session) {
+      return `<button class="session-row" type="button" data-action="open-session" data-id="${session.id}" ${state.sessionId === session.id ? 'aria-current="page"' : ''} aria-label="打开 ${session.title}，${session.harnessName}，${session.projectName}，${session.status}">
+        <span class="session-symbol">${icon(session.state === 'offline' ? 'clock' : session.state === 'unavailable' ? 'alert' : 'message')}</span>
+        <span class="session-main">
+          <span class="session-title-line"><span class="session-title">${session.title}</span><time class="session-time">${session.time}</time></span>
+          <span class="harness-name">${icon('terminal')} ${session.harnessName}</span>
+          <span class="session-project">${session.projectName} · ${session.computer}</span>
+          <span class="session-path">${session.path}</span>
+          <span class="session-status-line"><span class="badge ${statusClass(session)}">${session.status}</span>${session.permission === '只读' ? '<span class="badge">只读</span>' : ''}<span class="computer">${session.online ? '可查看历史' : '仅缓存历史'}</span></span>
+        </span>${icon('chevron', 'row-chevron')}
+      </button>`;
+    }
+    function sessionSheet() {
+      if (state.harness === 'kimi') {
+        return `<div class="session-sheet"><div class="empty">${icon('plug')}<strong>尚未启用 Kimi Code 会话</strong><p>先在已配对电脑上确认 Harness 可用性。<br>已有会话记录不会因此被删除。</p></div></div>`;
+      }
+      const filtered = sessions.filter(session =>
+        (state.harness === 'all' || session.harness === state.harness) &&
+        (state.project === 'all' || session.project === state.project)
+      );
+      if (!filtered.length) return `<div class="session-sheet"><div class="empty">${icon('message')}<strong>没有符合条件的会话</strong><p>调整 Harness 或项目筛选，也可以新建会话。</p></div></div>`;
+      if (state.viewMode === 'project') {
+        const grouped = new Map();
+        filtered.forEach(session => {
+          if (!grouped.has(session.project)) grouped.set(session.project, []);
+          grouped.get(session.project).push(session);
+        });
+        return `<div class="session-sheet">${[...grouped.entries()].map(([project, rows]) => `<section><h2 class="project-heading">${icon('folder')}${rows[0].projectName} · ${rows[0].computer}</h2>${rows.map(sessionRow).join('')}</section>`).join('')}</div>`;
+      }
+      return `<div class="session-sheet">${filtered.map(sessionRow).join('')}</div>`;
+    }
+    function listPane() {
+      return `<section class="list-pane" aria-label="Harness 会话列表"><div class="list-content">
+        <header class="list-header"><button class="header-back" type="button" data-action="home" aria-label="返回更多">${icon('back')}</button><h1>Harness 会话</h1><button class="button primary new-button" type="button" data-action="new-session" ${state.harness === 'kimi' ? 'disabled' : ''}>${icon('plus')}<span>新建会话</span></button></header>
+        <button class="recent-card" type="button" data-action="continue-recent"><span class="recent-icon">${icon('clock')}</span><span class="recent-copy"><small>继续最近会话</small><strong>核对移动端续聊入口</strong><span class="recent-meta">Codex · Dovun · 设计 Mac</span></span>${icon('chevron', 'entry-chevron')}</button>
+        <div class="filter-block"><span class="filter-label" id="harness-filter-label">Harness</span><div class="chips" role="group" aria-labelledby="harness-filter-label">
+          ${[['all', '全部'], ['codex', 'Codex'], ['claude', 'Claude Code'], ['zcode', 'ZCode'], ['kimi', 'Kimi Code']].map(([id, label]) => `<button class="chip" type="button" data-action="filter-harness" data-value="${id}" aria-pressed="${state.harness === id}">${label}</button>`).join('')}
+        </div></div>
+        <div class="filter-block filter-row">
+          <label><span class="filter-label">项目</span><select class="select" data-change="filter-project" aria-label="按项目筛选"><option value="all">全部项目</option>${projects.map(project => `<option value="${project.id}" ${state.project === project.id ? 'selected' : ''}>${project.name} · ${project.computer}</option>`).join('')}</select></label>
+          <div><span class="filter-label">会话视图</span><div class="segmented" role="group" aria-label="会话视图"><button type="button" data-action="view-mode" data-value="recent" aria-pressed="${state.viewMode === 'recent'}">最近更新</button><button type="button" data-action="view-mode" data-value="project" aria-pressed="${state.viewMode === 'project'}">按项目</button></div></div>
+        </div>
+        ${sessionSheet()}
+        <p style="margin:12px 3px 0;color:var(--muted-foreground);font-size:10px">仅显示 Dovun 已管理的会话；不提供任意终端历史导入。</p>
+      </div></section>`;
+    }
+    function noticeFor(session) {
+      if (session.state === 'running') return `<div class="state-notice">${icon('clock')}<p><strong>运行中。</strong>这条 Claude Code 会话可“排到下一轮”；其他 Harness 只显示各自支持的控制。</p></div>`;
+      if (session.state === 'offline') return `<div class="state-notice warning">${icon('lock')}<p><strong>电脑离线 · 只读。</strong>现在仍可查看和复制已缓存历史；缓存可能不完整。不能发送、审批或修改权限，上线后仍保持只读。</p></div>`;
+      if (session.state === 'unavailable') return `<div class="state-notice danger">${icon('alert')}<p><strong>会话暂不可用，无法续聊。</strong>仍可查看和复制已取回的历史；继续工作需主动新建，并重新确认 Harness 和项目。</p></div>`;
+      if (session.state === 'new') return `<div class="state-notice">${icon('lock')}<p>Harness 和项目已确认。权限沿用当前设置；只有点击「模拟发送」才会添加虚构消息。</p></div>`;
+      return '';
+    }
+    function messages(session) {
+      if (!session.history.length) {
+        return `<div class="new-welcome"><span class="chat-avatar">${icon('terminal')}</span><h3>开始一条 ${session.harnessName} 对话</h3><p>先看清 Harness 和项目，再主动发送第一条消息。</p><div class="new-summary"><span class="badge accent">${session.harnessName}</span><span class="badge">${session.projectName}</span><span class="badge">${session.computer}</span></div></div>`;
+      }
+      return session.history.map(([role, text], index) => `<article class="message ${role}"><span class="message-label">${role === 'user' ? '你' : session.harnessName}</span><div class="bubble">${escapeHtml(text)}</div>${session.state === 'offline' || session.state === 'unavailable' ? `<div class="message-tools"><button type="button" data-action="copy-message" data-index="${index}">${icon('copy')} 复制</button></div>` : ''}</article>`).join('');
+    }
+    function composer(session) {
+      if (session.state === 'offline') {
+        return `<div class="composer-area"><div class="permission-line"><span>${icon('lock')}权限：只读 · 电脑离线</span><span>不会自动重连</span></div><div class="unavailable-actions"><button class="button" type="button" data-action="copy-history">${icon('copy')}复制缓存历史</button><button class="button" type="button" disabled>电脑离线，不能发送</button></div></div>`;
+      }
+      if (session.state === 'unavailable') {
+        return `<div class="composer-area"><div class="permission-line"><span>${icon('alert')}原会话不可续聊</span><span>不会自动重试</span></div><div class="unavailable-actions"><button class="button" type="button" data-action="copy-history">${icon('copy')}复制已取回历史</button><button class="button primary" type="button" data-action="new-session">${icon('plus')}新建会话</button></div></div>`;
+      }
+      const sendLabel = session.state === 'running' ? '模拟排队' : '模拟发送';
+      const placeholder = session.state === 'running' ? '输入消息，模拟排到下一轮' : `发消息给 ${session.harnessName}`;
+      return `<div class="composer-area"><div class="permission-line"><span>${icon('lock')}权限：${session.permission}</span><span>原型不修改权限</span></div><form class="composer" data-form="send"><label class="sr-only" for="composer-input">输入消息</label><textarea id="composer-input" rows="1" placeholder="${placeholder}" aria-label="输入消息"></textarea><button class="send-button" type="submit" disabled>${sendLabel}</button></form></div>`;
+    }
+    function chat(session) {
+      if (!session) return `<div class="detail-placeholder"><div>${icon('message')}<strong>选择一条会话继续</strong><p>桌面可同时查看会话列表与同一条历史。</p></div></div>`;
+      return `<section class="chat" aria-label="会话详情">
+        <header class="chat-header"><button class="chat-back" type="button" data-action="back-list" aria-label="返回会话列表">${icon('back')}</button><span class="chat-avatar">${icon('terminal')}</span><div class="chat-identity"><h2>${session.title}</h2><p>${session.harnessName} · ${session.computer} · ${session.status}</p></div><span class="badge ${statusClass(session)}">${session.permission}</span></header>
+        <div class="chat-project"><strong>${icon('folder')} ${session.projectName} · ${session.computer}</strong><span>${session.path}</span></div>
+        ${noticeFor(session)}
+        <div class="messages" id="messages">${messages(session)}</div>
+        ${composer(session)}
+      </section>`;
+    }
+    function workspace() {
+      if (state.screen === 'home' && state.viewport === 'mobile') return home();
+      if (state.viewport === 'mobile' && state.screen === 'chat') return `<div class="detail-pane">${chat(selectedSession())}</div>`;
+      return `<div class="workspace">${listPane()}${state.viewport === 'desktop' ? `<div class="detail-pane">${chat(selectedSession())}</div>` : ''}</div>`;
+    }
+    function newDialog() {
+      if (!state.newOpen) return '';
+      const project = projects.find(item => item.id === state.newProject);
+      return `<div class="overlay"><section class="dialog" role="dialog" aria-modal="true" aria-labelledby="new-title">
+        <header class="dialog-header"><h2 id="new-title">新建会话</h2><p>先确认 Harness、项目和执行电脑，再进入对话。</p></header>
+        <fieldset><legend>1. Harness</legend><div class="choice-grid">${Object.entries(harnessNames).map(([id, name]) => `<button class="choice" type="button" data-action="new-harness" data-value="${id}" aria-pressed="${state.newHarness === id}">${name}</button>`).join('')}</div></fieldset>
+        <fieldset><legend>2. 项目与电脑</legend><div class="project-choices">${projects.map(item => `<button class="project-choice" type="button" data-action="new-project" data-value="${item.id}" aria-pressed="${state.newProject === item.id}" ${!item.online ? 'disabled' : ''}>${icon('folder')}<span><strong>${item.name} · ${item.computer}${!item.online ? '（离线）' : ''}</strong><code>${item.path}</code></span>${icon('chevron', 'entry-chevron')}</button>`).join('')}</div></fieldset>
+        <div class="confirm-summary"><span>发送前确认</span><strong>${harnessNames[state.newHarness]} · ${project.name} · ${project.computer}</strong><p>${project.path}</p></div>
+        <div class="permission-note">${icon('lock')}<span>权限沿用当前设置，本步骤不提供通用权限开关，也不会自动发送消息。</span></div>
+        <div class="dialog-footer"><button class="button" type="button" data-action="cancel-new">取消</button><button class="button primary" type="button" data-action="confirm-new">确认并打开会话</button></div>
+      </section></div>`;
+    }
+    function render() {
+      const device = document.getElementById('device');
+      device.className = `device ${state.viewport}`;
+      const isHome = state.screen === 'home' && state.viewport === 'mobile';
+      device.innerHTML = `<div class="app">${state.viewport === 'desktop' ? sidebar() : ''}${workspace()}</div>${newDialog()}${state.toast ? `<div class="toast" role="status">${escapeHtml(state.toast)}</div>` : ''}`;
+      document.querySelectorAll('[data-action="viewport"]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.value === state.viewport)));
+      if (state.newOpen) {
+        const cancel = device.querySelector('[data-action="cancel-new"]');
+        if (cancel) cancel.focus();
+      }
+      if (isHome) document.title = 'Dovun · Harness 会话入口原型';
+    }
+    function showToast(message) {
+      state.toast = message;
+      clearTimeout(state.toastTimer);
+      state.toastTimer = setTimeout(() => { state.toast = ''; render(); }, 2600);
+      render();
+    }
+    function openSession(id) {
+      state.sessionId = id;
+      state.screen = 'chat';
+      state.newOpen = false;
+      render();
+    }
+    async function copyText(text) {
+      try {
+        if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
+        else {
+          const area = document.createElement('textarea');
+          area.value = text;
+          area.style.position = 'fixed';
+          area.style.opacity = '0';
+          document.body.appendChild(area);
+          area.select();
+          document.execCommand('copy');
+          area.remove();
+        }
+        showToast('已复制虚构历史');
+      } catch { showToast('请直接选择消息文本复制'); }
+    }
+
+    document.addEventListener('click', event => {
+      const button = event.target.closest('[data-action]');
+      if (!button || button.disabled) return;
+      const action = button.dataset.action;
+      if (action === 'viewport') {
+        state.viewport = button.dataset.value;
+        state.screen = state.viewport === 'mobile' ? 'home' : 'list';
+        state.sessionId = null;
+        state.newOpen = false;
+        state.toast = '';
+        render();
+      } else if (action === 'reset') {
+        state.screen = state.viewport === 'mobile' ? 'home' : 'list';
+        state.sessionId = null;
+        state.harness = 'all';
+        state.project = 'all';
+        state.viewMode = 'recent';
+        state.newOpen = false;
+        state.newHarness = 'codex';
+        state.newProject = 'dovun';
+        state.newMessages = [];
+        state.toast = '';
+        render();
+      } else if (action === 'home') {
+        state.screen = 'home'; state.sessionId = null; state.newOpen = false; state.toast = ''; render();
+      } else if (action === 'open-list' || action === 'back-list') {
+        state.screen = 'list'; state.sessionId = null; state.newOpen = false; state.toast = ''; render();
+      } else if (action === 'continue-recent') openSession('latest');
+      else if (action === 'open-session') openSession(button.dataset.id);
+      else if (action === 'filter-harness') { state.harness = button.dataset.value; render(); }
+      else if (action === 'view-mode') { state.viewMode = button.dataset.value; if (state.viewMode === 'recent') state.project = 'all'; render(); }
+      else if (action === 'new-session') { state.newOpen = true; state.toast = ''; render(); }
+      else if (action === 'cancel-new') { state.newOpen = false; render(); }
+      else if (action === 'new-harness') { state.newHarness = button.dataset.value; render(); }
+      else if (action === 'new-project') { state.newProject = button.dataset.value; render(); }
+      else if (action === 'confirm-new') {
+        state.newMessages = [];
+        state.newOpen = false;
+        state.sessionId = 'new';
+        state.screen = 'chat';
+        render();
+      } else if (action === 'copy-history') {
+        const session = selectedSession();
+        copyText(session.history.map(([role, text]) => `${role === 'user' ? '你' : session.harnessName}：${text}`).join('\n'));
+      } else if (action === 'copy-message') {
+        copyText(selectedSession().history[Number(button.dataset.index)][1]);
+      } else if (action === 'runs-info') showToast('AI 执行保留编排、接力与统计；原会话页签和深链不变');
+      else if (action === 'connections-info') showToast('AI 连接仅负责 MCP 配置与授权，不是 Harness 会话列表');
+      else if (action === 'unimplemented') showToast(`${button.dataset.label}不在本原型范围内`);
+    });
+
+    document.addEventListener('change', event => {
+      if (event.target.matches('[data-change="filter-project"]')) {
+        state.project = event.target.value;
+        render();
+      }
+    });
+    document.addEventListener('input', event => {
+      if (event.target.id === 'composer-input') {
+        const submit = event.target.form.querySelector('[type="submit"]');
+        submit.disabled = !event.target.value.trim();
+        event.target.style.height = 'auto';
+        event.target.style.height = `${Math.min(event.target.scrollHeight, 110)}px`;
+      }
+    });
+    document.addEventListener('submit', event => {
+      if (!event.target.matches('[data-form="send"]')) return;
+      event.preventDefault();
+      const input = event.target.querySelector('textarea');
+      const text = input.value.trim();
+      if (!text) return;
+      const session = selectedSession();
+      const reply = session.state === 'running'
+        ? '这是离线原型中的模拟排队回执，没有发送给真实 Harness。'
+        : '这是离线原型中的模拟回复，没有调用模型、启动进程或修改权限。';
+      if (session.id === 'new') {
+        state.newMessages.push(['user', text], ['assistant', reply]);
+      } else {
+        session.history.push(['user', text], ['assistant', reply]);
+      }
+      render();
+      const messagesElement = document.getElementById('messages');
+      messagesElement.scrollTop = messagesElement.scrollHeight;
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && state.newOpen) { state.newOpen = false; render(); }
+      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && event.target.id === 'composer-input') {
+        event.preventDefault();
+        if (event.target.value.trim()) event.target.form.requestSubmit();
+      }
+    });
+    render();
+  </script>
+</body>
+</html>
