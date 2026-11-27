@@ -1,0 +1,102 @@
+/* Glass chrome: the task page header floats over the list, and the mobile navigation
+   drawer follows the finger in over a progressive blur. Values approved in the glass demo. */
+:root {
+  --glass-chrome-blur: 11px;
+  --glass-chrome-tint: 51%;
+  --glass-drawer-blur: 15px;
+  --glass-drawer-tint: 50%;
+  --glass-scrim-blur: 4px;
+  --glass-scrim-dim: 0.22;
+  --nav-drawer-ease: cubic-bezier(0.32, 0.72, 0, 1);
+}
+:root.dark { --glass-scrim-dim: 0.36; }
+@media (prefers-reduced-transparency: reduce) { :root { --glass-chrome-tint: 96%; --glass-drawer-tint: 96%; } }
+
+/* ---------- Page header (ListPageHeader) ----------
+   Sticks to the top of <main> and lets the list scroll under it. The tint follows the pane:
+   dark uses --background, the light porcelain skin paints --preview-face (as the assistant header does).
+   The glass lives on ::before and spans exactly the width of <main> (the content column is centred
+   in it, so 50% - 50cqw reaches both edges), so wide layouts are not left with a strip of unblurred
+   list beside the column. Reaching further would make <main> scroll sideways and swallow page swipes. */
+.dovun-workspace .dovun-main { --glass-chrome-base: var(--background); container: dovun-main / inline-size; }
+:root:not(.dark) .dovun-workspace .dovun-main { --glass-chrome-base: var(--preview-face, var(--background)); }
+.dovun-workspace .dovun-main .dovun-page-header {
+  --glass-chrome-pad: 24px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  isolation: isolate;
+  margin-top: calc(-1 * var(--glass-chrome-pad));
+  padding-top: var(--glass-chrome-pad);
+  margin-bottom: 16px;
+  background: none;
+}
+@media (max-width: 639px) { .dovun-workspace .dovun-main .dovun-page-header { --glass-chrome-pad: 16px; margin-top: -24px; padding-top: 16px; } }
+/* Both skins draw a bottom rule under page headers; the glass edge replaces it here. */
+.dovun-workspace.dovun-workspace .dovun-main .dovun-page-header { border-bottom: 0; }
+.dovun-workspace .dovun-main .dovun-page-header::before {
+  content: '';
+  position: absolute;
+  inset: 0 calc(50% - 50cqw);
+  z-index: -1;
+  background: color-mix(in srgb, var(--glass-chrome-base) var(--glass-chrome-tint), transparent);
+  backdrop-filter: blur(var(--glass-chrome-blur)) saturate(1.5);
+  -webkit-backdrop-filter: blur(var(--glass-chrome-blur)) saturate(1.5);
+  box-shadow: inset 0 -1px 0 transparent;
+  transition: box-shadow 160ms ease;
+  pointer-events: none;
+}
+/* The edge only appears once content actually runs under the header; the inbox toolbar's own rule steps aside. */
+.dovun-workspace .dovun-main[data-scrolled] .dovun-page-header::before { box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--border) 60%, transparent); }
+.dovun-workspace .dovun-main .dovun-page-header .inbox-toolbar { transition: border-color 160ms ease; }
+.dovun-workspace .dovun-main[data-scrolled] .dovun-page-header .inbox-toolbar { border-bottom-color: transparent; }
+/* Scrolled down: hide the description and shrink the title so the header takes less room. */
+.dovun-workspace .dovun-page-header :is(h1, .inbox-title-row) { transition: font-size 200ms var(--nav-drawer-ease), padding 200ms var(--nav-drawer-ease); }
+.dovun-workspace .dovun-main[data-header-collapsed] .dovun-page-header h1 { font-size: 20px; }
+.dovun-workspace .dovun-main[data-header-collapsed] .dovun-page-header .inbox-title-row { padding-bottom: 10px; }
+.dovun-workspace .dovun-main[data-header-collapsed] .dovun-page-header :is(.inbox-description, .dovun-page-date) { display: none; }
+
+/* ---------- Mobile navigation drawer ---------- */
+.assistant-navigation-sheet.glass-overlay {
+  --nav-drawer-x: 0px;
+  transform: translate3d(var(--nav-drawer-x), 0, 0) !important;
+  will-change: transform;
+  border: 0;
+  border-right: 1px solid var(--glass-border);
+  background: color-mix(in srgb, var(--glass-bg-strong) var(--glass-drawer-tint), transparent);
+  backdrop-filter: blur(var(--glass-drawer-blur)) saturate(1.6);
+  -webkit-backdrop-filter: blur(var(--glass-drawer-blur)) saturate(1.6);
+  box-shadow: inset -1px 0 0 var(--glass-highlight), var(--surface-overlay-shadow);
+}
+.assistant-navigation-sheet.glass-overlay[data-dragging] { box-shadow: inset -1px 0 0 var(--glass-highlight); }
+.assistant-navigation-sheet .app-sidebar { background: transparent; }
+
+/* The overlay stays a plain hit target: any opacity, filter or backdrop-filter on it would make it
+   a backdrop root and the blur layers inside could no longer see the page. */
+.assistant-navigation-backdrop.assistant-navigation-backdrop { background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; animation: none; opacity: 1; }
+/* Progressive blur: deepest against the drawer's edge, lighter towards the right; the page never moves.
+   Five layers stack from light to deep, each masked to a shorter strip on the left, so each one blurs
+   the result of the one before. Fading is on each layer's own opacity for the same backdrop-root reason. */
+.assistant-navigation-veil { position: absolute; top: 0; right: 0; bottom: 0; left: 0; pointer-events: none; }
+.assistant-navigation-veil > i {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 var(--s), transparent var(--e));
+  mask-image: linear-gradient(90deg, #000 0%, #000 var(--s), transparent var(--e));
+  backdrop-filter: blur(calc(var(--glass-scrim-blur) * var(--k)));
+  -webkit-backdrop-filter: blur(calc(var(--glass-scrim-blur) * var(--k)));
+}
+.assistant-navigation-veil > i:nth-child(1) { --k: 0.0625; --s: 55%; --e: 100%; }
+.assistant-navigation-veil > i:nth-child(2) { --k: 0.125; --s: 38%; --e: 82%; }
+.assistant-navigation-veil > i:nth-child(3) { --k: 0.25; --s: 22%; --e: 62%; }
+.assistant-navigation-veil > i:nth-child(4) { --k: 0.5; --s: 8%; --e: 42%; }
+.assistant-navigation-veil > i:nth-child(5) { --k: 1; --s: 0%; --e: 24%; }
+/* Top layer only dims, also deepest at the drawer. */
+.assistant-navigation-veil > i:nth-child(6) {
+  -webkit-mask-image: none;
+  mask-image: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: linear-gradient(90deg, rgb(0 0 0 / var(--glass-scrim-dim)), rgb(0 0 0 / calc(var(--glass-scrim-dim) * 0.25)));
+}

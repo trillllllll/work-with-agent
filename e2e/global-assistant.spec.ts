@@ -244,11 +244,12 @@ test('every route shares input and mobile visual viewport keeps the composer vis
   }
 });
 
-test('mobile page swipe opens navigation mid-gesture and ignores cancelled short swipes', async ({ page, isMobile }) => {
+test('mobile page swipe pulls navigation out under the finger and settles by speed and distance', async ({ page, isMobile }) => {
   test.skip(!isMobile, '全页面滑动是手机手势');
   await page.goto('/#/inbox');
   await expect(page.getByRole('button', { name: '主导航', exact: true })).toBeVisible();
   const drawer = page.locator('.assistant-navigation-sheet');
+  const main = page.locator('main.app-main');
   await expect(drawer).toHaveCount(0);
   const session = await page.context().newCDPSession(page);
   const touchDrag = async (start: { x: number; y: number }, dx: number, dy: number) => {
@@ -258,14 +259,36 @@ test('mobile page swipe opens navigation mid-gesture and ignores cancelled short
       await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: start.x + (dx * index) / steps, y: start.y + (dy * index) / steps, id: 0 }] });
     }
   };
+  const release = () => session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  const drawerRight = () => drawer.evaluate(node => node.getBoundingClientRect().right);
   try {
-    // 从左缘向右滑：途中（尚未松手）就应打开抽屉。
+    const before = await main.boundingBox();
+    // 滑动途中（尚未松手）抽屉已经出现，并且跟着手指走。
     await touchDrag({ x: 8, y: 360 }, 96, 6);
     await expect(drawer).toBeVisible();
-    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    await page.getByRole('button', { name: '返回页面', exact: true }).click();
+    await expect.poll(drawerRight).toBeGreaterThan(60);
+    expect(await drawerRight()).toBeLessThan(120);
+    // 继续往右拉，抽屉继续跟手。
+    for (let x = 114; x <= 164; x += 10) await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: 366, id: 0 }] });
+    await expect.poll(drawerRight).toBeGreaterThan(120);
+    // 页面本身不跟着动，只有背后的模糊在变。
+    expect(await main.boundingBox()).toEqual(before);
+    await expect.poll(() => page.locator('.assistant-navigation-veil > i').first().evaluate(node => Number(getComputedStyle(node).opacity))).toBeGreaterThan(0.2);
+    // 停住再松手、没拉过一半：收回去。
+    await page.waitForTimeout(150);
+    await release();
     await expect(drawer).toHaveCount(0);
-    // 被取消的短滑动不再降低阈值误开菜单。
+    // 拉过一半再松手：打开。（CDP 触摸每步约 50ms，测不出真机的快速甩动，甩动由单元测试覆盖。）
+    await touchDrag({ x: 8, y: 360 }, 200, 6);
+    await release();
+    await expect.poll(() => drawer.evaluate(node => node.getBoundingClientRect().left)).toBe(0);
+    // 打开后向左拖背后的模糊区，跟手收回。
+    const width = await drawerRight();
+    await touchDrag({ x: width + 20, y: 400 }, -220, 4);
+    await expect.poll(drawerRight).toBeLessThan(width - 100);
+    await release();
+    await expect(drawer).toHaveCount(0);
+    // 被取消的短滑动不会打开菜单。
     await touchDrag({ x: 8, y: 360 }, 30, 6);
     await session.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
     await expect(drawer).toHaveCount(0);
@@ -275,12 +298,14 @@ test('mobile page swipe opens navigation mid-gesture and ignores cancelled short
     await expect(drawer).toHaveCount(0);
     // 纵向滑动归页面滚动，不打开抽屉。
     await touchDrag({ x: 8, y: 360 }, 6, 120);
-    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await release();
     await expect(drawer).toHaveCount(0);
-    // 页面中间也能打开，不再受左侧起点限制。
-    await touchDrag({ x: 160, y: 360 }, 96, 6);
-    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    await expect(drawer).toBeVisible();
+    // 页面中间也能打开，不再受左侧起点限制；点背后的模糊区关闭。
+    await touchDrag({ x: 160, y: 360 }, 200, 6);
+    await release();
+    await expect.poll(() => drawer.evaluate(node => node.getBoundingClientRect().left)).toBe(0);
+    await page.mouse.click(380, 500);
+    await expect(drawer).toHaveCount(0);
   } finally {
     await session.detach();
   }
@@ -320,10 +345,10 @@ for (const route of ['inbox', 'chat']) test(`mobile full-page swipes open naviga
       });
     }
     await test.step(`${route}: start inside the page, away from the system edge`, async () => {
-      for (const x of [64, 160, 280]) {
-        await touchDrag(x, 360, 96, 6);
-        await expect(drawer).toBeVisible();
+      for (const x of [64, 120, 180]) {
+        await touchDrag(x, 360, 200, 6);
         await release();
+        await expect(drawer).toBeVisible();
         await page.getByRole('button', { name: '返回页面', exact: true }).click();
         await expect(drawer).toHaveCount(0);
         await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -411,7 +436,8 @@ test('mobile full-page swipe leaves the knowledge canvas in control', async ({ p
 
 async function mobileSwipeSession(page: Page) {
   const session = await page.context().newCDPSession(page);
-  const swipe = async (x: number, y: number, dx = 96, dy = 4) => {
+  // Far enough to settle open on its own: emulated touch is too slow to count as a flick.
+  const swipe = async (x: number, y: number, dx = 200, dy = 4) => {
     await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 0 }] });
     for (let step = 1; step <= 10; step += 1) {
       await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + dx * step / 10, y: y + dy * step / 10, id: 0 }] });
@@ -423,6 +449,8 @@ async function mobileSwipeSession(page: Page) {
 
 test('mobile full-page navigation works across routes and above workspace pages', async ({ page, isMobile }) => {
   test.skip(!isMobile, '手机全页面导航');
+  // 21 routes × open/close: settle the drawer instantly so the sweep fits the timeout.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   const { session, swipe } = await mobileSwipeSession(page);
   const drawer = page.locator('.assistant-navigation-sheet');
   try {

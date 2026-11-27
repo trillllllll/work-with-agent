@@ -50,6 +50,7 @@ function DialogContent({
   children,
   showCloseButton = true,
   overlayClassName,
+  overlayChildren,
   closeButtonClassName,
   motion = "default",
   surface = "default",
@@ -58,6 +59,8 @@ function DialogContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
   overlayClassName?: string
+  /** Decorative layers painted inside the overlay, behind the content. */
+  overlayChildren?: React.ReactNode
   closeButtonClassName?: string
   motion?: "default" | "none"
   surface?: "default" | "glass"
@@ -66,7 +69,7 @@ function DialogContent({
 }) {
   return (
     <DialogPortal data-slot="dialog-portal" container={container ?? undefined}>
-      <DialogOverlay className={overlayClassName} />
+      <DialogOverlay className={overlayClassName}>{overlayChildren}</DialogOverlay>
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
