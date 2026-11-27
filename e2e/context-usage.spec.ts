@@ -103,6 +103,45 @@ test('real requests record context composition; floating controls work in both t
   expect(errors).toEqual([]);
 });
 
+for (const previewReady of [true, false]) {
+  test(`sending shows ${previewReady ? 'the submitted estimate' : 'pending usage'} before the first server event`, async ({ page, request }) => {
+    await request.patch(`${api}/api/settings`, { data: { baseUrl: 'http://127.0.0.1:4010/v1', model: 'mock-context-no-usage', contextWindow: 128000 } });
+    if (!previewReady) await page.route('**/api/chat/context-preview', route => route.abort());
+
+    // Hold the actual send so an early run estimate can't hide a visual gap.
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/api/chat', async route => { await gate; await route.continue(); });
+    await page.goto('/#/chat');
+    const ring = page.getByTestId('context-usage-ring');
+    const message = '上下文统计验收：查询我的任务，保持数据不变。';
+    const draftPreview = previewReady ? page.waitForResponse(response =>
+      response.url().endsWith('/api/chat/context-preview') && response.ok() &&
+      response.request().postDataJSON().message === message,
+    ) : null;
+    await page.getByRole('textbox', { name: '向 AI 提问' }).fill(message);
+    try {
+      if (draftPreview) {
+        await draftPreview;
+        await expect(ring).toContainText('%');
+      }
+      await page.getByRole('button', { name: '发送', exact: true }).click();
+      if (previewReady) {
+        await expect(ring).toContainText('%');
+        await openUsage(page);
+        await expect(page.getByTestId('context-usage-popover')).toContainText('这是本次发送前的预估');
+      } else {
+        await expect(ring).toContainText('…');
+        await openUsage(page);
+        await expect(page.getByTestId('context-usage-popover')).toContainText('正在计算本次请求的上下文');
+      }
+    } finally { release(); }
+    await page.keyboard.press('Escape');
+    await expect(page.getByText('已读取隔离工作台的任务。保持原有数据，未进行修改。', { exact: true })).toBeVisible();
+    await expect(ring).toContainText('%');
+  });
+}
+
 test('asks for the pre-send estimate only while the assistant is visible', async ({ page }) => {
   let previews = 0;
   page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/chat/context-preview') previews++; });

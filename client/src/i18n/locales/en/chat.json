@@ -554,6 +554,8 @@
     "compositionWindow": "Context blocks as a share of the model limit; empty space is free",
     "free": "Free space",
     "setWindow": "Set the limit",
+    "estimating": "Estimating context for this request",
+    "submittedPreviewHint": "This estimate was made before sending and will update when this run reports its usage.",
     "previewHint": "This is the first request of the next send; tool calls during the run add more.",
     "windowHigh": "Over 80% of the limit. Earlier turns will rely more on summaries. Start a new conversation or attach less.",
     "windowFull": "The estimate reaches or exceeds the model limit and the provider may reject the request. Start a new conversation or attach less.",

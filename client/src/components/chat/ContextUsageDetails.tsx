@@ -25,8 +25,8 @@ export function ContextUsageDetails({ stats, preview, busy, onNavigate }: Contex
   const receiptCoverage = aggregate && typeof aggregate.usageReceipts === 'number' ? t('usage.receiptCoverage', { reported: aggregate.usageReceipts, total: aggregate.requests }) : null;
   const fieldCoverage = (reported: number | undefined) => aggregate && typeof reported === 'number' ? t('usage.fieldCoverage', { reported, total: aggregate.requests }) : null;
   return <div data-testid="context-usage-popover" aria-label={t('usage.title')}>
-    <div className="mb-1 flex items-center justify-between gap-3"><h3 className="text-sm font-medium">{t('usage.title')}</h3><span className={cn('text-sm tabular-nums', levelText[level])} data-testid="context-usage-total">{shown ? `≈ ${number(shown.estimatedInputTokens)}${capacity ? ` / ${number(capacity)}` : ''}` : '—'}</span></div>
-    {!shown ? <p className="py-3 text-xs leading-relaxed text-muted-foreground">{t('usage.empty')}</p> : <>
+    <div className="mb-1 flex items-center justify-between gap-3"><h3 className="text-sm font-medium">{t('usage.title')}</h3><span className={cn('text-sm tabular-nums', levelText[level])} data-testid="context-usage-total">{shown ? `≈ ${number(shown.estimatedInputTokens)}${capacity ? ` / ${number(capacity)}` : ''}` : busy ? '…' : '—'}</span></div>
+    {!shown ? <p className="py-3 text-xs leading-relaxed text-muted-foreground">{t(busy ? 'usage.estimating' : 'usage.empty')}</p> : <>
       <p className="mb-3 text-[11px] text-muted-foreground">{isPreview ? t('usage.preview') : t('usage.latest', { round: shown.round + 1 })}{percent !== null && <> · <span className={levelText[level]}>{t('usage.ofWindow', { percent: percent.toFixed(1) })}</span></>}</p>
       <div className="mb-3 flex h-2 w-full overflow-hidden rounded-full bg-muted" role="img" aria-label={capacity ? t('usage.compositionWindow') : t('usage.composition')}>
         {shown.categories.filter(c => c.tokens > 0).map(c => <span key={c.id} style={{ width: `${Number(tokenPercent(c.tokens, scale))}%`, background: colors[c.id] }} title={`${t(`usage.categories.${c.id}`)}: ${number(c.tokens)} token`} />)}
@@ -42,7 +42,7 @@ export function ContextUsageDetails({ stats, preview, busy, onNavigate }: Contex
         </div>}
       </div>
       <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">{capacity ? t('usage.estimateHintWindow') : <>{t('usage.estimateHint')} <a className="font-medium text-brand-link underline-offset-4 hover:underline" href={`#${settingsHash('model')}`} onClick={onNavigate}>{t('usage.setWindow')}</a></>}</p>
-      {isPreview && <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t('usage.previewHint')}</p>}
+      {isPreview && <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t(busy ? 'usage.submittedPreviewHint' : 'usage.previewHint')}</p>}
       {level !== 'normal' && <p className={cn('mt-2 text-xs', levelText[level])}>{level === 'full' ? t('usage.windowFull') : t('usage.windowHigh')}</p>}
       {shown.historyOverBudget && <p className="mt-2 text-xs text-warning">{t('usage.overBudget')}</p>}
       <Disclosure className="mt-3 border-t pt-2">

@@ -451,25 +451,28 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
   // Pre-send estimate of the next request (draft + history + tools). Read-only on the server;
   // debounced while typing and refreshed after each run so it reflects the next send.
   // Only requested while the assistant is visible; a superseded request is aborted.
-  const [contextPreview, setContextPreview] = useState<ContextUsage | null>(null);
+  const [draftPreview, setDraftPreview] = useState<{ scope: string; key: string; stats: ContextUsage } | null>(null);
+  const [submittedPreview, setSubmittedPreview] = useState<ContextUsage | null>(null);
   const previewSeq = useRef(0);
   const previewKey = JSON.stringify([input, conversationId, identityId, webSearchEnabled, referencedApproval?.id ?? null, messages.length, context ?? null]);
+  const previewScope = JSON.stringify([editorRuntime?.scopeKey, identityId, conversationId]);
+  const contextPreview = busy ? submittedPreview : draftPreview?.scope === previewScope ? draftPreview.stats : null;
   useEffect(() => {
     const seq = ++previewSeq.current;
-    // A preview from before this run is stale; fall back to the run's own stats until a fresh one arrives.
-    if (busy || !contextPreviewEnabled) { setContextPreview(null); return; }
+    // Stop draft previews while sending; the submitted estimate is kept separately.
+    if (busy || !contextPreviewEnabled) { setDraftPreview(null); return; }
     const controller = new AbortController();
     let expiry: ReturnType<typeof setTimeout> | undefined;
     const timer = setTimeout(() => {
       expiry = setTimeout(() => controller.abort(), 15_000);
       const body = { conversationId: conversationRef.current || undefined, identityId: identityIdRef.current, message: inputRef.current, learningMapId: identityIdRef.current === 'study' && !conversationRef.current ? readCurrentTopic(instanceScope.current) || undefined : undefined, webSearchEnabled: webSearchEnabledRef.current, context: buildRequestContext(referencedApproval) };
       api<ContextUsage>('/api/chat/context-preview', { method: 'POST', body: JSON.stringify(body), signal: controller.signal })
-        .then((stats) => { if (seq === previewSeq.current) setContextPreview(stats); })
-        .catch(() => { if (seq === previewSeq.current) setContextPreview(null); })
+        .then((stats) => { if (!controller.signal.aborted && seq === previewSeq.current) setDraftPreview({ scope: previewScope, key: previewKey, stats }); })
+        .catch(() => { if (seq === previewSeq.current) setDraftPreview(null); })
         .finally(() => clearTimeout(expiry));
     }, 500);
     return () => { clearTimeout(timer); clearTimeout(expiry); controller.abort(); };
-  }, [busy, contextPreviewEnabled, previewKey]);
+  }, [busy, contextPreviewEnabled, previewKey, previewScope]);
 
   const send = async (event: FormEvent) => {
     topicSelectionGeneration.current++;
@@ -494,6 +497,8 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
     }
     refusedRequest.current = null;
     pendingRequestBody.current = storedBody; pendingRequestKey.current = requestKey;
+    // Keep the matching draft estimate while waiting for this run’s first stats event.
+    setSubmittedPreview(contextPreviewEnabled && draftPreview?.scope === previewScope && draftPreview.key === previewKey ? draftPreview.stats : null);
     setContextStats(null);
     activeRunId.current = ''; loadGeneration.current++; busyRef.current = true;
     onErrorRef.current(''); setInterrupted(false); setBusy(true); setPausedRun(null);
@@ -578,7 +583,7 @@ export function useChat({ pageContext, selectedTopicId, taskId = '', view, ident
       setInterrupted(true);
       onErrorRef.current(reason instanceof Error ? reason.message : tRef.current('errors.chatInterrupted'));
     }
-    finally { if (accepted) await reloadConversation(conversationRef.current, true); busyRef.current = false; setBusy(false); }
+    finally { if (accepted) await reloadConversation(conversationRef.current, true); setSubmittedPreview(null); busyRef.current = false; setBusy(false); }
   };
   const resume = async () => {
     if (!pausedRun || busyRef.current) return;
