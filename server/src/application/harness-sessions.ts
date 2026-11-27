@@ -34,7 +34,7 @@ const leaseCommandBytes = 8 * 1024 * 1024;
 const legacyImageEncodedLimit = Math.ceil(HARNESS_LEGACY_IMAGE_LIMIT / 3) * 4;
 const listQuery = z.object({
   cursor: z.string().min(1).max(200).optional(), locationId: z.string().min(1).max(200).optional(),
-  archived: z.enum(['0', '1']).optional(), harness: harnessKind.optional(),
+  archived: z.enum(['0', '1']).optional(), harness: harnessKind.optional(), order: z.enum(['recent']).optional(),
 }).strip();
 const receiptFields = { commandId: true, status: true, error: true, createdAt: true, expiresAt: true, resultSessionId: true } as const;
 type ReceiptRow = Prisma.HarnessCommandGetPayload<{ select: typeof receiptFields }>;
@@ -314,7 +314,7 @@ export async function readHarnessWorkspaceFiles(id: string, raw: unknown) {
   return requestHarnessRead(node, 'files', { cwd, ...query });
 }
 export async function listHarnessSessions(raw: unknown = {}) {
-  const { cursor, locationId, archived, harness } = listQuery.parse(raw);
+  const { cursor, locationId, archived, harness, order } = listQuery.parse(raw);
   const nodes = await prisma.agentNode.findMany({ where: { deletedAt: null, status: 'active' } });
   const available = new Map(nodes.map((node) => [node.id, node]));
   const directories = await prisma.harnessDirectory.findMany({ where: { nodeId: { in: [...available.keys()] } }, orderBy: [{ name: 'asc' }, { path: 'asc' }] });
@@ -326,7 +326,9 @@ export async function listHarnessSessions(raw: unknown = {}) {
       archivedAt: archived === '1' ? { not: null } : null,
       ...(locationId ? { OR: [{ locationId }, ...(location ? [{ nodeId: location.nodeId, cwd: location.path }] : [])] } : {}),
     },
-    orderBy: [{ nativePinOrder: { sort: 'asc', nulls: 'last' } }, { pinnedAt: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
+    orderBy: order === 'recent'
+      ? [{ updatedAt: 'desc' }, { id: 'asc' }]
+      : [{ nativePinOrder: { sort: 'asc', nulls: 'last' } }, { pinnedAt: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}), take: 101,
   });
   const hasMore = sessions.length > 100;

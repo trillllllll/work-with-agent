@@ -402,6 +402,15 @@
       "sendNowInterrupt": "结束当前轮并发送", "edit": "编辑排队消息", "up": "上移", "down": "下移", "remove": "移除", "changed": "队列已变化，请重新打开。"
     },
     "tab": "会话",
+    "entryDescription": "选择或继续不同 Harness 的已有会话",
+    "recent": {
+      "continue": "继续最近会话",
+      "view": "查看最近会话",
+      "loading": "正在读取最近会话…",
+      "unavailable": "暂时无法读取最近会话",
+      "empty": "暂无已有会话",
+      "listFallback": "前往会话列表"
+    },
     "filter": "Harness",
     "chooseProject": "选择项目",
     "chatProject": "选择项目，当前为 {{project}}",

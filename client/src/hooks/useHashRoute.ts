@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { View } from '../lib/api.js';
 import { parseSettingsCategory, settingsHash, type SettingsCategory } from '../components/settings/settings-categories.js';
+import { harnessSessionsHash, type HarnessSessionTarget } from '../lib/harness-navigation.js';
 
 const validViews: View[] = ['board', 'quadrant', 'chat', 'topics', 'inbox', 'settings', 'trash', 'changes', 'today', 'search', 'tags', 'archived', 'more', 'connections', 'proposals', 'knowledge', 'library', 'skills', 'runs', 'worktrees', 'reviews', 'plan', 'focus', 'stats', 'learning'];
 const knowledgeSections = ['materials', 'memories', 'brief', 'search', 'tree', 'graph', 'extractions'] as const;
@@ -79,6 +80,9 @@ export function useHashRoute() {
   const openKnowledge = useCallback((section: KnowledgeSection, topicId: string, mode: 'push' | 'replace' = 'push') => {
     applyHash(knowledgeHash(section, topicId), mode);
   }, []);
+  const openHarnessSessions = useCallback((target?: HarnessSessionTarget) => {
+    applyHash(harnessSessionsHash(target), 'push');
+  }, []);
   const openSettings = useCallback((category: SettingsCategory | null, mode: 'push' | 'replace' = 'push') => {
     applyHash(settingsHash(category), mode);
   }, []);
@@ -102,6 +106,7 @@ export function useHashRoute() {
     knowledgeTopicId: state.knowledgeTopicId,
     knowledgeTopicExplicit: state.knowledgeTopicExplicit,
     navigate,
+    openHarnessSessions,
     openKnowledge,
   };
 }

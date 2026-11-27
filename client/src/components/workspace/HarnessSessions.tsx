@@ -49,7 +49,7 @@ type Session = {
   sourceSessionId?: string | null;
 };
 type SessionRow = Pick<Session, 'id' | 'nodeId' | 'nodeName' | 'online' | 'projectName' | 'status' | 'title' | 'activity' | 'updatedAt' | 'pinned' | 'archived' | 'unread' | 'organization' | 'pinOrder'> & {
-  nativeThreadId?: string; projectKey: string; projectPath?: string; projectPinOrder?: number;
+  nativeThreadId?: string; projectKey: string; projectPath?: string; projectPinOrder?: number; harness?: string;
 };
 type Detail = Session & { snapshot: HarnessSnapshot | null; current: boolean };
 type List = {
@@ -229,6 +229,8 @@ function SessionList({ sessions, groupBy, selectedId, opening, open, update }: {
         const status = !session.online ? t('harness.status.offline') : session.status !== 'ready' ? t('harness.status.' + session.status)
           : approval ? t('harness.waitingApproval') : running ? t('harness.turn.inProgress') : '';
         const nodeName = session.nodeName ?? t('harness.unknownComputer');
+        const provider = harnessKind.safeParse(session.harness ?? codex.id).data;
+        const harnessName = provider ? harnessNames[provider] : session.harness ?? codex.name;
         return <div key={session.id} className="flex min-w-0 items-center">
           <Button type="button" variant="row" size="bare"
           className="workspace-row flex min-h-[55px] min-w-0 flex-1 items-center gap-2.5 px-2 py-2 text-left"
@@ -245,7 +247,7 @@ function SessionList({ sessions, groupBy, selectedId, opening, open, update }: {
               {session.unread && <span className="size-1.5 shrink-0 rounded-full bg-brand-link" aria-label={t('harness.unread')} />}
             </span>
             <span className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="truncate">{session.title ? session.projectName + ' · ' + nodeName : nodeName}</span>
+              <span className="truncate">{harnessName} · {session.title ? session.projectName + ' · ' + nodeName : nodeName}</span>
               {status && <span className={'shrink-0 ' + (approval ? 'text-warning' : '')}>{status}</span>}
             </span>
           </span>

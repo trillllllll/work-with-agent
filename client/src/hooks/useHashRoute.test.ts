@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseHash } from './useHashRoute.js';
 import { SETTINGS_CATEGORIES } from '../components/settings/settings-categories.js';
+import { harnessSessionsHash } from '../lib/harness-navigation.js';
 
 const parse = (path: string, query = '') => parseHash(path, new URLSearchParams(query));
 
@@ -34,6 +35,17 @@ describe('parseHash settings routes', () => {
     expect(parse('runs', 'tab=handoffs')).toEqual({ view: 'runs', knowledgeSection: null, knowledgeTopicId: null, knowledgeTopicExplicit: false, settingsCategory: null, query: { tab: 'handoffs' } });
     expect(parse('runs', 'tab=orchestrations')).toMatchObject({ view: 'runs', query: { tab: 'orchestrations' } });
     expect(parse('runs')).toMatchObject({ view: 'runs', query: {} });
+  });
+
+  it('opens Harness sessions directly while keeping the runs route compatible', () => {
+    expect(harnessSessionsHash()).toBe('/runs?tab=sessions');
+    const hash = harnessSessionsHash({ id: 'session / 1', harness: 'claude', project: 'project / 1' });
+    const [path, query] = hash.slice(1).split('?');
+    expect(parse(path, query)).toEqual({
+      view: 'runs', knowledgeSection: null, knowledgeTopicId: null, knowledgeTopicExplicit: false, settingsCategory: null,
+      query: { tab: 'sessions', sessionId: 'session / 1', harness: 'claude', project: 'project / 1' },
+    });
+    expect(parse('runs', 'tab=handoffs')).toMatchObject({ view: 'runs', query: { tab: 'handoffs' } });
   });
 
   it('keeps the stats view and its range query', () => {

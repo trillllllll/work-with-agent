@@ -1,4 +1,4 @@
-import { Archive, Bot, CalendarClock, CalendarDays, CalendarRange, ChartColumn, ClipboardCheck, FolderKanban, GitBranch, GraduationCap, Grid2X2, History, Inbox, Library, MessageSquare, NotebookText, Plug, Search, Settings, Sparkles, Tags, Timer, Trash2, type LucideIcon } from 'lucide-react';
+import { Archive, Bot, CalendarClock, CalendarDays, CalendarRange, ChartColumn, ClipboardCheck, FolderKanban, GitBranch, GraduationCap, Grid2X2, History, Inbox, Library, MessageSquare, NotebookText, Plug, Search, Settings, Sparkles, Tags, Terminal, Timer, Trash2, type LucideIcon } from 'lucide-react';
 import { t } from '../i18n/index.js';
 import type { View } from './api.js';
 
@@ -36,6 +36,7 @@ export const navigationItems: NavigationItem[] = [
 
 /** 聊天是固定入口，不进入可配置清单；侧栏把聊天固定渲染在底部工具区（Sidebar footer）。 */
 export const chatItem: NavigationItem = navItem('chat', 'app:nav.chat', MessageSquare);
+export const harnessItem: NavigationItem = navItem('runs', 'app:nav.harness', Terminal);
 
 const itemsByView = new Map<View, NavigationItem>([...navigationItems, chatItem].map((item) => [item.view, item]));
 

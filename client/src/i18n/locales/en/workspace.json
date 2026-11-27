@@ -403,6 +403,15 @@
       "sendNowInterrupt": "Stop this turn and send", "edit": "Edit queued message", "up": "Move up", "down": "Move down", "remove": "Remove", "changed": "The queue changed. Reopen the message to edit."
     },
     "tab": "Sessions",
+    "entryDescription": "Choose or continue an existing session across Harnesses",
+    "recent": {
+      "continue": "Continue recent session",
+      "view": "View recent session",
+      "loading": "Loading the recent session…",
+      "unavailable": "The recent session is unavailable right now",
+      "empty": "No existing sessions",
+      "listFallback": "Go to the session list"
+    },
     "filter": "Harness",
     "chooseProject": "Choose project",
     "chatProject": "Choose project, currently {{project}}",
