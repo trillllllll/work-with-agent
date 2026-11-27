@@ -278,7 +278,7 @@ export const en: Record<string, string> = {
   "assignments 需要 taskId": "assignments requires taskId",
   "任务不存在": "Task does not exist",
   "get 需要 taskId": "get requires taskId",
-  "query_tasks.action 只能是 list、get、tags、trash 或 assignments": "query_tasks.action must be list, get, tags, trash, or assignments",
+  "query_tasks.action 只能是 list、get、selected、tags、trash 或 assignments": "query_tasks.action must be list, get, selected, tags, trash, or assignments",
   "query_topics.action 只能是 list 或 get": "query_topics.action must be list or get",
   "get 需要 topicId": "get requires topicId",
   "清单不存在": "List does not exist",

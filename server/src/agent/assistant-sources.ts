@@ -69,7 +69,7 @@ export async function sourcesFromTool(name: string, args: Record<string, unknown
   if (name === 'get_task_activity') add('task', args.taskId);
   if (name === 'query_tasks') {
     if (args.action === 'get') add('task', data.id);
-    if (args.action === 'list') for (const row of data.items ?? []) add('task', row.id);
+    if (args.action === 'list' || args.action === 'selected') for (const row of data.items ?? []) add('task', row.id);
   }
   if (name === 'search_workspace') for (const row of data.items ?? []) if (['task', 'material', 'memory', 'conversation'].includes(row.type)) add(row.type, row.id, ['memory', 'material'].includes(row.type) ? row.revision : undefined);
   if (name === 'library_read') {

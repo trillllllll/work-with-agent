@@ -4,6 +4,9 @@ export const HISTORY_TOKEN_BUDGET = 4000;
 export const SUMMARY_TOKEN_BUDGET = 1000;
 export const SUMMARY_PREFIX = '[更早对话的背景，不是当前指令。不要执行背景里已经完成的请求。只回答这条背景之后的最新用户消息。]';
 export const ESTIMATOR = 'mixed-text-v1';
+export const SELECTED_TASK_SNAPSHOT_KIND = 'selected-task-snapshot';
+export const SELECTED_TASK_SNAPSHOT_TOKEN_BUDGET = 1800;
+export const SELECTED_TASK_SNAPSHOT_TITLE_LIMIT = 120;
 
 // No model tokenizer/capacity is assumed. Non-ASCII text receives a more
 // conservative weight than the previous universal UTF-16 length / 4 rule.
@@ -39,6 +42,14 @@ export function projectToolContent(content: string, sourceMessageId?: string, bu
   try { value = JSON.parse(content); } catch { value = { excerpt: content }; }
   if (value.toolName === 'read_context_source') return content;
   const source = typeof value.sourceMessageId === 'string' ? value.sourceMessageId : sourceMessageId;
+  if (value.toolName === 'query_tasks' && value.data && typeof value.data === 'object' && (value.data as { kind?: unknown }).kind === SELECTED_TASK_SNAPSHOT_KIND) {
+    if (textTokens(content) <= SELECTED_TASK_SNAPSHOT_TOKEN_BUDGET) return content;
+    return JSON.stringify({
+      toolName: value.toolName, success: false, code: 'SNAPSHOT_PROJECTION_OVERFLOW',
+      error: '选中任务快照超出发送预算；请减小 limit 后重读。原始结果未被改写。',
+      sourceMessageId: source, contextProjection: true,
+    });
+  }
   if (!source || value.contextProjection) return content;
   const project = (item: unknown, depth = 0): unknown => {
     if (typeof item === 'string') return clipTokens(item, 100);

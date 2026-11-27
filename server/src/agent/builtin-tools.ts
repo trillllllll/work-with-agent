@@ -28,6 +28,7 @@ import { prepareChanges } from './propose.js';
 import { getCurrentTime, type Clock } from './time.js';
 import { searchWorkspace } from './workspace-search.js';
 import { proposeWorktreeCleanup, readOrchestration, redactStats, statsForAssistant } from './orchestration-tools.js';
+import { SELECTED_TASK_SNAPSHOT_KIND, SELECTED_TASK_SNAPSHOT_TITLE_LIMIT, SELECTED_TASK_SNAPSHOT_TOKEN_BUDGET, textTokens } from './context-budget.js';
 
 const tasks = new TaskService();
 const topics = new TopicService();
@@ -79,8 +80,80 @@ function scopeTopic(context: StoredChatContext, topicId: unknown) {
   return {};
 }
 
+async function selectedTaskSnapshot(args: Record<string, unknown>, context: StoredChatContext) {
+  if (Object.keys(args).some(key => !['action', 'cursor', 'limit'].includes(key))) {
+    throw new DomainError('INVALID_TOOL_ARGUMENTS', 'selected 只接受 cursor 和 limit，任务范围只能来自本次选中的任务', 400);
+  }
+  const limit = pageLimit(args.limit, 20, 100);
+  const selected = [...new Set(context.selectedTaskIds)].slice(0, 100);
+  const rows = selected.length ? await prisma.task.findMany({
+    where: { id: { in: selected }, deletedAt: null },
+    select: {
+      id: true, title: true, status: true, priority: true, revision: true, topicId: true,
+      dueDate: true, scheduledStart: true, scheduledEnd: true, estimatedMinutes: true,
+      description: true, resultSummary: true,
+    },
+  }) : [];
+  for (const row of rows) assertTopicAccess(ownerActor, row.topicId);
+  const byId = new Map(rows.map(row => [row.id, row]));
+  const readable = selected.flatMap(id => {
+    const row = byId.get(id);
+    if (!row) return [];
+    const titleCharacters = [...row.title].length;
+    return [{
+      id: row.id,
+      title: [...row.title].slice(0, SELECTED_TASK_SNAPSHOT_TITLE_LIMIT).join(''),
+      titleCharacters,
+      titleTruncated: titleCharacters > SELECTED_TASK_SNAPSHOT_TITLE_LIMIT,
+      status: row.status,
+      priority: row.priority,
+      dueDate: row.dueDate,
+      scheduledStart: row.scheduledStart,
+      scheduledEnd: row.scheduledEnd,
+      estimatedMinutes: row.estimatedMinutes,
+      revision: row.revision,
+      hasDescription: row.description.length > 0,
+      hasResultSummary: row.resultSummary.length > 0,
+    }];
+  });
+  const fingerprint = createHash('sha256').update(canonical({
+    action: 'selected', selected, actor: ownerActor.id,
+    versions: readable.map(row => [row.id, row.revision]),
+  })).digest('hex');
+  const offset = readCursor(args.cursor, fingerprint);
+  if (offset > readable.length) throw new DomainError('CURSOR_STALE', '分页位置已失效，请从第一页重新读取', 409);
+  const page = (items: typeof readable) => {
+    const covered = offset + items.length;
+    const remaining = readable.length - covered;
+    return {
+      kind: SELECTED_TASK_SNAPSHOT_KIND,
+      items,
+      coverage: {
+        total: selected.length,
+        readable: readable.length,
+        returned: items.length,
+        covered,
+        remaining,
+        unavailable: selected.length - readable.length,
+      },
+      hasMore: remaining > 0,
+      nextCursor: remaining > 0 ? cursorOf(fingerprint, covered) : null,
+      note: '仅含本次明确选中且仍可读取的任务基础字段。covered/remaining 只计算可读任务，unavailable 包含失效或已删除的选中项。hasDescription/hasResultSummary 只是存在标记；描述和结果正文尚未读取，需要时用 get 按选中 ID 少量补查，不得声称已读全文。',
+    };
+  };
+  const items: typeof readable = [];
+  for (const row of readable.slice(offset)) {
+    if (items.length >= limit) break;
+    const candidate = [...items, row];
+    if (items.length && textTokens(JSON.stringify(page(candidate))) > SELECTED_TASK_SNAPSHOT_TOKEN_BUDGET - 400) break;
+    items.push(row);
+  }
+  return page(items);
+}
+
 async function queryTasks(args: Record<string, unknown>, context: StoredChatContext) {
   const action = args.action;
+  if (action === 'selected') return selectedTaskSnapshot(args, context);
   if (action === 'tags') {
     const rows = await tags.list();
     return { items: rows.map((tag) => ({ id: tag.id, name: tag.name, color: tag.color, revision: tag.revision })) };
@@ -114,7 +187,7 @@ async function queryTasks(args: Record<string, unknown>, context: StoredChatCont
     if (!task) throw new DomainError('NOT_FOUND', '任务不存在', 404);
     return task;
   }
-  if (action !== 'list') throw new DomainError('INVALID_TOOL_ARGUMENTS', 'query_tasks.action 只能是 list、get、tags、trash 或 assignments', 400);
+  if (action !== 'list') throw new DomainError('INVALID_TOOL_ARGUMENTS', 'query_tasks.action 只能是 list、get、selected、tags、trash 或 assignments', 400);
   const usePage = args.scope !== 'all' && args.usePageFilter !== false && args.topicId === undefined;
   const selected = usePage ? context.selectedTaskIds : [];
   args = { ...(usePage && !selected.length ? context.taskFilter ?? {} : {}), ...args };
